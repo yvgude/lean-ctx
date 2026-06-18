@@ -70,6 +70,7 @@ class CockpitSettings extends HTMLElement {
   constructor() {
     super();
     this._data = null;
+    this._meta = null;
     this._loading = true;
     this._error = null;
     this._saving = null;
@@ -83,7 +84,7 @@ class CockpitSettings extends HTMLElement {
     this.style.display = 'block';
     document.addEventListener('lctx:refresh', this._onRefresh);
     this.render();
-    this.loadData();
+    // Lazy-load (#452): the router loads this view's data on activation.
   }
 
   disconnectedCallback() {
@@ -109,6 +110,7 @@ class CockpitSettings extends HTMLElement {
     try {
       var resp = await fetchJson('/api/settings', { timeoutMs: 8000 });
       this._data = (resp && resp.settings) || {};
+      this._meta = resp || {};
       this._loading = false;
       this.render();
       this._bind();
@@ -134,6 +136,7 @@ class CockpitSettings extends HTMLElement {
         timeoutMs: 12000,
       });
       this._data = (resp && resp.settings) || this._data;
+      this._meta = resp || this._meta;
       this._notice = { kind: 'ok', msg: (SETTINGS_META[key].label) + ' updated.' };
     } catch (e) {
       this._notice = { kind: 'err', msg: e && e.error ? String(e.error) : 'Update failed.' };
@@ -170,9 +173,30 @@ class CockpitSettings extends HTMLElement {
     }
 
     this.innerHTML =
+      this._renderMeta(this._meta || {}, esc) +
       notice +
       '<div style="display:grid;gap:14px">' + cards + '</div>' +
       this._renderFooter(shared());
+  }
+
+  /* GH #450: surface *which* config.toml is read plus any parse error, so a
+     "settings keep resetting" report shows the resolved path right here. */
+  _renderMeta(meta, esc) {
+    var rows = '';
+    if (meta.parse_error) {
+      rows +=
+        '<p class="hs" style="margin:0 0 6px;color:var(--red);font-size:11px">' +
+        '<strong>config.toml is unreadable</strong> \u2014 running on defaults: <code>' +
+        esc(meta.parse_error) + '</code>. Run <code>lean-ctx doctor --fix</code> to repair.</p>';
+    }
+    if (meta.config_path) {
+      var state = meta.config_exists ? 'exists' : 'missing \u2014 using defaults';
+      rows +=
+        '<p class="hs" style="margin:0;font-size:11px;opacity:.75">' +
+        'Reading config from <code>' + esc(meta.config_path) + '</code> (' + esc(state) + ').</p>';
+    }
+    if (!rows) return '';
+    return '<div class="card" style="margin-bottom:14px">' + rows + '</div>';
   }
 
   _renderCard(key, esc) {
@@ -180,11 +204,15 @@ class CockpitSettings extends HTMLElement {
     var s = (this._data && this._data[key]) || {};
     var ch = choiceFor(key, s);
     var envOver = !!s.env_override;
+    var localOver = !!s.local_override;
     var savingThis = this._saving === key;
 
     var btns = ch.options.map(function (o) {
       var on = o === ch.current;
-      var disabled = envOver || savingThis;
+      // A project-local override (like an env var) makes a global write a no-op
+      // for this project — disable the toggle and explain instead of letting it
+      // silently "snap back" (GH #450).
+      var disabled = envOver || localOver || savingThis;
       return (
         '<button type="button" class="filter-btn' + (on ? ' active' : '') + '"' +
         (disabled ? ' disabled style="opacity:.5;cursor:not-allowed"' : '') +
@@ -197,6 +225,14 @@ class CockpitSettings extends HTMLElement {
       ? '<p class="hs" style="margin:8px 0 0;color:var(--yellow);font-size:11px">' +
         'Currently overridden by <code>' + esc(meta.env) + '</code> in the environment \u2014 ' +
         'unset it for this toggle to take effect.</p>'
+      : '';
+
+    // A project-local `.lean-ctx.toml` wins over the global config the dashboard
+    // writes, so without this note the toggle appears to reset (GH #450, cause C).
+    var localNote = (localOver && !envOver)
+      ? '<p class="hs" style="margin:8px 0 0;color:var(--yellow);font-size:11px">' +
+        'Overridden by a project-local <code>.lean-ctx.toml</code> \u2014 it wins over the ' +
+        'global config for this project. Remove the key there for this toggle to take effect.</p>'
       : '';
 
     // A pinned custom tool set (`lean-ctx tools <list>`) has no matching button,
@@ -214,6 +250,7 @@ class CockpitSettings extends HTMLElement {
       '<div class="filter-row" style="display:flex;gap:6px;flex-wrap:wrap">' + btns + '</div>' +
       customNote +
       envNote +
+      localNote +
       '</div>'
     );
   }
@@ -234,7 +271,10 @@ class CockpitSettings extends HTMLElement {
       'are validated against the config schema. Some changes apply on the next tool call; ' +
       'compression and terse changes re-inject the agent rules and may need an agent / IDE restart.<br><br>' +
       'If a setting shows an <strong>environment override</strong> warning, a <code>LEAN_CTX_*</code> ' +
-      'variable is pinning it for this process — unset that variable for the toggle to take effect.'
+      'variable is pinning it for this process — unset that variable for the toggle to take effect. ' +
+      'A <strong>project-local override</strong> warning means a <code>.lean-ctx.toml</code> in the ' +
+      'current project sets that key and wins over the global config — remove it there to edit it here. ' +
+      'The header shows exactly which <code>config.toml</code> is being read.'
     );
   }
 

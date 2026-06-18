@@ -15,7 +15,7 @@ pub async fn handler(
     State(state): State<ProxyState>,
     req: Request<Body>,
 ) -> Result<Response, StatusCode> {
-    let upstream = state.anthropic_upstream.clone();
+    let upstream = state.anthropic_upstream();
     forward::forward_request(
         State(state),
         req,

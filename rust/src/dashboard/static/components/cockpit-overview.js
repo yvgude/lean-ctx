@@ -67,7 +67,9 @@ class CockpitOverview extends HTMLElement {
     document.addEventListener('lctx:session-data', this._onSessionData);
     document.addEventListener('lctx:stats-data', this._onStatsData);
     this.render();
-    this.loadData();
+    // Lazy-load (#452): the router's view loader fetches when this view becomes
+    // active, so opening any deep link no longer fans out one request storm
+    // across every mounted cockpit component.
   }
 
   disconnectedCallback() {
@@ -125,6 +127,7 @@ class CockpitOverview extends HTMLElement {
       '/api/verification',
       '/api/graph/stats',
       '/api/roi',
+      '/api/spend',
     ];
 
     var cached = window.LctxApi && window.LctxApi.cachedFetch ? window.LctxApi.cachedFetch : fetchJson;
@@ -157,7 +160,13 @@ class CockpitOverview extends HTMLElement {
       verification: ok(results[5]),
       graphStats: ok(results[6]),
       roi: ok(results[7]),
+      spend: ok(results[8]),
     };
+    // De-hardcode the estimated cost model's blended rate from the server.
+    var Fp = fmtLib();
+    if (this._data.spend && this._data.spend.pricing && Fp.applyServerPricing) {
+      Fp.applyServerPricing(this._data.spend.pricing);
+    }
 
     this._loading = false;
     this._stopAnim();
@@ -289,6 +298,8 @@ class CockpitOverview extends HTMLElement {
       '<p class="hs">estimated input cost avoided</p>' +
       '</div>' +
 
+      this._measuredSpendCard(esc, fu) +
+
       '<div class="hc">' +
       '<span class="hl">Energy saved' + tip('energy_saved') + '</span>' +
       '<div class="hv">' + esc(fe(energyWh)) + '</div>' +
@@ -320,6 +331,25 @@ class CockpitOverview extends HTMLElement {
 
       this._healthHeroCard(esc, ff) +
 
+      '</div>'
+    );
+  }
+
+  /**
+   * Measured spend hero card — the real provider bill (proxy-routed clients),
+   * shown only when the proxy has recorded usage. The *measured* counterpart to
+   * the estimated "Cost saved" card beside it. Full per-model detail lives in
+   * ROI & Plan → Measured spend.
+   */
+  _measuredSpendCard(esc, fu) {
+    var spend = this._data && this._data.spend;
+    if (!spend || !spend.available) return '';
+    return (
+      '<div class="hc">' +
+      '<span class="hl">Measured spend' +
+      '<span class="tag tg" style="margin-left:6px">measured</span></span>' +
+      '<div class="hv" style="color:var(--green)">' + esc(fu(spend.total_usd)) + '</div>' +
+      '<p class="hs">real provider bill (proxy-routed)</p>' +
       '</div>'
     );
   }
@@ -712,9 +742,24 @@ class CockpitOverview extends HTMLElement {
     var daily = this._filteredDaily();
     if (!daily.length) return;
 
+    // Baseline so the "All" view's right edge always equals the all-time total
+    // shown in the hero — even when older daily rows have aged out of retention.
+    // Shorter ranges stay zero-based to show in-window growth.
+    var stats = this._data && this._data.stats;
+    var baseline = 0;
+    if (this._range === 0 && stats) {
+      var allTime = Math.max(0, (stats.total_input_tokens || 0) - (stats.total_output_tokens || 0));
+      var stored = Array.isArray(stats.daily) ? stats.daily : [];
+      var storedSum = 0;
+      for (var j = 0; j < stored.length; j++) {
+        storedSum += (stored[j].input_tokens || 0) - (stored[j].output_tokens || 0);
+      }
+      baseline = Math.max(0, allTime - storedSum);
+    }
+
     var labels = [];
     var values = [];
-    var cum = 0;
+    var cum = baseline;
     for (var i = 0; i < daily.length; i++) {
       var d = daily[i];
       labels.push(String(d.date || '').slice(5));

@@ -1,0 +1,16 @@
+name: hermes-lean-ctx
+version: 0.1.0
+description: "lean-ctx as Hermes' active context engine — replaces the built-in ContextCompressor with deterministic, prompt-cache-friendly compaction and injects lean-ctx's code-intelligence and cross-session memory tools natively."
+author: "lean-ctx (https://leanctx.com)"
+homepage: "https://github.com/yvgude/lean-ctx"
+license: "Apache-2.0"
+# Engine name the user selects via `context.engine: lean-ctx` in config.yaml.
+engine: lean-ctx
+# Native tools this engine injects into the Hermes agent tool list.
+provides_tools:
+  - ctx_search
+  - ctx_semantic_search
+  - ctx_read
+  - ctx_expand
+  - ctx_knowledge
+  - ctx_summary

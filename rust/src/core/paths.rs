@@ -82,6 +82,12 @@ pub(crate) fn single_dir_override() -> Option<PathBuf> {
 
 /// Filesystem half of [`single_dir_override`], parameterized for hermetic tests.
 fn single_dir_override_fs(home: &Path, xdg_config_base: &Path) -> Option<PathBuf> {
+    // A committed XDG install is the single source of truth: never re-collapse
+    // it onto a stray legacy/mixed data marker (GL #623). The pin lives next to
+    // the mixed probe below, so the two reads always agree on `xdg_config_base`.
+    if crate::core::layout_pin::is_xdg_pinned_in(xdg_config_base) {
+        return None;
+    }
     let legacy = home.join(".lean-ctx");
     if legacy.exists() && has_data_files(&legacy) {
         return Some(legacy);
@@ -182,6 +188,16 @@ pub(crate) fn config_split_target() -> Result<PathBuf, String> {
     raw_category_dir("LEAN_CTX_CONFIG_DIR", "XDG_CONFIG_HOME", ".config")
 }
 
+/// `$XDG_CONFIG_HOME/lean-ctx` (or `~/.config/lean-ctx`) — where `config.toml`
+/// and the layout pin (`layout.toml`) live. Resolved through the XDG config base
+/// only, bypassing single-dir collapse, so the pin that governs that collapse
+/// never depends on it (GL #623). `None` only when HOME cannot be determined.
+pub(crate) fn xdg_config_lean_ctx_dir() -> Option<PathBuf> {
+    xdg_base("XDG_CONFIG_HOME", ".config")
+        .ok()
+        .map(|b| b.join("lean-ctx"))
+}
+
 /// Split target for the data category (`$XDG_DATA_HOME/lean-ctx`).
 pub(crate) fn data_split_target() -> Result<PathBuf, String> {
     raw_category_dir("LEAN_CTX_DATA_DIR", "XDG_DATA_HOME", ".local/share")
@@ -274,6 +290,36 @@ mod tests {
             single_dir_override_fs(home.path(), xdg.path()),
             Some(legacy)
         );
+    }
+
+    #[test]
+    fn xdg_pinned_install_ignores_stray_legacy_marker() {
+        // GL #623: once committed to XDG (pin in the config dir), a stray
+        // `~/.lean-ctx/stats.json` (legacy residue, restored backup, concurrent
+        // old binary) must NOT re-collapse the layout onto the legacy dir.
+        let home = tempfile::tempdir().unwrap();
+        let xdg = tempfile::tempdir().unwrap();
+        crate::core::layout_pin::write_xdg_pin_in(xdg.path()).unwrap();
+
+        let legacy = home.path().join(".lean-ctx");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("stats.json"), "{}").unwrap();
+
+        assert_eq!(single_dir_override_fs(home.path(), xdg.path()), None);
+    }
+
+    #[test]
+    fn xdg_pinned_install_ignores_stray_mixed_marker() {
+        // GL #623: same protection for a stray data marker that lands in the
+        // mixed `$XDG_CONFIG_HOME/lean-ctx` dir after the install committed.
+        let home = tempfile::tempdir().unwrap();
+        let xdg = tempfile::tempdir().unwrap();
+        crate::core::layout_pin::write_xdg_pin_in(xdg.path()).unwrap();
+
+        let mixed = xdg.path().join("lean-ctx");
+        std::fs::write(mixed.join("stats.json"), "{}").unwrap();
+
+        assert_eq!(single_dir_override_fs(home.path(), xdg.path()), None);
     }
 
     #[test]

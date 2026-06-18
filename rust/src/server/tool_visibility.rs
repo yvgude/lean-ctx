@@ -302,10 +302,14 @@ mod tests {
     /// Bumped to 2260 for #432: `ctx_read` now advertises the `offset`/`limit`
     /// aliases (so agents trained on the native Read tool discover them), a
     /// deliberate +~32 tok. Descriptions are kept terse to limit the cost.
+    ///
+    /// Bumped to 2275 for #451: `ctx_shell` now states it runs the system shell
+    /// profile-free (no rc/profile sourced), a deliberate +~13 tok so agents stop
+    /// mistaking it for a config-loaded interactive bash. Kept to one terse clause.
     #[test]
     fn core_tool_surface_stays_within_budget() {
         const PER_TOOL_BUDGET: usize = 300;
-        const TOTAL_BUDGET: usize = 2260;
+        const TOTAL_BUDGET: usize = 2275;
 
         let _guard = crate::core::data_dir::isolated_data_dir();
         let core = crate::tool_defs::core_tool_names();

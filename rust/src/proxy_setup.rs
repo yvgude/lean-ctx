@@ -687,10 +687,11 @@ fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, force: bool) {
     if let Some(upstream) = normalize_url_opt(&current_url)
         && !is_local_proxy_url(&upstream)
     {
-        let mut cfg = Config::load();
-        if cfg.proxy.anthropic_upstream.is_none() {
-            cfg.proxy.anthropic_upstream = Some(upstream.clone());
-            let _ = cfg.save();
+        if Config::load_global().proxy.anthropic_upstream.is_none()
+            && let Err(e) =
+                Config::update_global(|c| c.proxy.anthropic_upstream = Some(upstream.clone()))
+        {
+            tracing::warn!("could not persist proxy upstream: {e}");
         }
 
         if !force {

@@ -6,17 +6,23 @@ pub const PATTERN_ENGINE_VERSION: u32 = 1;
 pub mod pattern_trait;
 pub use pattern_trait::{CompressionPattern, CompressionResult};
 
+pub mod alembic;
 pub mod ansible;
+pub mod argocd;
 pub mod artisan;
 pub mod aws;
 pub mod bazel;
+pub mod buf;
 pub mod bun;
 pub mod cargo;
 pub mod clang;
 pub mod cmake;
 pub mod composer;
+pub mod cosign;
 pub mod curl;
+pub mod dbt;
 pub mod deno;
+pub mod deploy;
 pub mod deps_cmd;
 pub mod docker;
 pub mod dotnet;
@@ -25,25 +31,33 @@ pub mod eslint;
 pub mod fd;
 pub mod find;
 pub mod flutter;
+pub mod flyway;
+pub mod gem;
 pub mod gh;
 pub mod git;
 pub mod glab;
 pub mod golang;
 pub mod grep;
+pub mod grype;
 pub mod helm;
+pub mod jj;
 pub mod json_schema;
 pub mod just;
 pub mod kubectl;
+pub mod linkerd;
 pub mod log_dedup;
 pub mod ls;
 pub mod make;
 pub mod maven;
+pub mod mise;
 pub mod mix;
+pub mod mlflow;
 pub mod mypy;
 pub mod mysql;
 pub mod next_build;
 pub mod ninja;
 pub mod npm;
+pub mod ollama;
 pub mod php;
 pub mod pip;
 pub mod playwright;
@@ -52,14 +66,20 @@ pub mod poetry;
 pub mod prettier;
 pub mod prisma;
 pub mod psql;
+pub mod pulumi;
 pub mod pytest;
 pub mod ruby;
 pub mod ruff;
+pub mod semgrep;
+pub mod spark;
 pub mod swift;
+pub mod swiftlint;
+pub mod syft;
 pub mod sysinfo;
 pub mod systemd;
 pub mod terraform;
 pub mod test;
+pub mod trivy;
 pub mod typescript;
 pub mod wget;
 pub mod zig;
@@ -277,8 +297,7 @@ pub fn try_specific_pattern(cmd: &str, output: &str) -> Option<String> {
         return flutter::compress(c, output);
     }
     if c.starts_with("poetry ")
-        || c.starts_with("uv sync")
-        || (c.starts_with("uv ") && c.contains("pip install"))
+        || c.starts_with("uv ")
         || c.starts_with("conda ")
         || c.starts_with("mamba ")
         || c.starts_with("pipx ")
@@ -386,6 +405,84 @@ pub fn try_specific_pattern(cmd: &str, output: &str) -> Option<String> {
         return cmake::compress(c, output);
     }
 
+    // --- data domain (#657) ---
+    if c == "dbt" || c.starts_with("dbt ") {
+        return dbt::compress(c, output);
+    }
+    if c == "alembic" || c.starts_with("alembic ") {
+        return alembic::compress(c, output);
+    }
+    if c == "flyway" || c.starts_with("flyway ") {
+        return flyway::compress(c, output);
+    }
+    if c.starts_with("spark-submit") || c.starts_with("spark-sql") || c.starts_with("pyspark") {
+        return spark::compress(c, output);
+    }
+
+    // --- ai domain (#658) ---
+    if c == "ollama" || c.starts_with("ollama ") {
+        return ollama::compress(c, output);
+    }
+    if c.starts_with("mlflow ") {
+        return mlflow::compress(c, output);
+    }
+
+    // --- security / supply-chain (#659) ---
+    if c.starts_with("semgrep ") {
+        return semgrep::compress(c, output);
+    }
+    if c.starts_with("trivy ") {
+        return trivy::compress(c, output);
+    }
+    if c.starts_with("grype ") {
+        return grype::compress(c, output);
+    }
+    if c.starts_with("syft ") {
+        return syft::compress(c, output);
+    }
+    if c.starts_with("cosign ") {
+        return cosign::compress(c, output);
+    }
+    if c.starts_with("swiftlint") {
+        return swiftlint::compress(c, output);
+    }
+
+    // --- vcs / toolchain (#660) ---
+    if c == "jj" || c.starts_with("jj ") {
+        return jj::compress(c, output);
+    }
+    if c == "mise" || c.starts_with("mise ") {
+        return mise::compress(c, output);
+    }
+    if c == "buf" || c.starts_with("buf ") {
+        return buf::compress(c, output);
+    }
+    if c.starts_with("gem ") {
+        return gem::compress(c, output);
+    }
+
+    // --- edge / infra (#661) ---
+    if c == "pulumi" || c.starts_with("pulumi ") {
+        return pulumi::compress(c, output);
+    }
+    if c.starts_with("linkerd ") {
+        return linkerd::compress(c, output);
+    }
+    if c.starts_with("argocd ") {
+        return argocd::compress(c, output);
+    }
+    if c == "vercel"
+        || c.starts_with("vercel ")
+        || c == "fly"
+        || c.starts_with("fly ")
+        || c.starts_with("flyctl ")
+        || c.starts_with("wrangler ")
+        || c.starts_with("skaffold ")
+        || c.starts_with("supabase ")
+    {
+        return deploy::compress(c, output);
+    }
+
     None
 }
 
@@ -434,6 +531,75 @@ mod tests {
         let output = "===== test session starts =====\ncollected 5 items\ntest_main.py ..... [100%]\n===== 5 passed in 0.5s =====";
         assert!(compress_output("pytest", output).is_some());
         assert!(compress_output("python -m pytest tests/", output).is_some());
+    }
+
+    #[test]
+    fn routes_data_domain() {
+        let dbt =
+            "20:14:02  Found 12 models\n20:14:20  Done. PASS=11 WARN=0 ERROR=1 SKIP=0 TOTAL=12";
+        assert!(
+            compress_output("dbt run", dbt).is_some(),
+            "dbt routed+compressible"
+        );
+        let alembic = "INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.\nINFO  [alembic.runtime.migration] Running upgrade  -> a1b2c3, create users table\nINFO  [alembic.runtime.migration] Running upgrade a1b2c3 -> d4e5f6, add email index";
+        assert!(compress_output("alembic upgrade head", alembic).is_some());
+        let flyway = "Flyway Community Edition 9.22.0 by Redgate\nDatabase: jdbc:postgresql://localhost/db\nMigrating schema \"public\" to version \"5 - add orders\"\nSuccessfully applied 1 migration to schema \"public\", now at version v5";
+        assert!(compress_output("flyway migrate", flyway).is_some());
+        let spark = "23/01/01 12:00:00 INFO SparkContext: Running Spark version 3.4.0\n23/01/01 12:00:01 INFO ResourceUtils: none configured\n23/01/01 12:00:10 INFO DAGScheduler: Job 0 finished: collect, took 5.1 s\n23/01/01 12:00:15 ERROR Executor: Exception in task 0.0";
+        assert!(compress_output("spark-submit app.py", spark).is_some());
+    }
+
+    #[test]
+    fn routes_ai_domain() {
+        let ollama = "NAME              ID              SIZE      MODIFIED\nllama3.2:latest   a80c4f17acd5    2.0 GB    3 days ago\nqwen2.5-coder:7b  2b0496514337    4.7 GB    2 weeks ago";
+        assert!(compress_output("ollama list", ollama).is_some());
+        let mlflow = "2024/01/01 12:00:01 INFO mlflow.projects.backend.local: === Running command 'python train.py' ===\nCollecting numpy==1.26.0\nDownloading numpy-1.26.0.whl (18.2 MB)\n2024/01/01 12:00:30 INFO mlflow.projects: === Run (ID 'abc123def456') succeeded ===";
+        assert!(compress_output("mlflow run .", mlflow).is_some());
+    }
+
+    #[test]
+    fn routes_security_domain() {
+        let trivy = "2024-01-01T12:00:00.000Z\tINFO\tscanning\nnginx:latest (debian 12.1)\n=====\nTotal: 45 (LOW: 20, HIGH: 8, CRITICAL: 2)";
+        assert!(compress_output("trivy image nginx", trivy).is_some());
+        let grype = "NAME       INSTALLED  FIXED-IN  TYPE  VULNERABILITY   SEVERITY\nlibssl1.1  1.1.1n     1.1.1w    deb   CVE-2023-1234   Critical\nzlib1g     1.2.11     1.2.13    deb   CVE-2022-5678   High";
+        assert!(compress_output("grype nginx", grype).is_some());
+        let syft = "NAME       VERSION    TYPE\nadduser    3.118      deb\napt        2.6.1      deb\nlodash     4.17.21    npm";
+        assert!(compress_output("syft nginx", syft).is_some());
+        let semgrep = "Scanning 120 files.\n  src/app.py\n     python.security.dangerous-subprocess-use\n        Detected subprocess.\n         42┆ subprocess.call(x)\nRan 450 rules on 120 files: 1 findings.";
+        assert!(compress_output("semgrep scan", semgrep).is_some());
+        let swiftlint = "Linting Swift files in current working directory\nLinting 'A.swift' (1/3)\nLinting 'B.swift' (2/3)\nLinting 'C.swift' (3/3)\n/path/A.swift:10:5: warning: Line Length Violation: Line should be 120 chars or less (line_length)\n/path/A.swift:22:1: warning: Trailing Whitespace Violation: no trailing whitespace (trailing_whitespace)\n/path/B.swift:5:1: error: Force Cast Violation: avoid force casts (force_cast)\n/path/C.swift:8:3: warning: Todo Violation: resolve TODOs (todo)\nDone linting! Found 4 violations, 1 serious in 3 files.";
+        assert!(compress_output("swiftlint", swiftlint).is_some());
+    }
+
+    #[test]
+    fn routes_vcs_toolchain_domain() {
+        let jj = "@  qpvuntsm user@host.com 2024-01-01 12:00:00 1234abcd\n│  add feature x\n○  zzzzmmmm user@host.com 2024-01-01 11:00:00 main 5678efab\n│  initial commit\n~";
+        assert!(compress_output("jj log", jj).is_some());
+        let mise = "node    20.10.0  ~/.config/mise/config.toml\npython  3.12.0   ~/.tool-versions\nrust    1.75.0   ~/.config/mise/config.toml";
+        assert!(compress_output("mise ls", mise).is_some());
+        let buf_lines: Vec<String> = (0..30)
+            .map(|i| format!("proto/f{i}.proto:{i}:1:Field name should be lower_snake_case here."))
+            .collect();
+        let buf = buf_lines.join("\n");
+        assert!(compress_output("buf lint", &buf).is_some());
+        let gem = "Fetching rails-7.1.0.gem\nSuccessfully installed activesupport-7.1.0\nSuccessfully installed rails-7.1.0\nParsing documentation for rails-7.1.0\nInstalling ri documentation for rails-7.1.0\nDone installing documentation for rails after 3 seconds\n2 gems installed";
+        assert!(compress_output("gem install rails", gem).is_some());
+        let uv = "Resolved 42 packages in 120ms\nDownloading numpy (18.2MiB)\n 100%|████████| 18.2M/18.2M [00:01<00:00, 15.3MiB/s]\nDownloading pandas (12.1MiB)\n 100%|████████| 12.1M/12.1M [00:00<00:00, 14.1MiB/s]\nPrepared 5 packages in 1.2s\nInstalled 5 packages in 30ms\n + numpy==1.26.0\n + pandas==2.1.0";
+        assert!(compress_output("uv add pandas", uv).is_some());
+    }
+
+    #[test]
+    fn routes_edge_infra_domain() {
+        let pulumi = "Updating (dev):\n     Type   Name   Status\n +   pulumi:pulumi:Stack proj created\n +   aws:s3:Bucket b1 created\n +   aws:s3:Bucket b2 created\n +   aws:s3:Bucket b3 created\n +   aws:lambda:Function fn created\n\nOutputs:\n    url: \"https://x.example.com\"\n\nResources:\n    + 5 created\n    10 unchanged\n\nDuration: 35s";
+        assert!(compress_output("pulumi up", pulumi).is_some());
+        let linkerd = "kubernetes-api\n--------------\n√ can initialize the client\n√ can query the Kubernetes API\n√ is running the minimum kubectl version\n\nlinkerd-existence\n-----------------\n√ 'linkerd-config' config map exists\n× control plane pods are ready\n    some pods are not ready\n\nStatus check results are ×";
+        assert!(compress_output("linkerd check", linkerd).is_some());
+        let argocd = "Name:               argocd/myapp\nProject:            default\nSync Status:        Synced\nHealth Status:      Healthy\n\nGROUP  KIND  NAMESPACE  NAME  STATUS  HEALTH  HOOK  MESSAGE\n  Service ns s1 Synced Healthy\n  Service ns s2 Synced Healthy\n  Service ns s3 Synced Healthy\napps Deployment ns d1 OutOfSync Progressing";
+        assert!(compress_output("argocd app get myapp", argocd).is_some());
+        let vercel = "Vercel CLI 33.0.0\nInstalling dependencies...\nadded 420 packages in 12s\nBuilding...\nCompiling pages\nCollecting page data\nGenerating static pages\nProduction: https://my-app.vercel.app [45s]";
+        assert!(compress_output("vercel deploy --prod", vercel).is_some());
+        let wrangler = "wrangler 3.0.0\n-------------------\nyour worker has access to the following bindings:\n- KV Namespaces:\n  - CACHE: abc123\nTotal Upload: 1.2 MiB / gzip: 0.4 MiB\nUploaded my-worker (3.5 sec)\nPublished my-worker (1.2 sec)\n  https://my-worker.example.workers.dev";
+        assert!(compress_output("wrangler deploy", wrangler).is_some());
     }
 
     #[test]

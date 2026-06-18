@@ -168,6 +168,14 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) {
         "        ",
     );
 
+    // #449: pin the directory layout. A launchd-spawned proxy inherits only
+    // launchd's minimal environment (no HOME, no XDG vars), so it resolves a
+    // *different* config/data dir than the CLI that installed it — it never sees
+    // the user's config.toml edits (live-upstream reload reads nothing) and
+    // derives a mismatched session token. Bake the exact dirs this CLI resolves
+    // into the plist so the managed proxy always agrees with the CLI.
+    let env_vars = crate::core::tcc_guard_sandbox::pinned_layout_env_xml();
+
     let plist = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -179,7 +187,7 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) {
     <array>
 {program_args}
     </array>
-    <key>RunAtLoad</key>
+{env_vars}    <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>

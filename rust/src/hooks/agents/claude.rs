@@ -23,7 +23,17 @@ pub(crate) fn install_claude_hook_with_mode(global: bool, mode: HookMode) {
     if scope != crate::core::config::RulesScope::Project {
         remove_claude_rules_file(&home);
         install_claude_global_claude_md_for_mode(&home, mode);
-        install_claude_skill(&home);
+        // rules_injection=off (#361): the functional hooks above still install
+        // (off opts out of *instructions*, not compression), but the on-demand
+        // skill is lean-ctx-authored steering — suppress it, and remove one a
+        // previous shared/dedicated install left behind.
+        if crate::core::config::Config::load().rules_injection_effective()
+            == crate::core::config::RulesInjection::Off
+        {
+            remove_claude_skill(&home);
+        } else {
+            install_claude_skill(&home);
+        }
     }
 
     let _ = global;
@@ -104,12 +114,14 @@ fn install_claude_global_claude_md_for_mode(home: &std::path::Path, mode: HookMo
     let _ = std::fs::create_dir_all(&claude_dir);
     let claude_md_path = claude_dir.join("CLAUDE.md");
 
-    // Dedicated mode (#343): never keep a lean-ctx block in the user's CLAUDE.md.
-    // The SessionStart hook injects the compact summary instead; if a block was
-    // left by a previous shared install, strip it so switching modes is clean.
-    if crate::core::config::Config::load().rules_injection_effective()
-        == crate::core::config::RulesInjection::Dedicated
-    {
+    // Neither dedicated nor off keep a lean-ctx block in the user's CLAUDE.md:
+    //  - dedicated (#343): the SessionStart hook injects the compact summary;
+    //  - off (#361): the user opted out of lean-ctx steering entirely.
+    // Strip any block a previous shared install left so switching modes is clean.
+    if matches!(
+        crate::core::config::Config::load().rules_injection_effective(),
+        crate::core::config::RulesInjection::Dedicated | crate::core::config::RulesInjection::Off
+    ) {
         strip_claude_md_block(&claude_md_path);
         return;
     }
@@ -197,6 +209,22 @@ fn install_claude_skill(home: &std::path::Path) {
             perms.set_mode(0o755);
             let _ = std::fs::set_permissions(&script_path, perms);
         }
+    }
+}
+
+/// Remove the lean-ctx skill directory (`rules_injection=off`, GH #361). Only the
+/// lean-ctx-owned `lean-ctx` skill folder is touched, so a user's other skills
+/// are never affected.
+fn remove_claude_skill(home: &std::path::Path) {
+    let skill_dir = home.join(".claude/skills/lean-ctx");
+    if skill_dir.exists()
+        && std::fs::remove_dir_all(&skill_dir).is_ok()
+        && !super::super::mcp_server_quiet_mode()
+    {
+        eprintln!(
+            "Removed {} (rules_injection=off — instructions intentionally not installed)",
+            skill_dir.display()
+        );
     }
 }
 
@@ -717,5 +745,45 @@ mod tests {
             commands_for(&pre, "hook redirect"),
             ["lean-ctx hook redirect"]
         );
+    }
+
+    #[test]
+    fn rules_injection_off_strips_claude_md_block() {
+        // #361: with instructions opted out, the installer must not leave a
+        // lean-ctx block in CLAUDE.md (and must strip one left by a prior install).
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let dir = crate::core::editor_registry::claude_state_dir(home);
+        std::fs::create_dir_all(&dir).unwrap();
+        let md = dir.join("CLAUDE.md");
+        std::fs::write(
+            &md,
+            format!("# my notes\n\n{CLAUDE_MD_BLOCK_CONTENT_MCP}\n"),
+        )
+        .unwrap();
+
+        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "off");
+        install_claude_global_claude_md_for_mode(home, HookMode::Mcp);
+        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+
+        let after = std::fs::read_to_string(&md).unwrap_or_default();
+        assert!(
+            !after.contains(CLAUDE_MD_BLOCK_START),
+            "rules_injection=off must strip the CLAUDE.md block, got:\n{after}"
+        );
+        assert!(after.contains("# my notes"), "user content must survive");
+    }
+
+    #[test]
+    fn skill_install_then_remove_roundtrips() {
+        // The off path removes a previously installed skill; install+remove must
+        // touch only the lean-ctx skill folder.
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        install_claude_skill(home);
+        assert!(home.join(".claude/skills/lean-ctx/SKILL.md").exists());
+        remove_claude_skill(home);
+        assert!(!home.join(".claude/skills/lean-ctx").exists());
     }
 }

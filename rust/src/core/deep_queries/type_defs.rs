@@ -53,6 +53,13 @@ fn match_type_def(node: Node, src: &str, ext: &str, parent_exported: bool) -> Op
 
     let is_exported = parent_exported || is_exported_node(node, src, ext);
     let generics = extract_generics(node, src);
+    // Namespace is only cheaply + reliably derivable for C# today; other
+    // languages stay `None` and fall back to the global resolution path.
+    let namespace = if ext == "cs" {
+        csharp_namespace_for(node, src)
+    } else {
+        None
+    };
 
     Some(TypeDef {
         name,
@@ -61,7 +68,51 @@ fn match_type_def(node: Node, src: &str, ext: &str, parent_exported: bool) -> Op
         end_line: node.end_position().row + 1,
         is_exported,
         generics,
+        namespace,
     })
+}
+
+/// The namespace a C# type declaration lives in.
+///
+/// - Block-scoped: every `namespace_declaration` ancestor's `name` joined
+///   outer→inner (handles nesting and dotted names: `namespace A.B { … }`).
+/// - File-scoped (`namespace A.B;`): the declaration has no body, so the type
+///   is a *sibling* of the `file_scoped_namespace_declaration` under the
+///   compilation unit — found by scanning the root's direct children.
+///
+/// Returns `None` for types in the global namespace.
+#[cfg(feature = "tree-sitter")]
+fn csharp_namespace_for(node: Node, src: &str) -> Option<String> {
+    // 1) Block-scoped namespaces: collect ancestors inner→outer, then reverse.
+    let mut parts: Vec<String> = Vec::new();
+    let mut current = node.parent();
+    while let Some(p) = current {
+        if p.kind() == "namespace_declaration"
+            && let Some(name) = p.child_by_field_name("name")
+        {
+            parts.push(node_text(name, src).trim().to_string());
+        }
+        current = p.parent();
+    }
+    if !parts.is_empty() {
+        parts.reverse();
+        return Some(parts.join("."));
+    }
+
+    // 2) File-scoped namespace: a direct child of the compilation unit.
+    let mut root = node;
+    while let Some(p) = root.parent() {
+        root = p;
+    }
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() == "file_scoped_namespace_declaration"
+            && let Some(name) = child.child_by_field_name("name")
+        {
+            return Some(node_text(name, src).trim().to_string());
+        }
+    }
+    None
 }
 
 #[cfg(feature = "tree-sitter")]

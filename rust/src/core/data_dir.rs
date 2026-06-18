@@ -98,7 +98,19 @@ fn resolve_home_data_dir() -> Result<PathBuf, String> {
 }
 
 pub(crate) fn has_data_files(dir: &std::path::Path) -> bool {
-    DATA_MARKERS.iter().any(|f| dir.join(f).exists())
+    DATA_MARKERS.iter().any(|f| marker_has_data(&dir.join(f)))
+}
+
+/// A marker counts only when it actually carries data: a non-empty file, or a
+/// directory with at least one entry. An empty `sessions/` (a stray `mkdir`, a
+/// half-removed residue, a backup-restore artifact) must NOT collapse the whole
+/// layout onto a directory that holds no real data (GL #623 / #625).
+fn marker_has_data(path: &std::path::Path) -> bool {
+    match std::fs::metadata(path) {
+        Ok(m) if m.is_dir() => std::fs::read_dir(path).is_ok_and(|mut it| it.next().is_some()),
+        Ok(m) => m.len() > 0,
+        Err(_) => false,
+    }
 }
 
 /// Returns all known data directories that contain stats data, in resolution
@@ -269,11 +281,35 @@ mod tests {
     }
 
     #[test]
+    fn empty_marker_dir_does_not_count() {
+        // GL #623/#625: an empty `sessions/` (a stray mkdir, a half-removed
+        // residue) must not flip the whole layout — only a marker carrying real
+        // data counts.
+        let dir = std::env::temp_dir().join("test_data_dir_empty_marker");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::create_dir_all(dir.join("sessions"));
+        assert!(!has_data_files(&dir), "empty marker dir must not count");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn empty_marker_file_does_not_count() {
+        // A zero-byte `stats.json` is not real data either (GL #625).
+        let dir = std::env::temp_dir().join("test_data_dir_empty_marker_file");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(dir.join("stats.json"), "").unwrap();
+        assert!(!has_data_files(&dir), "empty marker file must not count");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn has_data_files_with_sessions() {
         let dir = std::env::temp_dir().join("test_data_dir_sessions");
         let _ = std::fs::remove_dir_all(&dir);
-        let _ = std::fs::create_dir_all(&dir);
         let _ = std::fs::create_dir_all(dir.join("sessions"));
+        // A non-empty sessions/ is real data (GL #625: empty dirs no longer count).
+        std::fs::write(dir.join("sessions").join("s1.json"), "{}").unwrap();
         assert!(has_data_files(&dir));
         let _ = std::fs::remove_dir_all(&dir);
     }

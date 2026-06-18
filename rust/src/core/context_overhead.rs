@@ -65,7 +65,18 @@ impl ContextOverhead {
             crate::instructions::build_instructions(crate::tools::CrpMode::effective());
         let instruction_tokens = count_tokens(&instructions);
 
-        let rules_block_tokens = count_tokens(crate::rules_inject::canonical_rules_block());
+        // The rules block only rides every turn when lean-ctx actually injects it
+        // into the host instruction file. With `rules_injection = off` no file is
+        // written (the `rules_inject` injectors early-return), so it adds zero
+        // per-turn overhead — counting it would overstate the faithful-arm tax and
+        // make the net-of-injection figure pessimistic (#361).
+        let rules_block_tokens = if crate::core::config::Config::load().rules_injection_effective()
+            == crate::core::config::RulesInjection::Off
+        {
+            0
+        } else {
+            count_tokens(crate::rules_inject::canonical_rules_block())
+        };
 
         Self {
             tool_count,
@@ -93,6 +104,10 @@ mod tests {
 
     #[test]
     fn measure_reports_nonzero_components() {
+        // Isolated (default) config: shared rules injection, no pinned profile —
+        // every component carries tokens. `isolated_data_dir` also holds the env
+        // lock, so a concurrent test toggling the knobs can't perturb this.
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let o = ContextOverhead::measure();
         assert!(o.tool_count > 0, "must expose at least one tool");
         assert!(o.tool_schema_tokens > 0, "tool schemas carry tokens");
@@ -113,5 +128,63 @@ mod tests {
             rules_block_tokens: 50,
         };
         assert_eq!(o.total_tokens(), 350);
+    }
+
+    #[test]
+    fn rules_injection_off_zeroes_the_rules_block() {
+        // With rules injection off, no rules file is written, so the per-turn
+        // overhead must not count the rules block (#361). The tool/instruction
+        // surface is unaffected. `isolated_data_dir` holds the env lock.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let on = ContextOverhead::measure();
+        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "off");
+        let off = ContextOverhead::measure();
+        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+
+        assert!(on.rules_block_tokens > 0, "default still injects rules");
+        assert_eq!(off.rules_block_tokens, 0, "off must drop the rules block");
+        assert_eq!(
+            off.total_tokens(),
+            off.tool_schema_tokens + off.instruction_tokens,
+            "off total excludes the rules block"
+        );
+    }
+
+    #[test]
+    fn minimal_arm_per_turn_prefix_stays_within_budget() {
+        // The "faithful arm" (#361): tool_profile=minimal (6 tools) +
+        // LEAN_CTX_MINIMAL (no session/knowledge prefix) + rules_injection=off
+        // (no rules block) must keep the fixed per-turn prefix tiny. This is the
+        // regression guard for the "~3K tokens/turn injected" critique — if any
+        // knob silently stops applying, the total balloons and this fails.
+        const MINIMAL_ARM_PREFIX_BUDGET_TOKENS: usize = 1500;
+
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::set_var("LEAN_CTX_TOOL_PROFILE", "minimal");
+        crate::test_env::set_var("LEAN_CTX_MINIMAL", "1");
+        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "off");
+        let o = ContextOverhead::measure();
+        crate::test_env::remove_var("LEAN_CTX_TOOL_PROFILE");
+        crate::test_env::remove_var("LEAN_CTX_MINIMAL");
+        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+
+        assert_eq!(
+            o.rules_block_tokens, 0,
+            "rules_injection=off must zero the rules block"
+        );
+        assert!(
+            o.tool_count <= 8,
+            "minimal profile must keep the surface lean, got {} tools",
+            o.tool_count
+        );
+        assert!(
+            o.total_tokens() <= MINIMAL_ARM_PREFIX_BUDGET_TOKENS,
+            "minimal-arm per-turn prefix = {} tok (schemas {} + instr {} + rules {}), budget {}",
+            o.total_tokens(),
+            o.tool_schema_tokens,
+            o.instruction_tokens,
+            o.rules_block_tokens,
+            MINIMAL_ARM_PREFIX_BUDGET_TOKENS,
+        );
     }
 }

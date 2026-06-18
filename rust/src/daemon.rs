@@ -42,7 +42,42 @@ pub fn read_daemon_pid() -> Option<u32> {
     contents.trim().parse::<u32>().ok()
 }
 
+/// Exclusive, bounded-wait lock that serializes the daemon-start critical
+/// section (liveness check → spawn → PID write). Several MCP servers launching
+/// at once (Claude Code + OpenCode + Cursor) would otherwise all pass the
+/// `is_daemon_running()` check in the TOCTOU window and each spawn a daemon —
+/// the process proliferation seen in #453. The advisory flock is tied to the
+/// open fd, so it is released automatically if a holder crashes; the bounded
+/// wait keeps a wedged holder from blocking startup forever (the
+/// `is_daemon_running()` re-check remains the last line of defense).
+fn acquire_start_lock() -> Option<fs::File> {
+    use fs2::FileExt;
+    let lock_path = data_dir().join("daemon.start.lock");
+    if let Some(parent) = lock_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .ok()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        match file.try_lock_exclusive() {
+            Ok(()) => return Some(file),
+            Err(_) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
 pub fn start_daemon(args: &[String]) -> Result<()> {
+    // Held for the whole critical section; released when `_start_lock` drops.
+    let _start_lock = acquire_start_lock();
+
     if is_daemon_running() {
         let pid = read_daemon_pid().unwrap_or(0);
         anyhow::bail!("Daemon already running (PID {pid}). Use --stop to stop it first.");
@@ -212,8 +247,15 @@ fn write_pid_file(pid: u32) -> Result<()> {
     Ok(())
 }
 
-/// Write the current process's PID. Called from the foreground-daemon process.
+/// Initialize the foreground-daemon process. Commits the XDG layout pin (and
+/// drains a residual `~/.lean-ctx`) *before* the daemon writes anything, so this
+/// long-running, possibly launchd/systemd-autostarted writer can never
+/// re-collapse config/data/state/cache onto a stray legacy dir (GL #623). The
+/// MCP server pins on its own start; the daemon is the other independent entry
+/// point (e.g. `serve --_foreground-daemon`), so it must heal too. `heal()` is
+/// idempotent and cheap — a no-op once pinned and when no residual dir exists.
 pub fn init_foreground_daemon() -> Result<()> {
+    crate::core::layout_pin::heal();
     let pid = std::process::id();
     write_pid_file(pid)?;
     Ok(())

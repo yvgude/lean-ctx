@@ -228,11 +228,19 @@ impl ModelPricing {
         }
     }
 
+    /// Resolves a pricing model for a client/agent, then quotes it. Resolution
+    /// order: `LEAN_CTX_MODEL`/`LCTX_MODEL` env → `[cost.models]` entry →
+    /// `[cost] default_model` → the client/agent string as a heuristic hint →
+    /// blended fallback (inside [`ModelPricing::quote`]). This is what lets
+    /// MCP-only IDEs (Cursor, Copilot, …) be priced with a declared model.
+    pub fn quote_for_client(&self, client: &str) -> ModelQuote {
+        self.quote(Some(&resolve_model_for_client(client)))
+    }
+
+    /// Back-compat alias for [`ModelPricing::quote_for_client`]; now also honors
+    /// the `[cost]` config, not just the env override.
     pub fn quote_from_env_or_agent_type(&self, agent_type: &str) -> ModelQuote {
-        let env_model = std::env::var("LEAN_CTX_MODEL")
-            .or_else(|_| std::env::var("LCTX_MODEL"))
-            .ok();
-        self.quote(env_model.as_deref().or(Some(agent_type)))
+        self.quote_for_client(agent_type)
     }
 
     pub fn infer_model_key(model: &str) -> Option<String> {
@@ -388,6 +396,38 @@ fn normalize(s: &str) -> String {
     s.trim().to_lowercase().replace(' ', "-")
 }
 
+fn non_blank(s: &str) -> Option<String> {
+    let t = s.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
+}
+
+/// Pure model resolution: env override → configured model → client hint.
+/// Split out for deterministic testing without touching global config/env.
+fn resolve_model(client: &str, env_model: Option<&str>, configured: Option<&str>) -> String {
+    env_model
+        .and_then(non_blank)
+        .or_else(|| configured.and_then(non_blank))
+        .unwrap_or_else(|| client.to_string())
+}
+
+/// Resolves the pricing model id for a client/agent: the `LEAN_CTX_MODEL`/
+/// `LCTX_MODEL` env override wins, then the `[cost]` config
+/// (`models[client]` → `default_model`), then the client/agent string itself.
+/// The returned string is fed to [`ModelPricing::quote`] for the actual price.
+pub fn resolve_model_for_client(client: &str) -> String {
+    let env_model = std::env::var("LEAN_CTX_MODEL")
+        .or_else(|_| std::env::var("LCTX_MODEL"))
+        .ok();
+    let configured = crate::core::config::Config::load()
+        .cost
+        .model_for_client(client);
+    resolve_model(client, env_model.as_deref(), configured.as_deref())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -436,5 +476,26 @@ mod tests {
         let q = p.quote(Some("claude-fable-5-thinking-high"));
         assert_eq!(q.model_key, "claude-fable-5");
         assert!((q.cost.input_per_m - 10.00).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn resolve_model_precedence() {
+        // env override wins over everything.
+        assert_eq!(
+            resolve_model("cursor", Some("gpt-5.4"), Some("claude-opus-4.5")),
+            "gpt-5.4"
+        );
+        // configured model used when no env override.
+        assert_eq!(
+            resolve_model("cursor", None, Some("claude-opus-4.5")),
+            "claude-opus-4.5"
+        );
+        // client/agent string is the final hint.
+        assert_eq!(
+            resolve_model("claude-haiku-4.5", None, None),
+            "claude-haiku-4.5"
+        );
+        // blanks are ignored at each level.
+        assert_eq!(resolve_model("cursor", Some("  "), Some("  ")), "cursor");
     }
 }

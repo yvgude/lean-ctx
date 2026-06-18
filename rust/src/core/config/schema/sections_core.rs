@@ -108,6 +108,14 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
+        "prefer_native_editor".into(),
+        key(
+            "bool",
+            serde_json::json!(cfg.prefer_native_editor),
+            "Disable lean-ctx edit tools (ctx_edit) so the host's native editor handles edits (#454)",
+        ),
+    );
+    root.insert(
             "default_tool_categories".into(),
             key(
                 "string[]",

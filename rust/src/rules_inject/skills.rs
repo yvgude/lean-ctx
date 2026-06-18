@@ -107,6 +107,14 @@ pub fn install_skill_for_agent(home: &std::path::Path, agent_key: &str) -> Resul
 /// Install SKILL.md for all detected agents.
 /// Returns `Vec<(display_name, was_new_or_updated)>`.
 pub fn install_all_skills(home: &std::path::Path) -> Vec<(String, bool)> {
+    // `rules_injection = off`: the user opted out of lean-ctx-authored steering
+    // entirely (GH #361). The on-demand SKILL.md is part of that surface, so
+    // write none — mirrors `inject_all_rules`'s early return.
+    if crate::core::config::Config::load().rules_injection_effective()
+        == crate::core::config::RulesInjection::Off
+    {
+        return Vec::new();
+    }
     let targets = build_skill_targets(home);
     let mut results = Vec::new();
 

@@ -65,10 +65,8 @@ pub fn cmd_theme(args: &[String]) {
                 );
                 std::process::exit(1);
             }
-            let mut cfg = config::Config::load();
-            cfg.theme.clone_from(name);
-            match cfg.save() {
-                Ok(()) => {
+            match config::Config::update_global(|cfg| cfg.theme.clone_from(name)) {
+                Ok(_) => {
                     let t = theme::load_theme(name);
                     println!("  {sc}✓{r} Theme set to {b}{name}{r}", sc = t.success.fg());
                     let preview = t.gradient_bar(0.75, 30);
@@ -96,9 +94,11 @@ pub fn cmd_theme(args: &[String]) {
                 Ok(content) => match toml::from_str::<theme::Theme>(&content) {
                     Ok(imported) => match theme::save_theme(&imported) {
                         Ok(()) => {
-                            let mut cfg = config::Config::load();
-                            cfg.theme = "custom".to_string();
-                            let _ = cfg.save();
+                            if let Err(e) = config::Config::update_global(|cfg| {
+                                cfg.theme = "custom".to_string();
+                            }) {
+                                tracing::warn!("could not persist theme: {e}");
+                            }
                             println!(
                                 "  {sc}✓{r} Imported theme '{name}' → ~/.lean-ctx/theme.toml",
                                 sc = imported.success.fg(),

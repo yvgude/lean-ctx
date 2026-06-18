@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::import_resolver;
 use crate::core::signatures;
+mod coordinator;
+pub use coordinator::{IndexBuildProgress, get_or_start_build};
 mod edges;
 pub(crate) use edges::*;
 #[cfg(test)]

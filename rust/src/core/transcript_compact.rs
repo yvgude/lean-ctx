@@ -183,7 +183,7 @@ fn has_tool_markers(s: &str) -> bool {
     s.contains("tool_result") || s.contains("ctx_") || s.contains("```") || s.len() > 2000
 }
 
-fn summarize_content(text: &str) -> String {
+pub(crate) fn summarize_content(text: &str) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let total_lines = lines.len();
     let char_count = text.len();

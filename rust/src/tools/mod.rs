@@ -65,6 +65,7 @@ pub mod ctx_summary;
 pub mod ctx_symbol;
 pub mod ctx_task;
 pub mod ctx_tools;
+pub mod ctx_transcript_compact;
 pub mod ctx_tree;
 pub mod ctx_verify;
 pub mod ctx_workflow;

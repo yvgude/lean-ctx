@@ -420,6 +420,9 @@ export default async function (pi: ExtensionAPI) {
     label: "ctx_shell",
     description:
       "Run shell commands. Prefer over native Bash/shell (auto-compressed output). "
+      + "Runs the system POSIX shell ($SHELL, sh/bash-compatible) non-login, non-interactive "
+      + "and profile-free: no .bash_profile/.zshrc/rc files are sourced, so behavior is "
+      + "deterministic regardless of user shell config. "
       + "IMPORTANT: Do NOT use ctx_shell to read files (cat/head/tail) — use ctx_read instead. "
       + "Do NOT use ctx_shell for grep/find/ls — use ctx_grep, ctx_find, ctx_ls. "
       + "Set raw=true to skip compression when exact output matters. "
@@ -429,10 +432,16 @@ export default async function (pi: ExtensionAPI) {
       "Use ctx_shell only for commands with side effects: build, test, install, git, run scripts.",
     ],
     parameters: bashSchemaWithRaw,
-    renderCall(args, theme, context) {
-      return baseBashTool.renderCall
-        ? baseBashTool.renderCall(args, theme, context)
-        : (context.lastComponent ?? new Text("", 0, 0));
+    renderCall(args, theme) {
+      // Render with an explicit `ctx_shell` label instead of delegating to Pi's
+      // bash renderer, whose bare `$` prefix made the call look like a native
+      // bash shell and obscured that this is lean-ctx's profile-free shell (#451).
+      const command = typeof args.command === "string" ? args.command : "";
+      return new Text(
+        theme.fg("toolTitle", theme.bold("ctx_shell ")) + theme.fg("text", command),
+        0,
+        0,
+      );
     },
     renderResult(result, options, theme, context) {
       // ctx_shell wraps Pi's bash tool; its renderer is typed for BashToolDetails,

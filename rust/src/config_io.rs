@@ -54,8 +54,17 @@ pub fn write_toml_preserving_minimal(
 ) -> Result<(), String> {
     let merged = match std::fs::read_to_string(path) {
         Ok(existing) if !existing.trim().is_empty() => {
-            merge_toml_inner(&existing, new_content, Some(default_content))
-                .unwrap_or_else(|_| new_content.to_string())
+            // Refuse to overwrite a non-empty file we cannot parse. `new_content`
+            // and `default_content` come from our own serializer (always valid),
+            // so a merge failure means the on-disk config is corrupt — clobbering
+            // it with defaults would silently wipe customizations (#443). We
+            // propagate the error and leave the file untouched instead.
+            merge_toml_inner(&existing, new_content, Some(default_content)).map_err(|e| {
+                format!(
+                    "refusing to overwrite an unparseable config at {}: {e}",
+                    path.display()
+                )
+            })?
         }
         // No existing file: write a fresh minimal document (drop defaults).
         _ => merge_toml_inner("", new_content, Some(default_content))
@@ -394,6 +403,34 @@ enabled = true
         write_toml_preserving(&path, "ultra_compact = true\n").unwrap();
         let result = std::fs::read_to_string(&path).unwrap();
         assert!(result.contains("ultra_compact = true"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn minimal_mode_refuses_to_clobber_unparseable_existing() {
+        // #443: a corrupt config must never be silently replaced with defaults.
+        let tmp = unique_tmp("cfg_corrupt");
+        let _ = std::fs::create_dir_all(&tmp);
+        let path = tmp.join("config.toml");
+        let corrupt = "broken = = =\n";
+        std::fs::write(&path, corrupt).unwrap();
+
+        let result = write_toml_preserving_minimal(
+            &path,
+            "ultra_compact = false\n",
+            "ultra_compact = false\n",
+        );
+
+        assert!(
+            result.is_err(),
+            "must refuse to overwrite an unparseable config"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            corrupt,
+            "the corrupt file must be left exactly as-is"
+        );
+
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }

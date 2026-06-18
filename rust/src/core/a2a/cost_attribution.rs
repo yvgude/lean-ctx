@@ -93,7 +93,8 @@ impl CostStore {
     ) {
         let now = Utc::now().to_rfc3339();
         let pricing = crate::core::gain::model_pricing::ModelPricing::load();
-        let quote = pricing.quote_from_env_or_agent_type(agent_type);
+        // Honors a declared model for MCP-only IDEs (`[cost.models]`/default).
+        let quote = pricing.quote_for_client(agent_type);
         let cost = quote
             .cost
             .estimate_usd(input_tokens, output_tokens, 0, cached_tokens);

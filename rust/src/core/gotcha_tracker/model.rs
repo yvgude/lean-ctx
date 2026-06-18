@@ -280,7 +280,13 @@ pub struct GotchaStore {
     pub stats: GotchaStats,
     pub updated_at: DateTime<Utc>,
 
-    #[serde(skip)]
+    // Persisted (#451 shell-ding): a fail→fix spanning two `lean-ctx -c`
+    // invocations is two separate processes, so the in-memory active store
+    // cannot bridge them. Persisting pending errors lets the later process load
+    // and correlate the fix. Bounded by MAX_PENDING + a 15-min TTL (pruned on
+    // load and on every detect/resolve), so the file stays tiny. `default`
+    // keeps older gotchas.json files (written without the field) loadable.
+    #[serde(default)]
     pub pending_errors: Vec<PendingError>,
 }
 

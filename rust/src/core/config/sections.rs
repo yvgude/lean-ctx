@@ -467,6 +467,42 @@ impl Default for GainConfig {
     }
 }
 
+/// Model declaration for **measured-vs-estimated** cost reporting.
+///
+/// Proxy-routed clients (Claude Code, Codex, Pi, Gemini CLI, OpenCode) report
+/// their real model and billed tokens, so lean-ctx prices them *measured* with
+/// no configuration. MCP-only IDEs (Cursor, Copilot, Windsurf, VS Code, Zed)
+/// send their LLM traffic straight to the provider, bypassing lean-ctx — their
+/// real model is invisible. Declaring it here lets those *estimated* turns be
+/// priced with the correct model instead of a blended fallback.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CostConfig {
+    /// Fallback pricing model for any client without a per-client entry.
+    /// Unset/empty → lean-ctx keeps its blended heuristic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    /// Per-client pricing model, keyed by client id (`cursor`, `copilot`,
+    /// `windsurf`, `claude`, `codex`, …). Used for MCP-only IDEs whose real
+    /// model lean-ctx cannot observe. Example:
+    /// `[cost.models]` then `cursor = "claude-opus-4.5"`.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub models: HashMap<String, String>,
+}
+
+impl CostConfig {
+    /// Configured pricing model for a client id: the per-client entry first, then
+    /// the global default. `None` when neither is set (the caller then falls back
+    /// to the env override / heuristic). Blank entries are ignored.
+    pub fn model_for_client(&self, client: &str) -> Option<String> {
+        self.models
+            .get(client)
+            .or(self.default_model.as_ref())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+}
+
 /// Settings for the code graph — in particular the *traversal* (co-access) edges
 /// learned from real agent sessions (#289).
 ///

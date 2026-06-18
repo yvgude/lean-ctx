@@ -45,7 +45,10 @@ pub fn format_gain_hero_themed(t: &Theme) -> String {
     let cost = cost_model.calculate(&store);
 
     let engine = crate::core::gain::GainEngine::load();
-    let score = engine.gain_score(None);
+    // One summary load powers both the score panel and the net-of-injection
+    // reconciliation below (#361) — no double compute.
+    let summary = engine.summary(None);
+    let score = &summary.score;
 
     let w = 57;
     let side = t.box_side();
@@ -122,7 +125,35 @@ pub fn format_gain_hero_themed(t: &Theme) -> String {
         )));
     }
 
+    // Net-of-injection honesty (#361): the headline above is gross savings on
+    // lean-ctx-touched traffic. lean-ctx also injects a fixed per-turn prefix
+    // that, without provider prompt caching, is re-billed every turn — so the
+    // honest bill impact is gross minus that tax. Show it in the default view,
+    // not just in `--json` / `--deep`, so the hero never overstates the effect.
+    if summary.turns > 0 {
+        let net = summary.net_tokens_saved;
+        let net_str = format_big(net.unsigned_abs());
+        let sign = if net < 0 { "-" } else { "" };
+        let net_col = if net < 0 { t.warning.fg() } else { c1.clone() };
+        out.push(box_line(""));
+        out.push(box_line(&format!(
+            "  {dim}net of injection:{rst} {net_col}{bold}{sign}{net_str}{rst} {dim}(− {tax} tax · {turns} turns){rst}",
+            tax = format_big(summary.injected_overhead_total_tokens),
+            turns = summary.turns,
+        )));
+    } else if summary.injected_overhead_tokens_per_turn > 0 {
+        out.push(box_line(""));
+        out.push(box_line(&format!(
+            "  {dim}injection:{rst} {dim}+{op}/turn fixed (net = gross; proxy not in path){rst}",
+            op = format_big(summary.injected_overhead_tokens_per_turn),
+        )));
+    }
+
     out.push(format!("  {}", t.box_bottom(w)));
+    // One-line methodology so the headline is never read as the whole bill.
+    out.push(format!(
+        "  {dim}savings = compression on lean-ctx-touched traffic, not your full provider bill · details: lean-ctx gain --deep{rst}"
+    ));
     out.push(String::new());
 
     // Weekly nudge: after 7 days of data, if user hasn't published, show a prominent card

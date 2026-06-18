@@ -925,7 +925,13 @@ fn draw_session(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
 }
 
 fn format_tokens(n: u64) -> String {
-    if n >= 1_000_000 {
+    if n >= 1_000_000_000_000 {
+        format!("{:.2}T", n as f64 / 1_000_000_000_000.0)
+    } else if n >= 1_000_000_000 {
+        // 2 decimals at B-scale: a heavy user crosses 1B and the figure must
+        // keep growing visibly instead of sticking at "1000.0M" / "1.0B".
+        format!("{:.2}B", n as f64 / 1_000_000_000.0)
+    } else if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)
     } else if n >= 1_000 {
         format!("{:.1}K", n as f64 / 1_000.0)
@@ -955,6 +961,16 @@ mod tests {
             search_query: String::new(),
             search_active: false,
         }
+    }
+
+    #[test]
+    fn format_tokens_scales_through_billions() {
+        assert_eq!(format_tokens(512), "512");
+        assert_eq!(format_tokens(1_500), "1.5K");
+        assert_eq!(format_tokens(2_500_000), "2.5M");
+        // Heavy users cross 1B — must read as B, not "1310.0M" or a frozen cap.
+        assert_eq!(format_tokens(1_310_000_000), "1.31B");
+        assert_eq!(format_tokens(2_000_000_000_000), "2.00T");
     }
 
     #[test]

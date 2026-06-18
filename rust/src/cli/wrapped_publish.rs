@@ -245,7 +245,7 @@ pub(crate) fn publish(period: &str, name: Option<&str>, leaderboard: bool) {
 
     // A name chosen here sticks: persist it so future (incl. automatic) publishes reuse it, and
     // fall back to a previously saved name when no `--name` flag is given.
-    let mut cfg = crate::core::config::Config::load();
+    let mut cfg = crate::core::config::Config::load_global();
     if let Some(n) = name.map(str::trim).filter(|n| !n.is_empty())
         && cfg.gain.display_name.as_deref() != Some(n)
     {
@@ -309,7 +309,7 @@ pub(crate) fn publish(period: &str, name: Option<&str>, leaderboard: bool) {
 /// signed, the server upserts one card per (machine, period), so refreshing the recap never
 /// piles up duplicates on the public leaderboard.
 pub(crate) fn maybe_auto_publish(period: &str) {
-    let cfg = crate::core::config::Config::load();
+    let cfg = crate::core::config::Config::load_global();
     let g = &cfg.gain;
     if !g.auto_publish {
         return;
@@ -393,7 +393,7 @@ pub(crate) fn maybe_auto_publish_background() {
 /// records the timestamp on success. Period is fixed to `all` to match the public
 /// leaderboard/hero, which aggregate the all-time per-publisher card.
 fn publish_in_background(period: &str) {
-    let cfg = crate::core::config::Config::load();
+    let cfg = crate::core::config::Config::load_global();
     let g = &cfg.gain;
     if !g.auto_publish
         || !auto_publish_due(

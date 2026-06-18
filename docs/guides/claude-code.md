@@ -73,7 +73,7 @@ lean-ctx registers itself via `claude mcp add-json --scope user` when available.
 }
 ```
 
-> **Note**: The `autoApprove` list includes all read-only and safe tools so Claude Code doesn't prompt for confirmation on every call. lean-ctx supports 76 tools total — the full list is auto-configured.
+> **Note**: The `autoApprove` list includes all read-only and safe tools so Claude Code doesn't prompt for confirmation on every call. lean-ctx supports 77 tools total — the full list is auto-configured.
 
 If `claude mcp add-json` is not available (older Claude Code versions), lean-ctx falls back to directly writing `~/.claude.json`.
 

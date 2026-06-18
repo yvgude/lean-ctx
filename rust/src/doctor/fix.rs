@@ -446,6 +446,34 @@ pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
     }
     steps.push(reclaim_step);
 
+    // Record the XDG commitment now that the install is split + the residual
+    // legacy dir is gone, so a stray `~/.lean-ctx` can never re-collapse this
+    // install again (GL #623). `ensure_pinned` is a no-op for a deliberate
+    // single-dir (`LEAN_CTX_DATA_DIR`) or an unmigrated legacy/mixed install.
+    let mut pin_step = SetupStepReport {
+        name: "layout_pin".to_string(),
+        ok: true,
+        items: Vec::new(),
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+    crate::core::layout_pin::ensure_pinned();
+    let pinned = crate::core::layout_pin::is_xdg_pinned();
+    pin_step.items.push(SetupItem {
+        name: "pin".to_string(),
+        status: if pinned { "xdg" } else { "single-dir" }.to_string(),
+        path: None,
+        note: Some(
+            if pinned {
+                "install committed to the XDG layout; ~/.lean-ctx can no longer hijack it"
+            } else {
+                "single-dir/legacy install — layout left in place"
+            }
+            .to_string(),
+        ),
+    });
+    steps.push(pin_step);
+
     // Prune knowledge stores whose project_root was deleted (removed git
     // worktrees, thrown-away projects). They can never be written again, so
     // their per-store eviction cap can never self-heal — pure accumulated bloat

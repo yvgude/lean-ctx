@@ -166,6 +166,10 @@ fn install_launchagent(binary: &str, quiet: bool) {
         "        ",
     );
 
+    // #449: pin the directory layout so the launchd-spawned daemon resolves the
+    // same config/data dirs as the installing CLI (see `pinned_layout_env_xml`).
+    let env_vars = crate::core::tcc_guard_sandbox::pinned_layout_env_xml();
+
     let plist = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -177,7 +181,7 @@ fn install_launchagent(binary: &str, quiet: bool) {
     <array>
 {program_args}
     </array>
-    <key>RunAtLoad</key>
+{env_vars}    <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <dict>

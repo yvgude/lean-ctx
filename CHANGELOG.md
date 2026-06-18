@@ -6,6 +6,310 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Fixed
+- **#356 — the "lean-ctx wants to access your Documents folder" prompt is now
+  closed even for `brew upgrade`-only installs.** The path guards + LaunchAgent
+  Seatbelt wrapper already made daemon/proxy boot promptless, and `lean-ctx
+  update`/`dev-install` regenerate the plists with that wrapper. The remaining
+  hole was a user who *only* runs `brew upgrade` (which bypasses lean-ctx's
+  updater), so their pre-Seatbelt plists were never regenerated. New belt-and-
+  suspenders: a launchd-standalone process (`ppid 1`) now **re-execs itself
+  under the deny-`~/Documents` Seatbelt at startup** if it is not already
+  wrapped (`reexec_under_seatbelt_if_needed`, called first thing in `main`). A
+  sentinel env var baked into the plists (`LEAN_CTX_SEATBELT`) prevents any
+  double-wrap for current-code plists; terminal/editor children (host TCC grant)
+  and non-macOS are unaffected. Verified by the existing `tcc_sandbox.sh`
+  SIGKILL-on-access boot test. This makes the daemon/proxy promptless
+  independent of code signature, so no Apple Developer ID is required.
+- **#451 — `ctx_shell` / `lean-ctx -c` no longer run agent commands in a
+  non-POSIX interactive shell.** `$SHELL` is the user's *interactive* shell; when
+  it is Nushell, Fish, Elvish, xonsh or PowerShell, an agent's bash/POSIX command
+  silently mis-executes. `detect_shell` now honors `$SHELL` only when it is
+  POSIX-compatible (bash/zsh/sh/dash/ash/ksh/mksh) and otherwise falls back to a
+  real POSIX shell. zsh/bash users are unaffected; `LEAN_CTX_SHELL` still forces a
+  specific shell regardless of the gate.
+- **Shell gotcha auto-learning now correlates fail→fix in CLI (`lean-ctx -c`)
+  mode.** `pending_errors` were `#[serde(skip)]` and cleared on load, so a fix
+  spanning two separate `lean-ctx -c` processes never correlated (only the
+  long-lived daemon could). They are now persisted (bounded by `MAX_PENDING` + a
+  15-min TTL, pruned on load), so a later process loads the pending error and
+  correlates the fix — the gotcha loop now works in the hybrid CLI-shell setup.
+
+### Added
+- **#454 — `prefer_native_editor` config to opt out of lean-ctx edit operations.**
+  Set `prefer_native_editor = true` (or `LEAN_CTX_PREFER_NATIVE_EDITOR=1`) so the
+  lean-ctx edit tool (`ctx_edit`) is neither advertised in `list_tools` nor
+  dispatchable (direct *or* via `ctx_call`); the agent falls back to the host's
+  built-in editor UI. Read / search / shell / memory tools are unaffected.
+  Colorized diffs are intentionally left to host extensions rather than the MCP
+  tool output, which must stay byte-stable for prompt caching (#498).
+
+## [3.8.9] — 2026-06-18
+
+### Added
+- **Hermes context-engine plugin + `ctx_transcript_compact` core tool** — lean-ctx
+  can now be Hermes Agent's *active context engine*, not just an MCP server it
+  might call. The new `integrations/hermes-lean-ctx` plugin is a thin Python
+  `ContextEngine` that replaces Hermes' built-in `ContextCompressor`: it keeps the
+  system preamble + a fresh tail verbatim, replaces older turns with a recoverable
+  summary, and injects lean-ctx's recall tools (`ctx_search`, `ctx_semantic_search`,
+  `ctx_read`, `ctx_expand`, `ctx_knowledge`, `ctx_summary`) natively into the agent.
+  Compaction itself lives in a new daemon tool, `ctx_transcript_compact` (the 77th
+  MCP tool): deterministic, prompt-cache-friendly compaction of OpenAI-format
+  message arrays that never splits a `tool_call`/`tool_result` pair and offloads the
+  raw turns into session memory. The plugin prefers this core tool over `/v1` and
+  falls back to local Python compaction when the daemon is unreachable, so the agent
+  loop never breaks. Includes session-lifecycle persistence (`resume` on start,
+  `ctx_summary` + `ctx_handoff` on end), model-window presets, a runnable
+  head-to-head benchmark harness (vs. import-guarded `ContextCompressor`/`hermes-lcm`),
+  and a dedicated CI job (pytest + offline benchmark smoke). `lean-ctx init --agent
+  hermes` now also points to the engine plugin.
+- **ACE-inspired auto-learning loop — gotchas now learn themselves, distil, and
+  surface** (study of `kayba-ai/agentic-context-engine`). Previously the
+  `GotchaStore` could *correlate* an error with its later fix but nothing ever fed
+  it real shell outcomes, so it stayed empty in production. The loop is now wired
+  end to end:
+  - **Live capture** — `shell::exec` hands every finished command to
+    `gotcha_tracker::record_shell_outcome`, gated by a cheap `is_correlatable_command`
+    filter (cargo/npm/pytest/go/docker/git…) so only build/test/run output is
+    inspected. A process-global in-memory store keyed by project hash keeps the
+    `pending_errors` (which are `#[serde(skip)]`) alive across commands inside a
+    long-lived daemon, mirroring `diagnostics_store`; durable gotchas are persisted
+    when a fix is correlated.
+  - **Reflector** — a deterministic `reflect()` distils the store into Playbook
+    deltas: recurring fixes (≥2 occurrences with a resolution) become *proven
+    strategies*, error signatures that recur across ≥2 distinct sessions with no
+    recorded fix become *recurring pitfalls*. It folds into the session Playbook
+    during `ctx_compress` via the existing dedup/stable-ID `add_delta`.
+  - **Offline mining** — `lean-ctx learn --mine <dir>` scans a directory of
+    `.jsonl` transcripts/logs for high-precision error markers (Rust E-codes,
+    tsc/pytest/npm signatures), aggregating recurring signatures across files
+    read-only — it never mutates stored state.
+  - **Learning Ledger** — `lean-ctx gotchas ledger` renders a human-readable
+    summary (errors observed, fixes correlated, repeats avoided, promoted to
+    knowledge) plus the distilled strategies/pitfalls, making the learning visible.
+- **Semantic near-duplicate detection on `ctx_knowledge remember`** — the lexical
+  similarity check only caught facts sharing tokens, so paraphrases of the same
+  decision silently accumulated. `remember` now also runs an embedding cosine
+  pass (threshold 0.86) *before* upsert and appends a non-destructive "SEMANTIC
+  NEAR-DUPLICATES" advisory listing paraphrases the lexical pass missed, so the
+  agent can `judge`/merge them. Self-matches and already-judged pairs are
+  excluded; the embedding path is behind the default `embeddings` feature.
+
+### Fixed
+- **High idle CPU when no session is running (#453)** — on v3.8.8 (macOS, Claude
+  Code & OpenCode) a connected-but-idle agent pegged a whole CPU core in the
+  `lean-ctx` process. A `sample` of the live process showed the `leanctx-index`
+  thread burning ~100% while every other thread (tokio workers, `memory-guard`,
+  main) sat parked in `cond_wait`/`nanosleep` — a CPU-bound worker, not a busy
+  timer loop (the screenshot's "2 idle wake-ups" at 97.5% CPU confirmed it). Root
+  cause: `LeanCtxServer::new()` ran an **eager full index build** (graph + BM25 +
+  line-search) on *every* server start whenever a project root was detected. A
+  warm cache still burned ~1 core for 6–9 s per start; multiplied across two
+  agents and stdio respawns it never settled. Fixed comprehensively:
+  - **No eager startup build (primary fix)** — the startup scan is removed; the
+    server falls back to the demand-driven lazy warming it already documents
+    (#152). A session that sits idle or only uses `ctx_read`/`ctx_shell`/
+    `ctx_tree` now pays **zero** indexing cost (measured: idle CPU stays at 0.0%);
+    graph/search tools still warm their index on first use. The eager call was an
+    unrelated regression slipped in via #294.
+  - **Long-lived HTTP `serve` keeps a one-time background warm-up** — only the
+    persistent `lean-ctx serve` process (never the per-respawn stdio path) kicks
+    off a single deduped background index build at startup. Without it the first
+    heavy/search tool call on a large project root raced a cold scan against the
+    per-request timeout and, on CPU-constrained CI runners, starved the request
+    handlers into `504 request_timeout` (the SDK-conformance regression). Idle CPU
+    still settles flat once the build completes, so #453 idle hygiene is preserved.
+  - **stdio transport no longer respawns on a single bad frame** — the codec
+    mapped *any* decode error to the same `None` as a true EOF, so one malformed
+    JSON-RPC message tore down the server (rmcp `QuitReason::Closed`), the agent
+    respawned it, and the fresh process paid another index build — a CPU churn
+    loop. Malformed frames are now skipped (the bad frame is already consumed) and
+    the stream resyncs onto the next message; only a real stream end closes the
+    transport.
+  - **No duplicate daemons** — concurrent MCP servers launching at once could all
+    pass the `is_daemon_running()` check in a TOCTOU window and each spawn a
+    daemon. `start_daemon()` now serializes that critical section with an
+    exclusive, bounded-wait file lock.
+  - **Leaner proxy reload** — the #449 upstream-reload loop's default interval is
+    relaxed from 2 s to 5 s; `Config::load()`'s internal content-hash cache
+    already skips re-parsing an unchanged `config.toml`, so each idle tick is just
+    a small file read.
+  - **memory-guard idle backoff** — RSS sampling stretches from every 3 s to
+    every 15 s once memory has been stably calm, and snaps back instantly under
+    any pressure (OOM reaction time during real work is unchanged).
+- **Quick settings that "keep resetting" are now diagnosable and stable (#450)** —
+  a value saved in the dashboard could be silently shadowed so it appeared to
+  revert to defaults (lite/off), and `lean-ctx config validate` only said
+  "no config" without telling you *where* it looked. There are four mechanisms
+  and none of them was visible: an env var (`LEAN_CTX_*`), a project-local
+  `.lean-ctx.toml` override (`compression_level`/`terse_agent`/`tool_profile`), a
+  divergent resolved config dir (dashboard writes path X, runtime reads path Y),
+  or an unparseable `config.toml` falling back to defaults. Fixed by making the
+  provenance explicit and the path stable:
+  - **`config validate` shows the source** — it now always prints the resolved
+    `config.toml` path (even when missing), the layout-pin state, any parse
+    error, and the active env / project-local overrides, with a one-line
+    explanation of why a value can appear to "reset".
+  - **Dashboard surfaces provenance** — `/api/settings` returns `config_path`,
+    `config_exists`, `parse_error` and a per-setting `local_override`; the Quick
+    Settings panel shows which `config.toml` is read and warns (and disables the
+    toggle) when an env var or a project-local `.lean-ctx.toml` is winning.
+  - **Dashboard pins the layout** — `lean-ctx dashboard` now runs the same
+    `layout_pin::heal()` as the daemon/server start paths, so it can no longer
+    write `config.toml` into a divergent dir the runtime never reads.
+- **Dashboard no longer times out on load; heavy index/graph routes never block (#452)** —
+  opening the dashboard mounted ~22 `<cockpit-*>` components that each fired
+  `loadData()` from `connectedCallback()` at once — a thundering herd of
+  `/api/graph`, `/api/call-graph`, `/api/symbols`, `/api/search-index` and
+  `/api/tree` requests that ran synchronous, file-count-scaling index/graph
+  builds and starved the trivial `/api/settings` handler until the client
+  aborted after 8 s ("Settings timeout"). Fixed on two layers:
+  - **Frontend lazy-load (primary fix)** — components no longer load in
+    `connectedCallback()`; the router's view-loader fetches only the active
+    view, so `#context/settings` issues a single `/api/settings` request instead
+    of triggering every panel's data load at once.
+  - **Backend single-flight + non-blocking (hardening)** — `graph_index` and
+    `bm25_index` gained a `get_or_start_build` coordinator (one background build
+    per root, concurrent callers deduplicated) modeled on `call_graph`. Heavy
+    routes (`/api/tree`, `/api/symbols`, `/api/call-graph`, `/api/search-index`,
+    `/api/search`) now return `202 {status:"building"}` with progress instead of
+    blocking on a full scan; the affected panels poll and show an
+    "index building…" state until the build completes.
+- **`ctx_shell` is clearly labelled and runs profile-free (#451)** —
+  - **Pi renderer** — the Pi extension rendered shell calls with a bare `$`
+    prefix (inherited from Pi's bash renderer), making `ctx_shell` look like a
+    native interactive bash shell. It now renders an explicit `ctx_shell` label.
+  - **Profile-free shell** — `ctx_shell` (MCP `execute_command_with_env`) and the
+    CLI `lean-ctx -c` paths now neutralize inherited `BASH_ENV`/`ENV` so a
+    non-interactive `sh -c`/`bash -c` can no longer be hijacked into sourcing a
+    profile/rc file (e.g. an `exec nu` snippet silently replacing the shell).
+    Shell behavior is now deterministic and independent of user shell config.
+  - **Sharper description** — the tool description (MCP and Pi) states it runs
+    the system shell (`$SHELL`) profile-free, so agents stop treating it as a
+    config-loaded interactive bash.
+- **Proxy upstream is now live from `config.toml` — no more stale upstream on a long-lived proxy (#449)** —
+  the proxy froze its provider upstreams in `ProxyState` at startup and never
+  re-read them, so a later `lean-ctx config set proxy.openai_upstream …` (or any
+  `config.toml` edit) had no effect until a manual restart — and a shell
+  `export LEAN_CTX_OPENAI_UPSTREAM=…` could never reach an already-running,
+  service-managed proxy at all (the env simply does not propagate into a running
+  process). Now:
+  - **Live reload** — a background task re-resolves the upstreams from
+    `config.toml` every ~5s (`LEAN_CTX_PROXY_RELOAD_SECS` to tune) and publishes
+    any change through a `tokio::sync::watch` channel that every provider handler
+    reads per request, so `config set` takes effect on the running proxy within
+    seconds, without a restart. An invalid value keeps the last good upstream
+    instead of silently dropping to the provider default.
+  - **`config.toml` is the source of truth for long-lived proxies**; a
+    `LEAN_CTX_*_UPSTREAM` env var remains a *start-time* override only (it cannot
+    reach a process that is already running). MCP hosts make this acute: Codex
+    (and others) launch the lean-ctx MCP server with a stripped, allowlisted
+    environment that omits `LEAN_CTX_*_UPSTREAM`, so the proxy it spawns never
+    sees it — `config.toml` is the only mechanism that reaches every proxy.
+  - **Root cause for service/MCP-managed proxies — directory pinning** — a
+    launchd-spawned proxy inherits only launchd's minimal environment (no `HOME`,
+    no XDG vars) and so resolved a *different* config/data dir than the CLI: it
+    never read the user's `config.toml` (live reload had nothing to read) and
+    derived a mismatched session token (its `/status` 401'd). The proxy/daemon
+    LaunchAgent plists now bake in the exact `HOME` + `LEAN_CTX_{CONFIG,DATA,STATE,CACHE}_DIR`
+    the installing CLI resolves, so a managed process always agrees with the CLI.
+  - **Observability** — `/status` and `lean-ctx proxy status` now report the
+    active upstreams; `proxy status` derives liveness from the public `/health`
+    endpoint (so a running proxy is never misreported as down) and warns in two
+    cases: a `LEAN_CTX_*_UPSTREAM` set in the shell that never reached the proxy
+    (with the exact `config set` command to persist it), and a proxy started with
+    an env override now masking a later `config.toml` edit. `doctor` carries the
+    same drift check.
+  - **`lean-ctx proxy restart`** — new subcommand that cleanly restarts the
+    managed service (re-reads `config.toml`, drops any start-time env override).
+- **`ctx_impact` resolves C# extension-method hosts and disambiguates types by namespace (GH #398 follow-ups, #640–#643)** —
+  the two deferred #398 follow-ups are now closed:
+  - **Extension methods (#642)** — a call `value.WordCount()` to a C# extension
+    method (`static int WordCount(this string s)`) names neither the defining
+    static class nor any of its types, so it produced no edge and left the host
+    a false-negative leaf. A new `deep_queries::ext_methods` extractor collects
+    `this`-parameter methods, and `ctx_impact` links each `value.Foo()` call to
+    the defining file (file + symbol `TypeRef` edge), self-filtered and capped.
+  - **Namespace-aware resolution (#641)** — `TypeDef` now carries its C#
+    namespace (block-, file-scoped and nested), and `type_ref_targets` resolves
+    hybridly: a definer in the consumer's *visible* namespace (own namespace +
+    enclosing namespaces + `using`s) always links — even past the cap — and its
+    homonyms in other namespaces are dropped, so same-named types are no longer
+    conflated. With no namespace match the global fallback still links, with the
+    too-generic cap raised 3 → 5. Java (no namespaces) keeps the fallback path.
+  Both capabilities are wired into the embeddings **and** minimal builder paths;
+  all new regressions are gated on `tree-sitter` so they exercise both. Outputs
+  stay deterministic (sorted/deduped, bounded indexes; #498).
+- **`ctx_impact` now sees C# types used only in expression position (GH #398 follow-up)** —
+  the v3.8.3 fix linked same-namespace C# consumers to definers for types in
+  *declaration* positions (fields, parameters, return types, `base_list`,
+  generics, casts, `typeof`), but a type referenced **only in expression
+  position** still produced no `TypeRef` edge, so `ctx_impact` reported the
+  defining file as a false-negative leaf. Now covered in
+  `deep_queries::type_uses`: static calls/fields and enum values via a
+  member-access receiver (`Engine.Create()`, `Engine.Default`, `Status.Active`)
+  and attributes (`[ApiController]`, which additionally resolves to the
+  `…Attribute` class name). Only PascalCase receivers are collected and the
+  existing def-index resolution discards any name that is not a real project
+  type, so precision is unchanged. The new end-to-end regression is gated on
+  `tree-sitter` rather than `embeddings`, so it also exercises the
+  `index_graph_file_minimal` builder path that the earlier #398 e2e tests never
+  reached. (Extension-method hosts and namespace-aware resolution were the
+  remaining follow-ups, now closed above.)
+- **`lean-ctx update` / `config init --full` no longer reset or leak config values (#443)** —
+  persisting a single setting could silently rewrite *other* customized keys in the
+  global `config.toml` (e.g. `compression_level` → `lite`, `max_ram_percent` → 5).
+  Three root causes, now closed by construction:
+  - **(A) default-seed clobber** — `config init --full` historically wrote
+    `Config::default()`, and `save()` overwrites every key present in both the
+    incoming document and the file (`config_io::merge_table`), resetting customized
+    values. (Already mitigated via `config_for_full_init`; now superseded.)
+  - **(B) project-local leak** — `Config::load()` folds project-local
+    `.lean-ctx.toml` overrides into the in-memory struct, so the common
+    `load() → mutate → save()` pattern (18 call sites across 10 files) wrote those
+    per-project values back into the *global* file.
+  - **(C) corrupt-file clobber** — `write_toml_preserving_minimal` wrote a fresh
+    document when the existing file failed to parse, discarding a hand-broken config.
+  The fix introduces a leak-free persistence API — `Config::load_global()` (reads
+  the global file only, never merging project-local overrides) and
+  `Config::update_global()` (read global-only → mutate → minimal save, and *refuses*
+  to touch an unparseable file) — and migrates every persist site to it. The runtime
+  read path (`Config::load()`, with project-local merge) is unchanged. In addition,
+  `write_toml_preserving_minimal` now refuses to overwrite an unparseable config
+  instead of clobbering it, and `config init --full` emits a fully annotated
+  reference document seeded with the user's current values (lossless round-trip,
+  independent of schema completeness).
+- **XDG layout no longer flips back to `~/.lean-ctx` (GL #623)** — once an install
+  resolved to the XDG four-dir layout, a single stray marker appearing in
+  `~/.lean-ctx` (a legacy residue, a restored backup, a concurrent older binary,
+  even an empty `sessions/`) silently re-collapsed config/data/state/cache onto
+  that one directory via `single_dir_override`, after which `config.toml` was no
+  longer found and the dashboard graph disappeared (data had moved to
+  `$XDG_DATA_HOME/lean-ctx/graphs`). A new **layout pin**
+  (`$XDG_CONFIG_HOME/lean-ctx/layout.toml`, `mode = "xdg"`) records the
+  commitment: the resolver reads it *before* the legacy/mixed heuristic and never
+  re-adopts `~/.lean-ctx` for a pinned install. The pin is written (and a
+  residual `~/.lean-ctx` auto-drained) by every independent long-running writer
+  and repair path — `setup`, the MCP server start, the daemon
+  (`init_foreground_daemon`, incl. the launchd/systemd autostart), and
+  `doctor --fix` (after it migrates + reclaims). Marker detection was hardened so an empty
+  `sessions/`/`graphs/` directory (or a zero-byte `stats.json`) no longer counts
+  as data, and the Docker self-heal shell hook no longer touches `~/.lean-ctx`
+  (heal timestamp → `$XDG_STATE_HOME`, lock count → `$XDG_DATA_HOME`). `doctor`
+  now reports the active layout mode (`xdg-pinned` / `single-dir / legacy`).
+- **Re-reads stop blowing up to full content (cache hit-rate regression)** — with
+  `mode` omitted (the recommended usage), a file first read in a compressed mode
+  (`map`/`signatures`) was resolved to `full` on its *second* read by the
+  `cache_hit` shortcut, even though full content had never been delivered
+  (`full_content_delivered=false`). The 2nd read therefore re-delivered the
+  *entire file* — more tokens than the first read — a compression bounce that
+  also meant stub hits only began at the 3rd read, which agents rarely reach.
+  Measured lifetime cache hit-rate had collapsed to ~5% (down from ~90%). The
+  resolver now only short-circuits to `full` once full content was actually
+  delivered; otherwise it falls through to the predictor, which reproduces the
+  cached compressed mode and serves it from the compressed-output cache as a
+  cheap, consistent hit. Explicit `mode="full"` reads (for editing) are
+  unchanged.
 - **Cache-aware pruning no longer churns the cached prompt prefix (#448)** — on
   cache-metered rails (Anthropic), the default `cache-aware` history pruner
   rewrote already-cached history every time the prune boundary advanced a
@@ -16,6 +320,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   the cache. Per-message tool-result compression is unchanged (it is
   content-deterministic and prefix-stable), and requests without `cache_control`
   (e.g. OpenAI) are byte-for-byte unaffected.
+- **`ctx_retrieve` / `ctx_share` no longer serve stale cached content** — both
+  paths returned the *cached* full content for a file (`get_full_content`) with
+  **no staleness check**, so an agent that retrieved a file — or received one via
+  a cross-agent `ctx_share` handover — could be handed a version that no longer
+  matched disk if the file had been edited since it was first read. This is the
+  classic handover failure: agent A edits a handover file, agent B reads the
+  pre-edit cached copy and "does not see the changes". `ctx_read` was already
+  safe (it revalidates by mtime **and** content hash and re-reads on any
+  mismatch); the two retrieve/share accessors bypassed that guard. Both now go
+  through a new staleness-safe accessor (`SessionCache::current_full_content`)
+  that validates the cached entry against disk (mtime + hash) and transparently
+  re-reads the current bytes when the cache is behind the file, so a retrieve or
+  handover always reflects the latest content.
 
 ## [3.8.8] — 2026-06-17
 

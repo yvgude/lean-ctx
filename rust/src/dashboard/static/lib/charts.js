@@ -134,24 +134,42 @@ function doughnutChart(canvasId, labels, values, colors) {
   );
 }
 
+// ~12% top headroom so a peak sitting just under a round number (e.g. a 0.95B
+// cumulative under a 1B gridline) is never glued to the top edge and mistaken
+// for a hard cap. suggestedMax only ever raises the axis, so it leaves the
+// Chart.js auto-min untouched (ratio/volume charts keep their natural scale).
+function topHeadroom(series) {
+  let max = -Infinity;
+  for (let i = 0; i < series.length; i++) {
+    const v = series[i];
+    if (typeof v === 'number' && isFinite(v) && v > max) max = v;
+  }
+  return max > 0 ? { scales: { y: { suggestedMax: max * 1.12 } } } : undefined;
+}
+
 function lineChart(canvasId, labels, series, strokeColor, fillRgba) {
   const c = strokeColor || '#34d399';
   const f = fillRgba || 'rgba(52,211,153,.04)';
-  return createChart(canvasId, 'line', {
-    labels,
-    datasets: [
-      {
-        data: series,
-        fill: true,
-        borderColor: c,
-        backgroundColor: f,
-        borderWidth: 2,
-        pointRadius: labels.length > 24 ? 0 : 3,
-        pointBackgroundColor: c,
-        tension: 0.4,
-      },
-    ],
-  });
+  return createChart(
+    canvasId,
+    'line',
+    {
+      labels,
+      datasets: [
+        {
+          data: series,
+          fill: true,
+          borderColor: c,
+          backgroundColor: f,
+          borderWidth: 2,
+          pointRadius: labels.length > 24 ? 0 : 3,
+          pointBackgroundColor: c,
+          tension: 0.4,
+        },
+      ],
+    },
+    topHeadroom(series)
+  );
 }
 
 function barChart(canvasId, labels, datasets) {

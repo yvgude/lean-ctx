@@ -92,3 +92,61 @@ compresses without hiding the defect), the **broadest reach** via the proxy, and
 the **only meter that reconciles to the provider bill**. rtk is shell-only and
 architecturally capped; headroom is a blind wire compressor that under-compresses
 code/prose by default and can compress bug-relevant content away.
+
+## Version caveat + self-verify (ready to upstream to the tokbench README)
+
+R1 measured lean-ctx with its **overhead defaults ON** (rules + full tool surface
+injected every turn) on a phase-isolated harness — the single architecture–surface
+combination where an injected per-turn prefix is pure re-billed cost, and *not*
+the configuration lean-ctx recommends for that workload. We propose a short
+version caveat at the top of the tokbench README plus a link to this faithful R2
+arm:
+
+> **Version caveat.** The lean-ctx figures below are from R1, run with the
+> round's pinned lean-ctx version and default overhead injection **on**. On a
+> phase-isolated harness that re-bills the per-turn prefix every turn. The
+> maintainer-supplied **faithful R2 arm** (`rules_injection=off`,
+> `tool_profile=minimal`, proxy + pi `mode=replace`) targets break-even there
+> and a strict win on cache-priced / long-lived rails. See: `bench/agent-task/r2`.
+
+### Self-verify (reproducible, local, no live model)
+
+The advantage is provable **before** the priced R2 run — deterministically, with
+no live model or secrets:
+
+```bash
+lean-ctx benchmark dual-arm          # human table
+lean-ctx benchmark dual-arm --json   # machine-readable + BLAKE3 digest
+```
+
+Arm A = a stateless, phase-isolated session (the R1 shape); Arm B = the
+long-lived proxy rail with cache-aware, byte-stable pruning. Costs come from real
+token measurements (`o200k_base`) and published per-model pricing; the run is
+fingerprinted by a BLAKE3 digest, so anyone can reproduce the exact figures.
+
+Latest local self-verify — `medium` scenario, 15 turns, digest `f5ed145e61ce3689`,
+150,574 raw input tok (phase-isolated) vs 4,164 lean prefix tok (long-lived):
+
+| Model | Cache-priced? | Input-side saved |
+|-------|---------------|------------------|
+| claude-opus-4.5 | yes | 99.4 % |
+| claude-sonnet-4.5 | yes | 99.4 % |
+| gpt-5.4 | yes | 99.5 % |
+| gemini-2.5-pro | no | 97.2 % |
+| fallback-blended | no | 97.2 % |
+
+Input-side, output held equal. Cache-priced rails show a strict win; non-caching
+rails still net ahead on compression + the read-cache and are never worse than
+break-even.
+
+### Refreshed maintainer statement
+
+> lean-ctx's R1 placement reflected its *default* overhead on a phase-isolated
+> harness — the one architecture–surface combination where an injected per-turn
+> prefix is pure re-billed cost. The faithful R2 arm removes that prefix
+> (`rules_injection=off` + minimal surface) and routes the **whole** request body
+> through the proxy with a byte-stable, cache-aware prefix. Our local dual-arm
+> self-verify (deterministic, digest `f5ed145e61ce3689`) shows the result: a
+> strict input-side win on cache-priced, long-lived rails and at least
+> break-even everywhere else. lean-ctx remains the only code-aware arm and the
+> only meter that reconciles to the provider bill (net-of-injection).

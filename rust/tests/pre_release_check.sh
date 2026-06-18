@@ -46,28 +46,39 @@ validate_rewrite() {
     local result
     result=$(echo "$input" | "$BIN" hook rewrite 2>/dev/null)
 
-    if [ "$expect" = "passthrough" ]; then
-        if [ -z "$result" ]; then ok "$label"; else fail "$label (expected passthrough)"; fi
-        return
-    fi
-
+    # The PreToolUse hook contract always emits a non-empty JSON "allow" decision.
+    #   passthrough = "allow" WITHOUT updatedInput  (command left untouched: self-calls,
+    #                 non-Bash tools, non-rewritable commands)
+    #   rewrite     = "allow" WITH updatedInput     (command routed through `lean-ctx -c`)
     if [ -z "$result" ]; then
         fail "$label (empty output)"
         return
     fi
 
-    if echo "$result" | python3 -c "import sys,json; json.loads(sys.stdin.read())" 2>/dev/null; then
-        ok "$label"
-    else
-        fail "$label (invalid JSON)"
-    fi
+    local kind
+    kind=$(echo "$result" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print('invalid'); sys.exit()
+hs = d.get('hookSpecificOutput', {}) or {}
+print('rewrite' if ('updatedInput' in hs or 'updated_input' in d) else 'passthrough')
+" 2>/dev/null)
+
+    case "$kind" in
+        invalid)   fail "$label (invalid JSON)" ;;
+        "$expect") ok "$label" ;;
+        *)         fail "$label (expected $expect, got $kind)" ;;
+    esac
 }
 
 validate_rewrite "simple cmd"       '{"tool_name":"Bash","command":"git status"}'                                      "rewrite"
 validate_rewrite "pipe cmd"         '{"tool_name":"Bash","command":"curl https://api.com | python3"}'                   "rewrite"
 validate_rewrite "embed quotes"     '{"tool_name":"Bash","command":"git commit --allow-empty -m \"Test\""}'             "rewrite"
 validate_rewrite "curl auth"        '{"tool_name":"Bash","command":"curl -H \"Authorization: Bearer tok\" api.com"}'    "rewrite"
-validate_rewrite "grep quotes"      '{"tool_name":"Bash","command":"grep -r \"TODO\" src/"}'                            "rewrite"
+validate_rewrite "rg quotes"        '{"tool_name":"Bash","command":"rg \"TODO\" src/"}'                                 "rewrite"
+validate_rewrite "grep passthrough" '{"tool_name":"Bash","command":"grep -r \"TODO\" src/"}'                            "passthrough"
 validate_rewrite "docker multi-env" '{"tool_name":"Bash","command":"docker run -e \"A=1\" -e \"B=2\" nginx"}'           "rewrite"
 validate_rewrite "find glob"        '{"tool_name":"Bash","command":"find . -name \"*.js\""}'                            "rewrite"
 validate_rewrite "git format"       '{"tool_name":"Bash","command":"git log --format=\"%H %s\""}'                       "rewrite"
@@ -75,14 +86,6 @@ validate_rewrite "npm build"        '{"tool_name":"Bash","command":"npm run buil
 validate_rewrite "ls"               '{"tool_name":"Bash","command":"ls -la"}'                                           "rewrite"
 validate_rewrite "self-skip"        '{"tool_name":"Bash","command":"lean-ctx read main.rs"}'                            "passthrough"
 validate_rewrite "non-bash"         '{"tool_name":"Write","command":"test"}'                                            "passthrough"
-
-# Also validate the bash hook script
-HOOK_SCRIPT=$("$BIN" 2>/dev/null <<< '{}' || true)
-TMPSCRIPT="/tmp/lean_ctx_prerelease_hook_$$.sh"
-python3 -c "
-import subprocess, sys
-# Generate the script by calling the binary's internal function via a simple test
-" 2>/dev/null || true
 
 # -----------------------------------------------------------------------
 printf "\n\033[1;97m=== RESULT: %d passed, %d failed ===\033[0m\n" "$PASS" "$FAIL"

@@ -33,6 +33,7 @@ Each journey document answers three questions for every feature:
 | 14 | [Performance Tuning](14-performance-tuning.md)                   | huge repo / constrained machine                      | `memory_profile`, `bm25_max_cache_mb`, `graph_index_max_files`, `LEAN_CTX_MAX_*`, `slow-log`              |
 | 18 | [Adaptive Learning](18-adaptive-learning.md)                     | understanding how lean-ctx tunes itself              | learned thresholds, LITM calibration, scent field, playbook, `learning export/import`, efficacy           |
 | 19 | [JetBrains-Plugin](19-jetbrains-plugin.md)                      | using code intelligence from a running JetBrains IDE | `ctx_refactor`: navigation, structure, inspections, symbol-edits, rename/reformat/move/safe_delete/inline |
+| 20 | [Hermes Context Engine](20-hermes-context-engine.md)            | embedding lean-ctx as your agent's context engine    | `ctx_transcript_compact`, `serve`, `context.engine`, recall tools, session lifecycle                      |
 
 ## Cross-cutting references
 

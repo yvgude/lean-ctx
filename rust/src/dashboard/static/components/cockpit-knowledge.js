@@ -84,7 +84,7 @@ class CockpitKnowledge extends HTMLElement {
     document.addEventListener('lctx:refresh', this._onRefresh);
     document.addEventListener('lctx:view', this._onViewChange);
     this.render();
-    this.loadData();
+    // Lazy-load (#452): the router loads this view's data on activation.
   }
 
   disconnectedCallback() {

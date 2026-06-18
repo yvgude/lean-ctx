@@ -515,6 +515,26 @@ pub(super) fn proxy_auth_probe(port: u16) -> bool {
     response.contains("200") || response.contains("ok")
 }
 
+/// Fetches the proxy's live upstreams from the authenticated `/status` endpoint.
+/// Returns `(anthropic, openai, gemini)`, or `None` if the proxy is unreachable
+/// or the response lacks the `upstreams` block. Drives the #449 drift check.
+pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String, String)> {
+    let token = crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN");
+    let url = format!("http://127.0.0.1:{port}/status");
+    let resp = ureq::get(&url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .call()
+        .ok()?;
+    let body = resp.into_body().read_to_string().ok()?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    let up = v.get("upstreams")?;
+    Some((
+        up.get("anthropic")?.as_str()?.to_string(),
+        up.get("openai")?.as_str()?.to_string(),
+        up.get("gemini")?.as_str()?.to_string(),
+    ))
+}
+
 /// How Claude Code currently receives the full lean-ctx instructions.
 ///
 /// Single source of truth for the main doctor check *and* `doctor integrations`

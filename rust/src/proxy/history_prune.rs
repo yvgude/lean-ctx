@@ -181,6 +181,26 @@ fn summarize_anthropic_tool_result(block: &mut Value, kind: ToolResultKind) -> b
     modified
 }
 
+/// Cache-aware prune of a single tool-output *string* for the frozen OLD region.
+///
+/// Returns `Some(pruned)` only when the text is long enough to be worth pruning
+/// AND the pruned form is actually shorter; otherwise `None` (leave it intact).
+/// The result is content-deterministic — it depends only on `text` and `kind`,
+/// never on position — so a pruned output is byte-identical on every later turn.
+///
+/// This is the Responses-API analogue of [`prune_history_range`]: that path can
+/// drop nothing because the API rejects a `function_call` whose matching
+/// `function_call_output` is absent, so we prune *in place* (file/source reads
+/// collapse to an honest re-read stub, everything else head/tail summarizes)
+/// without ever touching the conversation structure.
+pub fn prune_output_text(text: &str, kind: ToolResultKind) -> Option<String> {
+    if text.len() <= 200 {
+        return None;
+    }
+    let pruned = summarize_or_stub(text, kind);
+    (pruned.len() < text.len()).then_some(pruned)
+}
+
 /// For a *protected* (file/source) result, emit an honest re-read stub. For
 /// everything else, head/tail summarize so diagnostics stay readable.
 fn summarize_or_stub(text: &str, kind: ToolResultKind) -> String {

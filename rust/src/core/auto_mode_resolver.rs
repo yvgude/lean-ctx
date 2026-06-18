@@ -128,10 +128,23 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
     if let Some(cache) = ctx.cache
         && let Some(cached) = cache.get(ctx.path)
     {
-        if file_unchanged(ctx.path, cached) {
+        if !file_unchanged(ctx.path, cached) {
+            return resolved("diff", "cache_changed");
+        }
+        // Unchanged. Resolving to "full" is only a *cheap* stub hit when full
+        // content was actually delivered before. If the first read was a
+        // compressed mode (map/signatures), `full_content_delivered` is false,
+        // so forcing "full" here re-delivers the entire file on the very next
+        // read — a compression bounce that costs *more* tokens than the first
+        // read and collapses the cache hit rate: the 2nd read of every file
+        // blows up to full and stub hits only begin at the 3rd read (which
+        // agents rarely reach). Only short-circuit once full was delivered;
+        // otherwise fall through to the predictor, which deterministically
+        // reproduces the cached compressed mode and serves it from the
+        // compressed-output cache as a cheap, consistent hit.
+        if cache.is_full_delivered(ctx.path) {
             return resolved("full", "cache_hit");
         }
-        return resolved("diff", "cache_changed");
     }
 
     if ctx.token_count <= 200 {
@@ -560,6 +573,62 @@ mod tests {
         let result = resolve(&ctx);
         assert_eq!(result.mode, "full");
         assert_eq!(result.source, "config_data");
+    }
+
+    #[test]
+    fn cached_compressed_only_file_does_not_escalate_to_full() {
+        // Cache regression: a file first read in a compressed mode has
+        // `full_content_delivered=false`. Resolving its re-read to "full" would
+        // re-deliver the entire file on the 2nd read — a compression bounce that
+        // costs more tokens than the first read and defeats the cache. The
+        // resolver must fall through so the cached compressed mode is reused.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("medium.rs");
+        let body = "fn placeholder() { let _ = 1; }\n".repeat(400);
+        std::fs::write(&file, &body).unwrap();
+        let path = file.to_str().unwrap();
+
+        let mut cache = SessionCache::new();
+        cache.store(path, &body);
+        // A compressed first read does NOT mark full content as delivered.
+
+        let ctx = AutoModeContext {
+            path,
+            token_count: 3000,
+            task: None,
+            cache: Some(&cache),
+        };
+        let result = resolve(&ctx);
+        assert_ne!(
+            result.mode, "full",
+            "compressed-only cached file must not escalate to full on re-read"
+        );
+        assert_ne!(result.source, "cache_hit");
+    }
+
+    #[test]
+    fn cached_full_delivered_file_short_circuits_to_stub() {
+        // Once full content was actually delivered, the cache_hit shortcut still
+        // applies: a re-read resolves to "full" (a cheap `[unchanged]` stub).
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("medium.rs");
+        let body = "fn placeholder() { let _ = 1; }\n".repeat(400);
+        std::fs::write(&file, &body).unwrap();
+        let path = file.to_str().unwrap();
+
+        let mut cache = SessionCache::new();
+        cache.store(path, &body);
+        cache.mark_full_delivered(path);
+
+        let ctx = AutoModeContext {
+            path,
+            token_count: 3000,
+            task: None,
+            cache: Some(&cache),
+        };
+        let result = resolve(&ctx);
+        assert_eq!(result.mode, "full");
+        assert_eq!(result.source, "cache_hit");
     }
 
     #[test]

@@ -20,7 +20,17 @@ pub(crate) fn install_codebuddy_hook_with_mode(global: bool, mode: HookMode) {
     if scope != crate::core::config::RulesScope::Project {
         remove_codebuddy_rules_file(&home);
         install_codebuddy_global_codebuddy_md_for_mode(&home, mode);
-        install_codebuddy_skill(&home);
+        // rules_injection=off (#361): the functional hooks above still install
+        // (off opts out of *instructions*, not compression), but the on-demand
+        // skill is lean-ctx-authored steering — suppress it, and remove one a
+        // previous shared/dedicated install left behind.
+        if crate::core::config::Config::load().rules_injection_effective()
+            == crate::core::config::RulesInjection::Off
+        {
+            remove_codebuddy_skill(&home);
+        } else {
+            install_codebuddy_skill(&home);
+        }
     }
 
     let _ = global;
@@ -96,9 +106,14 @@ fn install_codebuddy_global_codebuddy_md_for_mode(home: &std::path::Path, mode: 
     let _ = std::fs::create_dir_all(&codebuddy_dir);
     let codebuddy_md_path = codebuddy_dir.join("CODEBUDDY.md");
 
-    if crate::core::config::Config::load().rules_injection_effective()
-        == crate::core::config::RulesInjection::Dedicated
-    {
+    // Neither dedicated nor off keep a lean-ctx block in CODEBUDDY.md:
+    //  - dedicated (#343): the SessionStart hook injects the compact summary;
+    //  - off (#361): the user opted out of lean-ctx steering entirely.
+    // Strip any block a previous shared install left so switching modes is clean.
+    if matches!(
+        crate::core::config::Config::load().rules_injection_effective(),
+        crate::core::config::RulesInjection::Dedicated | crate::core::config::RulesInjection::Off
+    ) {
         strip_codebuddy_md_block(&codebuddy_md_path);
         return;
     }
@@ -206,6 +221,21 @@ fn install_codebuddy_skill(home: &std::path::Path) {
             perms.set_mode(0o755);
             let _ = std::fs::set_permissions(&script_path, perms);
         }
+    }
+}
+
+/// Remove the lean-ctx skill directory (`rules_injection=off`, GH #361). Only the
+/// lean-ctx-owned `lean-ctx` skill folder is touched.
+fn remove_codebuddy_skill(home: &std::path::Path) {
+    let skill_dir = home.join(".codebuddy/skills/lean-ctx");
+    if skill_dir.exists()
+        && std::fs::remove_dir_all(&skill_dir).is_ok()
+        && !super::super::mcp_server_quiet_mode()
+    {
+        eprintln!(
+            "Removed {} (rules_injection=off — instructions intentionally not installed)",
+            skill_dir.display()
+        );
     }
 }
 
@@ -556,5 +586,48 @@ fn ensure_codebuddy_project_observe_hooks(
                 "hooks": [{ "type": "command", "command": observe_cmd }]
             }]);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rules_injection_off_strips_codebuddy_md_block() {
+        // #361: with instructions opted out, no lean-ctx block may remain in
+        // CODEBUDDY.md (and one left by a prior install must be stripped).
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let dir = crate::core::editor_registry::codebuddy_state_dir(home);
+        std::fs::create_dir_all(&dir).unwrap();
+        let md = dir.join("CODEBUDDY.md");
+        std::fs::write(
+            &md,
+            format!("# my notes\n\n{CODEBUDDY_MD_BLOCK_CONTENT_MCP}\n"),
+        )
+        .unwrap();
+
+        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "off");
+        install_codebuddy_global_codebuddy_md_for_mode(home, HookMode::Mcp);
+        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+
+        let after = std::fs::read_to_string(&md).unwrap_or_default();
+        assert!(
+            !after.contains(CODEBUDDY_MD_BLOCK_START),
+            "rules_injection=off must strip the CODEBUDDY.md block, got:\n{after}"
+        );
+        assert!(after.contains("# my notes"), "user content must survive");
+    }
+
+    #[test]
+    fn skill_install_then_remove_roundtrips() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        install_codebuddy_skill(home);
+        assert!(home.join(".codebuddy/skills/lean-ctx/SKILL.md").exists());
+        remove_codebuddy_skill(home);
+        assert!(!home.join(".codebuddy/skills/lean-ctx").exists());
     }
 }

@@ -118,7 +118,9 @@ COMMANDS:
     gain --graph                   30-day savings chart
     gain --daily                   Bordered day-by-day table with USD
     gain --score                   Gain score breakdown (4 sub-scores + trend)
-    gain --cost                    Agent cost attribution report
+    gain --cost                    Agent cost attribution report (estimated)
+    spend                          Measured provider bill (real model + billed tokens)
+    spend --json                   Machine-readable measured spend
     gain --tasks                   Task breakdown by category
     gain --agents                  Top agents by tool spend
     gain --heatmap                 Top files by tokens saved
@@ -239,6 +241,11 @@ SHELL HOOK PATTERNS (95+):
     ruby      rubocop, bundle install/update, rake test, rails test
     tests     jest, vitest, pytest, go test, playwright, rspec, minitest
     iac       terraform, make, maven, gradle, dotnet, flutter, dart
+    data-eng  dbt, spark, alembic, flyway
+    ai        ollama, mlflow
+    security  semgrep, trivy, grype, syft, cosign, swiftlint
+    vcs/tool  jj, mise, buf, gem, uv add/lock/tool
+    edge/iac  pulumi, linkerd, argocd, vercel, fly, wrangler, skaffold, supabase
     utils     curl, grep/rg, find, ls, wget, env
     data      JSON schema extraction, log deduplication
 

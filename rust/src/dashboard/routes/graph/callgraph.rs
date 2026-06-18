@@ -14,7 +14,10 @@ pub(super) fn get_route(
 
 fn call_graph() -> (&'static str, &'static str, String) {
     let root = detect_project_root_for_dashboard();
-    let index = std::sync::Arc::new(crate::core::graph_index::load_or_build(&root));
+    let index = match crate::core::graph_index::get_or_start_build(&root) {
+        Ok(index) => index,
+        Err(progress) => return super::building_response(&progress),
+    };
     match crate::core::call_graph::CallGraph::get_or_start_build(&root, index.clone()) {
         Ok(graph) => {
             // file_path → community_id, shared with the deps tab for a consistent
@@ -96,7 +99,10 @@ fn call_graph_status() -> (&'static str, &'static str, String) {
 
 fn symbols(query_str: &str) -> (&'static str, &'static str, String) {
     let root = detect_project_root_for_dashboard();
-    let index = crate::core::graph_index::load_or_build(&root);
+    let index = match crate::core::graph_index::get_or_start_build(&root) {
+        Ok(index) => index,
+        Err(progress) => return super::building_response(&progress),
+    };
     let q = extract_query_param(query_str, "q");
     let kind = extract_query_param(query_str, "kind");
     let json = build_symbols_json(&index, q.as_deref(), kind.as_deref());

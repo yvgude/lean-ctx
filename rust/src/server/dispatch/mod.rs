@@ -149,6 +149,20 @@ impl LeanCtxServer {
         args: Option<&serde_json::Map<String, Value>>,
         minimal: bool,
     ) -> Result<(String, usize, Option<ShellOutcome>), ErrorData> {
+        // #454: when the user prefers their host's native editor, lean-ctx edit
+        // operations are fully disabled — refused here so neither a direct call
+        // nor `ctx_call` can reach them (list_tools already hides them).
+        if crate::core::config::Config::load().edit_tool_blocked(name) {
+            return Ok((
+                format!(
+                    "[disabled] '{name}' is turned off (prefer_native_editor): use your editor's \
+                     built-in edit tool. Re-enable with `lean-ctx config set prefer_native_editor false`."
+                ),
+                0,
+                None,
+            ));
+        }
+
         if let Some(tool) = self.registry.as_ref().and_then(|r| r.get_arc(name)) {
             let empty = serde_json::Map::new();
             let args_map = args.unwrap_or(&empty);

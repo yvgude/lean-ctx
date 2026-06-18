@@ -61,14 +61,14 @@ pub fn cmd_compression(args: &[String]) {
 
     let action = args.first().map(std::string::String::as_str);
     if let Some(level @ ("off" | "lite" | "standard" | "max")) = action {
-        let mut cfg = Config::load();
-        cfg.compression_level = match level {
-            "lite" => CompressionLevel::Lite,
-            "standard" => CompressionLevel::Standard,
-            "max" => CompressionLevel::Max,
-            _ => CompressionLevel::Off,
-        };
-        if let Err(e) = cfg.save() {
+        if let Err(e) = Config::update_global(|cfg| {
+            cfg.compression_level = match level {
+                "lite" => CompressionLevel::Lite,
+                "standard" => CompressionLevel::Standard,
+                "max" => CompressionLevel::Max,
+                _ => CompressionLevel::Off,
+            };
+        }) {
             eprintln!("Error saving config: {e}");
             std::process::exit(1);
         }

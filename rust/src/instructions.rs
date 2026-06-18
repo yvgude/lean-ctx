@@ -698,6 +698,25 @@ mod tests {
     }
 
     #[test]
+    fn minimal_overhead_instructions_stay_within_budget() {
+        // #361 faithful arm: with LEAN_CTX_MINIMAL no session/knowledge blocks
+        // ride, so the per-turn instruction prefix must stay within the static
+        // skeleton budget plus a small margin. Guards the "~3K tok/turn" critique
+        // from regressing via dynamic-block creep.
+        const MINIMAL_INSTRUCTION_BUDGET_TOKENS: usize =
+            STATIC_INSTRUCTION_BUDGET_TDD_TOKENS + STATIC_INSTRUCTION_SHELL_HINT_TOKENS;
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::set_var("LEAN_CTX_MINIMAL", "1");
+        let out = build_instructions(CrpMode::Compact);
+        crate::test_env::remove_var("LEAN_CTX_MINIMAL");
+        let tokens = count_tokens(&out);
+        assert!(
+            tokens <= MINIMAL_INSTRUCTION_BUDGET_TOKENS,
+            "minimal-overhead instructions = {tokens} tok, budget {MINIMAL_INSTRUCTION_BUDGET_TOKENS}\n---\n{out}\n---"
+        );
+    }
+
+    #[test]
     fn static_skeleton_stays_within_budget() {
         // #579: the static instruction skeleton (no session/knowledge blocks)
         // rides in EVERY session of EVERY install. Detail documentation

@@ -83,7 +83,12 @@ pub(crate) fn daemon_fallback_hint() {
 }
 
 pub(crate) fn format_tokens_cli(tokens: u64) -> String {
-    if tokens >= 1_000_000 {
+    if tokens >= 1_000_000_000_000 {
+        format!("{:.2}T", tokens as f64 / 1_000_000_000_000.0)
+    } else if tokens >= 1_000_000_000 {
+        // Heavy users cross 1B; keep growing visibly instead of "1310.0M".
+        format!("{:.2}B", tokens as f64 / 1_000_000_000.0)
+    } else if tokens >= 1_000_000 {
         format!("{:.1}M", tokens as f64 / 1_000_000.0)
     } else if tokens >= 1_000 {
         format!("{:.1}K", tokens as f64 / 1_000.0)
@@ -160,5 +165,20 @@ fn promote_to_git_root(path: &str) -> String {
             Some(parent) => p = parent,
             None => return path.to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_tokens_cli;
+
+    #[test]
+    fn format_tokens_cli_scales_through_billions() {
+        assert_eq!(format_tokens_cli(742), "742");
+        assert_eq!(format_tokens_cli(2_500), "2.5K");
+        assert_eq!(format_tokens_cli(3_400_000), "3.4M");
+        // Must read as billions once a heavy user crosses 1B, not "1310.0M".
+        assert_eq!(format_tokens_cli(1_310_000_000), "1.31B");
+        assert_eq!(format_tokens_cli(1_500_000_000_000), "1.50T");
     }
 }

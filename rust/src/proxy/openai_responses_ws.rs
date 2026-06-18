@@ -47,7 +47,7 @@ const FORWARDED_UPGRADE_HEADERS: &[&str] = &[
 
 /// Upgrades a Responses WebSocket and bridges it to the HTTP/SSE upstream.
 pub fn upgrade(state: ProxyState, ws: WebSocketUpgrade, headers: &HeaderMap) -> Response {
-    let upstream = state.openai_upstream.clone();
+    let upstream = state.openai_upstream();
     let fwd = capture_forward_headers(headers);
     ws.on_upgrade(move |socket| bridge(socket, state, upstream, fwd))
 }
@@ -114,7 +114,10 @@ async fn run_turn(
 
     state.stats.record_request();
     let original_size = text.len();
-    let modified = super::openai_responses::compress_responses_input(&mut doc);
+    // Same two-stage path as the HTTP handler: cache-aware prune of the frozen
+    // OLD region, then compress the recent outputs.
+    let mut modified = super::openai_responses::prune_responses_input(&mut doc);
+    modified |= super::openai_responses::compress_responses_input(&mut doc);
     let payload = serde_json::to_vec(&doc).unwrap_or_default();
     if modified && payload.len() < original_size {
         state.stats.record_compression(original_size, payload.len());
@@ -174,6 +177,10 @@ fn build_upstream_body(text: &str) -> Option<Value> {
 async fn stream_sse_to_ws(socket: &mut WebSocket, resp: reqwest::Response) -> ControlFlow<()> {
     let mut stream = resp.bytes_stream();
     let mut buf: Vec<u8> = Vec::new();
+    // Observe the relayed SSE for the real model + billed tokens (Responses
+    // reports them in the `response.completed` event). Recorded only on a clean
+    // end-of-stream, so an interrupted/aborted turn never books partial spend.
+    let mut scanner = super::usage::Scanner::new(super::usage::Provider::OpenAi, None);
     while let Some(chunk) = stream.next().await {
         let Ok(chunk) = chunk else {
             return send_error(
@@ -184,6 +191,7 @@ async fn stream_sse_to_ws(socket: &mut WebSocket, resp: reqwest::Response) -> Co
             )
             .await;
         };
+        scanner.feed(&chunk);
         buf.extend_from_slice(&chunk);
         while let Some(nl) = buf.iter().position(|&b| b == b'\n') {
             let mut line: Vec<u8> = buf.drain(..=nl).collect();
@@ -201,6 +209,9 @@ async fn stream_sse_to_ws(socket: &mut WebSocket, resp: reqwest::Response) -> Co
     // A final event may arrive without a trailing newline.
     if let Some(payload) = sse_data_payload(&buf) {
         let _ = socket.send(Message::Text(payload.into())).await;
+    }
+    if let Some(usage) = scanner.finalize() {
+        super::usage_meter::record(&usage);
     }
     ControlFlow::Continue(())
 }

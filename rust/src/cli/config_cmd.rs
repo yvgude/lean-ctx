@@ -144,10 +144,20 @@ fn config_for_full_init(existing_raw: Option<&str>) -> Result<config::Config, St
     }
 }
 
-/// Implements `config init --full`: (re)writes the global config while
-/// preserving the user's existing values (#443).
+/// Implements `config init --full`: (re)writes the global config as a fully
+/// annotated reference document, seeded with the user's existing values (#443).
+///
+/// Unlike `save()` (which keeps the file minimal), this emits every key with its
+/// documentation. The body is a verbatim serialization of the resolved config,
+/// so no customized value is ever lost; an unparseable existing file is refused
+/// upstream by [`config_for_full_init`] rather than clobbered.
 fn init_full_config() {
-    let existing_raw = config::Config::path().and_then(|p| std::fs::read_to_string(&p).ok());
+    let Some(path) = config::Config::path() else {
+        eprintln!("Error: cannot determine the config path");
+        return;
+    };
+
+    let existing_raw = std::fs::read_to_string(&path).ok();
 
     let cfg = match config_for_full_init(existing_raw.as_deref()) {
         Ok(cfg) => cfg,
@@ -160,14 +170,11 @@ fn init_full_config() {
         }
     };
 
-    match cfg.save() {
-        Ok(()) => {
-            let path = config::Config::path().map_or_else(
-                || "~/.lean-ctx/config.toml".to_string(),
-                |p| p.to_string_lossy().to_string(),
-            );
-            println!("Created full config at {path}");
-        }
+    let schema = config::schema::ConfigSchema::generate();
+    let rendered = config::render_annotated_config(&cfg, &schema);
+
+    match crate::config_io::write_atomic_with_backup(&path, &rendered) {
+        Ok(()) => println!("Created full annotated config at {}", path.display()),
         Err(e) => eprintln!("Error: {e}"),
     }
 }
@@ -280,13 +287,22 @@ fn cmd_apply() {
 }
 
 fn cmd_validate() {
+    // GH #450: always surface *where* the effective settings come from first, so
+    // a "no config" result is never a dead end and a silently shadowed value
+    // (env / project-local / parse error) is immediately visible.
+    print_config_provenance();
+
     let schema = config::schema::ConfigSchema::generate();
     let known = schema.known_keys();
 
     let path = match config::Config::path() {
         Some(p) if p.exists() => p,
-        _ => {
-            println!("[OK] No config.toml found — using defaults.");
+        Some(p) => {
+            println!("[OK] No config.toml at {} — using defaults.", p.display());
+            return;
+        }
+        None => {
+            println!("[OK] No config dir resolved — using defaults.");
             return;
         }
     };
@@ -392,6 +408,68 @@ fn cmd_validate() {
     }
 }
 
+/// Print where the editable settings actually come from (GH #450): the resolved
+/// `config.toml` path, the layout pin, any parse error, and the env /
+/// project-local overrides that can silently shadow a saved value. This makes the
+/// "my quick settings keep resetting" reports self-diagnosing — the reporter sees
+/// the exact mechanism instead of an opaque "no config" message.
+fn print_config_provenance() {
+    let prov = config::Config::provenance();
+
+    println!("Config source:");
+    match &prov.config_path {
+        Some(p) if prov.config_exists => println!("  config.toml:    {} (exists)", p.display()),
+        Some(p) => println!(
+            "  config.toml:    {} (missing — using defaults)",
+            p.display()
+        ),
+        None => println!("  config.toml:    <no config dir resolved — using defaults>"),
+    }
+    println!(
+        "  layout pin:     {}",
+        if prov.xdg_pinned { "xdg" } else { "unpinned" }
+    );
+
+    if let Some(err) = &prov.parse_error {
+        println!("  [!] parse error: config.toml is unparseable — running on DEFAULTS:");
+        println!("                  {err}");
+        println!("                  Run `lean-ctx doctor --fix` to repair.");
+    }
+
+    if prov.local_exists && !prov.local_keys.is_empty() {
+        let path = prov
+            .local_path
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
+        println!(
+            "  [!] project-local: {path} overrides {}",
+            prov.local_keys.join(", ")
+        );
+        println!("                  (these win over the global config for this project)");
+    }
+
+    if !prov.env_overrides.is_empty() {
+        let list = prov
+            .env_overrides
+            .iter()
+            .map(|e| format!("{} ({})", e.var, e.setting))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("  [!] env override: {list}");
+        println!(
+            "                  (these win over config.toml; unset them for saved values to apply)"
+        );
+    }
+
+    if prov.has_shadow() {
+        println!(
+            "  -> A saved setting can appear to \"reset\" because a source above shadows it (GH #450)."
+        );
+    }
+    println!();
+}
+
 fn find_closest(needle: &str, haystack: &[String]) -> Option<String> {
     let mut best: Option<(usize, &str)> = None;
     for candidate in haystack {
@@ -460,6 +538,29 @@ pub fn cmd_benchmark(args: &[String]) {
             println!("       lean-ctx benchmark eval [path] [--json]");
             println!("       lean-ctx benchmark compare [--repo path] [--output file.md]");
             println!("       lean-ctx benchmark scorecard [--json] [--output file]");
+            println!("       lean-ctx benchmark dual-arm [--json] [--output file]");
+        }
+        "dual-arm" => {
+            let is_json = args.iter().any(|a| a == "--json");
+            let output = parse_flag_value(args, "--output");
+            match crate::core::scorecard::dual_arm::run_dual_arm() {
+                Ok(sc) => {
+                    let rendered = if is_json { sc.to_json() } else { sc.to_human() };
+                    if let Some(path) = output {
+                        if let Err(e) = std::fs::write(&path, &rendered) {
+                            eprintln!("Failed to write dual-arm scorecard to {path}: {e}");
+                            std::process::exit(1);
+                        }
+                        eprintln!("Wrote dual-arm scorecard to {path}");
+                    } else {
+                        print!("{rendered}");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Dual-arm bench failed: {e}");
+                    std::process::exit(1);
+                }
+            }
         }
         "scorecard" => {
             let is_json = args.iter().any(|a| a == "--json");

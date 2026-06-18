@@ -71,7 +71,7 @@ class CockpitCommander extends HTMLElement {
       if (v && v.classList.contains('active')) this.loadData();
     });
     document.addEventListener('lctx:refresh', this._onRefresh);
-    this.loadData();
+    // Lazy-load (#452): the router loads this view's data on activation.
   }
 
   disconnectedCallback() {

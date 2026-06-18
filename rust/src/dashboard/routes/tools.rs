@@ -15,12 +15,16 @@ pub(super) fn handle(
         "/api/search-index" => {
             let root_s = detect_project_root_for_dashboard();
             let root = Path::new(&root_s);
-            let index = crate::core::bm25_index::BM25Index::load_or_build(root);
-            let summary = bm25_index_summary_json(&index);
-            let json = serde_json::to_string(&summary).unwrap_or_else(|_| {
-                "{\"error\":\"failed to serialize search index summary\"}".to_string()
-            });
-            Some(("200 OK", "application/json", json))
+            match crate::core::bm25_index::get_or_start_build(root) {
+                Ok(index) => {
+                    let summary = bm25_index_summary_json(&index);
+                    let json = serde_json::to_string(&summary).unwrap_or_else(|_| {
+                        "{\"error\":\"failed to serialize search index summary\"}".to_string()
+                    });
+                    Some(("200 OK", "application/json", json))
+                }
+                Err(progress) => Some(search_building_response(&progress)),
+            }
         }
         "/api/search" => {
             let q = extract_query_param(query_str, "q").unwrap_or_default();
@@ -36,24 +40,28 @@ pub(super) fn handle(
             } else {
                 let root_s = detect_project_root_for_dashboard();
                 let root = Path::new(&root_s);
-                let index = crate::core::bm25_index::BM25Index::load_or_build(root);
-                let hits = index.search(&q, limit);
-                let results: Vec<serde_json::Value> = hits
-                    .iter()
-                    .map(|r| {
-                        serde_json::json!({
-                            "score": (r.score * 100.0).round() / 100.0,
-                            "file_path": r.file_path,
-                            "symbol_name": r.symbol_name,
-                            "kind": r.kind,
-                            "start_line": r.start_line,
-                            "end_line": r.end_line,
-                            "snippet": r.snippet,
-                        })
-                    })
-                    .collect();
-                let json = serde_json::json!({ "results": results }).to_string();
-                Some(("200 OK", "application/json", json))
+                match crate::core::bm25_index::get_or_start_build(root) {
+                    Ok(index) => {
+                        let hits = index.search(&q, limit);
+                        let results: Vec<serde_json::Value> = hits
+                            .iter()
+                            .map(|r| {
+                                serde_json::json!({
+                                    "score": (r.score * 100.0).round() / 100.0,
+                                    "file_path": r.file_path,
+                                    "symbol_name": r.symbol_name,
+                                    "kind": r.kind,
+                                    "start_line": r.start_line,
+                                    "end_line": r.end_line,
+                                    "snippet": r.snippet,
+                                })
+                            })
+                            .collect();
+                        let json = serde_json::json!({ "results": results }).to_string();
+                        Some(("200 OK", "application/json", json))
+                    }
+                    Err(progress) => Some(search_building_response(&progress)),
+                }
             }
         }
         "/api/compression-demo" => {
@@ -249,6 +257,17 @@ fn compression_demo_modes_json(
         "entropy": compression_mode_json(&entropy_out, original_tokens),
         "task": task_out.as_deref().map_or(serde_json::Value::Null, |s| compression_mode_json(s, original_tokens)),
     })
+}
+
+/// `202 Accepted` body for a search route whose BM25 index is still building in
+/// the background (#452). The dashboard polls the same route and renders once it
+/// returns `200`.
+fn search_building_response(
+    progress: &crate::core::bm25_index::SearchIndexBuildProgress,
+) -> (&'static str, &'static str, String) {
+    let json =
+        serde_json::to_string(progress).unwrap_or_else(|_| "{\"status\":\"building\"}".to_string());
+    ("202 Accepted", "application/json", json)
 }
 
 fn bm25_index_summary_json(index: &crate::core::bm25_index::BM25Index) -> serde_json::Value {

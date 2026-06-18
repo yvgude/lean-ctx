@@ -6,6 +6,7 @@
 //! retrieval path is pure BM25. Latency is measured wall-clock and therefore
 //! reported but not part of the determinism contract (see `determinism_digest`).
 
+pub mod dual_arm;
 mod scenarios;
 
 use std::collections::BTreeMap;

@@ -1,41 +1,105 @@
 use std::collections::HashMap;
 
+use crate::core::stats::StatsStore;
 use crate::core::tokens::count_tokens;
+use crate::shell::output_policy::{OutputPolicy, classify};
 
-const COMPRESSIBLE_COMMANDS: &[(&str, &str, &str)] = &[
-    ("git", "git status/diff/log/add/commit/push", "80-95%"),
-    ("cargo", "cargo build/test/clippy", "80-95%"),
-    ("npm", "npm install/run/test", "60-85%"),
-    ("pnpm", "pnpm install/run/test", "60-85%"),
-    ("yarn", "yarn install/run/test", "60-85%"),
-    ("docker", "docker ps/images/logs/build", "60-80%"),
-    ("kubectl", "kubectl get/describe/logs", "60-80%"),
-    ("pip", "pip install/list/freeze", "60-85%"),
-    ("go", "go test/build/vet", "75-90%"),
-    ("ruff", "ruff check/format", "80-90%"),
-    ("eslint", "eslint/biome lint", "80-90%"),
-    ("prettier", "prettier --check", "70-80%"),
-    ("tsc", "TypeScript compiler", "80-90%"),
-    ("curl", "HTTP requests", "60-80%"),
-    ("grep", "grep/rg search", "50-80%"),
-    ("find", "find files", "50-70%"),
-    ("ls", "directory listing", "50-70%"),
-    ("pytest", "Python tests", "85-95%"),
-    ("rspec", "Ruby tests", "60-80%"),
-    ("aws", "AWS CLI", "60-80%"),
-    ("helm", "Kubernetes Helm", "60-80%"),
-    ("terraform", "Terraform", "60-80%"),
-    ("ansible", "Ansible", "60-80%"),
-    ("prisma", "Prisma ORM", "70-85%"),
-    ("cmake", "CMake build", "60-80%"),
-    ("bazel", "Bazel build", "60-80%"),
-    ("zig", "Zig build/test", "60-80%"),
-    ("swift", "Swift build/test", "60-80%"),
-    ("deno", "Deno runtime", "60-80%"),
-    ("bun", "Bun runtime", "60-80%"),
-    ("composer", "PHP Composer", "60-80%"),
-    ("mix", "Elixir Mix", "60-80%"),
-    ("php", "PHP CLI/artisan", "60-80%"),
+/// Command families with a dedicated lean-ctx compressor, used to *recognise*
+/// compressible commands in shell history (the savings numbers themselves come
+/// from real measured `core::stats`, never from this table). `base` is the
+/// `normalize_command` base name; keep roughly in sync with the dispatch in
+/// `core::patterns::try_specific_pattern`.
+const COMPRESSIBLE_FAMILIES: &[(&str, &str)] = &[
+    ("git", "git status/diff/log/commit/push"),
+    ("gh", "GitHub CLI"),
+    ("glab", "GitLab CLI"),
+    ("cargo", "cargo build/test/clippy"),
+    ("npm", "npm install/run/test"),
+    ("pnpm", "pnpm install/run/test"),
+    ("yarn", "yarn install/run/test"),
+    ("bun", "Bun runtime"),
+    ("deno", "Deno runtime"),
+    ("docker", "docker ps/images/logs/build"),
+    ("kubectl", "kubectl get/describe/logs"),
+    ("helm", "Kubernetes Helm"),
+    ("pip", "pip install/list/freeze"),
+    ("poetry", "Poetry"),
+    ("uv", "uv add/lock/sync"),
+    ("conda", "conda/mamba env"),
+    ("pipx", "pipx install"),
+    ("go", "go test/build/vet"),
+    ("mypy", "mypy type check"),
+    ("pyright", "pyright type check"),
+    ("ruff", "ruff check/format"),
+    ("eslint", "eslint/biome lint"),
+    ("prettier", "prettier --check"),
+    ("tsc", "TypeScript compiler"),
+    ("pytest", "Python tests"),
+    ("jest", "Jest tests"),
+    ("vitest", "Vitest tests"),
+    ("mocha", "Mocha tests"),
+    ("playwright", "Playwright tests"),
+    ("rspec", "Ruby tests"),
+    ("rubocop", "RuboCop lint"),
+    ("bundle", "Bundler"),
+    ("rake", "Rake tasks"),
+    ("curl", "HTTP requests"),
+    ("wget", "HTTP downloads"),
+    ("grep", "grep/rg search"),
+    ("rg", "ripgrep search"),
+    ("find", "find files"),
+    ("fd", "fd file search"),
+    ("ls", "directory listing"),
+    ("jq", "JSON processing"),
+    ("aws", "AWS CLI"),
+    ("terraform", "Terraform"),
+    ("tofu", "OpenTofu"),
+    ("pulumi", "Pulumi IaC"),
+    ("ansible", "Ansible"),
+    ("prisma", "Prisma ORM"),
+    ("psql", "PostgreSQL"),
+    ("mysql", "MySQL/MariaDB"),
+    ("cmake", "CMake build"),
+    ("ninja", "Ninja build"),
+    ("bazel", "Bazel build"),
+    ("make", "Make targets"),
+    ("just", "just recipes"),
+    ("mvn", "Maven build"),
+    ("gradle", "Gradle build"),
+    ("dotnet", "dotnet build/test"),
+    ("flutter", "Flutter build"),
+    ("swift", "Swift build/test"),
+    ("zig", "Zig build/test"),
+    ("composer", "PHP Composer"),
+    ("mix", "Elixir Mix"),
+    ("next", "Next.js build"),
+    ("vite", "Vite build"),
+    ("turbo", "Turborepo"),
+    ("nx", "Nx monorepo"),
+    ("systemctl", "systemd units"),
+    ("journalctl", "systemd logs"),
+    ("dbt", "dbt models/tests"),
+    ("alembic", "Alembic migrations"),
+    ("flyway", "Flyway migrations"),
+    ("ollama", "Ollama models"),
+    ("mlflow", "MLflow runs"),
+    ("semgrep", "Semgrep scan"),
+    ("trivy", "Trivy scan"),
+    ("grype", "Grype scan"),
+    ("syft", "Syft SBOM"),
+    ("cosign", "Cosign verify"),
+    ("swiftlint", "SwiftLint"),
+    ("jj", "Jujutsu VCS"),
+    ("mise", "mise toolchain"),
+    ("buf", "Protobuf buf"),
+    ("gem", "RubyGems"),
+    ("linkerd", "Linkerd check"),
+    ("argocd", "Argo CD"),
+    ("vercel", "Vercel deploy"),
+    ("fly", "Fly.io deploy"),
+    ("wrangler", "Cloudflare deploy"),
+    ("skaffold", "Skaffold"),
+    ("supabase", "Supabase"),
 ];
 
 pub struct DiscoverResult {
@@ -44,20 +108,69 @@ pub struct DiscoverResult {
     pub missed_commands: Vec<MissedCommand>,
     pub potential_tokens: usize,
     pub potential_usd: f64,
+    /// True when at least one missed command had real measured savings backing
+    /// its token estimate. When false, `potential_tokens` is 0 and callers
+    /// should fall back to a frequency-based framing instead of a $ figure.
+    pub has_measured_data: bool,
 }
 
 pub struct MissedCommand {
     pub prefix: String,
     pub description: String,
+    /// Real measured savings for this family (e.g. "84%"), or "—" when the
+    /// user has not yet run this family through lean-ctx.
     pub savings_range: String,
     pub count: u32,
     pub estimated_tokens: usize,
+    pub measured: bool,
+}
+
+/// First whitespace token's file name — the `normalize_command` base.
+fn base_of(command: &str) -> &str {
+    let first = command.split_whitespace().next().unwrap_or(command);
+    std::path::Path::new(first)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(first)
+}
+
+fn describe(base: &str) -> Option<&'static str> {
+    COMPRESSIBLE_FAMILIES
+        .iter()
+        .find(|(b, _)| *b == base)
+        .map(|(_, d)| *d)
+}
+
+/// Aggregated real measurements per command family from `core::stats`:
+/// base → (input_tokens, output_tokens, count).
+fn measured_by_family(store: &StatsStore) -> HashMap<String, (u64, u64, u64)> {
+    let mut by_base: HashMap<String, (u64, u64, u64)> = HashMap::new();
+    for (key, s) in &store.commands {
+        let entry = by_base.entry(base_of(key).to_string()).or_default();
+        entry.0 = entry.0.saturating_add(s.input_tokens);
+        entry.1 = entry.1.saturating_add(s.output_tokens);
+        entry.2 = entry.2.saturating_add(s.count);
+    }
+    by_base
 }
 
 pub fn analyze_history(history: &[String], limit: usize) -> DiscoverResult {
-    let mut missed: HashMap<&str, u32> = HashMap::new();
+    let store = crate::core::stats::load();
+    analyze_history_with_stats(history, limit, &store)
+}
+
+/// Core analysis with the measured-stats source injected (testable, pure aside
+/// from the policy classifier). `analyze_history` is the disk-backed wrapper.
+fn analyze_history_with_stats(
+    history: &[String],
+    limit: usize,
+    store: &StatsStore,
+) -> DiscoverResult {
+    let mut missed: HashMap<String, u32> = HashMap::new();
     let mut already_optimized = 0u32;
     let mut total_commands = 0u32;
+
+    let measured = measured_by_family(store);
 
     for cmd in history {
         let trimmed = cmd.trim();
@@ -66,69 +179,67 @@ pub fn analyze_history(history: &[String], limit: usize) -> DiscoverResult {
         }
         total_commands += 1;
 
-        if trimmed.starts_with("lean-ctx ") {
+        if trimmed.starts_with("lean-ctx ") || trimmed.starts_with("lean-ctx\t") {
             already_optimized += 1;
             continue;
         }
 
-        for (prefix, _, _) in COMPRESSIBLE_COMMANDS {
-            if trimmed.starts_with(prefix) || trimmed.starts_with(&format!("{prefix} ")) {
-                *missed.entry(prefix).or_insert(0) += 1;
-                break;
-            }
+        let base = base_of(trimmed);
+        // A command is a missed save only if lean-ctx has a compressor for it
+        // (known family or already measured) AND the policy engine would
+        // actually compress it (not a protected verbatim/passthrough command).
+        let known = describe(base).is_some() || measured.contains_key(base);
+        if known && classify(trimmed, &[]) == OutputPolicy::Compressible {
+            *missed.entry(base.to_string()).or_insert(0) += 1;
         }
     }
 
     let mut sorted: Vec<_> = missed.into_iter().collect();
     sorted.sort_by_key(|x| std::cmp::Reverse(x.1));
 
-    let total_missed: u32 = sorted.iter().map(|(_, c)| c).sum();
-    let est_tokens_per_cmd = 500;
-    let est_savings_pct = 0.75;
-    let potential = (total_missed as f64 * est_tokens_per_cmd as f64 * est_savings_pct) as usize;
-    let potential_usd =
-        potential as f64 * crate::core::stats::DEFAULT_INPUT_PRICE_PER_M / 1_000_000.0;
+    let price_per_tok = crate::core::stats::DEFAULT_INPUT_PRICE_PER_M / 1_000_000.0;
+    let mut potential_tokens = 0usize;
+    let mut has_measured_data = false;
 
-    let real_stats = crate::core::stats::load();
-    let (effective_potential, effective_usd) = if real_stats.total_commands > 0 {
-        let real_savings_rate = if real_stats.total_input_tokens > 0 {
-            1.0 - (real_stats.total_output_tokens as f64 / real_stats.total_input_tokens as f64)
-        } else {
-            est_savings_pct
-        };
-        let p = (total_missed as f64 * est_tokens_per_cmd as f64 * real_savings_rate) as usize;
-        let u = p as f64 * crate::core::stats::DEFAULT_INPUT_PRICE_PER_M / 1_000_000.0;
-        (p, u)
-    } else {
-        (potential, potential_usd)
-    };
-
-    let missed_commands = sorted
+    let missed_commands: Vec<MissedCommand> = sorted
         .into_iter()
         .take(limit)
-        .map(|(prefix, count)| {
-            let (desc, savings) = COMPRESSIBLE_COMMANDS
-                .iter()
-                .find(|(p, _, _)| p == &prefix)
-                .map(|(_, d, s)| (d.to_string(), s.to_string()))
-                .unwrap_or_default();
+        .map(|(base, count)| {
+            let description = describe(&base).unwrap_or("compressible output").to_string();
+            // Project the family's *real* measured savings onto its plain-shell
+            // frequency. Families without measurements contribute nothing — we
+            // never invent a token figure.
+            let (savings_range, estimated_tokens, is_measured) = match measured.get(&base) {
+                Some(&(input, output, cnt)) if input > 0 && cnt > 0 => {
+                    let rate = 1.0 - (output as f64 / input as f64);
+                    let avg_input = input as f64 / cnt as f64;
+                    let est = (count as f64 * avg_input * rate).max(0.0) as usize;
+                    has_measured_data = true;
+                    potential_tokens += est;
+                    (format!("{:.0}%", (rate * 100.0).max(0.0)), est, true)
+                }
+                _ => ("—".to_string(), 0, false),
+            };
             MissedCommand {
-                prefix: prefix.to_string(),
-                description: desc,
-                savings_range: savings,
+                prefix: base,
+                description,
+                savings_range,
                 count,
-                estimated_tokens: (count as f64 * est_tokens_per_cmd as f64 * est_savings_pct)
-                    as usize,
+                estimated_tokens,
+                measured: is_measured,
             }
         })
         .collect();
+
+    let potential_usd = potential_tokens as f64 * price_per_tok;
 
     DiscoverResult {
         total_commands,
         already_optimized,
         missed_commands,
-        potential_tokens: effective_potential,
-        potential_usd: effective_usd,
+        potential_tokens,
+        potential_usd,
+        has_measured_data,
     }
 }
 
@@ -164,10 +275,17 @@ pub fn discover_from_history(history: &[String], limit: usize) -> String {
     }
 
     lines.push(String::new());
-    lines.push(format!(
-        "Estimated potential: ~{} tokens saved (~${:.2})",
-        result.potential_tokens, result.potential_usd
-    ));
+    if result.has_measured_data {
+        lines.push(format!(
+            "Estimated potential: ~{} tokens saved (~${:.2}), projected from your measured savings",
+            result.potential_tokens, result.potential_usd
+        ));
+    } else {
+        lines.push(
+            "No measured savings yet — run these via lean-ctx, then re-run discover for real numbers."
+                .to_string(),
+        );
+    }
     lines.push(String::new());
     lines.push("Fix: run 'lean-ctx init --global' to auto-compress all commands.".to_string());
     lines.push("Or:  run 'lean-ctx init --agent <tool>' for AI tool hooks.".to_string());
@@ -199,18 +317,30 @@ pub fn format_cli_output(result: &DiscoverResult) -> String {
     lines.push(format!("  {}", "-".repeat(80)));
 
     for m in &result.missed_commands {
+        let est = if m.measured {
+            format!("~{}", m.estimated_tokens)
+        } else {
+            "—".to_string()
+        };
         lines.push(format!(
-            "  {:<14} {:>5}x {:>10}  {:<30} ~{}",
-            m.prefix, m.count, m.savings_range, m.description, m.estimated_tokens
+            "  {:<14} {:>5}x {:>10}  {:<30} {}",
+            m.prefix, m.count, m.savings_range, m.description, est
         ));
     }
 
     lines.push(String::new());
-    lines.push(format!(
-        "Estimated missed savings: ~{} tokens (~${:.2}/month at current rate)",
-        result.potential_tokens,
-        result.potential_usd * 30.0
-    ));
+    if result.has_measured_data {
+        lines.push(format!(
+            "Estimated missed savings: ~{} tokens (~${:.2}/month), projected from your measured rate",
+            result.potential_tokens,
+            result.potential_usd * 30.0
+        ));
+    } else {
+        lines.push(
+            "No measured savings yet — route these through lean-ctx, then re-run discover."
+                .to_string(),
+        );
+    }
     lines.push(format!(
         "Already using lean-ctx: {} commands",
         result.already_optimized
@@ -289,7 +419,8 @@ fn xml_escape(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{analyze_history, render_before_card};
+    use super::{analyze_history, analyze_history_with_stats, render_before_card};
+    use crate::core::stats::{CommandStats, StatsStore};
 
     fn history() -> Vec<String> {
         vec![
@@ -300,6 +431,88 @@ mod tests {
             "lean-ctx gain".into(),
             "vim notes.txt".into(),
         ]
+    }
+
+    fn stats_with(entries: &[(&str, u64, u64, u64)]) -> StatsStore {
+        let mut s = StatsStore::default();
+        for (key, count, input, output) in entries {
+            s.commands.insert(
+                (*key).to_string(),
+                CommandStats {
+                    count: *count,
+                    input_tokens: *input,
+                    output_tokens: *output,
+                },
+            );
+            s.total_commands += count;
+            s.total_input_tokens += input;
+            s.total_output_tokens += output;
+        }
+        s
+    }
+
+    #[test]
+    fn no_measured_data_yields_zero_potential_and_no_fabrication() {
+        // Empty stats: detection still works, but NO token figure is invented.
+        let r = analyze_history_with_stats(&history(), 20, &StatsStore::default());
+        assert!(!r.has_measured_data, "no stats => no measured data");
+        assert_eq!(r.potential_tokens, 0, "must not fabricate tokens");
+        assert_eq!(r.potential_usd, 0.0, "must not fabricate dollars");
+        assert!(
+            r.missed_commands
+                .iter()
+                .all(|m| !m.measured && m.savings_range == "—"),
+            "unmeasured families show em dash, not a fake range"
+        );
+        // git (2) + cargo (2) recognised; vim ignored; lean-ctx already-optimized.
+        assert_eq!(r.already_optimized, 1);
+        assert!(
+            r.missed_commands
+                .iter()
+                .any(|m| m.prefix == "git" && m.count == 2)
+        );
+    }
+
+    #[test]
+    fn measured_family_projects_real_savings() {
+        // git measured at 90% savings (1000 in -> 100 out over 2 runs => 500 avg in).
+        let store = stats_with(&[("git status", 2, 1000, 100)]);
+        let r = analyze_history_with_stats(&history(), 20, &store);
+        assert!(r.has_measured_data);
+        let git = r
+            .missed_commands
+            .iter()
+            .find(|m| m.prefix == "git")
+            .expect("git present");
+        assert!(git.measured);
+        assert_eq!(git.savings_range, "90%", "real measured rate, not a guess");
+        // 2 plain-shell git cmds * 500 avg_input * 0.9 = 900 projected.
+        assert_eq!(git.estimated_tokens, 900);
+        assert!(git.savings_range.ends_with('%'));
+        // cargo has no measurement => contributes nothing.
+        let cargo = r
+            .missed_commands
+            .iter()
+            .find(|m| m.prefix == "cargo")
+            .unwrap();
+        assert_eq!(cargo.estimated_tokens, 0);
+        assert_eq!(r.potential_tokens, 900);
+    }
+
+    #[test]
+    fn newly_shipped_families_are_recognised() {
+        // Regression guard: families added in #657-#661 must be discoverable.
+        let hist: Vec<String> = ["dbt run", "trivy image nginx", "pulumi up", "jj log"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let r = analyze_history_with_stats(&hist, 20, &StatsStore::default());
+        for fam in ["dbt", "trivy", "pulumi", "jj"] {
+            assert!(
+                r.missed_commands.iter().any(|m| m.prefix == fam),
+                "{fam} should be recognised as compressible"
+            );
+        }
     }
 
     #[test]

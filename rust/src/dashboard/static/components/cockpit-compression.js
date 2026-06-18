@@ -51,7 +51,7 @@ class CockpitCompression extends HTMLElement {
     this._onSelectFromLive = this._onSelectFromLive.bind(this);
     document.addEventListener('lctx:compression-select', this._onSelectFromLive);
     this.render();
-    this.loadData();
+    // Lazy-load (#452): the router loads this view's data on activation.
   }
 
   disconnectedCallback() {

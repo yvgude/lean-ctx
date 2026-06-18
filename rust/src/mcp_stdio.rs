@@ -317,29 +317,43 @@ fn parse_content_length(header: &str) -> Result<usize, HybridCodecError> {
 
 impl<T: DeserializeOwned> HybridJsonRpcMessageCodec<T> {
     fn decode_content_length(&mut self, buf: &mut BytesMut) -> Result<Option<T>, HybridCodecError> {
-        let Some((header_end, delimiter_len)) = find_header_terminator(buf) else {
-            return Ok(None);
-        };
+        // Loop so a skipped (malformed) frame body resyncs onto the next framed
+        // message already buffered, instead of stalling until more bytes arrive.
+        loop {
+            let Some((header_end, delimiter_len)) = find_header_terminator(buf) else {
+                return Ok(None);
+            };
 
-        let header = std::str::from_utf8(&buf[..header_end])
-            .map_err(|error| HybridCodecError::InvalidHeaderFrame(error.to_string()))?;
-        let content_length = parse_content_length(header)?;
-        if content_length > self.max_length {
-            return Err(HybridCodecError::MaxLineLengthExceeded);
+            let header = std::str::from_utf8(&buf[..header_end])
+                .map_err(|error| HybridCodecError::InvalidHeaderFrame(error.to_string()))?;
+            let content_length = parse_content_length(header)?;
+            if content_length > self.max_length {
+                return Err(HybridCodecError::MaxLineLengthExceeded);
+            }
+            let body_start = header_end + delimiter_len;
+            let frame_len = body_start
+                .checked_add(content_length)
+                .ok_or(HybridCodecError::MaxLineLengthExceeded)?;
+            if buf.len() < frame_len {
+                return Ok(None);
+            }
+
+            let frame = buf.split_to(frame_len);
+            let payload = &frame[body_start..];
+            self.protocol.set_if_unset(WireProtocol::ContentLength);
+
+            match try_parse_with_compatibility(payload, "decode_content_length") {
+                Ok(Some(item)) => return Ok(Some(item)),
+                // An ignored notification — fall through and scan the next frame.
+                Ok(None) => {}
+                // Skip a malformed body instead of fusing the transport (see
+                // `decode_json_line` / #453). The Content-Length framing stayed
+                // intact, so the next frame in the buffer is still recoverable.
+                Err(err) => {
+                    tracing::warn!("skipping malformed Content-Length frame: {err}");
+                }
+            }
         }
-        let body_start = header_end + delimiter_len;
-        let frame_len = body_start
-            .checked_add(content_length)
-            .ok_or(HybridCodecError::MaxLineLengthExceeded)?;
-        if buf.len() < frame_len {
-            return Ok(None);
-        }
-
-        let frame = buf.split_to(frame_len);
-        let payload = &frame[body_start..];
-        self.protocol.set_if_unset(WireProtocol::ContentLength);
-
-        try_parse_with_compatibility(payload, "decode_content_length")
     }
 
     fn decode_json_line(&mut self, buf: &mut BytesMut) -> Result<Option<T>, HybridCodecError> {
@@ -370,8 +384,21 @@ impl<T: DeserializeOwned> HybridJsonRpcMessageCodec<T> {
                     let payload = without_carriage_return(line);
                     self.protocol.set_if_unset(WireProtocol::JsonLine);
 
-                    if let Some(item) = try_parse_with_compatibility(payload, "decode_json_line")? {
-                        return Ok(Some(item));
+                    match try_parse_with_compatibility(payload, "decode_json_line") {
+                        Ok(Some(item)) => return Ok(Some(item)),
+                        // An ignored notification — keep scanning for a real frame.
+                        Ok(None) => {}
+                        // A single malformed line must NOT tear down the transport.
+                        // Returning Err here makes `FramedRead` fuse the stream
+                        // (`has_errored`), so the next poll yields `None`; rmcp then
+                        // exits with `QuitReason::Closed`, the agent respawns us, and
+                        // the fresh process pays another index build — the respawn /
+                        // idle-CPU churn behind #453. The bad line is already consumed
+                        // (`split_to` above), so we just skip it and resync on the
+                        // next newline-delimited frame.
+                        Err(err) => {
+                            tracing::warn!("skipping malformed JSON-RPC line: {err}");
+                        }
                     }
                 }
                 (false, None) if buf.len() > self.max_length => {
@@ -417,7 +444,15 @@ impl<T: DeserializeOwned> Decoder for HybridJsonRpcMessageCodec<T> {
                 } else {
                     let line = buf.split_to(buf.len());
                     let payload = without_carriage_return(&line);
-                    try_parse_with_compatibility(payload, "decode_eof")?
+                    // At true stream end a malformed trailing frame is discarded
+                    // (clean close) rather than surfaced as a transport error.
+                    match try_parse_with_compatibility(payload, "decode_eof") {
+                        Ok(item) => item,
+                        Err(err) => {
+                            tracing::warn!("discarding malformed trailing frame at EOF: {err}");
+                            None
+                        }
+                    }
                 }
             }),
         }
@@ -514,5 +549,59 @@ mod tests {
                 .unwrap()
                 .starts_with("Content-Length: ")
         );
+    }
+
+    #[test]
+    fn decode_skips_malformed_json_line_and_recovers() {
+        // A bad line followed by a valid frame: the codec must skip the bad one
+        // and return the valid frame in the same decode pass — never an Err that
+        // would fuse the transport and trigger an MCP-server respawn (#453).
+        let protocol = SharedProtocol::new();
+        let mut codec = HybridJsonRpcMessageCodec::<serde_json::Value>::new(protocol);
+        let good = serde_json::to_vec(&sample_message()).unwrap();
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(b"{ this is : not valid json }\n");
+        buf.extend_from_slice(&good);
+        buf.put_u8(b'\n');
+
+        let item = codec
+            .decode(&mut buf)
+            .expect("a malformed line must not be a hard transport error");
+        assert!(item.is_some(), "valid frame after a bad line must decode");
+    }
+
+    #[test]
+    fn decode_malformed_json_line_alone_is_not_a_transport_error() {
+        // A lone malformed line yields Ok(None) (stream stays alive), not Err.
+        let protocol = SharedProtocol::new();
+        let mut codec = HybridJsonRpcMessageCodec::<serde_json::Value>::new(protocol);
+        let mut buf = BytesMut::from(&b"{ not valid json }\n"[..]);
+
+        let item = codec
+            .decode(&mut buf)
+            .expect("a malformed line must not be a hard transport error");
+        assert!(item.is_none());
+    }
+
+    #[test]
+    fn decode_skips_malformed_content_length_frame_and_recovers() {
+        // Same guarantee for the Content-Length wire protocol: a bad body is
+        // skipped and the next well-framed message is still delivered.
+        let protocol = SharedProtocol::new();
+        protocol.set_if_unset(WireProtocol::ContentLength);
+        let mut codec = HybridJsonRpcMessageCodec::<serde_json::Value>::new(protocol);
+
+        let bad_body = b"{ not json }";
+        let good_body = serde_json::to_vec(&sample_message()).unwrap();
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(format!("Content-Length: {}\r\n\r\n", bad_body.len()).as_bytes());
+        buf.extend_from_slice(bad_body);
+        buf.extend_from_slice(format!("Content-Length: {}\r\n\r\n", good_body.len()).as_bytes());
+        buf.extend_from_slice(&good_body);
+
+        let item = codec
+            .decode(&mut buf)
+            .expect("a malformed CL frame must not be a hard transport error");
+        assert!(item.is_some(), "valid CL frame after a bad one must decode");
     }
 }

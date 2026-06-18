@@ -115,7 +115,8 @@ impl LeanCtxServer {
         let name_owned = name.to_string();
         tokio::task::spawn_blocking(move || {
             let pricing = crate::core::gain::model_pricing::ModelPricing::load();
-            let quote = pricing.quote_from_env_or_agent_type(&client_name);
+            // Honors a declared model for MCP-only IDEs (`[cost.models]`/default).
+            let quote = pricing.quote_for_client(&client_name);
             let cost_usd = quote
                 .cost
                 .estimate_usd(input_token_count, output_token_count_u64, 0, 0);

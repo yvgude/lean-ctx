@@ -563,7 +563,7 @@ pub fn cmd_cloud(args: &[String]) {
 /// `lean-ctx cloud autosync <on|off|status>` — toggle the daily background
 /// Personal-Cloud push (GL #384). The flag lives in `[cloud] auto_sync`.
 fn cmd_cloud_autosync(arg: Option<&str>) {
-    let mut config = core::config::Config::load();
+    let mut config = core::config::Config::load_global();
     match arg {
         Some("on") => {
             config.cloud.auto_sync = true;
@@ -611,7 +611,7 @@ fn cmd_cloud_autosync(arg: Option<&str>) {
 /// hosted-index push (GL #392). Separate flag from `autosync` because index
 /// bundles are megabytes, not kilobytes. The flag lives in `[cloud] auto_index`.
 fn cmd_cloud_autoindex(arg: Option<&str>) {
-    let mut config = core::config::Config::load();
+    let mut config = core::config::Config::load_global();
     match arg {
         Some("on") => {
             config.cloud.auto_index = true;
@@ -961,8 +961,12 @@ pub fn cmd_gotchas(args: &[String]) {
             println!("  Decayed/archived:    {}", store.stats.gotchas_decayed);
             println!("  Session logs:        {}", store.error_log.len());
         }
+        "reflect" | "ledger" => {
+            let store = core::gotcha_tracker::GotchaStore::load(&project_root);
+            println!("{}", core::gotcha_tracker::format_ledger(&store));
+        }
         _ => {
-            println!("Usage: lean-ctx gotchas [list|clear|export|stats]");
+            println!("Usage: lean-ctx gotchas [list|clear|export|stats|reflect]");
         }
     }
 }

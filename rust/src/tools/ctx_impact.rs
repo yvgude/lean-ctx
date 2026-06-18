@@ -473,13 +473,22 @@ type AnalyzedFile<'a> = (
     crate::core::deep_queries::DeepAnalysis,
 );
 
-/// Definition sites per symbol name: `name -> [(file, line_start, line_end)]`.
-type DefIndex = std::collections::HashMap<String, Vec<(String, usize, usize)>>;
+/// Definition sites per symbol name: `name -> [(file, namespace, line_start,
+/// line_end)]`. The namespace (C# only; `None` for other languages) lets
+/// resolution disambiguate homonyms declared in different namespaces (GH #398).
+type DefIndex = std::collections::HashMap<String, Vec<(String, Option<String>, usize, usize)>>;
+
+/// Extension-method definition sites: `method_name -> [(file, line_start,
+/// line_end)]`. Drives host resolution for `value.Foo()` extension calls where
+/// the definer's type is never named at the call site (GH #398).
+type ExtMethodIndex = std::collections::HashMap<String, Vec<(String, usize, usize)>>;
 
 /// Analyze every walked source file once (parallel) and build the global
-/// symbol-definition index `type name -> [(file, line_start, line_end)]`.
-/// Shared by full build and incremental update on both builder paths.
-fn analyze_all(file_contents: &[(String, String, String)]) -> (Vec<AnalyzedFile<'_>>, DefIndex) {
+/// symbol-definition index and the extension-method index. Shared by full
+/// build and incremental update on both builder paths.
+fn analyze_all(
+    file_contents: &[(String, String, String)],
+) -> (Vec<AnalyzedFile<'_>>, DefIndex, ExtMethodIndex) {
     use rayon::prelude::*;
     let per_file: Vec<AnalyzedFile<'_>> = file_contents
         .par_iter()
@@ -494,17 +503,26 @@ fn analyze_all(file_contents: &[(String, String, String)]) -> (Vec<AnalyzedFile<
         .collect();
 
     let mut def_index = DefIndex::new();
+    let mut ext_method_index = ExtMethodIndex::new();
     for (p, _, _, analysis) in &per_file {
         for t in &analysis.types {
             def_index.entry(t.name.clone()).or_default().push((
                 (*p).to_string(),
+                t.namespace.clone(),
                 t.line,
                 t.end_line,
             ));
         }
+        for m in &analysis.ext_methods {
+            ext_method_index.entry(m.name.clone()).or_default().push((
+                (*p).to_string(),
+                m.line,
+                m.end_line,
+            ));
+        }
     }
 
-    (per_file, def_index)
+    (per_file, def_index, ext_method_index)
 }
 
 /// Definition sites of types this file *uses* (field/param/base/generic/cast),
@@ -512,15 +530,22 @@ fn analyze_all(file_contents: &[(String, String, String)]) -> (Vec<AnalyzedFile<
 /// type_name, line_start, line_end)`. This is what connects C#/Java
 /// same-namespace consumers that have no import statement (GH #398).
 ///
-/// A name defined in more than `MAX_DEF_SITES` files is considered too
-/// generic to attribute (e.g. `Config` in a monorepo) and is skipped —
-/// recall for the common case without flooding the graph with noise.
+/// Hybrid, failsafe resolution:
+/// - A definer whose namespace is **visible** to the consumer (its own
+///   namespace + enclosing namespaces + `using`s) is always linked — even past
+///   the fallback cap — because the match is unambiguous evidence, and any
+///   homonym in a non-visible namespace is dropped (no cross-namespace leak).
+/// - With no visible match the global fallback links every definer, but drops
+///   names with more than `MAX_FALLBACK_DEF_SITES` definers as too generic to
+///   attribute (e.g. `Config` in a monorepo). Languages without namespaces
+///   (Java; C# global namespace) always take this path.
 fn type_ref_targets(
     def_index: &DefIndex,
     type_uses: &[crate::core::deep_queries::TypeUse],
     rel_path: &str,
+    visible_ns: &std::collections::HashSet<String>,
 ) -> Vec<(String, String, usize, usize)> {
-    const MAX_DEF_SITES: usize = 3;
+    const MAX_FALLBACK_DEF_SITES: usize = 5;
 
     let mut targets: Vec<(String, String, usize, usize)> = Vec::new();
     for type_use in type_uses {
@@ -528,17 +553,33 @@ fn type_ref_targets(
             continue;
         };
         // Defined in this very file -> self-reference, not a dependency.
-        let mut sites: Vec<&(String, usize, usize)> =
-            sites.iter().filter(|(f, _, _)| f != rel_path).collect();
-        sites.sort_unstable();
-        sites.dedup();
-        if sites.is_empty() || sites.len() > MAX_DEF_SITES {
+        let mut external: Vec<&(String, Option<String>, usize, usize)> =
+            sites.iter().filter(|(f, _, _, _)| f != rel_path).collect();
+        external.sort_unstable();
+        external.dedup();
+        if external.is_empty() {
             continue;
         }
+
+        // Namespace-confirmed matches win and bypass the cap.
+        let visible: Vec<&(String, Option<String>, usize, usize)> = external
+            .iter()
+            .copied()
+            .filter(|(_, ns, _, _)| ns.as_deref().is_some_and(|n| visible_ns.contains(n)))
+            .collect();
+
+        let chosen = if !visible.is_empty() {
+            visible
+        } else if external.len() <= MAX_FALLBACK_DEF_SITES {
+            external
+        } else {
+            continue;
+        };
+
         targets.extend(
-            sites
+            chosen
                 .into_iter()
-                .map(|(f, ls, le)| (f.clone(), type_use.name.clone(), *ls, *le)),
+                .map(|(f, _ns, ls, le)| (f.clone(), type_use.name.clone(), *ls, *le)),
         );
     }
     targets.sort();
@@ -556,10 +597,11 @@ fn insert_type_ref_edges(
     rel_path: &str,
     type_uses: &[crate::core::deep_queries::TypeUse],
     def_index: &DefIndex,
+    visible_ns: &std::collections::HashSet<String>,
 ) -> usize {
     let mut added = 0usize;
     for (target_file, type_name, line_start, line_end) in
-        type_ref_targets(def_index, type_uses, rel_path)
+        type_ref_targets(def_index, type_uses, rel_path, visible_ns)
     {
         let Ok(target_id) = graph.upsert_node(&Node::file(&target_file)) else {
             continue;
@@ -579,6 +621,93 @@ fn insert_type_ref_edges(
         }
     }
     added
+}
+
+/// Insert `TypeRef` edges for resolved C# extension-method calls: a
+/// `value.Foo()` call links the consuming file to the file that defines the
+/// `this`-parameter method `Foo`. Mirrors `insert_type_ref_edges` (file +
+/// symbol edge). Resolution is by method name alone, so the same self-filter
+/// and a failsafe cap keep it bounded; the index only ever holds genuine
+/// extension methods, which keeps the name space small and distinct.
+fn insert_ext_method_edges(
+    graph: &CodeGraph,
+    file_node_id: i64,
+    rel_path: &str,
+    calls: &[crate::core::deep_queries::CallSite],
+    ext_method_index: &ExtMethodIndex,
+) -> usize {
+    const MAX_EXT_DEF_SITES: usize = 5;
+
+    let mut targets: Vec<(String, String, usize, usize)> = Vec::new();
+    for call in calls {
+        if !call.is_method {
+            continue;
+        }
+        let Some(sites) = ext_method_index.get(&call.callee) else {
+            continue;
+        };
+        let mut external: Vec<&(String, usize, usize)> =
+            sites.iter().filter(|(f, _, _)| f != rel_path).collect();
+        external.sort_unstable();
+        external.dedup();
+        if external.is_empty() || external.len() > MAX_EXT_DEF_SITES {
+            continue;
+        }
+        targets.extend(
+            external
+                .into_iter()
+                .map(|(f, ls, le)| (f.clone(), call.callee.clone(), *ls, *le)),
+        );
+    }
+    targets.sort();
+    targets.dedup();
+
+    let mut added = 0usize;
+    for (target_file, method_name, line_start, line_end) in targets {
+        let Ok(target_id) = graph.upsert_node(&Node::file(&target_file)) else {
+            continue;
+        };
+        let _ = graph.upsert_edge(&Edge::new(file_node_id, target_id, EdgeKind::TypeRef));
+        added += 1;
+
+        let sym_node = Node::symbol(
+            &method_name,
+            &target_file,
+            crate::core::property_graph::NodeKind::Symbol,
+        )
+        .with_lines(line_start, line_end);
+        if let Ok(sym_id) = graph.upsert_node(&sym_node) {
+            let _ = graph.upsert_edge(&Edge::new(file_node_id, sym_id, EdgeKind::TypeRef));
+            added += 1;
+        }
+    }
+    added
+}
+
+/// Namespaces a C# file can resolve unqualified types from: its own type
+/// namespaces, every enclosing namespace (dot-prefix), and each `using`
+/// target. Used to confirm namespace-aware type matches (GH #398). Empty for
+/// other languages, which then always take the global fallback path.
+fn csharp_visible_namespaces(
+    analysis: &crate::core::deep_queries::DeepAnalysis,
+) -> std::collections::HashSet<String> {
+    let mut set: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for t in &analysis.types {
+        if let Some(ns) = &t.namespace {
+            // Own namespace + every enclosing one: `A.B.C` -> A.B.C, A.B, A.
+            let segs: Vec<&str> = ns.split('.').filter(|s| !s.is_empty()).collect();
+            for i in 1..=segs.len() {
+                set.insert(segs[..i].join("."));
+            }
+        }
+    }
+    for imp in &analysis.imports {
+        let src = imp.source.trim();
+        if !src.is_empty() {
+            set.insert(src.to_string());
+        }
+    }
+    set
 }
 
 fn normalize_git_path(line: &str) -> String {
@@ -649,12 +778,15 @@ fn resolve_call_callee_site(
     caller_file: &str,
 ) -> Option<(String, usize, usize)> {
     let sites = def_index.get(callee)?;
-    for (f, ls, le) in sites {
+    for (f, _ns, ls, le) in sites {
         if f == caller_file {
             return Some((f.clone(), *ls, *le));
         }
     }
-    let mut sorted: Vec<(String, usize, usize)> = sites.clone();
+    let mut sorted: Vec<(String, usize, usize)> = sites
+        .iter()
+        .map(|(f, _ns, ls, le)| (f.clone(), *ls, *le))
+        .collect();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
     sorted.into_iter().next()
 }
@@ -667,6 +799,7 @@ fn index_graph_file_embeddings(
     analysis: &crate::core::deep_queries::DeepAnalysis,
     resolver_ctx: &crate::core::import_resolver::ResolverContext,
     def_index: &DefIndex,
+    ext_method_index: &ExtMethodIndex,
 ) -> (usize, usize) {
     let mut total_nodes = 0usize;
     let mut total_edges = 0usize;
@@ -762,13 +895,27 @@ fn index_graph_file_embeddings(
 
     // Type-usage edges close the same-namespace gap (C#/Java, GH #398):
     // a file consuming a project type without importing it still depends on
-    // the defining file.
+    // the defining file. Resolution is namespace-aware for C#.
+    let visible_ns = if ext == "cs" {
+        csharp_visible_namespaces(analysis)
+    } else {
+        std::collections::HashSet::new()
+    };
     total_edges += insert_type_ref_edges(
         graph,
         file_node_id,
         rel_path,
         &analysis.type_uses,
         def_index,
+        &visible_ns,
+    );
+    // Extension-method calls (`value.Foo()`) depend on the defining file too.
+    total_edges += insert_ext_method_edges(
+        graph,
+        file_node_id,
+        rel_path,
+        &analysis.calls,
+        ext_method_index,
     );
 
     (total_nodes, total_edges)
@@ -783,6 +930,7 @@ fn index_graph_file_minimal(
     analysis: &crate::core::deep_queries::DeepAnalysis,
     resolver_ctx: &crate::core::import_resolver::ResolverContext,
     def_index: &DefIndex,
+    ext_method_index: &ExtMethodIndex,
 ) -> (usize, usize) {
     let Ok(file_node_id) = graph.upsert_node(&Node::file(rel_path)) else {
         return (0, 0);
@@ -834,12 +982,25 @@ fn index_graph_file_minimal(
 
     // Same-namespace type consumption (C#/Java, GH #398) — see the
     // embeddings-path counterpart in `index_graph_file_embeddings`.
+    let visible_ns = if ext == "cs" {
+        csharp_visible_namespaces(analysis)
+    } else {
+        std::collections::HashSet::new()
+    };
     total_edges += insert_type_ref_edges(
         graph,
         file_node_id,
         rel_path,
         &analysis.type_uses,
         def_index,
+        &visible_ns,
+    );
+    total_edges += insert_ext_method_edges(
+        graph,
+        file_node_id,
+        rel_path,
+        &analysis.calls,
+        ext_method_index,
     );
 
     let exports: Vec<String> = analysis
@@ -913,12 +1074,19 @@ fn handle_build(root: &str, fmt: OutputFormat) -> String {
     let mut total_nodes = 0usize;
     let mut total_edges = 0usize;
 
-    let (per_file, def_index) = analyze_all(&file_contents);
+    let (per_file, def_index, ext_method_index) = analyze_all(&file_contents);
 
     #[cfg(feature = "embeddings")]
     for (rel_path, _content, ext, analysis) in &per_file {
-        let (n, e) =
-            index_graph_file_embeddings(&graph, rel_path, ext, analysis, &resolver_ctx, &def_index);
+        let (n, e) = index_graph_file_embeddings(
+            &graph,
+            rel_path,
+            ext,
+            analysis,
+            &resolver_ctx,
+            &def_index,
+            &ext_method_index,
+        );
         total_nodes += n;
         total_edges += e;
     }
@@ -933,6 +1101,7 @@ fn handle_build(root: &str, fmt: OutputFormat) -> String {
             analysis,
             &resolver_ctx,
             &def_index,
+            &ext_method_index,
         );
         total_nodes += n;
         total_edges += e;
@@ -1032,7 +1201,7 @@ fn handle_update(root: &str, fmt: OutputFormat) -> String {
         &cs_contents,
     );
 
-    let (per_file, def_index) = analyze_all(&file_contents);
+    let (per_file, def_index, ext_method_index) = analyze_all(&file_contents);
 
     let mut total_nodes = 0usize;
     let mut total_edges = 0usize;
@@ -1073,6 +1242,7 @@ fn handle_update(root: &str, fmt: OutputFormat) -> String {
                 analysis,
                 &resolver_ctx,
                 &def_index,
+                &ext_method_index,
             );
             total_nodes += n;
             total_edges += e;
@@ -1088,6 +1258,7 @@ fn handle_update(root: &str, fmt: OutputFormat) -> String {
                 analysis,
                 &resolver_ctx,
                 &def_index,
+                &ext_method_index,
             );
             total_nodes += n;
             total_edges += e;
@@ -1346,24 +1517,46 @@ mod tests {
         assert!(result.contains("Unknown action"));
     }
 
-    /// GH #398: the TypeRef target resolution — unique definers connect,
-    /// self-references are skipped, over-generic names (>3 definers) are
-    /// dropped, and output is sorted + deduped (determinism, #498).
+    /// GH #398 (+ #641 namespace-aware): the TypeRef target resolution —
+    /// unique definers connect, self-references are skipped, over-generic names
+    /// (> fallback cap of 5 with no namespace match) are dropped, a definer in
+    /// the consumer's visible namespace is linked even past the cap while its
+    /// homonyms are discarded, and output is sorted + deduped (determinism,
+    /// #498).
     #[test]
     fn type_ref_targets_resolution_rules() {
-        let mut def_index: std::collections::HashMap<String, Vec<(String, usize, usize)>> =
+        type Sites = Vec<(String, Option<String>, usize, usize)>;
+        let mut def_index: std::collections::HashMap<String, Sites> =
             std::collections::HashMap::new();
-        def_index.insert("Engine".into(), vec![("Models/Engine.cs".into(), 1, 5)]);
-        def_index.insert("Motor".into(), vec![("Services/Motor.cs".into(), 1, 9)]);
+        def_index.insert(
+            "Engine".into(),
+            vec![("Models/Engine.cs".into(), Some("App.Core".into()), 1, 5)],
+        );
+        def_index.insert(
+            "Motor".into(),
+            vec![("Services/Motor.cs".into(), Some("App.Core".into()), 1, 9)],
+        );
+        // Six definers, no namespace info -> exceeds the fallback cap (5).
         def_index.insert(
             "Config".into(),
+            (0..6)
+                .map(|i| (format!("p{i}/Config.cs"), None, 1usize, 2usize))
+                .collect(),
+        );
+        // Same name, two namespaces — one visible to the consumer, one not.
+        def_index.insert(
+            "Widget".into(),
             vec![
-                ("a/Config.cs".into(), 1, 2),
-                ("b/Config.cs".into(), 1, 2),
-                ("c/Config.cs".into(), 1, 2),
-                ("d/Config.cs".into(), 1, 2),
+                ("Foo/Widget.cs".into(), Some("App.Foo".into()), 1, 4),
+                ("Bar/Widget.cs".into(), Some("App.Bar".into()), 1, 4),
             ],
         );
+        // Seven definers, one of them in the visible namespace -> cap bypass.
+        let mut crowded: Sites = (0..6)
+            .map(|i| (format!("n{i}/Gadget.cs"), Some(format!("App.N{i}")), 1, 3))
+            .collect();
+        crowded.push(("Foo/Gadget.cs".into(), Some("App.Foo".into()), 1, 3));
+        def_index.insert("Gadget".into(), crowded);
 
         let uses = |names: &[&str]| -> Vec<crate::core::deep_queries::TypeUse> {
             names
@@ -1374,22 +1567,48 @@ mod tests {
                 })
                 .collect()
         };
+        let visible: std::collections::HashSet<String> = ["App.Foo".to_string(), "App".to_string()]
+            .into_iter()
+            .collect();
+        let none = std::collections::HashSet::new();
 
         // Unique definer in another file -> edge target with symbol site.
         assert_eq!(
-            type_ref_targets(&def_index, &uses(&["Engine"]), "Services/Motor.cs"),
+            type_ref_targets(&def_index, &uses(&["Engine"]), "Services/Motor.cs", &none),
             vec![("Models/Engine.cs".to_string(), "Engine".to_string(), 1, 5)]
         );
         // Using one's own type -> no self edge.
-        assert!(type_ref_targets(&def_index, &uses(&["Motor"]), "Services/Motor.cs").is_empty());
-        // Defined in 4 files -> too generic, skipped.
-        assert!(type_ref_targets(&def_index, &uses(&["Config"]), "Services/Motor.cs").is_empty());
+        assert!(
+            type_ref_targets(&def_index, &uses(&["Motor"]), "Services/Motor.cs", &none).is_empty()
+        );
+        // Defined in 6 files, no namespace match -> too generic, skipped.
+        assert!(
+            type_ref_targets(&def_index, &uses(&["Config"]), "Services/Motor.cs", &none).is_empty()
+        );
         // Unknown / external types -> nothing.
-        assert!(type_ref_targets(&def_index, &uses(&["String"]), "x.cs").is_empty());
+        assert!(type_ref_targets(&def_index, &uses(&["String"]), "x.cs", &none).is_empty());
         // Duplicate uses collapse into one sorted target list.
         assert_eq!(
-            type_ref_targets(&def_index, &uses(&["Engine", "Engine"]), "x.cs"),
+            type_ref_targets(&def_index, &uses(&["Engine", "Engine"]), "x.cs", &none),
             vec![("Models/Engine.cs".to_string(), "Engine".to_string(), 1, 5)]
+        );
+        // Namespace disambiguation: only the visible-namespace definer links.
+        assert_eq!(
+            type_ref_targets(&def_index, &uses(&["Widget"]), "Foo/Garage.cs", &visible),
+            vec![("Foo/Widget.cs".to_string(), "Widget".to_string(), 1, 4)]
+        );
+        // Without a visible namespace, both homonyms link (<= cap fallback).
+        assert_eq!(
+            type_ref_targets(&def_index, &uses(&["Widget"]), "Foo/Garage.cs", &none),
+            vec![
+                ("Bar/Widget.cs".to_string(), "Widget".to_string(), 1, 4),
+                ("Foo/Widget.cs".to_string(), "Widget".to_string(), 1, 4),
+            ]
+        );
+        // Cap bypass: 7 definers, but the one in the visible namespace links.
+        assert_eq!(
+            type_ref_targets(&def_index, &uses(&["Gadget"]), "Foo/Garage.cs", &visible),
+            vec![("Foo/Gadget.cs".to_string(), "Gadget".to_string(), 1, 3)]
         );
     }
 
@@ -1631,6 +1850,289 @@ mod tests {
             healed.engine_version,
             crate::core::property_graph::GRAPH_ENGINE_VERSION,
             "self-heal must re-stamp the current engine version"
+        );
+    }
+
+    /// End-to-end regression for GH #398 (expression-position follow-up): a C#
+    /// file that consumes types only through static calls, enum values or
+    /// attributes — no `using`, no `new`, no field/param of that type — must
+    /// still land in the blast radius of the defining file.
+    ///
+    /// Gated on `tree-sitter` (not `embeddings`) on purpose: the existing #398
+    /// e2e tests only run under `embeddings`, leaving the
+    /// `index_graph_file_minimal` builder path untested. This test exercises
+    /// both builder paths (it runs whenever the C# grammar is available).
+    #[cfg(feature = "tree-sitter")]
+    #[test]
+    fn csharp_expression_position_type_use_is_not_a_leaf() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("Models")).unwrap();
+        std::fs::create_dir_all(root.join("Attributes")).unwrap();
+        std::fs::create_dir_all(root.join("Services")).unwrap();
+
+        // Static factory + static field, used by a consumer via `Engine.X`.
+        std::fs::write(
+            root.join("Models/Engine.cs"),
+            "namespace App.Core;\n\n\
+             public class Engine\n{\n\
+             \x20   public static Engine Create() => new Engine();\n\
+             \x20   public static readonly int Default = 0;\n}\n",
+        )
+        .unwrap();
+        // Enum, consumed only as `Status.Active`.
+        std::fs::write(
+            root.join("Models/Status.cs"),
+            "namespace App.Core;\n\npublic enum Status { Active, Inactive }\n",
+        )
+        .unwrap();
+        // Attribute class, consumed only as `[ApiController]`.
+        std::fs::write(
+            root.join("Attributes/ApiControllerAttribute.cs"),
+            "using System;\n\nnamespace App.Core;\n\n\
+             public class ApiControllerAttribute : Attribute { }\n",
+        )
+        .unwrap();
+        // Consumer: ONLY expression-position usage — no using/new/field/param.
+        std::fs::write(
+            root.join("Services/Garage.cs"),
+            "namespace App.Core;\n\n\
+             [ApiController]\n\
+             public class Garage\n{\n\
+             \x20   public void Boot()\n    {\n\
+             \x20       var e = Engine.Create();\n\
+             \x20       var s = Status.Active;\n    }\n}\n",
+        )
+        .unwrap();
+        // Unrelated control: must NOT appear in any blast radius (non-vacuous).
+        std::fs::write(
+            root.join("Services/Logger.cs"),
+            "namespace App.Core;\n\n\
+             public class Logger\n{\n    public void Log(string m) { }\n}\n",
+        )
+        .unwrap();
+
+        let root_str = root.to_string_lossy().to_string();
+        let out = handle("build", None, &root_str, None, Some("text"));
+        assert!(!out.contains("ERROR"), "graph build failed: {out}");
+
+        let graph =
+            crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
+        let affected = |file: &str| -> Vec<String> {
+            graph
+                .impact_analysis(file, 5)
+                .expect("impact analysis")
+                .affected_files
+        };
+
+        let engine_aff = affected("Models/Engine.cs");
+        assert!(
+            engine_aff.contains(&"Services/Garage.cs".to_string()),
+            "static-call consumer (no using/new) must be affected by Engine.cs; got: {engine_aff:?}"
+        );
+        assert!(
+            !engine_aff.contains(&"Services/Logger.cs".to_string()),
+            "unrelated file must NOT be affected by Engine.cs; got: {engine_aff:?}"
+        );
+
+        let status_aff = affected("Models/Status.cs");
+        assert!(
+            status_aff.contains(&"Services/Garage.cs".to_string()),
+            "enum-value consumer must be affected by Status.cs; got: {status_aff:?}"
+        );
+
+        let attr_aff = affected("Attributes/ApiControllerAttribute.cs");
+        assert!(
+            attr_aff.contains(&"Services/Garage.cs".to_string()),
+            "attribute consumer must be affected by ApiControllerAttribute.cs; got: {attr_aff:?}"
+        );
+    }
+
+    /// GH #398 follow-up (extension methods, #642): an extension method
+    /// `value.WordCount()` makes the consuming file depend on the file that
+    /// *defines* the extension — the receiver is an instance and the definer's
+    /// type name is never written, so neither import- nor type-usage edges
+    /// connect them. Only a method-host edge does. Gated on `tree-sitter` so
+    /// both builder paths (embeddings + minimal) are exercised.
+    #[cfg(feature = "tree-sitter")]
+    #[test]
+    fn csharp_extension_method_host_is_in_blast_radius() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("Extensions")).unwrap();
+        std::fs::create_dir_all(root.join("Services")).unwrap();
+
+        // Extension host: static class, first parameter carries `this`. Same
+        // namespace as the consumer, so it is callable without a `using` —
+        // which keeps the test free of any import edge.
+        std::fs::write(
+            root.join("Extensions/StringExtensions.cs"),
+            "namespace App.Core;\n\n\
+             public static class StringExtensions\n{\n\
+             \x20   public static int WordCount(this string s) => s.Length;\n}\n",
+        )
+        .unwrap();
+        // Consumer: calls the extension as if it were an instance method.
+        std::fs::write(
+            root.join("Services/Report.cs"),
+            "namespace App.Core;\n\n\
+             public class Report\n{\n\
+             \x20   public int Count(string text) => text.WordCount();\n}\n",
+        )
+        .unwrap();
+        // Unrelated control: must NOT be linked (non-vacuous).
+        std::fs::write(
+            root.join("Services/Logger.cs"),
+            "namespace App.Core;\n\n\
+             public class Logger\n{\n    public void Log(string m) { }\n}\n",
+        )
+        .unwrap();
+
+        let root_str = root.to_string_lossy().to_string();
+        let out = handle("build", None, &root_str, None, Some("text"));
+        assert!(!out.contains("ERROR"), "graph build failed: {out}");
+
+        let graph =
+            crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
+        let affected = graph
+            .impact_analysis("Extensions/StringExtensions.cs", 5)
+            .expect("impact analysis")
+            .affected_files;
+        assert!(
+            affected.contains(&"Services/Report.cs".to_string()),
+            "extension-method consumer must be in the host's blast radius; got: {affected:?}"
+        );
+        assert!(
+            !affected.contains(&"Services/Logger.cs".to_string()),
+            "unrelated file must NOT be affected; got: {affected:?}"
+        );
+    }
+
+    /// GH #398 follow-up (namespace-aware resolution, #641): two project types
+    /// share a name in different namespaces. A consumer that sees only one of
+    /// them (its own namespace) must link to *that* definer and not the
+    /// homonym in an unrelated namespace. The pre-fix resolver linked both.
+    #[cfg(feature = "tree-sitter")]
+    #[test]
+    fn csharp_type_use_namespace_disambiguation() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("Foo")).unwrap();
+        std::fs::create_dir_all(root.join("Bar")).unwrap();
+
+        // Same type name, two namespaces.
+        std::fs::write(
+            root.join("Foo/Engine.cs"),
+            "namespace App.Foo;\n\n\
+             public class Engine\n{\n    public int Power { get; set; }\n}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("Bar/Engine.cs"),
+            "namespace App.Bar;\n\n\
+             public class Engine\n{\n    public int Torque { get; set; }\n}\n",
+        )
+        .unwrap();
+        // Consumer in App.Foo, no `using` — only `App.Foo.Engine` is visible.
+        std::fs::write(
+            root.join("Foo/Garage.cs"),
+            "namespace App.Foo;\n\n\
+             public class Garage\n{\n    private readonly Engine _engine;\n\n\
+             \x20   public Garage(Engine engine)\n    {\n        _engine = engine;\n    }\n}\n",
+        )
+        .unwrap();
+
+        let root_str = root.to_string_lossy().to_string();
+        let out = handle("build", None, &root_str, None, Some("text"));
+        assert!(!out.contains("ERROR"), "graph build failed: {out}");
+
+        let graph =
+            crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
+        let affected = |file: &str| -> Vec<String> {
+            graph
+                .impact_analysis(file, 5)
+                .expect("impact analysis")
+                .affected_files
+        };
+
+        assert!(
+            affected("Foo/Engine.cs").contains(&"Foo/Garage.cs".to_string()),
+            "consumer must depend on the same-namespace Engine; got: {:?}",
+            affected("Foo/Engine.cs")
+        );
+        assert!(
+            !affected("Bar/Engine.cs").contains(&"Foo/Garage.cs".to_string()),
+            "consumer must NOT depend on the homonym in another namespace; got: {:?}",
+            affected("Bar/Engine.cs")
+        );
+    }
+
+    /// GH #398 follow-up (cap bypass, #641): a type name defined in more files
+    /// than the failsafe fallback cap is normally dropped as too generic. But
+    /// when exactly one definer sits in the consumer's visible namespace, that
+    /// unambiguous match must still be linked — the namespace evidence beats
+    /// the global cap. The pre-fix resolver dropped the name entirely.
+    #[cfg(feature = "tree-sitter")]
+    #[test]
+    fn csharp_type_use_namespace_cap_bypass() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+
+        // Six definers of `Widget` — past the fallback cap (5).
+        let homonym_dirs = ["N1", "N2", "N3", "N4", "N5"];
+        for d in homonym_dirs {
+            std::fs::create_dir_all(root.join(d)).unwrap();
+            std::fs::write(
+                root.join(d).join("Widget.cs"),
+                format!(
+                    "namespace App.{d};\n\npublic class Widget\n{{\n    public int Id {{ get; set; }}\n}}\n"
+                ),
+            )
+            .unwrap();
+        }
+        // The visible one, in the consumer's own namespace.
+        std::fs::create_dir_all(root.join("Foo")).unwrap();
+        std::fs::write(
+            root.join("Foo/Widget.cs"),
+            "namespace App.Foo;\n\npublic class Widget\n{\n    public int Tag { get; set; }\n}\n",
+        )
+        .unwrap();
+        // Consumer in App.Foo, no `using`.
+        std::fs::write(
+            root.join("Foo/Dashboard.cs"),
+            "namespace App.Foo;\n\n\
+             public class Dashboard\n{\n    private readonly Widget _widget;\n\n\
+             \x20   public Dashboard(Widget widget)\n    {\n        _widget = widget;\n    }\n}\n",
+        )
+        .unwrap();
+
+        let root_str = root.to_string_lossy().to_string();
+        let out = handle("build", None, &root_str, None, Some("text"));
+        assert!(!out.contains("ERROR"), "graph build failed: {out}");
+
+        let graph =
+            crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
+        let affected = |file: &str| -> Vec<String> {
+            graph
+                .impact_analysis(file, 5)
+                .expect("impact analysis")
+                .affected_files
+        };
+
+        assert!(
+            affected("Foo/Widget.cs").contains(&"Foo/Dashboard.cs".to_string()),
+            "unambiguous same-namespace match must bypass the cap; got: {:?}",
+            affected("Foo/Widget.cs")
+        );
+        // The homonyms in other namespaces stay unlinked.
+        assert!(
+            !affected("N1/Widget.cs").contains(&"Foo/Dashboard.cs".to_string()),
+            "out-of-namespace homonym must NOT be linked; got: {:?}",
+            affected("N1/Widget.cs")
         );
     }
 }

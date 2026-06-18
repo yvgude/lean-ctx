@@ -389,6 +389,33 @@ impl SessionCache {
             .and_then(CacheEntry::content)
     }
 
+    /// Staleness-safe accessor for the *current* full content and its token
+    /// count: returns the cached copy when it is still fresh, or a fresh disk
+    /// re-read when the cached copy is stale (mtime/hash changed since it was
+    /// cached). Returns `None` when there is no cache entry, or the entry is
+    /// stale and the file can no longer be read.
+    ///
+    /// Cross-agent / retrieve paths (`ctx_retrieve`, `ctx_share`) MUST use this
+    /// instead of [`get_full_content`](Self::get_full_content): serving the raw
+    /// cached copy hands an agent a version that may no longer match disk — e.g.
+    /// a handover file edited between two agents — silently feeding it stale
+    /// context. Validation uses the entry's stored absolute `path`, because a
+    /// caller's `path` may be relative and resolve against a different CWD.
+    pub fn current_full_content(&self, path: &str) -> Option<(String, usize)> {
+        let entry = self.entries.get(&normalize_key(path))?;
+        if is_cache_entry_stale_verified(&entry.path, entry.stored_mtime, &entry.hash)
+            && let Ok(fresh) = crate::core::io_boundary::read_file_lossy(&entry.path)
+        {
+            // Cache is behind disk → serve the current bytes. If the file is now
+            // unreadable (deleted/permission), fall through to the cached copy:
+            // last-known content beats nothing, and that fall-through is not the
+            // staleness bug (it only fires when there is no current content).
+            let tokens = count_tokens(&fresh);
+            return Some((fresh, tokens));
+        }
+        Some((entry.content()?, entry.original_tokens))
+    }
+
     /// Records a cache hit, updates access stats, and emits a cache-hit event.
     ///
     /// Takes `&self`: the hit counters use interior-mutable atomics, so this
@@ -873,6 +900,73 @@ mod tests {
         assert_eq!(stats.total_reads(), 2);
         assert_eq!(stats.cache_hits(), 1);
         assert!(stats.hit_rate() > 0.0);
+    }
+
+    #[test]
+    fn current_full_content_serves_cached_when_fresh() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("handover.md");
+        std::fs::write(&file, "HANDOVER V1\n").unwrap();
+        let path = file.to_str().unwrap();
+
+        let mut cache = SessionCache::new();
+        cache.store(path, "HANDOVER V1\n");
+
+        let (content, tokens) = cache.current_full_content(path).unwrap();
+        assert_eq!(content, "HANDOVER V1\n");
+        assert!(tokens > 0);
+    }
+
+    #[test]
+    fn current_full_content_rereads_when_file_changed() {
+        // Handover staleness: a file cached by agent A and then edited must not
+        // be served from the stale cache to agent B (ctx_retrieve / ctx_share).
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("handover.md");
+        std::fs::write(&file, "HANDOVER V1\n").unwrap();
+        let path = file.to_str().unwrap();
+
+        let mut cache = SessionCache::new();
+        cache.store(path, "HANDOVER V1\n");
+
+        // Simulate an edit between agents (new mtime + new content).
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::fs::write(&file, "HANDOVER V2 CHANGED\n").unwrap();
+
+        let (content, _) = cache.current_full_content(path).unwrap();
+        assert_eq!(
+            content, "HANDOVER V2 CHANGED\n",
+            "stale cached copy must be re-read from disk, not served as-is"
+        );
+    }
+
+    #[test]
+    fn current_full_content_none_without_entry() {
+        let cache = SessionCache::new();
+        assert!(cache.current_full_content("/no/such/file.rs").is_none());
+    }
+
+    #[test]
+    fn current_full_content_falls_back_to_cache_when_file_unreadable() {
+        // Stale + now-unreadable (deleted/moved): there is no current content to
+        // serve, so the last-known cached copy is returned rather than nothing.
+        // Canonicalize the temp dir up front so the cache key is stable after the
+        // file is removed (macOS /var -> /private/var symlink).
+        let dir = tempfile::tempdir().unwrap();
+        let canon = dir.path().canonicalize().unwrap();
+        let file = canon.join("gone.md");
+        std::fs::write(&file, "ORIGINAL\n").unwrap();
+        let path = file.to_str().unwrap().to_string();
+
+        let mut cache = SessionCache::new();
+        cache.store(&path, "ORIGINAL\n");
+        std::fs::remove_file(&file).unwrap();
+
+        let (content, _) = cache.current_full_content(&path).unwrap();
+        assert_eq!(
+            content, "ORIGINAL\n",
+            "unreadable file must fall back to last-known cached content"
+        );
     }
 
     #[test]

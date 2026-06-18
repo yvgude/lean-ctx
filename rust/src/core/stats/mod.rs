@@ -14,6 +14,12 @@ static STATS_BUFFER: Mutex<Option<(StatsStore, StatsStore, Instant)>> = Mutex::n
 
 const FLUSH_INTERVAL_SECS: u64 = 30;
 
+/// Daily savings history retained on disk (~10 years of active days). This is a
+/// storage/sync safety bound, NOT a display limit: all-time token totals are
+/// unbounded, and the cumulative-savings chart baselines any pre-window savings
+/// so it always reaches the true all-time total regardless of this window.
+pub(super) const MAX_DAILY_HISTORY_DAYS: usize = 3650;
+
 pub fn load() -> StatsStore {
     let guard = STATS_BUFFER
         .lock()
@@ -137,8 +143,10 @@ pub fn record(command: &str, input_tokens: usize, output_tokens: usize) {
         });
     }
 
-    if store.daily.len() > 90 {
-        store.daily.drain(..store.daily.len() - 90);
+    if store.daily.len() > MAX_DAILY_HISTORY_DAYS {
+        store
+            .daily
+            .drain(..store.daily.len() - MAX_DAILY_HISTORY_DAYS);
     }
 
     if is_first_command {

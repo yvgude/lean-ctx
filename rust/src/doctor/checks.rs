@@ -894,6 +894,83 @@ pub(super) fn proxy_upstream_outcome() -> Outcome {
     }
 }
 
+/// #449 drift check: warns when the running proxy forwards to a different
+/// upstream than the operator expects. Covers both traps — a shell-exported
+/// `LEAN_CTX_*_UPSTREAM` that never reached the MCP/service-spawned proxy, and a
+/// proxy started with an env override that now masks a later config.toml edit.
+/// Returns `None` when the proxy is down or in sync, so the board stays quiet
+/// unless there is something actionable.
+pub(super) fn proxy_upstream_drift_outcome() -> Option<Outcome> {
+    use crate::core::config::{
+        Config, ProxyProvider, UpstreamDrift, diagnose_drift, env_upstream_override,
+    };
+
+    let cfg = Config::load();
+    if cfg.proxy_enabled != Some(true) {
+        return None;
+    }
+    let port = crate::proxy_setup::default_port();
+    let (live_anthropic, live_openai, live_gemini) = proxy_live_upstreams(port)?;
+    let disk = cfg.proxy.resolve_all_disk();
+
+    let mut env_not_applied = Vec::new();
+    let mut config_not_applied = Vec::new();
+    for (label, key, provider, disk_val, live) in [
+        (
+            "Anthropic",
+            "anthropic",
+            ProxyProvider::Anthropic,
+            &disk.anthropic,
+            &live_anthropic,
+        ),
+        (
+            "OpenAI",
+            "openai",
+            ProxyProvider::OpenAi,
+            &disk.openai,
+            &live_openai,
+        ),
+        (
+            "Gemini",
+            "gemini",
+            ProxyProvider::Gemini,
+            &disk.gemini,
+            &live_gemini,
+        ),
+    ] {
+        let env = env_upstream_override(provider);
+        match diagnose_drift(env.as_deref(), disk_val, live) {
+            Some(UpstreamDrift::EnvNotApplied) => {
+                env_not_applied.push(format!(
+                    "{label} → `lean-ctx config set proxy.{key}_upstream`"
+                ));
+            }
+            Some(UpstreamDrift::ConfigNotApplied) => {
+                config_not_applied.push(format!("{label} live {live} ≠ config {disk_val}"));
+            }
+            None => {}
+        }
+    }
+
+    if env_not_applied.is_empty() && config_not_applied.is_empty() {
+        return None;
+    }
+    let mut line = format!("{BOLD}Proxy upstream drift{RST}");
+    if !env_not_applied.is_empty() {
+        line.push_str(&format!(
+            "  {YELLOW}LEAN_CTX_*_UPSTREAM set in this shell but not reaching the proxy — env never reaches an MCP/service-spawned proxy (#449); persist it (applies live): {}{RST}",
+            env_not_applied.join(", ")
+        ));
+    }
+    if !config_not_applied.is_empty() {
+        line.push_str(&format!(
+            "  {YELLOW}{} — apply: lean-ctx proxy restart{RST}",
+            config_not_applied.join("; ")
+        ));
+    }
+    Some(Outcome { ok: false, line })
+}
+
 pub(super) fn cache_safety_outcome() -> Outcome {
     use crate::core::neural::cache_alignment::CacheAlignedOutput;
     use crate::core::provider_cache::ProviderCacheState;

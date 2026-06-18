@@ -271,6 +271,27 @@ mod tests {
     }
 
     #[test]
+    fn minimal_profile_schema_budget() {
+        // tool_profile=minimal advertises the 6-tool lean set; the schemas they
+        // re-send every turn (description + input schema) must stay small — this
+        // is the tool-side of the faithful-arm per-turn prefix tax (#361). We
+        // sum the registry's *uncompressed* schemas (a strict upper bound on the
+        // advertised, description-compressed surface).
+        const MINIMAL_SCHEMA_BUDGET_TOKENS: usize = 1500;
+        let defs = crate::server::registry::build_registry().tool_defs();
+        let total: usize = defs
+            .iter()
+            .filter(|t| MINIMAL_TOOLS.contains(&t.name.as_ref()))
+            .map(crate::core::context_overhead::tool_tokens)
+            .sum();
+        assert!(total > 0, "minimal tools must exist in the registry");
+        assert!(
+            total <= MINIMAL_SCHEMA_BUDGET_TOKENS,
+            "minimal-profile tool schemas = {total} tok, budget {MINIMAL_SCHEMA_BUDGET_TOKENS}"
+        );
+    }
+
+    #[test]
     fn standard_has_22_tools() {
         assert_eq!(STANDARD_TOOLS.len(), 22);
     }

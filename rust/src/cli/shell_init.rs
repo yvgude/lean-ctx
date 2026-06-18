@@ -69,7 +69,7 @@ fn write_hook_file(filename: &str, content: &str) -> Option<std::path::PathBuf> 
 
 fn resolved_hook_dir_display() -> String {
     config_artifact_dir().map_or_else(
-        || "$HOME/.lean-ctx".to_string(),
+        || "$HOME/.config/lean-ctx".to_string(),
         |p| p.to_string_lossy().to_string(),
     )
 }
@@ -696,7 +696,11 @@ _lc_compress() { command "$@"; }
 # Guards: container-only + no recursion + no re-entry via BASH_ENV + 60s cooldown + PID-lock
 if [ -f /.dockerenv ] || grep -qsE '/docker/|/lxc/' /proc/1/cgroup 2>/dev/null; then
   if [ -z "${LEAN_CTX_ACTIVE:-}" ] && [ -z "${_LEAN_CTX_HEAL:-}" ]; then
-    _LEAN_CTX_HEAL_TS="${HOME}/.lean-ctx/.heal_ts"
+    # XDG-only paths (GL #623): never touch ~/.lean-ctx, which would re-collapse
+    # a committed XDG layout. heal_ts is STATE, locks live in the DATA dir
+    # (matches process_guard::lock_dir defaults).
+    _LEAN_CTX_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/lean-ctx"
+    _LEAN_CTX_HEAL_TS="${_LEAN_CTX_STATE_DIR}/.heal_ts"
     _LEAN_CTX_HEAL_COOLDOWN=60
     _lean_ctx_heal_needed=1
     if [ -f "$_LEAN_CTX_HEAL_TS" ]; then
@@ -707,7 +711,7 @@ if [ -f /.dockerenv ] || grep -qsE '/docker/|/lxc/' /proc/1/cgroup 2>/dev/null; 
       fi
     fi
     _lean_ctx_lock_count=0
-    for _lf in "${HOME}/.lean-ctx/locks"/slot-*.lock; do
+    for _lf in "${XDG_DATA_HOME:-$HOME/.local/share}/lean-ctx/locks"/slot-*.lock; do
       [ -f "$_lf" ] && _lean_ctx_lock_count=$(( _lean_ctx_lock_count + 1 ))
     done
     if [ "$_lean_ctx_heal_needed" = "1" ] && [ "$_lean_ctx_lock_count" -lt 4 ]; then
@@ -715,6 +719,7 @@ if [ -f /.dockerenv ] || grep -qsE '/docker/|/lxc/' /proc/1/cgroup 2>/dev/null; 
       if command -v claude >/dev/null 2>&1 && command -v lean-ctx >/dev/null 2>&1; then
         if ! claude mcp list 2>/dev/null | grep -q "lean-ctx"; then
           LEAN_CTX_ACTIVE=1 LEAN_CTX_QUIET=1 lean-ctx init --agent claude >/dev/null 2>&1
+          mkdir -p "$_LEAN_CTX_STATE_DIR" 2>/dev/null
           date +%s > "$_LEAN_CTX_HEAL_TS" 2>/dev/null
         fi
       fi
@@ -739,7 +744,7 @@ fn print_docker_env_hints(is_zsh: bool) {
         return;
     }
     let env_sh = crate::core::paths::config_dir().map_or_else(
-        |_| "/root/.lean-ctx/env.sh".to_string(),
+        |_| "/root/.config/lean-ctx/env.sh".to_string(),
         |d| d.join("env.sh").to_string_lossy().to_string(),
     );
 
@@ -1058,6 +1063,21 @@ export EDITOR=vim
         assert!(
             content.contains("/.dockerenv"),
             "env.sh self-heal must be gated to container environments"
+        );
+        // GL #623/#627: the self-heal must never create or read ~/.lean-ctx,
+        // which would re-collapse a committed XDG layout. heal_ts → XDG state,
+        // lock count → XDG data.
+        assert!(
+            !content.contains("$HOME/.lean-ctx") && !content.contains("${HOME}/.lean-ctx"),
+            "self-heal must not touch ~/.lean-ctx (GL #623)"
+        );
+        assert!(
+            content.contains("${XDG_STATE_HOME:-$HOME/.local/state}/lean-ctx"),
+            "heal_ts must live under the XDG state dir"
+        );
+        assert!(
+            content.contains("${XDG_DATA_HOME:-$HOME/.local/share}/lean-ctx/locks"),
+            "lock count must read the XDG data lock dir"
         );
 
         crate::test_env::remove_var("LEAN_CTX_CONFIG_DIR");

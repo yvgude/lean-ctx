@@ -39,6 +39,7 @@ Top-level configuration keys
 - `output_density` (enum: normal | terse | ultra, default `normal` — env `LEAN_CTX_OUTPUT_DENSITY`) — Controls how dense/compact MCP tool output is formatted
 - `passthrough_urls` (string[], default `[]`) — URLs to pass through without proxy interception
 - `permission_inheritance` (enum: off | on, default `off`) — Mirror the host IDE's permission rules onto lean-ctx tools (v1: OpenCode). When on, ctx_shell honors your bash/rm * rules instead of bypassing them. Override via LEAN_CTX_PERMISSION_INHERITANCE
+- `prefer_native_editor` (bool, default `false`) — Disable lean-ctx edit tools (ctx_edit) so the host's native editor handles edits (#454)
 - `preserve_compact_formats` (string[], default `["toon"]`) — Already-compact output formats preserved verbatim instead of recompressed (e.g. ["toon"]). Set to [] to disable
 - `profile` (string, default `""`) — Persistent profile name. Checked after LEAN_CTX_PROFILE env var. Set via: lean-ctx config set profile passthrough
 - `project_root` (string?, default `null` — env `LEAN_CTX_PROJECT_ROOT`) — Explicit project root directory. Prevents accidental home-directory scans
@@ -115,6 +116,12 @@ Cloud feature settings
 
 - `auto_sync` (bool, default `false`) — Push the Personal Cloud (knowledge, commands, CEP, gotchas, buddy, feedback) silently once per day at session end (Pro; toggle: `lean-ctx cloud autosync on|off`)
 - `contribute_enabled` (bool, default `false`) — Enable contributing anonymized stats to lean-ctx cloud
+
+## `[cost]`
+
+Model declaration for measured-vs-estimated cost reporting
+
+- `default_model` (string?, default `null`) — Fallback pricing model for MCP-only IDEs whose real model lean-ctx cannot observe (Cursor, Copilot, Windsurf, …). Unset → blended heuristic. Per-IDE overrides live in [cost.models]
 
 ## `[custom_aliases]`
 
@@ -282,6 +289,7 @@ Proxy upstream configuration for API routing
 - `anthropic_upstream` (string?, default `null`) — Custom upstream URL for Anthropic API proxy
 - `gemini_upstream` (string?, default `null`) — Custom upstream URL for Gemini API proxy
 - `history_mode` (enum: cache-aware | rolling | off, default `cache-aware` — env `LEAN_CTX_PROXY_HISTORY_MODE`) — History pruning strategy. cache-aware: frozen boundaries that keep provider prompt caches valid (default). rolling: legacy moving window (max raw savings, breaks prompt caching). off: never prune
+- `meter_openai_usage` (bool, default `true`) — Inject stream_options.include_usage into streamed OpenAI Chat Completions so the final chunk reports real token usage for the measured spend meter. Default true
 - `openai_upstream` (string?, default `null`) — Custom upstream URL for OpenAI API proxy
 
 ## `[search]`

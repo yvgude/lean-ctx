@@ -284,3 +284,38 @@ background and intentionally does not list the consolidation stores.\n",
     .context("writing suite.ndjson")?;
     Ok(suite)
 }
+
+#[cfg(test)]
+mod recording_guard_tests {
+    use super::*;
+
+    /// The committed recording (`rust/eval/recording.json`) is what flips the CI
+    /// quality-gate from "skipped" to "enforced" (#361 Phase 3). Guard it
+    /// **in-process** so a suite/corpus/prompt change that invalidates the
+    /// recording (a replay key miss) or a captured regression fails here in
+    /// `cargo test` — i.e. during `dev-install` — not only in CI.
+    #[test]
+    fn committed_recording_replays_and_passes_gate() {
+        let dir = tempfile::tempdir().unwrap();
+        let suite_path = write_starter_suite(dir.path()).expect("scaffold starter suite");
+        let suite = EvalSuite::load(&suite_path).expect("load starter suite");
+
+        let rec_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("eval/recording.json");
+        assert!(
+            rec_path.exists(),
+            "committed recording missing at {} — CI quality-gate would silently skip",
+            rec_path.display()
+        );
+        let runner = RecordedRunner::from_file(&rec_path).expect("load committed recording");
+
+        // Every (task × condition) request must hit a recorded key, else the
+        // recording drifted from the suite/corpus/prompt and must be re-captured.
+        let report = run_ab(&suite, "suite.ndjson", &runner, &AbRunConfig::default())
+            .expect("committed recording must cover every replay key");
+        assert!(
+            report.verdict.gate_passes(),
+            "committed recording must not encode a regression, got: {}",
+            report.verdict.label()
+        );
+    }
+}

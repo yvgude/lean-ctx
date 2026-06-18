@@ -16,6 +16,12 @@ pub(super) fn run_mcp_server() -> Result<()> {
 
     cleanup_orphan_mcp_processes();
 
+    // Commit to the XDG layout (and drain any residual ~/.lean-ctx) once per
+    // server start, so a stray marker can never re-collapse config/data/state/
+    // cache while the server runs (GL #623). Every other process honors the pin
+    // through the same resolver once it exists.
+    crate::core::layout_pin::heal();
+
     // Concurrency hardening:
     // - Smooths "thundering herd" MCP startups (multiple agent sessions).
     // - Limits Tokio worker/blocking threads to avoid host degradation.

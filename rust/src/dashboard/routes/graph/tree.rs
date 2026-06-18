@@ -39,7 +39,10 @@ struct FileLeaf {
 fn tree() -> (&'static str, &'static str, String) {
     let root = detect_project_root_for_dashboard();
     let project = super::project_basename(&root);
-    let index = crate::core::graph_index::load_or_build(&root);
+    let index = match crate::core::graph_index::get_or_start_build(&root) {
+        Ok(index) => index,
+        Err(progress) => return super::building_response(&progress),
+    };
 
     // Group symbols by their (relative) file path.
     let mut syms_by_file: std::collections::HashMap<

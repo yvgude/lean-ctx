@@ -91,7 +91,8 @@ class CockpitGraph extends HTMLElement {
     var initTab = this.getAttribute('data-tab') || this.getAttribute('initial-tab');
     if (initTab) this._tab = initTab;
     this.render();
-    this.loadData();
+    // Lazy-load (#452): the router loads this graph view's data on activation,
+    // so the three graph tabs no longer all build the index/graph on page load.
   }
 
   disconnectedCallback() {
@@ -161,7 +162,13 @@ class CockpitGraph extends HTMLElement {
     ]);
 
     this._graphData = results[0] && !results[0].__error ? results[0] : null;
-    this._symbolsData = results[2] && !results[2].__error ? results[2] : null;
+    // /api/symbols returns an array when ready, or `{status:"building"}` while
+    // the shared index is built in the background (#452). Treat the latter as
+    // "no data yet"; the call-graph poll below refreshes it once the index lands.
+    this._symbolsData =
+      results[2] && !results[2].__error && results[2].status !== 'building'
+        ? results[2]
+        : null;
 
     var cgResult = results[1] && !results[1].__error ? results[1] : null;
     if (cgResult && cgResult.status === 'ready') {
@@ -198,6 +205,9 @@ class CockpitGraph extends HTMLElement {
           self._callGraphBuilding = false;
           self._callGraphProgress = null;
           self._stopCallGraphPolling();
+          // The index is built now, so the deps/symbols views that returned
+          // "building" on first load can be filled in (#452).
+          self._loadIndexBackedTabs();
           if (self._tab === 'callgraph') {
             self.render();
             self._renderActiveTab();
@@ -217,6 +227,28 @@ class CockpitGraph extends HTMLElement {
     }
   }
 
+  // Re-fetch the index-backed deps/symbols views after the shared index finished
+  // building (#452). On the initial load these returned "building" and were left
+  // empty; the call-graph poll calls this once the index is ready.
+  async _loadIndexBackedTabs() {
+    var fetchJson = ckgApi();
+    if (!fetchJson) return;
+    var results = await Promise.all([
+      fetchJson('/api/graph', { timeoutMs: 12000 }).catch(function () { return null; }),
+      fetchJson('/api/symbols', { timeoutMs: 12000 }).catch(function () { return null; }),
+    ]);
+    if (results[0] && !results[0].__error && results[0].status !== 'building') {
+      this._graphData = results[0];
+    }
+    if (results[1] && !results[1].__error && results[1].status !== 'building') {
+      this._symbolsData = results[1];
+    }
+    if (this._tab === 'deps' || this._tab === 'symbols') {
+      this.render();
+      this._renderActiveTab();
+    }
+  }
+
   _updateProgressBar() {
     var bar = this.querySelector('#ckg-cg-progress-fill');
     var label = this.querySelector('#ckg-cg-progress-label');
@@ -224,7 +256,11 @@ class CockpitGraph extends HTMLElement {
     var p = this._callGraphProgress;
     var pct = p.files_total > 0 ? Math.round((p.files_done / p.files_total) * 100) : 0;
     bar.style.width = pct + '%';
-    label.textContent = p.files_done + ' / ' + p.files_total + ' files (' + p.edges_found + ' calls found)';
+    // The shared index build (#452) reports files only; the call-graph build also
+    // reports edges. Render whichever detail the current phase provides.
+    label.textContent = p.edges_found != null
+      ? p.files_done + ' / ' + p.files_total + ' files (' + p.edges_found + ' calls found)'
+      : p.files_done + ' / ' + p.files_total + ' files indexed';
   }
 
   /* ---- chrome ---- */

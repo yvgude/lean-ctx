@@ -59,6 +59,29 @@ pub(super) fn handle(
             let json = serde_json::to_string(&stats).unwrap_or_else(|_| "{}".to_string());
             Some(("200 OK", "application/json", json))
         }
+        "/api/spend" => {
+            // Measured spend: real model + billed tokens the proxy read from
+            // provider responses (cross-process, from proxy_usage.json).
+            let per_model = crate::proxy::usage_meter::persisted_snapshot();
+            let total_usd: f64 = per_model.iter().map(|m| m.cost_usd).sum();
+            // Blended rate (the `fallback-blended` tier) so the dashboard's
+            // *estimated* cost model reads its price from the server, not a
+            // hardcoded JS constant.
+            let blended = crate::core::gain::model_pricing::ModelPricing::load().quote(None);
+            let payload = serde_json::json!({
+                "source": "measured",
+                "available": !per_model.is_empty(),
+                "total_usd": total_usd,
+                "per_model": per_model,
+                "pricing": {
+                    "input_per_m": blended.cost.input_per_m,
+                    "output_per_m": blended.cost.output_per_m,
+                },
+                "note": "Real provider bill for proxy-routed clients (Claude Code, Codex, Pi, Gemini CLI, OpenCode). MCP-only IDEs are priced as estimated.",
+            });
+            let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
+            Some(("200 OK", "application/json", json))
+        }
         _ => None,
     }
 }

@@ -89,16 +89,7 @@ pub fn show_first_run_wow() {
     let yellow = "\x1b[33m";
     let dim = "\x1b[2m";
     let rst = "\x1b[0m";
-    let monthly = result.potential_usd * 30.0;
-    let saved = crate::core::wrapped::format_tokens(result.potential_tokens as u64);
 
-    println!();
-    println!("  {bold}Here's what lean-ctx just started saving you{rst}");
-    println!("  {dim}estimated from your shell history — nothing leaves your machine{rst}");
-    println!();
-    println!(
-        "  {green}~{saved} tokens{rst}{dim}/month{rst} across {total_missed} uncompressed commands {dim}(~${monthly:.0}/mo){rst}"
-    );
     let top = result
         .missed_commands
         .iter()
@@ -106,6 +97,24 @@ pub fn show_first_run_wow() {
         .map(|m| format!("{} {}x", m.prefix, m.count))
         .collect::<Vec<_>>()
         .join("   ");
+
+    println!();
+    println!("  {bold}Here's what lean-ctx is about to start saving you{rst}");
+    println!("  {dim}estimated from your shell history — nothing leaves your machine{rst}");
+    println!();
+    if result.has_measured_data {
+        // Returning user: project their own measured savings onto frequency.
+        let monthly = result.potential_usd * 30.0;
+        let saved = crate::core::wrapped::format_tokens(result.potential_tokens as u64);
+        println!(
+            "  {green}~{saved} tokens{rst}{dim}/month{rst} across {total_missed} uncompressed commands {dim}(~${monthly:.0}/mo, from your measured rate){rst}"
+        );
+    } else {
+        // Fresh install: no measurements yet — show frequency, never a fake $.
+        println!(
+            "  {green}{total_missed} commands{rst} {dim}that lean-ctx will now compress automatically{rst}"
+        );
+    }
     if !top.is_empty() {
         println!("  {dim}top: {top}{rst}");
     }
@@ -128,16 +137,21 @@ pub fn cmd_ghost(args: &[String]) {
     let unoptimized_tokens = discover.potential_tokens;
     let _unoptimized_usd = discover.potential_usd;
 
+    // Redundant reads: every cache hit is a re-read lean-ctx served from cache
+    // instead of re-sending the file. Value it at the user's *measured* average
+    // read size (from the heatmap), never a guessed constant. No heatmap data
+    // yet => 0, so we never invent a figure.
     let redundant_reads = store.cep.total_cache_hits as usize;
-    let redundant_tokens = redundant_reads * 200;
+    let avg_read_tokens = crate::core::heatmap::HeatMap::load()
+        .avg_original_tokens_per_access()
+        .unwrap_or(0) as usize;
+    let redundant_tokens = redundant_reads.saturating_mul(avg_read_tokens);
 
-    let wasted_original = store
-        .cep
-        .total_tokens_original
-        .saturating_sub(store.cep.total_tokens_compressed) as usize;
-    let truncated_tokens = wasted_original / 3;
-
-    let total_ghost = unoptimized_tokens + redundant_tokens + truncated_tokens;
+    // NOTE: the former "oversized contexts" category was dropped — it was a
+    // fabricated wasted_original/3 heuristic applied to realized (not wasted)
+    // compression savings. The JSON keeps `truncated_contexts: 0` for schema
+    // stability; there is no honest data source to revive it.
+    let total_ghost = unoptimized_tokens + redundant_tokens;
     let total_usd =
         total_ghost as f64 * crate::core::stats::DEFAULT_INPUT_PRICE_PER_M / 1_000_000.0;
     let monthly_usd = total_usd * 30.0;
@@ -148,7 +162,7 @@ pub fn cmd_ghost(args: &[String]) {
             "breakdown": {
                 "unoptimized_shells": unoptimized_tokens,
                 "redundant_reads": redundant_tokens,
-                "truncated_contexts": truncated_tokens,
+                "truncated_contexts": 0,
             },
             "estimated_usd": total_usd,
             "monthly_usd": monthly_usd,
@@ -207,12 +221,6 @@ pub fn cmd_ghost(args: &[String]) {
             "  {dim}  Redundant reads:{rst}     {white}{redundant_tokens:>8}{rst} {dim}({redundant_reads} cache hits = wasted re-reads){rst}"
         );
     }
-    if truncated_tokens > 0 {
-        println!(
-            "  {dim}  Oversized contexts:{rst}  {white}{truncated_tokens:>8}{rst} {dim}(uncompressed portion of tool results){rst}"
-        );
-    }
-
     println!();
     println!("  {bold}Monthly savings potential:{rst} {green}${monthly_usd:.2}{rst}");
 

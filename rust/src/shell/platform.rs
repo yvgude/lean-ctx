@@ -14,6 +14,17 @@ pub(crate) fn apply_utf8_locale(cmd: &mut std::process::Command) {
     }
 }
 
+/// Neutralizes inherited startup-file hooks so a non-login/non-interactive
+/// `sh -c` / `bash -c` cannot be hijacked into sourcing a profile or rc file
+/// (#451). lean-ctx runs the system POSIX shell profile-free and deterministic;
+/// a stray inherited `BASH_ENV` (read by bash even for `bash -c`) or `ENV`
+/// pointing at e.g. an `exec nu` snippet would otherwise silently replace the
+/// shell. Cleared to empty so the expansion names no file. No-op in effect for
+/// PowerShell/cmd, which ignore both variables.
+pub(crate) fn apply_profile_free_env(cmd: &mut std::process::Command) {
+    cmd.env("BASH_ENV", "").env("ENV", "");
+}
+
 pub fn decode_output(bytes: &[u8]) -> String {
     match String::from_utf8(bytes.to_vec()) {
         Ok(s) => s,
@@ -218,10 +229,53 @@ pub(super) fn detect_shell() -> String {
         if bin == "lean-ctx" {
             return find_real_shell();
         }
-        return shell;
+        // #451: `$SHELL` is the user's *interactive* shell preference, not the
+        // agent's execution shell. Agents emit bash/POSIX command syntax, so an
+        // interactive-only shell like Nushell or Fish silently mis-runs it.
+        // Honor `$SHELL` only when it is POSIX-compatible; otherwise fall back
+        // to a real POSIX shell (deterministic, agent-trained). Set
+        // `LEAN_CTX_SHELL` to force a specific shell regardless of this gate.
+        if shell_acceptable_for_exec(&shell) {
+            return shell;
+        }
+        return find_real_shell();
     }
 
     find_real_shell()
+}
+
+/// Whether a `$SHELL` value may be auto-selected as the command-execution shell.
+///
+/// On Unix this rejects non-POSIX interactive shells (Nushell, Fish, Elvish,
+/// xonsh, PowerShell) so lean-ctx never feeds them bash/POSIX syntax (#451). On
+/// Windows the intended shells *are* PowerShell/cmd, so any `$SHELL` is honored
+/// (the POSIX gate would wrongly reject them).
+#[cfg(unix)]
+fn shell_acceptable_for_exec(shell: &str) -> bool {
+    is_posix_compatible_shell(shell)
+}
+
+#[cfg(windows)]
+fn shell_acceptable_for_exec(_shell: &str) -> bool {
+    true
+}
+
+/// `true` if `shell`'s basename is a POSIX-compatible shell that can run
+/// agent-authored bash/POSIX commands. Excludes interactive-only shells
+/// (`nu`, `fish`, `elvish`, `xonsh`) and non-POSIX shells (`pwsh`,
+/// `powershell`, `cmd`) where that syntax fails (#451).
+#[cfg(unix)]
+fn is_posix_compatible_shell(shell: &str) -> bool {
+    let name = std::path::Path::new(shell)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let name = name.strip_suffix(".exe").unwrap_or(&name);
+    matches!(
+        name,
+        "bash" | "zsh" | "sh" | "dash" | "ash" | "ksh" | "ksh93" | "mksh" | "busybox"
+    )
 }
 
 #[cfg(unix)]
@@ -649,5 +703,120 @@ mod platform_tests {
             result.starts_with('\''),
             "double quotes must be single-quoted: {result}"
         );
+    }
+
+    // #451: a non-interactive `bash -c` sources $BASH_ENV. lean-ctx must run
+    // profile-free, so `apply_profile_free_env` has to neutralize an inherited
+    // BASH_ENV before it can pull in a contaminating startup file.
+    #[cfg(unix)]
+    #[test]
+    fn profile_free_env_blocks_bash_env_contamination() {
+        let Some(bash) = ["/bin/bash", "/usr/bin/bash", "/usr/local/bin/bash"]
+            .into_iter()
+            .find(|p| std::path::Path::new(p).exists())
+        else {
+            return; // no bash on this host → nothing to guard against
+        };
+
+        let startup = std::env::temp_dir().join(format!(
+            "lean_ctx_bashenv_{}_{}.sh",
+            std::process::id(),
+            "guard"
+        ));
+        std::fs::write(&startup, "echo CONTAMINATED\n").expect("write startup file");
+
+        let mut cmd = std::process::Command::new(bash);
+        cmd.arg("-c").arg("echo clean").env("BASH_ENV", &startup);
+        super::apply_profile_free_env(&mut cmd);
+        let out = cmd.output().expect("run bash");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+
+        let _ = std::fs::remove_file(&startup);
+
+        assert!(stdout.contains("clean"), "command output missing: {stdout}");
+        assert!(
+            !stdout.contains("CONTAMINATED"),
+            "apply_profile_free_env must neutralize BASH_ENV, got: {stdout}"
+        );
+    }
+}
+
+#[cfg(all(test, unix))]
+mod posix_shell_gate_tests {
+    use super::{detect_shell, is_posix_compatible_shell};
+
+    #[test]
+    fn accepts_posix_shells() {
+        for s in [
+            "/bin/bash",
+            "/bin/zsh",
+            "/bin/sh",
+            "/usr/bin/dash",
+            "/bin/ash",
+            "/usr/bin/ksh",
+            "/usr/bin/mksh",
+            "bash",
+            "zsh",
+        ] {
+            assert!(is_posix_compatible_shell(s), "{s} must be POSIX-compatible");
+        }
+    }
+
+    #[test]
+    fn rejects_interactive_and_nonposix_shells() {
+        // #451: agent bash/POSIX syntax fails in these — never auto-select them.
+        for s in [
+            "/usr/bin/nu",
+            "/opt/homebrew/bin/nu",
+            "/usr/bin/fish",
+            "/usr/local/bin/elvish",
+            "/usr/bin/xonsh",
+            "/usr/bin/pwsh",
+            "powershell.exe",
+            "cmd.exe",
+        ] {
+            assert!(
+                !is_posix_compatible_shell(s),
+                "{s} must be rejected by the POSIX gate"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn detect_shell_falls_back_when_shell_is_nushell() {
+        // Serialize env mutation (set_var/remove_var are process-global).
+        let _lock = crate::core::data_dir::test_env_lock();
+        let saved_shell = std::env::var_os("SHELL");
+        let saved_override = std::env::var_os("LEAN_CTX_SHELL");
+
+        crate::test_env::remove_var("LEAN_CTX_SHELL");
+        crate::test_env::set_var("SHELL", "/usr/bin/nu");
+        let resolved = detect_shell();
+        assert!(
+            is_posix_compatible_shell(&resolved),
+            "a non-POSIX $SHELL (nu) must resolve to a POSIX shell, got {resolved}"
+        );
+        assert!(
+            !resolved.ends_with("/nu") && resolved != "/usr/bin/nu",
+            "must not run agent commands in Nushell, got {resolved}"
+        );
+
+        // A POSIX $SHELL is honored verbatim.
+        crate::test_env::set_var("SHELL", "/bin/sh");
+        assert_eq!(detect_shell(), "/bin/sh");
+
+        // LEAN_CTX_SHELL always wins, even when pointing at a non-POSIX shell.
+        crate::test_env::set_var("LEAN_CTX_SHELL", "/usr/bin/nu");
+        assert_eq!(detect_shell(), "/usr/bin/nu");
+
+        match saved_shell {
+            Some(v) => crate::test_env::set_var("SHELL", v),
+            None => crate::test_env::remove_var("SHELL"),
+        }
+        match saved_override {
+            Some(v) => crate::test_env::set_var("LEAN_CTX_SHELL", v),
+            None => crate::test_env::remove_var("LEAN_CTX_SHELL"),
+        }
     }
 }

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use super::memory_policy::MemoryPolicy;
@@ -8,12 +8,15 @@ use super::memory_policy::MemoryPolicy;
 mod defaults_allowlist;
 mod enums;
 mod memory;
+mod provenance;
 mod proxy;
+mod render;
 pub mod schema;
 mod sections;
 mod serde_defaults;
 pub mod setter;
 mod shell_activation;
+pub use render::render_annotated_config;
 pub use sections::*;
 #[cfg(test)]
 mod tests;
@@ -24,8 +27,10 @@ pub use enums::{
     RulesScope, TeeMode, TerseAgent,
 };
 pub use memory::{MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter};
+pub use provenance::{ConfigProvenance, EnvOverride};
 pub use proxy::{
-    HistoryMode, ProxyConfig, ProxyProvider, is_local_proxy_url, normalize_url, normalize_url_opt,
+    HistoryMode, ProxyConfig, ProxyProvider, UpstreamDrift, Upstreams, diagnose_drift,
+    env_upstream_override, is_local_proxy_url, normalize_url, normalize_url_opt,
 };
 pub use shell_activation::ShellActivation;
 
@@ -48,6 +53,15 @@ pub const DEFAULT_BM25_PERSIST_MB: u64 = 512;
 // Compile-time regression guard (#249): the default disk ceiling must stay well
 // above the old RAM-profile caps (64/128 MB) that starved large repos.
 const _: () = assert!(DEFAULT_BM25_PERSIST_MB >= 512);
+
+/// lean-ctx tools whose sole purpose is editing the user's source files. When
+/// `prefer_native_editor` is set (#454) these are hidden from `list_tools` and
+/// refused at dispatch so the host's native editor handles edits instead.
+///
+/// Deliberately narrow: only the dedicated edit tool is blocked. LSP refactor
+/// (`ctx_refactor`) also exposes read-only sub-actions (references/definition),
+/// so it is left available; users wanting it gone can add it to `disabled_tools`.
+pub const EDIT_TOOL_NAMES: &[&str] = &["ctx_edit"];
 
 /// Global lean-ctx configuration loaded from `config.toml`, merged with project-local overrides.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,6 +92,9 @@ pub struct Config {
     pub cloud: CloudConfig,
     #[serde(default)]
     pub gain: GainConfig,
+    /// Model declaration for measured-vs-estimated cost reporting (MCP-only IDEs).
+    #[serde(default)]
+    pub cost: CostConfig,
     #[serde(default)]
     pub autonomy: AutonomyConfig,
     #[serde(default)]
@@ -107,6 +124,14 @@ pub struct Config {
     /// Empty by default — all tools listed, no behaviour change.
     #[serde(default)]
     pub disabled_tools: Vec<String>,
+    /// Prefer the host agent's native editor over lean-ctx edit operations (#454).
+    /// When true, the lean-ctx edit tool(s) (see [`EDIT_TOOL_NAMES`]) are neither
+    /// advertised in `list_tools` nor dispatchable (direct or via `ctx_call`), so
+    /// the agent falls back to the host's built-in editing UI. Reads / search /
+    /// shell / memory tools are unaffected. Override via
+    /// `LEAN_CTX_PREFER_NATIVE_EDITOR=1`.
+    #[serde(default)]
+    pub prefer_native_editor: bool,
     /// Tool categories to activate by default for dynamic-tool-capable clients.
     /// Values: "core" (always on), "arch", "debug", "memory", "metrics", "session".
     /// Example: `default_tool_categories = ["core", "arch", "memory"]`
@@ -435,6 +460,7 @@ impl Default for Config {
             theme: serde_defaults::default_theme(),
             cloud: CloudConfig::default(),
             gain: GainConfig::default(),
+            cost: CostConfig::default(),
             autonomy: AutonomyConfig::default(),
             providers: ProvidersConfig::default(),
             proxy: ProxyConfig::default(),
@@ -445,6 +471,7 @@ impl Default for Config {
             enable_wakeup_ctx: true,
             redirect_exclude: Vec::new(),
             disabled_tools: Vec::new(),
+            prefer_native_editor: false,
             default_tool_categories: Vec::new(),
             no_degrade: false,
             profile: None,
@@ -597,13 +624,42 @@ impl Config {
             .collect()
     }
 
-    /// Returns the effective disabled tools list, preferring env var over config file.
+    /// Returns the effective disabled tools list, preferring env var over config
+    /// file. When `prefer_native_editor` is active, the lean-ctx edit tools are
+    /// folded in so they are hidden from `list_tools` (#454).
     pub fn disabled_tools_effective(&self) -> Vec<String> {
-        if let Ok(val) = std::env::var("LEAN_CTX_DISABLED_TOOLS") {
+        let mut list = if let Ok(val) = std::env::var("LEAN_CTX_DISABLED_TOOLS") {
             Self::parse_disabled_tools_env(&val)
         } else {
             self.disabled_tools.clone()
+        };
+        if self.prefer_native_editor_effective() {
+            for name in EDIT_TOOL_NAMES {
+                if !list.iter().any(|t| t == name) {
+                    list.push((*name).to_string());
+                }
+            }
         }
+        list
+    }
+
+    /// Whether lean-ctx edit operations are disabled in favour of the host's
+    /// native editor (#454). `LEAN_CTX_PREFER_NATIVE_EDITOR` wins over config.
+    pub fn prefer_native_editor_effective(&self) -> bool {
+        match std::env::var("LEAN_CTX_PREFER_NATIVE_EDITOR") {
+            Ok(raw) => matches!(
+                raw.trim().to_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            ),
+            Err(_) => self.prefer_native_editor,
+        }
+    }
+
+    /// Whether `name` is a lean-ctx edit operation that must be blocked from
+    /// dispatch (direct and via `ctx_call`) when [`Self::prefer_native_editor_effective`]
+    /// is set (#454). Read/search/shell/memory tools are never blocked.
+    pub fn edit_tool_blocked(&self, name: &str) -> bool {
+        self.prefer_native_editor_effective() && EDIT_TOOL_NAMES.contains(&name)
     }
 
     /// Returns `true` if minimal overhead is enabled via env var or config.
@@ -1041,6 +1097,9 @@ impl Config {
         if !local.disabled_tools.is_empty() {
             self.disabled_tools.extend(local.disabled_tools);
         }
+        if local.prefer_native_editor {
+            self.prefer_native_editor = true;
+        }
         if !local.extra_ignore_patterns.is_empty() {
             self.extra_ignore_patterns
                 .extend(local.extra_ignore_patterns);
@@ -1255,6 +1314,69 @@ impl Config {
         }
     }
 
+    /// Loads ONLY the global config file — never merging project-local
+    /// `.lean-ctx.toml` overrides, and bypassing the in-memory cache. Every
+    /// PERSIST path must use this (or [`Config::update_global`]): [`Config::load`]
+    /// folds per-project overrides into the struct, and [`Config::save`] writes
+    /// the whole struct back to the GLOBAL file — so a `load → mutate → save`
+    /// round-trip silently leaks per-project values (and, historically, reset
+    /// customized keys) into the global config (#443). Reading global-only makes
+    /// the save leak-free by construction.
+    pub fn load_global() -> Self {
+        Self::path().map_or_else(Self::default, |p| Self::load_global_from(&p))
+    }
+
+    /// Path-parameterized core of [`Config::load_global`] (unit-testable without
+    /// the real config dir). Missing, empty, or unparseable files yield
+    /// defaults; persisting callers that must not clobber a corrupt file use
+    /// [`Config::update_global`], which refuses instead.
+    fn load_global_from(path: &Path) -> Self {
+        match std::fs::read_to_string(path) {
+            Ok(raw) if !raw.trim().is_empty() => toml::from_str(&raw).unwrap_or_default(),
+            _ => Self::default(),
+        }
+    }
+
+    /// Safely mutate and persist the GLOBAL config. Reads the global file only
+    /// (no project-local merge), applies `f`, then writes minimally. Refuses
+    /// (returns `Err`) when the file exists but is unparseable, so a typo can
+    /// never clobber a customized config (#443). Returns the saved `Config`.
+    ///
+    /// This is the canonical persistence entry point: prefer it over
+    /// `Config::load()` followed by `save()`, which leaks project-local
+    /// overrides into the global file.
+    pub fn update_global<F>(f: F) -> std::result::Result<Self, super::error::LeanCtxError>
+    where
+        F: FnOnce(&mut Self),
+    {
+        let path = Self::path().ok_or_else(|| {
+            super::error::LeanCtxError::Config("cannot determine home directory".into())
+        })?;
+        Self::update_global_at(&path, f)
+    }
+
+    /// Path-parameterized core of [`Config::update_global`] (unit-testable).
+    fn update_global_at<F>(
+        path: &Path,
+        f: F,
+    ) -> std::result::Result<Self, super::error::LeanCtxError>
+    where
+        F: FnOnce(&mut Self),
+    {
+        let mut cfg = match std::fs::read_to_string(path) {
+            Ok(raw) if !raw.trim().is_empty() => toml::from_str::<Self>(&raw).map_err(|e| {
+                super::error::LeanCtxError::Config(format!(
+                    "refusing to modify an unparseable config.toml ({e}); fix it \
+                     manually or run `lean-ctx doctor --fix`, then retry"
+                ))
+            })?,
+            _ => Self::default(),
+        };
+        f(&mut cfg);
+        cfg.save_to(path)?;
+        Ok(cfg)
+    }
+
     /// Persists the current config to the global config file.
     ///
     /// Preserves user comments, formatting, and unknown keys, keeps the file
@@ -1264,6 +1386,11 @@ impl Config {
         let path = Self::path().ok_or_else(|| {
             super::error::LeanCtxError::Config("cannot determine home directory".into())
         })?;
+        self.save_to(&path)
+    }
+
+    /// Path-parameterized core of [`Config::save`] (unit-testable).
+    fn save_to(&self, path: &Path) -> std::result::Result<(), super::error::LeanCtxError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -1276,7 +1403,7 @@ impl Config {
         let baseline = toml::from_str::<Self>("").unwrap_or_else(|_| Self::default());
         let defaults = toml::to_string_pretty(&baseline)
             .map_err(|e| super::error::LeanCtxError::Config(e.to_string()))?;
-        crate::config_io::write_toml_preserving_minimal(&path, &content, &defaults)
+        crate::config_io::write_toml_preserving_minimal(path, &content, &defaults)
             .map_err(super::error::LeanCtxError::Config)?;
         Ok(())
     }

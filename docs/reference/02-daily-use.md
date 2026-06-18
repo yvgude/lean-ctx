@@ -203,7 +203,7 @@ compression opportunities in your shell history).
 
 ## 5. Choosing how much lean-ctx exposes — `lean-ctx tools`
 
-**What it does:** Sets the **tool profile** — how many of the 76 MCP tools your
+**What it does:** Sets the **tool profile** — how many of the 77 MCP tools your
 AI sees. Fewer tools = less per-call overhead.
 
 ```bash

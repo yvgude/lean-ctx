@@ -49,7 +49,7 @@ class CockpitAgents extends HTMLElement {
     this.style.display = 'block';
     document.addEventListener('lctx:refresh', this._onRefresh);
     this.render();
-    this.loadData();
+    // Lazy-load (#452): the router loads this view's data on activation.
   }
 
   disconnectedCallback() {

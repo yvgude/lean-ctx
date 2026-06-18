@@ -28,7 +28,7 @@ pub async fn handler(
     State(state): State<ProxyState>,
     req: Request<Body>,
 ) -> Result<Response, StatusCode> {
-    let upstream = state.openai_upstream.clone();
+    let upstream = state.openai_upstream();
     forward::forward_request(
         State(state),
         req,
@@ -57,10 +57,86 @@ pub async fn ws_handler(
 
 fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize, usize) {
     let mut doc = parsed;
-    let modified = compress_responses_input(&mut doc);
+    // Two-stage, like the Chat Completions path: (1) cache-aware prune of the
+    // frozen OLD region — old file reads collapse to re-read stubs, old logs
+    // head/tail summarize — then (2) compress whatever recent outputs remain.
+    // Stage 1 runs first so a stubbed old output isn't needlessly re-compressed.
+    let mut modified = prune_responses_input(&mut doc);
+    modified |= compress_responses_input(&mut doc);
     let out = serde_json::to_vec(&doc).unwrap_or_default();
     let compressed_size = if modified { out.len() } else { original_size };
     (out, original_size, compressed_size)
+}
+
+/// Cache-aware history pruning for the Responses API.
+///
+/// Unlike the Chat Completions path we never *remove* an item: the Responses API
+/// rejects a `function_call` whose matching `function_call_output` is absent (and
+/// reasoning items must keep their originating call). Instead we rewrite the
+/// `output` text of every `function_call_output` in the frozen OLD region
+/// (`input[..boundary]`) — pairing and ordering are untouched, so there is no
+/// risk of a 400.
+///
+/// The boundary is the same monotone staircase as every other rail
+/// ([`history_prune::prune_boundary`]), so the request prefix stays byte-stable
+/// for up to a full stride and OpenAI's automatic prompt cache keeps hitting.
+///
+/// Shared with the WebSocket bridge (#440) so Codex/WS turns prune identically.
+pub(super) fn prune_responses_input(doc: &mut Value) -> bool {
+    let mode = crate::core::config::Config::load()
+        .proxy
+        .resolved_history_mode();
+    let Some(input) = doc.get_mut("input").and_then(|i| i.as_array_mut()) else {
+        return false;
+    };
+    let boundary = super::history_prune::prune_boundary(mode, input.len());
+    if boundary == 0 {
+        return false;
+    }
+    let tool_names = tool_kind::responses_tool_names(input);
+    let mut modified = false;
+    for item in input.iter_mut().take(boundary) {
+        if item.get("type").and_then(|t| t.as_str()) != Some("function_call_output") {
+            continue;
+        }
+        let kind = item
+            .get("call_id")
+            .and_then(|v| v.as_str())
+            .and_then(|id| tool_names.get(id))
+            .map_or(ToolResultKind::Other, |n| tool_kind::classify_tool_name(n));
+        if let Some(output) = item.get_mut("output") {
+            modified |= prune_output_field(output, kind);
+        }
+    }
+    modified
+}
+
+/// Apply [`history_prune::prune_output_text`] to a `function_call_output.output`,
+/// handling both the JSON-string and array-of-content-parts shapes — the
+/// pruning analogue of [`compress_output_field`].
+fn prune_output_field(output: &mut Value, kind: ToolResultKind) -> bool {
+    match output {
+        Value::String(s) => match super::history_prune::prune_output_text(s, kind) {
+            Some(pruned) => {
+                *s = pruned;
+                true
+            }
+            None => false,
+        },
+        Value::Array(parts) => {
+            let mut changed = false;
+            for part in parts.iter_mut() {
+                if let Some(Value::String(text)) = part.get_mut("text")
+                    && let Some(pruned) = super::history_prune::prune_output_text(text, kind)
+                {
+                    *text = pruned;
+                    changed = true;
+                }
+            }
+            changed
+        }
+        _ => false,
+    }
 }
 
 /// Compresses the `function_call_output.output` entries of a Responses-API body
@@ -68,12 +144,12 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
 /// the WebSocket bridge (#440) so both paths get identical, safe savings.
 ///
 /// The only token sink we shrink is each `function_call_output.output` — the
-/// Responses-API analogue of a Chat Completions `role:"tool"` message. We
-/// deliberately do NOT prune or reorder the `input` array: the Responses API
-/// rejects a `function_call` whose matching `function_call_output` is absent
-/// (and reasoning items must keep their originating call), so structural
-/// history-pruning would risk 400s here. Compressing only the tool outputs
-/// captures the bulk of the savings without touching the conversation structure.
+/// Responses-API analogue of a Chat Completions `role:"tool"` message. We never
+/// remove or reorder `input` items: the Responses API rejects a `function_call`
+/// whose matching `function_call_output` is absent (and reasoning items must keep
+/// their originating call), so all token reclamation happens *in place* on the
+/// output text. Cache-aware pruning of the frozen OLD region lives in
+/// [`prune_responses_input`]; this pass compresses whatever recent outputs remain.
 pub(super) fn compress_responses_input(doc: &mut Value) -> bool {
     let mut modified = false;
     if let Some(input) = doc.get_mut("input").and_then(|i| i.as_array_mut()) {
@@ -256,5 +332,114 @@ mod tests {
         assert_eq!(comp, orig);
         let reparsed: Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(reparsed, body);
+    }
+
+    /// `pairs` Responses turns: each is a `function_call` + its matching
+    /// `function_call_output` carrying a long file read.
+    fn responses_read_turns(pairs: usize) -> Vec<Value> {
+        let code = (0..40)
+            .map(|i| format!("    let v{i} = compute_{i}(ctx, opts);"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut input = Vec::new();
+        for t in 0..pairs {
+            input.push(serde_json::json!({
+                "type": "function_call", "call_id": format!("c{t}"),
+                "name": "read_file", "arguments": "{}"
+            }));
+            input.push(serde_json::json!({
+                "type": "function_call_output", "call_id": format!("c{t}"),
+                "output": format!("{code}\n// turn {t}")
+            }));
+        }
+        input
+    }
+
+    #[test]
+    fn cache_aware_prune_stubs_old_reads_keeps_recent_and_pairing() {
+        // Default (isolated) config = cache-aware history mode.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        // 14 pairs = 28 items → staircase boundary 16.
+        let body = serde_json::json!({"model": "gpt-5", "input": responses_read_turns(14)});
+        let item_count = body["input"].as_array().unwrap().len();
+        let bytes = serde_json::to_vec(&body).unwrap();
+        let (out, orig, comp) = compress_request_body(body, bytes.len());
+        assert!(comp < orig, "old reads must be pruned for savings");
+
+        let parsed: Value = serde_json::from_slice(&out).unwrap();
+        let input = parsed["input"].as_array().unwrap();
+        // Pairing + ordering preserved: not a single item dropped or moved.
+        assert_eq!(input.len(), item_count, "no items may be removed (pairing)");
+        for (i, item) in input.iter().enumerate() {
+            let expect = if i.is_multiple_of(2) {
+                "function_call"
+            } else {
+                "function_call_output"
+            };
+            assert_eq!(item["type"], expect, "item {i} type/order changed");
+        }
+        // An OLD file read (output index 1, before boundary 16) is stubbed.
+        let old = input[1]["output"].as_str().unwrap();
+        assert!(
+            old.contains("Re-read the file"),
+            "old read should be stubbed, got: {old}"
+        );
+        // A RECENT file read (output index 27, after the boundary) keeps its body.
+        let recent = input[27]["output"].as_str().unwrap();
+        assert!(
+            recent.contains("v39"),
+            "recent read must be protected, got: {recent}"
+        );
+    }
+
+    #[test]
+    fn responses_compression_is_deterministic() {
+        // #498: the same request must compress to byte-identical output so the
+        // provider's prompt cache (and our regression diffs) stay stable.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let mk = || serde_json::json!({"model": "gpt-5", "input": responses_read_turns(14)});
+        let (a, b) = (mk(), mk());
+        let (la, lb) = (
+            serde_json::to_vec(&a).unwrap().len(),
+            serde_json::to_vec(&b).unwrap().len(),
+        );
+        let (out_a, _, _) = compress_request_body(a, la);
+        let (out_b, _, _) = compress_request_body(b, lb);
+        assert_eq!(out_a, out_b, "identical input must yield identical bytes");
+    }
+
+    #[test]
+    fn cache_aware_responses_prefix_is_byte_stable_across_turns() {
+        // THE cache invariant for the Responses rail: as `input` grows turn by
+        // turn, every item before an already-passed boundary must stay
+        // byte-identical, or OpenAI's automatic prompt cache stops hitting.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let mut prev: Vec<String> = Vec::new();
+        let mut prev_boundary = 0;
+        for pairs in 1..=20 {
+            let input = responses_read_turns(pairs);
+            let len = input.len();
+            let body = serde_json::json!({"model": "gpt-5", "input": input});
+            let bytes = serde_json::to_vec(&body).unwrap();
+            let (out, _, _) = compress_request_body(body, bytes.len());
+            let parsed: Value = serde_json::from_slice(&out).unwrap();
+            let items: Vec<String> = parsed["input"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(Value::to_string)
+                .collect();
+            for i in 0..prev_boundary {
+                assert_eq!(
+                    prev[i], items[i],
+                    "Responses item {i} changed at turn {pairs} — prompt cache prefix broken"
+                );
+            }
+            prev = items;
+            prev_boundary = crate::proxy::history_prune::prune_boundary(
+                crate::core::config::HistoryMode::CacheAware,
+                len,
+            );
+        }
     }
 }

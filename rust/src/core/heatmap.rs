@@ -106,6 +106,19 @@ impl HeatMap {
         sorted
     }
 
+    /// Mean original (pre-compression) token size of a recorded file access.
+    /// `None` when nothing has been recorded yet — callers must NOT substitute a
+    /// guessed constant (this backs the ghost report's redundant-read estimate).
+    pub fn avg_original_tokens_per_access(&self) -> Option<u64> {
+        let mut total_original: u64 = 0;
+        let mut total_accesses: u64 = 0;
+        for e in self.entries.values() {
+            total_original = total_original.saturating_add(e.total_original_tokens);
+            total_accesses = total_accesses.saturating_add(u64::from(e.access_count));
+        }
+        (total_accesses > 0).then(|| total_original / total_accesses)
+    }
+
     /// Compute stigmergic context credit: which agents' file-access traces
     /// benefited other agents? An agent A gets credit for a file F when A
     /// accessed F before (or alongside) agent B, because A's trace effectively
@@ -356,6 +369,21 @@ mod tests {
         assert_eq!(hm.entries.len(), 2);
         assert_eq!(hm.entries["src/main.rs"].access_count, 2);
         assert_eq!(hm.entries["src/lib.rs"].total_tokens_saved, 50);
+    }
+
+    #[test]
+    fn avg_original_tokens_per_access_is_measured_not_guessed() {
+        let mut hm = HeatMap::default();
+        assert_eq!(
+            hm.avg_original_tokens_per_access(),
+            None,
+            "no data must yield None, never a fallback constant"
+        );
+        hm.record_access("a.rs", 100, 40);
+        hm.record_access("a.rs", 100, 40);
+        hm.record_access("b.rs", 400, 100);
+        // total original = 600 over 3 accesses => mean 200.
+        assert_eq!(hm.avg_original_tokens_per_access(), Some(200));
     }
 
     #[test]

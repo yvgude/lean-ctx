@@ -373,6 +373,7 @@ pub mod knowledge_vault;
 pub mod language_capabilities;
 #[cfg(target_os = "macos")]
 pub mod launchd;
+pub mod layout_pin;
 pub mod learning_sync;
 pub mod limits;
 pub mod llm_enhance;

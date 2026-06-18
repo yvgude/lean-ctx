@@ -192,9 +192,9 @@ pub(super) fn merge_daily(merged: &mut Vec<DayStats>, current: &[DayStats], base
         }
     }
 
-    if merged.len() > 90 {
+    if merged.len() > super::MAX_DAILY_HISTORY_DAYS {
         merged.sort_by_key(|item| item.date.clone());
-        merged.drain(..merged.len() - 90);
+        merged.drain(..merged.len() - super::MAX_DAILY_HISTORY_DAYS);
     }
 }
 

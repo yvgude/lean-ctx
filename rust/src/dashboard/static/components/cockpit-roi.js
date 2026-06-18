@@ -50,7 +50,8 @@ class CockpitRoi extends HTMLElement {
     // content in place (no "Loading…" flash) once data exists.
     this._timer = setInterval(this._onRefresh, ROI_REFRESH_MS);
     this.render();
-    this.loadData();
+    // Lazy-load (#452): the router loads this view's data on activation; the
+    // interval above only refetches while the view is active (see _onRefresh).
   }
 
   disconnectedCallback() {
@@ -98,9 +99,17 @@ class CockpitRoi extends HTMLElement {
       var results = await Promise.all([
         fetchJson('/api/roi', { timeoutMs: 12000 }),
         cached('/api/stats', { timeoutMs: 12000 }).catch(function () { return null; }),
+        fetchJson('/api/spend', { timeoutMs: 8000 }).catch(function () { return null; }),
       ]);
       this._data = results[0];
       this._stats = results[1];
+      // Measured spend (real provider bill) + server-side pricing so the
+      // estimated cost model de-hardcodes its blended rate (GL #486 follow-up).
+      this._spend = results[2];
+      var Fp = croiFmt();
+      if (this._spend && this._spend.pricing && Fp.applyServerPricing) {
+        Fp.applyServerPricing(this._spend.pricing);
+      }
       this._updatedAt = new Date();
       // Output-echo summary (#501) rides on /api/stats; non-fatal if missing.
       try {
@@ -161,12 +170,59 @@ class CockpitRoi extends HTMLElement {
     body += this._renderOutputEfficiency(esc);
     body += this._renderVerification(esc);
     body += this._renderMethodology();
+    body += this._renderMeasuredSpend(esc);
     body += this._renderCostAnalysis(esc);
     body += this._renderPlan(esc);
     body += this._renderTrendCard(esc);
     body += this._renderBreakdown(esc);
     body += this._renderShare(esc);
     this.innerHTML = body;
+  }
+
+  /**
+   * Measured spend — the real provider bill. Shown only when the proxy has
+   * recorded usage (proxy-routed clients). This is the *measured* counterpart to
+   * the estimated cost-analysis card below: real model + billed tokens read from
+   * upstream responses, priced with the shared table.
+   */
+  _renderMeasuredSpend(esc) {
+    var spend = this._spend;
+    if (!spend || !spend.available) return '';
+    var rows = Array.isArray(spend.per_model) ? spend.per_model : [];
+    if (!rows.length) return '';
+    var F = croiFmt();
+    var ff = F.ff || function (n) { return String(n); };
+    var fu = F.fu || function (a) { return '$' + Number(a).toFixed(2); };
+
+    var bodyRows = rows.slice(0, 10).map(function (m) {
+      var estTag = m.pricing_estimated
+        ? ' <span class="tag ty" title="Pricing matched heuristically; no exact entry in the price table">est. price</span>'
+        : '';
+      return '<tr><td>' + esc(String(m.model)) + estTag + '</td>' +
+        '<td class="r">' + esc(ff(m.requests)) + '</td>' +
+        '<td class="r">' + esc(ff(m.input_tokens)) + '</td>' +
+        '<td class="r">' + esc(ff(m.output_tokens)) + '</td>' +
+        '<td class="r">' + esc(ff(m.cache_read_tokens)) + '</td>' +
+        '<td class="r" style="color:var(--green)">' + esc(fu(m.cost_usd)) + '</td></tr>';
+    }).join('');
+
+    return (
+      '<div class="card" style="margin-bottom:16px">' +
+      '<div class="card-header"><h3>Measured spend</h3>' +
+      '<span class="tag tg">measured</span></div>' +
+      '<p class="hs" style="margin:-4px 0 10px;color:var(--muted)">' +
+      'Your real provider bill \u2014 actual model &amp; billed tokens (incl. cache reads/writes ' +
+      '&amp; reasoning) read from upstream responses for proxy-routed clients ' +
+      '(Claude Code, Codex, Pi, Gemini CLI, OpenCode). MCP-only IDEs (Cursor, Copilot, \u2026) ' +
+      'bypass the proxy and show under <b>estimated</b> below.</p>' +
+      '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:10px">' +
+      '<div class="hv" style="color:var(--green)">' + esc(fu(spend.total_usd)) + '</div>' +
+      '<span class="hs">total measured spend</span></div>' +
+      '<div class="table-scroll"><table><thead><tr><th>Model</th>' +
+      '<th class="r">Reqs</th><th class="r">Input</th><th class="r">Output</th>' +
+      '<th class="r">Cache rd</th><th class="r">Cost</th></tr></thead>' +
+      '<tbody>' + bodyRows + '</tbody></table></div></div>'
+    );
   }
 
   /**

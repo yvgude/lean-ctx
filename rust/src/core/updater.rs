@@ -484,15 +484,25 @@ fn post_update_rewire(skip_rules: bool) {
     #[cfg(target_os = "macos")]
     rewrap_launchagents_for_tcc();
 
-    let mut cfg = crate::core::config::Config::load();
-
-    if cfg.proxy_enabled.is_none() && crate::proxy_autostart::is_installed() {
-        cfg.proxy_enabled = Some(true);
-        let _ = cfg.save();
-        eprintln!("  \u{2139} Proxy was already active \u{2014} keeping enabled.");
-        eprintln!("    Disable anytime: lean-ctx proxy disable");
+    // The persist decision reads the GLOBAL file only and writes via
+    // update_global, so a project-local override is never leaked into the
+    // global config (#443).
+    if crate::core::config::Config::load_global()
+        .proxy_enabled
+        .is_none()
+        && crate::proxy_autostart::is_installed()
+    {
+        match crate::core::config::Config::update_global(|c| c.proxy_enabled = Some(true)) {
+            Ok(_) => {
+                eprintln!("  \u{2139} Proxy was already active \u{2014} keeping enabled.");
+                eprintln!("    Disable anytime: lean-ctx proxy disable");
+            }
+            Err(e) => tracing::warn!("could not persist proxy_enabled during update: {e}"),
+        }
     }
 
+    // Runtime decisions use the effective (global + project-local) config.
+    let cfg = crate::core::config::Config::load();
     let proxy_active = cfg.proxy_enabled == Some(true);
 
     // Determine whether rules should be injected during rewire.

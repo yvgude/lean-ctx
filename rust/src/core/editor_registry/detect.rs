@@ -780,6 +780,66 @@ mod augment_tests {
     }
 }
 
+#[cfg(test)]
+mod footgun_audit_tests {
+    //! #361 Phase 4 — host-default footgun audit. The failure class is "shipped
+    //! default misrepresents the product": a host where lean-ctx registers `ctx_*`
+    //! as opt-in MCP tools *next to* the native ones, with nothing steering the
+    //! agent to use them — so the default experience shows none of the savings
+    //! (the R1 "102 native bash / 0 ctx_shell" finding). These tests pin the
+    //! invariants that keep every host out of that trap.
+    use super::*;
+
+    #[test]
+    fn opt_in_mcp_class_dominates_the_registry() {
+        // The opt-in MCP shape (native tools stay; ctx_* merely offered) is the
+        // footgun surface. Confirm it is the dominant host class so the default
+        // steering below is load-bearing, not incidental.
+        let home = Path::new("/home/tester");
+        let mcp_like = build_targets(home)
+            .iter()
+            .filter(|t| matches!(t.config_type, ConfigType::McpJson))
+            .count();
+        assert!(
+            mcp_like >= 10,
+            "expected the opt-in MCP class to dominate the registry, got {mcp_like}"
+        );
+    }
+
+    #[test]
+    fn default_ships_the_prefer_ctx_nudge_not_a_naked_opt_in() {
+        // THE anti-footgun invariant: a fresh install must NOT ship lean-ctx as a
+        // naked opt-in MCP. The default rules-injection mode is Shared, so every
+        // host that registers ctx_* also receives the "prefer ctx_* over native"
+        // steering. A regression to Off would make the shipped default
+        // misrepresent the product on every opt-in MCP host at once.
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+        let mode = crate::core::config::Config::default().rules_injection_effective();
+        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+        assert_eq!(
+            mode,
+            crate::core::config::RulesInjection::Shared,
+            "default rules injection must ship the nudge (Shared), never Off"
+        );
+    }
+
+    #[test]
+    fn injected_nudge_steers_the_heavy_tools_to_ctx() {
+        // The nudge must be substantive: it must remap the heavy native tools (the
+        // ones that dominate a turn's tokens) and carry an explicit directive — an
+        // "installed but toothless" block would be a footgun of its own.
+        let block = crate::rules_inject::canonical_rules_block();
+        for needle in ["ctx_read", "ctx_search", "ctx_shell"] {
+            assert!(block.contains(needle), "nudge missing {needle}");
+        }
+        assert!(
+            block.contains("NEVER use native"),
+            "nudge must explicitly forbid native fallbacks"
+        );
+    }
+}
+
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;

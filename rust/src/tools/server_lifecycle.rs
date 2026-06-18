@@ -109,9 +109,13 @@ impl LeanCtxServer {
             }
         };
 
-        if let Some(ref root) = startup.project_root {
-            crate::core::index_orchestrator::ensure_all_background(root);
-        }
+        // Indices are NOT built eagerly here. A freshly connected agent that sits
+        // idle — or only uses ctx_read/ctx_shell/ctx_tree — must pay zero indexing
+        // cost. Heavy/search tools warm their indices lazily on first use via
+        // `index_orchestrator::ensure_warm_for_tool`, driven from dispatch (#152).
+        // An eager full graph + BM25 scan on every `new()` pegged a CPU core on
+        // each server start; multiplied across multiple agents and stdio respawns
+        // it was the root cause of the idle-high-CPU report (#453).
 
         let cache = Arc::new(RwLock::new(SessionCache::new()));
         let bm25_cache: Arc<std::sync::Mutex<Option<crate::core::bm25_cache::Bm25CacheEntry>>> =

@@ -472,6 +472,11 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
             .find_map(|p| p.strip_prefix("--open="))
             .map(String::from)
     };
+    // GH #450: pin the XDG layout before serving, exactly like the daemon/server
+    // start paths do. Without this the dashboard was the only writer that could
+    // land config.toml in a divergent (unpinned/legacy) dir while the runtime
+    // read another — so a saved quick-setting silently "reset" on the next read.
+    crate::core::layout_pin::heal();
     super::spawn_proxy_if_needed();
     super::run_async(dashboard::start(
         port, host, base_path, auth_token, open_mode,
@@ -490,13 +495,113 @@ pub(super) fn cmd_watch(rest: &[String]) {
     }
 }
 
+/// Parse `--port=N` from proxy args, falling back to the configured default.
+#[cfg(feature = "http-server")]
+fn parse_proxy_port(rest: &[String]) -> u16 {
+    rest.iter()
+        .find_map(|p| p.strip_prefix("--port="))
+        .and_then(|p| p.parse().ok())
+        .unwrap_or_else(crate::proxy_setup::default_port)
+}
+
+/// Stops a standalone/foreground proxy by reading its PID from `/health` and
+/// terminating it (graceful, then force). Returns true if a proxy was reachable
+/// on `port`, false if nothing was listening. Shared by `stop` and `restart`.
+#[cfg(feature = "http-server")]
+fn stop_proxy_process(port: u16) -> bool {
+    let health_url = format!("http://127.0.0.1:{port}/health");
+    let Ok(resp) = ureq::get(&health_url).call() else {
+        return false;
+    };
+    let pid = resp.into_body().read_to_string().ok().and_then(|body| {
+        body.split("pid\":")
+            .nth(1)
+            .and_then(|s| s.split([',', '}']).next())
+            .and_then(|s| s.trim().parse::<u32>().ok())
+    });
+    match pid {
+        Some(pid) => {
+            let _ = crate::ipc::process::terminate_gracefully(pid);
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            if crate::ipc::process::is_alive(pid) {
+                let _ = crate::ipc::process::force_kill(pid);
+            }
+            println!("Proxy on port {port} stopped (PID {pid}).");
+        }
+        None => {
+            println!(
+                "Proxy on port {port} running but could not parse PID. Use `lean-ctx stop` to kill all."
+            );
+        }
+    }
+    true
+}
+
+/// Prints the proxy's live upstreams (from `/status`) and warns when they drift
+/// from what the operator expects. Covers both #449 cases: a shell-exported
+/// `LEAN_CTX_*_UPSTREAM` that never reached the MCP/service-spawned proxy, and a
+/// proxy started with an env override that now masks a later config.toml edit.
+#[cfg(feature = "http-server")]
+fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::config::Config) {
+    use crate::core::config::{
+        ProxyProvider, UpstreamDrift, diagnose_drift, env_upstream_override,
+    };
+
+    let Some(up) = v.get("upstreams").and_then(|u| u.as_object()) else {
+        return;
+    };
+    let disk = cfg.proxy.resolve_all_disk();
+    println!("  Upstreams (live):");
+    let mut notes = Vec::new();
+    for (label, key, provider, disk_val) in [
+        (
+            "Anthropic",
+            "anthropic",
+            ProxyProvider::Anthropic,
+            &disk.anthropic,
+        ),
+        ("OpenAI", "openai", ProxyProvider::OpenAi, &disk.openai),
+        ("Gemini", "gemini", ProxyProvider::Gemini, &disk.gemini),
+    ] {
+        let live = up.get(key).and_then(|x| x.as_str()).unwrap_or("?");
+        println!("    {label:<10} {live}");
+        if live == "?" {
+            continue;
+        }
+        let env = env_upstream_override(provider);
+        match diagnose_drift(env.as_deref(), disk_val, live) {
+            Some(UpstreamDrift::EnvNotApplied) => {
+                let want = env.as_deref().unwrap_or("");
+                notes.push(format!(
+                    "  \x1b[33m⚠ {label}: LEAN_CTX_{}_UPSTREAM is set in this shell ({want})\x1b[0m\n  \
+                       \x1b[33m  but the running proxy serves {live}. Environment variables do not reach\x1b[0m\n  \
+                       \x1b[33m  an MCP/service-spawned proxy (#449). Persist it — applies live:\x1b[0m\n  \
+                       \x1b[33m    lean-ctx config set proxy.{key}_upstream {want}\x1b[0m",
+                    label.to_uppercase(),
+                ));
+            }
+            Some(UpstreamDrift::ConfigNotApplied) => {
+                notes.push(format!(
+                    "  \x1b[33m⚠ {label}: proxy serves {live} but config.toml resolves to {disk_val}.\x1b[0m\n  \
+                       \x1b[33m  Apply it: lean-ctx proxy restart\x1b[0m",
+                ));
+            }
+            None => {}
+        }
+    }
+    for note in notes {
+        println!();
+        println!("{note}");
+    }
+}
+
 pub(super) fn cmd_proxy(rest: &[String]) {
     #[cfg(feature = "http-server")]
     {
         // `--help` anywhere must never execute the verb (GH #393).
         if wants_help(rest) {
             println!(
-                "Usage: lean-ctx proxy <start|stop|status|enable|disable|cleanup> [--port=4444]"
+                "Usage: lean-ctx proxy <start|stop|restart|status|enable|disable|cleanup> [--port=4444]"
             );
             println!();
             println!("Commands:");
@@ -504,7 +609,10 @@ pub(super) fn cmd_proxy(rest: &[String]) {
                 "  start     Run the compression proxy (foreground; --autostart installs a service)"
             );
             println!("  stop      Stop the proxy on the given port");
-            println!("  status    Show proxy config, process and compression stats");
+            println!(
+                "  restart   Restart the managed proxy (re-reads config.toml; drops env overrides)"
+            );
+            println!("  status    Show proxy config, process, live upstreams and stats");
             println!("  enable    Enable the proxy: config flag, autostart service, env wiring");
             println!("  disable   Disable the proxy and restore the original endpoint");
             println!("  cleanup   Remove stale proxy URLs from AI tool configs");
@@ -529,44 +637,36 @@ pub(super) fn cmd_proxy(rest: &[String]) {
                 }
             }
             "stop" => {
-                let port: u16 = rest
-                    .iter()
-                    .find_map(|p| p.strip_prefix("--port="))
-                    .and_then(|p| p.parse().ok())
-                    .unwrap_or_else(crate::proxy_setup::default_port);
-                let health_url = format!("http://127.0.0.1:{port}/health");
-                match ureq::get(&health_url).call() {
-                    Ok(resp) => {
-                        if let Ok(body) = resp.into_body().read_to_string()
-                            && let Some(pid_str) = body
-                                .split("pid\":")
-                                .nth(1)
-                                .and_then(|s| s.split([',', '}']).next())
-                            && let Ok(pid) = pid_str.trim().parse::<u32>()
-                        {
-                            let _ = crate::ipc::process::terminate_gracefully(pid);
-                            std::thread::sleep(std::time::Duration::from_millis(500));
-                            if crate::ipc::process::is_alive(pid) {
-                                let _ = crate::ipc::process::force_kill(pid);
-                            }
-                            println!("Proxy on port {port} stopped (PID {pid}).");
-                            return;
-                        }
-                        println!(
-                            "Proxy on port {port} running but could not parse PID. Use `lean-ctx stop` to kill all."
-                        );
-                    }
-                    Err(_) => {
-                        println!("No proxy running on port {port}.");
-                    }
+                let port = parse_proxy_port(rest);
+                if !stop_proxy_process(port) {
+                    println!("No proxy running on port {port}.");
+                }
+            }
+            "restart" => {
+                let port = parse_proxy_port(rest);
+                if crate::proxy_autostart::is_installed() {
+                    // Managed service (LaunchAgent / systemd): a clean bootout +
+                    // bootstrap restarts the proxy so it re-reads config.toml. It
+                    // deliberately drops any `LEAN_CTX_*_UPSTREAM` env override
+                    // (the service context has none), making config.toml the
+                    // single source of truth for the long-lived proxy (#449).
+                    crate::proxy_autostart::stop();
+                    std::thread::sleep(std::time::Duration::from_millis(700));
+                    crate::proxy_autostart::start();
+                    println!("\x1b[32m✓\x1b[0m Proxy restarted (managed service).");
+                    println!("  Verify active upstreams: lean-ctx proxy status");
+                } else if stop_proxy_process(port) {
+                    println!();
+                    println!("  No autostart service installed — start the proxy again:");
+                    println!("    lean-ctx proxy start --port={port}");
+                } else {
+                    println!("No proxy running on port {port} and no autostart service installed.");
+                    println!("  Start it now:       lean-ctx proxy start --port={port}");
+                    println!("  Or install service: lean-ctx proxy enable");
                 }
             }
             "status" => {
-                let port: u16 = rest
-                    .iter()
-                    .find_map(|p| p.strip_prefix("--port="))
-                    .and_then(|p| p.parse().ok())
-                    .unwrap_or_else(crate::proxy_setup::default_port);
+                let port = parse_proxy_port(rest);
                 let cfg = crate::core::config::Config::load();
                 println!("lean-ctx proxy:");
                 match cfg.proxy_enabled {
@@ -575,10 +675,24 @@ pub(super) fn cmd_proxy(rest: &[String]) {
                     None => println!("  Config:  undecided (not yet configured)"),
                 }
                 println!("  Port:    {port}");
-                match ureq::get(&format!("http://127.0.0.1:{port}/status")).call() {
-                    Ok(resp) => {
+                // Liveness comes from the *public* /health endpoint so a running
+                // proxy is never misreported as down — even mid-upgrade when the
+                // managed proxy still holds an old session token (#449). The rich
+                // detail (stats + live upstreams) comes from the authenticated
+                // /status; if that 401s while /health is up, we still report it as
+                // running and point at `proxy restart`.
+                let alive = ureq::get(&format!("http://127.0.0.1:{port}/health"))
+                    .call()
+                    .is_ok();
+                if alive {
+                    println!("  Process: running");
+                    let token =
+                        crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN");
+                    let status = ureq::get(&format!("http://127.0.0.1:{port}/status"))
+                        .header("Authorization", &format!("Bearer {token}"))
+                        .call();
+                    if let Ok(resp) = status {
                         let body = resp.into_body().read_to_string().unwrap_or_default();
-                        println!("  Process: running");
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
                             println!("  Requests:    {}", v["requests_total"]);
                             println!("  Compressed:  {}", v["requests_compressed"]);
@@ -587,11 +701,18 @@ pub(super) fn cmd_proxy(rest: &[String]) {
                                 "  Compression: {}%",
                                 v["compression_ratio_pct"].as_str().unwrap_or("0.0")
                             );
+                            print_live_upstreams_and_drift(&v, &cfg);
                         }
+                    } else {
+                        println!(
+                            "  \x1b[33m⚠ Live details unavailable: the running proxy rejects this\x1b[0m"
+                        );
+                        println!(
+                            "  \x1b[33m  shell's session token. Re-sync it: lean-ctx proxy restart\x1b[0m"
+                        );
                     }
-                    _ => {
-                        println!("  Process: not running");
-                    }
+                } else {
+                    println!("  Process: not running");
                 }
                 if cfg.proxy_enabled == Some(false) || cfg.proxy_enabled.is_none() {
                     println!();
@@ -613,9 +734,11 @@ pub(super) fn cmd_proxy(rest: &[String]) {
             }
             "enable" => {
                 let force = rest.iter().any(|a| a == "--force");
-                let mut cfg = crate::core::config::Config::load();
-                cfg.proxy_enabled = Some(true);
-                let _ = cfg.save();
+                if let Err(e) =
+                    crate::core::config::Config::update_global(|c| c.proxy_enabled = Some(true))
+                {
+                    tracing::warn!("could not persist proxy_enabled: {e}");
+                }
 
                 let port = crate::proxy_setup::default_port();
                 crate::proxy_autostart::install(port, false);
@@ -628,9 +751,11 @@ pub(super) fn cmd_proxy(rest: &[String]) {
                 );
             }
             "disable" => {
-                let mut cfg = crate::core::config::Config::load();
-                cfg.proxy_enabled = Some(false);
-                let _ = cfg.save();
+                if let Err(e) =
+                    crate::core::config::Config::update_global(|c| c.proxy_enabled = Some(false))
+                {
+                    tracing::warn!("could not persist proxy_enabled: {e}");
+                }
 
                 crate::proxy_autostart::uninstall(false);
                 let home = dirs::home_dir().unwrap_or_default();
@@ -651,7 +776,7 @@ pub(super) fn cmd_proxy(rest: &[String]) {
             }
             _ => {
                 println!(
-                    "Usage: lean-ctx proxy <start|stop|status|enable|disable|cleanup> [--port=4444]"
+                    "Usage: lean-ctx proxy <start|stop|restart|status|enable|disable|cleanup> [--port=4444]"
                 );
             }
         }

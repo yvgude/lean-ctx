@@ -95,7 +95,16 @@ pub async fn forward_request(
     )
     .await?;
 
-    build_response(response, extra_stream_types).await
+    // Measured usage: read the real model + billed tokens from the response.
+    // Gemini puts the model in the URL path, not the request/response body.
+    let usage_provider = super::usage::Provider::from_label(provider_label);
+    let url_model = if usage_provider == super::usage::Provider::Gemini {
+        super::usage::gemini_model_from_path(parts.uri.path())
+    } else {
+        None
+    };
+
+    build_response(response, extra_stream_types, usage_provider, url_model).await
 }
 
 fn build_upstream_url(parts: &Parts, base: &str, default_path: &str) -> String {
@@ -175,6 +184,8 @@ const FORWARDED_HEADERS: &[&str] = &[
 async fn build_response(
     response: reqwest::Response,
     extra_stream_types: &[&str],
+    usage_provider: super::usage::Provider,
+    url_model: Option<String>,
 ) -> Result<Response, StatusCode> {
     let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
     let resp_headers = response.headers().clone();
@@ -187,8 +198,12 @@ async fn build_response(
         });
 
     if is_stream {
-        let stream = response.bytes_stream();
-        let body = Body::from_stream(stream);
+        // Tee the stream through a usage Scanner: each chunk is forwarded
+        // byte-for-byte while the real model + billed tokens are extracted from
+        // the final event and recorded when the stream ends.
+        let scanner = super::usage::Scanner::new(usage_provider, url_model);
+        let inner = Box::pin(response.bytes_stream());
+        let body = Body::from_stream(super::usage::tee_stream(inner, scanner));
         let mut resp = Response::builder().status(status);
         for (k, v) in &resp_headers {
             let ks = k.as_str().to_lowercase();
@@ -205,6 +220,13 @@ async fn build_response(
         .bytes()
         .await
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    // Non-streaming: the whole body is one JSON object carrying `usage`.
+    let mut scanner = super::usage::Scanner::new(usage_provider, url_model);
+    scanner.feed_body(&resp_bytes);
+    if let Some(usage) = scanner.finalize() {
+        super::usage_meter::record(&usage);
+    }
 
     let mut resp = Response::builder().status(status);
     for (k, v) in &resp_headers {

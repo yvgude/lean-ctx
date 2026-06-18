@@ -2,3 +2,8 @@
 *.swp
 *.swo
 .DS_Store
+
+# eval A/B quality gate: CI regenerates the suite + report each run; only the
+# committed recording (eval/recording.json) is tracked for deterministic replay.
+/eval-suite/
+/ab-report.json

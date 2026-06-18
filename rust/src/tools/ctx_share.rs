@@ -66,18 +66,23 @@ fn handle_push(
     let mut not_found = Vec::new();
 
     for path in &path_list {
-        if let Some(entry) = cache.get(path) {
-            if let Some(content) = entry.content() {
-                shared_files.push(SharedFile {
-                    path: entry.path.clone(),
-                    content,
-                    mode: "full".to_string(),
-                    tokens: entry.original_tokens,
-                });
-            }
-        } else {
+        // Revalidate against disk before handing the file to another agent: a
+        // stale cached copy would silently pass an outdated handover file to the
+        // receiving agent. `current_full_content` re-reads when the cache is
+        // behind disk, so the receiver always gets the current content.
+        let Some((content, tokens)) = cache.current_full_content(path) else {
             not_found.push(*path);
-        }
+            continue;
+        };
+        let canonical = cache
+            .get(path)
+            .map_or_else(|| (*path).to_string(), |entry| entry.path.clone());
+        shared_files.push(SharedFile {
+            path: canonical,
+            content,
+            mode: "full".to_string(),
+            tokens,
+        });
     }
 
     if shared_files.is_empty() {
@@ -253,4 +258,181 @@ fn handle_clear(agent_id: Option<&str>, project_root: &str) -> String {
     }
 
     format!("Cleared {removed} shared context(s) from {my_id}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::cache::SessionCache;
+
+    /// Concatenated JSON of every shared-context file for `project_root`. Lets a
+    /// test assert on exactly what content was *captured into the handover*.
+    fn shared_json(project_root: &str) -> String {
+        let dir = shared_dir(project_root);
+        let mut all = String::new();
+        if let Ok(rd) = std::fs::read_dir(&dir) {
+            for e in rd.flatten() {
+                all.push_str(&std::fs::read_to_string(e.path()).unwrap_or_default());
+            }
+        }
+        all
+    }
+
+    #[test]
+    fn push_shares_fresh_content_and_pull_lists_it() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+
+        let proj = tempfile::tempdir().unwrap();
+        let root = proj.path().to_str().unwrap();
+        let file = proj.path().join("handover.md");
+        std::fs::write(&file, "HANDOVER marker-AAA\n").unwrap();
+        let path = file.to_str().unwrap();
+
+        let mut cache = SessionCache::new();
+        cache.store(path, "HANDOVER marker-AAA\n");
+
+        let out = handle_push(
+            Some("agentA"),
+            Some("agentB"),
+            Some(path),
+            None,
+            &cache,
+            root,
+        );
+        assert!(out.contains("Shared 1 files"), "push result: {out}");
+        assert!(
+            shared_json(root).contains("marker-AAA"),
+            "content not captured"
+        );
+
+        // The receiver sees the handover listed.
+        let pulled = handle_pull(Some("agentB"), root);
+        assert!(
+            pulled.contains("handover.md"),
+            "pull missing file: {pulled}"
+        );
+    }
+
+    #[test]
+    fn push_shares_edited_content_not_stale_diff_mtime() {
+        // Carlos handover: a file edited *after* it was cached must be shared as
+        // the NEW content — the receiving agent must never get the pre-edit copy.
+        let _lock = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+
+        let proj = tempfile::tempdir().unwrap();
+        let root = proj.path().to_str().unwrap();
+        let file = proj.path().join("handover.md");
+        std::fs::write(&file, "V1 marker-AAA\n").unwrap();
+        let path = file.to_str().unwrap();
+
+        let mut cache = SessionCache::new();
+        cache.store(path, "V1 marker-AAA\n");
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::fs::write(&file, "V2 marker-BBB\n").unwrap();
+
+        let out = handle_push(Some("a"), Some("b"), Some(path), None, &cache, root);
+        assert!(out.contains("Shared 1 files"), "push result: {out}");
+        let json = shared_json(root);
+        assert!(
+            json.contains("marker-BBB"),
+            "fresh content not shared: {json}"
+        );
+        assert!(
+            !json.contains("marker-AAA"),
+            "stale content leaked into handover: {json}"
+        );
+    }
+
+    #[test]
+    fn push_shares_edited_content_same_mtime_same_size() {
+        // Hash backstop: identical mtime + identical size, changed content.
+        let _lock = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+
+        let proj = tempfile::tempdir().unwrap();
+        let root = proj.path().to_str().unwrap();
+        let file = proj.path().join("h.md");
+        std::fs::write(&file, "AAA\n").unwrap();
+        let path = file.to_str().unwrap();
+        let mtime = std::fs::metadata(&file).unwrap().modified().unwrap();
+
+        let mut cache = SessionCache::new();
+        cache.store(path, "AAA\n");
+
+        // Same length (4 bytes), restore the original mtime → only the content hash differs.
+        std::fs::write(&file, "BBB\n").unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_modified(mtime)
+            .unwrap();
+
+        let out = handle_push(Some("a"), Some("b"), Some(path), None, &cache, root);
+        assert!(out.contains("Shared 1 files"), "push result: {out}");
+        let json = shared_json(root);
+        assert!(
+            json.contains("BBB"),
+            "hash backstop failed, stale shared: {json}"
+        );
+        assert!(!json.contains("AAA"), "stale content leaked: {json}");
+    }
+
+    #[test]
+    fn push_skips_uncached_paths() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+
+        let proj = tempfile::tempdir().unwrap();
+        let root = proj.path().to_str().unwrap();
+        let cache = SessionCache::new(); // empty
+
+        let out = handle_push(
+            Some("a"),
+            Some("b"),
+            Some("/no/such/file.md"),
+            None,
+            &cache,
+            root,
+        );
+        assert!(
+            out.contains("No cached files found to share"),
+            "expected skip message: {out}"
+        );
+    }
+
+    #[test]
+    fn push_falls_back_to_last_known_when_file_deleted() {
+        // Stale + unreadable (deleted between cache and handover): the last-known
+        // cached copy is shared rather than dropping the file silently.
+        let _lock = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+
+        let proj = tempfile::tempdir().unwrap();
+        // Canonicalize so the cache key stays stable after the file is removed.
+        let canon = proj.path().canonicalize().unwrap();
+        let root = canon.to_str().unwrap();
+        let file = canon.join("gone.md");
+        std::fs::write(&file, "LASTKNOWN-AAA\n").unwrap();
+        let path = file.to_str().unwrap();
+
+        let mut cache = SessionCache::new();
+        cache.store(path, "LASTKNOWN-AAA\n");
+        std::fs::remove_file(&file).unwrap();
+
+        let out = handle_push(Some("a"), Some("b"), Some(path), None, &cache, root);
+        assert!(out.contains("Shared 1 files"), "push result: {out}");
+        assert!(
+            shared_json(root).contains("LASTKNOWN-AAA"),
+            "last-known content not shared"
+        );
+    }
 }

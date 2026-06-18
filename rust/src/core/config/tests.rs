@@ -68,6 +68,80 @@ mod disabled_tools_tests {
 }
 
 #[cfg(test)]
+mod prefer_native_editor_tests {
+    use super::super::*;
+
+    fn env_clean() -> bool {
+        std::env::var("LEAN_CTX_PREFER_NATIVE_EDITOR").is_err()
+            && std::env::var("LEAN_CTX_DISABLED_TOOLS").is_err()
+    }
+
+    #[test]
+    fn default_is_off_and_blocks_nothing() {
+        if !env_clean() {
+            return;
+        }
+        let cfg = Config::default();
+        assert!(!cfg.prefer_native_editor);
+        assert!(!cfg.prefer_native_editor_effective());
+        assert!(!cfg.edit_tool_blocked("ctx_edit"));
+        assert!(cfg.disabled_tools_effective().is_empty());
+    }
+
+    #[test]
+    fn enabled_blocks_only_edit_tools() {
+        if !env_clean() {
+            return;
+        }
+        let cfg = Config {
+            prefer_native_editor: true,
+            ..Default::default()
+        };
+        // #454: the dedicated edit tool is blocked; reads/search stay available.
+        assert!(cfg.edit_tool_blocked("ctx_edit"));
+        assert!(!cfg.edit_tool_blocked("ctx_read"));
+        assert!(!cfg.edit_tool_blocked("ctx_search"));
+        assert!(!cfg.edit_tool_blocked("ctx_refactor"));
+    }
+
+    #[test]
+    fn enabled_hides_edit_tools_from_list() {
+        if !env_clean() {
+            return;
+        }
+        let cfg = Config {
+            prefer_native_editor: true,
+            ..Default::default()
+        };
+        assert!(
+            cfg.disabled_tools_effective()
+                .iter()
+                .any(|t| t == "ctx_edit"),
+            "edit tools must be folded into the effective disabled set"
+        );
+    }
+
+    #[test]
+    fn merges_existing_disabled_without_duplication() {
+        if !env_clean() {
+            return;
+        }
+        let cfg = Config {
+            prefer_native_editor: true,
+            disabled_tools: vec!["ctx_graph".to_string(), "ctx_edit".to_string()],
+            ..Default::default()
+        };
+        let eff = cfg.disabled_tools_effective();
+        assert_eq!(
+            eff.iter().filter(|t| *t == "ctx_edit").count(),
+            1,
+            "ctx_edit must not be duplicated when already disabled"
+        );
+        assert!(eff.iter().any(|t| t == "ctx_graph"));
+    }
+}
+
+#[cfg(test)]
 mod default_tool_categories_tests {
     use super::super::*;
 
@@ -1124,5 +1198,169 @@ mod config_load_cache_tests {
             Some(false),
             "Config::load() must honor a content change with unchanged mtime (#406)"
         );
+    }
+}
+
+#[cfg(test)]
+mod cost_config_tests {
+    use super::super::*;
+
+    #[test]
+    fn default_is_empty() {
+        let cfg = CostConfig::default();
+        assert!(cfg.default_model.is_none());
+        assert!(cfg.models.is_empty());
+        assert_eq!(cfg.model_for_client("cursor"), None);
+    }
+
+    #[test]
+    fn per_client_overrides_default() {
+        let mut models = std::collections::HashMap::new();
+        models.insert("cursor".to_string(), "claude-opus-4.5".to_string());
+        let cfg = CostConfig {
+            default_model: Some("gpt-5.4".to_string()),
+            models,
+        };
+        assert_eq!(
+            cfg.model_for_client("cursor").as_deref(),
+            Some("claude-opus-4.5")
+        );
+        // No entry → global default.
+        assert_eq!(cfg.model_for_client("copilot").as_deref(), Some("gpt-5.4"));
+    }
+
+    #[test]
+    fn blank_values_are_ignored() {
+        let cfg = CostConfig {
+            default_model: Some("   ".to_string()),
+            models: std::collections::HashMap::new(),
+        };
+        assert_eq!(cfg.model_for_client("cursor"), None);
+    }
+
+    #[test]
+    fn parses_from_toml_section() {
+        let cfg: Config = toml::from_str(
+            r#"
+[cost]
+default_model = "claude-opus-4.5"
+
+[cost.models]
+cursor = "claude-opus-4.5"
+copilot = "gpt-5.4"
+"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.cost.default_model.as_deref(), Some("claude-opus-4.5"));
+        assert_eq!(
+            cfg.cost.model_for_client("copilot").as_deref(),
+            Some("gpt-5.4")
+        );
+    }
+
+    #[test]
+    fn default_config_has_empty_cost_section() {
+        let cfg = Config::default();
+        assert!(cfg.cost.default_model.is_none());
+        assert!(cfg.cost.models.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod persist_global_tests {
+    //! Regression tests for #443: persisting config must never reset customized
+    //! values nor leak project-local overrides into the global file.
+    use super::super::*;
+
+    fn tmp_config() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        (dir, path)
+    }
+
+    // The canonical persist path keeps every customized value and applies only
+    // the requested change.
+    #[test]
+    fn update_global_at_preserves_customized_and_persists_change() {
+        let (_dir, path) = tmp_config();
+        std::fs::write(
+            &path,
+            "max_ram_percent = 30\ncompression_level = \"standard\"\n",
+        )
+        .unwrap();
+
+        let returned = Config::update_global_at(&path, |c| c.proxy_enabled = Some(true))
+            .expect("update_global_at must succeed");
+        assert_eq!(returned.proxy_enabled, Some(true));
+
+        let reloaded: Config = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            reloaded.max_ram_percent, 30,
+            "customized value must survive"
+        );
+        assert_eq!(reloaded.compression_level, CompressionLevel::Standard);
+        assert_eq!(reloaded.proxy_enabled, Some(true));
+    }
+
+    // load_global never folds in project-local overrides; it reads only the
+    // global file. update_global builds on this, so persists cannot leak.
+    #[test]
+    fn load_global_from_reads_only_the_given_file() {
+        let (_dir, path) = tmp_config();
+        std::fs::write(&path, "theme = \"global-theme\"\n").unwrap();
+        let cfg = Config::load_global_from(&path);
+        assert_eq!(cfg.theme, "global-theme");
+    }
+
+    // Root-cause marker: the OLD `load() (with merge_local) -> save()` pattern
+    // leaks a project-local override into the global file. This proves why
+    // persist paths must use load_global / update_global instead.
+    #[test]
+    fn merged_load_then_save_leaks_local_override_root_cause_marker() {
+        let (_dir, path) = tmp_config();
+        std::fs::write(&path, "theme = \"global-theme\"\n").unwrap();
+
+        // Simulate `Config::load()`: global file + project-local override merged.
+        let mut cfg = Config::load_global_from(&path);
+        cfg.merge_local("theme = \"project-local\"\n");
+        // OLD persist: write the merged struct back to the GLOBAL file.
+        cfg.save_to(&path).unwrap();
+
+        let reloaded: Config = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            reloaded.theme, "project-local",
+            "OLD load+merge_local+save leaks the project-local value into global (#443)"
+        );
+    }
+
+    // Subticket 4 contract: refuse to touch an unparseable config; never clobber.
+    #[test]
+    fn update_global_at_refuses_unparseable_and_leaves_file_untouched() {
+        let (_dir, path) = tmp_config();
+        let corrupt = "max_ram_percent = = =\n";
+        std::fs::write(&path, corrupt).unwrap();
+
+        let result = Config::update_global_at(&path, |c| c.proxy_enabled = Some(true));
+        assert!(
+            result.is_err(),
+            "must refuse to modify an unparseable config"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            corrupt,
+            "the corrupt file must be left exactly as-is"
+        );
+    }
+
+    #[test]
+    fn load_global_from_missing_or_empty_yields_defaults() {
+        let (_dir, path) = tmp_config();
+        // Missing file.
+        let cfg = Config::load_global_from(&path);
+        assert_eq!(cfg.max_ram_percent, Config::default().max_ram_percent);
+        // Empty / whitespace-only file.
+        std::fs::write(&path, "   \n").unwrap();
+        let cfg2 = Config::load_global_from(&path);
+        assert_eq!(cfg2.max_ram_percent, Config::default().max_ram_percent);
     }
 }

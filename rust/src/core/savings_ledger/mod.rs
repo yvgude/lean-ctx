@@ -38,11 +38,16 @@ fn enabled_from(value: Option<&str>) -> bool {
 fn model_and_price() -> &'static (String, f64) {
     static CACHE: OnceLock<(String, f64)> = OnceLock::new();
     CACHE.get_or_init(|| {
-        let env_model = std::env::var("LEAN_CTX_MODEL")
+        let resolved = std::env::var("LEAN_CTX_MODEL")
             .or_else(|_| std::env::var("LCTX_MODEL"))
-            .ok();
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            // No explicit model → value savings against the real model the proxy
+            // measured most, instead of the blended fallback (cross-process hint
+            // from `proxy_usage.json`). Falls back to blended when absent.
+            .or_else(crate::proxy::usage_meter::persisted_dominant_model);
         let quote =
-            crate::core::gain::model_pricing::ModelPricing::load().quote(env_model.as_deref());
+            crate::core::gain::model_pricing::ModelPricing::load().quote(resolved.as_deref());
         (quote.model_key, quote.cost.input_per_m)
     })
 }

@@ -196,8 +196,9 @@ pub fn current_pressure() -> PressureLevel {
 }
 
 /// Start the background memory guardian task (idempotent).
-/// Polls every 3s (normal) or 1s (under pressure). At Critical level, performs
-/// aggressive eviction and signals background tasks to abort — never exits the process.
+/// Polls every 3s (normal), 1s (under pressure), or up to 15s once RSS has been
+/// stably calm (idle backoff). At Critical level, performs aggressive eviction
+/// and signals background tasks to abort — never exits the process.
 pub fn start_guard(eviction_callback: Arc<dyn Fn(PressureLevel) + Send + Sync>) {
     // The guardian is a long-lived background monitor for the running
     // server/daemon. Under `cargo test` a single OS process executes the entire
@@ -220,7 +221,16 @@ pub fn start_guard(eviction_callback: Arc<dyn Fn(PressureLevel) + Send + Sync>) 
     std::thread::Builder::new()
         .name("memory-guard".into())
         .spawn(move || {
+            // Idle backoff: once RSS has stayed below the Soft threshold for
+            // CALM_TICKS_BEFORE_BACKOFF consecutive samples, stretch the poll
+            // interval to IDLE_POLL_SECS. An idle server allocates nothing, so 3s
+            // RSS sampling is just wasted wakeups; any pressure resets the cadence
+            // instantly (below), leaving OOM reaction time during real work
+            // unchanged (#453 idle hygiene).
+            const CALM_TICKS_BEFORE_BACKOFF: u64 = 5;
+            const IDLE_POLL_SECS: u64 = 15;
             let mut poll_secs = 3u64;
+            let mut calm_ticks = 0u64;
             loop {
                 std::thread::sleep(std::time::Duration::from_secs(poll_secs));
                 let Some(snap) = MemorySnapshot::capture() else {
@@ -267,6 +277,7 @@ pub fn start_guard(eviction_callback: Arc<dyn Fn(PressureLevel) + Send + Sync>) 
 
                 if snap.pressure_level >= PressureLevel::Soft {
                     poll_secs = 1;
+                    calm_ticks = 0;
                     ABORT_REQUESTED
                         .store(snap.pressure_level >= PressureLevel::Hard, Ordering::SeqCst);
                     tracing::warn!(
@@ -283,7 +294,12 @@ pub fn start_guard(eviction_callback: Arc<dyn Fn(PressureLevel) + Send + Sync>) 
                         jemalloc_purge();
                     }
                 } else {
-                    poll_secs = 3;
+                    calm_ticks = calm_ticks.saturating_add(1);
+                    poll_secs = if calm_ticks >= CALM_TICKS_BEFORE_BACKOFF {
+                        IDLE_POLL_SECS
+                    } else {
+                        3
+                    };
                     if ABORT_REQUESTED.load(Ordering::Relaxed) {
                         ABORT_REQUESTED.store(false, Ordering::SeqCst);
                         tracing::info!("[memory_guard] pressure normalized, clearing abort flag");

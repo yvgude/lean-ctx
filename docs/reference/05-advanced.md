@@ -132,6 +132,32 @@ allow_insecure_http_upstream = true
 > never for traffic that crosses an untrusted network. The proxy prints a warning at
 > startup whenever a non-loopback HTTP upstream is active.
 
+**Live upstream — `config.toml` is the source of truth for a running proxy**
+([#449](https://github.com/yvgude/lean-ctx/issues/449)). A long-lived proxy
+(LaunchAgent / systemd / IDE-spawned) re-reads its upstreams from `config.toml`
+every ~2s, so a change takes effect **without a restart**:
+
+```bash
+lean-ctx config set proxy.openai_upstream https://api.openai.com   # live in ≤2s
+lean-ctx proxy status                                              # shows the active upstreams
+```
+
+- **`LEAN_CTX_*_UPSTREAM` env vars are a *start-time* override only.** An
+  environment variable cannot reach a process that is already running, so for a
+  service-managed proxy use `config.toml` (or `lean-ctx proxy restart`, which
+  re-reads `config.toml` and drops any start-time env override). This is the
+  common trap with MCP hosts: **Codex (and other MCP clients) launch the lean-ctx
+  MCP server with a stripped, allowlisted environment** that omits
+  `LEAN_CTX_*_UPSTREAM`, so the proxy that server spawns never sees it — even
+  though `lean-ctx` *invoked directly as a CLI* does. Put the upstream in
+  `config.toml` and it applies to every proxy regardless of how it was started.
+- An **invalid** value (typo, unreachable scheme) keeps the last good upstream —
+  a live proxy is never silently rerouted to the provider default.
+- `lean-ctx doctor` warns when the running proxy's live upstream **drifts** from
+  what `config.toml` resolves to (typically an env override masking a later edit)
+  and points you at `lean-ctx proxy restart`.
+- Tune the reload cadence with `LEAN_CTX_PROXY_RELOAD_SECS` (default `2`).
+
 ---
 
 ## 2. HTTP MCP & multi-repo — `lean-ctx serve`

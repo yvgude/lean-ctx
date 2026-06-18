@@ -67,6 +67,12 @@ pub fn cmd_init(args: &[String]) {
             for e in &result.errors {
                 eprintln!("  ✗ {agent_name}: {e}");
             }
+            if agent_name.eq_ignore_ascii_case("hermes") {
+                qprintln!("\n  Beyond MCP, lean-ctx can be Hermes' active context engine");
+                qprintln!("  (replaces the built-in ContextCompressor). Install the plugin from");
+                qprintln!("  integrations/hermes-lean-ctx (scripts/install.sh), then set");
+                qprintln!("  context.engine: \"lean-ctx\" in ~/.hermes/config.yaml.");
+            }
             if project {
                 crate::hooks::install_agent_project_hooks(agent_name, &cwd);
             }

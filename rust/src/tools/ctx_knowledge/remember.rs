@@ -112,7 +112,7 @@ pub(crate) fn handle_remember(
             // recall then returned far fewer hits than facts stored (issue #412,
             // a #326 follow-up). The model is fetched outside the lock so its
             // load never serializes other writers.
-            let warn = ProjectKnowledge::with_project_lock(project_root, || {
+            let (warn, semantic) = ProjectKnowledge::with_project_lock(project_root, || {
                 let mut idx = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(
                     &knowledge.project_hash,
                 )
@@ -122,8 +122,23 @@ pub(crate) fn handle_remember(
                     )
                 });
 
-                match crate::core::knowledge_embedding::embed_and_store(&mut idx, engine, cat, k, v)
-                {
+                // Semantic near-duplicate scan against the *pre-upsert* index, so
+                // the new fact never matches itself. Catches paraphrases the
+                // lexical `find_cross_key_similar` pass misses.
+                let semantic = crate::core::knowledge_embedding::find_semantic_duplicates(
+                    &idx,
+                    engine,
+                    &knowledge,
+                    cat,
+                    k,
+                    v,
+                    crate::core::knowledge_embedding::SEMANTIC_DUP_THRESHOLD,
+                    3,
+                );
+
+                let warn = match crate::core::knowledge_embedding::embed_and_store(
+                    &mut idx, engine, cat, k, v,
+                ) {
                     Ok(()) => {
                         let fresh = ProjectKnowledge::load(project_root);
                         let kref = fresh.as_ref().unwrap_or(&knowledge);
@@ -135,10 +150,40 @@ pub(crate) fn handle_remember(
                             .map(|e| format!("\n(warn: embeddings save failed: {e})"))
                     }
                     Err(e) => Some(format!("\n(warn: embeddings update failed: {e})")),
-                }
+                };
+                (warn, semantic)
             });
             if let Some(w) = warn {
                 result.push_str(&w);
+            }
+
+            // Surface only the semantic duplicates the lexical pass did not
+            // already list, so the agent sees each near-duplicate once.
+            let extra: Vec<_> = semantic
+                .into_iter()
+                .filter(|s| {
+                    !similar
+                        .iter()
+                        .any(|l| l.category == s.category && l.key == s.key)
+                })
+                .collect();
+            if !extra.is_empty() {
+                result.push_str(&format!(
+                    "\n\nSEMANTIC NEAR-DUPLICATES ({} found):",
+                    extra.len()
+                ));
+                for sf in &extra {
+                    result.push_str(&format!(
+                        "\n  {}/{} ({:.0}%) — \"{}\"",
+                        sf.category,
+                        sf.key,
+                        sf.similarity * 100.0,
+                        sf.value_preview
+                    ));
+                }
+                result.push_str(
+                    "\n→ ctx_knowledge(action=\"judge\", key=\"<cat/key>\", value=\"<target_cat/key>\", query=\"supersedes|compatible|unrelated\")"
+                );
             }
         }
     }

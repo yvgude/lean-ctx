@@ -540,4 +540,39 @@ mod shadow_gating_tests {
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn shadow_plugin_routes_heavy_surface_through_compressed_tools() {
+        // shadow_mode's whole point is that native read/grep/glob/edit/bash are
+        // transparently routed through lean-ctx. The heaviest addressable surface
+        // in a fix task — build/test/repro logs — flows through `bash`, so if the
+        // bundled plugin ever stops shadowing it the output bypasses the
+        // compressor (the R1 "102 native bash / 0 ctx_shell" regression). This is
+        // the OpenCode analog of the Pi `resolveSuppressedBuiltins` guard: it pins
+        // the bundled template (`include_str!`'d into the installer) so a refactor
+        // can't silently drop a route.
+        let plugin = include_str!("../../templates/opencode-plugin.ts");
+        for (native, ctx) in [
+            ("bash", "ctx_shell"),
+            ("read", "ctx_read"),
+            ("grep", "ctx_search"),
+            ("glob", "ctx_glob"),
+            ("edit", "ctx_edit"),
+        ] {
+            assert!(
+                plugin.contains(&format!("{native}: tool(")),
+                "plugin must statically shadow the native `{native}` tool"
+            );
+            // Section header ties the native name to its ctx_* target …
+            assert!(
+                plugin.contains(&format!("{native} → lean-ctx {ctx}")),
+                "`{native}` must be documented as routing to `{ctx}`"
+            );
+            // … and the execute body must actually invoke that compressed tool.
+            assert!(
+                plugin.contains(&format!("callTool(\"{ctx}\"")),
+                "`{native}` must route through the compressed `{ctx}`"
+            );
+        }
+    }
 }

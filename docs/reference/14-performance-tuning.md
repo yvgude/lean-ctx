@@ -166,6 +166,34 @@ On a phase-isolated **and** non-caching workload the cached-re-read lever has no
 surface and the injected prefix is pure re-billed overhead. That is an
 architecture–surface fit, not a failure mode — but you should tune for it.
 
+### Win vs. break-even at a glance
+
+Three independent levers decide the outcome. The savings stack when they line
+up and cancel when they don't:
+
+- **Reach** — how much of the request body lean-ctx can shrink. As a *tool layer*
+  (`ctx_*` MCP tools) it only compresses its own outputs (~5 % of the window). As
+  the *wire-layer proxy* (or a true context **engine** like Hermes) it compresses
+  **every** `tool_result` and prunes history cache-stably (~95 %).
+- **Lifetime** — *long-lived* (one agent loop / interactive context, so re-reads
+  land in the same window and collapse to a ~13-token stub) vs. *phase-isolated*
+  (a fresh process/context per phase, where the back-reference can't resolve).
+- **Pricing** — *prompt-cache-priced* (the injected prefix rides the provider
+  cache and is billed once) vs. *non-caching / request-metered* (the prefix is
+  re-sent and re-billed every turn).
+
+| Reach | Lifetime | Pricing | Verdict |
+|-------|----------|---------|---------|
+| engine / proxy | long-lived | cache-priced | **Clear win** — re-reads collapse, the 95 % surface is compressed, the prefix is cached once |
+| engine / proxy | long-lived | non-caching | **Win** — re-read dividend + full-body compression outweigh the re-billed prefix |
+| tool-only | long-lived | cache-priced | **Modest win** — cached prefix + warm `ctx_*` re-reads, but only ~5 % reach |
+| tool-only | phase-isolated | non-caching | **Break-even** — no warm re-reads, ~5 % reach, prefix re-billed each turn; tune with the row below |
+
+The honest target is therefore: **own the window** (route through `proxy enable`
+or the engine), keep **one long-lived context**, and prefer a **cache-priced**
+rail. Where you can't, the goal is *break-even, not a loss* — which is exactly
+what the next sections tune for.
+
 ### The meter's denominator (read this before quoting `gain`)
 
 `lean-ctx gain` measures compression on **lean-ctx-touched traffic** (the reads

@@ -20,6 +20,14 @@ const BETA_CONFIDENCE: f32 = 0.25;
 const GAMMA_RECENCY: f32 = 0.15;
 const MAX_RECENCY_DAYS: f32 = 90.0;
 
+/// Cosine threshold above which a freshly-remembered fact is treated as a
+/// semantic near-duplicate of an existing one. Deliberately conservative — only
+/// genuine paraphrases ("DB is Postgres" / "we persist to PostgreSQL") clear it,
+/// so the advisory stays signal, not noise. Non-destructive: it nudges the agent
+/// to `judge`, never auto-merges (distinct facts can be near in embedding space,
+/// e.g. "Postgres 14" vs "Postgres 15").
+pub const SEMANTIC_DUP_THRESHOLD: f32 = 0.86;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FactEmbedding {
     pub category: String,
@@ -391,6 +399,108 @@ pub fn embed_and_store(
     Ok(())
 }
 
+/// Embedding-based near-duplicate detection for `remember`. Mirrors the lexical
+/// [`find_cross_key_similar`] but scores cosine similarity, so paraphrases that
+/// share few tokens are still caught. Read-only against the *pre-upsert* index,
+/// so the incoming fact never matches itself. Returns advisory hits for the
+/// agent to resolve via `judge` — it never mutates or merges facts.
+///
+/// [`find_cross_key_similar`]: crate::core::knowledge::find_cross_key_similar
+#[cfg(feature = "embeddings")]
+pub fn find_semantic_duplicates(
+    index: &KnowledgeEmbeddingIndex,
+    engine: &EmbeddingEngine,
+    knowledge: &ProjectKnowledge,
+    new_category: &str,
+    new_key: &str,
+    new_value: &str,
+    threshold: f32,
+    limit: usize,
+) -> Vec<crate::core::knowledge::SimilarFact> {
+    // Cheap static-model embed (microseconds); kept separate from the storage
+    // embed in `embed_and_store` so its well-tested side-car path is untouched.
+    let text = format!("{new_category} {new_key}: {new_value}");
+    let Ok(query) = engine.embed(&text) else {
+        return Vec::new();
+    };
+    semantic_duplicates_from_query(
+        index,
+        knowledge,
+        new_category,
+        new_key,
+        &query,
+        threshold,
+        limit,
+    )
+}
+
+/// Engine-free core of [`find_semantic_duplicates`]: scans an in-memory index
+/// for entries whose cosine similarity to a precomputed query embedding clears
+/// `threshold`, maps them back to current facts, and excludes the incoming
+/// fact's own key, non-current facts, and pairs the agent already judged. Pure
+/// and deterministic so the dedup logic is unit-testable with raw vectors.
+fn semantic_duplicates_from_query(
+    index: &KnowledgeEmbeddingIndex,
+    knowledge: &ProjectKnowledge,
+    new_category: &str,
+    new_key: &str,
+    query: &[f32],
+    threshold: f32,
+    limit: usize,
+) -> Vec<crate::core::knowledge::SimilarFact> {
+    use crate::core::knowledge::SimilarFact;
+
+    let composite_key = format!("{new_category}/{new_key}");
+
+    let mut scored: Vec<(&FactEmbedding, f32)> = index
+        .entries
+        .iter()
+        .filter(|e| !(e.category == new_category && e.key == new_key))
+        .map(|e| (e, e.similarity(query)))
+        .filter(|(_, sim)| *sim >= threshold)
+        .collect();
+    scored.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.category.cmp(&b.0.category))
+            .then_with(|| a.0.key.cmp(&b.0.key))
+    });
+
+    let mut out: Vec<SimilarFact> = Vec::new();
+    for (entry, sim) in scored {
+        let other_key = format!("{}/{}", entry.category, entry.key);
+        let already_judged = knowledge.judged_pairs.iter().any(|jp| {
+            (jp.key_a == composite_key && jp.key_b == other_key)
+                || (jp.key_a == other_key && jp.key_b == composite_key)
+        });
+        if already_judged {
+            continue;
+        }
+        let Some(fact) = knowledge
+            .facts
+            .iter()
+            .find(|f| f.category == entry.category && f.key == entry.key && f.is_current())
+        else {
+            continue;
+        };
+        let preview = if fact.value.len() > 60 {
+            format!("{}...", &fact.value[..fact.value.floor_char_boundary(57)])
+        } else {
+            fact.value.clone()
+        };
+        out.push(SimilarFact {
+            category: fact.category.clone(),
+            key: fact.key.clone(),
+            value_preview: preview,
+            similarity: sim,
+        });
+        if out.len() >= limit {
+            break;
+        }
+    }
+    out
+}
+
 pub fn format_scored_facts(results: &[ScoredFact<'_>]) -> String {
     if results.is_empty() {
         return "No matching facts found.".to_string();
@@ -728,5 +838,77 @@ mod tests {
         assert!(output.contains("arch:db=PostgreSQL"));
         assert!(output.contains("★★★★"));
         assert!(output.contains("[s:85%]"));
+    }
+
+    #[test]
+    fn semantic_dup_flags_high_cosine_other_key() {
+        let policy = MemoryPolicy::default();
+        let mut kn = ProjectKnowledge::new("/tmp/semdup-1");
+        kn.remember(
+            "arch",
+            "db",
+            "PostgreSQL is the primary database",
+            "s",
+            0.9,
+            &policy,
+        );
+        kn.remember(
+            "arch",
+            "cache",
+            "Redis is the cache layer",
+            "s",
+            0.9,
+            &policy,
+        );
+
+        let mut idx = KnowledgeEmbeddingIndex::new(&kn.project_hash);
+        idx.upsert("arch", "db", &[1.0, 0.0, 0.0]);
+        idx.upsert("arch", "cache", &[0.0, 1.0, 0.0]);
+
+        // Query near-identical to the "db" entry, remembering a *different* key.
+        let query = [1.0, 0.0, 0.0];
+        let dups = semantic_duplicates_from_query(&idx, &kn, "arch", "database", &query, 0.86, 3);
+        assert_eq!(
+            dups.len(),
+            1,
+            "only the near-identical entry clears threshold"
+        );
+        assert_eq!(dups[0].key, "db");
+        assert!(dups[0].similarity >= 0.86);
+    }
+
+    #[test]
+    fn semantic_dup_excludes_self_and_judged() {
+        let policy = MemoryPolicy::default();
+        let mut kn = ProjectKnowledge::new("/tmp/semdup-2");
+        kn.remember(
+            "arch",
+            "db",
+            "PostgreSQL primary database",
+            "s",
+            0.9,
+            &policy,
+        );
+
+        let mut idx = KnowledgeEmbeddingIndex::new(&kn.project_hash);
+        idx.upsert("arch", "db", &[1.0, 0.0, 0.0]);
+        let query = [1.0, 0.0, 0.0];
+
+        // Self: remembering the same key must never flag itself.
+        let self_hits = semantic_duplicates_from_query(&idx, &kn, "arch", "db", &query, 0.86, 3);
+        assert!(self_hits.is_empty(), "a fact is never its own duplicate");
+
+        // A different key matches — until the pair has been judged.
+        let other = semantic_duplicates_from_query(&idx, &kn, "arch", "database", &query, 0.86, 3);
+        assert_eq!(other.len(), 1);
+
+        kn.judged_pairs.push(crate::core::knowledge::JudgedPair {
+            key_a: "arch/database".to_string(),
+            key_b: "arch/db".to_string(),
+            verdict: "unrelated".to_string(),
+            judged_at: chrono::Utc::now(),
+        });
+        let judged = semantic_duplicates_from_query(&idx, &kn, "arch", "database", &query, 0.86, 3);
+        assert!(judged.is_empty(), "already-judged pairs are not re-flagged");
     }
 }

@@ -36,11 +36,39 @@ class CockpitExplorer extends HTMLElement {
     var fetchJson = cexpApi();
     if (!fetchJson) { this._renderError('API client not loaded'); return; }
     try {
-      this._data = await fetchJson('/api/tree', { timeoutMs: 20000 });
+      var data = await fetchJson('/api/tree', { timeoutMs: 20000 });
+      // The index is built in the background (#452): show progress and re-poll
+      // instead of rendering an empty tree.
+      if (data && data.status === 'building') {
+        this._renderBuilding(data);
+        this._scheduleBuildPoll();
+        return;
+      }
+      this._data = data;
       this._render();
     } catch (e) {
       this._renderError((e && e.error) || 'Failed to load explorer');
     }
+  }
+
+  _renderBuilding(progress) {
+    var pct = progress && progress.files_total > 0
+      ? Math.round((progress.files_done / progress.files_total) * 100)
+      : 0;
+    this.innerHTML =
+      '<div class="exp-wrap"><div class="exp-loading">Building project index\u2026 ' +
+      pct + '%</div></div>';
+  }
+
+  _scheduleBuildPoll() {
+    var self = this;
+    if (self._buildPoll) return;
+    self._buildPoll = setTimeout(function () {
+      self._buildPoll = null;
+      // Stop polling if the user navigated away from the Explorer tab.
+      var section = document.getElementById('view-explorer');
+      if (section && section.classList.contains('active')) self.loadData();
+    }, 1500);
   }
 
   _renderError(msg) {

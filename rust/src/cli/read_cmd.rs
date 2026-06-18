@@ -503,3 +503,64 @@ pub fn cmd_deps(args: &[String]) {
         std::process::exit(1);
     }
 }
+
+#[cfg(test)]
+mod cap_tests {
+    use super::{cap_cli_to_raw, count_tokens};
+
+    #[test]
+    fn caps_to_raw_when_framing_inflates() {
+        // A tiny file: the `path [NL]` header (+ any footer) pushes the framed
+        // payload past the bare content, so the cap must ship the content
+        // verbatim — the additive CLI default must never inflate a read (#361).
+        let raw = "x = 1\n";
+        let raw_tokens = count_tokens(raw);
+        let framed = format!("some/very/long/path/header.rs [1L]\n{raw}\n[lean-ctx: 0 tok saved]");
+        assert!(count_tokens(&framed) > raw_tokens, "fixture must inflate");
+        assert_eq!(cap_cli_to_raw(framed, raw, raw_tokens), raw);
+    }
+
+    #[test]
+    fn keeps_framing_when_it_saves() {
+        // A genuinely compressed payload (fewer tokens than raw) is kept as-is.
+        let raw = "fn a() {}\n".repeat(300);
+        let raw_tokens = count_tokens(&raw);
+        let framed = "f.rs [300L]\nfn a() {} …".to_string();
+        assert!(count_tokens(&framed) < raw_tokens);
+        assert_eq!(cap_cli_to_raw(framed.clone(), &raw, raw_tokens), framed);
+    }
+
+    #[test]
+    fn keeps_framing_for_empty_file() {
+        // raw_tokens == 0 disables the cap so an empty file still gets a signal.
+        let framed = "empty.rs [0L]\n".to_string();
+        assert_eq!(cap_cli_to_raw(framed.clone(), "", 0), framed);
+    }
+
+    #[test]
+    fn break_even_is_not_inflation() {
+        // Equal token counts use strict `>`, so framing is preserved at break-even.
+        let raw = "alpha beta gamma delta";
+        let raw_tokens = count_tokens(raw);
+        let framed = raw.to_string();
+        assert_eq!(count_tokens(&framed), raw_tokens);
+        assert_eq!(cap_cli_to_raw(framed.clone(), raw, raw_tokens), framed);
+    }
+
+    #[test]
+    fn emitted_never_exceeds_raw_across_sizes() {
+        // The invariant itself: for any bloated framing over a non-empty file the
+        // emitted token count is ≤ the raw token count.
+        for n in [1usize, 5, 50, 500] {
+            let raw = "data line here\n".repeat(n);
+            let raw_tokens = count_tokens(&raw);
+            let framed = format!("a/b/c/path.txt [{n}L]\n{raw}\n[lean-ctx: {n} tok saved ({n}%)]");
+            let out = cap_cli_to_raw(framed, &raw, raw_tokens);
+            assert!(
+                count_tokens(&out) <= raw_tokens,
+                "n={n}: emitted {} tok exceeds raw {raw_tokens}",
+                count_tokens(&out)
+            );
+        }
+    }
+}

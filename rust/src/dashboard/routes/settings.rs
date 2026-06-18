@@ -120,9 +120,7 @@ fn apply_terse_agent(value: &str) -> Result<(), String> {
 fn apply_compression(value: &str) -> Result<(), String> {
     let level = CompressionLevel::from_str_label(value)
         .ok_or_else(|| format!("invalid compression level '{value}'"))?;
-    let mut cfg = Config::load();
-    cfg.compression_level = level;
-    cfg.save()
+    let cfg = Config::update_global(move |c| c.compression_level = level)
         .map_err(|e| format!("Error saving config: {e}"))?;
     let _ = crate::core::terse::rules_inject::inject(&cfg.compression_level);
     Ok(())
@@ -159,22 +157,35 @@ fn ensure_bool(value: &str) -> Result<(), String> {
 }
 
 /// Snapshot of the four settings as the UI needs them: the active value, the
-/// selectable options, and whether an environment variable currently overrides
-/// the persisted config (so the UI can warn that a toggle won't take effect
-/// until the env var is unset).
+/// selectable options, and whether an environment variable or a project-local
+/// `.lean-ctx.toml` currently overrides the persisted config (so the UI can warn
+/// that a toggle won't take effect until that source is removed).
+///
+/// GH #450: the top-level `config_path`/`config_exists`/`parse_error` fields let
+/// the UI show *which* `config.toml` is being read — the missing piece that made
+/// "my settings keep resetting" undiagnosable. `local_override` mirrors the keys
+/// `Config::merge_local` honors (compression/terse/tool profile; `structure_first`
+/// is never merged from local config, so it carries no `local_override`).
 fn settings_payload() -> String {
     let cfg = Config::load();
+    let prov = Config::provenance();
+    let local = |key: &str| prov.local_overrides(key);
     let payload = serde_json::json!({
+        "config_path": prov.config_path.as_ref().map(|p| p.display().to_string()),
+        "config_exists": prov.config_exists,
+        "parse_error": prov.parse_error,
         "settings": {
             "compression_level": {
                 "value": compression_canon(&CompressionLevel::effective(&cfg)),
                 "options": COMPRESSION_OPTIONS,
                 "env_override": env_present("LEAN_CTX_COMPRESSION"),
+                "local_override": local("compression_level"),
             },
             "tool_profile": {
                 "value": tool_profile_value(&cfg),
                 "options": TOOL_PROFILE_OPTIONS,
                 "env_override": env_present("LEAN_CTX_TOOL_PROFILE"),
+                "local_override": local("tool_profile"),
             },
             "structure_first": {
                 "value": cfg.structure_first_effective(),
@@ -184,6 +195,7 @@ fn settings_payload() -> String {
                 "value": terse_canon(&cfg.terse_agent),
                 "options": TERSE_OPTIONS,
                 "env_override": env_present("LEAN_CTX_TERSE_AGENT"),
+                "local_override": local("terse_agent"),
             },
         }
     });
@@ -357,5 +369,37 @@ mod tests {
                 "missing env_override for {key}"
             );
         }
+    }
+
+    /// GH #450: the payload must carry the resolved config provenance so the UI
+    /// can show *which* config.toml is read and warn on a project-local override.
+    #[test]
+    fn payload_exposes_config_provenance() {
+        let raw = settings_payload();
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+
+        assert!(v.get("config_path").is_some(), "missing config_path");
+        assert!(
+            v.get("config_exists")
+                .is_some_and(serde_json::Value::is_boolean),
+            "config_exists must be a bool"
+        );
+        assert!(v.get("parse_error").is_some(), "missing parse_error key");
+
+        let s = &v["settings"];
+        // The three locally-mergeable settings expose local_override…
+        for key in ["compression_level", "tool_profile", "terse_agent"] {
+            assert!(
+                s[key]
+                    .get("local_override")
+                    .is_some_and(serde_json::Value::is_boolean),
+                "missing local_override bool for {key}"
+            );
+        }
+        // …structure_first is never merged from local config, so it has none.
+        assert!(
+            s["structure_first"].get("local_override").is_none(),
+            "structure_first must not carry local_override"
+        );
     }
 }

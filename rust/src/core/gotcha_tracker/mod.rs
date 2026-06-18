@@ -1,14 +1,21 @@
 mod detect;
 pub mod learn;
+pub mod mining;
 mod model;
 mod persist;
+mod reflector;
+mod runtime;
 
-pub use detect::{DetectedError, detect_error_pattern, normalize_error_signature};
+pub use detect::{
+    DetectedError, detect_error_pattern, is_correlatable_command, normalize_error_signature,
+};
 pub use model::{
     ErrorEntry, FixEntry, Gotcha, GotchaCategory, GotchaSeverity, GotchaSource, GotchaStats,
     GotchaStore, PendingError, SessionErrorLog,
 };
 pub use persist::{load_universal_gotchas, save_universal_gotchas};
+pub use reflector::{ReflectionInsight, fold_into_playbook, format_ledger, reflect};
+pub use runtime::record_shell_outcome;
 
 use chrono::{DateTime, Utc};
 use detect::command_base;
@@ -806,5 +813,26 @@ mod tests {
     fn truncate_str_short_utf8_unchanged() {
         let input = "Ölüm";
         assert_eq!(truncate_str(input, 20), input);
+    }
+
+    #[test]
+    fn correlatable_command_gate() {
+        for cmd in [
+            "cargo build",
+            "cargo test --release",
+            "npm install",
+            "pnpm run build",
+            "python app.py",
+            "go build ./...",
+            "npx tsc --noEmit",
+            "poetry run pytest -q",
+            "docker build .",
+            "git rebase main",
+        ] {
+            assert!(is_correlatable_command(cmd), "should correlate: {cmd}");
+        }
+        for cmd in ["ls -la", "cat README.md", "echo hi", "cd rust", "pwd"] {
+            assert!(!is_correlatable_command(cmd), "should skip: {cmd}");
+        }
     }
 }

@@ -36,6 +36,16 @@ pub(super) const SCENARIOS: &[Scenario] = &[
     },
 ];
 
+/// The `medium` scenario — the committed default for the dual-arm self-verify
+/// bench (48 files: large enough for the session model to be meaningful, small
+/// enough to stay fast and deterministic).
+pub(super) fn medium_scenario() -> &'static Scenario {
+    SCENARIOS
+        .iter()
+        .find(|s| s.name == "medium")
+        .expect("medium scenario is part of the committed matrix")
+}
+
 /// Topic buckets. Each file belongs to one topic; queries combine the topic
 /// with a per-file unique marker so the expected file is unambiguous.
 const TOPICS: &[&str] = &[

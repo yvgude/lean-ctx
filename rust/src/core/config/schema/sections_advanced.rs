@@ -50,11 +50,36 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "LEAN_CTX_ALLOW_INSECURE_HTTP_UPSTREAM",
         ),
     );
+    proxy.insert(
+        "meter_openai_usage".into(),
+        key(
+            "bool",
+            serde_json::json!(cfg.proxy.meters_openai_usage()),
+            "Inject stream_options.include_usage into streamed OpenAI Chat Completions so the final chunk reports real token usage for the measured spend meter. Default true",
+        ),
+    );
     sections.insert(
         "proxy".into(),
         SectionSchema {
             description: "Proxy upstream configuration for API routing".into(),
             keys: proxy,
+        },
+    );
+
+    let mut cost = BTreeMap::new();
+    cost.insert(
+        "default_model".into(),
+        key(
+            "string?",
+            serde_json::json!(cfg.cost.default_model),
+            "Fallback pricing model for MCP-only IDEs whose real model lean-ctx cannot observe (Cursor, Copilot, Windsurf, …). Unset → blended heuristic. Per-IDE overrides live in [cost.models]",
+        ),
+    );
+    sections.insert(
+        "cost".into(),
+        SectionSchema {
+            description: "Model declaration for measured-vs-estimated cost reporting".into(),
+            keys: cost,
         },
     );
 

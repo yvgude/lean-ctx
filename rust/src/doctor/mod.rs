@@ -200,6 +200,28 @@ pub fn run() {
         });
     }
 
+    // Layout commitment (GL #623): a pinned XDG install can no longer be
+    // hijacked by a stray ~/.lean-ctx. Surface the mode and flag a residual dir
+    // (heal reclaims it on the next start / `doctor --fix`).
+    {
+        let pinned = crate::core::layout_pin::is_xdg_pinned();
+        let residual = crate::core::xdg_migrate::residual_legacy_present();
+        let line = if pinned && residual {
+            format!(
+                "{BOLD}layout{RST}  {GREEN}xdg-pinned{RST}  {YELLOW}residual ~/.lean-ctx present{RST}  {DIM}(auto-reclaimed on next start){RST}"
+            )
+        } else if pinned {
+            format!(
+                "{BOLD}layout{RST}  {GREEN}xdg-pinned{RST}  {DIM}(~/.lean-ctx can no longer hijack this install){RST}"
+            )
+        } else {
+            format!(
+                "{BOLD}layout{RST}  {WHITE}single-dir / legacy{RST}  {DIM}(run: lean-ctx doctor --fix to commit to XDG){RST}"
+            )
+        };
+        board.check(&Outcome { ok: true, line });
+    }
+
     // 5) config.toml (missing is OK). It lives in the CONFIG dir
     // ($XDG_CONFIG_HOME/lean-ctx after a split), not the data dir — resolve it
     // through the same path as the loader so the report matches reality
@@ -473,6 +495,14 @@ pub fn run() {
     // 20) Proxy health
     let proxy_health = proxy_health_outcome();
     board.check(&proxy_health);
+
+    // 20a) Proxy upstream drift (#449): running proxy serves a different upstream
+    // than config.toml resolves to (env override masking config). Only surfaces
+    // when the proxy is up and actually drifting.
+    let upstream_drift = proxy_upstream_drift_outcome();
+    if let Some(ref check) = upstream_drift {
+        board.check(check);
+    }
 
     // 20) Stale proxy env (ANTHROPIC_BASE_URL pointing to local proxy while proxy is not enabled)
     let stale_env = stale_proxy_env_outcome();

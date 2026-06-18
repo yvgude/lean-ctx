@@ -25,6 +25,8 @@ class CockpitSearch extends HTMLElement {
     this._error = null;
     this._loading = false;
     this._searchTimer = null;
+    this._indexBuilding = false;
+    this._indexPoll = null;
   }
 
   connectedCallback() {
@@ -38,9 +40,14 @@ class CockpitSearch extends HTMLElement {
     if (stored) this._query = stored;
 
     this.render();
+    this._bindInputs();
+    // Lazy-load (#452): index stats / search hit the BM25 index, which can be
+    // an expensive first build. The router calls loadData() on activation.
+  }
+
+  loadData() {
     this._loadIndexStats();
     if (this._query) this._performSearch();
-    this._bindInputs();
   }
 
   disconnectedCallback() {
@@ -49,6 +56,10 @@ class CockpitSearch extends HTMLElement {
     if (this._searchTimer) {
       clearTimeout(this._searchTimer);
       this._searchTimer = null;
+    }
+    if (this._indexPoll) {
+      clearTimeout(this._indexPoll);
+      this._indexPoll = null;
     }
   }
 
@@ -74,11 +85,31 @@ class CockpitSearch extends HTMLElement {
 
     try {
       var data = await fetchJson('/api/search-index', { timeoutMs: 8000 });
+      // The BM25 index is built in the background (#452): show progress and
+      // re-poll instead of rendering empty stats.
+      if (data && data.status === 'building') {
+        this._indexBuilding = true;
+        this._renderIndexStats();
+        this._scheduleIndexPoll();
+        return;
+      }
       if (data && !data.__error) {
+        this._indexBuilding = false;
         this._indexStats = data;
         this._renderIndexStats();
       }
     } catch (_) {}
+  }
+
+  _scheduleIndexPoll() {
+    var self = this;
+    if (self._indexPoll) return;
+    self._indexPoll = setTimeout(function () {
+      self._indexPoll = null;
+      // Stop polling if the user navigated away from the Search tab.
+      var v = document.getElementById('view-search');
+      if (v && v.classList.contains('active')) self.loadData();
+    }, 1500);
   }
 
   async _performSearch() {
@@ -102,6 +133,14 @@ class CockpitSearch extends HTMLElement {
     try {
       var url = '/api/search?q=' + encodeURIComponent(this._query);
       var data = await fetchJson(url, { timeoutMs: 15000 });
+      if (data && data.status === 'building') {
+        this._indexBuilding = true;
+        this._loading = false;
+        this._renderResults();
+        this._scheduleIndexPoll();
+        return;
+      }
+      this._indexBuilding = false;
       if (data && data.__error) {
         this._error = String(data.__error);
         this._results = null;
@@ -154,6 +193,14 @@ class CockpitSearch extends HTMLElement {
     var container = this.querySelector('#cks-index-stats');
     if (!container) return;
 
+    if (this._indexBuilding) {
+      container.innerHTML =
+        '<div class="card" style="margin-bottom:16px">' +
+        '<div class="loading-state">Building search index\u2026</div>' +
+        '</div>';
+      return;
+    }
+
     var stats = this._indexStats;
     if (!stats) {
       container.innerHTML = '';
@@ -198,6 +245,13 @@ class CockpitSearch extends HTMLElement {
     var F = fmtLib();
     var esc = F.esc || function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); };
     var fmt = F.fmt || function (n) { return String(n); };
+
+    if (this._indexBuilding && this._query.trim()) {
+      container.innerHTML =
+        '<div class="card"><div class="loading-state">' +
+        'Building search index\u2026 results will appear shortly.</div></div>';
+      return;
+    }
 
     if (this._loading) {
       container.innerHTML =
@@ -433,7 +487,7 @@ customElements.define('cockpit-search', CockpitSearch);
     if (window.LctxRouter && window.LctxRouter.registerLoader) {
       window.LctxRouter.registerLoader('search', function () {
         var el = document.querySelector('cockpit-search');
-        if (el && typeof el._loadIndexStats === 'function') el._loadIndexStats();
+        if (el && typeof el.loadData === 'function') el.loadData();
       });
     }
   }

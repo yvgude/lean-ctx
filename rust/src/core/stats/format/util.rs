@@ -38,7 +38,12 @@ pub(super) fn format_pct_1dp(val: f64) -> String {
 }
 
 pub(super) fn format_big(n: u64) -> String {
-    if n >= 1_000_000 {
+    if n >= 1_000_000_000_000 {
+        format!("{:.2}T", n as f64 / 1_000_000_000_000.0)
+    } else if n >= 1_000_000_000 {
+        // Heavy users cross 1B; show B so the receipt keeps growing past "1000.0M".
+        format!("{:.2}B", n as f64 / 1_000_000_000.0)
+    } else if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)
     } else if n >= 1_000 {
         format!("{:.1}K", n as f64 / 1_000.0)
@@ -48,7 +53,11 @@ pub(super) fn format_big(n: u64) -> String {
 }
 
 pub(super) fn format_num(n: u64) -> String {
-    if n >= 1_000_000 {
+    if n >= 1_000_000_000_000 {
+        format!("{:.2}T", n as f64 / 1_000_000_000_000.0)
+    } else if n >= 1_000_000_000 {
+        format!("{:.2}B", n as f64 / 1_000_000_000.0)
+    } else if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)
     } else if n >= 1_000 {
         format!("{},{:03}", n / 1_000, n % 1_000)
@@ -124,7 +133,26 @@ pub(crate) fn normalize_command(command: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::format_pct_1dp;
+    use super::{format_big, format_num, format_pct_1dp};
+
+    #[test]
+    fn format_big_scales_through_billions() {
+        assert_eq!(format_big(900), "900");
+        assert_eq!(format_big(2_500), "2.5K");
+        assert_eq!(format_big(4_200_000), "4.2M");
+        // The gain receipt must read in B once savings cross 1B, not "1310.0M".
+        assert_eq!(format_big(1_310_000_000), "1.31B");
+        assert_eq!(format_big(3_000_000_000_000), "3.00T");
+    }
+
+    #[test]
+    fn format_num_scales_through_billions() {
+        assert_eq!(format_num(950), "950");
+        assert_eq!(format_num(12_345), "12,345");
+        assert_eq!(format_num(7_800_000), "7.8M");
+        assert_eq!(format_num(1_310_000_000), "1.31B");
+        assert_eq!(format_num(2_500_000_000_000), "2.50T");
+    }
 
     #[test]
     fn format_pct_1dp_normal() {

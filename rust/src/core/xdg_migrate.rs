@@ -72,7 +72,7 @@ impl Category {
 fn categorize(name: &str) -> Category {
     match name {
         // --- config: RO-safe ---
-        "config.toml" | "env.sh" => Category::Config,
+        "config.toml" | "env.sh" | "layout.toml" => Category::Config,
         n if n.starts_with("shell-hook.") => Category::Config,
 
         // --- state: events, logs, journals, ledgers, dashboards ---
@@ -412,6 +412,21 @@ pub fn migrate() -> Option<MigrationReport> {
 /// - Reuses the copy-before-remove / reconcile logic, so no data is ever lost.
 /// - Removes the dir only when it ends up empty; a surviving runtime file
 ///   (e.g. a live socket) keeps it — fine, it is no longer the data dir.
+///
+/// `true` when a residual legacy `~/.lean-ctx` directory still exists on disk.
+///
+/// Diagnostics (`doctor`) use this to surface a leftover dir that [`heal`] /
+/// [`reclaim_legacy`] will drain on the next start — without reconstructing
+/// `home.join(".lean-ctx")` themselves, which the legacy-path firewall
+/// (`tests/legacy_path_firewall.rs`) forbids outside the resolver/migrator
+/// modules. The migrator owns the legacy path, so the knowledge lives here.
+///
+/// [`heal`]: crate::core::layout_pin::heal
+#[must_use]
+pub fn residual_legacy_present() -> bool {
+    dirs::home_dir().is_some_and(|h| h.join(".lean-ctx").is_dir())
+}
+
 pub fn reclaim_legacy() -> Option<MigrationReport> {
     if std::env::var_os("LEAN_CTX_DATA_DIR").is_some() {
         return None;

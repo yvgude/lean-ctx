@@ -56,7 +56,9 @@ pub fn classify_outcomes(results: &[Result<(), String>]) -> AutoSyncOutcome {
 }
 
 pub fn cloud_background_tasks() {
-    let mut config = Config::load();
+    // Persist path: read global-only so the daily background save never leaks a
+    // project-local override into the global config (#443).
+    let mut config = Config::load_global();
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
     let already_contributed = config
@@ -179,7 +181,9 @@ pub fn cloud_background_tasks() {
         }
     }
 
-    let _ = config.save();
+    if let Err(e) = config.save() {
+        tracing::warn!("could not persist cloud background state: {e}");
+    }
 }
 
 /// Push every Personal-Cloud surface silently (background variant of

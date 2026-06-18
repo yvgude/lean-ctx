@@ -102,6 +102,10 @@ pub fn run() {
                 cmd_gain(&rest);
                 return;
             }
+            "spend" => {
+                cmd_spend(&rest);
+                return;
+            }
             "savings" => {
                 cmd_savings(&rest);
                 return;

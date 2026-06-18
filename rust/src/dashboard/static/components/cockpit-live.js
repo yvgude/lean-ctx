@@ -403,7 +403,7 @@ class CockpitLive extends HTMLElement {
     document.addEventListener('lctx:refresh', this._onRefresh);
     document.addEventListener('lctx:view', this._onViewChange.bind(this));
     this.render();
-    this.loadData();
+    // Lazy-load (#452): the router loads this view's data on activation.
   }
 
   disconnectedCallback() {

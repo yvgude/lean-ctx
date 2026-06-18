@@ -334,7 +334,11 @@ fn count_recent_sessions(sessions: &[crate::core::session::SessionSummary], days
 }
 
 pub(crate) fn format_tokens(tokens: u64) -> String {
-    if tokens >= 1_000_000 {
+    if tokens >= 1_000_000_000_000 {
+        format!("{:.2}T", tokens as f64 / 1_000_000_000_000.0)
+    } else if tokens >= 1_000_000_000 {
+        format!("{:.2}B", tokens as f64 / 1_000_000_000.0)
+    } else if tokens >= 1_000_000 {
         format!("{:.1}M", tokens as f64 / 1_000_000.0)
     } else if tokens >= 1_000 {
         format!("{:.1}K", tokens as f64 / 1_000.0)

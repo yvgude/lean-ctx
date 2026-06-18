@@ -138,6 +138,7 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
             "{}",
             tools::ctx_gain::handle("cost", None, model.as_deref(), Some(limit))
         );
+        print_measured_spend_hint();
     } else if rest.iter().any(|a| a == "--tasks") {
         println!(
             "{}",
@@ -228,6 +229,17 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         print_bridge_warning();
         crate::cli::wrapped_publish::maybe_auto_publish(&period);
         print_community_hint();
+    }
+}
+
+/// `gain --cost` values savings with a *resolved* model (estimated). When the
+/// proxy has recorded real provider usage, point at the measured `spend` view so
+/// the user knows the exact bill is one command away.
+fn print_measured_spend_hint() {
+    if !crate::proxy::usage_meter::persisted_snapshot().is_empty() {
+        eprintln!(
+            "\n  \x1b[2m💡 Measured provider spend available — run `lean-ctx spend` for the real per-model bill.\x1b[0m"
+        );
     }
 }
 

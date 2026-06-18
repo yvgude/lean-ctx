@@ -18,6 +18,7 @@ impl McpTool for CtxShellTool {
         tool_def(
             "ctx_shell",
             "Run a shell command with compressed output. Prefer over native Shell/Bash.\n\
+             Uses the system shell ($SHELL) profile-free — no rc/profile files sourced. \
              Especially for build/test/log commands (cargo, make, npm, pytest, \
              go test, …), the heaviest output in a session. Compression is \
              lossless for signal: compiler errors, test results and panics are \

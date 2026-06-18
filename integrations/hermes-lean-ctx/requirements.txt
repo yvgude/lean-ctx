@@ -1,0 +1,6 @@
+# Runtime dependency: the dependency-free lean-ctx HTTP /v1 client.
+leanctx>=0.1.0
+
+# Optional: exact token counting that matches Hermes' tiktoken accounting.
+# The engine falls back to a deterministic char-based estimate when absent.
+# tiktoken>=0.7.0

@@ -37,10 +37,7 @@ pub fn compress(command: &str, output: &str) -> Option<String> {
         };
     }
     let parts: Vec<&str> = cl.split_whitespace().collect();
-    if parts.len() >= 2 && parts[0] == "uv" && parts[1] == "sync" {
-        return Some(compress_uv(output));
-    }
-    if parts.len() >= 3 && parts[0] == "uv" && parts[1] == "pip" && parts[2] == "install" {
+    if parts.first() == Some(&"uv") && uv_is_compressible(&parts) {
         return Some(compress_uv(output));
     }
     if cl.starts_with("conda ") || cl.starts_with("mamba ") {
@@ -56,6 +53,26 @@ pub fn compress(command: &str, output: &str) -> Option<String> {
         return Some(compress_pipx(output));
     }
     None
+}
+
+/// uv subcommands whose output is the `Resolved/Prepared/Installed + pkg==ver`
+/// progress format we can safely compress. Excludes commands that emit an
+/// artifact or child-process output (`run`, `pip compile`, `export`, `tree`,
+/// `pip freeze`, `pip list`) which must pass through untouched.
+fn uv_is_compressible(parts: &[&str]) -> bool {
+    let sub = parts.get(1).copied().unwrap_or("");
+    match sub {
+        "sync" | "lock" | "add" | "remove" | "venv" => true,
+        "tool" => matches!(
+            parts.get(2).copied().unwrap_or(""),
+            "install" | "upgrade" | "uninstall"
+        ),
+        "pip" => matches!(
+            parts.get(2).copied().unwrap_or(""),
+            "install" | "sync" | "uninstall"
+        ),
+        _ => false,
+    }
 }
 
 fn is_download_noise(line: &str) -> bool {

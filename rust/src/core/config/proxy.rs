@@ -15,6 +15,12 @@ pub struct ProxyConfig {
     /// Allow a non-loopback plaintext `http://` upstream (trusted local network
     /// only). Opt-in; see [`ProxyConfig::allows_insecure_http_upstream`]. (#440)
     pub allow_insecure_http_upstream: Option<bool>,
+    /// Inject `stream_options.include_usage = true` into streamed OpenAI Chat
+    /// Completions so the final chunk reports real token usage for the measured
+    /// spend meter. Default on; set `false` for a client that mishandles the
+    /// trailing usage chunk. Anthropic/Gemini/OpenAI-Responses report usage
+    /// without any request change, so this only affects Chat Completions.
+    pub meter_openai_usage: Option<bool>,
 }
 
 /// How the proxy prunes old tool results from conversation history.
@@ -58,6 +64,13 @@ impl ProxyConfig {
         }
     }
 
+    /// Whether the proxy injects `stream_options.include_usage` into streamed
+    /// OpenAI Chat Completions to meter real spend. `[proxy] meter_openai_usage`
+    /// in config.toml, default `true`.
+    pub fn meters_openai_usage(&self) -> bool {
+        self.meter_openai_usage.unwrap_or(true)
+    }
+
     /// Whether a non-loopback plaintext `http://` upstream is allowed. Opt-in
     /// only — a deliberate downgrade for a trusted local-network service such as
     /// `http://host.docker.internal:2455` in front of codex-lb (#440).
@@ -68,8 +81,9 @@ impl ProxyConfig {
             || self.allow_insecure_http_upstream.unwrap_or(false)
     }
 
-    pub fn resolve_upstream(&self, provider: ProxyProvider) -> String {
-        let (env_var, config_val, default) = match provider {
+    /// `(env var, configured value, provider default)` for one provider.
+    fn provider_spec(&self, provider: ProxyProvider) -> (&'static str, Option<&str>, &'static str) {
+        match provider {
             ProxyProvider::Anthropic => (
                 "LEAN_CTX_ANTHROPIC_UPSTREAM",
                 self.anthropic_upstream.as_deref(),
@@ -85,20 +99,106 @@ impl ProxyConfig {
                 self.gemini_upstream.as_deref(),
                 "https://generativelanguage.googleapis.com",
             ),
+        }
+    }
+
+    /// Resolve one upstream with precedence `LEAN_CTX_*_UPSTREAM` env var >
+    /// `[proxy].*_upstream` (config.toml) > provider default.
+    ///
+    /// Returns `Err` when a value is *present but invalid* so a live reload can
+    /// keep the last good value instead of silently rerouting to the default; an
+    /// *absent* value resolves to the provider default (`Ok`).
+    fn resolve_upstream_checked(&self, provider: ProxyProvider) -> Result<String, String> {
+        self.resolve_upstream_inner(provider, true)
+    }
+
+    /// Shared resolver for [`resolve_upstream_checked`] and the disk-only view.
+    /// `use_env = false` ignores the `LEAN_CTX_*_UPSTREAM` override and yields
+    /// the config.toml truth a freshly (re)started managed proxy would serve.
+    fn resolve_upstream_inner(
+        &self,
+        provider: ProxyProvider,
+        use_env: bool,
+    ) -> Result<String, String> {
+        let (env_var, config_val, default) = self.provider_spec(provider);
+        let env_val = if use_env {
+            std::env::var(env_var)
+                .ok()
+                .and_then(|v| normalize_url_opt(&v))
+        } else {
+            None
         };
-        let resolved = std::env::var(env_var)
-            .ok()
-            .and_then(|v| normalize_url_opt(&v))
-            .or_else(|| config_val.and_then(normalize_url_opt))
-            .unwrap_or_else(|| normalize_url(default));
-        match validate_upstream_url(&resolved, self.allows_insecure_http_upstream()) {
+        let candidate = env_val.or_else(|| config_val.and_then(normalize_url_opt));
+        match candidate {
+            None => Ok(normalize_url(default)),
+            Some(url) => validate_upstream_url(&url, self.allows_insecure_http_upstream()),
+        }
+    }
+
+    /// Effective upstream for a provider (env > config > default). An invalid
+    /// configured/env value falls back to the provider default (logged) — the
+    /// safe choice at startup.
+    pub fn resolve_upstream(&self, provider: ProxyProvider) -> String {
+        match self.resolve_upstream_checked(provider) {
             Ok(url) => url,
             Err(e) => {
                 tracing::warn!("upstream validation failed, using default: {e}");
-                normalize_url(default)
+                normalize_url(self.provider_spec(provider).2)
             }
         }
     }
+
+    /// Resolve all three upstreams at once (startup snapshot, env-aware).
+    pub fn resolve_all(&self) -> Upstreams {
+        Upstreams {
+            anthropic: self.resolve_upstream(ProxyProvider::Anthropic),
+            openai: self.resolve_upstream(ProxyProvider::OpenAi),
+            gemini: self.resolve_upstream(ProxyProvider::Gemini),
+        }
+    }
+
+    /// Resolve all upstreams from config.toml only (ignoring `LEAN_CTX_*` env) —
+    /// the values a freshly (re)started managed proxy would serve. Used by
+    /// status/doctor to detect drift from a running proxy's live upstream (#449).
+    pub fn resolve_all_disk(&self) -> Upstreams {
+        let pick = |provider: ProxyProvider| {
+            self.resolve_upstream_inner(provider, false)
+                .unwrap_or_else(|_| normalize_url(self.provider_spec(provider).2))
+        };
+        Upstreams {
+            anthropic: pick(ProxyProvider::Anthropic),
+            openai: pick(ProxyProvider::OpenAi),
+            gemini: pick(ProxyProvider::Gemini),
+        }
+    }
+
+    /// Re-resolve upstreams for a *running* proxy (#449). For any provider whose
+    /// currently configured/env value fails validation, the last good value is
+    /// kept instead of rerouting live traffic to the provider default — so a typo
+    /// in config.toml can never silently redirect in-flight requests.
+    pub fn refresh_upstreams(&self, last: &Upstreams) -> Upstreams {
+        let keep = |provider: ProxyProvider, prev: &str| {
+            self.resolve_upstream_checked(provider).unwrap_or_else(|e| {
+                tracing::warn!("upstream invalid, keeping {prev}: {e}");
+                prev.to_string()
+            })
+        };
+        Upstreams {
+            anthropic: keep(ProxyProvider::Anthropic, &last.anthropic),
+            openai: keep(ProxyProvider::OpenAi, &last.openai),
+            gemini: keep(ProxyProvider::Gemini, &last.gemini),
+        }
+    }
+}
+
+/// The three resolved provider upstreams a running proxy forwards to. Published
+/// to request handlers via a `tokio::sync::watch` channel so a config change is
+/// picked up live, without a proxy restart (#449).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Upstreams {
+    pub anthropic: String,
+    pub openai: String,
+    pub gemini: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -106,6 +206,48 @@ pub enum ProxyProvider {
     Anthropic,
     OpenAi,
     Gemini,
+}
+
+/// Why a running proxy's live upstream differs from what the operator expects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpstreamDrift {
+    /// A `LEAN_CTX_*_UPSTREAM` env var is set in *this* process but the proxy
+    /// serves a different value — the env never reached the MCP/service-spawned
+    /// proxy. This is the #449 trap: Codex (and other MCP hosts) launch the
+    /// server with a stripped, allowlisted env that omits `LEAN_CTX_*_UPSTREAM`,
+    /// so the proxy it spawns never sees it. Fix: persist it to config.toml,
+    /// which the proxy reads live.
+    EnvNotApplied,
+    /// The proxy serves a value other than config.toml resolves to: it was
+    /// started with an env override that now masks a later config edit. Fix:
+    /// `lean-ctx proxy restart`.
+    ConfigNotApplied,
+}
+
+/// The `LEAN_CTX_*_UPSTREAM` override visible to *this* process for a provider,
+/// normalized (`None` if unset/blank). Lets status/doctor explain why an env var
+/// a user exported in their shell never reaches an MCP/service-spawned proxy.
+pub fn env_upstream_override(provider: ProxyProvider) -> Option<String> {
+    let var = match provider {
+        ProxyProvider::Anthropic => "LEAN_CTX_ANTHROPIC_UPSTREAM",
+        ProxyProvider::OpenAi => "LEAN_CTX_OPENAI_UPSTREAM",
+        ProxyProvider::Gemini => "LEAN_CTX_GEMINI_UPSTREAM",
+    };
+    std::env::var(var).ok().and_then(|v| normalize_url_opt(&v))
+}
+
+/// Diagnose upstream drift for one provider from the CLI-visible env override
+/// (`env`), the config.toml value (`disk`) and the proxy's live value (`live`).
+/// `None` means in sync.
+pub fn diagnose_drift(env: Option<&str>, disk: &str, live: &str) -> Option<UpstreamDrift> {
+    if let Some(env) = env {
+        // An env override is present in this process: the proxy honours it only
+        // if it was started with it. If the proxy serves something else, the env
+        // never reached it (#449). If it matches, that is consistent (no drift).
+        return (env != live).then_some(UpstreamDrift::EnvNotApplied);
+    }
+    // No env override here: the proxy should mirror config.toml.
+    (disk != live).then_some(UpstreamDrift::ConfigNotApplied)
 }
 
 pub fn normalize_url(value: &str) -> String {
@@ -237,5 +379,116 @@ mod tests {
             ..Default::default()
         };
         assert!(cfg.allows_insecure_http_upstream());
+    }
+
+    /// `resolve_all_disk` ignores `LEAN_CTX_*_UPSTREAM` env by construction, so
+    /// these assertions are env-independent (no lock needed). Loopback HTTP is an
+    /// always-valid custom upstream (no allowlist / opt-in required).
+    #[test]
+    fn resolve_all_disk_uses_config_then_default() {
+        let cfg = ProxyConfig {
+            openai_upstream: Some("http://127.0.0.1:19101".into()),
+            ..Default::default()
+        };
+        let up = cfg.resolve_all_disk();
+        assert_eq!(up.openai, "http://127.0.0.1:19101");
+        assert_eq!(up.anthropic, "https://api.anthropic.com");
+        assert_eq!(up.gemini, "https://generativelanguage.googleapis.com");
+    }
+
+    #[test]
+    fn resolve_all_disk_normalizes_trailing_slash() {
+        let cfg = ProxyConfig {
+            openai_upstream: Some("http://127.0.0.1:19101/".into()),
+            ..Default::default()
+        };
+        assert_eq!(cfg.resolve_all_disk().openai, "http://127.0.0.1:19101");
+    }
+
+    #[test]
+    fn refresh_keeps_last_good_on_invalid_config() {
+        // `refresh_upstreams` is env-aware; isolate from a developer's shell that
+        // may export LEAN_CTX_OPENAI_UPSTREAM (e.g. while reproducing #449).
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_OPENAI_UPSTREAM");
+
+        // A typo in config.toml must never reroute a live proxy to the default.
+        let last = Upstreams {
+            anthropic: "https://api.anthropic.com".into(),
+            openai: "http://127.0.0.1:19101".into(),
+            gemini: "https://generativelanguage.googleapis.com".into(),
+        };
+        let cfg = ProxyConfig {
+            openai_upstream: Some("not-a-valid-url".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            cfg.refresh_upstreams(&last).openai,
+            "http://127.0.0.1:19101",
+            "invalid upstream → keep last good, never silently fall to default"
+        );
+    }
+
+    #[test]
+    fn refresh_adopts_valid_config_change() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_OPENAI_UPSTREAM");
+
+        let last = Upstreams {
+            anthropic: "https://api.anthropic.com".into(),
+            openai: "http://127.0.0.1:19101".into(),
+            gemini: "https://generativelanguage.googleapis.com".into(),
+        };
+        let cfg = ProxyConfig {
+            openai_upstream: Some("http://127.0.0.1:19102".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            cfg.refresh_upstreams(&last).openai,
+            "http://127.0.0.1:19102"
+        );
+    }
+
+    #[test]
+    fn diagnose_drift_env_set_but_proxy_serves_other() {
+        // The exact #449 / Codex case: env exported in the shell, but the
+        // MCP-spawned proxy serves config.toml → the env never reached it.
+        assert_eq!(
+            diagnose_drift(
+                Some("http://127.0.0.1:2455"),
+                "https://api.openai.com",
+                "https://api.openai.com"
+            ),
+            Some(UpstreamDrift::EnvNotApplied)
+        );
+    }
+
+    #[test]
+    fn diagnose_drift_env_consistent_is_in_sync() {
+        // Proxy was started with the env value and serves it → not drift.
+        assert_eq!(
+            diagnose_drift(
+                Some("http://127.0.0.1:2455"),
+                "https://api.openai.com",
+                "http://127.0.0.1:2455"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn diagnose_drift_config_changed_needs_restart() {
+        assert_eq!(
+            diagnose_drift(None, "http://127.0.0.1:2455", "https://api.openai.com"),
+            Some(UpstreamDrift::ConfigNotApplied)
+        );
+    }
+
+    #[test]
+    fn diagnose_drift_in_sync() {
+        assert_eq!(
+            diagnose_drift(None, "https://api.openai.com", "https://api.openai.com"),
+            None
+        );
     }
 }

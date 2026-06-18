@@ -106,8 +106,8 @@ class CockpitContext extends HTMLElement {
     this._collapsedSections = {};
   }
 
-  connectedCallback() { this.loadData(); }
-
+  // Lazy-load (#452): no fetch on mount; the router's view loader calls
+  // loadData() when the Contents view becomes active.
   async loadData() {
     const fetchJson = api();
     if (!fetchJson) { this._error = 'API not loaded'; this._loading = false; this.render(); return; }

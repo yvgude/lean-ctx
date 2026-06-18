@@ -97,10 +97,12 @@ fn first_run_setup_level() -> (bool, bool) {
 
 /// Persist the user's setup level choice to config.toml.
 fn persist_setup_choice(inject_rules: bool, inject_skills: bool) {
-    let mut cfg = crate::core::config::Config::load();
-    cfg.setup.auto_inject_rules = Some(inject_rules);
-    cfg.setup.auto_inject_skills = Some(inject_skills);
-    let _ = cfg.save();
+    if let Err(e) = crate::core::config::Config::update_global(|cfg| {
+        cfg.setup.auto_inject_rules = Some(inject_rules);
+        cfg.setup.auto_inject_skills = Some(inject_skills);
+    }) {
+        tracing::warn!("could not persist setup choice: {e}");
+    }
 }
 
 pub fn run_setup() {
@@ -292,7 +294,7 @@ pub fn run_setup() {
     // Step 5: API Proxy (opt-in)
     terminal_ui::print_step_header(5, 12, "API Proxy (optional)");
     {
-        let mut cfg = crate::core::config::Config::load();
+        let cfg = crate::core::config::Config::load();
         let proxy_port = crate::proxy_setup::default_port();
 
         match cfg.proxy_enabled {
@@ -327,8 +329,11 @@ pub fn run_setup() {
                 let mut input = String::new();
                 let _ = std::io::stdin().read_line(&mut input);
                 let answer = matches!(input.trim().to_lowercase().as_str(), "y" | "yes");
-                cfg.proxy_enabled = Some(answer);
-                let _ = cfg.save();
+                if let Err(e) =
+                    crate::core::config::Config::update_global(|c| c.proxy_enabled = Some(answer))
+                {
+                    tracing::warn!("could not persist proxy choice: {e}");
+                }
                 if answer {
                     crate::proxy_autostart::install(proxy_port, false);
                     std::thread::sleep(std::time::Duration::from_millis(500));
@@ -387,6 +392,10 @@ pub fn run_setup() {
         ));
     }
     crate::doctor::run_compact();
+
+    // Commit to the XDG layout (and drain any residual ~/.lean-ctx) so a stray
+    // marker can never re-collapse config/data/state/cache later (GL #623).
+    crate::core::layout_pin::heal();
 
     // Step 8: Data sharing
     terminal_ui::print_step_header(8, 12, "Help Improve lean-ctx");
@@ -746,6 +755,10 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     let home = dirs::home_dir().ok_or_else(|| "Cannot determine home directory".to_string())?;
     let binary = resolve_portable_binary();
     let home_str = home.to_string_lossy().to_string();
+
+    // Commit to the XDG layout (and drain any residual ~/.lean-ctx) so a stray
+    // marker can never re-collapse config/data/state/cache later (GL #623).
+    crate::core::layout_pin::heal();
 
     let mut steps: Vec<SetupStepReport> = Vec::new();
 

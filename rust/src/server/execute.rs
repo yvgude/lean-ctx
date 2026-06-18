@@ -37,6 +37,7 @@ pub(crate) fn execute_command_with_env(
     }
 
     ensure_utf8_locale(&mut cmd, extra_env);
+    crate::shell::platform::apply_profile_free_env(&mut cmd);
 
     // Auto-forward agent runtime env vars (CODEX_THREAD_ID, CLAUDE_*, …) so
     // session-aware commands run through ctx_shell can see the active session.
