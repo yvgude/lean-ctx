@@ -112,7 +112,7 @@ wasm = ["dep:wasmi"]
 rmcp = { version = "1", features = ["server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 # Header types for the gateway's downstream HTTP MCP client (already in the tree via rmcp/reqwest).
 http = "1"
-tiktoken-rs = "0.6"
+tiktoken-rs = "0.12"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-std", "io-util", "net", "sync", "time", "signal", "process"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

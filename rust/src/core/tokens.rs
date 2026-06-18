@@ -434,4 +434,21 @@ mod tests {
             count_tokens_for(text, TokenizerFamily::O200kBase)
         );
     }
+
+    #[test]
+    fn count_tokens_reference_snapshot_o200k() {
+        // Reference counts captured at tiktoken-rs 0.6 baseline (Plan B Task 0).
+        // o200k_base encoding tables are a fixed spec; counts MUST stay identical
+        // across the 0.6→0.12 crate bump. A mismatch = silently wrong accounting.
+        let cases: [(&str, usize); 5] = [
+            ("", 0),
+            ("hello world", 2),
+            ("fn main() { println!(\"hello\"); }", 9),
+            ("Grüezi 🌍 — café déjà vu", 9),
+            ("use std::collections::HashMap;\nfn main() {\n    let mut map = HashMap::new();\n}", 23),
+        ];
+        for (text, expected) in cases {
+            assert_eq!(count_tokens(text), expected, "token count drift for {text:?}");
+        }
+    }
 }
