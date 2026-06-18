@@ -1022,6 +1022,19 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
     crate::core::plugins::PluginManager::init();
     crate::core::savings_autopush::spawn_if_enabled();
 
+    // Pre-warm the project indices in the background for this long-lived HTTP
+    // server. The stdio path deliberately stays lazy — short-lived respawns must
+    // not each pay a full graph + BM25 scan (#453) — but `serve` is a single,
+    // persistent process: one background build gives the first heavy/search tool
+    // call a warm index instead of racing a cold scan of a large project root
+    // against the per-request timeout (the SDK-conformance regression, GL #395).
+    // The build is deduped per root and idle CPU settles flat once it completes
+    // (the memory guard backs off), so #453 idle hygiene is preserved.
+    let warm_root = cfg.project_root.to_string_lossy().to_string();
+    if !warm_root.is_empty() {
+        crate::core::index_orchestrator::ensure_all_background(&warm_root);
+    }
+
     let addr: SocketAddr = format!("{}:{}", cfg.host, cfg.port)
         .parse()
         .context("invalid host/port")?;
