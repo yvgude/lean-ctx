@@ -92,7 +92,12 @@ pub(crate) fn compress_if_beneficial(command: &str, output: &str) -> String {
         return truncate_verbatim(output, original_tokens);
     }
 
-    if has_structural_output(command) {
+    // Structural output AND version-control history are owned by their
+    // dedicated compressor: apply it if it yields a gain, otherwise return the
+    // output verbatim. Never let the generic terse/dedup/truncate fallbacks
+    // below reshape it — they would corrupt commit subjects/hashes or drop
+    // commits the caller explicitly requested (`git log --oneline -40`).
+    if has_structural_output(command) || patterns::has_vcs_owner(command) {
         let cl = command.to_ascii_lowercase();
         if let Some(compressed) = patterns::try_specific_pattern(&cl, output)
             && !compressed.trim().is_empty()

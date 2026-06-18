@@ -2,8 +2,13 @@
 //!
 //! `gem install`/`update` interleaves the few lines that matter
 //! (`Successfully installed …`, gem count) with documentation/fetch noise
-//! (`Fetching`, `Parsing documentation`, `Installing ri/rdoc`). `gem list`
-//! prints one `name (versions)` row per gem, which we count + cap.
+//! (`Fetching`, `Parsing documentation`, `Installing ri/rdoc`).
+//!
+//! NOTE: `gem list` is classified **Verbatim** by the output policy
+//! (`is_package_manager_info`, alongside `npm list`/`pip list`/`cargo tree`) —
+//! installed-package inventories are reference data the agent reads in full, so
+//! they never reach this compressor. The `name (versions)` count+cap path here
+//! therefore serves `gem search` (remote listing noise), not `gem list`.
 
 use crate::core::compressor::strip_ansi;
 
@@ -96,9 +101,11 @@ mod tests {
     }
 
     #[test]
-    fn list_counts_and_caps() {
-        let out = "*** LOCAL GEMS ***\n\nbundler (2.5.0)\nrails (7.1.0)\nrake (13.1.0)";
-        let r = compress("gem list", out).unwrap();
+    fn search_counts_and_caps() {
+        // `gem search` (remote) is the reachable list path — `gem list` is
+        // intercepted upstream as Verbatim and never lands here.
+        let out = "*** REMOTE GEMS ***\n\nbundler (2.5.0)\nrails (7.1.0)\nrake (13.1.0)";
+        let r = compress("gem search rails", out).unwrap();
         assert!(r.contains("gem: 3 gem(s)"), "{r}");
         assert!(r.contains("rails (7.1.0)"), "{r}");
     }

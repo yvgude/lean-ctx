@@ -3,6 +3,10 @@
 //! Spark drivers emit hundreds of `YY/MM/DD HH:MM:SS INFO Component: ...`
 //! lines. We drop INFO noise, keep finished-job lines, deduplicate WARNs and
 //! preserve ERRORs / exceptions, then prefix a one-line job/warn/error count.
+//!
+//! Crucially we also keep lines that are NOT framework log records — these are
+//! the application's own stdout (e.g. `Result: total words = 184273`), which is
+//! the actual point of the run and must never be dropped.
 
 use crate::core::compressor::strip_ansi;
 use std::collections::HashSet;
@@ -17,6 +21,7 @@ pub fn compress(_cmd: &str, output: &str) -> Option<String> {
     let mut warnings: Vec<String> = Vec::new();
     let mut warn_seen: HashSet<String> = HashSet::new();
     let mut errors: Vec<String> = Vec::new();
+    let mut app_output: Vec<String> = Vec::new();
     let mut saw_log = false;
 
     for raw in trimmed.lines() {
@@ -44,6 +49,9 @@ pub fn compress(_cmd: &str, output: &str) -> Option<String> {
             }
         } else if is_exception(line) {
             errors.push(line.to_string());
+        } else {
+            // Not a framework log line → application stdout. Preserve it.
+            app_output.push(line.to_string());
         }
     }
 
@@ -60,6 +68,7 @@ pub fn compress(_cmd: &str, output: &str) -> Option<String> {
     push_capped(&mut parts, &jobs, 10, "more jobs");
     push_capped(&mut parts, &warnings, 5, "more warnings");
     push_capped(&mut parts, &errors, 10, "more errors");
+    push_capped(&mut parts, &app_output, 20, "more output lines");
     Some(parts.join("\n"))
 }
 
@@ -133,6 +142,17 @@ mod tests {
         assert!(r.contains("Executor: Exception"), "{r}");
         assert!(!r.contains("ResourceUtils"), "drops info noise: {r}");
         assert!(!r.contains("23/01/01"), "drops timestamps: {r}");
+    }
+
+    #[test]
+    fn keeps_application_stdout() {
+        let log = "23/01/01 12:00:00 INFO SparkContext: Running Spark version 3.4.0\n23/01/01 12:00:01 INFO ResourceUtils: No custom resources\n23/01/01 12:00:10 INFO DAGScheduler: Job 0 finished: collect, took 5.1 s\nResult: total words = 184273\n23/01/01 12:00:11 INFO SparkContext: Successfully stopped";
+        let r = compress("spark-submit app.py", log).unwrap();
+        assert!(
+            r.contains("Result: total words = 184273"),
+            "keeps app output: {r}"
+        );
+        assert!(!r.contains("ResourceUtils"), "still drops info noise: {r}");
     }
 
     #[test]

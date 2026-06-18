@@ -11,6 +11,14 @@ fn timestamp_re() -> &'static regex::Regex {
     static_regex!(r"^\[?\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]\s]*\]?\s*")
 }
 
+/// Word-boundary error matcher. Substring matching wrongly flagged identifiers
+/// like `pending_errors` (commit subjects, code symbols) as error lines; `\b`
+/// keeps real signals (`ERROR:`, `panic`, `1 error`) while ignoring tokens where
+/// the word is glued to other word characters (incl. `_`).
+fn error_re() -> &'static regex::Regex {
+    static_regex!(r"(?i)\b(errors?|critical|fatal|panic|exception)\b")
+}
+
 fn is_block_separator(line: &str) -> bool {
     let t = line.trim();
     if t.is_empty() {
@@ -73,13 +81,7 @@ pub fn compress(output: &str) -> Option<String> {
             continue;
         }
 
-        let lower = stripped.to_lowercase();
-        if lower.contains("error")
-            || lower.contains("critical")
-            || lower.contains("fatal")
-            || lower.contains("panic")
-            || lower.contains("exception")
-        {
+        if error_re().is_match(&stripped) {
             error_lines.push(stripped.clone());
         }
 
@@ -256,6 +258,33 @@ mod tests {
         assert!(is_block_separator("-----------"));
         assert!(is_block_separator("=== test block ==="));
         assert!(is_block_separator("--- a/file.rs"));
+    }
+
+    #[test]
+    fn identifier_with_error_substring_not_flagged() {
+        // 11 commit-subject-like lines; one contains "pending_errors" as an
+        // identifier — it must NOT be counted as an error line.
+        let mut lines: Vec<String> = (0..11)
+            .map(|i| format!("abc{i:03} feat: add module number {i}"))
+            .collect();
+        lines[3] = "abc003 fix: persist pending_errors for fail->fix correlation".to_string();
+        let output = lines.join("\n");
+        let result = compress(&output).unwrap();
+        assert!(
+            !result.contains("errors:"),
+            "identifier substring must not trigger error section: {result}"
+        );
+    }
+
+    #[test]
+    fn real_error_word_still_flagged() {
+        let mut lines = vec!["INFO doing work".to_string(); 10];
+        lines.push("ERROR: connection refused".to_string());
+        let result = compress(&lines.join("\n")).unwrap();
+        assert!(
+            result.contains("1 errors:"),
+            "real error must flag: {result}"
+        );
     }
 
     #[test]
