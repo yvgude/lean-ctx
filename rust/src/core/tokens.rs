@@ -445,10 +445,17 @@ mod tests {
             ("hello world", 2),
             ("fn main() { println!(\"hello\"); }", 9),
             ("Grüezi 🌍 — café déjà vu", 9),
-            ("use std::collections::HashMap;\nfn main() {\n    let mut map = HashMap::new();\n}", 23),
+            (
+                "use std::collections::HashMap;\nfn main() {\n    let mut map = HashMap::new();\n}",
+                23,
+            ),
         ];
         for (text, expected) in cases {
-            assert_eq!(count_tokens(text), expected, "token count drift for {text:?}");
+            assert_eq!(
+                count_tokens(text),
+                expected,
+                "token count drift for {text:?}"
+            );
         }
     }
 }

@@ -109,30 +109,30 @@ tree-sitter = [
 wasm = ["dep:wasmi"]
 
 [dependencies]
-rmcp = { version = "1", features = ["server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
+rmcp = { version = "1.7", features = ["server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 # Header types for the gateway's downstream HTTP MCP client (already in the tree via rmcp/reqwest).
-http = "1"
+http = "1.4"
 tiktoken-rs = "0.12"
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-std", "io-util", "net", "sync", "time", "signal", "process"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-subtle = "2"
+tokio = { version = "1.52", features = ["rt", "rt-multi-thread", "macros", "io-std", "io-util", "net", "sync", "time", "signal", "process"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+subtle = "2.6"
 md-5 = "0.11"
-anyhow = "1"
-regex = "1"
-walkdir = "2"
+anyhow = "1.0"
+regex = "1.12"
+walkdir = "2.5"
 ignore = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-thiserror = "2"
+thiserror = "2.0"
 futures = "0.3"
 tokio-util = { version = "0.7", features = ["codec"] }
 dirs = "6.0"
 chrono = { version = "0.4", features = ["serde"] }
 toml = "1.1"
 toml_edit = "0.25"
-similar = "3.0"
-flate2 = "1"
+similar = "3.1"
+flate2 = "1.1"
 rusqlite = { version = "0.40", features = ["bundled"] }
 tree-sitter = { version = "0.26", optional = true }
 tree-sitter-rust = { version = "0.24", optional = true }
@@ -149,11 +149,11 @@ tree-sitter-c-sharp = { version = "0.23", optional = true }
 tree-sitter-kotlin-ng = { version = "1.1", optional = true }
 tree-sitter-swift = { version = "0.7", optional = true }
 tree-sitter-php = { version = "0.24", optional = true }
-ureq = "3.3.0"
+ureq = "3.3"
 # PDF → text extraction for ctx_url_read (research context layer).
 pdf-extract = "0.10"
-tar = "0.4.46"
-zip = "8.4.0"
+tar = "0.4"
+zip = "8.6"
 tree-sitter-bash = { version = "0.25", optional = true }
 tree-sitter-scala = { version = "0.26", optional = true }
 tree-sitter-elixir = { version = "0.3", optional = true }
@@ -169,9 +169,9 @@ tower-http = { version = "0.7", features = ["cors", "auth"], optional = true }
 deadpool-postgres = { version = "0.14", optional = true }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1"], optional = true }
 lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"], optional = true }
-jsonwebtoken = { version = "10.3", optional = true }
+jsonwebtoken = { version = "10.4", optional = true }
 base64 = { version = "0.22", optional = true }
-uuid = { version = "1", features = ["v4", "serde"], optional = true }
+uuid = { version = "1.23", features = ["v4", "serde"], optional = true }
 hex = { version = "0.4", optional = true }
 hmac = "0.13"
 sha2 = "0.11"
@@ -179,29 +179,29 @@ hkdf = "0.13"
 chacha20poly1305 = "0.10"
 rand = { version = "0.10", optional = true }
 argon2 = { version = "0.5", optional = true }
-glob = "0.3.3"
-urlencoding = "2"
+glob = "0.3"
+urlencoding = "2.1"
 ratatui = "0.30"
 crossterm = "0.29"
-rpassword = "7.4.0"
-ed25519-dalek = { version = "2", features = ["rand_core"] }
+rpassword = "7.5"
+ed25519-dalek = { version = "2.2", features = ["rand_core"] }
 getrandom = "0.4"
-tempfile = "3"
-reqwest = { version = "0.13.2", default-features = false, features = ["rustls", "stream", "json"], optional = true }
-bytecount = "0.6.9"
+tempfile = "3.27"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "json"], optional = true }
+bytecount = "0.6"
 libc = "0.2"
-blake3 = "1"
-rayon = "1.10"
-moka = { version = "0.12.15", features = ["sync"] }
+blake3 = "1.8"
+rayon = "1.12"
+moka = { version = "0.12", features = ["sync"] }
 postcard = { version = "1.1", features = ["use-std"] }
 zstd = "0.13"
 memmap2 = "0.9"
 lsp-types = "0.97"
-fs2 = "0.4.3"
+fs2 = "0.4"
 unicode-width = "0.2"
-resvg = { version = "0.47.0", optional = true }
-wasmi = { version = "1.0.9", optional = true }
-gethostname = "1.1.0"
+resvg = { version = "0.47", optional = true }
+wasmi = { version = "1.1", optional = true }
+gethostname = "1.1"
 
 [lints.rust]
 unreachable_pub = "warn"
@@ -275,14 +275,14 @@ tikv-jemalloc-ctl = { version = "0.7", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
-filetime = "0.2.29"
-insta = "1"
-jsonschema = { version = "0.46.5", default-features = false }
-proptest = "1"
-serial_test = "3.4.0"
-tempfile = "3.27.0"
+filetime = "0.2"
+insta = "1.48"
+jsonschema = { version = "0.46", default-features = false }
+proptest = "1.11"
+serial_test = "3.5"
+tempfile = "3.27"
 tower = "0.5"
-wat = "1.251.0"
+wat = "1.252"
 
 [[bench]]
 name = "compression"
