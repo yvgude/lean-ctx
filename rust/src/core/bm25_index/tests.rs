@@ -487,7 +487,7 @@ fn auto_migrate_bin_to_zst() {
 
     let dir = crate::core::index_namespace::vectors_dir(root);
     std::fs::create_dir_all(&dir).expect("mkdir");
-    let data = bincode::serde::encode_to_vec(&index, bincode::config::standard()).expect("encode");
+    let data = postcard::to_allocvec(&index).expect("encode");
     std::fs::write(dir.join("bm25_index.bin"), &data).expect("write bin");
 
     let loaded = BM25Index::load(root).expect("load should auto-migrate");
@@ -503,6 +503,40 @@ fn auto_migrate_bin_to_zst() {
 
     crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
     crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+}
+
+#[test]
+fn postcard_roundtrip_and_garbage_is_graceful() {
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    std::fs::write(root.join("a.rs"), "pub fn a() {}\npub fn b() {}\n").expect("write");
+    let index = BM25Index::build_from_directory(root);
+    assert!(
+        index.doc_count > 0,
+        "fixture must produce at least one chunk"
+    );
+
+    // (a) postcard round-trip: encode → decode → structural equality.
+    let data = postcard::to_allocvec(&index).expect("postcard encode");
+    let decoded: BM25Index = postcard::from_bytes(&data).expect("postcard decode");
+    assert_eq!(
+        decoded.doc_count, index.doc_count,
+        "doc_count survives round-trip"
+    );
+    assert_eq!(
+        decoded.chunks.len(),
+        index.chunks.len(),
+        "chunk count survives round-trip"
+    );
+
+    // (b) corrupt/legacy bytes must NOT panic — decode returns Err,
+    //     which load() maps via .ok()? to None (→ rebuild), never a crash.
+    let garbage = b"\x00\x01\x02not-a-valid-postcard-index\xff\xff";
+    let res: Result<BM25Index, _> = postcard::from_bytes(garbage);
+    assert!(
+        res.is_err(),
+        "corrupt/legacy bytes must decode to Err, not panic"
+    );
 }
 
 #[test]

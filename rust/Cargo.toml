@@ -193,7 +193,7 @@ libc = "0.2"
 blake3 = "1"
 rayon = "1.10"
 moka = { version = "0.12.15", features = ["sync"] }
-bincode = { version = "2", features = ["serde"] }
+postcard = { version = "1.1", features = ["use-std"] }
 zstd = "0.13"
 memmap2 = "0.9"
 lsp-types = "0.97"

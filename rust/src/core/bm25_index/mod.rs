@@ -560,8 +560,7 @@ impl BM25Index {
 
         let dir = index_dir(root);
         std::fs::create_dir_all(&dir)?;
-        let data = bincode::serde::encode_to_vec(self, bincode::config::standard())
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let data = postcard::to_allocvec(self).map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let compressed = zstd::encode_all(data.as_slice(), ZSTD_LEVEL)
             .map_err(|e| std::io::Error::other(format!("zstd compress: {e}")))?;
@@ -587,7 +586,7 @@ impl BM25Index {
         }
 
         tracing::info!(
-            "[bm25] index: {:.1} MB bincode → {:.1} MB zstd ({:.0}% saved)",
+            "[bm25] index: {:.1} MB postcard → {:.1} MB zstd ({:.0}% saved)",
             data.len() as f64 / 1_048_576.0,
             compressed_bytes as f64 / 1_048_576.0,
             (1.0 - compressed_bytes as f64 / data.len().max(1) as f64) * 100.0
@@ -630,8 +629,7 @@ impl BM25Index {
             let compressed = std::fs::read(&zst_path).ok()?;
             let max_decompressed = max_bytes * 20; // allow 20x expansion ratio
             let data = bounded_zstd_decode(&compressed, max_decompressed)?;
-            let (idx, _): (Self, _) =
-                bincode::serde::decode_from_slice(&data, bincode::config::standard()).ok()?;
+            let idx: Self = postcard::from_bytes(&data).ok()?;
             return Some(idx);
         }
 
@@ -650,8 +648,7 @@ impl BM25Index {
                 return None;
             }
             let data = std::fs::read(&bin_path).ok()?;
-            let (idx, _): (Self, _) =
-                bincode::serde::decode_from_slice(&data, bincode::config::standard()).ok()?;
+            let idx: Self = postcard::from_bytes(&data).ok()?;
             // Auto-migrate: compress legacy .bin to .bin.zst
             if let Ok(compressed) = zstd::encode_all(data.as_slice(), ZSTD_LEVEL) {
                 let zst_tmp = zst_path.with_extension("zst.tmp");
