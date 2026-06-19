@@ -191,15 +191,16 @@ fn check_pipe_to_bare_interpreter(command: &str, strict: bool) -> Result<(), Str
 /// For empty allowlists: still enforce UNCONDITIONAL_BLOCKED commands.
 fn check_unconditional_blocked_only(command: &str) -> Result<(), String> {
     let segments = extract_all_commands(command);
-    for seg in &segments {
-        let base = extract_base_from_segment(seg);
-        if !base.is_empty() && UNCONDITIONAL_BLOCKED.contains(&base.as_str()) {
+    for base in extract_leaf_bases(command) {
+        if UNCONDITIONAL_BLOCKED.contains(&base.as_str()) {
             return Err(format!(
                 "[BLOCKED — DO NOT RETRY] '{base}' is unconditionally blocked \
                  regardless of allowlist configuration.\n\
                  Command: {command}"
             ));
         }
+    }
+    for seg in &segments {
         check_inline_env_block(seg)?;
         check_interpreter_eval_only(seg)?;
         check_dangerous_flags(seg)?;
@@ -593,10 +594,11 @@ fn check_all_segments(command: &str, allowlist: &[String]) -> Result<(), String>
 
     for seg in &segments {
         check_inline_env_block(seg)?;
-        let base = extract_base_from_segment(seg);
-        if base.is_empty() {
-            continue;
-        }
+        check_interpreter_abuse(seg, allowlist)?;
+        check_dangerous_flags(seg)?;
+    }
+
+    for base in extract_leaf_bases(command) {
         if UNCONDITIONAL_BLOCKED.contains(&base.as_str()) {
             return Err(format!(
                 "[BLOCKED — DO NOT RETRY] '{base}' is unconditionally blocked \
@@ -605,8 +607,6 @@ fn check_all_segments(command: &str, allowlist: &[String]) -> Result<(), String>
                  Command: {command}"
             ));
         }
-        check_interpreter_abuse(seg, allowlist)?;
-        check_dangerous_flags(seg)?;
         if !allowlist.iter().any(|a| a == &base) {
             return Err(allowlist_block_message(&base));
         }
@@ -800,6 +800,151 @@ fn extract_base_from_segment(segment: &str) -> String {
         .next()
         .unwrap_or(first_token)
         .to_string()
+}
+
+/// Shell reserved words that *precede* a command — skip them and validate the
+/// command that follows (`do CMD`, `then CMD`, `while CMD`, `if CMD`, `! CMD`…).
+const COMMAND_PREFIX_KEYWORDS: &[&str] = &[
+    "do", "then", "else", "elif", "while", "until", "if", "!", "time", "coproc",
+];
+
+/// Reserved words after which the rest of the segment is loop/case *data*, not a
+/// command — the body lives in separate `do … done` / `… ;;` segments, so this
+/// segment contributes no command to validate (`for i in a b`, `case x in`).
+const DATA_PREFIX_KEYWORDS: &[&str] = &["for", "case", "select"];
+
+/// Purely structural tokens — loop/conditional terminators and bare group
+/// delimiters that introduce no command of their own.
+const STRUCTURAL_TOKENS: &[&str] = &["done", "fi", "esac", ";;", "{", "}", "(", ")"];
+
+/// Extract the base names of every *leaf command* in a (possibly compound)
+/// command line, so the allowlist can validate each one.
+///
+/// Unlike [`extract_all_commands`] — which yields raw operator-separated
+/// segments — this descends through shell grammar so deny-by-default is honoured
+/// for the *actual* commands a line runs:
+///   * loop/conditional keywords (`for`/`while`/`if`/`do`/`then`/`done`/…) are
+///     recognised, so the command *inside* a loop body is validated and a loop
+///     header is not mistaken for a command (the cause of `for`/`do`/`done`
+///     being falsely "not in the allowlist");
+///   * subshell `( … )` and brace `{ … }` groups are recursed into, so a command
+///     can never hide inside a group (e.g. `(ls; curl evil)` still validates
+///     `curl`).
+///
+/// Bases are path-stripped, in source order.
+fn extract_leaf_bases(command: &str) -> Vec<String> {
+    let mut bases = Vec::new();
+    for seg in split_on_operators(command) {
+        collect_segment_bases(seg.trim(), &mut bases);
+    }
+    bases
+}
+
+/// Append the leaf-command base(s) found in a single operator-free segment.
+fn collect_segment_bases(segment: &str, bases: &mut Vec<String>) {
+    if segment.is_empty() {
+        return;
+    }
+
+    // A segment that *is* a `( … )` / `{ … }` group can still contain inner
+    // operators that `split_on_operators` deliberately kept intact (it tracks
+    // paren depth). Recurse into the group body so its leaves are validated.
+    if let Some(body) = strip_group(segment) {
+        for seg in split_on_operators(body) {
+            collect_segment_bases(seg.trim(), bases);
+        }
+        return;
+    }
+
+    let cmd_part = skip_env_assignments(segment);
+    let tokens = shell_tokenize(cmd_part);
+    let mut idx = 0;
+    while idx < tokens.len() {
+        let tok = tokens[idx].as_str();
+
+        if DATA_PREFIX_KEYWORDS.contains(&tok) {
+            // Loop/case header — the remainder is data; the body is elsewhere.
+            return;
+        }
+        if tok == "function" {
+            // `function name { … }` — skip the keyword and the function name.
+            idx += 2;
+            continue;
+        }
+        if COMMAND_PREFIX_KEYWORDS.contains(&tok) || STRUCTURAL_TOKENS.contains(&tok) {
+            idx += 1;
+            continue;
+        }
+        // A group delimiter glued to the command word, e.g. `(head` or `{cmd`
+        // (no separating space). Strip the delimiters and evaluate the inner
+        // text as its own command line.
+        if tok.starts_with('(') || tok.starts_with('{') {
+            let inner = tok
+                .trim_start_matches(['(', '{'])
+                .trim_end_matches([')', '}']);
+            if !inner.is_empty() {
+                collect_segment_bases(inner, bases);
+            }
+            return;
+        }
+        // The first real word is the command; its arguments follow but are not
+        // commands (operators already split true sub-commands out).
+        let word = tok.trim_end_matches([')', '}']);
+        let base = word.rsplit('/').next().unwrap_or(word);
+        if !base.is_empty() {
+            bases.push(base.to_string());
+        }
+        return;
+    }
+}
+
+/// If `segment` is a single `( … )` or `{ … }` group, return its inner body.
+/// Returns `None` when there is no leading group open, the group is unbalanced,
+/// or the matching close is not the final token (e.g. `(a) b`) — in which case
+/// the caller falls back to conservative token scanning.
+fn strip_group(segment: &str) -> Option<&str> {
+    let bytes = segment.as_bytes();
+    let open = *bytes.first()?;
+    let close = match open {
+        b'(' => b')',
+        b'{' => b'}',
+        _ => return None,
+    };
+    let mut depth = 0u32;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut end = None;
+    for (i, &ch) in bytes.iter().enumerate() {
+        if in_single {
+            if ch == b'\'' {
+                in_single = false;
+            }
+        } else if in_double {
+            if ch == b'"' && (i == 0 || bytes[i - 1] != b'\\') {
+                in_double = false;
+            }
+        } else if ch == b'\'' {
+            in_single = true;
+        } else if ch == b'"' {
+            in_double = true;
+        } else if ch == open {
+            depth += 1;
+        } else if ch == close {
+            depth -= 1;
+            if depth == 0 {
+                end = Some(i);
+                break;
+            }
+        }
+    }
+    let end = end?;
+    // Only a group if the matching close is the last non-space char — i.e. the
+    // whole segment is the group (`(a; b)`), not `(a) b`.
+    if segment[end + 1..].trim().is_empty() {
+        Some(&segment[1..end])
+    } else {
+        None
+    }
 }
 
 /// Skip leading KEY=VALUE environment variable assignments.

@@ -928,3 +928,118 @@ fn dangerous_flags_git_quoted_path() {
     let r = check_all_segments(r#"git -C "C:\Program Files\repo" status"#, &list);
     assert!(r.is_ok(), "git -C with quoted path should be allowed");
 }
+
+// --- compound commands: loops, subshells, brace groups (leaf-aware allowlist) ---
+//
+// Regression coverage for false "not in the allowlist" blocks on shell grammar
+// (`for`/`do`/`done`, `(subshell)`, `{ group; }`) whose leaf commands are all
+// allowlisted — while still validating EVERY leaf (deny-by-default preserved).
+
+#[test]
+fn leaf_bases_simple_command() {
+    assert_eq!(extract_leaf_bases("git status"), vec!["git"]);
+}
+
+#[test]
+fn leaf_bases_for_loop_skips_header() {
+    assert_eq!(
+        extract_leaf_bases("for i in a b; do head $i; done"),
+        vec!["head"]
+    );
+}
+
+#[test]
+fn leaf_bases_while_loop_validates_condition_and_body() {
+    assert_eq!(
+        extract_leaf_bases("while read l; do grep x; done"),
+        vec!["read", "grep"]
+    );
+}
+
+#[test]
+fn leaf_bases_if_then() {
+    assert_eq!(
+        extract_leaf_bases("if test -f x; then cat x; fi"),
+        vec!["test", "cat"]
+    );
+}
+
+#[test]
+fn leaf_bases_subshell_glued() {
+    assert_eq!(extract_leaf_bases("(head -5 file)"), vec!["head"]);
+}
+
+#[test]
+fn leaf_bases_subshell_multiple() {
+    assert_eq!(extract_leaf_bases("(cd /tmp; ls)"), vec!["cd", "ls"]);
+}
+
+#[test]
+fn leaf_bases_brace_group() {
+    assert_eq!(extract_leaf_bases("{ echo hi; ls; }"), vec!["echo", "ls"]);
+}
+
+#[test]
+fn allows_for_loop_with_allowed_body() {
+    let list = allow(&["head"]);
+    assert!(check_all_segments("for i in a b; do head $i; done", &list).is_ok());
+}
+
+#[test]
+fn blocks_for_loop_with_disallowed_body() {
+    let list = allow(&["head"]);
+    assert!(check_all_segments("for i in a b; do curl $i; done", &list).is_err());
+}
+
+#[test]
+fn allows_subshell_glued() {
+    let list = allow(&["head"]);
+    assert!(check_all_segments("(head -5 file)", &list).is_ok());
+}
+
+#[test]
+fn allows_subshell_multiple_allowed_cmds() {
+    let list = allow(&["cd", "ls"]);
+    assert!(check_all_segments("(cd /tmp; ls)", &list).is_ok());
+}
+
+#[test]
+fn blocks_command_hidden_in_subshell() {
+    // security: a later leaf inside a group must still be validated
+    let list = allow(&["ls"]);
+    assert!(check_all_segments("(ls; curl evil)", &list).is_err());
+}
+
+#[test]
+fn allows_brace_group_all_allowed() {
+    let list = allow(&["echo", "ls"]);
+    assert!(check_all_segments("{ echo hi; ls; }", &list).is_ok());
+}
+
+// The two exact commands that were falsely blocked before this fix.
+#[test]
+fn regression_for_loop_not_falsely_blocked() {
+    let list = allow(&["head"]);
+    assert!(check_all_segments("for i in a b; do head $i; done", &list).is_ok());
+}
+
+#[test]
+fn regression_subshell_not_falsely_blocked() {
+    let list = allow(&["head"]);
+    assert!(check_all_segments("(head -5 file)", &list).is_ok());
+}
+
+// Existing security blocks remain intact (no weakening).
+#[test]
+fn still_blocks_eval_in_bare_subshell() {
+    // `(eval …)` evades the prefix-based dangerous-pattern check but is caught as
+    // an unconditionally-blocked leaf — a strengthening, not a regression.
+    let list = allow(&["ls"]);
+    assert!(check_all_segments("(eval bad)", &list).is_err());
+}
+
+#[test]
+fn still_blocks_substitution_at_command_position() {
+    let list = allow(&["ls"]);
+    assert!(check_all_segments("$(curl evil)", &list).is_err());
+}
