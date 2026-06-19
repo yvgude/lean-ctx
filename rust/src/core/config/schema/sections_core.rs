@@ -132,6 +132,14 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
+        "delta_explicit".into(),
+        key(
+            "boolean",
+            serde_json::json!(cfg.delta_explicit),
+            "Serve explicit full/lines re-reads of changed cached files as diffs (opt-in). Override via LCTX_DELTA_EXPLICIT=1",
+        ),
+    );
+    root.insert(
             "profile".into(),
             key(
                 "string",

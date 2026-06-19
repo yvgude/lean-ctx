@@ -194,11 +194,40 @@ impl CtxReadTool {
             mode = overridden;
         }
 
-        let (mode, degrade_warning) = if crate::tools::ctx_read::is_instruction_file(path) {
+        let (mut mode, degrade_warning) = if crate::tools::ctx_read::is_instruction_file(path) {
             ("full".to_string(), None)
         } else {
             auto_degrade_read_mode(&mode)
         };
+
+        // Delta-aware explicit re-reads (opt-in: config `delta_explicit`, env
+        // LCTX_DELTA_EXPLICIT). Re-requesting full/lines:N-M content for a file
+        // this session already read re-emits content the model already holds;
+        // when the file changed on disk, a diff carries the same information in
+        // a fraction of the tokens, and an unchanged lines: request of a
+        // fully-delivered file collapses to the full-mode stub. The decision is
+        // a pure function of (cache, path, mode) — see
+        // `ctx_read::resolve_explicit_delta_mode`. First reads are unaffected;
+        // fresh=true always bypasses. Runs BEFORE the lines:→fresh guard below
+        // so a changed-file lines: re-read can still be diverted to a diff.
+        let mut delta_explicit_note: Option<String> = None;
+        if !fresh
+            && explicit_mode
+            && (mode == "full" || mode.starts_with("lines:"))
+            && crate::core::config::Config::load().delta_explicit_effective()
+            && let Ok(cache) = cache_lock.try_read()
+        {
+            let decision = crate::tools::ctx_read::resolve_explicit_delta_mode(
+                &cache,
+                path,
+                &mode,
+                explicit_mode,
+                fresh,
+                true,
+            );
+            mode = decision.mode;
+            delta_explicit_note = decision.note;
+        }
 
         if mode.starts_with("lines:") {
             fresh = true;
@@ -636,6 +665,9 @@ impl CtxReadTool {
             warnings.push(w.as_str());
         }
         if let Some(ref w) = degrade_warning {
+            warnings.push(w.as_str());
+        }
+        if let Some(ref w) = delta_explicit_note {
             warnings.push(w.as_str());
         }
         let final_output = if !warnings.is_empty() {

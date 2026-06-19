@@ -426,6 +426,89 @@ pub fn try_stub_hit_readonly(cache: &SessionCache, path: &str) -> Option<ReadOut
     })
 }
 
+/// Outcome of [`resolve_explicit_delta_mode`]: the (possibly rewritten) read
+/// mode plus an optional advisory note to surface to the agent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeltaExplicitDecision {
+    /// The mode the read should proceed with (rewritten only when the feature
+    /// fires; otherwise the caller's mode, unchanged).
+    pub mode: String,
+    /// A byte-stable advisory appended to the read body when the mode was
+    /// rewritten to `diff`. `None` when nothing was rewritten or the collapse
+    /// was a silent `lines:`→`full` stub.
+    pub note: Option<String>,
+}
+
+/// Decide whether an **explicit** `full`/`lines:N-M` re-read of a session-cached
+/// file should be served as a delta instead of re-emitting content the model
+/// already holds (the `delta_explicit` opt-in; env `LCTX_DELTA_EXPLICIT`).
+///
+/// Returns the mode the read should proceed with:
+/// - **Changed on disk** (verified mtime+md5 stale) and full content is cached →
+///   `diff`, plus an advisory note. The diff carries exactly the new
+///   information in a fraction of the tokens.
+/// - **Unchanged** and the request is `lines:` of an already-fully-delivered
+///   file → `full`, so the read collapses to the ~15-token `[unchanged]` stub
+///   instead of re-extracting a window the model has seen.
+/// - Otherwise the caller's `mode` is returned untouched.
+///
+/// First reads (nothing cached) and `fresh=true` are never affected — the
+/// caller gates those before calling. Staleness uses the **verified** variant
+/// ([`crate::core::cache::is_cache_entry_stale_verified`]) so a same-second
+/// write on a coarse-granularity filesystem cannot be mistaken for "unchanged"
+/// and yield a misleading empty diff (#498 determinism).
+///
+/// Pure w.r.t. (cache, path, mode, enabled): no wall-clock, counters, or
+/// randomness enter the result, so identical inputs stay byte-stable.
+pub fn resolve_explicit_delta_mode(
+    cache: &SessionCache,
+    path: &str,
+    mode: &str,
+    explicit_mode: bool,
+    fresh: bool,
+    enabled: bool,
+) -> DeltaExplicitDecision {
+    let unchanged = DeltaExplicitDecision {
+        mode: mode.to_string(),
+        note: None,
+    };
+    if fresh || !enabled || !explicit_mode || !(mode == "full" || mode.starts_with("lines:")) {
+        return unchanged;
+    }
+    let Some(entry) = cache.get(path) else {
+        // First read this session — nothing to diff against.
+        return unchanged;
+    };
+    let stale =
+        crate::core::cache::is_cache_entry_stale_verified(path, entry.stored_mtime, &entry.hash);
+    if stale {
+        // Only divert to a diff when full content is actually cached: the diff
+        // base is that full content (see `handle_diff`), never a compressed
+        // view. Without it, `handle_diff` would have nothing to compare.
+        if entry.content().is_some() {
+            return DeltaExplicitDecision {
+                mode: "diff".to_string(),
+                note: Some(format!(
+                    "[delta-explicit] requested mode={mode} served as a diff: the file \
+                     changed since your last read and the diff is the new information. \
+                     Pass fresh=true if you need the full content re-emitted."
+                )),
+            };
+        }
+        return unchanged;
+    }
+    // Unchanged on disk: a `lines:` window of a file already delivered in full
+    // re-emits text the model holds — collapse to the full-mode stub
+    // (~15 tokens). A plain `full` re-read already hits that stub downstream.
+    if mode.starts_with("lines:") && cache.is_full_delivered(path) {
+        return DeltaExplicitDecision {
+            mode: "full".to_string(),
+            note: None,
+        };
+    }
+    unchanged
+}
+
 fn handle_with_options_inner(
     cache: &mut SessionCache,
     path: &str,

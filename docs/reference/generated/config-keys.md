@@ -22,6 +22,7 @@ Top-level configuration keys
 - `content_defined_chunking` (bool, default `false`) — Enable Rabin-Karp chunking for cache-optimal output ordering
 - `custom_aliases` (array, default `[]`) — Custom command aliases (array of {command, alias} entries)
 - `default_tool_categories` (string[], default `[]`) — Tool categories active by default (core, arch, debug, memory, metrics, session). Override via LCTX_DEFAULT_CATEGORIES
+- `delta_explicit` (boolean, default `false`) — Serve explicit full/lines re-reads of changed cached files as diffs (opt-in). Override via LCTX_DELTA_EXPLICIT=1
 - `disabled_tools` (string[], default `[]`) — Tools to exclude from the MCP tool list
 - `enable_wakeup_ctx` (bool, default `true`) — Append wakeup briefing (facts, session summary) to ctx_overview output. Set false to reduce context bloat when calling ctx_overview frequently.
 - `excluded_commands` (string[], default `[]`) — Commands to exclude from shell hook interception

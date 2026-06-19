@@ -154,6 +154,13 @@ pub struct Config {
     /// Override via LCTX_NO_DEGRADE=1 env var.
     #[serde(default)]
     pub no_degrade: bool,
+    /// Serve explicit `full`/`lines:N-M` re-reads of session-cached files as
+    /// deltas: when the file changed on disk since it was cached, the read
+    /// returns `mode=diff` instead of re-emitting content the model already
+    /// holds. First reads are unaffected; `fresh=true` always bypasses.
+    /// Opt-in. Override via LCTX_DELTA_EXPLICIT=1/0 env var.
+    #[serde(default)]
+    pub delta_explicit: bool,
     /// Persistent profile name. Checked after LEAN_CTX_PROFILE env var.
     /// Set via `lean-ctx config set profile passthrough` or editing config.toml.
     #[serde(default)]
@@ -491,6 +498,7 @@ impl Default for Config {
             prefer_native_editor: false,
             default_tool_categories: Vec::new(),
             no_degrade: false,
+            delta_explicit: false,
             profile: None,
             tool_profile: None,
             tools_enabled: Vec::new(),
@@ -832,6 +840,21 @@ impl Config {
             return val == "1" || val.eq_ignore_ascii_case("true");
         }
         self.no_degrade
+    }
+
+    /// Returns `true` if explicit `full`/`lines:N-M` re-reads of
+    /// cached-but-changed files should be served as deltas (`mode=diff`)
+    /// instead of re-emitting full content.
+    ///
+    /// Checks the `LCTX_DELTA_EXPLICIT` env var first, then the config.toml
+    /// field. Unlike a presence-only knob, an explicit `0`/`false` in the env
+    /// forces the feature OFF even when the config field is `true`, so the env
+    /// can fully override config in both directions.
+    pub fn delta_explicit_effective(&self) -> bool {
+        if let Ok(val) = std::env::var("LCTX_DELTA_EXPLICIT") {
+            return val == "1" || val.eq_ignore_ascii_case("true");
+        }
+        self.delta_explicit
     }
 
     /// Effective max_disk_mb from env or config.
@@ -1323,6 +1346,9 @@ impl Config {
         }
         if local.no_degrade {
             self.no_degrade = true;
+        }
+        if local.delta_explicit {
+            self.delta_explicit = true;
         }
         if local.profile.is_some() {
             self.profile = local.profile;
