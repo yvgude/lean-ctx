@@ -305,6 +305,19 @@ impl GraphProvider {
 }
 
 pub fn open_best_effort(project_root: &str) -> Option<OpenGraphProvider> {
+    open_best_effort_inner(project_root, true)
+}
+
+/// `trigger_background`: external callers that return fast and warm lazily pass
+/// `true` to kick off a one-shot background build when the graph is empty. The
+/// synchronous [`open_or_build`] path passes `false` — it builds inline right
+/// after, so a background build there would only race that inline build for the
+/// `graph-idx` lock and make it return an empty index. That race was the cause of
+/// "No graph available" on the very first cold open of a fresh project.
+fn open_best_effort_inner(
+    project_root: &str,
+    trigger_background: bool,
+) -> Option<OpenGraphProvider> {
     let t0 = std::time::Instant::now();
 
     // Backend selection (#682): `legacy` never consults the property graph —
@@ -351,7 +364,7 @@ pub fn open_best_effort(project_root: &str) -> Option<OpenGraphProvider> {
         }
     }
 
-    if !pg_populated {
+    if !pg_populated && trigger_background {
         trigger_lazy_graph_build(project_root);
     }
 
@@ -442,7 +455,11 @@ pub fn build_property_graph(project_root: &str) -> anyhow::Result<()> {
 }
 
 pub fn open_or_build(project_root: &str) -> Option<OpenGraphProvider> {
-    if let Some(p) = open_best_effort(project_root) {
+    // Open without triggering the lazy *background* build: this function builds
+    // synchronously below when nothing is cached, and a background build would
+    // only race that synchronous build for the `graph-idx` lock — returning an
+    // empty index that surfaces as "No graph available" on the first cold open.
+    if let Some(p) = open_best_effort_inner(project_root, false) {
         return Some(p);
     }
     let idx = super::graph_index::load_or_build(project_root);
