@@ -119,6 +119,14 @@ pub fn start_daemon(args: &[String]) -> Result<()> {
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(stderr_cfg);
+    // #356: if the *spawner* is a launchd-standalone process (e.g. the proxy
+    // auto-starting the daemon), the spawned daemon's ppid is the spawner — not
+    // 1 — so `getppid()`-based detection would miss it and the daemon's TCC path
+    // guards would stay off. Propagate the marker explicitly so the daemon
+    // treats itself as standalone regardless of where it sits in the tree.
+    if crate::core::pathutil::process_is_tcc_standalone() {
+        cmd.env("LEAN_CTX_TCC_STANDALONE", "1");
+    }
     // Detached spawn: on Windows the daemon must escape the parent's
     // console/Job so it survives AI-client MCP process recycling (GL #545).
     let child = ipc::process::spawn_detached(&mut cmd)

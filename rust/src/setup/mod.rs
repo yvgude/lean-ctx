@@ -1247,8 +1247,10 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
 
     // Auto-build property graph if inside any recognized project. The marker
     // probe is TCC-guarded (#356): a launchd-standalone setup run never stats
-    // markers under ~/Documents.
+    // markers under ~/Documents — and `may_autoindex_cwd` additionally skips the
+    // probe for a non-standalone CLI refresh whose cwd is in a protected dir.
     if let Ok(cwd) = std::env::current_dir()
+        && may_autoindex_cwd(&cwd)
         && crate::core::pathutil::has_project_marker(&cwd)
     {
         spawn_index_build_background(&cwd);
@@ -1277,6 +1279,18 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     crate::config_io::write_atomic(&path, &content)?;
 
     Ok(report)
+}
+
+/// #356: decide whether a setup refresh may auto-index `cwd`. Returns `false`
+/// for any cwd inside a macOS TCC-protected home dir (`~/Documents`, `~/Desktop`,
+/// `~/Downloads`) so a `lean-ctx update` run from a project there never stats
+/// marker files in it. That stat pops the macOS privacy prompt when lean-ctx is
+/// its own TCC responsible process, and a maintenance refresh has no need to
+/// trigger it — the graph builds on the next real tool use anyway. On non-macOS
+/// hosts `is_under_tcc_protected_dir` is always `false`, so behaviour is
+/// unchanged.
+fn may_autoindex_cwd(cwd: &std::path::Path) -> bool {
+    !crate::core::pathutil::is_under_tcc_protected_dir(cwd)
 }
 
 fn spawn_index_build_background(root: &std::path::Path) {
@@ -1338,6 +1352,21 @@ fn which_ionice_available() -> bool {
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
+
+    // #356: a setup refresh (e.g. via `lean-ctx update`) must not auto-index a
+    // cwd inside a TCC-protected home dir, or it stats marker files there and
+    // pops the macOS privacy prompt. Projects elsewhere index normally.
+    #[test]
+    fn may_autoindex_cwd_skips_tcc_protected_dirs() {
+        let Some(home) = dirs::home_dir() else {
+            return;
+        };
+        assert!(!may_autoindex_cwd(&home.join("Documents/proj")));
+        assert!(!may_autoindex_cwd(&home.join("Desktop/proj")));
+        assert!(!may_autoindex_cwd(&home.join("Downloads/proj")));
+        assert!(may_autoindex_cwd(&home.join("code/proj")));
+        assert!(may_autoindex_cwd(std::path::Path::new("/tmp/proj")));
+    }
 
     #[test]
     #[cfg(target_os = "macos")]

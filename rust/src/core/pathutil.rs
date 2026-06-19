@@ -357,6 +357,16 @@ pub fn process_is_tcc_standalone() -> bool {
                 _ => {}
             }
         }
+        // A process carrying the deny-~/Documents seatbelt sentinel is, by
+        // construction, a launchd-standalone descendant: the sentinel is set
+        // only by the LaunchAgent plist env and the self re-exec, and child
+        // processes inherit it. This catches a daemon the long-lived standalone
+        // proxy spawned via `start_daemon` (ppid = proxy, not 1), whose code-side
+        // path guards would otherwise stay off because `getppid()` is no longer
+        // 1. (#356)
+        if std::env::var_os(crate::core::tcc_guard_sandbox::SEATBELT_SENTINEL).is_some() {
+            return true;
+        }
         // SAFETY: `getppid` takes no arguments and cannot fail.
         (unsafe { libc::getppid() }) == 1
     }
@@ -506,6 +516,30 @@ mod tests {
         assert!(!process_is_tcc_standalone());
         assert!(may_probe_path(&doc_proj));
         crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    #[serial_test::serial]
+    fn tcc_standalone_detected_via_seatbelt_sentinel() {
+        let Some(home) = dirs::home_dir() else {
+            return;
+        };
+        let doc_proj = home.join("Documents/some-project");
+
+        // No explicit override: a process carrying the deny-~/Documents seatbelt
+        // sentinel (inherited from its sandboxed launchd parent) counts as
+        // standalone even when ppid != 1, so its heuristic probes stay
+        // suppressed — this is the proxy→daemon chain the ppid check missed. (#356)
+        crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
+        crate::test_env::set_var(crate::core::tcc_guard_sandbox::SEATBELT_SENTINEL, "1");
+        assert!(process_is_tcc_standalone());
+        assert!(!may_probe_path(&doc_proj));
+        crate::test_env::remove_var(crate::core::tcc_guard_sandbox::SEATBELT_SENTINEL);
+
+        // With neither override nor sentinel a normal test process (ppid != 1)
+        // is not standalone, so the sentinel is what flipped the result above.
+        assert!(!process_is_tcc_standalone());
     }
 
     #[test]
