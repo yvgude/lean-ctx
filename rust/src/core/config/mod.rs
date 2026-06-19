@@ -364,6 +364,12 @@ pub struct Config {
     /// Flows into archive.max_age_hours and lifecycle idle TTL.
     #[serde(default)]
     pub max_staleness_days: u32,
+    /// Cap on the rayon worker threads used by the CPU-heavy index build
+    /// (call graph etc.). 0 = rayon default (all cores). Set >0 to bound
+    /// per-instance CPU so a fleet of concurrent sessions can't saturate the
+    /// host on startup. Override via LEANCTX_INDEX_THREADS env var.
+    #[serde(default)]
+    pub max_index_threads: usize,
     /// Controls visibility of token savings footers in tool output.
     /// Values: "always" (default, show on every response), "never", "auto" (legacy compatibility).
     /// Override via LEAN_CTX_SAVINGS_FOOTER or LEAN_CTX_SHOW_SAVINGS=1|0 env var.
@@ -545,6 +551,7 @@ impl Default for Config {
             max_ram_percent: serde_defaults::default_max_ram_percent(),
             max_disk_mb: 0,
             max_staleness_days: 0,
+            max_index_threads: 0,
             savings_footer: SavingsFooter::default(),
             project_root: None,
             lsp: std::collections::HashMap::new(),
@@ -681,6 +688,15 @@ impl Config {
             ),
             Err(_) => self.prefer_native_editor,
         }
+    }
+
+    /// Cap on the rayon index-build worker threads. `LEANCTX_INDEX_THREADS` wins
+    /// over config; `0` means "no cap" — rayon's all-cores default is kept.
+    pub fn max_index_threads_effective(&self) -> usize {
+        std::env::var("LEANCTX_INDEX_THREADS")
+            .ok()
+            .and_then(|raw| raw.trim().parse::<usize>().ok())
+            .unwrap_or(self.max_index_threads)
     }
 
     /// Whether `name` is a lean-ctx edit operation that must be blocked from

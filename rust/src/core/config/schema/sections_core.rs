@@ -429,6 +429,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
+        "max_index_threads".into(),
+        key_with_env(
+            "usize",
+            serde_json::json!(cfg.max_index_threads),
+            "Cap rayon threads for the CPU-heavy index build (0 = all cores). Bounds per-instance CPU so concurrent sessions don't saturate the host on startup",
+            "LEANCTX_INDEX_THREADS",
+        ),
+    );
+    root.insert(
         "max_staleness_days".into(),
         key_with_env(
             "u32",

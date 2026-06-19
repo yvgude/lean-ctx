@@ -37,6 +37,17 @@ pub(super) fn run_mcp_server() -> Result<()> {
     let worker_threads = resolve_worker_threads(parallelism);
     let max_blocking_threads = (worker_threads * 4).clamp(8, 32);
 
+    // The Tokio caps above bound async work, but the CPU-heavy index build runs
+    // on rayon, whose global pool otherwise grabs *every* core — so a fleet of
+    // concurrent sessions still spikes the host on startup. Bound it too.
+    // Opt-in: 0 keeps rayon's all-cores default; LEANCTX_INDEX_THREADS > config.
+    let index_threads = crate::core::config::Config::load().max_index_threads_effective();
+    if index_threads > 0 {
+        let _ = rayon::ThreadPoolBuilder::new()
+            .num_threads(index_threads)
+            .build_global();
+    }
+
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(worker_threads)
         .max_blocking_threads(max_blocking_threads)
