@@ -72,7 +72,10 @@ fn edit_fail_after_map_read_escalates_and_penalizes() {
     let other_path = other.to_string_lossy().to_string();
     let other_ctx = AutoModeContext {
         path: &other_path,
-        token_count: 3000,
+        // > 6000 tokens so the deterministic size heuristic resolves a code file
+        // to `map` (#683 raised the map floor from 3000 → 6000). Only a non-full
+        // base mode can be escalated to `full` by the risky (rs × map) penalty.
+        token_count: 7000,
         task: None,
         cache: None,
     };
