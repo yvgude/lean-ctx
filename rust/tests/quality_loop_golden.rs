@@ -70,9 +70,14 @@ fn edit_fail_after_map_read_escalates_and_penalizes() {
     let other = tmp.path().join("other.rs");
     std::fs::write(&other, "fn unrelated() { 2 }\n".repeat(60)).unwrap();
     let other_path = other.to_string_lossy().to_string();
+    // token_count must clear heuristic_mode's 6000-token code-compression floor so
+    // this `.rs` file resolves to `map` on its own — only then is the rs|map risk
+    // penalty observable (it escalates a *compressed* mode to full; an already-
+    // `full` heuristic result masks it). That floor was raised 3000 -> 6000 in the
+    // #683 default-cascade refactor, which this golden test had to catch up to.
     let other_ctx = AutoModeContext {
         path: &other_path,
-        token_count: 3000,
+        token_count: 7000,
         task: None,
         cache: None,
     };
