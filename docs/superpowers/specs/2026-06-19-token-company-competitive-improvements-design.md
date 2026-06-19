@@ -593,6 +593,10 @@ aufzugeben:
 Nutzen). B als separates Forschungs-Epic mit Spike (Modellwahl, Größe, Latenz,
 Lizenz) bewerten, *bevor* Code entsteht.
 
+> **Spike-Ergebnis (#729):** siehe `2026-06-19-prose-model-spike.md` — Empfehlung
+> **NO-GO (vorerst)**. Erst messen (Accuracy@Rate gegen die deterministische
+> IB-Prosa), dann ggf. bauen; Gate auf Epic-5a-Evidenz + Determinismus-Conformance.
+
 ### 4.4 Aufwand/Risiko
 A: **M**, niedriges Risiko (Wiederverwendung vorhandener IB). B: **XL**, hohes
 Risiko (Modell-Pflege, Binärgröße, Latenz, Determinismus-Disziplin).
