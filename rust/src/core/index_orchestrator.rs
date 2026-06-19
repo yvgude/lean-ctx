@@ -93,6 +93,17 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
+/// Per-repo lock name for serializing the BM25 build across processes, mirroring
+/// the `graph-idx-<hash>` lock (see LOCK_ORDERING.md). The distinct `bm25-` vs
+/// `graph-` prefix keeps the graph and BM25 builds from serializing against each
+/// other while still preventing N processes from rebuilding either in parallel.
+fn bm25_index_lock_name(root: &Path) -> String {
+    format!(
+        "bm25-idx-{}",
+        &crate::core::index_namespace::namespace_hash(root)[..8]
+    )
+}
+
 fn start_component(c: &mut Component) {
     c.state = State::Building;
     c.started_ms = Some(now_ms());
@@ -270,20 +281,44 @@ pub fn ensure_all_background(project_root: &str) {
         }
         let bm = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let root_pb = Path::new(&root);
+            // Cross-instance build coordination: serialize the (expensive) BM25
+            // build per repo, mirroring the `graph-idx` lock in graph_index. The
+            // graph scan is already guarded this way; BM25 was the one component
+            // left to stampede when N sessions warm the same repo at once. On
+            // lock contention we load the index the holder is producing rather
+            // than running a second full build.
+            let lock_name = bm25_index_lock_name(root_pb);
+            let _lock = crate::core::startup_guard::try_acquire_lock(
+                &lock_name,
+                std::time::Duration::from_millis(800),
+                std::time::Duration::from_mins(3),
+            );
+            if _lock.is_none() {
+                tracing::info!(
+                    "[bm25: another process is building {root} — loading the shared index]"
+                );
+                let idx = BM25Index::load(root_pb).unwrap_or_default();
+                return (idx.doc_count, None);
+            }
             let idx = if content_cache.is_empty() {
                 BM25Index::load_or_build(root_pb)
             } else {
                 BM25Index::build_with_content_hint(root_pb, &content_cache)
             };
             let outcome = idx.save(root_pb);
-            (idx.doc_count, outcome)
+            (idx.doc_count, Some(outcome))
         }));
         if let Ok((doc_count, save_res)) = bm {
             let mut s = state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             finish_ok(&mut s.bm25);
-            s.bm25.note = Some(bm25_build_note(doc_count, &save_res));
+            s.bm25.note = Some(match save_res {
+                Some(outcome) => bm25_build_note(doc_count, &outcome),
+                None => format!(
+                    "loaded shared BM25 index ({doc_count} chunks) — build in progress in another process"
+                ),
+            });
         } else {
             let mut s = state
                 .lock()
@@ -737,5 +772,22 @@ mod tests {
         let primary_str = primary.to_string_lossy().to_string();
         // Should not spawn more than MAX_EXTRA_ROOT_BUILDS threads
         ensure_extra_roots_background(&primary_str, &extra);
+    }
+
+    #[test]
+    fn bm25_index_lock_name_is_per_repo_and_distinct_from_graph() {
+        let a = bm25_index_lock_name(Path::new("/tmp/repo-a"));
+        let b = bm25_index_lock_name(Path::new("/tmp/repo-b"));
+        assert!(a.starts_with("bm25-idx-"), "unexpected lock name: {a}");
+        assert_ne!(a, b, "lock name must be per-repo");
+        // Stable for the same repo across calls.
+        assert_eq!(a, bm25_index_lock_name(Path::new("/tmp/repo-a")));
+        // Must NOT collide with the graph lock for the same repo, or the two
+        // builds would serialize against each other unnecessarily.
+        let graph = format!(
+            "graph-idx-{}",
+            &crate::core::index_namespace::namespace_hash(Path::new("/tmp/repo-a"))[..8]
+        );
+        assert_ne!(a, graph, "bm25 and graph locks must be independent");
     }
 }
