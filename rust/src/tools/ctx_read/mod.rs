@@ -35,6 +35,19 @@ fn is_cacheable_mode(mode: &str) -> bool {
     CACHEABLE_MODES.contains(&mode)
 }
 
+/// `#361` anti-inflation capping applies to whole-file views (`full` and the
+/// lossy summaries `map`/`signatures`/`aggressive`/`entropy`/`task`/…), where the
+/// raw file is a strict superset of the information and is therefore never a
+/// worse answer when the framing happens to inflate on a small file. `full` is
+/// included: an `auto` read can resolve to `full` and reach this path, and its
+/// header must not push the cost above raw. Selection and delta views have
+/// view-specific semantics — `lines:` returns a window, `reference` a pointer,
+/// `diff` a delta, `raw` the bytes — so replacing them with the whole file would
+/// be wrong, not cheaper, and they are never capped.
+fn mode_allows_raw_cap(mode: &str) -> bool {
+    !(mode.starts_with("lines:") || matches!(mode, "reference" | "diff" | "raw"))
+}
+
 fn compressed_cache_key(mode: &str, crp_mode: CrpMode, task: Option<&str>) -> String {
     // Bump when the rendered map/signatures body changes shape so stale
     // pre-line-range entries are not served from an older session cache.
@@ -58,26 +71,6 @@ fn compressed_cache_key(mode: &str, crp_mode: CrpMode, task: Option<&str>) -> St
             format!("{base}:t{:x}", h.finish())
         }
         None => base,
-    }
-}
-
-/// Extracts a short proof-line from file content to include in cache-hit stubs.
-/// Returns the first non-empty line (truncated to 60 chars) as evidence the cache is valid.
-/// Only shown after 2+ reads to avoid noise on early interactions.
-fn cache_hit_proof_line(content: &str, read_count: u32) -> Option<String> {
-    if read_count < 2 {
-        return None;
-    }
-    let first_line = content.lines().find(|l| !l.trim().is_empty())?;
-    let trimmed = first_line.trim();
-    if trimmed.len() > 60 {
-        let mut end = 57;
-        while end > 0 && !trimmed.is_char_boundary(end) {
-            end -= 1;
-        }
-        Some(format!("{}...", &trimmed[..end]))
-    } else {
-        Some(trimmed.to_string())
     }
 }
 
@@ -359,9 +352,11 @@ fn handle_with_options_resolved(
     }
 
     // Stigmergy (#540): deposit a Hot scent for this read in the background
-    // (the field file lock may briefly block; never stall the read path), and
-    // surface an active foreign claim as a one-line hint (~10 tokens) so
-    // parallel agents stop duplicating work.
+    // (the field file lock may briefly block; never stall the read path). The
+    // foreign-claim hint is intentionally NOT appended to the body: it carries a
+    // relative timestamp ("claimed Nm ago"), which would make the output a
+    // non-pure function of wall-clock time and defeat provider prompt caching
+    // (#498). The deposit remains so the field still reflects active work.
     {
         let self_agent = crate::core::scent_field::scent_agent_id();
         let scent_path = crate::core::pathutil::normalize_tool_path(path);
@@ -373,10 +368,6 @@ fn handle_with_options_resolved(
                 0.3,
             );
         });
-        if let Some(hint) = crate::core::scent_field::read_hint(path, self_agent) {
-            result.content.push('\n');
-            result.content.push_str(&hint);
-        }
     }
 
     result
@@ -394,15 +385,9 @@ fn handle_with_options_resolved(
 /// parallel reads of distinct files no longer serialize on a global write lock.
 pub fn try_stub_hit_readonly(cache: &SessionCache, path: &str) -> Option<ReadOutput> {
     let file_ref = cache.get_file_ref_readonly(path)?;
-    let (cached_mtime, cached_hash, read_count, line_count, content_opt) = {
+    let (cached_mtime, cached_hash, line_count) = {
         let entry = cache.get(path)?;
-        (
-            entry.stored_mtime,
-            entry.hash.clone(),
-            entry.read_count(),
-            entry.line_count,
-            entry.content(),
-        )
+        (entry.stored_mtime, entry.hash.clone(), entry.line_count)
     };
 
     let no_deg = crate::core::config::Config::load().no_degrade_effective();
@@ -426,20 +411,11 @@ pub fn try_stub_hit_readonly(cache: &SessionCache, path: &str) -> Option<ReadOut
             "{file_ref}={short} [unchanged {line_count}L]\nUnchanged on disk. Use fresh=true to force re-read.",
         )
     } else {
-        let proof = content_opt
-            .as_deref()
-            .and_then(|c| cache_hit_proof_line(c, read_count));
-        let reads_note = if read_count > 3 {
-            format!(" (read {}x)", read_count + 1)
-        } else {
-            String::new()
-        };
-        match proof {
-            Some(p) => {
-                format!("{file_ref}={short} [unchanged {line_count}L{reads_note} | \"{p}\"]")
-            }
-            None => format!("{file_ref}={short} [unchanged {line_count}L{reads_note}]"),
-        }
+        // #498 determinism: the cache-hit stub is a pure function of (content,
+        // path) so identical re-reads stay byte-stable and provider prompt
+        // caching applies. Rotating proof lines and read-count notes are
+        // intentionally omitted from the body.
+        format!("{file_ref}={short} [unchanged {line_count}L]")
     };
     let out = crate::core::redaction::redact_text_if_enabled(&out);
     let sent = count_tokens(&out);
@@ -559,18 +535,21 @@ fn handle_with_options_inner(
                 path,
                 task,
             );
-            if is_cacheable_mode(&resolved_mode) {
-                let cache_key = compressed_cache_key(&resolved_mode, crp_mode, task);
-                cache.set_compressed(path, &cache_key, out.clone());
-            }
-            // Only guard auto-resolved reads; an explicit mode is a deliberate
-            // view we must return verbatim (#361).
-            let out = if mode == "auto" {
+            // #361 anti-inflation for lossy whole-file summaries (auto OR
+            // explicit): map/signatures/… must never cost more than the raw file.
+            // Selection/delta views keep their exact shape (see
+            // mode_allows_raw_cap). Cap before caching so re-read hits serve the
+            // same capped, byte-stable body.
+            let out = if mode_allows_raw_cap(&resolved_mode) {
                 let framed_tokens = count_tokens(&out);
                 cap_to_raw(out, framed_tokens, &content, original_tokens)
             } else {
                 out
             };
+            if is_cacheable_mode(&resolved_mode) {
+                let cache_key = compressed_cache_key(&resolved_mode, crp_mode, task);
+                cache.set_compressed(path, &cache_key, out.clone());
+            }
             let out = crate::core::redaction::redact_text_if_enabled(&out);
             let sent = count_tokens(&out);
             return ReadOutput {
@@ -652,7 +631,7 @@ fn handle_with_options_inner(
         mode.to_string()
     };
 
-    let (mut output, _sent) = process_mode(
+    let (output, _sent) = process_mode(
         &content,
         &resolved_mode,
         &file_ref,
@@ -663,20 +642,12 @@ fn handle_with_options_inner(
         path,
         task,
     );
-    if let Some(hint) = &graph_hint {
-        output.push_str(&format!("\n{hint}"));
-    }
-    if let Some(hint) = similar_hint {
-        output.push_str(&format!("\n{hint}"));
-    }
-    if is_cacheable_mode(&resolved_mode) {
-        let cache_key = compressed_cache_key(&resolved_mode, crp_mode, task);
-        cache.set_compressed(path, &cache_key, output.clone());
-    }
-    // Anti-inflation only kicks in when *we* picked the mode (auto). An explicit
-    // map/signatures/lines request is a deliberate view — honour it verbatim,
-    // even on a tiny file where it happens not to save (#361).
-    let output = if mode == "auto" {
+    // #361 anti-inflation for lossy whole-file summaries (auto OR explicit);
+    // selection/delta views keep their exact shape (see mode_allows_raw_cap).
+    // Cap first, then cache the pure capped body so re-reads stay byte-stable
+    // (#498) — the optional, read-state-dependent navigation hints below are
+    // appended to the returned value only, never to the cached body.
+    let mut output = if mode_allows_raw_cap(&resolved_mode) {
         let framed_tokens = count_tokens(&output);
         cap_to_raw(
             output,
@@ -687,6 +658,16 @@ fn handle_with_options_inner(
     } else {
         output
     };
+    if is_cacheable_mode(&resolved_mode) {
+        let cache_key = compressed_cache_key(&resolved_mode, crp_mode, task);
+        cache.set_compressed(path, &cache_key, output.clone());
+    }
+    if let Some(hint) = &graph_hint {
+        output.push_str(&format!("\n{hint}"));
+    }
+    if let Some(hint) = similar_hint {
+        output.push_str(&format!("\n{hint}"));
+    }
     let output = crate::core::redaction::redact_text_if_enabled(&output);
     let final_tokens = count_tokens(&output);
     ReadOutput {
@@ -877,22 +858,12 @@ fn handle_full_with_auto_delta(
                     store_result.line_count
                 )
             } else {
-                let proof = cache_hit_proof_line(&disk_content, store_result.read_count);
-                let reads_note = if store_result.read_count > 3 {
-                    format!(" (read {}x)", store_result.read_count)
-                } else {
-                    String::new()
-                };
-                match proof {
-                    Some(p) => format!(
-                        "{file_ref}={short} [unchanged {}L{reads_note} | \"{p}\"]",
-                        store_result.line_count
-                    ),
-                    None => format!(
-                        "{file_ref}={short} [unchanged {}L{reads_note}]",
-                        store_result.line_count
-                    ),
-                }
+                // #498 determinism: byte-stable cache-hit stub (see
+                // try_stub_hit_readonly).
+                format!(
+                    "{file_ref}={short} [unchanged {}L]",
+                    store_result.line_count
+                )
             };
             let sent = count_tokens(&out);
             return (out, sent);

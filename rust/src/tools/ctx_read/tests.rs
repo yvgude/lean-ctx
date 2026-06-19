@@ -358,17 +358,21 @@ fn compressed_cache_key_distinguishes_task() {
 
 #[test]
 fn map_mode_includes_signature_line_ranges() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("lib.rs");
-    let p = path.to_string_lossy().to_string();
-    std::fs::write(
-        &path,
-        "pub struct Config {}\n\npub fn build() -> Config { Config {} }\n",
-    )
-    .unwrap();
-
-    let mut cache = SessionCache::new();
-    let result = handle(&mut cache, &p, "map", CrpMode::Off);
+    // Map formatting is rendered by `process_mode`; assert it directly so the
+    // structure check stays independent of the handle-level #361 cap, which
+    // legitimately collapses this tiny fixture to raw.
+    let content = "pub struct Config {}\n\npub fn build() -> Config { Config {} }\n";
+    let (result, _) = process_mode(
+        content,
+        "map",
+        "F1",
+        "lib.rs",
+        "rs",
+        count_tokens(content),
+        CrpMode::Off,
+        "/tmp/lib.rs",
+        None,
+    );
 
     assert!(
         result.contains("API:"),
@@ -388,18 +392,20 @@ fn map_mode_includes_signature_line_ranges() {
 fn map_mode_omits_exports_already_in_api() {
     // #361 follow-up: the `exports:` line duplicated symbols the API section
     // already lists with full signatures + line ranges. Map must not repeat
-    // exports that the API already covers (pure redundant tokens).
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("lib.rs");
-    let p = path.to_string_lossy().to_string();
-    std::fs::write(
-        &path,
-        "pub struct Config {}\n\npub fn build() -> Config { Config {} }\n",
-    )
-    .unwrap();
-
-    let mut cache = SessionCache::new();
-    let result = handle(&mut cache, &p, "map", CrpMode::Off);
+    // exports that the API already covers (pure redundant tokens). Rendered by
+    // `process_mode`; assert it directly (handle would cap this tiny fixture).
+    let content = "pub struct Config {}\n\npub fn build() -> Config { Config {} }\n";
+    let (result, _) = process_mode(
+        content,
+        "map",
+        "F1",
+        "lib.rs",
+        "rs",
+        count_tokens(content),
+        CrpMode::Off,
+        "/tmp/lib.rs",
+        None,
+    );
 
     // Both exported symbols stay discoverable via the API section …
     assert!(
@@ -416,24 +422,35 @@ fn map_mode_omits_exports_already_in_api() {
 #[test]
 fn tdd_map_output_carries_symbol_legend() {
     // GL #580: symbol notation must be self-describing for vanilla agents.
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("lib.rs");
-    let p = path.to_string_lossy().to_string();
-    std::fs::write(
-        &path,
-        "pub struct Config {}\n\npub fn build() -> Config { Config {} }\n",
-    )
-    .unwrap();
-
-    let mut cache = SessionCache::new();
-    let result = handle(&mut cache, &p, "map", CrpMode::Tdd);
+    // Rendered by `process_mode`; assert it directly (handle caps this fixture).
+    let content = "pub struct Config {}\n\npub fn build() -> Config { Config {} }\n";
+    let (result, _) = process_mode(
+        content,
+        "map",
+        "F1",
+        "lib.rs",
+        "rs",
+        count_tokens(content),
+        CrpMode::Tdd,
+        "/tmp/lib.rs",
+        None,
+    );
     assert!(
         result.contains("[λ=fn §=class +=pub]"),
         "TDD map output must carry the symbol legend: {result}"
     );
 
-    let mut cache2 = SessionCache::new();
-    let sigs = handle(&mut cache2, &p, "signatures", CrpMode::Tdd);
+    let (sigs, _) = process_mode(
+        content,
+        "signatures",
+        "F1",
+        "lib.rs",
+        "rs",
+        count_tokens(content),
+        CrpMode::Tdd,
+        "/tmp/lib.rs",
+        None,
+    );
     assert!(
         sigs.contains("[λ=fn §=class +=pub]"),
         "TDD signatures output must carry the symbol legend: {sigs}"
@@ -581,8 +598,9 @@ fn raw_mode_no_savings_footer() {
 // #361 anti-inflation invariant: a `ctx_read` must never cost more tokens than
 // the raw file. The framing header only earns its keep on large files and
 // cached re-reads; on a cold read of a small file it is pure overhead, so the
-// guard ships bare content (break-even, never a loss). Auto-resolved reads are
-// guarded; an explicitly requested view is honoured verbatim.
+// guard ships bare content (break-even, never a loss). The guard now applies to
+// every mode — auto-resolved AND explicitly requested — so no view can ever
+// cost more tokens than reading the file raw.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -695,20 +713,82 @@ fn auto_read_still_compresses_large_file() {
 }
 
 #[test]
-fn explicit_compressed_mode_honoured_on_tiny_file() {
-    // The guard must not override an explicit view: asking for `signatures` of
-    // a tiny file returns signatures, even when that happens not to save.
+fn explicit_compressed_mode_capped_on_tiny_file() {
+    // #361 now applies to explicit modes too: asking for `signatures` of a tiny
+    // file must never cost more tokens than reading it raw. (On a tiny file the
+    // capped result is the raw content, which still carries the symbols.)
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("lib.rs");
+    let p = path.to_string_lossy().to_string();
+    let content = "pub fn alpha() {}\npub fn beta() {}\n";
+    std::fs::write(&path, content).unwrap();
+
+    let mut cache = SessionCache::new();
+    let out = handle_with_task_resolved(&mut cache, &p, "signatures", CrpMode::Off, None);
+    assert!(
+        out.output_tokens <= count_tokens(content),
+        "explicit signatures of a tiny file must not inflate past raw: {} > {}\n{}",
+        out.output_tokens,
+        count_tokens(content),
+        out.content
+    );
+}
+
+#[test]
+fn explicit_signatures_still_compresses_large_file() {
+    // Capping explicit modes must not break legitimate compression: signatures
+    // of a large file are far smaller than raw, so the cap is a no-op and the
+    // compressed view (not raw) is returned.
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("big.rs");
+    let p = path.to_string_lossy().to_string();
+    let mut content = String::new();
+    for i in 0..400 {
+        content.push_str(&format!(
+            "pub fn function_number_{i}(x: i32, y: i32) -> i32 {{\n    let z = x + y + {i};\n    z * 2\n}}\n\n"
+        ));
+    }
+    std::fs::write(&path, &content).unwrap();
+
+    let mut cache = SessionCache::new();
+    let out = handle_with_task_resolved(&mut cache, &p, "signatures", CrpMode::Off, None);
+    assert!(
+        out.output_tokens < count_tokens(&content),
+        "explicit signatures of a large file must compress: {} >= {}",
+        out.output_tokens,
+        count_tokens(&content)
+    );
+}
+
+#[test]
+fn cache_hit_stub_is_byte_stable_across_rereads() {
+    // #498 determinism: re-reading an unchanged file must yield byte-identical
+    // output (no read-count note, no rotating proof line) so provider prompt
+    // caching applies to the repeated stub.
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("stable.rs");
     let p = path.to_string_lossy().to_string();
     std::fs::write(&path, "pub fn alpha() {}\npub fn beta() {}\n").unwrap();
 
     let mut cache = SessionCache::new();
-    let out = handle_with_task_resolved(&mut cache, &p, "signatures", CrpMode::Off, None);
-    assert_eq!(out.resolved_mode, "signatures");
+    // Prime: the first full read marks full content as delivered.
+    let _ = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let r2 = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let r3 = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let r4 = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    assert_eq!(
+        r2.content, r3.content,
+        "re-read drifted between reads 2 and 3"
+    );
+    assert_eq!(
+        r3.content, r4.content,
+        "re-read drifted between reads 3 and 4"
+    );
     assert!(
-        out.content.contains("alpha") && out.content.contains("beta"),
-        "explicit signatures must be returned verbatim, not capped to raw: {}",
-        out.content
+        !r2.content.contains("(read"),
+        "read-count note must not appear in the cache-hit body: {}",
+        r2.content
     );
 }
