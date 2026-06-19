@@ -36,6 +36,13 @@ lean-ctx enforces a **project boundary** for filesystem I/O:
   - Env: `LEAN_CTX_ALLOW_PATH` (or `LCTX_ALLOW_PATH`) — a path list (`:` on Unix, `;` on Windows)
   - Config: `allow_paths` in `~/.lean-ctx/config.toml` (whitelist only); `extra_roots` (whitelist + multi-root scanning)
   - `~`, `$VAR` and `${VAR}` are expanded in these entries (no shell runs for config files)
+- **Read-only roots** (`read_only_roots` / `LEAN_CTX_READ_ONLY_ROOTS`): a narrower tier
+  that grants **read** access (`ctx_read`, `ctx_search`, `ctx_tree`) to additional roots
+  while **refusing all writes/edits** to them. A path that resolves only via a read-only
+  root is rejected by write/edit tools ("path is under a read-only root; reads are allowed,
+  writes are not"); the same symlink/TOCTOU re-validation as normal roots applies, so a
+  symlink escaping a read-only root is still caught. Prefer this over `extra_roots` when an
+  agent must read a sibling repo but must never modify it. Empty by default (no behavior change).
 - **Disabling the jail** (sandboxed environments where the OS is the boundary):
   - Config: `path_jail = false` in `~/.lean-ctx/config.toml`
   - Compile-time: the `no-jail` cargo feature

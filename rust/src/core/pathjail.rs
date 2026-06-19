@@ -1,5 +1,12 @@
 use std::path::{Path, PathBuf};
 
+/// Error returned when a write/edit tool targets a path that resolved *only*
+/// via a read-only root. Centralized so the message is identical everywhere it
+/// is enforced (dispatch pre-resolution + in-handler write resolvers) and so
+/// tests can assert against a single source of truth.
+pub const READ_ONLY_ROOT_WRITE_ERR: &str =
+    "path is under a read-only root; reads are allowed, writes are not";
+
 const IDE_CONFIG_DIRS: &[&str] = &[
     ".lean-ctx",
     ".cursor",
@@ -110,6 +117,31 @@ pub fn allow_paths_from_env_and_config() -> Vec<PathBuf> {
     out
 }
 
+/// Read-only extra roots, sourced exactly like the read-write allow-list but
+/// kept in a separate tier: a candidate under one of these is *readable* yet
+/// must be *refused to write/edit tools*. Sourced from config `read_only_roots`
+/// and the additive `LEAN_CTX_READ_ONLY_ROOTS` env var (mirrors `extra_roots`).
+///
+/// Canonicalized the same (security, symlink-resolving) way as the candidate so
+/// `is_under_prefix` compares like with like — identical to the read-write tier.
+pub fn read_only_roots_from_env_and_config() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let cfg = crate::core::config::Config::load();
+
+    for p in &cfg.read_only_roots {
+        out.push(canonicalize_secure(&expand_user_path(p)));
+    }
+
+    let env = std::env::var("LEAN_CTX_READ_ONLY_ROOTS").unwrap_or_default();
+    if !env.trim().is_empty() {
+        for p in std::env::split_paths(&env) {
+            out.push(canonicalize_secure(&expand_user_path(&p.to_string_lossy())));
+        }
+    }
+
+    out
+}
+
 /// Home-level allow-dirs for the jail. `~/.lean-ctx` (own state) is always
 /// allowed; the *other* IDE config dirs (~/.cursor, ~/.claude, …) expose
 /// foreign projects' sessions, MCP configs and credentials to any agent, so
@@ -167,6 +199,20 @@ pub fn jail_path(candidate: &Path, jail_root: &Path) -> Result<PathBuf, String> 
     jail_path_with_roots(candidate, jail_root, &[])
 }
 
+/// Outcome of a jailed path resolution that also tracks the read-only tier.
+///
+/// `read_only` is true when the candidate was permitted *only* because it lives
+/// under a [`read_only_roots_from_env_and_config`] root (or a session-supplied
+/// `read_only_roots` entry) — i.e. it is NOT under the jail root, the
+/// read-write allow-list, or `extra_roots`. Read tools may use `path`; write/
+/// edit tools MUST refuse it. A path reachable via a read-write root is never
+/// flagged (read-write wins), so the flag is strictly the "writes forbidden" bit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JailedPath {
+    pub path: PathBuf,
+    pub read_only: bool,
+}
+
 /// Like [`jail_path`], but also accepts paths under any of `extra_roots`.
 ///
 /// `extra_roots` are session-scoped trusted roots (MCP `roots/list` and config
@@ -181,21 +227,49 @@ pub fn jail_path_with_roots(
     jail_root: &Path,
     extra_roots: &[String],
 ) -> Result<PathBuf, String> {
+    jail_path_with_roots_ro(candidate, jail_root, extra_roots, &[]).map(|j| j.path)
+}
+
+/// Like [`jail_path_with_roots`], but also accepts paths under any
+/// `read_only_roots` (session-supplied) plus the config/env read-only tier, and
+/// reports — via [`JailedPath::read_only`] — whether the candidate was permitted
+/// *only* because it lives under a read-only root.
+///
+/// Read tools call this and use the path regardless of the flag; write/edit
+/// tools call this and MUST refuse when `read_only` is true. A read-only root is
+/// therefore readable but never writable. Every other PathJail invariant
+/// (canonicalize-secure, symlink/TOCTOU re-validation, post-canonicalize
+/// recheck, null-byte rejection, `path_jail=false`/`no-jail` bypass) is
+/// preserved unchanged; an empty `read_only_roots` plus an empty config/env
+/// read-only tier makes this byte-for-byte identical to
+/// [`jail_path_with_roots`].
+pub fn jail_path_with_roots_ro(
+    candidate: &Path,
+    jail_root: &Path,
+    extra_roots: &[String],
+    read_only_roots: &[String],
+) -> Result<JailedPath, String> {
     if candidate.to_string_lossy().as_bytes().contains(&0) {
         return Err("path contains null byte".to_string());
     }
 
     #[cfg(feature = "no-jail")]
     {
-        let _ = (jail_root, extra_roots);
-        return Ok(canonicalize_or_self(candidate));
+        let _ = (jail_root, extra_roots, read_only_roots);
+        return Ok(JailedPath {
+            path: canonicalize_or_self(candidate),
+            read_only: false,
+        });
     }
 
     #[allow(unreachable_code)]
     {
         let cfg = crate::core::config::Config::load();
         if cfg.path_jail == Some(false) {
-            return Ok(canonicalize_or_self(candidate));
+            return Ok(JailedPath {
+                path: canonicalize_or_self(candidate),
+                read_only: false,
+            });
         }
 
         let root = canonicalize_secure(jail_root);
@@ -212,10 +286,22 @@ pub fn jail_path_with_roots(
             resolved.as_path()
         };
 
+        // Read-write allow-list: jail root ∪ config/env allow-list ∪ session
+        // `extra_roots`. A candidate under any of these is fully read-write.
         let mut allow = allow_paths_from_env_and_config();
         // Session-scoped roots widen the allow-list for this call only.
         allow.extend(
             extra_roots
+                .iter()
+                .filter(|r| !r.is_empty())
+                .map(|r| canonicalize_secure(Path::new(r))),
+        );
+
+        // Read-only tier (config/env + session): permits reads, forbids writes.
+        // Kept separate from `allow` so we can tag the resolution accordingly.
+        let mut ro_allow = read_only_roots_from_env_and_config();
+        ro_allow.extend(
+            read_only_roots
                 .iter()
                 .filter(|r| !r.is_empty())
                 .map(|r| canonicalize_secure(Path::new(r))),
@@ -228,13 +314,14 @@ pub fn jail_path_with_roots(
             )
         })?;
 
-        let allowed =
+        let under_rw =
             is_under_prefix(&base, &root) || allow.iter().any(|p| is_under_prefix(&base, p));
-
         #[cfg(windows)]
-        let allowed = allowed || is_under_prefix_windows(&base, &root);
+        let under_rw = under_rw || is_under_prefix_windows(&base, &root);
 
-        if !allowed {
+        let under_ro = ro_allow.iter().any(|p| is_under_prefix(&base, p));
+
+        if !under_rw && !under_ro {
             let base_msg = format!(
                 "path escapes project root: {} (root: {})",
                 candidate.display(),
@@ -261,22 +348,32 @@ pub fn jail_path_with_roots(
 
         // Re-validate after reconstruction: if the final path exists, canonicalize
         // and re-check to close TOCTOU window (symlink created between check and use).
+        // The recheck spans BOTH tiers so a symlink escaping into a read-only root
+        // is still validated; the read-only flag is recomputed from the canonical
+        // target so a symlink from a read-write area into a read-only root (or vice
+        // versa) is classified by where it actually lands.
+        let mut read_only = under_ro && !under_rw;
         if out.exists() {
             let final_canon = canonicalize_secure(&out);
-            let final_ok = is_under_prefix(&final_canon, &root)
+            let final_rw = is_under_prefix(&final_canon, &root)
                 || allow.iter().any(|p| is_under_prefix(&final_canon, p));
             #[cfg(windows)]
-            let final_ok = final_ok || is_under_prefix_windows(&final_canon, &root);
-            if !final_ok {
+            let final_rw = final_rw || is_under_prefix_windows(&final_canon, &root);
+            let final_ro = ro_allow.iter().any(|p| is_under_prefix(&final_canon, p));
+            if !final_rw && !final_ro {
                 return Err(format!(
                     "post-canonicalize jail escape detected: {} resolves to {}",
                     candidate.display(),
                     final_canon.display()
                 ));
             }
+            read_only = final_ro && !final_rw;
         }
 
-        Ok(out)
+        Ok(JailedPath {
+            path: out,
+            read_only,
+        })
     }
 }
 
@@ -638,4 +735,149 @@ mod tests {
         // Empty entries are ignored (no accidental allow-all).
         assert!(jail_path_with_roots(&outside, &root, &[String::new()]).is_err());
     }
+
+    /// read_only_roots (config/env tier): a path under a read-only root is
+    /// READABLE and TAGGED `read_only`; a normal `extra_root` stays read-write
+    /// (`read_only=false`); a path outside ALL roots still escapes. Holds the
+    /// read-only env lock so a parallel test mutating `LEAN_CTX_READ_ONLY_ROOTS`
+    /// cannot leak in, plus the allow-path lock and an isolated data dir.
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn read_only_root_is_readable_but_tagged_read_only() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let _alp = ALLOW_PATH_ENV_LOCK.lock().unwrap();
+        let _rol = READ_ONLY_ROOTS_ENV_LOCK.lock().unwrap();
+        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let ro = tmp.path().join("sibling");
+        let rw = tmp.path().join("worktree");
+        let elsewhere = tmp.path().join("elsewhere");
+        for d in [&root, &ro, &rw, &elsewhere] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let in_ro = ro.join("a.txt");
+        std::fs::write(&in_ro, "x").unwrap();
+        let in_rw = rw.join("b.txt");
+        std::fs::write(&in_rw, "y").unwrap();
+        let outside = elsewhere.join("c.txt");
+        std::fs::write(&outside, "z").unwrap();
+
+        let ro_roots = vec![ro.to_string_lossy().to_string()];
+        let rw_roots = vec![rw.to_string_lossy().to_string()];
+
+        // Read-only root: permitted, flagged read_only.
+        let j = jail_path_with_roots_ro(&in_ro, &root, &[], &ro_roots)
+            .expect("path under read_only root must resolve");
+        assert!(j.read_only, "path under a read_only root must be flagged");
+        assert!(j.path.ends_with("a.txt"));
+
+        // Read-write extra_root: permitted, NOT flagged (writes allowed).
+        let j2 = jail_path_with_roots_ro(&in_rw, &root, &rw_roots, &[])
+            .expect("path under extra_root must resolve");
+        assert!(!j2.read_only, "a read-write extra_root must not be flagged");
+
+        // A read_only root must NOT grant write semantics via the bare RW helper's
+        // contract: the flag is the only signal, and here it is set.
+        // Path outside every root still escapes, even with a read_only root present.
+        assert!(
+            jail_path_with_roots_ro(&outside, &root, &[], &ro_roots).is_err(),
+            "a path outside all roots must still escape"
+        );
+
+        // Empty read_only entries are ignored (no accidental allow-all).
+        assert!(jail_path_with_roots_ro(&outside, &root, &[], &[String::new()]).is_err());
+    }
+
+    /// A symlink inside the jail root that escapes into a read-only root is still
+    /// caught by the post-canonicalize recheck — and, because it lands in the
+    /// read-only root, is flagged read_only (so writes through it are refused too).
+    #[cfg(all(unix, not(feature = "no-jail")))]
+    #[test]
+    fn symlink_into_read_only_root_is_revalidated_and_flagged() {
+        use std::os::unix::fs::symlink;
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let _alp = ALLOW_PATH_ENV_LOCK.lock().unwrap();
+        let _rol = READ_ONLY_ROOTS_ENV_LOCK.lock().unwrap();
+        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let ro = tmp.path().join("sibling");
+        let outside = tmp.path().join("outside");
+        for d in [&root, &ro, &outside] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let target = ro.join("secret.txt");
+        std::fs::write(&target, "ro").unwrap();
+        let escaped = outside.join("secret.txt");
+        std::fs::write(&escaped, "no").unwrap();
+
+        let ro_roots = vec![ro.to_string_lossy().to_string()];
+
+        // A symlink in the jail root pointing INTO the read-only root: the post-
+        // canonicalize recheck spans the read-only tier, so it resolves — and the
+        // flag reflects where it actually lands (read-only).
+        let link_ro = root.join("link_ro.txt");
+        symlink(&target, &link_ro).unwrap();
+        let j = jail_path_with_roots_ro(&link_ro, &root, &[], &ro_roots)
+            .expect("symlink into a read_only root resolves (read allowed)");
+        assert!(
+            j.read_only,
+            "a symlink resolving into a read_only root must be flagged read_only"
+        );
+
+        // A symlink escaping to a path under NEITHER tier is still rejected.
+        let link_bad = root.join("link_bad.txt");
+        symlink(&escaped, &link_bad).unwrap();
+        assert!(
+            jail_path_with_roots_ro(&link_bad, &root, &[], &ro_roots).is_err(),
+            "a symlink escaping all roots must still be rejected"
+        );
+    }
+
+    /// `LEAN_CTX_READ_ONLY_ROOTS` is parsed (path-list separator) and feeds the
+    /// read-only tier: a path under an env-listed root resolves and is flagged.
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn read_only_roots_env_var_is_parsed() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let _alp = ALLOW_PATH_ENV_LOCK.lock().unwrap();
+        let _rol = READ_ONLY_ROOTS_ENV_LOCK.lock().unwrap();
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        let ro = tmp.path().join("sibling");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&ro).unwrap();
+        let in_ro = ro.join("a.txt");
+        std::fs::write(&in_ro, "x").unwrap();
+
+        // Canonicalize: the env tier is compared against the canonical candidate.
+        let ro_canon = canonicalize_or_self(&ro);
+        crate::test_env::set_var(
+            "LEAN_CTX_READ_ONLY_ROOTS",
+            ro_canon.to_string_lossy().as_ref(),
+        );
+        let parsed = read_only_roots_from_env_and_config();
+        let j = jail_path_with_roots_ro(&in_ro, &root, &[], &[]);
+        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
+
+        assert!(
+            parsed.iter().any(|p| in_ro.starts_with(p)),
+            "env read_only root must be parsed into the tier: {parsed:?}"
+        );
+        let j = j.expect("env read_only root must permit the read");
+        assert!(
+            j.read_only,
+            "env-sourced read_only root must flag read_only"
+        );
+    }
+
+    /// Serializes tests mutating `LEAN_CTX_READ_ONLY_ROOTS` (process-global env).
+    /// Gated like its only users so `--features no-jail` (which filters those
+    /// tests out) does not see an unused static.
+    #[cfg(not(feature = "no-jail"))]
+    static READ_ONLY_ROOTS_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 }

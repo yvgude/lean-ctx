@@ -233,6 +233,15 @@ pub struct Config {
     /// Override via LEAN_CTX_EXTRA_ROOTS env var (path-list separator).
     #[serde(default)]
     pub extra_roots: Vec<String>,
+    /// Read-only extra roots: PathJail permits READ tools (ctx_read / ctx_search /
+    /// ctx_tree) to access these paths, but WRITE/EDIT tools (ctx_edit, …) are
+    /// refused. Narrower and safer than `extra_roots`, which grants read+write.
+    /// Use for sibling repos you want an agent to read but never modify (e.g. an
+    /// `apes` session reading a neighboring `servo-agent/` checkout). Absolute
+    /// paths. Default empty = no behavior change. Additive with
+    /// `LEAN_CTX_READ_ONLY_ROOTS` env var (path-list separator).
+    #[serde(default)]
+    pub read_only_roots: Vec<String>,
     /// Enable content-defined chunking (Rabin-Karp) for cache-optimal output ordering.
     /// Stable chunks are emitted first to maximize prompt cache hits.
     #[serde(default)]
@@ -507,6 +516,7 @@ impl Default for Config {
             allow_paths: Vec::new(),
             allow_ide_config_dirs: false,
             extra_roots: Vec::new(),
+            read_only_roots: Vec::new(),
             content_defined_chunking: false,
             minimal_overhead: true,
             symbol_map_auto: false,
@@ -1279,6 +1289,9 @@ impl Config {
         }
         if !local.extra_roots.is_empty() {
             self.extra_roots.extend(local.extra_roots);
+        }
+        if !local.read_only_roots.is_empty() {
+            self.read_only_roots.extend(local.read_only_roots);
         }
         if local.minimal_overhead {
             self.minimal_overhead = true;

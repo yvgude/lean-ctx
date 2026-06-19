@@ -633,6 +633,54 @@ mod loop_detection_config_tests {
 }
 
 #[cfg(test)]
+mod read_only_roots_tests {
+    use super::super::*;
+
+    #[test]
+    fn default_is_empty() {
+        let cfg = Config::default();
+        assert!(cfg.read_only_roots.is_empty());
+    }
+
+    #[test]
+    fn deserialization_from_toml() {
+        let cfg: Config =
+            toml::from_str(r#"read_only_roots = ["/sib/repo", "/ref/checkout"]"#).unwrap();
+        assert_eq!(cfg.read_only_roots, vec!["/sib/repo", "/ref/checkout"]);
+    }
+
+    #[test]
+    fn merge_extends() {
+        let mut base = Config {
+            read_only_roots: vec!["/base-ro".to_string()],
+            ..Config::default()
+        };
+        base.merge_local(r#"read_only_roots = ["/local-ro"]"#);
+        assert_eq!(base.read_only_roots, vec!["/base-ro", "/local-ro"]);
+    }
+
+    #[test]
+    fn round_trip_serialize_deserialize() {
+        let cfg = Config {
+            read_only_roots: vec!["/a".to_string(), "/b".to_string()],
+            ..Config::default()
+        };
+        let toml_s = toml::to_string(&cfg).unwrap();
+        let back: Config = toml::from_str(&toml_s).unwrap();
+        assert_eq!(back.read_only_roots, vec!["/a", "/b"]);
+    }
+
+    #[test]
+    fn independent_of_extra_roots() {
+        // read_only_roots and extra_roots are distinct tiers — setting one must
+        // not populate the other.
+        let cfg: Config = toml::from_str(r#"read_only_roots = ["/ro"]"#).unwrap();
+        assert_eq!(cfg.read_only_roots, vec!["/ro"]);
+        assert!(cfg.extra_roots.is_empty());
+    }
+}
+
+#[cfg(test)]
 mod extra_roots_tests {
     use super::super::*;
 

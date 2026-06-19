@@ -22,7 +22,19 @@ impl LeanCtxServer {
     /// Resolves a (possibly relative) tool path against the session's project_root.
     /// Absolute paths and "." are returned as-is. Relative paths like "src/main.rs"
     /// are joined with project_root so tools work regardless of the server's cwd.
+    ///
+    /// Read-permissive: a path under a read-only root resolves. The write-tier
+    /// gate lives in [`Self::resolve_path_ro`] (called by dispatch with
+    /// `read_only_ok=false` for non-readonly tools).
     pub async fn resolve_path(&self, path: &str) -> Result<String, String> {
+        self.resolve_path_ro(path, true).await
+    }
+
+    /// Like [`Self::resolve_path`] but `read_only_ok` gates the read-only tier:
+    /// when false, a path that resolves *only* via a read-only root is refused
+    /// (writes forbidden). Dispatch passes `is_readonly_tool(name)` so only known
+    /// read tools may resolve read-only-root paths; every other tool is denied.
+    pub async fn resolve_path_ro(&self, path: &str, read_only_ok: bool) -> Result<String, String> {
         let normalized = crate::core::pathutil::normalize_tool_path(path);
         if normalized.is_empty() || normalized == "." {
             return Ok(normalized);
@@ -61,10 +73,11 @@ impl LeanCtxServer {
         };
 
         let jail_root_path = std::path::Path::new(&jail_root);
-        let jailed = match crate::core::pathjail::jail_path_with_roots(
+        let jailed = match crate::core::pathjail::jail_path_with_roots_ro(
             &resolved,
             jail_root_path,
             &extra_roots,
+            &[],
         ) {
             Ok(p) => p,
             Err(e) => {
@@ -96,10 +109,11 @@ impl LeanCtxServer {
                                 .or_else(|| Some(new_root_str.clone()));
                             let _ = session.save();
 
-                            crate::core::pathjail::jail_path_with_roots(
+                            crate::core::pathjail::jail_path_with_roots_ro(
                                 &resolved,
                                 &new_root,
                                 &extra_roots,
+                                &[],
                             )?
                         } else {
                             return Err(e);
@@ -113,10 +127,17 @@ impl LeanCtxServer {
             }
         };
 
-        crate::core::io_boundary::check_secret_path_for_tool("resolve_path", &jailed)?;
+        // Read-only-root gate: a write/edit tool (dispatch passes read_only_ok =
+        // is_readonly_tool(name) = false) may not resolve a path that landed only
+        // under a read-only root. Read tools (read_only_ok = true) resolve it.
+        if jailed.read_only && !read_only_ok {
+            return Err(crate::core::pathjail::READ_ONLY_ROOT_WRITE_ERR.to_string());
+        }
+
+        crate::core::io_boundary::check_secret_path_for_tool("resolve_path", &jailed.path)?;
 
         Ok(crate::core::pathutil::normalize_tool_path(
-            &jailed.to_string_lossy().replace('\\', "/"),
+            &jailed.path.to_string_lossy().replace('\\', "/"),
         ))
     }
 

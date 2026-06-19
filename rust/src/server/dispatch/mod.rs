@@ -192,10 +192,15 @@ impl LeanCtxServer {
             let mut resolved_paths = std::collections::HashMap::new();
             let mut path_errors: std::collections::HashMap<String, String> =
                 std::collections::HashMap::new();
+            // Read-only-root gate: only known read tools may resolve a path that
+            // lands under a `read_only_roots` entry. Every other tool (any writer,
+            // including unknown/future ones) is denied by default — a read-only
+            // root is therefore never writable through the path pre-resolution.
+            let read_only_ok = crate::server::dynamic_tools::is_readonly_tool(name);
             for key in PATH_LIKE_KEYS {
                 if let Some(val) = args_map.get(*key) {
                     if let Some(raw) = val.as_str() {
-                        match self.resolve_path(raw).await {
+                        match self.resolve_path_ro(raw, read_only_ok).await {
                             Ok(resolved) => {
                                 if !["path", "project_root", "root"].contains(key) {
                                     tracing::trace!(
@@ -252,6 +257,7 @@ impl LeanCtxServer {
                 autonomy: Some(self.autonomy.clone()),
                 pressure_snapshot,
                 path_errors,
+                read_only_ok,
                 bm25_cache: Some(self.bm25_cache.clone()),
                 progress_sender: Some(self.progress_sender.clone()),
             };

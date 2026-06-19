@@ -161,6 +161,13 @@ pub struct ToolContext {
     /// Errors from path resolution (PathJail rejection, secret path, etc.).
     /// Keyed by argument name (e.g. "path" -> "path escapes project root: ...").
     pub path_errors: std::collections::HashMap<String, String>,
+    /// Whether this tool may resolve paths that land under a read-only root.
+    /// Set at dispatch to `is_readonly_tool(name)`: known read tools = true,
+    /// every other (write-capable) tool = false. Gates in-handler
+    /// [`Self::resolve_path_sync`] so a read-only root is never writable even via
+    /// a handler that resolves its own paths. Default true (read-permissive) for
+    /// the one-shot CLI / test contexts that don't carry a tool classification.
+    pub read_only_ok: bool,
     /// Shared in-memory BM25 index cache for semantic search.
     pub bm25_cache: Option<crate::core::bm25_cache::SharedBm25Cache>,
     /// MCP progress notification sender for long-running operations.
@@ -190,6 +197,7 @@ impl Default for ToolContext {
             autonomy: None,
             pressure_snapshot: None,
             path_errors: std::collections::HashMap::new(),
+            read_only_ok: true,
             bm25_cache: None,
             progress_sender: None,
         }
@@ -207,15 +215,26 @@ impl ToolContext {
     }
 
     /// Sync path resolution using `project_root` + session `extra_roots`. Thin
-    /// wrapper over [`crate::core::path_resolve::resolve_tool_path_with_roots`]
-    /// for sync tool handlers.
+    /// wrapper over the shared resolver. When this context is for a write-capable
+    /// tool (`read_only_ok == false`) a path under a read-only root is refused;
+    /// read tools resolve it. This mirrors the dispatch pre-resolution gate so a
+    /// handler that resolves its own paths cannot write a read-only root.
     pub fn resolve_path_sync(&self, path: &str) -> Result<String, String> {
-        crate::core::path_resolve::resolve_tool_path_with_roots(
-            Some(&self.project_root),
-            None,
-            path,
-            &self.extra_roots,
-        )
+        if self.read_only_ok {
+            crate::core::path_resolve::resolve_tool_path_with_roots(
+                Some(&self.project_root),
+                None,
+                path,
+                &self.extra_roots,
+            )
+        } else {
+            crate::core::path_resolve::resolve_tool_path_rw(
+                Some(&self.project_root),
+                None,
+                path,
+                &self.extra_roots,
+            )
+        }
     }
 }
 

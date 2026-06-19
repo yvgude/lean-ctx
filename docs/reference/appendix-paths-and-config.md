@@ -104,6 +104,7 @@ var always wins.
 | `LEAN_CTX_NO_UPDATE_CHECK=1` | Disable update check | unset |
 | `LEAN_CTX_ALLOW_PATH` | Extra PathJail roots (path list; see §5) | unset |
 | `LEAN_CTX_EXTRA_ROOTS` | Multi-root workspace roots (path list; see §5) | unset |
+| `LEAN_CTX_READ_ONLY_ROOTS` | Read-only PathJail roots — readable, not writable (path list; see §5) | unset |
 
 ### Provider tokens (for `ctx_provider`)
 
@@ -175,26 +176,28 @@ between `<!-- lean-ctx -->` markers — your own content is preserved.
 
 ---
 
-## 5. Filesystem boundary — `path_jail`, `allow_paths`, `extra_roots` (GH #392)
+## 5. Filesystem boundary — `path_jail`, `allow_paths`, `extra_roots`, `read_only_roots` (GH #392)
 
 All tool file access (`ctx_read`, `ctx_edit`, `ctx_tree`, …) is jailed under the
-current `project_root` (**PathJail**). Three knobs widen or remove that boundary —
+current `project_root` (**PathJail**). Four knobs widen or remove that boundary —
 they overlap, so here is exactly what each one does:
 
 | Knob | Effect | Use when |
 |------|--------|----------|
 | `allow_paths = ["…"]` (root key) | **Adds** directories to PathJail's whitelist. Tools may read/edit under them, but `ctx_tree`/`ctx_search` do **not** scan them. | One extra directory needs to be readable/editable (e.g. a shared skills folder). |
 | `extra_roots = ["…"]` (root key) | Same whitelist effect as `allow_paths` **plus** multi-root scanning: `ctx_tree`, `ctx_search`, overview treat them as additional project roots. | Multi-repo workspaces. |
+| `read_only_roots = ["…"]` (root key) | **Read-only** widening: read tools (`ctx_read`, `ctx_search`, `ctx_tree`) may access these paths, but write/edit tools (`ctx_edit`, …) are **refused** with "path is under a read-only root; reads are allowed, writes are not". Narrower and safer than `extra_roots`. | A sibling repo the agent should read but never modify (e.g. an `apes` session reading a neighboring `servo-agent/` checkout). |
 | `path_jail = false` (root key) | **Disables PathJail entirely** — every absolute path is allowed. | Sandboxed environments (bwrap, containers, VMs) where the OS is the boundary. |
 
 Env equivalents (path-list syntax, `:` on Unix / `;` on Windows):
-`LEAN_CTX_ALLOW_PATH` (= `allow_paths`), `LEAN_CTX_EXTRA_ROOTS` (= `extra_roots`).
+`LEAN_CTX_ALLOW_PATH` (= `allow_paths`), `LEAN_CTX_EXTRA_ROOTS` (= `extra_roots`),
+`LEAN_CTX_READ_ONLY_ROOTS` (= `read_only_roots`).
 
 Notes that save debugging time:
 
 - **`~`, `$VAR` and `${VAR}` are expanded** in `allow_paths` / `extra_roots` /
-  the env vars (since v3.8.1). On older versions `"$HOME/code"` was matched
-  literally and silently never applied.
+  `read_only_roots` / the env vars (since v3.8.1). On older versions
+  `"$HOME/code"` was matched literally and silently never applied.
 - `allow_paths = ["/"]` technically whitelists everything; prefer the explicit
   `path_jail = false` — `lean-ctx doctor` flags the `"/"` pattern.
 - Config changes are picked up on the next tool call (mtime-based reload); no

@@ -48,11 +48,44 @@ pub fn resolve_tool_path(
 /// An empty `extra_roots` is identical to [`resolve_tool_path`]; this is how
 /// sync tool handlers honor MCP `roots/list` / config `extra_roots` for an
 /// explicit path without widening the global jail (#403).
+///
+/// Read-only roots are honored permissively here (`read_only_ok = true`): the
+/// shared sync resolver is used by both read and write handlers, and the
+/// write-side block is applied by callers that know they mutate (via
+/// [`resolve_tool_path_rw`] / the dispatch pre-resolution keyed on
+/// `is_readonly_tool`). A read-only-root path therefore resolves through this
+/// fn; an actual write to it is refused at the write choke point.
 pub fn resolve_tool_path_with_roots(
     project_root: Option<&str>,
     shell_cwd: Option<&str>,
     raw: &str,
     extra_roots: &[String],
+) -> Result<String, String> {
+    resolve_tool_path_inner(project_root, shell_cwd, raw, extra_roots, true)
+}
+
+/// Write-tier resolution: identical to [`resolve_tool_path_with_roots`] but a
+/// path that resolves *only* via a read-only root is REFUSED with a clear
+/// error. Write/edit handlers that resolve paths in-handler (rather than via the
+/// dispatch pre-resolution) call this so a read-only root is never writable.
+pub fn resolve_tool_path_rw(
+    project_root: Option<&str>,
+    shell_cwd: Option<&str>,
+    raw: &str,
+    extra_roots: &[String],
+) -> Result<String, String> {
+    resolve_tool_path_inner(project_root, shell_cwd, raw, extra_roots, false)
+}
+
+/// Shared body. `read_only_ok` gates the read-only tier: when false, a candidate
+/// permitted *only* because it lives under a read-only root is rejected (writes
+/// forbidden); when true, it resolves (reads allowed).
+fn resolve_tool_path_inner(
+    project_root: Option<&str>,
+    shell_cwd: Option<&str>,
+    raw: &str,
+    extra_roots: &[String],
+    read_only_ok: bool,
 ) -> Result<String, String> {
     let normalized = crate::core::pathutil::normalize_tool_path(raw);
     if normalized.is_empty() || normalized == "." {
@@ -80,12 +113,19 @@ pub fn resolve_tool_path_with_roots(
     };
 
     let jail_root_path = Path::new(&jail_root);
-    let jailed =
-        crate::core::pathjail::jail_path_with_roots(&resolved, jail_root_path, extra_roots)?;
-    crate::core::io_boundary::check_secret_path_for_tool("resolve_path", &jailed)?;
+    let jailed = crate::core::pathjail::jail_path_with_roots_ro(
+        &resolved,
+        jail_root_path,
+        extra_roots,
+        &[],
+    )?;
+    if jailed.read_only && !read_only_ok {
+        return Err(crate::core::pathjail::READ_ONLY_ROOT_WRITE_ERR.to_string());
+    }
+    crate::core::io_boundary::check_secret_path_for_tool("resolve_path", &jailed.path)?;
 
     Ok(crate::core::pathutil::normalize_tool_path(
-        &jailed.to_string_lossy().replace('\\', "/"),
+        &jailed.path.to_string_lossy().replace('\\', "/"),
     ))
 }
 
@@ -216,6 +256,78 @@ mod tests {
         assert!(out.ends_with("missing.rs"), "got {out}");
         let _ = fs::remove_dir_all(&tmp);
     }
+
+    /// Security: a path under a read-only root RESOLVES for a read (the
+    /// permissive resolver) but is REFUSED for a write (`resolve_tool_path_rw`)
+    /// with the canonical read-only-write error. This is the resolver-level
+    /// guarantee that a read_only root is never writable. Serialized on the env
+    /// lock; isolated data dir so the jail is on.
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn read_only_root_resolves_for_read_but_refuses_write() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let _rol = READ_ONLY_ENV_LOCK.lock().unwrap();
+
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("project");
+        let ro = base.path().join("sibling");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&ro).unwrap();
+        let in_ro = ro.join("a.txt");
+        fs::write(&in_ro, "x").unwrap();
+
+        let root_s = root.to_string_lossy().to_string();
+        let ro_canon = crate::core::pathjail::canonicalize_or_self(&ro);
+        let file_abs = in_ro.to_string_lossy().to_string();
+
+        crate::test_env::set_var(
+            "LEAN_CTX_READ_ONLY_ROOTS",
+            ro_canon.to_string_lossy().as_ref(),
+        );
+        // Read tier: resolves.
+        let read = resolve_tool_path_with_roots(Some(&root_s), None, &file_abs, &[]);
+        // Write tier: refused with the canonical message.
+        let write = resolve_tool_path_rw(Some(&root_s), None, &file_abs, &[]);
+        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
+
+        assert!(
+            read.is_ok(),
+            "read must resolve a read_only-root path: {read:?}"
+        );
+        let err = write.expect_err("write to a read_only-root path must be refused");
+        assert_eq!(err, crate::core::pathjail::READ_ONLY_ROOT_WRITE_ERR);
+    }
+
+    /// A normal `extra_root` stays read-WRITE through the write-tier resolver: it
+    /// is NOT a read-only root, so `resolve_tool_path_rw` resolves it. Guards
+    /// against the read-only gate over-firing on the existing read-write tier.
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn extra_root_remains_writable_through_rw_resolver() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let _rol = READ_ONLY_ENV_LOCK.lock().unwrap();
+        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
+
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("project");
+        let rw = base.path().join("worktree");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&rw).unwrap();
+        let in_rw = rw.join("b.txt");
+        fs::write(&in_rw, "y").unwrap();
+
+        let root_s = root.to_string_lossy().to_string();
+        let extra = vec![rw.to_string_lossy().to_string()];
+        let out = resolve_tool_path_rw(Some(&root_s), None, &in_rw.to_string_lossy(), &extra);
+        assert!(
+            out.is_ok(),
+            "a read-write extra_root must stay writable through the rw resolver: {out:?}"
+        );
+    }
+
+    /// Serializes tests mutating `LEAN_CTX_READ_ONLY_ROOTS`.
+    #[cfg(not(feature = "no-jail"))]
+    static READ_ONLY_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     // GH #397: on Unix an absolute path under a single-letter root (`/c/…`)
     // was rewritten to `C:/…`, which `Path::is_absolute()` rejects on Unix —
