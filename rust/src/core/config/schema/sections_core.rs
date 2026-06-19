@@ -690,6 +690,14 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "SPLADE expansion weight (0.0 to disable)",
         ),
     );
+    search.insert(
+        "dense_enabled".into(),
+        key(
+            "bool",
+            serde_json::json!(cfg.search.dense_enabled),
+            "Enable the dense (embedding) retrieval path. false → hybrid search ranks with BM25 + graph + rerank (+ SPLADE) only, skipping the embedding engine and the persistent embeddings.json (lighter footprint, no embed latency). An explicit mode=dense query still forces dense.",
+        ),
+    );
     sections.insert("search".into(), SectionSchema {
             description: "Hybrid search weights for ctx_semantic_search (BM25 + dense vector + SPLADE + graph proximity)".into(),
             keys: search,

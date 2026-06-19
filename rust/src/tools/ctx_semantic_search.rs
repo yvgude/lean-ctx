@@ -974,6 +974,66 @@ fn path_under_search_root(path: &str, root: &Path) -> bool {
     }
 }
 
+/// BM25 + graph + rerank (+ SPLADE) ranking with no dense signal — the body of
+/// `hybrid` semantic search when `search.dense_enabled = false` (#686). Mirrors
+/// the local dense path (`dense_backend::hybrid_results` + the SPLADE boost in
+/// `hybrid_search_mode`) step for step, but feeds `hybrid_search` a `None`
+/// engine/embeddings pair, which is the same input the pipeline already handles
+/// as its embeddings-absent fallback. Net effect: no `embeddings.json`, no embed
+/// latency, identical fusion/rerank/SPLADE stages.
+#[cfg(feature = "embeddings")]
+fn bm25_graph_search(
+    query: &str,
+    root: &Path,
+    index: &BM25Index,
+    top_k: usize,
+    compact: bool,
+    filter: &SearchFilter,
+    cfg: &HybridConfig,
+) -> String {
+    let graph_ranks = graph_rrf_ranks_for_search_root(root);
+    let graph_enhances = graph_ranks.as_ref().is_some_and(|m| !m.is_empty());
+
+    let mut results = crate::core::hybrid_search::hybrid_search(
+        query,
+        index,
+        None,
+        None,
+        top_k,
+        cfg,
+        graph_ranks.as_ref(),
+    );
+    if filter.is_active() {
+        results.retain(|r| filter.matches(&r.file_path));
+    }
+    results.truncate(top_k);
+
+    if cfg.splade_weight > 0.0 {
+        let splade = crate::core::splade_retrieval::hybrid_retrieve(query, index, top_k);
+        if !splade.is_empty() {
+            boost_with_splade(&mut results, &splade, cfg.splade_weight);
+        }
+    }
+    results.truncate(top_k);
+
+    let graph_tag = if graph_enhances { "+graph" } else { "" };
+    let header = if compact {
+        format!(
+            "semantic_search(bm25{graph_tag},{top_k}) → {} results, {} chunks indexed\n",
+            results.len(),
+            index.doc_count
+        )
+    } else {
+        format!(
+            "Semantic search (BM25{graph_tag}): \"{}\" ({} results from {} indexed chunks)\n",
+            truncate_query(query, 60),
+            results.len(),
+            index.doc_count,
+        )
+    };
+    format!("{header}{}", format_hybrid_results(&results, compact))
+}
+
 fn hybrid_search_mode(
     query: &str,
     root: &Path,
@@ -984,6 +1044,16 @@ fn hybrid_search_mode(
 ) -> String {
     #[cfg(feature = "embeddings")]
     {
+        let cfg = HybridConfig::from_config();
+
+        // Dense disabled (#686): skip the embedding engine + index build/persist
+        // and rank with BM25 + graph proximity + reranking (+ SPLADE) only — the
+        // exact fallback the pipeline uses when embeddings are absent, so results
+        // stay coherent while the vector footprint and embed latency disappear.
+        if !cfg.dense_enabled {
+            return bm25_graph_search(query, root, index, top_k, compact, filter, &cfg);
+        }
+
         let (engine, mut embed_idx) = match load_engine_and_index(root) {
             Ok(v) => v,
             Err(e) => return format!("ERR: {e}"),
@@ -999,8 +1069,6 @@ fn hybrid_search_mode(
             Ok(v) => v,
             Err(e) => return format!("ERR: {e}"),
         };
-
-        let cfg = HybridConfig::from_config();
         let filter_fn = |p: &str| filter.matches(p);
         let filter_pred: Option<&dyn Fn(&str) -> bool> = filter
             .is_active()
@@ -1502,5 +1570,96 @@ mod determinism_tests {
         assert_eq!(fused.len(), 2);
         assert_eq!(fused[0].file_path, "a.rs");
         assert_eq!(fused[1].file_path, "b.rs");
+    }
+}
+
+#[cfg(test)]
+mod dense_config_tests {
+    use super::*;
+
+    /// #686: dense stays on by default — the flip is opt-in, no behavior change.
+    #[test]
+    fn dense_enabled_defaults_true() {
+        assert!(HybridConfig::default().dense_enabled);
+    }
+
+    /// #686: `[search].dense_enabled = false` parses and leaves siblings at default.
+    #[test]
+    fn dense_enabled_deserializes_false() {
+        let cfg: HybridConfig = toml::from_str("dense_enabled = false").unwrap();
+        assert!(!cfg.dense_enabled);
+        assert_eq!(cfg.bm25_candidates, 75);
+        assert_eq!(cfg.splade_weight, 0.5);
+    }
+}
+
+#[cfg(all(test, feature = "embeddings"))]
+mod dense_toggle_tests {
+    use super::*;
+    use crate::core::bm25_index::{BM25Index, ChunkKind, CodeChunk, tokenize};
+
+    fn small_index() -> BM25Index {
+        BM25Index::from_chunks_for_test(vec![
+            CodeChunk {
+                file_path: "auth.rs".into(),
+                symbol_name: "validate_token".into(),
+                kind: ChunkKind::Function,
+                start_line: 1,
+                end_line: 10,
+                content: "fn validate_token(token: &str) -> bool { check_jwt_expiry(token) }"
+                    .into(),
+                tokens: tokenize("fn validate_token token str bool check_jwt_expiry token"),
+                token_count: 0,
+            },
+            CodeChunk {
+                file_path: "db.rs".into(),
+                symbol_name: "connect_database".into(),
+                kind: ChunkKind::Function,
+                start_line: 1,
+                end_line: 5,
+                content: "fn connect_database(url: &str) -> Pool { create_pool(url) }".into(),
+                tokens: tokenize("fn connect_database url str Pool create_pool url"),
+                token_count: 0,
+            },
+        ])
+    }
+
+    /// #686: the dense-disabled body ranks via BM25 (+ graph + rerank + SPLADE),
+    /// emits a BM25 header, finds the lexical match, and crucially never loads the
+    /// embedding engine or writes `embeddings.json` — the on-disk vector footprint
+    /// and embed latency disappear.
+    #[test]
+    fn bm25_graph_search_ranks_without_embeddings() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let index = small_index();
+        let cfg = HybridConfig {
+            dense_enabled: false,
+            ..Default::default()
+        };
+        let filter = SearchFilter::new(None, None).unwrap();
+
+        let out = bm25_graph_search(
+            "jwt token validation",
+            root,
+            &index,
+            5,
+            false,
+            &filter,
+            &cfg,
+        );
+
+        assert!(
+            out.contains("Semantic search (BM25"),
+            "expected BM25 header, got: {out}"
+        );
+        assert!(
+            out.contains("validate_token"),
+            "expected lexical match, got: {out}"
+        );
+        assert!(
+            !root.join("embeddings.json").exists(),
+            "dense-disabled path must not persist embeddings.json"
+        );
     }
 }

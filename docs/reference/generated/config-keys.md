@@ -301,6 +301,7 @@ Hybrid search weights for ctx_semantic_search (BM25 + dense vector + SPLADE + gr
 - `bm25_candidates` (usize, default `75`) — Number of BM25 candidates to retrieve before fusion
 - `bm25_weight` (f64, default `1.0`) — BM25 lexical search weight in RRF fusion
 - `dense_candidates` (usize, default `75`) — Number of dense candidates to retrieve before fusion
+- `dense_enabled` (bool, default `true`) — Enable the dense (embedding) retrieval path. false → hybrid search ranks with BM25 + graph + rerank (+ SPLADE) only, skipping the embedding engine and the persistent embeddings.json (lighter footprint, no embed latency). An explicit mode=dense query still forces dense.
 - `dense_weight` (f64, default `1.0`) — Dense vector search weight in RRF fusion
 - `splade_weight` (f64, default `0.5`) — SPLADE expansion weight (0.0 to disable)
 
