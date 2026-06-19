@@ -28,6 +28,82 @@ cargo test --all-features
 cargo test --release
 ```
 
+## Building & disk usage
+
+### Native-dependency prerequisites
+
+A cold `cargo build` compiles C/C++ sources for several bundled dependencies
+(tree-sitter language grammars, bundled SQLite via rusqlite, jemalloc on Linux/macOS).
+You need a working C toolchain before your first build:
+
+- **macOS**: `xcode-select --install` (provides `clang` and `make`)
+- **Linux**: `sudo apt install build-essential` or the equivalent for your distro
+
+No other system packages are required for the default feature set.
+
+### Worktree disk multiplier
+
+Each git worktree gets its own `target/` directory. With N worktrees you accumulate
+N independent build caches. A full debug build with all features can reach 10-20 GB
+per worktree; incremental rebuilds compound this over time.
+
+Check how much `target/` space you are using:
+
+```bash
+du -sh rust/target/
+```
+
+To check across all worktrees at once:
+
+```bash
+git worktree list | awk '{print $1"/rust/target/"}' | xargs du -sh 2>/dev/null
+```
+
+### sccache - shared build cache across worktrees
+
+[sccache](https://github.com/mozilla/sccache) caches compiled artifacts globally so
+that switching between worktrees does not re-compile identical crates:
+
+```bash
+# Install
+cargo install sccache
+
+# Enable for the current shell (or add to ~/.bashrc / ~/.zshrc)
+export RUSTC_WRAPPER=sccache
+```
+
+> Note: sharing a single `CARGO_TARGET_DIR` across worktrees is an alternative but
+> serializes all builds (Cargo holds a lock on the target directory). sccache avoids
+> that bottleneck while still deduplicating compilation work.
+
+### Reclaiming disk space
+
+Remove artifacts older than 7 days with [cargo-sweep](https://github.com/holmgr/cargo-sweep):
+
+```bash
+cargo install cargo-sweep
+cargo sweep --time 7        # run inside rust/
+```
+
+Or wipe the entire cache for a worktree:
+
+```bash
+cargo clean                 # run inside rust/
+```
+
+### Reducing baseline debug-build size (optional)
+
+Adding the following to `rust/Cargo.toml` cuts debug artifact size by 30-50% with
+minimal impact on debug quality:
+
+```toml
+[profile.dev]
+debug = "line-tables-only"
+```
+
+This keeps line-number information for backtraces while skipping the heavier per-variable
+DWARF data that is rarely needed during day-to-day development.
+
 ## Cookbook / SDK / extensions (optional)
 
 If you contribute to `cookbook/` or `packages/`, you’ll also need:
