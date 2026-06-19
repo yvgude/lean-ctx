@@ -8,6 +8,8 @@ Thanks for your interest in lean-ctx — contributions are welcome.
 
 - Rust (stable) via [rustup](https://rustup.rs/)
 - Git
+- A C toolchain (`cc`, plus `cmake` for `aws-lc`) — several dependencies
+  (jemalloc, `aws-lc`, …) build from source
 
 ### Setup
 
@@ -27,6 +29,59 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
 cargo test --release
 ```
+
+## Building across worktrees & disk usage
+
+lean-ctx pulls in a **heavy native-dependency tree** (jemalloc, an `aws-lc`
+crypto build, tree-sitter grammars, …), so a debug build is larger than the Rust
+source alone suggests. A couple of things worth knowing so it doesn't surprise
+your disk:
+
+- **Each `git worktree` gets its own `target/`.** Keep several PR checkouts open
+  and Cargo compiles the full native tree *per worktree*, sharing nothing
+  between them.
+- **`target/debug` never garbage-collects.** Stale incremental units and old
+  dependency versions accumulate, so one heavily-rebuilt `target/` can reach
+  **tens of GB** (vs. ~2 GB for a clean build).
+
+### A shared compilation cache (recommended)
+
+[`sccache`](https://github.com/mozilla/sccache) deduplicates dependency compiles
+across worktrees and branches, without the build-lock contention a shared
+`CARGO_TARGET_DIR` introduces:
+
+```bash
+cargo install sccache
+export RUSTC_WRAPPER=sccache   # add to your shell profile
+```
+
+> A single shared `CARGO_TARGET_DIR` also dedups, but Cargo holds a per-target
+> build lock, so concurrent builds across worktrees **serialize**.
+
+### Prune stale artifacts
+
+[`cargo-sweep`](https://github.com/holmgr/cargo-sweep) drops build artifacts past
+a cutoff so `target/` can't grow without bound:
+
+```bash
+cargo install cargo-sweep
+cargo sweep --time 7      # remove artifacts unused for > 7 days
+```
+
+### Reclaim space fast
+
+`target/` is always safe to delete — it's pure build output and regenerates on
+the next build:
+
+```bash
+cargo clean               # this checkout's target/
+du -sh target             # check current size
+```
+
+Debug info is the bulk of that size: this repo sets
+`[profile.dev] debug = "line-tables-only"`, which keeps `file:line` in panics and
+backtraces while dropping full variable-level data. Set `debug = 2` in a local
+profile override if you need to step-debug.
 
 ## Cookbook / SDK / extensions (optional)
 

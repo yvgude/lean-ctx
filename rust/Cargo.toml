@@ -254,6 +254,13 @@ trivially_copy_pass_by_ref = "allow"
 # --- HashMap: we always use default hasher ---
 implicit_hasher = "allow"
 
+# Debug info is the bulk of `target/debug` size, and `target/` never GCs — a
+# heavily-rebuilt worktree can reach tens of GB. Line-table debuginfo keeps
+# `file:line` in panics and backtraces while dropping full variable-level data.
+# Set `debug = 2` in a local profile override if you need to step-debug.
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.release]
 opt-level = "z"
 lto = true
