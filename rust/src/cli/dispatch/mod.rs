@@ -624,6 +624,12 @@ pub fn run() {
                 return;
             }
             "uninstall" => {
+                // Safety: `--help`/`-h` must NEVER fall through to a real
+                // uninstall (issue #476). Short-circuit before any removal.
+                if rest.iter().any(|a| a == "--help" || a == "-h") {
+                    uninstall::print_help();
+                    return;
+                }
                 let dry_run = rest.iter().any(|a| a == "--dry-run");
                 let keep_config = rest.iter().any(|a| a == "--keep-config");
                 let keep_binary = rest.iter().any(|a| a == "--keep-binary");

@@ -91,6 +91,44 @@ pub(super) fn safe_remove(path: &Path, dry_run: bool) -> Result<(), std::io::Err
 }
 
 // ---------------------------------------------------------------------------
+// Help
+// ---------------------------------------------------------------------------
+
+/// Print usage for `lean-ctx uninstall`.
+///
+/// This MUST stay side-effect free: `lean-ctx uninstall --help` previously fell
+/// through to [`run`] and removed everything, so help is now short-circuited in
+/// the CLI dispatch before any removal happens.
+pub fn print_help() {
+    println!(
+        "\
+lean-ctx uninstall — remove lean-ctx cleanly
+
+USAGE:
+    lean-ctx uninstall [OPTIONS]
+
+OPTIONS:
+    --dry-run        Preview every change without modifying anything
+    --keep-config    Preserve MCP configs and rules (for a later reinstall)
+    --keep-binary    Leave the lean-ctx binary in place
+    -h, --help       Show this help and exit (does NOT uninstall)
+
+WHAT IT REMOVES:
+    • Running processes (daemon, proxy) and autostart entries
+    • Shell hooks and proxy environment from your shell rc files
+    • MCP server configs and rules from every detected AI tool/IDE
+    • Skill directories and project integration files
+    • The data directory and the lean-ctx binary
+
+    Modified files are backed up as <file>.lean-ctx.bak before removal.
+
+EXAMPLES:
+    lean-ctx uninstall --dry-run     # see exactly what would change
+    lean-ctx uninstall               # full clean removal"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Main entry
 // ---------------------------------------------------------------------------
 
