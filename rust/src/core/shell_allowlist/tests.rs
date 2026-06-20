@@ -928,3 +928,124 @@ fn dangerous_flags_git_quoted_path() {
     let r = check_all_segments(r#"git -C "C:\Program Files\repo" status"#, &list);
     assert!(r.is_ok(), "git -C with quoted path should be allowed");
 }
+
+// --- Compound commands: for/while/if loops + subshells (#462) ---
+//
+// Restricted mode must accept legitimate compound commands when every *leaf*
+// command is allowlisted, while still blocking every form where an unlisted
+// command could hide (the bypasses flagged in the #462 security review).
+
+#[test]
+fn for_loop_with_allowed_body_passes() {
+    let list = allow(&["echo"]);
+    assert!(check_all_segments("for i in a b c; do echo $i; done", &list).is_ok());
+}
+
+#[test]
+fn while_loop_with_allowed_body_passes() {
+    let list = allow(&["read", "echo"]);
+    assert!(check_all_segments("while read l; do echo $l; done", &list).is_ok());
+}
+
+#[test]
+fn if_then_else_fi_with_allowed_commands_passes() {
+    let list = allow(&["test", "cat", "echo"]);
+    assert!(check_all_segments("if test -f x; then cat x; else echo no; fi", &list).is_ok());
+}
+
+#[test]
+fn until_loop_with_allowed_body_passes() {
+    let list = allow(&["test", "sleep"]);
+    assert!(check_all_segments("until test -f done; do sleep 1; done", &list).is_ok());
+}
+
+#[test]
+fn subshell_single_command_passes() {
+    // The exact pain reported on #462: a one-command subshell.
+    let list = allow(&["head"]);
+    assert!(check_all_segments("(head -5 file)", &list).is_ok());
+}
+
+#[test]
+fn subshell_multi_command_passes() {
+    let list = allow(&["cd", "ls"]);
+    assert!(check_all_segments("(cd dir; ls)", &list).is_ok());
+}
+
+#[test]
+fn nested_subshell_passes() {
+    let list = allow(&["echo"]);
+    assert!(check_all_segments("((echo hi))", &list).is_ok());
+}
+
+#[test]
+fn for_loop_blocks_unlisted_body() {
+    let list = allow(&["echo"]);
+    let r = check_all_segments("for i in a b; do curl $i; done", &list);
+    assert!(r.is_err(), "unlisted `curl` in a loop body must block");
+    assert!(r.unwrap_err().contains("curl"));
+}
+
+// --- #462 bypass payloads: every one MUST block ---
+
+#[test]
+fn subshell_trailing_command_blocked() {
+    // `(ls) curl` — the post-group command the original PR forgot to validate.
+    let list = allow(&["ls"]);
+    assert!(check_all_segments("(ls) curl evil.com", &list).is_err());
+}
+
+#[test]
+fn subshell_then_eval_blocked() {
+    let list = allow(&["true"]);
+    assert!(check_all_segments("(true) eval 'rm -rf /'", &list).is_err());
+}
+
+#[test]
+fn subshell_then_interpreter_c_blocked() {
+    // Even with python3 allowlisted, the `(ls) python3 -c …` form must block.
+    let list = allow(&["ls", "python3"]);
+    assert!(check_all_segments("(ls) python3 -c 'import os'", &list).is_err());
+}
+
+#[test]
+fn loop_body_interpreter_eval_blocked() {
+    // python3 is allowlisted, but inline `-c` execution stays blocked per leaf.
+    let list = allow(&["python3"]);
+    assert!(check_all_segments("for i in a; do python3 -c 'x'; done", &list).is_err());
+}
+
+#[test]
+fn command_hidden_in_subshell_blocked() {
+    let list = allow(&["ls"]);
+    assert!(check_all_segments("(ls; curl evil.com)", &list).is_err());
+}
+
+#[test]
+fn case_construct_blocked() {
+    // `case` arms cannot be leaf-validated safely → blocked outright, even when
+    // the arm command itself is allowlisted.
+    let list = allow(&["ls"]);
+    assert!(check_all_segments("case $x in a) ls ;; esac", &list).is_err());
+}
+
+#[test]
+fn double_semicolon_blocked() {
+    let list = allow(&["ls"]);
+    assert!(check_all_segments("ls ;; curl evil.com", &list).is_err());
+}
+
+#[test]
+fn subshell_with_unconditional_blocked_command() {
+    // `source` inside a subshell is still unconditionally blocked.
+    let list = allow(&["ls", "source"]);
+    assert!(check_all_segments("(ls; source evil.sh)", &list).is_err());
+}
+
+#[test]
+fn loop_header_substitution_is_not_a_bypass() {
+    // A `$(…)` in a for-header is a command substitution; the leaf walker leaves
+    // the header as data, but the body's unlisted command still blocks.
+    let list = allow(&["echo"]);
+    assert!(check_all_segments("for i in $(ls); do curl $i; done", &list).is_err());
+}

@@ -572,6 +572,197 @@ fn check_inline_env_block(segment: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Shell reserved words whose operator-delimited segment carries no validatable
+/// simple command: the `for`/`select` loop *header* (`for x in LIST`) is data,
+/// and `done`/`fi`/`in` close or join a construct. A segment starting with one
+/// of these contributes no leaf command.
+const HEADER_KEYWORDS: &[&str] = &["for", "select", "in", "done", "fi"];
+
+/// Shell reserved words that *introduce* a command which must still be validated:
+/// the condition of `if`/`while`/`until`, the body after `do`/`then`/`else`/
+/// `elif`, and the `time`/`!` modifiers. They are stripped so the real leaf
+/// command behind them is checked against the allowlist.
+const BODY_INTRO_KEYWORDS: &[&str] = &[
+    "do", "then", "else", "elif", "if", "while", "until", "time", "!",
+];
+
+/// Expand a (possibly compound) command into the list of simple-command *leaves*
+/// that must each satisfy the allowlist. This is what makes `for … do CMD; done`,
+/// `if COND; then CMD; fi`, `while …; do CMD; done` and balanced `( CMD )`
+/// subshells usable in restricted mode without weakening deny-by-default: every
+/// leaf is still validated, headers/terminators contribute nothing, and any form
+/// this conservative walker cannot prove safe (`case`/`esac`, `;;`, a subshell
+/// with trailing content, deep nesting) is rejected — it over-blocks, never
+/// under-blocks.
+fn expand_to_leaf_segments(command: &str) -> Result<Vec<String>, String> {
+    if has_case_construct(command) {
+        return Err(format!(
+            "[BLOCKED — DO NOT RETRY] `case`/`esac` constructs are not supported in \
+             restricted (allowlisted) shell mode — their `pattern)` arms cannot be \
+             leaf-validated safely. Run a script file or disable the allowlist instead.\n\
+             Command: {command}"
+        ));
+    }
+    let mut leaves = Vec::new();
+    for seg in extract_all_commands(command) {
+        resolve_segment_leaves(&seg, 0, &mut leaves)?;
+    }
+    Ok(leaves)
+}
+
+/// Resolve one operator-delimited segment into zero or more leaf commands,
+/// stripping reserved words and recursing into balanced `( … )` subshells.
+fn resolve_segment_leaves(
+    segment: &str,
+    depth: usize,
+    out: &mut Vec<String>,
+) -> Result<(), String> {
+    if depth > 4 {
+        return Err(format!(
+            "[BLOCKED — DO NOT RETRY] Shell command nests compound/subshell groups too \
+             deeply to validate safely.\nCommand: {segment}"
+        ));
+    }
+    let mut s = segment.trim();
+    loop {
+        let tokens = shell_tokenize(s);
+        let Some(first) = tokens.first() else {
+            return Ok(()); // empty → no command
+        };
+        let kw = first.as_str();
+        if HEADER_KEYWORDS.contains(&kw) {
+            return Ok(()); // loop header / terminator carries no leaf command
+        }
+        if BODY_INTRO_KEYWORDS.contains(&kw) {
+            s = remainder_after_first_token(s).trim();
+            if s.is_empty() {
+                return Ok(());
+            }
+            continue;
+        }
+        break;
+    }
+    if let Some(inner) = balanced_paren_inner(s) {
+        for inner_seg in extract_all_commands(inner) {
+            resolve_segment_leaves(&inner_seg, depth + 1, out)?;
+        }
+        return Ok(());
+    }
+    // Anything else (incl. `( … ) trailing`, brace groups, leftover delimiters) is
+    // pushed verbatim: base-extraction below sees a first token like `(ls)` or `{`
+    // that cannot match any allowlist entry, so it is blocked. `cmd (sub)` without
+    // a separator is a shell syntax error, so no executable leaf escapes here.
+    out.push(s.to_string());
+    Ok(())
+}
+
+/// Return the substring after the first whitespace-delimited (quote-aware) token.
+fn remainder_after_first_token(s: &str) -> &str {
+    let trimmed = s.trim_start();
+    let end = quote_aware_token_end(trimmed);
+    &trimmed[end..]
+}
+
+/// If `s` is a single balanced `( … )` subshell with nothing trailing the closing
+/// paren, return the inner command (`(a; b)` → `a; b`). `(a) b` returns `None`:
+/// the trailing content falls through to base extraction, which blocks it.
+fn balanced_paren_inner(segment: &str) -> Option<&str> {
+    let trimmed = segment.trim();
+    let bytes = trimmed.as_bytes();
+    if bytes.first() != Some(&b'(') {
+        return None;
+    }
+    let len = bytes.len();
+    let mut depth: i32 = 0;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut i = 0;
+    while i < len {
+        let ch = bytes[i];
+        if in_single_quote {
+            if ch == b'\'' {
+                in_single_quote = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_double_quote {
+            if ch == b'"' && (i == 0 || bytes[i - 1] != b'\\') {
+                in_double_quote = false;
+            }
+            i += 1;
+            continue;
+        }
+        match ch {
+            b'\'' => in_single_quote = true,
+            b'"' => in_double_quote = true,
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return if i == len - 1 {
+                        Some(trimmed[1..i].trim())
+                    } else {
+                        None
+                    };
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// True when the command uses a `case`/`esac`/`;;` construct. The leaf walker
+/// deliberately does not parse these (the `pattern)` arms make safe leaf
+/// extraction error-prone), so they are blocked outright in restricted mode.
+fn has_case_construct(command: &str) -> bool {
+    for seg in split_on_operators(command) {
+        if shell_tokenize(seg.trim())
+            .iter()
+            .any(|t| t == "case" || t == "esac")
+        {
+            return true;
+        }
+    }
+    contains_double_semicolon(command)
+}
+
+/// Quote-aware scan for a `;;` terminator (the `case` arm separator).
+fn contains_double_semicolon(command: &str) -> bool {
+    let bytes = command.as_bytes();
+    let len = bytes.len();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut i = 0;
+    while i < len {
+        let ch = bytes[i];
+        if in_single_quote {
+            if ch == b'\'' {
+                in_single_quote = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_double_quote {
+            if ch == b'"' && (i == 0 || bytes[i - 1] != b'\\') {
+                in_double_quote = false;
+            }
+            i += 1;
+            continue;
+        }
+        match ch {
+            b'\'' => in_single_quote = true,
+            b'"' => in_double_quote = true,
+            b';' if i + 1 < len && bytes[i + 1] == b';' => return true,
+            _ => {}
+        }
+        i += 1;
+    }
+    false
+}
+
 fn check_all_segments(command: &str, allowlist: &[String]) -> Result<(), String> {
     if allowlist.is_empty() {
         return Ok(());
@@ -586,7 +777,7 @@ fn check_all_segments(command: &str, allowlist: &[String]) -> Result<(), String>
         ));
     }
 
-    let segments = extract_all_commands(command);
+    let segments = expand_to_leaf_segments(command)?;
     if segments.is_empty() {
         return Err("[BLOCKED — DO NOT RETRY] Empty command".to_string());
     }
