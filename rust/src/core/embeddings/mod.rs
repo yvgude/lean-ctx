@@ -243,7 +243,7 @@ impl EmbeddingEngine {
                 }
             })
             .collect();
-        let prefixed_refs: Vec<&str> = prefixed.iter().map(|s| s.as_str()).collect();
+        let prefixed_refs: Vec<&str> = prefixed.iter().map(std::string::String::as_str).collect();
 
         // Tokenize all texts upfront (parallel — wordpiece tokenization is CPU-bound)
         let tokenized: Vec<TokenizedInput> = prefixed_refs
@@ -478,7 +478,7 @@ impl EmbeddingEngine {
 
                 let mut results: Vec<Vec<f32>> = out
                     .chunks_exact(self.dimensions)
-                    .map(|c| c.to_vec())
+                    .map(<[f32]>::to_vec)
                     .collect();
                 while results.len() < batch {
                     results.push(vec![0.0; self.dimensions]);

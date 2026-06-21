@@ -563,9 +563,9 @@ fn artifacts_search(
 
     let mut out = format!("{header}{}", format_search_results(&fused, compact));
     if !warnings.is_empty() && !compact {
-        let _ = write!(out, "\nWarnings ({}):\n", warnings.len());
+        let _ = writeln!(out, "\nWarnings ({}):", warnings.len());
         for w in warnings.iter().take(20) {
-            let _ = write!(out, "- {w}\n");
+            let _ = writeln!(out, "- {w}");
         }
     }
     out
@@ -1361,11 +1361,7 @@ fn ensure_embeddings(
         .embed_batch(&all_texts)
         .map_err(|e| format!("batch embed failed: {e}"))?;
 
-    let new_embeddings: Vec<(usize, Vec<f32>)> = batch_embeddings
-        .into_iter()
-        .enumerate()
-        .map(|(i, emb)| (i, emb))
-        .collect();
+    let new_embeddings: Vec<(usize, Vec<f32>)> = batch_embeddings.into_iter().enumerate().collect();
 
     embed_idx.update(&index.chunks, &new_embeddings, &all_files, None);
     embed_idx

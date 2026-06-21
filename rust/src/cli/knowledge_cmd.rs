@@ -538,7 +538,7 @@ fn facts_to_json(
 }
 
 fn cli_session_id() -> String {
-    format!("cli-{}", &uuid_short())
+    format!("cli-{}", uuid_short())
 }
 
 fn uuid_short() -> String {

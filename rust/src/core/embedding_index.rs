@@ -52,12 +52,12 @@ impl EmbeddingEntry {
         match &self.quant {
             Some(q) => {
                 let scale = q.scale;
-                if scale != 0.0 {
+                if scale == 0.0 {
+                    dest.resize(dest.len() + q.code.len(), 0.0);
+                } else {
                     for &c in &q.code {
                         dest.push(f32::from(c) * scale);
                     }
-                } else {
-                    dest.resize(dest.len() + q.code.len(), 0.0);
                 }
             }
             None => dest.extend_from_slice(&self.embedding),

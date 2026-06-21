@@ -134,7 +134,7 @@ mod shell_security {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod hnsw_performance {
-    use lean_ctx::core::hnsw::{AnnIndex, brute_force_topk};
+    use lean_ctx::core::hnsw::{AnnIndex, FlatEmbeddings, brute_force_topk};
 
     fn deterministic_vec(dim: usize, seed: u64) -> Vec<f32> {
         let mut v = Vec::with_capacity(dim);
@@ -154,7 +154,8 @@ mod hnsw_performance {
         let vectors: Vec<Vec<f32>> = (0..200).map(|i| deterministic_vec(dim, i)).collect();
         let query = deterministic_vec(dim, 9999);
 
-        let top10 = brute_force_topk(&vectors, &query, 10);
+        let flat = FlatEmbeddings::from_vecs(vectors.clone());
+        let top10 = brute_force_topk(&flat, &query, 10);
         assert_eq!(top10.len(), 10);
 
         // Must be in descending similarity order
@@ -194,12 +195,12 @@ mod hnsw_performance {
     #[test]
     fn scenario_topk_handles_edge_cases() {
         // Empty vectors
-        let result = brute_force_topk(&[], &[1.0, 0.0], 5);
+        let result = brute_force_topk(&FlatEmbeddings::from_vecs(vec![]), &[1.0, 0.0], 5);
         assert!(result.is_empty());
 
         // top_k > num vectors
         let vectors = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
-        let result = brute_force_topk(&vectors, &[1.0, 0.0], 10);
+        let result = brute_force_topk(&FlatEmbeddings::from_vecs(vectors), &[1.0, 0.0], 10);
         assert_eq!(result.len(), 2);
     }
 
@@ -207,7 +208,7 @@ mod hnsw_performance {
     fn scenario_ann_index_small_uses_brute_force() {
         let dim = 16;
         let vectors: Vec<Vec<f32>> = (0..100).map(|i| deterministic_vec(dim, i)).collect();
-        let index = AnnIndex::build(std::sync::Arc::from(vectors));
+        let index = AnnIndex::build(FlatEmbeddings::from_vecs(vectors));
 
         let results = index.search(&deterministic_vec(dim, 5000), 5);
         assert_eq!(results.len(), 5);
@@ -226,7 +227,7 @@ mod hnsw_performance {
         let query = deterministic_vec(dim, 99999);
 
         let start = std::time::Instant::now();
-        let _results = brute_force_topk(&vectors, &query, 20);
+        let _results = brute_force_topk(&FlatEmbeddings::from_vecs(vectors), &query, 20);
         let elapsed = start.elapsed();
 
         // Should complete in reasonable time (< 500ms for 5000 384-d vectors)

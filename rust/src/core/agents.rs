@@ -106,7 +106,7 @@ impl AgentRegistry {
 
     pub fn register(&mut self, agent_type: &str, role: Option<&str>, project_root: &str) -> String {
         let pid = std::process::id();
-        let agent_id = format!("{}-{}-{}", agent_type, pid, &generate_short_id());
+        let agent_id = format!("{}-{}-{}", agent_type, pid, generate_short_id());
 
         if let Some(existing) = self.agents.iter_mut().find(|a| a.pid == pid) {
             existing.last_active = Utc::now();

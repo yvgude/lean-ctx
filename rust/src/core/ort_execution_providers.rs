@@ -6,9 +6,6 @@
 //! to the next EP in the list; we emit [`tracing::warn!`] so users know.
 
 /// Build the list of GPU execution providers in registration-priority order.
-///
-/// Returns an empty vec for CPU-only execution. The caller passes this to
-/// [`ort::SessionBuilder::with_execution_providers`] at session creation.
 pub fn gpu_execution_providers() -> Vec<ort::ep::ExecutionProviderDispatch> {
     #[allow(unused_mut)]
     let mut eps: Vec<ort::ep::ExecutionProviderDispatch> = Vec::new();

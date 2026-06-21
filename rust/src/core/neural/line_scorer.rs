@@ -227,7 +227,7 @@ impl NeuralLineScorer {
         let eps = crate::core::ort_execution_providers::gpu_execution_providers();
         let num_cpus = std::thread::available_parallelism().map_or(4, |n| n.get().max(1));
         crate::core::ort_environment::ensure_ort_env(&eps)?;
-        let mut session = ort::session::Session::builder()
+        let session = ort::session::Session::builder()
             .map_err(|e| anyhow::anyhow!("ORT builder: {e}"))?
             .with_intra_threads(num_cpus)
             .map_err(|e| anyhow::anyhow!("ORT intra threads: {e}"))?

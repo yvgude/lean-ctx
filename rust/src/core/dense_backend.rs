@@ -20,9 +20,8 @@ impl DenseBackendKind {
             .map(|v| v.trim().to_ascii_lowercase())
             .filter(|v| !v.is_empty());
 
-        let inferred_qdrant = std::env::var("LEANCTX_QDRANT_URL")
-            .ok()
-            .is_some_and(|v| !v.trim().is_empty());
+        let inferred_qdrant =
+            std::env::var("LEANCTX_QDRANT_URL").is_ok_and(|v| !v.trim().is_empty());
 
         let requested = explicit.or_else(|| inferred_qdrant.then_some("qdrant".to_string()));
 

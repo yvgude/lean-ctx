@@ -123,7 +123,7 @@ fn download_file(
 
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_connect(Some(Duration::from_secs(30)))
-        .timeout_global(Some(Duration::from_secs(300)))
+        .timeout_global(Some(Duration::from_mins(5)))
         .build()
         .into();
     let response = agent

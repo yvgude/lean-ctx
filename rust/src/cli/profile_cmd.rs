@@ -321,8 +321,7 @@ fn cmd_tool_profile_list() {
         .as_deref()
         .is_some_and(|p| !tool_profiles::is_unpinned_alias(p))
         || std::env::var("LEAN_CTX_TOOL_PROFILE")
-            .ok()
-            .is_some_and(|v| !v.trim().is_empty() && !tool_profiles::is_unpinned_alias(v.trim()))
+            .is_ok_and(|v| !v.trim().is_empty() && !tool_profiles::is_unpinned_alias(v.trim()))
         || !cfg.tools_enabled.is_empty();
     let active_name = if pinned { active.as_str() } else { "lean" };
     let lazy_count = crate::tool_defs::core_tool_names().len();

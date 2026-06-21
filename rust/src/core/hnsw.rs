@@ -37,6 +37,9 @@ impl FlatEmbeddings {
     /// Number of vectors in the matrix.
     #[inline]
     pub fn n_vectors(&self) -> usize {
+        if self.dim == 0 {
+            return 0;
+        }
         self.data.len() / self.dim
     }
 
@@ -55,7 +58,7 @@ impl FlatEmbeddings {
 
     /// Build from a `Vec<Vec<f32>>` (for tests / migration).
     pub fn from_vecs(vecs: Vec<Vec<f32>>) -> Self {
-        let dim = vecs.first().map(|v| v.len()).unwrap_or(0);
+        let dim = vecs.first().map_or(0, std::vec::Vec::len);
         let n = vecs.len();
         let mut data = Vec::with_capacity(n * dim);
         for v in vecs {

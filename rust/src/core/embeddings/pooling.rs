@@ -53,10 +53,9 @@ pub fn mean_pool_batch(
         return vec![vec![0.0; dim]; batch];
     }
     let mut results = Vec::with_capacity(batch);
-    for b in 0..batch {
+    for (b, m) in masks.iter().enumerate().take(batch) {
         let offset = b * max_seq_len * dim;
         let h = &hidden_states[offset..][..max_seq_len * dim];
-        let m = masks[b];
         results.push(mean_pool(h, m, max_seq_len, dim));
     }
     results

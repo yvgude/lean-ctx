@@ -306,7 +306,7 @@ fn snapshot_code_files(project_root: &Path) -> HashMap<String, FileState> {
 fn print_human_status(project_root: &str) {
     let disk = crate::core::index_orchestrator::disk_status(project_root);
 
-    println!("  Project:     {project_root}");
+    println!("  Project:        {project_root}");
     println!(
         "  Graph Index:    {}",
         format_disk_line(&disk.graph_index, "files")

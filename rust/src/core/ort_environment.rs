@@ -22,7 +22,7 @@ use ort::ep::ExecutionProviderDispatch;
 /// Ensure the global ONNX Runtime environment is initialized.
 ///
 /// On first call: resolves `libonnxruntime` via the search chain defined in
-/// [`resolve_ort_dylib`], loads it with [`ort::init_from`], and registers GPU
+/// `resolve_ort_dylib`, loads it with [`ort::init_from`], and registers GPU
 /// execution providers.  Subsequent calls are no-ops.
 ///
 /// Returns an eager error when the shared library cannot be found (session

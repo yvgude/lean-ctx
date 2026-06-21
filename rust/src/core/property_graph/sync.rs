@@ -184,8 +184,7 @@ fn git_is_dirty(root: &Path) -> bool {
         Duration::from_secs(5),
         &[],
     )
-    .ok()
-    .is_some_and(|o| !o.stdout.trim().is_empty())
+    .is_ok_and(|o| !o.stdout.trim().is_empty())
 }
 
 #[cfg(test)]
