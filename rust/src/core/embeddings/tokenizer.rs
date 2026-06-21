@@ -300,6 +300,24 @@ impl HfTokenizerWrapper {
             .collect();
         vocab_lines.sort_by_key(|(_, id)| *id);
 
+        // GL #397 / #498: BPE/RoBERTa-style tokenizer.json files ship
+        // different special token names than BERT's `[CLS]`, `[SEP]`, etc.
+        // Remap them here so the downstream `WordPieceTokenizer` can find
+        // its expected sentinel tokens — the sort-order preserves the
+        // correct original IDs.
+        for (token, _) in &mut vocab_lines {
+            let mapped: &str = match token.as_str() {
+                "<s>" => "[CLS]",
+                "</s>" => "[SEP]",
+                "<pad>" => "[PAD]",
+                "<unk>" => "[UNK]",
+                // <mask> is unused by WordPieceTokenizer; map it for completeness.
+                "<mask>" => "[MASK]",
+                _ => continue,
+            };
+            *token = mapped.to_string();
+        }
+
         let vocab_str: String = vocab_lines
             .into_iter()
             .map(|(token, _)| token)
@@ -429,6 +447,36 @@ mod tests {
         assert!(is_bert_punctuation('{'));
         assert!(!is_bert_punctuation('a'));
         assert!(!is_bert_punctuation('0'));
+    }
+
+    #[test]
+    fn hf_tokenizer_remaps_bpe_special_tokens() {
+        // BPE/RoBERTa-style tokenizer.json with <s>/</s>/<pad>/<unk>
+        let json = r#"{
+            "version": "1.0",
+            "model": {
+                "type": "BPE",
+                "vocab": {
+                    "<s>": 0, "<pad>": 1, "</s>": 2, "<unk>": 3,
+                    "hello": 4, "world": 5, "fn": 6
+                }
+            }
+        }"#;
+        let tok = HfTokenizerWrapper::from_json(json).unwrap();
+
+        // After remapping: <s>→[CLS], <pad>→[PAD], </s>→[SEP], <unk>→[UNK]
+        // IDs come from sort order (0,1,2,3,4,5,6) which matches original IDs.
+        let input = tok.encode("hello world", 512);
+        assert_eq!(
+            input.input_ids[0], 0,
+            "first token should be [CLS] (remapped from <s>)"
+        );
+        assert_eq!(
+            *input.input_ids.last().unwrap(),
+            2,
+            "last token should be [SEP] (remapped from </s>)"
+        );
+        assert_eq!(input.input_ids.len(), 4); // [CLS] hello world [SEP]
     }
 
     #[test]
