@@ -42,7 +42,7 @@ impl ToolProfile {
     pub fn description(&self) -> &str {
         match self {
             Self::Minimal => "6 essential tools for new users",
-            Self::Standard => "22 balanced tools (recommended)",
+            Self::Standard => "25 balanced tools (recommended)",
             Self::Power => "All tools exposed",
             Self::Custom(v) => {
                 if v.is_empty() {
@@ -153,7 +153,10 @@ const STANDARD_TOOLS: &[&str] = &[
     "ctx_search",
     "ctx_tree",
     "ctx_session",
-    // Plus balanced additions
+    // Plus balanced additions (includes all lazy-core tools for completeness)
+    "ctx_expand",
+    "ctx_graph",
+    "ctx_provider",
     "ctx_semantic_search",
     "ctx_knowledge",
     "ctx_overview",
@@ -191,7 +194,7 @@ pub fn list_profiles() -> Vec<ProfileInfo> {
         },
         ProfileInfo {
             name: "standard",
-            tool_count: "22",
+            tool_count: "25",
             description: "Balanced set (recommended for most users)",
         },
         ProfileInfo {
@@ -292,8 +295,8 @@ mod tests {
     }
 
     #[test]
-    fn standard_has_22_tools() {
-        assert_eq!(STANDARD_TOOLS.len(), 22);
+    fn standard_has_25_tools() {
+        assert_eq!(STANDARD_TOOLS.len(), 25);
     }
 
     #[test]
@@ -333,6 +336,9 @@ mod tests {
         assert!(profile.is_tool_enabled("ctx_read"));
         assert!(profile.is_tool_enabled("ctx_semantic_search"));
         assert!(profile.is_tool_enabled("ctx_architecture"));
+        assert!(profile.is_tool_enabled("ctx_expand"));
+        assert!(profile.is_tool_enabled("ctx_graph"));
+        assert!(profile.is_tool_enabled("ctx_provider"));
         assert!(!profile.is_tool_enabled("ctx_benchmark"));
         assert!(!profile.is_tool_enabled("ctx_analyze"));
         assert!(!profile.is_tool_enabled("ctx_smells"));
@@ -462,8 +468,22 @@ mod tests {
     }
 
     #[test]
-    fn standard_includes_edit_and_delta() {
+    fn standard_includes_all_core_tools() {
         let profile = ToolProfile::Standard;
+        // Lazy-core tools that must be in standard
+        assert!(
+            profile.is_tool_enabled("ctx_expand"),
+            "ctx_expand must be in standard"
+        );
+        assert!(
+            profile.is_tool_enabled("ctx_graph"),
+            "ctx_graph must be in standard"
+        );
+        assert!(
+            profile.is_tool_enabled("ctx_provider"),
+            "ctx_provider must be in standard"
+        );
+        // Balanced additions
         assert!(
             profile.is_tool_enabled("ctx_edit"),
             "ctx_edit must be in standard"
