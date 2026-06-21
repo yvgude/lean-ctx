@@ -1,10 +1,9 @@
 use std::path::Path;
-#[cfg(feature = "embeddings")]
-use std::sync::Arc;
 
 use crate::core::bm25_index::BM25Index;
 #[cfg(feature = "qdrant")]
 use crate::core::bm25_index::ChunkKind;
+use crate::core::hnsw::FlatEmbeddings;
 use crate::core::hybrid_search::{DenseSearchResult, HybridConfig, HybridResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,7 +60,7 @@ pub fn dense_results_as_hybrid(
     root: &Path,
     index: &BM25Index,
     engine: &crate::core::embeddings::EmbeddingEngine,
-    aligned_embeddings: &[Vec<f32>],
+    aligned_embeddings: &FlatEmbeddings,
     changed_files: &[String],
     query: &str,
     top_k: usize,
@@ -104,7 +103,7 @@ pub fn hybrid_results(
     root: &Path,
     index: &BM25Index,
     engine: &crate::core::embeddings::EmbeddingEngine,
-    aligned_embeddings: &Arc<[Vec<f32>]>,
+    aligned_embeddings: &FlatEmbeddings,
     changed_files: &[String],
     query: &str,
     top_k: usize,
@@ -175,7 +174,7 @@ fn dense_results(
     root: &Path,
     index: &BM25Index,
     engine: &crate::core::embeddings::EmbeddingEngine,
-    aligned_embeddings: &[Vec<f32>],
+    aligned_embeddings: &FlatEmbeddings,
     changed_files: &[String],
     query: &str,
     top_k: usize,
@@ -187,16 +186,21 @@ fn dense_results(
             dense_results_local(index, engine, aligned_embeddings, query, top_k, filter)
         }
         #[cfg(feature = "qdrant")]
-        DenseBackendKind::Qdrant => dense_results_qdrant(
-            root,
-            index,
-            engine,
-            aligned_embeddings,
-            changed_files,
-            query,
-            top_k,
-            filter,
-        ),
+        DenseBackendKind::Qdrant => {
+            let vecs: Vec<Vec<f32>> = (0..aligned_embeddings.n_vectors())
+                .map(|i| aligned_embeddings.get_vec(i))
+                .collect();
+            dense_results_qdrant(
+                root,
+                index,
+                engine,
+                &vecs,
+                changed_files,
+                query,
+                top_k,
+                filter,
+            )
+        }
     }
 }
 
@@ -204,27 +208,19 @@ fn dense_results(
 fn dense_results_local(
     index: &BM25Index,
     engine: &crate::core::embeddings::EmbeddingEngine,
-    aligned_embeddings: &[Vec<f32>],
+    aligned_embeddings: &FlatEmbeddings,
     query: &str,
     top_k: usize,
     filter: Option<&dyn Fn(&str) -> bool>,
 ) -> Result<Vec<DenseSearchResult>, String> {
-    use crate::core::embeddings::cosine_similarity;
-
     let query_embedding = engine
         .embed_query(query)
         .map_err(|e| format!("embedding failed: {e}"))?;
 
-    let top = top_k_by_similarity(
-        &query_embedding,
-        aligned_embeddings,
-        top_k,
-        |i| {
-            let Some(pred) = filter else { return true };
-            index.chunks.get(i).is_some_and(|c| pred(&c.file_path))
-        },
-        cosine_similarity,
-    );
+    let top = top_k_by_similarity(&query_embedding, aligned_embeddings, top_k, |i| {
+        let Some(pred) = filter else { return true };
+        index.chunks.get(i).is_some_and(|c| pred(&c.file_path))
+    });
 
     Ok(top
         .into_iter()
@@ -245,14 +241,19 @@ fn dense_results_local(
         .collect())
 }
 
-/// Min-heap based Top-K selection: O(n log k) instead of O(n log n) full sort.
+/// Min-heap based Top-K selection over a flat embedding buffer.
+/// O(n log k) instead of O(n log n) full sort. The filter is applied inline
+/// during the scan so only matching chunks are considered — post-filtering
+/// cannot drop below `top_k` results regardless of filter selectivity.
+///
+/// Uses sequential memory access (one dereference) via `FlatEmbeddings::get`,
+/// unlike the old `Arc<[Vec<f32>]>` layout which had two-level indirection.
 #[cfg(feature = "embeddings")]
 fn top_k_by_similarity(
     query: &[f32],
-    embeddings: &[Vec<f32>],
+    embeddings: &FlatEmbeddings,
     k: usize,
     filter: impl Fn(usize) -> bool,
-    similarity_fn: fn(&[f32], &[f32]) -> f32,
 ) -> Vec<(usize, f32)> {
     use std::cmp::Ordering;
     use std::collections::BinaryHeap;
@@ -276,13 +277,15 @@ fn top_k_by_similarity(
         }
     }
 
+    let n = embeddings.n_vectors();
     let mut heap: BinaryHeap<MinEntry> = BinaryHeap::with_capacity(k + 1);
 
-    for (i, emb) in embeddings.iter().enumerate() {
+    for i in 0..n {
         if !filter(i) {
             continue;
         }
-        let sim = similarity_fn(query, emb);
+        let emb = embeddings.get(i);
+        let sim = crate::core::embeddings::cosine_similarity(query, emb);
         if heap.len() < k {
             heap.push(MinEntry(sim, i));
         } else if let Some(min) = heap.peek()
