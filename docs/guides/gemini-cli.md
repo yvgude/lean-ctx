@@ -34,9 +34,6 @@ lean-ctx configures `~/.gemini/settings.json` with the Gemini-specific format:
   "mcpServers": {
     "lean-ctx": {
       "command": "lean-ctx",
-      "env": {
-        "LEAN_CTX_DATA_DIR": "~/.lean-ctx"
-      },
       "trust": true
     }
   }

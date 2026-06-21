@@ -244,9 +244,8 @@ fn qoder_mcp_config_preserves_probe_and_upserts_lean_ctx() {
         serde_json::json!([])
     );
     assert!(
-        json["mcpServers"]["lean-ctx"]["env"]["LEAN_CTX_DATA_DIR"]
-            .as_str()
-            .is_some_and(|s| !s.trim().is_empty())
+        json["mcpServers"]["lean-ctx"]["env"].is_null(),
+        "data dir is auto-detected at runtime, not pinned into the config (GH #408)"
     );
     assert!(json["mcpServers"]["lean-ctx"]["identifier"].is_null());
     assert!(json["mcpServers"]["lean-ctx"]["source"].is_null());
@@ -559,7 +558,10 @@ fn augment_vscode_creates_array_with_lean_ctx_entry() {
     assert_eq!(e["disabled"], false);
     assert_eq!(e["useShellInterpolation"], false);
     assert!(e["id"].as_str().is_some());
-    assert!(e["env"]["LEAN_CTX_DATA_DIR"].as_str().is_some());
+    assert!(
+        e["env"].is_null(),
+        "data dir is auto-detected at runtime, not pinned into the config (GH #408)"
+    );
 }
 
 #[test]

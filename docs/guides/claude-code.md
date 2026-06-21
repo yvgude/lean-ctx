@@ -43,9 +43,6 @@ lean-ctx registers itself via `claude mcp add-json --scope user` when available.
   "mcpServers": {
     "lean-ctx": {
       "command": "lean-ctx",
-      "env": {
-        "LEAN_CTX_DATA_DIR": "~/.lean-ctx"
-      },
       "autoApprove": [
         "ctx_read",
         "ctx_shell",

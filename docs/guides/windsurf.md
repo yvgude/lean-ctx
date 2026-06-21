@@ -35,16 +35,13 @@ Add lean-ctx to Windsurf's MCP configuration:
 {
   "mcpServers": {
     "lean-ctx": {
-      "command": "lean-ctx",
-      "env": {
-        "LEAN_CTX_DATA_DIR": "~/.lean-ctx"
-      }
+      "command": "lean-ctx"
     }
   }
 }
 ```
 
-> **Note**: Run `lean-ctx init --agent windsurf` to get the correct `LEAN_CTX_DATA_DIR` path auto-configured for your system.
+> **Note**: lean-ctx auto-detects its data directory at runtime — don't hardcode `LEAN_CTX_DATA_DIR` unless you intentionally relocate it (a wrong path splits config and data across two locations). Running `lean-ctx init --agent windsurf` writes this config for you.
 
 ### Step 2: Agent Rules
 

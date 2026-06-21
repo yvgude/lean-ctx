@@ -37,10 +37,7 @@ lean-ctx configures OpenCode's MCP settings with the OpenCode-specific format:
     "lean-ctx": {
       "type": "local",
       "command": ["lean-ctx"],
-      "enabled": true,
-      "environment": {
-        "LEAN_CTX_DATA_DIR": "~/.lean-ctx"
-      }
+      "enabled": true
     }
   }
 }
@@ -244,10 +241,7 @@ Each project can have its own `opencode.json` with lean-ctx MCP config:
     "lean-ctx": {
       "type": "local",
       "command": ["lean-ctx"],
-      "enabled": true,
-      "environment": {
-        "LEAN_CTX_DATA_DIR": "~/.lean-ctx"
-      }
+      "enabled": true
     }
   }
 }

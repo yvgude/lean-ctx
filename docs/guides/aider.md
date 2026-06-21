@@ -41,9 +41,9 @@ mcp-servers:
   - lean-ctx:
       command: lean-ctx
       args: []
-      env:
-        LEAN_CTX_DATA_DIR: ~/.lean-ctx
 ```
+
+> **Note**: lean-ctx auto-detects its data directory at runtime — don't hardcode `LEAN_CTX_DATA_DIR` unless you intentionally relocate it. Running `lean-ctx init --agent aider` writes this config for you.
 
 Or pass it via command line:
 

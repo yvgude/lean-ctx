@@ -95,7 +95,7 @@ Codex CLI runs in a sandboxed environment for safety. lean-ctx integrates with t
 |--------|----------|
 | File reads | Work normally — lean-ctx reads files within the sandbox |
 | Shell commands | Compressed within sandbox constraints |
-| Data directory | `LEAN_CTX_DATA_DIR` must be accessible from the sandbox |
+| Data directory | the lean-ctx data directory (`~/.lean-ctx` / XDG, or `LEAN_CTX_DATA_DIR` if you relocated it) must be accessible from the sandbox |
 | Network | lean-ctx is local-first, no network needed |
 
 ### Sandbox Permissions

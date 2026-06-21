@@ -14,12 +14,11 @@ pub(super) fn write_mcp_json(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let data_dir = default_data_dir()?;
     let include_aa = supports_auto_approve(target);
     let desired = if target.agent_key.is_empty() {
-        lean_ctx_server_entry(binary, &data_dir, include_aa)
+        lean_ctx_server_entry(binary, include_aa)
     } else {
-        lean_ctx_server_entry_with_instructions(binary, &data_dir, include_aa, &target.agent_key)
+        lean_ctx_server_entry_with_instructions(binary, include_aa, &target.agent_key)
     };
 
     // Claude Code manages ~/.claude.json and may overwrite it on first start.
@@ -306,10 +305,7 @@ pub(super) fn write_vscode_mcp(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .map_err(|_| "LEAN_CTX_DATA_DIR unavailable".to_string())?;
-    let desired = serde_json::json!({ "type": "stdio", "command": binary, "args": [], "env": { "LEAN_CTX_DATA_DIR": data_dir } });
+    let desired = serde_json::json!({ "type": "stdio", "command": binary, "args": [] });
 
     if target.config_path.exists() {
         let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
@@ -362,11 +358,8 @@ pub(super) fn write_vscode_mcp_fresh(
     binary: &str,
     note: Option<String>,
 ) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .map_err(|_| "LEAN_CTX_DATA_DIR unavailable".to_string())?;
     let content = serde_json::to_string_pretty(&serde_json::json!({
-        "servers": { "lean-ctx": { "type": "stdio", "command": binary, "args": [], "env": { "LEAN_CTX_DATA_DIR": data_dir } } }
+        "servers": { "lean-ctx": { "type": "stdio", "command": binary, "args": [] } }
     }))
     .map_err(|e| e.to_string())?;
     crate::config_io::write_atomic_with_backup(path, &content)?;
@@ -385,14 +378,10 @@ pub(super) fn write_copilot_cli(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .map_err(|_| "LEAN_CTX_DATA_DIR unavailable".to_string())?;
     let desired = serde_json::json!({
         "type": "local",
         "command": binary,
         "args": ["mcp"],
-        "env": { "LEAN_CTX_DATA_DIR": data_dir },
         "tools": ["*"]
     });
 
@@ -449,7 +438,6 @@ pub(super) fn write_copilot_cli(
                 "type": "local",
                 "command": binary,
                 "args": ["mcp"],
-                "env": { "LEAN_CTX_DATA_DIR": data_dir },
                 "tools": ["*"]
             }
         }
@@ -467,14 +455,10 @@ pub(super) fn write_opencode_config(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .map_err(|_| "LEAN_CTX_DATA_DIR unavailable".to_string())?;
     let desired = serde_json::json!({
         "type": "local",
         "command": [binary],
-        "enabled": true,
-        "environment": { "LEAN_CTX_DATA_DIR": data_dir }
+        "enabled": true
     });
 
     if target.config_path.exists() {
@@ -525,12 +509,9 @@ pub(super) fn write_opencode_fresh(
     binary: &str,
     note: Option<String>,
 ) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .map_err(|_| "LEAN_CTX_DATA_DIR unavailable".to_string())?;
     let content = serde_json::to_string_pretty(&serde_json::json!({
         "$schema": "https://opencode.ai/config.json",
-        "mcp": { "lean-ctx": { "type": "local", "command": [binary], "enabled": true, "environment": { "LEAN_CTX_DATA_DIR": data_dir } } }
+        "mcp": { "lean-ctx": { "type": "local", "command": [binary], "enabled": true } }
     }))
     .map_err(|e| e.to_string())?;
     crate::config_io::write_atomic_with_backup(path, &content)?;
@@ -549,16 +530,12 @@ pub(super) fn write_jetbrains_config(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .map_err(|_| "LEAN_CTX_DATA_DIR unavailable".to_string())?;
     // JetBrains AI Assistant expects an "mcpServers" mapping in the JSON snippet
     // you paste into Settings | Tools | AI Assistant | Model Context Protocol (MCP).
     // We write that snippet to a file for easy copy/paste.
     let desired = serde_json::json!({
         "command": binary,
-        "args": [],
-        "env": { "LEAN_CTX_DATA_DIR": data_dir }
+        "args": []
     });
 
     if target.config_path.exists() {
@@ -618,12 +595,8 @@ pub(super) fn write_amp_config(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .map_err(|_| "LEAN_CTX_DATA_DIR unavailable".to_string())?;
     let entry = serde_json::json!({
-        "command": binary,
-        "env": { "LEAN_CTX_DATA_DIR": data_dir }
+        "command": binary
     });
 
     if target.config_path.exists() {
@@ -682,13 +655,9 @@ pub(super) fn write_crush_config(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .map_err(|_| "LEAN_CTX_DATA_DIR unavailable".to_string())?;
     let desired = serde_json::json!({
         "type": "stdio",
-        "command": binary,
-        "env": { "LEAN_CTX_DATA_DIR": data_dir }
+        "command": binary
     });
 
     if target.config_path.exists() {
@@ -841,12 +810,8 @@ pub(super) fn write_gemini_settings(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .map_err(|_| "LEAN_CTX_DATA_DIR unavailable".to_string())?;
     let entry = serde_json::json!({
         "command": binary,
-        "env": { "LEAN_CTX_DATA_DIR": data_dir },
         "trust": true,
     });
 
@@ -906,19 +871,14 @@ pub(super) fn write_hermes_yaml(
     binary: &str,
     _opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let data_dir = default_data_dir()?;
-
-    let lean_ctx_block = format!(
-        "  lean-ctx:\n    command: \"{binary}\"\n    env:\n      LEAN_CTX_DATA_DIR: \"{data_dir}\""
-    );
+    let lean_ctx_block = format!("  lean-ctx:\n    command: \"{binary}\"");
 
     if target.config_path.exists() {
         let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
 
         if content.contains("lean-ctx") {
             let has_correct_binary = content.contains(binary);
-            let has_correct_data_dir = content.contains(&data_dir);
-            if has_correct_binary && has_correct_data_dir {
+            if has_correct_binary {
                 return Ok(WriteResult {
                     action: WriteAction::Already,
                     note: None,
@@ -1010,15 +970,11 @@ pub(super) fn write_qoder_settings(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let data_dir = default_data_dir()?;
     // Core toolset by default — no LEAN_CTX_FULL_TOOLS (GitHub #385, see
     // hooks::full_server_entry).
     let desired = serde_json::json!({
         "command": binary,
-        "args": [],
-        "env": {
-            "LEAN_CTX_DATA_DIR": data_dir
-        }
+        "args": []
     });
 
     if target.config_path.exists() {
@@ -1154,10 +1110,8 @@ pub(super) fn write_openclaw_config(
     binary: &str,
     _opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let data_dir = default_data_dir()?;
     let desired = serde_json::json!({
-        "command": binary,
-        "env": { "LEAN_CTX_DATA_DIR": data_dir }
+        "command": binary
     });
 
     if !target.config_path.exists() {
@@ -1261,7 +1215,7 @@ pub(super) fn write_openclaw_config(
 //   { type, id, name, disabled, command, args, env, useShellInterpolation }
 // ---------------------------------------------------------------------------
 
-pub(super) fn lean_ctx_augment_vscode_entry(binary: &str, data_dir: &str) -> Value {
+pub(super) fn lean_ctx_augment_vscode_entry(binary: &str) -> Value {
     serde_json::json!({
         "type": "stdio",
         "id": LEAN_CTX_AUGMENT_VSCODE_ID,
@@ -1269,10 +1223,7 @@ pub(super) fn lean_ctx_augment_vscode_entry(binary: &str, data_dir: &str) -> Val
         "disabled": false,
         "command": binary,
         "args": [],
-        "useShellInterpolation": false,
-        "env": {
-            "LEAN_CTX_DATA_DIR": data_dir
-        }
+        "useShellInterpolation": false
     })
 }
 
@@ -1281,8 +1232,7 @@ pub(super) fn write_augment_vscode(
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let data_dir = default_data_dir()?;
-    let desired = lean_ctx_augment_vscode_entry(binary, &data_dir);
+    let desired = lean_ctx_augment_vscode_entry(binary);
 
     if !target.config_path.exists() {
         let arr = serde_json::Value::Array(vec![desired]);

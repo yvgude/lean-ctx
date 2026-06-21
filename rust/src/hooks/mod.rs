@@ -789,19 +789,17 @@ fn make_executable(_path: &PathBuf) {}
 /// Env key/value pairs for the lean-ctx MCP server entry written into agent
 /// configs (Codex TOML + the JSON agents).
 ///
-/// Always emits `LEAN_CTX_DATA_DIR`; adds `LEAN_CTX_PROJECT_ROOT` and
-/// `LEAN_CTX_EXTRA_ROOTS` when known (process env first, then config). Without
-/// these, a long-lived MCP server spawned by the agent loses the project /
-/// worktree scope captured at `init`, so an explicit path under a sibling
-/// worktree is wrongly rejected as a jail escape (#403). Single source of truth
-/// so every agent installer stays consistent.
+/// Deliberately does NOT pin `LEAN_CTX_DATA_DIR`: lean-ctx auto-detects its
+/// per-category dirs (config/data/state/cache) at runtime, and pinning the data
+/// dir would set that var in the server's environment, forcing single-dir mode
+/// and collapsing config/state/cache onto the data dir — defeating the XDG split
+/// (GH #408). Emits `LEAN_CTX_PROJECT_ROOT` and `LEAN_CTX_EXTRA_ROOTS` when known
+/// (process env first, then config). Without these, a long-lived MCP server
+/// spawned by the agent loses the project / worktree scope captured at `init`,
+/// so an explicit path under a sibling worktree is wrongly rejected as a jail
+/// escape (#403). Single source of truth so every agent installer stays consistent.
 pub(crate) fn mcp_server_env_pairs() -> Vec<(String, String)> {
     let mut pairs = Vec::new();
-
-    let data_dir = crate::core::data_dir::lean_ctx_data_dir()
-        .map(|d| d.to_string_lossy().to_string())
-        .unwrap_or_default();
-    pairs.push(("LEAN_CTX_DATA_DIR".to_string(), data_dir));
 
     let cfg = crate::core::config::Config::load();
 
@@ -916,8 +914,8 @@ mod tests {
         let pairs = mcp_server_env_pairs();
         let get = |k: &str| pairs.iter().find(|(p, _)| p == k).map(|(_, v)| v.as_str());
         assert!(
-            get("LEAN_CTX_DATA_DIR").is_some(),
-            "data dir always emitted"
+            get("LEAN_CTX_DATA_DIR").is_none(),
+            "data dir is auto-detected at runtime, never pinned into the config (GH #408)"
         );
         assert_eq!(get("LEAN_CTX_PROJECT_ROOT"), Some("/work/main"));
         assert_eq!(get("LEAN_CTX_EXTRA_ROOTS"), Some("/work/wt-a:/work/wt-b"));
@@ -932,15 +930,16 @@ mod tests {
 
     #[test]
     fn mcp_env_pairs_omit_roots_when_unset() {
-        // No project context configured anywhere ⇒ only the data dir is emitted,
-        // so we never write empty/placeholder root keys into agent configs.
+        // No project context configured anywhere ⇒ no env vars are emitted: the
+        // data dir is auto-detected (never pinned, GH #408) and we never write
+        // empty/placeholder root keys into agent configs.
         let _iso = crate::core::data_dir::isolated_data_dir();
         crate::test_env::remove_var("LEAN_CTX_PROJECT_ROOT");
         crate::test_env::remove_var("LEAN_CTX_EXTRA_ROOTS");
 
         let pairs = mcp_server_env_pairs();
         let keys: Vec<&str> = pairs.iter().map(|(k, _)| k.as_str()).collect();
-        assert!(keys.contains(&"LEAN_CTX_DATA_DIR"));
+        assert!(!keys.contains(&"LEAN_CTX_DATA_DIR"));
         assert!(!keys.contains(&"LEAN_CTX_PROJECT_ROOT"));
         assert!(!keys.contains(&"LEAN_CTX_EXTRA_ROOTS"));
     }

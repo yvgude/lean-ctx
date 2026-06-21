@@ -79,16 +79,13 @@ pub fn auto_approve_tools() -> Vec<&'static str> {
     ]
 }
 
-pub(super) fn lean_ctx_server_entry(
-    binary: &str,
-    data_dir: &str,
-    include_auto_approve: bool,
-) -> Value {
+pub(super) fn lean_ctx_server_entry(binary: &str, include_auto_approve: bool) -> Value {
+    // No `env` block: lean-ctx auto-detects its per-category dirs (config/data/
+    // state/cache) at runtime. Pinning `LEAN_CTX_DATA_DIR` here would set that var
+    // in the server's environment, forcing single-dir mode and collapsing
+    // config/state/cache onto the data dir — defeating the XDG split (GH #408).
     let mut entry = serde_json::json!({
-        "command": binary,
-        "env": {
-            "LEAN_CTX_DATA_DIR": data_dir
-        }
+        "command": binary
     });
     if include_auto_approve {
         entry["autoApprove"] = serde_json::json!(auto_approve_tools());
@@ -98,11 +95,10 @@ pub(super) fn lean_ctx_server_entry(
 
 pub(super) fn lean_ctx_server_entry_with_instructions(
     binary: &str,
-    data_dir: &str,
     include_auto_approve: bool,
     agent_key: &str,
 ) -> Value {
-    let mut entry = lean_ctx_server_entry(binary, data_dir, include_auto_approve);
+    let mut entry = lean_ctx_server_entry(binary, include_auto_approve);
     let mode = crate::core::rules_canonical::Mode::from_hook_mode(
         &crate::hooks::recommend_hook_mode(agent_key),
     );
@@ -123,12 +119,6 @@ pub(super) fn lean_ctx_server_entry_with_instructions(
 pub(super) fn supports_auto_approve(target: &EditorTarget) -> bool {
     crate::core::client_constraints::by_editor_name(target.name)
         .is_some_and(|c| c.supports_auto_approve)
-}
-
-pub(super) fn default_data_dir() -> Result<String, String> {
-    Ok(crate::core::data_dir::lean_ctx_data_dir()?
-        .to_string_lossy()
-        .to_string())
 }
 
 /// Fixed UUIDv4-shaped id reserved for lean-ctx in Augment's VS Code MCP list.
