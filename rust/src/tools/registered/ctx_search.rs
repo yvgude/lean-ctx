@@ -15,21 +15,23 @@ impl McpTool for CtxSearchTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_search",
-            "Regex code search. Prefer over native Grep/rg/find (compact, .gitignore-aware).",
+            "Regex pattern search — use when you know the exact pattern. For understanding code or\n\
+             finding answers, use ctx_compose FIRST (one call replaces search+read+symbol chains).\n\
+             pattern required; include='*.rs'; path scopes; max_results=N (default 20).\n\
+             paths=['dir1','dir2'] for multi-root. ignore_gitignore bypasses .gitignore (needs role).",
             json!({
                 "type": "object",
                 "properties": {
                     "pattern": { "type": "string", "description": "Regex pattern" },
-                    "path": { "type": "string", "description": "Directory to search" },
+                    "path": { "type": "string", "description": "Search dir" },
                     "paths": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "Multiple roots (alternative to path)"
+                        "description": "Multi-root (alternative to path)"
                     },
-                    "include": { "type": "string", "description": "Glob filter, e.g. *.ts, src/**/*.rs" },
-                    "ext": { "type": "string", "description": "Deprecated; use include" },
+                    "include": { "type": "string", "description": "Glob filter: *.ts, src/**/*.rs" },
                     "max_results": { "type": "integer", "description": "Default 20" },
-                    "ignore_gitignore": { "type": "boolean", "description": "Also scan gitignored files (needs role)" }
+                    "ignore_gitignore": { "type": "boolean", "description": "Scan gitignored (needs role)" }
                 },
                 "required": ["pattern"]
             }),

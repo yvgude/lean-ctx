@@ -327,6 +327,13 @@ fn build_full_instructions(crp_mode: CrpMode, client_name: &str) -> String {
 
     use crate::core::rules_canonical as rc;
     let tool_bullets = rc::tool_mapping_bullets(rc::Mode::Mcp);
+    let intent_block = if minimal { "" } else { rc::intent_playbook() };
+    let antipattern_block = if minimal { "" } else { rc::anti_patterns() };
+    let parallel_block = if minimal {
+        ""
+    } else {
+        rc::parallel_tool_guidance()
+    };
     let read_modes = rc::ctx_read_modes_block();
     let auto_block = rc::automation_block();
     let cep = rc::cep_block();
@@ -345,7 +352,13 @@ fn build_full_instructions(crp_mode: CrpMode, client_name: &str) -> String {
 CRITICAL: ALWAYS use lean-ctx MCP tools instead of native equivalents for token savings.\n\
 \n\
 {tool_bullets}\n\
+\n\
+{intent_block}\n\
 {shell_hint}\
+\n\
+{antipattern_block}\n\
+\n\
+{parallel_block}\n\
 \n\
 {read_modes}\n\
 \n\
@@ -549,6 +562,9 @@ fn build_full_instructions_for_compiler(
 
     use crate::core::rules_canonical as rc;
     let tool_bullets = rc::tool_mapping_bullets(rc::Mode::Mcp);
+    let intent_block = rc::intent_playbook();
+    let antipattern_block = rc::anti_patterns();
+    let parallel_block = rc::parallel_tool_guidance();
     let read_modes = rc::ctx_read_modes_block();
     let auto_blk = rc::automation_block();
     let cep = rc::cep_block();
@@ -559,7 +575,13 @@ fn build_full_instructions_for_compiler(
 CRITICAL: ALWAYS use lean-ctx MCP tools instead of native equivalents for token savings.\n\
 \n\
 {tool_bullets}\n\
+\n\
+{intent_block}\n\
 {shell_hint}\
+\n\
+{antipattern_block}\n\
+\n\
+{parallel_block}\n\
 \n\
 {read_modes}\n\
 \n\

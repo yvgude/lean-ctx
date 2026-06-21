@@ -4,7 +4,7 @@
 //! - Rules contain mode selection guidance
 //! - Rules contain NEVER anti-pattern reinforcement
 //! - MDC template has lean-ctx markers
-//! - No contradictions in hybrid mode (ctx_shell vs lean-ctx -c)
+//! - No contradictions in hybrid mode (`ctx_shell` vs lean-ctx -c)
 
 use lean_ctx::rules_inject;
 

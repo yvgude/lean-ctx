@@ -21,23 +21,22 @@ impl McpTool for CtxUrlReadTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_url_read",
-            "Fetch a web page, PDF, RSS/Atom feed, or YouTube URL as compressed, cited context.\n\
-             HTML→clean Markdown (tables→GFM), PDF→text, feeds→dated item list, YouTube→transcript; modes: auto|markdown|text|links|facts|quotes|transcript.\n\
-             GitHub blob/raw page URLs auto-resolve to the raw file. facts/quotes return claims with confidence + source. SSRF-guarded (http/https only, blocks private/loopback).\n\
-             Use for research/crawl instead of raw fetch.",
+            "Fetch URL: pages→Markdown; PDF→text; YouTube→transcript; mode=auto best per type\n\
+             mode=facts|quotes for research (claims+confidence). query='topic' to focus extraction.\n\
+             GitHub blob/raw URLs auto-resolve to raw file. SSRF-guarded (no private IPs). max_tokens=6000.",
             json!({
                 "type": "object",
                 "properties": {
-                    "url": { "type": "string", "description": "http(s) URL of a page or YouTube video" },
+                    "url": { "type": "string", "description": "http(s) URL (page, PDF, YouTube)" },
                     "mode": {
                         "type": "string",
                         "enum": ["auto", "markdown", "text", "links", "facts", "quotes", "transcript"],
-                        "description": "Distillation mode (default: auto — Markdown for pages, transcript for videos)"
+                        "description": "auto|markdown|text|links|facts|quotes|transcript (default auto)"
                     },
-                    "query": { "type": "string", "description": "Optional focus query; boosts relevance in facts/quotes modes" },
-                    "max_tokens": { "type": "integer", "description": "Token budget for returned content (default: 6000)" },
-                    "max_items": { "type": "integer", "description": "Max items for facts/quotes modes (default: 12)" },
-                    "timeout_secs": { "type": "integer", "description": "Request timeout in seconds (default: 20, max: 60)" }
+                    "query": { "type": "string", "description": "Focus query; boosts facts/quotes relevance" },
+                    "max_tokens": { "type": "integer", "description": "Token budget (default 6000)" },
+                    "max_items": { "type": "integer", "description": "Max items for facts/quotes (default 12)" },
+                    "timeout_secs": { "type": "integer", "description": "Timeout seconds (default 20, max 60)" }
                 },
                 "required": ["url"]
             }),

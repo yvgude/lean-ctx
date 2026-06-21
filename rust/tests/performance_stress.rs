@@ -209,7 +209,7 @@ mod hebbian_stress {
 
     #[test]
     fn stress_boltzmann_eviction_many_entries() {
-        let energies: Vec<f64> = (0..1000).map(|i| (i as f64) * 0.1).collect();
+        let energies: Vec<f64> = (0..1000).map(|i| f64::from(i) * 0.1).collect();
 
         let start = Instant::now();
         let evictions = boltzmann_select_evictions(&energies, 100, 0.1);

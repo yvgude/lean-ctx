@@ -1,4 +1,4 @@
-//! Tests for CLAUDE_CONFIG_DIR support in instructions and compiler output.
+//! Tests for `CLAUDE_CONFIG_DIR` support in instructions and compiler output.
 //!
 //! These tests modify process-global env vars — must run serialized.
 

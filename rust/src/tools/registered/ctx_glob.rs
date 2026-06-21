@@ -15,8 +15,9 @@ impl McpTool for CtxGlobTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_glob",
-            "Find files by glob pattern. Prefer over native Glob for consistency.\n\
-             Respects .gitignore; supports multi-root via `paths` array.",
+            "Find files by glob pattern. Respects .gitignore;\n\
+             supports multi-root via `paths` array. max_results=N sets limit.\n\
+             For file content search, use ctx_search (pattern) or ctx_semantic_search (meaning).",
             json!({
                 "type": "object",
                 "properties": {

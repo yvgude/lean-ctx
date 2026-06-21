@@ -7,7 +7,7 @@
 //! These tests verify:
 //! 1. Git subcommand words are NEVER abbreviated in compression output
 //! 2. Git write-commands (commit/push/pull/merge/rebase) are verbatim (no compression)
-//! 3. PowerShell join_command does not wrap full command strings with & '...'
+//! 3. PowerShell `join_command` does not wrap full command strings with & '...'
 
 use lean_ctx::core::terse::dictionaries::{DictLevel, GIT, apply_dictionaries};
 use lean_ctx::shell::compress::{has_structural_output, is_verbatim_output};

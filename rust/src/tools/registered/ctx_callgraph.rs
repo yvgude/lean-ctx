@@ -15,7 +15,12 @@ impl McpTool for CtxCallgraphTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_callgraph",
-            "Call graph query: callers/callees (multi-hop BFS), trace path between symbols, risk classification by caller count.",
+            "Callers/callees analysis — who calls a function and what it calls.\n\
+             action=callers symbol='fn' returns every call site with file:line.\n\
+             For END-TO-END flow tracing (how does X reach Y), use ctx_compose FIRST\n\
+             — one call returns the path + source. Use ctx_callgraph only when you need\n\
+             exhaustive enumeration of ALL callers/callees for a single symbol.\n\
+             action=trace from→to finds path between two symbols. depth=N for BFS depth.",
             json!({
                 "type": "object",
                 "properties": {
@@ -28,13 +33,9 @@ impl McpTool for CtxCallgraphTool {
                         "type": "string",
                         "description": "Symbol name (required for callers/callees/risk)"
                     },
-                    "direction": {
-                        "type": "string",
-                        "description": "Deprecated — use action instead. callers|callees"
-                    },
                     "file": {
                         "type": "string",
-                        "description": "Optional: scope results to a specific file"
+                        "description": "Scope results to file"
                     },
                     "depth": {
                         "type": "integer",

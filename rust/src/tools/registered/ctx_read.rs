@@ -35,24 +35,26 @@ impl McpTool for CtxReadTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_read",
-            "Read a file. Prefer over native Read/cat/head/tail (cached, compressed).\n\
-             Omit mode to auto-select (recommended); use full only right before editing. \
-             Re-reads ~13 tokens. fresh=true forces a disk re-read.",
+            "Read source files. mode is REQUIRED — choose by intent:\n\
+             full=verbatim (edit-ready, use before Edit), signatures=API surface only,\n\
+             map=structural overview of large files, auto=smart (learns from task and\n\
+             session context, use for orientation), diff=git delta, lines:N-M=window.\n\
+             fresh=true bypasses cache.\n\
+             For understanding code or finding answers, use ctx_compose FIRST instead.",
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "Absolute file path" },
+                    "path": { "type": "string", "description": "Absolute path" },
                     "mode": {
                         "type": "string",
-                        "default": "auto",
-                        "description": "Omit to auto-select (recommended). auto(default)|full (for editing)|raw|map (large files)|signatures|diff|task|reference|aggressive|entropy|lines:N-M|density:0.X"
+                        "description": "REQUIRED. full=verbatim(edit-ready) signatures=API map=structure auto=smart diff=git-delta lines:N-M=window reference=quotes task=focus"
                     },
-                    "start_line": { "type": "integer", "description": "First line, 1-based (alias: offset)" },
-                    "offset": { "type": "integer", "description": "Alias for start_line" },
-                    "limit": { "type": "integer", "description": "Max lines to read" },
-                    "fresh": { "type": "boolean", "description": "Bypass cache, force disk re-read" },
-                    "aggressiveness": { "type": "number", "description": "Compression intensity 0.0 (lossless)–1.0 (max). With no explicit mode, routes through the density path at the mapped target; also tunes entropy/task. Omit for per-mode defaults" },
-                    "protect": { "type": "array", "items": { "type": "string" }, "description": "Symbols/strings whose lines must never be compressed away — force-kept verbatim in entropy/task modes" }
+                    "start_line": { "type": "integer", "description": "1-based first line (offset alias)" },
+                    "offset": { "type": "integer", "description": "start_line alias" },
+                    "limit": { "type": "integer", "description": "Max lines" },
+                    "fresh": { "type": "boolean", "description": "Bypass cache, disk re-read" },
+                    "aggressiveness": { "type": "number", "description": "0.0(lossless)–1.0(max). Without explicit mode→density; also tunes entropy/task. Omit for defaults" },
+                    "protect": { "type": "array", "items": { "type": "string" }, "description": "Symbols/strings force-kept verbatim in entropy/task modes" }
                 },
                 "required": ["path"]
             }),

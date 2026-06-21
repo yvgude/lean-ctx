@@ -4,7 +4,7 @@
 //! On re-index, only files whose hash has changed get re-embedded,
 //! avoiding expensive model inference for unchanged code.
 //!
-//! Storage format: `~/.lean-ctx/vectors/<project_hash>/embeddings.json`
+//! Storage format: `~/.lean-ctx/vectors/<project_hash>/embeddings.bin` (postcard)
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -35,32 +35,23 @@ pub struct EmbeddingEntry {
     pub symbol_name: String,
     pub start_line: usize,
     pub end_line: usize,
-    /// Legacy full-precision vector (v1/v2 indices). Migrated to `quant` on load
-    /// and then emptied; only present in files written by pre-v3 binaries.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub embedding: Vec<f32>,
     /// int8-quantized embedding (turbovec-derived) — 4× smaller on disk.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quant: Option<QuantizedVector>,
+    pub quant: QuantizedVector,
     pub content_hash: String,
 }
 
 impl EmbeddingEntry {
-    /// Write the dequantized embedding directly into `dest`, avoiding the
+    /// Write the dequantized embedding directly into `dest`, avoiding
     /// intermediate `Vec<f32>` allocation.
     fn write_into_flat(&self, dest: &mut Vec<f32>) {
-        match &self.quant {
-            Some(q) => {
-                let scale = q.scale;
-                if scale == 0.0 {
-                    dest.resize(dest.len() + q.code.len(), 0.0);
-                } else {
-                    for &c in &q.code {
-                        dest.push(f32::from(c) * scale);
-                    }
-                }
+        let q = &self.quant;
+        let scale = q.scale;
+        if scale == 0.0 {
+            dest.resize(dest.len() + q.code.len(), 0.0);
+        } else {
+            for &c in &q.code {
+                dest.push(f32::from(c) * scale);
             }
-            None => dest.extend_from_slice(&self.embedding),
         }
     }
 }
@@ -102,7 +93,7 @@ impl EmbeddingBuildOutcome {
 /// Called by the index orchestrator during `build-full` / `build` after the BM25
 /// index is ready.  This is a *background-friendly* operation: it runs the ONNX
 /// model incrementally (only chunks whose content hash changed) and persists
-/// `embeddings.bin` so subsequent `ctx_semantic_search` calls find a warm cache.
+/// `embeddings.bin` (postcard) so subsequent `ctx_semantic_search` calls find a warm cache.
 ///
 /// Returns [`EmbeddingBuildOutcome`] — the orchestrator uses this to set the
 /// semantic component state without aborting the overall index build.
@@ -225,7 +216,7 @@ pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> Embe
     }
 }
 
-/// v1→v2 added `model_id`; v2→v3 stores embeddings as int8 (`quant`) instead of f32.
+/// Current on-disk format version. Used for forward-compatibility checks.
 const CURRENT_VERSION: u32 = 3;
 
 impl EmbeddingIndex {
@@ -273,9 +264,8 @@ impl EmbeddingIndex {
                 e.file_path.len()
                     + e.symbol_name.len()
                     + e.content_hash.len()
-                    + e.quant
-                        .as_ref()
-                        .map_or(e.embedding.len() * 4, |q| q.code.len() + 4)
+                    + e.quant.code.len()
+                    + 4
                     + 48
             })
             .sum();
@@ -370,26 +360,11 @@ impl EmbeddingIndex {
                     symbol_name: chunk.symbol_name.clone(),
                     start_line: chunk.start_line,
                     end_line: chunk.end_line,
-                    embedding: Vec::new(),
-                    quant: Some(embedding_quant::quantize(embedding)),
+                    quant: embedding_quant::quantize(embedding),
                     content_hash,
                 });
             }
         }
-    }
-
-    /// Upgrades any legacy f32 entries to int8 in place. Returns true if anything
-    /// changed, so the caller can persist the 4×-smaller form once.
-    fn migrate_legacy_entries(&mut self) -> bool {
-        let mut changed = false;
-        for e in &mut self.entries {
-            if e.quant.is_none() && !e.embedding.is_empty() {
-                e.quant = Some(embedding_quant::quantize(&e.embedding));
-                e.embedding = Vec::new();
-                changed = true;
-            }
-        }
-        changed
     }
 
     /// Get all embeddings in chunk order (aligned with BM25Index.chunks) as a
@@ -429,93 +404,29 @@ impl EmbeddingIndex {
     pub fn save(&self, root: &Path) -> std::io::Result<()> {
         let dir = index_dir(root);
         std::fs::create_dir_all(&dir)?;
-        // Binary (postcard) — primary format, ~10× faster serialize/deserialize than JSON.
+        // Binary (postcard) — compact, fast, deterministic.
         let data = postcard::to_allocvec(self).map_err(std::io::Error::other)?;
         std::fs::write(dir.join("embeddings.bin"), data)?;
         Ok(())
     }
 
     pub fn load(root: &Path) -> Option<Self> {
-        let dir = index_dir(root);
-
-        // Fast path: binary postcard format.
-        let bin_path = dir.join("embeddings.bin");
-        if let Ok(data) = std::fs::read(&bin_path) {
-            if let Ok(idx) = postcard::from_bytes::<Self>(&data) {
-                return match idx.version {
-                    CURRENT_VERSION => Some(idx),
-                    // Binary format didn't exist before v3, so v1/v2 can't appear here.
-                    // But handle gracefully just in case.
-                    v if v < CURRENT_VERSION => {
-                        tracing::info!(
-                            "[embeddings] migrating binary index v{v} → v{CURRENT_VERSION}"
-                        );
-                        let mut idx = idx;
-                        idx.version = CURRENT_VERSION;
-                        let _ = idx.migrate_legacy_entries();
-                        let _ = idx.save(root);
-                        Some(idx)
-                    }
-                    _ => None,
-                };
-            }
-            // Corrupt binary — fall through to JSON.
-            tracing::warn!("[embeddings] corrupt embeddings.bin, falling back to JSON");
-        }
-
-        // Legacy path: JSON format.
-        let json_path = dir.join("embeddings.json");
-        let data = std::fs::read_to_string(&json_path)
-            .or_else(|_| {
-                let legacy_dir = legacy_embedding_dir(root);
-                if legacy_dir == dir {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        "same path",
-                    ));
-                }
-                let legacy_path = legacy_dir.join("embeddings.json");
-                let content = std::fs::read_to_string(&legacy_path)?;
-                let _ = std::fs::create_dir_all(&dir);
-                let _ = std::fs::copy(&legacy_path, &json_path);
-                Ok(content)
-            })
-            .ok()?;
-        let mut idx: Self = serde_json::from_str(&data).ok()?;
-        match idx.version {
-            CURRENT_VERSION => {
-                // Migrate from JSON to binary for faster subsequent loads.
-                let _ = idx.save(root);
-                Some(idx)
-            }
-            1 | 2 => {
-                tracing::info!(
-                    "[embeddings] migrating index v{} → v{CURRENT_VERSION} (int8 quantization + binary)",
-                    idx.version
-                );
-                idx.version = CURRENT_VERSION;
-                let _ = idx.migrate_legacy_entries();
-                // Persist upgraded index in binary format.
-                let _ = idx.save(root);
-                Some(idx)
-            }
-            _ => None,
+        let bin_path = index_dir(root).join("embeddings.bin");
+        let data = std::fs::read(&bin_path).ok()?;
+        if let Ok(idx) = postcard::from_bytes::<Self>(&data) {
+            Some(idx)
+        } else {
+            tracing::warn!(
+                "[embeddings] corrupt embeddings.bin — removing and will rebuild from scratch"
+            );
+            let _ = std::fs::remove_file(&bin_path);
+            None
         }
     }
 }
 
 fn index_dir(root: &Path) -> PathBuf {
     crate::core::index_namespace::vectors_dir(root)
-}
-
-fn legacy_embedding_dir(root: &Path) -> PathBuf {
-    let mut hasher = Md5::new();
-    hasher.update(root.to_string_lossy().as_bytes());
-    let hash = crate::core::agent_identity::hex_encode(&hasher.finalize());
-    crate::core::data_dir::lean_ctx_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("vectors")
-        .join(hash)
 }
 
 fn hash_content(content: &str) -> String {
@@ -722,11 +633,7 @@ mod tests {
         assert_eq!(idx.entries.len(), 2);
 
         let b_entry = idx.entries.iter().find(|e| e.file_path == "b.rs").unwrap();
-        let b_embed = b_entry
-            .quant
-            .as_ref()
-            .map(|q| q.dequantize())
-            .unwrap_or_default();
+        let b_embed = b_entry.quant.dequantize();
         assert!(
             (b_embed[0] - 0.1).abs() < 1e-6,
             "b.rs embedding should be preserved"
@@ -799,11 +706,7 @@ mod tests {
         assert_eq!(loaded.dimensions, 3);
         assert_eq!(loaded.entries.len(), 1);
         // int8-quantized round-trip: within one quantization step of the original.
-        let recon = loaded.entries[0]
-            .quant
-            .as_ref()
-            .map(|q| q.dequantize())
-            .unwrap_or_default();
+        let recon = loaded.entries[0].quant.dequantize();
         assert!((recon[0] - 1.0).abs() < 0.02);
         assert!((recon[1] - 2.0).abs() < 0.02);
         assert!((recon[2] - 3.0).abs() < 0.02);
@@ -852,76 +755,4 @@ mod tests {
         assert!(idx.dimension_mismatch(768));
     }
 
-    #[test]
-    fn v1_index_migration() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let data_dir = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
-        let project_dir = tempfile::tempdir().unwrap();
-
-        let v1_json = serde_json::json!({
-            "version": 1,
-            "dimensions": 384,
-            "entries": [],
-            "file_hashes": {}
-        });
-
-        let dir = crate::core::index_namespace::vectors_dir(project_dir.path());
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("embeddings.json"), v1_json.to_string()).unwrap();
-
-        let loaded = EmbeddingIndex::load(project_dir.path()).unwrap();
-        assert_eq!(loaded.version, CURRENT_VERSION);
-        assert_eq!(loaded.dimensions, 384);
-        assert!(loaded.model_id.is_none());
-
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-    }
-
-    #[test]
-    fn v2_index_quantizes_on_migration() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let data_dir = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
-        let project_dir = tempfile::tempdir().unwrap();
-
-        // A v2 index with a full-precision f32 entry (pre-quantization on-disk form).
-        let v2_json = serde_json::json!({
-            "version": 2,
-            "dimensions": 3,
-            "model_id": "all-MiniLM-L6-v2",
-            "entries": [{
-                "file_path": "a.rs",
-                "symbol_name": "fn_a",
-                "start_line": 1,
-                "end_line": 3,
-                "embedding": [1.0, 2.0, 3.0],
-                "content_hash": "abc"
-            }],
-            "file_hashes": {}
-        });
-
-        let dir = crate::core::index_namespace::vectors_dir(project_dir.path());
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("embeddings.json"), v2_json.to_string()).unwrap();
-
-        let loaded = EmbeddingIndex::load(project_dir.path()).unwrap();
-        assert_eq!(loaded.version, CURRENT_VERSION);
-        // The legacy f32 was migrated to int8 codes and the f32 field emptied.
-        let entry = &loaded.entries[0];
-        assert!(
-            entry.embedding.is_empty(),
-            "f32 field cleared after migration"
-        );
-        assert!(entry.quant.is_some(), "entry is now quantized");
-        let recon = entry.quant.as_ref().unwrap().dequantize();
-        assert!((recon[2] - 3.0).abs() < 0.02);
-
-        // Migration persisted the smaller form: re-loading sees v3 directly.
-        let reloaded = EmbeddingIndex::load(project_dir.path()).unwrap();
-        assert_eq!(reloaded.version, CURRENT_VERSION);
-        assert!(reloaded.entries[0].quant.is_some());
-
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-    }
 }

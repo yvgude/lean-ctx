@@ -1,4 +1,4 @@
-//! E2E tests for shell detection, LEAN_CTX_SHELL override,
+//! E2E tests for shell detection, `LEAN_CTX_SHELL` override,
 //! agent init (incl. antigravity alias), Windows path handling,
 //! and pipe-guard (stdout not a terminal → bypass lean-ctx).
 

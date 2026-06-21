@@ -1,4 +1,4 @@
-//! Smoke + gate test for the LoCoMo memory benchmark (#291).
+//! Smoke + gate test for the `LoCoMo` memory benchmark (#291).
 //!
 //! Runs the bundled reference suite through real lean-ctx memory recall in an
 //! isolated data dir and asserts the harness produces sane, deterministic numbers.

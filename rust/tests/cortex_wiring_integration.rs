@@ -254,9 +254,9 @@ fn active_inference_predicts_for_task() {
     );
 }
 
-/// Simulates the exact MCP handler flow: ctx_provider query → consolidate →
-/// then ctx_read would append hints. Exercises `ctx_provider::handle` with a
-/// real ToolContext containing a shared SessionCache.
+/// Simulates the exact MCP handler flow: `ctx_provider` query → consolidate →
+/// then `ctx_read` would append hints. Exercises `ctx_provider::handle` with a
+/// real `ToolContext` containing a shared `SessionCache`.
 #[test]
 fn mcp_handler_flow_provider_then_read_hints() {
     use std::sync::Arc;

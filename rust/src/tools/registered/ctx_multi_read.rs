@@ -17,23 +17,27 @@ impl McpTool for CtxMultiReadTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_multi_read",
-            "Batch read files in one call. Same modes as ctx_read.",
+            "Batch-read multiple files in one call — more token-efficient than N sequential\n\
+             ctx_read calls. paths=['a.rs','b.rs'] reads them all at once.\n\
+             mode=full for files you edit; mode=auto for general reading (compressed).\n\
+             Use when you need the content of several files. For understanding code logic,\n\
+             use ctx_compose FIRST — it returns relevant symbol source grouped by file.",
             json!({
                 "type": "object",
                 "properties": {
                     "paths": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "Absolute file paths to read, in order"
+                        "description": "Paths to batch-read, in order"
                     },
                     "mode": {
                         "type": "string",
                         "default": "auto",
-                        "description": "Compression mode (default: auto — optimal per file, like ctx_read). Same modes as ctx_read (auto, full, raw, map, signatures, diff, aggressive, entropy, task, reference, lines:N-M). Use 'full' only when batch-editing; 'raw' for zero-overhead output."
+                        "description": "Same as ctx_read modes (default auto). full→edit; raw→zero-overhead. Omit for optimal per-file"
                     },
                     "fresh": {
                         "type": "boolean",
-                        "description": "Bypass cache and force a full re-read for all paths. Use when running as a subagent that may not have the parent's context."
+                        "description": "Bypass cache, full re-read all. Use in subagents with stale parent cache"
                     }
                 },
                 "required": ["paths"]

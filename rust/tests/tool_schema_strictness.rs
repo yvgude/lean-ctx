@@ -1,7 +1,7 @@
 //! Every advertised MCP tool schema must survive *strict* JSON-Schema
 //! validators (OpenAI/Azure Pydantic backends, Claude thinking models,
-//! SGLang, ...). Community-reported failure that motivated this gate
-//! (OpenCode on Windows → OpenAI):
+//! `SGLang`, ...). Community-reported failure that motivated this gate
+//! (`OpenCode` on Windows → OpenAI):
 //!
 //!   Invalid schema for function 'lean-ctx_ctx_expand': None is not of type 'array'
 //!

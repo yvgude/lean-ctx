@@ -97,7 +97,7 @@ fn bundle_is_deterministic_and_complete() {
 }
 
 /// Regression (GL #425): concurrent appends from multiple threads/handles
-/// forked the chain when prev_hash came from a per-process cache. With the
+/// forked the chain when `prev_hash` came from a per-process cache. With the
 /// advisory file lock + tail read, N concurrent writers must produce ONE
 /// valid chain of N entries.
 #[test]

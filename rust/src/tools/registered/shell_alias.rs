@@ -25,17 +25,18 @@ impl McpTool for ShellAliasTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "shell",
-            "Execute a shell command. Returns token-optimized compressed output (95+ patterns for git, npm, cargo, docker, tsc, etc). Equivalent to running the command in a terminal but with automatic output compression for efficiency.",
+            "Shell command with auto-compression (~95 patterns). Alias for ctx_shell.\n\
+             Output is compressed for token savings. For verbatim output pass raw=true.",
             json!({
                 "type": "object",
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "The shell command to execute"
+                        "description": "Shell command"
                     },
                     "cwd": {
                         "type": "string",
-                        "description": "Working directory (optional, defaults to project root)"
+                        "description": "Working dir (default: project root)"
                     }
                 },
                 "required": ["command"]

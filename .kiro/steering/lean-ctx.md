@@ -38,11 +38,9 @@ The workspace has the `lean-ctx` MCP server installed. You MUST prefer lean-ctx 
 - When running tests or build commands, use `mcp_lean_ctx_ctx_shell` for compressed output
 
 <!-- lean-ctx-compression -->
-OUTPUT STYLE: dense
-- Each statement = one atomic fact line
-- Use abbreviations: fn, cfg, impl, deps, req, res, ctx, err, ret
-- Diff lines only (+/-/~), never repeat unchanged code
-- Symbols: → (causes), + (adds), − (removes), ~ (modifies), ∴ (therefore)
-- No narration, no filler, no hedging
-- BUDGET: ≤200 tokens per response unless code block required
+OUTPUT STYLE: concise
+- Bullet points over paragraphs
+- Skip filler words and hedging ("I think", "probably", "it seems")
+- 1-sentence explanations max, then code/action
+- No repeating what the user said
 <!-- /lean-ctx-compression -->

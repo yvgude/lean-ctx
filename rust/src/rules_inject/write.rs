@@ -1,7 +1,7 @@
 //! Write primitives: marker-section replace, shared append, dedicated write.
 //! All writes go through `config_io::write_atomic_with_backup`.
 
-use super::content::{RULES_SHARED, rules_content};
+use super::content::rules_content;
 use super::{END_MARKER, MARKER, RULES_VERSION, RulesFormat, RulesResult, RulesTarget};
 
 pub(super) fn inject_rules(target: &RulesTarget) -> Result<RulesResult, String> {
@@ -15,7 +15,7 @@ pub(super) fn inject_rules(target: &RulesTarget) -> Result<RulesResult, String> 
             return match target.format {
                 RulesFormat::SharedMarkdown => replace_markdown_section(&target.path, &content),
                 RulesFormat::DedicatedMarkdown | RulesFormat::CursorMdc => {
-                    write_dedicated(&target.path, rules_content(&target.format))
+                    write_dedicated(&target.path, &rules_content(&target.format))
                 }
             };
         }
@@ -26,7 +26,7 @@ pub(super) fn inject_rules(target: &RulesTarget) -> Result<RulesResult, String> 
     match target.format {
         RulesFormat::SharedMarkdown => append_to_shared(&target.path),
         RulesFormat::DedicatedMarkdown | RulesFormat::CursorMdc => {
-            write_dedicated(&target.path, rules_content(&target.format))
+            write_dedicated(&target.path, &rules_content(&target.format))
         }
     }
 }
@@ -51,7 +51,7 @@ pub(super) fn append_to_shared(path: &std::path::Path) -> Result<RulesResult, St
     if !content.is_empty() {
         content.push('\n');
     }
-    content.push_str(RULES_SHARED);
+    content.push_str(&crate::rules_inject::rules_shared_content());
     content.push('\n');
 
     crate::config_io::write_atomic_with_backup(path, &content)?;
@@ -71,7 +71,7 @@ pub(super) fn replace_markdown_section(
             let after_end = e + END_MARKER.len();
             let after = content[after_end..].trim_start_matches('\n');
             let mut result = before.to_string();
-            result.push_str(RULES_SHARED);
+            result.push_str(&crate::rules_inject::rules_shared_content());
             if !after.is_empty() {
                 result.push('\n');
                 result.push_str(after);
@@ -102,7 +102,7 @@ pub(super) fn replace_markdown_section(
 
 pub(super) fn write_dedicated(
     path: &std::path::Path,
-    content: &'static str,
+    content: &str,
 ) -> Result<RulesResult, String> {
     if !path.exists() {
         crate::config_io::write_atomic_with_backup(path, content)?;

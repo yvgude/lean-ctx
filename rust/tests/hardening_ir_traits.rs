@@ -1,6 +1,6 @@
 //! Integration tests for the hardening sprint:
 //! - Context IR hot-path recording
-//! - ContextProvider trait interface
+//! - `ContextProvider` trait interface
 //! - CONTRACTS.md machine-checked KV block integrity
 
 // =============================================================================
@@ -145,7 +145,7 @@ mod context_ir_hotpath {
         assert!(ir.items.len() <= 128);
         assert_eq!(ir.totals.items_recorded, 200);
         // Oldest items were pruned, newest remain
-        assert!(ir.items.last().unwrap().seq == 200);
+        assert_eq!(ir.items.last().unwrap().seq, 200);
     }
 
     #[test]

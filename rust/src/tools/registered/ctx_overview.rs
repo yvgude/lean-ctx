@@ -15,13 +15,16 @@ impl McpTool for CtxOverviewTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_overview",
-            "Task-relevant project map — use at session start.",
+            "Task-relevant project map — use at session start to orient before diving into code.\n\
+             task='your goal' scopes files/modules by relevance (PageRank on symbol graph).\n\
+             For deeper code understanding, use ctx_compose instead — returns source + flow\n\
+             in one call. ctx_overview is lighter: high-level structure only, no source body.",
             json!({
                 "type": "object",
                 "properties": {
                     "task": {
                         "type": "string",
-                        "description": "Task description (short English preferred) for relevance scoring"
+                        "description": "Short English task for relevance scoring"
                     },
                     "path": {
                         "type": "string",

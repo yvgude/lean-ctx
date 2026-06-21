@@ -1,8 +1,8 @@
 //! Scenario tests for GitHub Issue #256:
-//! Stale ANTHROPIC_BASE_URL detection and cleanup when proxy is not enabled.
+//! Stale `ANTHROPIC_BASE_URL` detection and cleanup when proxy is not enabled.
 //!
-//! Each test uses an isolated temp dir for both LEAN_CTX_DATA_DIR (config)
-//! and CLAUDE_CONFIG_DIR (Claude Code settings) to avoid interference
+//! Each test uses an isolated temp dir for both `LEAN_CTX_DATA_DIR` (config)
+//! and `CLAUDE_CONFIG_DIR` (Claude Code settings) to avoid interference
 //! with the host system's real config.
 
 struct TestEnv {

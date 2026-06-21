@@ -1,4 +1,4 @@
-//! OpenAPI stability gate (GL #394): the public `/v1` surface is frozen.
+//! `OpenAPI` stability gate (GL #394): the public `/v1` surface is frozen.
 //!
 //! Compares the in-code endpoint inventory (`core::openapi::endpoints()`, the
 //! SSOT behind `GET /v1/openapi.json`) against the committed snapshot

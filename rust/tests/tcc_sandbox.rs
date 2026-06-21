@@ -7,7 +7,7 @@
 //! empirical method used to root-cause #356.
 //!
 //! Run it with:
-//!   LEAN_CTX_TCC_SANDBOX_TEST=1 cargo test --test tcc_sandbox -- --nocapture
+//!   `LEAN_CTX_TCC_SANDBOX_TEST=1` cargo test --test `tcc_sandbox` -- --nocapture
 
 #[test]
 fn tcc_standalone_daemon_never_touches_documents() {

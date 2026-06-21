@@ -2,7 +2,7 @@
 //!
 //! Compares compression approaches on a corpus of real-world outputs:
 //! - Arm 1 (baseline): No terse, only pattern compression
-//! - Arm 2 (legacy): Old `compress_terse`/`compress_ultra` (OutputDensity)
+//! - Arm 2 (legacy): Old `compress_terse`/`compress_ultra` (`OutputDensity`)
 //! - Arm 3 (premium): New 4-layer terse pipeline
 //!
 //! Metrics per arm: token count, savings %, quality preservation score.

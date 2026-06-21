@@ -14,6 +14,25 @@ pub fn tool_table(mode: Mode) -> &'static str {
 
 /// Returns the full rules block (LITM-optimized) for dedicated rule files.
 pub fn dedicated_rules(mode: Mode) -> String {
+    dedicated_rules_with_shadow(mode, false)
+}
+
+/// Returns the full rules block, shadow-mode aware.
+/// When `shadow` is true, native tools are transparently intercepted by the
+/// plugin so the mapping table is noise — emit workflow principles instead.
+pub fn dedicated_rules_with_shadow(mode: Mode, shadow: bool) -> String {
+    if shadow {
+        return format!(
+            "lean-ctx — Principles:\n\
+             - Surgical precision: read exactly what's needed with the right tool for each job\n\
+             - Parallelism: fire independent calls in the same turn, never sequence what can be batched\n\
+             - Token discipline: avoid duplication, reuse cached content, compress aggressively\n\
+             - Understanding first: use ctx_compose before editing, verify before shipping\n\n\
+             {}: full=verbatim signatures=API map=structure auto=smart diff=git-delta lines:N-M=window",
+            ctx_read_modes_header(mode)
+        );
+    }
+
     let table = tool_table(mode);
     let shell_note = match mode {
         Mode::Hybrid => {
@@ -21,29 +40,58 @@ pub fn dedicated_rules(mode: Mode) -> String {
         }
         Mode::Mcp => "Shell commands: use `ctx_shell(command)`. NEVER use raw Shell/bash.",
     };
+    let intent = intent_playbook();
+    let anti = anti_patterns();
+    let parallel = parallel_tool_guidance();
+    let read_modes = ctx_read_modes_block();
+
+    format!(
+        "# lean-ctx \u{2014} Context Engineering Layer\n<!-- lean-ctx-rules-v12 -->\n\nCRITICAL: ALWAYS use lean-ctx tools instead of native equivalents. This is NOT optional.\n\n{table}\n\n{shell_note}\n\n{intent}\n\n{anti}\n\n{parallel}\n\n{read_modes}\n\nNEVER use native Read/Grep/Shell/Glob when ctx_* equivalents are available.\n<!-- /lean-ctx -->"
+    )
+}
+
+/// Returns a shorter rules block for SHARED config files (appended to
+/// the user's existing AGENTS.md / GEMINI.md / instructions.md).
+pub fn shared_rules(mode: Mode) -> String {
+    shared_rules_with_shadow(mode, false)
+}
+
+/// Returns a shorter rules block for SHARED config files, shadow-mode aware.
+/// When `shadow` is true, native tools are transparently intercepted by the
+/// plugin so the mapping table is noise — emit workflow principles instead.
+pub fn shared_rules_with_shadow(mode: Mode, shadow: bool) -> String {
+    if shadow {
+        return format!(
+            "lean-ctx — Principles:\n\
+             - Surgical precision: read exactly what's needed with the right tool for each job\n\
+             - Parallelism: fire independent calls in the same turn, never sequence what can be batched\n\
+             - Token discipline: avoid duplication, reuse cached content, compress aggressively\n\
+             - Understanding first: use ctx_compose before editing, verify before shipping\n\n\
+             {}: full=verbatim signatures=API map=structure auto=smart diff=git-delta lines:N-M=window",
+            ctx_read_modes_header(mode)
+        );
+    }
+
+    let bullets = tool_mapping_bullets(mode);
+    let shell_note = match mode {
+        Mode::Hybrid => {
+            "Shell commands: use `lean-ctx -c \"<cmd>\"` via your Shell tool. NEVER use `ctx_shell` in Hybrid mode."
+        }
+        Mode::Mcp => "Shell commands: use `ctx_shell(command)`. NEVER use raw Shell/bash.",
+    };
+    let read_modes = ctx_read_modes_block();
 
     format!(
         r#"# lean-ctx — Context Engineering Layer
 <!-- lean-ctx-rules-v12 -->
 
-CRITICAL: ALWAYS use lean-ctx tools instead of native equivalents. This is NOT optional.
-
-{table}
-
+## Tool Mapping (MANDATORY — use instead of native equivalents)
+{bullets}
 {shell_note}
 
-## Workflow: Orient → Locate → Read → Edit → Verify → Record
-1. Orient: ctx_overview(task) or ctx_compose(task, path)
-2. Locate: ctx_search(pattern, path) or ctx_semantic_search(query)
-3. Read: ctx_read(path, mode) — omit mode for auto; full only right before edits
-4. Edit: ctx_edit(path, old_string, new_string) or native Edit
-5. Verify: ctx_read(path, "diff") + ctx_shell("test command")
-6. Record: ctx_knowledge(action="remember", content="...")
+{read_modes}
 
-File editing: use native Edit/StrReplace. Write, Delete, Glob → use normally.
-NEVER loop on Edit failures — switch to ctx_edit immediately.
-
-NEVER use native Read/Grep/Shell when ctx_* equivalents are available.
+NEVER use native Read/Grep/Shell/Glob when ctx_* equivalents are available.
 <!-- /lean-ctx -->"#
     )
 }
@@ -77,21 +125,23 @@ const HYBRID_TABLE: &str = "\
 | `ctx_read(path, mode)` | `Read` / `cat` / `head` / `tail` | Cached, 10 read modes, re-reads ~13 tokens |
 | `ctx_search(pattern, path)` | `Grep` / `rg` | Compact, token-efficient results |
 | `lean-ctx -c \"<cmd>\"` (via Shell) | `ctx_shell` / raw `Shell` | CLI compression, no MCP overhead |
-| `lean-ctx ls [path]` (via Shell) | `ctx_tree` / `ls` / `find` | Compact directory maps |";
+| `lean-ctx ls [path]` (via Shell) | `ctx_tree` / `ls` / `find` | Compact directory maps |
+| `ctx_glob(pattern)` | `Glob` / `find` | .gitignore-aware, multi-root |";
 
 const MCP_TABLE: &str = "\
 | MUST USE | NEVER USE | Why |
 |----------|-----------|-----|
 | `ctx_read(path, mode)` | `Read` / `cat` / `head` / `tail` | Cached, 10 read modes, re-reads ~13 tokens |
 | `ctx_search(pattern, path)` | `Grep` / `rg` | Compact, token-efficient results |
+| `ctx_glob(pattern)` | `Glob` / `find` | .gitignore-aware, multi-root |
 | `ctx_shell(command)` | `Shell` / `bash` / terminal | Pattern compression for git/npm/cargo output |
 | `ctx_tree(path, depth)` | `ls` / `find` | Compact directory maps |";
 
 const MCP_INSTRUCTIONS_HYBRID: &str = "\
-lean-ctx tools replace Read/Grep/Shell/ls. Workflow: Orient(ctx_overview) → Locate(ctx_search) → Read(ctx_read) → Edit(ctx_edit/native) → Verify(ctx_read diff + lean-ctx -c test) → Record(ctx_knowledge). Edit/Write/Glob: native.";
+Workflow: ctx_compose FIRST (understand) -> ctx_read(mode) -> Edit. ctx_glob & ctx_search replace Glob/Grep. Fire ctx_* calls in parallel.";
 
 const MCP_INSTRUCTIONS_MCP: &str = "\
-lean-ctx tools replace Read/Grep/Shell/ls. Workflow: Orient(ctx_overview) → Locate(ctx_search) → Read(ctx_read) → Edit(ctx_edit/native) → Verify(ctx_read diff + ctx_shell test) → Record(ctx_knowledge). Edit/Write/Glob: native.";
+Workflow: ctx_compose FIRST (understand) -> ctx_read(mode) -> Edit. ctx_glob & ctx_search replace Glob/Grep. Fire ctx_* calls in parallel.";
 
 /// Tool-mapping in bullet format for MCP instructions blocks.
 pub fn tool_mapping_bullets(mode: Mode) -> &'static str {
@@ -102,28 +152,68 @@ pub fn tool_mapping_bullets(mode: Mode) -> &'static str {
 }
 
 // Bullets are deliberately minimal (#579): the MANDATORY header carries the
-// imperative once, and the LITM-END preference line repeats it at the end —
-// per-bullet "[NEVER ...]" tails were redundant token weight in every session.
+// imperative once, and the LITM-END preference line repeats it at the end.
 const MCP_BULLETS: &str = "\
 lean-ctx MCP — MANDATORY tool mapping:\n\
-• Read/cat/head/tail -> ctx_read(path, mode)\n\
+• Read/cat/head/tail -> ctx_read(path, mode required)\n\
+• Glob/find -> ctx_glob(pattern)\n\
 • Shell/bash -> ctx_shell(command)\n\
 • Grep/rg -> ctx_search(pattern, path)\n\
-• ls/find -> ctx_tree(path, depth)\n\
-• Edit/Write/Delete/Glob -> native (lean-ctx replaces READ only); if Edit fails, switch to ctx_edit(path, old, new) — never loop";
+• ls/find -> ctx_tree(path, depth)";
 
 const HYBRID_BULLETS: &str = "\
 lean-ctx — MANDATORY tool mapping:\n\
-• Read/cat/head/tail -> ctx_read(path, mode)\n\
+• Read/cat/head/tail -> ctx_read(path, mode required)\n\
+• Glob/find -> ctx_glob(pattern)\n\
 • Shell commands -> lean-ctx -c \"<cmd>\" (via Shell)  [NEVER ctx_shell]\n\
 • Grep/rg -> ctx_search(pattern, path)\n\
-• ls/find -> lean-ctx ls [path] (via Shell)\n\
-• Edit/Write/Delete/Glob -> native (lean-ctx replaces READ only); if Edit fails, switch to ctx_edit(path, old, new) — never loop";
+• ls/find -> lean-ctx ls [path] (via Shell)";
+
+/// Intent-to-tool playbook. Maps common agent questions to the right tool.
+/// Compact enough to fit in the 800-token MCP instructions budget.
+pub fn intent_playbook() -> &'static str {
+    "Tool selection by intent:\n\
+     • Understand code / find answers / before editing -> ctx_compose (PRIMARY — call FIRST)\n\
+     • Read a file -> ctx_read(path, mode=full|signatures|map|auto)\n\
+     • Find a symbol by name (exact) -> ctx_symbol\n\
+     • Search code by pattern (fuzzy) -> ctx_search\n\
+     • Search by meaning (concepts, not keywords) -> ctx_semantic_search\n\
+     • Find files by pattern (glob) -> ctx_glob\n\
+     • Project structure -> ctx_tree\n\
+     • Who calls this / call graph -> ctx_callgraph\n\
+     • Session state / memory -> ctx_session / ctx_knowledge"
+}
+
+/// Anti-patterns that waste tokens and round-trips.
+pub fn anti_patterns() -> &'static str {
+    "Anti-patterns — do NOT:\n\
+     • Chain ctx_search -> ctx_read -> ctx_symbol — one ctx_compose replaces all three\n\
+     • Read a file after ctx_compose returned its source — it IS the source\n\
+     • Grep for symbol definitions — ctx_symbol or ctx_compose are faster + more precise\n\
+     • Use ctx_read(mode=full) for orientation — use mode=auto or mode=signatures\n\
+     • Re-verify tool output with grep — trust the index"
+}
+
+/// Encourage parallel tool calls to reduce round-trips.
+pub fn parallel_tool_guidance() -> &'static str {
+    "PARALLEL tool calls: fire independent calls in the SAME turn — don't sequence them.\n\
+     One turn with 3 parallel ctx_read calls completes faster than 3 sequential turns.\n\
+     ctx_compose bundles multiple lookups into one call; for anything it doesn't\n\
+     cover, batch independent reads/searches together."
+}
+
+/// Label for the ctx_read modes reference, mode-appropriate.
+pub fn ctx_read_modes_header(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Hybrid => "ctx_read modes",
+        Mode::Mcp => "ctx_read modes",
+    }
+}
 
 /// One line on purpose (#579): every word here rides in EVERY session's MCP
 /// instructions. Mode details live on disk (LEAN-CTX.md) and in tool schemas.
 pub fn ctx_read_modes_block() -> &'static str {
-    "ctx_read modes: auto(default)|full|map|signatures|diff|task|reference|aggressive|entropy|lines:N-M. Re-reads ~13 tok; fresh=true forces disk re-read."
+    "ctx_read modes (required): full=verbatim(edit-ready) signatures=API map=structure auto=smart diff=git-delta lines:N-M=window. fresh=true forces disk re-read."
 }
 
 /// One line on purpose (#579) — background automation needs awareness, not a
@@ -139,10 +229,10 @@ pub fn cep_block() -> &'static str {
 pub fn litm_end_block(mode: Mode) -> &'static str {
     match mode {
         Mode::Hybrid => {
-            "TOOL PREFERENCE (END): ctx_read>Read ctx_search>Grep lean-ctx_-c>Shell lean-ctx_ls>ls | Edit/Write/Glob=native"
+            "TOOL PREFERENCE (END): ctx_compose>chain ctx_read>Read ctx_search>Grep ctx_glob>Glob lean-ctx_-c>Shell ctx_tree>ls | Edit/Write/Delete=native"
         }
         Mode::Mcp => {
-            "TOOL PREFERENCE (END): ctx_read>Read ctx_shell>Shell ctx_search>Grep ctx_tree>ls | Edit/Write/Glob=native"
+            "TOOL PREFERENCE (END): ctx_compose>chain ctx_read>Read ctx_shell>Shell ctx_search>Grep ctx_glob>Glob ctx_tree>ls | Edit/Write/Delete=native"
         }
     }
 }
@@ -252,6 +342,38 @@ mod tests {
     }
 
     #[test]
+    fn shadow_dedicated_has_principles_no_mapping() {
+        for mode in [Mode::Hybrid, Mode::Mcp] {
+            let rules = dedicated_rules_with_shadow(mode, true);
+            assert!(rules.contains("Surgical precision"));
+            assert!(!rules.contains("MUST USE"));
+            assert!(!rules.contains("NEVER use native"));
+            assert!(!rules.contains("<!--"));
+        }
+    }
+
+    #[test]
+    fn shadow_shared_has_principles_no_mapping() {
+        for mode in [Mode::Hybrid, Mode::Mcp] {
+            let rules = shared_rules_with_shadow(mode, true);
+            assert!(rules.contains("Surgical precision"));
+            assert!(!rules.contains("Tool Mapping"));
+            assert!(!rules.contains("MUST USE"));
+            assert!(!rules.contains("<!--"));
+        }
+    }
+
+    #[test]
+    fn non_shadow_unchanged() {
+        // Non-shadow dedicated must still contain the mapping table.
+        for mode in [Mode::Hybrid, Mode::Mcp] {
+            let rules = dedicated_rules(mode);
+            assert!(rules.contains("MUST USE"), "non-shadow must have mapping");
+            assert!(rules.contains("NEVER use native"), "non-shadow must have native admonition");
+        }
+    }
+
+    #[test]
     fn shared_sections_not_empty() {
         assert!(!ctx_read_modes_block().is_empty());
         assert!(!automation_block().is_empty());
@@ -262,15 +384,33 @@ mod tests {
     }
 
     #[test]
-    fn bullets_carry_edit_failure_path() {
-        // The ctx_edit escape hatch is the one non-obvious compatibility rule;
-        // it must survive in the mapping bullets (#579 folded the old
-        // compatibility_block into them).
+    fn bullets_no_ctx_edit_fallback() {
+        // ctx_edit was moved to power-only; native Edit is preferred.
+        // Bullets must NOT mention ctx_edit as fallback.
         for mode in [Mode::Hybrid, Mode::Mcp] {
             assert!(
-                tool_mapping_bullets(mode).contains("ctx_edit"),
-                "edit-failure path missing for {mode:?}"
+                !tool_mapping_bullets(mode).contains("ctx_edit"),
+                "ctx_edit must not appear in bullets for {mode:?} (native Edit preferred)"
             );
         }
+    }
+
+    #[test]
+    fn intent_playbook_is_not_empty() {
+        assert!(!intent_playbook().is_empty());
+        assert!(intent_playbook().contains("ctx_compose"));
+        assert!(intent_playbook().contains("PRIMARY"));
+    }
+
+    #[test]
+    fn anti_patterns_is_not_empty() {
+        assert!(!anti_patterns().is_empty());
+        assert!(anti_patterns().contains("do NOT"));
+    }
+
+    #[test]
+    fn parallel_tool_guidance_is_not_empty() {
+        assert!(!parallel_tool_guidance().is_empty());
+        assert!(parallel_tool_guidance().contains("PARALLEL"));
     }
 }

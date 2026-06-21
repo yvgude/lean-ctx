@@ -24,11 +24,36 @@ mod tests;
 mod write;
 
 pub use content::{
-    GEMINI_DEDICATED_CONTEXT_FILENAME, canonical_rules_block, dedicated_session_summary,
-    gemini_dedicated_rules_path, opencode_dedicated_rules_path, rules_dedicated_markdown,
-    rules_shared_content,
+    GEMINI_DEDICATED_CONTEXT_FILENAME, dedicated_session_summary, gemini_dedicated_rules_path,
+    opencode_dedicated_rules_path,
 };
 pub use skills::{install_all_skills, install_skill_for_agent};
+
+/// Forwarding functions — content is delegated to `core::rules_canonical`.
+/// Kept for backward compat with existing callers (context_overhead, drift, etc.).
+/// Respects `shadow_mode` from config: when active, emits workflow principles
+/// instead of the tool-mapping table (native tools are transparently intercepted).
+pub fn canonical_rules_block() -> String {
+    let shadow = crate::core::config::Config::load().shadow_mode;
+    crate::core::rules_canonical::shared_rules_with_shadow(
+        crate::core::rules_canonical::Mode::Mcp,
+        shadow,
+    )
+}
+pub fn rules_shared_content() -> String {
+    let shadow = crate::core::config::Config::load().shadow_mode;
+    crate::core::rules_canonical::shared_rules_with_shadow(
+        crate::core::rules_canonical::Mode::Mcp,
+        shadow,
+    )
+}
+pub fn rules_dedicated_markdown() -> String {
+    let shadow = crate::core::config::Config::load().shadow_mode;
+    crate::core::rules_canonical::dedicated_rules_with_shadow(
+        crate::core::rules_canonical::Mode::Mcp,
+        shadow,
+    )
+}
 
 use detect::is_tool_detected;
 use targets::build_rules_targets;

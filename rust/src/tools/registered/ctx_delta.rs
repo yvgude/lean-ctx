@@ -15,7 +15,10 @@ impl McpTool for CtxDeltaTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_delta",
-            "Incremental diff — sends only changed lines since last read.",
+            "Incremental diff since last read — shows only changed lines after you edit.\n\
+             Use INSTEAD of re-reading the whole file after modifications — saves 90%+ tokens\n\
+             on unchanged content. Path must have a prior ctx_read in this session\'s cache.\n\
+             For the full git diff against HEAD, use ctx_read(path, mode=diff) instead.",
             json!({
                 "type": "object",
                 "properties": {

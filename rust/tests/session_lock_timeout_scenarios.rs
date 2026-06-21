@@ -1,6 +1,6 @@
-//! Tests verifying that ctx_read never hangs indefinitely due to session lock contention.
+//! Tests verifying that `ctx_read` never hangs indefinitely due to session lock contention.
 //! Covers the Windows deadlock scenario: shell-hook holds session write-lock while
-//! ctx_read waits on session read-lock, causing circular dependency.
+//! `ctx_read` waits on session read-lock, causing circular dependency.
 
 use lean_ctx::core::pathutil::safe_canonicalize_bounded;
 use std::path::Path;

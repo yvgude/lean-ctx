@@ -15,7 +15,9 @@ impl McpTool for CtxArchitectureTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_architecture",
-            "Graph-based architecture analysis. Actions: overview|clusters|communities|layers|cycles|entrypoints|hotspots|health|module.",
+            "Architecture analysis: action=overview→high-level; clusters|communities→groupings\n\
+             layers|cycles→dependency violations; entrypoints|hotspots→risk areas; health→quality.\n\
+             Use to understand module structure without reading every file. action=module path='src/' to zoom.",
             json!({
                 "type": "object",
                 "properties": {
@@ -26,7 +28,7 @@ impl McpTool for CtxArchitectureTool {
                     },
                     "path": {
                         "type": "string",
-                        "description": "Used for action=module (module/file path)"
+                        "description": "Module/file path for action=module"
                     },
                     "root": {
                         "type": "string",

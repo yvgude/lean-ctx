@@ -15,7 +15,9 @@ impl McpTool for CtxSessionTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_session",
-            "Cross-session memory: record task/finding/decision, restore previous session state.",
+            "Cross-session memory: action=task/finding/decision persists; load session_id=X resumes\n\
+             Use at session end to persist progress; at start to restore previous work.\n\
+             action=status for current snapshot; action=save commits state; action=reset clears.",
             json!({
                 "type": "object",
                 "properties": {
@@ -23,8 +25,8 @@ impl McpTool for CtxSessionTool {
                         "type": "string",
                         "description": "status|load|save|task|finding|decision|reset|list|cleanup|snapshot|restore|resume|profile|role|budget|slo|diff|verify|episodes|procedures"
                     },
-                    "value": { "type": "string", "description": "Text for task/finding/decision" },
-                    "session_id": { "type": "string", "description": "For load (default: latest)" }
+                    "value": { "type": "string", "description": "Value for task/finding/decision actions" },
+                    "session_id": { "type": "string", "description": "Session ID to load (omitting loads latest)" }
                 },
                 "required": ["action"]
             }),

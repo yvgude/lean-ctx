@@ -1,6 +1,6 @@
 //! Ultimate integration test suite covering ALL Context OS features:
 //! - Multi-agent shared sessions (concurrent read/write)
-//! - ContextBus event streaming + replay
+//! - `ContextBus` event streaming + replay
 //! - Workspace/channel isolation
 //! - Metrics observability
 //! - Redaction levels

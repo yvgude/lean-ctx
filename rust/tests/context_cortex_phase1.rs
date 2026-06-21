@@ -1,14 +1,14 @@
 //! Phase 1: Cortical Column Infrastructure — Integration Tests
 //!
 //! Verifies the full Context Engine Phase 1 implementation:
-//!   1. ContentChunk ↔ CodeChunk bidirectional conversion
-//!   2. ContentSource serialization and tagging
+//!   1. `ContentChunk` ↔ `CodeChunk` bidirectional conversion
+//!   2. `ContentSource` serialization and tagging
 //!   3. BM25 cross-source ingest pipeline
 //!   4. Provider Registry lifecycle (register, discover, execute)
-//!   5. ContextColumn trait pipeline (L4 → L2/3 → L5)
+//!   5. `ContextColumn` trait pipeline (L4 → L2/3 → L5)
 //!   6. Config-driven provider activation
 //!   7. File reference extraction from freeform text
-//!   8. ChunkKind extensions for external sources
+//!   8. `ChunkKind` extensions for external sources
 
 use lean_ctx::core::bm25_index::{BM25Index, ChunkKind, CodeChunk};
 use lean_ctx::core::content_chunk::{ContentChunk, ContentSource, extract_file_references};

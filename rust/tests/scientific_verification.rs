@@ -273,7 +273,7 @@ fn litm_monotonic_first_half() {
     let gamma = 0.85;
     let mut prev = positional_attention(0.0, alpha, beta, gamma);
     for i in 1..=10 {
-        let pos = i as f64 / 20.0;
+        let pos = f64::from(i) / 20.0;
         let val = positional_attention(pos, alpha, beta, gamma);
         assert!(
             val <= prev + f64::EPSILON,

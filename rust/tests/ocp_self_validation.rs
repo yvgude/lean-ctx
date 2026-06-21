@@ -1,6 +1,6 @@
 //! OCP self-validation (GL #430, H3 Epic C — AC 2).
 //!
-//! LeanCTX is the Open Context Protocol reference implementation. This
+//! `LeanCTX` is the Open Context Protocol reference implementation. This
 //! suite proves it: real engine output for every OCP part is validated
 //! against the published JSON Schemas (vendored in `docs/contracts/ocp/`,
 //! source of truth: the `open-context-protocol` repo).

@@ -1,11 +1,11 @@
-//! LoCoMo memory benchmark harness (#291).
+//! `LoCoMo` memory benchmark harness (#291).
 //!
 //! Runs lean-ctx's memory recall over a long-conversation QA suite and writes
 //! publishable numbers (JSON + Markdown).
 //!
 //! Run (bundled reference suite):
 //!   `cargo run --example locomo_bench --features dev-tools`
-//! Run the official LoCoMo dataset:
+//! Run the official `LoCoMo` dataset:
 //!   `cargo run --example locomo_bench --features dev-tools -- --suite path/to/locomo.json`
 //!
 //! Args:

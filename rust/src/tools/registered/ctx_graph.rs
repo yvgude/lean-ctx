@@ -15,7 +15,12 @@ impl McpTool for CtxGraphTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_graph",
-            "Code graph: dependencies, symbol usages, impact/blast radius, Mermaid diagrams, git-diff impact.",
+            "Code graph queries — find usages, relationships, and dependency chains.\n\
+             action=symbol path='file.rs::fnName' finds all usages of a symbol.\n\
+             action=neighbors shows adjacent nodes; action=path from→to shows dependency\n\
+             chains between files. action=diff since=HEAD~1 for git change impact.\n\
+             For understanding code end-to-end, use ctx_compose FIRST. Use ctx_graph for\n\
+             targeted structural queries the graph index can answer directly.",
             json!({
                 "type": "object",
                 "properties": {
@@ -32,7 +37,7 @@ impl McpTool for CtxGraphTool {
                     "kind": { "type": "string", "description": "diagram: deps|calls" },
                     "format": { "type": "string", "description": "text|json" },
                     "since": { "type": "string", "description": "Git ref for action=diff (default HEAD~1)" },
-                    "project_root": { "type": "string" }
+                    "project_root": { "type": "string", "description": "Project root" }
                 },
                 "required": ["action"]
             }),

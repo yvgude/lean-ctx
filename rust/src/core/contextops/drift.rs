@@ -88,9 +88,9 @@ pub fn detect_drift(home: &Path, _config: &RulesConfig) -> Vec<DriftReport> {
                 status.state == "up_to_date" && !content.contains("existing user rules");
 
             let expected_section = if is_dedicated {
-                extract_section(source_dedicated, marker, end_marker)
+                extract_section(&source_dedicated, marker, end_marker)
             } else {
-                extract_section(source_shared, marker, end_marker)
+                extract_section(&source_shared, marker, end_marker)
             };
 
             let section_trimmed = section.trim();

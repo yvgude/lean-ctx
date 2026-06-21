@@ -17,11 +17,15 @@ impl McpTool for CtxSemanticSearchTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_semantic_search",
-            "Concept/semantic code search (hybrid BM25+embeddings). Use when keyword ctx_search misses intent.",
+            "Search code by MEANING (BM25+embeddings) — use when you know the concept but not the exact\n\
+             symbol name. query='user auth' finds relevant code even with no keyword match.\n\
+             Different from ctx_search (regex pattern): use ctx_search for exact patterns, this for\n\
+             fuzzy/conceptual. For understanding code end-to-end, use ctx_compose FIRST.\n\
+             find_related(file_path, line) for context neighbors. mode=bm25|dense|hybrid.",
             json!({
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "Natural-language or symbol query" },
+                    "query": { "type": "string", "description": "Natural language or symbol query" },
                     "path": { "type": "string", "description": "Project root (default: .)" },
                     "top_k": { "type": "integer", "description": "Result count (default 10)" },
                     "action": {
@@ -34,12 +38,12 @@ impl McpTool for CtxSemanticSearchTool {
                         "enum": ["bm25", "dense", "hybrid"],
                         "description": "bm25|dense|hybrid (default hybrid)"
                     },
-                    "file_path": { "type": "string", "description": "find_related: source file (rel)" },
-                    "line": { "type": "integer", "description": "find_related: line number" },
+                    "file_path": { "type": "string", "description": "Source file for find_related (rel)" },
+                    "line": { "type": "integer", "description": "Line for find_related" },
                     "languages": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "Restrict to languages/exts"
+                        "description": "Restrict to exts: ['rust','ts']"
                     },
                     "path_glob": { "type": "string", "description": "Glob over rel paths" }
                 },

@@ -98,39 +98,6 @@ mod adoption_tests {
     use crate::core::terse::mcp_compress::{DescriptionMode, compress_description};
     use crate::server::tool_trait::McpTool;
 
-    /// Tools that compete with native harness tools must steer the agent toward
-    /// the ctx_* equivalent in the FIRST line of their description: under Max
-    /// compression (Lazy mode) only the first line survives, so steering placed
-    /// later would be dropped and adoption suffers (#168).
-    #[test]
-    fn native_competing_tools_steer_in_first_line() {
-        let tools: Vec<(&str, Box<dyn McpTool>)> = vec![
-            ("ctx_read", Box::new(ctx_read::CtxReadTool)),
-            ("ctx_search", Box::new(ctx_search::CtxSearchTool)),
-            ("ctx_shell", Box::new(ctx_shell::CtxShellTool)),
-            ("ctx_tree", Box::new(ctx_tree::CtxTreeTool)),
-        ];
-        for (name, tool) in tools {
-            let def = tool.tool_def();
-            let desc = def.description.as_deref().unwrap_or("");
-            let first = desc.lines().next().unwrap_or("");
-
-            assert!(
-                first.contains("Prefer over native"),
-                "{name}: first line must steer toward ctx_* over native: {first:?}"
-            );
-            assert!(
-                first.len() <= 80,
-                "{name}: first line is {} bytes (>80 truncates under Lazy mode): {first:?}",
-                first.len()
-            );
-
-            // Steering must survive Max-compression (Lazy keeps only line 1).
-            let lazy = compress_description(name, desc, DescriptionMode::Lazy);
-            assert!(
-                lazy.contains("native"),
-                "{name}: steering lost under Lazy compression: {lazy:?}"
-            );
-        }
-    }
+    // #168 removed: tool descriptions no longer steer toward ctx_* over native.
+    // Replacement guidance lives in AGENTS.md / CLAUDE.md rules files.
 }

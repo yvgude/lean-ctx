@@ -15,21 +15,25 @@ impl McpTool for CtxExpandTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_expand",
-            "Retrieve archived/firewalled tool output (zero-loss). Use the ID from an [Archived:/Firewalled: ...] hint.",
+            "Retrieve archived tool output by ID (e.g. id=@F1 from [Archived:ID] hints).\n\
+             Use when you see an [Archived:ID] reference in tool output and need the full\n\
+             content. Supports head/tail/search to filter lines. action=search_all across\n\
+             all archives. action=list shows available archives. Zero-loss: original preserved.\n\
+             For reading files, use ctx_read or ctx_compose instead.",
             json!({
                 "type": "object",
                 "properties": {
                     "id": { "type": "string", "description": "Archive ID or handle ref (@F1)" },
                     "action": { "type": "string", "description": "retrieve (default)|list|search_all" },
-                    "start_line": { "type": "integer" },
-                    "end_line": { "type": "integer" },
+                    "start_line": { "type": "integer", "description": "1-based start line in archived output" },
+                    "end_line": { "type": "integer", "description": "1-based end line in archived output" },
                     "head": { "type": "integer", "description": "First N lines" },
                     "tail": { "type": "integer", "description": "Last N lines" },
                     "search": { "type": "string", "description": "Only lines matching substring" },
                     "json_keys": { "type": "boolean", "description": "Describe JSON structure" },
                     "json_path": { "type": "string", "description": "JSON path, e.g. data.items.0" },
                     "query": { "type": "string", "description": "search_all query" },
-                    "session_id": { "type": "string" }
+                    "session_id": { "type": "string", "description": "Filter by session ID" }
                 }
             }),
         )

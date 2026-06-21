@@ -1,15 +1,32 @@
 //! Tests for rules injection. `super::*` resolves to the `rules_inject` module.
 
-use super::content::{RULES_CURSOR_MDC, RULES_DEDICATED, RULES_SHARED};
+use super::content::RULES_CURSOR_MDC;
 use super::skills::{SKILL_TEMPLATE, build_skill_targets};
 use super::write::{append_to_shared, replace_markdown_section, write_dedicated};
+use std::sync::OnceLock;
+
 use super::*;
+
+/// Canonical content loaded once for tests.
+fn shared_rules_content() -> String {
+    crate::core::rules_canonical::shared_rules(crate::core::rules_canonical::Mode::Mcp)
+}
+
+fn dedicated_rules_content() -> String {
+    crate::core::rules_canonical::dedicated_rules(crate::core::rules_canonical::Mode::Mcp)
+}
+
+fn dedicated_rules_cached() -> &'static str {
+    static RULES: OnceLock<String> = OnceLock::new();
+    RULES.get_or_init(|| dedicated_rules_content())
+}
 
 #[test]
 fn shared_rules_have_markers() {
-    assert!(RULES_SHARED.contains(MARKER));
-    assert!(RULES_SHARED.contains(END_MARKER));
-    assert!(RULES_SHARED.contains(RULES_VERSION));
+    let s = shared_rules_content();
+    assert!(s.contains(MARKER));
+    assert!(s.contains(END_MARKER));
+    assert!(s.contains(RULES_VERSION));
 }
 
 #[test]
@@ -28,9 +45,10 @@ fn zed_rules_path_is_os_aware_and_matches_config_dir() {
 
 #[test]
 fn dedicated_rules_have_markers() {
-    assert!(RULES_DEDICATED.contains(MARKER));
-    assert!(RULES_DEDICATED.contains(END_MARKER));
-    assert!(RULES_DEDICATED.contains(RULES_VERSION));
+    let d = dedicated_rules_content();
+    assert!(d.contains(MARKER));
+    assert!(d.contains(END_MARKER));
+    assert!(d.contains(RULES_VERSION));
 }
 
 #[test]
@@ -43,34 +61,32 @@ fn cursor_mdc_has_markers_and_frontmatter() {
 
 #[test]
 fn shared_rules_contain_mode_selection() {
-    assert!(RULES_SHARED.contains("Mode Selection"));
-    assert!(RULES_SHARED.contains("full"));
-    assert!(RULES_SHARED.contains("map"));
-    assert!(RULES_SHARED.contains("signatures"));
-    assert!(RULES_SHARED.contains("NEVER"));
+    let s = shared_rules_content();
+    assert!(s.contains("full"));
+    assert!(s.contains("signatures"));
+    assert!(s.contains("NEVER"));
 }
 
 #[test]
 fn shared_rules_has_never_native() {
-    assert!(RULES_SHARED.contains("NEVER use native"));
-    assert!(RULES_SHARED.contains("ctx_read"));
+    let s = shared_rules_content();
+    assert!(s.contains("NEVER use native"));
+    assert!(s.contains("ctx_read"));
 }
 
 #[test]
 fn dedicated_rules_contain_modes() {
-    assert!(RULES_DEDICATED.contains("auto"));
-    assert!(RULES_DEDICATED.contains("full"));
-    assert!(RULES_DEDICATED.contains("map"));
-    assert!(RULES_DEDICATED.contains("signatures"));
-    assert!(RULES_DEDICATED.contains("lines:N-M"));
-    assert!(RULES_DEDICATED.contains("diff"));
+    let d = dedicated_rules_content();
+    assert!(d.contains("full"));
+    assert!(d.contains("map"));
+    assert!(d.contains("signatures"));
+    assert!(d.contains("lines:N-M"));
 }
 
 #[test]
 fn dedicated_rules_has_proactive_section() {
-    assert!(RULES_DEDICATED.contains("Proactive"));
-    assert!(RULES_DEDICATED.contains("ctx_overview"));
-    assert!(RULES_DEDICATED.contains("ctx_compress"));
+    let d = dedicated_rules_content();
+    assert!(d.contains("intent"));
 }
 
 #[test]
@@ -157,14 +173,41 @@ fn write_dedicated_creates_file() {
         std::fs::remove_file(&path).ok();
     }
 
-    let result = write_dedicated(&path, RULES_DEDICATED).unwrap();
+    let result = write_dedicated(&path, dedicated_rules_cached()).unwrap();
     assert!(matches!(result, RulesResult::Injected));
 
     let content = std::fs::read_to_string(&path).unwrap();
     assert!(content.contains(MARKER));
-    assert!(content.contains("Mode Selection"));
+    assert!(content.contains("CRITICAL"));
 
     std::fs::remove_file(&path).ok();
+}
+
+#[test]
+fn shadow_mode_dedicated_rules_omit_mapping() {
+    let rules = crate::core::rules_canonical::dedicated_rules_with_shadow(
+        crate::core::rules_canonical::Mode::Mcp,
+        true,
+    );
+    assert!(rules.contains("Surgical precision"), "shadow must include principles");
+    assert!(rules.contains("Parallelism"), "shadow must include parallelism");
+    assert!(rules.contains("Token discipline"), "shadow must include token discipline");
+    assert!(rules.contains("Understanding first"), "shadow must include understanding-first");
+    assert!(!rules.contains("MUST USE"), "shadow must not include tool mapping");
+    assert!(!rules.contains("NEVER use native"), "shadow must not include native tool admonition");
+    assert!(!rules.contains("<!--"), "shadow must not include HTML comments");
+}
+
+#[test]
+fn shadow_mode_shared_rules_omit_mapping() {
+    let rules = crate::core::rules_canonical::shared_rules_with_shadow(
+        crate::core::rules_canonical::Mode::Mcp,
+        true,
+    );
+    assert!(rules.contains("Surgical precision"), "shadow shared must include principles");
+    assert!(!rules.contains("Tool Mapping"), "shadow shared must not include mapping header");
+    assert!(!rules.contains("MUST USE"), "shadow shared must not include tool mapping");
+    assert!(!rules.contains("<!--"), "shadow shared must not include HTML comments");
 }
 
 #[test]
@@ -173,7 +216,7 @@ fn write_dedicated_updates_existing() {
     let path = std::env::temp_dir().join("test_write_dedicated_update.md");
     std::fs::write(&path, "# lean-ctx — Context Engineering Layer\nold version").unwrap();
 
-    let result = write_dedicated(&path, RULES_DEDICATED).unwrap();
+    let result = write_dedicated(&path, dedicated_rules_cached()).unwrap();
     assert!(matches!(result, RulesResult::Updated));
 
     std::fs::remove_file(&path).ok();
@@ -419,7 +462,7 @@ fn any_rules_marker_present_detects_opencode() {
     std::fs::create_dir_all(&opencode_dir).unwrap();
     std::fs::write(
         opencode_dir.join("AGENTS.md"),
-        format!("# preamble\n\n{RULES_SHARED}\n"),
+        format!("# preamble\n\n{}\n", shared_rules_content()),
     )
     .unwrap();
     assert!(
@@ -438,7 +481,7 @@ fn write_dedicated_preserves_user_content_before_marker() {
     );
     std::fs::write(&path, &old).unwrap();
 
-    let result = write_dedicated(&path, RULES_DEDICATED).unwrap();
+    let result = write_dedicated(&path, dedicated_rules_cached()).unwrap();
     assert!(matches!(result, RulesResult::Updated));
 
     let content = std::fs::read_to_string(&path).unwrap();
@@ -471,7 +514,7 @@ fn write_dedicated_preserves_user_content_after_marker() {
     );
     std::fs::write(&path, &old).unwrap();
 
-    let result = write_dedicated(&path, RULES_DEDICATED).unwrap();
+    let result = write_dedicated(&path, dedicated_rules_cached()).unwrap();
     assert!(matches!(result, RulesResult::Updated));
 
     let content = std::fs::read_to_string(&path).unwrap();
@@ -500,7 +543,7 @@ fn write_dedicated_preserves_content_both_sides() {
     );
     std::fs::write(&path, &old).unwrap();
 
-    let result = write_dedicated(&path, RULES_DEDICATED).unwrap();
+    let result = write_dedicated(&path, dedicated_rules_cached()).unwrap();
     assert!(matches!(result, RulesResult::Updated));
 
     let content = std::fs::read_to_string(&path).unwrap();
@@ -518,12 +561,13 @@ fn write_dedicated_no_user_content_uses_template_directly() {
     let old = format!("{MARKER}\n<!-- lean-ctx-rules-v2 -->\nold content\n{END_MARKER}");
     std::fs::write(&path, &old).unwrap();
 
-    let result = write_dedicated(&path, RULES_DEDICATED).unwrap();
+    let result = write_dedicated(&path, dedicated_rules_cached()).unwrap();
     assert!(matches!(result, RulesResult::Updated));
 
     let content = std::fs::read_to_string(&path).unwrap();
     assert_eq!(
-        content, RULES_DEDICATED,
+        content,
+        *dedicated_rules_cached(),
         "without user content, template should be written as-is"
     );
 

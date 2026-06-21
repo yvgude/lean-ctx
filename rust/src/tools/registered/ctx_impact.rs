@@ -15,7 +15,9 @@ impl McpTool for CtxImpactTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_impact",
-            "Graph-based impact analysis. Actions: analyze|diff|chain|build|update|status.",
+            "Change impact: action=analyze path='file.rs'→blast radius; depth=N; action=diff→git refs\n\
+             action=chain from→to→dependency path. depth controls traversal (default 5).\n\
+             Use before refactoring to assess risk. path can be file path or type/class name.",
             json!({
                 "type": "object",
                 "properties": {
@@ -26,7 +28,7 @@ impl McpTool for CtxImpactTool {
                     },
                     "path": {
                         "type": "string",
-                        "description": "Target for analyze (required): a file path OR a class/type name (e.g. 'ArcPoint' resolves to its defining file). For chain: from->to spec."
+                        "description": "File path or type name (e.g. ArcPoint→defining file). For chain: from->to spec"
                     },
                     "root": {
                         "type": "string",

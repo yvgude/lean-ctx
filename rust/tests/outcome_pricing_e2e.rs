@@ -10,7 +10,7 @@
 //!    tamper check that must break the signature);
 //! 4. metered into a **billable usage** record (`is_billable = signed &&
 //!    chain_valid`);
-//! 5. rendered as a **FOCUS** FinOps export carrying the savings as a Credit row.
+//! 5. rendered as a **FOCUS** `FinOps` export carrying the savings as a Credit row.
 //!
 //! The private control-plane (`lean-ctx-cloud`) consumes the verified total from
 //! steps 4/5 to raise the Stripe success-fee invoice. That commercial half is

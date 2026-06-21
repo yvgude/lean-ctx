@@ -15,14 +15,17 @@ impl McpTool for CtxSymbolTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_symbol",
-            "Read a specific symbol (function, struct, class) by name. Returns only the symbol \
-code block instead of the entire file. 90-97% fewer tokens than full file read.",
+            "Get ONE symbol's body by name — exact, AST-precise (tree-sitter index). Use AFTER\n\
+             ctx_compose gave you the overview and you need a specific symbol's full body.\n\
+             For multiple symbols or understanding an area, use ctx_compose FIRST (returns\n\
+             all relevant symbols grouped by file in one call). name='fnName' returns code block.\n\
+             file='path.rs' narrows; kind='fn'|'struct'|'class'|'trait'|'enum' disambiguates.",
             json!({
                 "type": "object",
                 "properties": {
-                    "name": { "type": "string", "description": "Symbol name (function, struct, class, method)" },
-                    "file": { "type": "string", "description": "Optional: file path to narrow search" },
-                    "kind": { "type": "string", "description": "Optional: fn|struct|class|method|trait|enum" }
+                    "name": { "type": "string", "description": "fn|struct|class|method name" },
+                    "file": { "type": "string", "description": "Narrow search to file" },
+                    "kind": { "type": "string", "description": "fn|struct|class|trait|enum filter" }
                 },
                 "required": ["name"]
             }),

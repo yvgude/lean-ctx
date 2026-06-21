@@ -15,7 +15,9 @@ impl McpTool for CtxCompressTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_compress",
-            "Context checkpoint for long conversations.",
+            "Context checkpoint: compresses read cache to free budget in long sessions\n\
+             include_signatures=true (default) preserves API surface in compressed state.\n\
+             Does not affect session state or knowledge—only the read cache compaction.",
             json!({
                 "type": "object",
                 "properties": {

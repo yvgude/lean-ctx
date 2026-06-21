@@ -1,6 +1,6 @@
-//! Scenario tests for issues reported by BazsiBazsi:
+//! Scenario tests for issues reported by `BazsiBazsi`:
 //!
-//! 1. Workflow persists after agent crash → blocks ctx_multi_read in next session
+//! 1. Workflow persists after agent crash → blocks `ctx_multi_read` in next session
 //! 2. Cache-hit message is misleading when subagent cached the file
 //!
 //! These tests simulate real multi-session scenarios to verify the fixes.

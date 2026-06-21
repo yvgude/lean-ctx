@@ -1,5 +1,5 @@
-//! Tests verifying the lock-contention hardening (plan: harden_ctx_read_locks).
-//! Covers adaptive_timeout inversion fix, bounded_lock behavior under load,
+//! Tests verifying the lock-contention hardening (plan: `harden_ctx_read_locks`).
+//! Covers `adaptive_timeout` inversion fix, `bounded_lock` behavior under load,
 //! and concurrent read scenarios.
 
 use std::sync::Arc;

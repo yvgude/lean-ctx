@@ -15,11 +15,17 @@ impl McpTool for CtxComposeTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_compose",
-            "Task composer: one call returns keywords + semantically ranked files + exact match locations + the top symbol's body inline. Replaces the search→read→outline→read chain.",
+            "PRIMARY TOOL — call FIRST for understanding code, before editing, debugging, or\n\
+             answering 'how does X work'. Pass a task/question or symbol names. One call replaces\n\
+             ctx_search + ctx_read + ctx_symbol chains: returns ranked files with relevant symbol\n\
+             source inline grouped by file. Combines BM25 lexical + semantic search + associative\n\
+             retrieval + submodular optimization. Do NOT chain search→read→symbol — one compose\n\
+             does it all. Do NOT Read files whose source compose already returned — it IS the source.\n\
+             Fire independent ctx_read or ctx_compose calls for different areas in PARALLEL.",
             json!({
                 "type": "object",
                 "properties": {
-                    "task": { "type": "string", "description": "Task or question (short English preferred)" },
+                    "task": { "type": "string", "description": "Short English task/question or symbol names" },
                     "path": { "type": "string", "description": "Project root (default: .)" }
                 },
                 "required": ["task"]

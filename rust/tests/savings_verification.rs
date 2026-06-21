@@ -589,7 +589,7 @@ fn audit_full_savings_pipeline() {
                 "",
                 width = 20_usize.saturating_sub(format!("{text:?}").len())
             );
-            let diff = (actual as i64 - *expected_approx as i64).unsigned_abs();
+            let diff = (actual as i64 - i64::from(*expected_approx)).unsigned_abs();
             assert!(
                 diff <= 2,
                 "tokenizer off by >2 for {text:?}: got {actual}, expected ~{expected_approx}",

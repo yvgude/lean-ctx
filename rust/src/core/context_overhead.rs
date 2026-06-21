@@ -75,7 +75,7 @@ impl ContextOverhead {
         {
             0
         } else {
-            count_tokens(crate::rules_inject::canonical_rules_block())
+            count_tokens(&crate::rules_inject::canonical_rules_block())
         };
 
         Self {

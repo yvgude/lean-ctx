@@ -1,4 +1,4 @@
-//! Binds the public OpenAPI surface (`core::openapi::endpoints`) to the
+//! Binds the public `OpenAPI` surface (`core::openapi::endpoints`) to the
 //! Endpoints table in `docs/contracts/http-mcp-contract-v1.md`. Adding or
 //! removing a public route must touch both, or this fails (EPIC 12.1).
 
@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 /// Parse `(METHOD, /path)` pairs from the first markdown table under the
 /// `## Endpoints` heading. Skips the header/separator rows and the `/*`
-/// MCP fallback (it is not an OpenAPI path).
+/// MCP fallback (it is not an `OpenAPI` path).
 fn documented_pairs(doc: &str) -> BTreeSet<(String, String)> {
     let mut out = BTreeSet::new();
     let mut in_section = false;

@@ -436,7 +436,7 @@ fn bm25_cold_build_budget() -> std::time::Duration {
     let ms = std::env::var("LEAN_CTX_BM25_COLD_BUDGET_MS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(3000);
+        .unwrap_or(60_000);
     std::time::Duration::from_millis(ms)
 }
 

@@ -41,8 +41,8 @@ impl ToolProfile {
 
     pub fn description(&self) -> &str {
         match self {
-            Self::Minimal => "6 essential tools for new users",
-            Self::Standard => "25 balanced tools (recommended)",
+            Self::Minimal => "10 surgical tools — each irreplaceable (recommended)",
+            Self::Standard => "18 balanced tools (adds callgraph, semantics, delta, more)",
             Self::Power => "All tools exposed",
             Self::Custom(v) => {
                 if v.is_empty() {
@@ -136,43 +136,43 @@ pub fn is_unpinned_alias(name: &str) -> bool {
     )
 }
 
+/// Surgical core — each tool is irreplaceable. Agent learns <10 tools,
+/// reliably picks the right one for every intent.
 const MINIMAL_TOOLS: &[&str] = &[
     "ctx_read",
     "ctx_shell",
     "shell",
     "ctx_search",
+    "ctx_glob",
     "ctx_tree",
     "ctx_session",
+    "ctx_compose",   // PRIMARY — understand code, replaces search+read+symbol chains
+    "ctx_knowledge", // Persistent memory (facts, patterns, decisions)
+    "ctx_symbol",    // AST-precise symbol body by name
 ];
 
+/// Balanced set. Adds power-user tools the agent picks regularly but
+/// are not essential for every session.
 const STANDARD_TOOLS: &[&str] = &[
     // Everything in minimal
     "ctx_read",
     "ctx_shell",
     "shell",
     "ctx_search",
+    "ctx_glob",
     "ctx_tree",
     "ctx_session",
-    // Plus balanced additions (includes all lazy-core tools for completeness)
-    "ctx_expand",
-    "ctx_graph",
-    "ctx_provider",
-    "ctx_semantic_search",
+    "ctx_compose",
     "ctx_knowledge",
-    "ctx_overview",
-    "ctx_repomap",
+    "ctx_symbol",
+    // Standard additions — each has unique value not covered by minimal
     "ctx_callgraph",
-    "ctx_impact",
-    "ctx_compress",
-    "ctx_multi_read",
+    "ctx_graph",
+    "ctx_semantic_search",
     "ctx_delta",
-    "ctx_edit",
-    "ctx_agent",
-    "ctx_architecture",
-    "ctx_pack",
-    "ctx_routes",
-    "ctx_refactor",
-    // Web/research context: fetch + cite external pages and YouTube transcripts
+    "ctx_expand",
+    "ctx_overview",
+    "ctx_multi_read",
     "ctx_url_read",
 ];
 
@@ -189,13 +189,13 @@ pub fn list_profiles() -> Vec<ProfileInfo> {
     vec![
         ProfileInfo {
             name: "minimal",
-            tool_count: "6",
-            description: "Essential tools for new users / skeptics",
+            tool_count: "10",
+            description: "Surgical core — each tool irreplaceable (recommended)",
         },
         ProfileInfo {
             name: "standard",
-            tool_count: "25",
-            description: "Balanced set (recommended for most users)",
+            tool_count: "18",
+            description: "Balanced set — adds callgraph, semantics, delta, more",
         },
         ProfileInfo {
             name: "power",
@@ -269,18 +269,16 @@ mod tests {
     }
 
     #[test]
-    fn minimal_has_6_tools() {
-        assert_eq!(MINIMAL_TOOLS.len(), 6);
+    fn minimal_has_10_tools() {
+        assert_eq!(MINIMAL_TOOLS.len(), 10);
     }
 
     #[test]
     fn minimal_profile_schema_budget() {
-        // tool_profile=minimal advertises the 6-tool lean set; the schemas they
-        // re-send every turn (description + input schema) must stay small — this
-        // is the tool-side of the faithful-arm per-turn prefix tax (#361). We
-        // sum the registry's *uncompressed* schemas (a strict upper bound on the
-        // advertised, description-compressed surface).
-        const MINIMAL_SCHEMA_BUDGET_TOKENS: usize = 1500;
+        // tool_profile=minimal advertises the 9-tool surgical set; the schemas
+        // they re-send every turn (description + input schema) must stay small.
+        // This is the tool-side of the faithful-arm per-turn prefix tax (#361).
+        const MINIMAL_SCHEMA_BUDGET_TOKENS: usize = 2800;
         let defs = crate::server::registry::build_registry().tool_defs();
         let total: usize = defs
             .iter()
@@ -295,8 +293,8 @@ mod tests {
     }
 
     #[test]
-    fn standard_has_25_tools() {
-        assert_eq!(STANDARD_TOOLS.len(), 25);
+    fn standard_has_18_tools() {
+        assert_eq!(STANDARD_TOOLS.len(), 18);
     }
 
     #[test]
@@ -323,10 +321,14 @@ mod tests {
         assert!(profile.is_tool_enabled("ctx_read"));
         assert!(profile.is_tool_enabled("ctx_shell"));
         assert!(profile.is_tool_enabled("ctx_search"));
+        assert!(profile.is_tool_enabled("ctx_glob"));
         assert!(profile.is_tool_enabled("ctx_tree"));
         assert!(profile.is_tool_enabled("ctx_session"));
+        assert!(profile.is_tool_enabled("ctx_compose"));
+        assert!(profile.is_tool_enabled("ctx_knowledge"));
+        assert!(profile.is_tool_enabled("ctx_symbol"));
         assert!(!profile.is_tool_enabled("ctx_semantic_search"));
-        assert!(!profile.is_tool_enabled("ctx_architecture"));
+        assert!(!profile.is_tool_enabled("ctx_callgraph"));
         assert!(!profile.is_tool_enabled("ctx_benchmark"));
     }
 
@@ -334,14 +336,21 @@ mod tests {
     fn standard_filters_correctly() {
         let profile = ToolProfile::Standard;
         assert!(profile.is_tool_enabled("ctx_read"));
+        assert!(profile.is_tool_enabled("ctx_compose"));
+        assert!(profile.is_tool_enabled("ctx_symbol"));
+        assert!(profile.is_tool_enabled("ctx_glob"));
         assert!(profile.is_tool_enabled("ctx_semantic_search"));
-        assert!(profile.is_tool_enabled("ctx_architecture"));
-        assert!(profile.is_tool_enabled("ctx_expand"));
+        assert!(profile.is_tool_enabled("ctx_callgraph"));
         assert!(profile.is_tool_enabled("ctx_graph"));
-        assert!(profile.is_tool_enabled("ctx_provider"));
+        assert!(profile.is_tool_enabled("ctx_delta"));
+        assert!(profile.is_tool_enabled("ctx_expand"));
+        assert!(profile.is_tool_enabled("ctx_overview"));
+        assert!(profile.is_tool_enabled("ctx_multi_read"));
+        assert!(profile.is_tool_enabled("ctx_url_read"));
         assert!(!profile.is_tool_enabled("ctx_benchmark"));
         assert!(!profile.is_tool_enabled("ctx_analyze"));
-        assert!(!profile.is_tool_enabled("ctx_smells"));
+        assert!(!profile.is_tool_enabled("ctx_refactor"));
+        assert!(!profile.is_tool_enabled("ctx_edit"));
     }
 
     #[test]
@@ -470,27 +479,22 @@ mod tests {
     #[test]
     fn standard_includes_all_core_tools() {
         let profile = ToolProfile::Standard;
-        // Lazy-core tools that must be in standard
-        assert!(
-            profile.is_tool_enabled("ctx_expand"),
-            "ctx_expand must be in standard"
-        );
         assert!(
             profile.is_tool_enabled("ctx_graph"),
             "ctx_graph must be in standard"
         );
         assert!(
-            profile.is_tool_enabled("ctx_provider"),
-            "ctx_provider must be in standard"
-        );
-        // Balanced additions
-        assert!(
-            profile.is_tool_enabled("ctx_edit"),
-            "ctx_edit must be in standard"
-        );
-        assert!(
             profile.is_tool_enabled("ctx_delta"),
             "ctx_delta must be in standard"
+        );
+        assert!(
+            profile.is_tool_enabled("ctx_expand"),
+            "ctx_expand must be in standard"
+        );
+        // ctx_edit is power-only — native Edit tool is preferred
+        assert!(
+            !profile.is_tool_enabled("ctx_edit"),
+            "ctx_edit must NOT be in standard (native Edit preferred)"
         );
     }
 

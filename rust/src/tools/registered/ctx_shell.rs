@@ -17,18 +17,16 @@ impl McpTool for CtxShellTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_shell",
-            "Run a shell command with compressed output. Prefer over native Shell/Bash.\n\
-             Uses the system shell ($SHELL) profile-free — no rc/profile files sourced. \
-             Especially for build/test/log commands (cargo, make, npm, pytest, \
-             go test, …), the heaviest output in a session. Compression is \
-             lossless for signal: compiler errors, test results and panics are \
-             kept verbatim. cwd persists across calls.",
+            "Run shell commands with automatic output compression (~95 patterns).\n\
+             Optimized for build/test/log output (cargo, npm, pytest, go test).\n\
+             raw=true disables compression for verbatim output. Lossless for errors\n\
+             and exit codes — [exit:N] footer for failure codes. cwd persists.",
             json!({
                 "type": "object",
                 "properties": {
                     "command": { "type": "string", "description": "Shell command" },
-                    "raw": { "type": "boolean", "description": "Skip compression" },
-                    "cwd": { "type": "string", "description": "Working directory (default: last cd or project root)" },
+                    "raw": { "type": "boolean", "description": "Skip compression (verbatim)" },
+                    "cwd": { "type": "string", "description": "Working dir (default: last cd or project root)" },
                     "env": { "type": "object", "description": "Extra env vars", "additionalProperties": { "type": "string" } }
                 },
                 "required": ["command"]
