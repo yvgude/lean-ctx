@@ -107,7 +107,97 @@ pub fn allow_paths_from_env_and_config() -> Vec<PathBuf> {
         }
     }
 
+    // Read-only roots are *readable* (the whole point is read access to sibling
+    // repos); writes into them are denied separately by `enforce_writable`
+    // (#475). Add them to the read allow-list so reads resolve, exactly like
+    // `extra_roots`, without granting write access.
+    out.extend(canonicalized_roots(
+        &cfg.read_only_roots,
+        "LEAN_CTX_READ_ONLY_ROOTS",
+    ));
+
     out
+}
+
+/// Canonicalize a set of config-supplied root entries plus an env override
+/// (path-list separated), expanding `~`/`$VAR` first. Shared by the read
+/// allow-list and the read-only-roots collector so both tiers parse roots
+/// identically.
+fn canonicalized_roots(config_entries: &[String], env_var: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for p in config_entries {
+        out.push(canonicalize_secure(&expand_user_path(p)));
+    }
+    let v = std::env::var(env_var).unwrap_or_default();
+    if !v.trim().is_empty() {
+        for p in std::env::split_paths(&v) {
+            out.push(canonicalize_secure(&expand_user_path(&p.to_string_lossy())));
+        }
+    }
+    out
+}
+
+/// The configured read-only roots (config `read_only_roots` +
+/// `LEAN_CTX_READ_ONLY_ROOTS`), canonicalized for prefix comparison.
+///
+/// A read-only root is a sibling subtree the agent may **read** but never
+/// **write** — e.g. a reference repo mounted next to the project. Empty by
+/// default, so [`is_read_only_path`]/[`enforce_writable`] are zero-cost no-ops
+/// for everyone who hasn't opted in (#475).
+pub fn read_only_roots_from_env_and_config() -> Vec<PathBuf> {
+    let cfg = crate::core::config::Config::load();
+    canonicalized_roots(&cfg.read_only_roots, "LEAN_CTX_READ_ONLY_ROOTS")
+}
+
+/// True when `candidate` resolves to a location inside a configured read-only
+/// root. The candidate's nearest existing ancestor is canonicalized (so a
+/// not-yet-existing file inherits the read-only status of the directory it
+/// would be created in — closing the "create a new file in a read-only repo"
+/// hole) and matched against the (symlink-resolved) read-only roots.
+///
+/// A `false` return is only authoritative when the roots list is empty or the
+/// path provably sits outside every root; an unresolvable candidate (no
+/// existing ancestor) is treated as *not* read-only here and is rejected later
+/// by the ordinary write/jail error, never silently written.
+pub fn is_read_only_path(candidate: &Path) -> bool {
+    let roots = read_only_roots_from_env_and_config();
+    if roots.is_empty() {
+        return false;
+    }
+
+    // Compare the canonicalized nearest-existing-ancestor (resolves symlinks so
+    // a symlink *into* a read-only root can't launder a write past the prefix
+    // check), reconstructing the full path for the comparison.
+    let base = match canonicalize_existing_ancestor(candidate) {
+        Some((base, remainder)) => {
+            let mut p = base;
+            for part in remainder.iter().rev() {
+                p.push(part);
+            }
+            p
+        }
+        None => canonicalize_or_self(candidate),
+    };
+
+    roots.iter().any(|r| is_under_prefix(&base, r))
+}
+
+/// Default-deny write guard for the read-only tier (#475): returns an error if
+/// `candidate` is inside a configured read-only root, `Ok(())` otherwise.
+///
+/// This is the single read-only-aware choke point. Every filesystem write that
+/// can target a caller-supplied path routes through it (the atomic writers in
+/// `ctx_edit`/`edit_apply`, the handoff/session export bundle writers, the
+/// in-place memory-compaction writer, and the refactor IDE pre-write gate), so
+/// a "read-only" root cannot be written through any tool. Reads are unaffected.
+pub fn enforce_writable(candidate: &Path) -> Result<(), String> {
+    if is_read_only_path(candidate) {
+        return Err(format!(
+            "path is inside a read-only root — writes are denied (read_only_roots): {}",
+            candidate.display()
+        ));
+    }
+    Ok(())
 }
 
 /// Home-level allow-dirs for the jail. `~/.lean-ctx` (own state) is always
@@ -334,6 +424,66 @@ mod tests {
 
         let bad = jail_path(&other.join("b.txt"), &root);
         assert!(bad.is_err());
+    }
+
+    /// #475: a configured read-only root is readable but never writable. Reads
+    /// resolve (the root joins the allow-list like an extra_root), while the
+    /// single write choke point `enforce_writable` default-denies every write
+    /// inside it — including a not-yet-existing file, which inherits the
+    /// directory's read-only status. `isolated_data_dir` holds `test_env_lock`,
+    /// serialising the `LEAN_CTX_READ_ONLY_ROOTS` mutation against other tests.
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn read_only_roots_deny_writes_but_allow_reads() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("project");
+        let refrepo = tmp.path().join("refrepo");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(refrepo.join("sub")).unwrap();
+        std::fs::write(refrepo.join("lib.rs"), "pub fn x() {}\n").unwrap();
+
+        // Canonicalize the configured root the same (symlink-resolving) way the
+        // guard does, so macOS /var → /private/var can't defeat the prefix match.
+        let ro_canon = canonicalize_secure(&refrepo);
+        crate::test_env::set_var(
+            "LEAN_CTX_READ_ONLY_ROOTS",
+            ro_canon.to_string_lossy().as_ref(),
+        );
+
+        let existing = refrepo.join("lib.rs");
+        let new_file = refrepo.join("sub").join("new.rs");
+        let proj_file = project.join("main.rs");
+
+        // Capture every decision while the env is live (it is cleared below).
+        let read_existing = jail_path(&existing, &project);
+        let deny_existing = enforce_writable(&existing);
+        let deny_new = enforce_writable(&new_file);
+        let allow_project = enforce_writable(&proj_file);
+        let ro_existing = is_read_only_path(&existing);
+        let ro_project = is_read_only_path(&proj_file);
+
+        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
+
+        assert!(
+            deny_existing.is_err(),
+            "write to an existing file in a read-only root must be denied"
+        );
+        assert!(
+            deny_new.is_err(),
+            "creating a new file in a read-only root must be denied"
+        );
+        assert!(
+            allow_project.is_ok(),
+            "writes into the project root must stay allowed: {allow_project:?}"
+        );
+        assert!(
+            read_existing.is_ok(),
+            "reads inside a read-only root must resolve (read allow-list): {read_existing:?}"
+        );
+        assert!(ro_existing, "the file is inside the read-only root");
+        assert!(!ro_project, "the project file is not read-only");
     }
 
     /// #406 regression: a long-lived process (the MCP server) must honor

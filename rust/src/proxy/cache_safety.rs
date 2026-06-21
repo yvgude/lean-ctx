@@ -19,6 +19,11 @@ static PROSE_SEGMENTS: AtomicU64 = AtomicU64::new(0);
 static PROSE_REQUESTS: AtomicU64 = AtomicU64::new(0);
 /// Of those, the requests whose every rewrite was cache-safe.
 static CACHE_SAFE_REQUESTS: AtomicU64 = AtomicU64::new(0);
+/// Deliberate cold-prefix repacks (#480): requests where the proxy predicted the
+/// client-cached prefix was already cold and rewrote it on purpose. Tracked
+/// separately so an *intentional* prefix rewrite never dilutes the
+/// `cache_safe_ratio`, whose job is to catch *accidental* #448 regressions.
+static COLD_PREFIX_REPACKS: AtomicU64 = AtomicU64::new(0);
 
 /// Record one request's frozen-region prose activity.
 ///
@@ -35,6 +40,12 @@ pub fn record(segments: u64, all_safe: bool) {
     if all_safe {
         CACHE_SAFE_REQUESTS.fetch_add(1, Ordering::Relaxed);
     }
+}
+
+/// Record one deliberate cold-prefix repack (#480). Counted on its own gauge,
+/// never against [`record`]'s cache-safe ratio.
+pub fn record_cold_repack() {
+    COLD_PREFIX_REPACKS.fetch_add(1, Ordering::Relaxed);
 }
 
 /// Cache-preservation ratio: `safe / total`, or `1.0` when nothing has been
@@ -59,6 +70,11 @@ pub struct CacheSafety {
     /// the healthy steady state; the proxy only rewrites inside the cache-safe
     /// window by construction).
     pub cache_safe_ratio: f64,
+    /// Deliberate cold-prefix repacks (#480), cumulative. Non-zero only when the
+    /// opt-in mode fired on a predicted-cold session resume — expected, not a
+    /// regression.
+    #[serde(default)]
+    pub cold_prefix_repacks: u64,
 }
 
 #[must_use]
@@ -69,6 +85,7 @@ pub fn snapshot() -> CacheSafety {
         prose_segments_compressed: PROSE_SEGMENTS.load(Ordering::Relaxed),
         prose_requests,
         cache_safe_ratio: ratio(safe, prose_requests),
+        cold_prefix_repacks: COLD_PREFIX_REPACKS.load(Ordering::Relaxed),
     }
 }
 

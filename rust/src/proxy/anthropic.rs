@@ -50,12 +50,29 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
         .and_then(|m| m.as_array())
         .map_or(0, |m| super::history_prune::cached_prefix_len(m));
 
+    // #480: opt-in big-gap cold-prefix repack. When enabled AND the proxy can
+    // confidently predict (from idle time vs the provider cache TTL) that the
+    // client-cached prefix is already cold, override the normal "never touch the
+    // cached prefix" rule for THIS request and prune/compress the prefix too,
+    // re-seeding a leaner cache. Default-off; never fires without a measured idle
+    // gap past TTL × margin, so warm caches stay byte-stable (#448).
+    let repack = cfg.proxy.repacks_cold_prefix()
+        && doc
+            .get("messages")
+            .and_then(|m| m.as_array())
+            .is_some_and(|m| super::cold_prefix::repack_decision(m, cached));
+    // The prefix length the rewrites below must protect: the full cached prefix
+    // normally, or 0 when we are intentionally repacking the cold prefix.
+    let protect = if repack { 0 } else { cached };
+
     // System prose: only when nothing is client-cached and the `system` field
     // carries no `cache_control` of its own — otherwise it anchors the cache.
+    // A cold-prefix repack (`protect == 0` with `repack`) deliberately rewrites
+    // it to re-seed a leaner cache.
     if let Some(a) = system_aggr
-        && cached == 0
+        && protect == 0
         && let Some(system) = doc.get_mut("system")
-        && !prose::value_has_cache_control(system)
+        && (repack || !prose::value_has_cache_control(system))
     {
         let n = prose::compress_system_value(system, a);
         if n > 0 {
@@ -80,7 +97,7 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
         // starts after the last breakpoint; with no breakpoint this is 0, i.e.
         // the previous behaviour.
         modified |=
-            super::history_prune::prune_history_range(messages, cached, boundary, &tool_names);
+            super::history_prune::prune_history_range(messages, protect, boundary, &tool_names);
 
         for msg in messages.iter_mut() {
             let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("");
@@ -114,7 +131,7 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
         // rewrite is content-deterministic so the prefix stays byte-stable.
         if let Some(a) = user_aggr {
             let end = boundary.min(messages.len());
-            let start = cached.min(end);
+            let start = protect.min(end);
             for msg in &mut messages[start..end] {
                 if msg.get("role").and_then(|r| r.as_str()) == Some("user")
                     && let Some(content) = msg.get_mut("content").and_then(|c| c.as_array_mut())
@@ -128,8 +145,13 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
     if prose_segments > 0 {
         modified = true;
     }
-    // Every rewrite above lands strictly inside the cache-safe frozen window,
-    // so report the activity as cache-safe (the production invariant gauge).
+    // A deliberate cold-prefix repack (#480) is the one sanctioned exception to
+    // the frozen-window rule; count it on its own gauge so it never dilutes the
+    // cache-safe ratio (which exists to catch *accidental* #448 regressions).
+    // Every other rewrite lands strictly inside the cache-safe frozen window.
+    if repack {
+        cache_safety::record_cold_repack();
+    }
     cache_safety::record(prose_segments, true);
 
     let out = serde_json::to_vec(&doc).unwrap_or_default();
@@ -441,5 +463,99 @@ mod tests {
         let bytes = serde_json::to_vec(&body).unwrap();
         let (_out, orig, comp) = compress_request_body(body, bytes.len());
         assert!(comp < orig, "shell output must still be compressed");
+    }
+
+    /// A client-cached message anchors the prefix; `system` precedes it, so the
+    /// cached prefix is `cached > 0` and system prose is normally protected.
+    /// System-prose verbatim-vs-rewritten is therefore a clean binary signal for
+    /// whether the #480 cold-prefix repack fired.
+    ///
+    /// `first_text` must be UNIQUE per test: it is `messages[0]`, which the
+    /// cold-prefix tracker hashes into the conversation key. A shared global
+    /// last-touch store has no test-clear hook (that would race with the unit
+    /// tests), so distinct keys are how parallel tests stay isolated.
+    fn cached_prefix_body(first_text: &str, prose: &str) -> (Vec<Value>, Value) {
+        let messages = vec![
+            serde_json::json!({"role": "user", "content": [
+                {"type": "text", "text": first_text, "cache_control": {"type": "ephemeral"}}
+            ]}),
+            serde_json::json!({"role": "assistant", "content": "ok"}),
+        ];
+        let body = serde_json::json!({ "system": prose, "messages": messages.clone() });
+        (messages, body)
+    }
+
+    #[test]
+    fn cold_prefix_repack_rewrites_protected_system_prose_when_enabled() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::remove_var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK");
+        crate::core::config::Config::update_global(|c| {
+            c.proxy.role_aggressiveness.system = Some(0.9);
+            c.proxy.cold_prefix_repack = Some(true);
+        })
+        .unwrap();
+
+        let prose = big_prose();
+        let (messages, body) = cached_prefix_body("cold-repack-enabled-session", &prose);
+        // Predict cold: last touched 3h ago, well past the 5m default TTL × margin.
+        super::super::cold_prefix::test_seed_last_touch(&messages, 3 * 60 * 60);
+
+        let bytes = serde_json::to_vec(&body).unwrap();
+        let (out, _o, _c) = compress_request_body(body, bytes.len());
+        let parsed: Value = serde_json::from_slice(&out).unwrap();
+        assert!(
+            parsed["system"].as_str().unwrap().len() < prose.len(),
+            "a predicted-cold prefix must let the proxy repack the otherwise-protected system prose"
+        );
+    }
+
+    #[test]
+    fn cold_prefix_repack_off_by_default_keeps_prefix_protected() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::remove_var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK");
+        crate::core::config::Config::update_global(|c| {
+            c.proxy.role_aggressiveness.system = Some(0.9);
+            c.proxy.cold_prefix_repack = Some(false);
+        })
+        .unwrap();
+
+        let prose = big_prose();
+        let (messages, body) = cached_prefix_body("cold-repack-disabled-session", &prose);
+        // Even with a huge idle gap, default-off must never touch the prefix.
+        super::super::cold_prefix::test_seed_last_touch(&messages, 24 * 60 * 60);
+
+        let bytes = serde_json::to_vec(&body).unwrap();
+        let (out, _o, _c) = compress_request_body(body, bytes.len());
+        let parsed: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(
+            parsed["system"].as_str().unwrap(),
+            prose,
+            "with repack off the cached prefix stays byte-stable regardless of idle time (#448)"
+        );
+    }
+
+    #[test]
+    fn cold_prefix_repack_protects_warm_prefix_even_when_enabled() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::remove_var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK");
+        crate::core::config::Config::update_global(|c| {
+            c.proxy.role_aggressiveness.system = Some(0.9);
+            c.proxy.cold_prefix_repack = Some(true);
+        })
+        .unwrap();
+
+        let prose = big_prose();
+        let (messages, body) = cached_prefix_body("cold-repack-warm-session", &prose);
+        // Warm: touched 1 minute ago → the prediction must keep protecting.
+        super::super::cold_prefix::test_seed_last_touch(&messages, 60);
+
+        let bytes = serde_json::to_vec(&body).unwrap();
+        let (out, _o, _c) = compress_request_body(body, bytes.len());
+        let parsed: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(
+            parsed["system"].as_str().unwrap(),
+            prose,
+            "a warm prefix must stay protected even with repack enabled — only LARGE gaps trigger"
+        );
     }
 }

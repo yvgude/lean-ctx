@@ -323,6 +323,11 @@ fn handle_export(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String,
             Err(e) => return Ok(e),
         };
 
+        // Read-only-roots choke point (#475): export must not write a bundle into
+        // a read-only root even when the jail allows reads.
+        if let Err(e) = crate::core::pathjail::enforce_writable(&jailed) {
+            return Ok(format!("Export write failed: {e}"));
+        }
         if let Err(e) = crate::core::handoff_transfer_bundle::write_bundle_v1(&jailed, &json) {
             return Ok(format!("Export write failed: {e}"));
         }

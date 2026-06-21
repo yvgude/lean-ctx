@@ -2498,4 +2498,73 @@ mod tests {
             "json must mark symbol-resolved analyses; got: {json}"
         );
     }
+
+    /// The decisive real-world #398 case: the class name does **not** match its
+    /// file name (`ArcPoint` lives in `Shapes.cs`), which is exactly why a
+    /// user/LLM types `ctx_impact ArcPoint` instead of a path — and why the old
+    /// file-only lookup always missed. Both a cross-namespace `using` consumer
+    /// and a same-namespace no-`using` consumer must surface; an unrelated file
+    /// must not (non-vacuous).
+    #[test]
+    fn csharp_analyze_by_class_name_when_filename_differs() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("Geometry")).unwrap();
+        std::fs::create_dir_all(root.join("Rendering")).unwrap();
+        std::fs::create_dir_all(root.join("Misc")).unwrap();
+
+        // Class name != file name — the crux of the reporter's scenario.
+        std::fs::write(
+            root.join("Geometry/Shapes.cs"),
+            "namespace App.Geometry;\n\n\
+             public class ArcPoint\n{\n    public double X { get; set; }\n\
+             \x20   public double Y { get; set; }\n}\n",
+        )
+        .unwrap();
+        // Cross-namespace consumer WITH a `using`, DI via constructor.
+        std::fs::write(
+            root.join("Rendering/Canvas.cs"),
+            "using App.Geometry;\n\nnamespace App.Rendering;\n\n\
+             public class Canvas\n{\n    private readonly ArcPoint _origin;\n\n\
+             \x20   public Canvas(ArcPoint origin)\n    {\n        _origin = origin;\n    }\n}\n",
+        )
+        .unwrap();
+        // Same-namespace consumer WITHOUT any `using`, field injection.
+        std::fs::write(
+            root.join("Geometry/Grid.cs"),
+            "namespace App.Geometry;\n\n\
+             public class Grid\n{\n    private ArcPoint _topLeft = new();\n}\n",
+        )
+        .unwrap();
+        // Unrelated file in a third namespace: must stay out of the blast radius.
+        std::fs::write(
+            root.join("Misc/Clock.cs"),
+            "namespace App.Misc;\n\n\
+             public class Clock\n{\n    public long Ticks { get; set; }\n}\n",
+        )
+        .unwrap();
+
+        let root_str = root.to_string_lossy().to_string();
+        let build = handle("build", None, &root_str, None, Some("text"));
+        assert!(!build.contains("ERROR"), "graph build failed: {build}");
+
+        let out = handle("analyze", Some("ArcPoint"), &root_str, None, Some("text"));
+        assert!(
+            out.contains("Geometry/Shapes.cs"),
+            "name must resolve to the (differently named) definer file; got: {out}"
+        );
+        assert!(
+            out.contains("Rendering/Canvas.cs"),
+            "cross-namespace `using` DI consumer must be in the blast radius; got: {out}"
+        );
+        assert!(
+            out.contains("Geometry/Grid.cs"),
+            "same-namespace no-`using` consumer must be in the blast radius; got: {out}"
+        );
+        assert!(
+            !out.contains("Misc/Clock.cs"),
+            "unrelated file must NOT appear (non-vacuous); got: {out}"
+        );
+    }
 }

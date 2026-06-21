@@ -3,6 +3,12 @@ use std::path::Path;
 use crate::core::tokens::count_tokens;
 
 pub fn handle(path: &str) -> String {
+    // Read-only-roots choke point (#475): this tool rewrites `path` in place (and
+    // writes a sibling backup), so deny up front inside a read-only root.
+    if let Err(e) = crate::core::pathjail::enforce_writable(Path::new(path)) {
+        return format!("ERROR: {e}");
+    }
+
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) => return format!("ERROR: Cannot read {path}: {e}"),
@@ -271,6 +277,42 @@ mod tests {
         assert_eq!(
             Path::new(&build_backup_path("/project/CLAUDE.md")),
             Path::new("/project").join("CLAUDE.original.md").as_path()
+        );
+    }
+
+    /// #475: in-place memory compaction must refuse to rewrite a file inside a
+    /// read-only root and must not drop a `*.original.md` backup there either.
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn handle_denies_write_into_read_only_root() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let ro = dir.path().join("refrepo");
+        std::fs::create_dir_all(&ro).unwrap();
+        let file = ro.join("CLAUDE.md");
+        let original = "# Title\n\nJust some really verbose prose here.\n";
+        std::fs::write(&file, original).unwrap();
+
+        let ro_canon = crate::core::pathjail::canonicalize_or_self(&ro);
+        crate::test_env::set_var(
+            "LEAN_CTX_READ_ONLY_ROOTS",
+            ro_canon.to_string_lossy().as_ref(),
+        );
+        let out = handle(file.to_string_lossy().as_ref());
+        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
+
+        assert!(
+            out.starts_with("ERROR") && out.contains("read-only"),
+            "compaction into a read-only root must be refused: {out}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            original,
+            "the file must be untouched"
+        );
+        assert!(
+            !ro.join("CLAUDE.original.md").exists(),
+            "no backup may be written into a read-only root"
         );
     }
 }

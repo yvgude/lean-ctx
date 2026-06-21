@@ -245,6 +245,13 @@ pub struct Config {
     /// Override via LEAN_CTX_EXTRA_ROOTS env var (path-list separator).
     #[serde(default)]
     pub extra_roots: Vec<String>,
+    /// Read-only roots: sibling subtrees the agent may READ but never WRITE.
+    /// Reads resolve as if they were extra_roots; every write tool (edit, refactor,
+    /// handoff/session export, memory compaction) is default-denied inside these
+    /// paths. Useful for reference repos mounted next to the project.
+    /// Override via LEAN_CTX_READ_ONLY_ROOTS env var (path-list separator).
+    #[serde(default)]
+    pub read_only_roots: Vec<String>,
     /// Enable content-defined chunking (Rabin-Karp) for cache-optimal output ordering.
     /// Stable chunks are emitted first to maximize prompt cache hits.
     #[serde(default)]
@@ -530,6 +537,7 @@ impl Default for Config {
             allow_paths: Vec::new(),
             allow_ide_config_dirs: false,
             extra_roots: Vec::new(),
+            read_only_roots: Vec::new(),
             content_defined_chunking: false,
             minimal_overhead: true,
             symbol_map_auto: false,
@@ -1344,6 +1352,11 @@ impl Config {
         }
         if !local.extra_roots.is_empty() {
             self.extra_roots.extend(local.extra_roots);
+        }
+        // Project-local config may only ADD read-only roots (tighten the write
+        // boundary), never remove them — merge mirrors extra_roots (#475).
+        if !local.read_only_roots.is_empty() {
+            self.read_only_roots.extend(local.read_only_roots);
         }
         if local.minimal_overhead {
             self.minimal_overhead = true;

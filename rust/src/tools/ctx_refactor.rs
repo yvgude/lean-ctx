@@ -50,6 +50,14 @@ pub fn handle(args: &Value, project_root: &str, abs_path: &str) -> String {
 
     let position = Position::new(line.saturating_sub(1), column);
 
+    // #475: the IDE symbol `rename` rewrites the target file in place; deny when
+    // it sits inside a read-only root (the other read actions below never write).
+    if action == "rename"
+        && let Some(e) = deny_if_read_only(abs_path)
+    {
+        return e;
+    }
+
     match action {
         "rename" => handle_rename(args, abs_path, project_root, &uri, position),
         "references" => handle_references(abs_path, project_root, &uri, position, scope),
@@ -67,6 +75,17 @@ pub fn handle(args: &Value, project_root: &str, abs_path: &str) -> String {
              move_preview, move_apply, inline_preview, inline_apply, reformat."
         ),
     }
+}
+
+/// #475 read-only-roots default-deny for refactor writes. Returns an early
+/// `ERROR: …` string when `abs_path` resolves inside a configured read-only
+/// root, `None` otherwise. Two-phase `*_preview` actions only read and are
+/// never gated; every apply / symbol-edit / reformat / rename path routes its
+/// resolved target(s) through this before any IDE or headless write.
+fn deny_if_read_only(abs_path: &str) -> Option<String> {
+    crate::core::pathjail::enforce_writable(std::path::Path::new(abs_path))
+        .err()
+        .map(|e| format!("ERROR: {e}"))
 }
 
 fn handle_rename(
@@ -550,6 +569,12 @@ fn handle_rename_refactor(action: &str, args: &Value, project_root: &str) -> Str
             Ok(p) => p,
             Err(e) => return format!("ERROR: path blocked by jail: {e}"),
         };
+    // #475: rename_apply rewrites the file in place; rename_preview only reads.
+    if action == "rename_apply"
+        && let Some(e) = deny_if_read_only(&abs_path)
+    {
+        return e;
+    }
     let content = match std::fs::read_to_string(&abs_path) {
         Ok(c) => c,
         Err(e) => return format!("ERROR: FILE_NOT_FOUND: {abs_path}: {e}"),
@@ -726,6 +751,12 @@ fn handle_safe_delete_refactor(action: &str, args: &Value, project_root: &str) -
             Ok(p) => p,
             Err(e) => return format!("ERROR: path blocked by jail: {e}"),
         };
+    // #475: safe_delete_apply removes code from the file; preview only reads.
+    if action == "safe_delete_apply"
+        && let Some(e) = deny_if_read_only(&abs_path)
+    {
+        return e;
+    }
     let content = match std::fs::read_to_string(&abs_path) {
         Ok(c) => c,
         Err(e) => return format!("ERROR: FILE_NOT_FOUND: {abs_path}: {e}"),
@@ -951,6 +982,17 @@ fn handle_move_refactor(action: &str, args: &Value, project_root: &str) -> Strin
             Ok(p) => p,
             Err(e) => return format!("ERROR: path blocked by jail: {e}"),
         };
+    // #475: move_apply edits the source and writes the destination; deny if
+    // EITHER end sits inside a read-only root (preview only reads).
+    if action == "move_apply" {
+        let dest_abs = match &target {
+            crate::lsp::backend::MoveTarget::Path { abs_path, .. }
+            | crate::lsp::backend::MoveTarget::Parent { abs_path, .. } => abs_path.as_str(),
+        };
+        if let Some(e) = deny_if_read_only(&abs_path).or_else(|| deny_if_read_only(dest_abs)) {
+            return e;
+        }
+    }
     let content = match std::fs::read_to_string(&abs_path) {
         Ok(c) => c,
         Err(e) => return format!("ERROR: FILE_NOT_FOUND: {abs_path}: {e}"),
@@ -1099,6 +1141,12 @@ fn handle_inline_refactor(action: &str, args: &Value, project_root: &str) -> Str
             Ok(p) => p,
             Err(e) => return format!("ERROR: path blocked by jail: {e}"),
         };
+    // #475: inline_apply rewrites call sites in the file; preview only reads.
+    if action == "inline_apply"
+        && let Some(e) = deny_if_read_only(&abs_path)
+    {
+        return e;
+    }
     let content = match std::fs::read_to_string(&abs_path) {
         Ok(c) => c,
         Err(e) => return format!("ERROR: FILE_NOT_FOUND: {abs_path}: {e}"),
@@ -1239,6 +1287,10 @@ fn handle_reformat_refactor(args: &Value, project_root: &str) -> String {
         Ok(t) => t,
         Err(e) => return format!("ERROR: {e}"),
     };
+    // #475: reformat rewrites the file; deny inside a read-only root.
+    if let Some(e) = deny_if_read_only(&abs_path) {
+        return e;
+    }
     let mut backend = match live_jetbrains_backend(project_root) {
         Ok(b) => b,
         Err(e) => return format!("ERROR: {e}"),
@@ -1332,6 +1384,10 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
             Ok(p) => p,
             Err(e) => return format!("ERROR: path blocked by jail: {e}"),
         };
+    // #475: replace/insert symbol edits always write; deny inside a read-only root.
+    if let Some(e) = deny_if_read_only(&abs_path) {
+        return e;
+    }
 
     let content = match std::fs::read_to_string(&abs_path) {
         Ok(c) => c,

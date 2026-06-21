@@ -97,6 +97,11 @@ pub fn handle(
                     Err(e) => return e,
                 };
 
+                // Read-only-roots choke point (#475): export must not write a
+                // bundle into a read-only root even when the jail allows reads.
+                if let Err(e) = crate::core::pathjail::enforce_writable(&jailed) {
+                    return format!("Export write failed: {e}");
+                }
                 if let Err(e) = crate::core::ccp_session_bundle::write_bundle_v1(&jailed, &json) {
                     return format!("Export write failed: {e}");
                 }

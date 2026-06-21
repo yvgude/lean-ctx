@@ -229,6 +229,13 @@ fn write_atomic_bytes_with_permissions(
     bytes: &[u8],
     permissions: Option<&std::fs::Permissions>,
 ) -> Result<(), String> {
+    // Read-only-roots choke point (#475). Every ctx_edit write — edit, create,
+    // and the pre-edit backup — funnels here, including the backup whose raw
+    // `backup_path` bypasses the dispatch jail, so this single guard makes the
+    // whole tool default-deny inside a read-only root before any byte is written
+    // or temp/dir created.
+    crate::core::pathjail::enforce_writable(path)?;
+
     // The rename below would *replace* a symlink at `path` (safe), but the edit
     // pipeline read through this path moments ago — a symlink here means the
     // read/write pair straddles two different files. Reject for consistency
@@ -833,6 +840,13 @@ fn handle_create(file_path: &str, content: &str, params: &EditParams) -> (String
     let path = Path::new(file_path);
     let cap = crate::core::limits::max_read_bytes();
 
+    // Deny before the standalone create_dir_all below can materialise a
+    // directory inside a read-only root (#475). The atomic writer guards the
+    // file write too, but this stops an empty-dir side effect first.
+    if let Err(e) = crate::core::pathjail::enforce_writable(path) {
+        return (format!("ERROR: {e}"), CacheEffect::None);
+    }
+
     let mut preimage: Option<FilePreimage> = None;
     if path.exists() {
         let pre = match read_preimage(path, cap, params.allow_lossy_utf8) {
@@ -1022,6 +1036,161 @@ mod tests {
         assert!(result.contains("created new_file.txt"));
         assert!(result.contains("3 lines"));
         assert!(path.exists());
+    }
+
+    /// #475: creating a file inside a read-only root is refused before the
+    /// directory is even materialised (guard in `handle_create`).
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn create_denied_in_read_only_root() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let ro = dir.path().join("refrepo");
+        std::fs::create_dir_all(&ro).unwrap();
+        let path = ro.join("sub/new_file.txt");
+
+        let ro_canon = crate::core::pathjail::canonicalize_or_self(&ro);
+        crate::test_env::set_var(
+            "LEAN_CTX_READ_ONLY_ROOTS",
+            ro_canon.to_string_lossy().as_ref(),
+        );
+        let mut cache = SessionCache::new();
+        let result = handle(&mut cache, &mk_params(&path, "", "x\n", false, true));
+        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
+
+        assert!(
+            result.contains("read-only"),
+            "create in a read-only root must be refused: {result}"
+        );
+        assert!(!path.exists(), "no file may be created in a read-only root");
+        assert!(
+            !ro.join("sub").exists(),
+            "no directory may be created in a read-only root"
+        );
+    }
+
+    /// #475: editing an existing file inside a read-only root is refused at the
+    /// atomic-write choke point (`write_atomic_bytes_with_permissions`), leaving
+    /// the original bytes intact.
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn edit_denied_in_read_only_root() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let ro = dir.path().join("refrepo");
+        std::fs::create_dir_all(&ro).unwrap();
+        let path = ro.join("a.txt");
+        std::fs::write(&path, "alpha beta\n").unwrap();
+
+        let ro_canon = crate::core::pathjail::canonicalize_or_self(&ro);
+        crate::test_env::set_var(
+            "LEAN_CTX_READ_ONLY_ROOTS",
+            ro_canon.to_string_lossy().as_ref(),
+        );
+        let mut cache = SessionCache::new();
+        let result = handle(
+            &mut cache,
+            &mk_params(&path, "alpha", "OMEGA", false, false),
+        );
+        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
+
+        assert!(
+            result.contains("read-only"),
+            "edit in a read-only root must be refused: {result}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "alpha beta\n",
+            "the file must be left untouched"
+        );
+    }
+
+    /// #475 (the exact #464 regression): a caller-supplied `backup_path` must
+    /// not be a side door into a read-only root. Even when the *target* file is
+    /// writable, redirecting the pre-edit backup into a read-only root is denied
+    /// — and because the backup is written first, the denial is fail-closed: the
+    /// target keeps its original bytes and no backup is dropped in the root.
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn backup_path_cannot_smuggle_writes_into_read_only_root() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let ro = dir.path().join("refrepo");
+        let work = dir.path().join("work");
+        std::fs::create_dir_all(&ro).unwrap();
+        std::fs::create_dir_all(&work).unwrap();
+        let target = work.join("a.txt"); // writable target, outside the RO root
+        std::fs::write(&target, "alpha beta\n").unwrap();
+        let smuggled = ro.join("leak.bak"); // attacker-chosen backup inside RO root
+
+        let ro_canon = crate::core::pathjail::canonicalize_or_self(&ro);
+        crate::test_env::set_var(
+            "LEAN_CTX_READ_ONLY_ROOTS",
+            ro_canon.to_string_lossy().as_ref(),
+        );
+        let mut params = mk_params(&target, "alpha", "OMEGA", false, false);
+        params.backup = true;
+        params.backup_path = Some(smuggled.to_string_lossy().to_string());
+        let mut cache = SessionCache::new();
+        let result = handle(&mut cache, &params);
+        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
+
+        assert!(
+            result.contains("read-only"),
+            "a backup_path into a read-only root must be refused: {result}"
+        );
+        assert!(
+            !smuggled.exists(),
+            "no backup may be smuggled into a read-only root"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "alpha beta\n",
+            "fail-closed: the writable target must be untouched when the backup is denied"
+        );
+    }
+
+    /// #475 end-to-end via the *real* config mechanism a user would use:
+    /// `read_only_roots` declared in `config.toml` (not the env var) must make
+    /// `ctx_edit` refuse the write. Exercises the `Config::load()` → predicate →
+    /// tool-denial chain.
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn edit_denied_via_config_read_only_roots() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let ro = dir.path().join("refrepo");
+        std::fs::create_dir_all(&ro).unwrap();
+        let path = ro.join("a.txt");
+        std::fs::write(&path, "alpha beta\n").unwrap();
+
+        // Write the user-facing config.toml into the isolated config dir.
+        let cfg_path = crate::core::config::Config::path().unwrap();
+        if let Some(parent) = cfg_path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        // TOML literal string ('...') — no escaping of the temp path needed.
+        std::fs::write(
+            &cfg_path,
+            format!("read_only_roots = ['{}']\n", ro.to_string_lossy()),
+        )
+        .unwrap();
+
+        let mut cache = SessionCache::new();
+        let result = handle(
+            &mut cache,
+            &mk_params(&path, "alpha", "OMEGA", false, false),
+        );
+
+        assert!(
+            result.contains("read-only"),
+            "config-declared read_only_roots must deny the edit: {result}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "alpha beta\n",
+            "the file must be left untouched"
+        );
     }
 
     #[test]

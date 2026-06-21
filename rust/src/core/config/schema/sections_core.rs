@@ -247,6 +247,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
+        "read_only_roots".into(),
+        key_with_env(
+            "string[]",
+            serde_json::json!(cfg.read_only_roots),
+            "Read-only sibling roots: reads allowed, writes always denied (edit/refactor/export)",
+            "LEAN_CTX_READ_ONLY_ROOTS",
+        ),
+    );
+    root.insert(
         "content_defined_chunking".into(),
         key(
             "bool",

@@ -1,5 +1,6 @@
 pub mod anthropic;
 pub mod cache_safety;
+pub mod cold_prefix;
 pub mod compress;
 pub mod cost;
 pub mod forward;

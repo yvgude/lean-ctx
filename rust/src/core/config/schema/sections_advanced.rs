@@ -58,6 +58,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "Inject stream_options.include_usage into streamed OpenAI Chat Completions so the final chunk reports real token usage for the measured spend meter. Default true",
         ),
     );
+    proxy.insert(
+        "cold_prefix_repack".into(),
+        key_with_env(
+            "bool",
+            serde_json::json!(cfg.proxy.repacks_cold_prefix()),
+            "Opt-in big-gap cold-prefix repack (#480): on a session-resume request the proxy may predict (from idle time vs the provider cache TTL) that the client-cached prefix has already expired, then prune that now-cold prefix once to re-seed a leaner cache. A wrong guess re-bills cache reads as writes (~12x), so default false",
+            "LEAN_CTX_PROXY_COLD_PREFIX_REPACK",
+        ),
+    );
     sections.insert(
         "proxy".into(),
         SectionSchema {

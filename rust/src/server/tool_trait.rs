@@ -217,6 +217,18 @@ impl ToolContext {
             &self.extra_roots,
         )
     }
+
+    /// Default-deny write gate for the read-only tier (#475). Write-capable tool
+    /// handlers must call this with an already-resolved absolute path before
+    /// touching the filesystem; it errors if the path is inside a configured
+    /// `read_only_roots` subtree. A no-op (always `Ok`) when no read-only roots
+    /// are configured, so non-users pay nothing. Thin wrapper over the single
+    /// choke point [`crate::core::pathjail::enforce_writable`] — the low-level
+    /// atomic writers call the same function, so this is the ergonomic,
+    /// early-error layer, not the only line of defence.
+    pub fn ensure_writable(&self, resolved_path: &str) -> Result<(), String> {
+        crate::core::pathjail::enforce_writable(std::path::Path::new(resolved_path))
+    }
 }
 
 // ── Arg extraction helpers (mirror server/helpers.rs for standalone use) ──

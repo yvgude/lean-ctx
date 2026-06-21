@@ -21,6 +21,13 @@ pub struct ProxyConfig {
     /// trailing usage chunk. Anthropic/Gemini/OpenAI-Responses report usage
     /// without any request change, so this only affects Chat Completions.
     pub meter_openai_usage: Option<bool>,
+    /// Opt-in "big-gap cold-prefix repack" (#480). When the proxy can confidently
+    /// predict (from idle time vs the provider cache TTL) that the client-cached
+    /// prefix has already expired, it overrides the normal "never rewrite the
+    /// cached prefix" rule for that one resume request and prunes the now-cold
+    /// prefix too, re-seeding a leaner cache. `None`/`false` (the default) keeps
+    /// the prefix always protected. See [`ProxyConfig::repacks_cold_prefix`].
+    pub cold_prefix_repack: Option<bool>,
     /// Opt-in per-role prose compression for the proxy's frozen request region
     /// (#710). `None` for a role (the default) leaves that role untouched —
     /// today's behaviour. See [`RoleAggressiveness`].
@@ -100,6 +107,16 @@ impl ProxyConfig {
     /// in config.toml, default `true`.
     pub fn meters_openai_usage(&self) -> bool {
         self.meter_openai_usage.unwrap_or(true)
+    }
+
+    /// Whether the opt-in cold-prefix repack (#480) is enabled. A wrong "cold"
+    /// guess re-bills cache reads as writes (~12x), so this is off by default and
+    /// must be explicitly enabled. `LEAN_CTX_PROXY_COLD_PREFIX_REPACK` (any
+    /// value) wins, then `[proxy] cold_prefix_repack` in config.toml, else
+    /// `false`.
+    pub fn repacks_cold_prefix(&self) -> bool {
+        std::env::var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK").is_ok()
+            || self.cold_prefix_repack.unwrap_or(false)
     }
 
     /// Resolved prose-compression aggressiveness for `role`, clamped to `[0,1]`,
@@ -421,6 +438,24 @@ mod tests {
     #[test]
     fn unknown_scheme_is_rejected() {
         assert!(validate_upstream_url("ftp://example.com", true).is_err());
+    }
+
+    #[test]
+    fn cold_prefix_repack_is_opt_in_and_config_enables() {
+        // #480: off by default (a wrong cold guess re-bills reads as writes ~12x),
+        // enabled via config. Isolate from a developer shell that may export the
+        // env override.
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK");
+        assert!(
+            !ProxyConfig::default().repacks_cold_prefix(),
+            "cold-prefix repack must be opt-in (off by default)"
+        );
+        let cfg = ProxyConfig {
+            cold_prefix_repack: Some(true),
+            ..Default::default()
+        };
+        assert!(cfg.repacks_cold_prefix());
     }
 
     #[test]
