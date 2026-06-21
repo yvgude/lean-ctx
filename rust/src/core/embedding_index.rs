@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use super::bm25_index::CodeChunk;
 use super::embedding_quant::{self, QuantizedVector};
+use super::hnsw::FlatEmbeddings;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingIndex {
@@ -45,13 +46,182 @@ pub struct EmbeddingEntry {
 }
 
 impl EmbeddingEntry {
-    /// Full-precision embedding for scoring: reconstructs from int8 codes, or
-    /// returns the legacy vector for not-yet-migrated entries.
-    fn embedding_f32(&self) -> Vec<f32> {
+    /// Write the dequantized embedding directly into `dest`, avoiding the
+    /// intermediate `Vec<f32>` allocation.
+    fn write_into_flat(&self, dest: &mut Vec<f32>) {
         match &self.quant {
-            Some(q) => q.dequantize(),
-            None => self.embedding.clone(),
+            Some(q) => {
+                let scale = q.scale;
+                if scale != 0.0 {
+                    for &c in &q.code {
+                        dest.push(f32::from(c) * scale);
+                    }
+                } else {
+                    dest.resize(dest.len() + q.code.len(), 0.0);
+                }
+            }
+            None => dest.extend_from_slice(&self.embedding),
         }
+    }
+}
+
+/// Outcome of a `build_or_update` call from the index orchestrator.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmbeddingBuildOutcome {
+    /// Embeddings were built or already up-to-date.
+    Ready,
+    /// Skipped because the embeddings feature is not enabled or disabled by config.
+    Skipped,
+    /// The embedding engine (ONNX model) is not available.
+    /// Carries the reason so the orchestrator can show a helpful message.
+    ModelNotAvailable(String),
+    /// Build failed with an error.
+    Failed,
+}
+
+impl EmbeddingBuildOutcome {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::Skipped => "skipped",
+            Self::ModelNotAvailable(_) => "model-not-available",
+            Self::Failed => "failed",
+        }
+    }
+
+    pub fn reason(&self) -> Option<&str> {
+        match self {
+            Self::ModelNotAvailable(r) => Some(r.as_str()),
+            _ => None,
+        }
+    }
+}
+
+/// Build or update the persistent embedding index for a project.
+///
+/// Called by the index orchestrator during `build-full` / `build` after the BM25
+/// index is ready.  This is a *background-friendly* operation: it runs the ONNX
+/// model incrementally (only chunks whose content hash changed) and persists
+/// `embeddings.bin` so subsequent `ctx_semantic_search` calls find a warm cache.
+///
+/// Returns [`EmbeddingBuildOutcome`] — the orchestrator uses this to set the
+/// semantic component state without aborting the overall index build.
+///
+/// Feature-gated: when `embeddings` is not compiled in, this is a no-op that
+/// returns `Skipped`.
+pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> EmbeddingBuildOutcome {
+    #[cfg(feature = "embeddings")]
+    {
+        // Respect the config gates so the orchestrator does not force-embed when
+        // the user explicitly opted out.
+        let cfg = crate::core::config::Config::load();
+        if !cfg.search.dense_enabled {
+            tracing::info!("[embedding_index] build_or_update skipped: search.dense_enabled=false");
+            return EmbeddingBuildOutcome::Skipped;
+        }
+        let profile = crate::core::config::MemoryProfile::effective(&cfg);
+        if !profile.embeddings_enabled() {
+            tracing::info!(
+                "[embedding_index] build_or_update skipped: memory_profile disables embeddings"
+            );
+            return EmbeddingBuildOutcome::Skipped;
+        }
+
+        // Check model files exist before initializing ORT — `shared_engine()`
+        // loads the global ONNX Runtime environment which leaves behind C++
+        // static state; if model files are missing we can bail without touching
+        // ORT at all, avoiding unnecessary TLS-heavy teardown at exit.
+        if !crate::core::embeddings::EmbeddingEngine::is_available() {
+            let reason = "embedding model not downloaded — auto-download from HuggingFace attempted but failed (check network / logs)";
+            tracing::info!("[embedding_index] build_or_update skipped: {reason}");
+            return EmbeddingBuildOutcome::ModelNotAvailable(reason.to_string());
+        }
+
+        let Some(engine) = crate::core::embeddings::shared_engine() else {
+            let reason = "embedding model files found but engine failed to load (check logs / RUST_LOG=info)";
+            tracing::info!("[embedding_index] build_or_update skipped: {reason}");
+            return EmbeddingBuildOutcome::ModelNotAvailable(reason.to_string());
+        };
+
+        let model_name = engine.model_name();
+        let mut idx = EmbeddingIndex::load(root)
+            .unwrap_or_else(|| EmbeddingIndex::new_with_model(engine.dimensions(), model_name));
+
+        // Detect model / dimension changes → rebuild from scratch.
+        if let Some((stored, current)) = idx.model_mismatch(model_name) {
+            tracing::info!(
+                "[embedding_index] model changed: {stored} → {current}. Re-building from scratch."
+            );
+            idx = EmbeddingIndex::new_with_model(engine.dimensions(), model_name);
+        } else if idx.dimension_mismatch(engine.dimensions()) {
+            tracing::info!(
+                "[embedding_index] dimension mismatch: index={}d, engine={}d. Re-building.",
+                idx.dimensions,
+                engine.dimensions()
+            );
+            idx = EmbeddingIndex::new_with_model(engine.dimensions(), model_name);
+        }
+
+        // Find files whose content changed since the last build.
+        let mut changed_files = idx.files_needing_update(&bm25.chunks);
+        changed_files.sort();
+        changed_files.dedup();
+
+        if changed_files.is_empty() {
+            tracing::info!(
+                "[embedding_index] all {} chunks up-to-date, nothing to embed",
+                bm25.chunks.len()
+            );
+            return EmbeddingBuildOutcome::Ready;
+        }
+
+        // Collect the BM25 chunks that belong to changed files.
+        let changed_set: std::collections::HashSet<&str> =
+            changed_files.iter().map(String::as_str).collect();
+        let mut changed_indices: Vec<usize> = Vec::new();
+        let mut changed_texts: Vec<&str> = Vec::new();
+        for (i, c) in bm25.chunks.iter().enumerate() {
+            if changed_set.contains(c.file_path.as_str()) {
+                changed_indices.push(i);
+                changed_texts.push(&c.content);
+            }
+        }
+
+        let count = changed_files.len();
+        tracing::info!(
+            "[embedding_index] embedding {count} changed files ({total} chunks in index)",
+            total = bm25.chunks.len()
+        );
+
+        let batch_embeddings = match engine.embed_batch(&changed_texts) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("[embedding_index] batch embed failed: {e}");
+                return EmbeddingBuildOutcome::Failed;
+            }
+        };
+
+        let new_embeddings: Vec<(usize, Vec<f32>)> =
+            changed_indices.into_iter().zip(batch_embeddings).collect();
+
+        idx.update(&bm25.chunks, &new_embeddings, &changed_files, None);
+
+        if let Err(e) = idx.save(root) {
+            tracing::error!("[embedding_index] save failed: {e}");
+            return EmbeddingBuildOutcome::Failed;
+        }
+
+        tracing::info!(
+            "[embedding_index] successfully persisted {count} file embeddings ({total} chunks)",
+            total = bm25.chunks.len()
+        );
+        EmbeddingBuildOutcome::Ready
+    }
+
+    #[cfg(not(feature = "embeddings"))]
+    {
+        let _ = (root, bm25);
+        EmbeddingBuildOutcome::Skipped
     }
 }
 
@@ -134,7 +304,18 @@ impl EmbeddingIndex {
     }
 
     /// Determine which files need re-embedding based on content hashes.
+    ///
+    /// When the index is empty (no prior embeddings), skips hash computation
+    /// entirely by returning all unique file paths from chunks directly.
     pub fn files_needing_update(&self, chunks: &[CodeChunk]) -> Vec<String> {
+        // Empty index: every file needs embedding — skip O(chunks) hash iteration.
+        if self.file_hashes.is_empty() {
+            let mut files: Vec<String> = chunks.iter().map(|c| c.file_path.clone()).collect();
+            files.sort();
+            files.dedup();
+            return files;
+        }
+
         let current_hashes = compute_file_hashes(chunks);
 
         let mut needs_update = Vec::new();
@@ -156,11 +337,16 @@ impl EmbeddingIndex {
 
     /// Update the index with new embeddings for changed files.
     /// Preserves existing embeddings for unchanged files.
+    ///
+    /// `precomputed_hashes` can be passed to avoid re-computing file hashes
+    /// when the caller already has them (e.g. from `files_needing_update`).
+    /// When `None`, hashes are computed from `chunks`.
     pub fn update(
         &mut self,
         chunks: &[CodeChunk],
         new_embeddings: &[(usize, Vec<f32>)],
         changed_files: &[String],
+        precomputed_hashes: Option<HashMap<String, String>>,
     ) {
         self.entries
             .retain(|e| !changed_files.contains(&e.file_path));
@@ -169,7 +355,7 @@ impl EmbeddingIndex {
             self.file_hashes.remove(file);
         }
 
-        let current_hashes = compute_file_hashes(chunks);
+        let current_hashes = precomputed_hashes.unwrap_or_else(|| compute_file_hashes(chunks));
         for file in changed_files {
             if let Some(hash) = current_hashes.get(file) {
                 self.file_hashes.insert(file.clone(), hash.clone());
@@ -206,27 +392,31 @@ impl EmbeddingIndex {
         changed
     }
 
-    /// Get all embeddings in chunk order (aligned with BM25Index.chunks).
-    /// Returns None if index doesn't cover all chunks.
+    /// Get all embeddings in chunk order (aligned with BM25Index.chunks) as a
+    /// single contiguous [`FlatEmbeddings`] allocation. Returns None if the index
+    /// doesn't cover all chunks.
     ///
-    /// Returns `Arc<[Vec<f32>]>` so this single corpus allocation can be shared
-    /// (via `Arc::clone`) with the process-wide cached HNSW
-    /// [`AnnIndex`](crate::core::hnsw::AnnIndex) instead
-    /// of being copied a second time. `Arc::from(Vec<_>)` moves the per-vector
-    /// handles into the shared buffer once; the f32 heap data is never copied.
-    pub fn get_aligned_embeddings(&self, chunks: &[CodeChunk]) -> Option<Arc<[Vec<f32>]>> {
+    /// The flat layout (_n_vectors × _dim_ in row-major order) gives sequential
+    /// memory access during dot-product scoring — one dereference instead of the
+    /// two-level indirection of `Arc<[Vec<f32>]>`.
+    pub fn get_aligned_flat(&self, chunks: &[CodeChunk]) -> Option<FlatEmbeddings> {
+        let dim = self.dimensions;
         let mut map: HashMap<(&str, usize, usize), &EmbeddingEntry> =
             HashMap::with_capacity(self.entries.len());
         for e in &self.entries {
             map.insert((e.file_path.as_str(), e.start_line, e.end_line), e);
         }
 
-        let mut result = Vec::with_capacity(chunks.len());
+        let n = chunks.len();
+        let mut data = Vec::with_capacity(n * dim);
         for chunk in chunks {
             let entry = map.get(&(chunk.file_path.as_str(), chunk.start_line, chunk.end_line))?;
-            result.push(entry.embedding_f32());
+            entry.write_into_flat(&mut data);
         }
-        Some(Arc::from(result))
+        Some(FlatEmbeddings {
+            data: Arc::from(data),
+            dim,
+        })
     }
 
     pub fn coverage(&self, total_chunks: usize) -> f64 {
@@ -239,15 +429,43 @@ impl EmbeddingIndex {
     pub fn save(&self, root: &Path) -> std::io::Result<()> {
         let dir = index_dir(root);
         std::fs::create_dir_all(&dir)?;
-        let data = serde_json::to_string(self).map_err(std::io::Error::other)?;
-        std::fs::write(dir.join("embeddings.json"), data)?;
+        // Binary (postcard) — primary format, ~10× faster serialize/deserialize than JSON.
+        let data = postcard::to_allocvec(self).map_err(std::io::Error::other)?;
+        std::fs::write(dir.join("embeddings.bin"), data)?;
         Ok(())
     }
 
     pub fn load(root: &Path) -> Option<Self> {
         let dir = index_dir(root);
-        let path = dir.join("embeddings.json");
-        let data = std::fs::read_to_string(&path)
+
+        // Fast path: binary postcard format.
+        let bin_path = dir.join("embeddings.bin");
+        if let Ok(data) = std::fs::read(&bin_path) {
+            if let Ok(idx) = postcard::from_bytes::<Self>(&data) {
+                return match idx.version {
+                    CURRENT_VERSION => Some(idx),
+                    // Binary format didn't exist before v3, so v1/v2 can't appear here.
+                    // But handle gracefully just in case.
+                    v if v < CURRENT_VERSION => {
+                        tracing::info!(
+                            "[embeddings] migrating binary index v{v} → v{CURRENT_VERSION}"
+                        );
+                        let mut idx = idx;
+                        idx.version = CURRENT_VERSION;
+                        let _ = idx.migrate_legacy_entries();
+                        let _ = idx.save(root);
+                        Some(idx)
+                    }
+                    _ => None,
+                };
+            }
+            // Corrupt binary — fall through to JSON.
+            tracing::warn!("[embeddings] corrupt embeddings.bin, falling back to JSON");
+        }
+
+        // Legacy path: JSON format.
+        let json_path = dir.join("embeddings.json");
+        let data = std::fs::read_to_string(&json_path)
             .or_else(|_| {
                 let legacy_dir = legacy_embedding_dir(root);
                 if legacy_dir == dir {
@@ -259,24 +477,26 @@ impl EmbeddingIndex {
                 let legacy_path = legacy_dir.join("embeddings.json");
                 let content = std::fs::read_to_string(&legacy_path)?;
                 let _ = std::fs::create_dir_all(&dir);
-                let _ = std::fs::copy(&legacy_path, &path);
+                let _ = std::fs::copy(&legacy_path, &json_path);
                 Ok(content)
             })
             .ok()?;
         let mut idx: Self = serde_json::from_str(&data).ok()?;
         match idx.version {
-            CURRENT_VERSION => Some(idx),
+            CURRENT_VERSION => {
+                // Migrate from JSON to binary for faster subsequent loads.
+                let _ = idx.save(root);
+                Some(idx)
+            }
             1 | 2 => {
                 tracing::info!(
-                    "[embeddings] migrating index v{} → v{CURRENT_VERSION} (int8 quantization)",
+                    "[embeddings] migrating index v{} → v{CURRENT_VERSION} (int8 quantization + binary)",
                     idx.version
                 );
                 idx.version = CURRENT_VERSION;
-                let quantized = idx.migrate_legacy_entries();
-                // Persist the upgraded (4×-smaller) form once so the cost is amortized.
-                if quantized {
-                    let _ = idx.save(root);
-                }
+                let _ = idx.migrate_legacy_entries();
+                // Persist upgraded index in binary format.
+                let _ = idx.save(root);
                 Some(idx)
             }
             _ => None,
@@ -406,7 +626,12 @@ mod tests {
         let mut idx = EmbeddingIndex::new(384);
         let chunks = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
 
-        idx.update(&chunks, &[(0, dummy_embedding(384))], &["a.rs".to_string()]);
+        idx.update(
+            &chunks,
+            &[(0, dummy_embedding(384))],
+            &["a.rs".to_string()],
+            None,
+        );
 
         let needs = idx.files_needing_update(&chunks);
         assert!(needs.is_empty(), "unchanged file should not need update");
@@ -420,6 +645,7 @@ mod tests {
             &chunks_v1,
             &[(0, dummy_embedding(384))],
             &["a.rs".to_string()],
+            None,
         );
 
         let chunks_v2 = vec![make_chunk("a.rs", "fn_a", "fn a() { modified }", 1, 3)];
@@ -441,6 +667,7 @@ mod tests {
             &chunks_v1,
             &[(0, vec![0.1, 0.1, 0.1]), (1, vec![0.2, 0.2, 0.2])],
             &["a.rs".to_string()],
+            None,
         );
 
         let chunks_v2 = vec![
@@ -465,6 +692,7 @@ mod tests {
             &chunks,
             &[(0, dummy_embedding(384)), (1, dummy_embedding(384))],
             &["a.rs".to_string(), "b.rs".to_string()],
+            None,
         );
 
         let chunks_after = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
@@ -486,21 +714,27 @@ mod tests {
             &chunks,
             &[(0, dummy_embedding(384)), (1, dummy_embedding(384))],
             &["a.rs".to_string(), "b.rs".to_string()],
+            None,
         );
         assert_eq!(idx.entries.len(), 2);
 
-        idx.update(&chunks, &[(0, vec![0.5; 384])], &["a.rs".to_string()]);
+        idx.update(&chunks, &[(0, vec![0.5; 384])], &["a.rs".to_string()], None);
         assert_eq!(idx.entries.len(), 2);
 
         let b_entry = idx.entries.iter().find(|e| e.file_path == "b.rs").unwrap();
+        let b_embed = b_entry
+            .quant
+            .as_ref()
+            .map(|q| q.dequantize())
+            .unwrap_or_default();
         assert!(
-            (b_entry.embedding_f32()[0] - 0.1).abs() < 1e-6,
+            (b_embed[0] - 0.1).abs() < 1e-6,
             "b.rs embedding should be preserved"
         );
     }
 
     #[test]
-    fn get_aligned_embeddings() {
+    fn get_aligned_flat_ok() {
         let mut idx = EmbeddingIndex::new(2);
         let chunks = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
@@ -510,19 +744,21 @@ mod tests {
             &chunks,
             &[(0, vec![1.0, 0.0]), (1, vec![0.0, 1.0])],
             &["a.rs".to_string(), "b.rs".to_string()],
+            None,
         );
 
-        let aligned = idx.get_aligned_embeddings(&chunks).unwrap();
-        assert_eq!(aligned.len(), 2);
-        assert!((aligned[0][0] - 1.0).abs() < 1e-6);
-        assert!((aligned[1][1] - 1.0).abs() < 1e-6);
+        let flat = idx.get_aligned_flat(&chunks).unwrap();
+        assert_eq!(flat.n_vectors(), 2);
+        assert_eq!(flat.dim, 2);
+        assert!((flat.get(0)[0] - 1.0).abs() < 1e-6);
+        assert!((flat.get(1)[1] - 1.0).abs() < 1e-6);
     }
 
     #[test]
-    fn get_aligned_embeddings_missing() {
+    fn get_aligned_flat_missing() {
         let idx = EmbeddingIndex::new(384);
         let chunks = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
-        assert!(idx.get_aligned_embeddings(&chunks).is_none());
+        assert!(idx.get_aligned_flat(&chunks).is_none());
     }
 
     #[test]
@@ -531,7 +767,12 @@ mod tests {
         assert!((idx.coverage(10) - 0.0).abs() < 1e-6);
 
         let chunks = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
-        idx.update(&chunks, &[(0, dummy_embedding(384))], &["a.rs".to_string()]);
+        idx.update(
+            &chunks,
+            &[(0, dummy_embedding(384))],
+            &["a.rs".to_string()],
+            None,
+        );
         assert!((idx.coverage(2) - 0.5).abs() < 1e-6);
         assert!((idx.coverage(1) - 1.0).abs() < 1e-6);
     }
@@ -546,14 +787,23 @@ mod tests {
 
         let mut idx = EmbeddingIndex::new(3);
         let chunks = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
-        idx.update(&chunks, &[(0, vec![1.0, 2.0, 3.0])], &["a.rs".to_string()]);
+        idx.update(
+            &chunks,
+            &[(0, vec![1.0, 2.0, 3.0])],
+            &["a.rs".to_string()],
+            None,
+        );
         idx.save(project_dir.path()).unwrap();
 
         let loaded = EmbeddingIndex::load(project_dir.path()).unwrap();
         assert_eq!(loaded.dimensions, 3);
         assert_eq!(loaded.entries.len(), 1);
         // int8-quantized round-trip: within one quantization step of the original.
-        let recon = loaded.entries[0].embedding_f32();
+        let recon = loaded.entries[0]
+            .quant
+            .as_ref()
+            .map(|q| q.dequantize())
+            .unwrap_or_default();
         assert!((recon[0] - 1.0).abs() < 0.02);
         assert!((recon[1] - 2.0).abs() < 0.02);
         assert!((recon[2] - 3.0).abs() < 0.02);
@@ -592,7 +842,12 @@ mod tests {
         assert!(!idx.dimension_mismatch(768)); // no entries = no mismatch
 
         let chunks = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
-        idx.update(&chunks, &[(0, dummy_embedding(384))], &["a.rs".to_string()]);
+        idx.update(
+            &chunks,
+            &[(0, dummy_embedding(384))],
+            &["a.rs".to_string()],
+            None,
+        );
         assert!(!idx.dimension_mismatch(384));
         assert!(idx.dimension_mismatch(768));
     }
@@ -659,7 +914,7 @@ mod tests {
             "f32 field cleared after migration"
         );
         assert!(entry.quant.is_some(), "entry is now quantized");
-        let recon = entry.embedding_f32();
+        let recon = entry.quant.as_ref().unwrap().dequantize();
         assert!((recon[2] - 3.0).abs() < 0.02);
 
         // Migration persisted the smaller form: re-loading sees v3 directly.

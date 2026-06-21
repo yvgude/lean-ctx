@@ -51,6 +51,10 @@ struct ProjectBuild {
     warm_triggered: bool,
     graph: Component,
     bm25: Component,
+    /// Dense embedding index (semantic search). Built after BM25 as Phase 3.
+    /// Tracked separately so the orchestrator does not block on a missing ONNX
+    /// model — the status lets users see why semantic stays cold (#249).
+    semantic: Component,
 }
 
 impl ProjectBuild {
@@ -60,6 +64,7 @@ impl ProjectBuild {
             warm_triggered: false,
             graph: Component::new(),
             bm25: Component::new(),
+            semantic: Component::new(),
         }
     }
 }
@@ -344,6 +349,64 @@ pub fn ensure_all_background(project_root: &str) {
     }
 }
 
+/// Build only the semantic (dense embedding) index from the existing BM25 index.
+/// The BM25 index must already exist on disk — this function loads it and runs
+/// `embedding_index::build_or_update`. Updates the in-memory semantic component
+/// state on completion.
+pub fn build_semantic(project_root: &str) {
+    let state = entry_for(project_root);
+    let root = Path::new(project_root);
+
+    {
+        let mut s = state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        start_component(&mut s.semantic);
+    }
+
+    let bm25_idx = try_load_bm25_index(project_root);
+    match bm25_idx.as_ref() {
+        Some(idx) if idx.doc_count > 0 => {
+            let outcome = crate::core::embedding_index::build_or_update(root, idx);
+            let mut s = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            match outcome {
+                crate::core::embedding_index::EmbeddingBuildOutcome::Ready => {
+                    finish_ok(&mut s.semantic);
+                }
+                crate::core::embedding_index::EmbeddingBuildOutcome::Skipped => {
+                    finish_ok(&mut s.semantic);
+                    s.semantic.note = Some(
+                        "embeddings disabled by feature flag or config (search.dense_enabled / memory_profile)"
+                            .to_string(),
+                    );
+                }
+                crate::core::embedding_index::EmbeddingBuildOutcome::ModelNotAvailable(
+                    ref reason,
+                ) => {
+                    s.semantic.state = State::Idle;
+                    s.semantic.note = Some(format!("embedding model not available: {reason}"));
+                }
+                crate::core::embedding_index::EmbeddingBuildOutcome::Failed => {
+                    finish_err(
+                        &mut s.semantic,
+                        "embedding build failed (see logs)".to_string(),
+                    );
+                }
+            }
+        }
+        _ => {
+            let mut s = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            s.semantic.state = State::Idle;
+            s.semantic.note =
+                Some("BM25 index is empty or unavailable — nothing to embed".to_string());
+        }
+    }
+}
+
 /// Ensure background indexing for all extra roots (in addition to the primary).
 /// Each extra root that is not a subdirectory of `primary_root` gets its own
 /// graph + BM25 index. Capped at `MAX_EXTRA_ROOT_BUILDS` to prevent runaway.
@@ -412,6 +475,39 @@ pub struct Bm25Summary {
     pub last_error: Option<String>,
 }
 
+/// Lightweight snapshot of the semantic (dense embedding) component.
+#[derive(Debug, Clone)]
+pub struct SemanticSummary {
+    pub state: &'static str,
+    pub elapsed_ms: Option<u64>,
+    pub note: Option<String>,
+    pub last_error: Option<String>,
+}
+
+pub fn semantic_summary(project_root: &str) -> SemanticSummary {
+    let entry = entry_for(project_root);
+    let s = entry
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let c = &s.semantic;
+    let elapsed_ms = if matches!(c.state, State::Building) {
+        c.started_ms.map(|start| now_ms().saturating_sub(start))
+    } else {
+        c.duration_ms
+    };
+    SemanticSummary {
+        state: match c.state {
+            State::Idle => "idle",
+            State::Building => "building",
+            State::Ready => "ready",
+            State::Failed => "failed",
+        },
+        elapsed_ms,
+        note: c.note.clone(),
+        last_error: c.last_error.clone(),
+    }
+}
+
 pub fn bm25_summary(project_root: &str) -> Bm25Summary {
     let entry = entry_for(project_root);
     let s = entry
@@ -452,10 +548,12 @@ pub fn is_building() -> bool {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     map.values().any(|entry| {
-        let s = entry
+        let st = entry
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        matches!(s.bm25.state, State::Building) || matches!(s.graph.state, State::Building)
+        matches!(st.bm25.state, State::Building)
+            || matches!(st.graph.state, State::Building)
+            || matches!(st.semantic.state, State::Building)
     })
 }
 
@@ -491,6 +589,10 @@ struct StatusResponse<'a> {
     project_root: &'a str,
     graph_index: ComponentStatus<'a>,
     bm25_index: ComponentStatus<'a>,
+    /// Dense embedding index built after BM25.  "idle" means the ONNX model
+    /// has not been downloaded yet or the embeddings feature was not compiled
+    /// in; "ready" means embeddings are persisted and search will use them.
+    semantic_index: ComponentStatus<'a>,
     disk: DiskStatusAll,
 }
 
@@ -507,6 +609,10 @@ pub struct DiskStatusAll {
     pub graph_index: DiskStatus,
     pub bm25_index: DiskStatus,
     pub code_graph: DiskStatus,
+    /// On-disk embedding index (`embeddings.bin`).  Present when dense search
+    /// has been built at least once; absent when the model is not downloaded
+    /// yet or embeddings are disabled by config.
+    pub semantic_index: DiskStatus,
 }
 
 fn disk_status_for_graph(project_root: &str) -> DiskStatus {
@@ -579,15 +685,36 @@ fn format_time(t: SystemTime) -> String {
     )
 }
 
+pub fn disk_status_for_semantic(project_root: &str) -> DiskStatus {
+    let root = Path::new(project_root);
+    let dir = crate::core::index_namespace::vectors_dir(root);
+    let bin_path = dir.join("embeddings.bin");
+    if !bin_path.exists() {
+        return DiskStatus::default();
+    }
+    let meta = std::fs::metadata(&bin_path).ok();
+    DiskStatus {
+        exists: true,
+        size_bytes: meta.as_ref().map(std::fs::Metadata::len),
+        file_count: None,
+        modified_at: meta.and_then(|m| m.modified().ok()).map(format_time),
+    }
+}
+
 pub fn disk_status(project_root: &str) -> DiskStatusAll {
     DiskStatusAll {
         graph_index: disk_status_for_graph(project_root),
         bm25_index: disk_status_for_bm25(project_root),
         code_graph: disk_status_for_code_graph(project_root),
+        semantic_index: disk_status_for_semantic(project_root),
     }
 }
 
 pub fn status_json(project_root: &str) -> String {
+    // Compute disk status first — may do SQLite I/O and must NOT hold L2
+    // (per-project Mutex) while doing so, or the background index worker
+    // cannot call finish_ok / set worker_running = false (#deadlock).
+    let disk = disk_status(project_root);
     let state = entry_for(project_root);
     let s = state
         .lock()
@@ -596,7 +723,8 @@ pub fn status_json(project_root: &str) -> String {
         project_root,
         graph_index: component_status(&s.graph),
         bm25_index: component_status(&s.bm25),
-        disk: disk_status(project_root),
+        semantic_index: component_status(&s.semantic),
+        disk,
     };
     serde_json::to_string(&res).unwrap_or_else(|_| "{}".to_string())
 }
