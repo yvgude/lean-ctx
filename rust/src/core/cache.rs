@@ -26,11 +26,38 @@ fn normalize_key(path: &str) -> String {
     crate::core::pathutil::normalize_tool_path(path)
 }
 
-fn max_cache_tokens() -> usize {
-    std::env::var("LEAN_CTX_CACHE_MAX_TOKENS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(500_000)
+/// Built-in default token budget for the in-memory read cache.
+pub(crate) const DEFAULT_CACHE_MAX_TOKENS: usize = 500_000;
+
+/// Pure resolver for the read-cache token budget. `env` (the raw
+/// `LEAN_CTX_CACHE_MAX_TOKENS` value) wins when it parses to a positive integer,
+/// then the `configured` `[core] cache_max_tokens`, else
+/// [`DEFAULT_CACHE_MAX_TOKENS`]. A `0` (or unparseable env) in either source
+/// means "use the default". Split out so the precedence is unit-testable without
+/// touching the global env or config.
+fn resolve_cache_max_tokens(env: Option<&str>, configured: usize) -> usize {
+    if let Some(raw) = env
+        && let Ok(n) = raw.trim().parse::<usize>()
+        && n > 0
+    {
+        return n;
+    }
+    if configured > 0 {
+        configured
+    } else {
+        DEFAULT_CACHE_MAX_TOKENS
+    }
+}
+
+/// Resolved token budget for the read cache. `LEAN_CTX_CACHE_MAX_TOKENS` wins
+/// (env-first keeps the hot eviction path cheap for power users), then
+/// `[core] cache_max_tokens` in config.toml, else [`DEFAULT_CACHE_MAX_TOKENS`].
+/// Shared with `eviction_orchestrator` so both eviction rails read one budget.
+pub(crate) fn max_cache_tokens() -> usize {
+    resolve_cache_max_tokens(
+        std::env::var("LEAN_CTX_CACHE_MAX_TOKENS").ok().as_deref(),
+        crate::core::config::Config::load().cache_max_tokens,
+    )
 }
 
 /// A cached file read: zstd-compressed content, hash, token count, and access metadata.
@@ -1063,6 +1090,25 @@ mod tests {
         assert!(
             score_a > score_b,
             "frequently accessed entries should score higher via RRF"
+        );
+    }
+
+    #[test]
+    fn cache_budget_resolver_precedence() {
+        // env wins when positive
+        assert_eq!(resolve_cache_max_tokens(Some("250000"), 999), 250_000);
+        assert_eq!(resolve_cache_max_tokens(Some(" 80000 "), 0), 80_000);
+        // env 0 / blank / garbage falls through to config
+        assert_eq!(resolve_cache_max_tokens(Some("0"), 123_456), 123_456);
+        assert_eq!(resolve_cache_max_tokens(Some(""), 123_456), 123_456);
+        assert_eq!(resolve_cache_max_tokens(Some("lots"), 123_456), 123_456);
+        // no env → config field
+        assert_eq!(resolve_cache_max_tokens(None, 42_000), 42_000);
+        // nothing set anywhere → built-in default
+        assert_eq!(resolve_cache_max_tokens(None, 0), DEFAULT_CACHE_MAX_TOKENS);
+        assert_eq!(
+            resolve_cache_max_tokens(Some("0"), 0),
+            DEFAULT_CACHE_MAX_TOKENS
         );
     }
 

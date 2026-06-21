@@ -426,6 +426,13 @@ pub struct Config {
     /// Override via LEAN_CTX_CACHE_POLICY env var.
     #[serde(default)]
     pub cache_policy: Option<String>,
+    /// Token budget for the in-memory `ctx_read` cache. When the cached total
+    /// plus an incoming read would exceed this, lean-ctx evicts the least-valuable
+    /// entries *immediately* (RRF: recency × frequency × size) so the read always
+    /// proceeds — eviction is never deferred to the staleness TTL. `0` uses the
+    /// built-in default (500k). `LEAN_CTX_CACHE_MAX_TOKENS` env var overrides this.
+    #[serde(default)]
+    pub cache_max_tokens: usize,
     /// Cross-project boundary policy.
     /// Controls whether cross-project search/import is allowed and whether access is audited.
     #[serde(default)]
@@ -575,6 +582,7 @@ impl Default for Config {
             response_verbosity: ResponseVerbosity::default(),
             bypass_hints: None,
             cache_policy: None,
+            cache_max_tokens: 0,
             boundary_policy: crate::core::memory_boundary::BoundaryPolicy::default(),
             secret_detection: SecretDetectionConfig::default(),
             sensitivity: crate::core::sensitivity::SensitivityConfig::default(),

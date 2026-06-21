@@ -348,6 +348,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             ),
         );
     root.insert(
+        "cache_max_tokens".into(),
+        key_with_env(
+            "usize",
+            serde_json::json!(cfg.cache_max_tokens),
+            "Token budget for the in-memory ctx_read cache (0 = built-in default 500k). When exceeded, least-valuable entries are evicted immediately via RRF (recency x frequency x size) so reads never block; eviction is not deferred to the staleness TTL",
+            "LEAN_CTX_CACHE_MAX_TOKENS",
+        ),
+    );
+    root.insert(
             "shadow_mode".into(),
             key_with_env(
                 "bool",

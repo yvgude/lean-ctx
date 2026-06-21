@@ -17,6 +17,7 @@ Top-level configuration keys
 - `auto_mode_learning` (bool, default `false` — env `LEAN_CTX_AUTO_MODE_LEARNING`) — Opt-in: let adaptive learning signals (predictor, bandit, heatmap, adaptive policy, bounce/path memory) influence `auto` mode. Off by default for a deterministic, I/O-light cascade (capability guards + size/task heuristic only) that keeps output byte-stable for prompt caching. Override via LEAN_CTX_AUTO_MODE_LEARNING
 - `bm25_max_cache_mb` (u64, default `128` — env `LEAN_CTX_BM25_MAX_CACHE_MB`) — Maximum BM25 cache file size in MB
 - `buddy_enabled` (bool, default `true`) — Enable the buddy system for multi-agent coordination
+- `cache_max_tokens` (usize, default `0` — env `LEAN_CTX_CACHE_MAX_TOKENS`) — Token budget for the in-memory ctx_read cache (0 = built-in default 500k). When exceeded, least-valuable entries are evicted immediately via RRF (recency x frequency x size) so reads never block; eviction is not deferred to the staleness TTL
 - `cache_policy` (enum(aggressive|safe|off), default `aggressive` — env `LEAN_CTX_CACHE_POLICY`) — Cache policy for ctx_read: aggressive (13-tok stubs), safe (map on hit), off (always disk)
 - `checkpoint_interval` (u32, default `15`) — Session checkpoint interval in minutes
 - `compression_aggressiveness` (f64, default `null` — env `LEAN_CTX_AGGRESSIVENESS`) — Global compression intensity 0.0 (lossless) – 1.0 (max), mapped onto read modes/entropy/IB. Empty = per-mode defaults
