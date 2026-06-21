@@ -21,7 +21,7 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0",
-    "vitest": "^2.1.0"
+    "vitest": "^4.1.9"
   },
   "files": ["dist/", "README.md"]
 }
