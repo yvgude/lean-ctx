@@ -213,9 +213,16 @@ fn summarize_or_stub(text: &str, kind: ToolResultKind) -> String {
     if should_protect(kind, text) {
         let lines = text.lines().count();
         return match super::ccr::persist(text) {
-            Some(handle) => format!(
-                "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. This is the version shown that turn — the file may have changed since. Full original at {handle}. Re-read the file for its current contents.]"
-            ),
+            Some(handle) => match super::ccr::inband_locator(&handle) {
+                // In-band (#493): the remote agent can't read the tee path, so
+                // offer the echo-able marker to splice the historical bytes back.
+                Some(marker) => format!(
+                    "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. This is the version shown that turn — the file may have changed since. Echo {marker} to splice the verbatim original back inline, or re-read the file for its current contents.]"
+                ),
+                None => format!(
+                    "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. This is the version shown that turn — the file may have changed since. Full original at {handle}. Re-read the file for its current contents.]"
+                ),
+            },
             None => format!(
                 "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. This was an older version — the file may have changed since. Re-read the file for its current contents.]"
             ),
@@ -235,8 +242,12 @@ fn summarize_text(text: &str) -> String {
 
     // CCR (#482): a head/tail summary drops the middle; offer a recovery handle
     // to the verbatim original (content-addressed → cache-safe, MCP-independent).
+    // In-band (#493): advertise the echo-able marker when there is no shared FS.
     let recover = super::ccr::persist(text)
-        .map(|h| format!(" · full at {h}"))
+        .map(|h| match super::ccr::inband_locator(&h) {
+            Some(marker) => format!(" · echo {marker} for the full original"),
+            None => format!(" · full at {h}"),
+        })
         .unwrap_or_default();
 
     format!(

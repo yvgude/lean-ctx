@@ -49,6 +49,17 @@ pub struct ProxyConfig {
     /// mis-bucketed as `Search` by name). Set an explicit list to narrow it, or
     /// `[]` to disable the exclusion. See [`ProxyConfig::is_tool_live_compress_excluded`].
     pub live_compress_exclude: Option<Vec<String>>,
+    /// Opt-in in-band CCR retrieval for a remote proxy with no shared filesystem
+    /// (#493, follow-up to #482). When enabled, a lossy stub advertises a compact
+    /// `<lc_expand:HASH>` marker (instead of a local tee path the remote agent
+    /// can't read); when the model echoes that marker back, the proxy splices the
+    /// verbatim original — recovered from its **local** tee store — inline on the
+    /// next request, costing one turn of latency and needing no MCP/FS on the
+    /// agent host. `None`/`false` (the default) keeps the path-handle stub. The
+    /// splice is a strict no-op on marker-less turns, so it never perturbs the
+    /// provider cache prefix unless the model explicitly asked to expand. See
+    /// [`ProxyConfig::ccr_inband_enabled`].
+    pub ccr_inband: Option<bool>,
 }
 
 /// Per-role prose-compression intensity for the proxy's frozen request region.
@@ -134,6 +145,15 @@ impl ProxyConfig {
     pub fn repacks_cold_prefix(&self) -> bool {
         std::env::var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK").is_ok()
             || self.cold_prefix_repack.unwrap_or(false)
+    }
+
+    /// Whether opt-in in-band CCR retrieval (#493) is enabled. Off by default:
+    /// the splice mutates provider-visible conversation content for the one turn
+    /// the model asks to expand, so it must be an explicit opt-in.
+    /// `LEAN_CTX_PROXY_CCR_INBAND` (any value) wins, then `[proxy] ccr_inband` in
+    /// config.toml, else `false`.
+    pub fn ccr_inband_enabled(&self) -> bool {
+        std::env::var("LEAN_CTX_PROXY_CCR_INBAND").is_ok() || self.ccr_inband.unwrap_or(false)
     }
 
     /// Whether the proxy live-compresses non-protected `tool_result` content
@@ -520,6 +540,24 @@ mod tests {
             ..Default::default()
         };
         assert!(cfg.repacks_cold_prefix());
+    }
+
+    #[test]
+    fn ccr_inband_is_opt_in_and_config_enables() {
+        // #493: off by default (the splice mutates provider-visible content for
+        // the expand turn), enabled via config. Isolate from a developer shell
+        // that may export the env override.
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_PROXY_CCR_INBAND");
+        assert!(
+            !ProxyConfig::default().ccr_inband_enabled(),
+            "in-band CCR must be opt-in (off by default)"
+        );
+        let cfg = ProxyConfig {
+            ccr_inband: Some(true),
+            ..Default::default()
+        };
+        assert!(cfg.ccr_inband_enabled());
     }
 
     #[test]

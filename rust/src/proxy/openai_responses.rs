@@ -57,11 +57,22 @@ pub async fn ws_handler(
 
 fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize, usize) {
     let mut doc = parsed;
-    // Meter-only (#481): live compression off and history pruning off → forward
-    // the body unchanged while upstream usage metering still runs.
     let cfg = crate::core::config::Config::load();
+    // #493: in-band CCR expansion (opt-in). Splice any <lc_expand:HASH> the model
+    // echoed back into the verbatim original from the local tee store. A strict
+    // no-op when no marker is present (byte-identical body → cache-safe). Runs
+    // before the meter-only short-circuit so an explicit expand request is
+    // honored even when the proxy is otherwise byte-passthrough.
+    let mut modified = false;
+    if cfg.proxy.ccr_inband_enabled() {
+        modified |= super::ccr::splice_inband_in_place(&mut doc);
+    }
+    // Meter-only (#481): live compression off and history pruning off → forward
+    // the body unchanged while upstream usage metering still runs. A pending
+    // in-band splice (`modified`) opts out: the body did change this turn.
     if !cfg.proxy.live_compresses()
         && cfg.proxy.resolved_history_mode() == crate::core::config::HistoryMode::Off
+        && !modified
     {
         let out = serde_json::to_vec(&doc).unwrap_or_default();
         return (out, original_size, original_size);
@@ -70,7 +81,7 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
     // frozen OLD region — old file reads collapse to re-read stubs, old logs
     // head/tail summarize — then (2) compress whatever recent outputs remain.
     // Stage 1 runs first so a stubbed old output isn't needlessly re-compressed.
-    let mut modified = prune_responses_input(&mut doc);
+    modified |= prune_responses_input(&mut doc);
     modified |= compress_responses_input(&mut doc);
     let out = serde_json::to_vec(&doc).unwrap_or_default();
     let compressed_size = if modified { out.len() } else { original_size };

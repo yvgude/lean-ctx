@@ -35,10 +35,20 @@ fn attach_ccr(original: &str, result: String) -> String {
         return result;
     }
     match ccr::persist(original) {
-        Some(handle) => format!(
-            "{result}\n[lean-ctx: full original at {handle} — read it, or \
-             ctx_expand(id=\"{handle}\", head=N|search=\"…\"|json_path=\"…\") for a slice]"
-        ),
+        Some(handle) => match ccr::inband_locator(&handle) {
+            // In-band (#493): a remote agent can't read the local tee path, so
+            // advertise the echo-able marker instead — echoing it splices the
+            // verbatim original back inline next turn.
+            Some(marker) => format!(
+                "{result}\n[lean-ctx: full original elided to save tokens — echo {marker} \
+                 on your next turn to get the verbatim original spliced back inline]"
+            ),
+            // Shared-filesystem default: the path handle (native read or slice).
+            None => format!(
+                "{result}\n[lean-ctx: full original at {handle} — read it, or \
+                 ctx_expand(id=\"{handle}\", head=N|search=\"…\"|json_path=\"…\") for a slice]"
+            ),
+        },
         None => result,
     }
 }

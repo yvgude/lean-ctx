@@ -40,9 +40,23 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
     let user_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::User);
     let live_compress = cfg.proxy.live_compresses();
     let mode = cfg.proxy.resolved_history_mode();
+    // #493: in-band CCR expansion (opt-in). Splice any <lc_expand:HASH> the model
+    // echoed back into the verbatim original from the local tee store. A strict
+    // no-op when no marker is present (byte-identical body → cache-safe). Runs
+    // before the meter-only short-circuit so an explicit expand request is
+    // honored even when the proxy is otherwise byte-passthrough.
+    if cfg.proxy.ccr_inband_enabled() {
+        modified |= super::ccr::splice_inband_in_place(&mut doc);
+    }
     // Meter-only (#481): no live compression, no history pruning, no prose → the
-    // body is forwarded unchanged while usage metering still runs.
-    if !live_compress && mode == HistoryMode::Off && system_aggr.is_none() && user_aggr.is_none() {
+    // body is forwarded unchanged while usage metering still runs. A pending
+    // in-band splice (`modified`) opts out: the body did change this turn.
+    if !live_compress
+        && mode == HistoryMode::Off
+        && system_aggr.is_none()
+        && user_aggr.is_none()
+        && !modified
+    {
         let out = serde_json::to_vec(&doc).unwrap_or_default();
         return (out, original_size, original_size);
     }

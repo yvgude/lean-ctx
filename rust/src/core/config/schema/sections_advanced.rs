@@ -84,6 +84,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "Tool-name patterns (case-insensitive substring) whose tool_result is never live-compressed — treated as protected, like a file read (#481). Unset protects Serena's code-reading tools; set an explicit list to narrow it, or [] to disable",
         ),
     );
+    proxy.insert(
+        "ccr_inband".into(),
+        key_with_env(
+            "bool",
+            serde_json::json!(cfg.proxy.ccr_inband_enabled()),
+            "Opt-in in-band CCR retrieval for a remote proxy with no shared filesystem (#493). When on, a lossy stub advertises a compact <lc_expand:HASH> marker instead of a local tee path; when the model echoes that marker, the proxy splices the verbatim original (from its local tee store) back inline next turn — one turn of latency, no MCP/filesystem on the agent host. The splice is a strict no-op on marker-less turns, so it never perturbs the provider cache prefix unless the model asked to expand. Default false",
+            "LEAN_CTX_PROXY_CCR_INBAND",
+        ),
+    );
     sections.insert(
         "proxy".into(),
         SectionSchema {

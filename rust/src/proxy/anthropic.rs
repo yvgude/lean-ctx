@@ -41,10 +41,24 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
     let user_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::User);
     let live_compress = cfg.proxy.live_compresses();
     let mode = cfg.proxy.resolved_history_mode();
+    // #493: in-band CCR expansion (opt-in). Splice any <lc_expand:HASH> the model
+    // echoed back into the verbatim original from the local tee store. A strict
+    // no-op when no marker is present (byte-identical body → cache-safe). Runs
+    // before the meter-only short-circuit so an explicit expand request is
+    // honored even when the proxy is otherwise byte-passthrough.
+    if cfg.proxy.ccr_inband_enabled() {
+        modified |= super::ccr::splice_inband_in_place(&mut doc);
+    }
     // Meter-only (#481): live compression off, no history pruning, no prose
     // rewriting → forward + usage metering still run, but the body is left
-    // unchanged so the provider prompt-cache prefix stays byte-stable.
-    if !live_compress && mode == HistoryMode::Off && system_aggr.is_none() && user_aggr.is_none() {
+    // unchanged so the provider prompt-cache prefix stays byte-stable. A pending
+    // in-band splice (`modified`) opts out: the body did change this turn.
+    if !live_compress
+        && mode == HistoryMode::Off
+        && system_aggr.is_none()
+        && user_aggr.is_none()
+        && !modified
+    {
         let out = serde_json::to_vec(&doc).unwrap_or_default();
         return (out, original_size, original_size);
     }
@@ -323,6 +337,104 @@ mod tests {
         let a = compress_request_body(serde_json::from_slice(&bytes).unwrap(), bytes.len()).0;
         let b = compress_request_body(serde_json::from_slice(&bytes).unwrap(), bytes.len()).0;
         assert_eq!(a, b, "identical input must yield byte-identical output");
+    }
+
+    /// A large, highly-compressible foreign log so the live path tees + stubs it.
+    fn big_log() -> String {
+        (0..200)
+            .map(|i| format!("[info] processed item {i:04} ok, latency {i}ms, queue normal"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn inband_ccr_emit_echo_splice_round_trip() {
+        // Full #493 cycle through the real Anthropic request path: a lossy stub
+        // emits an <lc_expand:HASH> marker, the model echoes it, and the proxy
+        // splices the verbatim original back inline on the next request.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::remove_var("LEAN_CTX_PROXY_CCR_INBAND");
+        crate::core::config::Config::update_global(|c| {
+            c.proxy.ccr_inband = Some(true);
+        })
+        .unwrap();
+
+        // EMIT: live-compress a foreign tool_result → recovery stub with a marker.
+        let log = big_log();
+        let emit = serde_json::json!({
+            "messages": [
+                {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "bash", "input": {}}]},
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": log}]}
+            ]
+        });
+        let bytes = serde_json::to_vec(&emit).unwrap();
+        let (out, _o, _c) = compress_request_body(emit, bytes.len());
+        let emitted: Value = serde_json::from_slice(&out).unwrap();
+        let stub = emitted["messages"][1]["content"][0]["content"]
+            .as_str()
+            .unwrap();
+        assert!(
+            stub.contains("<lc_expand:"),
+            "in-band stub must advertise an echo-able marker: {stub}"
+        );
+        assert!(
+            !stub.contains("/tee/proxy_"),
+            "in-band stub must not leak the unreachable local tee path: {stub}"
+        );
+
+        // The marker the model would copy into its next turn.
+        let start = stub.find("<lc_expand:").unwrap();
+        let end = stub[start..].find('>').unwrap() + start + 1;
+        let marker = &stub[start..end];
+
+        // ECHO + SPLICE: the model echoes the marker; the proxy splices the
+        // verbatim original (recovered from the local tee store) back inline.
+        let echo = serde_json::json!({
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "look again"}]},
+                {"role": "assistant", "content": format!("revisiting that output: {marker}")}
+            ]
+        });
+        let bytes = serde_json::to_vec(&echo).unwrap();
+        let (out, _o, _c) = compress_request_body(echo, bytes.len());
+        let spliced: Value = serde_json::from_slice(&out).unwrap();
+        let assistant = spliced["messages"][1]["content"].as_str().unwrap();
+        assert!(
+            assistant.contains("processed item 0007 ok")
+                && assistant.contains("processed item 0199 ok"),
+            "the verbatim original must be spliced back in full: {assistant}"
+        );
+        assert!(
+            !assistant.contains("<lc_expand:"),
+            "the marker must be consumed by the splice"
+        );
+    }
+
+    #[test]
+    fn inband_marker_less_turn_is_byte_identical_on_or_off() {
+        // Cache-safety (#493): enabling in-band must be a strict no-op on a turn
+        // with no marker — same bytes on the wire, so the provider cache prefix is
+        // never perturbed unless the model actually asked to expand. Uses a body
+        // with nothing to prune/compress, isolating the splice from stub emission.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::remove_var("LEAN_CTX_PROXY_CCR_INBAND");
+        let body = serde_json::json!({
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "hello there"}]},
+                {"role": "assistant", "content": "hi — how can I help?"}
+            ]
+        });
+        let bytes = serde_json::to_vec(&body).unwrap();
+
+        crate::core::config::Config::update_global(|c| c.proxy.ccr_inband = Some(false)).unwrap();
+        let off = compress_request_body(body.clone(), bytes.len()).0;
+        crate::core::config::Config::update_global(|c| c.proxy.ccr_inband = Some(true)).unwrap();
+        let on = compress_request_body(body, bytes.len()).0;
+
+        assert_eq!(
+            off, on,
+            "a marker-less request must be byte-identical whether in-band is on or off"
+        );
     }
 
     /// Long, duplicate-rich natural-language prose that compresses cleanly.
