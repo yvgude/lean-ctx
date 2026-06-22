@@ -137,6 +137,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   property on Windows. The VCS path now allows *equal* (verbatim) output but
   rejects any growth, restoring the never-inflate invariant deterministically.
   Pinned with a regression unit test for the exact failing input.
+- **Cold-prefix repack is now sticky, persistent, and marker-stable (#499).** Three
+  fixes to the opt-in big-gap repack (#480): (1) once a resumed conversation is judged
+  cold and repacked, the decision **latches** so every warm follow-up keeps the same
+  deterministic prefix compression and hits the cache written at the cold turn — the
+  previous one-shot repack re-sent the *uncompressed* prefix on the very next turn and
+  busted its own fresh cache (net-negative for the common resume-then-continue case);
+  (2) per-conversation baselines now **persist to disk** (`cold_prefix_touch.json`,
+  atomic write) and reload on proxy startup, so a long idle gap that straddles a daemon
+  restart is still detected; (3) the conversation key **ignores the volatile
+  `cache_control` marker**, so a moving cache breakpoint no longer flips the key into a
+  permanent first-sighting that never repacks. All three are cache-safe by construction
+  (deterministic re-compression) and covered by new N→N+1, restart, and marker-stability
+  tests. Thanks to @phawrylak for the precise analysis.
 - **Billing edge no longer downgrades a paying account on a billing-service blip
   (GL #785).** Entitlement resolution at the cloud edge now caches each user's
   last known plan (in-memory, short TTL) and, when the upstream billing service

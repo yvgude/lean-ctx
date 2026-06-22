@@ -216,6 +216,9 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     // Seed the measured-spend meter from disk so a proxy restart never zeroes
     // the user's cumulative real provider bill.
     usage_meter::resume_from_disk();
+    // Seed the cold-prefix baselines too so a long idle gap that straddles a
+    // proxy restart is still detected and the repack can fire (#499).
+    cold_prefix::resume_from_disk();
 
     let cfg = Config::load();
     // Read once at startup — avoids a Config::load() on every proxied request.
