@@ -113,6 +113,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   `lean-ctx bypass` stays as a back-compat alias; model-visible hints now use
   `raw` and state that the allowlist still holds.
 
+### Fixed
+- **Billing edge no longer downgrades a paying account on a billing-service blip
+  (GL #785).** Entitlement resolution at the cloud edge now caches each user's
+  last known plan (in-memory, short TTL) and, when the upstream billing service
+  is unreachable or returns a bad response, serves that cached plan instead of
+  silently falling back to Free. Successful lookups refresh the cache; only
+  never-seen accounts fall to Free. A transient upstream outage can no longer
+  lock a Pro subscriber out of paid features mid-session.
+
 ## [3.8.11] — 2026-06-20
 
 ### Fixed
