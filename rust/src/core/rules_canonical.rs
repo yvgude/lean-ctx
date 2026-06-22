@@ -61,7 +61,7 @@ pub const ANTI: &str = "\
 Anti-patterns — do NOT:\n\
 • Chain ctx_search -> ctx_read -> ctx_symbol — one ctx_compose replaces all three\n\
 • Grep for symbol definitions — ctx_symbol is faster + more precise\n\
-• Use ctx_read(mode=full) for orientation — use mode=map\n\
+• Use ctx_read(mode=full) for orientation — use mode=signatures\n\
 • Use ctx_callgraph or ctx_graph for const/static/variable references — they track\n\
   function call edges and file-level deps only. Use grep or ctx_compose instead";
 
