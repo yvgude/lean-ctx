@@ -79,15 +79,98 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
         return expand_tee_file(&path, args);
     }
 
-    // Structured drilldown selectors (head / tail / json_keys).
+    // Route structured accessors by ID prefix. Archive IDs are hex-only, ref
+    // IDs are `ref_+hex` — the prefix tells us the exact store to query.
+    if id.starts_with("ref_") {
+        return expand_reference(id, args);
+    }
+    expand_archive(id, args)
+}
+
+/// Expand a reference-store entry (`ref_`-prefixed ID). Resolves content from
+/// the in-memory reference store and formats via `archive::format_*` — the same
+/// gutter/JSON formatters the archive path uses — so output is consistent
+/// regardless of which store backed the ID.
+fn expand_reference(id: &str, args: &serde_json::Value) -> String {
+    let Some(content) = crate::server::reference_store::resolve(id) else {
+        return format!(
+            "Reference '{id}' not found or expired (5-min TTL). \
+             Use the HTTP proxy at /v1/references/{id} if available."
+        );
+    };
+    let label = format!("reference {id}");
+
     if let Some(n) = args.get("head").and_then(serde_json::Value::as_u64) {
-        return match archive::retrieve_head(id, n as usize) {
+        let n = (n as usize).min(content.lines().count());
+        return format!(
+            "Reference {id} head {n}:\n{}",
+            archive::format_range(&content, 1, n)
+        );
+    }
+    if let Some(n) = args.get("tail").and_then(serde_json::Value::as_u64) {
+        let n = n as usize;
+        let total = content.lines().count();
+        let start = if total > n { total - n + 1 } else { 1 };
+        return format!(
+            "Reference {id} tail {n}:\n{}",
+            archive::format_range(&content, start, total)
+        );
+    }
+    if args.get("json_keys").and_then(serde_json::Value::as_bool) == Some(true)
+        || args.get("json_path").is_some()
+    {
+        let path = args.get("json_path").and_then(|v| v.as_str());
+        match archive::format_json_keys(&content, path, &label) {
+            Some(out) => return out,
+            None => {
+                return format!(
+                    "Reference '{id}' is not valid JSON. Use ctx_expand(id=\"{id}\") for raw content."
+                );
+            }
+        }
+    }
+    if let Some(pattern) = args.get("search").and_then(|v| v.as_str()) {
+        return format!(
+            "Reference {id}:\n{}",
+            archive::format_search(&content, pattern, &label)
+        );
+    }
+
+    let start = args
+        .get("start_line")
+        .and_then(serde_json::Value::as_u64)
+        .map(|v| v as usize);
+    let end = args
+        .get("end_line")
+        .and_then(serde_json::Value::as_u64)
+        .map(|v| v as usize);
+    if let (Some(s), Some(e)) = (start, end) {
+        return format!(
+            "Reference {id} lines {s}-{e}:\n{}",
+            archive::format_range(&content, s, e)
+        );
+    }
+
+    // Full content
+    let lines = content.lines().count();
+    let chars = content.len();
+    format!("Reference {id} ({chars} chars, {lines} lines):\n{content}")
+}
+
+/// Expand an archive entry (hex-only ID). Delegates to `archive::retrieve*`
+/// functions which handle on-disk lookup, cleanup-aware TTL checks, and
+/// line-number-guttered output formatting.
+fn expand_archive(id: &str, args: &serde_json::Value) -> String {
+    if let Some(n) = args.get("head").and_then(serde_json::Value::as_u64) {
+        let n = n as usize;
+        return match archive::retrieve_head(id, n) {
             Some(result) => format!("Archive {id} head {n}:\n{result}"),
             None => format!("Archive '{id}' not found or expired."),
         };
     }
     if let Some(n) = args.get("tail").and_then(serde_json::Value::as_u64) {
-        return match archive::retrieve_tail(id, n as usize) {
+        let n = n as usize;
+        return match archive::retrieve_tail(id, n) {
             Some(result) => format!("Archive {id} tail {n}:\n{result}"),
             None => format!("Archive '{id}' not found or expired."),
         };
@@ -103,7 +186,6 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
             ),
         };
     }
-
     if let Some(pattern) = args.get("search").and_then(|v| v.as_str()) {
         return match archive::retrieve_with_search(id, pattern) {
             Some(result) => result,
@@ -121,12 +203,9 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
         .get("end_line")
         .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize);
-
     if let (Some(s), Some(e)) = (start, end) {
         return match archive::retrieve_with_range(id, s, e) {
-            Some(result) => {
-                format!("Archive {id} lines {s}-{e}:\n{result}")
-            }
+            Some(result) => format!("Archive {id} lines {s}-{e}:\n{result}"),
             None => format!("Archive '{id}' not found or expired."),
         };
     }

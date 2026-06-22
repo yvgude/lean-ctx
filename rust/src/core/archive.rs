@@ -166,26 +166,27 @@ pub fn retrieve(id: &str) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
-pub fn retrieve_with_range(id: &str, start: usize, end: usize) -> Option<String> {
-    let content = retrieve(id)?;
+/// Format a range of lines from content with `{:>6}|` line-number gutter.
+/// Shared by `retrieve_with_range` (archive) and `expand_reference` (ref store).
+pub(crate) fn format_range(content: &str, start: usize, end: usize) -> String {
     let lines: Vec<&str> = content.lines().collect();
     let start = start.saturating_sub(1).min(lines.len());
     let end = end.min(lines.len());
     if start >= end {
-        return Some(String::new());
+        return String::new();
     }
-    Some(
-        lines[start..end]
-            .iter()
-            .enumerate()
-            .map(|(i, line)| format!("{:>6}|{line}", start + i + 1))
-            .collect::<Vec<_>>()
-            .join("\n"),
-    )
+    lines[start..end]
+        .iter()
+        .enumerate()
+        .map(|(i, line)| format!("{:>6}|{line}", start + i + 1))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-pub fn retrieve_with_search(id: &str, pattern: &str) -> Option<String> {
-    let content = retrieve(id)?;
+/// Search content for lines matching `pattern` (case-insensitive) and return
+/// gutter-prefixed matches. `label` appears in the result message (e.g. "archive
+/// a1966..." or "reference ref_18bb..."). Shared by archive and ref store paths.
+pub(crate) fn format_search(content: &str, pattern: &str, label: &str) -> String {
     let pattern_lower = pattern.to_lowercase();
     let matches: Vec<String> = content
         .lines()
@@ -193,38 +194,22 @@ pub fn retrieve_with_search(id: &str, pattern: &str) -> Option<String> {
         .filter(|(_, line)| line.to_lowercase().contains(&pattern_lower))
         .map(|(i, line)| format!("{:>6}|{line}", i + 1))
         .collect();
-
     if matches.is_empty() {
-        Some(format!("No matches for \"{pattern}\" in archive {id}"))
+        format!("No matches for \"{pattern}\" in {label}")
     } else {
-        Some(format!(
+        format!(
             "{} match(es) for \"{}\":\n{}",
             matches.len(),
             pattern,
             matches.join("\n")
-        ))
+        )
     }
 }
 
-/// Retrieve the first `n` lines of an archived entry, with a line-number gutter.
-pub fn retrieve_head(id: &str, n: usize) -> Option<String> {
-    retrieve_with_range(id, 1, n)
-}
-
-/// Retrieve the last `n` lines of an archived entry, with a line-number gutter.
-pub fn retrieve_tail(id: &str, n: usize) -> Option<String> {
-    let content = retrieve(id)?;
-    let total = content.lines().count();
-    let start = if total > n { total - n + 1 } else { 1 };
-    retrieve_with_range(id, start, total)
-}
-
-/// Describe the JSON structure of an archived entry: top-level keys with type hints,
-/// array lengths + element types, etc. An optional dot/slash `path` (e.g. `data.items.0`)
-/// navigates into the structure first. Returns `None` when the archive is missing or its
-/// content is not valid JSON, so callers can fall back to a raw retrieval hint.
-pub fn retrieve_json_keys(id: &str, path: Option<&str>) -> Option<String> {
-    let content = retrieve(id)?;
+/// Describe JSON structure: navigate `path` (dot/slash separated) into parsed
+/// content, then format with `describe_json`. `label` appears in error messages.
+/// Shared by archive and ref store paths.
+pub(crate) fn format_json_keys(content: &str, path: Option<&str>, label: &str) -> Option<String> {
     let root: serde_json::Value = serde_json::from_str(content.trim()).ok()?;
     let mut cur = &root;
     let mut walked = String::from("$");
@@ -242,9 +227,7 @@ pub fn retrieve_json_keys(id: &str, path: Option<&str>) -> Option<String> {
                     walked.push_str(seg);
                 }
                 None => {
-                    return Some(format!(
-                        "Path '{p}' not found at '{walked}' in archive {id}"
-                    ));
+                    return Some(format!("Path '{p}' not found at '{walked}' in {label}"));
                 }
             }
         }
@@ -252,7 +235,36 @@ pub fn retrieve_json_keys(id: &str, path: Option<&str>) -> Option<String> {
     Some(format!("{walked} => {}", describe_json(cur)))
 }
 
-fn json_type_hint(v: &serde_json::Value) -> String {
+pub fn retrieve_with_range(id: &str, start: usize, end: usize) -> Option<String> {
+    let content = retrieve(id)?;
+    Some(format_range(&content, start, end))
+}
+
+pub fn retrieve_with_search(id: &str, pattern: &str) -> Option<String> {
+    let content = retrieve(id)?;
+    Some(format_search(&content, pattern, &format!("archive {id}")))
+}
+
+/// Retrieve the first `n` lines of an archived entry, with a line-number gutter.
+pub fn retrieve_head(id: &str, n: usize) -> Option<String> {
+    retrieve_with_range(id, 1, n)
+}
+
+/// Retrieve the last `n` lines of an archived entry, with a line-number gutter.
+pub fn retrieve_tail(id: &str, n: usize) -> Option<String> {
+    let content = retrieve(id)?;
+    let total = content.lines().count();
+    let start = if total > n { total - n + 1 } else { 1 };
+    retrieve_with_range(id, start, total)
+}
+
+/// Describe the JSON structure of an archived entry.
+pub fn retrieve_json_keys(id: &str, path: Option<&str>) -> Option<String> {
+    let content = retrieve(id)?;
+    format_json_keys(&content, path, &format!("archive {id}"))
+}
+
+pub(crate) fn json_type_hint(v: &serde_json::Value) -> String {
     use serde_json::Value;
     match v {
         Value::Object(m) => format!("object({})", m.len()),
@@ -271,7 +283,7 @@ fn json_type_hint(v: &serde_json::Value) -> String {
     }
 }
 
-fn describe_json(v: &serde_json::Value) -> String {
+pub(crate) fn describe_json(v: &serde_json::Value) -> String {
     use serde_json::Value;
     match v {
         Value::Object(map) => {
