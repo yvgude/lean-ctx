@@ -1211,9 +1211,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
 
     // Project root validation: warn if no root is configured and cwd is broad
     {
-        let has_env_root = std::env::var("LEAN_CTX_PROJECT_ROOT")
-            .ok()
-            .is_some_and(|v| !v.is_empty());
+        let has_env_root = std::env::var("LEAN_CTX_PROJECT_ROOT").is_ok_and(|v| !v.is_empty());
         let cfg = crate::core::config::Config::load();
         let has_cfg_root = cfg.project_root.as_ref().is_some_and(|v| !v.is_empty());
         if !has_env_root

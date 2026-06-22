@@ -24,7 +24,33 @@ pub(crate) fn cmd_index(args: &[String]) {
         }
         Some("build") => {
             crate::core::index_orchestrator::ensure_all_background(&project_root);
-            println!("started");
+
+            let started = std::time::Instant::now();
+            let timeout = Duration::from_mins(5);
+            eprint!("building indexes (graph + BM25)");
+            loop {
+                std::thread::sleep(Duration::from_millis(500));
+                let status = crate::core::index_orchestrator::status_json(&project_root);
+                if !status.contains("\"building\"") {
+                    break;
+                }
+                eprint!(".");
+                if started.elapsed() > timeout {
+                    eprintln!(" timeout (background build continues)");
+                    return;
+                }
+            }
+            eprintln!(" done");
+
+            // Surface the BM25 build outcome so the operator knows the index
+            // state (issue #249).
+            let summary = crate::core::index_orchestrator::bm25_summary(&project_root);
+            if let Some(note) = summary.note {
+                eprintln!("  BM25: {note}");
+            }
+            if let Some(err) = summary.last_error {
+                eprintln!("  BM25 error: {err}");
+            }
         }
         Some("build-full") => {
             let bm25_path = crate::core::bm25_index::BM25Index::index_file_path(root);
@@ -32,11 +58,23 @@ pub(crate) fn cmd_index(args: &[String]) {
             // #696 C4: purge the property graph (graph.db + wal/shm + meta) and
             // any retired JSON/call-graph artifacts so the rebuild starts clean.
             crate::core::graph_index::purge_index(&project_root);
+            // Purge old embeddings so the full rebuild starts from scratch and
+            // does not re-use stale vectors from a different model or project
+            // state.
+            let vectors_dir = crate::core::index_namespace::vectors_dir(root);
+            let embedding_bin = vectors_dir.join("embeddings.bin");
+            if embedding_bin.exists() {
+                let _ = std::fs::remove_file(&embedding_bin);
+            }
+            let embedding_json = vectors_dir.join("embeddings.json");
+            if embedding_json.exists() {
+                let _ = std::fs::remove_file(&embedding_json);
+            }
             crate::core::index_orchestrator::ensure_all_background(&project_root);
 
             let started = std::time::Instant::now();
             let timeout = Duration::from_mins(5);
-            eprint!("rebuilding indexes (graph + BM25 + call graph)");
+            eprintln!("rebuilding indexes (graph + BM25)");
             loop {
                 std::thread::sleep(Duration::from_millis(500));
                 let status = crate::core::index_orchestrator::status_json(&project_root);
@@ -52,8 +90,7 @@ pub(crate) fn cmd_index(args: &[String]) {
             eprintln!(" done");
 
             // Surface the BM25 build outcome (chunk count + persisted size, or the
-            // "too large to persist" remedy) so the user is never left guessing why
-            // semantic search stays cold (issue #249).
+            // "too large to persist" remedy) so the operator is never left guessing.
             let summary = crate::core::index_orchestrator::bm25_summary(&project_root);
             if let Some(note) = summary.note {
                 eprintln!("  BM25: {note}");
@@ -65,6 +102,23 @@ pub(crate) fn cmd_index(args: &[String]) {
             // The property graph was already mirrored from the graph_index
             // extractor inside ensure_all_background above (#682.2).
             eprintln!("property graph mirrored from graph_index during index build");
+
+            // Build semantic (dense embedding) index on top of the fresh BM25.
+            eprintln!("building semantic (dense embedding) index ...");
+            crate::core::index_orchestrator::build_semantic(&project_root);
+            let sem = crate::core::index_orchestrator::semantic_summary(&project_root);
+            match sem.state {
+                "ready" => eprintln!("  semantic index ready"),
+                "failed" => eprintln!(
+                    "  semantic index failed: {}",
+                    sem.last_error.unwrap_or_else(|| String::from("unknown"))
+                ),
+                _ => {
+                    if let Some(note) = sem.note {
+                        eprintln!("  semantic: {note}");
+                    }
+                }
+            }
 
             // build-full is an explicit "make everything fresh". Drop the in-process
             // graph cache and flush the running daemon's read cache too, so ctx_read
@@ -91,15 +145,57 @@ pub(crate) fn cmd_index(args: &[String]) {
                 Err(e) => eprintln!("property graph build failed: {e}"),
             }
         }
+        Some("build-semantic") => {
+            // Build the dense embedding index on top of BM25.  If BM25 is not yet
+            // built, build graph + BM25 first, then build semantic.
+            let disk = crate::core::index_orchestrator::disk_status(&project_root);
+            if !disk.bm25_index.exists {
+                eprintln!("BM25 index not found — building graph + BM25 first ...");
+                crate::core::index_orchestrator::ensure_all_background(&project_root);
+                let started = std::time::Instant::now();
+                let timeout = Duration::from_mins(5);
+                loop {
+                    std::thread::sleep(Duration::from_millis(500));
+                    let status = crate::core::index_orchestrator::status_json(&project_root);
+                    if !status.contains("\"building\"") {
+                        break;
+                    }
+                    eprint!(".");
+                    if started.elapsed() > timeout {
+                        eprintln!(" timeout");
+                        return;
+                    }
+                }
+                eprintln!(" done");
+            }
+
+            eprintln!("building semantic (dense embedding) index ...");
+            crate::core::index_orchestrator::build_semantic(&project_root);
+            let sem = crate::core::index_orchestrator::semantic_summary(&project_root);
+            match sem.state {
+                "ready" => eprintln!("semantic index ready"),
+                "failed" => eprintln!(
+                    "semantic index failed: {}",
+                    sem.last_error.unwrap_or_else(|| String::from("unknown"))
+                ),
+                _ => {
+                    eprintln!("semantic index not available");
+                    if let Some(ref note) = sem.note {
+                        eprintln!("  reason: {note}");
+                    }
+                }
+            }
+        }
         Some("watch") => run_watcher(root),
         _ => {
             eprintln!(
-                "Usage: lean-ctx index <status|build|build-full|build-graph|watch> [--root <path>]\n\
+                "Usage: lean-ctx index <status|build|build-full|build-graph|build-semantic|watch> [--root <path>]\n\
                  Examples:\n\
                    lean-ctx index status\n\
-                   lean-ctx index build          (BM25 + JSON graph index)\n\
-                   lean-ctx index build-full     (force rebuild all indexes)\n\
-                   lean-ctx index build-graph    (SQLite property graph for impact analysis)\n\
+                   lean-ctx index build              (graph + BM25 indexes)\n\
+                   lean-ctx index build-full         (force rebuild all indexes)\n\
+                   lean-ctx index build-graph        (SQLite property graph for impact analysis)\n\
+                   lean-ctx index build-semantic     (dense embedding index, builds BM25 first if needed)\n\
                    lean-ctx index watch"
             );
         }
@@ -210,36 +306,23 @@ fn snapshot_code_files(project_root: &Path) -> HashMap<String, FileState> {
 fn print_human_status(project_root: &str) {
     let disk = crate::core::index_orchestrator::disk_status(project_root);
 
-    println!("  Project:     {project_root}");
+    println!("  Project:        {project_root}");
     println!(
-        "  Graph Index: {}",
+        "  Graph Index:    {}",
         format_disk_line(&disk.graph_index, "files")
     );
     println!(
-        "  BM25 Index:  {}",
+        "  BM25 Index:     {}",
         format_disk_line(&disk.bm25_index, "chunks")
     );
     println!(
-        "  Code Graph:  {}",
+        "  Code Graph:     {}",
         format_disk_line(&disk.code_graph, "nodes")
     );
-
-    // Runtime semantic-index status (state/timing/why-stuck). This is the part
-    // users asked for in #249 — knowing whether the index is working, how fast,
-    // and if/why it failed, instead of an opaque "warming up" loop.
-    let summary = crate::core::index_orchestrator::bm25_summary(project_root);
-    let timing = match summary.elapsed_ms {
-        Some(ms) if summary.state == "building" => format!(" ({:.1}s elapsed)", ms as f64 / 1000.0),
-        Some(ms) => format!(" (built in {:.1}s)", ms as f64 / 1000.0),
-        None => String::new(),
-    };
-    println!("  Semantic:    {}{timing}", summary.state);
-    if let Some(note) = summary.note {
-        println!("  Note:        {note}");
-    }
-    if let Some(err) = summary.last_error {
-        println!("  Error:       {err}");
-    }
+    println!(
+        "  Semantic Index: {}",
+        format_disk_line(&disk.semantic_index, "vectors")
+    );
 }
 
 fn format_disk_line(ds: &crate::core::index_orchestrator::DiskStatus, count_label: &str) -> String {

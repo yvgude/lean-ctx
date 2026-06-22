@@ -65,6 +65,7 @@ mod bm25_performance {
 
 mod hnsw_stress {
     use super::*;
+    use lean_ctx::core::hnsw::FlatEmbeddings;
     use lean_ctx::core::hnsw::brute_force_topk;
 
     fn random_vec(dim: usize, seed: u64) -> Vec<f32> {
@@ -87,7 +88,7 @@ mod hnsw_stress {
         let query = random_vec(dim, 99999);
 
         let start = Instant::now();
-        let results = brute_force_topk(&vectors, &query, 20);
+        let results = brute_force_topk(&FlatEmbeddings::from_vecs(vectors), &query, 20);
         let elapsed = start.elapsed();
 
         assert_eq!(results.len(), 20);
@@ -105,7 +106,7 @@ mod hnsw_stress {
         let vectors: Vec<Vec<f32>> = (0..n).map(|i| random_vec(dim, i as u64)).collect();
         let query = random_vec(dim, 12345);
 
-        let results = brute_force_topk(&vectors, &query, 50);
+        let results = brute_force_topk(&FlatEmbeddings::from_vecs(vectors), &query, 50);
         assert_eq!(results.len(), 50);
 
         // Verify strict descending order

@@ -175,12 +175,12 @@ mod tests {
 
     #[test]
     fn minimal_arm_per_turn_prefix_stays_within_budget() {
-        // The "faithful arm" (#361): tool_profile=minimal (6 tools) +
+        // The "faithful arm" (#361): tool_profile=minimal (10 tools) +
         // LEAN_CTX_MINIMAL (no session/knowledge prefix) + rules_injection=off
         // (no rules block) must keep the fixed per-turn prefix tiny. This is the
         // regression guard for the "~3K tokens/turn injected" critique — if any
         // knob silently stops applying, the total balloons and this fails.
-        const MINIMAL_ARM_PREFIX_BUDGET_TOKENS: usize = 1500;
+        const MINIMAL_ARM_PREFIX_BUDGET_TOKENS: usize = 2500;
 
         let _iso = crate::core::data_dir::isolated_data_dir();
         crate::test_env::set_var("LEAN_CTX_TOOL_PROFILE", "minimal");
@@ -196,9 +196,10 @@ mod tests {
             "rules_injection=off must zero the rules block"
         );
         assert!(
-            o.tool_count <= 8,
-            "minimal profile must keep the surface lean, got {} tools",
-            o.tool_count
+            o.tool_count <= crate::core::tool_profiles::ToolProfile::Minimal.tool_count() + 1,
+            "minimal profile must keep the surface lean, got {} tools (expected ≤ {})",
+            o.tool_count,
+            crate::core::tool_profiles::ToolProfile::Minimal.tool_count() + 1,
         );
         assert!(
             o.total_tokens() <= MINIMAL_ARM_PREFIX_BUDGET_TOKENS,

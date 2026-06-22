@@ -122,8 +122,7 @@ pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
             if !canonical.starts_with(&root) {
                 let allow = crate::core::pathjail::allow_paths_from_env_and_config();
                 let data_dir_ok = crate::core::data_dir::lean_ctx_data_dir()
-                    .ok()
-                    .is_some_and(|d| canonical.starts_with(d));
+                    .is_ok_and(|d| canonical.starts_with(d));
                 let tmp_ok = canonical.starts_with(std::env::temp_dir());
                 if !allow.iter().any(|a| canonical.starts_with(a)) && !data_dir_ok && !tmp_ok {
                     tracing::warn!(

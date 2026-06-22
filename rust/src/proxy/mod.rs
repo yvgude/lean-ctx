@@ -417,6 +417,7 @@ async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
     (StatusCode::OK, axum::Json(body))
 }
 
+#[allow(clippy::result_large_err)]
 async fn proxy_auth_guard(
     req: axum::extract::Request,
     next: axum::middleware::Next,

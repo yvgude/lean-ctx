@@ -798,8 +798,7 @@ fn detect_default_base(project_root: &str) -> Option<String> {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
-            .ok()
-            .is_some_and(|s| s.success());
+            .is_ok_and(|s| s.success());
         if ok {
             return Some(cand.to_string());
         }

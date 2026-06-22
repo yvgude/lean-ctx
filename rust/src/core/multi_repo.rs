@@ -403,7 +403,7 @@ pub fn resolve_repo_root(repo: &str) -> Option<String> {
 /// Check if multi-repo mode is active (more than 1 root configured).
 pub fn is_multi_repo_active() -> bool {
     let manager = global_manager();
-    manager.lock().ok().is_some_and(|mgr| mgr.is_active())
+    manager.lock().is_ok_and(|mgr| mgr.is_active())
 }
 
 /// Get all configured repo root paths (for tools that need to iterate).

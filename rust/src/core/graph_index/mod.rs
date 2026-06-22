@@ -936,7 +936,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         tracing::warn!("could not save graph index: {e}");
     }
 
-    tracing::warn!(
+    tracing::debug!(
         "[graph_index: {} files ({} scanned, {} reused), {} symbols, {} edges]",
         index.file_count(),
         scanned,

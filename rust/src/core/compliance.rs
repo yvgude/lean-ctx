@@ -463,7 +463,7 @@ mod tests {
                             m.framework,
                             c.id
                         );
-                        assert!(c.mechanism != Mechanism::None);
+                        assert_ne!(c.mechanism, Mechanism::None);
                     }
                     Coverage::None => {
                         assert!(

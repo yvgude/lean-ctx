@@ -8,20 +8,20 @@
 //!
 //! It is threshold-gated — corpora below [`ANN_MIN_VECTORS`] skip the cache and
 //! use exact SIMD brute-force top-k, which is both faster (no graph overhead)
-//! and *exact*. The threshold is deliberately high: at lean-ctx's typical scale
-//! (a few thousand chunks) exact brute force over int8/SIMD dot products is only
-//! ~1-2 ms, so HNSW's approximate recall is not worth trading. HNSW activates
-//! only for genuinely large corpora where exact scan would dominate latency.
+//! and *exact*.
 //! On any lock failure it falls back to brute force, so correctness never
 //! depends on the cache being available.
 
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 
-use super::hnsw::{AnnIndex, brute_force_topk};
+use super::hnsw::{AnnIndex, FlatEmbeddings, brute_force_topk};
 
 /// Minimum corpus size before an HNSW graph is worth building and caching.
 /// Below this, exact SIMD brute force is faster *and* exact (no recall loss).
-pub const ANN_MIN_VECTORS: usize = 50_000;
+/// At 2500, a medium codebase (~7k chunks for lean-ctx itself) enters the
+/// HNSW path and gets sub-linear dense search; brute force remains the default
+/// for smaller projects where it is both simpler and just as fast.
+pub const ANN_MIN_VECTORS: usize = 2_500;
 
 struct Cached {
     fingerprint: u64,
@@ -39,23 +39,22 @@ fn cache() -> &'static Mutex<Option<Cached>> {
 /// Small corpora use exact brute force. Large corpora build (once) and reuse a
 /// cached HNSW index. Falls back to brute force on lock failure.
 ///
-/// `embeddings` is taken as `Arc<[Vec<f32>]>` (the same allocation the caller
-/// already holds for per-query scoring) so building the cached HNSW index is an
-/// `Arc::clone` — a refcount bump, not a second full-precision corpus copy.
+/// The [`FlatEmbeddings`] data is shared via `Arc::clone` (a refcount bump, zero
+/// bytes copied) when building the cached HNSW index.
 #[must_use]
-pub fn topk(embeddings: &Arc<[Vec<f32>]>, query: &[f32], top_k: usize) -> Vec<(usize, f32)> {
+pub fn topk(embeddings: &FlatEmbeddings, query: &[f32], top_k: usize) -> Vec<(usize, f32)> {
     topk_gated(embeddings, query, top_k, ANN_MIN_VECTORS)
 }
 
 /// Core implementation with an injectable gate so tests can exercise the HNSW
 /// path without materializing a 50k-vector corpus.
 fn topk_gated(
-    embeddings: &Arc<[Vec<f32>]>,
+    embeddings: &FlatEmbeddings,
     query: &[f32],
     top_k: usize,
     min_vectors: usize,
 ) -> Vec<(usize, f32)> {
-    if embeddings.len() < min_vectors {
+    if embeddings.n_vectors() < min_vectors {
         return brute_force_topk(embeddings, query, top_k);
     }
 
@@ -71,8 +70,7 @@ fn topk_gated(
     if needs_build {
         *guard = Some(Cached {
             fingerprint: fp,
-            // Arc::clone: shares the caller's corpus allocation, zero bytes copied.
-            index: AnnIndex::build(Arc::clone(embeddings)),
+            index: AnnIndex::build(embeddings.clone()),
         });
     }
 
@@ -83,9 +81,8 @@ fn topk_gated(
 }
 
 /// Cheap, content-sensitive fingerprint (FNV-1a over lengths + sampled values).
-/// Strong enough that a changed corpus reliably triggers a rebuild; a collision
-/// would only mildly degrade already-approximate recall, never break results.
-fn fingerprint(embeddings: &[Vec<f32>]) -> u64 {
+/// Operates directly on the flat [`FlatEmbeddings`] buffer.
+fn fingerprint(embeddings: &FlatEmbeddings) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     macro_rules! mix {
         ($x:expr_2021) => {{
@@ -93,9 +90,11 @@ fn fingerprint(embeddings: &[Vec<f32>]) -> u64 {
             h = h.wrapping_mul(0x0000_0100_0000_01b3);
         }};
     }
-    mix!(embeddings.len() as u64);
-    for (i, v) in embeddings.iter().enumerate() {
-        mix!(v.len() as u64);
+    let n = embeddings.n_vectors();
+    mix!(n as u64);
+    mix!(embeddings.dim as u64);
+    for i in 0..n {
+        let v = embeddings.get(i);
         mix!(i as u64);
         if let Some(&f) = v.first() {
             mix!(u64::from(f.to_bits()));
@@ -150,9 +149,11 @@ mod tests {
         v
     }
 
-    /// A vector near `base` with small per-dimension noise — produces dense,
-    /// well-connected clusters where HNSW recall is high and stable (unlike a
-    /// single needle in random noise, which approximate search can miss).
+    fn flat_from(vecs: Vec<Vec<f32>>) -> FlatEmbeddings {
+        FlatEmbeddings::from_vecs(vecs)
+    }
+
+    /// A vector near `base` with small per-dimension noise.
     fn jitter(base: &[f32], seed: u64, scale: f32) -> Vec<f32> {
         base.iter()
             .enumerate()
@@ -170,7 +171,7 @@ mod tests {
         n_clusters: usize,
         per_cluster: usize,
         dim: usize,
-    ) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
+    ) -> (FlatEmbeddings, Vec<Vec<f32>>) {
         let centers: Vec<Vec<f32>> = (0..n_clusters)
             .map(|c| random_vec(dim, (c as u64 + 1) * 1_000))
             .collect();
@@ -180,17 +181,17 @@ mod tests {
                 vectors.push(jitter(center, (c * per_cluster + j) as u64 + 7, 0.02));
             }
         }
-        (vectors, centers)
+        (flat_from(vectors), centers)
     }
 
     #[test]
     fn small_corpus_matches_brute_force_exactly() {
-        let vectors: Arc<[Vec<f32>]> = (0..200).map(|i| random_vec(32, i)).collect();
+        let flat = flat_from((0..200).map(|i| random_vec(32, i)).collect());
         let query = random_vec(32, 9_999);
 
-        // Production gate (50k) → small corpus is exact brute force.
-        let via_cache = topk(&vectors, &query, 8);
-        let exact = brute_force_topk(&vectors, &query, 8);
+        // Production gate (2500) → 200 vectors is below threshold → exact brute force.
+        let via_cache = topk(&flat, &query, 8);
+        let exact = brute_force_topk(&flat, &query, 8);
 
         assert_eq!(via_cache.len(), exact.len());
         for (a, b) in via_cache.iter().zip(exact.iter()) {
@@ -201,13 +202,12 @@ mod tests {
     #[test]
     fn hnsw_path_recall_matches_brute_force_on_clusters() {
         let _serial = serial();
-        let (vectors, centers) = clustered(24, 60, 32); // 1440 vectors
-        let vectors: Arc<[Vec<f32>]> = Arc::from(vectors);
-        let query = centers[5].clone();
+        let (flat, centers) = clustered(24, 60, 32); // 1440 vectors
+        let query = &centers[5];
         let k = 20;
 
-        let ann = topk_gated(&vectors, &query, k, TEST_GATE); // forces HNSW
-        let exact = brute_force_topk(&vectors, &query, k);
+        let ann = topk_gated(&flat, query, k, TEST_GATE); // forces HNSW
+        let exact = brute_force_topk(&flat, query, k);
         assert_eq!(ann.len(), k);
 
         let exact_set: HashSet<usize> = exact.iter().map(|(i, _)| *i).collect();
@@ -221,9 +221,8 @@ mod tests {
     #[test]
     fn hnsw_path_results_are_descending() {
         let _serial = serial();
-        let (vectors, centers) = clustered(20, 60, 24); // 1200 vectors
-        let vectors: Arc<[Vec<f32>]> = Arc::from(vectors);
-        let results = topk_gated(&vectors, &centers[3], 10, TEST_GATE);
+        let (flat, centers) = clustered(20, 60, 24); // 1200 vectors
+        let results = topk_gated(&flat, &centers[3], 10, TEST_GATE);
         for w in results.windows(2) {
             assert!(
                 w[0].1 >= w[1].1,
@@ -235,14 +234,8 @@ mod tests {
     #[test]
     fn rebuilds_when_corpus_changes() {
         let _serial = serial();
-        // Two distinct corpora share the global cache slot; the fingerprint must
-        // force a rebuild so each query reflects its own corpus (no staleness).
-        // Asserting on the cached fingerprint tests the rebuild mechanism
-        // directly — deterministic, unlike HNSW's approximate top-1 recall.
         let (a, ca) = clustered(20, 55, 32); // 1100 vectors
         let (b, cb) = clustered(18, 60, 32); // 1080 vectors
-        let a: Arc<[Vec<f32>]> = Arc::from(a);
-        let b: Arc<[Vec<f32>]> = Arc::from(b);
 
         let _ = topk_gated(&a, &ca[7], 5, TEST_GATE);
         assert_eq!(
@@ -268,9 +261,10 @@ mod tests {
 
     #[test]
     fn fingerprint_differs_on_content_change() {
-        let a: Vec<Vec<f32>> = (0..10).map(|i| random_vec(8, i)).collect();
-        let mut b = a.clone();
-        b[3][0] += 0.5;
+        let a = flat_from((0..10).map(|i| random_vec(8, i)).collect());
+        let mut b_vecs: Vec<Vec<f32>> = (0..10).map(|i| random_vec(8, i)).collect();
+        b_vecs[3][0] += 0.5;
+        let b = flat_from(b_vecs);
         assert_ne!(fingerprint(&a), fingerprint(&b));
     }
 }

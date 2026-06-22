@@ -321,8 +321,7 @@ fn cmd_tool_profile_list() {
         .as_deref()
         .is_some_and(|p| !tool_profiles::is_unpinned_alias(p))
         || std::env::var("LEAN_CTX_TOOL_PROFILE")
-            .ok()
-            .is_some_and(|v| !v.trim().is_empty() && !tool_profiles::is_unpinned_alias(v.trim()))
+            .is_ok_and(|v| !v.trim().is_empty() && !tool_profiles::is_unpinned_alias(v.trim()))
         || !cfg.tools_enabled.is_empty();
     let active_name = if pinned { active.as_str() } else { "lean" };
     let lazy_count = crate::tool_defs::core_tool_names().len();
@@ -411,8 +410,8 @@ fn print_profile_help() {
 TOOL PROFILES — how many MCP tools your agent sees:
   lean-ctx tools                Show current tool profile
   lean-ctx tools lean           Lazy core advertised, all via ctx_call (default)
-  lean-ctx tools minimal        6 essential tools
-  lean-ctx tools standard       22 balanced tools
+  lean-ctx tools minimal        10 essential tools
+  lean-ctx tools standard       19 balanced tools
   lean-ctx tools power          All tools (highest context overhead)
   lean-ctx tools list           List tool profiles with counts
 

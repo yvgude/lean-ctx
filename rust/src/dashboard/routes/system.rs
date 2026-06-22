@@ -105,22 +105,26 @@ pub(super) fn handle(
         "/api/theme-tokens" => {
             let cfg = crate::core::config::Config::load();
             let theme = crate::core::theme::load_theme(&cfg.theme);
+            let color_hex = |c: &crate::core::theme::Color| -> String {
+                let crate::core::theme::Color::Hex(h) = c;
+                h.clone()
+            };
             let payload = serde_json::json!({
                 "name": theme.name,
                 "tokens": {
-                    "primary": format!("{}", { let crate::core::theme::Color::Hex(ref h) = theme.primary; h }),
-                    "secondary": format!("{}", { let crate::core::theme::Color::Hex(ref h) = theme.secondary; h }),
-                    "accent": format!("{}", { let crate::core::theme::Color::Hex(ref h) = theme.accent; h }),
-                    "success": format!("{}", { let crate::core::theme::Color::Hex(ref h) = theme.success; h }),
-                    "warning": format!("{}", { let crate::core::theme::Color::Hex(ref h) = theme.warning; h }),
-                    "danger": format!("{}", { let crate::core::theme::Color::Hex(ref h) = theme.danger; h }),
-                    "muted": format!("{}", { let crate::core::theme::Color::Hex(ref h) = theme.muted; h }),
-                    "text": format!("{}", { let crate::core::theme::Color::Hex(ref h) = theme.text; h }),
-                    "surface": format!("{}", { let crate::core::theme::Color::Hex(ref h) = theme.surface; h }),
-                    "background": format!("{}", { let crate::core::theme::Color::Hex(ref h) = theme.background; h }),
-                    "barStart": format!("{}", { let crate::core::theme::Color::Hex(ref h) = theme.bar_start; h }),
-                    "barEnd": format!("{}", { let crate::core::theme::Color::Hex(ref h) = theme.bar_end; h }),
-                    "border": format!("{}", { let crate::core::theme::Color::Hex(ref h) = theme.border; h }),
+                    "primary": color_hex(&theme.primary),
+                    "secondary": color_hex(&theme.secondary),
+                    "accent": color_hex(&theme.accent),
+                    "success": color_hex(&theme.success),
+                    "warning": color_hex(&theme.warning),
+                    "danger": color_hex(&theme.danger),
+                    "muted": color_hex(&theme.muted),
+                    "text": color_hex(&theme.text),
+                    "surface": color_hex(&theme.surface),
+                    "background": color_hex(&theme.background),
+                    "barStart": color_hex(&theme.bar_start),
+                    "barEnd": color_hex(&theme.bar_end),
+                    "border": color_hex(&theme.border),
                 },
                 "css": theme.to_css_vars(),
             });

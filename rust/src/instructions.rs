@@ -366,7 +366,7 @@ CRITICAL: ALWAYS use lean-ctx MCP tools instead of native equivalents for token 
         decoder_block =
             crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
         origin = crate::core::integrity::origin_line(),
-        litm_end_block = &litm_end_block
+        litm_end_block = litm_end_block
     );
 
     if should_use_unified(client_name) {
@@ -518,7 +518,7 @@ CRITICAL: ALWAYS use lean-ctx MCP tools instead of native equivalents for token 
         decoder_block =
             crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
         origin = crate::core::integrity::origin_line(),
-        litm_end_block = &litm_end_block
+        litm_end_block = litm_end_block
     );
 
     if should_use_unified(client_name) {
@@ -539,7 +539,7 @@ CRITICAL: ALWAYS use lean-ctx MCP tools instead of native equivalents for token 
 fn build_full_instructions_for_compiler(
     crp_mode: CrpMode,
     client_name: &str,
-    unified_tool_mode: bool,
+    _unified_tool_mode: bool,
 ) -> String {
     let shell_hint = build_shell_hint();
     let session_block = String::new();
@@ -580,10 +580,10 @@ CRITICAL: ALWAYS use lean-ctx MCP tools instead of native equivalents for token 
         decoder_block =
             crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
         origin = crate::core::integrity::origin_line(),
-        litm_end_block = &litm_end_block
+        litm_end_block = litm_end_block
     );
 
-    if unified_tool_mode {
+    if should_use_unified(client_name) {
         base.push_str("\n\n");
         base.push_str(rc::unified_tool_mode_block());
         base.push('\n');

@@ -123,7 +123,7 @@ impl EmbeddingModel {
                 hf_repo: "jinaai/jina-embeddings-v2-base-code".into(),
                 revision: None,
                 onnx_path: "onnx/model.onnx".into(),
-                vocab_file: VocabSource::VocabTxt("vocab.txt".into()),
+                vocab_file: VocabSource::TokenizerJson("tokenizer.json".into()),
                 dimensions: 768,
                 max_seq_len: 512,
                 model_min_bytes: 100_000_000,
@@ -583,12 +583,22 @@ mod tests {
     }
 
     #[test]
-    fn all_builtin_models_use_wordpiece() {
+    fn builtin_models_have_valid_vocab_sources() {
         for model in EmbeddingModel::ALL {
-            assert!(
-                model.config().vocab_file.is_wordpiece(),
-                "{model} should use WordPiece vocab.txt"
-            );
+            match model {
+                EmbeddingModel::JinaCodeV2 => {
+                    assert!(
+                        !model.config().vocab_file.is_wordpiece(),
+                        "{model} should use HuggingFace tokenizer.json"
+                    );
+                }
+                _ => {
+                    assert!(
+                        model.config().vocab_file.is_wordpiece(),
+                        "{model} should use WordPiece vocab.txt"
+                    );
+                }
+            }
         }
     }
 

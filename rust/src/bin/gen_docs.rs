@@ -80,8 +80,7 @@ fn main() {
 
 fn write_if_changed(path: &Path, content: &str) -> Result<bool, String> {
     if std::fs::read_to_string(path)
-        .ok()
-        .is_some_and(|on_disk| reference_docs::content_matches(&on_disk, content))
+        .is_ok_and(|on_disk| reference_docs::content_matches(&on_disk, content))
     {
         return Ok(false);
     }

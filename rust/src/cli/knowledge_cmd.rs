@@ -17,7 +17,6 @@ pub(crate) fn cmd_knowledge(args: &[String]) {
         Some("status") => {
             #[cfg(unix)]
             {
-                #[cfg(unix)]
                 if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
                     "ctx_knowledge",
                     Some(serde_json::json!({
@@ -48,7 +47,6 @@ pub(crate) fn cmd_knowledge(args: &[String]) {
         Some("health") => {
             #[cfg(unix)]
             {
-                #[cfg(unix)]
                 if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
                     "ctx_knowledge",
                     Some(serde_json::json!({
@@ -79,7 +77,6 @@ pub(crate) fn cmd_knowledge(args: &[String]) {
         Some("lifecycle") => {
             #[cfg(unix)]
             {
-                #[cfg(unix)]
                 if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
                     "ctx_knowledge",
                     Some(serde_json::json!({
@@ -135,7 +132,6 @@ fn cmd_remember(args: &[String], project_root: &str) {
 
     #[cfg(unix)]
     {
-        #[cfg(unix)]
         if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
             "ctx_knowledge",
             Some(serde_json::json!({
@@ -194,7 +190,6 @@ fn cmd_recall(args: &[String], project_root: &str) {
 
     #[cfg(unix)]
     {
-        #[cfg(unix)]
         if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
             "ctx_knowledge",
             Some(serde_json::json!({
@@ -239,7 +234,6 @@ fn cmd_search(args: &[String]) {
 
     #[cfg(unix)]
     {
-        #[cfg(unix)]
         if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
             "ctx_knowledge",
             Some(serde_json::json!({
@@ -341,7 +335,6 @@ fn cmd_remove(args: &[String], project_root: &str) {
 
     #[cfg(unix)]
     {
-        #[cfg(unix)]
         if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
             "ctx_knowledge",
             Some(serde_json::json!({
@@ -538,7 +531,7 @@ fn facts_to_json(
 }
 
 fn cli_session_id() -> String {
-    format!("cli-{}", &uuid_short())
+    format!("cli-{}", uuid_short())
 }
 
 fn uuid_short() -> String {

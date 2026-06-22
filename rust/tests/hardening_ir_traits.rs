@@ -145,7 +145,7 @@ mod context_ir_hotpath {
         assert!(ir.items.len() <= 128);
         assert_eq!(ir.totals.items_recorded, 200);
         // Oldest items were pruned, newest remain
-        assert!(ir.items.last().unwrap().seq == 200);
+        assert_eq!(ir.items.last().unwrap().seq, 200);
     }
 
     #[test]

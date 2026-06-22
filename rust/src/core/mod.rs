@@ -246,6 +246,8 @@ pub mod attention {
 // Domain: Neural / ML
 // ---------------------------------------------------------------------------
 pub mod neural;
+pub mod ort_environment;
+pub mod ort_execution_providers;
 
 // ---------------------------------------------------------------------------
 // Domain: Patterns & Shell
