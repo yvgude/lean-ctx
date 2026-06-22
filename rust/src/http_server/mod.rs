@@ -335,6 +335,36 @@ async fn v1_shutdown() -> impl IntoResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct IndexEnsureBody {
+    root: String,
+    #[serde(default)]
+    extra_roots: Vec<String>,
+}
+
+/// Daemon-side index delegation (#460). A thin-client session POSTs the repo it
+/// needs warmed and the daemon — the single long-lived indexer — builds it once
+/// in the background (deduped per root). Every other session for the same root
+/// then load-shares the on-disk result via the `graph-idx`/`bm25-idx`
+/// cross-process locks instead of running its own scan, so N concurrent sessions
+/// cost ~one index pass machine-wide instead of N. Returns immediately; the
+/// build runs in the orchestrator's own worker thread.
+async fn v1_index_ensure(Json(body): Json<IndexEnsureBody>) -> impl IntoResponse {
+    if body.root.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, "root is required\n");
+    }
+    let root = body.root;
+    let extra = body.extra_roots;
+    tokio::task::spawn_blocking(move || {
+        crate::core::index_orchestrator::ensure_all_background(&root);
+        if !extra.is_empty() {
+            crate::core::index_orchestrator::ensure_extra_roots_background(&root, &extra);
+        }
+    });
+    (StatusCode::OK, "{\"status\":\"ok\"}\n")
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ToolCallBody {
     name: String,
     #[serde(default)]
@@ -965,6 +995,7 @@ fn build_app_router(cfg: &HttpServerConfig) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/v1/shutdown", axum::routing::post(v1_shutdown))
+        .route("/v1/index/ensure", axum::routing::post(v1_index_ensure))
         .route("/v1/manifest", get(v1_manifest))
         .route("/v1/capabilities", get(v1_capabilities))
         .route("/v1/openapi.json", get(v1_openapi))
@@ -1018,6 +1049,10 @@ fn build_app_router(cfg: &HttpServerConfig) -> Router {
 pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
     crate::core::protocol::set_mcp_context(true);
     cfg.validate()?;
+
+    // Surface any path-jail relaxation inherited from the launch env or config,
+    // so a loosened boundary is never silent (GH security audit, finding 3).
+    crate::core::pathjail::warn_if_relaxed();
 
     crate::core::plugins::PluginManager::init();
     crate::core::savings_autopush::spawn_if_enabled();
@@ -1168,6 +1203,21 @@ mod tests {
             }
         }
         String::from_utf8_lossy(&buf).to_string()
+    }
+
+    #[test]
+    fn index_ensure_body_parses_root_and_optional_extra_roots() {
+        // Wire contract for the #460 daemon delegation endpoint: camelCase
+        // `extraRoots`, optional and defaulting to empty. daemon_client serializes
+        // exactly this shape, so a drift here silently breaks delegation.
+        let full: IndexEnsureBody =
+            serde_json::from_str(r#"{"root":"/a","extraRoots":["/b","/c"]}"#).unwrap();
+        assert_eq!(full.root, "/a");
+        assert_eq!(full.extra_roots, vec!["/b".to_string(), "/c".to_string()]);
+
+        let minimal: IndexEnsureBody = serde_json::from_str(r#"{"root":"/a"}"#).unwrap();
+        assert_eq!(minimal.root, "/a");
+        assert!(minimal.extra_roots.is_empty());
     }
 
     #[tokio::test]

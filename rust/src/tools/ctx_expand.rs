@@ -69,6 +69,16 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
         );
     }
 
+    // CCR proxy tee handle (#482): the proxy's prune / live-compression stubs
+    // carry a content-addressed tee handle. When the lean-ctx retrieve tool is
+    // attached the agent can pull back just the slice it needs (head / tail /
+    // search / json_path / range) instead of re-injecting the whole original —
+    // the surgical front-end the issue calls "preferred when available". The
+    // same path also works with a plain native file read for proxy-only setups.
+    if let Some(path) = crate::proxy::ccr::resolve_tee(id) {
+        return expand_tee_file(&path, args);
+    }
+
     // Structured drilldown selectors (head / tail / json_keys).
     if let Some(n) = args.get("head").and_then(serde_json::Value::as_u64) {
         return match archive::retrieve_head(id, n as usize) {
@@ -131,6 +141,132 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
             "Archive '{id}' not found or expired. Use ctx_expand(action=\"list\") to see available archives."
         ),
     }
+}
+
+/// Surgical retrieval over a CCR proxy tee file (#482). Mirrors the archive
+/// selectors (head / tail / search / json_path / range / full) but operates on
+/// the verbatim tee content on disk, so the agent pulls back only the slice it
+/// needs rather than undoing the proxy's compression with a full re-inject.
+fn expand_tee_file(path: &std::path::Path, args: &serde_json::Value) -> String {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return format!(
+            "ERROR: CCR tee file is no longer available: {}",
+            path.display()
+        );
+    };
+    let label = path.file_name().and_then(|n| n.to_str()).unwrap_or("ccr");
+
+    if let Some(n) = args.get("head").and_then(serde_json::Value::as_u64) {
+        return format!(
+            "[ccr {label}] head {n}:\n{}",
+            head_lines(&content, n as usize)
+        );
+    }
+    if let Some(n) = args.get("tail").and_then(serde_json::Value::as_u64) {
+        return format!(
+            "[ccr {label}] tail {n}:\n{}",
+            tail_lines(&content, n as usize)
+        );
+    }
+    if args.get("json_keys").and_then(serde_json::Value::as_bool) == Some(true)
+        || args.get("json_path").is_some()
+    {
+        let jp = args.get("json_path").and_then(|v| v.as_str());
+        return match json_view(&content, jp) {
+            Some(out) => format!("[ccr {label}] json {}:\n{out}", jp.unwrap_or("(keys)")),
+            None => format!(
+                "[ccr {label}] not valid JSON or path not found. Use ctx_expand(id=\"{label}\") for raw content."
+            ),
+        };
+    }
+    if let Some(pattern) = args.get("search").and_then(|v| v.as_str()) {
+        return format!(
+            "[ccr {label}] search \"{pattern}\":\n{}",
+            search_lines(&content, pattern)
+        );
+    }
+    let start = args
+        .get("start_line")
+        .and_then(serde_json::Value::as_u64)
+        .map(|v| v as usize);
+    let end = args
+        .get("end_line")
+        .and_then(serde_json::Value::as_u64)
+        .map(|v| v as usize);
+    if let (Some(s), Some(e)) = (start, end) {
+        return format!(
+            "[ccr {label}] lines {s}-{e}:\n{}",
+            range_lines(&content, s, e)
+        );
+    }
+
+    let lines = content.lines().count();
+    format!(
+        "[ccr {label}] ({} chars, {lines} lines):\n{content}",
+        content.len()
+    )
+}
+
+fn head_lines(s: &str, n: usize) -> String {
+    s.lines().take(n).collect::<Vec<_>>().join("\n")
+}
+
+fn tail_lines(s: &str, n: usize) -> String {
+    let v: Vec<&str> = s.lines().collect();
+    let start = v.len().saturating_sub(n);
+    v[start..].join("\n")
+}
+
+/// 1-indexed inclusive line range, clamped to the available lines.
+fn range_lines(s: &str, start: usize, end: usize) -> String {
+    let v: Vec<&str> = s.lines().collect();
+    let a = start.saturating_sub(1).min(v.len());
+    let b = end.min(v.len());
+    if a >= b {
+        return String::new();
+    }
+    v[a..b].join("\n")
+}
+
+fn search_lines(s: &str, pattern: &str) -> String {
+    let hits: Vec<String> = s
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| l.contains(pattern))
+        .map(|(i, l)| format!("{}: {}", i + 1, l))
+        .collect();
+    if hits.is_empty() {
+        format!("(no lines match \"{pattern}\")")
+    } else {
+        hits.join("\n")
+    }
+}
+
+/// `json_path` navigation over the tee content: object segments by key, array
+/// segments by numeric index, dot-separated. Empty path lists the root keys.
+/// Objects render as their key list; scalars/arrays pretty-print.
+fn json_view(s: &str, path: Option<&str>) -> Option<String> {
+    let root: serde_json::Value = serde_json::from_str(s).ok()?;
+    let target = match path {
+        Some(p) if !p.is_empty() => navigate_json(&root, p)?,
+        _ => &root,
+    };
+    if let Some(obj) = target.as_object() {
+        Some(obj.keys().cloned().collect::<Vec<_>>().join("\n"))
+    } else {
+        serde_json::to_string_pretty(target).ok()
+    }
+}
+
+fn navigate_json<'a>(v: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+    let mut cur = v;
+    for seg in path.split('.').filter(|s| !s.is_empty()) {
+        cur = match seg.parse::<usize>() {
+            Ok(idx) => cur.get(idx)?,
+            Err(_) => cur.get(seg)?,
+        };
+    }
+    Some(cur)
 }
 
 fn handle_search_all(args: &serde_json::Value) -> String {
@@ -215,5 +351,52 @@ mod tests {
             result.contains("No archives") || result.contains("archive(s)"),
             "unexpected: {result}"
         );
+    }
+
+    #[test]
+    fn text_selectors_slice_correctly() {
+        let body = (1..=10)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(head_lines(&body, 2), "line 1\nline 2");
+        assert_eq!(tail_lines(&body, 2), "line 9\nline 10");
+        assert_eq!(range_lines(&body, 3, 4), "line 3\nline 4");
+        assert!(search_lines(&body, "line 7").contains("7: line 7"));
+        assert!(search_lines(&body, "zzz").contains("no lines match"));
+    }
+
+    #[test]
+    fn json_view_lists_keys_and_navigates() {
+        let doc = r#"{"a":{"b":[10,20,30]},"c":1}"#;
+        assert_eq!(json_view(doc, None).unwrap(), "a\nc");
+        assert_eq!(json_view(doc, Some("a")).unwrap(), "b");
+        assert_eq!(json_view(doc, Some("a.b.1")).unwrap(), "20");
+        assert!(json_view(doc, Some("a.missing")).is_none());
+        assert!(json_view("not json", None).is_none());
+    }
+
+    #[test]
+    fn ctx_expand_retrieves_proxy_tee_handle_surgically() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        // Mimic what the proxy does: persist a verbatim original to the tee store
+        // and hand the agent its content-addressed handle.
+        let original = (1..=60)
+            .map(|i| format!("output row {i:03}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(original.len() >= crate::proxy::ccr::MIN_TEE_BYTES);
+        let tee_handle = crate::proxy::ccr::persist(&original).expect("tee handle");
+
+        // Full content via the handle path (proxy-only fallback also reads this).
+        let full = handle(&json!({"id": tee_handle}));
+        assert!(full.contains("output row 001") && full.contains("output row 060"));
+
+        // Surgical slices via the bare hash form the stub can also carry.
+        let hash = crate::core::hasher::hash_short(&original);
+        let head = handle(&json!({"id": hash, "head": 2}));
+        assert!(head.contains("output row 001") && !head.contains("output row 010"));
+        let search = handle(&json!({"id": hash, "search": "row 042"}));
+        assert!(search.contains("output row 042") && !search.contains("output row 001"));
     }
 }

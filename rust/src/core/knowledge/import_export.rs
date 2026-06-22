@@ -55,6 +55,7 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
         let facts = entries
             .into_iter()
             .map(|e| KnowledgeFact {
+                archetype: KnowledgeArchetype::infer_from_category(&e.category),
                 sensitivity: crate::core::sensitivity::classify_content(&e.value),
                 category: e.category,
                 key: e.key,
@@ -74,7 +75,6 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
                 last_feedback: None,
                 privacy: FactPrivacy::default(),
                 imported_from: None,
-                archetype: KnowledgeArchetype::default(),
                 fidelity: None,
                 revision_count: 0,
             })
@@ -91,6 +91,7 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
         if let Ok(entry) = serde_json::from_str::<SimpleFactEntry>(line) {
             let now = Utc::now();
             facts.push(KnowledgeFact {
+                archetype: KnowledgeArchetype::infer_from_category(&entry.category),
                 sensitivity: crate::core::sensitivity::classify_content(&entry.value),
                 category: entry.category,
                 key: entry.key,
@@ -110,7 +111,6 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
                 last_feedback: None,
                 privacy: FactPrivacy::default(),
                 imported_from: None,
-                archetype: KnowledgeArchetype::default(),
                 fidelity: None,
                 revision_count: 0,
             });

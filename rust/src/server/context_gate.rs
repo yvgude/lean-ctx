@@ -16,6 +16,9 @@ pub struct PostDispatchResult {
     pub eviction_hint: Option<String>,
     pub elicitation_hint: Option<String>,
     pub resource_changed: bool,
+    /// FEP prefetch suggestion (#9): files likely needed next, from the co-access
+    /// graph. A warmup hint only — never an automatic read.
+    pub prefetch_hint: Option<String>,
 }
 
 pub fn pre_dispatch_read(
@@ -317,6 +320,7 @@ pub fn post_dispatch_record(
         ledger,
         overlay,
         None,
+        None,
     )
 }
 
@@ -328,6 +332,7 @@ pub fn post_dispatch_record_with_task(
     ledger: &mut ContextLedger,
     overlay: &OverlayStore,
     task: Option<&str>,
+    project_root: Option<&str>,
 ) -> PostDispatchResult {
     let prev_count = ledger.entries.len();
     let prev_pressure = ledger.pressure().recommendation;
@@ -342,6 +347,7 @@ pub fn post_dispatch_record_with_task(
             eviction_hint: Some(format!("File '{path}' is excluded by overlay.")),
             elicitation_hint: None,
             resource_changed: true,
+            prefetch_hint: None,
         };
     }
 
@@ -351,11 +357,16 @@ pub fn post_dispatch_record_with_task(
 
     let pressure = ledger.pressure();
 
+    // #6 Global-Workspace ignition: salience outliers are broadcast (pinned) into
+    // the working set BEFORE reinjection, so an ignited item keeps its view while
+    // the rest are downgraded under pressure. Deterministic z-score threshold.
+    let ignited = ledger.ignite_high_salience();
+
     apply_reinjection_plan(ledger, &pressure.recommendation);
 
     let new_entry = ledger.entries.len() != prev_count;
     let pressure_shifted = pressure.recommendation != prev_pressure;
-    let resource_changed = new_entry || pressure_shifted;
+    let resource_changed = new_entry || pressure_shifted || !ignited.is_empty();
 
     if pressure.utilization > 0.9 {
         let candidates = ledger.eviction_candidates_by_phi(3);
@@ -373,14 +384,23 @@ pub fn post_dispatch_record_with_task(
                 )),
                 elicitation_hint: elicitation,
                 resource_changed,
+                // Under pressure we evict rather than prefetch — no warmup hint.
+                prefetch_hint: None,
             };
         }
     }
+
+    // #9 FEP prefetch: with budget to spare, suggest the files most likely needed
+    // next (co-access graph), so the agent can warm them before the surprise of a
+    // miss. Deterministic; runs in the background post-dispatch, never in output.
+    let prefetch_hint =
+        project_root.and_then(|root| crate::core::fep_prefetch::prefetch_hint(root, path, ledger));
 
     PostDispatchResult {
         eviction_hint: None,
         elicitation_hint: elicitation,
         resource_changed,
+        prefetch_hint,
     }
 }
 
@@ -390,6 +410,10 @@ fn apply_reinjection_plan(ledger: &mut ContextLedger, action: &PressureAction) {
         return;
     }
     for entry in &mut ledger.entries {
+        // #6: ignited / user-pinned items stay broadcast — never downgraded.
+        if entry.state == Some(ContextState::Pinned) {
+            continue;
+        }
         if entry.mode == "full" {
             entry.mode = "map".to_string();
         }
@@ -525,6 +549,30 @@ mod tests {
         assert!(result.resource_changed);
         let a_entry = ledger.entries.iter().find(|e| e.path == "a.rs").unwrap();
         assert_eq!(a_entry.mode, "map");
+    }
+
+    #[test]
+    fn ignited_item_resists_reinjection_downgrade() {
+        // #6: a high-salience outlier ignites (pins) and keeps its full view,
+        // while the rest are downgraded to map by pressure reinjection.
+        let mut ledger = ContextLedger::with_window_size(1000);
+        for i in 0..5 {
+            ledger.record(&format!("bg{i}.rs"), "full", 250, 250);
+        }
+        ledger.record("hot.rs", "full", 250, 250);
+        // Set the salience distribution explicitly (record recomputes Phi, so we
+        // overwrite afterwards) to make ignition deterministic in the test.
+        for e in &mut ledger.entries {
+            e.phi = Some(if e.path == "hot.rs" { 0.97 } else { 0.1 });
+        }
+        let ignited = ledger.ignite_high_salience();
+        assert_eq!(ignited, vec!["hot.rs".to_string()], "outlier should ignite");
+
+        apply_reinjection_plan(&mut ledger, &PressureAction::ForceCompression);
+        let hot = ledger.entries.iter().find(|e| e.path == "hot.rs").unwrap();
+        assert_eq!(hot.mode, "full", "ignited item keeps its full view");
+        let bg = ledger.entries.iter().find(|e| e.path == "bg0.rs").unwrap();
+        assert_eq!(bg.mode, "map", "non-ignited items are downgraded");
     }
 
     #[test]

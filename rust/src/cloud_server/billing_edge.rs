@@ -7,6 +7,10 @@
 //! [`Plan::Free`](crate::core::billing::Plan) — so the open backend runs fully
 //! standalone and **no local capability is ever gated** (Local-Free Invariant).
 
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex, PoisonError};
+use std::time::{Duration, Instant};
+
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -30,9 +34,99 @@ pub(super) async fn resolve_plan(cfg: &Config, user_id: Uuid) -> Plan {
         .unwrap_or(Plan::Free)
 }
 
+// ── Entitlements cache (GL #785) ──────────────────────────────────────────────
+//
+// A per-user, in-memory cache of the billing plane's entitlements payload. It
+// exists for one reason: a brief billing-service outage must never downgrade a
+// *paying* account. Without it, `resolve_entitlements_raw` degrades to `Free` on
+// any failure, so a single blip would 402 paying Pro users on every
+// `/api/sync/*` request (fail-closed against people who pay us).
+//
+// Policy (mirrors the supporters-wall cache below):
+// - fresh within `ENTITLEMENTS_CACHE_TTL` ⇒ serve cached (also shields the plane
+//   from per-request traffic),
+// - otherwise refetch; on success refresh the slot,
+// - on upstream failure ⇒ serve the last value regardless of age (a stale plan
+//   beats a wrong downgrade). Only an account never seen before falls through to
+//   `Free`, exactly as it did before this cache existed.
+//
+// Memory is bounded: once the map passes `ENTITLEMENTS_CACHE_MAX`, entries older
+// than `ENTITLEMENTS_STALE_RETAIN` are pruned — they could only ever serve as a
+// very old stale fallback.
+
+/// How long a fetched entitlements payload counts as fresh.
+const ENTITLEMENTS_CACHE_TTL: Duration = Duration::from_mins(1);
+/// Soft cap on distinct cached accounts before pruning kicks in.
+const ENTITLEMENTS_CACHE_MAX: usize = 50_000;
+/// On overflow, evict entries older than this (kept only as stale fallback).
+const ENTITLEMENTS_STALE_RETAIN: Duration = Duration::from_hours(1);
+
+struct CachedEntitlements {
+    at: Instant,
+    value: Value,
+}
+
+type EntitlementsCacheSlot = Mutex<HashMap<Uuid, CachedEntitlements>>;
+static ENTITLEMENTS_CACHE: LazyLock<EntitlementsCacheSlot> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// The cached payload for `user_id` if it was stored less than
+/// `ENTITLEMENTS_CACHE_TTL` before `now`. `now` is injected so expiry is
+/// unit-testable without sleeping.
+fn entitlements_cache_fresh(
+    slot: &EntitlementsCacheSlot,
+    user_id: Uuid,
+    now: Instant,
+) -> Option<Value> {
+    let guard = slot.lock().unwrap_or_else(PoisonError::into_inner);
+    guard
+        .get(&user_id)
+        .filter(|e| now.duration_since(e.at) < ENTITLEMENTS_CACHE_TTL)
+        .map(|e| e.value.clone())
+}
+
+/// The last cached payload for `user_id` regardless of age — the stale fallback
+/// served when the billing plane is unreachable (a stale plan beats a wrong
+/// downgrade to Free for a paying account).
+fn entitlements_cache_any(slot: &EntitlementsCacheSlot, user_id: Uuid) -> Option<Value> {
+    let guard = slot.lock().unwrap_or_else(PoisonError::into_inner);
+    guard.get(&user_id).map(|e| e.value.clone())
+}
+
+/// Store a freshly fetched payload, restarting the TTL window at `now` and
+/// pruning very old entries if the map has grown past its soft cap.
+fn entitlements_cache_store(
+    slot: &EntitlementsCacheSlot,
+    user_id: Uuid,
+    now: Instant,
+    value: &Value,
+) {
+    let mut guard = slot.lock().unwrap_or_else(PoisonError::into_inner);
+    guard.insert(
+        user_id,
+        CachedEntitlements {
+            at: now,
+            value: value.clone(),
+        },
+    );
+    if guard.len() > ENTITLEMENTS_CACHE_MAX {
+        prune_entitlements_cache(&mut guard, now);
+    }
+}
+
+/// Drop entries older than `ENTITLEMENTS_STALE_RETAIN` relative to `now`. They
+/// could only ever serve as a very old stale fallback, so evicting them bounds
+/// memory without affecting fresh hits or recent stale fallbacks.
+fn prune_entitlements_cache(map: &mut HashMap<Uuid, CachedEntitlements>, now: Instant) {
+    map.retain(|_, e| now.duration_since(e.at) < ENTITLEMENTS_STALE_RETAIN);
+}
+
 /// The raw entitlements payload from the private billing service (plan,
-/// entitlements, org membership — GL #468). `None` on any failure, so callers
-/// degrade exactly like [`resolve_plan`].
+/// entitlements, org membership — GL #468). Cached per user with a stale-on-error
+/// fallback (GL #785), so a billing blip never downgrades a paying account.
+/// `None` only when billing is unconfigured, or the account has never been seen
+/// and the plane is currently unreachable — callers then degrade to
+/// [`Plan::Free`] exactly like before.
 async fn resolve_entitlements_raw(cfg: &Config, user_id: Uuid) -> Option<Value> {
     let (Some(base), Some(key)) = (
         cfg.billing_base_url.clone(),
@@ -41,8 +135,13 @@ async fn resolve_entitlements_raw(cfg: &Config, user_id: Uuid) -> Option<Value> 
         return None;
     };
 
+    let now = Instant::now();
+    if let Some(cached) = entitlements_cache_fresh(&ENTITLEMENTS_CACHE, user_id, now) {
+        return Some(cached);
+    }
+
     let url = format!("{base}/api/billing/entitlements/{user_id}");
-    let body = tokio::task::spawn_blocking(move || {
+    let fetched = tokio::task::spawn_blocking(move || {
         ureq::get(&url)
             .header("X-Internal-Key", &key)
             .call()
@@ -53,9 +152,18 @@ async fn resolve_entitlements_raw(cfg: &Config, user_id: Uuid) -> Option<Value> 
     })
     .await
     .ok()
-    .flatten()?;
+    .flatten()
+    .and_then(|body| serde_json::from_str::<Value>(&body).ok());
 
-    serde_json::from_str::<Value>(&body).ok()
+    match fetched {
+        Some(value) => {
+            entitlements_cache_store(&ENTITLEMENTS_CACHE, user_id, now, &value);
+            Some(value)
+        }
+        // Billing unreachable / bad response: serve the last known plan so a blip
+        // never downgrades a paying account. Never-seen accounts fall to Free.
+        None => entitlements_cache_any(&ENTITLEMENTS_CACHE, user_id),
+    }
 }
 
 /// Billing-side account deletion (GL #535): cancels any live subscription
@@ -1047,19 +1155,155 @@ async fn billing_forward_text(
     Ok((status, text))
 }
 
+// ── Public supporters wall ────────────────────────────────────────────────────
+
+/// How long a fetched supporters payload stays fresh before the next request
+/// re-validates against the private plane. The wall changes rarely; 5 minutes
+/// keeps it lively while shielding the plane from per-pageview traffic.
+const SUPPORTERS_CACHE_TTL: Duration = Duration::from_mins(5);
+/// Plaintext clamp for a supporter's display name.
+const SUPPORTER_NAME_MAX: usize = 80;
+/// Plaintext clamp for a supporter's optional message.
+const SUPPORTER_MESSAGE_MAX: usize = 140;
+/// Clamp for short metadata strings (tier / currency / RFC 3339 timestamp).
+const SUPPORTER_META_MAX: usize = 40;
+
+/// The last sanitized supporters payload and when it was fetched. Process-wide
+/// because the wall is global (not per-user), so a single slot suffices.
+type SupportersCacheSlot = Mutex<Option<(Instant, Value)>>;
+static SUPPORTERS_CACHE: SupportersCacheSlot = Mutex::new(None);
+
+/// The cached wall, if it was stored less than `SUPPORTERS_CACHE_TTL` before
+/// `now`. `now` is injected so expiry is unit-testable without sleeping.
+fn supporters_cache_fresh(slot: &SupportersCacheSlot, now: Instant) -> Option<Value> {
+    let guard = slot.lock().unwrap_or_else(PoisonError::into_inner);
+    guard
+        .as_ref()
+        .filter(|(at, _)| now.duration_since(*at) < SUPPORTERS_CACHE_TTL)
+        .map(|(_, v)| v.clone())
+}
+
+/// Store a freshly sanitized wall payload, restarting the TTL window at `now`.
+fn supporters_cache_store(slot: &SupportersCacheSlot, now: Instant, value: &Value) {
+    *slot.lock().unwrap_or_else(PoisonError::into_inner) = Some((now, value.clone()));
+}
+
+/// The last stored wall regardless of age — the stale fallback served when the
+/// private plane is unreachable (a stale wall beats a broken one).
+fn supporters_cache_last(slot: &SupportersCacheSlot) -> Option<Value> {
+    slot.lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_ref()
+        .map(|(_, v)| v.clone())
+}
+
+/// Clamp supporter-provided free text to plain text (defense in depth — the
+/// website renders via `textContent`, this protects every other consumer):
+/// HTML tags are dropped, control characters and runs of whitespace collapse to
+/// a single space, and the result is cut at `max` characters (char-boundary
+/// safe for any UTF-8 input).
+fn sanitize_supporter_text(raw: &str, max: usize) -> String {
+    // Pass 1: drop tag-shaped `<…>` runs, neutralize control characters. A `<`
+    // only opens a tag when followed by a letter, `/` or `!`, so prose like
+    // "i <3 rust" survives.
+    let mut plain = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '<'
+            && matches!(chars.peek(), Some(n) if n.is_ascii_alphabetic() || *n == '/' || *n == '!')
+        {
+            for tag_char in chars.by_ref() {
+                if tag_char == '>' {
+                    break;
+                }
+            }
+            plain.push(' ');
+            continue;
+        }
+        plain.push(if c.is_control() { ' ' } else { c });
+    }
+
+    // Pass 2: collapse whitespace, trim, clamp to `max` characters.
+    let mut out = String::with_capacity(plain.len().min(max * 4));
+    let mut count = 0usize;
+    let mut last_was_space = true; // swallows leading whitespace
+    for c in plain.chars() {
+        let c = if c.is_whitespace() { ' ' } else { c };
+        if c == ' ' && last_was_space {
+            continue;
+        }
+        last_was_space = c == ' ';
+        out.push(c);
+        count += 1;
+        if count == max {
+            break;
+        }
+    }
+    while out.ends_with(' ') {
+        out.pop();
+    }
+    out
+}
+
+/// Rebuild the upstream supporters payload whitelist-style: only the documented
+/// fields survive (anything else the plane might ever leak is dropped), every
+/// free-text field is clamped to plain text, and `count` is recomputed instead
+/// of trusted.
+fn sanitize_supporters_payload(raw: &Value) -> Value {
+    let supporters: Vec<Value> = raw
+        .get("supporters")
+        .and_then(Value::as_array)
+        .map(|list| {
+            list.iter()
+                .filter_map(|entry| {
+                    if !entry.is_object() {
+                        return None;
+                    }
+                    let text = |field: &str, max: usize| {
+                        sanitize_supporter_text(
+                            entry.get(field).and_then(Value::as_str).unwrap_or(""),
+                            max,
+                        )
+                    };
+                    let message = text("message", SUPPORTER_MESSAGE_MAX);
+                    Some(json!({
+                        "name": text("name", SUPPORTER_NAME_MAX),
+                        "message": if message.is_empty() { Value::Null } else { Value::String(message) },
+                        "tier": text("tier", SUPPORTER_META_MAX),
+                        "amount_cents": entry.get("amount_cents").and_then(Value::as_i64).unwrap_or(0).max(0),
+                        "currency": text("currency", SUPPORTER_META_MAX),
+                        "created_at": text("created_at", SUPPORTER_META_MAX),
+                    }))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    json!({ "count": supporters.len(), "supporters": supporters })
+}
+
 /// `GET /api/supporters` — the public supporters wall (no auth). Proxies the
 /// private plane's read model with the shared internal key (which never reaches
-/// the browser). Degrades to an empty wall when billing is unconfigured or
-/// unreachable, so the website always renders.
-pub(super) async fn get_supporters(State(state): State<AppState>) -> Json<Value> {
-    let empty = || json!({ "supporters": [], "count": 0 });
-
+/// the browser), sanitizes every supporter field to clamped plain text, and
+/// serves from a 5-minute in-memory cache so page views don't hammer the plane.
+///
+/// Failure ladder:
+/// - billing unconfigured ⇒ `200` with an empty wall (a standalone community
+///   backend has no supporters read-model; the website still renders),
+/// - upstream unreachable but a wall was fetched before ⇒ the stale copy,
+/// - upstream unreachable and nothing cached ⇒ `503 {"error":"supporters_unavailable"}`.
+pub(super) async fn get_supporters(State(state): State<AppState>) -> Response {
     let (Some(base), Some(key)) = (
         state.cfg.billing_base_url.clone(),
         state.cfg.billing_internal_key.clone(),
     ) else {
-        return Json(empty());
+        return Json(json!({ "supporters": [], "count": 0 })).into_response();
     };
+
+    let now = Instant::now();
+    if let Some(fresh) = supporters_cache_fresh(&SUPPORTERS_CACHE, now) {
+        return Json(fresh).into_response();
+    }
 
     let url = format!("{base}/api/billing/supporters");
     let body = tokio::task::spawn_blocking(move || {
@@ -1076,8 +1320,19 @@ pub(super) async fn get_supporters(State(state): State<AppState>) -> Json<Value>
     .flatten();
 
     match body.and_then(|b| serde_json::from_str::<Value>(&b).ok()) {
-        Some(v) => Json(v),
-        None => Json(empty()),
+        Some(raw) => {
+            let clean = sanitize_supporters_payload(&raw);
+            supporters_cache_store(&SUPPORTERS_CACHE, now, &clean);
+            Json(clean).into_response()
+        }
+        None => match supporters_cache_last(&SUPPORTERS_CACHE) {
+            Some(stale) => Json(stale).into_response(),
+            None => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "error": "supporters_unavailable" })),
+            )
+                .into_response(),
+        },
     }
 }
 
@@ -1307,5 +1562,199 @@ mod tests {
         let opt_out = cfg(true, true);
         assert!(sync_is_open(&opt_out));
         assert!(cloud_sync_allowed(&opt_out, Plan::Free));
+    }
+
+    // ── Supporters wall: sanitization ─────────────────────────────────────────
+
+    #[test]
+    fn supporter_text_strips_html_and_control_chars() {
+        let dirty = "Eve <script>alert('x')</script>\u{0007}\n<b>!</b>";
+        assert_eq!(
+            sanitize_supporter_text(dirty, SUPPORTER_NAME_MAX),
+            "Eve alert('x') !"
+        );
+        // A bare `<` that doesn't open a tag is normal prose and survives.
+        assert_eq!(
+            sanitize_supporter_text("i <3 rust & you", SUPPORTER_MESSAGE_MAX),
+            "i <3 rust & you"
+        );
+    }
+
+    #[test]
+    fn supporter_text_clamps_length_on_char_boundaries() {
+        // Multi-byte input must clamp by characters, not bytes (no panics, no
+        // split code points). 90 'ä' → exactly 80 chars.
+        let long_name = "ä".repeat(90);
+        let clamped = sanitize_supporter_text(&long_name, SUPPORTER_NAME_MAX);
+        assert_eq!(clamped.chars().count(), SUPPORTER_NAME_MAX);
+
+        let long_message = "m".repeat(500);
+        assert_eq!(
+            sanitize_supporter_text(&long_message, SUPPORTER_MESSAGE_MAX).len(),
+            SUPPORTER_MESSAGE_MAX
+        );
+
+        // Whitespace runs (incl. tabs/newlines) collapse and ends are trimmed.
+        assert_eq!(
+            sanitize_supporter_text("  a \t\t b\n\nc  ", SUPPORTER_NAME_MAX),
+            "a b c"
+        );
+    }
+
+    #[test]
+    fn supporters_payload_is_whitelisted_and_recounted() {
+        let raw = json!({
+            "supporters": [
+                {
+                    "name": "<b>Ada</b>",
+                    "message": "",
+                    "tier": "Sponsor",
+                    "amount_cents": 2500,
+                    "currency": "usd",
+                    "created_at": "2026-05-01T10:00:00Z",
+                    "email": "leak@example.com"
+                },
+                "not-an-object"
+            ],
+            "count": 99
+        });
+
+        let clean = sanitize_supporters_payload(&raw);
+        // Non-object entries are dropped and `count` is recomputed, not trusted.
+        assert_eq!(clean["count"], 1);
+        assert_eq!(clean["supporters"].as_array().map(Vec::len), Some(1));
+
+        let s = &clean["supporters"][0];
+        assert_eq!(s["name"], "Ada");
+        // Empty message normalizes to null so clients can simply skip it.
+        assert!(s["message"].is_null());
+        assert_eq!(s["tier"], "Sponsor");
+        assert_eq!(s["amount_cents"], 2500);
+        assert_eq!(s["currency"], "usd");
+        assert_eq!(s["created_at"], "2026-05-01T10:00:00Z");
+        // Unknown upstream fields never pass the edge.
+        assert!(s.get("email").is_none());
+    }
+
+    #[test]
+    fn supporters_payload_handles_malformed_upstream_shapes() {
+        // No `supporters` array at all → an empty, well-formed wall.
+        let clean = sanitize_supporters_payload(&json!({ "unexpected": true }));
+        assert_eq!(clean["count"], 0);
+        assert_eq!(clean["supporters"].as_array().map(Vec::len), Some(0));
+    }
+
+    // ── Supporters wall: cache ────────────────────────────────────────────────
+
+    #[test]
+    fn supporters_cache_hit_expiry_and_stale_fallback() {
+        let slot: SupportersCacheSlot = Mutex::new(None);
+        let t0 = Instant::now();
+
+        // Empty cache: neither fresh nor stale.
+        assert!(supporters_cache_fresh(&slot, t0).is_none());
+        assert!(supporters_cache_last(&slot).is_none());
+
+        let wall = json!({ "count": 1, "supporters": [{ "name": "Ada" }] });
+        supporters_cache_store(&slot, t0, &wall);
+
+        // Fresh within the TTL window (just before expiry).
+        let just_before = (t0 + SUPPORTERS_CACHE_TTL)
+            .checked_sub(Duration::from_secs(1))
+            .unwrap();
+        assert_eq!(
+            supporters_cache_fresh(&slot, just_before),
+            Some(wall.clone())
+        );
+
+        // At/after the TTL the entry no longer counts as fresh…
+        assert!(supporters_cache_fresh(&slot, t0 + SUPPORTERS_CACHE_TTL).is_none());
+        // …but stays available as the stale fallback for upstream outages.
+        assert_eq!(supporters_cache_last(&slot), Some(wall.clone()));
+
+        // Storing again restarts the TTL window.
+        let t1 = t0 + SUPPORTERS_CACHE_TTL + Duration::from_secs(10);
+        supporters_cache_store(&slot, t1, &wall);
+        assert_eq!(supporters_cache_fresh(&slot, t1), Some(wall));
+    }
+
+    // ── Entitlements cache (GL #785) ──────────────────────────────────────────
+
+    #[test]
+    fn entitlements_cache_fresh_then_expiry_then_stale_fallback() {
+        let slot: EntitlementsCacheSlot = Mutex::new(HashMap::new());
+        let uid = Uuid::new_v4();
+        let t0 = Instant::now();
+
+        // Cold cache: neither fresh nor stale.
+        assert!(entitlements_cache_fresh(&slot, uid, t0).is_none());
+        assert!(entitlements_cache_any(&slot, uid).is_none());
+
+        let pro = json!({ "plan": "pro", "entitlements": { "cloud_sync": true } });
+        entitlements_cache_store(&slot, uid, t0, &pro);
+
+        // Fresh just before the TTL window closes.
+        let just_before = (t0 + ENTITLEMENTS_CACHE_TTL)
+            .checked_sub(Duration::from_secs(1))
+            .unwrap();
+        assert_eq!(
+            entitlements_cache_fresh(&slot, uid, just_before),
+            Some(pro.clone())
+        );
+
+        // At/after the TTL it is no longer fresh…
+        assert!(entitlements_cache_fresh(&slot, uid, t0 + ENTITLEMENTS_CACHE_TTL).is_none());
+        // …but survives as the stale fallback served during a billing outage.
+        assert_eq!(entitlements_cache_any(&slot, uid), Some(pro));
+    }
+
+    #[test]
+    fn entitlements_cache_stale_fallback_is_per_user() {
+        let slot: EntitlementsCacheSlot = Mutex::new(HashMap::new());
+        let seen = Uuid::new_v4();
+        let never_seen = Uuid::new_v4();
+        let t0 = Instant::now();
+
+        entitlements_cache_store(&slot, seen, t0, &json!({ "plan": "pro" }));
+
+        // A previously-seen payer keeps Pro during an outage; an account we have
+        // never resolved has nothing to fall back to → caller degrades to Free.
+        assert_eq!(
+            entitlements_cache_any(&slot, seen),
+            Some(json!({ "plan": "pro" }))
+        );
+        assert!(entitlements_cache_any(&slot, never_seen).is_none());
+    }
+
+    #[test]
+    fn prune_entitlements_cache_evicts_only_very_old_entries() {
+        let mut map: HashMap<Uuid, CachedEntitlements> = HashMap::new();
+        let t0 = Instant::now();
+        let later = t0 + ENTITLEMENTS_STALE_RETAIN + Duration::from_secs(1);
+
+        let old = Uuid::new_v4();
+        let recent = Uuid::new_v4();
+        map.insert(
+            old,
+            CachedEntitlements {
+                at: t0,
+                value: json!({ "plan": "team" }),
+            },
+        );
+        map.insert(
+            recent,
+            CachedEntitlements {
+                at: later,
+                value: json!({ "plan": "pro" }),
+            },
+        );
+
+        prune_entitlements_cache(&mut map, later);
+
+        assert!(
+            !map.contains_key(&old),
+            "entries past the stale-retain window are dropped"
+        );
+        assert!(map.contains_key(&recent), "recent entries are kept");
     }
 }

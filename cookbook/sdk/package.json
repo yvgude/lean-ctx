@@ -1,7 +1,15 @@
 {
-  "name": "@leanctx/sdk",
+  "name": "lean-ctx-client",
   "version": "0.1.0",
-  "private": true,
+  "description": "Thin, dependency-free TypeScript client for the lean-ctx HTTP /v1 contract.",
+  "license": "MIT",
+  "homepage": "https://leanctx.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yvgude/lean-ctx.git",
+    "directory": "cookbook/sdk"
+  },
+  "keywords": ["lean-ctx", "llm", "context", "mcp", "agent"],
   "type": "module",
   "exports": {
     ".": {
@@ -10,7 +18,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

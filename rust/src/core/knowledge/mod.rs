@@ -48,6 +48,95 @@ mod tests {
     }
 
     #[test]
+    fn remember_infers_archetype_from_category() {
+        let policy = default_policy();
+        let mut k = ProjectKnowledge::new("/tmp/test-archetype");
+        k.remember("architecture", "db", "PostgreSQL", "s1", 0.9, &policy);
+        k.remember("decision", "lang", "Rust", "s1", 0.9, &policy);
+        k.remember("known_bugs", "src/a.rs:1", "panics", "s1", 0.9, &policy);
+        k.remember("data_model", "user", "id,email", "s1", 0.9, &policy);
+        k.remember("misc", "note", "whatever", "s1", 0.9, &policy);
+
+        let arch = |cat: &str| {
+            k.facts
+                .iter()
+                .find(|f| f.category == cat && f.is_current())
+                .map(|f| f.archetype.clone())
+                .expect("fact present")
+        };
+        assert_eq!(arch("architecture"), KnowledgeArchetype::Architecture);
+        assert_eq!(arch("decision"), KnowledgeArchetype::Decision);
+        assert_eq!(arch("known_bugs"), KnowledgeArchetype::Gotcha);
+        assert_eq!(arch("data_model"), KnowledgeArchetype::Architecture);
+        assert_eq!(arch("misc"), KnowledgeArchetype::Fact);
+    }
+
+    #[test]
+    fn recall_surfaces_synthesized_observation_first() {
+        let policy = default_policy();
+        let mut k = ProjectKnowledge::new("/tmp/test-recall-obs");
+        // A raw decision and a synthesized observation, equally relevant to "jwt".
+        k.remember(
+            "decision",
+            "auth-choice",
+            "auth module uses jwt tokens",
+            "s1",
+            0.6,
+            &policy,
+        );
+        k.remember(
+            "observation",
+            "src/auth.rs",
+            "auth module summary jwt tokens",
+            crate::core::knowledge::COGNITION_SYNTHESIS_SOURCE,
+            0.6,
+            &policy,
+        );
+
+        let (out, total) = k.recall_for_output("jwt", 10);
+        assert!(total >= 2, "both facts match the query");
+        assert!(
+            out[0].is_synthesized_observation(),
+            "synthesized observation ranks above an equally relevant raw fact"
+        );
+        assert_eq!(out[0].key, "src/auth.rs");
+    }
+
+    #[test]
+    fn recall_exact_key_hit_outranks_observation() {
+        // #802 keeps the observation tier *balanced*: an exact key hit (+1.0) still
+        // outranks a synthesized summary (+0.4), so a stale summary can never bury a
+        // precisely-queried raw fact. This is the guarantee the reference docs make.
+        let policy = default_policy();
+        let mut k = ProjectKnowledge::new("/tmp/test-recall-exact-vs-obs");
+        k.remember(
+            "decision",
+            "jwt",
+            "auth module uses jwt tokens",
+            "s1",
+            0.6,
+            &policy,
+        );
+        k.remember(
+            "observation",
+            "src/auth.rs",
+            "auth module summary jwt tokens",
+            crate::core::knowledge::COGNITION_SYNTHESIS_SOURCE,
+            0.6,
+            &policy,
+        );
+
+        let (out, _total) = k.recall_for_output("jwt", 10);
+        assert_eq!(out[0].key, "jwt", "exact key hit leads the ranking");
+        assert_eq!(out[0].category, "decision");
+        assert!(
+            out.iter()
+                .any(crate::core::knowledge::KnowledgeFact::is_synthesized_observation),
+            "the observation is still recalled, just below the exact hit"
+        );
+    }
+
+    #[test]
     fn facts_evict_down_to_cap_not_double() {
         // Regression: remember() must keep the fact count at or below max_facts.
         // Previously the lifecycle only fired above 2 * max_facts, so a store

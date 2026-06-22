@@ -298,6 +298,34 @@ pub fn append_savings_with_info(
     )
 }
 
+/// Removes a single trailing savings footer line, if present.
+///
+/// The compression funnel appends at most one footer as the final line — either
+/// the box-drawing form (`─── 4,200 → 840 tok (↓80%) ───`) or the verbatim
+/// truncation form (`[lean-ctx: 4200→840 tok, verbatim truncated]`). The
+/// `/v1/compress` contract surfaces savings in a structured `stats` field, so
+/// message bodies must stay footer-free and byte-stable for prompt caching
+/// (#498). This strips that trailing line regardless of the ambient
+/// `savings_footer` setting; content without a footer is returned untouched.
+pub fn strip_trailing_savings_footer(output: &str) -> &str {
+    let body = output.trim_end_matches('\n');
+    let (head, last_line) = match body.rfind('\n') {
+        Some(nl) => (&body[..nl], &body[nl + 1..]),
+        None => ("", body),
+    };
+    if is_savings_footer_line(last_line) {
+        head
+    } else {
+        output
+    }
+}
+
+fn is_savings_footer_line(line: &str) -> bool {
+    let l = line.trim();
+    (l.starts_with("\u{2500}\u{2500}\u{2500} ") && l.ends_with(" \u{2500}\u{2500}\u{2500}"))
+        || (l.starts_with("[lean-ctx: ") && l.ends_with(']'))
+}
+
 /// A terse instruction code and its human-readable expansion.
 pub struct InstructionTemplate {
     pub code: &'static str,
@@ -397,6 +425,34 @@ pub fn encode_instructions_with_snr(complexity: &str, compression_pct: f64) -> S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn strip_trailing_savings_footer_handles_both_styles() {
+        // Box-drawing footer.
+        let boxed = "body line one\nbody line two\n\u{2500}\u{2500}\u{2500} 4,200 \u{2192} 840 tok (\u{2193}80%) \u{2500}\u{2500}\u{2500}";
+        assert_eq!(
+            strip_trailing_savings_footer(boxed),
+            "body line one\nbody line two"
+        );
+        // Verbatim-truncation footer.
+        let verbatim = "out\n[lean-ctx: 4200\u{2192}840 tok, verbatim truncated]";
+        assert_eq!(strip_trailing_savings_footer(verbatim), "out");
+        // No footer → untouched (including trailing newline).
+        assert_eq!(
+            strip_trailing_savings_footer("plain body\n"),
+            "plain body\n"
+        );
+        // A footer-only string collapses to empty.
+        assert_eq!(
+            strip_trailing_savings_footer("[lean-ctx: 10\u{2192}5 tok, verbatim truncated]"),
+            ""
+        );
+        // A body line that merely mentions the marker mid-text is preserved.
+        assert_eq!(
+            strip_trailing_savings_footer("see [lean-ctx: docs] for details"),
+            "see [lean-ctx: docs] for details"
+        );
+    }
 
     #[test]
     fn display_path_normalizes_windows_separators() {

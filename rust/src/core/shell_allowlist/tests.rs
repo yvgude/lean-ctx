@@ -1049,3 +1049,35 @@ fn loop_header_substitution_is_not_a_bypass() {
     let list = allow(&["echo"]);
     assert!(check_all_segments("for i in $(ls); do curl $i; done", &list).is_err());
 }
+
+// --- Shell-security mode dispatcher (GL #788) ---
+// `check_shell_allowlist` honours LEAN_CTX_SHELL_SECURITY. Env is serialized via
+// the shared test lock and removed BEFORE asserting, so a failed assert can never
+// leak the var into another test.
+
+#[test]
+fn security_off_skips_all_gating() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "off");
+    // `eval` is unconditionally blocked under enforce; off must let it through.
+    let eval_ok = check_shell_allowlist("eval rm -rf /");
+    // A binary that is not on any allowlist also passes under off.
+    let exotic_ok = check_shell_allowlist("some-exotic-tool --flag");
+    crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
+    assert!(eval_ok.is_ok(), "off must skip the eval block");
+    assert!(exotic_ok.is_ok(), "off must allow non-allowlisted binaries");
+}
+
+#[test]
+fn security_warn_never_blocks_while_enforce_does() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    // `eval …` is blocked in enforce mode regardless of allowlist contents.
+    let blocked = "eval danger";
+    crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+    let enforced = check_shell_allowlist(blocked);
+    crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "warn");
+    let warned = check_shell_allowlist(blocked);
+    crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
+    assert!(enforced.is_err(), "enforce must block eval");
+    assert!(warned.is_ok(), "warn must run the check but never block");
+}

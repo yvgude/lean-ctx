@@ -104,8 +104,17 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key_with_env(
             "u8",
             serde_json::json!(cfg.autonomy.cognition_loop_max_steps),
-            "Maximum steps per cognition loop iteration",
+            "Maximum steps per cognition loop iteration (>= 9 enables observation synthesis)",
             "LEAN_CTX_COGNITION_LOOP_MAX_STEPS",
+        ),
+    );
+    autonomy.insert(
+        "cognition_synthesis_min_cluster".into(),
+        key_with_env(
+            "usize",
+            serde_json::json!(cfg.autonomy.cognition_synthesis_min_cluster),
+            "Minimum facts per entity before observation synthesis writes a summary (needs cognition_loop_max_steps >= 9)",
+            "LEAN_CTX_COGNITION_SYNTHESIS_MIN_CLUSTER",
         ),
     );
     sections.insert(

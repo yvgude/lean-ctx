@@ -111,7 +111,7 @@ lean-ctx/
 │  │  ├─ cli/            # CLI subcommands (setup, init, read, ...)
 │  │  └─ hooks/          # editor/agent installers (Cursor, Claude Code, ...)
 │  └─ tests/             # integration/e2e/adversarial tests
-├─ cookbook/             # real examples + @leanctx/sdk
+├─ cookbook/             # real examples + lean-ctx-client
 ├─ packages/             # editor integrations (VSCode, Chrome, JetBrains, ...)
 ├─ docs/                 # repo docs (developer-facing)
 └─ website/generated/    # generated schemas (tool + TDD schema)

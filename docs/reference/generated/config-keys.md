@@ -17,6 +17,7 @@ Top-level configuration keys
 - `auto_mode_learning` (bool, default `false` — env `LEAN_CTX_AUTO_MODE_LEARNING`) — Opt-in: let adaptive learning signals (predictor, bandit, heatmap, adaptive policy, bounce/path memory) influence `auto` mode. Off by default for a deterministic, I/O-light cascade (capability guards + size/task heuristic only) that keeps output byte-stable for prompt caching. Override via LEAN_CTX_AUTO_MODE_LEARNING
 - `bm25_max_cache_mb` (u64, default `128` — env `LEAN_CTX_BM25_MAX_CACHE_MB`) — Maximum BM25 cache file size in MB
 - `buddy_enabled` (bool, default `true`) — Enable the buddy system for multi-agent coordination
+- `cache_max_tokens` (usize, default `0` — env `LEAN_CTX_CACHE_MAX_TOKENS`) — Token budget for the in-memory ctx_read cache (0 = built-in default 500k). When exceeded, least-valuable entries are evicted immediately via RRF (recency x frequency x size) so reads never block; eviction is not deferred to the staleness TTL
 - `cache_policy` (enum(aggressive|safe|off), default `aggressive` — env `LEAN_CTX_CACHE_POLICY`) — Cache policy for ctx_read: aggressive (13-tok stubs), safe (map on hit), off (always disk)
 - `checkpoint_interval` (u32, default `15`) — Session checkpoint interval in minutes
 - `compression_aggressiveness` (f64, default `null` — env `LEAN_CTX_AGGRESSIVENESS`) — Global compression intensity 0.0 (lossless) – 1.0 (max), mapped onto read modes/entropy/IB. Empty = per-mode defaults
@@ -63,6 +64,7 @@ Top-level configuration keys
 - `shell_allowlist` (array, default `[]` — env `LEAN_CTX_SHELL_ALLOWLIST`) — Optional shell command allowlist. When non-empty, only listed binaries are permitted
 - `shell_allowlist_extra` (array, default `[]`) — Commands merged on top of shell_allowlist without replacing the defaults. Managed via `lean-ctx allow <cmd>`
 - `shell_hook_disabled` (bool, default `false` — env `LEAN_CTX_NO_HOOK`) — Disable shell hook injection
+- `shell_security` (string, default `enforce` — env `LEAN_CTX_SHELL_SECURITY`) — Shell command gating: enforce (default, secure), warn (log only, never block) or off (skip allowlist + hard blocks; compression stays active)
 - `shell_strict_mode` (bool, default `false`) — Block $(), backticks, <() in shell arguments. Default false = warn only.
 - `slow_command_threshold_ms` (u64, default `5000`) — Commands taking longer than this (ms) are recorded in the slow log. Set to 0 to disable
 - `structure_first` (bool, default `false` — env `LEAN_CTX_STRUCTURE_FIRST`) — Opt-in: bias `auto` toward structure-first reads (map) for medium code files on a cold read. Off by default — for phase-isolated harnesses with no warm-session cache payback. Override via LEAN_CTX_STRUCTURE_FIRST
@@ -99,7 +101,8 @@ Controls autonomous background behaviors (preload, dedup, consolidation)
 - `auto_related` (bool, default `true`) — Auto-load graph-related files
 - `cognition_loop_enabled` (bool, default `true` — env `LEAN_CTX_COGNITION_LOOP_ENABLED`) — Enable the background cognition loop (periodic knowledge consolidation)
 - `cognition_loop_interval_secs` (u64, default `3600` — env `LEAN_CTX_COGNITION_LOOP_INTERVAL_SECS`) — Seconds between cognition loop iterations
-- `cognition_loop_max_steps` (u8, default `8` — env `LEAN_CTX_COGNITION_LOOP_MAX_STEPS`) — Maximum steps per cognition loop iteration
+- `cognition_loop_max_steps` (u8, default `9` — env `LEAN_CTX_COGNITION_LOOP_MAX_STEPS`) — Maximum steps per cognition loop iteration (>= 9 enables observation synthesis)
+- `cognition_synthesis_min_cluster` (usize, default `3` — env `LEAN_CTX_COGNITION_SYNTHESIS_MIN_CLUSTER`) — Minimum facts per entity before observation synthesis writes a summary (needs cognition_loop_max_steps >= 9)
 - `consolidate_cooldown_secs` (u64, default `120`) — Minimum seconds between consolidation runs
 - `consolidate_every_calls` (u32, default `25`) — Consolidate knowledge every N tool calls
 - `dedup_threshold` (usize, default `8`) — Number of repeated reads before dedup triggers
@@ -256,7 +259,10 @@ Knowledge memory budgets (facts, patterns, gotchas)
 
 Knowledge lifecycle policy (decay, staleness, dedup)
 
+- `archetype_aware_decay` (bool, default `false`) — Scale Ebbinghaus stability by fact archetype so structural evidence decays slower than inference (default false)
+- `base_stability_days` (f32, default `90.0`) — Characteristic memory stability (days) for the Ebbinghaus curve
 - `decay_rate` (f32, default `0.01`) — Rate at which knowledge confidence decays over time
+- `forgetting_model` (string, default `ebbinghaus`) — Forgetting curve: ebbinghaus (default, exponential + spacing) or linear
 - `low_confidence_threshold` (f32, default `0.3`) — Threshold below which facts are considered low-confidence
 - `similarity_threshold` (f32, default `0.85`) — Similarity threshold for deduplication
 - `stale_days` (i64, default `30`) — Days after which unused facts are considered stale
@@ -295,6 +301,8 @@ Proxy upstream configuration for API routing
 - `cold_prefix_repack` (bool, default `false` — env `LEAN_CTX_PROXY_COLD_PREFIX_REPACK`) — Opt-in big-gap cold-prefix repack (#480): on a session-resume request the proxy may predict (from idle time vs the provider cache TTL) that the client-cached prefix has already expired, then prune that now-cold prefix once to re-seed a leaner cache. A wrong guess re-bills cache reads as writes (~12x), so default false
 - `gemini_upstream` (string?, default `null`) — Custom upstream URL for Gemini API proxy
 - `history_mode` (enum: cache-aware | rolling | off, default `cache-aware` — env `LEAN_CTX_PROXY_HISTORY_MODE`) — History pruning strategy. cache-aware: frozen boundaries that keep provider prompt caches valid (default). rolling: legacy moving window (max raw savings, breaks prompt caching). off: never prune
+- `live_compress` (bool, default `true` — env `LEAN_CTX_PROXY_LIVE_COMPRESS`) — Live-compress non-protected tool_result content on the wire (#481). Default true. Set false for a meter-only proxy — real billed/cache token metering with zero request rewriting (combine with history_mode = "off" and no role_aggressiveness for a byte-unchanged body)
+- `live_compress_exclude` (string[], default `["serena"]`) — Tool-name patterns (case-insensitive substring) whose tool_result is never live-compressed — treated as protected, like a file read (#481). Unset protects Serena's code-reading tools; set an explicit list to narrow it, or [] to disable
 - `meter_openai_usage` (bool, default `true`) — Inject stream_options.include_usage into streamed OpenAI Chat Completions so the final chunk reports real token usage for the measured spend meter. Default true
 - `openai_upstream` (string?, default `null`) — Custom upstream URL for OpenAI API proxy
 

@@ -14,4 +14,5 @@ pub use platform::{
     decode_output, is_container, is_non_interactive, join_command, join_command_for,
     shell_and_flag, shell_name,
 };
+pub(crate) use redact::cleanup_old_tee_logs;
 pub use redact::save_tee;

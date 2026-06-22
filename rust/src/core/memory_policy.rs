@@ -64,6 +64,9 @@ pub struct LifecyclePolicyOverrides {
     pub low_confidence_threshold: Option<f32>,
     pub stale_days: Option<i64>,
     pub similarity_threshold: Option<f32>,
+    pub forgetting_model: Option<String>,
+    pub base_stability_days: Option<f32>,
+    pub archetype_aware_decay: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -321,6 +324,13 @@ pub struct LifecyclePolicy {
     pub low_confidence_threshold: f32,
     pub stale_days: i64,
     pub similarity_threshold: f32,
+    /// Forgetting curve (#1): `ebbinghaus` (default) or `linear` (legacy).
+    pub forgetting_model: String,
+    /// Characteristic memory stability in days for the Ebbinghaus curve.
+    pub base_stability_days: f32,
+    /// Scale Ebbinghaus stability by fact archetype so structural evidence decays
+    /// slower than inference. Default false keeps the baseline tuning unchanged.
+    pub archetype_aware_decay: bool,
 }
 
 impl Default for LifecyclePolicy {
@@ -330,6 +340,9 @@ impl Default for LifecyclePolicy {
             low_confidence_threshold: 0.3,
             stale_days: 30,
             similarity_threshold: 0.85,
+            forgetting_model: "ebbinghaus".to_string(),
+            base_stability_days: crate::core::memory_lifecycle::DEFAULT_BASE_STABILITY_DAYS,
+            archetype_aware_decay: false,
         }
     }
 }
@@ -356,6 +369,17 @@ impl LifecyclePolicy {
         {
             self.similarity_threshold = n;
         }
+        if let Ok(v) = std::env::var("LEAN_CTX_LIFECYCLE_FORGETTING") {
+            self.forgetting_model = v;
+        }
+        if let Ok(v) = std::env::var("LEAN_CTX_LIFECYCLE_BASE_STABILITY_DAYS")
+            && let Ok(n) = v.parse()
+        {
+            self.base_stability_days = n;
+        }
+        if let Ok(v) = std::env::var("LEAN_CTX_LIFECYCLE_ARCHETYPE_AWARE") {
+            self.archetype_aware_decay = v == "1" || v.eq_ignore_ascii_case("true");
+        }
     }
 
     fn validate(&self) -> Result<(), String> {
@@ -373,6 +397,9 @@ impl LifecyclePolicy {
         if !(0.0..=1.0).contains(&self.similarity_threshold) {
             return Err("memory.lifecycle.similarity_threshold must be in [0.0, 1.0]".to_string());
         }
+        if self.base_stability_days <= 0.0 {
+            return Err("memory.lifecycle.base_stability_days must be > 0".to_string());
+        }
         Ok(())
     }
 
@@ -388,6 +415,15 @@ impl LifecyclePolicy {
         }
         if let Some(v) = o.similarity_threshold {
             self.similarity_threshold = v;
+        }
+        if let Some(ref v) = o.forgetting_model {
+            self.forgetting_model.clone_from(v);
+        }
+        if let Some(v) = o.base_stability_days {
+            self.base_stability_days = v;
+        }
+        if let Some(v) = o.archetype_aware_decay {
+            self.archetype_aware_decay = v;
         }
     }
 }

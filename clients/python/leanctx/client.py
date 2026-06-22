@@ -3,7 +3,7 @@
 Uses only the Python standard library (``urllib``) so it installs and runs
 anywhere with no transitive dependencies. It speaks the wire protocol only — it
 never links the engine or re-implements compression — so it stays stable as
-lean-ctx evolves. Mirrors the TypeScript (`@leanctx/sdk`) and Rust
+lean-ctx evolves. Mirrors the TypeScript (`lean-ctx-client`) and Rust
 (`lean-ctx-client`) SDKs.
 """
 

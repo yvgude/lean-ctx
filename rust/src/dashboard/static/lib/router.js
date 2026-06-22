@@ -50,6 +50,7 @@ const COCKPIT_AREAS = [
     tabs: [
       { tab: 'roi', view: 'roi', label: 'ROI & Plan' },
       { tab: 'trends', view: 'learning', label: 'Trends' },
+      { tab: 'leaderboard', view: 'leaderboard', label: 'Leaderboard' },
     ],
   },
   {
@@ -88,6 +89,7 @@ const KNOWN_ROUTES = [
   'overview',
   'roi',
   'learning',
+  'leaderboard',
   'commander',
   'context',
   'live',
@@ -112,6 +114,7 @@ const ROUTE_LABELS = {
   overview: 'Home',
   roi: 'ROI & Plan',
   learning: 'Trends',
+  leaderboard: 'Leaderboard',
   commander: 'Context Triage',
   context: 'Context Contents',
   live: 'Live Activity',
@@ -137,6 +140,7 @@ const ROUTE_DESCRIPTIONS = {
   overview: 'Status, receipt and top savings — the 5-second answer.',
   roi: 'Signed, verifiable savings plus your plan and entitlements.',
   learning: 'How your savings and efficiency change over time.',
+  leaderboard: 'Submit your tokens saved to the community leaderboard.',
   commander: 'Context-window pressure and what to trim — your to-do list.',
   context: 'Everything currently loaded into the model context.',
   live: 'What lean-ctx is doing right now.',
@@ -354,6 +358,7 @@ function initRouter() {
   var viewElementMap = {
     overview: 'overviewView',
     roi: 'roiView',
+    leaderboard: 'leaderboardView',
     commander: 'commanderView',
     context: 'contextView',
     live: 'liveView',

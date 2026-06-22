@@ -8,8 +8,9 @@
 //! `config_dir()` resets its own perms to `0o700` on access, so `chmod 0o500` is
 //! a best-effort RO simulation only — the real gate is the assertion that the
 //! config dir's contents are byte-identical afterwards: any stray write (e.g. a
-//! `stats.json` landing next to `config.toml`) fails the test. Captured API keys
-//! are additionally asserted to land in the state dir at `0o600`.
+//! `stats.json` landing next to `config.toml`) fails the test. A captured agent
+//! session id is additionally asserted to land in the state dir at `0o600`, while
+//! a credential-shaped var (an API key) must never be persisted (finding 2).
 #![cfg(unix)]
 
 use std::collections::BTreeMap;
@@ -75,7 +76,11 @@ fn full_cycle_never_writes_into_readonly_config_dir() {
         // Suppress daemon auto-start: exercise the local-only path, never talk to
         // a developer's already-running daemon.
         .env("LEAN_CTX_HOOK_CHILD", "1")
-        // Forwardable var → captured into the state dir (proof writes land there).
+        // Forwardable session id → captured into the state dir (proof writes
+        // land there). A credential-shaped var is also set and must NOT be
+        // captured: forwarding API keys was the exfiltration risk fixed in
+        // finding 2, so `is_forwardable` rejects anything credential-shaped.
+        .env("CODEX_THREAD_ID", "ro-sandbox-session")
         .env("GEMINI_API_KEY", "ro-sandbox-secret")
         .output()
         .expect("spawn lean-ctx -c");
@@ -107,12 +112,23 @@ fn full_cycle_never_writes_into_readonly_config_dir() {
         "the config dir was modified during the cycle"
     );
 
-    // Proof that writes landed in the split categories: captured keys live in
-    // the state dir, owner-only.
+    // Proof that writes landed in the split categories: the captured session id
+    // lives in the state dir, owner-only — never the RO/shareable config dir.
     let key_file = state.join("agent_runtime_env.json");
     assert!(
         key_file.exists(),
-        "captured keys must be written to the state dir, not the config dir"
+        "captured session vars must be written to the state dir, not the config dir"
+    );
+    let captured = std::fs::read_to_string(&key_file).unwrap();
+    assert!(
+        captured.contains("CODEX_THREAD_ID"),
+        "the forwardable session id must be captured; got:\n{captured}"
+    );
+    // Finding 2: credential-shaped vars must never be persisted, even when they
+    // match a forwardable prefix (GEMINI_ here).
+    assert!(
+        !captured.contains("ro-sandbox-secret") && !captured.contains("GEMINI_API_KEY"),
+        "credential-shaped vars must never be written to disk; got:\n{captured}"
     );
     let mode = std::fs::metadata(&key_file).unwrap().permissions().mode();
     assert_eq!(mode & 0o777, 0o600, "captured key file must be owner-only");

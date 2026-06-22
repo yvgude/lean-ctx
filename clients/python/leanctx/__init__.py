@@ -1,7 +1,7 @@
 """lean-ctx Python SDK.
 
 A thin, dependency-free client for the lean-ctx HTTP ``/v1`` contract. Mirrors
-the TypeScript (`@leanctx/sdk`) and Rust (`lean-ctx-client`) SDKs.
+the TypeScript (`lean-ctx-client`) and Rust (`lean-ctx-client`) SDKs.
 """
 
 from __future__ import annotations

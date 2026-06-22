@@ -144,10 +144,92 @@ pub fn read_only_roots_from_env_and_config() -> Vec<PathBuf> {
     canonicalized_roots(&cfg.read_only_roots, "LEAN_CTX_READ_ONLY_ROOTS")
 }
 
-/// The candidate's nearest existing ancestor is canonicalized (so a not-yet-existing
-/// file inherits the read-only status of the directory it would be created in —
-/// closing the "create a new file in a read-only repo" hole) and matched against
-/// the (symlink-resolved) read-only roots.
+/// A single active relaxation of the path jail. Each one widens or disables what
+/// tools can reach beyond the project root, so it is surfaced loudly (GH security
+/// audit, finding 3): the MCP/HTTP server inherits its process env from the
+/// IDE/launchd, so a globally-set `LEAN_CTX_ALLOW_PATH` / `LEAN_CTX_EXTRA_ROOTS`
+/// / `LEAN_CTX_ALLOW_IDE_DIRS` (or `path_jail = false`) silently loosens the
+/// boundary with no in-band signal otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JailRelaxation {
+    /// The knob that activated it (env var name, config key, or build feature).
+    pub source: &'static str,
+    /// Human-readable effect of the relaxation.
+    pub detail: &'static str,
+}
+
+fn env_is_set(var: &str) -> bool {
+    std::env::var(var).is_ok_and(|v| !v.trim().is_empty())
+}
+
+/// Collect every currently-active path-jail relaxation. An empty result means
+/// the jail is fully in force. This is the single source of truth shared by the
+/// startup warning ([`warn_if_relaxed`]) and `lean-ctx doctor`.
+#[must_use]
+pub fn active_relaxations() -> Vec<JailRelaxation> {
+    let mut out = Vec::new();
+
+    if cfg!(feature = "no-jail") {
+        out.push(JailRelaxation {
+            source: "no-jail (build feature)",
+            detail: "path jail compiled out — every tool path is allowed",
+        });
+    }
+
+    if crate::core::config::Config::load().path_jail == Some(false) {
+        out.push(JailRelaxation {
+            source: "path_jail = false (config.toml)",
+            detail: "path jail disabled — every tool path is allowed",
+        });
+    }
+
+    if env_is_set("LEAN_CTX_ALLOW_PATH") || env_is_set("LCTX_ALLOW_PATH") {
+        out.push(JailRelaxation {
+            source: "LEAN_CTX_ALLOW_PATH",
+            detail: "widens the read/write allow-list beyond the project root",
+        });
+    }
+
+    if env_is_set("LEAN_CTX_EXTRA_ROOTS") {
+        out.push(JailRelaxation {
+            source: "LEAN_CTX_EXTRA_ROOTS",
+            detail: "adds extra accessible roots beyond the project root",
+        });
+    }
+
+    let ide_env = std::env::var("LEAN_CTX_ALLOW_IDE_DIRS").is_ok_and(|v| v == "1");
+    if ide_env || crate::core::config::Config::load().allow_ide_config_dirs {
+        out.push(JailRelaxation {
+            source: if ide_env {
+                "LEAN_CTX_ALLOW_IDE_DIRS=1"
+            } else {
+                "allow_ide_config_dirs = true (config.toml)"
+            },
+            detail: "exposes ~/.cursor, ~/.claude, … (other agents' sessions/credentials) to tools",
+        });
+    }
+
+    out
+}
+
+/// Emit a loud `tracing::warn!` for every active path-jail relaxation. Called
+/// once at MCP/HTTP server startup so a trusted-but-loosening env/config leaves
+/// an in-band audit signal instead of silently defeating the jail (finding 3).
+pub fn warn_if_relaxed() {
+    for relaxation in active_relaxations() {
+        tracing::warn!(
+            "[SECURITY] path jail relaxed via {}: {} — intended for trusted local use only",
+            relaxation.source,
+            relaxation.detail
+        );
+    }
+}
+
+/// True when `candidate` resolves to a location inside a configured read-only
+/// root. The candidate's nearest existing ancestor is canonicalized (so a
+/// not-yet-existing file inherits the read-only status of the directory it
+/// would be created in — closing the "create a new file in a read-only repo"
+/// hole) and matched against the (symlink-resolved) read-only roots.
 ///
 /// A `false` return is only authoritative when the roots list is empty or the
 /// path provably sits outside every root; an unresolvable candidate (no
@@ -677,6 +759,47 @@ mod tests {
         crate::test_env::remove_var("LEAN_CTX_ALLOW_PATH");
 
         assert!(result.is_ok(), "allow path '/' must permit all: {result:?}");
+    }
+
+    // Finding 3 (GH security audit): env-channel jail relaxations must be
+    // detectable so startup + doctor can surface them loudly.
+    #[test]
+    fn active_relaxations_detects_allow_path_env() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let _alp = ALLOW_PATH_ENV_LOCK.lock().unwrap();
+        crate::test_env::remove_var("LEAN_CTX_EXTRA_ROOTS");
+        crate::test_env::remove_var("LEAN_CTX_ALLOW_IDE_DIRS");
+        crate::test_env::set_var("LEAN_CTX_ALLOW_PATH", "/tmp");
+
+        let relaxed = active_relaxations();
+
+        crate::test_env::remove_var("LEAN_CTX_ALLOW_PATH");
+
+        assert!(
+            relaxed.iter().any(|r| r.source == "LEAN_CTX_ALLOW_PATH"),
+            "LEAN_CTX_ALLOW_PATH must be reported as a jail relaxation: {relaxed:?}"
+        );
+    }
+
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn active_relaxations_empty_when_jail_intact() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let _alp = ALLOW_PATH_ENV_LOCK.lock().unwrap();
+        for var in [
+            "LEAN_CTX_ALLOW_PATH",
+            "LCTX_ALLOW_PATH",
+            "LEAN_CTX_EXTRA_ROOTS",
+            "LEAN_CTX_ALLOW_IDE_DIRS",
+        ] {
+            crate::test_env::remove_var(var);
+        }
+
+        assert!(
+            active_relaxations().is_empty(),
+            "an intact jail (clean config, no relaxation env) must report no relaxations: {:?}",
+            active_relaxations()
+        );
     }
 
     #[test]

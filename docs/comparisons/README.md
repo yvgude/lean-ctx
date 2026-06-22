@@ -44,6 +44,9 @@ We believe in transparent, fact-based comparisons. Every page below includes rea
 ### "I want to compress free-form prose / chat history / RAG context"
 **Use [The Token Company](vs-token-company.md) for cloud ML prose compression.** Use [lean-ctx](vs-token-company.md) when the content is code or tool output, you need 100% local operation, or you need deterministic, prompt-cache-preserving output.
 
+### "I want a drop-in `compress(messages)` library like Headroom"
+**Use [Headroom](vs-headroom.md) for ML prose compression and the widest set of framework wrappers.** Use [lean-ctx](vs-headroom.md) when you need deterministic, prompt-cache-safe output, 100% local operation in a single binary, or compression alongside cached reads, search and memory.
+
 ### "I want all of the above in one tool"
 **Use lean-ctx.** It's the only tool that combines compression, memory, code intelligence, semantic search, repo-maps, and observability in a single binary.
 
@@ -57,6 +60,7 @@ We believe in transparent, fact-based comparisons. Every page below includes rea
 | [**lean-ctx vs Aider repo-map**](vs-aider-repomap.md) | MCP-available vs CLI-locked — PageRank for 28 agents | [Full comparison →](vs-aider-repomap.md) |
 | [**lean-ctx vs Mem0**](vs-mem0.md) | Code-specific vs general-purpose — local vs cloud | [Full comparison →](vs-mem0.md) |
 | [**lean-ctx vs The Token Company**](vs-token-company.md) | Local deterministic code compression vs cloud ML prose compression | [Full comparison →](vs-token-company.md) |
+| [**lean-ctx vs Headroom**](vs-headroom.md) | Deterministic, prompt-cache-safe `compress()` + full context layer vs ML compression library | [Full comparison →](vs-headroom.md) |
 
 ## What Makes lean-ctx Different
 

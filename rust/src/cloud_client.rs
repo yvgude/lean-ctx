@@ -444,6 +444,21 @@ pub fn unpublish_wrapped(id: &str, edit_token: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Bind a published card to the logged-in account so the leaderboard stacks all of the
+/// user's machines under one entry (#488). Auth: account Bearer + the card's `edit_token`
+/// (`X-Edit-Token`). Server: `POST /api/wrapped/:id/claim`. Requires being logged in.
+pub fn claim_wrapped(id: &str, edit_token: &str) -> Result<(), String> {
+    let bearer = auth_bearer_token()?;
+    let url = format!("{}/api/wrapped/{id}/claim", api_url());
+
+    ureq::post(&url)
+        .header("Authorization", &format!("Bearer {bearer}"))
+        .header("X-Edit-Token", edit_token)
+        .send_empty()
+        .map_err(|e| format!("Claim failed: {e}"))?;
+    Ok(())
+}
+
 /// Push the knowledge store as a zero-knowledge vault (GL #467): entries are
 /// sealed client-side (XChaCha20-Poly1305, domain-separated HKDF key) — the
 /// backend stores ciphertext and can never read them. The first vault push
@@ -521,6 +536,28 @@ pub fn load_cloud_models() -> Option<serde_json::Value> {
     let path = config_dir().join("cloud_models.json");
     let data = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&data).ok()
+}
+
+/// Fetch the public community leaderboard as JSON (`{ "entries": [ … ] }`).
+///
+/// Public, login-less endpoint (`GET /api/leaderboard`, contract:
+/// `docs/contracts/wrapped-permalink-v1.md`). The dashboard proxies it
+/// same-origin (#466) so the browser never reaches `api.leanctx.com` directly —
+/// the dashboard CSP pins `connect-src` to `'self'`. A 10s global timeout keeps
+/// a slow upstream from tying up a dashboard request thread.
+pub fn fetch_leaderboard() -> Result<serde_json::Value, String> {
+    let url = format!("{}/api/leaderboard", api_url());
+    let resp = ureq::get(&url)
+        .config()
+        .timeout_global(Some(std::time::Duration::from_secs(10)))
+        .build()
+        .call()
+        .map_err(|e| format!("Could not reach the leaderboard service: {e}"))?;
+    let body = resp
+        .into_body()
+        .read_to_string()
+        .map_err(|e| format!("Failed to read leaderboard response: {e}"))?;
+    serde_json::from_str(&body).map_err(|e| format!("Invalid leaderboard JSON: {e}"))
 }
 
 pub fn is_cloud_user() -> bool {

@@ -52,6 +52,36 @@ This is the foundation every other layer assumes.
 
 ---
 
+## 1.5 Workspace trust — gate untrusted project-local config
+
+**What it does:** a cloned repo ships its own `.lean-ctx.toml`, which is merged
+over your global config. That merge can raise **security-sensitive** settings —
+replace the `shell_allowlist`, widen the jail via `allow_paths` / `extra_roots`,
+repoint a `proxy.*_upstream`, define `custom_aliases`, or flip
+`rules_scope` / `rules_injection`. lean-ctx treats those as *trusted-only*.
+
+For a workspace you have **not** trusted, the sensitive overrides are **withheld**
+(comfort knobs like `compression_level` / `theme` still apply) and a `[SECURITY]`
+warning is logged. Grant trust explicitly:
+
+```bash
+lean-ctx trust              # trust the current project root
+lean-ctx trust status       # show trust state + which overrides are gated
+lean-ctx trust --list       # list all trusted workspaces
+lean-ctx untrust            # revoke trust for the current root
+```
+
+Trust is pinned to **both** the workspace path **and** a content hash of
+`.lean-ctx.toml` — editing the file after trust re-gates it, so a "trust once,
+modify later" change can't take effect silently. `lean-ctx doctor` shows the
+state. Headless / fleet environments can opt in without a prompt via
+`LEAN_CTX_TRUST_WORKSPACE=1` or a `LEAN_CTX_TRUSTED_ROOTS=/path/a,/path/b` list.
+
+> Review a clone's `.lean-ctx.toml` before you `lean-ctx trust` it — trusting is
+> what lets its security-sensitive settings widen lean-ctx's own boundaries.
+
+---
+
 ## 2. Shell allowlist & strict mode
 
 **What it does:** the shell hook only compresses/executes commands whose binary
@@ -75,6 +105,41 @@ excluded_commands = []                            # never intercept these
   `lean-ctx allow <cmd>` CLI edits `shell_allowlist_extra` for you, and
   `lean-ctx allow --list` prints the effective allowlist plus any parse errors so
   a typo can never silently drop your overrides.
+
+### 2.1 Shell-security mode (`enforce` | `warn` | `off`)
+
+One switch governs **all** command gating — the allowlist *and* the hard blocks
+(`eval`/`exec`/`source`, `$()`/backticks at command position, interpreter `-c`).
+It is applied at a single chokepoint, so MCP `ctx_shell` and the CLI
+(`lean-ctx -c` / `-t`) behave identically.
+
+```toml
+# config.toml
+shell_security = "enforce"   # default — secure
+# shell_security = "warn"    # run the checks, log violations via tracing, never block
+# shell_security = "off"     # skip command gating entirely — compression stays active
+```
+
+| Mode | Allowlist | Hard blocks (`eval`, `$()`, …) | Compression |
+|---|---|---|---|
+| `enforce` (default) | enforced | blocked | on |
+| `warn` | logged only | logged only | on |
+| `off` | skipped | skipped | **on** |
+
+- **Resolution:** `LEAN_CTX_SHELL_SECURITY` env → `shell_security` in config →
+  default `enforce`. An unknown value falls back to `enforce` (never fails open).
+- **Why `enforce` is the default, even for beginners:** lean-ctx mediates the
+  agent's shell, so a weaker default would silently downgrade security for every
+  install on upgrade. In practice the default allowlist already covers normal
+  workflows (`git`/`cargo`/`npm`/`node`/`python`/…), so beginners rarely hit it —
+  the friction is for power users running exotic tools, who opt into `off`.
+- **`off` is the "YOLO" escape hatch.** It disables *command gating* only; it does
+  **not** lift the read-only-output doctrine in `ctx_shell` (no `>`/`tee`/heredoc
+  file writes — use the native write tool). Compression is unaffected in every mode.
+- `lean-ctx doctor` surfaces the active mode whenever it is not `enforce`, so a
+  relaxed posture can never hide.
+- This supersedes the CLI-only `LEAN_CTX_ALLOWLIST_WARN_ONLY` (which still works
+  for backward compatibility); `shell_security` is the canonical, global switch.
 
 ---
 
@@ -214,6 +279,7 @@ which controls address which risks — useful when answering a security review.
 | Goal | Control |
 |------|---------|
 | Keep file access in-project | PathJail (on by default) |
+| Gate a cloned repo's `.lean-ctx.toml` | Workspace trust (`lean-ctx trust`) |
 | Restrict which commands run | `shell_allowlist` + `shell_strict_mode` |
 | Never wrap docker mount-escapes | docker/podman off the default allowlist |
 | Confine executed code | Seatbelt (macOS) / Landlock (Linux) |

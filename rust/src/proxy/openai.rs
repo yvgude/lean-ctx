@@ -11,7 +11,7 @@ use super::compress::compress_tool_result;
 use super::forward;
 use super::tool_kind::{self, ToolResultKind, should_protect};
 use super::{cache_safety, prose};
-use crate::core::config::ProseRole;
+use crate::core::config::{HistoryMode, ProseRole};
 
 pub async fn handler(
     State(state): State<ProxyState>,
@@ -38,14 +38,22 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
     let cfg = crate::core::config::Config::load();
     let system_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::System);
     let user_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::User);
+    let live_compress = cfg.proxy.live_compresses();
+    let mode = cfg.proxy.resolved_history_mode();
+    // Meter-only (#481): nothing rewrites the body, so skip all work and let
+    // forward + usage metering run against the byte-unchanged request.
+    if !live_compress && mode == HistoryMode::Off && system_aggr.is_none() && user_aggr.is_none() {
+        let out = serde_json::to_vec(&doc).unwrap_or_default();
+        return (out, original_size, original_size);
+    }
     let mut prose_segments: u64 = 0;
 
     if let Some(messages) = doc.get_mut("messages").and_then(|m| m.as_array_mut()) {
         let tool_names = tool_kind::openai_tool_names(messages);
 
         // OpenAI's automatic prompt caching is prefix-based like Anthropic's,
-        // so history is pruned at the same frozen, cache-aware boundary.
-        let mode = cfg.proxy.resolved_history_mode();
+        // so history is pruned at the same frozen, cache-aware boundary. `mode`
+        // resolved above.
         let boundary = super::history_prune::prune_boundary(mode, messages.len());
         // Mirror the Anthropic guard: never rewrite content behind a client
         // `cache_control` breakpoint (#448). OpenAI requests carry none, so this
@@ -68,6 +76,10 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
                 .map(String::as_str);
             let kind = name.map_or(ToolResultKind::Other, tool_kind::classify_tool_name);
 
+            // #481: skip live compression when globally off or tool excluded.
+            if !live_compress || name.is_some_and(|n| cfg.proxy.is_tool_live_compress_excluded(n)) {
+                continue;
+            }
             if let Some(content) = msg
                 .get_mut("content")
                 .and_then(|c| c.as_str().map(String::from))

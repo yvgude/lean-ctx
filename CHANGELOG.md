@@ -5,6 +5,137 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Observation tier — synthesized, recall-prioritized entity summaries (GL #802).**
+  A 9th cognition-loop step distils clusters of related facts into compact,
+  per-entity *observations* (Hindsight-inspired). Synthesis is **deterministic by
+  default** — facts are grouped by an entity anchor (file path in key/value, else
+  category) and each cluster of ≥ `cognition_synthesis_min_cluster` (default 3)
+  facts is written through the normal `remember()` path, so versioning, persistence
+  and idempotency come for free and the value stays byte-stable (#498). An optional
+  LLM refinement sits behind `llm.enabled` with the deterministic digest as
+  fallback. Recall gives a *balanced* boost to relevant synthesized observations
+  (above incidental matches, below an exact key hit). Facts are now **epistemically
+  typed** on write (evidence vs. inference) via `infer_from_category`, feeding
+  salience and — opt-in via `archetype_aware_decay` — slower decay for structural
+  evidence. Gated by `cognition_loop_max_steps >= 9` (the new default; set 8 to
+  disable); visible as `observation_synthesis` in `lean-ctx introspect cognition`.
+- **Configurable shell-security mode — `enforce` | `warn` | `off` (GL #788).** One
+  switch now governs *all* command gating (the allowlist **and** the hard blocks:
+  `eval`/`exec`/`source`, `$()`/backticks at command position, interpreter `-c`),
+  applied at a single chokepoint so MCP `ctx_shell` and the CLI (`lean-ctx -c`/`-t`)
+  behave identically. `enforce` stays the secure default; `warn` runs every check
+  but only logs violations; `off` is a deliberate opt-out that skips gating entirely
+  while **compression stays fully active**. Set via `shell_security` in config or
+  the `LEAN_CTX_SHELL_SECURITY` env (env wins; unknown values fall back to
+  `enforce`, never fail open). `off` does not lift the read-only-output doctrine
+  (no `>`/`tee`/heredoc writes via shell). `lean-ctx doctor` surfaces the active
+  mode whenever it is not `enforce`. Supersedes the CLI-only
+  `LEAN_CTX_ALLOWLIST_WARN_ONLY` (kept for backward compatibility).
+- **`/v1` contract clients published under one name — `lean-ctx-client`.** The thin,
+  engine-independent clients now ship on every registry under a single consistent
+  name: [PyPI](https://pypi.org/project/lean-ctx-client/) (import module stays
+  `leanctx`), [npm](https://www.npmjs.com/package/lean-ctx-client), and
+  [crates.io](https://crates.io/crates/lean-ctx-client). Replaces docs that pointed
+  at an unrelated third-party `leanctx` / unpublished `@leanctx/sdk` (GL #783). A
+  dedicated, idempotent `publish-clients.yml` workflow ships the family independently
+  of the engine.
+- **Cognition v2 — science-grounded context engineering, deterministic by default,
+  provably active.** Ten neuroscience/physics-motivated mechanisms are wired to
+  real hot-path call sites and made inspectable via `lean-ctx introspect cognition`
+  (each subsystem reports wired/active/last-run/count; also surfaced in `lean-ctx
+  doctor`). All decision layers are deterministic by default (Rule #498 / prompt
+  cache intact); stochastic exploration is gated behind `LEAN_CTX_STOCHASTIC`.
+  - **Time-variant Φ (attention).** Context salience is recomputed and EMA-blended
+    on every re-read instead of being frozen on first sight (`context_ledger`).
+  - **Ebbinghaus forgetting + spacing effect.** Knowledge confidence decays as
+    `R = exp(-Δt/S)` with stability `S` growing per retrieval, replacing linear
+    decay. Configurable via `forgetting_model` (`ebbinghaus`|`linear`),
+    `base_stability_days`, and `LEAN_CTX_LIFECYCLE_FORGETTING` (`memory_lifecycle`).
+  - **Hebbian eviction.** Co-accessed cache entries protect each other from
+    eviction ("fire together, wire together") via a deterministic association bonus
+    (`cache`, `hebbian_cache`).
+  - **Complementary-learning-systems consolidation.** Idle/loop replay lifts the
+    confidence of related, frequently-retrieved facts (`cognition_loop`).
+  - **Integration-aware Φ (IIT non-redundancy / MMR).** The context compiler now
+    selects via greedy Maximal-Marginal-Relevance and deduplicates on **content**
+    (fixes a bug that compared file *paths*), so near-duplicate items collapse to
+    one (`context_compiler`, `context_field`).
+  - **Global-workspace ignition.** High-salience Φ-outliers (z-score > θ, default
+    `LEAN_CTX_GWT_IGNITION_Z`) are broadcast/pinned and resist reinjection
+    downgrades (`context_ledger`, `context_gate`).
+  - **Learned field weights (bandit).** Φ field weights are chosen by a Thompson
+    bandit — deterministic argmax-of-posterior-mean by default, sampling only under
+    `LEAN_CTX_STOCHASTIC` (`bandit`, `context_field`, `adaptive_thresholds`).
+  - **Sharp-wave-ripple idle replay.** A quiet gap (default 300 s,
+    `LEAN_CTX_COGNITION_IDLE_SECS`) triggers a deeper replay-consolidation pass in
+    the background (`cognition_scheduler`, `cognition_loop`).
+  - **FEP prefetch (active inference).** After a read, likely-next files from the
+    co-access graph are surfaced as a deterministic warmup hint — never an automatic
+    read (`fep_prefetch`, `context_gate`).
+  - **Immune detector (artificial immune system).** External provider data is
+    screened for prompt-injection/poisoning before it can become a fact, edge or
+    cache entry; untrusted workspaces get a stricter screen (coupled to Workspace
+    Trust) (`immune_detector`, `consolidation`, `ctx_provider`).
+- **`lean-ctx introspect cognition` / `introspect qubo`.** New CLI to prove which
+  cognition subsystems are wired and active, and to run the experimental
+  QUBO-vs-greedy selection benchmark.
+- **QUBO selection spike (research only).** A deterministic simulated-annealing
+  QUBO solver and benchmark harness for redundancy-aware context selection, gated
+  behind `LEAN_CTX_EXPERIMENTAL_QUBO`. On clean problems it reaches parity with the
+  greedy knapsack (no measurable win), so **greedy remains the default**; promotion
+  is conditional on a future measurable gain (`qubo_select`).
+
+### Security
+- **Shell allowlist now enforced on the `-t` / track path (external audit, finding 1).**
+  `exec_argv` (used by the default shell hook `_lc() { lean-ctx -t "$@" }` for
+  multi-arg commands) never called `check_shell_allowlist`, so every aliased
+  invocation like `_lc git status` bypassed the restriction that `lean-ctx -c`
+  enforces. Both paths now share a single `allowlist_gate`, so the track path
+  blocks non-allowlisted commands (exit 126) exactly like the compress path.
+- **Agent API keys are no longer captured or forwarded to `ctx_shell` children
+  (external audit, finding 2).** The agent-runtime-env bridge forwarded every
+  `CODEX_*`/`CLAUDE_*`/`OPENCODE_*`/`GEMINI_*`… var — including `*_API_KEY`,
+  `*_TOKEN`, `*_SECRET`, `*_PASSWORD` — into the env of every command the agent
+  ran, where output redaction can't stop network exfiltration. `is_forwardable`
+  now excludes credential-shaped names (only session/thread identifiers cross the
+  bridge), and `load` retroactively scrubs such vars from any capture file
+  written by an older build, removing the plaintext secret at rest.
+- **Path-jail relaxations are now surfaced loudly (external audit, finding 3).**
+  `path_jail = false`, the `no-jail` build feature and the env channels
+  (`LEAN_CTX_ALLOW_PATH`, `LEAN_CTX_EXTRA_ROOTS`, `LEAN_CTX_ALLOW_IDE_DIRS`) that
+  widen or disable the jail are inherited from the IDE/launchd env and previously
+  loosened the boundary with no in-band signal. The MCP and HTTP servers now emit
+  a `[SECURITY]` warning at startup for each active relaxation, and `lean-ctx
+  doctor` reports env-channel relaxations alongside the config-level ones.
+- **Workspace Trust for project-local `.lean-ctx.toml` overrides (external audit,
+  finding 4).** A cloned repo's `.lean-ctx.toml` is merged over the global config
+  and could raise security-sensitive settings — replace the shell allowlist, widen
+  the path jail (`allow_paths`/`extra_roots`), repoint the proxy upstream, define
+  command aliases, change `rules_scope`/`rules_injection`. For an untrusted
+  workspace those overrides are now **withheld** (comfort knobs like
+  `compression`/`theme` still apply) with a `[SECURITY]` warning; `lean-ctx doctor`
+  shows the state. Grant trust with `lean-ctx trust` (and `lean-ctx untrust` /
+  `lean-ctx trust status` / `--list`); trust is pinned to the workspace path **and**
+  a content hash of `.lean-ctx.toml`, so editing the file re-gates it. Headless use
+  can opt in via `LEAN_CTX_TRUST_WORKSPACE=1` or `LEAN_CTX_TRUSTED_ROOTS`.
+
+### Changed
+- **`lean-ctx bypass` renamed to `lean-ctx raw` (external audit, finding 5).**
+  The "bypass" wording read to a model like a *security* bypass, but it only
+  skips output compression — the shell allowlist and path jail still apply.
+  `lean-ctx bypass` stays as a back-compat alias; model-visible hints now use
+  `raw` and state that the allowlist still holds.
+
+### Fixed
+- **Billing edge no longer downgrades a paying account on a billing-service blip
+  (GL #785).** Entitlement resolution at the cloud edge now caches each user's
+  last known plan (in-memory, short TTL) and, when the upstream billing service
+  is unreachable or returns a bad response, serves that cached plan instead of
+  silently falling back to Free. Successful lookups refresh the cache; only
+  never-seen accounts fall to Free. A transient upstream outage can no longer
+  lock a Pro subscriber out of paid features mid-session.
+
 ## [3.8.11] — 2026-06-20
 
 ### Fixed

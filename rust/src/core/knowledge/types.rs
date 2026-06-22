@@ -4,6 +4,11 @@ use serde::{Deserialize, Serialize};
 use crate::core::memory_boundary::FactPrivacy;
 use crate::core::sensitivity::SensitivityLevel;
 
+/// `source_session` marker for facts written by the cognition loop's observation
+/// synthesis step (#802). Lets recall distinguish synthesized entity-summaries
+/// from user-supplied findings (both are `Observation` archetype).
+pub const COGNITION_SYNTHESIS_SOURCE: &str = "cognition-synthesis";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum KnowledgeArchetype {
@@ -36,11 +41,41 @@ impl KnowledgeArchetype {
         }
     }
 
+    /// Whether this archetype is objective *evidence* (vs. *inference*). Hindsight's
+    /// central idea: evidence (the external world, structural facts) should be
+    /// treated differently from inference (decisions, preferences, synthesized
+    /// observations). Used by archetype-aware decay so evidence persists longer.
+    pub fn is_evidence(&self) -> bool {
+        matches!(
+            self,
+            Self::Architecture | Self::Dependency | Self::Convention | Self::Gotcha | Self::Fact
+        )
+    }
+
+    /// Ebbinghaus stability multiplier (≥ 1.0 slows decay). Structural evidence is
+    /// more durable than inference; only applied when `archetype_aware_decay` is on
+    /// (default off), so the baseline tuning is unchanged.
+    pub fn stability_multiplier(&self) -> f32 {
+        match self {
+            Self::Architecture => 1.5,
+            Self::Dependency => 1.4,
+            Self::Convention => 1.3,
+            Self::Gotcha => 1.25,
+            Self::Fact => 1.2,
+            Self::Pattern => 1.1,
+            Self::Workflow | Self::Decision | Self::Observation => 1.0,
+            Self::Preference => 0.9,
+        }
+    }
+
     pub fn infer_from_category(category: &str) -> Self {
         match category.to_lowercase().as_str() {
-            "architecture" | "arch" => Self::Architecture,
+            // `data_model`/`schema` are structural (provider-extracted); they join arch.
+            "architecture" | "arch" | "data_model" | "schema" => Self::Architecture,
             "decision" | "decisions" => Self::Decision,
-            "gotcha" | "gotchas" => Self::Gotcha,
+            // bugs/blockers (provider + auto-capture) are pitfalls → Gotcha.
+            "gotcha" | "gotchas" | "known_bugs" | "known_issues" | "bug" | "bugs" | "blocker"
+            | "blockers" => Self::Gotcha,
             "convention" | "conventions" | "style" => Self::Convention,
             "dependency" | "dependencies" | "deps" => Self::Dependency,
             "pattern" | "patterns" => Self::Pattern,

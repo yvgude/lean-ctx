@@ -426,6 +426,13 @@ pub struct Config {
     /// Override via LEAN_CTX_CACHE_POLICY env var.
     #[serde(default)]
     pub cache_policy: Option<String>,
+    /// Token budget for the in-memory `ctx_read` cache. When the cached total
+    /// plus an incoming read would exceed this, lean-ctx evicts the least-valuable
+    /// entries *immediately* (RRF: recency × frequency × size) so the read always
+    /// proceeds — eviction is never deferred to the staleness TTL. `0` uses the
+    /// built-in default (500k). `LEAN_CTX_CACHE_MAX_TOKENS` env var overrides this.
+    #[serde(default)]
+    pub cache_max_tokens: usize,
     /// Cross-project boundary policy.
     /// Controls whether cross-project search/import is allowed and whether access is audited.
     #[serde(default)]
@@ -484,6 +491,14 @@ pub struct Config {
     /// Default false preserves backward compatibility — set true for maximum security.
     #[serde(default)]
     pub shell_strict_mode: bool,
+
+    /// Shell-security mode for ctx_shell / `lean-ctx -c` command gating (GL #788):
+    /// `enforce` (default, secure), `warn` (run checks, log violations, never
+    /// block) or `off` (skip the allowlist + dangerous-pattern blocks entirely —
+    /// a deliberate opt-out; compression stays active). Override via
+    /// LEAN_CTX_SHELL_SECURITY. `None` resolves to `enforce`.
+    #[serde(default)]
+    pub shell_security: Option<String>,
     /// Setup behavior: controls what gets injected during setup and updates.
     #[serde(default)]
     pub setup: SetupConfig,
@@ -575,6 +590,7 @@ impl Default for Config {
             response_verbosity: ResponseVerbosity::default(),
             bypass_hints: None,
             cache_policy: None,
+            cache_max_tokens: 0,
             boundary_policy: crate::core::memory_boundary::BoundaryPolicy::default(),
             secret_detection: SecretDetectionConfig::default(),
             sensitivity: crate::core::sensitivity::SensitivityConfig::default(),
@@ -587,6 +603,7 @@ impl Default for Config {
             shell_allowlist: default_shell_allowlist(),
             shell_allowlist_extra: Vec::new(),
             shell_strict_mode: false,
+            shell_security: None,
             setup: SetupConfig::default(),
         }
     }
@@ -609,6 +626,85 @@ pub fn last_config_parse_error() -> Option<String> {
 fn record_parse_error(err: Option<String>) {
     if let Ok(mut guard) = LAST_PARSE_ERROR.lock() {
         *guard = err;
+    }
+}
+
+/// Reset every SECURITY-sensitive field of a parsed project-local `Config` back
+/// to its default, returning the names of the ones that actually carried an
+/// override. Used by [`Config::merge_local`] for untrusted workspaces: clearing a
+/// field to its default makes the downstream "== default ⇒ no override" merge
+/// guards skip it automatically, so a single list here gates every sensitive key
+/// without touching the per-field merge arms (security audit #4).
+///
+/// Sensitive = anything that can widen lean-ctx's own boundaries or steer the
+/// agent: the shell allowlist, path-jail roots, proxy upstreams, command
+/// aliases, network passthrough, rules scope/injection, tool disabling and
+/// permission inheritance. Comfort/perf knobs are intentionally NOT listed.
+fn strip_sensitive_overrides(local: &mut Config) -> Vec<&'static str> {
+    let mut withheld: Vec<&'static str> = Vec::new();
+
+    if local.shell_allowlist != default_shell_allowlist() {
+        local.shell_allowlist = default_shell_allowlist();
+        withheld.push("shell_allowlist");
+    }
+    if !local.shell_allowlist_extra.is_empty() {
+        local.shell_allowlist_extra.clear();
+        withheld.push("shell_allowlist_extra");
+    }
+    if !local.allow_paths.is_empty() {
+        local.allow_paths.clear();
+        withheld.push("allow_paths");
+    }
+    if !local.extra_roots.is_empty() {
+        local.extra_roots.clear();
+        withheld.push("extra_roots");
+    }
+    if !local.custom_aliases.is_empty() {
+        local.custom_aliases.clear();
+        withheld.push("custom_aliases");
+    }
+    if !local.passthrough_urls.is_empty() {
+        local.passthrough_urls.clear();
+        withheld.push("passthrough_urls");
+    }
+    if local.proxy.anthropic_upstream.is_some()
+        || local.proxy.openai_upstream.is_some()
+        || local.proxy.gemini_upstream.is_some()
+    {
+        local.proxy.anthropic_upstream = None;
+        local.proxy.openai_upstream = None;
+        local.proxy.gemini_upstream = None;
+        withheld.push("proxy.*_upstream");
+    }
+    if local.rules_scope.is_some() {
+        local.rules_scope = None;
+        withheld.push("rules_scope");
+    }
+    if local.rules_injection.is_some() {
+        local.rules_injection = None;
+        withheld.push("rules_injection");
+    }
+    if local.permission_inheritance.is_some() {
+        local.permission_inheritance = None;
+        withheld.push("permission_inheritance");
+    }
+    if !local.disabled_tools.is_empty() {
+        local.disabled_tools.clear();
+        withheld.push("disabled_tools");
+    }
+
+    withheld
+}
+
+/// Names of the SECURITY-sensitive overrides a project-local `.lean-ctx.toml`
+/// carries — the keys `strip_sensitive_overrides` would withhold for an
+/// untrusted workspace. Read-only (parses a throwaway `Config`); used by
+/// `lean-ctx trust` to tell the user exactly what trusting will enable.
+#[must_use]
+pub fn local_sensitive_overrides(local_toml: &str) -> Vec<&'static str> {
+    match toml::from_str::<Config>(local_toml) {
+        Ok(mut parsed) => strip_sensitive_overrides(&mut parsed),
+        Err(_) => Vec::new(),
     }
 }
 
@@ -752,6 +848,23 @@ impl Config {
                 "1" | "true" | "yes" | "on"
             ),
             Err(_) => self.auto_mode_learning,
+        }
+    }
+
+    /// Returns `true` when probabilistic exploration (Thompson sampling,
+    /// Boltzmann-temperature eviction, simulated annealing) may influence
+    /// decisions. Off by default so tool output stays a deterministic, byte-
+    /// stable function of (content, mode, task) — the determinism contract
+    /// (#498) that lets provider prompt caching apply. The `LEAN_CTX_STOCHASTIC`
+    /// env var wins (the usual truthy/falsy spellings); otherwise it follows
+    /// [`Self::auto_mode_learning_effective`], which is itself off by default.
+    pub fn is_stochastic_enabled(&self) -> bool {
+        match std::env::var("LEAN_CTX_STOCHASTIC") {
+            Ok(raw) => matches!(
+                raw.trim().to_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            ),
+            Err(_) => self.auto_mode_learning_effective(),
         }
     }
 
@@ -976,7 +1089,11 @@ impl Config {
         PathBuf::from(project_root).join(".lean-ctx.toml")
     }
 
-    fn find_project_root() -> Option<String> {
+    /// Resolves the active project root (env override → session → git toplevel →
+    /// cwd), cached for the process. Exposed crate-wide so workspace-trust and the
+    /// CLI agree with config loading on *which* directory a `.lean-ctx.toml`
+    /// belongs to (GH security audit, finding 4).
+    pub(crate) fn find_project_root() -> Option<String> {
         static ROOT_CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
         ROOT_CACHE
             .get_or_init(Self::find_project_root_inner)
@@ -1061,7 +1178,8 @@ impl Config {
             return Self::default();
         };
 
-        let local_path = Self::find_project_root().map(|r| Self::local_path(&r));
+        let project_root = Self::find_project_root();
+        let local_path = project_root.as_deref().map(Self::local_path);
 
         // Read raw content up front so the cache key is a content hash.
         let global_content = std::fs::read_to_string(&path).ok();
@@ -1108,7 +1226,18 @@ impl Config {
         };
 
         if let Some(ref local) = local_content {
-            cfg.merge_local(local);
+            // Finding 4: a project-local `.lean-ctx.toml`'s SECURITY-sensitive
+            // overrides (shell allowlist, path-jail widening, proxy upstream, …)
+            // are honoured only for a workspace the user has explicitly trusted.
+            // `local_hash` is exactly the content hash workspace-trust pins, so
+            // editing the file after trust re-gates it (see `workspace_trust`).
+            let trusted = project_root.as_deref().is_some_and(|r| {
+                crate::core::workspace_trust::is_trusted_for(
+                    std::path::Path::new(r),
+                    local_hash.as_deref().unwrap_or_default(),
+                )
+            });
+            cfg.merge_local(local, trusted);
         }
 
         if let Ok(mut guard) = CACHE.lock() {
@@ -1118,8 +1247,16 @@ impl Config {
         cfg
     }
 
-    fn merge_local(&mut self, local_toml: &str) {
-        let local: Config = match toml::from_str(local_toml) {
+    /// Merge a project-local `.lean-ctx.toml` onto `self`.
+    ///
+    /// `trusted` reflects [`crate::core::workspace_trust`]: when `false`, the
+    /// security-sensitive overrides (shell allowlist, path-jail widening, proxy
+    /// upstream, command aliases, rules scope, …) are withheld and a warning is
+    /// emitted — comfort-only overrides (compression, theme, memory tuning) still
+    /// apply. This stops a cloned, untrusted repo from silently weakening
+    /// lean-ctx's own boundaries through its bundled config (security audit #4).
+    fn merge_local(&mut self, local_toml: &str, trusted: bool) {
+        let mut local: Config = match toml::from_str(local_toml) {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!("local config parse error: {e}");
@@ -1130,6 +1267,17 @@ impl Config {
                 return;
             }
         };
+        if !trusted {
+            let withheld = strip_sensitive_overrides(&mut local);
+            if !withheld.is_empty() {
+                tracing::warn!(
+                    "[SECURITY] untrusted workspace: ignoring {} security-sensitive \
+                     .lean-ctx.toml override(s): {} — run `lean-ctx trust` to apply them",
+                    withheld.len(),
+                    withheld.join(", ")
+                );
+            }
+        }
         if local.ultra_compact {
             self.ultra_compact = true;
         }

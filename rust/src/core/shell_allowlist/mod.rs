@@ -5,15 +5,43 @@
 //! - When empty: all commands pass (backwards-compatible blocklist-only mode)
 //! - Dangerous patterns (subshells, eval, backticks) are blocked in restricted mode
 
+mod mode;
 #[cfg(test)]
 mod tests;
 
-/// Checks if a command is allowed by the shell allowlist.
-/// Returns `Ok(())` if allowed, `Err(message)` if blocked.
+pub use mode::ShellSecurity;
+
+/// Checks whether a command may run, honouring the active [`ShellSecurity`] mode
+/// (GL #788). This is the single chokepoint shared by MCP `ctx_shell` and the
+/// CLI shell entrypoints, so the mode applies consistently:
+///
+/// - [`ShellSecurity::Off`] → always `Ok` (gating skipped; compression intact).
+/// - [`ShellSecurity::Warn`] → run the checks, log any violation, return `Ok`.
+/// - [`ShellSecurity::Enforce`] → block on violation (the secure default).
+pub fn check_shell_allowlist(command: &str) -> Result<(), String> {
+    match ShellSecurity::resolve() {
+        ShellSecurity::Off => Ok(()),
+        ShellSecurity::Warn => {
+            if let Err(msg) = enforce_shell_allowlist(command) {
+                tracing::warn!(
+                    target: "shell_security",
+                    "warn-only: would block ({})",
+                    msg.lines().next().unwrap_or("blocked")
+                );
+            }
+            Ok(())
+        }
+        ShellSecurity::Enforce => enforce_shell_allowlist(command),
+    }
+}
+
+/// Allowlist + dangerous-pattern enforcement, evaluated as if in `enforce` mode.
+/// [`check_shell_allowlist`] decides whether a violation blocks, warns, or is
+/// skipped based on the active [`ShellSecurity`] mode.
 ///
 /// When the allowlist is empty, all commands pass (blocklist-only mode).
 /// When non-empty, EVERY command segment in the pipeline must match.
-pub fn check_shell_allowlist(command: &str) -> Result<(), String> {
+fn enforce_shell_allowlist(command: &str) -> Result<(), String> {
     let normalized = normalize_line_continuations(command);
     let cmd = normalized.as_str();
 
@@ -1077,6 +1105,8 @@ fn allowlist_block_message(base: &str) -> String {
          Fix (additive, keeps the defaults): run  lean-ctx allow {base}\n\
          Config in effect: {cfg_path}\n\
          Or disable the allowlist entirely: set  shell_allowlist = []\n\
+         Or turn off all shell gating (you own the risk): set  shell_security = \"off\"  \
+         (or env LEAN_CTX_SHELL_SECURITY=off) — compression still applies.\n\
          Do NOT retry this command — it will fail again with the same error."
     );
 

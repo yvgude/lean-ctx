@@ -92,6 +92,7 @@ const COCKPIT_NAV_SECTIONS = [
     items: [
       { id: 'roi', label: 'ROI & Plan', desc: 'Signed, verifiable savings plus your plan and entitlements.' },
       { id: 'learning', label: 'Trends', desc: 'How your savings and efficiency change over time.' },
+      { id: 'leaderboard', label: 'Leaderboard', desc: 'Submit your tokens saved to the community leaderboard.' },
     ],
   },
   {

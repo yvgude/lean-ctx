@@ -1,6 +1,6 @@
 # lean-ctx
 
-**Context Runtime for AI Agents with CCP + TDD. Shell Hook + MCP Server. 77 MCP tools, 10 read modes, 95+ shell patterns, cross-session memory (CCP), LITM-aware positioning, tree-sitter AST for 18 languages. Single Rust binary.**
+**Context Engineering for AI Agents with CCP + TDD. Shell Hook + MCP Server. 77 MCP tools, 10 read modes, 95+ shell patterns, cross-session memory (CCP), LITM-aware positioning, tree-sitter AST for 18 languages. Single Rust binary.**
 
 [![CI](https://github.com/yvgude/lean-ctx/actions/workflows/ci.yml/badge.svg)](https://github.com/yvgude/lean-ctx/actions/workflows/ci.yml)
 [![Security Check](https://github.com/yvgude/lean-ctx/actions/workflows/security-check.yml/badge.svg)](https://github.com/yvgude/lean-ctx/actions/workflows/security-check.yml)

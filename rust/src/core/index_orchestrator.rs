@@ -208,6 +208,40 @@ pub fn ensure_warm_for_tool(project_root: &str, tool: &str) -> bool {
 /// are iterative now too, so this is defense-in-depth.
 const INDEXER_STACK_BYTES: usize = 16 * 1024 * 1024;
 
+/// Fire-and-forget: ask a running daemon to own the index build for `root`
+/// (#460, shared-indexer-daemon / thin clients).
+///
+/// The daemon is the single long-lived, machine-wide indexer. Once it holds the
+/// per-repo `graph-idx`/`bm25-idx` build locks, every session load-shares its
+/// on-disk result instead of each running a full scan during a cold boot wave —
+/// turning N simultaneous index passes into ~one. Strictly additive and
+/// best-effort: it runs on its own thread (no ambient runtime to nest into), is
+/// skipped when we *are* the daemon or when no daemon is reachable, and never
+/// blocks the caller. The local build started right after remains the fallback,
+/// so indexing always works with no daemon present.
+fn nudge_daemon_index(project_root: &str) {
+    // The daemon must never delegate the build to itself.
+    if crate::daemon::is_foreground_daemon() {
+        return;
+    }
+    let root = project_root.to_string();
+    let _ = std::thread::Builder::new()
+        .name("leanctx-index-nudge".to_string())
+        .spawn(move || {
+            if !crate::daemon::is_daemon_running() {
+                return;
+            }
+            let Ok(rt) = tokio::runtime::Runtime::new() else {
+                return;
+            };
+            let body = serde_json::json!({ "root": root }).to_string();
+            rt.block_on(async {
+                let _ = crate::daemon_client::try_daemon_request("POST", "/v1/index/ensure", &body)
+                    .await;
+            });
+        });
+}
+
 pub fn ensure_all_background(project_root: &str) {
     let state = entry_for(project_root);
     let should_spawn = {
@@ -225,6 +259,12 @@ pub fn ensure_all_background(project_root: &str) {
     if !should_spawn {
         return;
     }
+
+    // #460: hand the build to the daemon (the single machine-wide indexer) when
+    // one is running and we aren't it. Deduped naturally — we only reach here
+    // when this process is actually about to start a build. Purely additive: the
+    // local build below still runs and load-shares via the per-repo locks.
+    nudge_daemon_index(project_root);
 
     let root = project_root.to_string();
     let indexer = move || {

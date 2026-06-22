@@ -3,8 +3,8 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lean-ctx"
-version = "0.1.0"
+name = "lean-ctx-sdk"
+version = "0.3.0"
 description = "SDK for lean-ctx — context compression for AI agents"
 readme = "README.md"
 license = "MIT"
@@ -19,7 +19,8 @@ classifiers = [
 [project.optional-dependencies]
 langchain = ["langchain-core>=0.2"]
 llamaindex = ["llama-index-core>=0.10"]
-all = ["langchain-core>=0.2", "llama-index-core>=0.10"]
+litellm = ["litellm>=1.0"]
+all = ["langchain-core>=0.2", "llama-index-core>=0.10", "litellm>=1.0"]
 
 [tool.setuptools.packages.find]
 include = ["lean_ctx*"]

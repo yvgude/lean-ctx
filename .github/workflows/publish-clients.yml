@@ -1,0 +1,101 @@
+name: Publish /v1 clients
+
+# Publishes the thin /v1 contract clients under one consistent name `lean-ctx-client`:
+#   - npm    -> cookbook/sdk         (TypeScript)
+#   - PyPI   -> clients/python       (Python; import module stays `leanctx`)
+#   - crates -> clients/rust/...     (Rust)
+# Versioned independently of the engine, so NOT part of release.yml. Trigger manually
+# or push a `client-v*` tag. Every step is idempotent: an already-published version is a no-op.
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Which registries to publish to"
+        type: choice
+        default: npm
+        options: [all, npm, pypi, crates]
+  push:
+    tags:
+      - 'client-v[0-9]*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish-npm:
+    name: Publish lean-ctx-client to npm
+    if: ${{ github.event_name == 'push' || inputs.targets == 'all' || inputs.targets == 'npm' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Build, test, publish
+        working-directory: cookbook
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm ci
+          npm --workspace lean-ctx-client run build
+          npm --workspace lean-ctx-client test
+          PKG_VERSION="$(node -p "require('./sdk/package.json').version")"
+          if npm view "lean-ctx-client@${PKG_VERSION}" version >/dev/null 2>&1; then
+            echo "npm already has lean-ctx-client@${PKG_VERSION} — skipping publish."
+            exit 0
+          fi
+          npm publish --workspace lean-ctx-client --access public
+
+  publish-pypi:
+    name: Publish lean-ctx-client to PyPI
+    if: ${{ github.event_name == 'push' || inputs.targets == 'all' || inputs.targets == 'pypi' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build and upload (skip if no token / already present)
+        working-directory: clients/python
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TWINE_PASSWORD}" ]; then
+            echo "PYPI_TOKEN secret not set — skipping PyPI publish."
+            exit 0
+          fi
+          python -m pip install --quiet build twine
+          python -m build
+          python -m twine upload --skip-existing dist/*
+
+  publish-crates:
+    name: Publish lean-ctx-client to crates.io
+    if: ${{ github.event_name == 'push' || inputs.targets == 'all' || inputs.targets == 'crates' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - name: Publish (idempotent)
+        working-directory: clients/rust/lean-ctx-client
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          CRATE_VERSION="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-client/${CRATE_VERSION}" >/dev/null 2>&1; then
+            echo "crates.io already has lean-ctx-client ${CRATE_VERSION} — skipping publish."
+            exit 0
+          fi
+          cargo publish --token "${CARGO_REGISTRY_TOKEN}"

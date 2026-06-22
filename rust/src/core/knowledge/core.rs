@@ -19,6 +19,11 @@ impl ProjectKnowledge {
             low_confidence_threshold: policy.lifecycle.low_confidence_threshold,
             stale_days: policy.lifecycle.stale_days,
             consolidation_similarity: policy.lifecycle.similarity_threshold,
+            forgetting_model: crate::core::memory_lifecycle::ForgettingModel::parse(
+                &policy.lifecycle.forgetting_model,
+            ),
+            base_stability_days: policy.lifecycle.base_stability_days,
+            archetype_aware_decay: policy.lifecycle.archetype_aware_decay,
         };
         crate::core::memory_lifecycle::run_lifecycle(&mut self.facts, &cfg)
     }
@@ -146,7 +151,7 @@ impl ProjectKnowledge {
                     privacy: FactPrivacy::default(),
                     sensitivity: crate::core::sensitivity::classify_content(value),
                     imported_from: None,
-                    archetype: KnowledgeArchetype::default(),
+                    archetype: KnowledgeArchetype::infer_from_category(category),
                     fidelity: None,
                     revision_count: next_revision,
                 });
@@ -173,7 +178,7 @@ impl ProjectKnowledge {
                 privacy: FactPrivacy::default(),
                 sensitivity: crate::core::sensitivity::classify_content(value),
                 imported_from: None,
-                archetype: KnowledgeArchetype::default(),
+                archetype: KnowledgeArchetype::infer_from_category(category),
                 fidelity: None,
                 revision_count: 1,
             });

@@ -21,6 +21,46 @@ const STALE_DAYS: i64 = 30;
 /// well above that prunes only already-unreachable files.
 const MAX_ARCHIVE_FILES: usize = 16;
 
+/// Spacing/testing effect: how strongly each prior retrieval lengthens memory
+/// stability. 0.5 ⇒ ~10 retrievals make a fact roughly 6× more durable.
+const SPACING_GAIN: f32 = 0.5;
+/// Floor on derived stability (days) so even a heavily down-voted fact decays
+/// smoothly rather than collapsing in a single pass.
+const MIN_STABILITY_DAYS: f32 = 1.0;
+/// Confidence never decays below this — archival happens elsewhere, decay never
+/// hard-deletes.
+const CONFIDENCE_FLOOR: f32 = 0.05;
+/// Default characteristic memory stability (days) for the Ebbinghaus curve.
+pub const DEFAULT_BASE_STABILITY_DAYS: f32 = 90.0;
+
+/// Which forgetting curve drives confidence decay (#1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ForgettingModel {
+    /// Exponential retention `R = exp(-Δt / S)` with spacing-boosted stability
+    /// `S` (Ebbinghaus forgetting curve + SM-2 spacing). Deterministic, the
+    /// default: durable memories fade gracefully, rehearsed ones persist.
+    #[default]
+    Ebbinghaus,
+    /// Legacy linear subtraction, kept for reproducibility / explicit opt-out.
+    Linear,
+}
+
+impl ForgettingModel {
+    pub fn parse(s: &str) -> Self {
+        match s.trim().to_lowercase().as_str() {
+            "linear" => Self::Linear,
+            _ => Self::Ebbinghaus,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ebbinghaus => "ebbinghaus",
+            Self::Linear => "linear",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LifecycleConfig {
     pub decay_rate_per_day: f32,
@@ -28,6 +68,15 @@ pub struct LifecycleConfig {
     pub low_confidence_threshold: f32,
     pub stale_days: i64,
     pub consolidation_similarity: f32,
+    /// Forgetting curve (#1). Defaults to Ebbinghaus.
+    pub forgetting_model: ForgettingModel,
+    /// Characteristic stability (days) for the Ebbinghaus curve before spacing
+    /// and feedback modulation.
+    pub base_stability_days: f32,
+    /// When true, scale stability by the fact's archetype so structural *evidence*
+    /// (architecture/dependency/…) decays slower than *inference* (#802/cognition).
+    /// Default false keeps the baseline tuning byte-for-byte.
+    pub archetype_aware_decay: bool,
 }
 
 impl Default for LifecycleConfig {
@@ -38,6 +87,9 @@ impl Default for LifecycleConfig {
             low_confidence_threshold: LOW_CONFIDENCE_THRESHOLD,
             stale_days: STALE_DAYS,
             consolidation_similarity: 0.85,
+            forgetting_model: ForgettingModel::default(),
+            base_stability_days: DEFAULT_BASE_STABILITY_DAYS,
+            archetype_aware_decay: false,
         }
     }
 }
@@ -70,41 +122,98 @@ pub fn apply_confidence_decay(facts: &mut [KnowledgeFact], config: &LifecycleCon
         }
 
         let days_since_confirmed = now.signed_duration_since(fact.last_confirmed).num_days() as f32;
+        if days_since_confirmed <= 0.0 {
+            continue;
+        }
         let days_since_retrieved = fact
             .last_retrieved
             .map_or(3650.0, |t| now.signed_duration_since(t).num_days() as f32);
         let retrieval_count = fact.retrieval_count as f32;
+        let net_feedback = i64::from(fact.feedback_up) - i64::from(fact.feedback_down);
 
-        if days_since_confirmed > 0.0 {
-            // FadeMem-inspired: protect frequently/recently retrieved facts.
-            // Deterministic, local-only signals; never hard-delete (archive-only elsewhere).
-            let freq_protect = 1.0 / (1.0 + retrieval_count.ln_1p()); // 1.0 .. ~0.2
-            let recency_protect = (1.0 - (days_since_retrieved / 30.0).min(1.0)).max(0.0); // 1.0 if today, 0.0 after 30d
-            let protect = (freq_protect * (1.0 - 0.5 * recency_protect)).max(0.05);
-            // Reward bridge: explicit thumbs-up/down feedback steers retention.
-            // Net-positive feedback scales decay down (keep longer); net-negative
-            // scales it up (forget faster). Logarithmic so a few votes matter but
-            // can't run away, and the penalty is capped so one downvote never
-            // collapses an otherwise healthy fact.
-            let net_feedback = i64::from(fact.feedback_up) - i64::from(fact.feedback_down);
-            let feedback_factor = match net_feedback.cmp(&0) {
-                std::cmp::Ordering::Greater => 1.0 / (1.0 + (net_feedback as f32).ln_1p()),
-                std::cmp::Ordering::Less => {
-                    (1.0 + (net_feedback.unsigned_abs() as f32).ln_1p()).min(4.0)
-                }
-                std::cmp::Ordering::Equal => 1.0,
-            };
-            let decay =
-                config.decay_rate_per_day * days_since_confirmed * protect * feedback_factor;
-            let new_confidence = (fact.confidence - decay).max(0.05);
-            if (new_confidence - fact.confidence).abs() > 0.001 {
-                fact.confidence = new_confidence;
-                count += 1;
-            }
+        // Archetype-aware stability (opt-in): structural evidence is more durable
+        // than inference. Off by default → identical to the prior baseline.
+        let base_stability = if config.archetype_aware_decay {
+            config.base_stability_days * fact.archetype.stability_multiplier()
+        } else {
+            config.base_stability_days
+        };
+
+        let new_confidence = match config.forgetting_model {
+            ForgettingModel::Ebbinghaus => ebbinghaus_confidence(
+                fact.confidence,
+                days_since_confirmed,
+                days_since_retrieved,
+                retrieval_count,
+                net_feedback,
+                base_stability,
+            ),
+            ForgettingModel::Linear => linear_confidence(
+                fact.confidence,
+                days_since_confirmed,
+                days_since_retrieved,
+                retrieval_count,
+                net_feedback,
+                config.decay_rate_per_day,
+            ),
+        };
+        if (new_confidence - fact.confidence).abs() > 0.001 {
+            fact.confidence = new_confidence;
+            count += 1;
         }
     }
 
+    if count > 0 && config.forgetting_model == ForgettingModel::Ebbinghaus {
+        crate::core::introspect::tick("power_law_decay");
+    }
     count
+}
+
+/// Ebbinghaus retention `R = exp(-Δt / S)` (#1). Stability `S` grows with the
+/// spacing effect (each prior retrieval) and net feedback; `Δt` is time since
+/// the memory was last reinforced (confirmed *or* retrieved). Multiplicative so
+/// confidence approaches the floor smoothly and never overshoots. Deterministic.
+fn ebbinghaus_confidence(
+    confidence: f32,
+    days_since_confirmed: f32,
+    days_since_retrieved: f32,
+    retrieval_count: f32,
+    net_feedback: i64,
+    base_stability_days: f32,
+) -> f32 {
+    let elapsed = days_since_confirmed.min(days_since_retrieved).max(0.0);
+    let spacing = 1.0 + SPACING_GAIN * retrieval_count;
+    let feedback_mult = match net_feedback.cmp(&0) {
+        std::cmp::Ordering::Greater => 1.0 + (net_feedback as f32).ln_1p(),
+        std::cmp::Ordering::Less => 1.0 / (1.0 + (net_feedback.unsigned_abs() as f32).ln_1p()),
+        std::cmp::Ordering::Equal => 1.0,
+    };
+    let stability = (base_stability_days * spacing * feedback_mult).max(MIN_STABILITY_DAYS);
+    let retention = (-(f64::from(elapsed)) / f64::from(stability)).exp() as f32;
+    (confidence * retention).max(CONFIDENCE_FLOOR)
+}
+
+/// Legacy linear subtraction, preserved verbatim for `forgetting_model = linear`.
+/// FadeMem-inspired: protect frequently/recently retrieved facts; feedback
+/// steers retention. Deterministic, local-only.
+fn linear_confidence(
+    confidence: f32,
+    days_since_confirmed: f32,
+    days_since_retrieved: f32,
+    retrieval_count: f32,
+    net_feedback: i64,
+    decay_rate_per_day: f32,
+) -> f32 {
+    let freq_protect = 1.0 / (1.0 + retrieval_count.ln_1p());
+    let recency_protect = (1.0 - (days_since_retrieved / 30.0).min(1.0)).max(0.0);
+    let protect = (freq_protect * (1.0 - 0.5 * recency_protect)).max(0.05);
+    let feedback_factor = match net_feedback.cmp(&0) {
+        std::cmp::Ordering::Greater => 1.0 / (1.0 + (net_feedback as f32).ln_1p()),
+        std::cmp::Ordering::Less => (1.0 + (net_feedback.unsigned_abs() as f32).ln_1p()).min(4.0),
+        std::cmp::Ordering::Equal => 1.0,
+    };
+    let decay = decay_rate_per_day * days_since_confirmed * protect * feedback_factor;
+    (confidence - decay).max(CONFIDENCE_FLOOR)
 }
 
 pub fn consolidate_similar(facts: &mut Vec<KnowledgeFact>, similarity_threshold: f32) -> usize {
@@ -393,6 +502,37 @@ mod tests {
     }
 
     #[test]
+    fn archetype_aware_decay_protects_evidence() {
+        // Opt-in: structural evidence (Architecture) decays slower than inference
+        // (Preference). Off (default), archetype is ignored and both decay alike.
+        let mut evidence = make_old_fact("arch", "db", "PostgreSQL", 0.9, 30);
+        evidence.archetype = KnowledgeArchetype::Architecture;
+        let mut inference = make_old_fact("pref", "style", "tabs", 0.9, 30);
+        inference.archetype = KnowledgeArchetype::Preference;
+
+        let off = LifecycleConfig::default();
+        let mut a = vec![evidence.clone(), inference.clone()];
+        apply_confidence_decay(&mut a, &off);
+        assert!(
+            (a[0].confidence - a[1].confidence).abs() < 1e-6,
+            "flag off → archetype ignored, equal decay"
+        );
+
+        let on = LifecycleConfig {
+            archetype_aware_decay: true,
+            ..Default::default()
+        };
+        let mut b = vec![evidence, inference];
+        apply_confidence_decay(&mut b, &on);
+        assert!(
+            b[0].confidence > b[1].confidence,
+            "evidence {} should outlast inference {}",
+            b[0].confidence,
+            b[1].confidence
+        );
+    }
+
+    #[test]
     fn decay_skips_recent_facts() {
         let config = LifecycleConfig::default();
         let mut facts = vec![make_fact("arch", "db", "PostgreSQL", 0.9)];
@@ -430,6 +570,61 @@ mod tests {
         );
         // Even a heavily down-voted fact only fades toward the floor — never hard-deleted.
         assert!(panned_c >= 0.05);
+    }
+
+    #[test]
+    fn spacing_effect_protects_frequently_retrieved() {
+        // #1: under the Ebbinghaus curve, a fact retrieved many times must decay
+        // slower than an identical never-retrieved fact of the same age.
+        let config = LifecycleConfig::default();
+        let rarely = make_old_fact("arch", "rare", "x", 0.9, 20);
+        let mut often = make_old_fact("arch", "often", "y", 0.9, 20);
+        often.retrieval_count = 20;
+        let mut facts = vec![rarely, often];
+        apply_confidence_decay(&mut facts, &config);
+        assert!(
+            facts[1].confidence > facts[0].confidence,
+            "spacing effect: rehearsed {} should outlast un-rehearsed {}",
+            facts[1].confidence,
+            facts[0].confidence
+        );
+    }
+
+    #[test]
+    fn ebbinghaus_decay_is_deterministic() {
+        // Determinism contract (#498): same input → same output, no RNG.
+        let config = LifecycleConfig::default();
+        let mut a = vec![make_old_fact("arch", "k", "v", 0.8, 15)];
+        let mut b = a.clone();
+        apply_confidence_decay(&mut a, &config);
+        apply_confidence_decay(&mut b, &config);
+        assert_eq!(a[0].confidence, b[0].confidence);
+    }
+
+    #[test]
+    fn linear_model_still_available() {
+        // Opt-out path keeps the legacy subtractive behavior.
+        let config = LifecycleConfig {
+            forgetting_model: ForgettingModel::Linear,
+            ..Default::default()
+        };
+        let mut facts = vec![make_old_fact("arch", "db", "PostgreSQL", 0.9, 10)];
+        let count = apply_confidence_decay(&mut facts, &config);
+        assert_eq!(count, 1);
+        assert!(facts[0].confidence < 0.9 && facts[0].confidence > 0.7);
+    }
+
+    #[test]
+    fn forgetting_model_parses() {
+        assert_eq!(ForgettingModel::parse("linear"), ForgettingModel::Linear);
+        assert_eq!(
+            ForgettingModel::parse("ebbinghaus"),
+            ForgettingModel::Ebbinghaus
+        );
+        assert_eq!(
+            ForgettingModel::parse("garbage"),
+            ForgettingModel::Ebbinghaus
+        );
     }
 
     #[test]

@@ -251,6 +251,10 @@ pub struct AutonomyConfig {
     pub cognition_loop_interval_secs: u64,
     #[serde(default = "serde_defaults::default_cognition_loop_max_steps")]
     pub cognition_loop_max_steps: u8,
+    /// Minimum facts an entity needs before observation synthesis (#802) writes a
+    /// summary. Synthesis itself is gated by `cognition_loop_max_steps >= 9`.
+    #[serde(default = "serde_defaults::default_cognition_synthesis_min_cluster")]
+    pub cognition_synthesis_min_cluster: usize,
 }
 
 impl Default for AutonomyConfig {
@@ -267,7 +271,8 @@ impl Default for AutonomyConfig {
             consolidate_cooldown_secs: 120,
             cognition_loop_enabled: true,
             cognition_loop_interval_secs: 3600,
-            cognition_loop_max_steps: 8,
+            cognition_loop_max_steps: 9,
+            cognition_synthesis_min_cluster: 3,
         }
     }
 }
@@ -362,6 +367,11 @@ impl AutonomyConfig {
         {
             cfg.cognition_loop_max_steps = n;
         }
+        if let Ok(v) = std::env::var("LEAN_CTX_COGNITION_SYNTHESIS_MIN_CLUSTER")
+            && let Ok(n) = v.parse()
+        {
+            cfg.cognition_synthesis_min_cluster = n;
+        }
         cfg
     }
 
@@ -403,6 +413,11 @@ impl AutonomyConfig {
             && let Ok(n) = v.parse()
         {
             cfg.cognition_loop_max_steps = n;
+        }
+        if let Ok(v) = std::env::var("LEAN_CTX_COGNITION_SYNTHESIS_MIN_CLUSTER")
+            && let Ok(n) = v.parse()
+        {
+            cfg.cognition_synthesis_min_cluster = n;
         }
         cfg
     }

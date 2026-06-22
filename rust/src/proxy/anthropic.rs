@@ -11,7 +11,7 @@ use super::compress::compress_tool_result;
 use super::forward;
 use super::tool_kind::{self, ToolResultKind, should_protect};
 use super::{cache_safety, prose};
-use crate::core::config::ProseRole;
+use crate::core::config::{HistoryMode, ProseRole};
 
 pub async fn handler(
     State(state): State<ProxyState>,
@@ -39,6 +39,15 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
     let cfg = crate::core::config::Config::load();
     let system_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::System);
     let user_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::User);
+    let live_compress = cfg.proxy.live_compresses();
+    let mode = cfg.proxy.resolved_history_mode();
+    // Meter-only (#481): live compression off, no history pruning, no prose
+    // rewriting → forward + usage metering still run, but the body is left
+    // unchanged so the provider prompt-cache prefix stays byte-stable.
+    if !live_compress && mode == HistoryMode::Off && system_aggr.is_none() && user_aggr.is_none() {
+        let out = serde_json::to_vec(&doc).unwrap_or_default();
+        return (out, original_size, original_size);
+    }
     let mut prose_segments: u64 = 0;
 
     // Length of the client's provider-cached message prefix. Needed both for
@@ -88,8 +97,7 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
 
         // Prune at a frozen, cache-aware boundary by default: Anthropic's
         // prompt cache matches exact prefixes, so the boundary must not move
-        // every turn (see `history_prune::prune_boundary`).
-        let mode = cfg.proxy.resolved_history_mode();
+        // every turn (see `history_prune::prune_boundary`). `mode` resolved above.
         let boundary = super::history_prune::prune_boundary(mode, messages.len());
         // Never rewrite content the client has marked with `cache_control`:
         // pruning inside the already-cached prefix invalidates Anthropic's
@@ -118,7 +126,14 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
                         .map(String::as_str);
                     let kind = name.map_or(ToolResultKind::Other, tool_kind::classify_tool_name);
 
-                    if let Some(inner_content) = block.get_mut("content") {
+                    // #481: skip live compression when globally off or when the
+                    // originating tool is on the exclusion list (Serena default).
+                    let excluded =
+                        name.is_some_and(|n| cfg.proxy.is_tool_live_compress_excluded(n));
+                    if live_compress
+                        && !excluded
+                        && let Some(inner_content) = block.get_mut("content")
+                    {
                         modified |= compress_content_field(inner_content, name, kind);
                     }
                 }
@@ -299,6 +314,9 @@ mod tests {
 
     #[test]
     fn compress_request_body_is_deterministic() {
+        // tee path depends on the data dir; serialize env access so a parallel
+        // test never swaps LEAN_CTX_DATA_DIR between the two compressions.
+        let _lock = crate::core::data_dir::test_env_lock();
         // #498: the proxy rewrite must be a pure function of the body so the
         // provider prompt-cache prefix stays byte-identical across turns.
         let bytes = serde_json::to_vec(&forge_log_body("Bash")).unwrap();

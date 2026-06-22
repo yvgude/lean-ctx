@@ -396,7 +396,7 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
             "  lean-ctx dashboard --open=none      Start without launching a browser (also --no-open)"
         );
         println!(
-            "  lean-ctx dashboard --open=vscode    Don't launch external browser; print VS Code Simple Browser steps"
+            "  lean-ctx dashboard --open=vscode    Don't launch external browser; show how to open the native VS Code tab"
         );
         println!("Environment:");
         println!(

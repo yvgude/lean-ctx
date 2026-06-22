@@ -54,15 +54,6 @@ export function cmdHeatmap(): Promise<void> {
   return runInChannel("Context Heatmap", ["heatmap"]);
 }
 
-/** The dashboard is a long-running local server, so it runs in an integrated
- *  terminal: it inherits the user's real shell PATH and they can stop it with
- *  Ctrl+C, instead of being orphaned behind the extension host. */
-export function cmdDashboard(): void {
-  const term = vscode.window.createTerminal("lean-ctx dashboard");
-  term.show();
-  term.sendText("lean-ctx dashboard");
-}
-
 interface McpConfig {
   // VS Code / Windsurf use `servers`; Cursor uses `mcpServers`.
   servers?: Record<string, unknown>;

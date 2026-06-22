@@ -36,6 +36,7 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 | `gain` | Token-savings dashboard; `--live`, `--graph`, `--daily`, `--json`, `--wrapped`, `--svg`, `--share`, `--copy`, `--open`, `--publish`, `--leaderboard`, `--unpublish`, `--cost`, `--tasks`, `--agents`, `--heatmap` |
 | `token-report` (`report-tokens`) | Token + memory report; `--json` |
 | `learning` | Adaptive-learning state: `status`, `export [file]`, `import <file\|->` — share learned thresholds + LITM calibration with your team (secret-free, idempotent merge) |
+| `introspect` | Cognition v2 activity: `cognition` (which science subsystems are wired/active, `--json`), `qubo` (experimental QUBO-vs-greedy selection benchmark) |
 | `discover` | Find uncompressed commands in shell history; `--card` (shareable "before" SVG) |
 | `ghost` | Ghost-token report (hidden waste); `--json` |
 | `cheatsheet` (`cheat`) | Workflow cheat sheet |
@@ -103,6 +104,7 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 |---------|---------|
 | `tools` | MCP tool profile: `minimal`, `standard`, `power`, `show`, `list` |
 | `allow` | Shell allowlist: add/remove commands in `shell_allowlist_extra`, `--list` shows the effective allowlist + any parse errors |
+| `trust` / `untrust` | Workspace trust: gate a cloned repo's project-local `.lean-ctx.toml` security overrides; `trust status`, `trust --list` |
 | `profile` | Context profiles: `list`, `show`, `active`, `diff`, `create`, `set` |
 | `config` | Config file: dump, `init`, `set <k> <v>`, `schema`, `validate`, `show`, `apply` |
 | `theme` | Terminal colors: `list`, `set`, `export`, `import` |

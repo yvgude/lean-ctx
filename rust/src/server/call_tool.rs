@@ -629,6 +629,7 @@ impl LeanCtxServer {
                                 &mut ledger,
                                 &overlay,
                                 active_task.as_deref(),
+                                project_root_owned.as_deref(),
                             );
                             drop(ledger);
                             if wants_eviction && let Some(hint) = &gate_result.eviction_hint {
@@ -636,6 +637,9 @@ impl LeanCtxServer {
                             }
                             if wants_elicitation && let Some(hint) = &gate_result.elicitation_hint {
                                 tracing::debug!("deferred elicitation hint: {hint}");
+                            }
+                            if let Some(hint) = &gate_result.prefetch_hint {
+                                tracing::debug!("deferred FEP prefetch hint: {hint}");
                             }
                             if gate_result.resource_changed
                                 && let Some(peer) = peer_clone.read().await.as_ref()

@@ -26,11 +26,38 @@ fn normalize_key(path: &str) -> String {
     crate::core::pathutil::normalize_tool_path(path)
 }
 
-fn max_cache_tokens() -> usize {
-    std::env::var("LEAN_CTX_CACHE_MAX_TOKENS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(500_000)
+/// Built-in default token budget for the in-memory read cache.
+pub(crate) const DEFAULT_CACHE_MAX_TOKENS: usize = 500_000;
+
+/// Pure resolver for the read-cache token budget. `env` (the raw
+/// `LEAN_CTX_CACHE_MAX_TOKENS` value) wins when it parses to a positive integer,
+/// then the `configured` `[core] cache_max_tokens`, else
+/// [`DEFAULT_CACHE_MAX_TOKENS`]. A `0` (or unparseable env) in either source
+/// means "use the default". Split out so the precedence is unit-testable without
+/// touching the global env or config.
+fn resolve_cache_max_tokens(env: Option<&str>, configured: usize) -> usize {
+    if let Some(raw) = env
+        && let Ok(n) = raw.trim().parse::<usize>()
+        && n > 0
+    {
+        return n;
+    }
+    if configured > 0 {
+        configured
+    } else {
+        DEFAULT_CACHE_MAX_TOKENS
+    }
+}
+
+/// Resolved token budget for the read cache. `LEAN_CTX_CACHE_MAX_TOKENS` wins
+/// (env-first keeps the hot eviction path cheap for power users), then
+/// `[core] cache_max_tokens` in config.toml, else [`DEFAULT_CACHE_MAX_TOKENS`].
+/// Shared with `eviction_orchestrator` so both eviction rails read one budget.
+pub(crate) fn max_cache_tokens() -> usize {
+    resolve_cache_max_tokens(
+        std::env::var("LEAN_CTX_CACHE_MAX_TOKENS").ok().as_deref(),
+        crate::core::config::Config::load().cache_max_tokens,
+    )
 }
 
 /// A cached file read: zstd-compressed content, hash, token count, and access metadata.
@@ -189,6 +216,15 @@ impl CacheEntry {
 
 const RRF_K: f64 = 60.0;
 
+/// Hebbian protection added to an entry's RRF eviction score per unit of
+/// association strength with the currently-active working set (#3). Files that
+/// are read together resist eviction together ("fire together, wire together").
+/// Deterministic: a fixed multiplier, no sampling.
+const HEBBIAN_PROTECT_WEIGHT: f64 = 0.05;
+/// Size of the "active working set" (most-recently-accessed entries) against
+/// which Hebbian association is measured during eviction.
+const HEBBIAN_ACTIVE_SET: usize = 8;
+
 /// Compute Reciprocal Rank Fusion eviction scores for a batch of cache entries.
 /// Each signal (recency, frequency, size) produces an independent ranking.
 /// The final score is the sum of `1/(k + rank)` across all signals.
@@ -250,6 +286,19 @@ pub fn eviction_scores_rrf(entries: &[(&String, &CacheEntry)], now: Instant) -> 
             ((*path).clone(), score)
         })
         .collect()
+}
+
+/// Add the Hebbian co-access bonus (#3) to RRF eviction scores in place. A
+/// higher score means "keep longer", so co-accessed entries are protected.
+fn apply_hebbian_bonus(scores: &mut [(String, f64)], bonus: &HashMap<String, f64>) {
+    if bonus.is_empty() {
+        return;
+    }
+    for s in scores.iter_mut() {
+        if let Some(b) = bonus.get(&s.0) {
+            s.1 += *b;
+        }
+    }
 }
 
 /// Aggregated cache statistics: hits, reads, and token savings.
@@ -334,6 +383,10 @@ pub struct SessionCache {
     next_ref: usize,
     stats: CacheStats,
     shared_blocks: Vec<SharedBlock>,
+    /// Hebbian co-access matrix (#3): tracks which files are read together so
+    /// eviction can protect co-accessed clusters. Updated on `store`, consulted
+    /// during eviction.
+    co_access: crate::core::hebbian_cache::CoAccessMatrix,
 }
 
 impl Default for SessionCache {
@@ -351,7 +404,61 @@ impl SessionCache {
             next_ref: 1,
             shared_blocks: Vec::new(),
             stats: CacheStats::default(),
+            co_access: crate::core::hebbian_cache::CoAccessMatrix::new(),
         }
+    }
+
+    /// Record that `path` was accessed, strengthening its Hebbian association
+    /// with other files read in the same burst window (#3). Called on every
+    /// `store`; co-access boundaries are flushed via `flush_co_access`.
+    pub fn record_co_access(&mut self, path: &str) {
+        let key = normalize_key(path);
+        self.co_access
+            .record_access(crate::core::hebbian_cache::path_hash(&key));
+    }
+
+    /// Close the current co-access burst so its associations are committed.
+    /// Call at the end of a logical tool call (post-dispatch).
+    pub fn flush_co_access(&mut self) {
+        self.co_access.end_burst();
+    }
+
+    /// Per-entry Hebbian eviction bonus (#3): each cached entry that is
+    /// co-accessed with the recently-active working set earns a positive bonus
+    /// that is added to its RRF score, so clustered files survive eviction
+    /// together. Deterministic (no sampling); ticks the activation registry when
+    /// any association actually influences the decision.
+    pub(crate) fn hebbian_eviction_bonus(&self) -> HashMap<String, f64> {
+        use crate::core::hebbian_cache::path_hash;
+        if self.entries.is_empty() {
+            return HashMap::new();
+        }
+        let mut by_recency: Vec<(&String, Instant)> = self
+            .entries
+            .iter()
+            .map(|(k, e)| (k, e.last_access()))
+            .collect();
+        by_recency.sort_by_key(|(_, t)| std::cmp::Reverse(*t));
+        let active: Vec<u64> = by_recency
+            .iter()
+            .take(HEBBIAN_ACTIVE_SET)
+            .map(|(k, _)| path_hash(k))
+            .collect();
+
+        let mut out = HashMap::new();
+        for k in self.entries.keys() {
+            let h = path_hash(k);
+            // Exclude self so an entry never "protects itself".
+            let peers: Vec<u64> = active.iter().copied().filter(|&a| a != h).collect();
+            let strength = self.co_access.association_strength(h, &peers);
+            if strength > 0.0 {
+                out.insert(k.clone(), f64::from(strength) * HEBBIAN_PROTECT_WEIGHT);
+            }
+        }
+        if !out.is_empty() {
+            crate::core::introspect::tick("hebbian_cache");
+        }
+        out
     }
 
     /// Returns or assigns a short file reference label (F1, F2, ...) for the given path.
@@ -447,6 +554,10 @@ impl SessionCache {
     /// Stores file content in the cache; returns a hit if content hash matches.
     pub fn store(&mut self, path: &str, content: &str) -> StoreResult {
         let key = normalize_key(path);
+        // #3: feed the Hebbian co-access matrix on every read so eviction can
+        // later protect files that are habitually read together.
+        self.co_access
+            .record_access(crate::core::hebbian_cache::path_hash(&key));
         let hash = compute_md5(content);
         let line_count = content.lines().count();
         let original_tokens = count_tokens(content);
@@ -547,6 +658,7 @@ impl SessionCache {
         let now = Instant::now();
         let all: Vec<(&String, &CacheEntry)> = self.entries.iter().collect();
         let mut scores = eviction_scores_rrf(&all, now);
+        apply_hebbian_bonus(&mut scores, &self.hebbian_eviction_bonus());
         // Sort ascending: lowest RRF score = least valuable = evict first
         scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -702,6 +814,7 @@ impl SessionCache {
         let now = Instant::now();
         let all: Vec<(&String, &CacheEntry)> = self.entries.iter().collect();
         let mut scores = eviction_scores_rrf(&all, now);
+        apply_hebbian_bonus(&mut scores, &self.hebbian_eviction_bonus());
         scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut freed = 0usize;
@@ -1014,6 +1127,21 @@ mod tests {
     }
 
     #[test]
+    fn hebbian_eviction_bonus_is_wired() {
+        // #3: files read together build a Hebbian association via store()'s
+        // recording, and that association must feed the eviction bonus.
+        let mut cache = SessionCache::new();
+        cache.store("/a.rs", "fn a() {}");
+        cache.store("/b.rs", "fn b() {}");
+        cache.flush_co_access(); // commit the burst → association (a,b) forms
+        let bonus = cache.hebbian_eviction_bonus();
+        assert!(
+            !bonus.is_empty(),
+            "co-accessed reads must yield a Hebbian eviction bonus (#3 wired)"
+        );
+    }
+
+    #[test]
     fn md5_is_deterministic() {
         let h1 = compute_md5("test content");
         let h2 = compute_md5("test content");
@@ -1063,6 +1191,25 @@ mod tests {
         assert!(
             score_a > score_b,
             "frequently accessed entries should score higher via RRF"
+        );
+    }
+
+    #[test]
+    fn cache_budget_resolver_precedence() {
+        // env wins when positive
+        assert_eq!(resolve_cache_max_tokens(Some("250000"), 999), 250_000);
+        assert_eq!(resolve_cache_max_tokens(Some(" 80000 "), 0), 80_000);
+        // env 0 / blank / garbage falls through to config
+        assert_eq!(resolve_cache_max_tokens(Some("0"), 123_456), 123_456);
+        assert_eq!(resolve_cache_max_tokens(Some(""), 123_456), 123_456);
+        assert_eq!(resolve_cache_max_tokens(Some("lots"), 123_456), 123_456);
+        // no env → config field
+        assert_eq!(resolve_cache_max_tokens(None, 42_000), 42_000);
+        // nothing set anywhere → built-in default
+        assert_eq!(resolve_cache_max_tokens(None, 0), DEFAULT_CACHE_MAX_TOKENS);
+        assert_eq!(
+            resolve_cache_max_tokens(Some("0"), 0),
+            DEFAULT_CACHE_MAX_TOKENS
         );
     }
 

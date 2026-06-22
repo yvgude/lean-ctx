@@ -13,6 +13,12 @@ website/
 DEVELOPMENT.md
 Makefile.deploy
 
+# ── Secrets / host access (private; live credentials — gitignored, must never reach GitHub) ──
+# server.md is the host-access/credentials reference (RUNBOOK §1, §10). It is
+# .gitignored so it can never be staged; listed here too so the pre-push hook and
+# the CI Proprietary Code Guard alarm if it is ever force-added (defense in depth).
+server.md
+
 # ── Business / monetization (private; never on the public GitHub mirror) ──
 docs/business/
 memory-bank/

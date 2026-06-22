@@ -249,8 +249,12 @@ pub(crate) fn format_facts_with_annotations(
     category: Option<&str>,
     judged_pairs: &[crate::core::knowledge::JudgedPair],
 ) -> String {
-    let mut facts: Vec<&crate::core::knowledge::KnowledgeFact> = facts.iter().collect();
-    facts.sort_by(|a, b| sort_fact_for_output(a, b));
+    // Preserve the caller's order: recall_for_output / recall_by_category_for_output
+    // already rank facts (balanced observation tier #802, exact-match precedence,
+    // relevance). Re-sorting here by salience would discard that ranking and bury a
+    // synthesized summary under a high-salience raw fact. The formatter renders; it
+    // does not re-rank.
+    let facts: Vec<&crate::core::knowledge::KnowledgeFact> = facts.iter().collect();
 
     let mut out = String::new();
     if let Some(cat) = category {
@@ -314,6 +318,9 @@ pub(crate) fn sort_fact_for_output(
     a: &crate::core::knowledge::KnowledgeFact,
     b: &crate::core::knowledge::KnowledgeFact,
 ) -> std::cmp::Ordering {
+    // Pure salience ordering. The observation tier (#802) is applied at the selection
+    // layer (recall_*), not here; this comparator is the as-of recall tiebreak and the
+    // display only preserves the order the recall functions already produced.
     salience_score(b)
         .cmp(&salience_score(a))
         .then_with(|| {
@@ -361,4 +368,61 @@ pub(crate) fn salience_score(f: &crate::core::knowledge::KnowledgeFact) -> u32 {
     });
 
     base + quality_bonus + recency_bonus
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::core::knowledge::{COGNITION_SYNTHESIS_SOURCE, ProjectKnowledge};
+    use crate::core::memory_policy::MemoryPolicy;
+
+    // #802: the formatter renders in the caller's order and must never re-rank.
+    // `recall_for_output` ranks a synthesized observation ahead via the balanced tier;
+    // the display must preserve that, not re-sort by salience (which would bury the
+    // summary under a high-salience gotcha). Feeding both orders proves no re-sort.
+    #[test]
+    fn format_preserves_caller_order_not_salience() {
+        let policy = MemoryPolicy::default();
+        let mut k = ProjectKnowledge::new("/tmp/test-fmt-preserve");
+        k.remember(
+            "gotcha",
+            "src/a.rs:1",
+            "race condition",
+            "s1",
+            0.95,
+            &policy,
+        );
+        k.remember(
+            "observation",
+            "src/a.rs",
+            "src/a.rs — gotcha: race condition",
+            COGNITION_SYNTHESIS_SOURCE,
+            0.60,
+            &policy,
+        );
+        let obs = k
+            .facts
+            .iter()
+            .find(|f| f.is_synthesized_observation())
+            .cloned()
+            .expect("observation present");
+        let gotcha = k
+            .facts
+            .iter()
+            .find(|f| !f.is_synthesized_observation())
+            .cloned()
+            .expect("gotcha present");
+
+        let out =
+            super::format_facts_with_annotations(&[obs.clone(), gotcha.clone()], 2, None, &[]);
+        assert!(
+            out.find("[observation/").unwrap() < out.find("[gotcha/").unwrap(),
+            "observation ranked first by recall must stay first in the rendered output"
+        );
+
+        let out_rev = super::format_facts_with_annotations(&[gotcha, obs], 2, None, &[]);
+        assert!(
+            out_rev.find("[gotcha/").unwrap() < out_rev.find("[observation/").unwrap(),
+            "formatter must preserve caller order, never impose its own salience sort"
+        );
+    }
 }

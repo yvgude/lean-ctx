@@ -266,6 +266,24 @@ Embedding models for semantic search are downloaded from HuggingFace Hub. Verifi
 
 **Recommendation for regulated environments:** Pre-provision models manually from an internal mirror with signature verification. Set `LEAN_CTX_EMBEDDING_MODEL_DIR` to point to the pre-provisioned directory to skip downloads entirely.
 
+### Project-Scope Config Influences Injected Context (external audit, finding 4)
+
+**Status:** Mitigated by Workspace Trust (selective gating + content-hash pin).
+
+A cloned repository's `.lean-ctx.toml` is merged over the global config by `Config::merge_local`. That merge can raise **security-sensitive** settings — replace the shell allowlist, widen the path jail (`allow_paths` / `extra_roots`), repoint the proxy upstream, define command aliases, change `rules_scope` / `rules_injection`. Opening an untrusted clone with an agent would let the repo silently weaken lean-ctx's own boundaries.
+
+**Mitigation (shipped):** lean-ctx now applies a VS-Code-style **Workspace Trust** gate. For a workspace the user has not trusted, the security-sensitive overrides above are **withheld** (comfort knobs like `compression`/`theme` still apply) and a `[SECURITY]` warning is logged; `lean-ctx doctor` shows the state. Trust is granted explicitly with `lean-ctx trust` and pinned to BOTH the workspace path AND a content hash of `.lean-ctx.toml`, so editing the file after trust re-gates it (a "trust once, modify later" change cannot take effect silently). Headless/fleet use can opt in via `LEAN_CTX_TRUST_WORKSPACE=1` or `LEAN_CTX_TRUSTED_ROOTS`.
+
+**Residual:** Model-visible *content* lean-ctx injects (the static `<!-- lean-ctx -->` rules block, hook `additionalContext`, `[VERIFY]`/`[HINT]` suffixes) is itself auditable and not repo-controlled. Review a clone's `.lean-ctx.toml` before `lean-ctx trust`.
+
+### LLM Proxy is a Full MITM on API Traffic (external audit, finding 6)
+
+**Status:** By design; loopback-bound and disabled by default.
+
+When enabled, the optional LLM proxy (`lean-ctx proxy`) reads and rewrites every request body (compression, history pruning) and sees `Authorization` headers in cleartext — a concentrated sensitive-data surface. Any process able to reach the port, or a forwarding bug, would expose prompts, completions and API keys.
+
+**Mitigation:** The proxy is disabled by default and binds to loopback (`127.0.0.1`) with an auto-generated auth token when enabled; keep it loopback-bound. The MCP `ctx_*` tools deliver compression savings without routing API traffic through any proxy — leave it disabled unless you need pay-as-you-go key forwarding.
+
 ---
 
 ## Security Architecture for Enterprise Deployments
@@ -329,4 +347,4 @@ When running the team server (`lean-ctx team-server`):
 
 ---
 
-**Last updated**: 2026-05-11
+**Last updated**: 2026-06-21

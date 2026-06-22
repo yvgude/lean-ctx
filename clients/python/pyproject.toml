@@ -3,7 +3,7 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "leanctx"
+name = "lean-ctx-client"
 version = "0.1.0"
 description = "Thin, dependency-free Python client for the lean-ctx HTTP /v1 contract"
 readme = "README.md"

@@ -37,6 +37,12 @@ pub(super) fn string_similarity(a: &str, b: &str) -> f32 {
 }
 
 pub(super) fn sort_fact_for_output(a: &KnowledgeFact, b: &KnowledgeFact) -> std::cmp::Ordering {
+    // Pure salience ordering for display/grouping. The observation tier (#802) lives
+    // in the *selection* layer (`recall_for_output`, `semantic_recall`,
+    // `recall_by_category_for_output`) which has query context to keep a summary above
+    // incidental matches yet below an exact key hit; the display then preserves that
+    // order. Keeping this comparator tier-free avoids side effects on
+    // wakeup/summary/aaak, where facts are already grouped by category.
     salience_score(b)
         .cmp(&salience_score(a))
         .then_with(|| {

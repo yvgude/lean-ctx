@@ -51,7 +51,7 @@ Hermes agent loop
 
 - A running **lean-ctx daemon** exposing the HTTP `/v1` tools API
   (`lean-ctx serve`). See [Setup](#setup).
-- The **`leanctx` Python SDK** in Hermes' environment: `pip install leanctx`.
+- The **`leanctx` Python SDK** in Hermes' environment: `pip install lean-ctx-client`.
 - Optional: `tiktoken` for exact token counts (a char-based estimate is used
   otherwise).
 - A Hermes Agent build that supports context-engine plugins
@@ -68,7 +68,7 @@ Hermes agent loop
 lean-ctx serve --host 127.0.0.1 --port 8080
 
 # 3. Install the SDK in Hermes' Python.
-pip install leanctx
+pip install lean-ctx-client
 
 # 4. Activate the engine in ~/.hermes/config.yaml:
 #    context:

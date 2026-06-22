@@ -1,7 +1,7 @@
 import type React from "react";
 import { useMemo, useState } from "react";
 
-import { LeanCtxHttpError } from "@leanctx/sdk";
+import { LeanCtxHttpError } from "lean-ctx-client";
 
 import { createLeanCtxClient } from "../lib/client.js";
 import { parseRecallFacts, type KnowledgeFactRow } from "../lib/facts.js";

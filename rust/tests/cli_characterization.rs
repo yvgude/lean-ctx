@@ -345,8 +345,20 @@ fn bypass_no_args_prints_usage() {
     assert_ne!(exit_code(&out), 0);
     let err = stderr(&out);
     assert!(
-        err.contains("Usage") || err.contains("bypass"),
-        "bypass without args should show usage"
+        err.contains("Usage") || err.contains("raw"),
+        "bypass alias without args should show usage"
+    );
+}
+
+#[test]
+fn raw_no_args_prints_usage() {
+    // `raw` is the primary name for the former `bypass` subcommand (finding 5).
+    let out = run(&["raw"]);
+    assert_ne!(exit_code(&out), 0);
+    let err = stderr(&out);
+    assert!(
+        err.contains("Usage") && err.contains("raw"),
+        "raw without args should show usage: {err}"
     );
 }
 

@@ -9,13 +9,35 @@ pub(super) struct DoctorFixOptions {
 }
 
 pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
+    let report = build_and_persist_fix_report(opts.json)?;
+    if opts.json {
+        let json_text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
+        println!("{json_text}");
+    } else {
+        let (passed, total) = compact_score();
+        print_compact_status(passed, total);
+        if let Ok(path) = crate::core::setup_report::doctor_report_path() {
+            println!("  {DIM}report saved:{RST} {}", display_user_path(&path));
+        }
+    }
+    Ok(i32::from(!report.success))
+}
+
+/// Run every `doctor --fix` repair step and persist the `SetupReport`, returning
+/// it without printing anything. Shared by the CLI (`run_fix`) and the dashboard
+/// fix route (#466) so both run byte-identical repair logic.
+pub(super) fn fix_report() -> Result<crate::core::setup_report::SetupReport, String> {
+    build_and_persist_fix_report(true)
+}
+
+fn build_and_persist_fix_report(
+    quiet: bool,
+) -> Result<crate::core::setup_report::SetupReport, String> {
     use crate::core::setup_report::{
         PlatformInfo, SetupItem, SetupReport, SetupStepReport, doctor_report_path,
     };
 
-    let _quiet_guard = opts
-        .json
-        .then(|| crate::setup::EnvVarGuard::set("LEAN_CTX_QUIET", "1"));
+    let _quiet_guard = quiet.then(|| crate::setup::EnvVarGuard::set("LEAN_CTX_QUIET", "1"));
     let started_at = Utc::now();
     let home = dirs::home_dir().ok_or_else(|| "Cannot determine home directory".to_string())?;
 
@@ -37,7 +59,7 @@ pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
             note: None,
         });
     } else {
-        if opts.json {
+        if quiet {
             crate::cli::cmd_init_quiet(&["--global".to_string()]);
         } else {
             crate::cli::cmd_init(&["--global".to_string()]);
@@ -549,13 +571,5 @@ pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
     let json_text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
     crate::config_io::write_atomic_with_backup(&path, &json_text)?;
 
-    if opts.json {
-        println!("{json_text}");
-    } else {
-        let (passed, total) = compact_score();
-        print_compact_status(passed, total);
-        println!("  {DIM}report saved:{RST} {}", display_user_path(&path));
-    }
-
-    Ok(i32::from(!report.success))
+    Ok(report)
 }

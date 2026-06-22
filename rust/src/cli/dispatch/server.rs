@@ -39,9 +39,27 @@ pub(super) fn run_mcp_server() -> Result<()> {
 
     // The Tokio caps above bound async work, but the CPU-heavy index build runs
     // on rayon, whose global pool otherwise grabs *every* core — so a fleet of
-    // concurrent sessions still spikes the host on startup. Bound it too.
-    // Opt-in: 0 keeps rayon's all-cores default; LEANCTX_INDEX_THREADS > config.
-    let index_threads = crate::core::config::Config::load().max_index_threads_effective();
+    // concurrent sessions still spikes the host on startup (#460). Resolve the
+    // cap in three tiers:
+    //   1. an explicit `LEANCTX_INDEX_THREADS` / config value always wins;
+    //   2. otherwise, if other lean-ctx processes are running, split the cores
+    //      fairly across the fleet so N sessions use ~one core-count of index
+    //      work between them instead of N × all-cores;
+    //   3. a lone session keeps rayon's all-cores default untouched (0 = no cap).
+    let index_threads = {
+        let configured = crate::core::config::Config::load().max_index_threads_effective();
+        if configured > 0 {
+            configured
+        } else {
+            // `find_pids_by_name` excludes us, so +1 counts this process too.
+            let concurrent = crate::ipc::process::find_pids_by_name("lean-ctx").len() + 1;
+            if concurrent > 1 {
+                herd_aware_index_threads(parallelism, concurrent)
+            } else {
+                0
+            }
+        }
+    };
     if index_threads > 0 {
         let _ = rayon::ThreadPoolBuilder::new()
             .num_threads(index_threads)
@@ -78,6 +96,10 @@ pub(super) fn run_mcp_server() -> Result<()> {
             "lean-ctx v{} MCP server starting",
             env!("CARGO_PKG_VERSION")
         );
+
+        // Surface any path-jail relaxation inherited from the IDE/launchd env or
+        // config, so a loosened boundary is never silent (GH security audit, #3).
+        core::pathjail::warn_if_relaxed();
 
         // Orphan watchdog: if our parent process dies (IDE crashed/closed without
         // closing stdin), we exit cleanly instead of hanging forever.
@@ -228,4 +250,53 @@ pub(super) fn resolve_worker_threads(parallelism: usize) -> usize {
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or_else(|| parallelism.clamp(1, 4))
+}
+
+/// Herd-aware default for the rayon index-build thread cap when the operator
+/// has not set one explicitly (#460).
+///
+/// Splits the machine's cores fairly across the lean-ctx processes alive right
+/// now, so a single session indexes at full speed while a fleet of `concurrent`
+/// sessions collectively stays near *one* core-count of index work instead of
+/// `concurrent × all-cores` — the thundering herd the issue describes. Always
+/// returns at least 1 (rayon rejects a zero-thread pool).
+///
+/// `cores`: available parallelism. `concurrent`: lean-ctx processes alive
+/// including this one (caller guarantees ≥ 1).
+pub(super) fn herd_aware_index_threads(cores: usize, concurrent: usize) -> usize {
+    let cores = cores.max(1);
+    let concurrent = concurrent.max(1);
+    (cores / concurrent).max(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::herd_aware_index_threads;
+
+    #[test]
+    fn lone_session_keeps_all_cores() {
+        // One process → no division → full parallelism (callers additionally
+        // skip capping entirely in this case, preserving rayon's default).
+        assert_eq!(herd_aware_index_threads(16, 1), 16);
+        assert_eq!(herd_aware_index_threads(8, 1), 8);
+    }
+
+    #[test]
+    fn fleet_splits_cores_and_stays_under_core_count() {
+        // 10 sessions on a 16-core box: each gets 1 thread → total 10 < 16, so
+        // the collective index load stays under the core count (the #460 bar).
+        assert_eq!(herd_aware_index_threads(16, 10), 1);
+        assert!(herd_aware_index_threads(16, 10) * 10 < 16);
+        // A handful of sessions each get a fair slice that sums to ~the cores.
+        assert_eq!(herd_aware_index_threads(16, 2), 8);
+        assert_eq!(herd_aware_index_threads(16, 4), 4);
+    }
+
+    #[test]
+    fn never_returns_zero_threads() {
+        // More sessions than cores must still yield a usable (≥1) pool, never a
+        // zero-thread pool that rayon would reject.
+        assert_eq!(herd_aware_index_threads(4, 32), 1);
+        assert_eq!(herd_aware_index_threads(0, 0), 1);
+    }
 }

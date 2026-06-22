@@ -505,6 +505,36 @@ fn consolidate_to_session(chunks: &[crate::core::content_chunk::ContentChunk], c
         return;
     }
 
+    // #8 Immune × workspace-trust coupling: in an UNTRUSTED workspace, apply the
+    // strict immune screen to provider data before consolidation, dropping
+    // command/exfiltration and obfuscated payloads that the baseline screen
+    // (inside `consolidate`) intentionally tolerates for trusted contexts.
+    let trusted = crate::core::workspace_trust::is_trusted(std::path::Path::new(&ctx.project_root));
+    let strict_screened: Vec<crate::core::content_chunk::ContentChunk>;
+    let chunks: &[crate::core::content_chunk::ContentChunk] = if trusted {
+        chunks
+    } else {
+        strict_screened = chunks
+            .iter()
+            .filter(|c| {
+                if c.is_external()
+                    && let Some(reason) = crate::core::immune_detector::screen_strict(&c.content)
+                {
+                    tracing::warn!(
+                        target: "immune",
+                        "untrusted workspace: quarantined {} ({reason})",
+                        c.file_path
+                    );
+                    crate::core::introspect::tick("immune_detector");
+                    return false;
+                }
+                true
+            })
+            .cloned()
+            .collect();
+        &strict_screened
+    };
+
     let artifacts = consolidation::consolidate(chunks);
     if artifacts.is_empty() {
         return;

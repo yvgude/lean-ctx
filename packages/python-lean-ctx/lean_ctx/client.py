@@ -22,9 +22,6 @@ class LeanCtxClient:
             args.append(path)
         return self._run(args)
 
-    def compress(self, text: str) -> str:
-        return self._run(["-c", f"echo {json.dumps(text)}"])
-
     def shell(self, command: str) -> str:
         return self._run(["-c", command])
 

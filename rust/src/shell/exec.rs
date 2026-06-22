@@ -179,11 +179,25 @@ pub fn exec_argv(args: &[String]) -> i32 {
         return 127;
     }
 
+    // Quote-safe join used only for the allowlist/policy *checks*; execution
+    // below still consumes the pre-split argv verbatim (the whole reason `-t`
+    // avoids `sh -c`). Joining first means a single argv element such as
+    // `git status; rm -rf /` is checked as ONE quoted token, never re-parsed.
+    let joined = super::platform::join_command(args);
+
+    // The `-t` track path is the agent's default shell hook
+    // (`_lc() { lean-ctx -t "$@" }`), so it MUST enforce the same allowlist
+    // boundary as `-c` (see `exec`). Previously it skipped the check entirely,
+    // letting every aliased multi-arg invocation (`_lc git …`) bypass the
+    // restriction that `lean-ctx -c` enforces (GH security audit, finding 1).
+    if let Some(code) = allowlist_gate(&joined) {
+        return code;
+    }
+
     if std::env::var("LEAN_CTX_DISABLED").is_ok() || std::env::var("LEAN_CTX_ACTIVE").is_ok() {
         return exec_direct(args);
     }
 
-    let joined = super::platform::join_command(args);
     let cfg = config::Config::load();
     let policy = super::output_policy::classify(&joined, &cfg.excluded_commands);
 
@@ -285,7 +299,14 @@ fn stdout_is_regular_file() -> bool {
     }
 }
 
-pub fn exec(command: &str) -> i32 {
+/// Shared allowlist gate for the CLI shell entrypoints — `-c` (via [`exec`]) and
+/// `-t` (via [`exec_argv`]). Both must apply the SAME boundary so the track path
+/// (the default shell hook) cannot be weaker than the compress path.
+///
+/// Returns `Some(126)` when the command is blocked and the caller must return
+/// that exit code; `None` when execution may proceed (allowed, or warn-only for
+/// an interactive human — see [`allowlist_must_enforce`]).
+fn allowlist_gate(command: &str) -> Option<i32> {
     if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(command) {
         if allowlist_must_enforce() {
             eprintln!("{msg}");
@@ -294,9 +315,16 @@ pub fn exec(command: &str) -> i32 {
                  Allow it permanently: lean-ctx allow <cmd> — or set \
                  LEAN_CTX_ALLOWLIST_WARN_ONLY=1 to downgrade to a warning."
             );
-            return 126;
+            return Some(126);
         }
         tracing::warn!("[CLI] Command would be blocked in MCP mode: {msg}");
+    }
+    None
+}
+
+pub fn exec(command: &str) -> i32 {
+    if let Some(code) = allowlist_gate(command) {
+        return code;
     }
 
     let (shell, shell_flag) = super::platform::shell_and_flag();
@@ -571,16 +599,61 @@ mod exec_tests {
 
     #[test]
     fn exec_argv_runs_simple_command() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
         let code = super::exec_argv(&["true".to_string()]);
         assert_eq!(code, 0);
     }
 
     #[test]
     fn exec_argv_passes_through_when_disabled() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
         crate::test_env::set_var("LEAN_CTX_DISABLED", "1");
         let code = super::exec_argv(&["true".to_string()]);
         crate::test_env::remove_var("LEAN_CTX_DISABLED");
         assert_eq!(code, 0);
+    }
+
+    // Finding 1 (GH security audit): the `-t` track path is the default shell
+    // hook, so it must enforce the allowlist exactly like the `-c` path. A
+    // non-allowlisted command must be blocked (126), not executed.
+    #[test]
+    fn exec_argv_enforces_allowlist_for_disallowed_command() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_ACTIVE");
+        crate::test_env::remove_var("LEAN_CTX_DISABLED");
+        crate::test_env::remove_var("LEAN_CTX_ALLOWLIST_WARN_ONLY");
+        // hook-child forces enforcement regardless of the test runner's TTY state.
+        crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
+        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "git");
+
+        let code = super::exec_argv(&["true".to_string()]);
+
+        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+
+        assert_eq!(
+            code, 126,
+            "non-allowlisted command must be blocked on the -t track path"
+        );
+    }
+
+    #[test]
+    fn exec_argv_allows_allowlisted_command() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_ACTIVE");
+        crate::test_env::remove_var("LEAN_CTX_DISABLED");
+        crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
+        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "true");
+
+        let code = super::exec_argv(&["true".to_string()]);
+
+        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+
+        assert_eq!(code, 0, "allowlisted command must run on the -t track path");
     }
 
     #[test]

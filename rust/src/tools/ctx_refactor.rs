@@ -265,6 +265,22 @@ pub(crate) fn reindent_first_line(text: &str, indent: &str) -> String {
     format!("{indent}{text}")
 }
 
+/// True if symbol `name` denotes a container for type `ancestor`: the bare type
+/// itself (struct/enum/inherent `impl Type`) — exact match — or a trait impl,
+/// whose indexed name is `<Trait> for <Type>` (see the round-trip note in
+/// graph_provider.rs). Generic args on the impl target (`… for Type<T>`) are
+/// stripped so `Type/method` still resolves. Language-agnostic: non-Rust
+/// container names never contain `" for "`, so only the exact branch applies.
+fn container_matches_ancestor(name: &str, ancestor: &str) -> bool {
+    if name == ancestor {
+        return true;
+    }
+    match name.rsplit_once(" for ") {
+        Some((_, target)) => target.split('<').next().unwrap_or(target).trim() == ancestor,
+        None => false,
+    }
+}
+
 /// Resolve a `name_path` (`Class/method` or bare `name`) to a single symbol via
 /// the tree-sitter index (spec v2a §3/§5.3). Disambiguates a qualified path by
 /// enclosing-range containment (ancestor symbol's line span contains the leaf's).
@@ -291,7 +307,7 @@ pub(crate) fn resolve_name_path(name_path: &str, project_root: &str) -> Result<R
         let parents: Vec<_> = gp
             .find_symbols(ancestor, None, None)
             .into_iter()
-            .filter(|s| s.name == ancestor)
+            .filter(|s| container_matches_ancestor(&s.name, ancestor))
             .collect();
         leaves.retain(|leaf_sym| {
             parents.iter().any(|p| {
@@ -1933,6 +1949,142 @@ mod tests {
 
         let err = super::resolve_name_path("ZzzNoSuchSymbol123", &root).unwrap_err();
         assert!(err.starts_with("NO_SYMBOL"), "got: {err}");
+
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+
+    #[test]
+    fn resolve_name_path_trait_impl_method() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tmp.path().join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
+
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(proj.join("src")).unwrap();
+        std::fs::write(
+            proj.join("Cargo.toml"),
+            "[package]\nname=\"x\"\nversion=\"0.0.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            proj.join("src/lib.rs"),
+            "pub struct RenderBridge;\n\
+             pub trait Exec { fn execute(&self); }\n\
+             impl Exec for RenderBridge {\n\
+             \x20   fn execute(&self) { let _ = 1; }\n\
+             }\n",
+        )
+        .unwrap();
+        let root = proj.to_string_lossy().to_string();
+
+        let r = super::resolve_name_path("RenderBridge/execute", &root)
+            .expect("trait-impl method should resolve");
+        assert!(r.rel_path.ends_with("lib.rs"), "got: {}", r.rel_path);
+        // Muss auf den Impl-Methoden-Body zeigen (Zeile >= 3), nicht auf das
+        // struct (Z. 1) oder die Trait-Deklaration (Z. 2).
+        assert!(
+            r.start_line >= 3,
+            "should point at impl method, got L{}",
+            r.start_line
+        );
+        assert!(r.end_line >= r.start_line && r.start_line > 0);
+
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+
+    #[test]
+    fn container_matches_ancestor_cases() {
+        use super::container_matches_ancestor as m;
+        assert!(m("RenderBridge", "RenderBridge"));
+        assert!(m("Exec for RenderBridge", "RenderBridge"));
+        assert!(m("Exec for RenderBridge<Wasm>", "RenderBridge"));
+        assert!(!m("OtherType", "RenderBridge"));
+        assert!(!m("Exec for Other", "RenderBridge"));
+    }
+
+    #[test]
+    fn resolve_name_path_inherent_impl_method() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tmp.path().join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
+
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(proj.join("src")).unwrap();
+        std::fs::write(
+            proj.join("Cargo.toml"),
+            "[package]\nname=\"x\"\nversion=\"0.0.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            proj.join("src/lib.rs"),
+            "pub struct RenderBridge;\n\
+             impl RenderBridge {\n\
+             \x20   pub fn run(&self) { let _ = 1; }\n\
+             }\n",
+        )
+        .unwrap();
+        let root = proj.to_string_lossy().to_string();
+
+        let r = super::resolve_name_path("RenderBridge/run", &root)
+            .expect("inherent-impl method should still resolve");
+        assert!(r.rel_path.ends_with("lib.rs"), "got: {}", r.rel_path);
+        assert!(r.start_line >= 2 && r.end_line >= r.start_line);
+
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+
+    #[test]
+    fn resolve_name_path_ambiguous_trait_impls() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tmp.path().join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
+
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(proj.join("src")).unwrap();
+        std::fs::write(
+            proj.join("Cargo.toml"),
+            "[package]\nname=\"x\"\nversion=\"0.0.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            proj.join("src/lib.rs"),
+            "pub struct RenderBridge;\n\
+             pub trait A { fn execute(&self); }\n\
+             pub trait B { fn execute(&self); }\n\
+             pub mod a;\n\
+             pub mod b;\n",
+        )
+        .unwrap();
+        // a.rs: impl A for RenderBridge — plain targets, multi-line body so fn is indexed
+        std::fs::write(
+            proj.join("src/a.rs"),
+            "impl A for RenderBridge {\n\
+             \x20   fn execute(&self) { let _ = 1; }\n\
+             }\n",
+        )
+        .unwrap();
+        // b.rs: impl B for RenderBridge — plain targets, multi-line body so fn is indexed
+        std::fs::write(
+            proj.join("src/b.rs"),
+            "impl B for RenderBridge {\n\
+             \x20   fn execute(&self) { let _ = 1; }\n\
+             }\n",
+        )
+        .unwrap();
+        let root = proj.to_string_lossy().to_string();
+
+        // "RenderBridge/execute": two segments → container_matches_ancestor runs for each hit.
+        // "A for RenderBridge" and "B for RenderBridge" both match ancestor "RenderBridge",
+        // producing two distinct hits (src/a.rs and src/b.rs) → AMBIGUOUS_SYMBOL.
+        let err = super::resolve_name_path("RenderBridge/execute", &root)
+            .expect_err("two trait impls (cross-file) with same method must be ambiguous");
+        assert!(err.starts_with("AMBIGUOUS_SYMBOL"), "got: {err}");
 
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }

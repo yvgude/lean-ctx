@@ -26,6 +26,36 @@ pub const FORWARD_PREFIXES: &[&str] = &[
     "GEMINI_",
 ];
 
+/// Case-insensitive name substrings that mark an env var as credential-shaped.
+///
+/// A variable whose name contains any of these is NEVER forwarded to `ctx_shell`
+/// children — and never captured to disk — even when it matches a forwardable
+/// prefix. Forwarding API keys / tokens / passwords into every child shell is an
+/// exfiltration risk that output redaction cannot stop: a `curl … -d "$KEY"`
+/// child never prints the secret to stdout, so the redactor never sees it (GH
+/// security audit, finding 2). Only non-secret session/thread identifiers
+/// (`*_THREAD_ID`, `*_SESSION`, …) should cross the bridge.
+const CREDENTIAL_MARKERS: &[&str] = &[
+    "_KEY",       // *_API_KEY, *_ACCESS_KEY, *_PRIVATE_KEY, *_SECRET_KEY
+    "APIKEY",     // unseparated spelling
+    "SECRET",     // *_SECRET, *_CLIENT_SECRET
+    "TOKEN",      // *_TOKEN, *_ACCESS_TOKEN, *_REFRESH_TOKEN
+    "PASSWORD",   // *_PASSWORD, *_SERVER_PASSWORD
+    "PASSWD",     // unseparated spelling
+    "CREDENTIAL", // *_CREDENTIAL(S)
+    "AUTH",       // *_AUTH, *_OAUTH, *_AUTHORIZATION
+];
+
+/// Whether `key` looks like a secret/credential that must never be forwarded or
+/// persisted, regardless of any matching forwardable prefix.
+#[must_use]
+pub fn is_credential_shaped(key: &str) -> bool {
+    let upper = key.to_ascii_uppercase();
+    CREDENTIAL_MARKERS
+        .iter()
+        .any(|marker| upper.contains(marker))
+}
+
 const FILE_NAME: &str = "agent_runtime_env.json";
 
 /// Captured variables older than this are ignored: a stale session/thread id is
@@ -33,18 +63,25 @@ const FILE_NAME: &str = "agent_runtime_env.json";
 const TTL_SECS: u64 = 7_200;
 
 /// Whether `key` is an agent runtime variable lean-ctx forwards to child shells.
+///
+/// A variable qualifies only when it (1) matches a forwardable agent prefix AND
+/// (2) is not credential-shaped — session/thread identifiers cross the bridge,
+/// secrets never do (GH security audit, finding 2).
 #[must_use]
 pub fn is_forwardable(key: &str) -> bool {
     FORWARD_PREFIXES
         .iter()
         .any(|prefix| key.starts_with(prefix))
+        && !is_credential_shaped(key)
 }
 
-/// Canonical key-file location: the STATE dir (GH #408 / GL #605).
+/// Canonical capture-file location: the STATE dir (GH #408 / GL #605).
 ///
-/// This file holds captured API keys (`GEMINI_API_KEY`, `OPENCODE_API_KEY`, …),
-/// so it must live in the RW state category — never in the RO/shareable config
-/// dir — and is always written `0o600`.
+/// This file holds captured agent **session/thread identifiers** (e.g.
+/// `CODEX_THREAD_ID`); credential-shaped vars are filtered out by
+/// [`is_forwardable`] and never written here (GH security audit, finding 2). It
+/// still lives in the RW state category — never the RO/shareable config dir —
+/// and is always written `0o600` as defence-in-depth.
 fn store_path() -> Option<PathBuf> {
     crate::core::paths::state_dir()
         .ok()
@@ -176,7 +213,33 @@ pub fn load() -> BTreeMap<String, String> {
     if now_secs().saturating_sub(captured_at) > TTL_SECS {
         return BTreeMap::new();
     }
-    vars
+    // Defense-in-depth: a capture written by a build predating finding 2 may
+    // still hold credential-shaped vars. Drop them from the returned set, and if
+    // any were present rewrite (or delete) the file so the plaintext secret does
+    // not linger at rest — not just out of the forwarded env.
+    let cleaned: BTreeMap<String, String> = vars
+        .iter()
+        .filter(|(key, _)| is_forwardable(key))
+        .map(|(key, val)| (key.clone(), val.clone()))
+        .collect();
+    if cleaned.len() != vars.len() {
+        scrub_store(&path, &cleaned, captured_at);
+    }
+    cleaned
+}
+
+/// Rewrite the capture file with `vars` (preserving `captured_at`), or remove it
+/// entirely when nothing forwardable remains. Retroactively strips
+/// credential-shaped vars from captures written by older builds (finding 2).
+fn scrub_store(path: &Path, vars: &BTreeMap<String, String>, captured_at: u64) {
+    if vars.is_empty() {
+        let _ = std::fs::remove_file(path);
+        return;
+    }
+    let payload = serde_json::json!({ "vars": vars, "captured_at": captured_at });
+    if let Ok(json) = serde_json::to_string_pretty(&payload) {
+        let _ = crate::config_io::write_atomic(path, &json);
+    }
 }
 
 #[cfg(test)]
@@ -247,14 +310,93 @@ mod tests {
         for (key, _) in collect_from_process() {
             crate::test_env::remove_var(key);
         }
-        crate::test_env::set_var("GEMINI_API_KEY", "secret-token");
+        // A forwardable (non-credential) var so a file is actually written; it
+        // can still hold session ids, so owner-only perms remain a requirement.
+        crate::test_env::set_var("CODEX_THREAD_ID", "session-id");
 
         capture();
         let path = store_path().unwrap();
-        crate::test_env::remove_var("GEMINI_API_KEY");
+        crate::test_env::remove_var("CODEX_THREAD_ID");
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
-        assert_eq!(mode & 0o777, 0o600, "captured key file must be owner-only");
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "captured runtime-env file must be owner-only"
+        );
+    }
+
+    // Finding 2 (GH security audit): credential-shaped vars must never be
+    // forwarded, even when they match a forwardable agent prefix.
+    #[test]
+    fn is_forwardable_rejects_credential_shaped_vars() {
+        // Session/thread identifiers cross the bridge.
+        assert!(is_forwardable("CODEX_THREAD_ID"));
+        assert!(is_forwardable("CLAUDE_SESSION_ID"));
+        assert!(is_forwardable("OPENCODE_SESSION"));
+        // Secrets matching a forwardable prefix do NOT.
+        assert!(!is_forwardable("GEMINI_API_KEY"));
+        assert!(!is_forwardable("OPENCODE_API_KEY"));
+        assert!(!is_forwardable("OPENCODE_SERVER_PASSWORD"));
+        assert!(!is_forwardable("CLAUDE_CODE_OAUTH_TOKEN"));
+        assert!(!is_forwardable("CODEX_ACCESS_TOKEN"));
+        assert!(!is_forwardable("CODEX_CLIENT_SECRET"));
+        assert!(!is_forwardable("CODEX_PRIVATE_KEY"));
+        assert!(!is_forwardable("GEMINI_CREDENTIALS"));
+    }
+
+    #[test]
+    fn capture_excludes_credentials() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        for (key, _) in collect_from_process() {
+            crate::test_env::remove_var(key);
+        }
+        crate::test_env::set_var("CODEX_THREAD_ID", "thread-keep");
+        crate::test_env::set_var("GEMINI_API_KEY", "secret-drop");
+
+        capture();
+        let loaded = load();
+
+        crate::test_env::remove_var("CODEX_THREAD_ID");
+        crate::test_env::remove_var("GEMINI_API_KEY");
+
+        assert_eq!(
+            loaded.get("CODEX_THREAD_ID").map(String::as_str),
+            Some("thread-keep")
+        );
+        assert!(
+            !loaded.contains_key("GEMINI_API_KEY"),
+            "API key must never be captured or forwarded"
+        );
+    }
+
+    #[test]
+    fn load_scrubs_legacy_credentials_from_disk() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let path = store_path().unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+        // Simulate a capture written by an older build: holds a real secret.
+        let payload = serde_json::json!({
+            "vars": { "CODEX_THREAD_ID": "t", "OPENCODE_SERVER_PASSWORD": "p4ssw0rd" },
+            "captured_at": now_secs()
+        });
+        std::fs::write(&path, serde_json::to_string_pretty(&payload).unwrap()).unwrap();
+
+        let loaded = load();
+
+        assert!(
+            !loaded.contains_key("OPENCODE_SERVER_PASSWORD"),
+            "legacy credential must not be loaded"
+        );
+        assert_eq!(loaded.get("CODEX_THREAD_ID").map(String::as_str), Some("t"));
+
+        // The plaintext secret must be scrubbed from disk, not just the env.
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !on_disk.contains("OPENCODE_SERVER_PASSWORD") && !on_disk.contains("p4ssw0rd"),
+            "secret must be removed from the capture file at rest: {on_disk}"
+        );
     }
 
     #[test]

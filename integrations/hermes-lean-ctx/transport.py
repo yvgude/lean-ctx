@@ -39,7 +39,7 @@ class ToolGateway:
         except Exception as exc:  # pragma: no cover - depends on install
             self._client_error = f"leanctx SDK not importable: {exc}"
             logger.warning(
-                "lean-ctx engine: %s — install with `pip install leanctx`. "
+                "lean-ctx engine: %s — install with `pip install lean-ctx-client`. "
                 "Compaction/recall will no-op until resolved.",
                 self._client_error,
             )

@@ -211,9 +211,9 @@ over linking the full Rust crate).
   `docs/contracts/http-mcp-contract-v1.md`). Add a formal deprecation policy.
 - **`GET /v1/capabilities`** — a client discovers an instance's presets, extensions,
   formats, and tools at runtime.
-- **Python SDK** (`leanctx` on PyPI), mirroring the TS client `cookbook/sdk/src/client.ts`
+- **Python SDK** (`lean-ctx-client` on PyPI), mirroring the TS client `cookbook/sdk/src/client.ts`
   / `cookbook/sdk/src/types.ts` (async + SSE).
-- **TS SDK GA** (`@leanctx/sdk`) + a shared **conformance test kit** that both SDKs run.
+- **TS SDK GA** (`lean-ctx-client`) + a shared **conformance test kit** that both SDKs run.
 - **Framework adapters**: LangChain / LlamaIndex / CrewAI tool wrappers + an OpenAI-tools
   shim.
 

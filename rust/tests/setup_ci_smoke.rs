@@ -558,12 +558,8 @@ fn init_augment_installs_lean_ctx_mcp_into_dot_augment_settings() {
             "augment vscode entry must carry a command string"
         );
         assert!(
-            lean_ctx
-                .get("env")
-                .and_then(|e| e.get("LEAN_CTX_DATA_DIR"))
-                .and_then(|d| d.as_str())
-                .is_some(),
-            "augment vscode entry must wire LEAN_CTX_DATA_DIR"
+            lean_ctx.get("env").is_none(),
+            "data dir is auto-detected at runtime, not pinned into the config (GH #408)"
         );
     }
 }

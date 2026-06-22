@@ -32,6 +32,23 @@ pub struct ProxyConfig {
     /// (#710). `None` for a role (the default) leaves that role untouched —
     /// today's behaviour. See [`RoleAggressiveness`].
     pub role_aggressiveness: RoleAggressiveness,
+    /// Live tool-result compression on the wire (#481). `true` (the default)
+    /// keeps today's behaviour: the proxy compresses non-protected `tool_result`
+    /// content on every request. `false` turns it off so the proxy can run
+    /// **meter-only** — real billed/cache token metering with zero request
+    /// rewriting (combine with `history_mode = "off"` and no `role_aggressiveness`
+    /// for a fully byte-unchanged body). Env `LEAN_CTX_PROXY_LIVE_COMPRESS`.
+    /// See [`ProxyConfig::live_compresses`].
+    pub live_compress: Option<bool>,
+    /// Per-tool exclusion list for live tool-result compression (#481). Tool
+    /// names are matched case-insensitively as substrings (the same style as
+    /// [`crate::proxy::tool_kind::classify_tool_name`]); a match is treated as
+    /// protected, exactly like a file read. `None` (the default) protects
+    /// Serena's code-reading tools (`find_symbol`/`find_referencing_symbols`/
+    /// `search_for_pattern` return source bodies the model edits, but are
+    /// mis-bucketed as `Search` by name). Set an explicit list to narrow it, or
+    /// `[]` to disable the exclusion. See [`ProxyConfig::is_tool_live_compress_excluded`].
+    pub live_compress_exclude: Option<Vec<String>>,
 }
 
 /// Per-role prose-compression intensity for the proxy's frozen request region.
@@ -117,6 +134,45 @@ impl ProxyConfig {
     pub fn repacks_cold_prefix(&self) -> bool {
         std::env::var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK").is_ok()
             || self.cold_prefix_repack.unwrap_or(false)
+    }
+
+    /// Whether the proxy live-compresses non-protected `tool_result` content
+    /// (#481). `LEAN_CTX_PROXY_LIVE_COMPRESS` (`0`/`false`/`off`/`no` → off,
+    /// `1`/`true`/`on`/`yes` → on) wins, then `[proxy] live_compress` in
+    /// config.toml, else `true`. An unparseable/blank env value is ignored so a
+    /// typo can never silently flip the mode.
+    pub fn live_compresses(&self) -> bool {
+        if let Ok(raw) = std::env::var("LEAN_CTX_PROXY_LIVE_COMPRESS") {
+            match raw.trim().to_ascii_lowercase().as_str() {
+                "0" | "false" | "off" | "no" => return false,
+                "1" | "true" | "on" | "yes" => return true,
+                _ => {}
+            }
+        }
+        self.live_compress.unwrap_or(true)
+    }
+
+    /// Resolved per-tool live-compress exclusion patterns (#481). `None` in
+    /// config falls back to the built-in default (protect Serena); an explicit
+    /// list — including the empty list — is used verbatim so operators can narrow
+    /// or fully clear it.
+    #[must_use]
+    pub fn live_compress_exclude_patterns(&self) -> Vec<String> {
+        self.live_compress_exclude
+            .clone()
+            .unwrap_or_else(default_live_compress_exclude)
+    }
+
+    /// Whether `tool_name` is on the live-compress exclusion list (#481) and must
+    /// therefore reach the model intact, like a protected file read. Matching is
+    /// case-insensitive substring, mirroring `tool_kind::classify_tool_name`.
+    #[must_use]
+    pub fn is_tool_live_compress_excluded(&self, tool_name: &str) -> bool {
+        let name = tool_name.to_ascii_lowercase();
+        self.live_compress_exclude_patterns().iter().any(|p| {
+            let p = p.trim().to_ascii_lowercase();
+            !p.is_empty() && name.contains(p.as_str())
+        })
     }
 
     /// Resolved prose-compression aggressiveness for `role`, clamped to `[0,1]`,
@@ -318,6 +374,14 @@ pub fn diagnose_drift(env: Option<&str>, disk: &str, live: &str) -> Option<Upstr
     }
     // No env override here: the proxy should mirror config.toml.
     (disk != live).then_some(UpstreamDrift::ConfigNotApplied)
+}
+
+/// Built-in default live-compress exclusion (#481). Serena's code-reading tools
+/// (`find_symbol`/`find_referencing_symbols`/`search_for_pattern`) return source
+/// bodies the model edits, yet are mis-bucketed as `Search` by name, so the proxy
+/// would otherwise gut them. Protect anything namespaced `serena` by default.
+fn default_live_compress_exclude() -> Vec<String> {
+    vec!["serena".to_string()]
 }
 
 pub fn normalize_url(value: &str) -> String {
@@ -649,5 +713,72 @@ mod tests {
             "a blank/garbage env value must fall back to config, not disable it"
         );
         crate::test_env::remove_var("LEAN_CTX_PROXY_USER_AGGR");
+    }
+
+    #[test]
+    fn live_compress_defaults_on_and_config_disables() {
+        // #481: default ON (today's behaviour); a config `false` opts into the
+        // meter-only mode. Isolate from a developer shell exporting the override.
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_PROXY_LIVE_COMPRESS");
+        assert!(
+            ProxyConfig::default().live_compresses(),
+            "live_compress must default to true"
+        );
+        let cfg = ProxyConfig {
+            live_compress: Some(false),
+            ..Default::default()
+        };
+        assert!(!cfg.live_compresses());
+    }
+
+    #[test]
+    fn live_compress_env_overrides_config() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        // env `off` wins over a config `true`.
+        crate::test_env::set_var("LEAN_CTX_PROXY_LIVE_COMPRESS", "off");
+        let cfg = ProxyConfig {
+            live_compress: Some(true),
+            ..Default::default()
+        };
+        assert!(!cfg.live_compresses(), "env off must win over config true");
+        // A garbage env value is ignored → falls back to config.
+        crate::test_env::set_var("LEAN_CTX_PROXY_LIVE_COMPRESS", "maybe");
+        assert!(
+            cfg.live_compresses(),
+            "unparseable env must fall back to config, not flip the mode"
+        );
+        crate::test_env::remove_var("LEAN_CTX_PROXY_LIVE_COMPRESS");
+    }
+
+    #[test]
+    fn live_compress_exclude_defaults_to_serena() {
+        // #481: an unset list protects Serena's code-reading tools, which return
+        // source bodies but are mis-bucketed as `Search` by name.
+        let cfg = ProxyConfig::default();
+        assert!(cfg.is_tool_live_compress_excluded("mcp__serena__find_symbol"));
+        assert!(cfg.is_tool_live_compress_excluded("Serena.search_for_pattern"));
+        assert!(!cfg.is_tool_live_compress_excluded("ctx_shell"));
+    }
+
+    #[test]
+    fn live_compress_exclude_explicit_list_replaces_default() {
+        // An explicit list narrows the exclusion (Serena no longer protected).
+        let cfg = ProxyConfig {
+            live_compress_exclude: Some(vec!["my_reader".into()]),
+            ..Default::default()
+        };
+        assert!(cfg.is_tool_live_compress_excluded("acme_my_reader_v2"));
+        assert!(!cfg.is_tool_live_compress_excluded("mcp__serena__find_symbol"));
+    }
+
+    #[test]
+    fn live_compress_exclude_empty_list_disables_protection() {
+        // `[]` fully clears the exclusion (operator opts every tool back in).
+        let cfg = ProxyConfig {
+            live_compress_exclude: Some(vec![]),
+            ..Default::default()
+        };
+        assert!(!cfg.is_tool_live_compress_excluded("mcp__serena__find_symbol"));
     }
 }

@@ -150,6 +150,7 @@ mod actionable_hints {
             &mut ledger,
             &overlay,
             None,
+            None,
         );
 
         if let Some(hint) = result.eviction_hint {
@@ -177,6 +178,7 @@ mod actionable_hints {
             50,
             &mut ledger,
             &overlay,
+            None,
             None,
         );
 

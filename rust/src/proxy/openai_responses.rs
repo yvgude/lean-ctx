@@ -57,6 +57,15 @@ pub async fn ws_handler(
 
 fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize, usize) {
     let mut doc = parsed;
+    // Meter-only (#481): live compression off and history pruning off → forward
+    // the body unchanged while upstream usage metering still runs.
+    let cfg = crate::core::config::Config::load();
+    if !cfg.proxy.live_compresses()
+        && cfg.proxy.resolved_history_mode() == crate::core::config::HistoryMode::Off
+    {
+        let out = serde_json::to_vec(&doc).unwrap_or_default();
+        return (out, original_size, original_size);
+    }
     // Two-stage, like the Chat Completions path: (1) cache-aware prune of the
     // frozen OLD region — old file reads collapse to re-read stubs, old logs
     // head/tail summarize — then (2) compress whatever recent outputs remain.
@@ -151,6 +160,12 @@ fn prune_output_field(output: &mut Value, kind: ToolResultKind) -> bool {
 /// output text. Cache-aware pruning of the frozen OLD region lives in
 /// [`prune_responses_input`]; this pass compresses whatever recent outputs remain.
 pub(super) fn compress_responses_input(doc: &mut Value) -> bool {
+    // #481: recent-region live compression respects the global toggle. Old-region
+    // pruning stays governed by `history_mode` in `prune_responses_input`.
+    let cfg = crate::core::config::Config::load();
+    if !cfg.proxy.live_compresses() {
+        return false;
+    }
     let mut modified = false;
     if let Some(input) = doc.get_mut("input").and_then(|i| i.as_array_mut()) {
         let tool_names = tool_kind::responses_tool_names(input);
@@ -163,6 +178,11 @@ pub(super) fn compress_responses_input(doc: &mut Value) -> bool {
                 .and_then(|v| v.as_str())
                 .and_then(|id| tool_names.get(id))
                 .map(String::as_str);
+            // #481: per-tool exclusion (Serena default) — skip live compression
+            // for excluded tools; history pruning above still applies.
+            if name.is_some_and(|n| cfg.proxy.is_tool_live_compress_excluded(n)) {
+                continue;
+            }
             let kind = name.map_or(ToolResultKind::Other, tool_kind::classify_tool_name);
             if let Some(output) = item.get_mut("output") {
                 modified |= compress_output_field(output, name, kind);
@@ -234,6 +254,9 @@ mod tests {
 
     #[test]
     fn string_output_mirrors_engine_and_shrinks() {
+        // tee path depends on the data dir; serialize env access so a parallel
+        // test never swaps LEAN_CTX_DATA_DIR between the two compressions (#498).
+        let _lock = crate::core::data_dir::test_env_lock();
         let raw = long_git_status();
         let expected = compress_tool_result(&raw, None);
         assert!(
@@ -261,6 +284,9 @@ mod tests {
 
     #[test]
     fn array_output_text_is_compressed() {
+        // tee path depends on the data dir; serialize env access so a parallel
+        // test never swaps LEAN_CTX_DATA_DIR between the two compressions (#498).
+        let _lock = crate::core::data_dir::test_env_lock();
         let raw = long_git_status();
         let expected = compress_tool_result(&raw, None);
 

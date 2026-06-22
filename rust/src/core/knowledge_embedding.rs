@@ -18,6 +18,13 @@ use super::embeddings::EmbeddingEngine;
 const ALPHA_SEMANTIC: f32 = 0.6;
 const BETA_CONFIDENCE: f32 = 0.25;
 const GAMMA_RECENCY: f32 = 0.15;
+/// Observation tier (#802): additive boost for a synthesized entity-summary in the
+/// semantic recall paths, mirroring the lexical `recall_for_output` boost so the
+/// tier is honoured regardless of whether embeddings are active. Calibrated for the
+/// [0,1] semantic score — a balanced nudge that lifts a relevant summary above
+/// incidental matches yet stays below an exact match (which scores 1.0), so a stale
+/// summary can never bury a precise raw fact.
+const OBSERVATION_TIER_BOOST: f32 = 0.15;
 const MAX_RECENCY_DAYS: f32 = 90.0;
 
 /// Cosine threshold above which a freshly-remembered fact is treated as a
@@ -206,9 +213,14 @@ pub fn semantic_recall<'a>(
         {
             let confidence_score = fact.quality_score();
             let recency_score = recency_decay(fact);
-            let score = ALPHA_SEMANTIC * sim
-                + BETA_CONFIDENCE * confidence_score
-                + GAMMA_RECENCY * recency_score;
+            // Observation tier (#802): honour synthesized entity-summaries in the
+            // semantic path too, not just lexical recall_for_output. Balanced nudge.
+            let score = apply_observation_tier(
+                ALPHA_SEMANTIC * sim
+                    + BETA_CONFIDENCE * confidence_score
+                    + GAMMA_RECENCY * recency_score,
+                fact,
+            );
 
             results.push(ScoredFact {
                 fact,
@@ -281,9 +293,14 @@ pub fn semantic_recall_semantic_only<'a>(
         {
             let confidence_score = fact.quality_score();
             let recency_score = recency_decay(fact);
-            let score = ALPHA_SEMANTIC * sim
-                + BETA_CONFIDENCE * confidence_score
-                + GAMMA_RECENCY * recency_score;
+            // Observation tier (#802): honour synthesized entity-summaries in the
+            // semantic path too, not just lexical recall_for_output. Balanced nudge.
+            let score = apply_observation_tier(
+                ALPHA_SEMANTIC * sim
+                    + BETA_CONFIDENCE * confidence_score
+                    + GAMMA_RECENCY * recency_score,
+                fact,
+            );
 
             results.push(ScoredFact {
                 fact,
@@ -383,6 +400,17 @@ fn recency_decay(fact: &KnowledgeFact) -> f32 {
         .signed_duration_since(fact.last_confirmed)
         .num_days() as f32;
     (1.0 - days_old / MAX_RECENCY_DAYS).max(0.0)
+}
+
+/// Add the observation-tier boost (#802) to a base recall score iff `fact` is a
+/// synthesized entity-summary. Pure + deterministic so the tier policy can be
+/// unit-tested without spinning up the embedding engine.
+fn apply_observation_tier(base: f32, fact: &KnowledgeFact) -> f32 {
+    if fact.is_synthesized_observation() {
+        base + OBSERVATION_TIER_BOOST
+    } else {
+        base
+    }
 }
 
 #[cfg(feature = "embeddings")]
@@ -538,6 +566,57 @@ pub fn format_scored_facts(results: &[ScoredFact<'_>]) -> String {
 mod tests {
     use super::*;
     use crate::core::knowledge::KnowledgeArchetype;
+
+    fn fact_with(category: &str, key: &str, source: &str) -> KnowledgeFact {
+        let now = chrono::Utc::now();
+        KnowledgeFact {
+            category: category.to_string(),
+            key: key.to_string(),
+            value: "v".to_string(),
+            source_session: source.to_string(),
+            confidence: 0.8,
+            created_at: now,
+            last_confirmed: now,
+            retrieval_count: 0,
+            last_retrieved: None,
+            valid_from: None,
+            valid_until: None,
+            supersedes: None,
+            confirmation_count: 0,
+            feedback_up: 0,
+            feedback_down: 0,
+            last_feedback: None,
+            privacy: crate::core::memory_boundary::FactPrivacy::default(),
+            sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
+            imported_from: None,
+            archetype: KnowledgeArchetype::infer_from_category(category),
+            fidelity: None,
+            revision_count: 0,
+        }
+    }
+
+    #[test]
+    fn observation_tier_boosts_only_synthesized_summaries() {
+        use crate::core::knowledge::COGNITION_SYNTHESIS_SOURCE;
+        // A synthesized observation (cognition-synthesis source) earns the tier boost.
+        let obs = fact_with(
+            "observation",
+            "src/auth/session.rs",
+            COGNITION_SYNTHESIS_SOURCE,
+        );
+        // A user finding (also Observation archetype) is NOT synthesized → no boost.
+        let user_finding = fact_with("observation", "src/auth/session.rs:1", "session-7");
+        // A raw evidence fact → no boost.
+        let raw = fact_with("gotcha", "src/auth/session.rs:2", "session-7");
+
+        assert!((apply_observation_tier(0.5, &raw) - 0.5).abs() < 1e-6);
+        assert!((apply_observation_tier(0.5, &user_finding) - 0.5).abs() < 1e-6);
+        assert!((apply_observation_tier(0.5, &obs) - (0.5 + OBSERVATION_TIER_BOOST)).abs() < 1e-6);
+        // The boost lifts a synthesized summary above an equal-base raw fact, yet is
+        // bounded so a boosted summary stays below an exact match (which scores 1.0).
+        assert!(apply_observation_tier(0.5, &obs) > apply_observation_tier(0.5, &raw));
+        assert!(apply_observation_tier(0.8, &obs) < 1.0);
+    }
 
     #[test]
     fn reset_removes_index_file() {

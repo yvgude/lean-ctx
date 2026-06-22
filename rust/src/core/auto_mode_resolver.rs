@@ -357,7 +357,8 @@ fn bandit_explore(file_path: &str, token_count: usize) -> Option<String> {
     let bandit_key = format!("{ext}_{bucket}");
     let mut store = crate::core::bandit::BanditStore::load(&project_root);
     let bandit = store.get_or_create(&bandit_key);
-    let arm = bandit.select_arm();
+    // #4: deterministic argmax-of-mean by default; Thompson only under the flag.
+    let arm = bandit.choose_arm();
     if arm.budget_ratio < 0.25 && token_count > 2000 {
         Some("aggressive".to_string())
     } else {

@@ -1,10 +1,18 @@
 use chrono::{DateTime, Utc};
 
-use super::types::{FidelityScore, KnowledgeFact};
+use super::types::{COGNITION_SYNTHESIS_SOURCE, FidelityScore, KnowledgeArchetype, KnowledgeFact};
 
 impl KnowledgeFact {
     pub fn is_current(&self) -> bool {
         self.valid_until.is_none()
+    }
+
+    /// A synthesized observation: an entity-summary written by the cognition loop's
+    /// synthesis step (#802), not a user-supplied finding. Recall surfaces these as
+    /// orientation (a balanced boost, never absolute).
+    pub fn is_synthesized_observation(&self) -> bool {
+        self.archetype == KnowledgeArchetype::Observation
+            && self.source_session == COGNITION_SYNTHESIS_SOURCE
     }
 
     /// Stable, intrinsic quality metric (0.0..1.0).

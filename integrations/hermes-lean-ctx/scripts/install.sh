@@ -33,7 +33,7 @@ fi
 
 if ! python3 -c "import leanctx" >/dev/null 2>&1; then
   echo "Note: the 'leanctx' SDK is not importable in this Python." >&2
-  echo "      Install it in Hermes' environment:  pip install leanctx" >&2
+  echo "      Install it in Hermes' environment:  pip install lean-ctx-client" >&2
 fi
 
 cat <<EOF
@@ -45,7 +45,7 @@ Next steps:
        lean-ctx serve --host 127.0.0.1 --port 8080
 
      (The always-on proxy on 4444+ does NOT serve /v1/tools — use 'serve'.)
-  2. Install the SDK in Hermes' Python:  pip install leanctx
+  2. Install the SDK in Hermes' Python:  pip install lean-ctx-client
   3. Activate the engine in ~/.hermes/config.yaml:
 
        context:

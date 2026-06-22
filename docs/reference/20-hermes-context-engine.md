@@ -121,7 +121,7 @@ cd integrations/hermes-lean-ctx && ./scripts/install.sh
 lean-ctx serve --host 127.0.0.1 --port 8080
 
 # 3. Install the SDK in Hermes' Python.
-pip install leanctx
+pip install lean-ctx-client
 
 # 4. Activate the engine in ~/.hermes/config.yaml:
 #    context:

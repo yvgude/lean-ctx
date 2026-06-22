@@ -15,7 +15,7 @@ End-user documentation lives at **https://leanctx.com/docs/getting-started**.
 ## Codebase entry points
 
 - Core binary + MCP server: [`rust/`](../rust/)
-- Cookbook (real examples + `@leanctx/sdk`): [`cookbook/`](../cookbook/)
+- Cookbook (real examples + `lean-ctx-client`): [`cookbook/`](../cookbook/)
 - Editor integrations: [`packages/`](../packages/)
 
 ## Reference & journeys

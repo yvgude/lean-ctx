@@ -1,4 +1,4 @@
-# @leanctx/sdk
+# lean-ctx-client
 
 Thin, dependency-free TypeScript client for the lean-ctx **HTTP `/v1` contract**.
 It speaks the wire protocol only — it never links the engine or re-implements
@@ -8,13 +8,13 @@ Bun, and the browser (anywhere `fetch` exists).
 ## Install
 
 ```bash
-npm install @leanctx/sdk
+npm install lean-ctx-client
 ```
 
 ## Usage
 
 ```ts
-import { LeanCtxClient, toolResultToText, runConformance } from "@leanctx/sdk";
+import { LeanCtxClient, toolResultToText, runConformance } from "lean-ctx-client";
 
 const client = new LeanCtxClient({ baseUrl: "http://127.0.0.1:8080" });
 

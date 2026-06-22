@@ -1,3 +1,4 @@
+use super::ccr;
 use crate::core::tokens::count_tokens;
 use crate::core::web::distill;
 
@@ -17,6 +18,32 @@ const RESEARCH_PROSE_CAP: usize = 24_000;
 ///    `compress_if_beneficial` pipeline. A `$ ...` command hint is extracted so
 ///    the pattern engine gets the same routing as the CLI and MCP paths.
 pub fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
+    let compressed = compress_inner(content, tool_name);
+    attach_ccr(content, compressed)
+}
+
+/// Make a live-compressed `tool_result` non-lossy (#482): when compression
+/// removed a meaningful amount, tee the verbatim original to the shared
+/// content-addressed store and append a deterministic recovery handle. The
+/// handle is a pure function of the content hash, so the rewritten result is
+/// byte-stable across turns and never invalidates the provider cache prefix
+/// (#448). Passthrough / verbatim results (no real shrink) keep their bytes.
+fn attach_ccr(original: &str, result: String) -> String {
+    if original.len() < ccr::MIN_TEE_BYTES
+        || original.len().saturating_sub(result.len()) < ccr::MIN_TEE_BYTES
+    {
+        return result;
+    }
+    match ccr::persist(original) {
+        Some(handle) => format!(
+            "{result}\n[lean-ctx: full original at {handle} — read it, or \
+             ctx_expand(id=\"{handle}\", head=N|search=\"…\"|json_path=\"…\") for a slice]"
+        ),
+        None => result,
+    }
+}
+
+fn compress_inner(content: &str, tool_name: Option<&str>) -> String {
     if content.trim().is_empty() || content.len() < 200 {
         return content.to_string();
     }
@@ -36,7 +63,7 @@ pub fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
     // through the normal funnel (markers are stripped, so this never recurses).
     if crate::core::protect::has_markers(content) {
         return crate::core::protect::compress_preserving(content, |seg| {
-            compress_tool_result(seg, tool_name)
+            compress_inner(seg, tool_name)
         });
     }
 
@@ -370,5 +397,63 @@ mod tests {
         let log = "Listening on port 8080\nRequest received from 10.0.0.2\n".repeat(20);
         assert!(!output_looks_like_test_run(&log));
         assert!(!output_looks_like_build_failure(&log));
+    }
+
+    fn big_compressible_log() -> String {
+        (1..=400)
+            .map(|i| format!("[info] processed item {i:04} ok"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn live_compression_is_recoverable_via_ccr_handle() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let log = big_compressible_log();
+        let out = compress_tool_result(&log, Some("bash"));
+        assert!(
+            out.len() < log.len(),
+            "a large foreign log must be compressed"
+        );
+
+        // The compressed result carries the content-addressed handle, and the
+        // handle points at the *verbatim* original — live compression is now
+        // non-lossy (#482), recoverable with a plain native file read.
+        let handle = ccr::persist(&log).expect("same content -> same handle");
+        assert!(out.contains(&handle), "CCR handle must be embedded: {out}");
+        let recovered = std::fs::read_to_string(&handle).expect("tee file readable");
+        assert!(
+            recovered.contains("processed item 0007 ok")
+                && recovered.contains("processed item 0400 ok"),
+            "verbatim original must be fully recoverable"
+        );
+    }
+
+    #[test]
+    fn live_compression_output_is_byte_stable_across_turns() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let log = big_compressible_log();
+        let a = compress_tool_result(&log, Some("bash"));
+        let b = compress_tool_result(&log, Some("bash"));
+        assert_eq!(
+            a, b,
+            "the CCR handle is content-addressed, so the rewritten result must be \
+             byte-identical across turns (provider cache prefix stays valid, #448)"
+        );
+    }
+
+    #[test]
+    fn small_or_passthrough_output_gets_no_ccr_handle() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        // Below the 200-char compress floor: passes through, no handle.
+        let tiny = "ok\n".repeat(10);
+        assert!(!compress_tool_result(&tiny, Some("bash")).contains("full original at"));
+        // lean-ctx tool output passes through verbatim (no handle either).
+        let raw = (1..=120)
+            .map(|i| format!("Line {i:04}: lorem ipsum dolor sit amet consectetur"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let out = compress_tool_result(&raw, Some("ctx_shell"));
+        assert_eq!(out, raw, "lean-ctx tool result must stay verbatim (no CCR)");
     }
 }

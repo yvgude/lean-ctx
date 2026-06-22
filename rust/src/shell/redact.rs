@@ -42,7 +42,7 @@ pub fn save_tee(command: &str, output: &str) -> Option<String> {
     Some(path.to_string_lossy().to_string())
 }
 
-fn cleanup_old_tee_logs(tee_dir: &std::path::Path) {
+pub(crate) fn cleanup_old_tee_logs(tee_dir: &std::path::Path) {
     let cutoff = std::time::SystemTime::now().checked_sub(std::time::Duration::from_hours(24));
     let Some(cutoff) = cutoff else { return };
 

@@ -201,14 +201,25 @@ pub fn prune_output_text(text: &str, kind: ToolResultKind) -> Option<String> {
     (pruned.len() < text.len()).then_some(pruned)
 }
 
-/// For a *protected* (file/source) result, emit an honest re-read stub. For
+/// For a *protected* (file/source) result, emit an honest, recoverable stub. For
 /// everything else, head/tail summarize so diagnostics stay readable.
+///
+/// CCR (#482): both paths persist the verbatim original to the content-addressed
+/// tee store and embed a retrieval handle, so the model can recover the exact
+/// *historical* bytes instead of re-reading a file that may have changed (or
+/// vanished) since. The handle is a pure function of the content hash, so the
+/// stub stays byte-identical across turns — cache-safe by construction (#448).
 fn summarize_or_stub(text: &str, kind: ToolResultKind) -> String {
     if should_protect(kind, text) {
         let lines = text.lines().count();
-        return format!(
-            "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. Re-read the file if you need its full contents again.]"
-        );
+        return match super::ccr::persist(text) {
+            Some(handle) => format!(
+                "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. This is the version shown that turn — the file may have changed since. Full original at {handle}. Re-read the file for its current contents.]"
+            ),
+            None => format!(
+                "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. This was an older version — the file may have changed since. Re-read the file for its current contents.]"
+            ),
+        };
     }
     summarize_text(text)
 }
@@ -222,10 +233,17 @@ fn summarize_text(text: &str) -> String {
     let first_3: Vec<&str> = lines.iter().take(3).copied().collect();
     let last_2: Vec<&str> = lines.iter().rev().take(2).rev().copied().collect();
 
+    // CCR (#482): a head/tail summary drops the middle; offer a recovery handle
+    // to the verbatim original (content-addressed → cache-safe, MCP-independent).
+    let recover = super::ccr::persist(text)
+        .map(|h| format!(" · full at {h}"))
+        .unwrap_or_default();
+
     format!(
-        "{}\n[...{} lines pruned by lean-ctx...]\n{}",
+        "{}\n[...{} lines pruned by lean-ctx{}...]\n{}",
         first_3.join("\n"),
         lines.len() - 5,
+        recover,
         last_2.join("\n")
     )
 }
@@ -302,6 +320,10 @@ mod tests {
     /// request prefix between boundary jumps.
     #[test]
     fn cache_aware_prefix_is_byte_stable_across_turns() {
+        // CCR handles embed the content-addressed tee path (`state_dir()`-derived);
+        // serialize against tests that repoint LEAN_CTX_DATA_DIR so the data dir
+        // stays fixed across turns — exactly the stable-env reality in production.
+        let _lock = crate::core::data_dir::test_env_lock();
         let long = (0..30)
             .map(|i| {
                 format!("INFO line {i}: a sufficiently long log line for the pruning threshold")
@@ -341,6 +363,9 @@ mod tests {
 
     #[test]
     fn pruning_is_deterministic() {
+        // See `cache_aware_prefix_is_byte_stable_across_turns`: the CCR handle is
+        // `state_dir()`-derived, so hold the env lock for a fixed data dir.
+        let _lock = crate::core::data_dir::test_env_lock();
         let long = (0..30)
             .map(|i| format!("line {i}: deterministic content that exceeds the length threshold"))
             .collect::<Vec<_>>()
@@ -415,6 +440,70 @@ mod tests {
             !stub.contains("value_5"),
             "source body must not be partially leaked"
         );
+    }
+
+    /// CCR (#482): a pruned file read must (a) be honest that the bytes are a
+    /// historical version, (b) carry a recovery handle, and (c) let the verbatim
+    /// original be read back from that handle — so the model recovers the exact
+    /// historical content instead of a stale re-read.
+    #[test]
+    fn pruned_file_read_is_recoverable_and_honest_about_staleness() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let code = (0..60)
+            .map(|i| format!("    let handle_marker_{i} = compute_{i}(input);"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut names = HashMap::new();
+        names.insert("call_1".to_string(), "read_file".to_string());
+        let mut messages = vec![
+            serde_json::json!({"role": "tool", "tool_call_id": "call_1", "content": code.clone()}),
+            serde_json::json!({"role": "assistant", "content": "ok"}),
+            serde_json::json!({"role": "user", "content": "next"}),
+        ];
+        prune_history(&mut messages, 1, &names);
+        let stub = messages[0]["content"].as_str().unwrap();
+
+        assert!(
+            stub.contains("may have changed since"),
+            "stub must be honest about staleness, got: {stub}"
+        );
+        // Extract the handle path from the stub and read the verbatim original back.
+        let handle = stub
+            .split("Full original at ")
+            .nth(1)
+            .and_then(|rest| rest.split(". Re-read").next())
+            .expect("stub carries a recovery handle");
+        let recovered = std::fs::read_to_string(handle.trim()).expect("handle is readable");
+        assert!(
+            recovered.contains("handle_marker_42"),
+            "the exact historical bytes must be recoverable via the handle"
+        );
+        assert!(
+            !stub.contains("handle_marker_42"),
+            "the stub itself must not leak the source body"
+        );
+    }
+
+    /// The recovery handle is content-addressed, so re-pruning the same message
+    /// yields a byte-identical stub — the cache-safety invariant CCR must keep.
+    #[test]
+    fn ccr_stub_is_byte_stable_across_turns() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let code = (0..60)
+            .map(|i| format!("    let stable_{i} = f_{i}();"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut names = HashMap::new();
+        names.insert("c".to_string(), "read_file".to_string());
+        let stub_for = || {
+            let mut m = vec![
+                serde_json::json!({"role": "tool", "tool_call_id": "c", "content": code.clone()}),
+                serde_json::json!({"role": "assistant", "content": "ok"}),
+            ];
+            prune_history(&mut m, 1, &names);
+            m[0]["content"].as_str().unwrap().to_string()
+        };
+        assert_eq!(stub_for(), stub_for(), "CCR stub must be deterministic");
     }
 
     #[test]

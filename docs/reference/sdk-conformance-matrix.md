@@ -9,8 +9,8 @@ against a real `lean-ctx serve` instance — regenerate, never edit.
 
 | SDK | Package | Version | Conformance |
 |---|---|---|---|
-| python | `leanctx` (PyPI) | 0.1.0 | PASS (14/14) |
-| typescript | `@leanctx/sdk` (npm) | 0.1.0 | PASS (14/14) |
+| python | `lean-ctx-client` (PyPI) | 0.1.0 | PASS (14/14) |
+| typescript | `lean-ctx-client` (npm) | 0.1.0 | PASS (14/14) |
 | rust | `lean-ctx-client` (crates.io) | 0.1.0 | PASS (14/14) |
 
 ## Checks

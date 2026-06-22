@@ -502,8 +502,20 @@ pub fn run() {
                 super::cmd_allow(&rest);
                 return;
             }
+            "trust" => {
+                super::cmd_trust(&rest);
+                return;
+            }
+            "untrust" => {
+                super::cmd_untrust(&rest);
+                return;
+            }
             "stats" => {
                 super::cmd_stats(&rest);
+                return;
+            }
+            "introspect" => {
+                super::cmd_introspect(&rest);
                 return;
             }
             "cache" => {
@@ -636,10 +648,17 @@ pub fn run() {
                 uninstall::run(dry_run, keep_config, keep_binary);
                 return;
             }
-            "bypass" => {
+            // `raw` is the primary name; `bypass` is kept as a back-compat alias.
+            // The old "bypass" wording read to a model like a *security* bypass,
+            // but this only skips compression — the shell allowlist and path jail
+            // still apply (GH security audit, finding 5).
+            "raw" | "bypass" => {
                 if rest.is_empty() {
-                    eprintln!("Usage: lean-ctx bypass \"command\"");
-                    eprintln!("Runs the command with zero compression (raw passthrough).");
+                    eprintln!("Usage: lean-ctx raw \"command\"");
+                    eprintln!(
+                        "Runs the command with output passed through unchanged (no \
+                         compression). The shell allowlist still applies."
+                    );
                     std::process::exit(1);
                 }
                 let command = if rest.len() == 1 {

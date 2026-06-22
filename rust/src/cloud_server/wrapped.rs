@@ -449,6 +449,14 @@ pub(super) struct Leaderboard {
 
 const LEADERBOARD_LIMIT: i64 = 50;
 
+/// Safety cap on how many per-machine rows we pull before account aggregation.
+/// Account stacking (#488) sums a user's machines in Rust, so we must fetch all
+/// of a user's machines — a pre-aggregation top-N could drop the smaller ones
+/// and undercount the account. Comfortably above the current opted-in
+/// population; revisit with a SQL-side `GROUP BY` (and a Postgres test harness)
+/// if the board ever approaches this many distinct machines.
+const LEADERBOARD_FETCH_CAP: i64 = 2_000;
+
 /// Compression rate (percent) at/above which a card is treated as implausible *when paired with
 /// high volume*. Organic agent usage compresses reads by ~60-90% on average; a sustained rate
 /// this high indicates cache-hit/automation-dominated or fabricated figures, not representative
@@ -502,50 +510,156 @@ pub(super) async fn get_leaderboard_page(
 
 async fn top_cards(state: &AppState) -> ApiResult<Vec<LeaderRow>> {
     let client = state.pool.get().await.map_err(internal_error)?;
-    // One row per publisher (their highest-saving card); legacy anonymous rows (publisher_id
-    // NULL) stay distinct via COALESCE(publisher_id, id) so they are never collapsed together.
+    // One representative row per machine (its highest-saving card); legacy anonymous rows
+    // (publisher_id NULL) stay distinct via COALESCE(publisher_id, id). `user_id` is carried
+    // through so machines claimed to the same account can be stacked below (#488).
     let rows = client
         .query(
-            "SELECT id, payload_json FROM ( \
+            "SELECT id, payload_json, user_id::text, COALESCE(publisher_id, id) FROM ( \
                SELECT DISTINCT ON (COALESCE(publisher_id, id)) \
-                      id, payload_json, tokens_saved, created_at \
+                      id, payload_json, tokens_saved, created_at, user_id, publisher_id \
                FROM wrapped_cards \
                WHERE leaderboard_opt_in = TRUE \
                ORDER BY COALESCE(publisher_id, id), tokens_saved DESC, created_at DESC \
              ) t \
              ORDER BY tokens_saved DESC, created_at DESC LIMIT $1",
-            &[&LEADERBOARD_LIMIT],
+            &[&LEADERBOARD_FETCH_CAP],
         )
         .await
         .map_err(internal_error)?;
 
-    let base = state.cfg.public_base_url.trim_end_matches('/');
-    let mut entries: Vec<LeaderRow> = rows
+    let raw: Vec<RawLeaderCard> = rows
         .iter()
-        .filter_map(|r| {
-            let id: String = r.get(0);
-            let payload_json: String = r.get(1);
-            let p: PublishPayload = serde_json::from_str(&payload_json).ok()?;
-            let flagged = stats_implausible(p.tokens_saved, p.compression_rate_pct);
-            Some(LeaderRow {
-                rank: 0, // assigned after reordering below
-                url: format!("{base}/w/{id}"),
-                id,
-                display_name: p.display_name,
-                tokens_saved: p.tokens_saved,
-                cost_avoided_usd: p.cost_avoided_usd,
-                compression_rate_pct: p.compression_rate_pct,
-                period: p.period,
-                pricing_estimated: p.pricing_estimated,
-                flagged,
-            })
+        .map(|r| RawLeaderCard {
+            id: r.get(0),
+            payload_json: r.get(1),
+            user_id: r.get(2),
+            pub_key: r.get(3),
         })
         .collect();
+
+    let base = state.cfg.public_base_url.trim_end_matches('/');
+    let mut entries = aggregate_by_account(raw, base);
 
     // Plausible cards rank first; flagged (implausible, unverifiable) cards sink to the bottom
     // regardless of raw `tokens_saved`, so one unverifiable card can't top the board.
     rank_and_demote_flagged(&mut entries);
+    entries.truncate(LEADERBOARD_LIMIT as usize);
     Ok(entries)
+}
+
+/// A per-machine leaderboard row as fetched from the DB, before account aggregation.
+struct RawLeaderCard {
+    id: String,
+    payload_json: String,
+    /// Account id (`user_id`) as text — present once the card is claimed (`claim_card`).
+    user_id: Option<String>,
+    /// `COALESCE(publisher_id, id)` — the per-machine identity used for unclaimed cards.
+    pub_key: String,
+}
+
+/// Collapse a user's machines into one leaderboard entry (#488).
+///
+/// Reported by a user: publishing from two machines produced two leaderboard rows.
+/// The machine identity (`publisher_id`) is derived per device, so each machine is
+/// distinct by construction. Once a user claims their cards to one account
+/// (`POST /api/wrapped/:id/claim` → `user_id`), this stacks them: cards sharing a
+/// `user_id` sum their `tokens_saved` / `cost_avoided_usd`, with the highest-saving
+/// machine as the representative (display name + card URL) and a token-weighted
+/// average compression rate. Unclaimed / legacy cards (no `user_id`) stay
+/// individual, keyed by `pub_key`. Pure (no I/O) so the stacking rule is
+/// unit-tested without a database.
+fn aggregate_by_account(raw: Vec<RawLeaderCard>, base: &str) -> Vec<LeaderRow> {
+    use std::collections::HashMap;
+
+    struct Acc {
+        rep_tokens: i64,
+        rep_id: String,
+        rep_display_name: Option<String>,
+        rep_period: String,
+        rep_rate: f64,
+        sum_tokens: i64,
+        sum_cost: f64,
+        rate_num: f64,
+        rate_den: i64,
+        pricing_estimated: bool,
+    }
+
+    let mut groups: HashMap<String, Acc> = HashMap::new();
+    for c in raw {
+        let Ok(p) = serde_json::from_str::<PublishPayload>(&c.payload_json) else {
+            continue;
+        };
+        // Claimed cards group by account; everything else stays per-machine.
+        let key = match c.user_id.as_deref() {
+            Some(u) if !u.is_empty() => format!("u:{u}"),
+            _ => format!("p:{}", c.pub_key),
+        };
+        let acc = groups.entry(key).or_insert_with(|| Acc {
+            rep_tokens: i64::MIN,
+            rep_id: String::new(),
+            rep_display_name: None,
+            rep_period: String::new(),
+            rep_rate: 0.0,
+            sum_tokens: 0,
+            sum_cost: 0.0,
+            rate_num: 0.0,
+            rate_den: 0,
+            pricing_estimated: false,
+        });
+
+        let tokens = p.tokens_saved;
+        acc.sum_tokens = acc.sum_tokens.saturating_add(tokens);
+        acc.sum_cost += p.cost_avoided_usd;
+        if tokens > 0 {
+            acc.rate_num += p.compression_rate_pct * tokens as f64;
+            acc.rate_den = acc.rate_den.saturating_add(tokens);
+        }
+        acc.pricing_estimated |= p.pricing_estimated;
+        // The highest-saving machine represents the account (display name + card URL).
+        if tokens > acc.rep_tokens {
+            acc.rep_tokens = tokens;
+            acc.rep_id = c.id;
+            acc.rep_display_name = p.display_name;
+            acc.rep_period = p.period;
+            acc.rep_rate = p.compression_rate_pct;
+        }
+    }
+
+    let mut rows: Vec<LeaderRow> = groups
+        .into_values()
+        .map(|a| {
+            // Token-weighted average rate across the account's machines (a plain mean would let a
+            // tiny high-rate machine distort the figure); fall back to the representative's rate
+            // when there is no positive volume to weight by.
+            let rate = if a.rate_den > 0 {
+                a.rate_num / a.rate_den as f64
+            } else {
+                a.rep_rate
+            };
+            LeaderRow {
+                rank: 0, // assigned after reordering by the caller
+                url: format!("{base}/w/{}", a.rep_id),
+                id: a.rep_id,
+                display_name: a.rep_display_name,
+                tokens_saved: a.sum_tokens,
+                cost_avoided_usd: a.sum_cost,
+                compression_rate_pct: rate,
+                period: a.rep_period,
+                pricing_estimated: a.pricing_estimated,
+                flagged: stats_implausible(a.sum_tokens, rate),
+            }
+        })
+        .collect();
+
+    // Deterministic order independent of HashMap iteration: highest stacked savings first,
+    // ties broken by the representative card id.
+    rows.sort_by(|x, y| {
+        y.tokens_saved
+            .cmp(&x.tokens_saved)
+            .then_with(|| x.id.cmp(&y.id))
+    });
+    rows
 }
 
 fn render_leaderboard_html(rows: &[LeaderRow], public_base: &str) -> String {
@@ -893,6 +1007,92 @@ mod tests {
     #[test]
     fn accepts_a_well_formed_payload() {
         assert!(valid().validate().is_ok());
+    }
+
+    fn raw_card(
+        id: &str,
+        user: Option<&str>,
+        pub_key: &str,
+        tokens: i64,
+        name: &str,
+        rate: f64,
+    ) -> RawLeaderCard {
+        let payload = serde_json::json!({
+            "period": "all",
+            "tokens_saved": tokens,
+            "cost_avoided_usd": tokens as f64 / 1000.0,
+            "pricing_estimated": false,
+            "compression_rate_pct": rate,
+            "display_name": name,
+        })
+        .to_string();
+        RawLeaderCard {
+            id: id.to_string(),
+            payload_json: payload,
+            user_id: user.map(str::to_string),
+            pub_key: pub_key.to_string(),
+        }
+    }
+
+    #[test]
+    fn machines_claimed_to_one_account_stack() {
+        // Two machines, same account → one stacked entry (the #488 fix).
+        let raw = vec![
+            raw_card("cardA", Some("user-1"), "pubA", 1_000, "Stephen", 80.0),
+            raw_card("cardB", Some("user-1"), "pubB", 3_000, "Stephen", 90.0),
+        ];
+        let out = aggregate_by_account(raw, "https://leanctx.com");
+        assert_eq!(
+            out.len(),
+            1,
+            "two machines on one account collapse to one row"
+        );
+        assert_eq!(out[0].tokens_saved, 4_000, "points stack across machines");
+        assert!(
+            out[0].url.ends_with("/w/cardB"),
+            "the highest-saving machine represents the account"
+        );
+        // Token-weighted rate: (1000*80 + 3000*90) / 4000 = 87.5
+        assert!((out[0].compression_rate_pct - 87.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn distinct_accounts_and_unclaimed_cards_stay_separate() {
+        let raw = vec![
+            raw_card("a", Some("user-1"), "pubA", 1_000, "A", 80.0),
+            raw_card("b", Some("user-2"), "pubB", 2_000, "B", 80.0),
+            raw_card("c", None, "pubC", 1_500, "C", 80.0), // unclaimed, stays individual
+        ];
+        let out = aggregate_by_account(raw, "https://x");
+        assert_eq!(out.len(), 3);
+        // Ordered by stacked tokens, descending.
+        assert_eq!(out[0].id, "b");
+        assert_eq!(out[1].id, "c");
+        assert_eq!(out[2].id, "a");
+    }
+
+    #[test]
+    fn aggregation_order_is_deterministic_on_ties() {
+        let raw = vec![
+            raw_card("zzz", Some("u1"), "p1", 1_000, "Z", 50.0),
+            raw_card("aaa", Some("u2"), "p2", 1_000, "A", 50.0),
+        ];
+        let out = aggregate_by_account(raw, "https://x");
+        assert_eq!(
+            out[0].id, "aaa",
+            "equal totals are tie-broken by id, stably"
+        );
+        assert_eq!(out[1].id, "zzz");
+    }
+
+    #[test]
+    fn single_machine_is_unchanged_by_aggregation() {
+        let raw = vec![raw_card("solo", None, "pSolo", 1_234, "Solo", 73.0)];
+        let out = aggregate_by_account(raw, "https://leanctx.com");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].tokens_saved, 1_234);
+        assert_eq!(out[0].display_name.as_deref(), Some("Solo"));
+        assert!((out[0].compression_rate_pct - 73.0).abs() < 1e-9);
     }
 
     #[test]

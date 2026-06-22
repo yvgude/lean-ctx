@@ -1,4 +1,4 @@
-import { LeanCtxClient, LeanCtxHttpError } from "@leanctx/sdk";
+import { LeanCtxClient, LeanCtxHttpError } from "lean-ctx-client";
 
 function env(name: string): string | undefined {
   const v = process.env[name];

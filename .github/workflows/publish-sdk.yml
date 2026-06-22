@@ -1,0 +1,76 @@
+name: Publish SDK
+
+# Publishes the drop-in compress() SDKs (packages/node-lean-ctx -> npm `lean-ctx-sdk`,
+# packages/python-lean-ctx -> PyPI `lean-ctx-sdk`). These versions independently of the
+# engine, so they are NOT part of release.yml (engine `v*` tags). Trigger manually, or
+# push an `sdk-v*` tag. Every step is idempotent: an already-published version is a no-op.
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Which registries to publish to"
+        type: choice
+        default: both
+        options: [both, npm, pypi]
+  push:
+    tags:
+      - 'sdk-v[0-9]*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish-npm:
+    name: Publish lean-ctx-sdk to npm
+    if: ${{ github.event_name == 'push' || inputs.targets == 'both' || inputs.targets == 'npm' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Build, test, publish
+        working-directory: packages/node-lean-ctx
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npm test
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if npm view "lean-ctx-sdk@${PKG_VERSION}" version >/dev/null 2>&1; then
+            echo "npm already has lean-ctx-sdk@${PKG_VERSION} — skipping publish."
+            exit 0
+          fi
+          npm publish --access public
+
+  publish-pypi:
+    name: Publish lean-ctx-sdk to PyPI
+    if: ${{ github.event_name == 'push' || inputs.targets == 'both' || inputs.targets == 'pypi' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build and upload (skip if no token / already present)
+        working-directory: packages/python-lean-ctx
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TWINE_PASSWORD}" ]; then
+            echo "PYPI_TOKEN secret not set — skipping PyPI publish."
+            exit 0
+          fi
+          python -m pip install --quiet build twine
+          python -m build
+          python -m twine upload --skip-existing dist/*

@@ -196,6 +196,11 @@ pub fn plan_to_candidates(ledger: &ContextLedger, policies: &PolicySet) -> Vec<C
             selected_view: entry.active_view.unwrap_or(ViewKind::Full),
             selected_tokens: entry.sent_tokens,
             pinned: effective_state == ContextState::Pinned,
+            // Content fingerprint for redundancy/MMR (#5): the ledger's content
+            // hash identifies byte-identical items so duplicates collapse to one;
+            // distinct content yields no false overlap (word-Jaccard over a single
+            // hash token). Falls back to the path when no hash is recorded.
+            content_sketch: entry.source_hash.clone(),
         });
     }
 

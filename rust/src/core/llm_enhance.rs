@@ -120,6 +120,38 @@ fn deterministic_contradiction(a: &str, b: &str) -> String {
     format!("Conflict: \"{a}\" vs \"{b}\"")
 }
 
+/// Refine a synthesized observation summary with an LLM (#802). Opt-in via
+/// `llm.enabled`; the deterministic input is always a valid result and is returned
+/// unchanged when LLM is disabled, errors, times out, or yields something unusable.
+/// The model is constrained to the supplied notes (no invention). Because the
+/// result is stored once and recalled byte-stably, enabling this does not break
+/// hot-path read determinism (#498) — only the one-time stored value differs.
+pub fn enhance_observation(entity: &str, deterministic: &str) -> String {
+    let cfg = crate::core::config::Config::load().llm;
+    if !cfg.enabled {
+        return deterministic.to_string();
+    }
+
+    let prompt = format!(
+        "Summarize what is known about `{entity}` in ONE concise, factual sentence. \
+         Use ONLY these notes; do not invent. Return ONLY the sentence.\n\
+         Notes: {deterministic}"
+    );
+
+    match call_llm(&cfg, &prompt) {
+        Ok(text) => {
+            let cleaned = text.trim();
+            // Reject empty or runaway output; the deterministic digest is the floor.
+            if cleaned.is_empty() || cleaned.len() > deterministic.len() * 4 {
+                deterministic.to_string()
+            } else {
+                format!("{entity} — {cleaned}")
+            }
+        }
+        Err(_) => deterministic.to_string(),
+    }
+}
+
 /// Low-level LLM call. Supports Ollama, OpenRouter, and Anthropic.
 fn call_llm(cfg: &LlmConfig, prompt: &str) -> Result<String, String> {
     let truncated = if prompt.len() > MAX_PROMPT_CHARS {

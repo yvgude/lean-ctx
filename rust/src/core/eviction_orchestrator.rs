@@ -25,7 +25,7 @@ pub struct EvictionOrchestrator {
 
 impl EvictionOrchestrator {
     pub fn new(cache: SharedCache, bm25_cache: SharedBm25Cache) -> Self {
-        let token_budget = max_cache_tokens();
+        let token_budget = super::cache::max_cache_tokens();
         Self {
             cache,
             bm25_cache,
@@ -157,13 +157,6 @@ impl EvictionOrchestrator {
             R::default()
         }
     }
-}
-
-fn max_cache_tokens() -> usize {
-    std::env::var("LEAN_CTX_CACHE_MAX_TOKENS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(500_000)
 }
 
 #[cfg(test)]

@@ -58,5 +58,9 @@ pub(super) fn default_cognition_loop_interval() -> u64 {
 }
 
 pub(super) fn default_cognition_loop_max_steps() -> u8 {
-    8
+    9
+}
+
+pub(super) fn default_cognition_synthesis_min_cluster() -> usize {
+    3
 }

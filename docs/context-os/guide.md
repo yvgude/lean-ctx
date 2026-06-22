@@ -31,7 +31,7 @@ commercial plane.
 
 ```
             ┌──────────────────────── clients ────────────────────────┐
-            │  TS SDK (@leanctx/sdk)   Python SDK (leanctx)   Rust SDK │
+            │  TS SDK (lean-ctx-client)   Python SDK (leanctx)   Rust SDK │
             │  + framework adapters (OpenAI/LangChain/LlamaIndex/Crew) │
             └───────────────┬─────────────────────────────────────────┘
                             │  HTTP /v1  (REST + SSE)  |  stdio MCP

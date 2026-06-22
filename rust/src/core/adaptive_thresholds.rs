@@ -316,10 +316,15 @@ pub fn adaptive_thresholds(path: &str, content: &str) -> CompressionThresholds {
         let bandit_key = format!("{ext}_{}", token_bucket_label(content));
         let mut store = super::bandit::BanditStore::load(&project_root);
         let bandit = store.get_or_create(&bandit_key);
-        let arm = bandit.select_arm();
+        // #4: deterministic argmax-of-mean by default (Thompson only under the
+        // stochastic flag). The chosen arm drives both the entropy/jaccard
+        // thresholds AND the learned FieldWeights that feed Phi.
+        let arm = bandit.choose_arm();
         base.bpe_entropy = base.bpe_entropy * 0.5 + arm.entropy_threshold * 0.5;
         base.jaccard = base.jaccard * 0.5 + arm.jaccard_threshold * 0.5;
-        record_selected_arm(path, project_root, bandit_key, arm.name.clone());
+        let arm_name = arm.name.clone();
+        super::context_field::set_active_weights(super::context_field::FieldWeights::from_arm(arm));
+        record_selected_arm(path, project_root, bandit_key, arm_name);
     }
 
     base

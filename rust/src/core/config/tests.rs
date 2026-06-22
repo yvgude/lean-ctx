@@ -646,7 +646,7 @@ mod rules_injection_tests {
     #[test]
     fn local_override_merges() {
         let mut base = Config::default();
-        base.merge_local(r#"rules_injection = "dedicated""#);
+        base.merge_local(r#"rules_injection = "dedicated""#, true);
         assert_eq!(base.rules_injection_effective(), RulesInjection::Dedicated);
     }
 }
@@ -710,7 +710,7 @@ mod permission_inheritance_tests {
             return;
         }
         let mut base = Config::default();
-        base.merge_local(r#"permission_inheritance = "on""#);
+        base.merge_local(r#"permission_inheritance = "on""#, true);
         assert_eq!(
             base.permission_inheritance_effective(),
             PermissionInheritance::On
@@ -798,7 +798,7 @@ mod extra_roots_tests {
             extra_roots: vec!["/base".to_string()],
             ..Config::default()
         };
-        base.merge_local(r#"extra_roots = ["/local"]"#);
+        base.merge_local(r#"extra_roots = ["/local"]"#, true);
         assert_eq!(base.extra_roots, vec!["/base", "/local"]);
     }
 
@@ -811,7 +811,7 @@ mod extra_roots_tests {
             shell_allowlist: vec!["git".to_string(), "cargo".to_string()],
             ..Config::default()
         };
-        base.merge_local(r"minimal_overhead = true");
+        base.merge_local(r"minimal_overhead = true", true);
         assert_eq!(base.shell_allowlist, vec!["git", "cargo"]);
     }
 
@@ -821,7 +821,7 @@ mod extra_roots_tests {
             shell_allowlist: vec!["git".to_string(), "cargo".to_string()],
             ..Config::default()
         };
-        base.merge_local(r#"shell_allowlist = ["npm"]"#);
+        base.merge_local(r#"shell_allowlist = ["npm"]"#, true);
         assert_eq!(base.shell_allowlist, vec!["npm"]);
     }
 
@@ -832,8 +832,50 @@ mod extra_roots_tests {
             shell_allowlist: vec!["git".to_string()],
             ..Config::default()
         };
-        base.merge_local(r"shell_allowlist = []");
+        base.merge_local(r"shell_allowlist = []", true);
         assert!(base.shell_allowlist.is_empty());
+    }
+
+    #[test]
+    fn merge_local_untrusted_withholds_sensitive_keeps_comfort() {
+        // Finding 4: an untrusted workspace's security-sensitive overrides
+        // (allowlist, path-jail widening) are withheld, but a comfort override
+        // (theme) still applies — selective gating, not a blanket block.
+        let mut base = Config {
+            shell_allowlist: vec!["git".to_string()],
+            ..Config::default()
+        };
+        base.merge_local(
+            "shell_allowlist = [\"rm\"]\nextra_roots = [\"/etc\"]\ntheme = \"midnight\"\n",
+            false,
+        );
+        assert_eq!(
+            base.shell_allowlist,
+            vec!["git"],
+            "sensitive allowlist override must be withheld for untrusted workspace"
+        );
+        assert!(
+            base.extra_roots.is_empty(),
+            "path-jail widening must be withheld for untrusted workspace"
+        );
+        assert_eq!(
+            base.theme, "midnight",
+            "comfort override must still apply for untrusted workspace"
+        );
+    }
+
+    #[test]
+    fn merge_local_trusted_applies_sensitive() {
+        let mut base = Config {
+            shell_allowlist: vec!["git".to_string()],
+            ..Config::default()
+        };
+        base.merge_local(
+            "shell_allowlist = [\"rm\"]\nextra_roots = [\"/etc\"]\n",
+            true,
+        );
+        assert_eq!(base.shell_allowlist, vec!["rm"]);
+        assert_eq!(base.extra_roots, vec!["/etc"]);
     }
 }
 
@@ -1466,7 +1508,7 @@ mod persist_global_tests {
 
         // Simulate `Config::load()`: global file + project-local override merged.
         let mut cfg = Config::load_global_from(&path);
-        cfg.merge_local("theme = \"project-local\"\n");
+        cfg.merge_local("theme = \"project-local\"\n", true);
         // OLD persist: write the merged struct back to the GLOBAL file.
         cfg.save_to(&path).unwrap();
 

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@leanctx/sdk": "^0.1.0",
+    "lean-ctx-client": "^0.1.0",
     "mermaid": "^10.9.6",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"

@@ -106,7 +106,7 @@ builds, package managers) while keeping the signal.
 lean-ctx -c "cargo test"             # compressed
 lean-ctx -c "cargo test" --raw       # full output
 lean-ctx -t "cargo build"            # tracked: full output + recorded stats
-lean-ctx bypass "cmd"                # zero compression (= LEAN_CTX_RAW=1)
+lean-ctx raw "cmd"                   # skip compression (= LEAN_CTX_RAW=1; allowlist still applies)
 ```
 
 When the shell hook is installed, your AI's terminal commands route through this

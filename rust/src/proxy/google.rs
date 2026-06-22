@@ -11,7 +11,7 @@ use super::compress::compress_tool_result;
 use super::forward;
 use super::tool_kind::{self, ToolResultKind, should_protect};
 use super::{cache_safety, prose};
-use crate::core::config::ProseRole;
+use crate::core::config::{HistoryMode, ProseRole};
 
 pub async fn handler(
     State(state): State<ProxyState>,
@@ -38,6 +38,14 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
     let cfg = crate::core::config::Config::load();
     let system_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::System);
     let user_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::User);
+    let live_compress = cfg.proxy.live_compresses();
+    let mode = cfg.proxy.resolved_history_mode();
+    // Meter-only (#481): no live compression, no history pruning, no prose → the
+    // body is forwarded unchanged while usage metering still runs.
+    if !live_compress && mode == HistoryMode::Off && system_aggr.is_none() && user_aggr.is_none() {
+        let out = serde_json::to_vec(&doc).unwrap_or_default();
+        return (out, original_size, original_size);
+    }
     let mut prose_segments: u64 = 0;
 
     // System prose: the top-level `systemInstruction` anchor. Gemini has no
@@ -61,7 +69,7 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
         // other rail. We never remove a `contents` entry — only rewrite the
         // `functionResponse` text in place — so the conversation structure
         // (and any `functionCall` ↔ `functionResponse` correspondence) is intact.
-        let mode = cfg.proxy.resolved_history_mode();
+        // `mode` resolved above.
         let boundary = super::history_prune::prune_boundary(mode, contents.len());
 
         for (idx, content) in contents.iter_mut().enumerate() {
@@ -87,14 +95,23 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
                 let kind = name
                     .as_deref()
                     .map_or(ToolResultKind::Other, tool_kind::classify_tool_name);
+                // #481: recent-region live compression respects the global toggle
+                // and the per-tool exclusion list (Serena default). Old-region
+                // pruning stays governed by `history_mode`.
+                let live = live_compress
+                    && !name
+                        .as_deref()
+                        .is_some_and(|n| cfg.proxy.is_tool_live_compress_excluded(n));
                 let Some(response) = func_resp.get_mut("response") else {
                     continue;
                 };
                 for field in ["result", "content"] {
                     modified |= if in_old_region {
                         prune_string_field(response, field, kind)
-                    } else {
+                    } else if live {
                         compress_string_field(response, field, name.as_deref(), kind)
+                    } else {
+                        false
                     };
                 }
             }

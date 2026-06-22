@@ -69,8 +69,8 @@ def main() -> int:
         "|---|---|---|---|",
     ]
     packages = {
-        "python": "`leanctx` (PyPI)",
-        "typescript": "`@leanctx/sdk` (npm)",
+        "python": "`lean-ctx-client` (PyPI)",
+        "typescript": "`lean-ctx-client` (npm)",
         "rust": "`lean-ctx-client` (crates.io)",
     }
     for sdk, card in cards.items():

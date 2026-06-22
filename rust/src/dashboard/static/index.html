@@ -66,6 +66,59 @@
   font-size:10px;color:var(--text);opacity:0.8;
 }
 .topbar-status .ts-sep{width:1px;height:14px;background:var(--border);flex-shrink:0}
+/* Doctor health signal (#466) — three-level badge + one-click fix popover */
+.doctor-signal{position:relative;flex-shrink:0}
+.doctor-badge{
+  display:flex;align-items:center;gap:6px;cursor:pointer;
+  font-size:11px;color:var(--muted);font-family:var(--font);
+  padding:6px 10px;background:var(--bg);border-radius:var(--rs);border:1px solid var(--border);
+  transition:.15s;
+}
+.doctor-badge:hover{border-color:var(--border-light);color:var(--text)}
+.doctor-badge .doctor-dot{font-family:var(--mono);font-size:9px;font-weight:700;flex-shrink:0;color:var(--muted)}
+.doctor-badge.doctor-ok .doctor-dot{color:var(--green)}
+.doctor-badge.doctor-warn .doctor-dot{color:var(--yellow)}
+.doctor-badge.doctor-crit .doctor-dot{color:var(--red)}
+.doctor-badge.doctor-warn{border-color:rgba(251,191,36,0.35)}
+.doctor-badge.doctor-crit{border-color:rgba(248,113,113,0.35)}
+.doctor-badge-label{font-weight:600}
+.doctor-panel{
+  position:fixed;top:64px;right:16px;z-index:var(--z-dropdown);
+  width:340px;max-width:calc(100vw - 16px);
+  background:var(--surface);border:1px solid var(--border-light);border-radius:var(--r);
+  box-shadow:var(--shadow-md);padding:12px;font-size:12px;color:var(--text);
+}
+.doctor-panel-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--border);
+}
+.doctor-panel-title{font-weight:600;color:var(--text-bright)}
+.doctor-panel-score{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--muted)}
+.doctor-panel-head.doctor-ok .doctor-panel-score{color:var(--green)}
+.doctor-panel-head.doctor-warn .doctor-panel-score{color:var(--yellow)}
+.doctor-panel-head.doctor-crit .doctor-panel-score{color:var(--red)}
+.doctor-checks{list-style:none;display:flex;flex-direction:column;gap:5px;margin:0;padding:0}
+.doctor-check{display:flex;align-items:flex-start;gap:7px;line-height:1.35}
+.doctor-check-mark{font-family:var(--mono);font-weight:700;flex-shrink:0}
+.doctor-check.ok .doctor-check-mark{color:var(--green)}
+.doctor-check.bad .doctor-check-mark{color:var(--red)}
+.doctor-check.bad .doctor-check-text{color:var(--text-bright)}
+.doctor-warnings{list-style:none;margin:8px 0 0;padding:8px 0 0;display:flex;flex-direction:column;gap:4px;
+  border-top:1px solid var(--border);color:var(--yellow);font-size:11px}
+.doctor-panel-actions{display:flex;gap:8px;margin-top:12px}
+.doctor-fix-btn,.doctor-recheck-btn{
+  flex:1;padding:7px 10px;border-radius:var(--rs);cursor:pointer;font-size:11px;font-weight:600;
+  border:1px solid var(--border);background:var(--surface-2);color:var(--text);transition:.15s;
+}
+.doctor-fix-btn{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+.doctor-fix-btn:hover:not(:disabled){background:var(--accent);color:var(--bg)}
+.doctor-fix-btn:disabled{opacity:.5;cursor:default}
+.doctor-recheck-btn:hover{border-color:var(--border-light);color:var(--text-bright)}
+.doctor-fix-status{margin-top:8px;font-size:11px;min-height:0;line-height:1.4}
+.doctor-fix-status.running{color:var(--muted)}
+.doctor-fix-status.ok{color:var(--green)}
+.doctor-fix-status.warn{color:var(--yellow)}
+.doctor-fix-status.err{color:var(--red)}
 .theme-toggle{
   display:flex;align-items:center;justify-content:center;
   width:32px;height:32px;border-radius:var(--rs);border:1px solid var(--border);
@@ -197,6 +250,7 @@
 </script>
 <script src="/static/lib/format.js" defer></script>
 <script src="/static/lib/shared.js" defer></script>
+<script src="/static/lib/doctor.js" defer></script>
 <script type="module" src="/static/lib/api.js"></script>
 <script type="module" src="/static/lib/charts.js"></script>
 <script type="module" src="/static/lib/router.js"></script>
@@ -218,6 +272,7 @@
 <script type="module" src="/static/components/cockpit-commander.js"></script>
 <script type="module" src="/static/components/cockpit-palette.js"></script>
 <script type="module" src="/static/components/cockpit-roi.js"></script>
+<script type="module" src="/static/components/cockpit-leaderboard.js"></script>
 <script type="module" src="/static/components/cockpit-area-tabs.js"></script>
 <script type="module" src="/static/components/cockpit-protection.js"></script>
 <script type="module" src="/static/components/cockpit-settings.js"></script>
@@ -315,6 +370,7 @@
           <span class="ts-sep"></span>
           <span class="agent-badge" id="agentCountBadge" title="Active agents">0</span>
         </div>
+        <div id="doctorSignal" class="doctor-signal"></div>
         <div class="seg-toggle" id="modeToggle" role="group" aria-label="View detail level">
           <span class="seg-toggle-label" aria-hidden="true">View</span>
           <button type="button" class="seg" data-mode="simple" aria-pressed="true" title="Essential views only">
@@ -372,6 +428,9 @@
     </section>
     <section id="view-learning" class="view">
       <cockpit-learning id="learningView"></cockpit-learning>
+    </section>
+    <section id="view-leaderboard" class="view">
+      <cockpit-leaderboard id="leaderboardView"></cockpit-leaderboard>
     </section>
     <section id="view-agents" class="view">
       <cockpit-agents id="agentsView"></cockpit-agents>

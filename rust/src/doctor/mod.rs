@@ -7,12 +7,24 @@ mod fix;
 mod integrations;
 mod migrate;
 mod overhead;
+mod report;
 mod workspace_scope;
 
 #[allow(clippy::wildcard_imports)]
 use checks::*;
 #[allow(clippy::wildcard_imports)]
 use common::*;
+
+pub use report::{HealthCheck, HealthLevel, HealthReport, health_report};
+
+/// Run `doctor --fix` and return the structured `SetupReport` without printing
+/// anything — the in-process entry point for the dashboard fix route (#466).
+///
+/// # Errors
+/// Propagates any repair-step failure (e.g. an unwritable data directory).
+pub fn run_fix_report() -> Result<crate::core::setup_report::SetupReport, String> {
+    fix::fix_report()
+}
 
 pub(super) const GREEN: &str = "\x1b[32m";
 
@@ -265,6 +277,14 @@ pub fn run() {
     // 5b2) Path jail (effective state + dead allow_paths entries, GH #392)
     let path_jail = path_jail_outcome();
     board.check(&path_jail);
+
+    // 5b3) Workspace trust for project-local .lean-ctx.toml (security audit #4)
+    let workspace_trust = workspace_trust_outcome();
+    board.check(&workspace_trust);
+
+    // 5b4) Cognition v2 activation (science subsystems wired + active)
+    let cognition = cognition_activity_outcome();
+    board.check(&cognition);
 
     // 5c) Compact-format passthrough (preserve already-compact TOON output, #342)
     let passthrough_outcome = compact_format_passthrough_outcome();

@@ -1,4 +1,4 @@
-import { LeanCtxClient } from "@leanctx/sdk";
+import { LeanCtxClient } from "lean-ctx-client";
 
 export function createLeanCtxClient(opts: {
   bearerToken?: string;

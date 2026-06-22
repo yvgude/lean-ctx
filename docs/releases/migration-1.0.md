@@ -42,8 +42,8 @@ If you find a regression that contradicts this table, it is a release blocker:
 
 ## SDKs: 0.1.x → 1.0
 
-The SDK family (`leanctx` on PyPI, `@leanctx/sdk` on npm, `lean-ctx-client` on
-crates.io) moves to 1.0 with the engine. No API changes — 1.0 marks the
+The unified SDK family (`lean-ctx-client` on PyPI, npm, and crates.io) moves to
+1.0 with the engine. No API changes — 1.0 marks the
 conformance guarantee: every SDK release passes the 14-check conformance kit
 against the engine it ships with
 ([matrix](../reference/sdk-conformance-matrix.md)), and the release pipeline

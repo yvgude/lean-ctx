@@ -57,6 +57,11 @@ pub struct CompileCandidate {
     pub selected_view: ViewKind,
     pub selected_tokens: usize,
     pub pinned: bool,
+    /// Content fingerprint used for redundancy/MMR comparison (#5). A short
+    /// signature or token sketch of the item's content; when `None`, selection
+    /// falls back to the path (so callers that don't provide content behave as
+    /// before). Comparing content — not paths — is what makes dedup correct.
+    pub content_sketch: Option<String>,
 }
 
 /// Result of a compilation run.
@@ -139,44 +144,93 @@ pub fn compile(
         });
     }
 
-    let mut scored: Vec<(usize, f64)> = unpinned
+    // Steps 2+3: SCORE + SELECT via greedy Maximal Marginal Relevance (#5).
+    // Relevance = normalized efficiency (Phi/token, keeps the knapsack budget-
+    // aware); penalty = max content similarity to the already-selected set, so a
+    // near-duplicate of something already chosen loses to a complementary item.
+    // Deterministic: fixed λ, fixed tie-break (efficiency, then id).
+    let pickable: Vec<usize> = unpinned
         .iter()
         .enumerate()
         .filter(|(_, c)| c.state != ContextState::Excluded)
-        .map(|(i, c)| {
+        .map(|(i, _)| i)
+        .collect();
+
+    let effs: Vec<f64> = unpinned
+        .iter()
+        .map(|c| {
             let best_tokens = c
                 .view_costs
                 .cheapest_content_view()
                 .map_or(c.selected_tokens, |(_, t)| t);
-            (i, efficiency(c.phi, best_tokens.max(1)))
+            efficiency(c.phi, best_tokens.max(1))
         })
         .collect();
+    let max_eff = effs
+        .iter()
+        .copied()
+        .fold(0.0_f64, f64::max)
+        .max(f64::MIN_POSITIVE);
 
-    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    // Sketches of already-selected items (pinned first) drive the redundancy term.
+    let mut selected_sketches: Vec<String> = selected
+        .iter()
+        .map(|s| sketch_of(candidates, &s.id, &s.path))
+        .collect();
+    let mut redundancy_applied = false;
+    let mut remaining_idx: Vec<usize> = pickable;
 
-    for (idx, _eff) in &scored {
-        let c = &unpinned[*idx];
+    while !remaining_idx.is_empty() {
         let budget_left = remaining.saturating_sub(tokens_used);
         if budget_left == 0 {
-            excluded.push(ExcludedItem {
-                id: c.id.to_string(),
-                path: c.path.clone(),
-                reason: "budget exhausted".to_string(),
-            });
-            continue;
+            break;
+        }
+        // Pick the highest-MMR candidate that still fits the budget.
+        let mut best: Option<(usize, usize, f64, usize)> = None; // (pos_in_vec, cand_idx, mmr, tokens)
+        for (pos, &idx) in remaining_idx.iter().enumerate() {
+            let c = &unpinned[idx];
+            let (_, tokens) = best_affordable_view(&c.view_costs, budget_left);
+            if tokens == 0 || tokens > budget_left {
+                continue;
+            }
+            let sketch = candidate_sketch(c);
+            let max_sim = selected_sketches
+                .iter()
+                .map(|s| jaccard_similarity(s, &sketch))
+                .fold(0.0_f64, f64::max);
+            if max_sim > 0.0 {
+                redundancy_applied = true;
+            }
+            let norm_eff = effs[idx] / max_eff;
+            let mmr = crate::core::context_field::mmr_score(
+                norm_eff,
+                max_sim,
+                crate::core::context_field::MMR_LAMBDA,
+            );
+            let better = match best {
+                None => true,
+                Some((_, best_idx, best_mmr, _)) => {
+                    mmr > best_mmr
+                        || (mmr == best_mmr && effs[idx] > effs[best_idx])
+                        || (mmr == best_mmr
+                            && (effs[idx] - effs[best_idx]).abs() < f64::EPSILON
+                            && c.id.to_string() < unpinned[best_idx].id.to_string())
+                }
+            };
+            if better {
+                best = Some((pos, idx, mmr, tokens));
+            }
         }
 
+        let Some((pos, idx, _mmr, _)) = best else {
+            // Nothing else fits the remaining budget.
+            break;
+        };
+        remaining_idx.remove(pos);
+        let c = &unpinned[idx];
         let (view, tokens) = best_affordable_view(&c.view_costs, budget_left);
-        if tokens == 0 || tokens > budget_left {
-            excluded.push(ExcludedItem {
-                id: c.id.to_string(),
-                path: c.path.clone(),
-                reason: format!("too expensive ({tokens}t > {budget_left}t remaining)"),
-            });
-            continue;
-        }
-
         tokens_used = tokens_used.saturating_add(tokens);
+        selected_sketches.push(candidate_sketch(c));
         selected.push(SelectedItem {
             id: c.id.to_string(),
             path: c.path.clone(),
@@ -185,6 +239,19 @@ pub fn compile(
             phi: c.phi,
             pinned: false,
         });
+    }
+
+    // Anything still unpicked didn't fit the budget.
+    for idx in remaining_idx {
+        let c = &unpinned[idx];
+        excluded.push(ExcludedItem {
+            id: c.id.to_string(),
+            path: c.path.clone(),
+            reason: "budget exhausted".to_string(),
+        });
+    }
+    if redundancy_applied {
+        crate::core::introspect::tick("integration_phi");
     }
 
     for c in candidates
@@ -200,37 +267,34 @@ pub fn compile(
         }
     }
 
-    // Step 4: DEDUP — remove redundant items via Jaccard similarity.
-    // Items with >70% word overlap with a higher-Phi selected item are dropped.
-    let contents: Vec<Option<String>> = selected
-        .iter()
-        .map(|s| {
-            candidates
-                .iter()
-                .find(|c| c.id.to_string() == s.id)
-                .map(|c| c.path.clone())
-        })
-        .collect();
-
+    // Step 4: DEDUP — drop items whose CONTENT is >70% redundant with an
+    // already-kept item of equal-or-higher Phi (IIT non-redundancy). The old
+    // code compared file *paths* and mis-indexed the kept list; we now compare
+    // each item's content sketch against the sketches we actually kept.
     let mut deduped: Vec<SelectedItem> = Vec::with_capacity(selected.len());
+    let mut kept_sketches: Vec<String> = Vec::with_capacity(selected.len());
     let mut dedup_tokens = 0usize;
-    for (i, item) in selected.iter().enumerate() {
-        let dominated = deduped.iter().enumerate().any(|(j, existing)| {
-            let path_a = contents.get(j).and_then(|p| p.as_deref()).unwrap_or("");
-            let path_b = contents.get(i).and_then(|p| p.as_deref()).unwrap_or("");
-            if path_a.is_empty() || path_b.is_empty() {
-                return false;
-            }
-            jaccard_similarity(path_a, path_b) > 0.7 && existing.phi >= item.phi
-        });
+    for item in &selected {
+        let sketch_i = sketch_of(candidates, &item.id, &item.path);
+        let dominated = deduped
+            .iter()
+            .zip(&kept_sketches)
+            .any(|(existing, sketch_j)| {
+                if sketch_i.is_empty() || sketch_j.is_empty() {
+                    return false;
+                }
+                jaccard_similarity(sketch_j, &sketch_i) > DEDUP_JACCARD_THRESHOLD
+                    && existing.phi >= item.phi
+            });
         if dominated {
             excluded.push(ExcludedItem {
                 id: item.id.clone(),
                 path: item.path.clone(),
-                reason: "dedup: >70% Jaccard overlap with higher-Phi item".to_string(),
+                reason: "dedup: >70% content overlap with higher-Phi item".to_string(),
             });
         } else {
             dedup_tokens += item.tokens;
+            kept_sketches.push(sketch_i);
             deduped.push(item.clone());
         }
     }
@@ -282,6 +346,27 @@ pub fn compile(
         excluded_reasons: excluded,
         warnings,
     }
+}
+
+/// Above this content-Jaccard, a lower-or-equal-Phi item is treated as a
+/// redundant duplicate and dropped during DEDUP (#5).
+const DEDUP_JACCARD_THRESHOLD: f64 = 0.7;
+
+/// Content fingerprint of a candidate for redundancy comparison (#5): its
+/// explicit `content_sketch` when provided, else the path as a degraded fallback
+/// (so callers that supply no content behave exactly as before).
+fn candidate_sketch(c: &CompileCandidate) -> String {
+    c.content_sketch.clone().unwrap_or_else(|| c.path.clone())
+}
+
+/// Look up a candidate by its id string and return its content sketch, falling
+/// back to `fallback_path` when the candidate or its sketch is missing.
+fn sketch_of(candidates: &[CompileCandidate], id: &str, fallback_path: &str) -> String {
+    candidates
+        .iter()
+        .find(|c| c.id.to_string() == id)
+        .and_then(|c| c.content_sketch.clone())
+        .unwrap_or_else(|| fallback_path.to_string())
 }
 
 /// Select the best view that fits within the budget, preferring denser views.
@@ -361,6 +446,19 @@ mod tests {
             selected_view: ViewKind::Full,
             selected_tokens: full_tokens,
             pinned,
+            content_sketch: None,
+        }
+    }
+
+    fn make_candidate_with_sketch(
+        path: &str,
+        phi: f64,
+        full_tokens: usize,
+        sketch: &str,
+    ) -> CompileCandidate {
+        CompileCandidate {
+            content_sketch: Some(sketch.to_string()),
+            ..make_candidate(path, phi, full_tokens, false)
         }
     }
 
@@ -452,6 +550,66 @@ mod tests {
             !result.warnings.is_empty(),
             "should warn when >90% utilized"
         );
+    }
+
+    #[test]
+    fn dedup_drops_content_duplicate_keeps_higher_phi() {
+        // #5: two items with identical content sketches but different paths —
+        // the lower-Phi one must be dropped (content-based, not path-based).
+        let candidates = vec![
+            make_candidate_with_sketch("a.rs", 0.9, 300, "same content fingerprint here"),
+            make_candidate_with_sketch("b.rs", 0.4, 300, "same content fingerprint here"),
+        ];
+        let budget = TokenBudget {
+            total: 10000,
+            used: 0,
+        };
+        let result = compile(&candidates, budget, CompileMode::HandleManifest);
+        assert_eq!(
+            result.items_selected, 1,
+            "content duplicate should be deduped to one item"
+        );
+        assert_eq!(
+            result.selected[0].path, "a.rs",
+            "the higher-Phi duplicate must survive"
+        );
+    }
+
+    #[test]
+    fn distinct_content_is_not_deduped() {
+        // #5 regression: different content must NOT be treated as duplicate.
+        let candidates = vec![
+            make_candidate_with_sketch("a.rs", 0.9, 300, "alpha beta gamma"),
+            make_candidate_with_sketch("b.rs", 0.8, 300, "delta epsilon zeta"),
+        ];
+        let budget = TokenBudget {
+            total: 10000,
+            used: 0,
+        };
+        let result = compile(&candidates, budget, CompileMode::HandleManifest);
+        assert_eq!(
+            result.items_selected, 2,
+            "distinct content must both survive"
+        );
+    }
+
+    #[test]
+    fn compile_is_deterministic() {
+        // Determinism contract (#498): identical input → identical selection.
+        let candidates = vec![
+            make_candidate("a.rs", 0.7, 400, false),
+            make_candidate("b.rs", 0.6, 300, false),
+            make_candidate("c.rs", 0.8, 500, false),
+        ];
+        let budget = TokenBudget {
+            total: 5000,
+            used: 0,
+        };
+        let r1 = compile(&candidates, budget, CompileMode::Compressed);
+        let r2 = compile(&candidates, budget, CompileMode::Compressed);
+        let paths1: Vec<&str> = r1.selected.iter().map(|s| s.path.as_str()).collect();
+        let paths2: Vec<&str> = r2.selected.iter().map(|s| s.path.as_str()).collect();
+        assert_eq!(paths1, paths2, "selection order must be deterministic");
     }
 
     #[test]

@@ -5,9 +5,9 @@ import {
   cmdDoctor,
   cmdGain,
   cmdHeatmap,
-  cmdDashboard,
   cmdConfigureMcp,
 } from "./cli-commands";
+import { cmdDashboard } from "./dashboard-panel";
 import { SidebarProvider } from "./sidebar/provider";
 
 export function registerCommands(
@@ -33,7 +33,9 @@ export function registerCommands(
     vscode.commands.registerCommand("leanctx.doctor", cmdDoctor),
     vscode.commands.registerCommand("leanctx.gain", cmdGain),
     vscode.commands.registerCommand("leanctx.heatmap", cmdHeatmap),
-    vscode.commands.registerCommand("leanctx.dashboard", cmdDashboard),
+    vscode.commands.registerCommand("leanctx.dashboard", () =>
+      cmdDashboard(context)
+    ),
     vscode.commands.registerCommand("leanctx.configureMcp", cmdConfigureMcp)
   );
 }

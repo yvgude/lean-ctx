@@ -146,8 +146,9 @@ pub async fn run() -> anyhow::Result<()> {
         .route("/leaderboard", get(wrapped::get_leaderboard_page))
         .route("/api/global-stats", get(global_stats::get_global_stats))
         .route("/api/cloud/models", get(models::get_models))
-        // Public supporters wall — proxied from the private billing plane; empty
-        // (never an error) when billing is unset, so the website always renders.
+        // Public supporters wall — proxied from the private billing plane with a
+        // 5-minute edge cache and plaintext sanitization. Empty when billing is
+        // unset; stale cache (else 503) when the plane is unreachable.
         .route("/api/supporters", get(billing_edge::get_supporters))
         .route(
             "/api/supporters/checkout",

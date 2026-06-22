@@ -361,6 +361,24 @@ fn integration_codebuddy(
     }
 }
 
+/// Validates an optionally-pinned `LEAN_CTX_DATA_DIR` in an MCP server entry.
+///
+/// lean-ctx no longer pins the data dir into agent configs (GH #408): it
+/// auto-detects its per-category dirs (config/data/state/cache) at runtime, and a
+/// pinned `LEAN_CTX_DATA_DIR` would force single-dir mode and collapse
+/// config/state/cache onto the data dir. So an absent env block is healthy. A
+/// config that still carries the var (legacy install, intentional relocation)
+/// must point at the resolved data dir — a stale pin is genuine drift.
+fn pinned_data_dir_ok(env_obj: Option<&serde_json::Value>, data_dir: &str) -> bool {
+    match env_obj
+        .and_then(|env| env.get("LEAN_CTX_DATA_DIR"))
+        .and_then(|d| d.as_str())
+    {
+        Some(d) => d.trim() == data_dir.trim(),
+        None => true,
+    }
+}
+
 fn check_mcp_json(path: &std::path::Path, binary: &str, data_dir: &str) -> NamedCheck {
     if !path.exists() {
         return NamedCheck {
@@ -403,11 +421,7 @@ fn check_mcp_json(path: &std::path::Path, binary: &str, data_dir: &str) -> Named
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = e
-        .get("env")
-        .and_then(|env| env.get("LEAN_CTX_DATA_DIR"))
-        .and_then(|d| d.as_str())
-        .is_some_and(|d| d.trim() == data_dir.trim());
+    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
 
     let ok = cmd_ok && env_ok;
     let detail = if ok {
@@ -601,11 +615,7 @@ fn check_vscode_mcp(path: &std::path::Path, binary: &str, data_dir: &str) -> Nam
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = e
-        .get("env")
-        .and_then(|env| env.get("LEAN_CTX_DATA_DIR"))
-        .and_then(|d| d.as_str())
-        .is_some_and(|d| d.trim() == data_dir.trim());
+    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
 
     let ok = ty_ok && cmd_ok && env_ok;
     NamedCheck {
@@ -658,11 +668,7 @@ fn check_augment_vscode_mcp(path: &std::path::Path, binary: &str, data_dir: &str
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = e
-        .get("env")
-        .and_then(|env| env.get("LEAN_CTX_DATA_DIR"))
-        .and_then(|d| d.as_str())
-        .is_some_and(|d| d.trim() == data_dir.trim());
+    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
     // The Augment VS Code panel persists user toggles via the `disabled` flag.
     // An entry with `disabled: true` is present-but-inert, so doctor must
     // surface that as drift instead of silently passing. A missing key,
@@ -713,11 +719,7 @@ fn check_copilot_cli_mcp(path: &std::path::Path, binary: &str, data_dir: &str) -
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = e
-        .get("env")
-        .and_then(|env| env.get("LEAN_CTX_DATA_DIR"))
-        .and_then(|d| d.as_str())
-        .is_some_and(|d| d.trim() == data_dir.trim());
+    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
 
     let ok = cmd_ok && env_ok;
     NamedCheck {
@@ -762,11 +764,7 @@ fn check_opencode_config(path: &std::path::Path, binary: &str, data_dir: &str) -
         .and_then(|a| a.first())
         .and_then(|x| x.as_str());
     let cmd_ok = cmd.is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = e
-        .get("environment")
-        .and_then(|env| env.get("LEAN_CTX_DATA_DIR"))
-        .and_then(|d| d.as_str())
-        .is_some_and(|d| d.trim() == data_dir.trim());
+    let env_ok = pinned_data_dir_ok(e.get("environment"), data_dir);
     let ok = cmd_ok && env_ok;
     NamedCheck {
         name: "OpenCode MCP".to_string(),
@@ -808,11 +806,7 @@ fn check_crush_config(path: &std::path::Path, binary: &str, data_dir: &str) -> N
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = e
-        .get("env")
-        .and_then(|env| env.get("LEAN_CTX_DATA_DIR"))
-        .and_then(|d| d.as_str())
-        .is_some_and(|d| d.trim() == data_dir.trim());
+    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
     let ok = cmd_ok && env_ok;
     NamedCheck {
         name: "Crush MCP".to_string(),
@@ -878,11 +872,7 @@ fn check_openclaw_config(path: &std::path::Path, binary: &str, data_dir: &str) -
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = e
-        .get("env")
-        .and_then(|env| env.get("LEAN_CTX_DATA_DIR"))
-        .and_then(|d| d.as_str())
-        .is_some_and(|d| d.trim() == data_dir.trim());
+    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
     let ok = cmd_ok && env_ok;
     NamedCheck {
         name,
@@ -924,11 +914,7 @@ fn check_amp_config(path: &std::path::Path, binary: &str, data_dir: &str) -> Nam
         .get("command")
         .and_then(|c| c.as_str())
         .is_some_and(|c| cmd_matches_expected(c, binary));
-    let env_ok = e
-        .get("env")
-        .and_then(|env| env.get("LEAN_CTX_DATA_DIR"))
-        .and_then(|d| d.as_str())
-        .is_some_and(|d| d.trim() == data_dir.trim());
+    let env_ok = pinned_data_dir_ok(e.get("env"), data_dir);
     let ok = cmd_ok && env_ok;
     NamedCheck {
         name: "Amp MCP".to_string(),
@@ -1102,7 +1088,8 @@ fn check_hermes_yaml(path: &std::path::Path, binary: &str, data_dir: &str) -> Na
     let has_mcp = content.contains("mcp_servers:") && content.contains("lean-ctx:");
     let has_cmd =
         content.contains("command:") && (content.contains(binary) || content.contains("lean-ctx"));
-    let has_env = content.contains("LEAN_CTX_DATA_DIR") && content.contains(data_dir);
+    // Absent ⇒ healthy (auto-detected); present ⇒ must point at the resolved dir.
+    let has_env = !content.contains("LEAN_CTX_DATA_DIR") || content.contains(data_dir);
     let ok = has_mcp && has_cmd && has_env;
     NamedCheck {
         name: "Hermes MCP".to_string(),

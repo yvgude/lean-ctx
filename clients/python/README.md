@@ -1,15 +1,15 @@
-# leanctx (Python SDK)
+# lean-ctx-client (Python SDK)
 
 Thin, **dependency-free** Python client for the lean-ctx HTTP `/v1` contract.
 Standard library only (`urllib`) — installs and runs anywhere, no transitive
 dependencies. It speaks the wire protocol only; it never links the engine or
-re-implements compression. Mirrors the TypeScript (`@leanctx/sdk`) and Rust
-(`lean-ctx-client`) SDKs.
+re-implements compression. Mirrors the TypeScript and Rust
+`lean-ctx-client` SDKs.
 
 ## Install
 
 ```bash
-pip install leanctx
+pip install lean-ctx-client
 # from this repo:
 pip install ./clients/python
 ```
@@ -80,16 +80,16 @@ The SDK's major version follows the engine's `http_mcp` contract major
 ## Framework adapters
 
 Expose the lean-ctx tool surface to popular agent frameworks. Each framework is
-an **optional** dependency, imported lazily — installing `leanctx` pulls in none
+an **optional** dependency, imported lazily — installing `lean-ctx-client` pulls in none
 of them. The OpenAI adapter is a pure transformation and needs no extra package.
 
 ```python
 from leanctx import LeanCtxClient
 from leanctx.adapters import (
     to_openai_tools, run_openai_tool_call,   # no extra dep
-    to_langchain_tools,                       # pip install "leanctx[langchain]"
-    to_llamaindex_tools,                      # pip install "leanctx[llamaindex]"
-    to_crewai_tools,                          # pip install "leanctx[crewai]"
+    to_langchain_tools,                       # pip install "lean-ctx-client[langchain]"
+    to_llamaindex_tools,                      # pip install "lean-ctx-client[llamaindex]"
+    to_crewai_tools,                          # pip install "lean-ctx-client[crewai]"
 )
 
 client = LeanCtxClient("http://127.0.0.1:8080")

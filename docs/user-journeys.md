@@ -34,7 +34,7 @@ compose instead of fighting each other.
 
 | Feature | Persona it unblocks | One-line value | Surface |
 |---|---|---|---|
-| **Open Door: `/v1` API + SDKs** | Developers in any language | Embed lean-ctx in your own harness over a stable contract | `lean-ctx serve`, `/v1/*`, `leanctx` · `@leanctx/sdk` |
+| **Open Door: `/v1` API + SDKs** | Developers in any language | Embed lean-ctx in your own harness over a stable contract | `lean-ctx serve`, `/v1/*`, `lean-ctx-client` |
 | **Context Personas** | Non-coding agents (sales/research/support) | One runtime, many verticals — reshape the whole surface | `LEAN_CTX_PERSONA`, `persona` |
 | **Universal Intake** | Research / data / support | Index PDF, CSV, email, HTML, JSON — not just code | format extractors, `ctx_index` |
 | **Open Core: plugins + WASM** | Platform engineers | Add tools / compressors / providers without forking | `plugin.toml`, `LEAN_CTX_WASM_DIR`, `/v1/capabilities` |
@@ -279,7 +279,7 @@ curl -s --oauth2-bearer "$TOKEN" http://127.0.0.1:8080/v1/capabilities
 3. He installs an SDK — same wire contract in every language — and calls tools:
 
 ```python
-# pip install leanctx
+# pip install lean-ctx-client
 from leanctx import LeanCtxClient
 client = LeanCtxClient("http://127.0.0.1:8080", bearer_token=TOKEN)
 
@@ -302,7 +302,7 @@ result = run_openai_tool_call(client, tool_call)   # when the model picks one
   `GET /v1/openapi.json` are the SSOT, generated from code and drift-tested —
   generate a typed client in any language.
 - **Three first-party SDKs**, all thin wire clients (no engine linking): Python
-  [`clients/python`](../clients/python), TypeScript [`@leanctx/sdk`](../cookbook/sdk),
+  [`clients/python`](../clients/python), TypeScript [`lean-ctx-client`](../cookbook/sdk),
   Rust [`clients/rust/lean-ctx-client`](../clients/rust/lean-ctx-client).
 - **Adapters** for OpenAI, LangChain, LlamaIndex and CrewAI — present when the
   framework is installed, with a helpful `ImportError` when it isn't.
@@ -569,7 +569,7 @@ coordination *around* the runtime without ever reaching in to gate a local featu
 | **Context Firewall** | `core/firewall.rs` (`is_protected_read` SSOT, digest builder) | firewall + `archive_expand_tests` | `[archive].ephemeral`, `ephemeral_min_tokens` |
 | **Sensitivity Floor** | `core/sensitivity/{mod,classify}.rs`, `enforce_text` choke point | `tests/sensitivity_floor.rs` (8) | `[sensitivity]` (`enabled`, `policy_floor`, `action`) |
 | **Scorecard** | `core/scorecard/{mod,scenarios}.rs`, `benchmark scorecard` CLI | `tests/scorecard_determinism.rs` (2) | `lean-ctx benchmark scorecard [--json]` |
-| **Open Door (SDKs + `/v1`)** | `http_server/` (`/v1/capabilities`, `/v1/openapi.json`), `clients/{python,rust}`, `cookbook/sdk` | SDK conformance kits; `tests/capabilities_*`, OpenAPI drift | `lean-ctx serve`; `leanctx` · `@leanctx/sdk` · `lean-ctx-client` |
+| **Open Door (SDKs + `/v1`)** | `http_server/` (`/v1/capabilities`, `/v1/openapi.json`), `clients/{python,rust}`, `cookbook/sdk` | SDK conformance kits; `tests/capabilities_*`, OpenAPI drift | `lean-ctx serve`; `lean-ctx-client` |
 | **Context Personas** | `core/persona.rs`, `core/config` resolution | persona resolution + tool-surface tests | `LEAN_CTX_PERSONA`, `config.persona`; `<personas_dir>/*.toml` |
 | **Universal Intake** | `core/ingestion.rs`, `core/extractors/{json,csv,eml,html,pdf,text}.rs` | extractor + chunker conformance | `ctx_index`; auto per-format |
 | **Open Core (plugins + WASM)** | `core/plugins/`, `core/wasm_ext.rs` (`wasm-abi-v1`) | plugin/hook + WASM host tests; `conformance` | `plugin.toml` `[[tools]]`, hooks; `LEAN_CTX_WASM_DIR` |

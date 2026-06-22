@@ -554,23 +554,76 @@ pub fn warm_blocking(root: &str, respect_gitignore: bool, allow_secret_paths: bo
     true
 }
 
-fn spawn_build(root: String, respect_gitignore: bool, allow_secret_paths: bool) {
-    std::thread::spawn(move || {
-        let built = std::panic::catch_unwind(|| {
-            SearchIndex::build(&root, respect_gitignore, allow_secret_paths)
-        })
-        .ok()
-        .flatten();
+/// Per-repo lock name serializing the resident search-index build across
+/// processes, mirroring the `graph-idx` / `bm25-idx` locks in
+/// [`crate::core::index_orchestrator`]. Distinct `search-` prefix so the three
+/// indexers never serialize against one another.
+fn search_index_lock_name(root: &str) -> String {
+    format!(
+        "search-idx-{}",
+        &crate::core::index_namespace::namespace_hash(Path::new(root))[..8]
+    )
+}
 
+/// Outcome of a guarded background build: did this process do the walk, or did
+/// it yield to another process already building the same root?
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuildOutcome {
+    Built,
+    Deferred,
+}
+
+/// Build the resident index under a cross-process herd guard (#460).
+///
+/// The trigram index is RAM-resident (not shareable on disk), so on lock
+/// contention we *defer* the proactive pre-warm instead of running a second
+/// simultaneous file walk: a boot wave of N sessions on one repo then triggers
+/// ~1 walk at a time, not N. Deferring is safe — `ctx_search` still works via
+/// its walk fallback, and the per-process `building` flag is cleared so the next
+/// `ensure_background` nudge (every search, post-TTL) retries once the holder
+/// releases. The short 200 ms wait keeps the common single-session path
+/// latency-free.
+fn build_guarded(root: &str, respect_gitignore: bool, allow_secret_paths: bool) -> BuildOutcome {
+    let lock = crate::core::startup_guard::try_acquire_lock(
+        &search_index_lock_name(root),
+        Duration::from_millis(200),
+        Duration::from_mins(3),
+    );
+    if lock.is_none() {
+        // Another process owns the build. Clear the in-flight flag so a later
+        // nudge retries rather than leaving `building` stuck true forever.
         let mut map = cache()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(entry) = map.get_mut(&root) {
+        if let Some(entry) = map.get_mut(root) {
             entry.building = false;
-            if let Some(idx) = built {
-                entry.index = Some(Arc::new(idx));
-            }
         }
+        return BuildOutcome::Deferred;
+    }
+
+    let built = std::panic::catch_unwind(|| {
+        SearchIndex::build(root, respect_gitignore, allow_secret_paths)
+    })
+    .ok()
+    .flatten();
+
+    let mut map = cache()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(entry) = map.get_mut(root) {
+        entry.building = false;
+        if let Some(idx) = built {
+            entry.index = Some(Arc::new(idx));
+        }
+    }
+    // `lock` is held until here so the cross-process guard spans the whole walk.
+    drop(lock);
+    BuildOutcome::Built
+}
+
+fn spawn_build(root: String, respect_gitignore: bool, allow_secret_paths: bool) {
+    std::thread::spawn(move || {
+        let _ = build_guarded(&root, respect_gitignore, allow_secret_paths);
     });
 }
 
@@ -898,5 +951,129 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A scoped override of `LEAN_CTX_DATA_DIR`, restored on drop, so the
+    /// cross-process lock files land in an isolated temp dir during tests.
+    struct DataDirGuard {
+        prev: Option<String>,
+    }
+    impl DataDirGuard {
+        fn set(path: &std::path::Path) -> Self {
+            let prev = std::env::var("LEAN_CTX_DATA_DIR").ok();
+            crate::test_env::set_var("LEAN_CTX_DATA_DIR", path);
+            Self { prev }
+        }
+    }
+    impl Drop for DataDirGuard {
+        fn drop(&mut self) {
+            match self.prev.as_deref() {
+                Some(v) => crate::test_env::set_var("LEAN_CTX_DATA_DIR", v),
+                None => crate::test_env::remove_var("LEAN_CTX_DATA_DIR"),
+            }
+        }
+    }
+
+    #[test]
+    fn search_index_lock_name_is_per_repo_and_distinct() {
+        let a = search_index_lock_name("/tmp/repo-a");
+        let b = search_index_lock_name("/tmp/repo-b");
+        assert!(a.starts_with("search-idx-"), "unexpected lock name: {a}");
+        assert_ne!(a, b, "lock name must be per-repo");
+        assert_eq!(a, search_index_lock_name("/tmp/repo-a"), "stable per repo");
+        // Must not collide with the graph/bm25 locks for the same repo, or the
+        // three indexers would needlessly serialize against one another.
+        let h = &crate::core::index_namespace::namespace_hash(Path::new("/tmp/repo-a"))[..8];
+        assert_ne!(
+            a,
+            format!("graph-idx-{h}"),
+            "must not collide with graph lock"
+        );
+        assert_ne!(
+            a,
+            format!("bm25-idx-{h}"),
+            "must not collide with bm25 lock"
+        );
+    }
+
+    #[test]
+    fn build_guarded_builds_when_uncontended() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().unwrap();
+        let _guard = DataDirGuard::set(data.path());
+
+        let dir = corpus();
+        let root = dir.path().to_string_lossy().to_string();
+        // Seed the in-flight flag the way `ensure_background` does before spawn.
+        {
+            let mut map = cache()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            map.insert(
+                root.clone(),
+                CacheEntry {
+                    index: None,
+                    building: true,
+                },
+            );
+        }
+        assert_eq!(
+            build_guarded(&root, true, false),
+            BuildOutcome::Built,
+            "an uncontended root must build"
+        );
+        let map = cache()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let entry = map.get(&root).expect("entry present");
+        assert!(!entry.building, "building flag must clear after build");
+        assert!(entry.index.is_some(), "index must be installed after build");
+    }
+
+    #[test]
+    fn build_guarded_defers_when_another_process_holds_the_lock() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().unwrap();
+        let _guard = DataDirGuard::set(data.path());
+
+        let dir = corpus();
+        let root = dir.path().to_string_lossy().to_string();
+        // Pre-hold the cross-process lock with *this* (alive) PID and a fresh
+        // mtime, so neither the dead-owner nor the staleness reclaim can take it
+        // — exactly the "another session is already building" state from #460.
+        let lock_path = data
+            .path()
+            .join(format!(".{}.lock", search_index_lock_name(&root)));
+        std::fs::write(&lock_path, format!("{}\n", std::process::id())).unwrap();
+
+        {
+            let mut map = cache()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            map.insert(
+                root.clone(),
+                CacheEntry {
+                    index: None,
+                    building: true,
+                },
+            );
+        }
+        assert_eq!(
+            build_guarded(&root, true, false),
+            BuildOutcome::Deferred,
+            "a contended root must defer the proactive pre-warm"
+        );
+        let map = cache()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let entry = map.get(&root).expect("entry present");
+        assert!(
+            !entry.building,
+            "deferred build must clear the in-flight flag so a later nudge retries"
+        );
+        assert!(
+            entry.index.is_none(),
+            "deferred build must not run a second walk / install an index"
+        );
     }
 }

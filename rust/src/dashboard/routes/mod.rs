@@ -2,9 +2,11 @@
 
 mod agents;
 mod context;
+mod doctor;
 mod graph;
 pub mod helpers;
 mod knowledge;
+mod leaderboard;
 mod learning;
 mod memory;
 mod risk;
@@ -37,6 +39,7 @@ fn match_component_path(path: &str) -> Option<String> {
         "/static/components/cockpit-commander.js" => super::COCKPIT_COMPONENT_COMMANDER_JS,
         "/static/components/cockpit-palette.js" => super::COCKPIT_COMPONENT_PALETTE_JS,
         "/static/components/cockpit-roi.js" => super::COCKPIT_COMPONENT_ROI_JS,
+        "/static/components/cockpit-leaderboard.js" => super::COCKPIT_COMPONENT_LEADERBOARD_JS,
         "/static/components/cockpit-area-tabs.js" => super::COCKPIT_COMPONENT_AREA_TABS_JS,
         "/static/components/cockpit-protection.js" => super::COCKPIT_COMPONENT_PROTECTION_JS,
         "/static/components/cockpit-settings.js" => super::COCKPIT_COMPONENT_SETTINGS_JS,
@@ -112,6 +115,13 @@ pub fn route_response(
             super::COCKPIT_LIB_SHARED_JS.to_string(),
         );
     }
+    if path == "/static/lib/doctor.js" {
+        return (
+            "200 OK",
+            "application/javascript; charset=utf-8",
+            super::COCKPIT_LIB_DOCTOR_JS.to_string(),
+        );
+    }
     if let Some(content) = match_component_path(path) {
         return ("200 OK", "application/javascript; charset=utf-8", content);
     }
@@ -159,6 +169,8 @@ pub fn route_response(
         .or_else(|| agents::handle(path, query_str, method, body))
         .or_else(|| tools::handle(path, query_str, method, body))
         .or_else(|| settings::handle(path, query_str, method, body))
+        .or_else(|| doctor::handle(path, query_str, method, body))
+        .or_else(|| leaderboard::handle(path, query_str, method, body))
         .or_else(|| system::handle(path, query_str, method, body))
         .unwrap_or_else(|| ("404 Not Found", "text/plain", "Not Found".to_string()))
 }

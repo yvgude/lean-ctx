@@ -2,10 +2,27 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result};
 
 use crate::ipc;
+
+/// True once this process is the long-lived foreground daemon
+/// (`serve --_foreground-daemon`). Sessions delegate index builds to the daemon
+/// (#460); the daemon itself must never delegate to itself, so it checks this.
+static IS_FOREGROUND_DAEMON: AtomicBool = AtomicBool::new(false);
+
+/// Mark this process as the foreground daemon. Called once at daemon init.
+pub fn mark_foreground_daemon() {
+    IS_FOREGROUND_DAEMON.store(true, Ordering::Relaxed);
+}
+
+/// Whether this process is the long-lived foreground daemon.
+#[must_use]
+pub fn is_foreground_daemon() -> bool {
+    IS_FOREGROUND_DAEMON.load(Ordering::Relaxed)
+}
 
 fn data_dir() -> PathBuf {
     dirs::data_local_dir()
@@ -263,6 +280,7 @@ fn write_pid_file(pid: u32) -> Result<()> {
 /// point (e.g. `serve --_foreground-daemon`), so it must heal too. `heal()` is
 /// idempotent and cheap — a no-op once pinned and when no residual dir exists.
 pub fn init_foreground_daemon() -> Result<()> {
+    mark_foreground_daemon();
     crate::core::layout_pin::heal();
     let pid = std::process::id();
     write_pid_file(pid)?;

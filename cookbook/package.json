@@ -9,12 +9,12 @@
   "scripts": {
     "format": "biome format --write .",
     "lint": "biome lint .",
-    "typecheck": "npm --workspace @leanctx/sdk run build && npm -ws run typecheck",
+    "typecheck": "npm --workspace lean-ctx-client run build && npm -ws run typecheck",
     "build": "npm -ws run build",
-    "test": "npm --workspace @leanctx/sdk test",
-    "quickstart": "npm --workspace @leanctx/sdk run build && npm --workspace @leanctx/example-quickstart-cli start",
-    "memory-playground": "npm --workspace @leanctx/sdk run build && npm --workspace @leanctx/example-memory-policy-playground start",
-    "graph-explorer": "npm --workspace @leanctx/sdk run build && npm --workspace @leanctx/example-knowledge-graph-explorer dev"
+    "test": "npm --workspace lean-ctx-client test",
+    "quickstart": "npm --workspace lean-ctx-client run build && npm --workspace @leanctx/example-quickstart-cli start",
+    "memory-playground": "npm --workspace lean-ctx-client run build && npm --workspace @leanctx/example-memory-policy-playground start",
+    "graph-explorer": "npm --workspace lean-ctx-client run build && npm --workspace @leanctx/example-knowledge-graph-explorer dev"
   },
   "engines": {
     "node": ">=20.19.0"

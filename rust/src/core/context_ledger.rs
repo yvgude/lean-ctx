@@ -8,6 +8,20 @@ use super::context_field::{
 
 const DEFAULT_CONTEXT_WINDOW: usize = 128_000;
 
+/// EMA weight for the freshly computed Phi on a re-read (#2). 0.5 keeps equal
+/// weight on the new signal and the running history, so salience tracks recency
+/// and task changes without overreacting to one read.
+const PHI_REREAD_ALPHA: f64 = 0.5;
+
+/// Default Global-Workspace ignition threshold (#6) as a Phi z-score: an item
+/// must stand more than this many standard deviations above the mean salience to
+/// "ignite" and be broadcast (promoted to Pinned) into the global workspace.
+const GWT_IGNITION_Z: f64 = 1.5;
+/// Minimum number of scored entries before ignition can fire — below this the
+/// Phi distribution is too small to identify a meaningful outlier, so ignition
+/// is suppressed to avoid pinning everything on a cold ledger.
+const GWT_MIN_ENTRIES: usize = 4;
+
 fn ledger_path(agent_id: &str) -> Result<std::path::PathBuf, String> {
     let dir = crate::core::paths::state_dir()?;
     if agent_id == "default" {
@@ -184,9 +198,16 @@ impl ContextLedger {
             if existing.state.is_none() || existing.state == Some(ContextState::Candidate) {
                 existing.state = Some(ContextState::Included);
             }
-            if existing.phi.is_none() {
-                existing.phi = Some(phi);
-            }
+            // #2 Sticky-Phi fix: salience is time-variant (recency, task match,
+            // access frequency all changed since the first read), so recompute
+            // Phi on every re-read instead of freezing the first value. Blend
+            // with the prior score via a fixed-alpha EMA — deterministic, and
+            // damped so a single noisy read can't whipsaw eviction order.
+            existing.phi = Some(match existing.phi {
+                Some(old) => PHI_REREAD_ALPHA * phi + (1.0 - PHI_REREAD_ALPHA) * old,
+                None => phi,
+            });
+            crate::core::introspect::tick("phi_recompute");
         } else {
             self.entries.push(LedgerEntry {
                 path: path.clone(),
@@ -220,7 +241,8 @@ impl ContextLedger {
 
         let (signals, _costs) =
             compute_signals_for_path(path, task, None, window_size, original_tokens);
-        let phi = ContextField::new().compute_phi(&signals);
+        // #4: use the learned (bandit-selected) field weights when available.
+        let phi = ContextField::active().compute_phi(&signals);
         if phi > 0.0 {
             return phi;
         }
@@ -243,7 +265,7 @@ impl ContextLedger {
             token_cost_norm,
             redundancy: 0.0,
         };
-        ContextField::new().compute_phi(&signals)
+        ContextField::active().compute_phi(&signals)
     }
 
     /// Record with full CFT metadata including source hash and provenance.
@@ -322,6 +344,44 @@ impl ContextLedger {
             .take(self.entries.len() - keep_count)
             .map(|e| e.path.clone())
             .collect()
+    }
+
+    /// Global-Workspace ignition (#6): context items compete on salience (Phi);
+    /// any whose z-score exceeds the ignition threshold is "broadcast" — promoted
+    /// to Pinned so it survives eviction (`eviction_candidates_by_phi` already
+    /// skips Pinned) and pressure reinjection, and reaches the compiler's working
+    /// set as a pinned candidate. Deterministic: a pure threshold over the current
+    /// Phi distribution, no sampling. Returns the paths newly ignited this call.
+    pub fn ignite_high_salience(&mut self) -> Vec<String> {
+        let z_threshold = ignition_z_threshold();
+        let phis: Vec<f64> = self.entries.iter().filter_map(|e| e.phi).collect();
+        if phis.len() < GWT_MIN_ENTRIES {
+            return Vec::new();
+        }
+        let n = phis.len() as f64;
+        let mean = phis.iter().sum::<f64>() / n;
+        let var = phis.iter().map(|p| (p - mean).powi(2)).sum::<f64>() / n;
+        let std = var.sqrt();
+        if std <= f64::EPSILON {
+            return Vec::new();
+        }
+
+        let mut ignited = Vec::new();
+        for e in &mut self.entries {
+            let Some(phi) = e.phi else { continue };
+            let state = e.state.unwrap_or(ContextState::Included);
+            if matches!(state, ContextState::Excluded | ContextState::Pinned) {
+                continue;
+            }
+            if (phi - mean) / std > z_threshold {
+                e.state = Some(ContextState::Pinned);
+                ignited.push(e.path.clone());
+            }
+        }
+        if !ignited.is_empty() {
+            crate::core::introspect::tick("gwt_ignition");
+        }
+        ignited
     }
 
     /// Mark entries as stale if their source hash has changed.
@@ -681,6 +741,17 @@ fn downgrade_mode(current_mode: &str, current_tokens: usize) -> Option<(String, 
     }
 }
 
+/// Resolve the Global-Workspace ignition z-score threshold (#6): the
+/// `LEAN_CTX_GWT_IGNITION_Z` env override (must be > 0) wins, else the default
+/// [`GWT_IGNITION_Z`]. Deterministic for a given environment.
+fn ignition_z_threshold() -> f64 {
+    std::env::var("LEAN_CTX_GWT_IGNITION_Z")
+        .ok()
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|v| *v > 0.0)
+        .unwrap_or(GWT_IGNITION_Z)
+}
+
 impl Default for ContextLedger {
     fn default() -> Self {
         Self::new()
@@ -707,6 +778,50 @@ mod tests {
         assert_eq!(ledger.total_tokens_sent, 700);
         assert_eq!(ledger.total_tokens_saved, 800);
         assert_eq!(ledger.entries.len(), 2);
+    }
+
+    #[test]
+    fn ignition_broadcasts_high_salience_outlier() {
+        // #6: an item far above the mean salience ignites and is pinned.
+        let mut ledger = ContextLedger::with_window_size(100_000);
+        for i in 0..5 {
+            ledger.record(&format!("low{i}.rs"), "map", 100, 100);
+        }
+        ledger.record("hot.rs", "full", 100, 100);
+        for e in &mut ledger.entries {
+            e.phi = Some(if e.path == "hot.rs" { 0.95 } else { 0.1 });
+        }
+        let ignited = ledger.ignite_high_salience();
+        assert_eq!(ignited, vec!["hot.rs".to_string()]);
+        let hot = ledger.entries.iter().find(|e| e.path == "hot.rs").unwrap();
+        assert_eq!(hot.state, Some(ContextState::Pinned));
+    }
+
+    #[test]
+    fn ignition_skips_small_ledger() {
+        // Below GWT_MIN_ENTRIES the distribution is too small — no ignition.
+        let mut ledger = ContextLedger::with_window_size(100_000);
+        ledger.record("a.rs", "full", 100, 100);
+        ledger.entries[0].phi = Some(0.99);
+        assert!(ledger.ignite_high_salience().is_empty());
+    }
+
+    #[test]
+    fn ignition_is_deterministic() {
+        // Determinism contract (#498): same Phi distribution → same ignitions.
+        let build = || {
+            let mut l = ContextLedger::with_window_size(100_000);
+            for i in 0..5 {
+                l.record(&format!("f{i}.rs"), "map", 100, 100);
+            }
+            for (i, e) in l.entries.iter_mut().enumerate() {
+                e.phi = Some(if i == 0 { 0.95 } else { 0.1 });
+            }
+            l
+        };
+        let mut a = build();
+        let mut b = build();
+        assert_eq!(a.ignite_high_salience(), b.ignite_high_salience());
     }
 
     #[test]
@@ -998,6 +1113,37 @@ mod tests {
         ledger.record("src/lib.rs", "full", 100, 100);
         let id = crate::core::context_field::ContextItemId::from_file("src/lib.rs");
         assert!(ledger.find_by_id(&id).is_some());
+    }
+
+    #[test]
+    fn phi_recomputed_on_reread_not_sticky() {
+        // #2: Phi must track time-variant salience, not freeze on first read.
+        let _env = crate::core::data_dir::test_env_lock();
+        let dir = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.path());
+
+        let mut ledger = ContextLedger::with_window_size(100_000);
+        // First read carries a task whose keyword matches the path → relevance up.
+        ledger.record_with_task(
+            "src/authentication.rs",
+            "full",
+            2000,
+            2000,
+            Some("fix authentication login flow"),
+        );
+        let phi_with_task = ledger.entries[0].phi.unwrap();
+        // Re-read with no task context → relevance collapses, so the blended Phi
+        // must move. Before the fix this stayed frozen at the first value.
+        ledger.record_with_task("src/authentication.rs", "full", 2000, 2000, None);
+        let phi_after = ledger.entries[0].phi.unwrap();
+        assert_ne!(
+            phi_with_task, phi_after,
+            "Phi must be recomputed on re-read (#2)"
+        );
+        assert!(
+            phi_after < phi_with_task,
+            "dropping task relevance should lower Phi ({phi_with_task} -> {phi_after})"
+        );
     }
 
     #[test]

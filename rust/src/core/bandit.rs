@@ -89,23 +89,53 @@ impl Default for ThresholdBandit {
 }
 
 impl ThresholdBandit {
-    pub fn select_arm(&mut self) -> &BanditArm {
+    /// Choose an arm for this decision. Deterministic by default — the arm with
+    /// the highest posterior mean (argmax) — so tool behavior is reproducible and
+    /// provider prompt caching stays valid (#498). Probabilistic exploration
+    /// (epsilon-greedy + Thompson sampling) is used only when
+    /// [`Config::is_stochastic_enabled`] is on (`LEAN_CTX_STOCHASTIC` or
+    /// auto-mode-learning). Always counts the pull and registers activity (#4).
+    ///
+    /// [`Config::is_stochastic_enabled`]: crate::core::config::Config::is_stochastic_enabled
+    pub fn choose_arm(&mut self) -> &BanditArm {
         self.total_pulls += 1;
+        crate::core::introspect::tick("field_weights_bandit");
+        let idx = if crate::core::config::Config::load().is_stochastic_enabled() {
+            self.select_arm_stochastic()
+        } else {
+            self.best_arm_idx_by_mean()
+        };
+        &self.arms[idx]
+    }
 
+    /// Deterministic argmax of the posterior mean. Tie-break by lowest index so
+    /// the choice is stable and reproducible.
+    pub fn best_arm_idx_by_mean(&self) -> usize {
+        self.arms
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| {
+                a.mean()
+                    .partial_cmp(&b.mean())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map_or(0, |(i, _)| i)
+    }
+
+    /// Probabilistic arm selection (epsilon-greedy + Thompson sampling). Uses
+    /// `getrandom`, so it is NON-deterministic and must only be reached behind the
+    /// stochastic gate. Returns the chosen arm index.
+    fn select_arm_stochastic(&self) -> usize {
         let epsilon = (0.1 / (1.0 + self.total_pulls as f64 / 100.0)).max(0.02);
         if rng_f64() < epsilon {
-            let idx = rng_usize(self.arms.len());
-            return &self.arms[idx];
+            return rng_usize(self.arms.len());
         }
-
         let samples: Vec<f64> = self.arms.iter().map(BanditArm::sample).collect();
-        let best_idx = samples
+        samples
             .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map_or(0, |(i, _)| i);
-
-        &self.arms[best_idx]
+            .map_or(0, |(i, _)| i)
     }
 
     pub fn update(&mut self, arm_name: &str, success: bool) {
@@ -285,10 +315,39 @@ mod tests {
     fn bandit_selection_works() {
         let mut b = ThresholdBandit::default();
         for _ in 0..10 {
-            let arm = b.select_arm();
+            let arm = b.choose_arm();
             let _ = arm.name.clone();
         }
         assert_eq!(b.total_pulls, 10);
+    }
+
+    #[test]
+    fn choose_arm_is_deterministic_by_default() {
+        // #4 / #498: with stochastic exploration off (test default), choose_arm
+        // returns the argmax-of-mean arm every time — reproducible.
+        let mut a = ThresholdBandit::default();
+        let mut b = ThresholdBandit::default();
+        // Train both identically toward "aggressive".
+        for _ in 0..15 {
+            a.update("aggressive", true);
+            b.update("aggressive", true);
+        }
+        let pick_a: Vec<String> = (0..5).map(|_| a.choose_arm().name.clone()).collect();
+        let pick_b: Vec<String> = (0..5).map(|_| b.choose_arm().name.clone()).collect();
+        assert_eq!(pick_a, pick_b, "selection must be reproducible");
+        assert!(
+            pick_a.iter().all(|n| n == "aggressive"),
+            "argmax should pick the trained arm, got {pick_a:?}"
+        );
+    }
+
+    #[test]
+    fn best_arm_by_mean_picks_highest_posterior() {
+        let mut b = ThresholdBandit::default();
+        for _ in 0..10 {
+            b.update("balanced", true);
+        }
+        assert_eq!(b.arms[b.best_arm_idx_by_mean()].name, "balanced");
     }
 
     #[test]

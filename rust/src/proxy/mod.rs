@@ -1,7 +1,9 @@
 pub mod anthropic;
 pub mod cache_safety;
+pub mod ccr;
 pub mod cold_prefix;
 pub mod compress;
+pub mod compress_api;
 pub mod cost;
 pub mod forward;
 pub mod google;
@@ -267,6 +269,9 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         )
         .route("/responses/{*rest}", any(openai_responses::handler))
         .route("/v1/references/{id}", get(v1_resolve_reference))
+        // Drop-in `compress(messages, model)` contract (#739): deterministic
+        // messages-in / messages-out compression for SDK clients.
+        .route("/v1/compress", post(compress_api::handler))
         .fallback(fallback_router)
         .layer(axum::middleware::from_fn(host_guard))
         .with_state(state);
@@ -292,6 +297,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         "  OpenAI:    POST /v1/responses → {openai_upstream}  (bare /responses also accepted)"
     );
     println!("  Gemini:    POST /v1beta/models/... → {gemini_upstream}");
+    println!("  Compress:  POST /v1/compress (deterministic messages-in/out, local)");
     // Codex defaults to a WebSocket Responses transport (ws://…/responses). The
     // proxy now bridges it to the HTTP/SSE upstream (#440), so Codex works as a
     // drop-in without a `supports_websockets = false` workaround.

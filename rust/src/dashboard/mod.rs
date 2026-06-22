@@ -12,6 +12,7 @@ const COCKPIT_LIB_FORMAT_JS: &str = include_str!("static/lib/format.js");
 const COCKPIT_LIB_ROUTER_JS: &str = include_str!("static/lib/router.js");
 const COCKPIT_LIB_CHARTS_JS: &str = include_str!("static/lib/charts.js");
 const COCKPIT_LIB_SHARED_JS: &str = include_str!("static/lib/shared.js");
+const COCKPIT_LIB_DOCTOR_JS: &str = include_str!("static/lib/doctor.js");
 const COCKPIT_COMPONENT_NAV_JS: &str = include_str!("static/components/cockpit-nav.js");
 const COCKPIT_COMPONENT_CONTEXT_JS: &str = include_str!("static/components/cockpit-context.js");
 const COCKPIT_COMPONENT_OVERVIEW_JS: &str = include_str!("static/components/cockpit-overview.js");
@@ -32,6 +33,8 @@ const COCKPIT_COMPONENT_REMAINING_JS: &str = include_str!("static/components/coc
 const COCKPIT_COMPONENT_COMMANDER_JS: &str = include_str!("static/components/cockpit-commander.js");
 const COCKPIT_COMPONENT_PALETTE_JS: &str = include_str!("static/components/cockpit-palette.js");
 const COCKPIT_COMPONENT_ROI_JS: &str = include_str!("static/components/cockpit-roi.js");
+const COCKPIT_COMPONENT_LEADERBOARD_JS: &str =
+    include_str!("static/components/cockpit-leaderboard.js");
 const COCKPIT_COMPONENT_AREA_TABS_JS: &str = include_str!("static/components/cockpit-area-tabs.js");
 const COCKPIT_COMPONENT_PROTECTION_JS: &str =
     include_str!("static/components/cockpit-protection.js");
@@ -368,8 +371,15 @@ fn open_dashboard_url(url: &str, mode: DashboardOpen) {
         DashboardOpen::Browser => open_browser(url),
         DashboardOpen::None => {}
         DashboardOpen::Vscode => {
+            // Prefer the extension's native webview tab (#466 item 3): with the
+            // lean-ctx VS Code extension installed, one command opens the
+            // dashboard as a real editor tab — no URL copy/paste. Keep the
+            // Simple Browser path as the no-extension fallback.
             println!(
-                "  \x1b[2mOpen in VS Code: ⇧⌘P → \"Simple Browser: Show\" → paste the URL above\x1b[0m"
+                "  \x1b[2mNative tab: run ⇧⌘P → \"lean-ctx: Open Web Dashboard\" (needs the lean-ctx VS Code extension)\x1b[0m"
+            );
+            println!(
+                "  \x1b[2mNo extension? ⇧⌘P → \"Simple Browser: Show\" → paste the URL above\x1b[0m"
             );
         }
     }

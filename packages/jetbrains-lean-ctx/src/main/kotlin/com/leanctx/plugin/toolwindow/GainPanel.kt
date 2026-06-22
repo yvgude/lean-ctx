@@ -145,11 +145,7 @@ class GainPanel : SimpleToolWindowPanel(true, true) {
         else -> "→ Stable"
     }
 
-    private fun tokens(n: Long): String = when {
-        n >= 1_000_000 -> "%.1fM".format(n / 1_000_000.0)
-        n >= 1_000 -> "%.1fK".format(n / 1_000.0)
-        else -> n.toString()
-    }
+    private fun tokens(n: Long): String = com.leanctx.plugin.formatTokens(n)
 
     private fun usd(amount: Double): String =
         if (amount >= 0.01) "$%.2f".format(amount) else "$%.3f".format(amount)
