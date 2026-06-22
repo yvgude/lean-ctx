@@ -1,10 +1,12 @@
 use std::collections::HashSet;
+use std::fmt::Write;
 use std::path::Path;
 
 use crate::core::bm25_index::{BM25Index, format_search_results};
 use crate::core::embedding_index::EmbeddingIndex;
 #[cfg(feature = "embeddings")]
 use crate::core::embeddings::EmbeddingEngine;
+use crate::core::hnsw::FlatEmbeddings;
 use crate::core::hybrid_search::{HybridConfig, HybridResult, format_hybrid_results};
 use crate::tools::CrpMode;
 
@@ -48,7 +50,7 @@ pub fn handle(
     };
 
     let compact = crp_mode.is_tdd();
-    let mode = mode.unwrap_or("hybrid").to_lowercase();
+    let mode = mode.unwrap_or("bm25").to_lowercase();
     let workspace = workspace.unwrap_or(false);
     let artifacts = artifacts.unwrap_or(false);
 
@@ -216,6 +218,7 @@ fn bm25_hits(
 }
 
 /// Rebuilds the BM25 search index for the given directory from scratch.
+#[must_use]
 pub fn handle_reindex(path: &str) -> String {
     let root = Path::new(path);
     if !root.exists() {
@@ -235,6 +238,7 @@ pub fn handle_reindex(path: &str) -> String {
     format!("Reindexed {path}: {files} files, {chunks} chunks")
 }
 
+#[must_use]
 pub fn handle_reindex_artifacts(path: &str, workspace: bool) -> String {
     let root = Path::new(path);
     if !root.exists() {
@@ -432,7 +436,7 @@ fn bm25_cold_build_budget() -> std::time::Duration {
     let ms = std::env::var("LEAN_CTX_BM25_COLD_BUDGET_MS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(3000);
+        .unwrap_or(60_000);
     std::time::Duration::from_millis(ms)
 }
 
@@ -559,9 +563,9 @@ fn artifacts_search(
 
     let mut out = format!("{header}{}", format_search_results(&fused, compact));
     if !warnings.is_empty() && !compact {
-        out.push_str(&format!("\nWarnings ({}):\n", warnings.len()));
+        let _ = writeln!(out, "\nWarnings ({}):", warnings.len());
         for w in warnings.iter().take(20) {
-            out.push_str(&format!("- {w}\n"));
+            let _ = writeln!(out, "- {w}");
         }
     }
     out
@@ -1127,7 +1131,8 @@ fn hybrid_search_mode(
             results.retain(|x| filter.matches(&x.file_path));
         }
 
-        if let Some(graph_ranks) = graph_rrf_ranks_for_search_root(root) {
+        let graph_ranks = graph_rrf_ranks_for_search_root(root);
+        if let Some(ref graph_ranks) = graph_ranks {
             const GRAPH_RRF_K: f64 = 60.0;
             for r in &mut results {
                 if let Some(&rank) = graph_ranks.get(&r.file_path) {
@@ -1142,11 +1147,7 @@ fn hybrid_search_mode(
         }
 
         results.truncate(top_k);
-        let graph_tag = if graph_rrf_ranks_for_search_root(root).is_some() {
-            "+graph"
-        } else {
-            ""
-        };
+        let graph_tag = if graph_ranks.is_some() { "+graph" } else { "" };
         let header = if compact {
             format!(
                 "semantic_search(bm25{graph_tag},{top_k}) → {} results, {} chunks indexed\n",
@@ -1276,11 +1277,12 @@ fn load_engine_and_index(
     Ok((engine, idx))
 }
 
-/// Aligned embedding corpus shared with the cached HNSW index, plus coverage
-/// and the list of files re-embedded this call. `Arc<[Vec<f32>]>` lets the
-/// corpus back both per-query scoring and the cached [`AnnIndex`] without a copy.
+/// Aligned embedding corpus as a single contiguous [`FlatEmbeddings`] allocation,
+/// plus coverage and the list of files re-embedded this call. The flat row-major
+/// layout gives sequential memory access during dot-product scoring — one
+/// dereference instead of the two-level indirection of `Arc<[Vec<f32>]>`.
 #[cfg(feature = "embeddings")]
-type AlignedEmbeddings = (std::sync::Arc<[Vec<f32>]>, f64, Vec<String>);
+type AlignedEmbeddings = (FlatEmbeddings, f64, Vec<String>);
 
 #[cfg(feature = "embeddings")]
 fn ensure_embeddings(
@@ -1299,13 +1301,11 @@ fn ensure_embeddings(
     // BM25 cache fingerprint goes stale and a fresh full-content index (reloaded
     // from disk) replaces this one, restoring the normal re-embed path.
     if index.content_truncated {
-        let aligned = embed_idx
-            .get_aligned_embeddings(&index.chunks)
-            .ok_or_else(|| {
-                "embedding alignment failed on truncated resident index; \
+        let aligned = embed_idx.get_aligned_flat(&index.chunks).ok_or_else(|| {
+            "embedding alignment failed on truncated resident index; \
                  refusing to re-embed snippet-only bodies"
-                    .to_string()
-            })?;
+                .to_string()
+        })?;
         let coverage = embed_idx.coverage(index.chunks.len());
         return Ok((aligned, coverage, Vec::new()));
     }
@@ -1319,47 +1319,53 @@ fn ensure_embeddings(
             .iter()
             .map(std::string::String::as_str)
             .collect();
-        let mut new_embeddings: Vec<(usize, Vec<f32>)> = Vec::new();
+
+        let mut changed_indices: Vec<usize> = Vec::new();
+        let mut changed_texts: Vec<&str> = Vec::new();
         for (i, c) in index.chunks.iter().enumerate() {
-            if !changed_set.contains(c.file_path.as_str()) {
-                continue;
+            if changed_set.contains(c.file_path.as_str()) {
+                changed_indices.push(i);
+                changed_texts.push(&c.content);
             }
-            let emb = engine
-                .embed(&c.content)
-                .map_err(|e| format!("embed failed for {}: {e}", c.file_path))?;
-            new_embeddings.push((i, emb));
         }
-        embed_idx.update(&index.chunks, &new_embeddings, &changed_files);
+
+        let batch_embeddings = engine
+            .embed_batch(&changed_texts)
+            .map_err(|e| format!("batch embed failed: {e}"))?;
+
+        let new_embeddings: Vec<(usize, Vec<f32>)> =
+            changed_indices.into_iter().zip(batch_embeddings).collect();
+
+        embed_idx.update(&index.chunks, &new_embeddings, &changed_files, None);
         embed_idx
             .save(root)
             .map_err(|e| format!("save embeddings failed: {e}"))?;
     }
 
-    if let Some(aligned) = embed_idx.get_aligned_embeddings(&index.chunks) {
+    if let Some(aligned) = embed_idx.get_aligned_flat(&index.chunks) {
         let coverage = embed_idx.coverage(index.chunks.len());
         return Ok((aligned, coverage, changed_files));
     }
 
-    // Alignment missing: rebuild everything once.
+    // Alignment missing: rebuild everything once via batched inference.
     let mut all_files: Vec<String> = index.chunks.iter().map(|c| c.file_path.clone()).collect();
     all_files.sort();
     all_files.dedup();
 
-    let mut new_embeddings: Vec<(usize, Vec<f32>)> = Vec::with_capacity(index.chunks.len());
-    for (i, c) in index.chunks.iter().enumerate() {
-        let emb = engine
-            .embed(&c.content)
-            .map_err(|e| format!("embed failed for {}: {e}", c.file_path))?;
-        new_embeddings.push((i, emb));
-    }
+    let all_texts: Vec<&str> = index.chunks.iter().map(|c| c.content.as_str()).collect();
+    let batch_embeddings = engine
+        .embed_batch(&all_texts)
+        .map_err(|e| format!("batch embed failed: {e}"))?;
 
-    embed_idx.update(&index.chunks, &new_embeddings, &all_files);
+    let new_embeddings: Vec<(usize, Vec<f32>)> = batch_embeddings.into_iter().enumerate().collect();
+
+    embed_idx.update(&index.chunks, &new_embeddings, &all_files, None);
     embed_idx
         .save(root)
         .map_err(|e| format!("save embeddings failed: {e}"))?;
 
     let aligned = embed_idx
-        .get_aligned_embeddings(&index.chunks)
+        .get_aligned_flat(&index.chunks)
         .ok_or_else(|| "embedding alignment failed after full rebuild".to_string())?;
     let coverage = embed_idx.coverage(index.chunks.len());
     Ok((aligned, coverage, all_files))

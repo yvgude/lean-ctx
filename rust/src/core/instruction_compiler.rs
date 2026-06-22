@@ -77,7 +77,7 @@ pub fn compile(
         let config_dir = crate::instructions::claude_config_dir_display();
         rules_files.push(CompiledRuleFile {
             path: format!("{config_dir}/rules/lean-ctx.md"),
-            content: crate::rules_inject::rules_dedicated_markdown().to_string(),
+            content: crate::rules_inject::rules_dedicated_markdown().clone(),
         });
     }
 

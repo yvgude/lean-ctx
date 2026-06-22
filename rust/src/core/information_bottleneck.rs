@@ -142,7 +142,7 @@ pub fn compress_ib_with_query(text: &str, target_ratio: f64, query: Option<&str>
     };
 
     for _ in 0..26 {
-        let mid = (lo + hi) * 0.5;
+        let mid = f64::midpoint(lo, hi);
         let cand = render_ib(lines, &scores, mid);
         let r = count_tokens(&cand) as f64 / input_tokens as f64;
         consider(mid);
@@ -153,7 +153,7 @@ pub fn compress_ib_with_query(text: &str, target_ratio: f64, query: Option<&str>
         }
     }
 
-    for thr in [0.0_f64, 1.0_f64, lo, hi, (lo + hi) * 0.5] {
+    for thr in [0.0_f64, 1.0_f64, lo, hi, f64::midpoint(lo, hi)] {
         consider(thr);
     }
 

@@ -7,7 +7,7 @@
 //! needed).
 //!
 //! Run:    cargo bench --bench efficiency
-//! Tune:   BENCH_FILES=5000 cargo bench --bench efficiency
+//! Tune:   `BENCH_FILES=5000` cargo bench --bench efficiency
 
 use std::path::Path;
 use std::time::{Duration, Instant};

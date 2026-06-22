@@ -37,6 +37,30 @@ pub fn mean_pool(
     sum
 }
 
+/// Batched mean pooling over multiple sequences in a single output tensor.
+///
+/// The model output is `[batch, max_seq_len, dim]` flattened row-major. Each
+/// sequence is mean-pooled using its own attention mask to exclude padding.
+pub fn mean_pool_batch(
+    hidden_states: &[f32],
+    masks: &[&[i32]],
+    max_seq_len: usize,
+    dim: usize,
+) -> Vec<Vec<f32>> {
+    let batch = masks.len();
+    let expected_len = batch * max_seq_len * dim;
+    if hidden_states.len() < expected_len {
+        return vec![vec![0.0; dim]; batch];
+    }
+    let mut results = Vec::with_capacity(batch);
+    for (b, m) in masks.iter().enumerate().take(batch) {
+        let offset = b * max_seq_len * dim;
+        let h = &hidden_states[offset..][..max_seq_len * dim];
+        results.push(mean_pool(h, m, max_seq_len, dim));
+    }
+    results
+}
+
 /// L2-normalize a vector in-place.
 pub fn normalize_l2(vec: &mut [f32]) {
     let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();

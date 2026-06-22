@@ -11,6 +11,7 @@
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use super::model_registry::{ModelConfig, VocabSource};
 
@@ -120,7 +121,13 @@ fn download_file(
 
     tracing::info!("Downloading {local_name} ...");
 
-    let response = ureq::get(url)
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(30)))
+        .timeout_global(Some(Duration::from_mins(5)))
+        .build()
+        .into();
+    let response = agent
+        .get(url)
         .header("User-Agent", USER_AGENT)
         .call()
         .map_err(|e| anyhow::anyhow!("Failed to download {url}: {e}"))?;

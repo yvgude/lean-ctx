@@ -161,7 +161,7 @@ pub fn format_gain_daily() -> String {
         };
         let row = format!(
             " {m}{:<12}{rst} {:>6}  {:>10}  {pc}{bold}{:>10}{rst}  {pc}{:>6.1}%{rst}  {dim}{:>8}{rst}  {dim}{:>8}{rst}",
-            &day.date,
+            day.date,
             day.commands,
             format_big(day.input_tokens),
             format_big(saved),

@@ -51,6 +51,10 @@ struct ProjectBuild {
     warm_triggered: bool,
     graph: Component,
     bm25: Component,
+    /// Dense embedding index (semantic search). Built after BM25 as Phase 3.
+    /// Tracked separately so the orchestrator does not block on a missing ONNX
+    /// model — the status lets users see why semantic stays cold (#249).
+    semantic: Component,
 }
 
 impl ProjectBuild {
@@ -60,6 +64,7 @@ impl ProjectBuild {
             warm_triggered: false,
             graph: Component::new(),
             bm25: Component::new(),
+            semantic: Component::new(),
         }
     }
 }
@@ -228,100 +233,108 @@ pub fn ensure_all_background(project_root: &str) {
 
     let root = project_root.to_string();
     let indexer = move || {
-        let state = entry_for(&root);
-
         // Pre-warm the resident line-search index in parallel (own thread,
         // deduped internally) so the first ctx_search hits the fast path.
         crate::core::search_index::ensure_background(&root, true, false);
 
-        // Phase 1: Graph index — may produce a content cache from the file walk
-        {
-            let mut s = state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            start_component(&mut s.graph);
-        }
-        let graph_result = std::panic::catch_unwind(|| {
-            let (idx, content_cache) = graph_index::scan_with_content_cache(&root);
-            // #696 C4: the property graph is the sole store. `save()` mirrors the
-            // freshly scanned index into PG (stamping `graph.meta.json`) in this
-            // same reliable worker, so PG inherits the scan's build reliability —
-            // no separate fire-and-forget mirror thread that dies in short-lived
-            // processes.
-            if let Err(e) = idx.save() {
-                tracing::warn!("[index_orchestrator: graph save failed: {e}]");
-            }
-            (idx, content_cache)
-        });
-        let content_cache = if let Ok((_idx, cache)) = graph_result {
-            let mut s = state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            finish_ok(&mut s.graph);
-            cache
-        } else {
-            let mut s = state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            finish_err(&mut s.graph, "graph index build panicked".to_string());
-            HashMap::new()
-        };
+        // ---- Parallel Phase: Graph + BM25 ----
+        let graph_state = entry_for(&root);
+        let graph_root = root.clone();
+        let graph_handle = std::thread::Builder::new()
+            .name("leanctx-graph".to_string())
+            .stack_size(INDEXER_STACK_BYTES)
+            .spawn(move || {
+                {
+                    let mut s = graph_state
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    start_component(&mut s.graph);
+                }
+                let graph_result = std::panic::catch_unwind(|| {
+                    let (idx, _cache) = graph_index::scan_with_content_cache(&graph_root);
+                    // #696 C4: the property graph is the sole store. `save()` mirrors
+                    // the freshly scanned index into PG (stamping `graph.meta.json`) in
+                    // this same reliable worker, so PG inherits the scan's build reliability.
+                    if let Err(e) = idx.save() {
+                        tracing::warn!("[index_orchestrator: graph save failed: {e}]");
+                    }
+                });
+                if let Ok(()) = graph_result {
+                    let mut s = graph_state
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    finish_ok(&mut s.graph);
+                } else {
+                    let mut s = graph_state
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    finish_err(&mut s.graph, "graph index build panicked".to_string());
+                }
+            })
+            .expect("spawning graph index thread");
 
-        // Phase 2: BM25 index — reuses content from graph scan when available
-        {
-            let mut s = state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            start_component(&mut s.bm25);
+        let bm25_state = entry_for(&root);
+        let bm25_root = root.clone();
+        let bm25_handle = std::thread::Builder::new()
+            .name("leanctx-bm25".to_string())
+            .stack_size(INDEXER_STACK_BYTES)
+            .spawn(move || {
+                {
+                    let mut s = bm25_state
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    start_component(&mut s.bm25);
+                }
+                let bm = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let root_pb = Path::new(&bm25_root);
+                    // Cross-instance build coordination: serialize the (expensive) BM25
+                    // build per repo, mirroring the `graph-idx` lock in graph_index.
+                    let lock_name = bm25_index_lock_name(root_pb);
+                    let _lock = crate::core::startup_guard::try_acquire_lock(
+                        &lock_name,
+                        std::time::Duration::from_millis(800),
+                        std::time::Duration::from_mins(3),
+                    );
+                    if _lock.is_none() {
+                        tracing::info!(
+                            "[bm25: another process is building {bm25_root} — loading the shared index]"
+                        );
+                        let idx = BM25Index::load(root_pb).unwrap_or_default();
+                        return (idx.doc_count, None);
+                    }
+                    let idx = BM25Index::load_or_build(root_pb);
+                    let outcome = idx.save(root_pb);
+                    (idx.doc_count, Some(outcome))
+                }));
+                if let Ok((doc_count, save_res)) = bm {
+                     let mut s = bm25_state
+                         .lock()
+                         .unwrap_or_else(std::sync::PoisonError::into_inner);
+                     finish_ok(&mut s.bm25);
+                     s.bm25.note = Some(match save_res {
+                         Some(outcome) => bm25_build_note(doc_count, &outcome),
+                         None => format!(
+                             "loaded shared BM25 index ({doc_count} chunks) — build in progress in another process"
+                         ),
+                     });
+                 } else {
+                     let mut s = bm25_state
+                         .lock()
+                         .unwrap_or_else(std::sync::PoisonError::into_inner);
+                     finish_err(&mut s.bm25, "bm25 build panicked".to_string());
+                 }
+            })
+            .expect("spawning BM25 index thread");
+
+        if let Err(e) = graph_handle.join() {
+            tracing::error!("[index_orchestrator: graph thread panicked: {e:?}]");
         }
-        let bm = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let root_pb = Path::new(&root);
-            // Cross-instance build coordination: serialize the (expensive) BM25
-            // build per repo, mirroring the `graph-idx` lock in graph_index. The
-            // graph scan is already guarded this way; BM25 was the one component
-            // left to stampede when N sessions warm the same repo at once. On
-            // lock contention we load the index the holder is producing rather
-            // than running a second full build.
-            let lock_name = bm25_index_lock_name(root_pb);
-            let _lock = crate::core::startup_guard::try_acquire_lock(
-                &lock_name,
-                std::time::Duration::from_millis(800),
-                std::time::Duration::from_mins(3),
-            );
-            if _lock.is_none() {
-                tracing::info!(
-                    "[bm25: another process is building {root} — loading the shared index]"
-                );
-                let idx = BM25Index::load(root_pb).unwrap_or_default();
-                return (idx.doc_count, None);
-            }
-            let idx = if content_cache.is_empty() {
-                BM25Index::load_or_build(root_pb)
-            } else {
-                BM25Index::build_with_content_hint(root_pb, &content_cache)
-            };
-            let outcome = idx.save(root_pb);
-            (idx.doc_count, Some(outcome))
-        }));
-        if let Ok((doc_count, save_res)) = bm {
-            let mut s = state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            finish_ok(&mut s.bm25);
-            s.bm25.note = Some(match save_res {
-                Some(outcome) => bm25_build_note(doc_count, &outcome),
-                None => format!(
-                    "loaded shared BM25 index ({doc_count} chunks) — build in progress in another process"
-                ),
-            });
-        } else {
-            let mut s = state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            finish_err(&mut s.bm25, "bm25 build panicked".to_string());
+        if let Err(e) = bm25_handle.join() {
+            tracing::error!("[index_orchestrator: BM25 thread panicked: {e:?}]");
         }
 
-        let mut s = state
+        let final_state = entry_for(&root);
+        let mut s = final_state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         s.worker_running = false;
@@ -341,6 +354,64 @@ pub fn ensure_all_background(project_root: &str) {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         s.worker_running = false;
+    }
+}
+
+/// Build only the semantic (dense embedding) index from the existing BM25 index.
+/// The BM25 index must already exist on disk — this function loads it and runs
+/// `embedding_index::build_or_update`. Updates the in-memory semantic component
+/// state on completion.
+pub fn build_semantic(project_root: &str) {
+    let state = entry_for(project_root);
+    let root = Path::new(project_root);
+
+    {
+        let mut s = state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        start_component(&mut s.semantic);
+    }
+
+    let bm25_idx = try_load_bm25_index(project_root);
+    match bm25_idx.as_ref() {
+        Some(idx) if idx.doc_count > 0 => {
+            let outcome = crate::core::embedding_index::build_or_update(root, idx);
+            let mut s = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            match outcome {
+                crate::core::embedding_index::EmbeddingBuildOutcome::Ready => {
+                    finish_ok(&mut s.semantic);
+                }
+                crate::core::embedding_index::EmbeddingBuildOutcome::Skipped => {
+                    finish_ok(&mut s.semantic);
+                    s.semantic.note = Some(
+                        "embeddings disabled by feature flag or config (search.dense_enabled / memory_profile)"
+                            .to_string(),
+                    );
+                }
+                crate::core::embedding_index::EmbeddingBuildOutcome::ModelNotAvailable(
+                    ref reason,
+                ) => {
+                    s.semantic.state = State::Idle;
+                    s.semantic.note = Some(format!("embedding model not available: {reason}"));
+                }
+                crate::core::embedding_index::EmbeddingBuildOutcome::Failed => {
+                    finish_err(
+                        &mut s.semantic,
+                        "embedding build failed (see logs)".to_string(),
+                    );
+                }
+            }
+        }
+        _ => {
+            let mut s = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            s.semantic.state = State::Idle;
+            s.semantic.note =
+                Some("BM25 index is empty or unavailable — nothing to embed".to_string());
+        }
     }
 }
 
@@ -412,24 +483,57 @@ pub struct Bm25Summary {
     pub last_error: Option<String>,
 }
 
+/// Lightweight snapshot of the semantic (dense embedding) component.
+#[derive(Debug, Clone)]
+pub struct SemanticSummary {
+    pub state: &'static str,
+    pub elapsed_ms: Option<u64>,
+    pub note: Option<String>,
+    pub last_error: Option<String>,
+}
+
+/// Shared helper: compute (state_str, elapsed_ms) for a component.
+/// Deduplicates the elapsed-while-building logic and state-to-string mapping
+/// between bm25_summary and semantic_summary.
+fn component_elapsed_and_state(c: &Component) -> (&'static str, Option<u64>) {
+    let elapsed_ms = if matches!(c.state, State::Building) {
+        c.started_ms.map(|start| now_ms().saturating_sub(start))
+    } else {
+        c.duration_ms
+    };
+    let state = match c.state {
+        State::Idle => "idle",
+        State::Building => "building",
+        State::Ready => "ready",
+        State::Failed => "failed",
+    };
+    (state, elapsed_ms)
+}
+
+pub fn semantic_summary(project_root: &str) -> SemanticSummary {
+    let entry = entry_for(project_root);
+    let s = entry
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let c = &s.semantic;
+    let (state, elapsed_ms) = component_elapsed_and_state(c);
+    SemanticSummary {
+        state,
+        elapsed_ms,
+        note: c.note.clone(),
+        last_error: c.last_error.clone(),
+    }
+}
+
 pub fn bm25_summary(project_root: &str) -> Bm25Summary {
     let entry = entry_for(project_root);
     let s = entry
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let c = &s.bm25;
-    let elapsed_ms = if matches!(c.state, State::Building) {
-        c.started_ms.map(|start| now_ms().saturating_sub(start))
-    } else {
-        c.duration_ms
-    };
+    let (state, elapsed_ms) = component_elapsed_and_state(c);
     Bm25Summary {
-        state: match c.state {
-            State::Idle => "idle",
-            State::Building => "building",
-            State::Ready => "ready",
-            State::Failed => "failed",
-        },
+        state,
         elapsed_ms,
         note: c.note.clone(),
         last_error: c.last_error.clone(),
@@ -452,10 +556,12 @@ pub fn is_building() -> bool {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     map.values().any(|entry| {
-        let s = entry
+        let st = entry
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        matches!(s.bm25.state, State::Building) || matches!(s.graph.state, State::Building)
+        matches!(st.bm25.state, State::Building)
+            || matches!(st.graph.state, State::Building)
+            || matches!(st.semantic.state, State::Building)
     })
 }
 
@@ -491,6 +597,10 @@ struct StatusResponse<'a> {
     project_root: &'a str,
     graph_index: ComponentStatus<'a>,
     bm25_index: ComponentStatus<'a>,
+    /// Dense embedding index built after BM25.  "idle" means the ONNX model
+    /// has not been downloaded yet or the embeddings feature was not compiled
+    /// in; "ready" means embeddings are persisted and search will use them.
+    semantic_index: ComponentStatus<'a>,
     disk: DiskStatusAll,
 }
 
@@ -507,6 +617,10 @@ pub struct DiskStatusAll {
     pub graph_index: DiskStatus,
     pub bm25_index: DiskStatus,
     pub code_graph: DiskStatus,
+    /// On-disk embedding index (`embeddings.bin`).  Present when dense search
+    /// has been built at least once; absent when the model is not downloaded
+    /// yet or embeddings are disabled by config.
+    pub semantic_index: DiskStatus,
 }
 
 fn disk_status_for_graph(project_root: &str) -> DiskStatus {
@@ -579,15 +693,36 @@ fn format_time(t: SystemTime) -> String {
     )
 }
 
+pub fn disk_status_for_semantic(project_root: &str) -> DiskStatus {
+    let root = Path::new(project_root);
+    let dir = crate::core::index_namespace::vectors_dir(root);
+    let bin_path = dir.join("embeddings.bin");
+    if !bin_path.exists() {
+        return DiskStatus::default();
+    }
+    let meta = std::fs::metadata(&bin_path).ok();
+    DiskStatus {
+        exists: true,
+        size_bytes: meta.as_ref().map(std::fs::Metadata::len),
+        file_count: None,
+        modified_at: meta.and_then(|m| m.modified().ok()).map(format_time),
+    }
+}
+
 pub fn disk_status(project_root: &str) -> DiskStatusAll {
     DiskStatusAll {
         graph_index: disk_status_for_graph(project_root),
         bm25_index: disk_status_for_bm25(project_root),
         code_graph: disk_status_for_code_graph(project_root),
+        semantic_index: disk_status_for_semantic(project_root),
     }
 }
 
 pub fn status_json(project_root: &str) -> String {
+    // Compute disk status first — may do SQLite I/O and must NOT hold L2
+    // (per-project Mutex) while doing so, or the background index worker
+    // cannot call finish_ok / set worker_running = false (#deadlock).
+    let disk = disk_status(project_root);
     let state = entry_for(project_root);
     let s = state
         .lock()
@@ -596,7 +731,8 @@ pub fn status_json(project_root: &str) -> String {
         project_root,
         graph_index: component_status(&s.graph),
         bm25_index: component_status(&s.bm25),
-        disk: disk_status(project_root),
+        semantic_index: component_status(&s.semantic),
+        disk,
     };
     serde_json::to_string(&res).unwrap_or_else(|_| "{}".to_string())
 }
@@ -625,7 +761,6 @@ mod tests {
         }
         // ctx_search only needs the cheap trigram index.
         assert_eq!(warm_need_for_tool("ctx_search"), WarmNeed::Search);
-        // Graph / BM25 consumers need the full warm.
         for heavy in [
             "ctx_graph",
             "ctx_callgraph",
@@ -644,8 +779,6 @@ mod tests {
 
     #[test]
     fn ensure_warm_lightweight_and_search_never_signal_first_warm() {
-        // None and Search must return false (no heavy pre-warm), and an empty
-        // root is always a no-op.
         assert!(!ensure_warm_for_tool("", "ctx_graph"));
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().to_string_lossy().to_string();
