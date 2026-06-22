@@ -15,22 +15,25 @@ impl McpTool for CtxPackageTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_package",
-            "Save or resume portable context packages — self-contained JSON bundles with session state, summaries, and knowledge. Use to hand off context between agents, persist session snapshots for later, or onboard a new agent into a previous session's context. Actions: save (export current session), resume (import from a package file), list (show saved packages), info (inspect a package without importing).",
+            "Save or resume portable context packages — self-contained JSON bundles with session\n\
+             state, summaries, and knowledge. Use to hand off context between agents, persist\n\
+             session snapshots for later, or onboard a new agent into a previous session.\n\
+             Actions: save (export), resume (import), list, info (inspect without importing).",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["save", "resume", "list", "info"],
-                        "description": "Package action (default: save)"
+                        "description": "save|resume|list|info"
                     },
                     "path": {
                         "type": "string",
-                        "description": "File path for resume/info, or custom output path for save"
+                        "description": "File path"
                     },
                     "description": {
                         "type": "string",
-                        "description": "Human-readable description for the saved package"
+                        "description": "Package description"
                     }
                 },
                 "required": []

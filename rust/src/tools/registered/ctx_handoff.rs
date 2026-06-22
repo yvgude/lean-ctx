@@ -17,24 +17,26 @@ impl McpTool for CtxHandoffTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_handoff",
-            "Context Ledger Protocol (hashed, deterministic, local-first). Actions: create|show|list|pull|clear|export|import.",
+            "Context handoff protocol (hashed, deterministic, local-first).\n\
+             Actions: create|show|list|pull|clear|export|import. Stores curated file refs with hashes.\n\
+             Use before ending a session or when handing off work to another agent.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["create", "show", "list", "pull", "clear", "export", "import"],
-                        "description": "Operation to perform (default: list)"
+                        "description": "create|show|list|pull|clear|export|import"
                     },
                     "path": { "type": "string", "description": "Ledger file path (for show/pull/import)" },
-                    "paths": { "type": "array", "items": { "type": "string" }, "description": "Optional file paths for curated refs (for create/export)" },
-                    "format": { "type": "string", "description": "Output format (json|summary|a2a — a2a wraps the bundle in a spec-shaped A2A Task envelope)" },
+                    "paths": { "type": "array", "items": { "type": "string" }, "description": "File paths for curated refs" },
+                    "format": { "type": "string", "description": "json|summary|a2a" },
                     "write": { "type": "boolean", "description": "Write export to file" },
-                    "privacy": { "type": "string", "description": "Export privacy: redacted (default) | full (admin only)" },
+                    "privacy": { "type": "string", "description": "redacted|full (admin only)" },
                     "filename": { "type": "string", "description": "Custom filename for export" },
-                    "apply_workflow": { "type": "boolean", "description": "For pull/import: apply workflow state (default: true)" },
-                    "apply_session": { "type": "boolean", "description": "For pull/import: apply session snapshot (default: true)" },
-                    "apply_knowledge": { "type": "boolean", "description": "For pull/import: import knowledge facts (default: true)" }
+                    "apply_workflow": { "type": "boolean", "description": "Apply workflow state" },
+                    "apply_session": { "type": "boolean", "description": "Apply session snapshot" },
+                    "apply_knowledge": { "type": "boolean", "description": "Import knowledge facts" }
                 }
             }),
         )

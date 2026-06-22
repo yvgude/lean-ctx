@@ -26,12 +26,12 @@ impl McpTool for CtxCallgraphTool {
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "callers|callees|trace|risk (default: callers)",
+                        "description": "callers|callees|trace|risk",
                         "enum": ["callers", "callees", "trace", "risk"]
                     },
                     "symbol": {
                         "type": "string",
-                        "description": "Symbol name (required for callers/callees/risk)"
+                        "description": "Symbol name"
                     },
                     "file": {
                         "type": "string",
@@ -39,17 +39,17 @@ impl McpTool for CtxCallgraphTool {
                     },
                     "depth": {
                         "type": "integer",
-                        "description": "BFS depth for callers/callees (1–5, default 1)",
+                        "description": "BFS depth (1-5)",
                         "minimum": 1,
                         "maximum": 5
                     },
                     "from": {
                         "type": "string",
-                        "description": "Source symbol for trace action"
+                        "description": "Source symbol"
                     },
                     "to": {
                         "type": "string",
-                        "description": "Target symbol for trace action"
+                        "description": "Target symbol"
                     }
                 }
             }),

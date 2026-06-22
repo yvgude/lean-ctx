@@ -15,44 +15,44 @@ impl McpTool for CtxAgentTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_agent",
-            "Multi-agent coordination: shared message bus, persistent diaries, stigmergic scent field. Actions: register (agent_type+role), \
-post (message+category), read (poll), status (active|idle|finished), handoff (transfer task+summary), \
-sync (agents + messages + scent: claims/stuck/hot), claim/release (atomic file/task claim, message=target), \
-brief (sub-agent briefing pack: message=task, priority=budget), \
-return (distill sub-agent report into knowledge: message='category/key: value' lines), \
-diary (log discovery/decision/blocker/progress/insight), recall_diary, diaries, list, info.",
+            "Multi-agent coordination — shared message bus, persistent diaries, stigmergic scent field. \
+Actions: register (agent_type+role), post (message+category), read (poll), \
+status (active|idle|finished), handoff (task+summary), sync (agents+messages+scent), \
+claim/release (file/task claim), brief (sub-agent briefing), \
+return (distill report into knowledge), diary, recall_diary, list, info. \
+Use when orchestrating multiple LLM agents across a shared workspace.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["register", "list", "post", "read", "status", "info", "handoff", "sync", "claim", "release", "brief", "return", "diary", "recall_diary", "diaries", "share_knowledge", "receive_knowledge"],
-                        "description": "Agent operation."
+                        "description": "register|list|post|read|status|info|handoff|sync|claim|release|brief|return|diary|recall_diary|diaries|share_knowledge|receive_knowledge"
                     },
                     "agent_type": {
                         "type": "string",
-                        "description": "Agent type for register (cursor, claude, codex, gemini, crush, subagent)"
+                        "description": "cursor|claude|codex|gemini|crush|subagent"
                     },
                     "role": {
                         "type": "string",
-                        "description": "Agent role (dev, review, test, plan)"
+                        "description": "dev|review|test|plan"
                     },
                     "message": {
                         "type": "string",
-                        "description": "Message text for post action, or status detail for status action"
+                        "description": "Post text or status detail"
                     },
                     "category": {
                         "type": "string",
-                        "description": "Message category for post (finding, warning, request, status)"
+                        "description": "finding|warning|request|status"
                     },
                     "to_agent": {
                         "type": "string",
-                        "description": "Target agent ID for direct message (omit for broadcast)"
+                        "description": "Target agent ID"
                     },
                     "status": {
                         "type": "string",
                         "enum": ["active", "idle", "finished"],
-                        "description": "New status for status action"
+                        "description": "active|idle|finished"
                     }
                 },
                 "required": ["action"]

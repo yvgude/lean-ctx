@@ -15,18 +15,22 @@ impl McpTool for CtxSkillifyTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_skillify",
-            "Codify recurring patterns from this project's session diary + knowledge into versioned, git-committable .cursor/rules/skillify-*.mdc files. Actions: mine (distill & write/merge rules), list (show generated rules), status (config + counts), promote (copy a project rule to ~/.cursor/rules). Precision-biased; only acts when invoked; re-runs are idempotent.",
+            "Codify recurring patterns from session diary + knowledge into versioned,\n\
+             git-committable .cursor/rules/skillify-*.mdc files.\n\
+             Actions: mine (distill & write/merge rules), list (show generated rules),\n\
+             status (config + counts), promote (copy to ~/.cursor/rules).\n\
+             Precision-biased; re-runs are idempotent.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["mine", "list", "status", "promote"],
-                        "description": "Skillify action (default: mine)"
+                        "description": "mine|list|status|promote"
                     },
                     "slug": {
                         "type": "string",
-                        "description": "Rule slug for the promote action (e.g. skillify-stop-before-build)"
+                        "description": "Rule slug (for promote)"
                     }
                 }
             }),

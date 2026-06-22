@@ -15,27 +15,30 @@ impl McpTool for CtxShareTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_share",
-            "Share cached file contexts between agents. Actions: push (share files from your cache to another agent), \
-pull (receive files shared by other agents), list (show all shared contexts), clear (remove your shared contexts).",
+            "Share cached file contexts between agents for collaborative workflows.\n\
+             Actions: push (share files from your cache to another agent),\n\
+             pull (receive files shared by others), list (show shared contexts),\n\
+             clear (remove your shares). Omit to_agent for broadcast;\n\
+             set to_agent='agent-id' for targeted sharing.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["push", "pull", "list", "clear"],
-                        "description": "Share operation to perform"
+                        "description": "push|pull|list|clear"
                     },
                     "paths": {
                         "type": "string",
-                        "description": "Comma-separated file paths to share (for push action)"
+                        "description": "Comma-separated paths (for push)"
                     },
                     "to_agent": {
                         "type": "string",
-                        "description": "Target agent ID (omit for broadcast to all agents)"
+                        "description": "Target agent ID (omit for broadcast)"
                     },
                     "message": {
                         "type": "string",
-                        "description": "Optional context message explaining what was shared"
+                        "description": "Context message about what was shared"
                     }
                 },
                 "required": ["action"]

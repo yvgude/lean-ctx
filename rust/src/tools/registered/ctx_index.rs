@@ -17,18 +17,20 @@ impl McpTool for CtxIndexTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_index",
-            "Index orchestration. Actions: status|build|build-full.",
+            "Index orchestration — manage the code graph index.\n\
+             Actions: status (current state), build (incremental update), build-full (complete rebuild).\n\
+             Use when the graph index is stale and ctx_graph returns empty or outdated results.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["status", "build", "build-full"],
-                        "description": "Index action"
+                        "description": "status|build|build-full"
                     },
                     "project_root": {
                         "type": "string",
-                        "description": "Project root (default: session project root)"
+                        "description": "Project root"
                     }
                 },
                 "required": ["action"]

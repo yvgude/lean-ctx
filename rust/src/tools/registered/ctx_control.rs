@@ -15,7 +15,7 @@ impl McpTool for CtxControlTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_control",
-            "Universal context manipulation (Context Field Theory). Actions: exclude|include|pin|unpin|set_view|set_priority|mark_outdated|reset|list|history. Overlay-based, reversible, scoped.",
+            "Universal context manipulation (CFT) — fine-tune what appears in context. Actions: exclude|include|pin|unpin|set_view|set_priority|mark_outdated|reset|list|history. Overlay-based, reversible, scoped to call/session/project.",
             json!({
                 "type": "object",
                 "properties": {
@@ -25,7 +25,7 @@ impl McpTool for CtxControlTool {
                     },
                     "target": { "type": "string", "description": "@F1 or path or item ID" },
                     "value": { "type": "string", "description": "New content, view name, or priority" },
-                    "scope": { "type": "string", "description": "call|session|project (default: session)" },
+                    "scope": { "type": "string", "description": "call|session|project" },
                     "reason": { "type": "string", "description": "Reason for the action" }
                 },
                 "required": ["action"]

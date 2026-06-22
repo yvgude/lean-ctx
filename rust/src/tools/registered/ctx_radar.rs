@@ -15,13 +15,16 @@ impl McpTool for CtxRadarTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_radar",
-            "Full context budget breakdown: system prompt, messages, tools, reads, shell — all tracked token usage.",
+            "Full context budget breakdown — system prompt, messages, tools, reads, shell,\n\
+             all tracked token usage. format=display (human-readable) or json (structured).\n\
+             Complements ctx_metrics for comprehensive budget analysis. Use when context\n\
+             window is tight and you need to identify the biggest consumers.",
             json!({
                 "type": "object",
                 "properties": {
                     "format": {
                         "type": "string",
-                        "description": "Output format: 'display' (human-readable) or 'json' (structured)",
+                        "description": "display|json",
                         "enum": ["display", "json"],
                         "default": "display"
                     }

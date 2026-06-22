@@ -134,8 +134,8 @@ fn bench_tool_descriptions_token_count() {
     // enriches per-tool profile metadata on the full opt-in surface. The default
     // surface stays small (see `bench_lazy_default_vs_full_overhead`).
     assert!(
-        total < 4000,
-        "Total tool description tokens should be <4000, got {total}"
+        total < 5000,
+        "Total tool description tokens should be <5000, got {total}"
     );
 
     for (name, desc) in &descriptions {

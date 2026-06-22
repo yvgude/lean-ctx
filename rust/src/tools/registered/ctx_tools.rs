@@ -19,19 +19,21 @@ impl McpTool for CtxToolsTool {
         tool_def(
             "ctx_tools",
             "Gateway to downstream MCP servers — unlimited external tools at ~constant context cost.\n\
-             actions: find (query → top-N relevant tools as ChoiceCards) | call (proxy a `server::tool`) | list (servers+counts) | refresh.\n\
-             Use find to discover, then call the chosen `server::tool`. Off by default ([gateway] config).",
+             actions: find (query → top-N relevant tools as ChoiceCards) |\n\
+             call (proxy a server::tool) | list (servers+counts) | refresh.\n\
+             Use find to discover, then call the chosen server::tool.\n\
+             Off by default — enable via [gateway] config section.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["find", "call", "list", "refresh"],
-                        "description": "Operation to perform (default: find)"
+                        "description": "find|call|list|refresh"
                     },
-                    "query": { "type": "string", "description": "What you want to do; ranks the catalog (find)" },
-                    "tool": { "type": "string", "description": "A `server::tool` handle from find (call)" },
-                    "arguments": { "type": "object", "description": "Arguments forwarded verbatim to the downstream tool (call)" }
+                    "query": { "type": "string", "description": "What you want to do (for find)" },
+                    "tool": { "type": "string", "description": "`server::tool` handle (for call)" },
+                    "arguments": { "type": "object", "description": "Arguments for downstream tool (call)" }
                 }
             }),
         )

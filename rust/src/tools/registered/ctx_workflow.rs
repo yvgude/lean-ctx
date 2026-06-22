@@ -15,20 +15,24 @@ impl McpTool for CtxWorkflowTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_workflow",
-            "Workflow rails (state machine + evidence). Actions: start|status|transition|complete|evidence_add|evidence_list|stop.",
+            "Workflow rails — state machine with evidence tracking.\n\
+             Actions: start|status|transition|complete|evidence_add|evidence_list|stop.\n\
+             spec=WorkflowSpec JSON to define custom states/transitions.\n\
+             Built-in plan_code_test workflow when spec omitted.\n\
+             Use with ctx_task for multi-agent orchestration.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["start", "status", "transition", "complete", "evidence_add", "evidence_list", "stop"],
-                        "description": "Workflow operation (default: status)"
+                        "description": "start|status|transition|complete|evidence_add|evidence_list|stop"
                     },
-                    "name": { "type": "string", "description": "Optional workflow name override (action=start)" },
-                    "spec": { "type": "string", "description": "WorkflowSpec JSON (action=start). If omitted, uses builtin plan_code_test." },
-                    "to": { "type": "string", "description": "Target state (action=transition)" },
-                    "key": { "type": "string", "description": "Evidence key (action=evidence_add)" },
-                    "value": { "type": "string", "description": "Optional evidence value / transition note" }
+                    "name": { "type": "string", "description": "Workflow name (for start)" },
+                    "spec": { "type": "string", "description": "WorkflowSpec JSON (for start; omit for builtin)" },
+                    "to": { "type": "string", "description": "Target state (for transition)" },
+                    "key": { "type": "string", "description": "Evidence key (for evidence_add)" },
+                    "value": { "type": "string", "description": "Evidence value or transition note" }
                 }
             }),
         )

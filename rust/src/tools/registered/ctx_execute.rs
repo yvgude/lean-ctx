@@ -18,42 +18,41 @@ impl McpTool for CtxExecuteTool {
         tool_def(
             "ctx_execute",
             "Run code in sandbox (11 languages) — use when compute beats shell glue.\n\
-             action=code (default) for one-shot transform/math/generation; action=batch for parallel\n\
-             multi-language scripts; action=file to process a project file (extension auto-detects\n\
-             language). Pass intent to focus large output and save tokens. Prefer over ctx_shell when\n\
-             logic, conditionals, multi-line scripts, or cross-language data munging — stdout-only,\n\
-             no argv escaping. Languages: javascript, typescript, python, shell, ruby, go, rust, php,\n\
-             perl, r, elixir.",
+             action=code (default) for one-shot scripts; action=batch for parallel multi-language;\n\
+             action=file to process a project file (extension auto-detects language).\n\
+             Pass intent to focus large output. Prefer over ctx_shell for conditionals,\n\
+             multi-line scripts, or cross-language data munging. Languages: javascript,\n\
+             typescript, python, shell, ruby, go, rust, php, perl, r, elixir.",
             json!({
                 "type": "object",
                 "properties": {
                     "language": {
                         "type": "string",
-                        "description": "REQUIRED for action=code. One of: javascript|typescript|python|shell|ruby|go|rust|php|perl|r|elixir. Omit for action=file (auto-detected)."
+                        "description": "javascript|typescript|python|shell|ruby|go|rust|php|perl|r|elixir (for action=code)"
                     },
                     "code": {
                         "type": "string",
-                        "description": "Source code string. REQUIRED for action=code. Set intent to focus large output on what you need."
+                        "description": "Source code for action=code. Set intent to filter large output."
                     },
                     "intent": {
                         "type": "string",
-                        "description": "What you need from output. Triggers intent-driven filtering when output is large — saves tokens by discarding irrelevant lines."
+                        "description": "Focus intent; triggers filtering when output is large."
                     },
                     "timeout": {
                         "type": "integer",
-                        "description": "Timeout in seconds (default: 30). Increase for long-running scripts (data processing, scraping)."
+                        "description": "Timeout in seconds (default: 30)"
                     },
                     "action": {
                         "type": "string",
-                        "description": "code (default) — run one script via language+code. batch — run multiple scripts in parallel via items. file — process a project file (language auto-detected from extension)."
+                        "description": "code (run script) | batch (parallel) | file (project file)"
                     },
                     "items": {
                         "type": "string",
-                        "description": "JSON array of [{\"language\": \"...\", \"code\": \"...\"}] for action=batch. All scripts run in parallel."
+                        "description": "JSON array of [{language, code}] for batch action."
                     },
                     "path": {
                         "type": "string",
-                        "description": "Project file path. REQUIRED for action=file. Language auto-detected from file extension (see detect_language_from_extension)."
+                        "description": "File path for action=file (language auto-detected)."
                     }
                 }
             }),

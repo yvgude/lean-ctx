@@ -15,11 +15,13 @@ impl McpTool for CtxDiscoverToolsTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_discover_tools",
-            "Search available lean-ctx tools by keyword. Returns matching tool names and descriptions.",
+            "Search available lean-ctx tools by keyword — use to find the right tool.\n\
+             Empty query lists all tools. query=\"keyword\" returns matching names and descriptions.\n\
+             Use before ctx_call or when unsure which tool fits your task.",
             json!({
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "Search keyword to filter tools (optional, empty returns all)" }
+                    "query": { "type": "string", "description": "Search keyword (empty returns all)" }
                 }
             }),
         )

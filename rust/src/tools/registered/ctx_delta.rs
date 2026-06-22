@@ -22,7 +22,7 @@ impl McpTool for CtxDeltaTool {
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "Absolute file path" }
+                    "path": { "type": "string", "description": "File path" }
                 },
                 "required": ["path"]
             }),

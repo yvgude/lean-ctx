@@ -19,18 +19,21 @@ impl McpTool for CtxLedgerTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_ledger",
-            "Context ledger ops: status|reset|evict. Manages persistent context pressure.",
+            "Context ledger operations — track and manage persistent context pressure.\n\
+             action=status shows pressure (%), top files by cost, and recommendations;\n\
+             action=reset clears all entries; action=evict targets=paths removes files\n\
+             and excludes them from re-accumulation. Use when context budget is tight.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["status", "reset", "evict"],
-                        "description": "Ledger operation: status (show pressure), reset (clear all), evict (remove specific files)"
+                        "description": "status|reset|evict"
                     },
                     "targets": {
                         "type": "string",
-                        "description": "Comma-separated file paths to evict (required for 'evict' action)"
+                        "description": "Paths to evict (comma-separated)"
                     }
                 },
                 "required": ["action"]

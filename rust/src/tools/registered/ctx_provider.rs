@@ -15,7 +15,10 @@ impl McpTool for CtxProviderTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_provider",
-            "External context providers (GitHub, GitLab, Jira, Postgres, MCP, custom REST).",
+            "External context providers — query data from GitHub, GitLab, Jira, Postgres, MCP\n\
+             bridges, and custom REST APIs. Actions: discover|list|status|refresh|configure|\n\
+             query|mcp_resources|gitlab_issues. provider=id (github|gitlab|jira|mcp:<name>);\n\
+             resource=issues|pull_requests. Data flows through consolidation pipeline.",
             json!({
                 "type": "object",
                 "properties": {
@@ -25,18 +28,18 @@ impl McpTool for CtxProviderTool {
                     },
                     "provider": {
                         "type": "string",
-                        "description": "Provider ID (github|gitlab|jira|mcp:<name>). Required for query"
+                        "description": "github|gitlab|jira|mcp:<name>"
                     },
                     "resource": {
                         "type": "string",
-                        "description": "query: e.g. issues, pull_requests. configure: paths|template|show"
+                        "description": "issues|pull_requests|paths|template|show"
                     },
-                    "mode": { "type": "string", "description": "query output: compact|chunks" },
+                    "mode": { "type": "string", "description": "compact|chunks" },
                     "state": { "type": "string", "description": "open|closed|merged|all" },
-                    "labels": { "type": "string", "description": "Comma-separated label filter" },
+                    "labels": { "type": "string", "description": "Comma-separated labels" },
                     "iid": { "type": "integer", "description": "Issue/MR IID" },
                     "status": { "type": "string", "description": "Pipeline status filter" },
-                    "limit": { "type": "integer", "description": "Max results (default 20)" }
+                    "limit": { "type": "integer", "description": "Max results" }
                 },
                 "required": ["action"]
             }),

@@ -17,35 +17,35 @@ impl McpTool for CtxArtifactsTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_artifacts",
-            "Context artifact registry + BM25 index. Actions: list|status|index|reindex|search|remove.",
+            "Context artifact registry with BM25 search — manage and query indexed code artifacts. Actions: list|status|index|reindex|search|remove. Use search with query for semantic retrieval across artifacts.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["list", "status", "index", "reindex", "search", "remove"],
-                        "description": "Artifact action"
+                        "description": "list|status|index|reindex|search|remove"
                     },
                     "project_root": {
                         "type": "string",
-                        "description": "Project root (default: session project root)"
+                        "description": "Project root"
                     },
                     "query": {
                         "type": "string",
-                        "description": "Search query (required for action=search)"
+                        "description": "Search query"
                     },
                     "name": {
                         "type": "string",
-                        "description": "Artifact name (required for action=remove)"
+                        "description": "Artifact name"
                     },
                     "top_k": {
                         "type": "integer",
-                        "description": "Max results (default: 10, max: 50)"
+                        "description": "Max results"
                     },
                     "format": {
                         "type": "string",
                         "enum": ["json", "markdown"],
-                        "description": "Output format (default: json)"
+                        "description": "json|markdown"
                     }
                 },
                 "required": ["action"]

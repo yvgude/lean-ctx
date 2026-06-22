@@ -25,7 +25,7 @@ impl McpTool for CtxComposeTool {
                 "type": "object",
                 "properties": {
                     "task": { "type": "string", "description": "Short English task/question or symbol names" },
-                    "path": { "type": "string", "description": "Project root (default: .)" }
+                    "path": { "type": "string", "description": "Project root" }
                 },
                 "required": ["task"]
             }),

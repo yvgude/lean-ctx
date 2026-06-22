@@ -27,24 +27,24 @@ impl McpTool for CtxGitReadTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_git_read",
-            "Read a remote git repository via a cached shallow clone (not HTML scraping).\n\
-             modes: overview (tree + README) | tree (file list) | read (a file) | grep (search).\n\
-             Accepts repo URLs and GitHub/GitLab blob/tree links (ref + path auto-detected). https-only, SSRF-guarded, bounded.\n\
-             Use instead of ctx_url_read when you need a whole repo's files/structure.",
+            "Read remote git repos via cached shallow clone (not HTML scraping).\n\
+             modes: overview (tree + README) | tree (file list) | read (file content) | grep (search).\n\
+             Accepts repo URLs and GitHub/GitLab blob/tree links (ref+path auto-detected).\n\
+             https-only, SSRF-guarded. Use instead of ctx_url_read for a whole repo.",
             json!({
                 "type": "object",
                 "properties": {
-                    "url": { "type": "string", "description": "https repo URL, optionally a blob/tree link carrying ref + path" },
+                    "url": { "type": "string", "description": "https repo URL (blob/tree links auto-detect ref+path)" },
                     "mode": {
                         "type": "string",
                         "enum": ["overview", "tree", "read", "grep"],
-                        "description": "Default: read when a path is present, else overview"
+                        "description": "overview|tree|read|grep"
                     },
-                    "path": { "type": "string", "description": "File (read) or directory (tree/grep) within the repo" },
-                    "ref": { "type": "string", "description": "Branch/tag/commit (overrides any ref in the URL)" },
+                    "path": { "type": "string", "description": "Path within repo" },
+                    "ref": { "type": "string", "description": "Branch/tag/commit (overrides URL ref)" },
                     "query": { "type": "string", "description": "Search term for grep mode" },
-                    "max_tokens": { "type": "integer", "description": "Token budget for returned content (default: 6000)" },
-                    "timeout_secs": { "type": "integer", "description": "Clone/fetch timeout (default: 90, max: 300)" }
+                    "max_tokens": { "type": "integer", "description": "Token budget (default: 6000)" },
+                    "timeout_secs": { "type": "integer", "description": "Timeout seconds (default: 90, max: 300)" }
                 },
                 "required": ["url"]
             }),

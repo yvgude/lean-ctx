@@ -20,26 +20,30 @@ impl McpTool for CtxTranscriptCompactTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_transcript_compact",
-            "Compact an OpenAI-format message array deterministically: keep system + a fresh tail verbatim, replace older turns with a recoverable summary, and offload the raw turns into lean-ctx session memory (indexed for ctx_search/ctx_knowledge recall). Built for the Hermes context-engine plugin. Returns JSON {messages, stats}; tool_call/tool_result pairs are never split.",
+            "Compact an OpenAI-format message array deterministically:\n\
+             keep system + fresh tail verbatim, replace older turns with a recoverable\n\
+             summary, offload raw turns into session memory (indexed for recall).\n\
+             Built for the Hermes context-engine plugin. Returns JSON {messages, stats}.\n\
+             tool_call/tool_result pairs are never split.",
             json!({
                 "type": "object",
                 "properties": {
                     "messages": {
                         "type": "array",
                         "items": { "type": "object" },
-                        "description": "OpenAI-format message array to compact"
+                        "description": "OpenAI message array to compact"
                     },
                     "fresh_tail_tokens": {
                         "type": "integer",
-                        "description": "Recent tokens to keep verbatim (default 4000)"
+                        "description": "Recent tokens to keep verbatim"
                     },
                     "protect_min_messages": {
                         "type": "integer",
-                        "description": "Minimum recent messages to keep verbatim (default 6)"
+                        "description": "Minimum recent messages to keep"
                     },
                     "focus_topic": {
                         "type": "string",
-                        "description": "Optional topic to prioritise in the summary"
+                        "description": "Topic to prioritise in summary"
                     }
                 },
                 "required": ["messages"]

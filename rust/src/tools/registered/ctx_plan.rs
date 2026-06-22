@@ -15,7 +15,10 @@ impl McpTool for CtxPlanTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_plan",
-            "Context planning (CFT). Computes optimal context plan with Phi scoring, budget allocation, and policy-driven view selection.",
+            "Context planning (CFT) — selects WHICH files/modules to include in context via Phi scoring, budget\n\
+             allocation, and policy-driven view selection. Scans the project to pick the most relevant content.\n\
+             task=description (short English), budget=token limit (default 12000), profile=ultra_lean|balanced|forensic.\n\
+             For compressing already-chosen files to fit a budget, use ctx_fill instead.",
             json!({
                 "type": "object",
                 "properties": {

@@ -15,21 +15,21 @@ impl McpTool for CtxGlobTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_glob",
-            "Find files by glob pattern. Respects .gitignore;\n\
-             supports multi-root via `paths` array. max_results=N sets limit.\n\
+            "Find files by glob pattern — use to locate files by name or extension.\n\
+             Respects .gitignore. Supports multi-root via paths array. max_results=N sets limit.\n\
              For file content search, use ctx_search (pattern) or ctx_semantic_search (meaning).",
             json!({
                 "type": "object",
                 "properties": {
-                    "pattern": { "type": "string", "description": "Glob pattern (e.g. **/*.ts, *.rs)" },
-                    "path": { "type": "string", "description": "Directory to search (default: .)" },
+                    "pattern": { "type": "string", "description": "Glob pattern (e.g. **/*.ts)" },
+                    "path": { "type": "string", "description": "Directory to search" },
                     "paths": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "Multiple directories to search (alternative to path)"
+                        "description": "Alternative to path: multi-root"
                     },
                     "max_results": { "type": "integer", "description": "Max results (default: 200)" },
-                    "ignore_gitignore": { "type": "boolean", "description": "Set true to scan ALL files including .gitignore'd paths (default: false). Requires role policy (e.g. admin)." }
+                    "ignore_gitignore": { "type": "boolean", "description": "Scan gitignored files (requires admin role)" }
                 },
                 "required": ["pattern"]
             }),

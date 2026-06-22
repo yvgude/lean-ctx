@@ -30,7 +30,7 @@ impl McpTool for CtxSearchTool {
                         "description": "Multi-root (alternative to path)"
                     },
                     "include": { "type": "string", "description": "Glob filter: *.ts, src/**/*.rs" },
-                    "max_results": { "type": "integer", "description": "Default 20" },
+                    "max_results": { "type": "integer", "description": "Result limit" },
                     "ignore_gitignore": { "type": "boolean", "description": "Scan gitignored (needs role)" }
                 },
                 "required": ["pattern"]

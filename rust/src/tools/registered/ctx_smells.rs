@@ -15,14 +15,17 @@ impl McpTool for CtxSmellsTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_smells",
-            "Code smell detection. Actions: scan|summary|rules|file.",
+            "Code smell detection engine.\n\
+             Actions: scan (run all rules on project), summary (aggregate counts),\n\
+             rules (list available rules with descriptions), file (scan a single file).\n\
+             Supports rule='name' and path='file' filters for targeted analysis.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["scan", "summary", "rules", "file"],
-                        "description": "Smell operation (default: summary)"
+                        "description": "scan|summary|rules|file"
                     },
                     "rule": {
                         "type": "string",
@@ -34,7 +37,7 @@ impl McpTool for CtxSmellsTool {
                     },
                     "root": {
                         "type": "string",
-                        "description": "Project root (default: .)"
+                        "description": "Project root"
                     },
                     "format": {
                         "type": "string",

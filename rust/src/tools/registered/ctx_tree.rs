@@ -17,19 +17,20 @@ impl McpTool for CtxTreeTool {
             "ctx_tree",
             "Directory tree with file counts per directory. depth=N (default 3);\n\
              show_hidden for dotfiles; paths for multi-root.\n\
-             respect_gitignore filters ignored files (default true).",
+             respect_gitignore filters ignored files (default true).\n\
+             Use for lightweight project orientation before ctx_repomap or ctx_compose.",
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "Dir (default .)" },
+                    "path": { "type": "string", "description": "Dir" },
                     "paths": {
                         "type": "array",
                         "items": { "type": "string" },
                         "description": "Multi-root (alternative to path)"
                     },
-                    "depth": { "type": "integer", "description": "Max depth (default 3)" },
+                    "depth": { "type": "integer", "description": "Max depth" },
                     "show_hidden": { "type": "boolean", "description": "Include dotfiles" },
-                    "respect_gitignore": { "type": "boolean", "description": "Filter ignored (default true)" }
+                    "respect_gitignore": { "type": "boolean", "description": "Filter ignored" }
                 }
             }),
         )

@@ -15,18 +15,18 @@ impl McpTool for CtxCacheTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_cache",
-            "Cache ops: status|clear|invalidate.",
+            "Cache operations — inspect, clear, or invalidate the read cache. Actions: status lists cached files; clear empties all; invalidate path=... refreshes a single entry. Use to diagnose stale content or recover budget.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["status", "clear", "invalidate"],
-                        "description": "Cache operation to perform"
+                        "description": "status|clear|invalidate"
                     },
                     "path": {
                         "type": "string",
-                        "description": "File path (required for 'invalidate' action)"
+                        "description": "Target path"
                     }
                 },
                 "required": ["action"]

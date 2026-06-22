@@ -15,17 +15,20 @@ impl McpTool for CtxPreloadTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_preload",
-            "Proactive context loader — caches task-relevant files, returns L-curve-optimized summary (~50-100 tokens vs ~5000 for individual reads).",
+            "Proactive context loader — caches task-relevant files and returns L-curve-optimized\n\
+             summary (~50-100 tokens vs ~5000 for individual reads). task=short description;\n\
+             path=project root. Use at session start or when switching tasks to efficiently\n\
+             warm the context cache with the most relevant files.",
             json!({
                 "type": "object",
                 "properties": {
                     "task": {
                         "type": "string",
-                        "description": "Task description, short English preferred (e.g. 'fix auth bug in validate_token')"
+                        "description": "Task description (short English)"
                     },
                     "path": {
                         "type": "string",
-                        "description": "Project root (default: .)"
+                        "description": "Project root"
                     }
                 },
                 "required": ["task"]

@@ -15,22 +15,22 @@ impl McpTool for CtxCostTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_cost",
-            "Cost attribution (local-first). Actions: report|agent|tools|json|reset.",
+            "Cost attribution — track tokens and cost per agent and tool call. Actions: report (summary), agent (per-agent), tools (per-tool), json (machine-readable), reset (zero counters). Local-first, no external billing calls.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["report", "agent", "tools", "json", "reset", "status"],
-                        "description": "Operation to perform (default: report)"
+                        "description": "report|agent|tools|json|reset|status"
                     },
                     "agent_id": {
                         "type": "string",
-                        "description": "Agent ID for action=agent (optional)"
+                        "description": "Agent ID"
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Max rows (default: 10)"
+                        "description": "Max rows"
                     }
                 }
             }),

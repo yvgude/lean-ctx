@@ -17,7 +17,10 @@ impl McpTool for CtxPackTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_pack",
-            "Context Package Manager. Actions: pr (PR context), create (build package from project), list, info, remove, install, export, import, auto_load, summary.",
+            "Context Package Manager — create, install, and manage portable context packages.\n\
+             Actions: pr (PR context), create (build from project), list, info, remove,\n\
+             install, export, import, auto_load, summary. Use to bundle and share context\n\
+             state including knowledge, graph, session patterns, and gotchas.",
             json!({
                 "type": "object",
                 "properties": {
@@ -28,15 +31,15 @@ impl McpTool for CtxPackTool {
                     },
                     "project_root": {
                         "type": "string",
-                        "description": "Project root (default: session project root)"
+                        "description": "Project root"
                     },
                     "name": {
                         "type": "string",
-                        "description": "Package name (required for create, info, remove, install, export, auto_load)"
+                        "description": "Package name"
                     },
                     "version": {
                         "type": "string",
-                        "description": "Package version (default: latest or '1.0.0' for create)"
+                        "description": "Package version"
                     },
                     "description": {
                         "type": "string",
@@ -54,24 +57,24 @@ impl McpTool for CtxPackTool {
                     "layers": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "Layers to include: knowledge, graph, session, patterns, gotchas (for create)"
+                        "description": "knowledge|graph|session|patterns|gotchas"
                     },
                     "level": {
                         "type": "integer",
-                        "description": "Conformance level 1-3 (for create, default: 1)"
+                        "description": "1-3"
                     },
                     "scope": {
                         "type": "string",
-                        "description": "Package scope like @org (for create)"
+                        "description": "@org style scope"
                     },
                     "base": {
                         "type": "string",
-                        "description": "Git base ref (for pr action, default: auto-detect)"
+                        "description": "Git base ref"
                     },
                     "format": {
                         "type": "string",
                         "enum": ["markdown", "json"],
-                        "description": "Output format (for pr action, default: markdown)"
+                        "description": "markdown|json"
                     },
                     "depth": {
                         "type": "integer",
@@ -79,7 +82,7 @@ impl McpTool for CtxPackTool {
                     },
                     "diff": {
                         "type": "string",
-                        "description": "Git diff --name-status text (for pr action; if omitted, computed via git)"
+                        "description": "Git diff --name-status text"
                     },
                     "file": {
                         "type": "string",
@@ -87,11 +90,11 @@ impl McpTool for CtxPackTool {
                     },
                     "apply": {
                         "type": "boolean",
-                        "description": "Apply package after import (for import action, default: false)"
+                        "description": "Apply after import"
                     },
                     "enable": {
                         "type": "boolean",
-                        "description": "Enable or disable auto-load (for auto_load action, default: true)"
+                        "description": "Enable auto-load"
                     }
                 },
                 "required": ["action"]

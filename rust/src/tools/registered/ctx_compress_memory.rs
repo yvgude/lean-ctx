@@ -15,7 +15,7 @@ impl McpTool for CtxCompressMemoryTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_compress_memory",
-            "Compress a memory/config file (CLAUDE.md, .cursorrules) preserving code, URLs, paths. Creates .original.md backup.",
+            "Compress a memory/config file (CLAUDE.md, .cursorrules) preserving code, URLs, and paths. Creates .original.md backup. Use to reduce token overhead of persistent instruction files.",
             json!({
                 "type": "object",
                 "properties": {

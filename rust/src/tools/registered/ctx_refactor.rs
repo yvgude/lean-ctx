@@ -15,58 +15,52 @@ impl McpTool for CtxRefactorTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_refactor",
-            "LSP/IDE refactoring. action=one pipe-delimited value below. \
-             Reads (references/definition/implementations/declaration/type_hierarchy/\
-             symbols_overview/inspections) need a language server or the JetBrains \
-             backend. Symbol edits (replace/insert_before/insert_after_symbol) are \
-             name_path-addressed, IDE-first with a lossless headless fallback. Two-Phase \
-             ops (rename/move/safe_delete/inline _preview+_apply) need a JetBrains IDE \
-             (else BACKEND_REQUIRED) with a stateless plan_hash TOCTOU guard. \
-             rename/move/safe_delete block conflicts unless force=true; inline cannot be \
-             forced (→ UNSUPPORTED). reformat is Single-Phase, by name_path | path | path+line.",
+            "LSP/IDE refactoring — rename, move, safe_delete, inline, and read-only analyses\n\
+             (references, definition, implementations, type_hierarchy, inspections).\n\
+             Single-Phase edits (replace_symbol_body, reformat) work headless via name_path.\n\
+             Two-Phase ops (rename/move/safe_delete/inline _preview+_apply) need JetBrains\n\
+             IDE (else BACKEND_REQUIRED) with plan_hash TOCTOU guard. Conflicts blocked\n\
+             unless force=true. See action enum for full list of pipe-delimited values.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "rename|references|definition|implementations|declaration|type_hierarchy|\
-                            symbols_overview|inspections|replace_symbol_body|insert_before_symbol|\
-                            insert_after_symbol|rename_preview|rename_apply|move_preview|move_apply|\
-                            safe_delete_preview|safe_delete_apply|inline_preview|inline_apply|reformat"
+                        "description": "rename|references|definition|implementations|declaration|type_hierarchy|symbols_overview|inspections|replace_symbol_body|insert_before_symbol|insert_after_symbol|rename_preview|rename_apply|move_preview|move_apply|safe_delete_preview|safe_delete_apply|inline_preview|inline_apply|reformat"
                     },
-                    "path": { "type": "string", "description": "File path" },
-                    "line": { "type": "integer", "description": "1-indexed line number" },
-                    "column": { "type": "integer", "description": "0-indexed character offset" },
-                    "new_name": { "type": "string", "description": "New name (only for rename action)" },
+                    "path": { "type": "string", "description": "Path" },
+                    "line": { "type": "integer", "description": "1-indexed line" },
+                    "column": { "type": "integer", "description": "0-indexed column" },
+                    "new_name": { "type": "string", "description": "New symbol name" },
                     "scope": {
                         "type": "string",
                         "enum": ["project", "all"],
-                        "description": "Search scope for references/implementations/type_hierarchy (JetBrains backend). 'project' = project sources only (default); 'all' = include libraries/SDK."
+                        "description": "project|all"
                     },
                     "direction": {
                         "type": "string",
                         "enum": ["supertypes", "subtypes"],
-                        "description": "type_hierarchy direction (JetBrains backend). 'supertypes' (default) = parents; 'subtypes' = children/implementors."
+                        "description": "supertypes|subtypes"
                     },
                     "mode": {
                         "type": "string",
                         "enum": ["run", "list"],
-                        "description": "inspections mode (JetBrains backend). 'run' (default) = diagnostics for the given file; 'list' = enabled inspections of the current project profile."
+                        "description": "run|list"
                     },
-                    "name_path": { "type": "string", "description": "Symbol path for body edits: 'Class/method' (qualified) or bare 'name'. Resolved via the symbol index; ambiguous → AMBIGUOUS_SYMBOL with candidates." },
-                    "new_body": { "type": "string", "description": "Full replacement declaration text (replace_symbol_body)." },
-                    "text": { "type": "string", "description": "Sibling text to insert (insert_before_symbol/insert_after_symbol); indentation is applied automatically." },
-                    "end_line": { "type": "integer", "description": "1-based last line of the symbol (only for the path+line fallback when name_path is omitted)." },
-                    "expected_hash": { "type": "string", "description": "Optional BLAKE3-hex of the current range content; mismatch → CONFLICT (no blind overwrite)." },
-                    "plan_hash": { "type": "string", "description": "Required for rename_apply: the BLAKE3 plan hash returned by rename_preview (stateless TOCTOU guard; mismatch → CONFLICT)." },
-                    "force": { "type": "boolean", "description": "rename_apply only: override blocking refactoring conflicts (default false → CONFLICT when conflicts exist)." },
-                    "search_comments": { "type": "boolean", "description": "rename: also rename matches inside comments/strings (default false)." },
-                    "search_text_occurrences": { "type": "boolean", "description": "rename: also rename non-code text occurrences (default false)." },
-                    "target_path": { "type": "string", "description": "move only: destination directory/file (project-relative). Set EXACTLY ONE of target_path/target_parent. Out-of-jail or both/neither set → INVALID_TARGET." },
-                    "target_parent": { "type": "string", "description": "move only: destination parent symbol (name_path, e.g. 'OtherClass') for a member move. Set EXACTLY ONE of target_path/target_parent." },
-                    "propagate": { "type": "boolean", "description": "safe_delete_apply only: also delete dependencies that become unreferenced (Serena 'propagate', default false)." },
-                    "keep_definition": { "type": "boolean", "description": "inline only: inline at all call sites but keep the declaration (default false)." },
-                    "optimize_imports": { "type": "boolean", "description": "reformat only: also remove unused imports (default false)." }
+                    "name_path": { "type": "string", "description": "Symbol path for body edits (qualified or bare)" },
+                    "new_body": { "type": "string", "description": "Full replacement declaration text" },
+                    "text": { "type": "string", "description": "Sibling text to insert (auto-indented)" },
+                    "end_line": { "type": "integer", "description": "1-based last line (path+line fallback)" },
+                    "expected_hash": { "type": "string", "description": "BLAKE3 hex of current range (TOCTOU guard)" },
+                    "plan_hash": { "type": "string", "description": "BLAKE3 plan hash from rename_preview" },
+                    "force": { "type": "boolean", "description": "Override refactoring conflicts" },
+                    "search_comments": { "type": "boolean", "description": "Rename in comments/strings" },
+                    "search_text_occurrences": { "type": "boolean", "description": "Rename in non-code text" },
+                    "target_path": { "type": "string", "description": "Destination directory/file (project-relative)" },
+                    "target_parent": { "type": "string", "description": "Destination parent symbol for member move" },
+                    "propagate": { "type": "boolean", "description": "Delete unreferenced dependencies" },
+                    "keep_definition": { "type": "boolean", "description": "Keep declaration after inline" },
+                    "optimize_imports": { "type": "boolean", "description": "Remove unused imports" }
                 },
                 "required": ["action"]
             }),

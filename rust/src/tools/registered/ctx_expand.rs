@@ -16,21 +16,21 @@ impl McpTool for CtxExpandTool {
         tool_def(
             "ctx_expand",
             "Retrieve archived tool output by ID (e.g. id=@F1 from [Archived:ID] hints).\n\
-             Use when you see an [Archived:ID] reference in tool output and need the full\n\
-             content. Supports head/tail/search to filter lines. action=search_all across\n\
-             all archives. action=list shows available archives. Zero-loss: original preserved.\n\
+             Use when you see an [Archived:ID] reference and need the full content.\n\
+             Supports head/tail/search to filter lines. action=search_all across all archives.\n\
+             action=list shows available archives. Zero-loss: original preserved.\n\
              For reading files, use ctx_read or ctx_compose instead.",
             json!({
                 "type": "object",
                 "properties": {
-                    "id": { "type": "string", "description": "Archive ID or handle ref (@F1)" },
-                    "action": { "type": "string", "description": "retrieve (default)|list|search_all" },
-                    "start_line": { "type": "integer", "description": "1-based start line in archived output" },
-                    "end_line": { "type": "integer", "description": "1-based end line in archived output" },
+                    "id": { "type": "string", "description": "Archive ID or @F1 ref" },
+                    "action": { "type": "string", "description": "retrieve|list|search_all" },
+                    "start_line": { "type": "integer", "description": "1-based start line" },
+                    "end_line": { "type": "integer", "description": "1-based end line" },
                     "head": { "type": "integer", "description": "First N lines" },
                     "tail": { "type": "integer", "description": "Last N lines" },
-                    "search": { "type": "string", "description": "Only lines matching substring" },
-                    "json_keys": { "type": "boolean", "description": "Describe JSON structure" },
+                    "search": { "type": "string", "description": "Lines matching substring" },
+                    "json_keys": { "type": "boolean", "description": "List JSON keys" },
                     "json_path": { "type": "string", "description": "JSON path, e.g. data.items.0" },
                     "query": { "type": "string", "description": "search_all query" },
                     "session_id": { "type": "string", "description": "Filter by session ID" }

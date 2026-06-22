@@ -15,13 +15,14 @@ impl McpTool for CtxCompressTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_compress",
-            "Context checkpoint: compresses read cache to free budget in long sessions\n\
-             include_signatures=true (default) preserves API surface in compressed state.\n\
-             Does not affect session state or knowledge—only the read cache compaction.",
+            "Compress read cache to free token budget in long sessions.\n\
+include_signatures=true (default) preserves API surface in compressed state.\n\
+Does not affect session state or knowledge — only read cache compaction.\n\
+Use when nearing context limit to reclaim space for new content.",
             json!({
                 "type": "object",
                 "properties": {
-                    "include_signatures": { "type": "boolean", "description": "Include signatures (default: true)" }
+                    "include_signatures": { "type": "boolean", "description": "Include signatures" }
                 }
             }),
         )

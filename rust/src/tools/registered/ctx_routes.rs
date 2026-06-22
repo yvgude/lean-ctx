@@ -15,13 +15,13 @@ impl McpTool for CtxRoutesTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_routes",
-            "HTTP routes: method=GET|POST filter; path='/api' prefix; auto-detects frameworks\n\
-             Extracts endpoints from: Express, Flask, FastAPI, Actix, Spring, Rails, Next.js.\n\
-             Use to discover API surface without reading route definition files.",
+            "Discover HTTP API endpoints without reading route definition files.\n\
+             Auto-detects: Express, Flask, FastAPI, Actix, Spring, Rails, Next.js.\n\
+             method=GET|POST filters by verb; path='/api' filters by prefix.",
             json!({
                 "type": "object",
                 "properties": {
-                    "method": { "type": "string", "description": "GET|POST|PUT|DELETE filter" },
+                    "method": { "type": "string", "description": "GET|POST|PUT|DELETE" },
                     "path": { "type": "string", "description": "Path prefix, e.g. /api/users" }
                 }
             }),

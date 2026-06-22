@@ -15,20 +15,23 @@ impl McpTool for CtxTaskTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_task",
-            "Multi-agent task orchestration. Actions: create|update|list|get|cancel|message|info.",
+            "Multi-agent task orchestration.\n\
+             Actions: create (assign to agent), update (change state), list (active),\n\
+             get (details), cancel, message (add note), info (metadata).\n\
+             States: working|input-required|completed|failed|canceled.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["create", "update", "list", "get", "cancel", "message", "info"],
-                        "description": "Task operation"
+                        "description": "create|update|list|get|cancel|message|info"
                     },
-                    "task_id": { "type": "string", "description": "Task ID (required for update|get|cancel|message)" },
-                    "to_agent": { "type": "string", "description": "Target agent ID (required for create)" },
+                    "task_id": { "type": "string", "description": "Task ID (for update|get|cancel|message)" },
+                    "to_agent": { "type": "string", "description": "Target agent ID (for create)" },
                     "description": { "type": "string", "description": "Task description (for create)" },
-                    "state": { "type": "string", "description": "New state for update (working|input-required|completed|failed|canceled)" },
-                    "message": { "type": "string", "description": "Optional message / reason" }
+                    "state": { "type": "string", "description": "New state (working|input-required|completed|failed|canceled)" },
+                    "message": { "type": "string", "description": "Message or reason" }
                 },
                 "required": ["action"]
             }),

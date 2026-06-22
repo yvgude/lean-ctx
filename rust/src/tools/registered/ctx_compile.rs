@@ -15,12 +15,12 @@ impl McpTool for CtxCompileTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_compile",
-            "Context compilation (CFT). Builds minimal context package via greedy knapsack + Boltzmann view selection. Modes: handles|compressed|full.",
+            "Context compilation (CFT) — builds minimal context package via greedy knapsack + Boltzmann view selection. Modes: handles|compressed|full. Use to produce focused context for handoff or subagent tasks.",
             json!({
                 "type": "object",
                 "properties": {
-                    "mode": { "type": "string", "description": "handles|compressed|full (default: handles)" },
-                    "budget": { "type": "integer", "description": "Token budget (default: 12000)" }
+                    "mode": { "type": "string", "description": "handles|compressed|full" },
+                    "budget": { "type": "integer", "description": "Token budget" }
                 }
             }),
         )

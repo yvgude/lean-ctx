@@ -17,22 +17,25 @@ impl McpTool for CtxMultiRepoTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_multi_repo",
-            "Multi-repo management: add/remove roots, cross-repo search with Reciprocal Rank Fusion (RRF). Enables searching across multiple project directories simultaneously.",
+            "Multi-repository management — add, remove, and search across project directories.\n\
+             action=add_root|remove_root|list_roots|search. Cross-repo search uses Reciprocal\n\
+             Rank Fusion (RRF) to merge results from multiple repos. query=search term;\n\
+             roots=filter to specific repos. max_results limits output (default 20).",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["add_root", "remove_root", "list_roots", "search", "status", "save_config"],
-                        "description": "Action to perform"
+                        "description": "add_root|remove_root|list_roots|search|status|save_config"
                     },
                     "path": {
                         "type": "string",
-                        "description": "Repository path (for add_root/remove_root)"
+                        "description": "Repo path"
                     },
                     "alias": {
                         "type": "string",
-                        "description": "Short alias for the repo (for add_root). Auto-derived from directory name if omitted."
+                        "description": "Short alias (auto-derived if omitted)"
                     },
                     "query": {
                         "type": "string",
@@ -41,11 +44,11 @@ impl McpTool for CtxMultiRepoTool {
                     "roots": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "Filter search to specific roots by alias or path (for search). Omit to search all."
+                        "description": "Filter to specific repos by alias/path"
                     },
                     "max_results": {
                         "type": "integer",
-                        "description": "Maximum results to return (default: 20)"
+                        "description": "Max results"
                     }
                 },
                 "required": ["action"]

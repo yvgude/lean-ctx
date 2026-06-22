@@ -24,7 +24,7 @@ pub fn unified_tool_defs() -> Vec<Tool> {
     vec![
         tool_def(
             "ctx_read",
-            "Read file (replaces native Read). Cached, re-reads ~13 tok. Omit mode to auto-select (recommended); full only right before editing. Modes: auto(default)|full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true re-reads.",
+            "Read file (replaces native Read). Cached, re-reads ~13 tok. Omit mode to auto-select; full only right before editing. Modes: auto|full|map|signatures|diff|aggressive|entropy|task|reference|lines:N-M. fresh=true re-reads.",
             json!({
                 "type": "object",
                 "properties": {
@@ -40,7 +40,7 @@ pub fn unified_tool_defs() -> Vec<Tool> {
         ),
         tool_def(
             "ctx_shell",
-            "Run shell (replaces native Shell). Compressed output. raw=true skips compression. cwd sets working directory.",
+            "Run shell (replaces native Shell). Compressed output (~95 patterns). raw=true for verbatim. cwd sets working dir (default: project root).",
             json!({
                 "type": "object",
                 "properties": {
@@ -53,7 +53,7 @@ pub fn unified_tool_defs() -> Vec<Tool> {
         ),
         tool_def(
             "ctx_search",
-            "Search code (replaces native Grep/rg). Regex, .gitignore aware, token-efficient.",
+            "Search code (replaces native Grep/rg) — use when you know the exact pattern. Regex, .gitignore aware, token-efficient. For understanding code, use ctx_compose FIRST.",
             json!({
                 "type": "object",
                 "properties": {
@@ -69,7 +69,7 @@ pub fn unified_tool_defs() -> Vec<Tool> {
         ),
         tool_def(
             "ctx_tree",
-            "Directory tree (replaces ls/find). Compact maps with file counts.",
+            "Directory tree (replaces ls/find) — compact maps with file counts per directory. depth=N (default 3); paths for multi-root. Use for orientation before ctx_repomap or ctx_compose.",
             json!({
                 "type": "object",
                 "properties": {

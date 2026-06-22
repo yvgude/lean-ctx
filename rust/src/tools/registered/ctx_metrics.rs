@@ -15,7 +15,10 @@ impl McpTool for CtxMetricsTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_metrics",
-            "Session token stats, cache rates, per-tool savings.",
+            "Session token statistics — cache hit rates, per-tool savings, pipeline metrics,\n\
+             and signature backend ratios. No parameters needed. Use to understand token\n\
+             efficiency and identify which tools cost the most. Complements ctx_radar\n\
+             for full context budget analysis.",
             json!({
                 "type": "object",
                 "properties": {}
