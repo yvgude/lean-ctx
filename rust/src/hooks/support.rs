@@ -190,7 +190,6 @@ fn codex_instruction_doc_content() -> String {
     let marker = crate::core::rules_canonical::START_MARK;
     let bullets = crate::core::rules_canonical::BULLETS;
     let never = crate::core::rules_canonical::NEVER;
-    let read_modes = crate::core::rules_canonical::READ_MODES;
     format!(
         r#"{marker} (Hybrid Mode)
 
@@ -217,8 +216,6 @@ those tokens.
 {bullets}
 
 {never}
-
-Read modes: {read_modes}
 
 ## CLI
 

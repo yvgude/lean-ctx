@@ -22,6 +22,10 @@ pub const END_MARK: &str = "<!-- /lean-ctx -->";
 /// injection layer can parse it and decide whether a file is up-to-date.
 pub const RULES_VERSION: usize = 1;
 
+/// Banner placed at the top of dedicated rule files (non-shadow only).
+pub const CRITICAL: &str = "CRITICAL: ALWAYS use lean-ctx tools instead of native equivalents. \
+     This is NOT optional.";
+
 /// Compact bullet-list mapping (for both dedicated and shared contexts).
 pub const BULLETS: &str = "\
 MANDATORY MAPPING:\n\
@@ -63,11 +67,6 @@ One turn with 5 parallel ctx_read calls completes faster than 5 sequential turns
 ctx_compose bundles multiple lookups into one call; for anything it doesn't\n\
 cover, batch independent reads/searches together.";
 
-/// One-line reference for ctx_read modes (purpose: every session carries
-/// this, so it must stay terse — #579).
-pub const READ_MODES: &str = "ctx_read modes (required): full=verbatim(edit-ready) signatures=API map=structure \
-     auto=smart diff=git-delta lines:N-M=window. fresh=true forces disk re-read.";
-
 /// One-line automation reminder.
 pub const AUTO: &str = "Auto: preload/dedup/compress run in background. \
     ctx_session=memory, ctx_knowledge=facts, ctx_semantic_search=meaning search, \
@@ -85,37 +84,24 @@ pub const INTELLIGENCE: &str =
 pub const LITM_END: &str = "TOOL PREFERENCE (END): ctx_compose>chain ctx_read>Read ctx_shell>Shell \
      ctx_search>Grep ctx_glob>Glob ctx_tree>ls | Edit/Write/Delete=native";
 
-/// Banner placed at the top of dedicated rule files (non-shadow only).
-pub const CRITICAL: &str = "CRITICAL: ALWAYS use lean-ctx tools instead of native equivalents. \
-     This is NOT optional.";
-
 const FULL_NON_SHADOW: &[&str] = &[
+    CRITICAL,
     BULLETS,
     NEVER,
     INTENT,
     ANTI,
     PARALLEL,
-    READ_MODES,
     AUTO,
     CEP,
     INTELLIGENCE,
     LITM_END,
 ];
 
-const FULL_SHADOW: &[&str] = &[
-    INTENT,
-    ANTI,
-    PARALLEL,
-    READ_MODES,
-    AUTO,
-    CEP,
-    INTELLIGENCE,
-    LITM_END,
-];
+const FULL_SHADOW: &[&str] = &[INTENT, ANTI, PARALLEL, AUTO, CEP, INTELLIGENCE, LITM_END];
 
-const COMPACT_NON_SHADOW: &[&str] = &[BULLETS, NEVER, INTENT, ANTI, PARALLEL, READ_MODES];
+const COMPACT_NON_SHADOW: &[&str] = &[CRITICAL, BULLETS, NEVER, INTENT, ANTI, PARALLEL];
 
-const COMPACT_SHADOW: &[&str] = &[INTENT, ANTI, PARALLEL, READ_MODES];
+const COMPACT_SHADOW: &[&str] = &[INTENT, ANTI, PARALLEL];
 
 /// Selects the profile (FULL vs COMPACT) and the wrapping style (markers,
 /// headers, footers) for `render()`.
@@ -156,15 +142,9 @@ pub fn render(shadow: bool, wrapper: Wrapper) -> String {
         return body;
     }
 
-    let critical_section = if shadow {
-        String::new()
-    } else {
-        format!("{CRITICAL}\n\n")
-    };
-
     let version_line = format!("<!-- version: {RULES_VERSION} -->");
 
-    format!("{START_MARK}\n\n{version_line}\n\n{critical_section}{body}\n{END_MARK}")
+    format!("{START_MARK}\n{version_line}\n\n{body}\n{END_MARK}")
 }
 // ============================================================
 // RULES FILE — centralized interface for reading rule files
@@ -333,7 +313,6 @@ mod tests {
         assert!(!INTENT.is_empty());
         assert!(!ANTI.is_empty());
         assert!(!PARALLEL.is_empty());
-        assert!(!READ_MODES.is_empty());
         assert!(!AUTO.is_empty());
         assert!(!CEP.is_empty());
         assert!(!INTELLIGENCE.is_empty());
@@ -414,7 +393,6 @@ mod tests {
         assert!(out.contains(END_MARK));
         assert!(out.contains("MANDATORY MAPPING"));
         assert!(out.contains(BULLETS));
-        assert!(out.contains(READ_MODES));
     }
 
     #[test]
@@ -429,7 +407,6 @@ mod tests {
             !out.contains("MANDATORY MAPPING"),
             "shadow must not contain BULLETS"
         );
-        assert!(out.contains(READ_MODES), "shadow must keep READ_MODES");
     }
 
     // --- render() — Bare ---
@@ -442,7 +419,6 @@ mod tests {
         assert!(!out.contains("<!-- version:"), "Bare must not have version");
         assert!(out.contains(BULLETS));
         assert!(out.contains(NEVER));
-        assert!(out.contains(READ_MODES));
     }
 
     #[test]
@@ -453,7 +429,6 @@ mod tests {
             !out.contains("MANDATORY MAPPING"),
             "shadow Bare must not have BULLETS"
         );
-        assert!(out.contains(READ_MODES), "shadow Bare keeps READ_MODES");
     }
 
     // --- Wrapper round-trip ---

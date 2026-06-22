@@ -38,15 +38,6 @@ fn dedicated_rules_have_markers() {
     assert!(d.contains("intent"));
 }
 
-#[test]
-fn dedicated_rules_contain_read_modes() {
-    let d = dedicated_content_cached();
-    assert!(d.contains("full"));
-    assert!(d.contains("map"));
-    assert!(d.contains("signatures"));
-    assert!(d.contains("lines:N-M"));
-}
-
 // ── Shadow mode ──────────────────────────────────────────────
 
 #[test]
