@@ -128,6 +128,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   `raw` and state that the allowlist still holds.
 
 ### Fixed
+- **Shell-output compression can no longer inflate token counts (Windows CI
+  flake).** The VCS branch of `compress_output` (git/jj/gh/glab/hg) returned its
+  authoritative compressor's result even when it was not strictly shorter — so a
+  compact `git log --oneline` stays verbatim — but it skipped the token guard the
+  other paths use. A tiny adversarial `git status` body could reshape into a
+  one-token-larger summary, breaking the `compress_output_never_inflates_tokens`
+  property on Windows. The VCS path now allows *equal* (verbatim) output but
+  rejects any growth, restoring the never-inflate invariant deterministically.
+  Pinned with a regression unit test for the exact failing input.
 - **Billing edge no longer downgrades a paying account on a billing-service blip
   (GL #785).** Entitlement resolution at the cloud edge now caches each user's
   last known plan (in-memory, short TTL) and, when the upstream billing service

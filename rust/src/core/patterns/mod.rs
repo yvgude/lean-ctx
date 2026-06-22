@@ -119,7 +119,15 @@ pub fn compress_output(command: &str, output: &str) -> Option<String> {
     // compact oneline log is preserved verbatim (full history intact) instead of
     // being reshaped by a generic heuristic.
     if has_vcs_owner(command) {
-        return try_specific_pattern(command, clean_output).filter(|c| !c.trim().is_empty());
+        // The VCS compressor is authoritative and is kept even when it is not
+        // strictly *shorter*, so a compact `git log --oneline` is preserved
+        // verbatim (full history intact). It must still never return *more*
+        // tokens than its input, though — a tiny adversarial `git status` body
+        // could otherwise reshape into a one-token-larger summary and break the
+        // never-inflate invariant. Allow equal (verbatim), reject only growth.
+        return try_specific_pattern(command, clean_output)
+            .filter(|c| !c.trim().is_empty())
+            .filter(|c| !inflates_tokens(c, output));
     }
 
     if let Some(compressed) = try_specific_pattern(command, clean_output)
@@ -164,6 +172,14 @@ pub(crate) fn has_vcs_owner(command: &str) -> bool {
 /// Collapse whitespace into single spaces so comparisons align with logical word tokens.
 fn normalize_shell_tokens(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// True when `compressed` carries *more* tokens than the raw `original` — i.e.
+/// the transform inflated rather than compressed. Compared against the raw
+/// (pre-ANSI-strip) output so the guard matches the public `compress_output`
+/// invariant exactly: the returned text never tokenizes larger than its input.
+fn inflates_tokens(compressed: &str, original: &str) -> bool {
+    count_tokens(compressed) > count_tokens(original)
 }
 
 fn shorter_only(compressed: String, original: &str) -> Option<String> {
@@ -515,6 +531,24 @@ mod tests {
     fn routes_git_commands() {
         let output = "On branch main\nnothing to commit";
         assert!(compress_output("git status", output).is_some());
+    }
+
+    #[test]
+    fn vcs_path_never_inflates_tokens() {
+        // Regression for the `compress_output_never_inflates_tokens` property
+        // (Windows CI): the VCS branch returned the git compressor's reshaped
+        // output without the `shorter_only` guard the other paths use, so this
+        // tiny adversarial `git status` body grew 10 -> 11 tokens. The result
+        // must now never tokenize larger than its input (None == use original).
+        let output = " Abu a\nAa aa_A00A\n\n-";
+        if let Some(compressed) = compress_output("git status", output) {
+            assert!(
+                count_tokens(&compressed) <= count_tokens(output),
+                "VCS compress inflated: {} > {}",
+                count_tokens(&compressed),
+                count_tokens(output),
+            );
+        }
     }
 
     #[test]
