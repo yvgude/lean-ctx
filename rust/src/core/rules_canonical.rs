@@ -18,7 +18,7 @@ use crate::core::config::CompressionLevel;
 pub const START_MARK: &str = "<!-- lean-ctx-rules -->";
 
 /// Closing marker that ends a lean-ctx rule section.
-pub const END_MARK: &str = "<!-- /lean-ctx -->";
+pub const END_MARK: &str = "<!-- /lean-ctx-rules -->";
 
 /// Current rules version (monotonically increasing integer).  Embedded as
 /// `<!-- version: {RULES_VERSION} -->` right after `START_MARK` so the
