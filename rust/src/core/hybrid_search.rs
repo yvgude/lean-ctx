@@ -345,14 +345,17 @@ pub fn format_hybrid_results(results: &[HybridResult], compact: bool) -> String 
                 r.symbol_name,
             ));
         } else {
+            // Prefix the separator inside each arm so an absent rank-source
+            // (e.g. BM25-only fallback when embeddings are off) renders a clean
+            // "(rrf: X)" instead of a dangling "(rrf: X, )" (#509).
             let source_info = match (r.bm25_rank, r.dense_rank) {
-                (Some(bm), Some(dn)) => format!("bm25:#{bm} + dense:#{dn}"),
-                (Some(bm), None) => format!("bm25:#{bm}"),
-                (None, Some(dn)) => format!("dense:#{dn}"),
+                (Some(bm), Some(dn)) => format!(", bm25:#{bm} + dense:#{dn}"),
+                (Some(bm), None) => format!(", bm25:#{bm}"),
+                (None, Some(dn)) => format!(", dense:#{dn}"),
                 _ => String::new(),
             };
             out.push_str(&format!(
-                "\n--- Result {} (rrf: {:.4}, {}) ---\n{} :: {} [{:?}] (L{}-{})\n{}\n",
+                "\n--- Result {} (rrf: {:.4}{}) ---\n{} :: {} [{:?}] (L{}-{})\n{}\n",
                 i + 1,
                 r.rrf_score,
                 source_info,
@@ -535,6 +538,34 @@ mod tests {
         }];
         let output = format_hybrid_results(&results, false);
         assert!(output.contains("bm25:#1 + dense:#2"));
+    }
+
+    #[test]
+    fn format_verbose_no_dangling_comma_when_source_absent() {
+        // BM25-only fallback (embeddings off) leaves both ranks None; the header
+        // must read "(rrf: X)" with no trailing ", )" waste (#509).
+        let results = vec![HybridResult {
+            file_path: "auth.rs".into(),
+            symbol_name: "validate".into(),
+            kind: ChunkKind::Function,
+            start_line: 10,
+            end_line: 20,
+            snippet: "fn validate() {}".into(),
+            rrf_score: 0.5898,
+            bm25_score: Some(4.2),
+            dense_score: None,
+            bm25_rank: None,
+            dense_rank: None,
+        }];
+        let output = format_hybrid_results(&results, false);
+        assert!(
+            output.contains("(rrf: 0.5898)"),
+            "absent rank-source must render a clean header, got: {output}"
+        );
+        assert!(
+            !output.contains(", )"),
+            "must not emit a dangling ', )' (#509)"
+        );
     }
 
     #[test]
