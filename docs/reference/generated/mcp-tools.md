@@ -8,46 +8,48 @@ lean-ctx registers **77 MCP tools** (granular profile). Each entry below lists t
 
 ## `ctx_agent`
 
-Multi-agent coordination: shared message bus, persistent diaries, stigmergic scent field. Actions: register (agent_type+role), post (message+category), read (poll), status (active|idle|finished), handoff (transfer task+summary), sync (agents + messages + scent: claims/stuck/hot), claim/release (atomic file/task claim, message=target), brief (sub-agent briefing pack: message=task, priority=budget), return (distill sub-agent report into knowledge: message='category/key: value' lines), diary (log discovery/decision/blocker/progress/insight), recall_diary, diaries, list, info.
+Multi-agent coordination — shared message bus, persistent diaries, stigmergic scent field. Actions: register (agent_type+role), post (message+category), read (poll), status (active|idle|finished), handoff (task+summary), sync (agents+messages+scent), claim/release (file/task claim), brief (sub-agent briefing), return (distill report into knowledge), diary, recall_diary, list, info. Use when orchestrating multiple LLM agents across a shared workspace.
 
 Parameters: `action`*, `agent_type`, `category`, `message`, `role`, `status`, `to_agent`
 
 ## `ctx_analyze`
 
-Entropy analysis — recommends optimal compression mode for a file.
+Entropy analysis — recommends optimal compression mode for a file path. Use before ctx_read to pick the best mode (full/signatures/auto) that balances size vs information retention.
 
 Parameters: `path`*
 
 ## `ctx_architecture`
 
-Architecture analysis: action=overview→high-level; clusters|communities→groupings
-layers|cycles→dependency violations; entrypoints|hotspots→risk areas; health→quality.
-Use to understand module structure without reading every file. action=module path='src/' to zoom.
+Architecture analysis — understand module structure without reading every file.
+action=overview→high-level; clusters|communities→groupings;
+layers|cycles→dependency violations; entrypoints|hotspots→risk areas;
+health→quality; module path='src/' to zoom into a specific module.
 
 Parameters: `action`, `format`, `path`, `root`
 
 ## `ctx_artifacts`
 
-Context artifact registry + BM25 index. Actions: list|status|index|reindex|search|remove.
+Context artifact registry with BM25 search — manage and query indexed code artifacts. Actions: list|status|index|reindex|search|remove. Use search with query for semantic retrieval across artifacts.
 
 Parameters: `action`*, `format`, `name`, `project_root`, `query`, `top_k`
 
 ## `ctx_benchmark`
 
-Benchmark compression modes for a file or project.
+Benchmark compression modes — measures token savings across all available modes for a file or project. Provide a file path, or use action=project format=json|markdown for project-wide results.
 
 Parameters: `action`, `format`, `path`*
 
 ## `ctx_cache`
 
-Cache ops: status|clear|invalidate.
+Cache operations — inspect, clear, or invalidate the read cache. Actions: status lists cached files; clear empties all; invalidate path=... refreshes a single entry. Use to diagnose stale content or recover budget.
 
 Parameters: `action`*, `path`
 
 ## `ctx_call`
 
-Invoke any non-core lean-ctx tool by name.
-Categories: arch, debug, memory, batch, agent, util. Find exact names with ctx_discover_tools (query=keyword; empty query lists all).
+Invoke any non-core lean-ctx tool by name — for tools not exposed as standalone MCP tools.
+Categories: arch, debug, memory, batch, agent, util. Find exact names with
+ctx_discover_tools (query=keyword; empty query lists all). Cannot invoke itself.
 
 Parameters: `arguments`, `name`*
 
@@ -64,16 +66,17 @@ Parameters: `action`, `depth`, `file`, `from`, `symbol`, `to`
 
 ## `ctx_checkpoint`
 
-Local shadow git history of the agent's changes (separate from the user's .git).
-actions: snapshot (record current state) | log (list checkpoints) | diff (vs a checkpoint) | restore (revert files).
-Snapshot before+after a change to capture exactly what the LLM modified; diff/restore to review or roll back.
+Local shadow git history of the agent's changes — separate from the user's .git.
+Actions: snapshot (record current state), log (list checkpoints),
+diff (compare against a checkpoint), restore (revert files).
+Snapshot before+after changes to capture exactly what was modified.
 Never touches the user's repository.
 
 Parameters: `action`, `from`, `limit`, `message`, `path`, `ref`, `to`
 
 ## `ctx_compile`
 
-Context compilation (CFT). Builds minimal context package via greedy knapsack + Boltzmann view selection. Modes: handles|compressed|full.
+Context compilation (CFT) — builds minimal context package via greedy knapsack + Boltzmann view selection. Modes: handles|compressed|full. Use to produce focused context for handoff or subagent tasks.
 
 Parameters: `budget`, `mode`
 
@@ -90,39 +93,40 @@ Parameters: `path`, `task`*
 
 ## `ctx_compress`
 
-Context checkpoint: compresses read cache to free budget in long sessions
+Compress read cache to free token budget in long sessions.
 include_signatures=true (default) preserves API surface in compressed state.
-Does not affect session state or knowledge—only the read cache compaction.
+Does not affect session state or knowledge — only read cache compaction.
+Use when nearing context limit to reclaim space for new content.
 
 Parameters: `include_signatures`
 
 ## `ctx_compress_memory`
 
-Compress a memory/config file (CLAUDE.md, .cursorrules) preserving code, URLs, paths. Creates .original.md backup.
+Compress a memory/config file (CLAUDE.md, .cursorrules) preserving code, URLs, and paths. Creates .original.md backup. Use to reduce token overhead of persistent instruction files.
 
 Parameters: `path`*
 
 ## `ctx_context`
 
-Session context overview — cached files, seen files, session state.
+Session context overview — shows cached files, seen files, session state, and current CRP mode. No arguments needed. Call periodically to track what's in your context window and remaining budget.
 
 Parameters: _none_
 
 ## `ctx_control`
 
-Universal context manipulation (Context Field Theory). Actions: exclude|include|pin|unpin|set_view|set_priority|mark_outdated|reset|list|history. Overlay-based, reversible, scoped.
+Universal context manipulation (CFT) — fine-tune what appears in context. Actions: exclude|include|pin|unpin|set_view|set_priority|mark_outdated|reset|list|history. Overlay-based, reversible, scoped to call/session/project.
 
 Parameters: `action`*, `reason`, `scope`, `target`, `value`
 
 ## `ctx_cost`
 
-Cost attribution (local-first). Actions: report|agent|tools|json|reset.
+Cost attribution — track tokens and cost per agent and tool call. Actions: report (summary), agent (per-agent), tools (per-tool), json (machine-readable), reset (zero counters). Local-first, no external billing calls.
 
 Parameters: `action`, `agent_id`, `limit`
 
 ## `ctx_dedup`
 
-Cross-file dedup: analyze or apply shared block references.
+Cross-file deduplication — detect and eliminate repeated content across files. action=analyze (default) finds shared blocks; action=apply registers them for auto-dedup in ctx_read output.
 
 Parameters: `action`
 
@@ -137,77 +141,88 @@ Parameters: `path`*
 
 ## `ctx_discover`
 
-Find missed compression opportunities in shell history.
+Identify compression misses in shell history — use when context feels bloated.
+Shows commands that would save tokens via lean-ctx patterns. limit=N caps results.
+No params needed for quick health check.
 
 Parameters: `limit`
 
 ## `ctx_discover_tools`
 
-Search available lean-ctx tools by keyword. Returns matching tool names and descriptions.
+Search available lean-ctx tools by keyword — use to find the right tool.
+Empty query lists all tools. query="keyword" returns matching names and descriptions.
+Use before ctx_call or when unsure which tool fits your task.
 
 Parameters: `query`
 
 ## `ctx_edit`
 
-Search-and-replace edit: old_string must be unique unless replace_all=true
-create=true writes new files from new_string. TOCTOU-guarded with preimage hash verification.
-backup creates .bak before modifying. Supports MD5/size/mtime pre-guards for race-free edits.
+Search-and-replace edit with TOCTOU safety — for simple text replacement in a single file.
+Use INSTEAD of native Edit when Read is unavailable. old_string must be unique unless replace_all=true.
+create=true writes new files. backup creates .bak. MD5/size/mtime pre-guards prevent race conditions.
+Do NOT loop on failures — switch to ctx_edit. For LSP-aware refactoring (rename, move, inline), use ctx_refactor.
 
 Parameters: `create`, `new_string`*, `old_string`, `path`*, `replace_all`
 
 ## `ctx_execute`
 
 Run code in sandbox (11 languages) — use when compute beats shell glue.
-action=code (default) for one-shot transform/math/generation; action=batch for parallel
-multi-language scripts; action=file to process a project file (extension auto-detects
-language). Pass intent to focus large output and save tokens. Prefer over ctx_shell when
-logic, conditionals, multi-line scripts, or cross-language data munging — stdout-only,
-no argv escaping. Languages: javascript, typescript, python, shell, ruby, go, rust, php,
-perl, r, elixir.
+action=code (default) for one-shot scripts; action=batch for parallel multi-language;
+action=file to process a project file (extension auto-detects language).
+Pass intent to focus large output. Prefer over ctx_shell for conditionals,
+multi-line scripts, or cross-language data munging. Languages: javascript,
+typescript, python, shell, ruby, go, rust, php, perl, r, elixir.
 
 Parameters: `action`, `code`, `intent`, `items`, `language`, `path`, `timeout`
 
 ## `ctx_expand`
 
 Retrieve archived tool output by ID (e.g. id=@F1 from [Archived:ID] hints).
-Use when you see an [Archived:ID] reference in tool output and need the full
-content. Supports head/tail/search to filter lines. action=search_all across
-all archives. action=list shows available archives. Zero-loss: original preserved.
+Use when you see an [Archived:ID] reference and need the full content.
+Supports head/tail/search to filter lines. action=search_all across all archives.
+action=list shows available archives. Zero-loss: original preserved.
 For reading files, use ctx_read or ctx_compose instead.
 
 Parameters: `action`, `end_line`, `head`, `id`, `json_keys`, `json_path`, `query`, `search`, `session_id`, `start_line`, `tail`
 
 ## `ctx_feedback`
 
-Harness feedback for LLM output tokens/latency (local-first). Actions: record|report|json|reset|status.
+Record and report LLM token/latency metrics (local-first) — use to track efficiency.
+Actions: record (log event), report (readable summary), json (machine-readable),
+reset (clear data), status (storage info). record requires llm_input_tokens + llm_output_tokens.
 
 Parameters: `action`, `agent_id`, `intent`, `latency_ms`, `limit`, `llm_input_tokens`, `llm_output_tokens`, `model`, `note`
 
 ## `ctx_fill`
 
-Budget-aware context fill — auto-selects compression per file within token limit.
+Budget-aware context fill — given a list of paths, auto-compresses each to fit within a token budget.
+Pass paths array + budget=N. task="..." enables intent-driven pruning for relevance.
+Does NOT decide what to include (use ctx_plan for project-wide selection).
+Use instead of reading each file individually when you have many files and a budget.
 
 Parameters: `budget`*, `paths`*, `task`
 
 ## `ctx_gain`
 
-Gain report (includes Wrapped via action=wrapped).
+Gain report — shows token savings from lean-ctx compression. Use to measure efficiency.
+action=wrapped for periodic/annual summary. Other actions: status|report|score|cost|tasks|heatmap|agents|json.
+period="week"|"month"|"all" scopes the report.
 
 Parameters: `action`, `limit`, `model`, `period`
 
 ## `ctx_git_read`
 
-Read a remote git repository via a cached shallow clone (not HTML scraping).
-modes: overview (tree + README) | tree (file list) | read (a file) | grep (search).
-Accepts repo URLs and GitHub/GitLab blob/tree links (ref + path auto-detected). https-only, SSRF-guarded, bounded.
-Use instead of ctx_url_read when you need a whole repo's files/structure.
+Read remote git repos via cached shallow clone (not HTML scraping).
+modes: overview (tree + README) | tree (file list) | read (file content) | grep (search).
+Accepts repo URLs and GitHub/GitLab blob/tree links (ref+path auto-detected).
+https-only, SSRF-guarded. Use instead of ctx_url_read for a whole repo.
 
 Parameters: `max_tokens`, `mode`, `path`, `query`, `ref`, `timeout_secs`, `url`*
 
 ## `ctx_glob`
 
-Find files by glob pattern. Respects .gitignore;
-supports multi-root via `paths` array. max_results=N sets limit.
+Find files by glob pattern — use to locate files by name or extension.
+Respects .gitignore. Supports multi-root via paths array. max_results=N sets limit.
 For file content search, use ctx_search (pattern) or ctx_semantic_search (meaning).
 
 Parameters: `ignore_gitignore`, `max_results`, `path`, `paths`, `pattern`*
@@ -215,7 +230,7 @@ Parameters: `ignore_gitignore`, `max_results`, `path`, `paths`, `pattern`*
 ## `ctx_graph`
 
 Code graph queries — find usages, relationships, and dependency chains.
-action=symbol path='file.rs::fnName' finds all usages of a symbol.
+action=symbol path="file.rs::fnName" finds all usages of a symbol.
 action=neighbors shows adjacent nodes; action=path from→to shows dependency
 chains between files. action=diff since=HEAD~1 for git change impact.
 For understanding code end-to-end, use ctx_compose FIRST. Use ctx_graph for
@@ -225,41 +240,50 @@ Parameters: `action`*, `depth`, `format`, `kind`, `path`, `project_root`, `since
 
 ## `ctx_handoff`
 
-Context Ledger Protocol (hashed, deterministic, local-first). Actions: create|show|list|pull|clear|export|import.
+Context handoff protocol (hashed, deterministic, local-first).
+Actions: create|show|list|pull|clear|export|import. Stores curated file refs with hashes.
+Use before ending a session or when handing off work to another agent.
 
 Parameters: `action`, `apply_knowledge`, `apply_session`, `apply_workflow`, `filename`, `format`, `path`, `paths`, `privacy`, `write`
 
 ## `ctx_heatmap`
 
-File access heatmap — shows most frequently accessed files.
+File access heatmap — shows most frequently accessed files per session.
+action=status (default) for summary, action=detail for per-file access counts.
+Use to identify hot files and optimize context usage.
 
 Parameters: `action`, `path`
 
 ## `ctx_impact`
 
-Change impact: action=analyze path='file.rs'→blast radius; depth=N; action=diff→git refs
-action=chain from→to→dependency path. depth controls traversal (default 5).
-Use before refactoring to assess risk. path can be file path or type/class name.
+Change impact analysis — assess blast radius before refactoring.
+action=analyze path="file.rs" maps downstream dependents; action=diff compares git refs;
+action=chain traces from→to dependency paths. depth controls traversal (default 5).
+Use before any significant refactor to understand risk.
 
 Parameters: `action`, `depth`, `format`, `path`, `root`
 
 ## `ctx_index`
 
-Index orchestration. Actions: status|build|build-full.
+Index orchestration — manage the code graph index.
+Actions: status (current state), build (incremental update), build-full (complete rebuild).
+Use when the graph index is stale and ctx_graph returns empty or outdated results.
 
 Parameters: `action`*, `project_root`
 
 ## `ctx_intent`
 
-Structured intent input (optional) — submit compact JSON or short text; server also infers intents automatically from tool calls.
+Structured intent input (optional) — submit compact task goals as JSON or short text.
+Server also auto-infers intent from tool calls. Use to guide context prioritization,
+preloading, and cache optimization. query=task|JSON; project_root=scope.
 
 Parameters: `project_root`, `query`*
 
 ## `ctx_knowledge`
 
-Persistent memory across sessions — remember decisions, patterns, and facts.
+Persistent memory across sessions — remember decisions, patterns, and facts for recall.
 action=remember saves a fact; action=recall query='X' retrieves it.
-Use to persist architecture decisions, gotchas, and patterns for future sessions.
+Use to persist architecture decisions, gotchas, and patterns between sessions.
 action=gotcha trigger='X' resolution='Y' for known pitfalls.
 mode=semantic|exact for recall. category groups related facts.
 
@@ -267,19 +291,28 @@ Parameters: `action`*, `as_of`, `category`, `confidence`, `examples`, `key`, `mo
 
 ## `ctx_ledger`
 
-Context ledger ops: status|reset|evict. Manages persistent context pressure.
+Context ledger operations — track and manage persistent context pressure.
+action=status shows pressure (%), top files by cost, and recommendations;
+action=reset clears all entries; action=evict targets=paths removes files
+and excludes them from re-accumulation. Use when context budget is tight.
 
 Parameters: `action`*, `targets`
 
 ## `ctx_load_tools`
 
-Load/unload specialized tool categories on demand. Categories: arch, debug, memory, metrics, session. Core is always loaded.
+Load/unload specialized tool categories on demand to reduce tool surface area.
+action=load|unload|list. Categories: arch, debug, memory, metrics, session.
+Core is always loaded and cannot be unloaded. Use when you only need
+a subset of tools for your current task.
 
 Parameters: `action`*, `category`
 
 ## `ctx_metrics`
 
-Session token stats, cache rates, per-tool savings.
+Session token statistics — cache hit rates, per-tool savings, pipeline metrics,
+and signature backend ratios. No parameters needed. Use to understand token
+efficiency and identify which tools cost the most. Complements ctx_radar
+for full context budget analysis.
 
 Parameters: _none_
 
@@ -295,15 +328,19 @@ Parameters: `fresh`, `mode`, `paths`*
 
 ## `ctx_multi_repo`
 
-Multi-repo management: add/remove roots, cross-repo search with Reciprocal Rank Fusion (RRF). Enables searching across multiple project directories simultaneously.
+Multi-repository management — add, remove, and search across project directories.
+action=add_root|remove_root|list_roots|search. Cross-repo search uses Reciprocal
+Rank Fusion (RRF) to merge results from multiple repos. query=search term;
+roots=filter to specific repos. max_results limits output (default 20).
 
 Parameters: `action`*, `alias`, `max_results`, `path`, `query`, `roots`
 
 ## `ctx_outline`
 
-File symbols: path='file.rs'->signatures; kind=fn|struct|class|all filter
-Lists all named symbols in a file with signatures and line numbers.
-Generated via tree-sitter extraction of fn/struct/class/trait declarations.
+List file symbols with signatures and line numbers — path='file.rs' returns fn, struct,
+class, and trait declarations via tree-sitter extraction. kind=fn|struct|class|all
+to filter. Use for a quick API overview of a file. For deeper understanding,
+use ctx_compose. For full file content, use ctx_read.
 
 Parameters: `kind`, `path`*
 
@@ -318,55 +355,82 @@ Parameters: `path`, `task`
 
 ## `ctx_pack`
 
-Context Package Manager. Actions: pr (PR context), create (build package from project), list, info, remove, install, export, import, auto_load, summary.
+Context Package Manager — create, install, and manage portable context packages.
+Actions: pr (PR context), create (build from project), list, info, remove,
+install, export, import, auto_load, summary. Use to bundle and share context
+state including knowledge, graph, session patterns, and gotchas.
 
 Parameters: `action`*, `apply`, `author`, `base`, `depth`, `description`, `diff`, `enable`, `file`, `format`, `layers`, `level`, `name`, `project_root`, `scope`, `tags`, `version`
 
 ## `ctx_package`
 
-Save or resume portable context packages — self-contained JSON bundles with session state, summaries, and knowledge. Use to hand off context between agents, persist session snapshots for later, or onboard a new agent into a previous session's context. Actions: save (export current session), resume (import from a package file), list (show saved packages), info (inspect a package without importing).
+Save or resume portable context packages — self-contained JSON bundles with session
+state, summaries, and knowledge. Use to hand off context between agents, persist
+session snapshots for later, or onboard a new agent into a previous session.
+Actions: save (export), resume (import), list, info (inspect without importing).
 
 Parameters: `action`, `description`, `path`
 
 ## `ctx_plan`
 
-Context planning (CFT). Computes optimal context plan with Phi scoring, budget allocation, and policy-driven view selection.
+Context planning (CFT) — selects WHICH files/modules to include in context via Phi scoring, budget
+allocation, and policy-driven view selection. Scans the project to pick the most relevant content.
+task=description (short English), budget=token limit (default 12000), profile=ultra_lean|balanced|forensic.
+For compressing already-chosen files to fit a budget, use ctx_fill instead.
 
 Parameters: `budget`, `profile`, `task`*
 
 ## `ctx_plugins`
 
-Plugin management. Actions: list (show installed plugins), enable (activate a plugin), disable (deactivate a plugin), info (show plugin details), hooks (list available hook points).
+Plugin management — list, enable, disable, and inspect plugins with their hooks.
+Actions: list (show installed), enable (activate), disable (deactivate),
+info (show details), hooks (list available hook points). name=plugin_name
+required for enable, disable, info. Use to extend tool functionality.
 
 Parameters: `action`*, `name`
 
 ## `ctx_prefetch`
 
-Predictive prefetch — prewarm cache for blast radius files (graph + task signals) within budgets.
+Predictive prefetch — prewarm the cache for blast radius files using graph and
+task signals. task=description for relevance scoring; changed_files=paths to
+compute blast radius; budget_tokens=soft budget (default 3000); max_files=limit
+(default 10). Use before context-heavy operations to minimize latency.
 
 Parameters: `budget_tokens`, `changed_files`, `max_files`, `root`, `task`
 
 ## `ctx_preload`
 
-Proactive context loader — caches task-relevant files, returns L-curve-optimized summary (~50-100 tokens vs ~5000 for individual reads).
+Proactive context loader — caches task-relevant files and returns L-curve-optimized
+summary (~50-100 tokens vs ~5000 for individual reads). task=short description;
+path=project root. Use at session start or when switching tasks to efficiently
+warm the context cache with the most relevant files.
 
 Parameters: `path`, `task`*
 
 ## `ctx_proof`
 
-Export a machine-readable ContextProofV1 (Verifier + SLO + Pipeline + Provenance). Writes to .lean-ctx/proofs/ by default.
+Export machine-readable ContextProofV1 with Verifier, SLO, Pipeline, and Provenance.
+Writes to .lean-ctx/proofs/ by default. action=export (required);
+format=json|summary|both; write=true|false; filename=custom path;
+max_evidence=max tool receipts (default 50). Use for audit trails.
 
 Parameters: `action`*, `filename`, `format`, `max_evidence`, `max_ledger_files`, `project_root`, `write`
 
 ## `ctx_provider`
 
-External context providers (GitHub, GitLab, Jira, Postgres, MCP, custom REST).
+External context providers — query data from GitHub, GitLab, Jira, Postgres, MCP
+bridges, and custom REST APIs. Actions: discover|list|status|refresh|configure|
+query|mcp_resources|gitlab_issues. provider=id (github|gitlab|jira|mcp:<name>);
+resource=issues|pull_requests. Data flows through consolidation pipeline.
 
 Parameters: `action`*, `iid`, `labels`, `limit`, `mode`, `provider`, `resource`, `state`, `status`
 
 ## `ctx_radar`
 
-Full context budget breakdown: system prompt, messages, tools, reads, shell — all tracked token usage.
+Full context budget breakdown — system prompt, messages, tools, reads, shell,
+all tracked token usage. format=display (human-readable) or json (structured).
+Complements ctx_metrics for comprehensive budget analysis. Use when context
+window is tight and you need to identify the biggest consumers.
 
 Parameters: `format`
 
@@ -383,47 +447,61 @@ Parameters: `aggressiveness`, `fresh`, `limit`, `mode`, `offset`, `path`*, `prot
 
 ## `ctx_refactor`
 
-LSP/IDE refactoring. action=one pipe-delimited value below. Reads (references/definition/implementations/declaration/type_hierarchy/symbols_overview/inspections) need a language server or the JetBrains backend. Symbol edits (replace/insert_before/insert_after_symbol) are name_path-addressed, IDE-first with a lossless headless fallback. Two-Phase ops (rename/move/safe_delete/inline _preview+_apply) need a JetBrains IDE (else BACKEND_REQUIRED) with a stateless plan_hash TOCTOU guard. rename/move/safe_delete block conflicts unless force=true; inline cannot be forced (→ UNSUPPORTED). reformat is Single-Phase, by name_path | path | path+line.
+LSP/IDE refactoring — rename, move, safe_delete, inline, and read-only analyses
+(references, definition, implementations, type_hierarchy, inspections).
+Single-Phase edits (replace_symbol_body, reformat) work headless via name_path.
+Two-Phase ops (rename/move/safe_delete/inline _preview+_apply) need JetBrains
+IDE (else BACKEND_REQUIRED) with plan_hash TOCTOU guard. Conflicts blocked
+unless force=true. See action enum for full list of pipe-delimited values.
 
 Parameters: `action`*, `column`, `direction`, `end_line`, `expected_hash`, `force`, `keep_definition`, `line`, `mode`, `name_path`, `new_body`, `new_name`, `optimize_imports`, `path`, `plan_hash`, `propagate`, `scope`, `search_comments`, `search_text_occurrences`, `target_parent`, `target_path`, `text`
 
 ## `ctx_repomap`
 
-PageRank symbol map: focus_files=['path/*.rs'] boosts areas; max_tokens controls size (default 2048)
-Shows structurally important symbols ranked by PageRank and session relevance.
+PageRank symbol map ranked by structural importance and session relevance.
+focus_files=['path/*.rs'] boosts specific areas; max_tokens controls size (default 2048).
 Use for codebase-wide orientation; for task-scoped view use ctx_overview.
 
 Parameters: `focus_files`, `max_tokens`, `path`
 
 ## `ctx_response`
 
-Compress LLM response text (structural de-duplication).
+Compress LLM response text via structural de-duplication.
+Pass response text to remove repetitive patterns while preserving key information.
+Use to reduce token waste before storing or forwarding responses.
 
 Parameters: `text`*
 
 ## `ctx_retrieve`
 
-Retrieve original uncompressed content from the session cache (CCR). Use when a compressed ctx_read output is insufficient.
+Retrieve original uncompressed content from the session cache (CCR).
+Use when a compressed ctx_read output is insufficient — restores full verbatim source.
+Supports query='search' to find matching lines within cached content.
+Requires path to a file previously read via ctx_read.
 
 Parameters: `path`*, `query`
 
 ## `ctx_review`
 
-Automated code review: combines impact analysis, caller tracking, and test discovery. Actions: review (single file), diff-review (from git diff), checklist (structured review questions).
+Automated code review with impact analysis, caller tracking, and test discovery.
+Actions: review (single file), diff-review (from git diff),
+checklist (structured review questions). depth=N controls analysis breadth (default 3).
 
 Parameters: `action`*, `depth`, `path`
 
 ## `ctx_routes`
 
-HTTP routes: method=GET|POST filter; path='/api' prefix; auto-detects frameworks
-Extracts endpoints from: Express, Flask, FastAPI, Actix, Spring, Rails, Next.js.
-Use to discover API surface without reading route definition files.
+Discover HTTP API endpoints without reading route definition files.
+Auto-detects: Express, Flask, FastAPI, Actix, Spring, Rails, Next.js.
+method=GET|POST filters by verb; path='/api' filters by prefix.
 
 Parameters: `method`, `path`
 
 ## `ctx_rules`
 
-Cross-agent rules governance (ContextOps). Actions: sync (distribute rules to agents), diff (show drift), lint (check consistency), status (show sync state), init (create central config).
+Cross-agent rules governance (ContextOps).
+Actions: sync (distribute rules to agents), diff (show drift),
+lint (check consistency), status (sync state), init (create central config).
 
 Parameters: `action`*, `agent`
 
@@ -448,15 +526,20 @@ Parameters: `action`, `file_path`, `languages`, `line`, `mode`, `path`, `path_gl
 
 ## `ctx_session`
 
-Cross-session memory: action=task/finding/decision persists; load session_id=X resumes
-Use at session end to persist progress; at start to restore previous work.
-action=status for current snapshot; action=save commits state; action=reset clears.
+Cross-session memory: action=task|finding|decision persists progress;
+load session_id=X resumes prior work. Use at session end to persist;
+at start to restore. action=status for snapshot; action=save commits state;
+action=reset clears. Supports profile|role|budget|slo|diff|verify|episodes|procedures.
 
 Parameters: `action`*, `session_id`, `value`
 
 ## `ctx_share`
 
-Share cached file contexts between agents. Actions: push (share files from your cache to another agent), pull (receive files shared by other agents), list (show all shared contexts), clear (remove your shared contexts).
+Share cached file contexts between agents for collaborative workflows.
+Actions: push (share files from your cache to another agent),
+pull (receive files shared by others), list (show shared contexts),
+clear (remove your shares). Omit to_agent for broadcast;
+set to_agent='agent-id' for targeted sharing.
 
 Parameters: `action`*, `message`, `paths`, `to_agent`
 
@@ -471,25 +554,38 @@ Parameters: `command`*, `cwd`, `env`, `raw`
 
 ## `ctx_skillify`
 
-Codify recurring patterns from this project's session diary + knowledge into versioned, git-committable .cursor/rules/skillify-*.mdc files. Actions: mine (distill & write/merge rules), list (show generated rules), status (config + counts), promote (copy a project rule to ~/.cursor/rules). Precision-biased; only acts when invoked; re-runs are idempotent.
+Codify recurring patterns from session diary + knowledge into versioned,
+git-committable .cursor/rules/skillify-*.mdc files.
+Actions: mine (distill & write/merge rules), list (show generated rules),
+status (config + counts), promote (copy to ~/.cursor/rules).
+Precision-biased; re-runs are idempotent.
 
 Parameters: `action`, `slug`
 
 ## `ctx_smart_read`
 
-Auto-select optimal read mode for a file.
+Auto-select optimal read mode (full|map|signatures|auto) based on file size,
+type, and compression history. Use when you want smart defaults without
+choosing a mode. For explicit control use ctx_read with mode= parameter directly.
 
 Parameters: `path`*
 
 ## `ctx_smells`
 
-Code smell detection. Actions: scan|summary|rules|file.
+Code smell detection engine.
+Actions: scan (run all rules on project), summary (aggregate counts),
+rules (list available rules with descriptions), file (scan a single file).
+Supports rule='name' and path='file' filters for targeted analysis.
 
 Parameters: `action`, `format`, `path`, `root`, `rule`
 
 ## `ctx_summary`
 
-Record and recall AI session summaries — compact, semantically-recallable digests of what was done (task, files, decisions, next steps). Actions: recall (find past summaries by query; semantic when embeddings are warm, else lexical), record (snapshot the current session now), list (recent summaries). Summaries are also captured automatically on the checkpoint cadence.
+Record and recall AI session summaries — compact, semantically-recallable
+digests of what was done (task, files, decisions, next steps).
+Actions: recall (find past summaries by query), record (snapshot session),
+list (recent summaries). Auto-captured on checkpoint cadence.
+Use with ctx_session for cross-session continuity.
 
 Parameters: `action`, `query`, `top_k`
 
@@ -505,21 +601,30 @@ Parameters: `file`, `kind`, `name`*
 
 ## `ctx_task`
 
-Multi-agent task orchestration. Actions: create|update|list|get|cancel|message|info.
+Multi-agent task orchestration.
+Actions: create (assign to agent), update (change state), list (active),
+get (details), cancel, message (add note), info (metadata).
+States: working|input-required|completed|failed|canceled.
 
 Parameters: `action`*, `description`, `message`, `state`, `task_id`, `to_agent`
 
 ## `ctx_tools`
 
 Gateway to downstream MCP servers — unlimited external tools at ~constant context cost.
-actions: find (query → top-N relevant tools as ChoiceCards) | call (proxy a `server::tool`) | list (servers+counts) | refresh.
-Use find to discover, then call the chosen `server::tool`. Off by default ([gateway] config).
+actions: find (query → top-N relevant tools as ChoiceCards) |
+call (proxy a server::tool) | list (servers+counts) | refresh.
+Use find to discover, then call the chosen server::tool.
+Off by default — enable via [gateway] config section.
 
 Parameters: `action`, `arguments`, `query`, `tool`
 
 ## `ctx_transcript_compact`
 
-Compact an OpenAI-format message array deterministically: keep system + a fresh tail verbatim, replace older turns with a recoverable summary, and offload the raw turns into lean-ctx session memory (indexed for ctx_search/ctx_knowledge recall). Built for the Hermes context-engine plugin. Returns JSON {messages, stats}; tool_call/tool_result pairs are never split.
+Compact an OpenAI-format message array deterministically:
+keep system + fresh tail verbatim, replace older turns with a recoverable
+summary, offload raw turns into session memory (indexed for recall).
+Built for the Hermes context-engine plugin. Returns JSON {messages, stats}.
+tool_call/tool_result pairs are never split.
 
 Parameters: `focus_topic`, `fresh_tail_tokens`, `messages`*, `protect_min_messages`
 
@@ -528,26 +633,34 @@ Parameters: `focus_topic`, `fresh_tail_tokens`, `messages`*, `protect_min_messag
 Directory tree with file counts per directory. depth=N (default 3);
 show_hidden for dotfiles; paths for multi-root.
 respect_gitignore filters ignored files (default true).
+Use for lightweight project orientation before ctx_repomap or ctx_compose.
 
 Parameters: `depth`, `path`, `paths`, `respect_gitignore`, `show_hidden`
 
 ## `ctx_url_read`
 
-Fetch URL: pages→Markdown; PDF→text; YouTube→transcript; mode=auto best per type
-mode=facts|quotes for research (claims+confidence). query='topic' to focus extraction.
-GitHub blob/raw URLs auto-resolve to raw file. SSRF-guarded (no private IPs). max_tokens=6000.
+Fetch URL: pages→Markdown; PDF→text; YouTube→transcript; mode=auto best per type.
+mode=facts|quotes for research (claims+confidence). query='topic' focuses extraction.
+GitHub blob/raw URLs auto-resolve to raw file. SSRF-guarded (no private IPs).
+max_tokens=6000; timeout_secs=20 (max 60).
 
 Parameters: `max_items`, `max_tokens`, `mode`, `query`, `timeout_secs`, `url`*
 
 ## `ctx_verify`
 
-Verification observability. Actions: stats (tool call statistics), proof|v2 (ContextProofV2 claim-based verification with Lean4 proofs).
+Verification observability — tool call statistics and claim-based verification.
+Actions: stats (tool call usage counts), proof|v2 (ContextProofV2 claim
+verification with Lean4 proofs). Use to audit tool usage or verify claims.
 
 Parameters: `action`, `format`
 
 ## `ctx_workflow`
 
-Workflow rails (state machine + evidence). Actions: start|status|transition|complete|evidence_add|evidence_list|stop.
+Workflow rails — state machine with evidence tracking.
+Actions: start|status|transition|complete|evidence_add|evidence_list|stop.
+spec=WorkflowSpec JSON to define custom states/transitions.
+Built-in plan_code_test workflow when spec omitted.
+Use with ctx_task for multi-agent orchestration.
 
 Parameters: `action`, `key`, `name`, `spec`, `to`, `value`
 
@@ -555,6 +668,8 @@ Parameters: `action`, `key`, `name`, `spec`, `to`, `value`
 
 Shell command with auto-compression (~95 patterns). Alias for ctx_shell.
 Output is compressed for token savings. For verbatim output pass raw=true.
+Use when your MCP client prefers shell/bash over ctx_shell — transparently
+delegates to ctx_shell internals.
 
 Parameters: `command`*, `cwd`
 
