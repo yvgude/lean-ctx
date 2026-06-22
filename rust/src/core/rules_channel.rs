@@ -111,9 +111,7 @@ mod tests {
 
     fn compression_block() -> String {
         format!(
-            "{}\nOUTPUT STYLE\n{}\n",
-            COMPRESSION_BLOCK_START,
-            COMPRESSION_BLOCK_END,
+            "{COMPRESSION_BLOCK_START}\nOUTPUT STYLE\n{COMPRESSION_BLOCK_END}\n",
         )
     }
 
