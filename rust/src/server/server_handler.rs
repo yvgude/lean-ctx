@@ -48,10 +48,6 @@ impl ServerHandler for LeanCtxServer {
     fn get_info(&self) -> ServerInfo {
         let capabilities = server_capabilities(true, true);
 
-        let config = crate::core::config::Config::load();
-        let level = crate::core::config::CompressionLevel::effective(&config);
-        let _ = crate::core::terse::rules_inject::inject(&level);
-
         let instructions = crate::instructions::build_instructions(CrpMode::effective());
 
         InitializeResult::new(capabilities)

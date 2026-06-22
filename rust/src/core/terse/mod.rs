@@ -26,7 +26,6 @@ pub mod mcp_compress;
 pub mod pipeline;
 pub mod quality;
 pub mod residual;
-pub mod rules_inject;
 pub mod scoring;
 
 /// Tools whose textual output is read content the agent edits against and must

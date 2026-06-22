@@ -110,8 +110,8 @@ fn apply_setting(key: &str, value: &str) -> Result<(), String> {
 /// re-inject the agent rules" claim would be false).
 fn apply_terse_agent(value: &str) -> Result<(), String> {
     crate::core::config::setter::set_by_key("terse_agent", value)?;
-    let cfg = Config::load();
-    let _ = crate::core::terse::rules_inject::inject(&CompressionLevel::effective(&cfg));
+    let home = dirs::home_dir().unwrap_or_default();
+    let _ = crate::rules_inject::inject_all_rules(&home);
     Ok(())
 }
 
@@ -120,9 +120,10 @@ fn apply_terse_agent(value: &str) -> Result<(), String> {
 fn apply_compression(value: &str) -> Result<(), String> {
     let level = CompressionLevel::from_str_label(value)
         .ok_or_else(|| format!("invalid compression level '{value}'"))?;
-    let cfg = Config::update_global(move |c| c.compression_level = level)
+    let _cfg = Config::update_global(move |c| c.compression_level = level)
         .map_err(|e| format!("Error saving config: {e}"))?;
-    let _ = crate::core::terse::rules_inject::inject(&cfg.compression_level);
+    let home = dirs::home_dir().unwrap_or_default();
+    let _ = crate::rules_inject::inject_all_rules(&home);
     Ok(())
 }
 

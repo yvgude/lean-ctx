@@ -247,7 +247,6 @@ fn build_full_instructions(crp_mode: CrpMode, client_name: &str) -> String {
     // Shadow mode omits BULLETS/NEVER/CRITICAL automatically.
     let skeleton = rc::render(shadow, Wrapper::Bare, level);
 
-    let config_dir = claude_config_dir_display();
     let base = format!(
         "{skeleton}\n\
         {shell_hint}\n\

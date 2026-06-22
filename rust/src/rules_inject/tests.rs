@@ -87,7 +87,7 @@ fn zed_rules_path_is_os_aware_and_matches_config_dir() {
 fn target_count() {
     let home = std::path::PathBuf::from("/tmp/fake_home");
     let targets = build_rules_targets(&home, crate::core::config::RulesInjection::Shared);
-    assert_eq!(targets.len(), 24);
+    assert_eq!(targets.len(), 25);
     assert!(
         !targets.iter().any(|t| t.name == "Claude Code"),
         "Claude Code must not get a rules target"
@@ -97,7 +97,7 @@ fn target_count() {
         "CodeBuddy must not get a rules target"
     );
     let dedicated = build_rules_targets(&home, crate::core::config::RulesInjection::Dedicated);
-    assert_eq!(dedicated.len(), 24);
+    assert_eq!(dedicated.len(), 25);
 }
 
 #[test]

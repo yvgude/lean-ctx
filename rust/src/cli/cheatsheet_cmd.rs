@@ -74,9 +74,13 @@ pub fn cmd_compression(args: &[String]) {
         }
         let effective = CompressionLevel::from_str_label(level).unwrap_or(CompressionLevel::Off);
         println!("Compression level: {level} — {}", effective.description());
-        let n = crate::core::terse::rules_inject::inject(&effective);
-        if n > 0 {
-            println!("Updated {n} rules file(s) with compression prompt.");
+        let home = dirs::home_dir().unwrap_or_default();
+        let result = crate::rules_inject::inject_all_rules(&home);
+        if !result.updated.is_empty() {
+            println!(
+                "Updated {} rules file(s) with compression prompt.",
+                result.updated.len()
+            );
         }
         println!("Restart your agent/IDE for changes to take effect.");
     } else {

@@ -325,11 +325,13 @@ pub(crate) fn configure_premium_features(home: &std::path::Path) {
     match crate::config_io::write_atomic_with_backup(&config_path, &config_content) {
         Ok(()) => {
             compression_status.emit();
-            if let Some(lvl) = effective_level {
-                let n = crate::core::terse::rules_inject::inject(&lvl);
-                if n > 0 {
+            if effective_level.is_some() {
+                let home = dirs::home_dir().unwrap_or_default();
+                let result = crate::rules_inject::inject_all_rules(&home);
+                if !result.updated.is_empty() {
                     terminal_ui::print_status_ok(&format!(
-                        "Updated {n} rules file(s) with compression prompt"
+                        "Updated {} rules file(s) with compression prompt",
+                        result.updated.len()
                     ));
                 }
             }
