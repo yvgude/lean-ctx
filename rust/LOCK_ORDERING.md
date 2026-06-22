@@ -63,6 +63,8 @@ All `std::sync::Mutex` unless noted otherwise.
 | L50 | `LINE_EMBED_CACHE` | `core/entropy.rs:299` | `Mutex<Option<HashMap<u64, Vec<f32>>>>` | Per-line embedding cache (line-hash → vector) for the semantic redundancy filter (#544); capacity-bounded, never blocks on model loads |
 | L51 | `SELECTED_ARMS` | `core/adaptive_thresholds.rs:342` | `Mutex<Option<SelectedArmRegistry>>` | Registry of recently selected bandit arms (per project root) so real bounce/edit-fail signals are attributed to the arm that produced the compression (#593); capacity-bounded (64 paths, oldest-first eviction) |
 | L52 | `ACTIVE_PROFILE_OVERRIDE` | `core/profiles.rs:1008` | `RwLock<Option<String>>` | In-process active-profile override set by `set_active_profile`; replaces the former `std::env::set_var("LEAN_CTX_PROFILE")` so profile switching is data-race-free under the multi-threaded MCP runtime (Edition 2024). Read on every `active_profile_name()` (override → env → config → "coder") |
+| L53 | `REGISTRY` (introspect) | `core/introspect.rs:112` | `LazyLock<Mutex<Registry>>` | Cognition v2 activity registry — per-subsystem tick counters + last-run; flushed debounced to a project-scoped JSON so `introspect cognition` / `doctor` can report wired/active across processes (#cognition-v2) |
+| L54 | `ACTIVE_WEIGHTS` | `core/context_field.rs:266` | `RwLock<Option<FieldWeights>>` | In-process learned Φ field-weights cache set by `set_active_weights` (bandit-chosen arm), read by `active_weights()` / `compute_phi`; deterministic by default, sampling only under `LEAN_CTX_STOCHASTIC` (#cognition-v2) |
 
 ### Test / Environment Locks (serialise env-var mutations)
 
@@ -172,9 +174,9 @@ Override via `LEAN_CTX_WORKER_THREADS` (positive integer) for environments with 
 concurrent subagents. Example: `LEAN_CTX_WORKER_THREADS=8`. The blocking thread pool
 is always `worker_threads * 4`, clamped to `[8, 32]`.
 
-### Independent Static Locks (L3–L52)
+### Independent Static Locks (L3–L54)
 
-All other static locks (L3–L52) — **except the L22 → L4 pair documented above** — are
+All other static locks (L3–L54) — **except the L22 → L4 pair documented above** — are
 **independent singletons**: they protect isolated subsystem state and are never nested inside
 each other. Each should be acquired in isolation:
 

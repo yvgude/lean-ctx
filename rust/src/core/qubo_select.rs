@@ -296,12 +296,10 @@ mod tests {
 
     #[test]
     fn disabled_by_default() {
-        // Spike must be opt-in; greedy stays default.
-        // SAFETY: the test runner is single-threaded per test binary and this var
-        // is only read by qubo_select; no other thread observes the env here.
-        unsafe {
-            std::env::remove_var("LEAN_CTX_EXPERIMENTAL_QUBO");
-        }
+        // Spike must be opt-in; greedy stays default. Serialize env access through
+        // the shared test lock so this never races other env-reading tests.
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_EXPERIMENTAL_QUBO");
         assert!(!is_enabled());
     }
 
