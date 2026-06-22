@@ -6,6 +6,11 @@
 //! This is a minimal implementation optimized for lean-ctx's embedding dimensions (384-d).
 //! For indices under BRUTE_FORCE_THRESHOLD chunks, falls back to exact linear scan
 //! with binary-heap top-k selection (O(n log k) instead of O(n log n)).
+//!
+//! All embeddings are stored in a single flat `Arc<[f32]>` allocation (row-major). This
+//! gives sequential memory access during the distance hot-loop — one dereference instead
+//! of `Arc → slice → Vec → f32 heap`, eliminates per-vector allocation overhead, and
+//! improves cache utilization for large corpora.
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -17,6 +22,65 @@ const EF_CONSTRUCTION: usize = 200; // search width during build
 const EF_SEARCH: usize = 64; // search width during query
 // ML = 1/ln(M) = 1/ln(16) ≈ 0.3607
 const ML: f64 = 0.360_674_0;
+
+/// Flat row-major embedding matrix: `data` is `n_vectors × dim` floats in one
+/// contiguous heap allocation. Used everywhere in the dense search pipeline so
+/// the same allocation backs both the HNSW graph cache and per-query scoring —
+/// zero copies between layers.
+#[derive(Clone)]
+pub struct FlatEmbeddings {
+    pub data: Arc<[f32]>,
+    pub dim: usize,
+}
+
+impl FlatEmbeddings {
+    /// Number of vectors in the matrix.
+    #[inline]
+    pub fn n_vectors(&self) -> usize {
+        if self.dim == 0 {
+            return 0;
+        }
+        self.data.len() / self.dim
+    }
+
+    /// View the i-th vector as a `&[f32]`.
+    #[inline]
+    pub fn get(&self, i: usize) -> &[f32] {
+        let start = i * self.dim;
+        &self.data[start..][..self.dim]
+    }
+
+    /// Extract the i-th vector into an owned `Vec<f32>`.
+    #[inline]
+    pub fn get_vec(&self, i: usize) -> Vec<f32> {
+        self.get(i).to_vec()
+    }
+
+    /// Build from a `Vec<Vec<f32>>` (for tests / migration).
+    pub fn from_vecs(vecs: Vec<Vec<f32>>) -> Self {
+        let dim = vecs.first().map_or(0, std::vec::Vec::len);
+        let n = vecs.len();
+        let mut data = Vec::with_capacity(n * dim);
+        for v in vecs {
+            debug_assert_eq!(v.len(), dim);
+            data.extend_from_slice(&v);
+        }
+        Self {
+            data: Arc::from(data),
+            dim,
+        }
+    }
+}
+
+impl std::fmt::Debug for FlatEmbeddings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FlatEmbeddings")
+            .field("n_vectors", &self.n_vectors())
+            .field("dim", &self.dim)
+            .field("total_bytes", &(self.data.len() * 4))
+            .finish()
+    }
+}
 
 /// A scored item for the min-heap (lowest similarity first for top-k pruning).
 #[derive(Clone, PartialEq)]
@@ -68,25 +132,27 @@ struct Node {
 
 /// Approximate nearest neighbor index using HNSW for large datasets,
 /// with brute-force fallback for small ones.
+///
+/// Vectors are stored in a [`FlatEmbeddings`] — one contiguous `Arc<[f32]>`
+/// allocation — shared with the rest of the pipeline.
 pub struct AnnIndex {
-    vectors: Arc<[Vec<f32>]>,
+    embeddings: FlatEmbeddings,
     nodes: Vec<Node>,
     entry_point: usize,
     max_level: usize,
 }
 
 impl AnnIndex {
-    /// Build the index from a shared set of vectors.
+    /// Build the index from a [`FlatEmbeddings`].
     ///
-    /// The corpus is taken as `Arc<[Vec<f32>]>` so the cached index shares the
-    /// *same* full-precision allocation as the per-query aligned corpus: build
-    /// performs an `Arc::clone` (a refcount bump, zero element bytes copied)
-    /// rather than duplicating the whole `Vec<Vec<f32>>`.
-    pub fn build(vectors: Arc<[Vec<f32>]>) -> Self {
-        let n = vectors.len();
+    /// The corpus is shared via `FlatEmbeddings.data` (an `Arc::clone`, zero
+    /// bytes copied), so the cached HNSW index shares the *same* flat f32
+    /// allocation as the per-query aligned corpus.
+    pub fn build(embeddings: FlatEmbeddings) -> Self {
+        let n = embeddings.n_vectors();
         if n == 0 {
             return Self {
-                vectors,
+                embeddings,
                 nodes: Vec::new(),
                 entry_point: 0,
                 max_level: 0,
@@ -95,18 +161,15 @@ impl AnnIndex {
 
         if n < BRUTE_FORCE_THRESHOLD {
             return Self {
-                vectors,
+                embeddings,
                 nodes: Vec::new(),
                 entry_point: 0,
                 max_level: 0,
             };
         }
 
-        // HNSW graph path: the vectors slice is shared up front (Arc::clone, no
-        // element copy) and the insert loop reads from it by index. `insert`
-        // only mutates `nodes`, deriving each new id from `nodes.len()`.
         let mut index = Self {
-            vectors,
+            embeddings,
             nodes: Vec::with_capacity(n),
             entry_point: 0,
             max_level: 0,
@@ -133,16 +196,17 @@ impl AnnIndex {
         }
 
         let mut ep = self.entry_point;
+        let new_vec = self.embeddings.get(new_id);
 
         // Traverse from top layer down to level+1 (greedy)
         for lc in (level + 1..=self.max_level).rev() {
-            ep = self.search_layer_single(&self.vectors[new_id], ep, lc);
+            ep = self.search_layer_single(new_vec, ep, lc);
         }
 
         // Insert into layers [min(level, max_level) .. 0]
         let insert_levels = level.min(self.max_level);
         for lc in (0..=insert_levels).rev() {
-            let neighbors = self.search_layer(&self.vectors[new_id], ep, EF_CONSTRUCTION, lc);
+            let neighbors = self.search_layer(new_vec, ep, EF_CONSTRUCTION, lc);
             let selected = Self::select_neighbors(&neighbors, M);
 
             if lc < self.nodes[new_id].connections.len() {
@@ -153,10 +217,10 @@ impl AnnIndex {
                 if lc < self.nodes[neighbor].connections.len() {
                     self.nodes[neighbor].connections[lc].push(new_id);
                     if self.nodes[neighbor].connections[lc].len() > M * 2 {
-                        let nv = &self.vectors[neighbor];
+                        let nv = self.embeddings.get(neighbor);
                         let mut scored: Vec<(usize, f32)> = self.nodes[neighbor].connections[lc]
                             .iter()
-                            .map(|&n| (n, cosine_sim(nv, &self.vectors[n])))
+                            .map(|&n| (n, cosine_sim(nv, self.embeddings.get(n))))
                             .collect();
                         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
                         scored.truncate(M);
@@ -179,7 +243,7 @@ impl AnnIndex {
 
     fn search_layer_single(&self, query: &[f32], ep: usize, _layer: usize) -> usize {
         let mut current = ep;
-        let mut best_sim = cosine_sim(query, &self.vectors[ep]);
+        let mut best_sim = cosine_sim(query, self.embeddings.get(ep));
 
         loop {
             let mut improved = false;
@@ -191,7 +255,7 @@ impl AnnIndex {
             };
 
             for &neighbor in layer_conns {
-                let sim = cosine_sim(query, &self.vectors[neighbor]);
+                let sim = cosine_sim(query, self.embeddings.get(neighbor));
                 if sim > best_sim {
                     best_sim = sim;
                     current = neighbor;
@@ -206,18 +270,19 @@ impl AnnIndex {
     }
 
     fn search_layer(&self, query: &[f32], ep: usize, ef: usize, layer: usize) -> Vec<(usize, f32)> {
-        let mut visited = vec![false; self.vectors.len()];
+        let n = self.embeddings.n_vectors();
+        let mut visited = vec![false; n];
         let mut candidates = BinaryHeap::<MaxCandidate>::new();
         let mut results = BinaryHeap::<Candidate>::new();
 
-        let sim = cosine_sim(query, &self.vectors[ep]);
+        let sim = cosine_sim(query, self.embeddings.get(ep));
         visited[ep] = true;
         candidates.push(MaxCandidate { idx: ep, sim });
         results.push(Candidate { idx: ep, sim });
 
         while let Some(MaxCandidate { idx: c, sim: _ }) = candidates.pop() {
             let worst_result = results.peek().map_or(f32::MIN, |r| r.sim);
-            if cosine_sim(query, &self.vectors[c]) < worst_result && results.len() >= ef {
+            if cosine_sim(query, self.embeddings.get(c)) < worst_result && results.len() >= ef {
                 break;
             }
 
@@ -234,7 +299,7 @@ impl AnnIndex {
                 }
                 visited[neighbor] = true;
 
-                let n_sim = cosine_sim(query, &self.vectors[neighbor]);
+                let n_sim = cosine_sim(query, self.embeddings.get(neighbor));
                 let worst = results.peek().map_or(f32::MIN, |r| r.sim);
 
                 if results.len() < ef || n_sim > worst {
@@ -267,21 +332,11 @@ impl AnnIndex {
     }
 
     /// Deterministic geometric level draw seeded by the node's insertion index.
-    ///
-    /// HNSW only requires the per-node level to follow a geometric distribution
-    /// (mean `ML`); it does not require OS entropy. Deriving the draw from the
-    /// node id via splitmix64 keeps that distribution while making index
-    /// construction **fully reproducible** — the same corpus always yields the
-    /// same graph and therefore the same search results. The previous
-    /// `getrandom`-seeded draw rebuilt a different graph on every run, which made
-    /// approximate recall (and the recall tests) non-deterministic and flaky.
     fn level_for(node_id: usize) -> usize {
-        // splitmix64: a single id → a well-distributed u64.
         let mut z = (node_id as u64).wrapping_add(0x9E37_79B9_7F4A_7C15);
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
         z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
         z ^= z >> 31;
-        // Map the top 53 bits to (0,1); +1 keeps r > 0 so -ln(r) stays finite.
         let r = (((z >> 11) as f64) + 1.0) / ((1u64 << 53) as f64 + 1.0);
         (-r.ln() * ML).floor() as usize
     }
@@ -289,13 +344,13 @@ impl AnnIndex {
     /// Search for the top-k nearest neighbors of a query vector.
     /// Returns (index, similarity) pairs sorted by descending similarity.
     pub fn search(&self, query: &[f32], top_k: usize) -> Vec<(usize, f32)> {
-        if self.vectors.is_empty() {
+        if self.embeddings.n_vectors() == 0 {
             return Vec::new();
         }
 
         // Brute-force for small indices (faster due to no graph overhead)
-        if self.nodes.is_empty() || self.vectors.len() < BRUTE_FORCE_THRESHOLD {
-            return brute_force_topk(&self.vectors, query, top_k);
+        if self.nodes.is_empty() || self.embeddings.n_vectors() < BRUTE_FORCE_THRESHOLD {
+            return brute_force_topk(&self.embeddings, query, top_k);
         }
 
         // HNSW search
@@ -310,12 +365,17 @@ impl AnnIndex {
     }
 }
 
-/// O(n log k) brute-force top-k selection using a min-heap.
-pub fn brute_force_topk(vectors: &[Vec<f32>], query: &[f32], top_k: usize) -> Vec<(usize, f32)> {
+/// O(n log k) brute-force top-k selection using a min-heap over a flat buffer.
+pub fn brute_force_topk(
+    embeddings: &FlatEmbeddings,
+    query: &[f32],
+    top_k: usize,
+) -> Vec<(usize, f32)> {
+    let n = embeddings.n_vectors();
     let mut heap = BinaryHeap::<Candidate>::with_capacity(top_k + 1);
 
-    for (i, vec) in vectors.iter().enumerate() {
-        let sim = cosine_sim(query, vec);
+    for i in 0..n {
+        let sim = cosine_sim(query, embeddings.get(i));
         if heap.len() < top_k {
             heap.push(Candidate { idx: i, sim });
         } else if let Some(worst) = heap.peek()
@@ -327,7 +387,7 @@ pub fn brute_force_topk(vectors: &[Vec<f32>], query: &[f32], top_k: usize) -> Ve
     }
 
     let mut results: Vec<(usize, f32)> = heap.into_iter().map(|c| (c.idx, c.sim)).collect();
-    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
+    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     results
 }
 
@@ -358,15 +418,19 @@ mod tests {
         v
     }
 
+    fn flat_from(vecs: Vec<Vec<f32>>) -> FlatEmbeddings {
+        FlatEmbeddings::from_vecs(vecs)
+    }
+
     #[test]
     fn brute_force_topk_correctness() {
-        let vectors: Vec<Vec<f32>> = (0..100).map(|i| random_vec(16, i)).collect();
+        let vectors = (0..100).map(|i| random_vec(16, i)).collect();
+        let flat = flat_from(vectors);
         let query = random_vec(16, 999);
 
-        let results = brute_force_topk(&vectors, &query, 5);
+        let results = brute_force_topk(&flat, &query, 5);
         assert_eq!(results.len(), 5);
 
-        // Results should be in descending similarity order
         for w in results.windows(2) {
             assert!(w[0].1 >= w[1].1);
         }
@@ -375,15 +439,14 @@ mod tests {
     #[test]
     fn brute_force_topk_matches_exhaustive() {
         let vectors: Vec<Vec<f32>> = (0..50).map(|i| random_vec(8, i + 42)).collect();
+        let flat = flat_from(vectors);
         let query = random_vec(8, 123);
 
-        let top5 = brute_force_topk(&vectors, &query, 5);
+        let top5 = brute_force_topk(&flat, &query, 5);
 
         // Exhaustive comparison
-        let mut all: Vec<(usize, f32)> = vectors
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (i, cosine_sim(&query, v)))
+        let mut all: Vec<(usize, f32)> = (0..flat.n_vectors())
+            .map(|i| (i, cosine_sim(&query, flat.get(i))))
             .collect();
         all.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         all.truncate(5);
@@ -396,16 +459,44 @@ mod tests {
 
     #[test]
     fn empty_index_returns_empty() {
-        let index = AnnIndex::build(Arc::from(Vec::new()));
+        let flat = FlatEmbeddings {
+            data: Arc::from(Vec::new()),
+            dim: 2,
+        };
+        let index = AnnIndex::build(flat);
         assert!(index.search(&[1.0, 0.0], 5).is_empty());
     }
 
     #[test]
     fn small_index_uses_brute_force() {
         let vectors: Vec<Vec<f32>> = (0..50).map(|i| random_vec(4, i)).collect();
-        let index = AnnIndex::build(Arc::from(vectors));
+        let flat = flat_from(vectors);
+        let index = AnnIndex::build(flat);
         assert!(index.nodes.is_empty()); // no HNSW graph built
         let results = index.search(&random_vec(4, 999), 3);
         assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn flat_embeddings_from_vecs_shape() {
+        let vecs = vec![
+            vec![1.0, 2.0, 3.0],
+            vec![4.0, 5.0, 6.0],
+            vec![7.0, 8.0, 9.0],
+        ];
+        let flat = FlatEmbeddings::from_vecs(vecs);
+        assert_eq!(flat.n_vectors(), 3);
+        assert_eq!(flat.dim, 3);
+        assert_eq!(flat.get(0), &[1.0, 2.0, 3.0]);
+        assert_eq!(flat.get(2), &[7.0, 8.0, 9.0]);
+    }
+
+    #[test]
+    fn flat_embeddings_clone_is_shallow() {
+        let vecs = vec![vec![1.0, 2.0]];
+        let a = FlatEmbeddings::from_vecs(vecs);
+        let b = a.clone();
+        // Arc: same ptr after clone
+        assert!(Arc::ptr_eq(&a.data, &b.data));
     }
 }

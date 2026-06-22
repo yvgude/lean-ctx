@@ -59,28 +59,40 @@ path = "src/bin/seed_observatory.rs"
 required-features = ["dev-tools"]
 
 [features]
-default = ["tree-sitter", "embeddings", "http-server", "team-server", "secure-update", "jemalloc"]
+default = [
+  "tree-sitter",
+  "embeddings",
+  "http-server",
+  "team-server",
+  "secure-update",
+  "jemalloc",
+]
 jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
 dev-tools = []
 no-jail = []
-neural = ["dep:rten", "dep:rten-tensor"]
-embeddings = ["dep:rten", "dep:rten-tensor"]
+neural = ["dep:ort", "dep:ndarray"]
+embeddings = ["dep:ort", "dep:ndarray"]
+ort-cuda = ["ort?/cuda"]
+ort-webgpu = ["ort?/webgpu"]
+ort-rocm = ["ort?/rocm"]
+ort-directml = ["ort?/directml"]
+ort-coreml = ["ort?/coreml"]
 http-server = ["dep:axum", "dep:tower-http", "dep:reqwest"]
 qdrant = ["embeddings"]
 team-server = ["http-server"]
 secure-update = []
 cloud-server = [
-    "http-server",
-    "dep:deadpool-postgres",
-    "dep:tokio-postgres",
-    "dep:lettre",
-    "dep:jsonwebtoken",
-    "dep:base64",
-    "dep:uuid",
-    "dep:hex",
-    "dep:rand",
-    "dep:argon2",
-    "dep:resvg",
+  "http-server",
+  "dep:deadpool-postgres",
+  "dep:tokio-postgres",
+  "dep:lettre",
+  "dep:jsonwebtoken",
+  "dep:base64",
+  "dep:uuid",
+  "dep:hex",
+  "dep:rand",
+  "dep:argon2",
+  "dep:resvg",
 ]
 tree-sitter = [
   "dep:tree-sitter",
@@ -109,11 +121,29 @@ tree-sitter = [
 wasm = ["dep:wasmi"]
 
 [dependencies]
-rmcp = { version = "1.7", features = ["server", "client", "transport-io", "transport-streamable-http-server", "transport-child-process", "transport-streamable-http-client-reqwest"] }
+rmcp = { version = "1.7", features = [
+  "server",
+  "client",
+  "transport-io",
+  "transport-streamable-http-server",
+  "transport-child-process",
+  "transport-streamable-http-client-reqwest",
+] }
 # Header types for the gateway's downstream HTTP MCP client (already in the tree via rmcp/reqwest).
 http = "1.4"
 tiktoken-rs = "0.12"
-tokio = { version = "1.52", features = ["rt", "rt-multi-thread", "macros", "io-std", "io-util", "net", "sync", "time", "signal", "process"] }
+tokio = { version = "1.52", features = [
+  "rt",
+  "rt-multi-thread",
+  "macros",
+  "io-std",
+  "io-util",
+  "net",
+  "sync",
+  "time",
+  "signal",
+  "process",
+] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 subtle = "2.6"
@@ -162,13 +192,27 @@ tree-sitter-dart = { version = "0.2", optional = true }
 tree-sitter-gdscript = { version = "6.1", optional = true }
 tree-sitter-lua = { version = "0.5", optional = true }
 tree-sitter-luau = { version = "1.2", optional = true }
-rten = { version = "0.24", optional = true }
-rten-tensor = { version = "0.24", optional = true }
+ort = { version = "2.0.0-rc.12", optional = true, default-features = false, features = [
+  "api-24",
+  "std",
+  "ndarray",
+  "tls-rustls",
+  "tracing",
+  "load-dynamic",
+] }
+ndarray = { version = "0.17", optional = true }
 axum = { version = "0.8", optional = true, features = ["ws"] }
 tower-http = { version = "0.7", features = ["cors", "auth"], optional = true }
 deadpool-postgres = { version = "0.14", optional = true }
-tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1"], optional = true }
-lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"], optional = true }
+tokio-postgres = { version = "0.7", features = [
+  "with-chrono-0_4",
+  "with-uuid-1",
+], optional = true }
+lettre = { version = "0.11", default-features = false, features = [
+  "tokio1-rustls-tls",
+  "smtp-transport",
+  "builder",
+], optional = true }
 jsonwebtoken = { version = "10.4", optional = true }
 base64 = { version = "0.22", optional = true }
 uuid = { version = "1.23", features = ["v4", "serde"], optional = true }
@@ -187,7 +231,11 @@ rpassword = "7.5"
 ed25519-dalek = { version = "2.2", features = ["rand_core"] }
 getrandom = "0.4"
 tempfile = "3.27"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "json"], optional = true }
+reqwest = { version = "0.13", default-features = false, features = [
+  "rustls",
+  "stream",
+  "json",
+], optional = true }
 bytecount = "0.6"
 libc = "0.2"
 blake3 = "1.8"
@@ -270,10 +318,10 @@ panic = "unwind"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
-    "Win32_Foundation",
-    "Win32_System_Threading",
-    "Win32_Security",
-    "Win32_System_Pipes",
+  "Win32_Foundation",
+  "Win32_System_Threading",
+  "Win32_Security",
+  "Win32_System_Pipes",
 ] }
 
 [target.'cfg(not(windows))'.dependencies]
