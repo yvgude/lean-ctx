@@ -16,10 +16,11 @@ impl McpTool for CtxWorkflowTool {
         tool_def(
             "ctx_workflow",
             "Workflow rails — state machine with evidence tracking.\n\
+             WORKFLOW: start → transition (multiple) → complete. evidence_add before\n\
+             transition to attach proof. Built-in plan_code_test when spec omitted.\n\
              Actions: start|status|transition|complete|evidence_add|evidence_list|stop.\n\
-             spec=WorkflowSpec JSON to define custom states/transitions.\n\
-             Built-in plan_code_test workflow when spec omitted.\n\
-             Use with ctx_task for multi-agent orchestration.",
+             spec=WorkflowSpec JSON for custom states/transitions.\n\
+             ANTIPATTERN: NOT for one-shot tasks — use direct tool calls instead.",
             json!({
                 "type": "object",
                 "properties": {

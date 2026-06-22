@@ -16,10 +16,11 @@ impl McpTool for CtxLoadToolsTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_load_tools",
-            "Load/unload specialized tool categories on demand to reduce tool surface area.\n\
-             action=load|unload|list. Categories: arch, debug, memory, metrics, session.\n\
-             Core is always loaded and cannot be unloaded. Use when you only need\n\
-             a subset of tools for your current task.",
+            "Load/unload specialized tool categories to reduce surface area.\n\
+             WORKFLOW: list → load → unload when done.\n\
+             ANTI-PATTERN: don't unload categories you're actively using.\n\
+             Actions: load|unload|list. Categories: arch, debug, memory, metrics, session.\n\
+             Core is always loaded.",
             json!({
                 "type": "object",
                 "properties": {

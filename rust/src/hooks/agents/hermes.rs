@@ -6,8 +6,11 @@ use super::super::{HookMode, install_project_rules, resolve_binary_path};
 /// Hermes extras sit after END_MARK and are preserved as user content.
 pub(super) fn hermes_rules_content() -> String {
     let shadow = crate::core::config::Config::load().shadow_mode;
-    let base =
-        crate::core::rules_canonical::render(shadow, crate::core::rules_canonical::Wrapper::Shared);
+    let base = crate::core::rules_canonical::render(
+        shadow,
+        crate::core::rules_canonical::Wrapper::Shared,
+        crate::core::config::CompressionLevel::Off,
+    );
     format!(
         "{base}\n\
          Available tools: ctx_overview, ctx_preload, ctx_dedup, ctx_compress, \

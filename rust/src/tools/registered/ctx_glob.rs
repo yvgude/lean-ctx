@@ -15,7 +15,7 @@ impl McpTool for CtxGlobTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_glob",
-            "Find files by glob pattern — use to locate files by name or extension.\n\
+            "Find files by glob pattern — locate by name or extension.\n\
              Respects .gitignore. Supports multi-root via paths array. max_results=N sets limit.\n\
              For file content search, use ctx_search (pattern) or ctx_semantic_search (meaning).",
             json!({

@@ -17,7 +17,9 @@ impl McpTool for CtxRoutesTool {
             "ctx_routes",
             "Discover HTTP API endpoints without reading route definition files.\n\
              Auto-detects: Express, Flask, FastAPI, Actix, Spring, Rails, Next.js.\n\
-             method=GET|POST filters by verb; path='/api' filters by prefix.",
+             method=GET|POST filters by verb; path='/api' filters by prefix.\n\
+             ANTIPATTERN: not for filesystem paths — use ctx_tree.\n\
+             Saves tokens vs grepping route definitions.",
             json!({
                 "type": "object",
                 "properties": {

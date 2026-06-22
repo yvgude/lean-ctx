@@ -13,8 +13,12 @@ const COMPRESSION_BLOCK_END: &str = "<!-- /lean-ctx-compression -->";
 /// Updates all detected agent rules files with the compression prompt for `level`.
 /// Idempotent — safe to call repeatedly. Returns the number of files updated.
 pub fn inject(level: &CompressionLevel) -> usize {
-    let prompt = super::agent_prompts::build_prompt_block(level);
-    let prompt_ascii = super::agent_prompts::build_prompt_block_for_client(level, "cursor");
+    let prompt = crate::core::rules_canonical::compression_text(level);
+    let prompt_ascii = if prompt.is_empty() {
+        String::new()
+    } else {
+        crate::core::output_sanitizer::ascii_safe_symbols(prompt)
+    };
     let block = |p: &str| {
         if p.is_empty() {
             String::new()

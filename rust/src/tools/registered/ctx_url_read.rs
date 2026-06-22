@@ -24,7 +24,7 @@ impl McpTool for CtxUrlReadTool {
             "Fetch URL: pages→Markdown; PDF→text; YouTube→transcript; mode=auto best per type.\n\
              mode=facts|quotes for research (claims+confidence). query='topic' focuses extraction.\n\
              GitHub blob/raw URLs auto-resolve to raw file. SSRF-guarded (no private IPs).\n\
-             max_tokens=6000; timeout_secs=20 (max 60).",
+             max_tokens=6000; timeout_secs=20 (max 60).\n",
             json!({
                 "type": "object",
                 "properties": {
@@ -37,7 +37,7 @@ impl McpTool for CtxUrlReadTool {
                     "query": { "type": "string", "description": "Focus query (boosts facts/quotes)" },
                     "max_tokens": { "type": "integer", "description": "Token budget" },
                     "max_items": { "type": "integer", "description": "Max items for facts/quotes" },
-                    "timeout_secs": { "type": "integer", "description": "Timeout in seconds" }
+                    "timeout_secs": { "type": "integer", "description": "Timeout seconds" }
                 },
                 "required": ["url"]
             }),

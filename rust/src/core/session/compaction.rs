@@ -1,11 +1,36 @@
 use std::path::PathBuf;
 
+use crate::core::config::CompressionLevel;
 use crate::core::graph_context;
 
 use super::paths::{
     escape_xml_attr, file_stem_search_pattern, parent_dir_slash, sessions_dir, shorten_path,
 };
 use super::types::SessionState;
+
+/// Format a `<config compression="..." />` XML tag for the compaction snapshot.
+fn session_context_tag(level: &CompressionLevel) -> Option<String> {
+    if !level.is_active() {
+        return None;
+    }
+    Some(format!("<config compression=\"{}\" />", level.label()))
+}
+
+/// Format a resume block hint for session restore.
+fn resume_block_hint(level: &CompressionLevel) -> Option<String> {
+    match level {
+        CompressionLevel::Off => None,
+        CompressionLevel::Lite => Some(
+            "[COMPRESSION: lite] Keep responses concise. Bullet points, avoid filler.".to_string(),
+        ),
+        CompressionLevel::Standard => Some(
+            "[COMPRESSION: standard] Dense output. Atomic fact lines, abbreviations, diff-only code.".to_string(),
+        ),
+        CompressionLevel::Max => Some(
+            "[COMPRESSION: max] Expert-terse mode. Telegraph format, symbolic vocabulary, zero narration.".to_string(),
+        ),
+    }
+}
 
 impl SessionState {
     /// Formats the session state as a compact multi-line summary for agent context.
@@ -122,7 +147,7 @@ impl SessionState {
 
         let level = crate::core::config::CompressionLevel::from_str_label(&self.compression_level)
             .unwrap_or_default();
-        if let Some(tag) = crate::core::terse::agent_prompts::session_context_tag(&level) {
+        if let Some(tag) = session_context_tag(&level) {
             sections.push((0, tag));
         }
 
@@ -464,7 +489,7 @@ impl SessionState {
 
         let level = crate::core::config::CompressionLevel::from_str_label(&self.compression_level)
             .unwrap_or_default();
-        if let Some(hint) = crate::core::terse::agent_prompts::resume_block_hint(&level) {
+        if let Some(hint) = resume_block_hint(&level) {
             parts.push(hint);
         }
 

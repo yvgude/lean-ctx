@@ -16,10 +16,11 @@ impl McpTool for CtxExpandTool {
         tool_def(
             "ctx_expand",
             "Retrieve archived tool output by ID (e.g. id=@F1 from [Archived:ID] hints).\n\
-             Use when you see an [Archived:ID] reference and need the full content.\n\
-             Supports head/tail/search to filter lines. action=search_all across all archives.\n\
-             action=list shows available archives. Zero-loss: original preserved.\n\
-             For reading files, use ctx_read or ctx_compose instead.",
+             WORKFLOW: see [Archived:ID] → ctx_expand id=ID to restore full content.\n\
+             Supports head/tail/search to filter lines and save tokens on re-read.\n\
+             action=list browses all archives. action=search_all queries across archives.\n\
+             Zero-loss: original preserved.\n\
+             ANTIPATTERN: not for reading project files — use ctx_read or ctx_compose.",
             json!({
                 "type": "object",
                 "properties": {

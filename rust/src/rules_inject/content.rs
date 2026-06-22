@@ -7,15 +7,16 @@
 use std::path::PathBuf;
 
 use super::RulesFormat;
+use crate::core::config::CompressionLevel;
 use crate::core::rules_canonical::{self as rc, Wrapper};
 
-pub(super) fn rules_content(format: &RulesFormat) -> String {
+pub(super) fn rules_content(format: &RulesFormat, level: CompressionLevel) -> String {
     let shadow = crate::core::config::Config::load().shadow_mode;
     match format {
-        RulesFormat::SharedMarkdown => rc::render(shadow, Wrapper::Shared),
-        RulesFormat::DedicatedMarkdown => rc::render(shadow, Wrapper::Dedicated),
+        RulesFormat::SharedMarkdown => rc::render(shadow, Wrapper::Shared, level),
+        RulesFormat::DedicatedMarkdown => rc::render(shadow, Wrapper::Dedicated, level),
         RulesFormat::CursorMdc => {
-            let body = rc::render(shadow, Wrapper::Dedicated);
+            let body = rc::render(shadow, Wrapper::Dedicated, level);
             format!(
                 "---\n\
                  description: \"lean-ctx: context compression layer. \

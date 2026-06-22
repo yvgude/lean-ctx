@@ -15,7 +15,10 @@ impl McpTool for CtxControlTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_control",
-            "Universal context manipulation (CFT) — fine-tune what appears in context. Actions: exclude|include|pin|unpin|set_view|set_priority|mark_outdated|reset|list|history. Overlay-based, reversible, scoped to call/session/project.",
+            "Fine-tune context — exclude, include, pin, unpin, set_view, set_priority, mark_outdated, reset, list, history.\n\
+            Overlay-based, reversible, scoped to call/session/project.\n\
+            WORKFLOW: after ctx_compose, exclude low-relevance files.\n\
+            ANTIPATTERN: not for initial context building — use ctx_compose/ctx_read first.",
             json!({
                 "type": "object",
                 "properties": {
@@ -23,9 +26,9 @@ impl McpTool for CtxControlTool {
                         "type": "string",
                         "description": "exclude|include|pin|unpin|set_view|set_priority|mark_outdated|reset|list|history"
                     },
-                    "target": { "type": "string", "description": "@F1 or path or item ID" },
+                    "target": { "type": "string", "description": "@F1 handle (ctx_compile reference) or file path or item ID" },
                     "value": { "type": "string", "description": "New content, view name, or priority" },
-                    "scope": { "type": "string", "description": "call|session|project" },
+                    "scope": { "type": "string", "description": "call (this turn only), session (rest of this session), project (persists)" },
                     "reason": { "type": "string", "description": "Reason for the action" }
                 },
                 "required": ["action"]

@@ -17,18 +17,20 @@ impl McpTool for CtxPrefetchTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_prefetch",
-            "Predictive prefetch — prewarm the cache for blast radius files using graph and\n\
-             task signals. task=description for relevance scoring; changed_files=paths to\n\
-             compute blast radius; budget_tokens=soft budget (default 3000); max_files=limit\n\
-             (default 10). Use before context-heavy operations to minimize latency.",
+            "WORKFLOW: call BEFORE context-heavy operations to minimize latency.\n\
+            ANTIPATTERN: NOT for normal reads — only for proactive cache warming.\n\
+            Prewarms cache for blast radius files via graph + task signals.\n\
+            task=description; changed_files=paths for blast radius;\n\
+            budget_tokens=soft budget (default 3000); max_files=limit (default 10).\n\
+            Saves latency (not tokens): preloads files before needed.",
             json!({
                 "type": "object",
                 "properties": {
-                    "root": { "type": "string", "description": "Project root" },
-                    "task": { "type": "string", "description": "Task for relevance scoring" },
-                    "changed_files": { "type": "array", "items": { "type": "string" }, "description": "Changed files for blast radius" },
-                    "budget_tokens": { "type": "integer", "description": "Soft budget hint" },
-                    "max_files": { "type": "integer", "description": "Max files to prefetch" }
+                    "root": { "type": "string", "description": "Project root directory" },
+                    "task": { "type": "string", "description": "Task description for relevance scoring" },
+                    "changed_files": { "type": "array", "items": { "type": "string" }, "description": "Changed file paths for computing blast radius" },
+                    "budget_tokens": { "type": "integer", "description": "Soft token budget (default: 3000)" },
+                    "max_files": { "type": "integer", "description": "Max files to prefetch (default: 10)" }
                 }
             }),
         )

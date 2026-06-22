@@ -18,9 +18,11 @@ impl McpTool for CtxRepomapTool {
     fn tool_def(&self) -> rmcp::model::Tool {
         tool_def(
             "ctx_repomap",
-            "PageRank symbol map ranked by structural importance and session relevance.\n\
-             focus_files=['path/*.rs'] boosts specific areas; max_tokens controls size (default 2048).\n\
-             Use for codebase-wide orientation; for task-scoped view use ctx_overview.",
+            "PageRank symbol map ranked by structural importance + session relevance.\n\
+             WORKFLOW: call for codebase-wide orientation at session start.\n\
+             ANTIPATTERN: not for task-scoped views — use ctx_overview instead.\n\
+             focus_files=['path/*.rs'] boosts specific areas; max_tokens controls size\n\
+             (default 2048). Saves tokens vs reading all files individually.",
             json!({
                 "type": "object",
                 "properties": {

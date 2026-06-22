@@ -100,8 +100,13 @@ pub(super) fn lean_ctx_server_entry_with_instructions(
 ) -> Value {
     let mut entry = lean_ctx_server_entry(binary, include_auto_approve);
     let shadow = crate::core::config::Config::load().shadow_mode;
-    let instructions =
-        crate::core::rules_canonical::render(shadow, crate::core::rules_canonical::Wrapper::Bare);
+    let level =
+        crate::core::config::CompressionLevel::effective(&crate::core::config::Config::load());
+    let instructions = crate::core::rules_canonical::render(
+        shadow,
+        crate::core::rules_canonical::Wrapper::Bare,
+        level,
+    );
 
     let constraints = crate::core::client_constraints::by_client_id(agent_key);
     if let Some(max_chars) = constraints.and_then(|c| c.mcp_instructions_max_chars) {

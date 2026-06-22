@@ -15,11 +15,9 @@ impl McpTool for CtxShareTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_share",
-            "Share cached file contexts between agents for collaborative workflows.\n\
-             Actions: push (share files from your cache to another agent),\n\
-             pull (receive files shared by others), list (show shared contexts),\n\
-             clear (remove your shares). Omit to_agent for broadcast;\n\
-             set to_agent='agent-id' for targeted sharing.",
+            "WORKFLOW: push from agent A → pull from agent B shares cached file contexts.\n\
+             Actions: push|pull|list|clear. Omit to_agent for broadcast.\n\
+             ANTIPATTERN: NOT file transfer — shares lean-ctx cache entries only.",
             json!({
                 "type": "object",
                 "properties": {

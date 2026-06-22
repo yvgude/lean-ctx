@@ -15,7 +15,9 @@ impl McpTool for CtxContextTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_context",
-            "Session context overview — shows cached files, seen files, session state, and current CRP mode. No arguments needed. Call periodically to track what's in your context window and remaining budget.",
+            "Session context overview — cached files, seen files, session state, CRP mode.\n\
+            WORKFLOW: track context budget periodically — use before ctx_compress/ctx_compile.\n\
+            ANTIPATTERN: not for reading file content — use ctx_read or ctx_compose.",
             json!({
                 "type": "object",
                 "properties": {}

@@ -30,7 +30,7 @@ impl McpTool for CtxGitReadTool {
             "Read remote git repos via cached shallow clone (not HTML scraping).\n\
              modes: overview (tree + README) | tree (file list) | read (file content) | grep (search).\n\
              Accepts repo URLs and GitHub/GitLab blob/tree links (ref+path auto-detected).\n\
-             https-only, SSRF-guarded. Use instead of ctx_url_read for a whole repo.",
+             https-only, SSRF-guarded. Prefer over ctx_url_read for whole-repo access.",
             json!({
                 "type": "object",
                 "properties": {

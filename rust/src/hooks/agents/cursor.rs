@@ -140,6 +140,7 @@ pub fn install_cursor_hook(global: bool) {
             let body = crate::core::rules_canonical::render(
                 false,
                 crate::core::rules_canonical::Wrapper::Dedicated,
+                crate::core::config::CompressionLevel::Off,
             );
             let rule_content = format!(
                 "---\n\
@@ -207,6 +208,7 @@ fn cursor_mdc_for_mode(_mode: HookMode) -> String {
     let body = crate::core::rules_canonical::render(
         false,
         crate::core::rules_canonical::Wrapper::Dedicated,
+        crate::core::config::CompressionLevel::Off,
     );
     format!(
         "---\n\

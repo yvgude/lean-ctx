@@ -16,9 +16,11 @@ impl McpTool for CtxArchitectureTool {
         tool_def(
             "ctx_architecture",
             "Architecture analysis — understand module structure without reading every file.\n\
-action=overview→high-level; clusters|communities→groupings;\n\
-layers|cycles→dependency violations; entrypoints|hotspots→risk areas;\n\
-health→quality; module path='src/' to zoom into a specific module.",
+            WORKFLOW: use ctx_compose FIRST for code understanding; ctx_architecture for high-level structure.\n\
+            action=overview→high-level; clusters|communities→groupings;\n\
+            layers|cycles→dependency violations; entrypoints|hotspots→risk areas;\n\
+            health→quality; module path='src/' to zoom into a specific module.\n\
+            ANTIPATTERN: does NOT show source code — only structural relationships.",
             json!({
                 "type": "object",
                 "properties": {
@@ -37,7 +39,7 @@ health→quality; module path='src/' to zoom into a specific module.",
                     },
                     "format": {
                         "type": "string",
-                        "description": "Output format"
+                        "description": "Output format: text|json (default text)"
                     }
                 }
             }),

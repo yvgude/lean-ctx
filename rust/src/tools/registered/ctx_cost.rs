@@ -15,7 +15,9 @@ impl McpTool for CtxCostTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_cost",
-            "Cost attribution — track tokens and cost per agent and tool call. Actions: report (summary), agent (per-agent), tools (per-tool), json (machine-readable), reset (zero counters). Local-first, no external billing calls.",
+            "Cost attribution — track tokens and cost per agent/tool call. Local-first, no external billing.\n\
+            Actions: report (summary), agent (per-agent), tools (per-tool), json (machine), status (live), reset (zero).\n\
+            WORKFLOW: call report to find top cost drivers, then agent/tools for detail.",
             json!({
                 "type": "object",
                 "properties": {

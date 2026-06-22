@@ -16,13 +16,22 @@ impl McpTool for CtxVerifyTool {
         tool_def(
             "ctx_verify",
             "Verification observability — tool call statistics and claim-based verification.\n\
-             Actions: stats (tool call usage counts), proof|v2 (ContextProofV2 claim\n\
-             verification with Lean4 proofs). Use to audit tool usage or verify claims.",
+             WORKFLOW: action=stats to monitor tool usage; action=proof|v2 for Lean4 proof verification.\n\
+             Actions: stats|proof|v2 (format=summary|json|both, default summary).\n\
+             ANTIPATTERN: not for runtime verification during active development — use for periodic audit.",
             json!({
                 "type": "object",
                 "properties": {
-                    "action": { "type": "string", "description": "stats|proof|v2" },
-                    "format": { "type": "string" }
+                    "action": {
+                        "type": "string",
+                        "enum": ["stats", "proof", "v2"],
+                        "description": "stats|proof|v2"
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["summary", "json", "both"],
+                        "description": "Output format: summary|json|both (default summary)"
+                    }
                 }
             }),
         )

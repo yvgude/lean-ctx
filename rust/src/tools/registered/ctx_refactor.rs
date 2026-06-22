@@ -15,12 +15,12 @@ impl McpTool for CtxRefactorTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_refactor",
-            "LSP/IDE refactoring — rename, move, safe_delete, inline, and read-only analyses\n\
-             (references, definition, implementations, type_hierarchy, inspections).\n\
-             Single-Phase edits (replace_symbol_body, reformat) work headless via name_path.\n\
-             Two-Phase ops (rename/move/safe_delete/inline _preview+_apply) need JetBrains\n\
-             IDE (else BACKEND_REQUIRED) with plan_hash TOCTOU guard. Conflicts blocked\n\
-             unless force=true. See action enum for full list of pipe-delimited values.",
+            "Rename, move, safe_delete, inline, read-only analyses via LSP/IDE.\n\
+             WORKFLOW: use action=references first to find usages before refactoring.\n\
+             ANTIPATTERN: not for symbol discovery — use ctx_symbol/ctx_compose.\n\
+             Single-phase edits (replace_symbol_body, reformat) work headless via name_path.\n\
+             Two-phase ops (_preview+_apply) need JetBrains IDE (else BACKEND_REQUIRED).\n\
+             Conflicts blocked unless force=true. See `action` parameter for full list.",
             json!({
                 "type": "object",
                 "properties": {

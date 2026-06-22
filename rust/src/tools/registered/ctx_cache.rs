@@ -15,7 +15,11 @@ impl McpTool for CtxCacheTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_cache",
-            "Cache operations — inspect, clear, or invalidate the read cache. Actions: status lists cached files; clear empties all; invalidate path=... refreshes a single entry. Use to diagnose stale content or recover budget.",
+            "Cache operations — inspect, clear, or invalidate the read cache.\n\
+            Actions: status lists cached files; clear empties all (recover token budget);\n\
+            invalidate path=... refreshes a single entry.\n\
+            Use to diagnose stale content or recover budget after large reads.\n\
+            ANTIPATTERN: does NOT affect disk files — only cached read content.",
             json!({
                 "type": "object",
                 "properties": {
@@ -26,7 +30,7 @@ impl McpTool for CtxCacheTool {
                     },
                     "path": {
                         "type": "string",
-                        "description": "Target path"
+                        "description": "File path for invalidate action (only used with action=invalidate)"
                     }
                 },
                 "required": ["action"]

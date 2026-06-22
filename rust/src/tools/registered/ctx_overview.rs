@@ -15,10 +15,10 @@ impl McpTool for CtxOverviewTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_overview",
-            "Task-relevant project map — use at session start to orient before diving into code.\n\
-             task='your goal' scopes files/modules by relevance (PageRank on symbol graph).\n\
-             For deeper code understanding, use ctx_compose instead — returns source + flow\n\
-             in one call. ctx_overview is lighter: high-level structure only, no source body.",
+            "WORKFLOW: call at session START before ctx_compose/ctx_read.\n\
+            ANTIPATTERN: NOT for source code — structure only. Use ctx_compose for code understanding.\n\
+            Project map — task='your goal' scopes files by relevance (PageRank on symbol graph).\n\
+            High-level structure only, no source body. ~10x cheaper than ctx_compose.",
             json!({
                 "type": "object",
                 "properties": {

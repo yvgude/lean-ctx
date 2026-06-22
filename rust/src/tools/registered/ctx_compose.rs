@@ -15,12 +15,12 @@ impl McpTool for CtxComposeTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_compose",
-            "PRIMARY TOOL — call FIRST for understanding code, before editing, debugging, or\n\
-             answering 'how does X work'. Pass a task/question or symbol names. returns ranked files with \n\
-             relevant symbol source inline grouped by file. Combines BM25 lexical + semantic + associative\n\
-             retrieval + submodular optimization. Do NOT chain search→read→symbol — one compose\n\
-             does it all. Do NOT Read files whose source compose already returned — it IS the source.\n\
-             Fire independent ctx_read or ctx_compose calls for different areas in PARALLEL.",
+            "PRIMARY TOOL — call FIRST for understanding code (before editing/debugging/'how does X work').\n\
+             Returns ranked files with relevant symbol source inline grouped by file.\n\
+             Combines BM25 lexical+semantic+associative retrieval+submodular optimization.\n\
+             ANTIPATTERN: Do NOT chain search→read→symbol — one compose replaces the whole chain.\n\
+             ANTIPATTERN: Do NOT Read files whose source compose already returned — it IS the source.\n\
+             WORKFLOW: Fire parallel ctx_read or ctx_compose for different areas.",
             json!({
                 "type": "object",
                 "properties": {

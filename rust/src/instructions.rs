@@ -1,6 +1,6 @@
-use crate::tools::CrpMode;
-
+use crate::core::config::CompressionLevel;
 use crate::core::rules_canonical::{self as rc, Wrapper};
+use crate::tools::CrpMode;
 
 /// Universal instruction cap for all MCP clients (in tokens, not bytes).
 const INSTRUCTION_CAP_TOKENS: usize = 800;
@@ -28,24 +28,57 @@ pub fn build_instructions_with_client(crp_mode: CrpMode, client_name: &str) -> S
     build_full_instructions(crp_mode, client_name)
 }
 
+/// Deterministic variant for tests (no session/knowledge state).
 #[must_use]
 pub fn build_instructions_for_test(crp_mode: CrpMode) -> String {
-    build_full_instructions_for_test(crp_mode, "")
-}
+    let shadow = false;
+    let skeleton = rc::render(shadow, Wrapper::Bare, CompressionLevel::Off);
+    let shell_hint = build_shell_hint();
 
-#[must_use]
-pub fn build_instructions_with_client_for_test(crp_mode: CrpMode, client_name: &str) -> String {
-    build_full_instructions_for_test(crp_mode, client_name)
+    let base = format!(
+        "{skeleton}\n\
+        {shell_hint}\n\
+        {decoder_block}\n\
+        {origin}",
+        decoder_block =
+            crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
+        origin = crate::core::integrity::origin_line(),
+    );
+
+    match crp_mode_suffix(crp_mode) {
+        "" => format!("{base}\n\n{}", rc::INTELLIGENCE),
+        crp => format!("{base}\n\n{crp}\n\n{}", rc::INTELLIGENCE),
+    }
 }
 
 /// Deterministic instruction builder for the Instruction Compiler.
+/// Uses shadow mode (COMPACT_SHADOW profile) to avoid duplicating
+/// BULLETS/NEVER/CRITICAL that the CLAUDE.md / dedicated rule file carries.
 #[must_use]
 pub fn build_instructions_with_client_for_compiler(
     crp_mode: CrpMode,
     client_name: &str,
-    unified_tool_mode: bool,
+    _unified_tool_mode: bool,
 ) -> String {
-    build_full_instructions_for_compiler(crp_mode, client_name, unified_tool_mode)
+    let skeleton = rc::render(true, Wrapper::Bare, CompressionLevel::Off);
+    let shell_hint = build_shell_hint();
+
+    let base = format!(
+        "{skeleton}\n\
+        {shell_hint}\n\
+        {decoder_block}\n\
+        {origin}",
+        decoder_block =
+            crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
+        origin = crate::core::integrity::origin_line(),
+    );
+
+    let _ = client_name;
+
+    match crp_mode_suffix(crp_mode) {
+        "" => format!("{base}\n\n{}", rc::INTELLIGENCE),
+        crp => format!("{base}\n\n{crp}\n\n{}", rc::INTELLIGENCE),
+    }
 }
 
 /// LITM calibration manifest rotation (#539).
@@ -122,6 +155,14 @@ fn build_full_instructions(crp_mode: CrpMode, client_name: &str) -> String {
     let cfg = crate::core::config::Config::load();
     let minimal = cfg.minimal_overhead_effective_for_client(client_name);
     let shadow = cfg.shadow_mode;
+
+    // Cross-channel dedup: if the client auto-loads compression from its own
+    // rule file, skip it here to avoid duplicate billing.
+    let level = if client_loads_compression_from_file(client_name) {
+        CompressionLevel::Off
+    } else {
+        CompressionLevel::effective(&cfg)
+    };
 
     let profile = crate::core::litm::LitmProfile::from_client_name(client_name);
     let loaded_session = if minimal {
@@ -202,13 +243,13 @@ fn build_full_instructions(crp_mode: CrpMode, client_name: &str) -> String {
 
     let shell_hint = build_shell_hint();
 
-    // In shadow mode the mapping sections are omitted automatically.
-    let skeleton = rc::render(shadow, Wrapper::Bare);
+    // Skeleton includes tool-mapping rules + compression prompt (if level active).
+    // Shadow mode omits BULLETS/NEVER/CRITICAL automatically.
+    let skeleton = rc::render(shadow, Wrapper::Bare, level);
 
     let config_dir = claude_config_dir_display();
     let base = format!(
-        "{shadow_preamble}\n\
-        {skeleton}\n\
+        "{skeleton}\n\
         {shell_hint}\n\
         {decoder_block}\n\
         {session_block}\n\
@@ -222,19 +263,11 @@ fn build_full_instructions(crp_mode: CrpMode, client_name: &str) -> String {
         litm_end_block = litm_end_block
     );
 
-    // Cross-channel dedup: skip terse/compression block if client already
-    // auto-loads it from its own rule file.
-    let terse_block = if client_loads_compression_from_file(client_name) {
-        String::new()
-    } else {
-        build_terse_agent_block_for_client(crp_mode, client_name)
-    };
-
-    // The guidance suffix is the operational contract — protect it from
-    // truncation under pressure by trimming only `base`.
+    // Guidance suffix: CRP mode + general output rule.
+    // This is the operational contract — protected from truncation.
     let guidance_suffix = match crp_mode_suffix(crp_mode) {
-        "" => format!("{terse_block}{intel}", intel = rc::INTELLIGENCE),
-        crp => format!("{crp}\n\n{terse_block}{intel}", intel = rc::INTELLIGENCE),
+        "" => rc::INTELLIGENCE.to_string(),
+        crp => format!("{crp}\n\n{}", rc::INTELLIGENCE),
     };
 
     assemble_within_cap(&base, &guidance_suffix, INSTRUCTION_CAP_TOKENS)
@@ -305,61 +338,6 @@ fn truncate_to_token_cap(s: &str, cap_tokens: usize) -> String {
     s[..safe].to_string()
 }
 
-fn build_full_instructions_for_test(crp_mode: CrpMode, client_name: &str) -> String {
-    let shadow = false; // tests never use shadow mode
-    let skeleton = rc::render(shadow, Wrapper::Bare);
-    let shell_hint = build_shell_hint();
-
-    let base = format!(
-        "{skeleton}\n\
-        {shell_hint}\n\
-        {decoder_block}\n\
-        {origin}",
-        decoder_block =
-            crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
-        origin = crate::core::integrity::origin_line(),
-    );
-
-    let terse_block = build_terse_agent_block_for_client(crp_mode, client_name);
-
-    match crp_mode_suffix(crp_mode) {
-        "" => format!("{base}\n\n{terse_block}{intel}", intel = rc::INTELLIGENCE),
-        crp => format!(
-            "{base}\n\n{crp}\n\n{terse_block}{intel}",
-            intel = rc::INTELLIGENCE
-        ),
-    }
-}
-
-fn build_full_instructions_for_compiler(
-    crp_mode: CrpMode,
-    client_name: &str,
-    _unified_tool_mode: bool,
-) -> String {
-    // MCP instructions are capped at 2048 chars (Claude Code). Use
-    // COMPACT_SHADOW profile — omits BULLETS/NEVER/CRITICAL that the
-    // CLAUDE.md / dedicated rule file already carries.
-    let skeleton = rc::render(true, Wrapper::Bare);
-    let shell_hint = build_shell_hint();
-
-    let base = format!(
-        "{skeleton}\n\
-        {shell_hint}\n\
-        {decoder_block}\n\
-        {origin}",
-        decoder_block =
-            crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
-        origin = crate::core::integrity::origin_line(),
-    );
-
-    let _ = client_name;
-
-    match crp_mode_suffix(crp_mode) {
-        "" => format!("{base}\n\n{intel}", intel = rc::INTELLIGENCE),
-        crp => format!("{base}\n\n{crp}\n\n{intel}", intel = rc::INTELLIGENCE),
-    }
-}
-
 /// Backward-compat alias kept for external callers.
 #[must_use]
 pub fn claude_code_instructions() -> String {
@@ -370,21 +348,6 @@ fn client_loads_compression_from_file(client_name: &str) -> bool {
     crate::core::home::resolve_home_dir().is_some_and(|home| {
         crate::core::rules_channel::client_autoloads_compression(client_name, &home)
     })
-}
-
-fn build_terse_agent_block_for_client(_crp_mode: CrpMode, client_name: &str) -> String {
-    use crate::core::config::{CompressionLevel, Config};
-    let cfg = Config::load();
-    let compression = CompressionLevel::effective(&cfg);
-    if compression.is_active() {
-        let persona = crate::core::persona::Persona::resolve(&cfg);
-        return crate::core::terse::agent_prompts::build_prompt_block_for_persona(
-            &compression,
-            client_name,
-            &persona,
-        );
-    }
-    String::new()
 }
 
 fn build_shell_hint() -> String {

@@ -15,7 +15,7 @@ impl McpTool for CtxGainTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_gain",
-            "Gain report — shows token savings from lean-ctx compression. Use to measure efficiency.\n\
+            "Gain report — shows token savings from lean-ctx compression.\n\
              action=wrapped for periodic/annual summary. Other actions: status|report|score|cost|tasks|heatmap|agents|json.\n\
              period=\"week\"|\"month\"|\"all\" scopes the report.",
             json!({

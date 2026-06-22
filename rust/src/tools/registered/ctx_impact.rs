@@ -17,8 +17,7 @@ impl McpTool for CtxImpactTool {
             "ctx_impact",
             "Change impact analysis — assess blast radius before refactoring.\n\
              action=analyze path=\"file.rs\" maps downstream dependents; action=diff compares git refs;\n\
-             action=chain traces from→to dependency paths. depth controls traversal (default 5).\n\
-             Use before any significant refactor to understand risk.",
+             action=chain traces from→to dependency paths. depth controls traversal (default 5).",
             json!({
                 "type": "object",
                 "properties": {

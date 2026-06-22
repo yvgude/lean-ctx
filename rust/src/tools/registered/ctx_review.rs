@@ -16,23 +16,24 @@ impl McpTool for CtxReviewTool {
         tool_def(
             "ctx_review",
             "Automated code review with impact analysis, caller tracking, and test discovery.\n\
-             Actions: review (single file), diff-review (from git diff),\n\
-             checklist (structured review questions). depth=N controls analysis breadth (default 3).",
+             Actions: review (single file), diff-review (from git diff text),\n\
+             checklist (structured review questions). depth=N (default 3).\n\
+             WORKFLOW: run tests first, then use review for structured analysis.\n\
+             ANTIPATTERN: not a substitute for actual test execution.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["review", "diff-review", "checklist"],
-                        "description": "review|diff-review|checklist"
+                        "enum": ["review", "diff-review", "checklist"]
                     },
                     "path": {
                         "type": "string",
-                        "description": "File path or git diff text"
+                        "description": "File path (review/checklist) or git diff text (diff-review)"
                     },
                     "depth": {
                         "type": "integer",
-                        "description": "Analysis depth"
+                        "description": "Analysis breadth (default 3)"
                     }
                 },
                 "required": ["action"]

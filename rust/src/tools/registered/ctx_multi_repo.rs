@@ -17,10 +17,11 @@ impl McpTool for CtxMultiRepoTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_multi_repo",
-            "Multi-repository management — add, remove, and search across project directories.\n\
-             action=add_root|remove_root|list_roots|search. Cross-repo search uses Reciprocal\n\
-             Rank Fusion (RRF) to merge results from multiple repos. query=search term;\n\
-             roots=filter to specific repos. max_results limits output (default 20).",
+            "Multi-repository — add, remove, search project directories.\n\
+             WORKFLOW: list_roots → add_root/remove_root → search.\n\
+             ANTI-PATTERN: not for single-repo projects — use ctx_search.\n\
+             Actions: add_root|remove_root|list_roots|search|status|save_config.\n\
+             Cross-repo search uses RRF to merge results.",
             json!({
                 "type": "object",
                 "properties": {
