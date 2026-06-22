@@ -14,16 +14,20 @@
 **LeanCTX — Lean Context Engineering for AI agents**
 
 LeanCTX — short for **Lean Context** — is the context engineering layer for
-AI agents. It runs as a single local binary between your agents and your code,
-shell and data: it **decides** what they read, **remembers** what they learn,
-**guards** what they touch — and **proves** what they save with a signed,
-verifiable savings ledger. The result: 60–90% fewer tokens — and that's the
-receipt, not the product. Zero config required. Local-first.
+AI agents. It runs as a single local binary between your agents and everything
+they touch — your code, shell, data, and the model itself: it **decides** what
+they read, **compresses** what they send (an optional local proxy shrinks every
+request — system prompt, history and tool results — prompt-cache-safe),
+**remembers** what they learn, **guards** what they touch — and **proves** what
+they save with a signed, verifiable savings ledger. The result: 60–90% fewer
+tokens — and that's the receipt, not the product. Zero config required.
+Local-first.
 
 | Problem | With LeanCTX |
 |---------|-------------|
 | Repeated file reads: ~2000 tokens each | Cached re-reads: **~13 tokens** |
 | Raw `git status`: ~800 tokens | Compressed: **~120 tokens** |
+| Every turn re-sends the whole history | Proxy compresses each request, **prompt-cache-safe** |
 | Context resets every chat | Session memory persists across chats |
 | No visibility into context usage | Real-time dashboard + budget control |
 
@@ -52,7 +56,7 @@ receipt, not the product. Zero config required. Local-first.
 
 ---
 
-> **Control what your AI can see.** LeanCTX — short for **Lean Context** — is the **context engineering layer** for AI agents: one local Rust binary that decides what your agents read, remembers what they learn, guards what they touch — and proves what they save.
+> **Control what your AI can see.** LeanCTX — short for **Lean Context** — is the **context engineering layer** for AI agents: one local Rust binary that decides what your agents read, compresses what they send to the model, remembers what they learn, guards what they touch — and proves what they save.
 
 > Token savings are the receipt. Intelligence is the product. Works with **Cursor, Claude Code, Copilot, Windsurf, Codex, Gemini** and 30+ other agents — no config needed.
 
@@ -172,12 +176,16 @@ The full roadmap lives in **[VISION.md](VISION.md)**.
 
 ## How it works (30 seconds)
 
+LeanCTX works on **two planes** — what your agents *read* and what they *send to the model*:
+
 ```
-AI tool  →  (MCP tools + shell commands)  →  lean-ctx  →  your repo + CLI
+read path:   AI tool  →  (MCP tools + shell)  →  lean-ctx  →  your repo + CLI
+wire path:   AI tool  →  lean-ctx proxy        →  model provider   (every request, compressed)
 ```
 
-- **MCP server**: exposes `ctx_*` tools (read modes, caching, deltas, search, memory, multi-agent)
-- **Shell hook**: transparently compresses common commands so the LLM sees less noise
+- **MCP server** *(read path)*: exposes `ctx_*` tools (read modes, caching, deltas, search, memory, multi-agent)
+- **Shell hook** *(read path)*: transparently compresses common commands so the LLM sees less noise
+- **Request proxy** *(wire path, opt-in)*: `lean-ctx proxy enable` puts a local proxy between your agent and the model that compresses **every request** — system prompt, full history and tool results — prompt-cache-safe, with measured USD spend. Same layer as a standalone request-compression proxy (e.g. Headroom) — you don't need one on top.
 - **Property Graph**: multi-edge code graph powers impact analysis, related file discovery, and search ranking
 - **Session memory**: persists state with structured recovery so long-running work never "cold starts"
 - **Context Manager**: browser dashboard for real-time visibility into what's in your context window
@@ -314,7 +322,7 @@ A multi-edge property graph powers impact analysis + ranked search.
 <tr>
 <td width="50%" valign="top">
 
-### 🔌 Wire in proxy, providers, plugins
+### 🔌 Providers & multi-repo
 *"Pull in GitHub issues and our Postgres schema."*
 
 ```bash

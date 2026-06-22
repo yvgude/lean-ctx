@@ -27,7 +27,7 @@ impl McpTool for CtxSessionTool {
                         "description": "status|load|save|task|finding|decision|reset|list|cleanup|snapshot|restore|resume|profile|role|budget|slo|diff|verify|episodes|procedures"
                     },
                     "value": { "type": "string", "description": "Value for task/finding/decision actions" },
-                    "session_id": { "type": "string", "description": "Session ID to load (omitting loads latest)" }
+                    "session_id": { "type": "string", "description": "Session ID (omit for latest)" }
                 },
                 "required": ["action"]
             }),

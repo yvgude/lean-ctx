@@ -435,18 +435,21 @@ mod confidence_signal {
 
     #[test]
     fn scenario_high_compression_hint_format() {
-        // Verify the hint format exists in source
+        // Verify the hint format exists in source. The local var was renamed
+        // savings_pct -> pct in the shell-fidelity refactor (42a186a65c).
         let src = include_str!("../src/tools/registered/ctx_shell.rs");
         assert!(
-            src.contains("compressed {savings_pct:.0}%: full output at"),
+            src.contains("compressed {pct:.0}%: full output at"),
             "high compression hint must use correct format"
         );
     }
 
     #[test]
     fn scenario_threshold_is_70_percent() {
-        let src = include_str!("../src/tools/registered/ctx_shell.rs");
-        assert!(src.contains("savings_pct > 70.0"), "threshold must be 70%");
+        // The 70% tee threshold now lives in the shared tee_policy (single source
+        // of truth), not inline in ctx_shell.rs (refactor 42a186a65c).
+        let src = include_str!("../src/shell/tee_policy.rs");
+        assert!(src.contains("> 70.0"), "threshold must be 70%");
     }
 }
 
