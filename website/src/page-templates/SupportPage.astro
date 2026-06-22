@@ -284,8 +284,22 @@ const faq = [
         descMb="clamp(2rem, 1.5rem + 1.5vw, 3rem)"
       />
       <p class="sup-wall-count" data-wall-count hidden></p>
-      <div class="sup-wall" data-wall>
-        <div class="sup-wall-state" data-wall-state>Loading supporters…</div>
+      <div class="sup-wall" data-wall aria-busy="true">
+        {/* Skeleton mirrors the final card grid 1:1, so swapping in real
+            supporters never shifts the layout below. */}
+        <ul class="sup-wall-grid" data-wall-skeleton aria-hidden="true">
+          {[1, 2, 3].map(() => (
+            <li class="sup-wall-card sup-wall-card--skeleton">
+              <div class="sup-wall-card-top">
+                <span class="sup-skel sup-skel-name"></span>
+                <span class="sup-skel sup-skel-badge"></span>
+              </div>
+              <span class="sup-skel sup-skel-line"></span>
+              <span class="sup-skel sup-skel-line sup-skel-line--short"></span>
+            </li>
+          ))}
+        </ul>
+        <div class="sup-wall-state" data-wall-state hidden></div>
         <ul class="sup-wall-grid" data-wall-grid hidden></ul>
       </div>
     </div>
@@ -957,6 +971,38 @@ const faq = [
     background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
     border-color: transparent;
   }
+  :global(.sup-wall-since) {
+    margin-top: auto; /* card is a flex column — pin "since" to the bottom edge */
+    font-size: var(--text-caption);
+    color: var(--color-muted);
+  }
+  :global(.sup-wall-empty-sub) {
+    margin-top: 0.4rem;
+    color: var(--color-muted);
+  }
+
+  /* Skeleton placeholders shown while the wall loads. */
+  .sup-wall-card--skeleton { pointer-events: none; }
+  .sup-skel {
+    display: block;
+    border-radius: 4px;
+    background: linear-gradient(
+      90deg,
+      var(--color-surface-2) 25%,
+      color-mix(in srgb, var(--color-border) 65%, var(--color-surface-2)) 50%,
+      var(--color-surface-2) 75%
+    );
+    background-size: 200% 100%;
+    animation: sup-shimmer 1.4s ease-in-out infinite;
+  }
+  .sup-skel-name { width: 7rem; max-width: 55%; height: 0.95rem; }
+  .sup-skel-badge { width: 4.5rem; height: 1.4rem; border-radius: var(--radius-pill); }
+  .sup-skel-line { width: 100%; height: 0.8rem; }
+  .sup-skel-line--short { width: 60%; }
+  @keyframes sup-shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
 
   /* ── FAQ ──────────────────────────────────────────────── */
   .sup-faq {
@@ -1010,6 +1056,7 @@ const faq = [
   /* ── Motion preferences ───────────────────────────────── */
   @media (prefers-reduced-motion: reduce) {
     .sup-medallion svg { animation: none; }
+    .sup-skel { animation: none; }
     .sup-fund:hover,
     .sup-tier:hover,
     :global(.sup-wall-card:hover),
@@ -1155,6 +1202,8 @@ const faq = [
     // textContent (never innerHTML), so names/messages can't inject markup.
     var section = document.getElementById('supporters');
     if (!section) return;
+    var wall = section.querySelector('[data-wall]');
+    var skeleton = section.querySelector('[data-wall-skeleton]');
     var stateEl = section.querySelector('[data-wall-state]');
     var grid = section.querySelector('[data-wall-grid]');
     var countEl = section.querySelector('[data-wall-count]');
@@ -1166,9 +1215,31 @@ const faq = [
       return node;
     }
 
+    function settle() {
+      if (skeleton) skeleton.hidden = true;
+      if (wall) wall.removeAttribute('aria-busy');
+    }
+
+    function createdMs(s) {
+      var t = Date.parse(String((s && s.created_at) || ''));
+      return isNaN(t) ? 0 : t;
+    }
+
+    // "Since May 2026" — month/year is recognition enough; the exact day is
+    // nobody's business but the supporter's.
+    function sinceLabel(s) {
+      var t = createdMs(s);
+      if (!t) return '';
+      return 'Since ' + new Date(t).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    }
+
     function showEmpty() {
+      settle();
       stateEl.textContent = '';
-      stateEl.appendChild(el('p', null, 'No supporters yet — be the first to keep LeanCTX independent.'));
+      stateEl.appendChild(el('p', null, 'Be the first supporter ❤️'));
+      stateEl.appendChild(
+        el('p', 'sup-wall-empty-sub', 'Your name could open this wall — and keep LeanCTX independent.')
+      );
       var cta = el('a', 'sup-wall-cta', 'Become a supporter →');
       cta.href = '#';
       cta.addEventListener('click', function (e) {
@@ -1177,6 +1248,7 @@ const faq = [
         if (pledge) pledge.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
       stateEl.appendChild(cta);
+      stateEl.hidden = false;
     }
 
     fetch('https://api.leanctx.com/api/supporters', { headers: { accept: 'application/json' } })
@@ -1184,6 +1256,9 @@ const faq = [
       .then(function (data) {
         var list = (data && data.supporters) || [];
         if (!list.length) { showEmpty(); return; }
+
+        // Newest first — the freshest thank-you leads the wall.
+        list = list.slice().sort(function (a, b) { return createdMs(b) - createdMs(a); });
 
         list.forEach(function (s) {
           var card = el('li', 'sup-wall-card');
@@ -1196,10 +1271,12 @@ const faq = [
           }
           card.appendChild(top);
           if (s.message) card.appendChild(el('p', 'sup-wall-msg', s.message));
+          var since = sinceLabel(s);
+          if (since) card.appendChild(el('span', 'sup-wall-since', since));
           grid.appendChild(card);
         });
 
-        stateEl.hidden = true;
+        settle();
         grid.hidden = false;
 
         if (countEl && typeof data.count === 'number' && data.count > 0) {
