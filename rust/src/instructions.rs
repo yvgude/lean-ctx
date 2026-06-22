@@ -204,34 +204,18 @@ fn build_full_instructions(crp_mode: CrpMode, client_name: &str) -> String {
 
     // In shadow mode the mapping sections are omitted automatically.
     let skeleton = rc::render(shadow, Wrapper::Bare);
-    let critical = rc::CRITICAL;
-
-    let shadow_preamble = if shadow {
-        "SHADOW MODE ACTIVE: ALL file reads, searches, and shell commands \
-         MUST go through ctx_* tools. Native equivalents are intercepted.\n\n"
-    } else {
-        ""
-    };
 
     let config_dir = claude_config_dir_display();
     let base = format!(
-        "\
-{shadow_preamble}\
-{critical}\n\
-\n\
-{skeleton}\n\
-{shell_hint}\
-\n\
-{decoder_block}\n\
-\n\
-Full instructions at {config_dir}/CLAUDE.md\n\
-{session_block}\
-{knowledge_block}\
-{gotcha_block}\
-\n\
-{origin}\n\
-\n\
-{litm_end_block}",
+        "{shadow_preamble}\n\
+        {skeleton}\n\
+        {shell_hint}\n\
+        {decoder_block}\n\
+        {session_block}\n\
+        {knowledge_block}\n\
+        {gotcha_block}\n\
+        {origin}\n\
+        {litm_end_block}",
         decoder_block =
             crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
         origin = crate::core::integrity::origin_line(),
@@ -325,18 +309,12 @@ fn build_full_instructions_for_test(crp_mode: CrpMode, client_name: &str) -> Str
     let shadow = false; // tests never use shadow mode
     let skeleton = rc::render(shadow, Wrapper::Bare);
     let shell_hint = build_shell_hint();
-    let critical = rc::CRITICAL;
 
     let base = format!(
-        "\
-{critical}\n\
-\n\
-{skeleton}\n\
-{shell_hint}\
-\n\
-{decoder_block}\n\
-\n\
-{origin}",
+        "{skeleton}\n\
+        {shell_hint}\n\
+        {decoder_block}\n\
+        {origin}",
         decoder_block =
             crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
         origin = crate::core::integrity::origin_line(),
@@ -365,13 +343,10 @@ fn build_full_instructions_for_compiler(
     let shell_hint = build_shell_hint();
 
     let base = format!(
-        "\
-{skeleton}\n\
-{shell_hint}\
-\n\
-{decoder_block}\n\
-\n\
-{origin}",
+        "{skeleton}\n\
+        {shell_hint}\n\
+        {decoder_block}\n\
+        {origin}",
         decoder_block =
             crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
         origin = crate::core::integrity::origin_line(),
