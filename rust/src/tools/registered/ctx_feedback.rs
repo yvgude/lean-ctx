@@ -15,23 +15,25 @@ impl McpTool for CtxFeedbackTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_feedback",
-            "Harness feedback for LLM output tokens/latency (local-first). Actions: record|report|json|reset|status.",
+            "Record and report LLM token/latency metrics (local-first) — use to track efficiency.\n\
+             Actions: record (log event), report (readable summary), json (machine-readable),\n\
+             reset (clear data), status (storage info). record requires llm_input_tokens + llm_output_tokens.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["record", "report", "json", "reset", "status"],
-                        "description": "Operation to perform (default: report)"
+                        "description": "record (log event) | report (summary) | json (data) | reset (clear) | status (storage)"
                     },
-                    "agent_id": { "type": "string", "description": "Agent ID (optional; defaults to current agent)" },
-                    "intent": { "type": "string", "description": "Intent/task string (optional)" },
-                    "model": { "type": "string", "description": "Model identifier (optional)" },
+                    "agent_id": { "type": "string", "description": "Agent ID (default: current agent)" },
+                    "intent": { "type": "string", "description": "Intent/task string" },
+                    "model": { "type": "string", "description": "Model identifier" },
                     "llm_input_tokens": { "type": "integer", "description": "Required for action=record" },
                     "llm_output_tokens": { "type": "integer", "description": "Required for action=record" },
-                    "latency_ms": { "type": "integer", "description": "Optional for action=record" },
-                    "note": { "type": "string", "description": "Optional note (no prompts/PII)" },
-                    "limit": { "type": "integer", "description": "For report/json: max recent events (default: 500)" }
+                    "latency_ms": { "type": "integer", "description": "Latency in ms (for record)" },
+                    "note": { "type": "string", "description": "Note (no prompts/PII)" },
+                    "limit": { "type": "integer", "description": "Max recent events (default: 500)" }
                 }
             }),
         )

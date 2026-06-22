@@ -17,22 +17,25 @@ impl McpTool for CtxFillTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_fill",
-            "Budget-aware context fill — auto-selects compression per file within token limit.",
+            "Budget-aware context fill — given a list of paths, auto-compresses each to fit within a token budget.\n\
+             Pass paths array + budget=N. task=\"...\" enables intent-driven pruning for relevance.\n\
+             Does NOT decide what to include (use ctx_plan for project-wide selection).\n\
+             Use instead of reading each file individually when you have many files and a budget.",
             json!({
                 "type": "object",
                 "properties": {
                     "paths": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "File paths to consider"
+                        "description": "File paths"
                     },
                     "budget": {
                         "type": "integer",
-                        "description": "Maximum token budget to fill"
+                        "description": "Max token budget"
                     },
                     "task": {
                         "type": "string",
-                        "description": "Optional task (short English preferred) for intent-driven pruning"
+                        "description": "Intent-driven pruning target"
                     }
                 },
                 "required": ["paths", "budget"]

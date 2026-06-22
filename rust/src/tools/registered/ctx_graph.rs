@@ -16,7 +16,7 @@ impl McpTool for CtxGraphTool {
         tool_def(
             "ctx_graph",
             "Code graph queries — find usages, relationships, and dependency chains.\n\
-             action=symbol path='file.rs::fnName' finds all usages of a symbol.\n\
+             action=symbol path=\"file.rs::fnName\" finds all usages of a symbol.\n\
              action=neighbors shows adjacent nodes; action=path from→to shows dependency\n\
              chains between files. action=diff since=HEAD~1 for git change impact.\n\
              For understanding code end-to-end, use ctx_compose FIRST. Use ctx_graph for\n\
@@ -30,7 +30,7 @@ impl McpTool for CtxGraphTool {
                     },
                     "path": {
                         "type": "string",
-                        "description": "File path; file::symbol for action=symbol; FROM file for action=path"
+                        "description": "Path; file::symbol for symbol action"
                     },
                     "to": { "type": "string", "description": "Target file (action=path)" },
                     "depth": { "type": "integer", "description": "Traversal depth" },

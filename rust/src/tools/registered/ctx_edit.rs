@@ -17,17 +17,18 @@ impl McpTool for CtxEditTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_edit",
-            "Search-and-replace edit: old_string must be unique unless replace_all=true\n\
-             create=true writes new files from new_string. TOCTOU-guarded with preimage hash verification.\n\
-             backup creates .bak before modifying. Supports MD5/size/mtime pre-guards for race-free edits.",
+            "Search-and-replace edit with TOCTOU safety — for simple text replacement in a single file.\n\
+             Use INSTEAD of native Edit when Read is unavailable. old_string must be unique unless replace_all=true.\n\
+             create=true writes new files. backup creates .bak. MD5/size/mtime pre-guards prevent race conditions.\n\
+             Do NOT loop on failures — switch to ctx_edit. For LSP-aware refactoring (rename, move, inline), use ctx_refactor.",
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "Absolute path" },
-                    "old_string": { "type": "string", "description": "Text to replace (unique unless replace_all)" },
+                    "path": { "type": "string", "description": "Path" },
+                    "old_string": { "type": "string", "description": "Text to replace (unique unless replace_all=true)" },
                     "new_string": { "type": "string", "description": "Replacement text" },
                     "replace_all": { "type": "boolean", "default": false },
-                    "create": { "type": "boolean", "description": "Create file from new_string", "default": false }
+                    "create": { "type": "boolean", "description": "Create file", "default": false }
                 },
                 "required": ["path", "new_string"]
             }),

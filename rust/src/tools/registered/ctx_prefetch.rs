@@ -17,15 +17,18 @@ impl McpTool for CtxPrefetchTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_prefetch",
-            "Predictive prefetch — prewarm cache for blast radius files (graph + task signals) within budgets.",
+            "Predictive prefetch — prewarm the cache for blast radius files using graph and\n\
+             task signals. task=description for relevance scoring; changed_files=paths to\n\
+             compute blast radius; budget_tokens=soft budget (default 3000); max_files=limit\n\
+             (default 10). Use before context-heavy operations to minimize latency.",
             json!({
                 "type": "object",
                 "properties": {
-                    "root": { "type": "string", "description": "Project root (default: .)" },
-                    "task": { "type": "string", "description": "Optional task (short English preferred) for relevance scoring" },
-                    "changed_files": { "type": "array", "items": { "type": "string" }, "description": "Optional changed files (paths) to compute blast radius" },
-                    "budget_tokens": { "type": "integer", "description": "Soft budget hint for mode selection (default: 3000)" },
-                    "max_files": { "type": "integer", "description": "Max files to prefetch (default: 10)" }
+                    "root": { "type": "string", "description": "Project root" },
+                    "task": { "type": "string", "description": "Task for relevance scoring" },
+                    "changed_files": { "type": "array", "items": { "type": "string" }, "description": "Changed files for blast radius" },
+                    "budget_tokens": { "type": "integer", "description": "Soft budget hint" },
+                    "max_files": { "type": "integer", "description": "Max files to prefetch" }
                 }
             }),
         )

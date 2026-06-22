@@ -15,22 +15,26 @@ impl McpTool for CtxSummaryTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_summary",
-            "Record and recall AI session summaries — compact, semantically-recallable digests of what was done (task, files, decisions, next steps). Actions: recall (find past summaries by query; semantic when embeddings are warm, else lexical), record (snapshot the current session now), list (recent summaries). Summaries are also captured automatically on the checkpoint cadence.",
+            "Record and recall AI session summaries — compact, semantically-recallable\n\
+             digests of what was done (task, files, decisions, next steps).\n\
+             Actions: recall (find past summaries by query), record (snapshot session),\n\
+             list (recent summaries). Auto-captured on checkpoint cadence.\n\
+             Use with ctx_session for cross-session continuity.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["recall", "record", "list"],
-                        "description": "Summary action (default: recall)"
+                        "description": "recall|record|list"
                     },
                     "query": {
                         "type": "string",
-                        "description": "Recall query, e.g. \"what did I change in the graph index?\""
+                        "description": "Recall query, e.g. \"what did I change?\""
                     },
                     "top_k": {
                         "type": "integer",
-                        "description": "Max summaries to return for recall (default 5, max 20)"
+                        "description": "Max summaries to return"
                     }
                 }
             }),

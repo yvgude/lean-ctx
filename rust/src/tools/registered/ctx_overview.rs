@@ -28,7 +28,7 @@ impl McpTool for CtxOverviewTool {
                     },
                     "path": {
                         "type": "string",
-                        "description": "Project root directory (default: .)"
+                        "description": "Project root"
                     }
                 }
             }),

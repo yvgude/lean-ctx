@@ -15,23 +15,24 @@ impl McpTool for CtxReviewTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_review",
-            "Automated code review: combines impact analysis, caller tracking, and test discovery. \
-             Actions: review (single file), diff-review (from git diff), checklist (structured review questions).",
+            "Automated code review with impact analysis, caller tracking, and test discovery.\n\
+             Actions: review (single file), diff-review (from git diff),\n\
+             checklist (structured review questions). depth=N controls analysis breadth (default 3).",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["review", "diff-review", "checklist"],
-                        "description": "Review action"
+                        "description": "review|diff-review|checklist"
                     },
                     "path": {
                         "type": "string",
-                        "description": "File path to review (or git diff text for diff-review)"
+                        "description": "File path or git diff text"
                     },
                     "depth": {
                         "type": "integer",
-                        "description": "Impact analysis depth (default: 3)"
+                        "description": "Analysis depth"
                     }
                 },
                 "required": ["action"]

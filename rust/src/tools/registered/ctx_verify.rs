@@ -15,11 +15,13 @@ impl McpTool for CtxVerifyTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_verify",
-            "Verification observability. Actions: stats (tool call statistics), proof|v2 (ContextProofV2 claim-based verification with Lean4 proofs).",
+            "Verification observability — tool call statistics and claim-based verification.\n\
+             Actions: stats (tool call usage counts), proof|v2 (ContextProofV2 claim\n\
+             verification with Lean4 proofs). Use to audit tool usage or verify claims.",
             json!({
                 "type": "object",
                 "properties": {
-                    "action": { "type": "string", "description": "stats" },
+                    "action": { "type": "string", "description": "stats|proof|v2" },
                     "format": { "type": "string" }
                 }
             }),

@@ -15,7 +15,9 @@ impl McpTool for CtxHeatmapTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_heatmap",
-            "File access heatmap — shows most frequently accessed files.",
+            "File access heatmap — shows most frequently accessed files per session.\n\
+             action=status (default) for summary, action=detail for per-file access counts.\n\
+             Use to identify hot files and optimize context usage.",
             json!({
                 "type": "object",
                 "properties": {

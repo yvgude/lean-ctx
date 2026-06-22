@@ -35,11 +35,11 @@ impl McpTool for CtxMultiReadTool {
                     "mode": {
                         "type": "string",
                         "default": "auto",
-                        "description": "Same as ctx_read modes (default auto). full→edit; raw→zero-overhead. Omit for optimal per-file"
+                        "description": "auto|full|raw|signatures|map (same as ctx_read)"
                     },
                     "fresh": {
                         "type": "boolean",
-                        "description": "Bypass cache, full re-read all. Use in subagents with stale parent cache"
+                        "description": "Bypass cache, full re-read"
                     }
                 },
                 "required": ["paths"]

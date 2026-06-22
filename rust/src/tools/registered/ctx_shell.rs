@@ -26,7 +26,7 @@ impl McpTool for CtxShellTool {
                 "properties": {
                     "command": { "type": "string", "description": "Shell command" },
                     "raw": { "type": "boolean", "description": "Skip compression (verbatim)" },
-                    "cwd": { "type": "string", "description": "Working dir (default: last cd or project root)" },
+                    "cwd": { "type": "string", "description": "Working dir" },
                     "env": { "type": "object", "description": "Extra env vars", "additionalProperties": { "type": "string" } }
                 },
                 "required": ["command"]

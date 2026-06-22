@@ -15,7 +15,10 @@ impl McpTool for CtxPluginsTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_plugins",
-            "Plugin management. Actions: list (show installed plugins), enable (activate a plugin), disable (deactivate a plugin), info (show plugin details), hooks (list available hook points).",
+            "Plugin management — list, enable, disable, and inspect plugins with their hooks.\n\
+             Actions: list (show installed), enable (activate), disable (deactivate),\n\
+             info (show details), hooks (list available hook points). name=plugin_name\n\
+             required for enable, disable, info. Use to extend tool functionality.",
             json!({
                 "type": "object",
                 "properties": {

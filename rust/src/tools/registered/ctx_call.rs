@@ -15,14 +15,14 @@ impl McpTool for CtxCallTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_call",
-            "Invoke any non-core lean-ctx tool by name.\n\
-             Categories: arch, debug, memory, batch, agent, util. Find exact names \
-             with ctx_discover_tools (query=keyword; empty query lists all).",
+            "Invoke any non-core lean-ctx tool by name — for tools not exposed as standalone MCP tools.\n\
+Categories: arch, debug, memory, batch, agent, util. Find exact names with\n\
+ctx_discover_tools (query=keyword; empty query lists all). Cannot invoke itself.",
             json!({
                 "type": "object",
                 "properties": {
                     "name": { "type": "string", "description": "Tool name" },
-                    "arguments": { "type": "object", "description": "Arguments for the tool" }
+                    "arguments": { "type": "object",                         "description": "Tool arguments" }
                 },
                 "required": ["name"]
             }),

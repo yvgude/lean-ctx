@@ -17,9 +17,9 @@ impl McpTool for CtxKnowledgeTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_knowledge",
-            "Persistent memory across sessions — remember decisions, patterns, and facts.\n\
+            "Persistent memory across sessions — remember decisions, patterns, and facts for recall.\n\
              action=remember saves a fact; action=recall query='X' retrieves it.\n\
-             Use to persist architecture decisions, gotchas, and patterns for future sessions.\n\
+             Use to persist architecture decisions, gotchas, and patterns between sessions.\n\
              action=gotcha trigger='X' resolution='Y' for known pitfalls.\n\
              mode=semantic|exact for recall. category groups related facts.",
             json!({
@@ -36,11 +36,11 @@ impl McpTool for CtxKnowledgeTool {
                     "key": { "type": "string" },
                     "value": { "type": "string" },
                     "query": { "type": "string", "description": "Query for recall/search/relate" },
-                    "mode": { "type": "string", "description": "Recall mode: auto|exact|semantic|hybrid" },
-                    "as_of": { "type": "string", "description": "Recall facts valid at this date (YYYY-MM-DD)" },
+                    "mode": { "type": "string", "description": "auto|exact|semantic|hybrid" },
+                    "as_of": { "type": "string", "description": "YYYY-MM-DD date filter" },
                     "pattern_type": { "type": "string" },
                     "examples": { "type": "array", "items": { "type": "string" } },
-                    "confidence": { "type": "number", "description": "0.0-1.0 (default 0.8)" }
+                    "confidence": { "type": "number", "description": "0.0-1.0" }
                 },
                 "required": ["action"]
             }),

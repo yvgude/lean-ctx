@@ -15,13 +15,14 @@ impl McpTool for CtxOutlineTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_outline",
-            "File symbols: path='file.rs'->signatures; kind=fn|struct|class|all filter\n\
-             Lists all named symbols in a file with signatures and line numbers.\n\
-             Generated via tree-sitter extraction of fn/struct/class/trait declarations.",
+            "List file symbols with signatures and line numbers — path='file.rs' returns fn, struct,\n\
+             class, and trait declarations via tree-sitter extraction. kind=fn|struct|class|all\n\
+             to filter. Use for a quick API overview of a file. For deeper understanding,\n\
+             use ctx_compose. For full file content, use ctx_read.",
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "File path" },
+                    "path": { "type": "string", "description": "Path" },
                     "kind": { "type": "string", "description": "fn|struct|class|all filter" }
                 },
                 "required": ["path"]

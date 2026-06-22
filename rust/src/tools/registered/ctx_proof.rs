@@ -15,17 +15,20 @@ impl McpTool for CtxProofTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_proof",
-            "Export a machine-readable ContextProofV1 (Verifier + SLO + Pipeline + Provenance). Writes to .lean-ctx/proofs/ by default.",
+            "Export machine-readable ContextProofV1 with Verifier, SLO, Pipeline, and Provenance.\n\
+             Writes to .lean-ctx/proofs/ by default. action=export (required);\n\
+             format=json|summary|both; write=true|false; filename=custom path;\n\
+             max_evidence=max tool receipts (default 50). Use for audit trails.",
             json!({
                 "type": "object",
                 "properties": {
-                    "action": { "type": "string", "description": "export (required)" },
-                    "project_root": { "type": "string", "description": "Project root for proof output (default: .)" },
-                    "format": { "type": "string", "description": "json|summary|both (default: json)" },
-                    "write": { "type": "boolean", "description": "Write proof file under .lean-ctx/proofs/ (default: true)" },
+                    "action": { "type": "string", "description": "export" },
+                    "project_root": { "type": "string", "description": "Project root" },
+                    "format": { "type": "string", "description": "json|summary|both" },
+                    "write": { "type": "boolean", "description": "Write to .lean-ctx/proofs/" },
                     "filename": { "type": "string", "description": "Optional output filename" },
-                    "max_evidence": { "type": "integer", "description": "Max tool receipts to include (default: 50)" },
-                    "max_ledger_files": { "type": "integer", "description": "Max context ledger top files to include (default: 10)" }
+                    "max_evidence": { "type": "integer", "description": "Max tool receipts" },
+                    "max_ledger_files": { "type": "integer", "description": "Max ledger files" }
                 },
                 "required": ["action"]
             }),

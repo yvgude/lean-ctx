@@ -16,18 +16,21 @@ impl McpTool for CtxLoadToolsTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_load_tools",
-            "Load/unload specialized tool categories on demand. Categories: arch, debug, memory, metrics, session. Core is always loaded.",
+            "Load/unload specialized tool categories on demand to reduce tool surface area.\n\
+             action=load|unload|list. Categories: arch, debug, memory, metrics, session.\n\
+             Core is always loaded and cannot be unloaded. Use when you only need\n\
+             a subset of tools for your current task.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["load", "unload", "list"],
-                        "description": "load = activate category, unload = deactivate, list = show status"
+                        "description": "load|unload|list"
                     },
                     "category": {
                         "type": "string",
-                        "description": "Category name: arch|debug|memory|metrics|session"
+                        "description": "arch|debug|memory|metrics|session"
                     }
                 },
                 "required": ["action"]

@@ -15,18 +15,20 @@ impl McpTool for CtxRulesTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_rules",
-            "Cross-agent rules governance (ContextOps). Actions: sync (distribute rules to agents), diff (show drift), lint (check consistency), status (show sync state), init (create central config).",
+            "Cross-agent rules governance (ContextOps).\n\
+             Actions: sync (distribute rules to agents), diff (show drift),\n\
+             lint (check consistency), status (sync state), init (create central config).",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["sync", "diff", "lint", "status", "init"],
-                        "description": "Rules action to perform"
+                        "description": "sync|diff|lint|status|init"
                     },
                     "agent": {
                         "type": "string",
-                        "description": "Target agent name (for sync action only, e.g. 'cursor', 'claude')"
+                        "description": "Target agent name (for sync)"
                     }
                 },
                 "required": ["action"]

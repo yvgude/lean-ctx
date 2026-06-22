@@ -15,7 +15,7 @@ impl McpTool for CtxBenchmarkTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_benchmark",
-            "Benchmark compression modes for a file or project.",
+            "Benchmark compression modes — measures token savings across all available modes for a file or project. Provide a file path, or use action=project format=json|markdown for project-wide results.",
             json!({
                 "type": "object",
                 "properties": {

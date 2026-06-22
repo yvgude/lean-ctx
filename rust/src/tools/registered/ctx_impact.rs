@@ -15,28 +15,29 @@ impl McpTool for CtxImpactTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_impact",
-            "Change impact: action=analyze path='file.rs'→blast radius; depth=N; action=diff→git refs\n\
-             action=chain from→to→dependency path. depth controls traversal (default 5).\n\
-             Use before refactoring to assess risk. path can be file path or type/class name.",
+            "Change impact analysis — assess blast radius before refactoring.\n\
+             action=analyze path=\"file.rs\" maps downstream dependents; action=diff compares git refs;\n\
+             action=chain traces from→to dependency paths. depth controls traversal (default 5).\n\
+             Use before any significant refactor to understand risk.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["analyze", "diff", "chain", "build", "update", "status"],
-                        "description": "Impact operation (default: analyze)"
+                        "description": "analyze|diff|chain|build|update|status"
                     },
                     "path": {
                         "type": "string",
-                        "description": "File path or type name (e.g. ArcPoint→defining file). For chain: from->to spec"
+                        "description": "File path or type name"
                     },
                     "root": {
                         "type": "string",
-                        "description": "Project root (default: .)"
+                        "description": "Project root"
                     },
                     "depth": {
                         "type": "integer",
-                        "description": "Max traversal depth (default: 5)"
+                        "description": "Max depth (default: 5)"
                     },
                     "format": {
                         "type": "string",

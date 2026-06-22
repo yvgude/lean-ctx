@@ -15,12 +15,14 @@ impl McpTool for CtxIntentTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_intent",
-            "Structured intent input (optional) — submit compact JSON or short text; server also infers intents automatically from tool calls.",
+            "Structured intent input (optional) — submit compact task goals as JSON or short text.\n\
+             Server also auto-infers intent from tool calls. Use to guide context prioritization,\n\
+             preloading, and cache optimization. query=task|JSON; project_root=scope.",
             json!({
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Compact JSON intent or short text" },
-                    "project_root": { "type": "string", "description": "Project root directory (default: .)" }
+                    "project_root": { "type": "string", "description": "Project root" }
                 },
                 "required": ["query"]
             }),

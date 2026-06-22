@@ -15,7 +15,9 @@ impl McpTool for CtxDiscoverTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_discover",
-            "Find missed compression opportunities in shell history.",
+            "Identify compression misses in shell history — use when context feels bloated.\n\
+             Shows commands that would save tokens via lean-ctx patterns. limit=N caps results.\n\
+             No params needed for quick health check.",
             json!({
                 "type": "object",
                 "properties": {

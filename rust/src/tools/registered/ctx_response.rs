@@ -15,7 +15,9 @@ impl McpTool for CtxResponseTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_response",
-            "Compress LLM response text (structural de-duplication).",
+            "Compress LLM response text via structural de-duplication.\n\
+             Pass response text to remove repetitive patterns while preserving key information.\n\
+             Use to reduce token waste before storing or forwarding responses.",
             json!({
                 "type": "object",
                 "properties": {

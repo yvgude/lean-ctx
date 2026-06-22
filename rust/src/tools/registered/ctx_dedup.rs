@@ -15,13 +15,13 @@ impl McpTool for CtxDedupTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_dedup",
-            "Cross-file dedup: analyze or apply shared block references.",
+            "Cross-file deduplication — detect and eliminate repeated content across files. action=analyze (default) finds shared blocks; action=apply registers them for auto-dedup in ctx_read output.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "analyze (default) or apply (register shared blocks for auto-dedup in ctx_read)",
+                        "description": "analyze (find shared) | apply (register dedup)",
                         "default": "analyze"
                     }
                 }

@@ -21,9 +21,10 @@ impl McpTool for CtxUrlReadTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_url_read",
-            "Fetch URL: pages→Markdown; PDF→text; YouTube→transcript; mode=auto best per type\n\
-             mode=facts|quotes for research (claims+confidence). query='topic' to focus extraction.\n\
-             GitHub blob/raw URLs auto-resolve to raw file. SSRF-guarded (no private IPs). max_tokens=6000.",
+            "Fetch URL: pages→Markdown; PDF→text; YouTube→transcript; mode=auto best per type.\n\
+             mode=facts|quotes for research (claims+confidence). query='topic' focuses extraction.\n\
+             GitHub blob/raw URLs auto-resolve to raw file. SSRF-guarded (no private IPs).\n\
+             max_tokens=6000; timeout_secs=20 (max 60).",
             json!({
                 "type": "object",
                 "properties": {
@@ -31,12 +32,12 @@ impl McpTool for CtxUrlReadTool {
                     "mode": {
                         "type": "string",
                         "enum": ["auto", "markdown", "text", "links", "facts", "quotes", "transcript"],
-                        "description": "auto|markdown|text|links|facts|quotes|transcript (default auto)"
+                        "description": "auto|markdown|text|links|facts|quotes|transcript"
                     },
-                    "query": { "type": "string", "description": "Focus query; boosts facts/quotes relevance" },
-                    "max_tokens": { "type": "integer", "description": "Token budget (default 6000)" },
-                    "max_items": { "type": "integer", "description": "Max items for facts/quotes (default 12)" },
-                    "timeout_secs": { "type": "integer", "description": "Timeout seconds (default 20, max 60)" }
+                    "query": { "type": "string", "description": "Focus query (boosts facts/quotes)" },
+                    "max_tokens": { "type": "integer", "description": "Token budget" },
+                    "max_items": { "type": "integer", "description": "Max items for facts/quotes" },
+                    "timeout_secs": { "type": "integer", "description": "Timeout in seconds" }
                 },
                 "required": ["url"]
             }),

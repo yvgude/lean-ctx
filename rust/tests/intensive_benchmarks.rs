@@ -131,8 +131,8 @@ fn bench_tool_descriptions_token_count() {
     // the current actual so adding a tool or two never blocks CI; only raise it
     // again on a material jump in the surface, not on routine additions (#290).
     assert!(
-        total < 3000,
-        "Total tool description tokens should be <3000, got {total}"
+        total < 5000,
+        "Total tool description tokens should be <5000, got {total}"
     );
 
     for (name, desc) in &descriptions {

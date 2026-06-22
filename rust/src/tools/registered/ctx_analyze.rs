@@ -15,7 +15,7 @@ impl McpTool for CtxAnalyzeTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_analyze",
-            "Entropy analysis — recommends optimal compression mode for a file.",
+            "Entropy analysis — recommends optimal compression mode for a file path. Use before ctx_read to pick the best mode (full/signatures/auto) that balances size vs information retention.",
             json!({
                 "type": "object",
                 "properties": {

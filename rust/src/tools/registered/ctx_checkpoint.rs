@@ -24,24 +24,25 @@ impl McpTool for CtxCheckpointTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_checkpoint",
-            "Local shadow git history of the agent's changes (separate from the user's .git).\n\
-             actions: snapshot (record current state) | log (list checkpoints) | diff (vs a checkpoint) | restore (revert files).\n\
-             Snapshot before+after a change to capture exactly what the LLM modified; diff/restore to review or roll back.\n\
-             Never touches the user's repository.",
+            "Local shadow git history of the agent's changes — separate from the user's .git.\n\
+Actions: snapshot (record current state), log (list checkpoints),\n\
+diff (compare against a checkpoint), restore (revert files).\n\
+Snapshot before+after changes to capture exactly what was modified.\n\
+Never touches the user's repository.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["snapshot", "log", "diff", "restore"],
-                        "description": "Operation to perform (default: log)"
+                        "description": "snapshot|log|diff|restore"
                     },
-                    "message": { "type": "string", "description": "Snapshot label (snapshot)" },
-                    "from": { "type": "string", "description": "Base checkpoint sha (diff)" },
-                    "to": { "type": "string", "description": "Target checkpoint sha (diff; default: working tree)" },
-                    "ref": { "type": "string", "description": "Checkpoint sha to restore from (restore)" },
-                    "path": { "type": "string", "description": "Limit restore to this file/dir (restore)" },
-                    "limit": { "type": "integer", "description": "Max checkpoints to list (log, default: 20)" }
+                    "message": { "type": "string", "description": "Snapshot label" },
+                    "from": { "type": "string", "description": "Base checkpoint SHA" },
+                    "to": { "type": "string", "description": "Target checkpoint SHA" },
+                    "ref": { "type": "string", "description": "Checkpoint SHA" },
+                    "path": { "type": "string", "description": "File/dir to restore" },
+                    "limit": { "type": "integer", "description": "Max checkpoints" }
                 }
             }),
         )
