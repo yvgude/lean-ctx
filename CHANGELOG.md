@@ -150,6 +150,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   permanent first-sighting that never repacks. All three are cache-safe by construction
   (deterministic re-compression) and covered by new N→N+1, restart, and marker-stability
   tests. Thanks to @phawrylak for the precise analysis.
+- **`gain` no longer reports `0` saved when MCP tools wrote to a different data
+  dir (#500).** The savings headline, gain score, cost view and net-of-injection
+  line now **sum stats across every auto-resolved data dir** that holds a
+  `stats.json`. When an agent host launches the lean-ctx MCP server with a
+  different `HOME`/`XDG_*` than the user's shell (e.g. a containerised Hermes
+  Agent) the savings landed in a sibling tree while the CLI read an empty primary
+  dir and showed a false zero. Aggregation is a **no-op without a split** and is
+  skipped entirely when `LEAN_CTX_DATA_DIR` pins one dir, so non-split users are
+  unaffected. The empty-state screen now also cross-checks the tamper-evident
+  savings ledger and, when it holds events that `stats.json` does not, names the
+  data-dir split outright (`lean-ctx savings` / `lean-ctx doctor`). Finally, the
+  proxy "bridge OFF — savings cannot be measured" caveat is suppressed whenever
+  there are real (MCP-measured) savings to show, since `gain` measures MCP-tool
+  savings directly and needs no proxy. Thanks to the reporter for the detailed
+  Hermes + OpenRouter writeup.
 - **Billing edge no longer downgrades a paying account on a billing-service blip
   (GL #785).** Entitlement resolution at the cloud edge now caches each user's
   last known plan (in-memory, short TTL) and, when the upstream billing service

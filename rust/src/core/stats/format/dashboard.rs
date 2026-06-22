@@ -24,7 +24,9 @@ pub fn format_gain_hero() -> String {
 
 /// Hero gain with specific theme.
 pub fn format_gain_hero_themed(t: &Theme) -> String {
-    let store = crate::core::stats::load();
+    // Aggregate across split data dirs so an MCP-server/CLI XDG split does not
+    // hide savings behind a false `0` (#500).
+    let store = crate::core::stats::load_for_display();
     let rst = theme::rst();
     let bold = theme::bold();
     let dim = theme::dim();
@@ -227,7 +229,8 @@ pub fn format_gain_footer() -> String {
 
 #[allow(clippy::many_single_char_names)] // ANSI formatting: t=theme, r=reset, b=bold, d=dim
 fn gain_dashboard(t: &Theme, tick: Option<u64>, with_footer: bool) -> String {
-    let store = crate::core::stats::load();
+    // Aggregate across split data dirs (#500) — see `format_gain_hero_themed`.
+    let store = crate::core::stats::load_for_display();
     let mut out = Vec::new();
     let rst = theme::rst();
     let bold = theme::bold();
@@ -270,6 +273,22 @@ fn gain_dashboard(t: &Theme, tick: Option<u64>, with_footer: bool) -> String {
         } else {
             String::new()
         };
+        // Cross-check the tamper-evident savings ledger (#500): if it recorded
+        // events while stats.json stayed empty, the MCP server and the CLI are
+        // almost certainly resolving different data dirs — name that explicitly
+        // instead of the bare "expected" message so the user can act.
+        let ledger = crate::core::savings_ledger::summary();
+        let ledger_hint = if ledger.total_events > 0 {
+            format!(
+                "\n{dim}⚠ {} savings events (~{} tokens) ARE in the ledger but not in stats.json —{rst}\
+                 \n{dim}  the MCP server likely writes to a different data dir than this CLI.{rst}\
+                 \n{dim}  Inspect: lean-ctx savings   ·   Diagnose: lean-ctx doctor{rst}",
+                ledger.total_events,
+                crate::core::wrapped::format_tokens(ledger.saved_tokens),
+            )
+        } else {
+            String::new()
+        };
         return format!(
             "{bold}No savings recorded yet — and that's expected.{rst}\
              \n\n  {dim}Savings appear after your AI tool uses lean-ctx for the first time.{rst}\
@@ -278,7 +297,7 @@ fn gain_dashboard(t: &Theme, tick: Option<u64>, with_footer: bool) -> String {
              \n    2. Fully restart your AI tool so it reconnects to lean-ctx.\
              \n    3. Ask it to read a file or run a command — then check back here.\
              \n\n  {dim}Tip: track a shell command yourself with {rst}{cmd}lean-ctx -c \"git status\"{rst}\
-             \n\n  {dim}Stats path: {data_dir}{rst}{mcp_hint}{split_hint}",
+             \n\n  {dim}Stats path: {data_dir}{rst}{mcp_hint}{split_hint}{ledger_hint}",
             cmd = t.secondary.fg(),
         );
     }

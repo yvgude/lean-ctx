@@ -227,6 +227,7 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         }
         print_support_hint();
         print_bridge_warning();
+        print_split_hint();
         crate::cli::wrapped_publish::maybe_auto_publish(&period);
         print_community_hint();
     }
@@ -243,14 +244,44 @@ fn print_measured_spend_hint() {
     }
 }
 
-/// When the bridge is not engaged, the hero card is built from locally
-/// persisted stats the proxy is no longer feeding live. Surface that caveat so
-/// `gain` never implies savings it cannot currently measure (GitHub #361/#271).
+/// When the bridge is not engaged, the proxy is no longer feeding live request
+/// stats. Surface that caveat so `gain` never implies savings it cannot measure
+/// (GitHub #361/#271) — **but only when there are genuinely no savings to show**.
+///
+/// `gain` also measures MCP-tool savings directly (reads/search/shell via the
+/// savings ledger + stats), which need no proxy at all. Emitting a "proxy down —
+/// savings cannot be measured" line above a real, MCP-measured headline wrongly
+/// told MCP-only users their numbers were untrustworthy (#500). Gate on the
+/// displayed total so the warning fires only for a true zero.
 fn print_bridge_warning() {
     use crate::core::gain::bridge_status::{BridgeEngagement, BridgeStatus};
+    let store = core::stats::load_for_display();
+    let saved = store
+        .total_input_tokens
+        .saturating_sub(store.total_output_tokens);
+    if saved > 0 {
+        return;
+    }
     let bridge = BridgeStatus::detect();
     if bridge.engagement != BridgeEngagement::Engaged {
         eprintln!("\n  \x1b[33m⚠ {}\x1b[0m", bridge.summary_line());
+    }
+}
+
+/// When stats live in more than one auto-resolved data dir, `gain` now sums them
+/// for display (#500) — but each process still *writes* to its own dir, so the
+/// split persists. Nudge toward consolidation once, non-alarmingly, since the
+/// headline is already correct. Suppressed when `LEAN_CTX_DATA_DIR` pins one dir.
+fn print_split_hint() {
+    if std::env::var_os("LEAN_CTX_DATA_DIR").is_some() {
+        return;
+    }
+    let dirs = core::data_dir::all_data_dirs_with_stats();
+    if dirs.len() >= 2 {
+        eprintln!(
+            "\n  \x1b[2m💡 Stats span {} data dirs (summed above). Consolidate them with `lean-ctx doctor`.\x1b[0m",
+            dirs.len()
+        );
     }
 }
 

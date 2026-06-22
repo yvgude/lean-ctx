@@ -22,6 +22,17 @@ pub(super) fn load_from_disk() -> StatsStore {
     }
 }
 
+/// Loads `stats.json` from a *specific* directory (no in-process buffer applied).
+/// Used by [`crate::core::stats::load_for_display`] to fold sibling data dirs
+/// into the displayed total when an XDG split (#408/#414/#500) spread savings
+/// across more than one tree. Missing/corrupt files degrade to an empty store.
+pub(super) fn load_from_dir(dir: &std::path::Path) -> StatsStore {
+    match std::fs::read_to_string(dir.join("stats.json")) {
+        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+        Err(_) => StatsStore::default(),
+    }
+}
+
 fn write_to_disk(store: &StatsStore) {
     let Some(dir) = stats_dir() else { return };
 

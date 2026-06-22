@@ -85,7 +85,9 @@ pub struct FileGainRow {
 impl GainEngine {
     pub fn load() -> Self {
         Self {
-            stats: crate::core::stats::load(),
+            // Aggregate across split data dirs so the gain score, cost view and
+            // net-of-injection line agree with the hero headline (#500).
+            stats: crate::core::stats::load_for_display(),
             costs: crate::core::a2a::cost_attribution::CostStore::load(),
             heatmap: crate::core::heatmap::HeatMap::load(),
             pricing: ModelPricing::load(),
