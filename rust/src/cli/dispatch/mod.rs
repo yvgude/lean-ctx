@@ -556,6 +556,10 @@ pub fn run() {
                 super::cmd_slow_log(&rest);
                 return;
             }
+            "debug-log" => {
+                super::cmd_debug_log(&rest);
+                return;
+            }
             // Editor focus ingress (#500): called by the VS Code extension on
             // tab change; <10ms, no daemon required.
             "editor-signal" => {

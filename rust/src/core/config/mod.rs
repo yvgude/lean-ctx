@@ -334,6 +334,11 @@ pub struct Config {
     /// replacement" so agents use ctx_* without explicit opt-in.
     #[serde(default)]
     pub shadow_mode: bool,
+    /// Opt-in (#520): write a human-readable debug log of intercepted MCP tool
+    /// calls and hook routing decisions (lean-ctx vs native, with reasons) to
+    /// `<state_dir>/logs/debug.log`. Override via the LEAN_CTX_DEBUG_LOG env var.
+    #[serde(default)]
+    pub debug_log: bool,
     /// Controls when the shell hook auto-activates aliases.
     /// - `always`: (Default) Aliases active in every interactive shell.
     /// - `agents-only`: Aliases only active when an AI agent env var is detected.
@@ -572,6 +577,7 @@ impl Default for Config {
             embedding: EmbeddingConfig::default(),
             shell_hook_disabled: false,
             shadow_mode: false,
+            debug_log: false,
             shell_activation: ShellActivation::default(),
             update_check_disabled: false,
             updates: UpdatesConfig::default(),

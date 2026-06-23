@@ -1,4 +1,5 @@
 use crate::compound_lexer;
+use crate::core::debug_log::{self, Route};
 use crate::rewrite_registry;
 use std::io::Read;
 use std::sync::mpsc;
@@ -166,9 +167,36 @@ pub fn handle_rewrite() {
     };
 
     if let Some(rewritten) = rewrite_candidate(cmd, &binary) {
+        debug_log::log_hook_decision(
+            "rewrite",
+            tool_name,
+            Route::LeanCtx,
+            cmd,
+            "rewritable command",
+        );
         print!("{}", build_dual_rewrite_output(tool_input, &rewritten));
     } else {
+        debug_log::log_hook_decision(
+            "rewrite",
+            tool_name,
+            Route::Native,
+            cmd,
+            rewrite_skip_reason(cmd),
+        );
         print!("{allow}");
+    }
+}
+
+/// Human-readable reason a shell command was left to the native tool. Mirrors
+/// the `None` branches of [`rewrite_candidate`] so #520's debug log can explain
+/// *why* a call fell back to native instead of routing through lean-ctx.
+fn rewrite_skip_reason(cmd: &str) -> &'static str {
+    if cmd.starts_with("lean-ctx ") {
+        "already a lean-ctx command"
+    } else if cmd.contains("<<") {
+        "heredoc cannot be rewritten safely"
+    } else {
+        "not a known read/search/list command"
     }
 }
 
@@ -478,7 +506,25 @@ fn redirect_read(tool_input: Option<&serde_json::Value>) {
         .and_then(|p| p.as_str())
         .unwrap_or("");
 
-    if path.is_empty() || should_passthrough(path) {
+    if path.is_empty() {
+        debug_log::log_hook_decision(
+            "redirect",
+            "Read",
+            Route::Native,
+            "<none>",
+            "no path in tool input",
+        );
+        print!("{}", build_dual_allow_output());
+        return;
+    }
+    if should_passthrough(path) {
+        debug_log::log_hook_decision(
+            "redirect",
+            "Read",
+            Route::Native,
+            path,
+            "passthrough path (sensitive/binary/excluded)",
+        );
         print!("{}", build_dual_allow_output());
         return;
     }
@@ -507,12 +553,26 @@ fn redirect_read(tool_input: Option<&serde_json::Value>) {
         }
         if !output.is_empty() && std::fs::write(&temp_path, &output).is_ok() {
             let temp_str = temp_path.to_str().unwrap_or("");
+            debug_log::log_hook_decision(
+                "redirect",
+                "Read",
+                Route::LeanCtx,
+                path,
+                "redirected to ctx_read",
+            );
             print!("{}", build_redirect_output(tool_input, "path", temp_str));
             log_shadow_intercept("Read", path);
             return;
         }
     }
 
+    debug_log::log_hook_decision(
+        "redirect",
+        "Read",
+        Route::Native,
+        path,
+        "lean-ctx read produced no output",
+    );
     print!("{}", build_dual_allow_output());
 }
 
@@ -528,6 +588,13 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) {
         .unwrap_or(".");
 
     if pattern.is_empty() {
+        debug_log::log_hook_decision(
+            "redirect",
+            "Grep",
+            Route::Native,
+            "<none>",
+            "no pattern in tool input",
+        );
         print!("{}", build_dual_allow_output());
         return;
     }
@@ -559,12 +626,26 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) {
         }
         if !output.is_empty() && std::fs::write(&temp_path, &output).is_ok() {
             let temp_str = temp_path.to_str().unwrap_or("");
+            debug_log::log_hook_decision(
+                "redirect",
+                "Grep",
+                Route::LeanCtx,
+                &format!("{pattern} in {search_path}"),
+                "redirected to ctx_search",
+            );
             print!("{}", build_redirect_output(tool_input, "path", temp_str));
             log_shadow_intercept("Grep", &format!("{pattern} in {search_path}"));
             return;
         }
     }
 
+    debug_log::log_hook_decision(
+        "redirect",
+        "Grep",
+        Route::Native,
+        &format!("{pattern} in {search_path}"),
+        "lean-ctx grep produced no output",
+    );
     print!("{}", build_dual_allow_output());
 }
 
