@@ -1038,6 +1038,54 @@ fn bm25_graph_search(
     format!("{header}{}", format_hybrid_results(&results, compact))
 }
 
+/// #512: max chunks the hybrid/dense path will embed *inline* (under the
+/// per-request watchdog) before degrading instead of embedding. A server that
+/// started before the on-disk dense index existed would otherwise embed the
+/// whole corpus on the first query — observed as a runaway 500%+ CPU child the
+/// 120s watchdog abandons but cannot cancel. Tunable via
+/// `LEAN_CTX_HYBRID_INLINE_EMBED_MAX`; `0` disables the guard (always embed
+/// inline — the pre-#512 behavior).
+#[cfg(feature = "embeddings")]
+fn inline_embed_max_chunks() -> usize {
+    const DEFAULT_MAX: usize = 2000;
+    std::env::var("LEAN_CTX_HYBRID_INLINE_EMBED_MAX")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(DEFAULT_MAX)
+}
+
+/// Pure budget check for the cold-start guard (#512): `max == 0` disables it,
+/// and the budget is inclusive (`pending == max` still embeds inline).
+#[cfg(feature = "embeddings")]
+fn exceeds_inline_embed_budget(pending: usize, max: usize) -> bool {
+    max > 0 && pending > max
+}
+
+/// Decide whether this call would trigger a large inline embed the watchdog
+/// cannot safely bound (#512). Returns the pending-chunk count when the call
+/// should degrade instead of embedding inline; `None` keeps the normal path
+/// (warm index, or an incremental embed of only a few changed chunks).
+#[cfg(feature = "embeddings")]
+fn cold_start_embed_guard(embed_idx: &EmbeddingIndex, index: &BM25Index) -> Option<usize> {
+    let pending = embed_idx.pending_chunk_count(&index.chunks);
+    exceeds_inline_embed_budget(pending, inline_embed_max_chunks()).then_some(pending)
+}
+
+/// One-line, deterministic hint pointing at the out-of-band dense build. Shared
+/// by the hybrid fallback and the dense fail-fast so the guidance never drifts.
+#[cfg(feature = "embeddings")]
+fn dense_build_hint(pending: usize, compact: bool) -> String {
+    if compact {
+        format!("[dense not built: {pending} chunks pending — run: lean-ctx index build-semantic]")
+    } else {
+        format!(
+            "[lean-ctx: dense index not built ({pending} chunks would embed inline). \
+             Build it once — no per-query embed, no cold-start hang: \
+             lean-ctx index build-semantic]"
+        )
+    }
+}
+
 fn hybrid_search_mode(
     query: &str,
     root: &Path,
@@ -1062,6 +1110,17 @@ fn hybrid_search_mode(
             Ok(v) => v,
             Err(e) => return format!("ERR: {e}"),
         };
+
+        // #512: cold-start guard. Never embed a large corpus inline under the
+        // request watchdog (it produces a runaway the watchdog abandons but
+        // cannot cancel). Degrade to the BM25+graph path — the same coherent
+        // fallback used when dense is disabled — and tell the user to build the
+        // dense index once, out of band. Incremental embeds (few changed chunks
+        // on a warm index) stay inline and fast.
+        if let Some(pending) = cold_start_embed_guard(&embed_idx, index) {
+            let base = bm25_graph_search(query, root, index, top_k, compact, filter, &cfg);
+            return format!("{base}\n{}", dense_build_hint(pending, compact));
+        }
 
         let (aligned, coverage, changed_files) =
             match ensure_embeddings(root, index, engine, &mut embed_idx) {
@@ -1180,6 +1239,14 @@ fn dense_search_mode(
             Ok(v) => v,
             Err(e) => return format!("ERR: {e}"),
         };
+
+        // #512: explicit dense has no BM25 fallback to degrade into, so fail fast
+        // with the same actionable hint rather than embed the whole corpus inline
+        // under the watchdog (the cold-start runaway). A warm/incremental index
+        // passes through untouched.
+        if let Some(pending) = cold_start_embed_guard(&embed_idx, index) {
+            return dense_build_hint(pending, compact);
+        }
 
         let (aligned, coverage, changed_files) =
             match ensure_embeddings(root, index, engine, &mut embed_idx) {
@@ -1528,6 +1595,48 @@ mod filter_tests {
         let f = SearchFilter::new(None, Some("rust/src/**")).unwrap();
         assert!(f.matches("rust/src/core/mod.rs"));
         assert!(!f.matches("website/src/pages/index.astro"));
+    }
+}
+
+#[cfg(all(test, feature = "embeddings"))]
+mod cold_start_guard_tests {
+    use super::*;
+
+    #[test]
+    fn budget_zero_disables_guard() {
+        // 0 = "always embed inline" (pre-#512 behavior), regardless of size.
+        assert!(!exceeds_inline_embed_budget(1_000_000, 0));
+    }
+
+    #[test]
+    fn budget_is_inclusive_and_triggers_above_threshold() {
+        assert!(!exceeds_inline_embed_budget(0, 2000), "warm index: inline");
+        assert!(
+            !exceeds_inline_embed_budget(2000, 2000),
+            "at the budget: still inline"
+        );
+        assert!(
+            exceeds_inline_embed_budget(2001, 2000),
+            "over the budget: degrade"
+        );
+    }
+
+    #[test]
+    fn default_threshold_positive_when_env_unset() {
+        // With the env override unset the default must be a real, positive guard.
+        if std::env::var_os("LEAN_CTX_HYBRID_INLINE_EMBED_MAX").is_none() {
+            assert!(inline_embed_max_chunks() >= 1);
+        }
+    }
+
+    #[test]
+    fn dense_build_hint_always_points_at_the_cli_build() {
+        let full = dense_build_hint(22_741, false);
+        assert!(full.contains("lean-ctx index build-semantic"));
+        assert!(full.contains("22741"));
+        let compact = dense_build_hint(22_741, true);
+        assert!(compact.contains("lean-ctx index build-semantic"));
+        assert!(compact.contains("22741"));
     }
 }
 

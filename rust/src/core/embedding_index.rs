@@ -323,6 +323,26 @@ impl EmbeddingIndex {
         needs_update
     }
 
+    /// Number of `chunks` a re-embed pass would have to embed right now — i.e.
+    /// the chunks belonging to files flagged by [`Self::files_needing_update`].
+    ///
+    /// Used by the hybrid/dense cold-start guard (#512): on a server that came
+    /// up before the on-disk index existed, the first query would otherwise embed
+    /// the *entire* corpus inline under the request watchdog, producing a runaway
+    /// the watchdog abandons but cannot cancel. Counting the pending chunks up
+    /// front lets the caller fall back instead of starting that embed.
+    pub fn pending_chunk_count(&self, chunks: &[CodeChunk]) -> usize {
+        let changed = self.files_needing_update(chunks);
+        if changed.is_empty() {
+            return 0;
+        }
+        let changed: std::collections::HashSet<&str> = changed.iter().map(String::as_str).collect();
+        chunks
+            .iter()
+            .filter(|c| changed.contains(c.file_path.as_str()))
+            .count()
+    }
+
     /// Update the index with new embeddings for changed files.
     /// Preserves existing embeddings for unchanged files.
     ///
@@ -623,6 +643,73 @@ mod tests {
         assert!(
             needs.contains(&"b.rs".to_string()),
             "deleted file should trigger update"
+        );
+    }
+
+    #[test]
+    fn pending_chunk_count_cold_start_counts_every_chunk() {
+        let idx = EmbeddingIndex::new(384);
+        let chunks = vec![
+            make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
+            make_chunk("a.rs", "fn_b", "fn b() {}", 10, 12),
+            make_chunk("b.rs", "fn_c", "fn c() {}", 1, 3),
+        ];
+        assert_eq!(
+            idx.pending_chunk_count(&chunks),
+            3,
+            "an empty index must report every chunk as pending (cold start)"
+        );
+    }
+
+    #[test]
+    fn pending_chunk_count_zero_when_fully_embedded() {
+        let mut idx = EmbeddingIndex::new(384);
+        let chunks = vec![
+            make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
+            make_chunk("b.rs", "fn_b", "fn b() {}", 1, 3),
+        ];
+        idx.update(
+            &chunks,
+            &[(0, dummy_embedding(384)), (1, dummy_embedding(384))],
+            &["a.rs".to_string(), "b.rs".to_string()],
+            None,
+        );
+        assert_eq!(
+            idx.pending_chunk_count(&chunks),
+            0,
+            "a fully-embedded index has no pending chunks (warm path stays inline)"
+        );
+    }
+
+    #[test]
+    fn pending_chunk_count_only_counts_changed_files_chunks() {
+        let mut idx = EmbeddingIndex::new(384);
+        let chunks_v1 = vec![
+            make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
+            make_chunk("a.rs", "fn_b", "fn b() {}", 10, 12),
+            make_chunk("b.rs", "fn_c", "fn c() {}", 1, 3),
+        ];
+        idx.update(
+            &chunks_v1,
+            &[
+                (0, dummy_embedding(384)),
+                (1, dummy_embedding(384)),
+                (2, dummy_embedding(384)),
+            ],
+            &["a.rs".to_string(), "b.rs".to_string()],
+            None,
+        );
+
+        // Only b.rs changed → its single chunk is pending, a.rs's two are not.
+        let chunks_v2 = vec![
+            make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
+            make_chunk("a.rs", "fn_b", "fn b() {}", 10, 12),
+            make_chunk("b.rs", "fn_c", "fn c() { changed }", 1, 3),
+        ];
+        assert_eq!(
+            idx.pending_chunk_count(&chunks_v2),
+            1,
+            "incremental update must only count the changed file's chunks"
         );
     }
 

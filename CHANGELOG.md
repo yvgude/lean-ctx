@@ -160,6 +160,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   `raw` and state that the allowlist still holds.
 
 ### Fixed
+- **Hybrid/dense cold-start no longer re-embeds the whole corpus inline (#512).**
+  On a large repo, the *first* `ctx_semantic_search mode=hybrid` (or `dense`) call on
+  an MCP server that started *before* the on-disk dense index existed would embed the
+  entire corpus under the 120s per-request watchdog. The watchdog abandons the response
+  but cannot cancel the spawned compute, so the embed kept running — observed as a 500%+
+  CPU child for >10 min after the call "returned". A new cold-start guard counts the
+  chunks a re-embed would touch (`EmbeddingIndex::pending_chunk_count`) and, above a
+  budget (default 2000 chunks, tunable via `LEAN_CTX_HYBRID_INLINE_EMBED_MAX`; `0`
+  disables — the pre-#512 behavior), refuses the inline embed: **hybrid** degrades to the
+  coherent BM25+graph ranking (the same fallback used when dense is disabled) and
+  **dense** fails fast — both with a one-line hint to build the index once, out of band
+  (`lean-ctx index build-semantic`). Warm and incremental paths (a few changed chunks on
+  an existing index) are untouched and still embed inline.
 - **Shell-output compression can no longer inflate token counts (Windows CI
   flake).** The VCS branch of `compress_output` (git/jj/gh/glab/hg) returned its
   authoritative compressor's result even when it was not strictly shorter — so a
