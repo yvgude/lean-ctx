@@ -1,14 +1,8 @@
 //! Tests for the BM25 index. Extracted from `bm25_index/mod.rs`;
 //! `super::*` resolves to the `bm25_index` module.
-// These test the deprecated entry points which are still available until Phase B (T23).
-
-#![allow(deprecated)]
 
 use super::*;
 use tempfile::tempdir;
-
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 
 #[test]
 fn tokenize_splits_code() {
@@ -144,52 +138,20 @@ fn bm25_index_is_stale_when_any_indexed_file_is_missing() {
     let root = td.path();
     std::fs::write(root.join("a.rs"), "pub fn a() {}\n").expect("write a.rs");
 
-    let idx = BM25Index::build_from_directory(root);
-    assert!(!bm25_index_looks_stale(&idx, root));
+    let idx = BM25Index::from_chunks_for_test(vec![CodeChunk {
+        file_path: "a.rs".into(),
+        symbol_name: "a".into(),
+        kind: ChunkKind::Function,
+        start_line: 1,
+        end_line: 1,
+        content: "pub fn a() {}".into(),
+        tokens: vec![],
+        token_count: 0,
+    }]);
+    assert!(!bm25_index_looks_stale_fast(&idx, root));
 
     std::fs::remove_file(root.join("a.rs")).expect("remove a.rs");
-    assert!(bm25_index_looks_stale(&idx, root));
-}
-
-#[test]
-#[cfg(unix)]
-fn bm25_incremental_rebuild_reuses_unchanged_files_without_reading() {
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-
-    std::fs::write(root.join("a.rs"), "pub fn a() { println!(\"A\"); }\n").expect("write a.rs");
-    std::fs::write(root.join("b.rs"), "pub fn b() { println!(\"B\"); }\n").expect("write b.rs");
-
-    let idx1 = BM25Index::build_from_directory(root);
-    assert!(idx1.files.contains_key("a.rs"));
-    assert!(idx1.files.contains_key("b.rs"));
-
-    // Make a.rs unreadable. Incremental rebuild must keep it indexed by reusing prior chunks.
-    let a_path = root.join("a.rs");
-    let mut perms = std::fs::metadata(&a_path).expect("meta a.rs").permissions();
-    perms.set_mode(0o000);
-    std::fs::set_permissions(&a_path, perms).expect("chmod a.rs");
-
-    // Change b.rs (size changes) to force a re-read for that file.
-    std::fs::write(root.join("b.rs"), "pub fn b() { println!(\"B2\"); }\n").expect("rewrite b.rs");
-
-    let idx2 = BM25Index::rebuild_incremental(root, &idx1);
-    assert!(
-        idx2.files.contains_key("a.rs"),
-        "a.rs should be kept via reuse"
-    );
-    assert!(idx2.files.contains_key("b.rs"));
-
-    let b_has_b2 = idx2
-        .chunks
-        .iter()
-        .any(|c| c.file_path == "b.rs" && c.content.contains("B2"));
-    assert!(b_has_b2, "b.rs should be re-read and re-chunked");
-
-    // Restore permissions to avoid cleanup surprises.
-    let mut perms = std::fs::metadata(&a_path).expect("meta a.rs").permissions();
-    perms.set_mode(0o644);
-    let _ = std::fs::set_permissions(&a_path, perms);
+    assert!(bm25_index_looks_stale_fast(&idx, root));
 }
 
 #[test]
@@ -280,13 +242,17 @@ fn shrink_resident_is_not_persisted_to_disk() {
     crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "512");
     let td = tempdir().expect("tempdir");
     let root = td.path();
-    std::fs::write(
-        root.join("big.rs"),
-        "pub fn big() {\n  let a = 1;\n  let b = 2;\n  let c = 3;\n  let d = 4;\n  let e = 5;\n  let f = 6;\n}\n",
-    )
-    .expect("write");
 
-    let mut index = BM25Index::build_from_directory(root);
+    let mut index = BM25Index::from_chunks_for_test(vec![CodeChunk {
+        file_path: "big.rs".into(),
+        symbol_name: "big".into(),
+        kind: ChunkKind::Function,
+        start_line: 1,
+        end_line: 8,
+        content: "pub fn big() {\n  let a = 1;\n  let b = 2;\n  let c = 3;\n  let d = 4;\n  let e = 5;\n  let f = 6;\n}\n".into(),
+        tokens: vec![],
+        token_count: 0,
+    }]);
     let full_lines: usize = index
         .chunks
         .iter()
@@ -391,9 +357,17 @@ fn save_reports_persisted_outcome() {
     crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "512");
     let td = tempdir().expect("tempdir");
     let root = td.path();
-    std::fs::write(root.join("a.rs"), "pub fn alpha() {}\n").expect("write");
 
-    let index = BM25Index::build_from_directory(root);
+    let index = BM25Index::from_chunks_for_test(vec![CodeChunk {
+        file_path: "a.rs".into(),
+        symbol_name: "alpha".into(),
+        kind: ChunkKind::Function,
+        start_line: 1,
+        end_line: 1,
+        content: "pub fn alpha() {}".into(),
+        tokens: vec![],
+        token_count: 0,
+    }]);
     let outcome = index.save(root).expect("save");
     match outcome {
         SaveOutcome::Persisted { compressed_bytes } => {
@@ -423,10 +397,18 @@ fn save_writes_project_root_marker() {
     let _env = crate::core::data_dir::test_env_lock();
     let td = tempdir().expect("tempdir");
     let root = td.path();
-    std::fs::write(root.join("a.rs"), "pub fn a() {}\n").expect("write");
 
     crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
-    let index = BM25Index::build_from_directory(root);
+    let index = BM25Index::from_chunks_for_test(vec![CodeChunk {
+        file_path: "a.rs".into(),
+        symbol_name: "a".into(),
+        kind: ChunkKind::Function,
+        start_line: 1,
+        end_line: 1,
+        content: "pub fn a() {}".into(),
+        tokens: vec![],
+        token_count: 0,
+    }]);
     index.save(root).expect("save");
 
     let dir = crate::core::index_namespace::vectors_dir(root);
@@ -445,18 +427,19 @@ fn save_load_roundtrip_uses_zstd() {
     let td = tempdir().expect("tempdir");
     let root = td.path();
 
-    for i in 0..10 {
-        std::fs::write(
-            root.join(format!("mod{i}.rs")),
-            format!(
-                "pub fn handler_{i}() {{\n    println!(\"hello\");\n}}\n\n\
-                     pub fn helper_{i}() {{\n    println!(\"world\");\n}}\n"
-            ),
-        )
-        .expect("write");
-    }
-
-    let index = BM25Index::build_from_directory(root);
+    let chunks: Vec<CodeChunk> = (0..20)
+        .map(|i| CodeChunk {
+            file_path: format!("mod{}.rs", i / 2),
+            symbol_name: format!("fn_{i}"),
+            kind: ChunkKind::Function,
+            start_line: 1,
+            end_line: 1,
+            content: format!("pub fn fn_{i}() {{}}"),
+            tokens: vec![],
+            token_count: 0,
+        })
+        .collect();
+    let index = BM25Index::from_chunks_for_test(chunks);
     assert!(index.doc_count > 0, "should have indexed chunks");
     index.save(root).expect("save");
 
@@ -485,8 +468,16 @@ fn auto_migrate_bin_to_zst() {
     let td = tempdir().expect("tempdir");
     let root = td.path();
 
-    std::fs::write(root.join("a.rs"), "pub fn a() {}\n").expect("write");
-    let index = BM25Index::build_from_directory(root);
+    let index = BM25Index::from_chunks_for_test(vec![CodeChunk {
+        file_path: "a.rs".into(),
+        symbol_name: "a".into(),
+        kind: ChunkKind::Function,
+        start_line: 1,
+        end_line: 1,
+        content: "pub fn a() {}".into(),
+        tokens: vec![],
+        token_count: 0,
+    }]);
 
     let dir = crate::core::index_namespace::vectors_dir(root);
     std::fs::create_dir_all(&dir).expect("mkdir");
@@ -510,10 +501,28 @@ fn auto_migrate_bin_to_zst() {
 
 #[test]
 fn postcard_roundtrip_and_garbage_is_graceful() {
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-    std::fs::write(root.join("a.rs"), "pub fn a() {}\npub fn b() {}\n").expect("write");
-    let index = BM25Index::build_from_directory(root);
+    let index = BM25Index::from_chunks_for_test(vec![
+        CodeChunk {
+            file_path: "a.rs".into(),
+            symbol_name: "a".into(),
+            kind: ChunkKind::Function,
+            start_line: 1,
+            end_line: 1,
+            content: "pub fn a() {}".into(),
+            tokens: vec![],
+            token_count: 0,
+        },
+        CodeChunk {
+            file_path: "a.rs".into(),
+            symbol_name: "b".into(),
+            kind: ChunkKind::Function,
+            start_line: 2,
+            end_line: 2,
+            content: "pub fn b() {}".into(),
+            tokens: vec![],
+            token_count: 0,
+        },
+    ]);
     assert!(
         index.doc_count > 0,
         "fixture must produce at least one chunk"

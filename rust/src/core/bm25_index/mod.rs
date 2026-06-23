@@ -263,199 +263,6 @@ impl BM25Index {
         index
     }
 
-    #[deprecated(note = "Use IndexPipeline instead")]
-    pub fn build_from_directory(root: &Path) -> Self {
-        Self::build_from_directory_inner(root, &HashMap::new())
-    }
-
-    /// Like `build_from_directory` but reuses file content from a prior scan
-    /// (e.g. the graph index walk) to avoid redundant disk reads.
-    #[deprecated(note = "Use IndexPipeline instead")]
-    pub fn build_with_content_hint(root: &Path, content_hint: &HashMap<String, String>) -> Self {
-        Self::build_from_directory_inner(root, content_hint)
-    }
-
-    #[deprecated(note = "Use IndexPipeline instead")]
-    fn build_from_directory_inner(root: &Path, content_hint: &HashMap<String, String>) -> Self {
-        let root_str = root.to_string_lossy();
-        if !super::graph_index::is_safe_scan_root_public(&root_str) {
-            tracing::warn!("[bm25: scan aborted for unsafe root {root_str}]");
-            return Self::new();
-        }
-        let mut index = Self::new();
-        let files = list_code_files(root);
-        const MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024;
-        let mut cache_hits = 0usize;
-
-        for (i, rel) in files.iter().enumerate() {
-            if i.is_multiple_of(500) && crate::core::memory_guard::is_under_pressure() {
-                tracing::warn!(
-                    "[bm25: stopping build at file {i}/{} due to memory pressure]",
-                    files.len()
-                );
-                break;
-            }
-            if crate::core::memory_guard::abort_requested() {
-                tracing::warn!("[bm25: aborting build due to critical memory pressure]");
-                break;
-            }
-
-            let abs = root.join(rel);
-            let Some(state) = IndexedFileState::from_path(&abs) else {
-                continue;
-            };
-            if state.size_bytes > MAX_FILE_SIZE_BYTES {
-                continue;
-            }
-
-            // Content sources, cheapest first: an explicit per-build hint, then
-            // the shared resident content cache (populated by the search-index
-            // build / ctx_search, issue #148) validated by `(mtime, size)`, then
-            // a one-time disk read that also publishes into the shared cache.
-            let cache_state = crate::core::content_cache::FileState {
-                mtime_ms: state.mtime_ms,
-                size_bytes: state.size_bytes,
-            };
-            let content = if crate::core::extractors::is_binary_document(&abs) {
-                // Binary document (PDF, …): extract clean text from raw bytes.
-                // Skipped if extraction yields nothing (e.g. scanned/image-only).
-                // Never populates the shared UTF-8 content cache (not text).
-                match std::fs::read(&abs) {
-                    Ok(bytes) => {
-                        let text = crate::core::extractors::extract(&abs, &bytes).text;
-                        if text.is_empty() {
-                            continue;
-                        }
-                        std::borrow::Cow::Owned(text)
-                    }
-                    Err(_) => continue,
-                }
-            } else if let Some(cached) = content_hint.get(rel) {
-                cache_hits += 1;
-                std::borrow::Cow::Borrowed(cached.as_str())
-            } else if let Some(arc) = crate::core::content_cache::get(&abs, cache_state) {
-                cache_hits += 1;
-                std::borrow::Cow::Owned(arc.to_string())
-            } else {
-                match std::fs::read_to_string(&abs) {
-                    Ok(c) => {
-                        crate::core::content_cache::insert(
-                            &abs,
-                            cache_state,
-                            std::sync::Arc::from(c.as_str()),
-                        );
-                        std::borrow::Cow::Owned(c)
-                    }
-                    Err(_) => continue,
-                }
-            };
-
-            let mut chunks = extract_chunks(rel, &content);
-            chunks.sort_by(|a, b| {
-                a.start_line
-                    .cmp(&b.start_line)
-                    .then_with(|| a.end_line.cmp(&b.end_line))
-                    .then_with(|| a.symbol_name.cmp(&b.symbol_name))
-            });
-            for chunk in chunks {
-                index.add_chunk(chunk);
-            }
-            index.files.insert(rel.clone(), state);
-        }
-
-        if cache_hits > 0 {
-            tracing::info!(
-                "[bm25: reused {cache_hits}/{} file contents from graph scan cache]",
-                files.len()
-            );
-        }
-
-        index.finalize();
-        index
-    }
-
-    #[deprecated(note = "Use IndexPipeline instead")]
-    pub fn rebuild_incremental(root: &Path, prev: &BM25Index) -> Self {
-        let mut old_by_file: HashMap<String, Vec<CodeChunk>> = HashMap::new();
-        for c in &prev.chunks {
-            old_by_file
-                .entry(c.file_path.clone())
-                .or_default()
-                .push(c.clone());
-        }
-        for v in old_by_file.values_mut() {
-            v.sort_by(|a, b| {
-                a.start_line
-                    .cmp(&b.start_line)
-                    .then_with(|| a.end_line.cmp(&b.end_line))
-                    .then_with(|| a.symbol_name.cmp(&b.symbol_name))
-            });
-        }
-
-        let mut index = Self::new();
-        let files = list_code_files(root);
-        const MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024;
-
-        for (i, rel) in files.iter().enumerate() {
-            if i.is_multiple_of(500) && crate::core::memory_guard::is_under_pressure() {
-                tracing::warn!(
-                    "[bm25: stopping incremental rebuild at file {i}/{} due to memory pressure]",
-                    files.len()
-                );
-                break;
-            }
-
-            let abs = root.join(rel);
-            let Some(state) = IndexedFileState::from_path(&abs) else {
-                continue;
-            };
-
-            let unchanged = prev.files.get(rel).is_some_and(|old| *old == state);
-            if unchanged
-                && let Some(chunks) = old_by_file.get(rel)
-                && chunks.first().is_some_and(|c| !c.content.is_empty())
-            {
-                for chunk in chunks {
-                    index.add_chunk(chunk.clone());
-                }
-                index.files.insert(rel.clone(), state);
-                continue;
-            }
-
-            if state.size_bytes > MAX_FILE_SIZE_BYTES {
-                continue;
-            }
-            let content = if crate::core::extractors::is_binary_document(&abs) {
-                match std::fs::read(&abs) {
-                    Ok(bytes) => crate::core::extractors::extract(&abs, &bytes).text,
-                    Err(_) => continue,
-                }
-            } else {
-                match std::fs::read_to_string(&abs) {
-                    Ok(c) => c,
-                    Err(_) => continue,
-                }
-            };
-            if content.is_empty() {
-                continue;
-            }
-            let mut chunks = extract_chunks(rel, &content);
-            chunks.sort_by(|a, b| {
-                a.start_line
-                    .cmp(&b.start_line)
-                    .then_with(|| a.end_line.cmp(&b.end_line))
-                    .then_with(|| a.symbol_name.cmp(&b.symbol_name))
-            });
-            for chunk in chunks {
-                index.add_chunk(chunk);
-            }
-            index.files.insert(rel.clone(), state);
-        }
-
-        index.finalize();
-        index
-    }
-
     pub(crate) fn add_chunk(&mut self, chunk: CodeChunk) {
         let idx = self.chunks.len();
 
@@ -693,50 +500,6 @@ impl BM25Index {
         None
     }
 
-    #[deprecated(note = "Use IndexPipeline instead")]
-    pub fn load_or_build(root: &Path) -> Self {
-        Self::load_or_build_inner(root, false)
-    }
-
-    /// Like `load_or_build` but uses a fast sentinel-sampling staleness check
-    /// that skips the expensive full directory walk for new-file detection.
-    #[deprecated(note = "Use IndexPipeline instead")]
-    pub fn load_or_build_fast(root: &Path) -> Self {
-        Self::load_or_build_inner(root, true)
-    }
-
-    #[deprecated(note = "Use IndexPipeline instead")]
-    fn load_or_build_inner(root: &Path, fast_stale: bool) -> Self {
-        if !is_safe_bm25_root(root) {
-            return Self::default();
-        }
-        if let Some(idx) = Self::load(root) {
-            let stale = if fast_stale {
-                bm25_index_looks_stale_fast(&idx, root)
-            } else {
-                bm25_index_looks_stale(&idx, root)
-            };
-            if !stale {
-                return idx;
-            }
-            tracing::debug!(
-                "[bm25_index: stale index detected for {}; rebuilding]",
-                root.display()
-            );
-            let rebuilt = if idx.files.is_empty() {
-                Self::build_from_directory(root)
-            } else {
-                Self::rebuild_incremental(root, &idx)
-            };
-            let _ = rebuilt.save(root);
-            return rebuilt;
-        }
-
-        let built = Self::build_from_directory(root);
-        let _ = built.save(root);
-        built
-    }
-
     pub fn index_file_path(root: &Path) -> PathBuf {
         let dir = index_dir(root);
         let zst = dir.join("bm25_index.bin.zst");
@@ -777,21 +540,10 @@ impl BM25Index {
     }
 }
 
-fn is_safe_bm25_root(root: &Path) -> bool {
-    super::graph_index::is_safe_scan_root_public(&root.to_string_lossy())
-}
-
-fn bm25_index_looks_stale(index: &BM25Index, root: &Path) -> bool {
-    bm25_index_looks_stale_inner(index, root, false)
-}
-
-/// Fast staleness check: samples a subset of tracked files and skips the
-/// expensive `list_code_files()` walk for new-file detection.
+/// Sentinel-based staleness check: samples a subset of tracked files and
+/// skips the expensive full `list_code_files()` walk. Used by the coordinator
+/// as a quick pre-flight check before loading the on-disk index.
 pub fn bm25_index_looks_stale_fast(index: &BM25Index, root: &Path) -> bool {
-    bm25_index_looks_stale_inner(index, root, true)
-}
-
-fn bm25_index_looks_stale_inner(index: &BM25Index, root: &Path, fast: bool) -> bool {
     if index.chunks.is_empty() {
         return false;
     }
@@ -813,32 +565,16 @@ fn bm25_index_looks_stale_inner(index: &BM25Index, root: &Path, fast: bool) -> b
         return false;
     }
 
-    if fast {
-        let sample_size = index.files.len().min(SENTINEL_SAMPLE_SIZE);
-        let step = if index.files.len() > sample_size {
-            index.files.len() / sample_size
-        } else {
-            1
-        };
-        for (i, (rel, old_state)) in index.files.iter().enumerate() {
-            if i % step != 0 {
-                continue;
-            }
-            let abs = root.join(rel);
-            if !abs.exists() {
-                return true;
-            }
-            let Some(cur) = IndexedFileState::from_path(&abs) else {
-                return true;
-            };
-            if &cur != old_state {
-                return true;
-            }
+    let sample_size = index.files.len().min(SENTINEL_SAMPLE_SIZE);
+    let step = if index.files.len() > sample_size {
+        index.files.len() / sample_size
+    } else {
+        1
+    };
+    for (i, (rel, old_state)) in index.files.iter().enumerate() {
+        if i % step != 0 {
+            continue;
         }
-        return false;
-    }
-
-    for (rel, old_state) in &index.files {
         let abs = root.join(rel);
         if !abs.exists() {
             return true;
@@ -847,12 +583,6 @@ fn bm25_index_looks_stale_inner(index: &BM25Index, root: &Path, fast: bool) -> b
             return true;
         };
         if &cur != old_state {
-            return true;
-        }
-    }
-
-    for rel in list_code_files(root) {
-        if !index.files.contains_key(&rel) {
             return true;
         }
     }
