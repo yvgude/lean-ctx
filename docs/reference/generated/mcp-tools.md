@@ -360,11 +360,8 @@ Parameters: _none_
 
 ## `ctx_multi_read`
 
-Batch-read multiple files in one call — more efficient than N sequential
-ctx_read calls. paths=['a.rs','b.rs'] reads all at once.
-WORKFLOW: ctx_compose FIRST → ctx_multi_read for content.
-ANTI-PATTERN: not for understanding code logic — use ctx_compose.
-mode=full for edit; mode=auto for reading.
+DEPRECATED → use ctx_read with paths=['a.rs','b.rs']. Folded into ctx_read
+(#509); hidden from tools/list, still callable for one release.
 
 Parameters: `fresh`, `mode`, `paths`*
 
@@ -496,7 +493,7 @@ full=verbatim (edit-ready), raw=exact bytes (no framing), signatures=API,
 map=structure, auto=smart (learns from task context), diff=git delta,
 lines:N-M=window. fresh=true bypasses cache; raw=true=verbatim+fresh.
 
-Parameters: `aggressiveness`, `fresh`, `limit`, `mode`, `offset`, `path`*, `protect`, `raw`, `start_line`
+Parameters: `aggressiveness`, `fresh`, `limit`, `mode`, `offset`, `path`, `paths`, `protect`, `raw`, `start_line`
 
 ## `ctx_refactor`
 
@@ -623,9 +620,8 @@ Parameters: `action`, `slug`
 
 ## `ctx_smart_read`
 
-WORKFLOW: orientation — auto-selects mode (full|map|signatures) by file size.
-ANTIPATTERN: edit-target files → ctx_read mode=full for precision.
-Explicit mode control → ctx_read mode=...
+DEPRECATED → use ctx_read (it auto-selects the mode; omit `mode`). Folded
+into ctx_read (#509); hidden from tools/list, still callable for one release.
 
 Parameters: `path`*
 

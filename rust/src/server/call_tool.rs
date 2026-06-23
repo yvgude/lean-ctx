@@ -911,6 +911,12 @@ impl LeanCtxServer {
             }
         }
 
+        // #509: a folded read-cluster alias (ctx_smart_read / ctx_multi_read) stays
+        // callable but warns — prepend a one-line notice steering to the primary.
+        if let Some(notice) = crate::server::dynamic_tools::deprecation_notice(name) {
+            result_text = format!("{notice}\n{result_text}");
+        }
+
         Ok(finalize_call_result(result_text, shell_outcome))
     }
 

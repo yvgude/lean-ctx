@@ -19,11 +19,8 @@ impl McpTool for CtxMultiReadTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_multi_read",
-            "Batch-read multiple files in one call — more efficient than N sequential\n\
-             ctx_read calls. paths=['a.rs','b.rs'] reads all at once.\n\
-             WORKFLOW: ctx_compose FIRST → ctx_multi_read for content.\n\
-             ANTI-PATTERN: not for understanding code logic — use ctx_compose.\n\
-             mode=full for edit; mode=auto for reading.",
+            "DEPRECATED → use ctx_read with paths=['a.rs','b.rs']. Folded into ctx_read\n\
+             (#509); hidden from tools/list, still callable for one release.",
             json!({
                 "type": "object",
                 "properties": {
@@ -52,129 +49,130 @@ impl McpTool for CtxMultiReadTool {
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
-        // Panic guard (mirrors ctx_read): a panic in tree-sitter / compression must
-        // never unwind through the dispatch `block_in_place` and kill the MCP server.
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.handle_inner(args, ctx)
-        })) {
-            Ok(result) => result,
-            Err(_) => Err(ErrorData::internal_error(
-                "ctx_multi_read panicked while processing the batch. This is a bug — please report it.",
-                None,
-            )),
-        }
+        batch_read(args, ctx)
     }
 }
 
-impl CtxMultiReadTool {
-    #[allow(clippy::unused_self)]
-    fn handle_inner(
-        &self,
-        args: &Map<String, Value>,
-        ctx: &ToolContext,
-    ) -> Result<ToolOutput, ErrorData> {
-        let raw_paths = get_str_array(args, "paths")
-            .ok_or_else(|| ErrorData::invalid_params("paths array is required", None))?;
+/// Batch-read multiple files in one call. The single implementation shared by
+/// the (deprecated) `ctx_multi_read` tool and by `ctx_read` when it is called
+/// with a `paths` array (#509) — no duplicated batch logic across the two.
+///
+/// Panic guard (mirrors ctx_read): a panic in tree-sitter / compression must
+/// never unwind through the dispatch `block_in_place` and kill the MCP server.
+pub(crate) fn batch_read(
+    args: &Map<String, Value>,
+    ctx: &ToolContext,
+) -> Result<ToolOutput, ErrorData> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handle_inner(args, ctx))) {
+        Ok(result) => result,
+        Err(_) => Err(ErrorData::internal_error(
+            "ctx_multi_read panicked while processing the batch. This is a bug — please report it.",
+            None,
+        )),
+    }
+}
 
-        let session_lock = ctx
-            .session
-            .as_ref()
-            .ok_or_else(|| ErrorData::internal_error("session not available", None))?;
-        let cache_lock = ctx
-            .cache
-            .as_ref()
-            .ok_or_else(|| ErrorData::internal_error("cache not available", None))?;
+fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
+    let raw_paths = get_str_array(args, "paths")
+        .ok_or_else(|| ErrorData::invalid_params("paths array is required", None))?;
 
-        let cap = crate::core::limits::max_read_bytes() as u64;
+    let session_lock = ctx
+        .session
+        .as_ref()
+        .ok_or_else(|| ErrorData::internal_error("session not available", None))?;
+    let cache_lock = ctx
+        .cache
+        .as_ref()
+        .ok_or_else(|| ErrorData::internal_error("cache not available", None))?;
 
-        // Resolve + filter paths and capture the active task under one short read lock.
-        // `bounded_lock` uses `Handle::block_on` directly — NOT a nested
-        // `block_in_place` — because the dispatch layer already wraps this handler in
-        // `block_in_place`. The previous nested `block_in_place` calls could exhaust the
-        // 32-thread blocking pool under concurrent reads and freeze the server (#271).
-        let (paths, current_task) = {
-            let Some(session) =
-                crate::server::bounded_lock::read(session_lock, "ctx_multi_read:session")
-            else {
-                return Err(ErrorData::internal_error(
-                    "session read-lock timeout in ctx_multi_read — another tool may be holding it. Retry in a moment.",
-                    None,
-                ));
-            };
-            let mut paths = Vec::with_capacity(raw_paths.len());
-            for p in &raw_paths {
-                let resolved = super::resolve_path_sync(&session, p)
-                    .map_err(|e| ErrorData::invalid_params(e, None))?;
-                if crate::core::binary_detect::is_binary_file(&resolved) {
-                    continue;
-                }
-                if let Ok(meta) = std::fs::metadata(&resolved)
-                    && meta.len() > cap
-                {
-                    continue;
-                }
-                paths.push(resolved);
-            }
-            let current_task = session.task.as_ref().map(|t| t.description.clone());
-            (paths, current_task)
-        };
+    let cap = crate::core::limits::max_read_bytes() as u64;
 
-        if paths.is_empty() {
-            return Err(ErrorData::invalid_params(
-                "all paths are binary or exceed the size limit",
-                None,
-            ));
-        }
-
-        // Default to the profile's read mode (auto) and let ctx_read resolve the
-        // optimal mode per file. Previously this forced auto→full, which is exactly
-        // the "everything comes back as full" complaint (#421): batch reads must
-        // honour auto like single ctx_read does.
-        let mode = get_str(args, "mode").unwrap_or_else(|| {
-            crate::core::profiles::active_profile()
-                .read
-                .default_mode_effective()
-                .to_string()
-        });
-        let fresh = get_bool(args, "fresh").unwrap_or(false);
-
-        // Batch read under one bounded write lock. `bounded_lock` guarantees we never
-        // block the runtime indefinitely and degrade gracefully on contention instead
-        // of hanging; ctx_read's own fast/slow path tolerates this lock being held.
-        let Some(mut cache) =
-            crate::server::bounded_lock::write(cache_lock, "ctx_multi_read:cache")
+    // Resolve + filter paths and capture the active task under one short read lock.
+    // `bounded_lock` uses `Handle::block_on` directly — NOT a nested
+    // `block_in_place` — because the dispatch layer already wraps this handler in
+    // `block_in_place`. The previous nested `block_in_place` calls could exhaust the
+    // 32-thread blocking pool under concurrent reads and freeze the server (#271).
+    let (paths, current_task) = {
+        let Some(session) =
+            crate::server::bounded_lock::read(session_lock, "ctx_multi_read:session")
         else {
             return Err(ErrorData::internal_error(
-                "cache write-lock timeout in ctx_multi_read — another tool may be holding it. Retry in a moment.",
+                "session read-lock timeout in ctx_multi_read — another tool may be holding it. Retry in a moment.",
                 None,
             ));
         };
-        let output = crate::tools::ctx_multi_read::handle_with_task_fresh(
-            &mut cache,
-            &paths,
-            &mode,
-            fresh,
-            ctx.crp_mode,
-            current_task.as_deref(),
-        );
-        let mut total_original: usize = 0;
-        for path in &paths {
-            total_original =
-                total_original.saturating_add(cache.get(path).map_or(0, |e| e.original_tokens));
+        let mut paths = Vec::with_capacity(raw_paths.len());
+        for p in &raw_paths {
+            let resolved = super::resolve_path_sync(&session, p)
+                .map_err(|e| ErrorData::invalid_params(e, None))?;
+            if crate::core::binary_detect::is_binary_file(&resolved) {
+                continue;
+            }
+            if let Ok(meta) = std::fs::metadata(&resolved)
+                && meta.len() > cap
+            {
+                continue;
+            }
+            paths.push(resolved);
         }
-        let tokens = crate::core::tokens::count_tokens(&output);
-        drop(cache);
+        let current_task = session.task.as_ref().map(|t| t.description.clone());
+        (paths, current_task)
+    };
 
-        Ok(ToolOutput {
-            text: output,
-            original_tokens: total_original,
-            saved_tokens: total_original.saturating_sub(tokens),
-            mode: Some(mode),
-            path: None,
-            changed: false,
-            shell_outcome: None,
-        })
+    if paths.is_empty() {
+        return Err(ErrorData::invalid_params(
+            "all paths are binary or exceed the size limit",
+            None,
+        ));
     }
+
+    // Default to the profile's read mode (auto) and let ctx_read resolve the
+    // optimal mode per file. Previously this forced auto→full, which is exactly
+    // the "everything comes back as full" complaint (#421): batch reads must
+    // honour auto like single ctx_read does.
+    let mode = get_str(args, "mode").unwrap_or_else(|| {
+        crate::core::profiles::active_profile()
+            .read
+            .default_mode_effective()
+            .to_string()
+    });
+    let fresh = get_bool(args, "fresh").unwrap_or(false);
+
+    // Batch read under one bounded write lock. `bounded_lock` guarantees we never
+    // block the runtime indefinitely and degrade gracefully on contention instead
+    // of hanging; ctx_read's own fast/slow path tolerates this lock being held.
+    let Some(mut cache) = crate::server::bounded_lock::write(cache_lock, "ctx_multi_read:cache")
+    else {
+        return Err(ErrorData::internal_error(
+            "cache write-lock timeout in ctx_multi_read — another tool may be holding it. Retry in a moment.",
+            None,
+        ));
+    };
+    let output = crate::tools::ctx_multi_read::handle_with_task_fresh(
+        &mut cache,
+        &paths,
+        &mode,
+        fresh,
+        ctx.crp_mode,
+        current_task.as_deref(),
+    );
+    let mut total_original: usize = 0;
+    for path in &paths {
+        total_original =
+            total_original.saturating_add(cache.get(path).map_or(0, |e| e.original_tokens));
+    }
+    let tokens = crate::core::tokens::count_tokens(&output);
+    drop(cache);
+
+    Ok(ToolOutput {
+        text: output,
+        original_tokens: total_original,
+        saved_tokens: total_original.saturating_sub(tokens),
+        mode: Some(mode),
+        path: None,
+        changed: false,
+        shell_outcome: None,
+    })
 }
 
 #[cfg(test)]
@@ -273,6 +271,43 @@ mod tests {
                 out.text
             );
         }
+    }
+
+    /// #509: `ctx_read` with a `paths` array must route to the shared
+    /// `batch_read` (folding `ctx_multi_read` into `ctx_read`), producing the
+    /// same multi-file batch output as calling `ctx_multi_read` directly.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ctx_read_with_paths_delegates_to_batch_read() {
+        use crate::tools::registered::ctx_read::CtxReadTool;
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut paths = Vec::new();
+        for i in 0..3 {
+            let p = dir.path().join(format!("f{i}.rs"));
+            std::fs::write(&p, format!("fn f{i}() {{ let _ = {i}; }}\n")).unwrap();
+            paths.push(p.to_string_lossy().to_string());
+        }
+        let root = dir.path().to_string_lossy().to_string();
+
+        let cache: Arc<RwLock<SessionCache>> = Arc::new(RwLock::new(SessionCache::new()));
+        let session = {
+            let mut s = SessionState::new();
+            s.project_root = Some(root.clone());
+            Arc::new(RwLock::new(s))
+        };
+        let ctx = ctx_with(cache, session, &root);
+        let args = json!({ "paths": paths, "mode": "full" })
+            .as_object()
+            .unwrap()
+            .clone();
+
+        let out = tokio::task::block_in_place(|| CtxReadTool.handle(&args, &ctx))
+            .expect("ctx_read(paths) returned an error");
+        assert!(
+            out.text.contains("Read 3 files"),
+            "ctx_read(paths) must batch-read like ctx_multi_read, got: {}",
+            out.text
+        );
     }
 
     /// #421: `ctx_multi_read` used to force `auto`→`full`, so omitting `mode`

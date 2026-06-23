@@ -107,6 +107,61 @@ pub fn categorize_tool(name: &str) -> ToolCategory {
     }
 }
 
+/// A deprecated tool that has been folded into a primary tool (#509 Phase 1).
+///
+/// The alias stays **registered and callable** (directly and via `ctx_call`) for
+/// one release so nothing breaks, but it is hidden from `tools/list` and warns on
+/// use, steering agents to the consolidated primary. Removal happens in Phase 2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeprecatedAlias {
+    /// The primary tool that supersedes this alias (e.g. `"ctx_read"`).
+    pub replacement: &'static str,
+    /// One-line migration hint (e.g. how the primary covers this use case).
+    pub hint: &'static str,
+}
+
+/// Single source of truth for read-cluster deprecations (#509). Returns the
+/// replacement + migration hint when `name` is a deprecated alias, else `None`.
+///
+/// Used by [`crate::server::tool_visibility::is_tool_visible`] to hide the alias
+/// from `tools/list`, and by the dispatch layer to prepend a one-line
+/// deprecation notice to the alias's output. Keeping both behaviours keyed off
+/// this one function guarantees "hidden" and "warned" can never drift apart.
+#[must_use]
+pub fn deprecated_alias(name: &str) -> Option<DeprecatedAlias> {
+    match name {
+        "ctx_smart_read" => Some(DeprecatedAlias {
+            replacement: "ctx_read",
+            hint: "ctx_read auto-selects the mode (omit `mode`, or pass mode=\"auto\")",
+        }),
+        "ctx_multi_read" => Some(DeprecatedAlias {
+            replacement: "ctx_read",
+            hint: "ctx_read now batch-reads via paths=[\"a.rs\",\"b.rs\"]",
+        }),
+        _ => None,
+    }
+}
+
+/// Whether `name` is a deprecated alias hidden from `tools/list` (#509).
+#[must_use]
+pub fn is_deprecated_alias(name: &str) -> bool {
+    deprecated_alias(name).is_some()
+}
+
+/// The one-line deprecation notice prepended to a deprecated alias's output.
+/// Stable per tool (no timestamps/counters) so provider-side prompt caching
+/// stays byte-stable (#498).
+#[must_use]
+pub fn deprecation_notice(name: &str) -> Option<String> {
+    deprecated_alias(name).map(|d| {
+        format!(
+            "[DEPRECATED] {name} is superseded by {} — {}. This alias is hidden from \
+             tools/list and will be removed in a future release.",
+            d.replacement, d.hint
+        )
+    })
+}
+
 pub fn is_readonly_tool(name: &str) -> bool {
     matches!(
         name,
@@ -276,6 +331,35 @@ mod tests {
         let state = DynamicToolState::new();
         assert!(state.is_tool_active("ctx_read"));
         assert!(state.is_tool_active("ctx_search"));
+    }
+
+    #[test]
+    fn deprecated_alias_maps_read_cluster_to_ctx_read() {
+        // #509: only the folded read-cluster tools are deprecated; everything
+        // else (incl. the primary) returns None.
+        assert_eq!(
+            deprecated_alias("ctx_smart_read").unwrap().replacement,
+            "ctx_read"
+        );
+        assert_eq!(
+            deprecated_alias("ctx_multi_read").unwrap().replacement,
+            "ctx_read"
+        );
+        assert!(deprecated_alias("ctx_read").is_none());
+        assert!(deprecated_alias("ctx_search").is_none());
+        assert!(is_deprecated_alias("ctx_multi_read"));
+        assert!(!is_deprecated_alias("ctx_read"));
+    }
+
+    #[test]
+    fn deprecation_notice_is_stable_and_names_replacement() {
+        // Stable text (no timestamps/counters) for cache-byte-stability (#498),
+        // and it must point at the primary so agents know where to go.
+        let notice = deprecation_notice("ctx_multi_read").unwrap();
+        assert!(notice.starts_with("[DEPRECATED] ctx_multi_read is superseded by ctx_read"));
+        assert!(notice.contains("paths="));
+        assert_eq!(notice, deprecation_notice("ctx_multi_read").unwrap());
+        assert!(deprecation_notice("ctx_read").is_none());
     }
 
     #[test]

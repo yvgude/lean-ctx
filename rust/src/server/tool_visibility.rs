@@ -73,6 +73,11 @@ pub fn is_tool_visible(
     if categorize_tool(name) == ToolCategory::Internal {
         return false;
     }
+    // #509: deprecated read-cluster aliases (ctx_smart_read, ctx_multi_read) are
+    // hidden from the advertised surface but stay callable for one release.
+    if super::dynamic_tools::is_deprecated_alias(name) {
+        return false;
+    }
     if !profile.is_tool_enabled(name) {
         return false;
     }
@@ -190,6 +195,34 @@ mod tests {
         assert!(!is_tool_visible("ctx_metrics", &p, &[], false, true));
         assert!(!is_tool_visible("ctx_cost", &p, &[], false, true));
         assert!(!is_tool_visible("ctx_discover_tools", &p, &[], false, true));
+    }
+
+    #[test]
+    fn deprecated_aliases_never_visible_even_in_power() {
+        // #509: folded read-cluster aliases are hidden from tools/list in every
+        // mode (Power enables everything) — but stay registered + callable.
+        let p = ToolProfile::Power;
+        assert!(!is_tool_visible("ctx_smart_read", &p, &[], false, true));
+        assert!(!is_tool_visible("ctx_multi_read", &p, &[], false, true));
+    }
+
+    #[test]
+    fn deprecated_aliases_stay_registered_and_callable() {
+        // The non-breaking contract (#509): hidden from the advertised surface,
+        // but still in the registry so direct calls and ctx_call keep working
+        // for one release. Removal is Phase 2.
+        let _guard = crate::core::data_dir::isolated_data_dir();
+        let defs = crate::server::registry::build_registry().tool_defs();
+        for name in ["ctx_smart_read", "ctx_multi_read"] {
+            assert!(
+                defs.iter().any(|t| t.name.as_ref() == name),
+                "{name} must stay registered (callable) even though hidden"
+            );
+            assert!(
+                !is_tool_visible(name, &ToolProfile::Power, &[], false, true),
+                "{name} must be hidden from tools/list"
+            );
+        }
     }
 
     #[test]
@@ -314,10 +347,16 @@ mod tests {
     /// bytes for review/audit instead of guessing. `ctx_read` is the richest core
     /// tool and is the only one that crosses 300; the per-tool cap still guards
     /// every other tool from bloat. Kept to terse clauses (+~33 tok on ctx_read).
+    ///
+    /// Bumped to per-tool 360 / total 2340 for #509: `ctx_read` absorbs the
+    /// `ctx_multi_read` batch capability via a `paths` array, so two tools collapse
+    /// into one (`ctx_smart_read` + `ctx_multi_read` are now deprecated aliases
+    /// hidden from the surface). The net effect REDUCES the advertised surface; the
+    /// only local cost is +~18 tok on `ctx_read`'s schema for the new `paths` arg.
     #[test]
     fn core_tool_surface_stays_within_budget() {
-        const PER_TOOL_BUDGET: usize = 335;
-        const TOTAL_BUDGET: usize = 2310;
+        const PER_TOOL_BUDGET: usize = 360;
+        const TOTAL_BUDGET: usize = 2340;
 
         let _guard = crate::core::data_dir::isolated_data_dir();
         let core = crate::tool_defs::core_tool_names();

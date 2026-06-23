@@ -165,7 +165,6 @@ const STANDARD_TOOLS: &[&str] = &[
     "ctx_execute",
     "ctx_expand",
     "ctx_overview",
-    "ctx_multi_read",
     "ctx_url_read",
 ];
 
@@ -187,7 +186,7 @@ pub fn list_profiles() -> Vec<ProfileInfo> {
         },
         ProfileInfo {
             name: "standard",
-            tool_count: "17",
+            tool_count: "16",
             description: "Balanced set — adds callgraph, execute, semantics, delta, more",
         },
         ProfileInfo {
@@ -326,7 +325,9 @@ mod tests {
         assert!(profile.is_tool_enabled("ctx_expand"));
         assert!(profile.is_tool_enabled("ctx_execute"));
         assert!(profile.is_tool_enabled("ctx_overview"));
-        assert!(profile.is_tool_enabled("ctx_multi_read"));
+        // #509: ctx_multi_read is a deprecated alias folded into ctx_read (paths=…)
+        // and was removed from the Standard set.
+        assert!(!profile.is_tool_enabled("ctx_multi_read"));
         assert!(profile.is_tool_enabled("ctx_url_read"));
         assert!(!profile.is_tool_enabled("ctx_benchmark"));
         assert!(!profile.is_tool_enabled("ctx_analyze"));

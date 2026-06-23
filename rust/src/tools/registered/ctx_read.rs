@@ -45,6 +45,7 @@ impl McpTool for CtxReadTool {
                 "type": "object",
                 "properties": {
                     "path": { "type": "string", "description": "Absolute path" },
+                    "paths": { "type": "array", "items": { "type": "string" }, "description": "Batch-read many files (replaces ctx_multi_read)" },
                     "mode": {
                         "type": "string",
                         "description": "REQUIRED. full=verbatim(edit-ready) raw=exact-bytes signatures=API map=structure auto=smart diff=git-delta lines:N-M=window reference=quotes task=focus"
@@ -57,7 +58,7 @@ impl McpTool for CtxReadTool {
                     "aggressiveness": { "type": "number", "description": "0.0(lossless)–1.0(max). Without explicit mode→density; also tunes entropy/task. Omit for defaults" },
                     "protect": { "type": "array", "items": { "type": "string" }, "description": "Symbols/strings force-kept verbatim in entropy/task modes" }
                 },
-                "required": ["path"]
+                "required": []
             }),
         )
     }
@@ -67,6 +68,16 @@ impl McpTool for CtxReadTool {
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
+        // #509: ctx_read absorbs multi-file batch reads (supersedes ctx_multi_read).
+        // A non-empty `paths` array routes to the one shared batch implementation.
+        if args
+            .get("paths")
+            .and_then(|v| v.as_array())
+            .is_some_and(|a| !a.is_empty())
+        {
+            return super::ctx_multi_read::batch_read(args, ctx);
+        }
+
         let path = require_resolved_path(ctx, args, "path")?;
 
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
