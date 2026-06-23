@@ -262,6 +262,7 @@ impl LeanCtxServer {
                     {
                         detector.record_error_outcome(name, &args_fp);
                     }
+                    crate::core::debug_log::log_mcp_error(name, args, &format!("{e:?}"));
                     return Err(e);
                 }
             };
@@ -733,9 +734,24 @@ impl LeanCtxServer {
         {
             let tool_name = name.to_string();
             let summary = result_text.lines().next().unwrap_or("").to_string();
+            // #520 opt-in debug log: a full per-call record (tool, args, result
+            // preview, savings, wall time). Captured here and written off the hot
+            // path in the existing journal thread; no-op unless `debug_log` is on.
+            let dbg_args = args.cloned();
+            let dbg_bytes = result_text.len();
+            let dbg_saved = tool_saved_tokens;
+            let dbg_elapsed = tool_start.elapsed();
             std::thread::spawn(move || {
                 crate::core::journal::maybe_day_separator();
                 crate::core::journal::log_tool_call(&tool_name, &summary);
+                crate::core::debug_log::log_mcp_call(
+                    &tool_name,
+                    dbg_args.as_ref(),
+                    &summary,
+                    dbg_bytes,
+                    dbg_saved,
+                    dbg_elapsed,
+                );
             });
         }
 

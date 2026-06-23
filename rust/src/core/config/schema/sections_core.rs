@@ -366,6 +366,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             ),
         );
     root.insert(
+        "debug_log".into(),
+        key_with_env(
+            "bool",
+            serde_json::json!(false),
+            "Opt-in (default off): write a human-readable debug log of intercepted MCP tool calls and hook routing decisions (lean-ctx vs native, with the reason) to <state_dir>/logs/debug.log. View with `lean-ctx debug-log`",
+            "LEAN_CTX_DEBUG_LOG",
+        ),
+    );
+    root.insert(
         "shell_hook_disabled".into(),
         key_with_env(
             "bool",

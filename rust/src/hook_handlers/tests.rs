@@ -30,6 +30,31 @@ fn file_read_rewrite_cat() {
 }
 
 #[test]
+fn rewrite_skip_reason_tracks_candidate_none_branches() {
+    // Every command that `rewrite_candidate` declines must get a stable,
+    // human-readable reason for the #520 debug log.
+    let binary = "lean-ctx";
+
+    let already = "lean-ctx read x";
+    assert!(rewrite_candidate(already, binary).is_none());
+    assert_eq!(rewrite_skip_reason(already), "already a lean-ctx command");
+
+    let heredoc = "cat <<EOF\nhi\nEOF";
+    assert!(rewrite_candidate(heredoc, binary).is_none());
+    assert_eq!(
+        rewrite_skip_reason(heredoc),
+        "heredoc cannot be rewritten safely"
+    );
+
+    let unknown = "echo hello";
+    assert!(rewrite_candidate(unknown, binary).is_none());
+    assert_eq!(
+        rewrite_skip_reason(unknown),
+        "not a known read/search/list command"
+    );
+}
+
+#[test]
 fn file_read_rewrite_head_with_n() {
     let r = rewrite_file_read_command("head -n 20 src/main.rs", "lean-ctx");
     assert_eq!(

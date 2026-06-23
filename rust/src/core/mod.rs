@@ -329,6 +329,7 @@ pub mod contextops;
 pub mod crash_log;
 pub mod data_consolidate;
 pub mod data_dir;
+pub mod debug_log;
 pub mod diagnostics_store;
 pub mod editor_signal;
 pub mod egress;

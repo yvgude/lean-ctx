@@ -24,6 +24,7 @@ Top-level configuration keys
 - `compression_level` (enum: off | lite | standard | max, default `lite` — env `LEAN_CTX_COMPRESSION`) — Unified output-style level for the model's prose (not tool-output compression). lite=plain concise (default), standard/max=denser symbolic 'power modes'
 - `content_defined_chunking` (bool, default `false`) — Enable Rabin-Karp chunking for cache-optimal output ordering
 - `custom_aliases` (array, default `[]`) — Custom command aliases (array of {command, alias} entries)
+- `debug_log` (bool, default `false` — env `LEAN_CTX_DEBUG_LOG`) — Opt-in (default off): write a human-readable debug log of intercepted MCP tool calls and hook routing decisions (lean-ctx vs native, with the reason) to <state_dir>/logs/debug.log. View with `lean-ctx debug-log`
 - `default_tool_categories` (string[], default `[]`) — Tool categories active by default (core, arch, debug, memory, metrics, session). Override via LCTX_DEFAULT_CATEGORIES
 - `delta_explicit` (boolean, default `false`) — Serve explicit full/lines re-reads of changed cached files as diffs (opt-in). Override via LCTX_DELTA_EXPLICIT=1
 - `disabled_tools` (string[], default `[]`) — Tools to exclude from the MCP tool list
