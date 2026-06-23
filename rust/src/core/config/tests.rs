@@ -1678,6 +1678,97 @@ mod shell_timeout_and_writes_tests {
     }
 }
 
+mod indexing_mode_tests {
+    use super::super::*;
+
+    #[test]
+    fn default_is_full() {
+        assert_eq!(IndexingMode::default(), IndexingMode::Full);
+    }
+
+    #[test]
+    fn labels_match() {
+        assert_eq!(IndexingMode::Full.label(), "full");
+        assert_eq!(IndexingMode::Moderate.label(), "moderate");
+        assert_eq!(IndexingMode::Fast.label(), "fast");
+    }
+
+    #[test]
+    fn parse_works() {
+        assert_eq!(IndexingMode::parse("full"), Some(IndexingMode::Full));
+        assert_eq!(
+            IndexingMode::parse("moderate"),
+            Some(IndexingMode::Moderate)
+        );
+        assert_eq!(IndexingMode::parse("fast"), Some(IndexingMode::Fast));
+        assert_eq!(IndexingMode::parse("unknown"), None);
+    }
+
+    #[test]
+    fn parse_is_case_insensitive() {
+        assert_eq!(IndexingMode::parse("FULL"), Some(IndexingMode::Full));
+        assert_eq!(
+            IndexingMode::parse("Moderate"),
+            Some(IndexingMode::Moderate)
+        );
+        assert_eq!(IndexingMode::parse("FAST"), Some(IndexingMode::Fast));
+    }
+
+    #[test]
+    fn default_config_index_mode_is_full() {
+        // Guard: don't run if LEAN_CTX_INDEX_MODE is set in the test env.
+        if std::env::var("LEAN_CTX_INDEX_MODE").is_ok() {
+            return;
+        }
+        let cfg = Config::default();
+        assert_eq!(cfg.index_mode, IndexingMode::Full);
+        assert_eq!(cfg.index_mode_effective(), IndexingMode::Full);
+    }
+
+    #[test]
+    fn config_field_respected_when_no_env() {
+        if std::env::var("LEAN_CTX_INDEX_MODE").is_ok() {
+            return;
+        }
+        let cfg = Config {
+            index_mode: IndexingMode::Fast,
+            ..Default::default()
+        };
+        assert_eq!(cfg.index_mode, IndexingMode::Fast);
+        assert_eq!(cfg.index_mode_effective(), IndexingMode::Fast);
+    }
+
+    #[test]
+    fn deserialization_defaults_to_full() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert_eq!(cfg.index_mode, IndexingMode::Full);
+    }
+
+    #[test]
+    fn deserialization_from_toml() {
+        let cfg: Config = toml::from_str(r#"index_mode = "moderate""#).unwrap();
+        assert_eq!(cfg.index_mode, IndexingMode::Moderate);
+    }
+
+    #[test]
+    fn deserialization_fast() {
+        let cfg: Config = toml::from_str(r#"index_mode = "fast""#).unwrap();
+        assert_eq!(cfg.index_mode, IndexingMode::Fast);
+    }
+
+    #[test]
+    fn roundtrip_serialize() {
+        let cfg = Config {
+            index_mode: IndexingMode::Moderate,
+            ..Default::default()
+        };
+        let serialized = toml::to_string(&cfg).expect("Config must serialize to TOML");
+        let restored: Config =
+            toml::from_str(&serialized).expect("serialized Config must round-trip");
+        assert_eq!(restored.index_mode, IndexingMode::Moderate);
+    }
+}
+
 #[cfg(test)]
 mod config_path_visibility_tests {
     use super::super::*;
@@ -1707,5 +1798,129 @@ mod config_path_visibility_tests {
         if let Some(v) = saved {
             crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", v);
         }
+    }
+}
+
+mod auto_watch_tests {
+    use super::super::*;
+
+    #[test]
+    fn default_is_false() {
+        let cfg = Config::default();
+        assert!(!cfg.auto_watch);
+    }
+
+    #[test]
+    fn config_field_true_respected_when_no_env() {
+        if std::env::var("LEAN_CTX_AUTO_WATCH").is_ok() {
+            return;
+        }
+        let cfg = Config {
+            auto_watch: true,
+            ..Default::default()
+        };
+        assert!(cfg.auto_watch_effective());
+    }
+
+    #[test]
+    fn deserialization_true() {
+        let cfg: Config = toml::from_str(r#"auto_watch = true"#).unwrap();
+        assert!(cfg.auto_watch);
+    }
+
+    #[test]
+    fn deserialization_false() {
+        let cfg: Config = toml::from_str(r#"auto_watch = false"#).unwrap();
+        assert!(!cfg.auto_watch);
+    }
+
+    #[test]
+    fn deserialization_absent_defaults_false() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert!(!cfg.auto_watch);
+    }
+
+    #[test]
+    fn coexists_with_index_mode() {
+        if std::env::var("LEAN_CTX_INDEX_MODE").is_ok()
+            || std::env::var("LEAN_CTX_AUTO_WATCH").is_ok()
+        {
+            return;
+        }
+        let cfg = Config {
+            index_mode: IndexingMode::Fast,
+            auto_watch: true,
+            ..Default::default()
+        };
+        assert_eq!(cfg.index_mode_effective(), IndexingMode::Fast);
+        assert!(cfg.auto_watch_effective());
+    }
+
+    #[test]
+    fn env_override_index_mode() {
+        let _lock = crate::core::data_dir::test_env_lock();
+
+        crate::test_env::set_var("LEAN_CTX_INDEX_MODE", "fast");
+        let cfg = Config::default();
+        assert_eq!(cfg.index_mode_effective(), IndexingMode::Fast);
+
+        crate::test_env::set_var("LEAN_CTX_INDEX_MODE", "moderate");
+        assert_eq!(cfg.index_mode_effective(), IndexingMode::Moderate);
+
+        crate::test_env::set_var("LEAN_CTX_INDEX_MODE", "full");
+        assert_eq!(cfg.index_mode_effective(), IndexingMode::Full);
+
+        // Config field still wins when env removed.
+        crate::test_env::remove_var("LEAN_CTX_INDEX_MODE");
+        let cfg2 = Config {
+            index_mode: IndexingMode::Moderate,
+            ..Default::default()
+        };
+        assert_eq!(cfg2.index_mode_effective(), IndexingMode::Moderate);
+    }
+
+    #[test]
+    fn env_override_auto_watch() {
+        let _lock = crate::core::data_dir::test_env_lock();
+
+        crate::test_env::set_var("LEAN_CTX_AUTO_WATCH", "true");
+        let cfg = Config::default();
+        assert!(cfg.auto_watch_effective());
+
+        crate::test_env::set_var("LEAN_CTX_AUTO_WATCH", "false");
+        assert!(!cfg.auto_watch_effective());
+
+        crate::test_env::set_var("LEAN_CTX_AUTO_WATCH", "1");
+        assert!(cfg.auto_watch_effective());
+
+        crate::test_env::set_var("LEAN_CTX_AUTO_WATCH", "0");
+        assert!(!cfg.auto_watch_effective());
+
+        // Config field still wins when env removed.
+        crate::test_env::remove_var("LEAN_CTX_AUTO_WATCH");
+        let cfg2 = Config {
+            auto_watch: true,
+            ..Default::default()
+        };
+        assert!(cfg2.auto_watch_effective());
+    }
+
+    #[test]
+    fn deserialize_both_fields_together() {
+        let cfg: Config = toml::from_str("index_mode = \"moderate\"\nauto_watch = true").unwrap();
+        assert_eq!(cfg.index_mode, IndexingMode::Moderate);
+        assert!(cfg.auto_watch);
+    }
+
+    #[test]
+    fn roundtrip_auto_watch() {
+        let cfg = Config {
+            auto_watch: true,
+            ..Default::default()
+        };
+        let serialized = toml::to_string(&cfg).expect("Config must serialize to TOML");
+        let restored: Config =
+            toml::from_str(&serialized).expect("serialized Config must round-trip");
+        assert!(restored.auto_watch);
     }
 }

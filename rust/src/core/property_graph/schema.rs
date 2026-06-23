@@ -74,6 +74,15 @@ pub(super) fn initialize(conn: &Connection) -> anyhow::Result<()> {
             ON cross_source_edges(from_path);
         CREATE INDEX IF NOT EXISTS idx_cross_source_to
             ON cross_source_edges(to_path);
+
+        CREATE TABLE IF NOT EXISTS file_metadata (
+            path         TEXT NOT NULL PRIMARY KEY,
+            mtime_ns     INTEGER NOT NULL,
+            size_bytes   INTEGER NOT NULL,
+            content_hash TEXT NOT NULL DEFAULT '',
+            mode_mask    INTEGER NOT NULL DEFAULT 0,
+            updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         ",
     )?;
     Ok(())
@@ -100,6 +109,7 @@ mod tests {
         assert!(tables.contains(&"edges".to_string()));
         assert!(tables.contains(&"file_catalog".to_string()));
         assert!(tables.contains(&"cross_source_edges".to_string()));
+        assert!(tables.contains(&"file_metadata".to_string()));
     }
 
     #[test]
