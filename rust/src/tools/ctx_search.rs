@@ -81,10 +81,11 @@ pub fn handle(
     allow_secret_paths: bool,
 ) -> SearchOutcome {
     // `include` is a glob matched against each file's path *relative to* `dir`
-    // (e.g. `*.ts`, `*.{rs,ts}`, `src/**/*.tsx`). Brace alternation is expanded
-    // here because the `glob` crate has no native support for it. An empty result
-    // (no `include`, or only unparsable globs) means "no filter", so a typo never
-    // silently drops every match.
+    // (e.g. `*.ts`, `*.{rs,ts}`, `src/**/*.tsx`). Bare globs without `/` match
+    // at any directory depth (like `rg --glob`), so `*.ts` finds `a/b.ts` too.
+    // Brace alternation is expanded here because the `glob` crate has no native
+    // support for it. An empty result (no `include`, or only unparsable globs)
+    // means "no filter", so a typo never silently drops every match.
     let include_patterns = compile_include(include);
     const MAX_PATTERN_LEN: usize = 1024;
     const MAX_REGEX_SIZE: usize = 1 << 20; // 1 MiB DFA limit
@@ -469,6 +470,11 @@ const MAX_INCLUDE_GLOBS: usize = 64;
 /// `*.ts`) because the `glob` crate matches `{` / `}` literally. A file is
 /// included when it matches *any* of the returned patterns. An empty vec means
 /// "no filter": `include` was `None`, or every expansion failed to parse.
+///
+/// Bare globs without a `/` (e.g. `pathjail.rs`, `*.rs`) are auto-prefixed
+/// with `**/` to match at any directory depth — matching `rg --glob` and
+/// `git grep` behaviour. Globs that already contain `/` are used as-is, so
+/// `src/**/*.rs` only matches under `src/`.
 fn compile_include(include: Option<&str>) -> Vec<Pattern> {
     let Some(raw) = include else {
         return Vec::new();
@@ -476,6 +482,14 @@ fn compile_include(include: Option<&str>) -> Vec<Pattern> {
     expand_braces(raw)
         .into_iter()
         .take(MAX_INCLUDE_GLOBS)
+        .filter(|g| !g.is_empty())
+        .map(|g| {
+            if !g.contains('/') {
+                format!("**/{g}")
+            } else {
+                g
+            }
+        })
         .filter_map(|g| Pattern::new(&g).ok())
         .collect()
 }
@@ -862,6 +876,52 @@ mod tests {
         assert!(out.contains("a.rs"), "rs file must match: {out}");
         assert!(out.contains("b.ts"), "ts file must match: {out}");
         assert!(!out.contains("c.py"), "py file must be excluded: {out}");
+    }
+
+    #[test]
+    fn bare_include_glob_matches_at_any_depth() {
+        // rg/git grep behaviour: a bare glob without `/` should match
+        // files at any depth, not just in the search root.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("a/deep/path")).unwrap();
+        std::fs::write(dir.path().join("a/deep/path/file.rs"), "needle\n").unwrap();
+        std::fs::write(dir.path().join("root.rs"), "needle\n").unwrap();
+        std::fs::write(dir.path().join("other.py"), "needle\n").unwrap();
+
+        let out = handle(
+            "needle",
+            dir.path().to_string_lossy().as_ref(),
+            Some("*.rs"),
+            10,
+            CrpMode::Off,
+            true,
+            true,
+        )
+        .text;
+
+        assert!(out.contains("root.rs"), "root .rs file must match: {out}");
+        assert!(
+            out.contains("file.rs"),
+            "nested .rs file must match bare *.rs glob: {out}"
+        );
+        assert!(!out.contains("other.py"), ".py must be excluded: {out}");
+
+        // Also test bare filename glob (no wildcard at all)
+        let out2 = handle(
+            "needle",
+            dir.path().to_string_lossy().as_ref(),
+            Some("file.rs"),
+            10,
+            CrpMode::Off,
+            true,
+            true,
+        )
+        .text;
+
+        assert!(
+            out2.contains("file.rs"),
+            "bare filename glob must match nested file: {out2}"
+        );
     }
 
     #[test]

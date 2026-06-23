@@ -406,10 +406,12 @@ pub fn jail_path_with_roots(
                 candidate.display(),
                 root.display(),
             );
-            let mut hint = if crate::core::protocol::meta_visible() {
+            let hint = if crate::core::protocol::meta_visible() {
+                let dir = candidate.parent().unwrap_or(candidate).display();
                 format!(
-                    ". Hint: set LEAN_CTX_ALLOW_PATH={} or add it to allow_paths in ~/.lean-ctx/config.toml",
-                    candidate.parent().unwrap_or(candidate).display()
+                    ". Hint: set LEAN_CTX_READ_ONLY_ROOTS={dir} for read-only access, \
+                     or LEAN_CTX_ALLOW_PATH={dir} for read-write access, \
+                     or add entries to read_only_roots/allow_paths in ~/.config/lean-ctx/config.toml"
                 )
             } else {
                 String::new()
