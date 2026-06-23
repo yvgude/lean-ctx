@@ -833,6 +833,12 @@ fn dense_results_for_root(
     filter: &SearchFilter,
 ) -> Result<(Vec<HybridResult>, f64), String> {
     let (engine, mut embed_idx) = load_engine_and_index(root)?;
+    // #512: cold-start guard for the CLI/editor (`search_hits`) path — the twin of
+    // the MCP `dense_search_mode` guard. Explicit dense fails fast on a cold index
+    // rather than embed the whole corpus inline under the request.
+    if let Some(pending) = cold_start_embed_guard(&embed_idx, index) {
+        return Err(dense_build_hint(pending, true));
+    }
     let (aligned, coverage, changed_files) =
         ensure_embeddings(root, index, engine, &mut embed_idx)?;
 
@@ -868,6 +874,17 @@ fn hybrid_results_for_root(
     filter: &SearchFilter,
 ) -> Result<(Vec<HybridResult>, f64), String> {
     let (engine, mut embed_idx) = load_engine_and_index(root)?;
+    // #512: cold-start guard for the CLI/editor (`search_hits`) path — the twin of
+    // the MCP `hybrid_search_mode` guard. Degrade to BM25 on a cold index rather
+    // than embed the whole corpus inline under the request.
+    if let Some(pending) = cold_start_embed_guard(&embed_idx, index) {
+        tracing::info!(
+            pending,
+            "hybrid cold-start guard: dense index not built — degrading to BM25 \
+             (build once: lean-ctx index build-semantic)"
+        );
+        return Ok((bm25_hits(index, query, top_k, filter), 0.0));
+    }
     let (aligned, coverage, changed_files) =
         ensure_embeddings(root, index, engine, &mut embed_idx)?;
 

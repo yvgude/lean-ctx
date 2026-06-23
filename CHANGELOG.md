@@ -168,11 +168,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   CPU child for >10 min after the call "returned". A new cold-start guard counts the
   chunks a re-embed would touch (`EmbeddingIndex::pending_chunk_count`) and, above a
   budget (default 2000 chunks, tunable via `LEAN_CTX_HYBRID_INLINE_EMBED_MAX`; `0`
-  disables — the pre-#512 behavior), refuses the inline embed: **hybrid** degrades to the
-  coherent BM25+graph ranking (the same fallback used when dense is disabled) and
-  **dense** fails fast — both with a one-line hint to build the index once, out of band
-  (`lean-ctx index build-semantic`). Warm and incremental paths (a few changed chunks on
-  an existing index) are untouched and still embed inline.
+  disables — the pre-#512 behavior), refuses the inline embed across **all four search
+  entry points** (hybrid/dense × the MCP tool and the CLI/editor `search_hits` path):
+  **hybrid** degrades to the coherent BM25(+graph) ranking (the same fallback used when
+  dense is disabled) and **dense** fails fast — both with a one-line hint to build the
+  index once, out of band (`lean-ctx index build-semantic`). Warm and incremental paths
+  (a few changed chunks on an existing index) are untouched and still embed inline.
 - **Shell-output compression can no longer inflate token counts (Windows CI
   flake).** The VCS branch of `compress_output` (git/jj/gh/glab/hg) returned its
   authoritative compressor's result even when it was not strictly shorter — so a
