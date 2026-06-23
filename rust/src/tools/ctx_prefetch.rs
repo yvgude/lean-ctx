@@ -6,6 +6,7 @@ use crate::core::graph_provider::{self, GraphProvider};
 use crate::core::protocol;
 use crate::core::task_relevance::{compute_relevance, parse_task_hints};
 use crate::tools::CrpMode;
+use crate::tools::ctx_read::ReadMode;
 
 const DEFAULT_MAX_FILES: usize = 10;
 
@@ -93,9 +94,9 @@ pub fn handle(
         if crate::core::binary_detect::is_binary_file(&jailed_s) {
             continue;
         }
-        let cap = crate::core::limits::max_read_bytes() as u64;
+        let cap = crate::core::limits::max_read_bytes();
         if let Ok(meta) = std::fs::metadata(&jailed)
-            && meta.len() > cap
+            && meta.len() > cap as u64
         {
             continue;
         }
@@ -106,7 +107,7 @@ pub fn handle(
         let tokens = crate::core::tokens::count_tokens(&content);
         total = total.saturating_add(tokens);
 
-        let mode = if crate::tools::ctx_read::is_instruction_file(&jailed_s) {
+        let mode_str = if crate::tools::ctx_read::is_instruction_file(&jailed_s) {
             "full"
         } else if budget_tokens > 0 {
             let ratio = budget_tokens as f64 / total.max(1) as f64;
@@ -121,10 +122,14 @@ pub fn handle(
             "signatures"
         };
 
-        let _ = crate::tools::ctx_read::handle_with_task_resolved(
-            cache, &jailed_s, mode, crp_mode, task,
-        );
-        prefetched.push((jailed_s, mode.to_string()));
+        let read_mode = match mode_str {
+            "map" => ReadMode::Map,
+            "signatures" => ReadMode::Signatures,
+            "diff" => ReadMode::Diff,
+            _ => ReadMode::Full(None),
+        };
+        let _ = crate::tools::ctx_read::read(&jailed_s, &read_mode, crp_mode, task);
+        prefetched.push((jailed_s, mode_str.to_string()));
     }
 
     let mut lines = vec![

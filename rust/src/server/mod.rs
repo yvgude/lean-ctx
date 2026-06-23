@@ -197,7 +197,6 @@ pub const WORKFLOW_PASSTHROUGH_TOOLS: &[&str] = &[
     "ctx_workflow",
     "ctx_read",
     "ctx_multi_read",
-    "ctx_smart_read",
     "ctx_search",
     "ctx_tree",
     "ctx_session",
@@ -282,7 +281,7 @@ mod tests {
         let registry = crate::server::registry::build_registry();
         assert_eq!(
             registry.len(),
-            77,
+            75,
             "Registry tool count drift! Update this test AND all docs when adding/removing tools."
         );
     }

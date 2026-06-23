@@ -4,7 +4,7 @@
 
 Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.
 
-lean-ctx registers **77 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
+lean-ctx registers **75 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
 
 ## `ctx_agent`
 
@@ -159,16 +159,6 @@ WORKFLOW: action=analyze first to find shared imports/code across files, then ac
 ANTIPATTERN: NOT for permanent dedup — only compression hints for read output.
 
 Parameters: `action`
-
-## `ctx_delta`
-
-Incremental diff since last read — shows only changed lines after you edit.
-WORKFLOW: ctx_read(mode=full) -> edit -> ctx_delta (no re-read needed).
-Use INSTEAD of re-reading the whole file after modifications — saves 90%+ tokens
-on unchanged content. Path must have a prior ctx_read in this session's cache.
-For the full git diff against HEAD, use ctx_read(path, mode=diff) instead.
-
-Parameters: `path`*
 
 ## `ctx_discover`
 
@@ -489,14 +479,13 @@ Parameters: `format`
 
 ## `ctx_read`
 
-Read source files. mode REQUIRED — choose by intent.
+Read source files. mode defaults to "signatures".
 WORKFLOW: after ctx_compose identified relevant files.
 ANTIPATTERN: not for understanding code — use ctx_compose FIRST (saves tokens).
-full=verbatim (edit-ready), raw=exact bytes (no framing), signatures=API,
-map=structure, auto=smart (learns from task context), diff=git delta,
-lines:N-M=window. fresh=true bypasses cache; raw=true=verbatim+fresh.
+full=verbatim(edit-ready), signatures=API(default), map=structure, diff=git-delta.
+Use range.offset/range.limit for partial reads in full mode only.
 
-Parameters: `aggressiveness`, `fresh`, `limit`, `mode`, `offset`, `path`*, `protect`, `raw`, `start_line`
+Parameters: `mode`, `path`*, `range`
 
 ## `ctx_refactor`
 
@@ -620,14 +609,6 @@ Actions: mine|list|status|promote. Idempotent.
 ANTIPATTERN: one-off rules → write .mdc by hand.
 
 Parameters: `action`, `slug`
-
-## `ctx_smart_read`
-
-WORKFLOW: orientation — auto-selects mode (full|map|signatures) by file size.
-ANTIPATTERN: edit-target files → ctx_read mode=full for precision.
-Explicit mode control → ctx_read mode=...
-
-Parameters: `path`*
 
 ## `ctx_smells`
 

@@ -30,13 +30,7 @@ pub mod scoring;
 
 /// Tools whose textual output is read content the agent edits against and must
 /// therefore be returned byte-for-byte.
-const READ_FAMILY: &[&str] = &[
-    "ctx_read",
-    "ctx_multi_read",
-    "ctx_smart_read",
-    "ctx_compress",
-    "ctx_overview",
-];
+const READ_FAMILY: &[&str] = &["ctx_read", "ctx_multi_read", "ctx_compress", "ctx_overview"];
 
 /// Whether a tool's output must be returned verbatim and so must never pass
 /// through the prose terse pipeline (#404).
@@ -90,13 +84,7 @@ mod verbatim_read_tests {
 
     #[test]
     fn read_family_is_always_verbatim() {
-        for name in [
-            "ctx_read",
-            "ctx_multi_read",
-            "ctx_smart_read",
-            "ctx_compress",
-            "ctx_overview",
-        ] {
+        for name in ["ctx_read", "ctx_multi_read", "ctx_compress", "ctx_overview"] {
             // Even an intentionally-lossy mode like `signatures` is exempt: the
             // read tool applies its own structure-preserving compression and the
             // generic prose terse layer must never run on top of it (#404).

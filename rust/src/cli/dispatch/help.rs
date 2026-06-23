@@ -147,7 +147,7 @@ COMMANDS:
     pack --pr                      PR Context Pack (changed files, impact, tests, artifacts)
     index <status|build|build-full|watch>  Codebase index utilities
     cep                            CEP report (compression metrics, cache, modes, trends)
-    verify-cache [path] [--json]   Prove the session cache: re-read collapses to a ~13-token stub
+
     watch                          Live TUI dashboard (real-time event stream)
     dashboard [--port=N] [--host=H] [--base-path=/prefix] [--open=browser|none|vscode]  Open web dashboard (default: http://localhost:3333)
     serve [--host H] [--port N]    MCP over HTTP (Streamable HTTP, local-first)
@@ -256,16 +256,10 @@ SHELL HOOK PATTERNS (95+):
     data      JSON schema extraction, log deduplication
 
 READ MODES:
-    auto                           Auto-select optimal mode (default)
-    full                           Full content (cached re-reads = 13 tokens)
-    map                            Dependency graph + API signatures
-    signatures                     tree-sitter AST extraction (18 languages)
-    task                           Task-relevant filtering (requires ctx_session task)
-    reference                      One-line reference stub (cheap cache key)
-    aggressive                     Syntax-stripped content
-    entropy                        Shannon entropy filtered
-    diff                           Changed lines only
-    lines:N-M                      Specific line ranges (e.g. lines:10-50,80)
+    full                           Full content (reads disk directly)
+    signatures                     API signatures (default)
+    map                            Structure overview + API signatures
+    diff                           Git diff against HEAD (non-deterministic)
 
 ENVIRONMENT:
     LEAN_CTX_DISABLED=1            Bypass ALL compression + prevent shell hook from loading

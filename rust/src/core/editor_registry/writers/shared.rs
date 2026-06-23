@@ -32,8 +32,6 @@ pub fn auto_approve_tools() -> Vec<&'static str> {
         "ctx_benchmark",
         "ctx_cache",
         "ctx_discover",
-        "ctx_smart_read",
-        "ctx_delta",
         "ctx_edit",
         "ctx_dedup",
         "ctx_fill",

@@ -1,7 +1,7 @@
-use crate::core::cache::SessionCache;
 use crate::core::signatures::{Signature, extract_signatures};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
+use crate::tools::ctx_read::ReadMode;
 
 /// Thin redirect: delegates to ctx_read mode=signatures with optional kind filter.
 pub fn handle(path: &str, kind_filter: Option<&str>) -> (String, usize) {
@@ -55,15 +55,13 @@ pub fn handle(path: &str, kind_filter: Option<&str>) -> (String, usize) {
     (format!("{outline}\n{savings}"), full_tokens)
 }
 
-/// Also available via ctx_read mode=signatures. This adapts to the SessionCache path.
-pub fn handle_via_read(
-    cache: &mut SessionCache,
-    path: &str,
-    kind_filter: Option<&str>,
-    crp_mode: CrpMode,
-) -> String {
+/// Also available via ctx_read mode=signatures.
+pub fn handle_via_read(path: &str, kind_filter: Option<&str>, crp_mode: CrpMode) -> String {
     if kind_filter.is_none() || kind_filter == Some("all") {
-        return crate::tools::ctx_read::handle(cache, path, "signatures", crp_mode);
+        return match crate::tools::ctx_read::read(path, &ReadMode::Signatures, crp_mode, None) {
+            Ok(r) => r.content,
+            Err(e) => format!("ERROR: {e}"),
+        };
     }
     let (result, _) = handle(path, kind_filter);
     result

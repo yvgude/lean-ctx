@@ -59,10 +59,6 @@ impl McpTool for CtxFillTool {
                 .session
                 .as_ref()
                 .ok_or_else(|| ErrorData::internal_error("session not available", None))?;
-            let cache_lock = ctx
-                .cache
-                .as_ref()
-                .ok_or_else(|| ErrorData::internal_error("cache not available", None))?;
 
             let mut paths = Vec::with_capacity(raw_paths.len());
             {
@@ -77,25 +73,8 @@ impl McpTool for CtxFillTool {
                 }
             }
 
-            let timeout_dur =
-                crate::core::io_health::adaptive_timeout(std::time::Duration::from_secs(10));
-            let Ok(mut cache) = tokio::runtime::Handle::current()
-                .block_on(tokio::time::timeout(timeout_dur, cache_lock.write()))
-            else {
-                crate::core::io_health::record_freeze();
-                return Err(ErrorData::internal_error(
-                    "cache busy (ctx_fill) — retry in a moment",
-                    None,
-                ));
-            };
-            let output = crate::tools::ctx_fill::handle(
-                &mut cache,
-                &paths,
-                budget,
-                ctx.crp_mode,
-                task.as_deref(),
-            );
-            drop(cache);
+            let output =
+                crate::tools::ctx_fill::handle(&paths, budget, ctx.crp_mode, task.as_deref());
 
             Ok(ToolOutput {
                 text: output,

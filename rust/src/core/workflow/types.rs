@@ -103,7 +103,6 @@ impl WorkflowSpec {
                         "ctx_search".to_string(),
                         "ctx_tree".to_string(),
                         "ctx_edit".to_string(),
-                        "ctx_delta".to_string(),
                         "ctx_graph".to_string(),
                         "ctx_outline".to_string(),
                         "ctx_symbol".to_string(),

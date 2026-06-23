@@ -405,69 +405,65 @@ fn generate_git_log_stat(n: usize) -> String {
 /// and verify that "original" and "saved" are fair comparisons.
 #[test]
 fn audit_full_savings_pipeline() {
-    use lean_ctx::core::cache::SessionCache;
     use lean_ctx::core::tokens::count_tokens;
     use lean_ctx::tools::CrpMode;
+    use lean_ctx::tools::ctx_read::ReadMode;
 
     eprintln!("\n{}", "=".repeat(70));
     eprintln!("  FULL SAVINGS PIPELINE AUDIT");
     eprintln!("{}", "=".repeat(70));
 
-    // 1. ctx_read — first read in full mode: savings should be ~0
+    // 1. ctx_read — full mode: deterministic, no caching
     {
-        let mut cache = SessionCache::new();
         let content = "use std::io;\nfn main() {\n    println!(\"hello\");\n}\n";
         let tmp = std::env::temp_dir().join("audit_test_file.rs");
         std::fs::write(&tmp, content).unwrap();
 
-        let output = lean_ctx::tools::ctx_read::handle(
-            &mut cache,
+        let output = lean_ctx::tools::ctx_read::read(
             tmp.to_str().unwrap(),
-            "full",
+            &ReadMode::Full(None),
             CrpMode::Off,
-        );
+            None,
+        )
+        .expect("read should succeed");
         let file_tokens = count_tokens(content);
-        let output_tokens = count_tokens(&output);
-        let saved = file_tokens.saturating_sub(output_tokens);
+        let saved = file_tokens.saturating_sub(output.output_tokens);
 
-        eprintln!("\n  ctx_read (first read, full mode):");
+        eprintln!("\n  ctx_read (full mode):");
         eprintln!("    file tokens:   {file_tokens}");
-        eprintln!("    output tokens: {output_tokens}");
+        eprintln!("    output tokens: {}", output.output_tokens);
         eprintln!("    saved:         {saved}");
-        eprintln!(
-            "    contains savings line: {}",
-            output.contains("tok saved")
+
+        // Full mode for a small file: cap_to_raw should return bare content
+        assert_eq!(
+            output.content, content,
+            "full mode small file should return bare content, got: {:?}",
+            output.content
         );
 
-        assert!(
-            output_tokens >= file_tokens,
-            "first full read includes header, so output >= original: {output_tokens} vs {file_tokens}"
-        );
+        let _ = std::fs::remove_file(&tmp);
+    }
 
-        // 2. ctx_read — second read (cache hit): massive savings
-        let output2 = lean_ctx::tools::ctx_read::handle(
-            &mut cache,
-            tmp.to_str().unwrap(),
-            "full",
-            CrpMode::Off,
-        );
-        let output2_tokens = count_tokens(&output2);
-        let is_cache_hit =
-            output2.is_empty() || output2.contains("unchanged") || output2.contains("cached");
+    // 2. ctx_read — pure function: second read is byte-identical
+    {
+        let content = "pub fn alpha() {}\npub fn beta() {}\n";
+        let tmp = std::env::temp_dir().join("audit_test_pure.rs");
+        std::fs::write(&tmp, content).unwrap();
+        let path = tmp.to_str().unwrap();
 
-        eprintln!("\n  ctx_read (cache re-read):");
-        eprintln!("    file tokens:   {file_tokens}");
-        eprintln!("    output tokens: {output2_tokens}");
-        eprintln!("    is_cache_hit:  {is_cache_hit}");
-        eprintln!("    output: {output2:?}");
+        let first =
+            lean_ctx::tools::ctx_read::read(path, &ReadMode::Full(None), CrpMode::Off, None)
+                .expect("first read");
+        let second =
+            lean_ctx::tools::ctx_read::read(path, &ReadMode::Full(None), CrpMode::Off, None)
+                .expect("second read");
 
-        assert!(
-            is_cache_hit,
-            "second read should be a cache hit, got: {output2}"
-        );
-        assert!(
-            output2_tokens < 40,
-            "cache hit stub should be <40 tokens, got {output2_tokens}",
+        eprintln!("\n  ctx_read (pure function determinism):");
+        eprintln!("    first output tokens:  {}", first.output_tokens);
+        eprintln!("    second output tokens: {}", second.output_tokens);
+        assert_eq!(
+            first.content, second.content,
+            "identical inputs must produce identical output"
         );
 
         let _ = std::fs::remove_file(&tmp);
@@ -475,7 +471,6 @@ fn audit_full_savings_pipeline() {
 
     // 3. ctx_read — compressed mode (signatures): fair comparison
     {
-        let mut cache = SessionCache::new();
         let mut code = Vec::new();
         code.push("use std::collections::HashMap;".to_string());
         for i in 0..50 {
@@ -497,15 +492,15 @@ fn audit_full_savings_pipeline() {
         let tmp = std::env::temp_dir().join("audit_test_sigs.rs");
         std::fs::write(&tmp, &content).unwrap();
 
-        let output = lean_ctx::tools::ctx_read::handle(
-            &mut cache,
+        let result = lean_ctx::tools::ctx_read::read(
             tmp.to_str().unwrap(),
-            "signatures",
+            &ReadMode::Signatures,
             CrpMode::Off,
-        );
+            None,
+        )
+        .expect("signatures read");
         let file_tokens = count_tokens(&content);
-        let output_tokens = count_tokens(&output);
-        let saved = file_tokens.saturating_sub(output_tokens);
+        let saved = file_tokens.saturating_sub(result.output_tokens);
         let ratio = if file_tokens > 0 {
             saved as f64 / file_tokens as f64 * 100.0
         } else {
@@ -514,12 +509,13 @@ fn audit_full_savings_pipeline() {
 
         eprintln!("\n  ctx_read (signatures mode, 50 multi-line fns):");
         eprintln!("    file tokens:   {file_tokens}");
-        eprintln!("    output tokens: {output_tokens}");
+        eprintln!("    output tokens: {}", result.output_tokens);
         eprintln!("    savings:       {saved} ({ratio:.1}%)");
 
         assert!(
-            output_tokens < file_tokens,
-            "signatures should compress: {output_tokens} < {file_tokens}"
+            result.output_tokens < file_tokens,
+            "signatures should compress: {} < {file_tokens}",
+            result.output_tokens
         );
         assert!(
             ratio > 20.0 && ratio < 98.0,

@@ -10,7 +10,6 @@ pub fn handle(
     action: &str,
     path: Option<&str>,
     root: &str,
-    cache: &mut crate::core::cache::SessionCache,
     crp_mode: crate::tools::CrpMode,
     depth: Option<usize>,
     kind: Option<&str>,
@@ -21,7 +20,7 @@ pub fn handle(
     match action {
         "build" => handle_build(root),
         "related" => handle_related(path, root),
-        "symbol" => handle_symbol(path, root, cache, crp_mode),
+        "symbol" => handle_symbol(path, root, crp_mode),
         "impact" => handle_impact(path, root),
         "status" => handle_status(root),
         "enrich" => handle_enrich(root),
@@ -122,12 +121,7 @@ fn handle_related(path: Option<&str>, root: &str) -> String {
     format!("{result}[ctx_graph related: {tokens} tok]")
 }
 
-fn handle_symbol(
-    path: Option<&str>,
-    root: &str,
-    cache: &mut crate::core::cache::SessionCache,
-    crp_mode: crate::tools::CrpMode,
-) -> String {
+fn handle_symbol(path: Option<&str>, root: &str, crp_mode: crate::tools::CrpMode) -> String {
     let Some(spec) = path else {
         return "path is required for 'symbol' action (format: <file>::<symbol>, or a bare <symbol> name)".to_string();
     };
@@ -136,11 +130,11 @@ fn handle_symbol(
         return "No graph index found. Run ctx_graph with action='build' first.".to_string();
     };
 
-    // Bare symbol name (no `::`): resolve against the symbol table so GDScript
+    // Bare symbol name (no `::`) — resolve against the symbol table so GDScript
     // (and every other language) symbols are reachable without a file qualifier
     // (#314).
     let Some((file_part, symbol_name)) = spec.split_once("::") else {
-        return resolve_bare_symbol(&open.provider, spec, root, cache, crp_mode);
+        return resolve_bare_symbol(&open.provider, spec, root, crp_mode);
     };
 
     let rel_file = graph_index::graph_relative_key(file_part, root);
@@ -175,7 +169,7 @@ fn handle_symbol(
             .to_string()
     };
 
-    render_symbol_snippet(&symbol, &abs_path, &rel_file, cache, crp_mode)
+    render_symbol_snippet(&symbol, &abs_path, &rel_file, crp_mode)
 }
 
 /// Resolve a bare symbol name (no `<file>::` qualifier) against the symbol table.
@@ -185,7 +179,6 @@ fn resolve_bare_symbol(
     provider: &GraphProvider,
     name: &str,
     root: &str,
-    cache: &mut crate::core::cache::SessionCache,
     crp_mode: crate::tools::CrpMode,
 ) -> String {
     let matches = provider.find_symbols(name, None, None);
@@ -206,7 +199,7 @@ fn resolve_bare_symbol(
             .join(only.file.trim_start_matches(['/', '\\']))
             .to_string_lossy()
             .to_string();
-        return render_symbol_snippet(only, &abs_path, &only.file, cache, crp_mode);
+        return render_symbol_snippet(only, &abs_path, &only.file, crp_mode);
     }
 
     // Several identically-named symbols, or only substring hits → list them.
@@ -238,7 +231,6 @@ fn render_symbol_snippet(
     symbol: &graph_provider::SymbolInfo,
     abs_path: &str,
     rel_display: &str,
-    cache: &mut crate::core::cache::SessionCache,
     crp_mode: crate::tools::CrpMode,
 ) -> String {
     let content = match std::fs::read_to_string(abs_path) {
@@ -251,7 +243,15 @@ fn render_symbol_snippet(
     let end = symbol.end_line.min(lines.len());
 
     if start >= lines.len() {
-        return crate::tools::ctx_read::handle(cache, abs_path, "full", crp_mode);
+        return match crate::tools::ctx_read::read(
+            abs_path,
+            &crate::tools::ctx_read::ReadMode::Full(None),
+            crp_mode,
+            None,
+        ) {
+            Ok(r) => r.content,
+            Err(e) => format!("ERROR: {e}"),
+        };
     }
 
     let mut result = format!(
@@ -820,13 +820,7 @@ mod gdscript_p0_tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let (_tmp, root) = godot_fixture();
         let _ = handle_build(&root);
-        let mut cache = crate::core::cache::SessionCache::new();
-        let out = handle_symbol(
-            Some("_ready"),
-            &root,
-            &mut cache,
-            crate::tools::CrpMode::Off,
-        );
+        let out = handle_symbol(Some("_ready"), &root, crate::tools::CrpMode::Off);
         // Four `_ready` defs → a disambiguation list (or a snippet), never the
         // pre-#314 "Invalid symbol spec" / "not found" errors.
         assert!(out.contains("_ready"), "bare symbol should resolve: {out}");

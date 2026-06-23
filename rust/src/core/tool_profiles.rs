@@ -42,7 +42,7 @@ impl ToolProfile {
     pub fn description(&self) -> &str {
         match self {
             Self::Minimal => "6 surgical tools — each irreplaceable (recommended)",
-            Self::Standard => "17 balanced tools (adds callgraph, execute, semantics, delta, more)",
+            Self::Standard => "16 balanced tools (adds callgraph, execute, semantics, more)",
             Self::Power => "All tools exposed",
             Self::Custom(v) => {
                 if v.is_empty() {
@@ -161,7 +161,6 @@ const STANDARD_TOOLS: &[&str] = &[
     "ctx_callgraph",
     "ctx_graph",
     "ctx_semantic_search",
-    "ctx_delta",
     "ctx_execute",
     "ctx_expand",
     "ctx_overview",
@@ -187,8 +186,8 @@ pub fn list_profiles() -> Vec<ProfileInfo> {
         },
         ProfileInfo {
             name: "standard",
-            tool_count: "17",
-            description: "Balanced set — adds callgraph, execute, semantics, delta, more",
+            tool_count: "16",
+            description: "Balanced set — adds callgraph, execute, semantics, more",
         },
         ProfileInfo {
             name: "power",
@@ -322,7 +321,6 @@ mod tests {
         assert!(profile.is_tool_enabled("ctx_semantic_search"));
         assert!(profile.is_tool_enabled("ctx_callgraph"));
         assert!(profile.is_tool_enabled("ctx_graph"));
-        assert!(profile.is_tool_enabled("ctx_delta"));
         assert!(profile.is_tool_enabled("ctx_expand"));
         assert!(profile.is_tool_enabled("ctx_execute"));
         assert!(profile.is_tool_enabled("ctx_overview"));
@@ -463,10 +461,6 @@ mod tests {
         assert!(
             profile.is_tool_enabled("ctx_graph"),
             "ctx_graph must be in standard"
-        );
-        assert!(
-            profile.is_tool_enabled("ctx_delta"),
-            "ctx_delta must be in standard"
         );
         assert!(
             profile.is_tool_enabled("ctx_expand"),

@@ -420,7 +420,6 @@ impl LeanCtxServer {
                 "ctx_shell"
                     | "ctx_read"
                     | "ctx_multi_read"
-                    | "ctx_smart_read"
                     | "ctx_execute"
                     | "ctx_search"
                     | "ctx_tree"

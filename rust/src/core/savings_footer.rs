@@ -1,11 +1,4 @@
 use std::cell::RefCell;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-static SESSION_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
-static SESSION_SAVED: AtomicUsize = AtomicUsize::new(0);
-static SESSION_CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-const SESSION_TOTAL_INTERVAL: usize = 10;
 
 thread_local! {
     static CURRENT_MODE: RefCell<Option<String>> = const { RefCell::new(None) };
@@ -58,26 +51,6 @@ fn current_mode() -> Option<String> {
 
 fn current_detail() -> Option<String> {
     CURRENT_DETAIL.with(|d| d.borrow().clone())
-}
-
-pub fn record_savings(original: usize, saved: usize) {
-    SESSION_ORIGINAL.fetch_add(original, Ordering::Relaxed);
-    SESSION_SAVED.fetch_add(saved, Ordering::Relaxed);
-    SESSION_CALL_COUNT.fetch_add(1, Ordering::Relaxed);
-}
-
-pub fn session_totals() -> (usize, usize, usize) {
-    (
-        SESSION_ORIGINAL.load(Ordering::Relaxed),
-        SESSION_SAVED.load(Ordering::Relaxed),
-        SESSION_CALL_COUNT.load(Ordering::Relaxed),
-    )
-}
-
-pub fn reset_session() {
-    SESSION_ORIGINAL.store(0, Ordering::Relaxed);
-    SESSION_SAVED.store(0, Ordering::Relaxed);
-    SESSION_CALL_COUNT.store(0, Ordering::Relaxed);
 }
 
 fn format_number(n: usize) -> String {
@@ -139,15 +112,6 @@ fn format_footer_inner(info: &SavingsInfo<'_>) -> String {
     }
     if let Some(detail) = info.detail {
         parts.push(detail.to_string());
-    }
-
-    record_savings(info.original, saved);
-
-    let call_count = SESSION_CALL_COUNT.load(Ordering::Relaxed);
-    if call_count > 0 && call_count.is_multiple_of(SESSION_TOTAL_INTERVAL) {
-        let (_, total_saved, _) = session_totals();
-        let total_str = format_number(total_saved);
-        parts.push(format!("session: {total_str} saved"));
     }
 
     let body = parts.join(" | ");
@@ -327,38 +291,6 @@ mod tests {
         // made footers visible in unrelated tests (GL #556 flakiness).
         crate::test_env::remove_var("LEAN_CTX_SHOW_SAVINGS");
         crate::test_env::remove_var("LEAN_CTX_SAVINGS_FOOTER");
-    }
-
-    #[test]
-    fn session_accumulator_tracks() {
-        reset_session();
-        record_savings(100, 50);
-        record_savings(200, 80);
-        let (orig, saved, calls) = session_totals();
-        assert_eq!(orig, 300);
-        assert_eq!(saved, 130);
-        assert_eq!(calls, 2);
-        reset_session();
-    }
-
-    #[test]
-    fn session_total_shown_at_interval() {
-        reset_session();
-        for _ in 0..(SESSION_TOTAL_INTERVAL - 1) {
-            record_savings(100, 50);
-        }
-        let info = SavingsInfo {
-            original: 100,
-            compressed: 50,
-            mode: None,
-            detail: None,
-        };
-        let result = format_footer_inner(&info);
-        assert!(
-            result.contains("session:"),
-            "should contain session total at interval: {result}"
-        );
-        reset_session();
     }
 
     #[test]

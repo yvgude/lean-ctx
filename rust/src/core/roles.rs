@@ -212,7 +212,6 @@ fn builtin_reviewer() -> Role {
             allowed: vec![
                 "ctx_read".into(),
                 "ctx_multi_read".into(),
-                "ctx_smart_read".into(),
                 "ctx_fill".into(),
                 "ctx_search".into(),
                 "ctx_tree".into(),
