@@ -120,7 +120,7 @@ pub struct Config {
     #[serde(default)]
     pub proxy_port: Option<u16>,
     /// Proxy reachability timeout in milliseconds. Default: 200.
-    /// Override via LEAN_CTX_PROXY_TIMEOUT_MS env var.
+    ///  Override via LEAN_CTX_PROXY_TIMEOUT_MS env var.
     #[serde(default)]
     pub proxy_timeout_ms: Option<u64>,
     /// Strict proxy auth: when true, authenticate ONLY via the Bearer token

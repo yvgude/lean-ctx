@@ -118,11 +118,10 @@ impl DumpEngine {
         ];
         for name in &artifacts {
             let path = dir.join(name);
-            if path.exists() {
-                if let Err(e) = std::fs::remove_file(&path) {
+            if path.exists()
+                && let Err(e) = std::fs::remove_file(&path) {
                     tracing::warn!("[dump_engine] failed to remove {}: {e}", path.display());
                 }
-            }
         }
         cleanup_tmp_files(&dir);
         Ok(())

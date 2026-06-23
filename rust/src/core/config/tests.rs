@@ -1824,13 +1824,13 @@ mod auto_watch_tests {
 
     #[test]
     fn deserialization_true() {
-        let cfg: Config = toml::from_str(r#"auto_watch = true"#).unwrap();
+        let cfg: Config = toml::from_str("auto_watch = true").unwrap();
         assert!(cfg.auto_watch);
     }
 
     #[test]
     fn deserialization_false() {
-        let cfg: Config = toml::from_str(r#"auto_watch = false"#).unwrap();
+        let cfg: Config = toml::from_str("auto_watch = false").unwrap();
         assert!(!cfg.auto_watch);
     }
 

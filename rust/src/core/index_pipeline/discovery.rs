@@ -64,25 +64,10 @@ const FAST_SKIP_FILENAMES: &[&str] = &[
 ];
 
 /// File patterns (matched against path suffix) skipped in MODERATE and FAST modes.
-const FAST_PATTERNS: &[&str] = &[
-    ".d.ts",
-    ".pb.go",
-    "mock_",
-    ".test.",
-    ".spec.",
-    ".stories.",
-];
+const FAST_PATTERNS: &[&str] = &[".d.ts", ".pb.go", "mock_", ".test.", ".spec.", ".stories."];
 
 /// Suffixes ALWAYS ignored regardless of mode (binary/unusable outputs).
-const ALWAYS_IGNORED_SUFFIXES: &[&str] = &[
-    ".pyc",
-    ".o",
-    ".so",
-    ".png",
-    ".wasm",
-    ".exe",
-    ".db",
-];
+const ALWAYS_IGNORED_SUFFIXES: &[&str] = &[".pyc", ".o", ".so", ".png", ".wasm", ".exe", ".db"];
 
 /// Suffixes ignored in MODERATE and FAST modes only.
 const FAST_IGNORED_SUFFIXES: &[&str] = &[".zip", ".pdf", ".map", ".min.js", ".pem"];
@@ -145,7 +130,6 @@ pub fn discover_files(root: &Path, config: &DiscoveryConfig) -> Result<Vec<Disco
         .build();
 
     let mut files: Vec<DiscoveredFile> = Vec::new();
-    let root = root;
 
     for entry in walker.flatten() {
         let path = entry.path();
@@ -245,7 +229,10 @@ fn is_skipped_dir(entry: &ignore::DirEntry, mode: IndexingMode) -> bool {
 /// `path_str` is the project-relative path with `/` separators.
 fn should_include(path_str: &str, mode: IndexingMode) -> bool {
     // Always-skip suffixes.
-    if ALWAYS_IGNORED_SUFFIXES.iter().any(|s| path_str.ends_with(s)) {
+    if ALWAYS_IGNORED_SUFFIXES
+        .iter()
+        .any(|s| path_str.ends_with(s))
+    {
         return false;
     }
 
@@ -259,10 +246,10 @@ fn should_include(path_str: &str, mode: IndexingMode) -> bool {
             return false;
         }
         // Mode-specific filenames.
-        if let Some(filename) = path_str.rsplit('/').next() {
-            if FAST_SKIP_FILENAMES.contains(&filename) {
-                return false;
-            }
+        if let Some(filename) = path_str.rsplit('/').next()
+            && FAST_SKIP_FILENAMES.contains(&filename)
+        {
+            return false;
         }
     }
 
@@ -319,7 +306,9 @@ mod tests {
 
         // -- Large file (exceed max_file_size) --
         let mut giant = std::fs::File::create(root.join("giant.rs")).unwrap();
-        giant.write_all(b"// giant\n".repeat(500_000).as_slice()).unwrap();
+        giant
+            .write_all(b"// giant\n".repeat(500_000).as_slice())
+            .unwrap();
 
         // -- Hidden dirs --
         std::fs::create_dir_all(root.join(".git")).unwrap();
@@ -351,12 +340,30 @@ mod tests {
         let files = discover_files(dir.path(), &config).unwrap();
 
         // Mode-specific dirs present in FULL.
-        assert!(count_containing(&files, "tests/") > 0, "tests/ should be in FULL");
-        assert!(count_containing(&files, "docs/") > 0, "docs/ should be in FULL");
-        assert!(count_containing(&files, "examples/") > 0, "examples/ should be in FULL");
-        assert!(count_containing(&files, "generated/") > 0, "generated/ should be in FULL");
-        assert!(count_containing(&files, "assets/") > 0, "assets/ should be in FULL");
-        assert!(count_containing(&files, "public/") > 0, "public/ should be in FULL");
+        assert!(
+            count_containing(&files, "tests/") > 0,
+            "tests/ should be in FULL"
+        );
+        assert!(
+            count_containing(&files, "docs/") > 0,
+            "docs/ should be in FULL"
+        );
+        assert!(
+            count_containing(&files, "examples/") > 0,
+            "examples/ should be in FULL"
+        );
+        assert!(
+            count_containing(&files, "generated/") > 0,
+            "generated/ should be in FULL"
+        );
+        assert!(
+            count_containing(&files, "assets/") > 0,
+            "assets/ should be in FULL"
+        );
+        assert!(
+            count_containing(&files, "public/") > 0,
+            "public/ should be in FULL"
+        );
     }
 
     #[test]
@@ -390,12 +397,36 @@ mod tests {
         };
         let files = discover_files(dir.path(), &config).unwrap();
 
-        assert_eq!(count_containing(&files, "tests/"), 0, "tests/ excluded in Moderate");
-        assert_eq!(count_containing(&files, "docs/"), 0, "docs/ excluded in Moderate");
-        assert_eq!(count_containing(&files, "examples/"), 0, "examples/ excluded in Moderate");
-        assert_eq!(count_containing(&files, "generated/"), 0, "generated/ excluded in Moderate");
-        assert_eq!(count_containing(&files, "assets/"), 0, "assets/ excluded in Moderate");
-        assert_eq!(count_containing(&files, "public/"), 0, "public/ excluded in Moderate");
+        assert_eq!(
+            count_containing(&files, "tests/"),
+            0,
+            "tests/ excluded in Moderate"
+        );
+        assert_eq!(
+            count_containing(&files, "docs/"),
+            0,
+            "docs/ excluded in Moderate"
+        );
+        assert_eq!(
+            count_containing(&files, "examples/"),
+            0,
+            "examples/ excluded in Moderate"
+        );
+        assert_eq!(
+            count_containing(&files, "generated/"),
+            0,
+            "generated/ excluded in Moderate"
+        );
+        assert_eq!(
+            count_containing(&files, "assets/"),
+            0,
+            "assets/ excluded in Moderate"
+        );
+        assert_eq!(
+            count_containing(&files, "public/"),
+            0,
+            "public/ excluded in Moderate"
+        );
     }
 
     #[test]
@@ -444,7 +475,11 @@ mod tests {
     fn all_modes_skip_always_skip_dirs() {
         let dir = tempfile::tempdir().unwrap();
         create_test_tree(dir.path());
-        for mode in [IndexingMode::Full, IndexingMode::Moderate, IndexingMode::Fast] {
+        for mode in [
+            IndexingMode::Full,
+            IndexingMode::Moderate,
+            IndexingMode::Fast,
+        ] {
             let config = DiscoveryConfig {
                 mode,
                 max_file_size: 2 * 1024 * 1024,
@@ -471,7 +506,11 @@ mod tests {
     fn all_modes_exclude_binary_suffixes() {
         let dir = tempfile::tempdir().unwrap();
         create_test_tree(dir.path());
-        for mode in [IndexingMode::Full, IndexingMode::Moderate, IndexingMode::Fast] {
+        for mode in [
+            IndexingMode::Full,
+            IndexingMode::Moderate,
+            IndexingMode::Fast,
+        ] {
             let config = DiscoveryConfig {
                 mode,
                 max_file_size: 2 * 1024 * 1024,

@@ -13,7 +13,9 @@
 //!                         ├── ④ no-changes fast path
 //!                         ├── ⑤ full build OR incremental reindex
 //!                         ├── ⑥ update file metadata store
-//!                         └── ⑦ atomic dump → PipelineReport
+//!                         ├── ⑦ atomic dump
+//!                         ├── ⑧ property graph mirror (fire-and-forget)
+//!                         └── ⑨ PipelineReport
 //! ```
 
 use std::path::PathBuf;
@@ -158,7 +160,8 @@ impl PipelineHandle {
     ///    incremental reindex.
     /// 6. **Update** `FileMetadataStore` with new per-file state.
     /// 7. **Dump** graph + BM25 + metadata atomically to disk.
-    /// 8. **Report** elapsed time and stats.
+    /// 8. **Mirror** graph into property graph (background, non-blocking).
+    /// 9. **Report** elapsed time and stats.
     ///
     /// # Errors
     ///
@@ -267,7 +270,17 @@ impl PipelineHandle {
             .dump_file_metadata(&metadata_store)
             .context("dump file metadata failed")?;
 
-        // ------------------------------------------------------------------
+        // Step 8b: Property graph mirror (fire-and-forget, non-blocking)
+        {
+            let root = self.project_root.to_string_lossy().to_string();
+            let idx = graph.clone();
+            std::thread::spawn(move || {
+                if let Err(e) = crate::core::property_graph::mirror_index(&root, &idx) {
+                    tracing::warn!("[pipeline] property graph mirror failed: {e}");
+                }
+            });
+        }
+
         // Step 9: Report
         // ------------------------------------------------------------------
         let elapsed = start.elapsed().as_millis() as u64;
@@ -365,8 +378,7 @@ impl PipelineHandle {
                 let mtime_ns = f
                     .mtime
                     .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_nanos() as i64)
-                    .unwrap_or(0);
+                    .map_or(0, |d| d.as_nanos() as i64);
                 FileMetadata {
                     rel_path: f.rel_path.clone(),
                     mtime_ns,
@@ -419,8 +431,7 @@ impl PipelineHandle {
                 let mtime_ns = f
                     .mtime
                     .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_nanos() as i64)
-                    .unwrap_or(0);
+                    .map_or(0, |d| d.as_nanos() as i64);
                 FileMetadata {
                     rel_path: f.rel_path.clone(),
                     mtime_ns,

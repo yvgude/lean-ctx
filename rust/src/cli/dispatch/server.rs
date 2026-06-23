@@ -83,7 +83,45 @@ pub(super) fn run_mcp_server() -> Result<()> {
     // Silent + detached: must not touch stdout (MCP protocol channel) or block startup.
     crate::cli::wrapped_publish::maybe_auto_publish_background();
 
-    rt.block_on(async {
+    // === Auto-file-watcher (opt-in, Phase F) ===
+    let stop_signal = server.stop_signal.clone();
+    let auto_watch = crate::core::config::Config::load().auto_watch_effective();
+
+    let index_fn: crate::watcher::IndexFn = std::sync::Arc::new(
+        move |_name: &str, root: &std::path::Path| {
+            let mode = crate::core::config::Config::load().index_mode_effective();
+            let handle = crate::core::index_pipeline::pipeline::IndexPipeline::new(
+                root.to_path_buf(),
+            )
+            .with_mode(mode)
+            .build()?;
+            handle.run()?;
+            Ok(true)
+        },
+    );
+
+    if auto_watch {
+        let project_root = server
+            .startup_project_root
+            .clone()
+            .map_or_else(
+                || std::env::current_dir().unwrap_or_default(),
+                std::path::PathBuf::from,
+            );
+        let index_fn = index_fn.clone();
+        let thread_stop_signal = stop_signal.clone();
+        std::thread::Builder::new()
+            .name("file-watcher".into())
+            .spawn(move || {
+                let mut watcher = crate::watcher::Watcher::new(index_fn);
+                watcher.watch("default", project_root);
+                watcher.set_stop_signal(thread_stop_signal);
+                watcher.run(5_000);
+            })
+            .ok();
+    }
+
+    let result = rt.block_on(async {
         core::logging::init_mcp_logging();
         core::protocol::set_mcp_context(true);
 
@@ -155,7 +193,12 @@ pub(super) fn run_mcp_server() -> Result<()> {
         core::efficacy::capture();
 
         Ok(())
-    })
+    });
+
+    // Signal the watcher thread to stop after MCP server shuts down
+    stop_signal.store(true, std::sync::atomic::Ordering::Relaxed);
+
+    result
 }
 
 /// Kill orphan MCP server processes whose parent (IDE) has died.

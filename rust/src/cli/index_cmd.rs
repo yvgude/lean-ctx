@@ -2,6 +2,9 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
+use crate::core::config::{Config, IndexingMode};
+use crate::core::index_pipeline::pipeline::IndexPipeline;
+
 pub(crate) fn cmd_index(args: &[String]) {
     let project_root = super::common::detect_project_root(args);
     let root = Path::new(&project_root);
@@ -23,33 +26,39 @@ pub(crate) fn cmd_index(args: &[String]) {
             }
         }
         Some("build") => {
-            crate::core::index_orchestrator::ensure_all_background(&project_root);
+            let mode = resolve_mode(args);
 
-            let started = std::time::Instant::now();
-            let timeout = Duration::from_mins(5);
-            eprint!("building indexes (graph + BM25)");
-            loop {
-                std::thread::sleep(Duration::from_millis(500));
-                let status = crate::core::index_orchestrator::status_json(&project_root);
-                if !status.contains("\"building\"") {
-                    break;
-                }
-                eprint!(".");
-                if started.elapsed() > timeout {
-                    eprintln!(" timeout (background build continues)");
+            eprintln!("building indexes (mode: {}) ...", mode.label());
+            let pipeline = match IndexPipeline::new(root.to_path_buf())
+                .with_mode(mode)
+                .build()
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("error configuring index build: {e}");
                     return;
                 }
-            }
-            eprintln!(" done");
+            };
 
-            // Surface the BM25 build outcome so the operator knows the index
-            // state (issue #249).
-            let summary = crate::core::index_orchestrator::bm25_summary(&project_root);
-            if let Some(note) = summary.note {
-                eprintln!("  BM25: {note}");
-            }
-            if let Some(err) = summary.last_error {
-                eprintln!("  BM25 error: {err}");
+            match pipeline.run() {
+                Ok(report) => {
+                    eprintln!("index build complete");
+                    eprintln!("  mode:         {}", report.mode.label());
+                    eprintln!(
+                        "  files:        {} scanned, {} new, {} changed, {} deleted",
+                        report.files_scanned,
+                        report.files_new,
+                        report.files_changed,
+                        report.files_deleted
+                    );
+                    eprintln!("  graph:        {} nodes, {} edges", report.nodes, report.edges);
+                    eprintln!("  BM25 chunks:  {}", report.chunks);
+                    eprintln!("  elapsed:      {} ms", report.elapsed_ms);
+                    eprintln!("  incremental:  {}", report.is_incremental);
+                }
+                Err(e) => {
+                    eprintln!("index build failed: {e}");
+                }
             }
         }
         Some("build-full") => {
@@ -70,37 +79,41 @@ pub(crate) fn cmd_index(args: &[String]) {
             if embedding_json.exists() {
                 let _ = std::fs::remove_file(&embedding_json);
             }
-            crate::core::index_orchestrator::ensure_all_background(&project_root);
 
-            let started = std::time::Instant::now();
-            let timeout = Duration::from_mins(5);
-            eprintln!("rebuilding indexes (graph + BM25)");
-            loop {
-                std::thread::sleep(Duration::from_millis(500));
-                let status = crate::core::index_orchestrator::status_json(&project_root);
-                if !status.contains("\"building\"") {
-                    break;
+            eprintln!("rebuilding indexes (full) ...");
+            let pipeline = match IndexPipeline::new(root.to_path_buf())
+                .with_mode(IndexingMode::Full)
+                .build()
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("error configuring full rebuild: {e}");
+                    return;
                 }
-                eprint!(".");
-                if started.elapsed() > timeout {
-                    eprintln!(" timeout (background build continues)");
+            };
+
+            match pipeline.run() {
+                Ok(report) => {
+                    eprintln!("full rebuild complete");
+                    eprintln!(
+                        "  files:        {} scanned, {} new, {} changed, {} deleted",
+                        report.files_scanned,
+                        report.files_new,
+                        report.files_changed,
+                        report.files_deleted
+                    );
+                    eprintln!("  graph:        {} nodes, {} edges", report.nodes, report.edges);
+                    eprintln!("  BM25 chunks:  {}", report.chunks);
+                    eprintln!("  elapsed:      {} ms", report.elapsed_ms);
+                }
+                Err(e) => {
+                    eprintln!("full rebuild failed: {e}");
                     return;
                 }
             }
-            eprintln!(" done");
-
-            // Surface the BM25 build outcome (chunk count + persisted size, or the
-            // "too large to persist" remedy) so the operator is never left guessing.
-            let summary = crate::core::index_orchestrator::bm25_summary(&project_root);
-            if let Some(note) = summary.note {
-                eprintln!("  BM25: {note}");
-            }
-            if let Some(err) = summary.last_error {
-                eprintln!("  BM25 error: {err}");
-            }
 
             // The property graph was already mirrored from the graph_index
-            // extractor inside ensure_all_background above (#682.2).
+            // extractor inside the pipeline above (#682.2).
             eprintln!("property graph mirrored from graph_index during index build");
 
             // Build semantic (dense embedding) index on top of the fresh BM25.
@@ -189,17 +202,34 @@ pub(crate) fn cmd_index(args: &[String]) {
         Some("watch") => run_watcher(root),
         _ => {
             eprintln!(
-                "Usage: lean-ctx index <status|build|build-full|build-graph|build-semantic|watch> [--root <path>]\n\
+                "Usage: lean-ctx index <status|build|build-full|build-graph|build-semantic|watch> [--root <path>] [--mode <full|moderate|fast>]\n\
                  Examples:\n\
                    lean-ctx index status\n\
-                   lean-ctx index build              (graph + BM25 indexes)\n\
-                   lean-ctx index build-full         (force rebuild all indexes)\n\
-                   lean-ctx index build-graph        (SQLite property graph for impact analysis)\n\
-                   lean-ctx index build-semantic     (dense embedding index, builds BM25 first if needed)\n\
+                   lean-ctx index build                                (graph + BM25 indexes)\n\
+                   lean-ctx index build --mode moderate                (moderate indexing)\n\
+                   lean-ctx index build --mode fast                    (fast indexing, skips tests/docs)\n\
+                   lean-ctx index build-full                           (force rebuild all indexes)\n\
+                   lean-ctx index build-graph                          (SQLite property graph for impact analysis)\n\
+                   lean-ctx index build-semantic                       (dense embedding index, builds BM25 first if needed)\n\
                    lean-ctx index watch"
             );
         }
     }
+}
+
+/// Parse `--mode <full|moderate|fast>` / `-m <full|moderate|fast>` from args.
+/// Falls back to env var, then config default.
+fn resolve_mode(args: &[String]) -> IndexingMode {
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
+        if (arg == "--mode" || arg == "-m") && let Some(val) = iter.next() {
+            if let Some(mode) = IndexingMode::parse(val) {
+                return mode;
+            }
+            eprintln!("warning: unknown mode '{val}', valid: full, moderate, fast");
+        }
+    }
+    IndexingMode::effective(&Config::load())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -209,6 +239,12 @@ struct FileState {
 }
 
 fn run_watcher(project_root: &Path) {
+    let mode = IndexingMode::effective(&Config::load());
+    eprintln!(
+        "index watcher started (mode: {}, poll: 700ms, debounce: 900ms)",
+        mode.label()
+    );
+
     let hash = crate::core::index_namespace::namespace_hash(project_root);
     let lock_name = format!("index-watch-{}", &hash[..8.min(hash.len())]);
     let Some(lock) = crate::core::startup_guard::try_acquire_lock(
@@ -305,8 +341,14 @@ fn snapshot_code_files(project_root: &Path) -> HashMap<String, FileState> {
 
 fn print_human_status(project_root: &str) {
     let disk = crate::core::index_orchestrator::disk_status(project_root);
+    let mode = IndexingMode::effective(&Config::load());
+
+    // Determine incremental readiness: all primary indices exist on disk.
+    let incremental_ready = disk.graph_index.exists && disk.bm25_index.exists;
 
     println!("  Project:        {project_root}");
+    println!("  Index Mode:     {}", mode.label());
+    println!("  Incremental:    {}", if incremental_ready { "ready (indices exist)" } else { "no (full rebuild needed)" });
     println!(
         "  Graph Index:    {}",
         format_disk_line(&disk.graph_index, "files")
