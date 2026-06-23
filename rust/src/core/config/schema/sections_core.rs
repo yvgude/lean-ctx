@@ -625,6 +625,33 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "LEAN_CTX_SHELL_SECURITY",
         ),
     );
+    root.insert(
+        "shell_timeout_secs".into(),
+        key_with_env(
+            "u64?",
+            serde_json::json!(null),
+            "Shell command timeout (seconds) for normal commands. null = built-in 2-minute default. LEAN_CTX_SHELL_TIMEOUT_MS overrides both tiers (in ms)",
+            "LEAN_CTX_SHELL_TIMEOUT_SECS",
+        ),
+    );
+    root.insert(
+        "shell_heavy_timeout_secs".into(),
+        key_with_env(
+            "u64?",
+            serde_json::json!(null),
+            "Shell command timeout (seconds) for heavy commands (cargo build/test, make, docker build, git commit/push). null = built-in 10-minute ceiling",
+            "LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS",
+        ),
+    );
+    root.insert(
+        "shell_allow_writes".into(),
+        key_with_env(
+            "bool",
+            serde_json::json!(false),
+            "Allow ctx_shell file-write redirects (>, >>, tee, heredoc-to-file, curl -o, wget default mode). Default false — prefer the native Write/Edit tool. The real command gating (allowlist, dangerous-pattern, interpreter-eval) still applies",
+            "LEAN_CTX_SHELL_ALLOW_WRITES",
+        ),
+    );
 
     sections.insert(
         "root".into(),

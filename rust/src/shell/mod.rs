@@ -7,7 +7,7 @@ mod redact;
 pub(crate) mod tee_policy;
 
 pub use compress::compress_if_beneficial_pub;
-pub(crate) use exec::heavy_timeout;
+pub(crate) use exec::shell_timeout;
 pub(crate) use exec::{STDERR_LABEL, combine_streams};
 pub use exec::{exec, exec_argv};
 pub use interactive::interactive;

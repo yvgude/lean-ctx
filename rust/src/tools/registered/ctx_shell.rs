@@ -42,7 +42,13 @@ impl McpTool for CtxShellTool {
         let command = get_str(args, "command")
             .ok_or_else(|| ErrorData::invalid_params("command is required", None))?;
 
-        if let Some(rejection) = crate::tools::ctx_shell::validate_command(&command) {
+        // The write-doctrine check (no `>`, `tee`, heredoc-to-file, curl -o, …)
+        // is an MCP-payload-safety convention, not a security boundary, so it is
+        // opt-out via `shell_allow_writes` (#523). The real command gating
+        // (`check_shell_allowlist`, below) is NOT affected by this flag.
+        if !crate::core::config::Config::load().shell_allow_writes_effective()
+            && let Some(rejection) = crate::tools::ctx_shell::validate_command(&command)
+        {
             // The command never ran — report as a tool error so MCP clients
             // (guards, retry logic) can detect it programmatically (#389).
             return Ok(ToolOutput {

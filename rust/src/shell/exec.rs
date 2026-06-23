@@ -106,11 +106,55 @@ const HEAVY_MAX_BYTES: usize = 32 * 1024 * 1024; // 32 MB
 const HEAVY_TIMEOUT: std::time::Duration = std::time::Duration::from_mins(10);
 
 fn exec_limits(command: &str) -> (usize, std::time::Duration) {
-    if is_heavy_command(command) {
-        (HEAVY_MAX_BYTES, HEAVY_TIMEOUT)
+    let max_bytes = if is_heavy_command(command) {
+        HEAVY_MAX_BYTES
     } else {
-        (DEFAULT_MAX_BYTES, DEFAULT_TIMEOUT)
+        DEFAULT_MAX_BYTES
+    };
+    (max_bytes, shell_timeout(command))
+}
+
+/// Resolve the timeout `ctx_shell` / the shell hook grants a command.
+///
+/// Heavy builds/tests (cargo install/nextest/build, npm ci, git commit/push, …)
+/// get the long ceiling instead of being killed at the 2-minute default, keeping
+/// the MCP path and the interactive hook consistent. The constants are
+/// overridable so operators can pin any value. Precedence (first match wins):
+///
+/// 1. `LEAN_CTX_SHELL_TIMEOUT_MS` — universal override, in milliseconds.
+/// 2. heavy command → `LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS` / config
+///    `shell_heavy_timeout_secs`, else [`HEAVY_TIMEOUT`].
+/// 3. normal command → `LEAN_CTX_SHELL_TIMEOUT_SECS` / config
+///    `shell_timeout_secs`, else [`DEFAULT_TIMEOUT`].
+#[must_use]
+pub(crate) fn shell_timeout(command: &str) -> std::time::Duration {
+    if let Some(ms) = env_u64("LEAN_CTX_SHELL_TIMEOUT_MS") {
+        return std::time::Duration::from_millis(ms);
     }
+    if is_heavy_command(command) {
+        if let Some(secs) = env_u64("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS")
+            .or_else(|| config::Config::load().shell_heavy_timeout_secs)
+        {
+            return std::time::Duration::from_secs(secs);
+        }
+        HEAVY_TIMEOUT
+    } else {
+        if let Some(secs) = env_u64("LEAN_CTX_SHELL_TIMEOUT_SECS")
+            .or_else(|| config::Config::load().shell_timeout_secs)
+        {
+            return std::time::Duration::from_secs(secs);
+        }
+        DEFAULT_TIMEOUT
+    }
+}
+
+/// Parse a positive `u64` from an env var, ignoring absent/empty/zero/invalid
+/// values so the caller falls through to the next precedence tier.
+fn env_u64(var: &str) -> Option<u64> {
+    std::env::var(var)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|n| *n > 0)
 }
 
 fn is_heavy_command(command: &str) -> bool {
@@ -165,16 +209,6 @@ fn is_heavy_command(command: &str) -> bool {
         "git push",
     ];
     HEAVY_PREFIXES.iter().any(|p| lower.starts_with(p))
-}
-
-/// Timeout the MCP `ctx_shell` tool should grant a command, mirroring the
-/// interactive hook's heavy-command detection. Returns `None` for ordinary
-/// commands (caller applies its own default), `Some(HEAVY_TIMEOUT)` for heavy
-/// builds/tests so long-running `cargo install`/`nextest`/etc. aren't killed at
-/// the 2-minute default. Keeps the MCP path and the shell-hook path consistent.
-#[must_use]
-pub(crate) fn heavy_timeout(command: &str) -> Option<std::time::Duration> {
-    is_heavy_command(command).then_some(HEAVY_TIMEOUT)
 }
 
 /// Execute a command from pre-split argv without going through `sh -c`.
@@ -750,75 +784,114 @@ mod exec_tests {
     }
 
     #[test]
-    fn heavy_commands_get_higher_limits() {
-        let (bytes, timeout) = super::exec_limits("cargo build --release");
-        assert_eq!(bytes, super::HEAVY_MAX_BYTES);
-        assert_eq!(timeout, super::HEAVY_TIMEOUT);
-
-        let (bytes, timeout) = super::exec_limits("cargo test --lib");
-        assert_eq!(bytes, super::HEAVY_MAX_BYTES);
-        assert_eq!(timeout, super::HEAVY_TIMEOUT);
-
-        let (bytes, timeout) = super::exec_limits("cargo nextest run");
-        assert_eq!(bytes, super::HEAVY_MAX_BYTES);
-        assert_eq!(timeout, super::HEAVY_TIMEOUT);
-
-        let (bytes, timeout) = super::exec_limits("npm run build");
-        assert_eq!(bytes, super::HEAVY_MAX_BYTES);
-        assert_eq!(timeout, super::HEAVY_TIMEOUT);
-
-        let (bytes, timeout) = super::exec_limits("docker build -t myapp .");
-        assert_eq!(bytes, super::HEAVY_MAX_BYTES);
-        assert_eq!(timeout, super::HEAVY_TIMEOUT);
-
-        // Git commands that trigger build/test hooks (pre-commit clippy,
-        // pre-push preflight) must not be killed at the 2-minute default.
-        let (bytes, timeout) = super::exec_limits("git commit --amend --no-edit");
-        assert_eq!(bytes, super::HEAVY_MAX_BYTES);
-        assert_eq!(timeout, super::HEAVY_TIMEOUT);
-
-        let (bytes, timeout) = super::exec_limits("git push -u origin HEAD");
-        assert_eq!(bytes, super::HEAVY_MAX_BYTES);
-        assert_eq!(timeout, super::HEAVY_TIMEOUT);
+    fn heavy_commands_get_higher_byte_limits() {
+        // exec_limits owns the byte ceiling; timeout resolution is covered by
+        // `shell_timeout_resolves_heavy_normal_and_env_overrides` (which is
+        // env/config-isolated, so these stay deterministic regardless of the
+        // operator's config.toml).
+        for cmd in [
+            "cargo build --release",
+            "cargo test --lib",
+            "cargo nextest run",
+            "npm run build",
+            "docker build -t myapp .",
+            // Git verbs that fire build/test hooks (pre-commit clippy, pre-push
+            // preflight) must not be killed at the default ceiling (#854).
+            "git commit --amend --no-edit",
+            "git push -u origin HEAD",
+        ] {
+            let (bytes, _) = super::exec_limits(cmd);
+            assert_eq!(bytes, super::HEAVY_MAX_BYTES, "heavy byte limit for {cmd}");
+        }
     }
 
     #[test]
-    fn normal_commands_get_default_limits() {
-        let (bytes, timeout) = super::exec_limits("echo hello");
-        assert_eq!(bytes, super::DEFAULT_MAX_BYTES);
-        assert_eq!(timeout, super::DEFAULT_TIMEOUT);
-
+    fn normal_commands_get_default_byte_limits() {
         // Read-only git verbs stay on the default ceiling — only `commit`/`push`
         // (which fire the cargo-heavy hooks) are promoted.
-        let (bytes, timeout) = super::exec_limits("git status");
-        assert_eq!(bytes, super::DEFAULT_MAX_BYTES);
-        assert_eq!(timeout, super::DEFAULT_TIMEOUT);
-
-        let (bytes, timeout) = super::exec_limits("git log --oneline -5");
-        assert_eq!(bytes, super::DEFAULT_MAX_BYTES);
-        assert_eq!(timeout, super::DEFAULT_TIMEOUT);
+        for cmd in ["echo hello", "git status", "git log --oneline -5"] {
+            let (bytes, _) = super::exec_limits(cmd);
+            assert_eq!(
+                bytes,
+                super::DEFAULT_MAX_BYTES,
+                "default byte limit for {cmd}"
+            );
+        }
     }
 
     #[test]
-    fn heavy_timeout_some_for_heavy_none_otherwise() {
+    fn shell_timeout_resolves_heavy_normal_and_env_overrides() {
+        // Serialize env mutation so this never races other env-reading tests.
+        let _lock = crate::core::data_dir::test_env_lock();
+        let saved_ms = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
+        let saved_secs = std::env::var("LEAN_CTX_SHELL_TIMEOUT_SECS").ok();
+        let saved_heavy = std::env::var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS").ok();
+        for v in [
+            "LEAN_CTX_SHELL_TIMEOUT_MS",
+            "LEAN_CTX_SHELL_TIMEOUT_SECS",
+            "LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS",
+        ] {
+            crate::test_env::remove_var(v);
+        }
+
+        // Heavy builds/tests and hook-firing git verbs get the heavy ceiling;
+        // read-only verbs stay on the default. Preserves the #854 promotion.
         assert_eq!(
-            super::heavy_timeout("cargo install --path ."),
-            Some(super::HEAVY_TIMEOUT)
+            super::shell_timeout("cargo install --path ."),
+            super::HEAVY_TIMEOUT
         );
         assert_eq!(
-            super::heavy_timeout("cargo nextest run"),
-            Some(super::HEAVY_TIMEOUT)
+            super::shell_timeout("cargo nextest run"),
+            super::HEAVY_TIMEOUT
         );
         assert_eq!(
-            super::heavy_timeout("git commit -m 'wip'"),
-            Some(super::HEAVY_TIMEOUT)
+            super::shell_timeout("git commit -m 'wip'"),
+            super::HEAVY_TIMEOUT
         );
         assert_eq!(
-            super::heavy_timeout("git push origin main"),
-            Some(super::HEAVY_TIMEOUT)
+            super::shell_timeout("git push origin main"),
+            super::HEAVY_TIMEOUT
         );
-        assert_eq!(super::heavy_timeout("git status"), None);
-        assert_eq!(super::heavy_timeout("ls -la"), None);
+        assert_eq!(super::shell_timeout("git status"), super::DEFAULT_TIMEOUT);
+        assert_eq!(super::shell_timeout("ls -la"), super::DEFAULT_TIMEOUT);
+
+        // Per-tier env overrides win over the built-in constants. (Non-round
+        // second values keep the literals clippy-clean and unambiguous.)
+        crate::test_env::set_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS", "90");
+        assert_eq!(
+            super::shell_timeout("cargo build"),
+            std::time::Duration::from_secs(90)
+        );
+        crate::test_env::remove_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS");
+
+        crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_SECS", "30");
+        assert_eq!(
+            super::shell_timeout("git status"),
+            std::time::Duration::from_secs(30)
+        );
+        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_SECS");
+
+        // The universal millisecond override wins over everything.
+        crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", "5000");
+        assert_eq!(
+            super::shell_timeout("cargo build"),
+            std::time::Duration::from_secs(5)
+        );
+        assert_eq!(
+            super::shell_timeout("git status"),
+            std::time::Duration::from_secs(5)
+        );
+        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
+
+        for (var, saved) in [
+            ("LEAN_CTX_SHELL_TIMEOUT_MS", saved_ms),
+            ("LEAN_CTX_SHELL_TIMEOUT_SECS", saved_secs),
+            ("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS", saved_heavy),
+        ] {
+            if let Some(v) = saved {
+                crate::test_env::set_var(var, v);
+            }
+        }
     }
 
     // P0-1 (#413): the CLI allowlist must enforce for agents, warn for humans.

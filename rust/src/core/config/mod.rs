@@ -505,6 +505,30 @@ pub struct Config {
     /// LEAN_CTX_SHELL_SECURITY. `None` resolves to `enforce`.
     #[serde(default)]
     pub shell_security: Option<String>,
+
+    /// Default shell-command timeout in seconds for *normal* commands. `None`
+    /// resolves to the built-in 2-minute default; heavy builds/tests use
+    /// [`Config::shell_heavy_timeout_secs`]. Override via
+    /// `LEAN_CTX_SHELL_TIMEOUT_SECS` (`LEAN_CTX_SHELL_TIMEOUT_MS` still wins over
+    /// both, in milliseconds).
+    #[serde(default)]
+    pub shell_timeout_secs: Option<u64>,
+
+    /// Shell-command timeout in seconds for *heavy* commands (cargo build/test,
+    /// make, docker build, git commit/push, …). `None` resolves to the built-in
+    /// 10-minute ceiling. Override via `LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS`.
+    #[serde(default)]
+    pub shell_heavy_timeout_secs: Option<u64>,
+
+    /// When true, `ctx_shell` accepts shell file-write redirects (`>`, `>>`,
+    /// `tee`, heredoc-to-file, `curl -o`, `wget` default mode). Default false —
+    /// the native Write/Edit tool is preferred. Opt-in for power users who want
+    /// classic shell syntax; the real command gating (allowlist,
+    /// dangerous-pattern and interpreter-eval blocks) still applies. Override
+    /// via `LEAN_CTX_SHELL_ALLOW_WRITES=1`.
+    #[serde(default)]
+    pub shell_allow_writes: bool,
+
     /// Setup behavior: controls what gets injected during setup and updates.
     #[serde(default)]
     pub setup: SetupConfig,
@@ -611,6 +635,9 @@ impl Default for Config {
             shell_allowlist_extra: Vec::new(),
             shell_strict_mode: false,
             shell_security: None,
+            shell_timeout_secs: None,
+            shell_heavy_timeout_secs: None,
+            shell_allow_writes: false,
             setup: SetupConfig::default(),
         }
     }
@@ -934,6 +961,19 @@ impl Config {
     /// Returns the effective shell activation mode (env var > config > default).
     pub fn shell_activation_effective(&self) -> ShellActivation {
         ShellActivation::effective(self)
+    }
+
+    /// Returns `true` if `ctx_shell` may accept shell file-write redirects.
+    /// `LEAN_CTX_SHELL_ALLOW_WRITES` (`1`/`true`/`yes`/`on`) overrides
+    /// `config.toml`. The real command gating still applies either way.
+    pub fn shell_allow_writes_effective(&self) -> bool {
+        match std::env::var("LEAN_CTX_SHELL_ALLOW_WRITES") {
+            Ok(raw) => matches!(
+                raw.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            ),
+            Err(_) => self.shell_allow_writes,
+        }
     }
 
     /// Returns `true` if the daily update check is disabled via env var or config.
