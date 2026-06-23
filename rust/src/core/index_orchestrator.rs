@@ -159,9 +159,11 @@ pub enum WarmNeed {
 #[must_use]
 pub fn warm_need_for_tool(tool: &str) -> WarmNeed {
     match tool {
-        "ctx_search" => WarmNeed::Search,
         // Tools that build/consume the graph, call-graph, BM25 or artifact index.
-        "ctx_graph"
+        // `ctx_search` is included for lazy indexing: the first search
+        // triggers a full pipeline build so indices are available on demand.
+        "ctx_search"
+        | "ctx_graph"
         | "ctx_callgraph"
         | "ctx_routes"
         | "ctx_repomap"
@@ -824,8 +826,8 @@ mod tests {
         ] {
             assert_eq!(warm_need_for_tool(light), WarmNeed::None, "{light}");
         }
-        // ctx_search only needs the cheap trigram index.
-        assert_eq!(warm_need_for_tool("ctx_search"), WarmNeed::Search);
+        // ctx_search triggers the full pipeline for lazy indexing.
+        assert_eq!(warm_need_for_tool("ctx_search"), WarmNeed::Heavy);
         for heavy in [
             "ctx_graph",
             "ctx_callgraph",
@@ -844,12 +846,13 @@ mod tests {
     }
 
     #[test]
-    fn ensure_warm_lightweight_and_search_never_signal_first_warm() {
+    fn ensure_warm_lightweight_never_signals_and_search_now_signals() {
         assert!(!ensure_warm_for_tool("", "ctx_graph"));
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().to_string_lossy().to_string();
         assert!(!ensure_warm_for_tool(&root, "ctx_read"));
-        assert!(!ensure_warm_for_tool(&root, "ctx_search"));
+        // ctx_search is now Heavy (lazy indexing) — first call signals true.
+        assert!(ensure_warm_for_tool(&root, "ctx_search"));
     }
 
     #[test]

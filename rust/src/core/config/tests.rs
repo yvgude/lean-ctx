@@ -1805,9 +1805,9 @@ mod auto_watch_tests {
     use super::super::*;
 
     #[test]
-    fn default_is_false() {
+    fn default_is_true() {
         let cfg = Config::default();
-        assert!(!cfg.auto_watch);
+        assert!(cfg.auto_watch);
     }
 
     #[test]
@@ -1835,9 +1835,9 @@ mod auto_watch_tests {
     }
 
     #[test]
-    fn deserialization_absent_defaults_false() {
+    fn deserialization_absent_defaults_true() {
         let cfg: Config = toml::from_str("").unwrap();
-        assert!(!cfg.auto_watch);
+        assert!(cfg.auto_watch);
     }
 
     #[test]

@@ -408,9 +408,9 @@ pub struct Config {
     #[serde(default)]
     pub index_mode: IndexingMode,
     /// When true, lean-ctx automatically watches the project for file changes
-    /// and re-indexes incrementally. Default: false.
+    /// and re-indexes incrementally. Default: true.
     /// Override via LEAN_CTX_AUTO_WATCH env var (true/false).
-    #[serde(default)]
+    #[serde(default = "serde_defaults::default_true")]
     pub auto_watch: bool,
     /// Controls visibility of token savings footers in tool output.
     /// Values: "always" (default, show on every response), "never", "auto" (legacy compatibility).
@@ -643,7 +643,7 @@ impl Default for Config {
             max_staleness_days: 0,
             max_index_threads: 0,
             index_mode: IndexingMode::Full,
-            auto_watch: false,
+            auto_watch: true,
             savings_footer: SavingsFooter::default(),
             project_root: None,
             lsp: std::collections::HashMap::new(),

@@ -749,4 +749,320 @@ mod tests {
             "error must mention not-a-directory, got: {err}"
         );
     }
+
+    // ---- Test 1: Mode transition FULL → MODERATE ----
+
+    #[test]
+    fn incremental_mode_transition_full_to_moderate() {
+        let _iso = isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+
+        // Tree: src/ (always included), tests/ + examples/ + docs/ (FAST_SKIP in Moderate)
+        write_file(dir.path(), "src/main.rs", "fn main() {}");
+        write_file(dir.path(), "src/lib.rs", "pub fn helper() {}");
+        write_file(dir.path(), "README.md", "# Project");
+        write_file(dir.path(), "tests/test_main.rs", "fn test_main() {}");
+        write_file(dir.path(), "examples/example.rs", "fn example() {}");
+        write_file(dir.path(), "docs/guide.md", "# Guide");
+
+        // FULL build: all 6 files indexed.
+        let handle_full = IndexPipeline::new(dir.path().to_path_buf())
+            .with_mode(IndexingMode::Full)
+            .build()
+            .unwrap();
+        let report_full = handle_full.run().unwrap();
+        assert_eq!(report_full.files_scanned, 6, "FULL must find all 6 files");
+        assert_eq!(report_full.files_new, 6, "first build: all files are new");
+
+        // MODERATE build: excludes tests/, examples/, docs/ (FAST_SKIP_DIRS).
+        // Because metadata was stored under the FULL mode_mask, `load_for_mode(MODERATE)`
+        // returns empty → all 3 discovered files are "new" for MODERATE →
+        // total_affected == files_scanned → full_build is triggered (mode_skipped
+        // files from FULL index are replaced, not preserved — this is the expected
+        // behaviour when the mode transition triggers a full rebuild).
+        let handle_mod = IndexPipeline::new(dir.path().to_path_buf())
+            .with_mode(IndexingMode::Moderate)
+            .build()
+            .unwrap();
+        let report_mod = handle_mod.run().unwrap();
+
+        assert_eq!(
+            report_mod.files_scanned, 3,
+            "MODERATE should only find src/ + README"
+        );
+        assert_eq!(
+            report_mod.files_new, 3,
+            "3 files new for MODERATE mode_mask"
+        );
+        assert_eq!(report_mod.files_changed, 0);
+        assert_eq!(
+            report_mod.files_deleted, 0,
+            "FAST_SKIP files are mode_skipped — not deleted — even in full_build"
+        );
+        // Note: is_incremental is true because prev_graph loaded from the FULL
+        // dump artifact still on disk, even though the build internally went
+        // through full_build (total_affected == files_scanned).
+
+        // Load graph after MODERATE build — only the 3 MODERATE-discovered files
+        // survive because full_build replaced the entire index.
+        let (graph, bm25) = handle_mod.run_and_load().unwrap();
+        assert_eq!(graph.files.len(), 3, "only 3 src/ files in MODERATE graph");
+        assert!(graph.files.contains_key("src/main.rs"));
+        assert!(graph.files.contains_key("src/lib.rs"));
+        assert!(graph.files.contains_key("README.md"));
+
+        let chunk_paths: Vec<&str> = bm25.chunks.iter().map(|c| c.file_path.as_str()).collect();
+        assert!(chunk_paths.contains(&"src/main.rs"));
+        assert!(chunk_paths.contains(&"src/lib.rs"));
+        assert!(chunk_paths.contains(&"README.md"));
+    }
+
+    // ---- Test 2: Deleted file is removed from indices after incremental rebuild ----
+
+    #[test]
+    fn incremental_deleted_file_removed_from_indices() {
+        let _iso = isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+
+        write_file(dir.path(), "src/a.rs", "fn a() {}");
+        write_file(dir.path(), "src/b.rs", "fn b() {}");
+        write_file(dir.path(), "src/c.rs", "fn c() {}");
+
+        // First build (FULL).
+        let handle1 = IndexPipeline::new(dir.path().to_path_buf())
+            .with_mode(IndexingMode::Full)
+            .build()
+            .unwrap();
+        let report1 = handle1.run().unwrap();
+        assert_eq!(report1.files_scanned, 3);
+        assert_eq!(report1.files_new, 3);
+
+        // Delete src/c.rs on disk.
+        std::fs::remove_file(dir.path().join("src/c.rs")).unwrap();
+
+        // Second build (FULL incremental).
+        let handle2 = IndexPipeline::new(dir.path().to_path_buf())
+            .with_mode(IndexingMode::Full)
+            .build()
+            .unwrap();
+        let report2 = handle2.run().unwrap();
+
+        assert_eq!(report2.files_scanned, 2, "c.rs is gone");
+        assert_eq!(report2.files_deleted, 1, "one file deleted");
+        assert_eq!(report2.files_new, 0);
+        assert_eq!(report2.files_changed, 0);
+        assert!(report2.is_incremental, "second build is incremental");
+
+        // Load indices and verify c.rs is absent.
+        let (graph, bm25) = handle2.run_and_load().unwrap();
+
+        assert!(
+            graph.files.contains_key("src/a.rs"),
+            "a.rs must remain in graph"
+        );
+        assert!(
+            graph.files.contains_key("src/b.rs"),
+            "b.rs must remain in graph"
+        );
+        assert!(
+            !graph.files.contains_key("src/c.rs"),
+            "c.rs must be removed from graph"
+        );
+        assert_eq!(graph.files.len(), 2, "exactly 2 files in graph");
+
+        let chunk_paths: Vec<&str> = bm25.chunks.iter().map(|c| c.file_path.as_str()).collect();
+        assert!(chunk_paths.contains(&"src/a.rs"));
+        assert!(chunk_paths.contains(&"src/b.rs"));
+        assert!(
+            !chunk_paths.contains(&"src/c.rs"),
+            "c.rs chunks must be removed from BM25"
+        );
+    }
+
+    // ---- Test 3: FAST mode skips SIMILAR_TO / SEMANTICALLY_RELATED edges ----
+
+    #[test]
+    fn fast_mode_skips_similarity_edges() {
+        let _iso = isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+
+        // Files with inter-dependencies so edges are generated.
+        write_file(dir.path(), "src/main.rs", "mod helper;\nfn main() { helper::util(); }");
+        write_file(dir.path(), "src/helper.rs", "pub fn util() -> u32 { 42 }");
+
+        // FAST build.
+        let handle = IndexPipeline::new(dir.path().to_path_buf())
+            .with_mode(IndexingMode::Fast)
+            .build()
+            .unwrap();
+        let report = handle.run().unwrap();
+        assert!(report.files_scanned >= 2, "FAST should discover src/ files");
+
+        // Load graph and verify no SIMILAR_TO or SEMANTICALLY_RELATED edges.
+        let (graph, _bm25) = handle.run_and_load().unwrap();
+
+        for edge in &graph.edges {
+            assert!(
+                edge.kind != "SIMILAR_TO",
+                "FAST mode must not produce SIMILAR_TO edges, found: {edge:?}"
+            );
+            assert!(
+                edge.kind != "SEMANTICALLY_RELATED",
+                "FAST mode must not produce SEMANTICALLY_RELATED edges, found: {edge:?}"
+            );
+        }
+
+        // Edges should exist (import/module edges are structural, not skipped).
+        let edge_kinds: Vec<&str> = graph.edges.iter().map(|e| e.kind.as_str()).collect();
+        assert!(
+            edge_kinds.contains(&"import") || edge_kinds.contains(&"module"),
+            "FAST mode should still produce structural edges (import/module), got: {edge_kinds:?}"
+        );
+    }
+
+    // ---- Test 4: Full rebuild after purge produces valid output ----
+
+    #[test]
+    fn full_rebuild_after_purge() {
+        let _iso = isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+
+        write_file(dir.path(), "src/main.rs", "fn main() {}");
+        write_file(dir.path(), "src/lib.rs", "pub fn helper() {}");
+
+        // First build.
+        let handle1 = IndexPipeline::new(dir.path().to_path_buf())
+            .with_mode(IndexingMode::Full)
+            .build()
+            .unwrap();
+        let report1 = handle1.run().unwrap();
+        assert_eq!(report1.files_new, 2, "first build: both files new");
+
+        // Purge all dump artifacts (simulates starting from scratch).
+        let dump_engine = DumpEngine::new(dir.path().to_path_buf());
+        dump_engine.purge_all().unwrap();
+
+        // Second build after purge — full rebuild because dump artifacts are gone.
+        // Note: DumpEngine::purge_all removes graph/BM25 dump files but NOT the
+        // file metadata store (graph.db), so stored metadata still exists and
+        // classify_files reports all discovered files as "unchanged" (not "new").
+        // The build still runs the full_build path (prev_graph was None) producing
+        // a valid index.
+        let handle2 = IndexPipeline::new(dir.path().to_path_buf())
+            .with_mode(IndexingMode::Full)
+            .build()
+            .unwrap();
+        let report2 = handle2.run().unwrap();
+
+        assert_eq!(report2.files_scanned, 2, "still discovers 2 files");
+        // files_new is 0 because metadata store preserved the classification
+        // (files unchanged relative to stored metadata).
+        assert_eq!(report2.files_changed, 0);
+        assert_eq!(report2.files_deleted, 0);
+        assert!(
+            !report2.is_incremental,
+            "after purge the build is NOT incremental (no prev_graph loaded)"
+        );
+
+        // Load indices and verify they are valid.
+        let (graph, bm25) = handle2.run_and_load().unwrap();
+
+        assert_eq!(graph.files.len(), 2, "both files in graph");
+        assert!(graph.files.contains_key("src/main.rs"));
+        assert!(graph.files.contains_key("src/lib.rs"));
+
+        let chunk_paths: Vec<&str> = bm25.chunks.iter().map(|c| c.file_path.as_str()).collect();
+        assert!(chunk_paths.contains(&"src/main.rs"));
+        assert!(chunk_paths.contains(&"src/lib.rs"));
+        assert!(bm25.chunks.len() >= 2, "BM25 should have chunks for both files");
+    }
+
+    // ---- Test 5: All modes produce deterministic output ----
+
+    #[test]
+    fn all_modes_produce_deterministic_output() {
+        let _iso = isolated_data_dir();
+
+        fn run_twice(
+            dir: &std::path::Path,
+            mode: IndexingMode,
+        ) -> (PipelineReport, PipelineReport) {
+            let h1 = IndexPipeline::new(dir.to_path_buf())
+                .with_mode(mode)
+                .build()
+                .unwrap();
+            let r1 = h1.run().unwrap();
+
+            let h2 = IndexPipeline::new(dir.to_path_buf())
+                .with_mode(mode)
+                .build()
+                .unwrap();
+            let r2 = h2.run().unwrap();
+
+            (r1, r2)
+        }
+
+        // Create a test tree that produces edges (files with imports).
+        let dir = tempfile::tempdir().unwrap();
+        write_file(dir.path(), "src/main.rs", "mod helper;\nfn main() { helper::util(); }");
+        write_file(dir.path(), "src/helper.rs", "pub fn util() -> u32 { 42 }");
+        write_file(dir.path(), "README.md", "# Project");
+
+        // FULL mode: two runs.
+        let (full_1, full_2) = run_twice(dir.path(), IndexingMode::Full);
+        assert_eq!(
+            full_1.files_scanned, full_2.files_scanned,
+            "FULL: files_scanned must match"
+        );
+        assert_eq!(
+            full_1.nodes, full_2.nodes,
+            "FULL: nodes must match"
+        );
+        assert_eq!(
+            full_1.edges, full_2.edges,
+            "FULL: edges must match"
+        );
+        assert_eq!(
+            full_1.chunks, full_2.chunks,
+            "FULL: chunks must match"
+        );
+
+        // MODERATE mode: two runs.
+        let (mod_1, mod_2) = run_twice(dir.path(), IndexingMode::Moderate);
+        assert_eq!(
+            mod_1.files_scanned, mod_2.files_scanned,
+            "MODERATE: files_scanned must match"
+        );
+        assert_eq!(
+            mod_1.nodes, mod_2.nodes,
+            "MODERATE: nodes must match"
+        );
+        assert_eq!(
+            mod_1.edges, mod_2.edges,
+            "MODERATE: edges must match"
+        );
+        assert_eq!(
+            mod_1.chunks, mod_2.chunks,
+            "MODERATE: chunks must match"
+        );
+
+        // FAST mode: two runs.
+        let (fast_1, fast_2) = run_twice(dir.path(), IndexingMode::Fast);
+        assert_eq!(
+            fast_1.files_scanned, fast_2.files_scanned,
+            "FAST: files_scanned must match"
+        );
+        assert_eq!(
+            fast_1.nodes, fast_2.nodes,
+            "FAST: nodes must match"
+        );
+        assert_eq!(
+            fast_1.edges, fast_2.edges,
+            "FAST: edges must match"
+        );
+        assert_eq!(
+            fast_1.chunks, fast_2.chunks,
+            "FAST: chunks must match"
+        );
+    }
 }
