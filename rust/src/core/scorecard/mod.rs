@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use serde::Serialize;
 
-use crate::core::{benchmark, bm25_index::BM25Index};
+use crate::core::benchmark;
 
 /// Per-scenario result.
 #[derive(Debug, Clone, Serialize, PartialEq)]

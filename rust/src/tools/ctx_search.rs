@@ -484,10 +484,10 @@ fn compile_include(include: Option<&str>) -> Vec<Pattern> {
         .take(MAX_INCLUDE_GLOBS)
         .filter(|g| !g.is_empty())
         .map(|g| {
-            if !g.contains('/') {
-                format!("**/{g}")
-            } else {
+            if g.contains('/') {
                 g
+            } else {
+                format!("**/{g}")
             }
         })
         .filter_map(|g| Pattern::new(&g).ok())

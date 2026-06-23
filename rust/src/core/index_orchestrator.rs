@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::core::bm25_index::BM25Index;
 use crate::core::graph_index::{self, ProjectIndex};
 use crate::core::index_pipeline::dump_engine::DumpEngine;
-use crate::core::index_pipeline::pipeline::IndexPipeline;
+use crate::core::index_pipeline::pipeline::{IndexPipeline, PipelineReport};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
@@ -57,6 +57,9 @@ struct ProjectBuild {
     /// Tracked separately so the orchestrator does not block on a missing ONNX
     /// model — the status lets users see why semantic stays cold (#249).
     semantic: Component,
+    /// Most recent pipeline run report — carries mode, incremental flag,
+    /// elapsed time and per-file/per-node stats.
+    pipeline_report: Option<PipelineReport>,
 }
 
 impl ProjectBuild {
@@ -67,6 +70,7 @@ impl ProjectBuild {
             graph: Component::new(),
             bm25: Component::new(),
             semantic: Component::new(),
+            pipeline_report: None,
         }
     }
 }
@@ -279,128 +283,78 @@ pub fn ensure_all_background(project_root: &str) {
         // deduped internally) so the first ctx_search hits the fast path.
         crate::core::search_index::ensure_background(&root, true, false);
 
-        // ---- Parallel Phase: Graph + BM25 ----
-        let graph_state = entry_for(&root);
-        let graph_root = root.clone();
-        let graph_handle = std::thread::Builder::new()
-            .name("leanctx-graph".to_string())
-            .stack_size(INDEXER_STACK_BYTES)
-            .spawn(move || {
-                {
-                    let mut s = graph_state
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    start_component(&mut s.graph);
-                }
-                let graph_result = std::panic::catch_unwind(|| {
-                    let pipeline = IndexPipeline::new(std::path::PathBuf::from(&graph_root))
-                        .build()
-                        .expect("pipeline build failed");
-                    let _report = pipeline.run().expect("pipeline run failed");
-                    let (idx_opt, _, _) = DumpEngine::load_with_integrity_check(
-                        std::path::Path::new(&graph_root),
-                    )
-                    .expect("dump engine load failed");
-                    let idx = idx_opt.unwrap_or_else(|| ProjectIndex::new(&graph_root));
-                    // #696 C4: the property graph is the sole store. `save()` mirrors
-                    // the freshly scanned index into PG (stamping `graph.meta.json`) in
-                    // this same reliable worker, so PG inherits the scan's build reliability.
-                    if let Err(e) = idx.save() {
-                        tracing::warn!("[index_orchestrator: graph save failed: {e}]");
-                    }
-                });
-                if let Ok(()) = graph_result {
-                    let mut s = graph_state
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    finish_ok(&mut s.graph);
-                } else {
-                    let mut s = graph_state
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    finish_err(&mut s.graph, "graph index build panicked".to_string());
-                }
-            })
-            .expect("spawning graph index thread");
+        // ---- Single IndexPipeline run for Graph + BM25 ----
+        let state = entry_for(&root);
 
-        let bm25_state = entry_for(&root);
-        let bm25_root = root.clone();
-        let bm25_handle = std::thread::Builder::new()
-            .name("leanctx-bm25".to_string())
-            .stack_size(INDEXER_STACK_BYTES)
-            .spawn(move || {
-                {
-                    let mut s = bm25_state
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    start_component(&mut s.bm25);
-                }
-                let bm = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let root_pb = Path::new(&bm25_root);
-                    // Cross-instance build coordination: serialize the (expensive) BM25
-                    // build per repo, mirroring the `graph-idx` lock in graph_index.
-                    let lock_name = bm25_index_lock_name(root_pb);
-                    let _lock = crate::core::startup_guard::try_acquire_lock(
-                        &lock_name,
-                        std::time::Duration::from_millis(800),
-                        std::time::Duration::from_mins(3),
-                    );
-                    if _lock.is_none() {
-                        tracing::info!(
-                            "[bm25: another process is building {bm25_root} — loading the shared index]"
-                        );
-                        let idx = BM25Index::load(root_pb).unwrap_or_default();
-                        return (idx.doc_count, None);
-                    }
-                    // Use IndexPipeline instead of BM25Index::load_or_build
-                    let root_buf = root_pb.to_path_buf();
-                    let idx = if let Ok(pipeline) = IndexPipeline::new(root_buf.clone()).build() {
-                        let _ = pipeline.run();
-                        if let Ok((_, bm25, _)) =
-                            DumpEngine::load_with_integrity_check(&root_buf)
-                        {
-                            bm25.unwrap_or_default()
-                        } else {
-                            BM25Index::default()
+        // Mark both components as building.
+        {
+            let mut s = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            start_component(&mut s.graph);
+            start_component(&mut s.bm25);
+        }
+
+        let pipeline_result = std::panic::catch_unwind(|| -> Result<_, String> {
+            let handle = IndexPipeline::new(std::path::PathBuf::from(&root))
+                .build()
+                .map_err(|e| format!("pipeline build failed: {e}"))?;
+            let report = handle
+                .run()
+                .map_err(|e| format!("pipeline run failed: {e}"))?;
+
+            // Load the resulting indices from disk (dumped by the pipeline).
+            let (graph_opt, bm25_opt, _metadata_store) =
+                DumpEngine::load_with_integrity_check(std::path::Path::new(&root))
+                    .map_err(|e| format!("loading dumped indices failed: {e}"))?;
+
+            Ok((report, graph_opt, bm25_opt))
+        });
+
+        {
+            let mut s = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+            match pipeline_result {
+                Ok(Ok((report, graph_opt, bm25_opt))) => {
+                    s.pipeline_report = Some(report);
+
+                    // #696 C4: persist graph index to the property graph
+                    // (stamping `graph.meta.json`) so PG mirrors the freshly
+                    // scanned index.
+                    if let Some(ref idx) = graph_opt
+                        && let Err(e) = idx.save() {
+                            tracing::warn!(
+                                "[index_orchestrator: graph save failed: {e}]"
+                            );
                         }
-                    } else {
-                        BM25Index::default()
-                    };
-                    let outcome = idx.save(root_pb);
-                    (idx.doc_count, Some(outcome))
-                }));
-                if let Ok((doc_count, save_res)) = bm {
-                     let mut s = bm25_state
-                         .lock()
-                         .unwrap_or_else(std::sync::PoisonError::into_inner);
-                     finish_ok(&mut s.bm25);
-                     s.bm25.note = Some(match save_res {
-                         Some(outcome) => bm25_build_note(doc_count, &outcome),
-                         None => format!(
-                             "loaded shared BM25 index ({doc_count} chunks) — build in progress in another process"
-                         ),
-                     });
-                 } else {
-                     let mut s = bm25_state
-                         .lock()
-                         .unwrap_or_else(std::sync::PoisonError::into_inner);
-                     finish_err(&mut s.bm25, "bm25 build panicked".to_string());
-                 }
-            })
-            .expect("spawning BM25 index thread");
 
-        if let Err(e) = graph_handle.join() {
-            tracing::error!("[index_orchestrator: graph thread panicked: {e:?}]");
-        }
-        if let Err(e) = bm25_handle.join() {
-            tracing::error!("[index_orchestrator: BM25 thread panicked: {e:?}]");
-        }
+                    let graph_note =
+                        graph_opt.as_ref().map(|idx| {
+                            format!("{} files, {} edges", idx.file_count(), idx.edge_count())
+                        });
+                    let bm25_note =
+                        bm25_opt.as_ref().map(|idx| format!("{} chunks", idx.chunks.len()));
 
-        let final_state = entry_for(&root);
-        let mut s = final_state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        s.worker_running = false;
+                    s.graph.note = graph_note;
+                    s.bm25.note = bm25_note;
+                    finish_ok(&mut s.graph);
+                    finish_ok(&mut s.bm25);
+                }
+                Ok(Err(e)) => {
+                    finish_err(&mut s.graph, e.clone());
+                    finish_err(&mut s.bm25, e);
+                }
+                Err(panic) => {
+                    let msg = format!("index build panicked: {panic:?}");
+                    finish_err(&mut s.graph, msg.clone());
+                    finish_err(&mut s.bm25, msg);
+                }
+            }
+
+            s.worker_running = false;
+        }
     };
 
     // Indexing parses large ASTs and traverses graphs; give the worker a
@@ -689,6 +643,15 @@ struct StatusResponse<'a> {
     /// has not been downloaded yet or the embeddings feature was not compiled
     /// in; "ready" means embeddings are persisted and search will use them.
     semantic_index: ComponentStatus<'a>,
+    /// Indexing mode used by the most recent pipeline run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pipeline_mode: Option<&'a str>,
+    /// Whether the most recent pipeline run was incremental.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pipeline_incremental: Option<bool>,
+    /// Elapsed wall-clock time of the most recent pipeline run, in ms.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pipeline_elapsed_ms: Option<u64>,
     disk: DiskStatusAll,
 }
 
@@ -815,11 +778,24 @@ pub fn status_json(project_root: &str) -> String {
     let s = state
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    // Extract pipeline fields from the stored report into local variables
+    // so the &str borrow lives long enough for serialization.
+    let pipeline_mode_label: Option<String> = s
+        .pipeline_report
+        .as_ref()
+        .map(|r| r.mode.label().to_string());
+    let pipeline_incremental = s.pipeline_report.as_ref().map(|r| r.is_incremental);
+    let pipeline_elapsed_ms = s.pipeline_report.as_ref().map(|r| r.elapsed_ms);
+
     let res = StatusResponse {
         project_root,
         graph_index: component_status(&s.graph),
         bm25_index: component_status(&s.bm25),
         semantic_index: component_status(&s.semantic),
+        pipeline_mode: pipeline_mode_label.as_deref(),
+        pipeline_incremental,
+        pipeline_elapsed_ms,
         disk,
     };
     serde_json::to_string(&res).unwrap_or_else(|_| "{}".to_string())

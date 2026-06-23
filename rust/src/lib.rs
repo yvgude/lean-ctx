@@ -56,3 +56,4 @@ pub mod tool_defs;
 pub mod tools;
 pub mod tui;
 pub mod uninstall;
+pub mod watcher;

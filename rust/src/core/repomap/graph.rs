@@ -6,7 +6,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::core::call_graph::{CallGraph, CallGraphInputs};
-use crate::core::graph_index::{self, ProjectIndex, SymbolEntry};
+use crate::core::graph_index;
+use crate::core::graph_index::{ProjectIndex, SymbolEntry};
 
 /// A symbol definition with its file context.
 #[derive(Debug, Clone)]
@@ -35,14 +36,15 @@ impl RepoGraph {
     /// Loads or builds the project index and call graph,
     /// then merges their edges into a unified file-level graph.
     pub fn build(project_root: &str) -> Self {
-        let (index, content_cache) = match Self::try_build_pipeline(project_root) {
-            Some(result) => result,
-            None => {
-                // Pipeline unavailable (non-existent root, etc.) — build an
-                // empty graph from what's available on disk.
-                let index = ProjectIndex::new(project_root);
-                return Self::from_index_and_calls(&index, &CallGraph::new(project_root), &HashMap::new());
-            }
+        let Some((index, content_cache)) = Self::try_build_pipeline(project_root) else {
+            // Pipeline unavailable (non-existent root, etc.) — build an
+            // empty graph from what's available on disk.
+            let index = ProjectIndex::new(project_root);
+            return Self::from_index_and_calls(
+                &index,
+                &CallGraph::new(project_root),
+                &HashMap::new(),
+            );
         };
         // Pipeline doesn't preserve the content cache; repomap omits detailed
         // signature enrichment when it is unavailable (still builds valid graph).
@@ -105,7 +107,9 @@ impl RepoGraph {
     /// Try to build a ProjectIndex from the pipeline; returns None if the
     /// pipeline cannot be built (e.g. root does not exist) so callers can
     /// fall back to an empty index instead of panicking.
-    fn try_build_pipeline(project_root: &str) -> Option<(ProjectIndex, Option<HashMap<String, String>>)> {
+    fn try_build_pipeline(
+        project_root: &str,
+    ) -> Option<(ProjectIndex, Option<HashMap<String, String>>)> {
         let root = std::path::PathBuf::from(project_root);
         if !root.exists() || !root.is_dir() {
             return None;

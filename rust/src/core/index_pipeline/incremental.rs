@@ -150,11 +150,10 @@ pub fn classify_files(
     // so the additional `all_stored.contains_key` check is a safety net for
     // internal consistency.
     for path in stored.keys() {
-        if !discovered_set.contains(path.as_str()) {
-            if all_stored.contains_key(path) {
+        if !discovered_set.contains(path.as_str())
+            && all_stored.contains_key(path) {
                 result.deleted.push(path.clone());
             }
-        }
     }
 
     // ── Step 3: Detect mode-skipped files ──────────────────────────────────
@@ -163,7 +162,7 @@ pub fn classify_files(
     // but NOT in `stored`) and are not found by the current discovery pass.
     // Their metadata is preserved so graph nodes are not dropped.
     let deleted_set: std::collections::HashSet<&str> =
-        result.deleted.iter().map(|s| s.as_str()).collect();
+        result.deleted.iter().map(std::string::String::as_str).collect();
 
     for path in all_stored.keys() {
         if !discovered_set.contains(path.as_str())

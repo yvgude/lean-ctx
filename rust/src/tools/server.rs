@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::time::Instant;
 use tokio::sync::RwLock;
 
@@ -89,6 +89,7 @@ pub struct LeanCtxServer {
     pub(crate) roots_resolved: Arc<std::sync::atomic::AtomicBool>,
     pub(crate) bm25_cache: Arc<std::sync::Mutex<Option<crate::core::bm25_cache::Bm25CacheEntry>>>,
     pub(crate) progress_sender: crate::server::progress::SharedProgressSender,
+    pub stop_signal: Arc<AtomicBool>,
 }
 
 pub use crate::core::protocol::ToolCallRecord;

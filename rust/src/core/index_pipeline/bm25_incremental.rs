@@ -78,8 +78,8 @@ impl Bm25IncrementalBuilder {
             }
             FileStatus::Changed | FileStatus::New => {
                 // Extract fresh chunks from content
-                if let Some(content) = content {
-                    if !content.is_empty() {
+                if let Some(content) = content
+                    && !content.is_empty() {
                         let mut chunks = extract_chunks(rel, content);
                         chunks.sort_by(|a, b| {
                             a.start_line
@@ -88,7 +88,6 @@ impl Bm25IncrementalBuilder {
                         });
                         self.chunks.extend(chunks);
                     }
-                }
             }
             FileStatus::Deleted => {
                 // Skip — previous chunks already removed via HashMap::remove above

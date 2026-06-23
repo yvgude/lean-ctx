@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::time::Instant;
 use tokio::sync::RwLock;
 
@@ -183,6 +183,7 @@ impl LeanCtxServer {
             roots_resolved: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             bm25_cache,
             progress_sender: Arc::new(std::sync::Mutex::new(None)),
+            stop_signal: Arc::new(AtomicBool::new(false)),
         }
     }
 
