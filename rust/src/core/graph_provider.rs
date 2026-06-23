@@ -591,12 +591,15 @@ pub fn open_or_build(project_root: &str) -> Option<OpenGraphProvider> {
     if let (Some(p), _) = open_existing(project_root) {
         return Some(p);
     }
-    let handle = super::index_pipeline::pipeline::IndexPipeline::new(
-        std::path::PathBuf::from(project_root),
-    )
-    .build()
-    .expect("pipeline build failed");
-    let (idx, _) = handle.run_and_load().expect("pipeline run failed");
+    // Graceful fallback for non-existent roots (matching try_build_pipeline).
+    let root = std::path::PathBuf::from(project_root);
+    if !root.exists() || !root.is_dir() {
+        return None;
+    }
+    let handle = super::index_pipeline::pipeline::IndexPipeline::new(root)
+        .build()
+        .ok()?;
+    let (idx, _) = handle.run_and_load().ok()?;
     if idx.files.is_empty() {
         return None;
     }

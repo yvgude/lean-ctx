@@ -160,7 +160,7 @@ fn run_one(sc: &scenarios::Scenario) -> std::io::Result<ScenarioScore> {
         .map_or_else(|| ("none".to_string(), 0.0), |(m, v)| (m.clone(), *v));
 
     // --- Retrieval quality (pure BM25 → deterministic, feature-independent) ---
-    let index = BM25Index::build_from_directory(root);
+    let index = crate::core::index_orchestrator::load_or_build_bm25(root);
     let mut sum_r5 = 0.0;
     let mut sum_r10 = 0.0;
     let mut sum_mrr = 0.0;

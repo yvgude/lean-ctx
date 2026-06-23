@@ -1,5 +1,8 @@
 //! Unit tests for the graph index. Extracted from `graph_index/mod.rs`;
 //! `super::*` resolves to the `graph_index` module.
+// These test the deprecated entry points which are still available until Phase B (T23).
+
+#![allow(deprecated)]
 
 use super::*;
 use tempfile::tempdir;

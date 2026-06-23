@@ -1,5 +1,8 @@
 //! Tests for the BM25 index. Extracted from `bm25_index/mod.rs`;
 //! `super::*` resolves to the `bm25_index` module.
+// These test the deprecated entry points which are still available until Phase B (T23).
+
+#![allow(deprecated)]
 
 use super::*;
 use tempfile::tempdir;

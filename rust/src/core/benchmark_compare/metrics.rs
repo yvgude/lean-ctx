@@ -112,7 +112,7 @@ fn build_mode_comparisons(bench: &ProjectBenchmark) -> Vec<ModeComparison> {
 }
 
 fn measure_search_latency(root: &Path) -> Vec<SearchLatency> {
-    let index = BM25Index::load_or_build_fast(root);
+    let index = crate::core::index_orchestrator::load_or_build_bm25(root);
 
     SEARCH_QUERIES
         .iter()
@@ -158,7 +158,7 @@ fn measure_cold_start(root: &Path) -> ColdStartTiming {
     let scan_us = scan_start.elapsed().as_micros() as u64;
 
     let bm25_start = Instant::now();
-    let _index = BM25Index::build_from_directory(root);
+    let _index = crate::core::index_orchestrator::load_or_build_bm25(root);
     let bm25_build_us = bm25_start.elapsed().as_micros() as u64;
 
     let read_start = Instant::now();

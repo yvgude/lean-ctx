@@ -72,7 +72,7 @@ pub fn get_or_load(cache: &SharedBm25Cache, root: &Path) -> Arc<BM25Index> {
         }
     }
 
-    let index = Arc::new(BM25Index::load_or_build_fast(root));
+    let index = Arc::new(crate::core::index_orchestrator::load_or_build_bm25(root));
 
     let mut guard = cache
         .lock()
@@ -109,7 +109,7 @@ pub fn get_or_background(cache: &SharedBm25Cache, root: &Path) -> Option<Arc<BM2
             // kill the worker silently — the stale index keeps serving and the
             // next call retries the refresh.
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let rebuilt = BM25Index::load_or_build(&root_clone);
+                let rebuilt = crate::core::index_orchestrator::load_or_build_bm25(&root_clone);
                 let rebuilt_fp = index_fingerprint(&root_clone);
                 let mut g = cache_clone
                     .lock()

@@ -17,7 +17,6 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::core::bm25_index::BM25Index;
 use crate::core::compressor::aggressive_compress;
 use crate::core::tokens::count_tokens;
 
@@ -85,7 +84,7 @@ fn baseline_entries(workspace: &Path) -> Vec<(String, String)> {
 
 /// `(relpath, rendered_content)` in lean-ctx order: BM25-ranked by `query`, then compressed.
 fn lean_ctx_entries(workspace: &Path, query: &str) -> Vec<(String, String)> {
-    let index = BM25Index::build_from_directory(workspace);
+    let index = crate::core::index_orchestrator::load_or_build_bm25(workspace);
     let ranked = index.search(query, 256);
     let mut out = Vec::new();
     let mut seen = std::collections::HashSet::new();

@@ -134,7 +134,7 @@ impl ActiveRepoRoot {
         if self.index.is_some() {
             return;
         }
-        self.index = Some(BM25Index::load_or_build(&self.path));
+        self.index = Some(crate::core::index_orchestrator::load_or_build_bm25(&self.path));
     }
 
     pub fn alias(&self) -> String {
