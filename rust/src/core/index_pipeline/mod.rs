@@ -1,8 +1,10 @@
+pub mod bm25_incremental;
 pub mod content_pipeline;
 pub mod discovery;
 pub mod dump_engine;
 pub mod edge_snapshot;
 pub mod extraction;
 pub mod file_metadata_store;
+pub mod graph_builder;
 pub mod incremental;
 pub mod pipeline;
