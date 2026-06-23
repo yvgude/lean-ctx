@@ -61,13 +61,18 @@ pub fn handle(
 /// current graph_index and quantify whether PG reproduces everything the
 /// facade exposes (symbols, edges, dependencies) before any backend flip.
 fn handle_parity(root: &str, fmt: OutputFormat) -> String {
-    // Compare the *fresh extractor* output (a real graph_index scan, built
-    // in-memory from the file walk + signature extraction) against a
+    // Compare the *fresh extractor* output (a real index build, produced by
+    // the IndexPipeline from the file walk + signature extraction) against a
     // PropertyGraph populated from it — the genuine "mirror is lossless"
     // invariant. Loading the persisted index would be circular since #696 C4
     // (it is itself materialized from the PG), yielding a meaningless trivially
     // lossless result, so always rescan to keep this a real proof.
-    let index = crate::core::graph_index::scan_with_content_cache(root).0;
+    let handle = crate::core::index_pipeline::pipeline::IndexPipeline::new(
+        std::path::PathBuf::from(root),
+    )
+    .build()
+    .expect("pipeline build failed");
+    let (index, _) = handle.run_and_load().expect("pipeline run failed");
 
     let report = match crate::core::graph_parity::compare(&index) {
         Ok(r) => r,

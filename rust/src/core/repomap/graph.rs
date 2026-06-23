@@ -35,7 +35,18 @@ impl RepoGraph {
     /// Loads or builds the project index and call graph,
     /// then merges their edges into a unified file-level graph.
     pub fn build(project_root: &str) -> Self {
-        let (index, content_cache) = graph_index::scan_with_content_cache(project_root);
+        let (index, content_cache) = match Self::try_build_pipeline(project_root) {
+            Some(result) => result,
+            None => {
+                // Pipeline unavailable (non-existent root, etc.) — build an
+                // empty graph from what's available on disk.
+                let index = ProjectIndex::new(project_root);
+                return Self::from_index_and_calls(&index, &CallGraph::new(project_root), &HashMap::new());
+            }
+        };
+        // Pipeline doesn't preserve the content cache; repomap omits detailed
+        // signature enrichment when it is unavailable (still builds valid graph).
+        let content_cache = content_cache.unwrap_or_default();
         let cg_inputs = CallGraphInputs::from_project_index(&index);
         let call_graph = CallGraph::load_or_build(project_root, &cg_inputs);
 
@@ -89,6 +100,21 @@ impl RepoGraph {
             forward,
             symbols_by_file,
         }
+    }
+
+    /// Try to build a ProjectIndex from the pipeline; returns None if the
+    /// pipeline cannot be built (e.g. root does not exist) so callers can
+    /// fall back to an empty index instead of panicking.
+    fn try_build_pipeline(project_root: &str) -> Option<(ProjectIndex, Option<HashMap<String, String>>)> {
+        let root = std::path::PathBuf::from(project_root);
+        if !root.exists() || !root.is_dir() {
+            return None;
+        }
+        let handle = crate::core::index_pipeline::pipeline::IndexPipeline::new(root)
+            .build()
+            .ok()?;
+        let (index, _bm25) = handle.run_and_load().ok()?;
+        Some((index, None))
     }
 }
 

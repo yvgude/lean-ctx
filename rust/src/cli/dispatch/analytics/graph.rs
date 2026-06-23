@@ -36,7 +36,12 @@ pub(in crate::cli::dispatch) fn cmd_graph(rest: &[String]) {
             if force {
                 core::graph_index::purge_index(&root);
             }
-            let index = core::graph_index::scan(&root);
+            let handle = crate::core::index_pipeline::pipeline::IndexPipeline::new(
+                std::path::PathBuf::from(&root),
+            )
+            .build()
+            .expect("pipeline build failed");
+            let (index, _) = handle.run_and_load().expect("pipeline run failed");
             println!(
                 "Graph built: {} files, {} edges",
                 index.files.len(),

@@ -38,7 +38,12 @@ diagram, neighbors, path, explain, diff"
 }
 
 fn handle_build(root: &str) -> String {
-    let index = graph_index::scan(root);
+    let handle = crate::core::index_pipeline::pipeline::IndexPipeline::new(
+        std::path::PathBuf::from(root),
+    )
+    .build()
+    .expect("pipeline build failed");
+    let (index, _) = handle.run_and_load().expect("pipeline run failed");
 
     let mut by_lang: HashMap<&str, (usize, usize)> = HashMap::new();
     for entry in index.files.values() {

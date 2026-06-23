@@ -11,6 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use super::{BM25Index, bm25_index_looks_stale_fast};
+use crate::core::index_pipeline::dump_engine::DumpEngine;
+use crate::core::index_pipeline::pipeline::IndexPipeline;
 
 /// Build progress, serialised to the dashboard as the `202` body.
 #[derive(serde::Serialize)]
@@ -54,11 +56,15 @@ pub fn get_or_start_build(root: &Path) -> Result<Arc<BM25Index>, SearchIndexBuil
 
     let bg_root = root.to_path_buf();
     std::thread::spawn(move || {
-        // `load_or_build_fast` builds and persists the index; the next poll then
+        // Use IndexPipeline to build+persist the index; the next poll then
         // loads it via the fast path. Catch panics so the single-flight flag is
         // always cleared and the coordinator never wedges.
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _ = BM25Index::load_or_build_fast(&bg_root);
+            if let Ok(pipeline) = IndexPipeline::new(bg_root.clone()).build() {
+                let _ = pipeline.run();
+            }
+            // Load result from disk so DumpEngine dumps are visible to fast-path load
+            let _ = DumpEngine::load_with_integrity_check(&bg_root);
         }));
         building_flag().store(false, Ordering::SeqCst);
     });

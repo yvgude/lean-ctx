@@ -263,16 +263,19 @@ impl BM25Index {
         index
     }
 
+    #[deprecated(note = "Use IndexPipeline instead")]
     pub fn build_from_directory(root: &Path) -> Self {
         Self::build_from_directory_inner(root, &HashMap::new())
     }
 
     /// Like `build_from_directory` but reuses file content from a prior scan
     /// (e.g. the graph index walk) to avoid redundant disk reads.
+    #[deprecated(note = "Use IndexPipeline instead")]
     pub fn build_with_content_hint(root: &Path, content_hint: &HashMap<String, String>) -> Self {
         Self::build_from_directory_inner(root, content_hint)
     }
 
+    #[deprecated(note = "Use IndexPipeline instead")]
     fn build_from_directory_inner(root: &Path, content_hint: &HashMap<String, String>) -> Self {
         let root_str = root.to_string_lossy();
         if !super::graph_index::is_safe_scan_root_public(&root_str) {
@@ -371,6 +374,7 @@ impl BM25Index {
         index
     }
 
+    #[deprecated(note = "Use IndexPipeline instead")]
     pub fn rebuild_incremental(root: &Path, prev: &BM25Index) -> Self {
         let mut old_by_file: HashMap<String, Vec<CodeChunk>> = HashMap::new();
         for c in &prev.chunks {
@@ -689,16 +693,19 @@ impl BM25Index {
         None
     }
 
+    #[deprecated(note = "Use IndexPipeline instead")]
     pub fn load_or_build(root: &Path) -> Self {
         Self::load_or_build_inner(root, false)
     }
 
     /// Like `load_or_build` but uses a fast sentinel-sampling staleness check
     /// that skips the expensive full directory walk for new-file detection.
+    #[deprecated(note = "Use IndexPipeline instead")]
     pub fn load_or_build_fast(root: &Path) -> Self {
         Self::load_or_build_inner(root, true)
     }
 
+    #[deprecated(note = "Use IndexPipeline instead")]
     fn load_or_build_inner(root: &Path, fast_stale: bool) -> Self {
         if !is_safe_bm25_root(root) {
             return Self::default();

@@ -7,6 +7,8 @@ use serde::Serialize;
 
 use crate::core::bm25_index::BM25Index;
 use crate::core::graph_index::{self, ProjectIndex};
+use crate::core::index_pipeline::dump_engine::DumpEngine;
+use crate::core::index_pipeline::pipeline::IndexPipeline;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
@@ -291,7 +293,15 @@ pub fn ensure_all_background(project_root: &str) {
                     start_component(&mut s.graph);
                 }
                 let graph_result = std::panic::catch_unwind(|| {
-                    let (idx, _cache) = graph_index::scan_with_content_cache(&graph_root);
+                    let pipeline = IndexPipeline::new(std::path::PathBuf::from(&graph_root))
+                        .build()
+                        .expect("pipeline build failed");
+                    let _report = pipeline.run().expect("pipeline run failed");
+                    let (idx_opt, _, _) = DumpEngine::load_with_integrity_check(
+                        std::path::Path::new(&graph_root),
+                    )
+                    .expect("dump engine load failed");
+                    let idx = idx_opt.unwrap_or_else(|| ProjectIndex::new(&graph_root));
                     // #696 C4: the property graph is the sole store. `save()` mirrors
                     // the freshly scanned index into PG (stamping `graph.meta.json`) in
                     // this same reliable worker, so PG inherits the scan's build reliability.
@@ -342,7 +352,20 @@ pub fn ensure_all_background(project_root: &str) {
                         let idx = BM25Index::load(root_pb).unwrap_or_default();
                         return (idx.doc_count, None);
                     }
-                    let idx = BM25Index::load_or_build(root_pb);
+                    // Use IndexPipeline instead of BM25Index::load_or_build
+                    let root_buf = root_pb.to_path_buf();
+                    let idx = if let Ok(pipeline) = IndexPipeline::new(root_buf.clone()).build() {
+                        let _ = pipeline.run();
+                        if let Ok((_, bm25, _)) =
+                            DumpEngine::load_with_integrity_check(&root_buf)
+                        {
+                            bm25.unwrap_or_default()
+                        } else {
+                            BM25Index::default()
+                        }
+                    } else {
+                        BM25Index::default()
+                    };
                     let outcome = idx.save(root_pb);
                     (idx.doc_count, Some(outcome))
                 }));

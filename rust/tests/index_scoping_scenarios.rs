@@ -16,6 +16,7 @@ fn graph_api_response_contains_project_root_full() {
     assert!(json_str.contains(root));
 }
 
+#[allow(deprecated)]
 #[test]
 fn load_or_build_does_not_use_legacy_dot_cache() {
     let tmp = tempfile::tempdir().unwrap();
@@ -33,6 +34,7 @@ fn load_or_build_does_not_use_legacy_dot_cache() {
     );
 }
 
+#[allow(deprecated)]
 #[test]
 fn cwd_fallback_only_used_if_subdirectory_of_root() {
     let tmp = tempfile::tempdir().unwrap();

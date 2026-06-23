@@ -449,6 +449,7 @@ impl ProjectIndex {
 /// Load the best available graph index, trying multiple root path variants.
 /// If no valid index exists, automatically scans the project to build one.
 /// This is the primary entry point — ensures zero-config usage.
+#[deprecated(note = "Use IndexPipeline instead")]
 pub fn load_or_build(project_root: &str) -> ProjectIndex {
     if std::env::var("LEAN_CTX_NO_INDEX").is_ok() {
         return ProjectIndex::load(project_root).unwrap_or_else(|| ProjectIndex::new(project_root));
@@ -683,10 +684,12 @@ pub fn purge_index(project_root: &str) {
     }
 }
 
+#[deprecated(note = "Use IndexPipeline instead")]
 pub fn scan(project_root: &str) -> ProjectIndex {
     scan_inner(project_root).0
 }
 
+#[deprecated(note = "Use IndexPipeline instead")]
 pub fn scan_with_content_cache(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     scan_inner(project_root)
 }

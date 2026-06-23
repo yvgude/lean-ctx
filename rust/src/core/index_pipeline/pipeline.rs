@@ -286,6 +286,27 @@ impl PipelineHandle {
         })
     }
 
+    /// Run the pipeline and load the resulting indices from disk.
+    ///
+    /// Convenience method that calls [`run()`] and then loads the graph and
+    /// BM25 indices that were dumped to disk, returning them directly.
+    ///
+    /// # Errors
+    ///
+    /// Propagates errors from the pipeline run and the load-with-integrity-check.
+    pub fn run_and_load(&self) -> Result<(ProjectIndex, BM25Index)> {
+        self.run()?;
+        let (_graph, _bm25, _metadata) =
+            DumpEngine::load_with_integrity_check(&self.project_root)
+                .context("loading dumped indices after pipeline run")?;
+        Ok((
+            _graph.unwrap_or_else(|| ProjectIndex::new(
+                &self.project_root.to_string_lossy(),
+            )),
+            _bm25.unwrap_or_default(),
+        ))
+    }
+
     // ---- Full build ----
 
     /// Perform a full (non-incremental) index build from scratch.

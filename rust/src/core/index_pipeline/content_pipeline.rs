@@ -8,7 +8,8 @@
 //! ```text
 //! ContentPipeline::ingest_file(file)
 //!   ├── checks max_file_size (skip if too large)
-//!   ├── reads file content via std::fs::read_to_string
+//!   ├── checks global shared content_cache (hit → cache, return)
+//!   ├── reads file content via std::fs::read_to_string (cache miss)
 //!   ├── computes content hash (std hash, deterministic)
 //!   ├── populates ContentEntry { content, mtime, size, hash }
 //!   ├── stores in self.content_cache (HashMap<String, ContentEntry>)
@@ -109,7 +110,30 @@ impl ContentPipeline {
             return Ok(entry);
         }
 
-        // Read from disk.
+        // Check the global shared content cache first — another component (e.g. the
+        // BM25 index build, ctx_search, or a previous pipeline run) may have already
+        // read this file.  content_cache::get validates against (mtime, size), so a
+        // cache-hit is guaranteed fresh.
+        let cache_state = content_cache::FileState {
+            mtime_ms: system_time_to_millis(file.mtime),
+            size_bytes: file.size,
+        };
+        if let Some(cached) = content_cache::get(&file.path, cache_state) {
+            let cached_string: String = cached.to_string();
+            let content_arc: Arc<String> = Arc::new(cached_string);
+            let content_hash = compute_content_hash(content_arc.as_str());
+            let entry = ContentEntry {
+                content: Arc::clone(&content_arc),
+                mtime: file.mtime,
+                size: file.size,
+                content_hash,
+            };
+            self.content_cache
+                .insert(file.rel_path.clone(), entry.clone());
+            return Ok(entry);
+        }
+
+        // Cache miss — read from disk.
         let content_text =
             std::fs::read_to_string(&file.path)
                 .with_context(|| format!("failed to read {}", file.path.display()))?;
@@ -388,7 +412,7 @@ mod tests {
     fn re_ingesting_same_file_updates_cache() {
         let dir = tempfile::tempdir().unwrap();
         let abs_path = dir.path().join("update.rs");
-        std::fs::write(&abs_path, "v1").unwrap();
+        std::fs::write(&abs_path, "version one content").unwrap();
 
         let meta = abs_path.metadata().unwrap();
         let file_v1 = DiscoveredFile {
@@ -401,10 +425,10 @@ mod tests {
 
         let mut pipeline = ContentPipeline::new(1_000_000);
         let entry_v1 = pipeline.ingest_file(&file_v1).unwrap();
-        assert_eq!(&*entry_v1.content, "v1");
+        assert_eq!(&*entry_v1.content, "version one content");
 
-        // Modify the file.
-        std::fs::write(&abs_path, "v2").unwrap();
+        // Modify the file with different content length so FileState differs.
+        std::fs::write(&abs_path, "v2-shorter").unwrap();
         let meta = abs_path.metadata().unwrap();
         let file_v2 = DiscoveredFile {
             path: abs_path,
@@ -415,7 +439,7 @@ mod tests {
         };
 
         let entry_v2 = pipeline.ingest_file(&file_v2).unwrap();
-        assert_eq!(&*entry_v2.content, "v2", "re-ingest must return new content");
+        assert_eq!(&*entry_v2.content, "v2-shorter", "re-ingest must return new content");
         assert_ne!(
             entry_v1.content_hash, entry_v2.content_hash,
             "hash must change when content changes"
@@ -531,6 +555,71 @@ mod tests {
             pipeline.get_entry("Cargo.toml").unwrap().content_hash,
             entry.content_hash
         );
+    }
+
+    // -- ingest_file reads from shared cache when pre-populated --
+
+    #[test]
+    fn ingest_file_hits_shared_cache_when_prepopulated() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = make_file(dir.path(), "cached.rs", "// from shared cache");
+
+        // Pre-populate the global shared cache before creating the pipeline.
+        let cache_state = content_cache::FileState {
+            mtime_ms: system_time_to_millis(file.mtime),
+            size_bytes: file.size,
+        };
+        let pre_content: Arc<str> = Arc::from("// from shared cache");
+        content_cache::insert(&file.path, cache_state, pre_content);
+
+        // Now ingest_file should hit the cache instead of reading from disk.
+        let hits_before = content_cache::stats().hits;
+        let mut pipeline = ContentPipeline::new(1_000_000);
+        let entry = pipeline.ingest_file(&file).unwrap();
+        let hits_after = content_cache::stats().hits;
+
+        assert_eq!(&*entry.content, "// from shared cache");
+        assert!(
+            hits_after > hits_before,
+            "ingest_file must produce a shared cache hit when cache is pre-populated (hits: {hits_before} → {hits_after})"
+        );
+    }
+
+    // -- ingest_file misses shared cache when file changed since cached --
+
+    #[test]
+    fn ingest_file_misses_stale_cache_when_file_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let abs_path = dir.path().join("stale_cache.rs");
+
+        // Write v1 and pre-populate cache.
+        std::fs::write(&abs_path, "v1 content that is longer").unwrap();
+        let meta_v1 = abs_path.metadata().unwrap();
+        let state_v1 = content_cache::FileState {
+            mtime_ms: system_time_to_millis(meta_v1.modified().unwrap()),
+            size_bytes: meta_v1.len(),
+        };
+        content_cache::insert(&abs_path, state_v1, Arc::from("v1 content that is longer"));
+
+        // Modify the file (v2) with different size so FileState is guaranteed
+        // to differ — mtime alone is not reliable on fast filesystems.
+        std::fs::write(&abs_path, "v2 shorter").unwrap();
+
+        // Create DiscoveredFile for v2 (with current mtime/size).
+        let meta_v2 = abs_path.metadata().unwrap();
+        let file_v2 = DiscoveredFile {
+            path: abs_path.clone(),
+            rel_path: "stale_cache.rs".to_string(),
+            ext: "rs".to_string(),
+            size: meta_v2.len(),
+            mtime: meta_v2.modified().unwrap(),
+        };
+
+        let mut pipeline = ContentPipeline::new(1_000_000);
+        let entry = pipeline.ingest_file(&file_v2).unwrap();
+
+        // Must read v2 from disk, not the stale cached v1.
+        assert_eq!(&*entry.content, "v2 shorter", "must read updated content, not stale cached v1");
     }
 
     // -- Deterministic hash property (same content → same hash) --

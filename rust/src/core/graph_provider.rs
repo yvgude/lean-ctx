@@ -571,7 +571,14 @@ fn trigger_lazy_graph_build(project_root: &str) {
 pub fn build_property_graph(project_root: &str) -> anyhow::Result<()> {
     let index = super::index_orchestrator::try_load_graph_index(project_root)
         .filter(|i| !i.files.is_empty())
-        .unwrap_or_else(|| graph_index::scan_with_content_cache(project_root).0);
+        .unwrap_or_else(|| {
+            let handle = super::index_pipeline::pipeline::IndexPipeline::new(
+                std::path::PathBuf::from(project_root),
+            )
+            .build()
+            .expect("pipeline build failed");
+            handle.run_and_load().expect("pipeline run failed").0
+        });
     super::property_graph::mirror_index(project_root, &index)
 }
 
@@ -584,7 +591,12 @@ pub fn open_or_build(project_root: &str) -> Option<OpenGraphProvider> {
     if let (Some(p), _) = open_existing(project_root) {
         return Some(p);
     }
-    let idx = super::graph_index::load_or_build(project_root);
+    let handle = super::index_pipeline::pipeline::IndexPipeline::new(
+        std::path::PathBuf::from(project_root),
+    )
+    .build()
+    .expect("pipeline build failed");
+    let (idx, _) = handle.run_and_load().expect("pipeline run failed");
     if idx.files.is_empty() {
         return None;
     }
