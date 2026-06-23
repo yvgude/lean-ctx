@@ -503,12 +503,14 @@ impl LeanCtxServer {
 }
 
 /// Read the configured watchdog budget in seconds (defaults to
-/// [`DEFAULT_TOOL_TIMEOUT_SECS`]). Kept separate from the policy so the pure
-/// `secs -> Option<Duration>` mapping stays trivially testable.
+/// [`DEFAULT_TOOL_TIMEOUT_SECS`]). Priority: env var > config.toml > default.
+/// Kept separate from the policy so the pure `secs -> Option<Duration>` mapping
+/// stays trivially testable.
 fn read_watchdog_secs() -> u64 {
     std::env::var("LEAN_CTX_TOOL_TIMEOUT_SECS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
+        .or_else(|| crate::core::config::Config::load().tool_timeout_secs)
         .unwrap_or(DEFAULT_TOOL_TIMEOUT_SECS)
 }
 
@@ -522,7 +524,7 @@ const REFERENCE_THRESHOLD: usize = 4000;
 /// Default per-tool watchdog budget (#271). Long enough that no legitimate
 /// read/search/graph call ever hits it, short enough that a hang degrades to a
 /// clean error instead of a dropped request.
-const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 120;
+const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 300;
 
 const PATH_LIKE_KEYS: &[&str] = &[
     "path",
@@ -600,7 +602,7 @@ mod tests {
             watchdog_from_secs(DEFAULT_TOOL_TIMEOUT_SECS)
                 .unwrap()
                 .as_secs(),
-            120
+            300
         );
     }
 

@@ -463,6 +463,11 @@ pub struct Config {
     /// Override via LEAN_CTX_SANDBOX_LEVEL env var.
     #[serde(default)]
     pub sandbox_level: u8,
+    /// Per-tool handler watchdog timeout in seconds (default: 300).
+    /// Applies to non-shell tools; set to 0 to disable.
+    /// Override via LEAN_CTX_TOOL_TIMEOUT_SECS env var.
+    #[serde(default)]
+    pub tool_timeout_secs: Option<u64>,
     /// When true, large tool outputs (>4000 chars) are stored as references
     /// and a short URI is returned instead of the full content.
     /// Override via LEAN_CTX_REFERENCE_RESULTS env var.
@@ -598,6 +603,7 @@ impl Default for Config {
             allow_auto_reroot: false,
             path_jail: None,
             sandbox_level: 0,
+            tool_timeout_secs: None,
             reference_results: false,
             agent_token_budget: 0,
             shell_allowlist: default_shell_allowlist(),

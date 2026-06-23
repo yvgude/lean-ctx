@@ -541,6 +541,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
+        "tool_timeout_secs".into(),
+        key_with_env(
+            "u64?",
+            serde_json::json!(null),
+            "Per-tool handler watchdog timeout in seconds (default: 300). Applies to non-shell tools; 0 disables",
+            "LEAN_CTX_TOOL_TIMEOUT_SECS",
+        ),
+    );
+    root.insert(
         "reference_results".into(),
         key_with_env(
             "bool",

@@ -77,6 +77,7 @@ Top-level configuration keys
 - `terse_agent` (enum: off | lite | full | ultra, default `off` — env `LEAN_CTX_TERSE_AGENT`) — Controls agent output verbosity via instructions injection
 - `theme` (string, default `default`) — Dashboard color theme
 - `tool_profile` (enum: minimal | standard | power, default `""`) — Tool visibility profile: minimal (6 tools), standard (17), power (all). Override via LEAN_CTX_TOOL_PROFILE
+- `tool_timeout_secs` (u64?, default `null` — env `LEAN_CTX_TOOL_TIMEOUT_SECS`) — Per-tool handler watchdog timeout in seconds (default: 300). Applies to non-shell tools; 0 disables
 - `tools_enabled` (string[], default `[]`) — Explicit list of enabled tool names (overrides tool_profile when non-empty)
 - `ultra_compact` (bool, default `false`) — Legacy flag for maximum compression (use compression_level instead)
 - `update_check_disabled` (bool, default `false` — env `LEAN_CTX_NO_UPDATE_CHECK`) — Disable the daily version check
