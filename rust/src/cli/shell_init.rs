@@ -8,7 +8,7 @@ macro_rules! qprintln {
 
 pub fn print_hook_stdout(shell: &str) {
     let binary = crate::core::portable_binary::resolve_portable_binary();
-    let binary = crate::hooks::to_bash_compatible_path(&binary);
+    let binary = hook_binary_for_shell(shell, &binary);
 
     let code = match shell {
         "bash" | "zsh" => generate_hook_posix(&binary),
@@ -21,6 +21,20 @@ pub fn print_hook_stdout(shell: &str) {
         }
     };
     print!("{code}");
+}
+
+/// Pick the executable-path form to embed in a generated shell hook.
+///
+/// bash/zsh/fish (incl. Git Bash / MSYS on Windows) source the hook and invoke
+/// the binary from a POSIX shell, so on Windows they need the MSYS `/c/...`
+/// form. PowerShell and `pwsh` execute the path via the `&` call operator and
+/// cannot run an MSYS `/c/...` path (#518); they get the native path unchanged.
+/// On Unix `to_bash_compatible_path` is a no-op, so all shells are unaffected.
+fn hook_binary_for_shell(shell: &str, binary: &str) -> String {
+    match shell {
+        "powershell" | "pwsh" => binary.to_string(),
+        _ => crate::hooks::to_bash_compatible_path(binary),
+    }
 }
 
 fn backup_shell_config(path: &std::path::Path) {
@@ -979,6 +993,27 @@ lean-ctx-mode() {{
             hook.contains("IsOutputRedirected"),
             "PowerShell hook must contain pipe guard ([Console]::IsOutputRedirected)"
         );
+    }
+
+    #[test]
+    fn powershell_hook_binary_is_native_not_msys() {
+        // #518: PowerShell/pwsh execute the path via the `&` call operator and
+        // cannot run an MSYS `/c/...` path — they must get the native binary.
+        let win = "C:/Users/Dawid/.cargo/bin/lean-ctx.exe";
+        assert_eq!(hook_binary_for_shell("powershell", win), win);
+        assert_eq!(hook_binary_for_shell("pwsh", win), win);
+        assert!(!hook_binary_for_shell("powershell", win).contains("/c/"));
+    }
+
+    #[test]
+    fn posix_hook_binary_keeps_msys_form_on_windows_drive() {
+        // bash/zsh/fish source the hook from a POSIX shell, so a Windows drive
+        // path is converted to the MSYS `/c/...` form for them.
+        let win = "C:/Users/Dawid/.cargo/bin/lean-ctx.exe";
+        let msys = "/c/Users/Dawid/.cargo/bin/lean-ctx.exe";
+        assert_eq!(hook_binary_for_shell("bash", win), msys);
+        assert_eq!(hook_binary_for_shell("zsh", win), msys);
+        assert_eq!(hook_binary_for_shell("fish", win), msys);
     }
 
     #[test]

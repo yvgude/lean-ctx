@@ -799,13 +799,11 @@ pub fn handle_copilot() {
 
 /// Inline rewrite: takes a command as CLI args, prints the rewritten command to stdout.
 /// The command is passed as positional arguments, not via stdin JSON.
-/// Uses native OS paths (not MSYS) because the calling shell may be
-/// PowerShell or cmd on Windows.
 pub fn handle_rewrite_inline() {
     if is_disabled() {
         return;
     }
-    let binary = resolve_binary_native();
+    let binary = resolve_binary();
     let args: Vec<String> = std::env::args().collect();
     // args: [binary, "hook", "rewrite-inline", ...command parts]
     if args.len() < 4 {
@@ -826,12 +824,13 @@ pub fn handle_rewrite_inline() {
     print!("{cmd}");
 }
 
+/// Resolve the lean-ctx executable path for hook command emission and
+/// subprocess spawning. Always the **native** OS path: the MSYS/Git-Bash
+/// `/c/...` form breaks `CreateProcess` on Windows and cannot be run by
+/// PowerShell or cmd (#518). Native `C:/...` runs in PowerShell, cmd *and*
+/// Git Bash, so it is the correct universal form for executed commands.
+/// (MSYS `/c/...` is only needed for bash *source* lines — see `cli::shell_init`.)
 fn resolve_binary() -> String {
-    let path = crate::core::portable_binary::resolve_portable_binary();
-    crate::hooks::to_bash_compatible_path(&path)
-}
-
-fn resolve_binary_native() -> String {
     crate::core::portable_binary::resolve_portable_binary()
 }
 

@@ -422,6 +422,32 @@ fn to_bash_compatible_path_msys2_unchanged() {
 }
 
 #[test]
+fn resolve_binary_is_native_not_msys() {
+    // #518: hook handlers spawn the binary (CreateProcess) and embed it into
+    // rewritten commands; both require the native path, never the MSYS `/c/...`
+    // form (unrunnable by PowerShell/cmd and invalid for CreateProcess).
+    assert_eq!(
+        resolve_binary(),
+        crate::core::portable_binary::resolve_portable_binary()
+    );
+}
+
+#[test]
+fn rewrite_preserves_native_windows_binary_path() {
+    // #518: a Windows native binary path must survive into the rewritten
+    // command verbatim — no `/c/...` MSYS rewrite, which PowerShell/cmd
+    // cannot execute.
+    let win_binary = "C:/Users/Dawid/.cargo/bin/lean-ctx.exe";
+    let rewritten =
+        rewrite_candidate("git status", win_binary).expect("git status is a rewrite candidate");
+    assert!(rewritten.contains(win_binary), "rewritten: {rewritten}");
+    assert!(
+        !rewritten.contains("/c/"),
+        "must not emit MSYS path: {rewritten}"
+    );
+}
+
+#[test]
 fn wrap_command_with_bash_path() {
     let binary = crate::hooks::to_bash_compatible_path(r"E:\packages\lean-ctx.exe");
     let result = wrap_single_command("git status", &binary);
