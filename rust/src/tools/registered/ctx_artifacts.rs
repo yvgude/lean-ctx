@@ -17,7 +17,10 @@ impl McpTool for CtxArtifactsTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_artifacts",
-            "Context artifact registry with BM25 search — manage and query indexed code artifacts. Actions: list|status|index|reindex|search|remove. Use search with query for semantic retrieval across artifacts.",
+            "Context artifact registry with BM25 search — manage and query indexed code artifacts.\n\
+            WORKFLOW: index artifacts first (index/reindex), then search with query for semantic retrieval.\n\
+            Actions: list|status|index|reindex|search|remove.\n\
+            ANTIPATTERN: NOT for general code search — use ctx_semantic_search for codebase queries.",
             json!({
                 "type": "object",
                 "properties": {
@@ -40,7 +43,7 @@ impl McpTool for CtxArtifactsTool {
                     },
                     "top_k": {
                         "type": "integer",
-                        "description": "Max results"
+                        "description": "Max results (default depends on action, capped at 1000)"
                     },
                     "format": {
                         "type": "string",

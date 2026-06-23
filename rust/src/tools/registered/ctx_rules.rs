@@ -17,14 +17,14 @@ impl McpTool for CtxRulesTool {
             "ctx_rules",
             "Cross-agent rules governance (ContextOps).\n\
              Actions: sync (distribute rules to agents), diff (show drift),\n\
-             lint (check consistency), status (sync state), init (create central config).",
+             lint (check consistency), status (sync state), init (create central config).\n\
+             WORKFLOW: run status first to check state, then sync if out of date.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["sync", "diff", "lint", "status", "init"],
-                        "description": "sync|diff|lint|status|init"
+                        "enum": ["sync", "diff", "lint", "status", "init"]
                     },
                     "agent": {
                         "type": "string",

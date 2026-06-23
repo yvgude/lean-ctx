@@ -15,10 +15,11 @@ impl McpTool for CtxProviderTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_provider",
-            "External context providers — query data from GitHub, GitLab, Jira, Postgres, MCP\n\
-             bridges, and custom REST APIs. Actions: discover|list|status|refresh|configure|\n\
-             query|mcp_resources|gitlab_issues. provider=id (github|gitlab|jira|mcp:<name>);\n\
-             resource=issues|pull_requests. Data flows through consolidation pipeline.",
+            "Query GitHub, GitLab, Jira, Postgres, MCP bridges, custom REST.\n\
+             WORKFLOW: action=list first to discover configured providers.\n\
+             ANTIPATTERN: not for file content — use ctx_compose/ctx_read instead.\n\
+             provider=id (github|gitlab|jira|mcp:<name>); resource=issues|pull_requests.\n\
+             Data flows through consolidation pipeline; results searchable via ctx_semantic_search.",
             json!({
                 "type": "object",
                 "properties": {

@@ -5,13 +5,16 @@
 //! `core::rules_canonical` — the single source of truth for marker/version
 //! detection and content boundary management.
 
+use crate::core::config::CompressionLevel;
 use crate::core::rules_canonical::{RulesFile, Wrapper};
 
 use super::RulesFormat;
 use super::content::rules_content;
 
 pub(super) fn inject_rules(target: &RulesTarget) -> Result<RulesResult, String> {
-    let shadow = crate::core::config::Config::load().shadow_mode;
+    let cfg = crate::core::config::Config::load();
+    let shadow = cfg.shadow_mode;
+    let level = CompressionLevel::effective(&cfg);
     let wrapper = match target.format {
         RulesFormat::SharedMarkdown => Wrapper::Shared,
         RulesFormat::DedicatedMarkdown | RulesFormat::CursorMdc => Wrapper::Dedicated,
@@ -25,13 +28,13 @@ pub(super) fn inject_rules(target: &RulesTarget) -> Result<RulesResult, String> 
             return Ok(RulesResult::AlreadyPresent);
         }
 
-        file.merged(shadow, wrapper)
+        file.merged(shadow, wrapper, level)
     } else {
         // Cursor MDC needs frontmatter; others use canonical directly.
         if matches!(target.format, RulesFormat::CursorMdc) {
-            rules_content(&target.format)
+            rules_content(&target.format, level)
         } else {
-            RulesFile::initial(shadow, wrapper)
+            RulesFile::initial(shadow, wrapper, level)
         }
     };
 

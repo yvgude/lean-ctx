@@ -15,12 +15,14 @@ impl McpTool for CtxAgentTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_agent",
-            "Multi-agent coordination — shared message bus, persistent diaries, stigmergic scent field. \
-Actions: register (agent_type+role), post (message+category), read (poll), \
-status (active|idle|finished), handoff (task+summary), sync (agents+messages+scent), \
-claim/release (file/task claim), brief (sub-agent briefing), \
-return (distill report into knowledge), diary, recall_diary, list, info. \
-Use when orchestrating multiple LLM agents across a shared workspace.",
+            "Multi-agent coordination — shared message bus, persistent diaries, stigmergic scent field.\n\
+            WORKFLOW: register agents first, then post/read messages, sync for state alignment.\n\
+            Actions: register (agent_type+role), post (message+category), read (poll),\n\
+            status (active|idle|finished), handoff (task+summary), sync (agents+messages+scent),\n\
+            claim/release (file/task), brief (sub-agent briefing),\n\
+            return (distill→knowledge), diary|recall_diary|diaries (agent journal),\n\
+            share_knowledge|receive_knowledge (cross-agent), list, info.\n\
+            ANTIPATTERN: NOT for single-agent workflows. Use ctx_compose for code understanding.",
             json!({
                 "type": "object",
                 "properties": {

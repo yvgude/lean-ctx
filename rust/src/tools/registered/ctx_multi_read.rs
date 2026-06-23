@@ -19,11 +19,11 @@ impl McpTool for CtxMultiReadTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_multi_read",
-            "Batch-read multiple files in one call — more token-efficient than N sequential\n\
-             ctx_read calls. paths=['a.rs','b.rs'] reads them all at once.\n\
-             mode=full for files you edit; mode=auto for general reading (compressed).\n\
-             Use when you need the content of several files. For understanding code logic,\n\
-             use ctx_compose FIRST — it returns relevant symbol source grouped by file.",
+            "Batch-read multiple files in one call — more efficient than N sequential\n\
+             ctx_read calls. paths=['a.rs','b.rs'] reads all at once.\n\
+             WORKFLOW: ctx_compose FIRST → ctx_multi_read for content.\n\
+             ANTI-PATTERN: not for understanding code logic — use ctx_compose.\n\
+             mode=full for edit; mode=auto for reading.",
             json!({
                 "type": "object",
                 "properties": {

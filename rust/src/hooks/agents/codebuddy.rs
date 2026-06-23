@@ -190,7 +190,7 @@ fn remove_codebuddy_rules_file(home: &std::path::Path) {
     let Ok(existing) = std::fs::read_to_string(&rules_path) else {
         return;
     };
-    if existing.contains("<!-- lean-ctx-rules")
+    if existing.contains(crate::core::rules_canonical::RULES_MARKER_PREFIX)
         && std::fs::remove_file(&rules_path).is_ok()
         && !super::super::mcp_server_quiet_mode()
     {

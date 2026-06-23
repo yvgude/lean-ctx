@@ -17,16 +17,16 @@ impl McpTool for CtxShellTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_shell",
-            "Run shell commands with automatic output compression (~95 patterns).\n\
-             Optimized for build/test/log output (cargo, npm, pytest, go test).\n\
-             raw=true disables compression for verbatim output. Lossless for errors\n\
-             and exit codes — [exit:N] footer for failure codes. cwd persists.",
+            "WORKFLOW: preferred — auto-compresses output (build/test/log).\n\
+             raw=true for verbatim output.\n\
+             [exit:N] on errors (lossless).\n\
+             ANTIPATTERN: multi-line scripts → ctx_execute.",
             json!({
                 "type": "object",
                 "properties": {
                     "command": { "type": "string", "description": "Shell command" },
                     "raw": { "type": "boolean", "description": "Skip compression (verbatim)" },
-                    "cwd": { "type": "string", "description": "Working dir" },
+                    "cwd": { "type": "string", "description": "Working dir (persists across calls)" },
                     "env": { "type": "object", "description": "Extra env vars", "additionalProperties": { "type": "string" } }
                 },
                 "required": ["command"]

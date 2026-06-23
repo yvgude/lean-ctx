@@ -17,11 +17,11 @@ impl McpTool for CtxExecuteTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_execute",
-            "Run code in sandbox (11 languages) — use when compute beats shell glue.\n\
-             action=code (default) for one-shot scripts; action=batch for parallel multi-language;\n\
-             action=file to process a project file (extension auto-detects language).\n\
-             Pass intent to focus large output. Prefer over ctx_shell for conditionals,\n\
-             multi-line scripts, or cross-language data munging. Languages: javascript,\n\
+            "Run code in sandbox (11 languages) — use when conditionals, multi-line or cross-language transforms.\n\
+             ANTIPATTERN: for simple one-liners, prefer ctx_shell (lower overhead, auto-compressed).\n\
+             action=code (default) for one-shot; action=batch for parallel multi-language;\n\
+             action=file to process a project file (extension auto-detects).\n\
+             Pass intent to focus large output and save tokens. Languages: javascript,\n\
              typescript, python, shell, ruby, go, rust, php, perl, r, elixir.",
             json!({
                 "type": "object",
@@ -44,7 +44,7 @@ impl McpTool for CtxExecuteTool {
                     },
                     "action": {
                         "type": "string",
-                        "description": "code (run script) | batch (parallel) | file (project file)"
+                        "description": "code (default, run script) | batch (parallel) | file (project file)"
                     },
                     "items": {
                         "type": "string",

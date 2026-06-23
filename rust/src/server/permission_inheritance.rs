@@ -92,6 +92,14 @@ pub fn check(
     if config.permission_inheritance_effective() != PermissionInheritance::On {
         return PermissionCheck::allow();
     }
+    // shadow_mode writes permission denies to the same opencode.json `permission`
+    // object that inheritance reads from. If both are active, native tools are
+    // denied (shadow mode) AND ctx_* tools are denied (inheritance mirroring the
+    // shadow denies back), leaving the agent with no working tools. Since shadow
+    // mode already handles its own permission controls, disable inheritance.
+    if config.shadow_mode {
+        return PermissionCheck::allow();
+    }
     let Some(cid) = client_id(client_name) else {
         return PermissionCheck::allow();
     };

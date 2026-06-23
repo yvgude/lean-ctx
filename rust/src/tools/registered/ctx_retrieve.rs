@@ -15,20 +15,21 @@ impl McpTool for CtxRetrieveTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_retrieve",
-            "Retrieve original uncompressed content from the session cache (CCR).\n\
-             Use when a compressed ctx_read output is insufficient — restores full verbatim source.\n\
-             Supports query='search' to find matching lines within cached content.\n\
-             Requires path to a file previously read via ctx_read.",
+            "Retrieve original uncompressed content from the session cache (CCR) —\n\
+             restores full verbatim source when compressed ctx_read output is insufficient.\n\
+             WORKFLOW: call ctx_read FIRST to populate cache, then ctx_retrieve for verbatim.\n\
+             query='text' to find matching lines within cached content.\n\
+             ANTIPATTERN: not for reading files directly — use ctx_read.",
             json!({
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Target path"
+                        "description": "File path previously read via ctx_read"
                     },
                     "query": {
                         "type": "string",
-                        "description": "Search within cached content"
+                        "description": "Search within cached content for matching lines"
                     }
                 },
                 "required": ["path"]

@@ -17,17 +17,18 @@ impl McpTool for CtxEditTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_edit",
-            "Search-and-replace edit with TOCTOU safety — for simple text replacement in a single file.\n\
-             Use INSTEAD of native Edit when Read is unavailable. old_string must be unique unless replace_all=true.\n\
-             create=true writes new files. backup creates .bak. MD5/size/mtime pre-guards prevent race conditions.\n\
-             Do NOT loop on failures — switch to ctx_edit. For LSP-aware refactoring (rename, move, inline), use ctx_refactor.",
+            "Search-and-replace edit with race-condition guards — for simple text replacement in a single file.\n\
+             old_string must be unique unless replace_all=true. create=true writes new files.\n\
+             backup creates .bak. MD5/size/mtime pre-guards prevent race conditions.\n\
+             ANTIPATTERN: Do NOT loop on failures — verify file content and adjust old_string, or use native Edit with prior Read.\n\
+             For LSP-aware refactoring (rename, move, inline), use ctx_refactor.",
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "Path" },
+                    "path": { "type": "string", "description": "File path to edit" },
                     "old_string": { "type": "string", "description": "Text to replace (unique unless replace_all=true)" },
                     "new_string": { "type": "string", "description": "Replacement text" },
-                    "replace_all": { "type": "boolean", "default": false },
+                    "replace_all": { "type": "boolean", "description": "Replace all occurrences (default false)", "default": false },
                     "create": { "type": "boolean", "description": "Create file", "default": false }
                 },
                 "required": ["path", "new_string"]

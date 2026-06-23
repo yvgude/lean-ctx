@@ -95,8 +95,8 @@ fn print_named_json_server_success(name: &str, display_path: &str) {
     }
 }
 
-const CODEX_AGENTS_BLOCK_START: &str = "<!-- lean-ctx -->";
-const CODEX_AGENTS_BLOCK_END: &str = crate::core::rules_canonical::END_MARK;
+const CODEX_AGENTS_BLOCK_START: &str = crate::core::rules_canonical::AGENTS_BLOCK_START;
+const CODEX_AGENTS_BLOCK_END: &str = crate::core::rules_canonical::AGENTS_BLOCK_END;
 
 pub(super) fn install_codex_instruction_docs(codex_dir: &Path) -> bool {
     let agents_path = codex_dir.join("AGENTS.md");

@@ -17,10 +17,12 @@ impl McpTool for CtxPackTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_pack",
-            "Context Package Manager — create, install, and manage portable context packages.\n\
-             Actions: pr (PR context), create (build from project), list, info, remove,\n\
-             install, export, import, auto_load, summary. Use to bundle and share context\n\
-             state including knowledge, graph, session patterns, and gotchas.",
+            "WORKFLOW: create -> export -> import -> install for sharing context state.\n\
+            ANTIPATTERN: NOT for ephemeral session save (use ctx_session).\n\
+            Context Package Manager — create, install, manage portable context packages\n\
+            with knowledge, graph, session patterns, and gotchas.\n\
+            Actions: pr, create, list, info, remove, install, export, import, auto_load, summary.\n\
+            Saves tokens: pre-built context state (avoids re-building).",
             json!({
                 "type": "object",
                 "properties": {
@@ -31,7 +33,7 @@ impl McpTool for CtxPackTool {
                     },
                     "project_root": {
                         "type": "string",
-                        "description": "Project root"
+                        "description": "Project root directory"
                     },
                     "name": {
                         "type": "string",
@@ -39,7 +41,7 @@ impl McpTool for CtxPackTool {
                     },
                     "version": {
                         "type": "string",
-                        "description": "Package version"
+                        "description": "Package version (semver)"
                     },
                     "description": {
                         "type": "string",
@@ -52,49 +54,49 @@ impl McpTool for CtxPackTool {
                     "tags": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "Tags (for create)"
+                        "description": "Tags for categorization (for create)"
                     },
                     "layers": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "knowledge|graph|session|patterns|gotchas"
+                        "description": "Layers to include: knowledge|graph|session|patterns|gotchas"
                     },
                     "level": {
                         "type": "integer",
-                        "description": "1-3"
+                        "description": "Detail level 1-3 (higher = more detail)"
                     },
                     "scope": {
                         "type": "string",
-                        "description": "@org style scope"
+                        "description": "Package scope (e.g. @org/name)"
                     },
                     "base": {
                         "type": "string",
-                        "description": "Git base ref"
+                        "description": "Git base ref for PR diff"
                     },
                     "format": {
                         "type": "string",
                         "enum": ["markdown", "json"],
-                        "description": "markdown|json"
+                        "description": "Output format: markdown|json"
                     },
                     "depth": {
                         "type": "integer",
-                        "description": "Impact depth (for pr action, default: 3)"
+                        "description": "Impact depth for pr action (default: 3)"
                     },
                     "diff": {
                         "type": "string",
-                        "description": "Git diff --name-status text"
+                        "description": "Git diff --name-status text input"
                     },
                     "file": {
                         "type": "string",
-                        "description": "File path (for import/export)"
+                        "description": "File path for import/export"
                     },
                     "apply": {
                         "type": "boolean",
-                        "description": "Apply after import"
+                        "description": "Apply after import (default: false)"
                     },
                     "enable": {
                         "type": "boolean",
-                        "description": "Enable auto-load"
+                        "description": "Enable auto-load (default: true)"
                     }
                 },
                 "required": ["action"]

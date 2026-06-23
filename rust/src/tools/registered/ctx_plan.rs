@@ -15,16 +15,17 @@ impl McpTool for CtxPlanTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_plan",
-            "Context planning (CFT) — selects WHICH files/modules to include in context via Phi scoring, budget\n\
-             allocation, and policy-driven view selection. Scans the project to pick the most relevant content.\n\
-             task=description (short English), budget=token limit (default 12000), profile=ultra_lean|balanced|forensic.\n\
-             For compressing already-chosen files to fit a budget, use ctx_fill instead.",
+            "WORKFLOW: set task+profile -> ctx_plan -> use results with ctx_read/ctx_compose.\n\
+            ANTIPATTERN: NOT for compressing already-selected files (use ctx_fill).\n\
+            Selects files for context via Phi scoring + budget + policy.\n\
+            task=short English; budget=token limit (default 12000);\n\
+            profile=ultra_lean|balanced|forensic. Saves tokens by prioritizing relevant files.",
             json!({
                 "type": "object",
                 "properties": {
                     "task": { "type": "string", "description": "Task description (short English preferred)" },
-                    "budget": { "type": "integer", "description": "Token budget (default: 12000)" },
-                    "profile": { "type": "string", "description": "ultra_lean|balanced|forensic" }
+                    "budget": { "type": "integer", "description": "Token budget limit (default: 12000)" },
+                    "profile": { "type": "string", "description": "ultra_lean (minimal)|balanced (default)|forensic (exhaustive)" }
                 },
                 "required": ["task"]
             }),

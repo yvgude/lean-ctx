@@ -7,7 +7,6 @@
 //!
 //! ```text
 //! Tool Output → [Layer 1: Deterministic] → [Layer 2: Residual] → Compressed Output
-//! Model Prompt → [Layer 3: Agent Shaping] → Optimized Prompt
 //! MCP Tools List → [Layer 4: Description Terse] → Compact Descriptions
 //! ```
 //!
@@ -17,12 +16,9 @@
 //!   content/function word filtering, domain dictionaries, quality gate.
 //! - **Layer 2** (`residual.rs`): Pattern-aware post-terse — applies after pattern
 //!   compression, avoids double-compression, tracks attribution.
-//! - **Layer 3** (`agent_prompts.rs`): Agent output shaping — scale-aware brevity
-//!   prompts, Telegraph-English-inspired format, adaptive levels.
 //! - **Layer 4** (`mcp_compress.rs`): MCP description compression — shrinks tool
 //!   descriptions, lazy-load stubs, on-demand expansion.
 
-pub mod agent_prompts;
 pub mod counter;
 pub mod dictionaries;
 pub mod engine;
@@ -30,7 +26,6 @@ pub mod mcp_compress;
 pub mod pipeline;
 pub mod quality;
 pub mod residual;
-pub mod rules_inject;
 pub mod scoring;
 
 /// Tools whose textual output is read content the agent edits against and must

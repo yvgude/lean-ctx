@@ -15,9 +15,9 @@ impl McpTool for CtxSmartReadTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_smart_read",
-            "Auto-select optimal read mode (full|map|signatures|auto) based on file size,\n\
-             type, and compression history. Use when you want smart defaults without\n\
-             choosing a mode. For explicit control use ctx_read with mode= parameter directly.",
+            "WORKFLOW: orientation — auto-selects mode (full|map|signatures) by file size.\n\
+             ANTIPATTERN: edit-target files → ctx_read mode=full for precision.\n\
+             Explicit mode control → ctx_read mode=...",
             json!({
                 "type": "object",
                 "properties": {

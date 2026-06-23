@@ -108,21 +108,33 @@ mod tests {
     use super::*;
 
     const FULL_HEADER: &str = crate::core::rules_canonical::START_MARK;
-    const COMPRESSION: &str =
-        "<!-- lean-ctx-compression -->\nOUTPUT STYLE\n<!-- /lean-ctx-compression -->\n";
-    const POINTER: &str = "<!-- lean-ctx -->\n## lean-ctx\nFull rules: ~/.cursor/rules/lean-ctx.mdc\n<!-- /lean-ctx -->\n";
+
+    fn compression_block() -> String {
+        format!("{COMPRESSION_BLOCK_START}\nOUTPUT STYLE\n{COMPRESSION_BLOCK_END}\n")
+    }
+
+    fn pointer_block() -> String {
+        format!(
+            "{}\n## lean-ctx\nFull rules: ~/.cursor/rules/lean-ctx.mdc\n{}\n",
+            crate::core::rules_canonical::AGENTS_BLOCK_START,
+            crate::core::rules_canonical::AGENTS_BLOCK_END,
+        )
+    }
 
     #[test]
     fn full_rules_detected_for_canonical_header_and_compression() {
+        let comp = compression_block();
+        let ptr = pointer_block();
         assert!(carries_full_rules(&format!("{FULL_HEADER}\nbody\n")));
-        assert!(carries_full_rules(COMPRESSION));
-        assert!(carries_full_rules(&format!("{POINTER}{COMPRESSION}")));
+        assert!(carries_full_rules(&comp));
+        assert!(carries_full_rules(&format!("{ptr}{comp}")));
     }
 
     #[test]
     fn pointer_only_block_is_not_full() {
-        assert!(!carries_full_rules(POINTER));
-        assert!(is_pointer_only(POINTER));
+        let ptr = pointer_block();
+        assert!(!carries_full_rules(&ptr));
+        assert!(is_pointer_only(&ptr));
     }
 
     #[test]
@@ -134,6 +146,7 @@ mod tests {
 
     #[test]
     fn cursor_coverage_follows_mdc_block() {
+        let comp = compression_block();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         assert!(!cursor_compression_covered(home));
@@ -141,7 +154,7 @@ mod tests {
         std::fs::create_dir_all(home.join(".cursor/rules")).unwrap();
         std::fs::write(
             home.join(".cursor/rules/lean-ctx.mdc"),
-            format!("{FULL_HEADER}\n{COMPRESSION}"),
+            format!("{FULL_HEADER}\n{comp}"),
         )
         .unwrap();
         assert!(cursor_compression_covered(home));
@@ -149,6 +162,7 @@ mod tests {
 
     #[test]
     fn agents_md_thins_only_when_cursor_covered_and_no_uncovered_codex() {
+        let comp = compression_block();
         // Serialize CODEX_HOME mutation (tests share the process environment).
         let _guard = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
@@ -164,7 +178,7 @@ mod tests {
         std::fs::create_dir_all(home.join(".cursor/rules")).unwrap();
         std::fs::write(
             home.join(".cursor/rules/lean-ctx.mdc"),
-            format!("{FULL_HEADER}\n{COMPRESSION}"),
+            format!("{FULL_HEADER}\n{comp}"),
         )
         .unwrap();
         assert!(agents_md_can_thin(home));
@@ -175,19 +189,20 @@ mod tests {
         assert!(!agents_md_can_thin(home));
 
         // Codex now covered by its own global AGENTS.md → safe to thin again.
-        std::fs::write(home.join(".codex/AGENTS.md"), COMPRESSION).unwrap();
+        std::fs::write(home.join(".codex/AGENTS.md"), &comp).unwrap();
         assert!(agents_md_can_thin(home));
         crate::test_env::remove_var("CODEX_HOME");
     }
 
     #[test]
     fn client_autoloads_compression_is_client_aware() {
+        let comp = compression_block();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
         std::fs::create_dir_all(home.join(".cursor/rules")).unwrap();
         std::fs::write(
             home.join(".cursor/rules/lean-ctx.mdc"),
-            format!("{FULL_HEADER}\n{COMPRESSION}"),
+            format!("{FULL_HEADER}\n{comp}"),
         )
         .unwrap();
 

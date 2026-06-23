@@ -15,12 +15,15 @@ impl McpTool for CtxGraphTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_graph",
-            "Code graph queries — find usages, relationships, and dependency chains.\n\
-             action=symbol path=\"file.rs::fnName\" finds all usages of a symbol.\n\
-             action=neighbors shows adjacent nodes; action=path from→to shows dependency\n\
-             chains between files. action=diff since=HEAD~1 for git change impact.\n\
-             For understanding code end-to-end, use ctx_compose FIRST. Use ctx_graph for\n\
-             targeted structural queries the graph index can answer directly.",
+            "Graph queries — find dependencies, relationships, and symbols.\n\
+             action=symbol path=\"file.rs::fnName\" returns the source (NOT usages).\n\
+             action=neighbors path=\"file.rs\" shows import neighbors with direction & confidence.\n\
+             action=impact path=\"file.rs\" shows reverse dependency tree (blast radius).\n\
+             action=path from→to shows shortest dependency chain between two files.\n\
+             action=diff since=HEAD~1 for git change impact.\n\
+             action=diagram kind=deps|calls renders a Mermaid diagram.\n\
+             For understanding code, use ctx_compose FIRST. Use ctx_graph for targeted structural queries.\n\
+             ANTIPATTERN: symbol returns only the DEFINITION — not usages. For REFERENCES use grep or ctx_compose.",
             json!({
                 "type": "object",
                 "properties": {

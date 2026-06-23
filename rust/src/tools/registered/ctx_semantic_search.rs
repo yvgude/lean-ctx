@@ -27,25 +27,23 @@ impl McpTool for CtxSemanticSearchTool {
                 "properties": {
                     "query": { "type": "string", "description": "Natural language or symbol query" },
                     "path": { "type": "string", "description": "Project root" },
-                    "top_k": { "type": "integer", "description": "Result count" },
+                    "top_k": { "type": "integer", "description": "Max results (default: 10)" },
                     "action": {
                         "type": "string",
-                        "enum": ["search", "reindex", "find_related"],
-                        "description": "search|reindex|find_related"
+                        "enum": ["search", "reindex", "find_related"]
                     },
                     "mode": {
                         "type": "string",
-                        "enum": ["bm25", "dense", "hybrid"],
-                        "description": "bm25|dense|hybrid"
+                        "enum": ["bm25", "dense", "hybrid"]
                     },
                     "file_path": { "type": "string", "description": "Source file for find_related" },
                     "line": { "type": "integer", "description": "Line for find_related" },
                     "languages": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "Restrict to extensions"
+                        "description": "Restrict to extensions, e.g. ['rust','ts']"
                     },
-                    "path_glob": { "type": "string", "description": "Glob over rel paths" }
+                    "path_glob": { "type": "string", "description": "Glob over relative file paths" }
                 },
                 "required": ["query"]
             }),

@@ -16,6 +16,7 @@ impl McpTool for CtxDeltaTool {
         tool_def(
             "ctx_delta",
             "Incremental diff since last read — shows only changed lines after you edit.\n\
+             WORKFLOW: ctx_read(mode=full) -> edit -> ctx_delta (no re-read needed).\n\
              Use INSTEAD of re-reading the whole file after modifications — saves 90%+ tokens\n\
              on unchanged content. Path must have a prior ctx_read in this session\'s cache.\n\
              For the full git diff against HEAD, use ctx_read(path, mode=diff) instead.",

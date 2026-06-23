@@ -15,11 +15,10 @@ impl McpTool for CtxSkillifyTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_skillify",
-            "Codify recurring patterns from session diary + knowledge into versioned,\n\
-             git-committable .cursor/rules/skillify-*.mdc files.\n\
-             Actions: mine (distill & write/merge rules), list (show generated rules),\n\
-             status (config + counts), promote (copy to ~/.cursor/rules).\n\
-             Precision-biased; re-runs are idempotent.",
+            "WORKFLOW: mine to extract patterns → list to review → promote to activate.\n\
+             Codifies patterns into .cursor/rules/skillify-*.mdc.\n\
+             Actions: mine|list|status|promote. Idempotent.\n\
+             ANTIPATTERN: one-off rules → write .mdc by hand.",
             json!({
                 "type": "object",
                 "properties": {

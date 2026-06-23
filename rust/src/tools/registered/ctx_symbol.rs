@@ -15,11 +15,11 @@ impl McpTool for CtxSymbolTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_symbol",
-            "Get ONE symbol's body by name — exact, AST-precise (tree-sitter index). Use AFTER\n\
-             ctx_compose gave you the overview and you need a specific symbol's full body.\n\
-             For multiple symbols or understanding an area, use ctx_compose FIRST (returns\n\
-             all relevant symbols grouped by file in one call). name='fnName' returns code block.\n\
-             file='path.rs' narrows; kind='fn'|'struct'|'class'|'trait'|'enum' disambiguates.",
+            "Get ONE symbol's body by name — exact, AST-precise (tree-sitter index).\n\
+             WORKFLOW: after ctx_compose gave overview, for one symbol's body.\n\
+             name='fnName' returns code block; file='path.rs' narrows;\n\
+             kind='fn'|'struct'|'class'|'trait'|'enum' disambiguates.\n\
+             ANTIPATTERN: NOT for finding all usages (grep) or exploring areas (ctx_compose).",
             json!({
                 "type": "object",
                 "properties": {

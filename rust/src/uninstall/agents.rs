@@ -416,6 +416,15 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
             {
                 cleaned = Some(stripped);
             }
+            // OpenCode: also clean up shadow-mode permission denies (read/grep/glob/bash)
+            // that lean-ctx may have set via `apply_shadow_permissions` — they don't
+            // contain "lean-ctx" so the generic JSON cleanup above won't touch them.
+            if *name == "OpenCode"
+                && let Some(ref c) = cleaned
+                && let Some(stripped) = remove_shadow_permissions_from_json(c)
+            {
+                cleaned = Some(stripped);
+            }
             cleaned
         };
 
@@ -570,7 +579,7 @@ pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
         ("Qoder", home.join(".qoder/rules/lean-ctx.md")),
         ("Hermes Agent", home.join(".hermes/rules/lean-ctx.md")),
         (
-            "OpenCode Plugin",
+            "OpenCode Plugin (legacy)",
             home.join(".config/opencode/plugins/lean-ctx.ts"),
         ),
     ];
@@ -962,6 +971,34 @@ pub(super) enum HookCleanupResult {
     EntirelyLeanCtx,
     /// JSON parse failed; file should NOT be touched.
     ParseError,
+}
+
+/// Remove shadow-mode permission denies (read/grep/glob/bash = "deny") from
+/// an opencode.json content string. Returns `Some(cleaned)` if entries were
+/// removed, or `None` if no shadow permission entries were found.
+fn remove_shadow_permissions_from_json(content: &str) -> Option<String> {
+    let mut json: serde_json::Value = serde_json::from_str(content).ok()?;
+    let obj = json.as_object_mut()?;
+    let perms = obj.get_mut("permission")?.as_object_mut()?;
+
+    let shadow_tools = ["read", "grep", "glob", "bash"];
+    let mut changed = false;
+    for &tool in &shadow_tools {
+        if perms.get(tool).and_then(|v| v.as_str()) == Some("deny") {
+            perms.remove(tool);
+            changed = true;
+        }
+    }
+
+    if !changed {
+        return None;
+    }
+
+    if perms.is_empty() {
+        obj.remove("permission");
+    }
+
+    serde_json::to_string_pretty(&json).ok()
 }
 
 /// Check if a single string value references lean-ctx.

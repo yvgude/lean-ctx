@@ -432,7 +432,7 @@ command = \"lean-ctx\"
             "user rules must be preserved"
         );
         assert!(
-            result.contains("<!-- lean-ctx -->"),
+            result.contains(crate::core::rules_canonical::AGENTS_BLOCK_START),
             "lean-ctx block must be appended"
         );
         let expected_ref = tmp.join("LEAN-CTX.md").display().to_string();
@@ -451,7 +451,11 @@ command = \"lean-ctx\"
         std::fs::create_dir_all(&tmp).unwrap();
 
         let agents_md = tmp.join("AGENTS.md");
-        let content_with_block = "# My Instructions\n\nCustom rule here.\n\n<!-- lean-ctx -->\n## lean-ctx\n\n@OLD-LEAN-CTX.md\n<!-- /lean-ctx -->\n\n## Other Section\nKeep this.\n";
+        let content_with_block = format!(
+            "# My Instructions\n\nCustom rule here.\n\n{}\n## lean-ctx\n\n@OLD-LEAN-CTX.md\n{}\n\n## Other Section\nKeep this.\n",
+            crate::core::rules_canonical::AGENTS_BLOCK_START,
+            crate::core::rules_canonical::AGENTS_BLOCK_END,
+        );
         std::fs::write(&agents_md, content_with_block).unwrap();
 
         crate::hooks::support::install_codex_instruction_docs(&tmp);

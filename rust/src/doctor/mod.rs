@@ -557,7 +557,7 @@ pub fn run() {
     let cfg = crate::core::config::Config::load();
     let shadow_line = if cfg.shadow_mode {
         format!(
-            "{BOLD}Shadow mode{RST}  {GREEN}active{RST}  {DIM}(native tools intercepted → ctx_*){RST}"
+            "{BOLD}Shadow mode{RST}  {GREEN}active{RST}  {DIM}(native tools denied → ctx_* mandatory){RST}"
         )
     } else {
         format!(

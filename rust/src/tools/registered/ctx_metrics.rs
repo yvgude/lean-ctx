@@ -16,9 +16,9 @@ impl McpTool for CtxMetricsTool {
         tool_def(
             "ctx_metrics",
             "Session token statistics — cache hit rates, per-tool savings, pipeline metrics,\n\
-             and signature backend ratios. No parameters needed. Use to understand token\n\
-             efficiency and identify which tools cost the most. Complements ctx_radar\n\
-             for full context budget analysis.",
+ and signature backend ratios.\n\
+ ANTI-PATTERN: not for real-time monitoring — snapshot of current session.\n\
+ Complements ctx_radar for budget analysis.",
             json!({
                 "type": "object",
                 "properties": {}

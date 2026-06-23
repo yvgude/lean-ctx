@@ -177,6 +177,11 @@ pub(super) fn build_rules_targets(
             path: home.join(".hermes/HERMES.md"),
             format: RulesFormat::SharedMarkdown,
         },
+        RulesTarget {
+            name: "Qoder",
+            path: home.join(".qoder/rules/lean-ctx.md"),
+            format: RulesFormat::DedicatedMarkdown,
+        },
     ]
 }
 

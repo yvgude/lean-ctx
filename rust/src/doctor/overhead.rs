@@ -333,21 +333,25 @@ mod tests {
 
     #[test]
     fn block_tokens_counts_only_marked_regions() {
-        let content = "\
+        let content = format!(
+            "\
 # Some user rules
 custom stuff here
 
-<!-- lean-ctx -->
+{}
 ## lean-ctx
 Prefer ctx_read over Read.
-<!-- /lean-ctx -->
+{}
 
 more user stuff that is not ours
-";
-        let ours = lean_ctx_block_tokens(content);
+",
+            crate::core::rules_canonical::START_MARK,
+            crate::core::rules_canonical::END_MARK,
+        );
+        let ours = lean_ctx_block_tokens(&content);
         assert!(ours > 0, "must count the marked block");
         assert!(
-            ours < count_tokens(content),
+            ours < count_tokens(&content),
             "must not count unmarked user content"
         );
     }
@@ -463,8 +467,9 @@ more user stuff that is not ours
         std::fs::write(
             project.join("AGENTS.md"),
             format!(
-                "<!-- lean-ctx -->\nx\n{}\n",
-                crate::core::rules_canonical::END_MARK
+                "{}\nx\n{}\n",
+                crate::core::rules_canonical::AGENTS_BLOCK_START,
+                crate::core::rules_canonical::AGENTS_BLOCK_END,
             ),
         )
         .unwrap();

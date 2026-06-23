@@ -15,10 +15,11 @@ impl McpTool for CtxProofTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_proof",
-            "Export machine-readable ContextProofV1 with Verifier, SLO, Pipeline, and Provenance.\n\
-             Writes to .lean-ctx/proofs/ by default. action=export (required);\n\
-             format=json|summary|both; write=true|false; filename=custom path;\n\
-             max_evidence=max tool receipts (default 50). Use for audit trails.",
+            "Export machine-readable ContextProofV1 (Verifier, SLO, Pipeline, Provenance).\n\
+             WORKFLOW: call after completing a task to generate audit trail.\n\
+             ANTIPATTERN: not for budget analysis — use ctx_radar/ctx_metrics instead.\n\
+             action=export (only valid); format=json|summary|both; write=true|false;\n\
+             max_evidence=max tool receipts (default 50). Writes to .lean-ctx/proofs/.",
             json!({
                 "type": "object",
                 "properties": {

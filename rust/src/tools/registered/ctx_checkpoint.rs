@@ -25,24 +25,24 @@ impl McpTool for CtxCheckpointTool {
         tool_def(
             "ctx_checkpoint",
             "Local shadow git history of the agent's changes — separate from the user's .git.\n\
-Actions: snapshot (record current state), log (list checkpoints),\n\
-diff (compare against a checkpoint), restore (revert files).\n\
-Snapshot before+after changes to capture exactly what was modified.\n\
-Never touches the user's repository.",
+WORKFLOW: snapshot before+after changes to capture exactly what was modified.\n\
+Actions: snapshot (record current state), log (list checkpoints with SHAs),\n\
+diff from=... to=... (compare checkpoints), restore ref=... (revert files).\n\
+ANTIPATTERN: Never touches the user's repository — completely isolated shadow history.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["snapshot", "log", "diff", "restore"],
-                        "description": "snapshot|log|diff|restore"
+                        "description": "snapshot|log|diff|restore (default: log)"
                     },
-                    "message": { "type": "string", "description": "Snapshot label" },
-                    "from": { "type": "string", "description": "Base checkpoint SHA" },
-                    "to": { "type": "string", "description": "Target checkpoint SHA" },
-                    "ref": { "type": "string", "description": "Checkpoint SHA" },
-                    "path": { "type": "string", "description": "File/dir to restore" },
-                    "limit": { "type": "integer", "description": "Max checkpoints" }
+                    "message": { "type": "string", "description": "Label for the snapshot (action=snapshot only)" },
+                    "from": { "type": "string", "description": "Base checkpoint SHA for diff (default: HEAD~1, action=diff only)" },
+                    "to": { "type": "string", "description": "Target checkpoint SHA for diff (default: HEAD, action=diff only)" },
+                    "ref": { "type": "string", "description": "Checkpoint SHA to restore (required for action=restore)" },
+                    "path": { "type": "string", "description": "File/dir to restore (omit for full restore, action=restore only)" },
+                    "limit": { "type": "integer", "description": "Max checkpoints in log (default: 20, max: 200)" }
                 }
             }),
         )

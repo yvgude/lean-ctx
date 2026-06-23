@@ -15,10 +15,10 @@ impl McpTool for CtxSessionTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_session",
-            "Cross-session memory: action=task|finding|decision persists progress;\n\
-             load session_id=X resumes prior work. Use at session end to persist;\n\
-             at start to restore. action=status for snapshot; action=save commits state;\n\
-             action=reset clears. Supports profile|role|budget|slo|diff|verify|episodes|procedures.",
+            "WORKFLOW: action=save at session end; action=load at session start.\n\
+             action=status (snapshot); task|finding|decision (progress).\n\
+             ANTIPATTERN: permanent project knowledge → ctx_knowledge.\n\
+             Also supports: profile|role|budget|slo|diff|verify|episodes|procedures.",
             json!({
                 "type": "object",
                 "properties": {

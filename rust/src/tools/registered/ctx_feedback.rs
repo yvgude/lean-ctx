@@ -15,9 +15,12 @@ impl McpTool for CtxFeedbackTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_feedback",
-            "Record and report LLM token/latency metrics (local-first) — use to track efficiency.\n\
+            "Record and report LLM token/latency metrics — use to track efficiency and optimize context usage.\n\
+             WORKFLOW: action=record during each LLM call, then action=report for readable summary.\n\
              Actions: record (log event), report (readable summary), json (machine-readable),\n\
-             reset (clear data), status (storage info). record requires llm_input_tokens + llm_output_tokens.",
+             reset (clear data), status (storage info).\n\
+             ANTIPATTERN: not for debugging code behavior — this tracks token/latency stats only.\n\
+             record requires llm_input_tokens + llm_output_tokens.",
             json!({
                 "type": "object",
                 "properties": {

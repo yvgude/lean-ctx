@@ -798,9 +798,9 @@ pub fn handle_copilot() {
 }
 
 /// Inline rewrite: takes a command as CLI args, prints the rewritten command to stdout.
-/// Used by the OpenCode TS plugin where the command is passed as an argument,
-/// not via stdin JSON. Uses native OS paths (not MSYS) because the calling
-/// shell may be PowerShell or cmd on Windows.
+/// The command is passed as positional arguments, not via stdin JSON.
+/// Uses native OS paths (not MSYS) because the calling shell may be
+/// PowerShell or cmd on Windows.
 pub fn handle_rewrite_inline() {
     if is_disabled() {
         return;

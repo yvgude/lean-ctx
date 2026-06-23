@@ -35,13 +35,12 @@ impl McpTool for CtxReadTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_read",
-            "Read source files. mode is REQUIRED — choose by intent:\n\
-             full=verbatim (edit-ready, use before Edit), raw=exact bytes (no framing),\n\
-             signatures=API surface only, map=structural overview of large files,\n\
-             auto=smart (learns from task and session context, use for orientation),\n\
-             diff=git delta, lines:N-M=window.\n\
-             fresh=true bypasses cache; raw=true=verbatim+fresh.\n\
-             For understanding code or finding answers, use ctx_compose FIRST instead.",
+            "Read source files. mode REQUIRED — choose by intent.\n\
+             WORKFLOW: after ctx_compose identified relevant files.\n\
+             ANTIPATTERN: not for understanding code — use ctx_compose FIRST (saves tokens).\n\
+             full=verbatim (edit-ready), raw=exact bytes (no framing), signatures=API,\n\
+             map=structure, auto=smart (learns from task context), diff=git delta,\n\
+             lines:N-M=window. fresh=true bypasses cache; raw=true=verbatim+fresh.",
             json!({
                 "type": "object",
                 "properties": {

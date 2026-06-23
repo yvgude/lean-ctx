@@ -17,7 +17,7 @@ impl McpTool for CtxHeatmapTool {
             "ctx_heatmap",
             "File access heatmap — shows most frequently accessed files per session.\n\
              action=status (default) for summary, action=detail for per-file access counts.\n\
-             Use to identify hot files and optimize context usage.",
+             Identify hot files to optimize context usage.",
             json!({
                 "type": "object",
                 "properties": {

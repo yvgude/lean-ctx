@@ -18,8 +18,9 @@ impl McpTool for CtxKnowledgeTool {
         tool_def(
             "ctx_knowledge",
             "Persistent memory across sessions — remember decisions, patterns, and facts for recall.\n\
-             action=remember saves a fact; action=recall query='X' retrieves it.\n\
-             Use to persist architecture decisions, gotchas, and patterns between sessions.\n\
+             WORKFLOW: save after completing significant tasks; recall at session start.\n\
+             action=remember key='X' value='Y' saves a fact (both required).\n\
+             action=recall query='X' retrieves it. action=status shows all categories.\n\
              action=gotcha trigger='X' resolution='Y' for known pitfalls.\n\
              mode=semantic|exact for recall. category groups related facts.",
             json!({

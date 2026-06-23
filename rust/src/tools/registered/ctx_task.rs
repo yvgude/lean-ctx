@@ -16,9 +16,10 @@ impl McpTool for CtxTaskTool {
         tool_def(
             "ctx_task",
             "Multi-agent task orchestration.\n\
-             Actions: create (assign to agent), update (change state), list (active),\n\
-             get (details), cancel, message (add note), info (metadata).\n\
-             States: working|input-required|completed|failed|canceled.",
+             WORKFLOW: action=create → action=list to review → action=update to change state.\n\
+             Actions: create|update|list|get|cancel|message|info.\n\
+             States: working|input-required|completed|failed|canceled.\n\
+             ANTIPATTERN: not for code execution — use ctx_shell or ctx_execute.",
             json!({
                 "type": "object",
                 "properties": {

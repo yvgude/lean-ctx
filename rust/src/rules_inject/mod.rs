@@ -29,15 +29,27 @@ pub use skills::{install_all_skills, install_skill_for_agent};
 
 /// Forwarding functions — content is delegated to `core::rules_canonical`.
 pub fn canonical_rules_block() -> String {
-    let shadow = crate::core::config::Config::load().shadow_mode;
-    crate::core::rules_canonical::render(shadow, crate::core::rules_canonical::Wrapper::Shared)
+    let cfg = crate::core::config::Config::load();
+    let shadow = cfg.shadow_mode;
+    let level = crate::core::config::CompressionLevel::effective(&cfg);
+    crate::core::rules_canonical::render(
+        shadow,
+        crate::core::rules_canonical::Wrapper::Shared,
+        level,
+    )
 }
 pub fn rules_shared_content() -> String {
     canonical_rules_block()
 }
 pub fn rules_dedicated_markdown() -> String {
-    let shadow = crate::core::config::Config::load().shadow_mode;
-    crate::core::rules_canonical::render(shadow, crate::core::rules_canonical::Wrapper::Dedicated)
+    let cfg = crate::core::config::Config::load();
+    let shadow = cfg.shadow_mode;
+    let level = crate::core::config::CompressionLevel::effective(&cfg);
+    crate::core::rules_canonical::render(
+        shadow,
+        crate::core::rules_canonical::Wrapper::Dedicated,
+        level,
+    )
 }
 
 use detect::is_tool_detected;

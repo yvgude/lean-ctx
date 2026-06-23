@@ -5,7 +5,6 @@ Complete guide to setting up and optimally using lean-ctx with OpenCode (open-so
 ## Overview
 
 | Property | Value |
-|----------|-------|
 | Integration mode | **Hybrid** (MCP reads + shell hooks) |
 | Config file | `opencode.json` (project) or `~/.config/opencode/config.json` (global) |
 | Rules file | `~/.config/opencode/AGENTS.md` (shared, appended) |
@@ -44,6 +43,7 @@ lean-ctx configures OpenCode's MCP settings with the OpenCode-specific format:
 ```
 
 > **Key differences from other agents**:
+>
 > - Uses `"type": "local"` instead of `"type": "stdio"`
 > - `"command"` is an array `["lean-ctx"]` instead of a string
 > - Uses `"environment"` instead of `"env"`
@@ -58,12 +58,15 @@ OpenCode uses `~/.config/opencode/AGENTS.md` for global agent instructions. lean
 
 ```markdown
 # Your existing OpenCode AGENTS.md content here
+
 ...
 
 # lean-ctx — Context Engineering Layer
+
 <!-- lean-ctx-rules -->
 
 ## Mode Selection
+
 - Editing the file? → `full` first, then `diff` for re-reads
 - Context only? → `map` or `signatures`
 - Large file? → `aggressive` or `entropy`
@@ -73,15 +76,18 @@ OpenCode uses `~/.config/opencode/AGENTS.md` for global agent instructions. lean
 Anti-pattern: NEVER use `full` for files you won't edit — use `map` or `signatures`.
 
 ## File Editing
+
 Use native Edit/Write/StrReplace — unchanged. lean-ctx replaces READ only.
 If Edit requires Read and Read is unavailable, use `ctx_edit(path, old_string, new_string)`.
 NEVER loop on Edit failures — switch to ctx_edit immediately.
 
 ## Session Documentation
+
 After significant work: ctx_knowledge(action=remember, category=decision, content=...)
 When you see [CHECKPOINT] → call ctx_session(action=task, value=current status).
 
 Fallback only if a lean-ctx tool is unavailable: use native equivalents.
+
 <!-- /lean-ctx -->
 ```
 
@@ -97,53 +103,51 @@ lean-ctx init --global
 
 ## Tool Interception (`shadow_mode`)
 
-lean-ctx offers OpenCode **two mutually exclusive** integration surfaces. Exactly
-one is active at a time, decided by the `shadow_mode` config flag — running both
-would expose lean-ctx twice (the plugin spawns its own lean-ctx MCP client *in
-addition* to the `mcp.lean-ctx` server), wasting tokens and confusing the model.
+When `shadow_mode` is enabled, lean-ctx **denies** native tool access
+(`read`, `grep`, `glob`, `bash`) at the `opencode.json` permission level, so the
+agent must use the `ctx_*` equivalents via the MCP server. The MCP server is
+registered regardless of `shadow_mode` — both paths expose `ctx_*` tools; shadow
+mode just removes the native alternative.
 
-| `shadow_mode` | Active surface | Behaviour |
-|---------------|----------------|-----------|
-| `false` (default) | **MCP config** (`mcp.lean-ctx`) | `ctx_*` tools are offered; the model *chooses* when to use them. Native `read`/`grep`/`glob`/`edit`/`bash` are untouched. |
-| `true` | **Interception plugin** (`~/.config/opencode/plugins/lean-ctx.ts`) | Native `read`/`grep`/`glob`/`edit`/`bash` are transparently routed through `ctx_read`/`ctx_search`/`ctx_glob`/`ctx_edit`/`ctx_shell`. The `mcp.lean-ctx` entry is removed automatically. |
+| `shadow_mode` | Behaviour |
+| `false` (default) | `ctx_*` tools are available via MCP; native `read`/`grep`/`glob`/`bash` are untouched. |
+| `true` | Native `read`/`grep`/`glob`/`bash` are **denied** via `opencode.json` `permission` object. The agent **must** use `ctx_read`/`ctx_search`/`ctx_glob`/`ctx_shell`. |
 
-### Enabling interception
+### Enabling shadow mode
 
 ```bash
 lean-ctx config set shadow_mode true
-lean-ctx init --agent opencode    # installs the plugin, removes mcp.lean-ctx
+lean-ctx init --agent opencode    # denies native tools, registers MCP
 ```
 
-This writes the interception plugin to `~/.config/opencode/plugins/lean-ctx.ts`
-plus a `package.json` declaring its npm dependencies
-(`@modelcontextprotocol/sdk`, `@opencode-ai/plugin`). Install them once from the
-plugin directory:
+This adds `"read": "deny"`, `"grep": "deny"`, `"glob": "deny"`, `"bash": "deny"`
+to the `"permission"` object in `~/.config/opencode/opencode.json`.
 
-```bash
-cd ~/.config/opencode/plugins && npm install   # or: bun install
-```
-
-### Disabling interception (back to opt-in tools)
+### Disabling shadow mode (back to opt-in tools)
 
 ```bash
 lean-ctx config set shadow_mode false
-lean-ctx init --agent opencode    # removes the plugin, restores mcp.lean-ctx
+lean-ctx init --agent opencode    # removes native-tool denies, keeps MCP
 ```
 
-The plugin file is deleted so interception actually stops. Its `package.json` is
-left in place (it may contain dependencies you manage).
+Only `"deny"` entries set by lean-ctx are removed — your user-set permission
+values (e.g. `"edit": "allow"`) are preserved.
 
-### No redundant rules
+### Rules injected in both modes
 
-While the interception plugin is active, native tools *are* the lean-ctx tools, so
-the "prefer `ctx_*`" rules block would be redundant. lean-ctx therefore **skips
-the dedicated rules registration** when `shadow_mode` is on, so you never pay for
-duplicate instructions (rules + plugin) out of the context budget.
+Unlike the previous plugin-based design (which skipped rules to avoid token
+waste), the current design **always** injects the "prefer `ctx_*`" rules block.
+In shadow mode the agent has no native alternative, so the rules are even more
+important.
 
-> **Plugin vs. MCP — never both.** Don't hand-add `mcp.lean-ctx` to
-> `opencode.json` while the interception plugin is installed (or vice versa).
-> `lean-ctx init --agent opencode` always reconciles the two for you based on
-> `shadow_mode`.
+### Known limitation
+
+`shadow_mode` and `permission_inheritance` are mutually exclusive. When shadow
+mode is active, permission inheritance is automatically disabled because both
+features write to and read from the same `opencode.json` `permission` object —
+enabling both would create a deadlock where native tools are denied (shadow mode)
+and `ctx_*` tools are also denied (permission inheritance mirroring the deny
+rules back).
 
 ## Multi-Model Workflow
 
@@ -152,7 +156,6 @@ OpenCode supports multiple LLM providers. lean-ctx works identically across all 
 ### Provider-Agnostic Benefits
 
 | Provider | Context Window | lean-ctx Benefit |
-|----------|---------------|------------------|
 | Claude (Anthropic) | 200K tokens | Cost reduction, session memory |
 | GPT-4 (OpenAI) | 128K tokens | Context space optimization |
 | Gemini (Google) | 1M+ tokens | Cost reduction, focus |
@@ -293,14 +296,14 @@ ctx_agent(action="sync")  # Receives Agent 1's context
 
 ## Token Savings
 
-| Operation | Without lean-ctx | With lean-ctx | Savings |
-|-----------|-----------------|---------------|---------|
-| File read (cached re-read) | ~2000 tokens | ~13 tokens | 99.4% |
-| File read (map mode) | ~2000 tokens | ~400 tokens | 80% |
-| File read (signatures) | ~2000 tokens | ~200 tokens | 90% |
-| `git status` | ~800 tokens | ~120 tokens | 85% |
-| `cargo test` | ~2000 tokens | ~300 tokens | 85% |
-| `npm install` | ~1500 tokens | ~200 tokens | 87% |
+| Operation                  | Without lean-ctx | With lean-ctx | Savings |
+| -------------------------- | ---------------- | ------------- | ------- |
+| File read (cached re-read) | ~2000 tokens     | ~13 tokens    | 99.4%   |
+| File read (map mode)       | ~2000 tokens     | ~400 tokens   | 80%     |
+| File read (signatures)     | ~2000 tokens     | ~200 tokens   | 90%     |
+| `git status`               | ~800 tokens      | ~120 tokens   | 85%     |
+| `cargo test`               | ~2000 tokens     | ~300 tokens   | 85%     |
+| `npm install`              | ~1500 tokens     | ~200 tokens   | 87%     |
 
 ## Troubleshooting
 
@@ -374,3 +377,4 @@ lean-ctx init --agent opencode
 - [CLI Reference](https://leanctx.com/docs/cli-reference/)
 - [OpenCode Documentation](https://opencode.ai/docs)
 - [MCP Protocol](https://modelcontextprotocol.io/)
+

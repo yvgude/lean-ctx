@@ -1,13 +1,18 @@
 //! Contract tests: verify that canonical rules rendering is consistent.
 //!
-//! Tests use `render(false, ...)` directly to bypass config-driven shadow mode,
-//! ensuring the non-shadow baseline is always tested.
+//! Tests use `render(false, ..., CompressionLevel::Off)` directly to bypass
+//! config-driven shadow mode, ensuring the non-shadow baseline is always tested.
 
+use lean_ctx::core::config::CompressionLevel;
 use lean_ctx::core::rules_canonical;
 
 #[test]
 fn shared_non_shadow_contains_never() {
-    let content = rules_canonical::render(false, rules_canonical::Wrapper::Shared);
+    let content = rules_canonical::render(
+        false,
+        rules_canonical::Wrapper::Shared,
+        CompressionLevel::Off,
+    );
     assert!(
         content.contains("NEVER"),
         "shared non-shadow must contain NEVER"
@@ -16,7 +21,11 @@ fn shared_non_shadow_contains_never() {
 
 #[test]
 fn dedicated_non_shadow_contains_never() {
-    let content = rules_canonical::render(false, rules_canonical::Wrapper::Dedicated);
+    let content = rules_canonical::render(
+        false,
+        rules_canonical::Wrapper::Dedicated,
+        CompressionLevel::Off,
+    );
     assert!(
         content.contains("NEVER"),
         "dedicated non-shadow must contain NEVER"
@@ -25,7 +34,11 @@ fn dedicated_non_shadow_contains_never() {
 
 #[test]
 fn dedicated_non_shadow_contains_intent_and_anti() {
-    let content = rules_canonical::render(false, rules_canonical::Wrapper::Dedicated);
+    let content = rules_canonical::render(
+        false,
+        rules_canonical::Wrapper::Dedicated,
+        CompressionLevel::Off,
+    );
     assert!(
         content.contains("Anti-patterns"),
         "dedicated must have anti-patterns"
@@ -38,7 +51,11 @@ fn dedicated_non_shadow_contains_intent_and_anti() {
 
 #[test]
 fn shared_non_shadow_contains_mapping() {
-    let content = rules_canonical::render(false, rules_canonical::Wrapper::Shared);
+    let content = rules_canonical::render(
+        false,
+        rules_canonical::Wrapper::Shared,
+        CompressionLevel::Off,
+    );
     assert!(
         content.contains("MANDATORY MAPPING"),
         "shared must have mapping"
@@ -47,7 +64,11 @@ fn shared_non_shadow_contains_mapping() {
 
 #[test]
 fn dedicated_has_markers() {
-    let content = rules_canonical::render(false, rules_canonical::Wrapper::Dedicated);
+    let content = rules_canonical::render(
+        false,
+        rules_canonical::Wrapper::Dedicated,
+        CompressionLevel::Off,
+    );
     assert!(content.contains(rules_canonical::START_MARK));
     assert!(content.contains(rules_canonical::END_MARK));
     assert!(content.contains("CRITICAL"));
@@ -55,7 +76,8 @@ fn dedicated_has_markers() {
 
 #[test]
 fn bare_has_no_markers() {
-    let content = rules_canonical::render(false, rules_canonical::Wrapper::Bare);
+    let content =
+        rules_canonical::render(false, rules_canonical::Wrapper::Bare, CompressionLevel::Off);
     assert!(!content.contains(rules_canonical::START_MARK));
     assert!(!content.contains(rules_canonical::END_MARK));
 }
@@ -67,13 +89,14 @@ fn all_wrappers_use_current_version() {
         rules_canonical::Wrapper::Dedicated,
         rules_canonical::Wrapper::Shared,
     ] {
-        let content = rules_canonical::render(false, wrapper);
+        let content = rules_canonical::render(false, wrapper, CompressionLevel::Off);
         assert!(
             content.contains(&version),
             "{wrapper:?} must use current version"
         );
     }
-    let bare = rules_canonical::render(false, rules_canonical::Wrapper::Bare);
+    let bare =
+        rules_canonical::render(false, rules_canonical::Wrapper::Bare, CompressionLevel::Off);
     assert!(
         !bare.contains("version:"),
         "bare must not have version comment"

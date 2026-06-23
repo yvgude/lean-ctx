@@ -23,8 +23,7 @@ impl McpTool for CtxTranscriptCompactTool {
             "Compact an OpenAI-format message array deterministically:\n\
              keep system + fresh tail verbatim, replace older turns with a recoverable\n\
              summary, offload raw turns into session memory (indexed for recall).\n\
-             Built for the Hermes context-engine plugin. Returns JSON {messages, stats}.\n\
-             tool_call/tool_result pairs are never split.",
+             Returns JSON {messages, stats}. tool_call/tool_result pairs never split.",
             json!({
                 "type": "object",
                 "properties": {

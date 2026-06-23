@@ -236,8 +236,9 @@ extra = "claude specific"
     #[test]
     fn extract_user_content_with_markers() {
         let content = format!(
-            "user preamble\n\n{}\nrules here\n<!-- /lean-ctx -->\n\nuser postamble",
-            crate::core::rules_canonical::START_MARK
+            "user preamble\n\n{}\nrules here\n{}\n\nuser postamble",
+            crate::core::rules_canonical::START_MARK,
+            crate::core::rules_canonical::END_MARK
         );
         let result = extract_user_content(&content);
         assert!(result.contains("user preamble"));

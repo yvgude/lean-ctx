@@ -126,25 +126,6 @@ pub fn sanitize(output: &str) -> String {
     result
 }
 
-/// Replaces Unicode mathematical/symbolic characters with ASCII equivalents.
-/// Used to produce output that is friendly to lightweight downstream models
-/// (e.g. Cursor's Thought summarizer) which may degenerate on dense Unicode.
-pub fn ascii_safe_symbols(text: &str) -> String {
-    text.replace('\u{2192}', "->")
-        .replace('←', "<-")
-        .replace('∴', ":.")
-        .replace('≈', "~=")
-        .replace('≠', "!=")
-        .replace('∈', "in")
-        .replace('∅', "(none)")
-        .replace('⊕', "+")
-        .replace('⊖', "-")
-        .replace('Δ', "delta")
-        .replace('✓', "ok")
-        .replace('✗', "FAIL")
-        .replace('⚠', "WARN")
-}
-
 /// Prompt-injection detection heuristic. Scans context content for known
 /// injection patterns (role-override attempts, instruction-breaking sequences).
 /// Returns a list of detected patterns (empty = clean). This is a conservative,
@@ -292,18 +273,6 @@ mod tests {
     fn clean_preserves_normal_punctuation() {
         let input = "Error: something failed!!";
         assert_eq!(sanitize(input), input);
-    }
-
-    #[test]
-    fn ascii_safe_replaces_unicode_symbols() {
-        let out = ascii_safe_symbols("fn -> result ok or FAIL");
-        assert_eq!(out, "fn -> result ok or FAIL");
-    }
-
-    #[test]
-    fn ascii_safe_replaces_math_symbols() {
-        let out = ascii_safe_symbols("A ≠ B, C ≈ D, x ∈ set, ∅");
-        assert_eq!(out, "A != B, C ~= D, x in set, (none)");
     }
 
     #[test]

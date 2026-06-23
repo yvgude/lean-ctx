@@ -19,10 +19,10 @@ impl McpTool for CtxToolsTool {
         tool_def(
             "ctx_tools",
             "Gateway to downstream MCP servers — unlimited external tools at ~constant context cost.\n\
-             actions: find (query → top-N relevant tools as ChoiceCards) |\n\
-             call (proxy a server::tool) | list (servers+counts) | refresh.\n\
-             Use find to discover, then call the chosen server::tool.\n\
-             Off by default — enable via [gateway] config section.",
+             actions: find (query → top-N relevant tools) | call (proxy a server::tool) |\n\
+             list (servers+counts) | refresh.\n\
+             WORKFLOW: find to discover, then call the chosen server::tool.\n\
+             ANTIPATTERN: not for built-in tools — use those directly.",
             json!({
                 "type": "object",
                 "properties": {

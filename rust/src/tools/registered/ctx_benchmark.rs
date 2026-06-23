@@ -15,13 +15,16 @@ impl McpTool for CtxBenchmarkTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_benchmark",
-            "Benchmark compression modes — measures token savings across all available modes for a file or project. Provide a file path, or use action=project format=json|markdown for project-wide results.",
+            "Benchmark compression modes — measures token savings across all available modes for a file or project.\n\
+            WORKFLOW: use BEFORE ctx_read to pick the optimal compression strategy.\n\
+            Provide a file path, or use action=project for project-wide results.\n\
+            ANTIPATTERN: NOT for production profiling — measures compression, not runtime performance.",
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string" },
-                    "action": { "type": "string" },
-                    "format": { "type": "string" }
+                    "path": { "type": "string", "description": "File path to benchmark (required for per-file mode)" },
+                    "action": { "type": "string", "description": "Benchmark scope: omit for per-file, \"project\" for project-wide" },
+                    "format": { "type": "string", "description": "Output format for project benchmarks: json|markdown|terminal (default terminal)" }
                 },
                 "required": ["path"]
             }),

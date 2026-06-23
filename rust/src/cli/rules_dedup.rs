@@ -22,10 +22,8 @@
 
 use std::path::{Path, PathBuf};
 
-const COMPRESSION_START: &str = "<!-- lean-ctx-compression -->";
-const COMPRESSION_END: &str = "<!-- /lean-ctx-compression -->";
-const BLOCK_START: &str = crate::core::rules_canonical::START_MARK;
-const BLOCK_END: &str = crate::core::rules_canonical::END_MARK;
+use crate::core::rules_canonical::{END_MARK as BLOCK_END, START_MARK as BLOCK_START};
+use crate::core::rules_channel::{COMPRESSION_BLOCK_END, COMPRESSION_BLOCK_START};
 
 /// One planned dedup action.
 #[derive(Debug, PartialEq, Eq)]
@@ -57,7 +55,7 @@ fn is_owned_rules_file(content: &str) -> bool {
 
 fn has_marked_block(content: &str) -> bool {
     (content.contains(BLOCK_START) && content.contains(BLOCK_END))
-        || (content.contains(COMPRESSION_START) && content.contains(COMPRESSION_END))
+        || (content.contains(COMPRESSION_BLOCK_START) && content.contains(COMPRESSION_BLOCK_END))
 }
 
 /// Strips every lean-ctx-marked block (rules + compression) from `content`.
@@ -68,8 +66,12 @@ pub(crate) fn strip_lean_ctx_blocks(content: &str) -> String {
     loop {
         let next = if out.contains(BLOCK_START) && out.contains(BLOCK_END) {
             crate::marked_block::remove_content(&out, BLOCK_START, BLOCK_END)
-        } else if out.contains(COMPRESSION_START) && out.contains(COMPRESSION_END) {
-            crate::marked_block::remove_content(&out, COMPRESSION_START, COMPRESSION_END)
+        } else if out.contains(COMPRESSION_BLOCK_START) && out.contains(COMPRESSION_BLOCK_END) {
+            crate::marked_block::remove_content(
+                &out,
+                COMPRESSION_BLOCK_START,
+                COMPRESSION_BLOCK_END,
+            )
         } else {
             break;
         };
@@ -90,10 +92,14 @@ pub(crate) fn strip_lean_ctx_blocks(content: &str) -> String {
 /// and every line of user content. Used to thin a shared AGENTS.md once each
 /// reader is covered by its own canonical carrier (#684).
 pub(crate) fn strip_compression_block(content: &str) -> String {
-    if !(content.contains(COMPRESSION_START) && content.contains(COMPRESSION_END)) {
+    if !(content.contains(COMPRESSION_BLOCK_START) && content.contains(COMPRESSION_BLOCK_END)) {
         return content.to_string();
     }
-    let stripped = crate::marked_block::remove_content(content, COMPRESSION_START, COMPRESSION_END);
+    let stripped = crate::marked_block::remove_content(
+        content,
+        COMPRESSION_BLOCK_START,
+        COMPRESSION_BLOCK_END,
+    );
     let trimmed = stripped.trim_end();
     if trimmed.is_empty() {
         String::new()
@@ -177,7 +183,7 @@ pub(crate) fn plan(home: &Path, project: &Path) -> Vec<Action> {
     let agents_md = project.join("AGENTS.md");
     if let Ok(content) = std::fs::read_to_string(&agents_md) {
         let has_compression =
-            content.contains(COMPRESSION_START) && content.contains(COMPRESSION_END);
+            content.contains(COMPRESSION_BLOCK_START) && content.contains(COMPRESSION_BLOCK_END);
         if has_compression {
             if crate::core::rules_channel::agents_md_can_thin(home) {
                 actions.push(Action::StripCompression {
@@ -346,7 +352,7 @@ mod tests {
     #[test]
     fn strip_removes_rules_and_compression_blocks() {
         let content = format!(
-            "user line\n{BLOCK_START}\nour rules\n{BLOCK_END}\nmore user\n{COMPRESSION_START}\nstyle\n{COMPRESSION_END}\n",
+            "user line\n{BLOCK_START}\nour rules\n{BLOCK_END}\nmore user\n{COMPRESSION_BLOCK_START}\nstyle\n{COMPRESSION_BLOCK_END}\n",
         );
         let out = strip_lean_ctx_blocks(&content);
         assert!(out.contains("user line"));
@@ -456,7 +462,7 @@ mod tests {
     #[test]
     fn strip_compression_keeps_pointer_and_user_content() {
         let content = format!(
-            "# Agent Instructions\n\n{BLOCK_START}\npointer\n{BLOCK_END}\n\n{COMPRESSION_START}\nOUTPUT STYLE\n{COMPRESSION_END}\n",
+            "# Agent Instructions\n\n{BLOCK_START}\npointer\n{BLOCK_END}\n\n{COMPRESSION_BLOCK_START}\nOUTPUT STYLE\n{COMPRESSION_BLOCK_END}\n",
         );
         let out = strip_compression_block(&content);
         assert!(out.contains("# Agent Instructions"));
@@ -481,7 +487,7 @@ mod tests {
         std::fs::write(
             home.join(".cursor/rules/lean-ctx.mdc"),
             format!(
-                "{}\n<!-- version: 1 -->\n{COMPRESSION_START}\nstyle\n{COMPRESSION_END}\n",
+                "{}\n<!-- version: 1 -->\n{COMPRESSION_BLOCK_START}\nstyle\n{COMPRESSION_BLOCK_END}\n",
                 crate::core::rules_canonical::START_MARK
             ),
         )
@@ -491,7 +497,7 @@ mod tests {
         std::fs::write(
             project.join("AGENTS.md"),
             format!(
-                "# Agent Instructions\n\n{BLOCK_START}\npointer\n{BLOCK_END}\n\n{COMPRESSION_START}\nstyle\n{COMPRESSION_END}\n"
+                "# Agent Instructions\n\n{BLOCK_START}\npointer\n{BLOCK_END}\n\n{COMPRESSION_BLOCK_START}\nstyle\n{COMPRESSION_BLOCK_END}\n"
             ),
         )
         .unwrap();
@@ -520,7 +526,7 @@ mod tests {
         std::fs::write(
             project.join("AGENTS.md"),
             format!(
-                "# Agent Instructions\n\n{BLOCK_START}\npointer\n{BLOCK_END}\n\n{COMPRESSION_START}\nstyle\n{COMPRESSION_END}\n"
+                "# Agent Instructions\n\n{BLOCK_START}\npointer\n{BLOCK_END}\n\n{COMPRESSION_BLOCK_START}\nstyle\n{COMPRESSION_BLOCK_END}\n"
             ),
         )
         .unwrap();
@@ -550,7 +556,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "# Agent Instructions\n\n{BLOCK_START}\npointer\n{BLOCK_END}\n\n{COMPRESSION_START}\nstyle\n{COMPRESSION_END}\n"
+                "# Agent Instructions\n\n{BLOCK_START}\npointer\n{BLOCK_END}\n\n{COMPRESSION_BLOCK_START}\nstyle\n{COMPRESSION_BLOCK_END}\n"
             ),
         )
         .unwrap();

@@ -136,9 +136,17 @@ fn bench_tool_descriptions_token_count() {
     // Raised 4000 -> 5200 for #505 (@omar-mohamed-khallaf): the power tier now
     // carries the same first-line-dense, workflow-first treatment as the other
     // tiers (actual ~4872), with headroom for a tool or two per #290.
+    // Raised 5200 -> 5600 for #510 (@omar-mohamed-khallaf): the optimized tools
+    // schema adds explicit WORKFLOW:/ANTIPATTERN: intent lines across the surface
+    // (actual ~5498). Validated by the output-quality gate (eval A/B: NO
+    // REGRESSION, Δ +0.039) — the richer intents earn their tokens. The per-
+    // request cost is unchanged (core surface stays at ~2272, see
+    // `core_tool_surface_stays_within_budget`); this full-surface total only
+    // applies in opt-in full mode. Cutting it further is #509 (reduce tool
+    // COUNT), not trimming these eval-validated descriptions.
     assert!(
-        total < 5200,
-        "Total tool description tokens should be <5200, got {total}"
+        total < 5600,
+        "Total tool description tokens should be <5600, got {total}"
     );
 
     for (name, desc) in &descriptions {
@@ -186,9 +194,15 @@ fn bench_total_input_overhead() {
     // over the current actual so routine tool additions do not trip CI (#290).
     // Raised 12000 -> 13000 for the #496 tool-profile reorg (material jump in
     // the full opt-in surface); the lazy default users actually pay is unaffected.
+    // Raised 13000 -> 14000 for #510 (@omar-mohamed-khallaf): the optimized tools
+    // schema enriches per-parameter descriptions + WORKFLOW/ANTIPATTERN intents
+    // (actual ~13707: instr ~457 + desc ~5498 + schemas ~7752). Output-quality
+    // gate confirms NO REGRESSION (eval A/B Δ +0.039). The lazy default surface
+    // (bench_lazy_default_vs_full_overhead) is unaffected; cutting the full-
+    // surface total is #509 (reduce tool COUNT).
     assert!(
-        total < 13000,
-        "Total input overhead should be <13000 tokens, got {total}"
+        total < 14000,
+        "Total input overhead should be <14000 tokens, got {total}"
     );
 }
 

@@ -1,12 +1,15 @@
 //! Canonical rules source — single source of truth for all lean-ctx guidance.
 //!
 //! All content is declared as `pub const` at the top. Two profiles (FULL,
-//! COMPACT) define which sections compose each output format. One `render()`
-//! function assembles them. Three wrappers (Dedicated, Shared, Bare) select
-//! the profile and wrapping style.
+//! COMPACT) define which sections compose each output format. Three wrappers
+//! (Dedicated, Shared, Bare) select the profile and wrapping style. One
+//! `render()` function assembles everything, including the compression-level
+//! output-style prompt (Lite / Standard / Max).
 //!
 //! ***Every*** template, injected rule file, AGENTS.md block, and MCP
 //! instructions field MUST derive its content from this module.
+
+use crate::core::config::CompressionLevel;
 
 /// Stable HTML-comment anchor that marks the start of any lean-ctx rule
 /// section.  Never changes — used for find/replace in shared files and for
@@ -14,8 +17,23 @@
 /// next line (see `render`).
 pub const START_MARK: &str = "<!-- lean-ctx-rules -->";
 
+/// Prefix shared by every lean-ctx rules marker including legacy versioned
+/// formats (`<!-- lean-ctx-rules-v9 -->`). Use for substring detection when
+/// the exact constant would miss older installs.
+pub const RULES_MARKER_PREFIX: &str = "<!-- lean-ctx-rules";
+
+/// Start marker for lightweight AGENTS.md/CODEBUDDY.md/CLAUDE.md pointer
+/// blocks. These are deliberately separate from `START_MARK` / `<!-- lean-ctx-rules -->`
+/// because the pointer-only vs full-rules distinction drives duplicate detection
+/// in `doctor overhead` — a pointer-only file (`is_pointer_only`) must not be
+/// counted as a second source for its client.
+pub const AGENTS_BLOCK_START: &str = "<!-- lean-ctx -->";
+
+/// End marker for AGENTS.md/CODEBUDDY.md/CLAUDE.md pointer blocks.
+pub const AGENTS_BLOCK_END: &str = "<!-- /lean-ctx -->";
+
 /// Closing marker that ends a lean-ctx rule section.
-pub const END_MARK: &str = "<!-- /lean-ctx -->";
+pub const END_MARK: &str = "<!-- /lean-ctx-rules -->";
 
 /// Current rules version (monotonically increasing integer).  Embedded as
 /// `<!-- version: {RULES_VERSION} -->` right after `START_MARK` so the
@@ -58,7 +76,9 @@ pub const ANTI: &str = "\
 Anti-patterns — do NOT:\n\
 • Chain ctx_search -> ctx_read -> ctx_symbol — one ctx_compose replaces all three\n\
 • Grep for symbol definitions — ctx_symbol is faster + more precise\n\
-• Use ctx_read(mode=full) for orientation — use mode=signatures";
+• Use ctx_read(mode=full) for orientation — use mode=signatures\n\
+• Use ctx_callgraph or ctx_graph for const/static/variable references — they track\n\
+  function call edges and file-level deps only. Use grep or ctx_compose instead";
 
 /// Encourages parallel tool calls to reduce round-trips.
 pub const PARALLEL: &str = "\
@@ -83,6 +103,46 @@ pub const INTELLIGENCE: &str =
 /// LITM end-of-instructions preference line.
 pub const LITM_END: &str = "TOOL PREFERENCE (END): ctx_compose>chain ctx_read>Read ctx_shell>Shell \
      ctx_search>Grep ctx_glob>Glob ctx_tree>ls | Edit/Write/Delete=native";
+
+// ── Output-style compression prompts ───────────────────────────
+
+/// Lite compression — concise, bullet-point output.
+pub const LITE_PROMPT: &str = "\
+OUTPUT STYLE: concise
+- Bullet points over paragraphs
+- Skip filler words and hedging (\"I think\", \"probably\", \"it seems\")
+- 1-sentence explanations max, then code/action
+- No repeating what the user said";
+
+/// Standard compression — dense, atomic fact lines, abbreviations.
+pub const STANDARD_PROMPT: &str = "\
+OUTPUT STYLE: dense
+- Each statement = one atomic fact line
+- Use abbreviations: fn, cfg, impl, deps, req, res, ctx, err, ret
+- Diff lines only (+/-/~), never repeat unchanged code
+- Symbols: → (causes), + (adds), − (removes), ~ (modifies), ∴ (therefore)
+- No narration, no filler, no hedging
+- BUDGET: ≤200 tokens per response unless code block required";
+
+/// Max compression — expert-terse, telegraph format, symbolic vocabulary.
+pub const MAX_PROMPT: &str = "\
+OUTPUT STYLE: expert-terse
+- Telegraph format: subject-verb-object, drop articles/prepositions
+- Symbolic vocabulary: → cause, ∵ because, ∴ therefore, ⊕ add, ⊖ remove, Δ change, ≈ similar, ≠ different, ∈ in/member, ∅ empty/none, ✓ ok, ✗ fail
+- Code blocks: untouched (never compress code syntax)
+- Each line: max 80 chars
+- Zero narration, zero filler
+- BUDGET: ≤100 tokens per non-code response";
+
+/// Return the compression prompt text for a given level (empty string for Off).
+pub fn compression_text(level: CompressionLevel) -> &'static str {
+    match level {
+        CompressionLevel::Off => "",
+        CompressionLevel::Lite => LITE_PROMPT,
+        CompressionLevel::Standard => STANDARD_PROMPT,
+        CompressionLevel::Max => MAX_PROMPT,
+    }
+}
 
 const FULL_NON_SHADOW: &[&str] = &[
     CRITICAL,
@@ -123,12 +183,14 @@ pub enum Wrapper {
     Bare,
 }
 
-/// Render lean-ctx rules for a given wrapper and shadow mode.
+/// Render lean-ctx rules for a given wrapper, shadow mode, and compression level.
 ///
 /// * `shadow` — when true, tool-mapping sections (BULLETS, NEVER,
 ///   CRITICAL banner, "## Tool Mapping" header) are omitted.
 /// * `wrapper` — selects the profile (FULL / COMPACT) and wrapping style.
-pub fn render(shadow: bool, wrapper: Wrapper) -> String {
+/// * `level` — selects the output-style compression prompt (Lite / Standard /
+///   Max) which is appended to the body. `Off` omits it.
+pub fn render(shadow: bool, wrapper: Wrapper, level: CompressionLevel) -> String {
     let profile = match (wrapper, shadow) {
         (Wrapper::Dedicated, false) => FULL_NON_SHADOW,
         (Wrapper::Dedicated, true) => FULL_SHADOW,
@@ -136,7 +198,14 @@ pub fn render(shadow: bool, wrapper: Wrapper) -> String {
         (_, true) => COMPACT_SHADOW,
     };
 
-    let body = profile.join("\n\n");
+    let mut body = profile.join("\n\n");
+
+    // Append compression prompt for active levels
+    let compression = compression_text(level);
+    if !compression.is_empty() {
+        body.push('\n');
+        body.push_str(compression);
+    }
 
     if matches!(wrapper, Wrapper::Bare) {
         return body;
@@ -231,8 +300,8 @@ impl<'a> RulesFile<'a> {
     /// * If a lean-ctx section exists → replaces content between `START_MARK`
     ///   and `END_MARK`, preserving user content before/after.
     /// * If no section exists → appends fresh content at the end.
-    pub fn merged(&self, shadow: bool, wrapper: Wrapper) -> String {
-        let fresh = render(shadow, wrapper);
+    pub fn merged(&self, shadow: bool, wrapper: Wrapper, level: CompressionLevel) -> String {
+        let fresh = render(shadow, wrapper, level);
         if self.start.is_some() {
             let before = self.prefix();
             let after = self.suffix();
@@ -266,8 +335,8 @@ impl<'a> RulesFile<'a> {
     }
 
     /// Create initial rules content (no existing section to merge with).
-    pub fn initial(shadow: bool, wrapper: Wrapper) -> String {
-        render(shadow, wrapper)
+    pub fn initial(shadow: bool, wrapper: Wrapper, level: CompressionLevel) -> String {
+        render(shadow, wrapper, level)
     }
 
     // ── Delete ─────────────────────────────────────────────────
@@ -339,7 +408,7 @@ mod tests {
 
     #[test]
     fn dedicated_has_markers_and_version() {
-        let out = render(false, Wrapper::Dedicated);
+        let out = render(false, Wrapper::Dedicated, CompressionLevel::Off);
         assert!(out.contains(START_MARK));
         assert!(out.contains(&format!("<!-- version: {RULES_VERSION} -->")));
         assert!(out.contains(END_MARK));
@@ -350,7 +419,7 @@ mod tests {
 
     #[test]
     fn dedicated_shadow_omits_mapping() {
-        let out = render(true, Wrapper::Dedicated);
+        let out = render(true, Wrapper::Dedicated, CompressionLevel::Off);
         assert!(out.contains(START_MARK));
         assert!(
             !out.contains("MANDATORY MAPPING"),
@@ -369,7 +438,7 @@ mod tests {
 
     #[test]
     fn dedicated_litm_structure() {
-        let out = render(false, Wrapper::Dedicated);
+        let out = render(false, Wrapper::Dedicated, CompressionLevel::Off);
         let lines: Vec<&str> = out.lines().collect();
         let first_5 = lines[..5.min(lines.len())].join("\n");
         assert!(
@@ -388,7 +457,7 @@ mod tests {
 
     #[test]
     fn shared_has_markers_and_header() {
-        let out = render(false, Wrapper::Shared);
+        let out = render(false, Wrapper::Shared, CompressionLevel::Off);
         assert!(out.contains(START_MARK));
         assert!(out.contains(END_MARK));
         assert!(out.contains("MANDATORY MAPPING"));
@@ -397,7 +466,7 @@ mod tests {
 
     #[test]
     fn shared_shadow_omits_mapping() {
-        let out = render(true, Wrapper::Shared);
+        let out = render(true, Wrapper::Shared, CompressionLevel::Off);
         assert!(out.contains(START_MARK));
         assert!(
             !out.contains("MANDATORY MAPPING"),
@@ -413,7 +482,7 @@ mod tests {
 
     #[test]
     fn bare_has_no_markers() {
-        let out = render(false, Wrapper::Bare);
+        let out = render(false, Wrapper::Bare, CompressionLevel::Off);
         assert!(!out.contains(START_MARK), "Bare must not have START_MARK");
         assert!(!out.contains(END_MARK), "Bare must not have END_MARK");
         assert!(!out.contains("<!-- version:"), "Bare must not have version");
@@ -423,12 +492,49 @@ mod tests {
 
     #[test]
     fn bare_shadow_only_read_modes() {
-        let out = render(true, Wrapper::Bare);
+        let out = render(true, Wrapper::Bare, CompressionLevel::Off);
         assert!(!out.contains(NEVER), "shadow Bare must not have NEVER");
         assert!(
             !out.contains("MANDATORY MAPPING"),
             "shadow Bare must not have BULLETS"
         );
+    }
+
+    // --- Compression level tests ---
+
+    #[test]
+    fn render_includes_lite_prompt() {
+        let out = render(false, Wrapper::Bare, CompressionLevel::Lite);
+        assert!(out.contains("OUTPUT STYLE: concise"));
+        assert!(out.contains("Bullet points"));
+    }
+
+    #[test]
+    fn render_includes_standard_prompt() {
+        let out = render(false, Wrapper::Bare, CompressionLevel::Standard);
+        assert!(out.contains("OUTPUT STYLE: dense"));
+        assert!(out.contains("atomic fact"));
+    }
+
+    #[test]
+    fn render_includes_max_prompt() {
+        let out = render(false, Wrapper::Bare, CompressionLevel::Max);
+        assert!(out.contains("OUTPUT STYLE: expert-terse"));
+        assert!(out.contains("Telegraph"));
+    }
+
+    #[test]
+    fn render_off_excludes_compression() {
+        let out = render(false, Wrapper::Bare, CompressionLevel::Off);
+        assert!(!out.contains("OUTPUT STYLE:"));
+    }
+
+    #[test]
+    fn compression_text_matches_level() {
+        assert!(compression_text(CompressionLevel::Off).is_empty());
+        assert!(compression_text(CompressionLevel::Lite).contains("Bullet"));
+        assert!(compression_text(CompressionLevel::Standard).contains("fn, cfg"));
+        assert!(compression_text(CompressionLevel::Max).contains("Telegraph"));
     }
 
     // --- Wrapper round-trip ---
@@ -437,7 +543,7 @@ mod tests {
     fn all_wrappers_produce_output() {
         for shadow in [false, true] {
             for wrapper in [Wrapper::Dedicated, Wrapper::Shared, Wrapper::Bare] {
-                let out = render(shadow, wrapper);
+                let out = render(shadow, wrapper, CompressionLevel::Off);
                 assert!(!out.is_empty(), "{wrapper:?} shadow={shadow} is empty");
             }
         }
@@ -479,7 +585,7 @@ mod tests {
         let content =
             format!("before\n{START_MARK}\n<!-- version: 1 -->\n\nold\n{END_MARK}\nafter");
         let f = RulesFile::parse(&content);
-        let merged = f.merged(false, Wrapper::Shared);
+        let merged = f.merged(false, Wrapper::Shared, CompressionLevel::Off);
         assert!(merged.contains("before"), "prefix preserved");
         assert!(merged.contains("after"), "suffix preserved");
         assert!(!merged.contains("old"), "old content replaced");
@@ -491,7 +597,7 @@ mod tests {
         let content = "user content";
         let f = RulesFile::parse(content);
         assert!(!f.has_content());
-        let merged = f.merged(false, Wrapper::Bare);
+        let merged = f.merged(false, Wrapper::Bare, CompressionLevel::Off);
         assert!(merged.contains("user content"));
         assert!(merged.contains(BULLETS));
     }

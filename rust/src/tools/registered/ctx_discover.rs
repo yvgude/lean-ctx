@@ -15,13 +15,14 @@ impl McpTool for CtxDiscoverTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_discover",
-            "Identify compression misses in shell history — use when context feels bloated.\n\
-             Shows commands that would save tokens via lean-ctx patterns. limit=N caps results.\n\
-             No params needed for quick health check.",
+            "Find shell commands not yet using lean-ctx compression — use when context feels bloated.\n\
+             Shows which commands would save tokens via lean-ctx patterns. limit=N caps results.\n\
+             ANTIPATTERN: not for finding compression bugs — reports missed opportunities only.\n\
+             Run 'lean-ctx init --global' to auto-compress all commands.",
             json!({
                 "type": "object",
                 "properties": {
-                    "limit": { "type": "integer" }
+                    "limit": { "type": "integer", "description": "Max results (default 15)" }
                 }
             }),
         )

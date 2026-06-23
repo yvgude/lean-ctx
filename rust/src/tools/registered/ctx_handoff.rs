@@ -19,7 +19,7 @@ impl McpTool for CtxHandoffTool {
             "ctx_handoff",
             "Context handoff protocol (hashed, deterministic, local-first).\n\
              Actions: create|show|list|pull|clear|export|import. Stores curated file refs with hashes.\n\
-             Use before ending a session or when handing off work to another agent.",
+             Before ending a session or handing off to another agent.",
             json!({
                 "type": "object",
                 "properties": {

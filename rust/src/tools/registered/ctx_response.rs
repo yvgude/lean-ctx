@@ -16,8 +16,9 @@ impl McpTool for CtxResponseTool {
         tool_def(
             "ctx_response",
             "Compress LLM response text via structural de-duplication.\n\
-             Pass response text to remove repetitive patterns while preserving key information.\n\
-             Use to reduce token waste before storing or forwarding responses.",
+             Removes repetitive patterns while preserving key information.\n\
+             WORKFLOW: use after receiving a response, before storing/forwarding.\n\
+             ANTIPATTERN: no-op when CRP mode is off — use ctx_read compression instead.",
             json!({
                 "type": "object",
                 "properties": {

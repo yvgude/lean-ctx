@@ -436,7 +436,7 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
         // lean-ctx-owned copy is removed instead of refreshed.
         let claude_rules_file = cwd.join(".claude").join("rules").join("lean-ctx.md");
         if let Ok(existing) = std::fs::read_to_string(&claude_rules_file)
-            && existing.contains("<!-- lean-ctx-rules")
+            && existing.contains(crate::core::rules_canonical::RULES_MARKER_PREFIX)
             && std::fs::remove_file(&claude_rules_file).is_ok()
             && !mcp_server_quiet_mode()
         {
@@ -451,7 +451,7 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
     if wants("codebuddy") {
         let codebuddy_rules_file = cwd.join(".codebuddy").join("rules").join("lean-ctx.md");
         if let Ok(existing) = std::fs::read_to_string(&codebuddy_rules_file)
-            && existing.contains("<!-- lean-ctx-rules")
+            && existing.contains(crate::core::rules_canonical::RULES_MARKER_PREFIX)
             && std::fs::remove_file(&codebuddy_rules_file).is_ok()
             && !mcp_server_quiet_mode()
         {
@@ -487,10 +487,10 @@ const PROJECT_LEAN_CTX_MD_MARKER: &str = "<!-- lean-ctx-owned: PROJECT-LEAN-CTX.
 const PROJECT_LEAN_CTX_MD: &str = "LEAN-CTX.md";
 const PROJECT_AGENTS_MD: &str = "AGENTS.md";
 // The AGENTS.md pointer block keeps its own marker pair, independent of the
-// dedicated rules-file `START_MARK`: existing user blocks (and uninstall) match
-// on `<!-- lean-ctx -->`, so it must not be aliased to `<!-- lean-ctx-rules -->`.
-const AGENTS_BLOCK_START: &str = "<!-- lean-ctx -->";
-const AGENTS_BLOCK_END: &str = "<!-- /lean-ctx -->";
+// dedicated rules-file `START_MARK`: pointer-only files must not be counted as
+// duplicate lean-ctx sources (doctor overhead, #684).
+const AGENTS_BLOCK_START: &str = crate::core::rules_canonical::AGENTS_BLOCK_START;
+const AGENTS_BLOCK_END: &str = crate::core::rules_canonical::AGENTS_BLOCK_END;
 
 fn ensure_project_agents_integration(cwd: &std::path::Path) {
     let lean_ctx_md = cwd.join(PROJECT_LEAN_CTX_MD);

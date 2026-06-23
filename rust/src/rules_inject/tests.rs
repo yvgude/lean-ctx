@@ -5,15 +5,18 @@ use super::skills::{SKILL_TEMPLATE, build_skill_targets};
 use std::sync::OnceLock;
 
 use super::*;
+use crate::core::config::CompressionLevel;
 use crate::core::rules_canonical::{END_MARK, RULES_VERSION, RulesFile, START_MARK, Wrapper};
 
 fn shared_content() -> String {
-    crate::core::rules_canonical::render(false, Wrapper::Shared)
+    crate::core::rules_canonical::render(false, Wrapper::Shared, CompressionLevel::Off)
 }
 
 fn dedicated_content_cached() -> &'static str {
     static RULES: OnceLock<String> = OnceLock::new();
-    RULES.get_or_init(|| crate::core::rules_canonical::render(false, Wrapper::Dedicated))
+    RULES.get_or_init(|| {
+        crate::core::rules_canonical::render(false, Wrapper::Dedicated, CompressionLevel::Off)
+    })
 }
 
 // ── Canonical rules content ──────────────────────────────────
@@ -42,7 +45,8 @@ fn dedicated_rules_have_markers() {
 
 #[test]
 fn shadow_dedicated_omits_mapping() {
-    let rules = crate::core::rules_canonical::render(true, Wrapper::Dedicated);
+    let rules =
+        crate::core::rules_canonical::render(true, Wrapper::Dedicated, CompressionLevel::Off);
     assert!(
         !rules.contains("MUST USE"),
         "shadow must not include tool mapping"
@@ -57,7 +61,7 @@ fn shadow_dedicated_omits_mapping() {
 
 #[test]
 fn shadow_shared_omits_mapping() {
-    let rules = crate::core::rules_canonical::render(true, Wrapper::Shared);
+    let rules = crate::core::rules_canonical::render(true, Wrapper::Shared, CompressionLevel::Off);
     assert!(
         !rules.contains("MANDATORY MAPPING"),
         "shadow shared must not include mapping header"
@@ -83,7 +87,7 @@ fn zed_rules_path_is_os_aware_and_matches_config_dir() {
 fn target_count() {
     let home = std::path::PathBuf::from("/tmp/fake_home");
     let targets = build_rules_targets(&home, crate::core::config::RulesInjection::Shared);
-    assert_eq!(targets.len(), 24);
+    assert_eq!(targets.len(), 25);
     assert!(
         !targets.iter().any(|t| t.name == "Claude Code"),
         "Claude Code must not get a rules target"
@@ -93,7 +97,7 @@ fn target_count() {
         "CodeBuddy must not get a rules target"
     );
     let dedicated = build_rules_targets(&home, crate::core::config::RulesInjection::Dedicated);
-    assert_eq!(dedicated.len(), 24);
+    assert_eq!(dedicated.len(), 25);
 }
 
 #[test]
@@ -146,7 +150,7 @@ fn rules_catalog_includes_previously_missing_agents_for_detection() {
 
 #[test]
 fn cursor_mdc_has_frontmatter_and_markers() {
-    let mdc = rules_content(&RulesFormat::CursorMdc);
+    let mdc = rules_content(&RulesFormat::CursorMdc, CompressionLevel::Off);
     assert!(mdc.contains("alwaysApply: true"));
     assert!(mdc.contains(START_MARK));
     assert!(mdc.contains(END_MARK));
@@ -169,7 +173,7 @@ fn rules_file_merged_replaces_section_preserving_user_content() {
     assert_eq!(file.version(), 0);
     assert!(!file.is_current());
 
-    let merged = file.merged(false, Wrapper::Shared);
+    let merged = file.merged(false, Wrapper::Shared, CompressionLevel::Off);
     std::fs::write(&path, &merged).unwrap();
 
     let result = std::fs::read_to_string(&path).unwrap();
@@ -190,7 +194,7 @@ fn rules_file_merged_appends_when_no_section() {
     let file = RulesFile::parse(content);
     assert!(!file.has_content());
 
-    let merged = file.merged(false, Wrapper::Shared);
+    let merged = file.merged(false, Wrapper::Shared, CompressionLevel::Off);
     assert!(merged.contains("user content only"));
     assert!(merged.contains(START_MARK));
 }

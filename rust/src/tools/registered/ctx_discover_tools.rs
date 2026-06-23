@@ -15,9 +15,9 @@ impl McpTool for CtxDiscoverToolsTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_discover_tools",
-            "Search available lean-ctx tools by keyword — use to find the right tool.\n\
-             Empty query lists all tools. query=\"keyword\" returns matching names and descriptions.\n\
-             Use before ctx_call or when unsure which tool fits your task.",
+            "WORKFLOW: call FIRST when unsure which tool fits your task — lists all tools on empty query.\n\
+             Then use ctx_call to invoke discovered tools (for static-tool-list clients).\n\
+             ANTIPATTERN: not for runtime invocation — use ctx_call(name=..., arguments=...) directly.",
             json!({
                 "type": "object",
                 "properties": {
