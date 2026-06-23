@@ -437,13 +437,14 @@ Parameters: `format`
 ## `ctx_read`
 
 Read source files. mode is REQUIRED — choose by intent:
-full=verbatim (edit-ready, use before Edit), signatures=API surface only,
-map=structural overview of large files, auto=smart (learns from task and
-session context, use for orientation), diff=git delta, lines:N-M=window.
-fresh=true bypasses cache.
+full=verbatim (edit-ready, use before Edit), raw=exact bytes (no framing),
+signatures=API surface only, map=structural overview of large files,
+auto=smart (learns from task and session context, use for orientation),
+diff=git delta, lines:N-M=window.
+fresh=true bypasses cache; raw=true=verbatim+fresh.
 For understanding code or finding answers, use ctx_compose FIRST instead.
 
-Parameters: `aggressiveness`, `fresh`, `limit`, `mode`, `offset`, `path`*, `protect`, `start_line`
+Parameters: `aggressiveness`, `fresh`, `limit`, `mode`, `offset`, `path`*, `protect`, `raw`, `start_line`
 
 ## `ctx_refactor`
 

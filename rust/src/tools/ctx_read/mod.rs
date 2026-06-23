@@ -27,7 +27,7 @@ pub struct ReadOutput {
     pub output_tokens: usize,
 }
 
-const COMPRESSED_HINT: &str = "[compressed — use mode=\"full\" for complete source]";
+const COMPRESSED_HINT: &str = "[lean-ctx: compact view — nothing lost, full source on request]";
 
 const CACHEABLE_MODES: &[&str] = &["map", "signatures"];
 
@@ -101,7 +101,7 @@ fn append_compressed_hint(output: &str, file_path: &str) -> String {
         return output.to_string();
     }
     format!(
-        "{output}\n{COMPRESSED_HINT}\n  ctx_read(\"{file_path}\", mode=\"full\") | ctx_retrieve(\"{file_path}\")"
+        "{output}\n{COMPRESSED_HINT}\n  full: ctx_read(\"{file_path}\", mode=\"full\")  ·  exact bytes: ctx_read(\"{file_path}\", raw=true)  ·  recover: ctx_retrieve(\"{file_path}\")"
     )
 }
 
@@ -502,9 +502,10 @@ pub fn try_stub_hit_readonly(cache: &SessionCache, path: &str) -> Option<ReadOut
     } else {
         // #498 determinism: the cache-hit stub is a pure function of (content,
         // path) so identical re-reads stay byte-stable and provider prompt
-        // caching applies. Rotating proof lines and read-count notes are
-        // intentionally omitted from the body.
-        format!("{file_ref}={short} [unchanged {line_count}L]")
+        // caching applies. The `fresh=true` escape is a *static* suffix (no
+        // rotating proof lines or read-count notes), so determinism holds while
+        // a re-reader in non-meta mode still sees how to force the content (#513).
+        format!("{file_ref}={short} [unchanged {line_count}L · fresh=true to re-read]")
     };
     let out = crate::core::redaction::redact_text_if_enabled(&out);
     let sent = count_tokens(&out);
@@ -1058,9 +1059,10 @@ fn handle_full_with_auto_delta(
                 )
             } else {
                 // #498 determinism: byte-stable cache-hit stub (see
-                // try_stub_hit_readonly).
+                // try_stub_hit_readonly). The `fresh=true` escape is a static
+                // suffix, so non-meta re-readers still see how to force content (#513).
                 format!(
-                    "{file_ref}={short} [unchanged {}L]",
+                    "{file_ref}={short} [unchanged {}L · fresh=true to re-read]",
                     store_result.line_count
                 )
             };

@@ -307,10 +307,17 @@ mod tests {
     /// Bumped to 2275 for #451: `ctx_shell` now states it runs the system shell
     /// profile-free (no rc/profile sourced), a deliberate +~13 tok so agents stop
     /// mistaking it for a config-loaded interactive bash. Kept to one terse clause.
+    ///
+    /// Bumped to per-tool 335 / total 2310 for #513: `ctx_read` now documents the
+    /// verbatim escape hatch (`raw=true` arg + `raw` mode) so agents — especially
+    /// non-Opus models that fought the compression — discover how to get exact
+    /// bytes for review/audit instead of guessing. `ctx_read` is the richest core
+    /// tool and is the only one that crosses 300; the per-tool cap still guards
+    /// every other tool from bloat. Kept to terse clauses (+~33 tok on ctx_read).
     #[test]
     fn core_tool_surface_stays_within_budget() {
-        const PER_TOOL_BUDGET: usize = 300;
-        const TOTAL_BUDGET: usize = 2275;
+        const PER_TOOL_BUDGET: usize = 335;
+        const TOTAL_BUDGET: usize = 2310;
 
         let _guard = crate::core::data_dir::isolated_data_dir();
         let core = crate::tool_defs::core_tool_names();

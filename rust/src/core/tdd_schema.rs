@@ -52,7 +52,7 @@ pub fn tdd_schema_value() -> Value {
                 "api": "  API:\\n    <signature>"
             },
             "file_ref_format": "F<idx>=<short-path> <line-count>L",
-            "compressed_hint": "[compressed — use mode=\"full\" for complete source]"
+            "compressed_hint": "[lean-ctx: compact view — nothing lost, full source on request]"
         },
         "stability": {
             "determinism": [

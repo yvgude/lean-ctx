@@ -36,10 +36,11 @@ impl McpTool for CtxReadTool {
         tool_def(
             "ctx_read",
             "Read source files. mode is REQUIRED — choose by intent:\n\
-             full=verbatim (edit-ready, use before Edit), signatures=API surface only,\n\
-             map=structural overview of large files, auto=smart (learns from task and\n\
-             session context, use for orientation), diff=git delta, lines:N-M=window.\n\
-             fresh=true bypasses cache.\n\
+             full=verbatim (edit-ready, use before Edit), raw=exact bytes (no framing),\n\
+             signatures=API surface only, map=structural overview of large files,\n\
+             auto=smart (learns from task and session context, use for orientation),\n\
+             diff=git delta, lines:N-M=window.\n\
+             fresh=true bypasses cache; raw=true=verbatim+fresh.\n\
              For understanding code or finding answers, use ctx_compose FIRST instead.",
             json!({
                 "type": "object",
@@ -47,8 +48,9 @@ impl McpTool for CtxReadTool {
                     "path": { "type": "string", "description": "Absolute path" },
                     "mode": {
                         "type": "string",
-                        "description": "REQUIRED. full=verbatim(edit-ready) signatures=API map=structure auto=smart diff=git-delta lines:N-M=window reference=quotes task=focus"
+                        "description": "REQUIRED. full=verbatim(edit-ready) raw=exact-bytes signatures=API map=structure auto=smart diff=git-delta lines:N-M=window reference=quotes task=focus"
                     },
+                    "raw": { "type": "boolean", "description": "Verbatim, no compression (= mode=\"raw\" + fresh)" },
                     "start_line": { "type": "integer", "description": "1-based first line (offset alias)" },
                     "offset": { "type": "integer", "description": "start_line alias" },
                     "limit": { "type": "integer", "description": "Max lines" },
@@ -128,7 +130,12 @@ impl CtxReadTool {
         let task_ref = current_task.as_deref();
 
         let profile = crate::core::profiles::active_profile();
-        let explicit_mode_arg = get_str(args, "mode");
+        // #513: `raw=true` is the intuitive "give me the exact bytes" escape an
+        // agent reaches for. Alias it to mode="raw" (verbatim, unframed) and
+        // force a fresh disk read below so a re-read never collapses to an
+        // `[unchanged]`/auto-delta stub. An explicit raw flag wins over `mode`.
+        let arg_raw = get_bool(args, "raw").unwrap_or(false);
+        let explicit_mode_arg = resolve_raw_alias(arg_raw, get_str(args, "mode"));
         let explicit_mode = explicit_mode_arg.is_some();
         // #673 — when the caller omits `mode`, a context policy pack's
         // `default_read_mode` (if set) takes precedence over the profile/auto
@@ -158,6 +165,11 @@ impl CtxReadTool {
             profile.read.default_mode_effective().to_string()
         };
         let mut fresh = get_bool(args, "fresh").unwrap_or(false);
+        // #513: a raw/verbatim request always reads from disk — the whole point
+        // is exact current bytes, never a cached stub or delta.
+        if arg_raw {
+            fresh = true;
+        }
         let cache_policy = crate::server::compaction_sync::effective_cache_policy();
         if cache_policy == "off" {
             fresh = true;
@@ -207,12 +219,21 @@ impl CtxReadTool {
             return Err(ErrorData::invalid_params(msg, None));
         }
         let budget_warning = gate_result.budget_warning.clone();
-        if let Some(overridden) = gate_result.overridden_mode {
+        // #513: an explicit raw/verbatim request is never silently downgraded by
+        // the budget gate — the caller asked for exact bytes.
+        if mode != "raw"
+            && let Some(overridden) = gate_result.overridden_mode
+        {
             mode = overridden;
         }
 
         let (mut mode, degrade_warning) = if crate::tools::ctx_read::is_instruction_file(path) {
             ("full".to_string(), None)
+        } else if mode == "raw" {
+            // #513: raw bypasses context-pressure degradation (which would
+            // otherwise downgrade to signatures under Block), exactly like
+            // instruction files — verbatim means verbatim.
+            ("raw".to_string(), None)
         } else {
             auto_degrade_read_mode(&mode)
         };
@@ -772,6 +793,20 @@ fn apply_line_window(
     }
 }
 
+/// #513: resolve the `raw=true` convenience flag into the effective explicit
+/// `mode` argument. Agents reach for `raw:true` to get exact bytes; it aliases
+/// to `mode="raw"` (verbatim, unframed) and wins over any caller-supplied
+/// `mode`. When `raw` is unset, the caller's `mode` (if any) passes through
+/// unchanged. The caller separately forces `fresh=true` for raw so a re-read
+/// never collapses to an `[unchanged]`/auto-delta stub.
+fn resolve_raw_alias(arg_raw: bool, mode_arg: Option<String>) -> Option<String> {
+    if arg_raw {
+        Some("raw".to_string())
+    } else {
+        mode_arg
+    }
+}
+
 fn apply_verdict(
     mode: &str,
     verdict: crate::core::degradation_policy::DegradationVerdictV1,
@@ -840,6 +875,28 @@ fn extract_file_summary(output: &str, path: &str) -> String {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn raw_alias_forces_raw_mode_over_explicit_mode() {
+        // #513: raw=true is the verbatim escape hatch and must win over any
+        // mode arg an agent also happened to pass.
+        assert_eq!(
+            resolve_raw_alias(true, Some("signatures".to_string())),
+            Some("raw".to_string())
+        );
+        assert_eq!(resolve_raw_alias(true, None), Some("raw".to_string()));
+    }
+
+    #[test]
+    fn raw_alias_absent_passes_mode_through() {
+        // Without raw=true the caller's mode is untouched (including None, which
+        // lets the auto/policy/profile resolution downstream pick the mode).
+        assert_eq!(
+            resolve_raw_alias(false, Some("full".to_string())),
+            Some("full".to_string())
+        );
+        assert_eq!(resolve_raw_alias(false, None), None);
+    }
 
     #[test]
     fn per_file_lock_same_path_returns_same_mutex() {
