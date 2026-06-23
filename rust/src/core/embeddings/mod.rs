@@ -651,6 +651,56 @@ pub fn try_shared_engine() -> Option<&'static EmbeddingEngine> {
     SHARED_ENGINE.get()?.as_ref().ok()
 }
 
+/// Whether this process may load the ONNX model on a **detached background
+/// thread** (#519).
+///
+/// ONNX Runtime registers its op schemas in global C++ static state while a
+/// model is loading. If a detached loader thread is still mid-load when the
+/// process returns from `main`, it races `libonnxruntime`'s static-destructor
+/// teardown — a use-after-free SIGSEGV inside `onnx::OpSchema` on an ORT worker
+/// thread. The shipped `lean-ctx` daemon/MCP server is long-lived, so its
+/// warmup always finishes well before exit; short-lived processes (`cargo test`/
+/// bench/doctest binaries, build-time generators) can exit mid-load, so we
+/// refuse the background spawn for them. Their semantic features simply stay
+/// cold — blocking, on-thread loads still work and always complete before exit,
+/// which is race-free.
+///
+/// Note: blocking [`shared_engine`] loads are intentionally NOT gated — they
+/// finish on the caller's thread before the process exits, so no worker is ever
+/// active during teardown.
+#[cfg(feature = "embeddings")]
+pub fn background_load_allowed() -> bool {
+    // Unit tests compile with cfg(test): a cheap, unambiguous short-circuit.
+    // Integration/bench/doctest binaries link the lib in its normal config
+    // (cfg(test) is false), so they are caught by the executable-path probe.
+    if cfg!(test) {
+        return false;
+    }
+    !current_exe_is_test_artifact()
+}
+
+/// `true` when the running executable is a Cargo test/bench/doctest artifact.
+#[cfg(feature = "embeddings")]
+fn current_exe_is_test_artifact() -> bool {
+    std::env::current_exe()
+        .ok()
+        .as_deref()
+        .is_some_and(exe_path_is_test_artifact)
+}
+
+/// Pure predicate (unit-testable): Cargo places test, bench and doctest binaries
+/// directly inside `…/target/<profile>/deps/`. The shipped binary lives in a
+/// package `bin` directory (`/usr/bin`, `~/.local/bin`, `…/Homebrew/bin`, …) and
+/// is never a direct child of a `deps/` directory, so the parent-dir name is an
+/// install-location-independent signal (survives renames of the binary). (#519)
+#[cfg(feature = "embeddings")]
+fn exe_path_is_test_artifact(path: &Path) -> bool {
+    path.parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == "deps")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -698,6 +748,44 @@ mod tests {
         assert_eq!(dir.to_string_lossy(), unique);
         assert!(!EmbeddingEngine::is_available());
         crate::test_env::remove_var("LEAN_CTX_MODELS_DIR");
+    }
+
+    /// #519: Cargo test/bench/doctest binaries live under `…/deps/`; the shipped
+    /// binary lives in a `bin` directory. The parent-dir probe must distinguish
+    /// them so background ORT loads are refused only in short-lived processes.
+    #[test]
+    #[cfg(feature = "embeddings")]
+    fn exe_path_test_artifact_detection() {
+        // Cargo test/bench/doctest artifacts: parent dir is `deps`.
+        assert!(exe_path_is_test_artifact(Path::new(
+            "/repo/rust/target/debug/deps/conformance_suite-0a1b2c3d4e5f6789"
+        )));
+        assert!(exe_path_is_test_artifact(Path::new(
+            "/repo/rust/target/release/deps/lean_ctx-deadbeefcafef00d"
+        )));
+        // Shipped/installed binary: never a direct child of `deps`.
+        assert!(!exe_path_is_test_artifact(Path::new(
+            "/usr/local/bin/lean-ctx"
+        )));
+        assert!(!exe_path_is_test_artifact(Path::new(
+            "/Users/x/.local/bin/lean-ctx"
+        )));
+        // A renamed shipped binary is still allowed (rename-independent signal).
+        assert!(!exe_path_is_test_artifact(Path::new("/opt/tools/ctx")));
+        // The plain target dir build (e.g. `target/debug/lean-ctx`) is not under
+        // `deps/` — treated as a product binary, not a test artifact.
+        assert!(!exe_path_is_test_artifact(Path::new(
+            "/repo/rust/target/debug/lean-ctx"
+        )));
+    }
+
+    /// In the unit-test binary `background_load_allowed` must be false via the
+    /// `cfg!(test)` short-circuit — no detached ORT load may ever be spawned
+    /// from a test process (the #519 teardown race).
+    #[test]
+    #[cfg(feature = "embeddings")]
+    fn background_load_disallowed_in_tests() {
+        assert!(!background_load_allowed());
     }
 
     /// GL #452: the EmbeddingBag detection is purely name-based — exactly two

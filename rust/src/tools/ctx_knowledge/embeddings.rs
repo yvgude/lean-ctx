@@ -64,10 +64,14 @@ pub(crate) fn embedding_engine_impl(nonblocking: bool) -> Option<&'static Embedd
 #[cfg(feature = "embeddings")]
 fn ensure_engine_background() {
     use std::sync::atomic::{AtomicBool, Ordering};
-    // Unit tests must never spawn a background model load: the shared engine
-    // is process-global state (races tests asserting on it) and the load may
-    // download the model — network I/O that CI sandboxes must not perform.
-    if cfg!(test) {
+    // Never spawn a detached model load in a short-lived process (#519): a
+    // loader thread still running when the process returns from `main` races
+    // libonnxruntime's static-destructor teardown → SIGSEGV in onnx::OpSchema.
+    // This also keeps the process-global shared engine untouched in tests
+    // (races assertions) and avoids model-download network I/O in CI sandboxes.
+    // `background_load_allowed` covers unit tests (cfg!(test)) AND integration/
+    // bench/doctest binaries (which link the lib with cfg(test) = false).
+    if !crate::core::embeddings::background_load_allowed() {
         return;
     }
     static STARTED: AtomicBool = AtomicBool::new(false);
