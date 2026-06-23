@@ -379,7 +379,7 @@ impl BM25Index {
         index
     }
 
-    fn add_chunk(&mut self, chunk: CodeChunk) {
+    pub(crate) fn add_chunk(&mut self, chunk: CodeChunk) {
         let idx = self.chunks.len();
 
         let enriched = enrich_for_bm25(&chunk);
@@ -400,7 +400,7 @@ impl BM25Index {
         });
     }
 
-    fn finalize(&mut self) {
+    pub(crate) fn finalize(&mut self) {
         self.doc_count = self.chunks.len();
         if self.doc_count == 0 {
             return;
