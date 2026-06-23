@@ -24,8 +24,8 @@ mod tests;
 
 pub(crate) use defaults_allowlist::{cloud_infra_commands, default_shell_allowlist};
 pub use enums::{
-    CompressionLevel, Effort, OutputDensity, PermissionInheritance, ResponseVerbosity,
-    RulesInjection, RulesScope, TeeMode, TerseAgent,
+    CompressionLevel, Effort, IndexingMode, OutputDensity, PermissionInheritance,
+    ResponseVerbosity, RulesInjection, RulesScope, TeeMode, TerseAgent,
 };
 pub use memory::{MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter};
 pub use provenance::{ConfigProvenance, EnvOverride};
@@ -400,6 +400,18 @@ pub struct Config {
     /// host on startup. Override via LEANCTX_INDEX_THREADS env var.
     #[serde(default)]
     pub max_index_threads: usize,
+    /// Indexing mode: controls how aggressively files are scanned at startup.
+    /// - `Full` (default): all files including tests, docs, examples, generated.
+    /// - `Moderate`: skip FAST_SKIP dirs/files/patterns.
+    /// - `Fast`: skip FAST_SKIP + SIMILAR_TO/SEMANTICALLY_RELATED passes.
+    /// Override via LEAN_CTX_INDEX_MODE env var.
+    #[serde(default)]
+    pub index_mode: IndexingMode,
+    /// When true, lean-ctx automatically watches the project for file changes
+    /// and re-indexes incrementally. Default: false.
+    /// Override via LEAN_CTX_AUTO_WATCH env var (true/false).
+    #[serde(default)]
+    pub auto_watch: bool,
     /// Controls visibility of token savings footers in tool output.
     /// Values: "always" (default, show on every response), "never", "auto" (legacy compatibility).
     /// Override via LEAN_CTX_SAVINGS_FOOTER or LEAN_CTX_SHOW_SAVINGS=1|0 env var.
@@ -630,6 +642,8 @@ impl Default for Config {
             max_disk_mb: 0,
             max_staleness_days: 0,
             max_index_threads: 0,
+            index_mode: IndexingMode::Full,
+            auto_watch: false,
             savings_footer: SavingsFooter::default(),
             project_root: None,
             lsp: std::collections::HashMap::new(),
@@ -869,6 +883,22 @@ impl Config {
             .ok()
             .and_then(|raw| raw.trim().parse::<usize>().ok())
             .unwrap_or(self.max_index_threads)
+    }
+
+    /// Returns the effective index mode: `LEAN_CTX_INDEX_MODE` env var > config > default.
+    pub fn index_mode_effective(&self) -> IndexingMode {
+        IndexingMode::effective(self)
+    }
+
+    /// Returns the effective `auto_watch` value: `LEAN_CTX_AUTO_WATCH` env var > config > default.
+    pub fn auto_watch_effective(&self) -> bool {
+        match std::env::var("LEAN_CTX_AUTO_WATCH") {
+            Ok(raw) => matches!(
+                raw.trim().to_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            ),
+            Err(_) => self.auto_watch,
+        }
     }
 
     /// Whether `name` is a lean-ctx edit operation that must be blocked from

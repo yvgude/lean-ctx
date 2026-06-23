@@ -15,6 +15,7 @@ INTERNAL_ARCHITECTURE.md
 RELEASE_SUMMARY.md
 aur/
 server.md
+.omo
 
 .lean-ctx/
 .DS_Store

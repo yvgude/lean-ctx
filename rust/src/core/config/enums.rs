@@ -302,6 +302,59 @@ impl CompressionLevel {
     }
 }
 
+/// Controls how aggressively the file index is built at startup/reload.
+///
+/// Mirrors CBM indexing semantics:
+/// - `Full`: all files (tests, docs, examples, generated) are indexed.
+/// - `Moderate`: skip directories/files/patterns matching `FAST_SKIP`.
+/// - `Fast`: skip `FAST_SKIP` patterns + skip `SIMILAR_TO`/`SEMANTICALLY_RELATED` passes.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum IndexingMode {
+    #[default]
+    Full,
+    Moderate,
+    Fast,
+}
+
+impl IndexingMode {
+    /// Parse a config/env token.
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "full" => Some(Self::Full),
+            "moderate" => Some(Self::Moderate),
+            "fast" => Some(Self::Fast),
+            _ => None,
+        }
+    }
+
+    /// Stable lowercase label (config display, logs).
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Moderate => "moderate",
+            Self::Fast => "fast",
+        }
+    }
+
+    /// Reads the index mode from the `LEAN_CTX_INDEX_MODE` env var.
+    pub fn from_env() -> Option<Self> {
+        std::env::var("LEAN_CTX_INDEX_MODE")
+            .ok()
+            .and_then(|v| Self::parse(&v))
+    }
+
+    /// Returns the effective index mode: env var > config > default.
+    pub fn effective(config: &Config) -> Self {
+        if let Some(env_mode) = Self::from_env() {
+            return env_mode;
+        }
+        config.index_mode
+    }
+}
+
 /// Where agent rule files are installed: global home dir, project-local, or both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RulesScope {
