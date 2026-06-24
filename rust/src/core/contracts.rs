@@ -187,6 +187,9 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             Stable,
         ),
         doc("wrapped-permalink", "wrapped-permalink-v1.md", 1, Stable),
+        // Community addon manifest (#858): self-declared stable (v1); the format
+        // evolves additively (new optional fields), so Stable, not Frozen.
+        doc("addon-manifest", "addon-manifest-v1.md", 1, Stable),
         // ── Experimental: may change without notice ─────────────────────────
         doc(
             "hosted-personal-index",
