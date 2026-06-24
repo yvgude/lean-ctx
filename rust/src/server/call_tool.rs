@@ -136,20 +136,37 @@ impl LeanCtxServer {
                 let session = self.session.read().await;
                 session.project_root.clone()
             };
-            let cache_timeout =
-                tokio::time::timeout(std::time::Duration::from_secs(5), self.cache.write()).await;
-            if let Ok(mut cache) = cache_timeout {
+            // ctx_preload needs the cache write lock; ctx_overview doesn't touch
+            // the cache at all, so skip the lock acquisition for the no-task path
+            // to avoid holding the cache write lock during graph building (#CI-504).
+            if let Some(task_desc) = task.as_deref() {
+                let cache_timeout =
+                    tokio::time::timeout(std::time::Duration::from_secs(5), self.cache.write())
+                        .await;
+                if let Ok(mut cache) = cache_timeout {
+                    crate::tools::autonomy::session_lifecycle_pre_hook(
+                        &self.autonomy,
+                        name,
+                        Some(&mut cache),
+                        Some(task_desc),
+                        project_root.as_deref(),
+                        CrpMode::effective(),
+                    )
+                } else {
+                    tracing::warn!(
+                        "pre-dispatch: cache write-lock timeout (5s), skipping autonomy"
+                    );
+                    None
+                }
+            } else {
                 crate::tools::autonomy::session_lifecycle_pre_hook(
                     &self.autonomy,
                     name,
-                    &mut cache,
-                    task.as_deref(),
+                    None,
+                    None,
                     project_root.as_deref(),
                     CrpMode::effective(),
                 )
-            } else {
-                tracing::warn!("pre-dispatch: cache write-lock timeout (5s), skipping autonomy");
-                None
             }
         };
 

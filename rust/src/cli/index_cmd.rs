@@ -93,6 +93,7 @@ pub(crate) fn cmd_index(args: &[String]) {
                  Examples:\n\
                    lean-ctx index status\n\
                    lean-ctx index build                                (graph + BM25 + semantic indexes)\n\
+                   lean-ctx index build --mode fast                    (fast indexing: skip heavy passes)\n\
                    lean-ctx index build --mode moderate                (moderate indexing)\n\
                    lean-ctx index build --mode full                    (force full rebuild)\n\
                    lean-ctx index watch"

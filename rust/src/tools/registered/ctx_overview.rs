@@ -57,21 +57,7 @@ impl McpTool for CtxOverviewTool {
             None
         };
 
-        let cache = ctx
-            .cache
-            .as_ref()
-            .ok_or_else(|| ErrorData::internal_error("cache not available", None))?;
-        let Some(guard) = crate::server::bounded_lock::read(cache, "ctx_overview:cache") else {
-            return Ok(ToolOutput::simple(
-                "[overview temporarily unavailable — cache busy]".to_string(),
-            ));
-        };
-        let result = crate::tools::ctx_overview::handle(
-            &guard,
-            task.as_deref(),
-            resolved_path.as_deref(),
-            ctx.crp_mode,
-        );
+        let result = crate::tools::ctx_overview::handle(task.as_deref(), resolved_path.as_deref());
 
         Ok(ToolOutput {
             text: result,

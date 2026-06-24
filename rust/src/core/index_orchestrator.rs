@@ -315,11 +315,22 @@ pub fn ensure_all_background(project_root: &str) {
                     let graph_note = graph_opt.as_ref().map(|idx| {
                         format!("{} files, {} edges", idx.file_count(), idx.edge_count())
                     });
-                    let bm25_note = bm25_opt
-                        .as_ref()
-                        .map(|idx| format!("{} chunks", idx.chunks.len()));
-
                     s.graph.note = graph_note;
+
+                    let bm25_note = match bm25_opt.as_ref() {
+                        Some(idx) => Some(format!("{} chunks", idx.chunks.len())),
+                        None if report.chunks > 0 => {
+                            let limit_mb =
+                                crate::core::bm25_index::persist_ceiling_bytes() / (1024 * 1024);
+                            Some(format!(
+                                "NOT persisted: index too large ({} chunks, \
+                                 limit {limit_mb} MB). \
+                                 Increase LEAN_CTX_BM25_MAX_CACHE_MB and reindex.",
+                                report.chunks
+                            ))
+                        }
+                        None => None,
+                    };
                     s.bm25.note = bm25_note;
                     finish_ok(&mut s.graph);
                     finish_ok(&mut s.bm25);
