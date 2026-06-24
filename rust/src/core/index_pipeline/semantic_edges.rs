@@ -7,13 +7,15 @@
 use std::collections::{HashMap, HashSet, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
 
+use rayon::prelude::*;
+
 use crate::core::config::IndexingMode;
 use crate::core::graph_index::{IndexEdge, ProjectIndex, SymbolEntry};
 
 // ── Constants ──
 
 /// Random Indexing dimension (128 is sufficient for <50K symbols).
-pub const RI_DIM: usize = 128;
+pub const RI_DIM: usize = 768;
 
 /// Non-zero entries per sparse random vector (matches CBM_SEM_SPARSE_NNZE).
 pub const SPARSE_NNZE: usize = 8;
@@ -133,37 +135,43 @@ fn compute_similar_to(graph: &mut ProjectIndex) {
         }
     }
 
-    // Collect candidate edges: (from_file, to_file, weight)
-    let mut candidates: Vec<(String, String, f32)> = Vec::new();
+    // Collect candidate edges: (from_file, to_file, weight).
+    // Parallelised over the outer file-pair loop — each iteration is independent
+    // and produces a local Vec that is flat-merged.
+    let mut candidates: Vec<(String, String, f32)> = (0..file_list.len())
+        .into_par_iter()
+        .flat_map(|i| {
+            let file_a = file_list[i];
+            let syms_a = &file_symbols[file_a];
+            let mut local: Vec<(String, String, f32)> = Vec::new();
+            for j in (i + 1)..file_list.len() {
+                let file_b = file_list[j];
+                let syms_b = &file_symbols[file_b];
 
-    for i in 0..file_list.len() {
-        let file_a = file_list[i];
-        let syms_a = &file_symbols[file_a];
-        for file_b in &file_list[(i + 1)..] {
-            let syms_b = &file_symbols[*file_b];
-
-            for (key_a, entry_a) in syms_a {
-                let Some(tokens_a) = symbol_tokens.get(key_a.as_str()) else {
-                    continue;
-                };
-                for (key_b, entry_b) in syms_b {
-                    let Some(tokens_b) = symbol_tokens.get(key_b.as_str()) else {
+                for (key_a, entry_a) in syms_a {
+                    let Some(tokens_a) = symbol_tokens.get(key_a.as_str()) else {
                         continue;
                     };
-
-                    let sim = jaccard(tokens_a, tokens_b);
-                    if sim >= SIMILAR_THRESHOLD {
-                        let (f_a, f_b) = if entry_a.file <= entry_b.file {
-                            (entry_a.file.clone(), entry_b.file.clone())
-                        } else {
-                            (entry_b.file.clone(), entry_a.file.clone())
+                    for (key_b, entry_b) in syms_b {
+                        let Some(tokens_b) = symbol_tokens.get(key_b.as_str()) else {
+                            continue;
                         };
-                        candidates.push((f_a, f_b, sim));
+
+                        let sim = jaccard(tokens_a, tokens_b);
+                        if sim >= SIMILAR_THRESHOLD {
+                            let (f_a, f_b) = if entry_a.file <= entry_b.file {
+                                (entry_a.file.clone(), entry_b.file.clone())
+                            } else {
+                                (entry_b.file.clone(), entry_a.file.clone())
+                            };
+                            local.push((f_a, f_b, sim));
+                        }
                     }
                 }
             }
-        }
-    }
+            local
+        })
+        .collect();
 
     if candidates.is_empty() {
         return;
@@ -368,47 +376,70 @@ fn compute_semantically_related(graph: &mut ProjectIndex) {
         return;
     }
 
-    // Collect (from_file, to_file, cosine) — one per file pair (highest cos)
-    // Using a map: (file_a, file_b) -> best_cosine
-    let mut pair_scores: HashMap<(String, String), f32> = HashMap::new();
+    // Collect (from_file, to_file, cosine) — one per file pair (highest cos).
+    // Parallelised over the outer file-pair loop, then merged.
+    let pair_scores: HashMap<(String, String), f32> = {
+        let per_thread: Vec<HashMap<(String, String), f32>> = (0..file_list.len())
+            .into_par_iter()
+            .map(|i| {
+                let file_a = file_list[i];
+                let syms_a = &file_symbols[file_a];
+                let mut local: HashMap<(String, String), f32> = HashMap::new();
 
-    for i in 0..file_list.len() {
-        let file_a = file_list[i];
-        let syms_a = &file_symbols[file_a];
+                for j in (i + 1)..file_list.len() {
+                    let file_b = file_list[j];
+                    let syms_b = &file_symbols[file_b];
 
-        for file_b in &file_list[(i + 1)..] {
-            let syms_b = &file_symbols[*file_b];
-
-            for (key_a, entry_a) in syms_a {
-                let Some(vec_a) = ri_vectors.get(key_a.as_str()) else {
-                    continue;
-                };
-                for (key_b, entry_b) in syms_b {
-                    let Some(vec_b) = ri_vectors.get(key_b.as_str()) else {
-                        continue;
-                    };
-
-                    let cos = vec_a.cosine(vec_b);
-                    if cos > SEMANTIC_THRESHOLD {
-                        let (f_a, f_b) = if entry_a.file <= entry_b.file {
-                            (entry_a.file.clone(), entry_b.file.clone())
-                        } else {
-                            (entry_b.file.clone(), entry_a.file.clone())
+                    for (key_a, entry_a) in syms_a {
+                        let Some(vec_a) = ri_vectors.get(key_a.as_str()) else {
+                            continue;
                         };
-                        let pair = (f_a, f_b);
-                        pair_scores
-                            .entry(pair)
-                            .and_modify(|best| {
-                                if cos > *best {
-                                    *best = cos;
-                                }
-                            })
-                            .or_insert(cos);
+                        for (key_b, entry_b) in syms_b {
+                            let Some(vec_b) = ri_vectors.get(key_b.as_str()) else {
+                                continue;
+                            };
+
+                            let cos = vec_a.cosine(vec_b);
+                            if cos > SEMANTIC_THRESHOLD {
+                                let (f_a, f_b) = if entry_a.file <= entry_b.file {
+                                    (entry_a.file.clone(), entry_b.file.clone())
+                                } else {
+                                    (entry_b.file.clone(), entry_a.file.clone())
+                                };
+                                let pair = (f_a, f_b);
+                                local
+                                    .entry(pair)
+                                    .and_modify(|best| {
+                                        if cos > *best {
+                                            *best = cos;
+                                        }
+                                    })
+                                    .or_insert(cos);
+                            }
+                        }
                     }
                 }
+                local
+            })
+            .collect();
+
+        // Merge per-thread maps — each covers disjoint file pairs so no
+        // collision handling is needed beyond the simple max-across-workers.
+        let mut merged: HashMap<(String, String), f32> = HashMap::new();
+        for local in per_thread {
+            for (pair, cos) in local {
+                merged
+                    .entry(pair)
+                    .and_modify(|best| {
+                        if cos > *best {
+                            *best = cos;
+                        }
+                    })
+                    .or_insert(cos);
             }
         }
-    }
+        merged
+    };
 
     if pair_scores.is_empty() {
         return;

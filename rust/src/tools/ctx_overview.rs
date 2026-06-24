@@ -1,8 +1,6 @@
-use crate::core::cache::SessionCache;
 use crate::core::graph_provider::{self, GraphProvider};
 use crate::core::task_relevance::{compute_relevance, parse_task_hints};
 use crate::core::tokens::count_tokens;
-use crate::tools::CrpMode;
 
 /// Multi-resolution context overview.
 ///
@@ -14,12 +12,7 @@ use crate::tools::CrpMode;
 ///
 /// This implements lazy evaluation for context: start with the overview,
 /// then zoom into specific files as needed.
-pub fn handle(
-    _cache: &SessionCache,
-    task: Option<&str>,
-    path: Option<&str>,
-    _crp_mode: CrpMode,
-) -> String {
+pub fn handle(task: Option<&str>, path: Option<&str>) -> String {
     let project_root = path.map_or_else(|| ".".to_string(), std::string::ToString::to_string);
 
     let auto_loaded = crate::core::context_package::auto_load_packages(&project_root);

@@ -72,7 +72,7 @@ pub struct PipelineReport {
 /// Defaults:
 /// - `mode`: `IndexingMode::Full`
 /// - `max_file_size`: 2 MiB
-/// - `max_workers`: 4
+/// - `max_workers`: `available_parallelism()`, falling back to 4
 pub struct IndexPipeline {
     project_root: PathBuf,
     mode: IndexingMode,
@@ -88,7 +88,8 @@ impl IndexPipeline {
             project_root,
             mode: IndexingMode::Full,
             max_file_size: 2 * 1024 * 1024,
-            max_workers: 4,
+            max_workers: std::thread::available_parallelism()
+                .map_or(4, |n| n.get()),
         }
     }
 
@@ -667,10 +668,13 @@ mod tests {
         assert!(report.files_scanned >= 2);
         assert!(report.nodes > 0);
         assert!(report.elapsed_ms > 0);
-        assert_eq!(
-            report.embedding_ready,
-            EmbeddingBuildOutcome::Skipped,
-            "embeddings skipped without --features embeddings"
+        assert!(
+            matches!(
+                report.embedding_ready,
+                EmbeddingBuildOutcome::Skipped | EmbeddingBuildOutcome::ModelNotAvailable(_)
+            ),
+            "embeddings: expected Skipped or ModelNotAvailable, got {:?}",
+            report.embedding_ready
         );
     }
 

@@ -8,4 +8,5 @@ pub mod file_metadata_store;
 pub mod graph_builder;
 pub mod incremental;
 pub mod pipeline;
+pub mod semantic_lsh;
 pub mod semantic_edges;

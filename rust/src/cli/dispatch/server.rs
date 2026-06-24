@@ -83,7 +83,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
     // Silent + detached: must not touch stdout (MCP protocol channel) or block startup.
     crate::cli::wrapped_publish::maybe_auto_publish_background();
 
-    // === Auto-file-watcher (opt-in, Phase F) ===
     let stop_signal = server.stop_signal.clone();
     let auto_watch = crate::core::config::Config::load().auto_watch_effective();
 

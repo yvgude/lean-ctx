@@ -35,7 +35,7 @@ fn session_lifecycle_fires_once() {
     let _first = session_lifecycle_pre_hook(
         &state,
         "ctx_read",
-        &mut cache,
+        Some(&mut cache),
         Some("fix auth bug"),
         Some("/tmp/test-project"),
         CrpMode::Tdd,
@@ -44,7 +44,7 @@ fn session_lifecycle_fires_once() {
     let second = session_lifecycle_pre_hook(
         &state,
         "ctx_read",
-        &mut cache,
+        Some(&mut cache),
         Some("fix auth bug"),
         Some("/tmp/test-project"),
         CrpMode::Tdd,
@@ -65,7 +65,7 @@ fn session_lifecycle_skips_without_project_root() {
     let result = session_lifecycle_pre_hook(
         &state,
         "ctx_read",
-        &mut cache,
+        Some(&mut cache),
         Some("fix auth bug"),
         None,
         CrpMode::Tdd,
@@ -86,7 +86,7 @@ fn session_lifecycle_skips_overview_tool() {
     let result = session_lifecycle_pre_hook(
         &state,
         "ctx_overview",
-        &mut cache,
+        Some(&mut cache),
         Some("task"),
         None,
         CrpMode::Tdd,
@@ -107,7 +107,7 @@ fn session_lifecycle_skips_preload_tool() {
     let result = session_lifecycle_pre_hook(
         &state,
         "ctx_preload",
-        &mut cache,
+        Some(&mut cache),
         Some("task"),
         None,
         CrpMode::Tdd,
@@ -128,7 +128,7 @@ fn session_lifecycle_disabled_returns_none() {
     let result = session_lifecycle_pre_hook(
         &state,
         "ctx_read",
-        &mut cache,
+        Some(&mut cache),
         Some("task"),
         None,
         CrpMode::Tdd,

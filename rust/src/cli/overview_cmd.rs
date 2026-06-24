@@ -1,5 +1,4 @@
-use crate::core::cache::SessionCache;
-use crate::tools::{CrpMode, ctx_overview};
+use crate::tools::ctx_overview;
 
 pub(crate) fn cmd_overview(args: &[String]) {
     let project_root = super::common::detect_project_root(args);
@@ -33,8 +32,7 @@ pub(crate) fn cmd_overview(args: &[String]) {
         }
     }
 
-    let cache = SessionCache::new();
-    let out = ctx_overview::handle(&cache, task.as_deref(), Some(&project_root), CrpMode::Off);
+    let out = ctx_overview::handle(task.as_deref(), Some(&project_root));
 
     if json {
         let payload = serde_json::json!({

@@ -144,7 +144,7 @@ fn record_event(
 pub fn session_lifecycle_pre_hook(
     state: &AutonomyState,
     tool_name: &str,
-    cache: &mut SessionCache,
+    cache: Option<&mut SessionCache>,
     task: Option<&str>,
     project_root: Option<&str>,
     crp_mode: CrpMode,
@@ -203,10 +203,10 @@ pub fn session_lifecycle_pre_hook(
     }
 
     let result = if let Some(task_desc) = task {
+        let cache = cache.expect("session_lifecycle_pre_hook: cache required for ctx_preload");
         crate::tools::ctx_preload::handle(cache, task_desc, Some(&root), crp_mode)
     } else {
-        let cache_readonly = &*cache;
-        crate::tools::ctx_overview::handle(cache_readonly, None, Some(&root), crp_mode)
+        crate::tools::ctx_overview::handle(None, Some(&root))
     };
 
     let empty = result.trim().is_empty()
