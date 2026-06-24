@@ -53,6 +53,9 @@ pub(crate) fn split_camel_case_tokens(tokens: &[String]) -> Vec<String> {
     result
 }
 
+/// Fallback only: used by the non-tree-sitter regex path and incremental builder.
+/// Prefer `BM25Index::from_chunks` (Phase 5) which takes pre-extracted pipeline chunks
+/// and avoids file re-reads.
 pub(crate) fn extract_chunks(file_path: &str, content: &str) -> Vec<CodeChunk> {
     #[cfg(feature = "tree-sitter")]
     {

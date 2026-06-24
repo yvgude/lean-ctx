@@ -2,6 +2,7 @@
 //! `super::*` resolves to the `bm25_index` module.
 
 use super::*;
+use crate::core::index_types;
 use tempfile::tempdir;
 
 #[test]
@@ -558,4 +559,156 @@ fn max_bm25_cache_bytes_reads_env() {
     let bytes = max_bm25_cache_bytes();
     assert_eq!(bytes, 64 * 1024 * 1024);
     crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
+}
+
+// ---------------------------------------------------------------------------
+// from_chunks (Phase 5)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn from_chunks_basic_chunk_count_matches() {
+    let chunks = vec![
+        index_types::CodeChunk {
+            file_path: "a.rs".into(),
+            content: "pub fn validate(token: &str) -> bool { check(token) }".into(),
+            content_hash: String::new(),
+            start_line: 1,
+            end_line: 3,
+            language: "rs".into(),
+        },
+        index_types::CodeChunk {
+            file_path: "b.rs".into(),
+            content: "pub fn connect(url: &str) -> Pool { create_pool(url) }".into(),
+            content_hash: String::new(),
+            start_line: 1,
+            end_line: 5,
+            language: "rs".into(),
+        },
+    ];
+
+    let idx = BM25Index::from_chunks(&chunks);
+    assert_eq!(idx.chunks.len(), 2);
+    assert_eq!(idx.doc_count, 2);
+}
+
+#[test]
+fn from_chunks_search_finds_relevant() {
+    let chunks = vec![
+        index_types::CodeChunk {
+            file_path: "auth.rs".into(),
+            content: "fn validate_token(token: &str) -> bool { check_jwt_expiry(token) }".into(),
+            content_hash: String::new(),
+            start_line: 1,
+            end_line: 2,
+            language: "rs".into(),
+        },
+        index_types::CodeChunk {
+            file_path: "db.rs".into(),
+            content: "fn connect_database(url: &str) -> Pool { create_pool(url) }".into(),
+            content_hash: String::new(),
+            start_line: 1,
+            end_line: 2,
+            language: "rs".into(),
+        },
+    ];
+
+    let idx = BM25Index::from_chunks(&chunks);
+    let results = idx.search("jwt token validation", 5);
+    assert!(!results.is_empty());
+    assert_eq!(results[0].file_path, "auth.rs");
+}
+
+#[test]
+fn from_chunks_empty_chunks_produces_valid_empty_index() {
+    let chunks: Vec<index_types::CodeChunk> = Vec::new();
+    let idx = BM25Index::from_chunks(&chunks);
+    assert!(idx.chunks.is_empty());
+    assert_eq!(idx.doc_count, 0);
+    assert!(idx.search("anything", 10).is_empty());
+    assert!(idx.inverted.is_empty());
+}
+
+#[test]
+fn from_chunks_parallel_tokenization_matches_sequential() {
+    let pipeline_chunks = vec![
+        index_types::CodeChunk {
+            file_path: "m.rs".into(),
+            content: "fn alpha() -> i32 { 42 }".into(),
+            content_hash: String::new(),
+            start_line: 1,
+            end_line: 1,
+            language: "rs".into(),
+        },
+        index_types::CodeChunk {
+            file_path: "m.rs".into(),
+            content: "fn beta(x: i32) -> i32 { x * 2 }".into(),
+            content_hash: String::new(),
+            start_line: 3,
+            end_line: 3,
+            language: "rs".into(),
+        },
+    ];
+    let idx_par = BM25Index::from_chunks(&pipeline_chunks);
+
+    let mut idx_seq = BM25Index::new();
+    for c in &pipeline_chunks {
+        let enriched = enrich_for_bm25(&CodeChunk {
+            file_path: c.file_path.clone(),
+            symbol_name: String::new(),
+            kind: ChunkKind::Other,
+            start_line: c.start_line as usize,
+            end_line: c.end_line as usize,
+            content: c.content.clone(),
+            tokens: Vec::new(),
+            token_count: 0,
+        });
+        let tokens = tokenize(&enriched);
+        let code_chunk = CodeChunk {
+            file_path: c.file_path.clone(),
+            symbol_name: String::new(),
+            kind: ChunkKind::Other,
+            start_line: c.start_line as usize,
+            end_line: c.end_line as usize,
+            content: c.content.clone(),
+            tokens: Vec::new(),
+            token_count: tokens.len(),
+        };
+        idx_seq.add_tokenized_chunk(idx_seq.chunks.len(), code_chunk, &tokens);
+    }
+    idx_seq.finalize();
+
+    assert_eq!(idx_par.chunks.len(), idx_seq.chunks.len());
+    assert_eq!(idx_par.doc_count, idx_seq.doc_count);
+    assert!(
+        (idx_par.avg_doc_len - idx_seq.avg_doc_len).abs() < 1e-10,
+        "avg_doc_len should match"
+    );
+}
+
+#[test]
+fn from_chunks_search_sorts_ties_deterministically() {
+    let chunks = vec![
+        index_types::CodeChunk {
+            file_path: "b.rs".into(),
+            content: "fn same() {}".into(),
+            content_hash: String::new(),
+            start_line: 1,
+            end_line: 1,
+            language: "rs".into(),
+        },
+        index_types::CodeChunk {
+            file_path: "a.rs".into(),
+            content: "fn same() {}".into(),
+            content_hash: String::new(),
+            start_line: 1,
+            end_line: 1,
+            language: "rs".into(),
+        },
+    ];
+
+    let idx = BM25Index::from_chunks(&chunks);
+    let results = idx.search("same", 10);
+    assert!(results.len() >= 2);
+    assert_eq!(results[0].file_path, "a.rs");
+    assert_eq!(results[1].file_path, "b.rs");
 }

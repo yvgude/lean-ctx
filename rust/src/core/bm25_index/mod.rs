@@ -2,9 +2,14 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 mod chunking;
-pub use chunking::*;
+pub use chunking::format_search_results;
+pub(crate) use chunking::{
+    tokenize, tokenize_for_index, split_camel_case_tokens, detect_symbol, find_block_end,
+    enrich_for_bm25, extract_chunks,
+};
 mod coordinator;
 pub use coordinator::{SearchIndexBuildProgress, get_or_start_build};
 #[cfg(test)]
@@ -180,7 +185,7 @@ impl BM25Index {
                 .unwrap_or(path)
                 .to_string_lossy()
                 .to_string();
-            let chunks = extract_chunks(&rel_path, &content);
+            let chunks = chunking::extract_chunks(&rel_path, &content);
             for chunk in chunks {
                 index.add_chunk(chunk);
             }
@@ -265,6 +270,45 @@ impl BM25Index {
             "[bm25] shrank resident content to {keep_lines} lines/chunk, freed ~{:.1}MB",
             before.saturating_sub(after) as f64 / 1_048_576.0
         );
+    }
+
+    /// Build a BM25 index from pre-extracted pipeline chunks (Phase 5).
+    ///
+    /// Takes chunks already extracted by the tree-sitter pipeline (Phase 3A),
+    /// converts them to the internal `CodeChunk` format, tokenizes in parallel
+    /// via rayon, and inserts into the inverted index sequentially.
+    ///
+    /// No file I/O — chunks are already in memory.
+    pub fn from_chunks(chunks: &[crate::core::index_types::CodeChunk]) -> Self {
+        let mut idx = Self::new();
+
+        // Phase 1: convert + enrich + tokenize in parallel
+        let prepared: Vec<(CodeChunk, Vec<String>)> = chunks
+            .par_iter()
+            .map(|chunk| {
+                let code_chunk = CodeChunk {
+                    file_path: chunk.file_path.clone(),
+                    symbol_name: String::new(),
+                    kind: ChunkKind::Other,
+                    start_line: chunk.start_line as usize,
+                    end_line: chunk.end_line as usize,
+                    content: chunk.content.clone(),
+                    tokens: Vec::new(),
+                    token_count: 0,
+                };
+                let enriched = enrich_for_bm25(&code_chunk);
+                let tokens = tokenize(&enriched);
+                (code_chunk, tokens)
+            })
+            .collect();
+
+        // Phase 2: sequential inverted index insert
+        for (code_chunk, tokens) in prepared {
+            idx.add_tokenized_chunk(idx.chunks.len(), code_chunk, &tokens);
+        }
+
+        idx.finalize();
+        idx
     }
 
     /// Builds an index from explicit chunks (unit tests; avoids filesystem walking).

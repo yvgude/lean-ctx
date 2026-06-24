@@ -6,6 +6,7 @@ pub mod edge_snapshot;
 pub mod extraction;
 pub mod file_metadata_store;
 pub mod parallel_extract;
+pub mod registry_build;
 pub mod graph_builder;
 pub mod incremental;
 pub mod pipeline;
