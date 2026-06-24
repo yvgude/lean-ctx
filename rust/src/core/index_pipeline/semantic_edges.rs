@@ -10,10 +10,13 @@ use std::hash::{Hash, Hasher};
 use rayon::prelude::*;
 
 use crate::core::config::IndexingMode;
+use crate::core::graph_buffer::GraphBuffer;
 use crate::core::graph_index::{IndexEdge, ProjectIndex, SymbolEntry};
 use crate::core::index_pipeline::semantic_lsh::{
     CandidateTable, LshConfig, Signature as LshSignature,
 };
+use crate::core::index_pipeline::similarity_pass;
+use crate::core::index_types::NodeId;
 
 // ── Constants ──
 
@@ -44,7 +47,7 @@ const TOKEN_BUCKET_COUNT: u64 = 256;
 ///
 /// - `Full` / `Moderate`: both passes run.
 /// - `Fast`: no-op.
-pub fn run_post_passes(graph: &mut ProjectIndex, mode: IndexingMode) {
+pub fn run_post_passes_legacy(graph: &mut ProjectIndex, mode: IndexingMode) {
     match mode {
         IndexingMode::Full | IndexingMode::Moderate => {
             let before = graph.edges.len();
@@ -716,6 +719,191 @@ fn compute_semantically_related(graph: &mut ProjectIndex) {
     }
 }
 
+// ── GraphBuffer-based API (Phase 6) ──
+
+/// Run post-passes on a `GraphBuffer`, reading node properties directly.
+///
+/// - `Full` / `Moderate`: similarity (via `similarity_pass`) + semantic passes.
+/// - `Fast`: no-op.
+///
+/// This is the primary API for new code; existing ProjectIndex consumers
+/// should migrate when the pipeline transitions to `GraphBuffer`.
+pub fn run_post_passes(gbuf: &mut GraphBuffer, mode: IndexingMode) {
+    match mode {
+        IndexingMode::Full | IndexingMode::Moderate => {
+            similarity_pass::compute_similar_to(gbuf, SIMILAR_THRESHOLD);
+            compute_semantically_related_gbuf(gbuf);
+        }
+        IndexingMode::Fast => {}
+    }
+}
+
+/// Compute SEMANTICALLY_RELATED edges using Random Indexing over `GbufNode`
+/// names and properties.
+///
+/// Works like `compute_semantically_related` but reads from `GraphBuffer`
+/// instead of `ProjectIndex`. Edges are between `NodeId`-s rather than file
+/// paths, and same-file pairs are excluded.
+fn compute_semantically_related_gbuf(gbuf: &mut GraphBuffer) {
+    // Collect Function/Method nodes
+    let mut node_ptrs: Vec<(NodeId, String, String, String)> = Vec::new(); // (id, name, kind, file_path)
+    for label in &["Function", "Method"] {
+        let nodes = gbuf.find_nodes_by_label(label);
+        for n in &nodes {
+            let kind = if n.label == "Function" { "function" } else { "method" };
+            node_ptrs.push((n.id, n.name.clone(), kind.to_string(), n.file_path.clone()));
+        }
+    }
+
+    if node_ptrs.len() < 2 {
+        return;
+    }
+
+    // Build RI vectors for eligible symbols
+    let mut ri_vectors: HashMap<NodeId, RiVector> = HashMap::new();
+    for (id, name, kind, _file) in &node_ptrs {
+        if is_ri_eligible(kind) {
+            let vec = RiVector::for_symbol(name);
+            ri_vectors.insert(*id, vec);
+        }
+    }
+
+    if ri_vectors.is_empty() {
+        return;
+    }
+
+    let eligible_count = ri_vectors.len();
+    let sorted_ids: Vec<NodeId> = {
+        let mut v: Vec<NodeId> = ri_vectors.keys().copied().collect();
+        v.sort_by_key(|id| id.0);
+        v
+    };
+
+    // Map node_id → file_path for cross-file check
+    let id_to_file: HashMap<NodeId, &str> = node_ptrs.iter().map(|(id, _, _, fp)| (*id, fp.as_str())).collect();
+
+    // ── Pair-score collection ──
+    let pair_scores: HashMap<(NodeId, NodeId), f32> = if eligible_count <= 100 {
+        // Small-n fallback: brute-force O(n²)
+        let mut scores: HashMap<(NodeId, NodeId), f32> = HashMap::new();
+        for i in 0..sorted_ids.len() {
+            let id_a = sorted_ids[i];
+            let vec_a = &ri_vectors[&id_a];
+            let file_a = id_to_file[&id_a];
+            for j in (i + 1)..sorted_ids.len() {
+                let id_b = sorted_ids[j];
+                let file_b = id_to_file[&id_b];
+                if file_a == file_b {
+                    continue;
+                }
+                let vec_b = &ri_vectors[&id_b];
+                let cos = vec_a.cosine(vec_b);
+                if cos > SEMANTIC_THRESHOLD {
+                    let pair = (id_a, id_b);
+                    scores.entry(pair).and_modify(|best| { if cos > *best { *best = cos; } }).or_insert(cos);
+                }
+            }
+        }
+        scores
+    } else {
+        // LSH pre-filtering
+        let mut eligible_items: Vec<(NodeId, &RiVector)> = sorted_ids.iter().map(|id| (*id, &ri_vectors[id])).collect();
+        eligible_items.sort_by_key(|(id, _)| id.0);
+
+        let idx_to_id: Vec<NodeId> = eligible_items.iter().map(|(id, _)| *id).collect();
+
+        let lsh_config = LshConfig::new(RI_DIM, 16, 4)
+            .expect("RI_DIM=256, bands=16, rows=4 is always a valid LSH config");
+
+        let signatures: Vec<LshSignature> = eligible_items.iter()
+            .map(|(_, vec)| lsh_config.sign_sparse(&vec.positions, &vec.values, vec.nnz))
+            .collect();
+
+        let mut table = CandidateTable::new(16);
+        for (idx, sig) in signatures.iter().enumerate() {
+            for band in 0..16 {
+                let bucket = lsh_config.band_index(sig, band);
+                table.insert(band, bucket, idx);
+            }
+        }
+
+        let per_thread: Vec<HashMap<(NodeId, NodeId), f32>> = (0..eligible_items.len())
+            .into_par_iter()
+            .map(|i| {
+                let id_i = idx_to_id[i];
+                let file_i = id_to_file[&id_i];
+                let vec_i = &eligible_items[i].1;
+                let sig_i = &signatures[i];
+                let candidates = table.candidates(&lsh_config, sig_i, eligible_items.len());
+                let mut local: HashMap<(NodeId, NodeId), f32> = HashMap::new();
+
+                for &j in &candidates {
+                    if j <= i { continue; }
+                    let id_j = idx_to_id[j];
+                    let file_j = id_to_file[&id_j];
+                    if file_i == file_j { continue; }
+                    let vec_j = &eligible_items[j].1;
+                    let cos = vec_i.cosine(vec_j);
+                    if cos > SEMANTIC_THRESHOLD {
+                        let pair = (id_i, id_j);
+                        local.entry(pair).and_modify(|best| { if cos > *best { *best = cos; } }).or_insert(cos);
+                    }
+                }
+                local
+            })
+            .collect();
+
+        let mut merged: HashMap<(NodeId, NodeId), f32> = HashMap::new();
+        for local in per_thread {
+            for (pair, cos) in local {
+                merged.entry(pair).and_modify(|best| { if cos > *best { *best = cos; } }).or_insert(cos);
+            }
+        }
+        merged
+    };
+
+    if pair_scores.is_empty() {
+        return;
+    }
+
+    // Sort candidates by weight descending
+    let mut candidates: Vec<(NodeId, NodeId, f32)> = pair_scores.into_iter()
+        .map(|((a, b), cos)| (a, b, cos))
+        .collect();
+    candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal)
+        .then_with(|| a.0.cmp(&b.0))
+        .then_with(|| a.1.cmp(&b.1)));
+
+    // Emit edges respecting MAX_EDGES_PER_NODE
+    let mut edge_counts: HashMap<NodeId, usize> = HashMap::new();
+    for (src, tgt, weight) in candidates {
+        // Check dedup
+        if gbuf.edge_dedup_key(src, tgt, "SEMANTICALLY_RELATED") {
+            continue;
+        }
+        let count = edge_counts.entry(src).or_insert(0);
+        if *count >= MAX_EDGES_PER_NODE {
+            let count_rev = edge_counts.entry(tgt).or_insert(0);
+            if *count_rev >= MAX_EDGES_PER_NODE {
+                continue;
+            }
+            gbuf.insert_edge(tgt, src, "SEMANTICALLY_RELATED", {
+                let mut p = HashMap::new();
+                p.insert("score".to_string(), format!("{:.3}", weight));
+                p
+            });
+            *count_rev += 1;
+            continue;
+        }
+        gbuf.insert_edge(src, tgt, "SEMANTICALLY_RELATED", {
+            let mut p = HashMap::new();
+            p.insert("score".to_string(), format!("{:.3}", weight));
+            p
+        });
+        *count += 1;
+    }
+}
+
 // ── Tests ──
 
 #[cfg(test)]
@@ -1185,7 +1373,7 @@ mod tests {
         compute_semantically_related(&mut graph);
     }
 
-    // ── run_post_passes mode dispatch ──
+    // ── run_post_passes_legacy mode dispatch ──
 
     #[test]
     fn full_mode_runs_passes() {
@@ -1198,7 +1386,7 @@ mod tests {
         );
 
         let before = graph.edges.len();
-        run_post_passes(&mut graph, IndexingMode::Full);
+        run_post_passes_legacy(&mut graph, IndexingMode::Full);
         assert!(graph.edges.len() > before, "FULL mode should add edges");
     }
 
@@ -1213,7 +1401,7 @@ mod tests {
         );
 
         let before = graph.edges.len();
-        run_post_passes(&mut graph, IndexingMode::Fast);
+        run_post_passes_legacy(&mut graph, IndexingMode::Fast);
         assert_eq!(
             graph.edges.len(),
             before,
@@ -1232,7 +1420,7 @@ mod tests {
         );
 
         let before = graph.edges.len();
-        run_post_passes(&mut graph, IndexingMode::Moderate);
+        run_post_passes_legacy(&mut graph, IndexingMode::Moderate);
         assert!(graph.edges.len() > before, "MODERATE mode should add edges");
     }
 
@@ -1248,7 +1436,7 @@ mod tests {
                 ("src/c.rs", "process_data", "fn"),
             ],
         );
-        run_post_passes(&mut graph1, IndexingMode::Full);
+        run_post_passes_legacy(&mut graph1, IndexingMode::Full);
 
         let mut graph2 = make_graph(
             &["src/a.rs", "src/b.rs", "src/c.rs"],
@@ -1258,7 +1446,7 @@ mod tests {
                 ("src/c.rs", "process_data", "fn"),
             ],
         );
-        run_post_passes(&mut graph2, IndexingMode::Full);
+        run_post_passes_legacy(&mut graph2, IndexingMode::Full);
 
         assert_eq!(graph1.edges.len(), graph2.edges.len(), "same edge count");
         for (e1, e2) in graph1.edges.iter().zip(graph2.edges.iter()) {
@@ -1796,9 +1984,9 @@ mod tests {
         let graph = build_fnr_corpus();
         // Run post-passes twice on identical graphs
         let mut g1 = graph.clone();
-        run_post_passes(&mut g1, IndexingMode::Full);
+        run_post_passes_legacy(&mut g1, IndexingMode::Full);
         let mut g2 = graph.clone();
-        run_post_passes(&mut g2, IndexingMode::Full);
+        run_post_passes_legacy(&mut g2, IndexingMode::Full);
         assert_eq!(
             g1.edges.len(),
             g2.edges.len(),

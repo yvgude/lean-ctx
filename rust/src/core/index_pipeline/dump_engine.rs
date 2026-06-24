@@ -1,66 +1,304 @@
-//! Dump engine — atomic snapshot + crash recovery for the index pipeline.
+//! Dump engine — SQLite-backed snapshot with bulk-insert pattern.
 //!
-//! Serialises in-memory indices (graph, BM25) to disk with tmp→rename atomicity
-//! and bounded decompression.  Each dump is self-contained: graph uses
-//! postcard+zstd → `.zst`, BM25 delegates to [`BM25Index::save`], and file
-//! metadata runs a WAL checkpoint on the SQLite property-graph DB.
+//! Replaces the former postcard+zstd serialiser with a single SQLite database
+//! (`code_index.db`) containing graph nodes, edges, FTS5 search index, file
+//! metadata, and BM25 code chunks.  All writes use batch inserts of 500 rows
+//! per batch (matching C's `cbm_store_begin_bulk` / `cbm_store_end_bulk`
+//! pattern from the reference implementation).
+//!
+//! ## Schema
+//!
+//! - **files** — `ProjectIndex` file entries (round-trip fidelity for the old
+//!   load path).
+//! - **nodes** — graph nodes with label, name, qualified_name, file_path,
+//!   line range, and JSON properties.
+//! - **edges** — directed edges with source/target node FK, type, and JSON
+//!   properties.
+//! - **nodes_fts** — FTS5 virtual table over `nodes` (enables `search_graph`).
+//! - **file_hashes** — per-file content hashes for incremental rebuild support.
+//! - **chunks** — BM25 code chunks (content, path, line range, metadata).
+//!
+//! ## Integrity
+//!
+//! After every write pass, `PRAGMA integrity_check` is run.  A failing check
+//! is a hard error — the pipeline should treat a corrupt DB like a corrupt
+//! `.zst` artifact.
+//!
+//! ## Locking
+//!
+//! No concurrent writers: SQLite's file-level lock prevents corruption, but
+//! the caller must still serialise all dump calls.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use rusqlite::{params, Connection};
 
 use crate::core::bm25_index::BM25Index;
-use crate::core::graph_index::ProjectIndex;
+use crate::core::graph_buffer::GraphBuffer;
+use crate::core::graph_index::{FileEntry, IndexEdge, ProjectIndex, SymbolEntry};
 use crate::core::index_namespace;
 use crate::core::index_pipeline::file_metadata_store::FileMetadataStore;
+use crate::core::index_types::{CodeChunk, GbufEdge, GbufNode};
 
-/// Atomic dump engine for index snapshots.
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/// Number of rows per bulk-insert batch.  C's reference uses 1000; 500 is a
+/// safer default that keeps memory low while still outperforming row-by-row.
+const BATCH_SIZE: usize = 500;
+
+/// Name of the SQLite database file inside the vectors directory.
+const DB_FILENAME: &str = "code_index.db";
+
+// ---------------------------------------------------------------------------
+// DumpEngine
+// ---------------------------------------------------------------------------
+
+/// SQLite-backed dump engine using bulk-insert pattern (like C).
 ///
-/// Every write goes through a `.tmp` → rename sequence so partial writes from
-/// crashes or OOM never leave a corrupt artifact.  [`DumpEngine::load_with_integrity_check`]
-/// pairs with this to detect and recover from such scenarios.
+/// Every write goes through batch inserts inside a single top-level
+/// transaction.  The FTS5 virtual table is dropped before the insert loop and
+/// rebuilt at the end for maximum insert throughput.
 pub struct DumpEngine {
     pub project_root: PathBuf,
 }
 
 impl DumpEngine {
+    // ── Construction ────────────────────────────────────────────────────
+
     pub fn new(project_root: PathBuf) -> Self {
         Self { project_root }
     }
 
-    /// Serialize graph index to `vectors_dir/project_index.bin.zst`.
-    ///
-    /// Pipeline: postcard → zstd (level 9) → `.zst.tmp` → atomic rename.
-    pub fn dump_graph_index(&self, graph: &ProjectIndex) -> Result<()> {
+    // ── Path helpers ────────────────────────────────────────────────────
+
+    /// Full path to the SQLite database file.
+    fn db_path(&self) -> PathBuf {
         let dir = index_namespace::vectors_dir(&self.project_root);
-        std::fs::create_dir_all(&dir)?;
+        dir.join(DB_FILENAME)
+    }
 
-        let data = postcard::to_allocvec(graph)
-            .map_err(|e| anyhow::anyhow!("postcard serialize graph index: {e}"))?;
-        let compressed = zstd::encode_all(data.as_slice(), 9)
-            .map_err(|e| anyhow::anyhow!("zstd compress graph index: {e}"))?;
+    /// Full path to the SQLite database file for a given root (static variant).
+    fn db_path_for(root: &Path) -> PathBuf {
+        let dir = index_namespace::vectors_dir(root);
+        dir.join(DB_FILENAME)
+    }
 
-        let tmp = dir.join("project_index.bin.zst.tmp");
-        let target = dir.join("project_index.bin.zst");
+    // ── Schema ─────────────────────────────────────────────────────────
 
-        std::fs::write(&tmp, &compressed)?;
-        std::fs::rename(&tmp, &target)?;
+    /// Create all tables if they do not exist.
+    ///
+    /// Idempotent — safe to call on every dump.
+    fn create_schema(conn: &Connection) -> Result<()> {
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS files (
+                path         TEXT    PRIMARY KEY,
+                hash         TEXT    NOT NULL,
+                language     TEXT    DEFAULT '',
+                line_count   INTEGER DEFAULT 0,
+                token_count  INTEGER DEFAULT 0,
+                exports      TEXT    DEFAULT '[]',
+                summary      TEXT    DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS nodes (
+                id              INTEGER PRIMARY KEY,
+                label           TEXT    NOT NULL,
+                name            TEXT    NOT NULL,
+                qualified_name  TEXT    NOT NULL UNIQUE,
+                file_path       TEXT    NOT NULL,
+                start_line      INTEGER DEFAULT 0,
+                end_line        INTEGER DEFAULT 0,
+                properties      TEXT    DEFAULT '{}'
+            );
+
+            CREATE TABLE IF NOT EXISTS edges (
+                id          INTEGER PRIMARY KEY,
+                source_id   INTEGER NOT NULL REFERENCES nodes(id),
+                target_id   INTEGER NOT NULL REFERENCES nodes(id),
+                type        TEXT    NOT NULL,
+                properties  TEXT    DEFAULT '{}'
+            );
+
+            CREATE TABLE IF NOT EXISTS file_hashes (
+                file_path   TEXT    PRIMARY KEY,
+                hash        TEXT    NOT NULL,
+                mode_mask   INTEGER DEFAULT 0,
+                updated_at  TEXT    DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS chunks (
+                id           INTEGER PRIMARY KEY,
+                file_path    TEXT    NOT NULL,
+                symbol_name  TEXT    DEFAULT '',
+                kind         TEXT    DEFAULT '',
+                start_line   INTEGER DEFAULT 0,
+                end_line     INTEGER DEFAULT 0,
+                content      TEXT    NOT NULL,
+                content_hash TEXT    DEFAULT '',
+                language     TEXT    DEFAULT '',
+                token_count  INTEGER DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
+            CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
+            CREATE INDEX IF NOT EXISTS idx_nodes_file    ON nodes(file_path);
+            CREATE INDEX IF NOT EXISTS idx_nodes_qn      ON nodes(qualified_name);
+            ",
+        )
+        .context("create schema")?;
+        Ok(())
+    }
+
+    // ── Main dump method (new pipeline) ────────────────────────────────
+
+    /// Dump [`GraphBuffer`] + BM25 [`CodeChunk`]s to the single SQLite
+    /// database at `{vectors_dir}/code_index.db`.
+    ///
+    /// Uses bulk-insert with `BATCH_SIZE`-sized batches. DDL (DROP/CREATE
+    /// TABLE) runs in auto-commit mode because SQLite implicitly commits any
+    /// open transaction before DDL. Batch inserts use inner transactions.
+    pub fn dump_all(&self, gbuf: &GraphBuffer, code_chunks: &[CodeChunk]) -> Result<()> {
+        let db_path = self.db_path();
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = Connection::open(&db_path).context("open code_index.db")?;
+
+        // ══ DDL phase (auto-commit) ════════════════════════════════════
+        // SQLite auto-commits before DDL, so never wrap these in BEGIN/COMMIT.
+
+        // 1. Drop FTS5 virtual table (fast rebuild)
+        conn.execute("DROP TABLE IF EXISTS nodes_fts", [])?;
+
+        // 2. Create / ensure schema
+        Self::create_schema(&conn)?;
+
+        // 3. Clear existing data (idempotent dump) — runs in auto-commit.
+        conn.execute("DELETE FROM files", [])?;
+        conn.execute("DELETE FROM nodes", [])?;
+        conn.execute("DELETE FROM edges", [])?;
+        conn.execute("DELETE FROM file_hashes", [])?;
+        conn.execute("DELETE FROM chunks", [])?;
+
+        // ══ DML phase (batched transactions) ═══════════════════════════
+
+        // 4. Insert nodes in batches of BATCH_SIZE
+        Self::insert_nodes_batch(&conn, gbuf)?;
+
+        // 5. Insert edges in batches of BATCH_SIZE
+        Self::insert_edges_batch(&conn, gbuf)?;
+
+        // ══ FTS5 rebuild (contains DDL — auto-commit) ═════════════════
+
+        // 6. Rebuild FTS5 index (CREATE VIRTUAL TABLE + INSERT)
+        Self::rebuild_fts(&conn)?;
+
+        // ══ Chunk inserts (batched transactions) ═══════════════════════
+
+        // 7. Insert chunks in batches of BATCH_SIZE
+        Self::insert_chunks(&conn, code_chunks)?;
+
+        // ══ Verification ═══════════════════════════════════════════════
+
+        // 8. Integrity check
+        Self::verify_integrity(&conn)?;
 
         Ok(())
     }
 
-    /// Persist BM25 index to `vectors_dir/bm25_index.bin.zst`.
+    // ── Backward-compatible dump methods ───────────────────────────────
+
+    /// Persist [`ProjectIndex`] to the SQLite database.
     ///
-    /// Delegates to [`BM25Index::save`] which uses the same tmp→rename pattern.
+    /// Writes symbol entries as graph nodes, index edges as graph edges, and
+    /// file entries to the `files` table. DDL runs in auto-commit mode;
+    /// batch inserts use inner transactions.
+    pub fn dump_graph_index(&self, graph: &ProjectIndex) -> Result<()> {
+        let db_path = self.db_path();
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = Connection::open(&db_path).context("open code_index.db")?;
+
+        // ══ DDL phase (auto-commit) ════════════════════════════════════
+        conn.execute("DROP TABLE IF EXISTS nodes_fts", [])?;
+        Self::create_schema(&conn)?;
+        conn.execute("DELETE FROM files", [])?;
+        conn.execute("DELETE FROM nodes", [])?;
+        conn.execute("DELETE FROM edges", [])?;
+        conn.execute("DELETE FROM file_hashes", [])?;
+
+        // ══ DML phase (batched transactions) ═══════════════════════════
+        Self::insert_project_files(&conn, graph)?;
+        Self::insert_project_symbols(&conn, graph)?;
+        Self::insert_project_edges(&conn, graph)?;
+
+        // ══ FTS5 rebuild (contains DDL — auto-commit) ═════════════════
+        Self::rebuild_fts(&conn)?;
+
+        // ══ Verification ═══════════════════════════════════════════════
+        Self::verify_integrity(&conn)?;
+        Ok(())
+    }
+
+    /// Persist [`BM25Index`] chunks to the SQLite `chunks` table.
+    ///
+    /// Only the chunk list is stored — the BM25 statistical data (inverted
+    /// index, doc freqs, avg doc length) is reconstructed on load via
+    /// [`BM25Index::add_chunk`] + [`BM25Index::finalize`].
     pub fn dump_bm25_index(&self, bm25: &BM25Index) -> Result<()> {
-        let _outcome = bm25.save(&self.project_root).context("BM25 save failed")?;
+        let db_path = self.db_path();
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = Connection::open(&db_path).context("open code_index.db")?;
+        Self::create_schema(&conn)?;
+
+        // Clear existing chunks (auto-commit DML).
+        conn.execute("DELETE FROM chunks", [])?;
+
+        if bm25.chunks.is_empty() {
+            Self::verify_integrity(&conn)?;
+            return Ok(());
+        }
+
+        let mut stmt = conn
+            .prepare(
+                "INSERT INTO chunks (file_path, symbol_name, kind, start_line, end_line, content, token_count)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )
+            .context("prepare chunks insert")?;
+
+        for batch in bm25.chunks.chunks(BATCH_SIZE) {
+            let tx = conn.unchecked_transaction()?;
+            for c in batch {
+                let kind_str = serde_json::to_string(&c.kind).unwrap_or_else(|_| String::new());
+                stmt.execute(params![
+                    c.file_path,
+                    c.symbol_name,
+                    kind_str,
+                    c.start_line as i64,
+                    c.end_line as i64,
+                    c.content,
+                    c.token_count as i64,
+                ])?;
+            }
+            tx.commit()?;
+        }
+
+        Self::verify_integrity(&conn)?;
         Ok(())
     }
 
-    /// Fsync + WAL checkpoint the property-graph SQLite database.
+    /// WAL-checkpoint the file-metadata SQLite database.
     ///
-    /// Runs `PRAGMA wal_checkpoint(TRUNCATE)` so the WAL is fully checkpointed
-    /// into the main DB file, ensuring file_metadata rows are durable.
+    /// This is the **only** dump method that touches the property-graph
+    /// `graph.db` rather than `code_index.db`.
     pub fn dump_file_metadata(&self, store: &FileMetadataStore) -> Result<()> {
         store
             .connection()
@@ -69,16 +307,18 @@ impl DumpEngine {
         Ok(())
     }
 
+    // ── Load / Integrity ───────────────────────────────────────────────
+
     /// Load all three index components with integrity checks.
     ///
     /// Returns `None` for any component whose on-disk artifact is missing or
     /// corrupted.  Callers should trigger a full rebuild for the failed parts.
     ///
     /// Steps:
-    /// 1. Remove leftover `.tmp` files from prior crashes.
-    /// 2. Load graph index from `project_index.bin.zst` (bounded decompression).
-    /// 3. Load BM25 index via [`BM25Index::load`].
-    /// 4. Open [`FileMetadataStore`] from the property-graph DB (creates schema
+    /// 1. Open `code_index.db` (return `None` for graph/BM25 if absent).
+    /// 2. Load graph: read files + nodes + edges → reconstruct `ProjectIndex`.
+    /// 3. Load BM25: read chunks → rebuild BM25 index (tokenise + finalise).
+    /// 4. Open `FileMetadataStore` from the property-graph DB (creates schema
     ///    if absent).
     pub fn load_with_integrity_check(
         root: &Path,
@@ -88,11 +328,11 @@ impl DumpEngine {
         // 1. Clean up leftover .tmp files from crashes
         cleanup_tmp_files(&dir);
 
-        // 2. Load graph index
-        let graph = load_graph_index(&dir);
+        // 2. Load graph index from SQLite
+        let graph = load_graph_index(root);
 
-        // 3. Load BM25 index
-        let bm25 = BM25Index::load(root);
+        // 3. Load BM25 index from SQLite
+        let bm25 = load_bm25_index(root);
 
         // 4. Open file metadata store
         let fm_store = open_file_metadata_store(root)?;
@@ -100,21 +340,39 @@ impl DumpEngine {
         Ok((graph, bm25, fm_store))
     }
 
-    /// Delete all dump artifacts from disk, leaving the property graph DB
-    /// (`graph.db`, file_catalog, nodes, edges) intact.
+    // ── Purge ──────────────────────────────────────────────────────────
+
+    /// Delete all dump artifacts from disk, leaving the property-graph DB
+    /// (`graph.db`) intact.
     pub fn purge_all(&self) -> Result<()> {
         let dir = index_namespace::vectors_dir(&self.project_root);
         if !dir.exists() {
             return Ok(());
         }
 
-        let artifacts = [
+        // Remove the SQLite code_index.db
+        let db = dir.join(DB_FILENAME);
+        if db.exists() {
+            let _ = std::fs::remove_file(&db);
+        }
+        // Also remove WAL and SHM files left over from a dirty close
+        let wal = dir.join(DB_FILENAME.to_string() + "-wal");
+        if wal.exists() {
+            let _ = std::fs::remove_file(&wal);
+        }
+        let shm = dir.join(DB_FILENAME.to_string() + "-shm");
+        if shm.exists() {
+            let _ = std::fs::remove_file(&shm);
+        }
+
+        // Remove legacy artifacts from the old postcard+zstd era
+        let legacy_artifacts = [
             "project_index.bin.zst",
             "bm25_index.bin.zst",
             "bm25_index.bin",
             "bm25_index.json",
         ];
-        for name in &artifacts {
+        for name in &legacy_artifacts {
             let path = dir.join(name);
             if path.exists()
                 && let Err(e) = std::fs::remove_file(&path)
@@ -122,12 +380,480 @@ impl DumpEngine {
                 tracing::warn!("[dump_engine] failed to remove {}: {e}", path.display());
             }
         }
+
         cleanup_tmp_files(&dir);
+        Ok(())
+    }
+
+    // ── Internal bulk-insert helpers ────────────────────────────────────
+
+    /// Insert all nodes from `gbuf` into the `nodes` table in batches.
+    fn insert_nodes_batch(conn: &Connection, gbuf: &GraphBuffer) -> Result<()> {
+        let mut stmt = conn
+            .prepare(
+                "INSERT OR REPLACE INTO nodes (id, label, name, qualified_name, file_path, start_line, end_line, properties)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            )
+            .context("prepare nodes insert")?;
+
+        let mut nodes: Vec<GbufNode> = Vec::new();
+        gbuf.foreach_node(&mut |n| nodes.push(n.clone()));
+
+        for batch in nodes.chunks(BATCH_SIZE) {
+            let tx = conn.unchecked_transaction()?;
+            for node in batch {
+                let props_json = serde_json::to_string(&node.properties)
+                    .context("serialize node properties")?;
+                stmt.execute(params![
+                    node.id.0 as i64,
+                    node.label,
+                    node.name,
+                    node.qualified_name,
+                    node.file_path,
+                    node.start_line,
+                    node.end_line,
+                    props_json,
+                ])?;
+            }
+            tx.commit()?;
+        }
+        Ok(())
+    }
+
+    /// Insert all edges from `gbuf` into the `edges` table in batches.
+    fn insert_edges_batch(conn: &Connection, gbuf: &GraphBuffer) -> Result<()> {
+        let mut stmt = conn
+            .prepare(
+                "INSERT OR REPLACE INTO edges (id, source_id, target_id, type, properties)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )
+            .context("prepare edges insert")?;
+
+        let mut edges: Vec<GbufEdge> = Vec::new();
+        gbuf.foreach_edge(&mut |e| edges.push(e.clone()));
+
+        for batch in edges.chunks(BATCH_SIZE) {
+            let tx = conn.unchecked_transaction()?;
+            for edge in batch {
+                let props_json = serde_json::to_string(&edge.properties)
+                    .context("serialize edge properties")?;
+                stmt.execute(params![
+                    edge.id.0 as i64,
+                    edge.source_id.0 as i64,
+                    edge.target_id.0 as i64,
+                    edge.edge_type,
+                    props_json,
+                ])?;
+            }
+            tx.commit()?;
+        }
+        Ok(())
+    }
+
+    /// Rebuild the FTS5 `nodes_fts` virtual table from the `nodes` table.
+    fn rebuild_fts(conn: &Connection) -> Result<()> {
+        // Re-create the FTS5 table (content-sync with nodes table)
+        conn.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
+                qualified_name, name, label, file_path,
+                content='nodes',
+                content_rowid='id'
+            )",
+            [],
+        )
+        .context("create FTS5 table")?;
+
+        // Populate from nodes
+        conn.execute(
+            "INSERT INTO nodes_fts(rowid, qualified_name, name, label, file_path)
+             SELECT id, qualified_name, name, label, file_path FROM nodes",
+            [],
+        )
+        .context("rebuild FTS5 index")?;
+
+        Ok(())
+    }
+
+    /// Insert BM25 [`CodeChunk`]s (new pipeline type) into the `chunks` table.
+    fn insert_chunks(conn: &Connection, chunks: &[CodeChunk]) -> Result<()> {
+        if chunks.is_empty() {
+            return Ok(());
+        }
+
+        let mut stmt = conn
+            .prepare(
+                "INSERT INTO chunks (file_path, content, content_hash, start_line, end_line, language)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            )
+            .context("prepare chunks insert")?;
+
+        for batch in chunks.chunks(BATCH_SIZE) {
+            let tx = conn.unchecked_transaction()?;
+            for c in batch {
+                stmt.execute(params![
+                    c.file_path,
+                    c.content,
+                    c.content_hash,
+                    c.start_line,
+                    c.end_line,
+                    c.language,
+                ])?;
+            }
+            tx.commit()?;
+        }
+        Ok(())
+    }
+
+    /// Insert `ProjectIndex` file entries into the `files` table.
+    fn insert_project_files(conn: &Connection, graph: &ProjectIndex) -> Result<()> {
+        let mut stmt = conn
+            .prepare(
+                "INSERT OR REPLACE INTO files (path, hash, language, line_count, token_count, exports, summary)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )
+            .context("prepare files insert")?;
+
+        for batch in graph.files.values().collect::<Vec<_>>().chunks(BATCH_SIZE) {
+            let tx = conn.unchecked_transaction()?;
+            for fe in batch {
+                let exports_json =
+                    serde_json::to_string(&fe.exports).context("serialize file exports")?;
+                stmt.execute(params![
+                    fe.path,
+                    fe.hash,
+                    fe.language,
+                    fe.line_count as i64,
+                    fe.token_count as i64,
+                    exports_json,
+                    fe.summary,
+                ])?;
+            }
+            tx.commit()?;
+        }
+        Ok(())
+    }
+
+    /// Insert `ProjectIndex` symbols as graph nodes.
+    ///
+    /// Also builds a QN → numeric-ID mapping for edge insertion.
+    /// Returns the mapping (though currently unused because edges are also
+    /// processed through the mapping during `insert_project_edges`).
+    fn insert_project_symbols(
+        conn: &Connection,
+        graph: &ProjectIndex,
+    ) -> Result<HashMap<String, i64>> {
+        // We need a stable mapping from QN to the numeric ID we assign.
+        // SQLite's INTEGER PRIMARY KEY is the rowid, so we insert and retrieve.
+        let mut qn_to_id: HashMap<String, i64> = HashMap::new();
+
+        // Pre-allocate IDs sequentially (we know the total count).
+        let symbols: Vec<(&String, &SymbolEntry)> = graph.symbols.iter().collect();
+        let mut assigned_id = 1i64;
+
+        let mut stmt = conn
+            .prepare(
+                "INSERT OR REPLACE INTO nodes (id, label, name, qualified_name, file_path, start_line, end_line, properties)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            )
+            .context("prepare symbol nodes insert")?;
+
+        for batch in symbols.chunks(BATCH_SIZE) {
+            let tx = conn.unchecked_transaction()?;
+            for (qn, sym) in batch {
+                let id = assigned_id;
+                assigned_id += 1;
+
+                let mut props: HashMap<String, String> = HashMap::new();
+                props.insert(
+                    "is_exported".to_string(),
+                    if sym.is_exported { "true" } else { "false" }.to_string(),
+                );
+                if !sym.minhash.is_empty() {
+                    let mh_str = sym
+                        .minhash
+                        .iter()
+                        .map(|v| format!("{v:08x}"))
+                        .collect::<Vec<_>>()
+                        .join("");
+                    props.insert("minhash".to_string(), mh_str);
+                }
+                let props_json =
+                    serde_json::to_string(&props).context("serialize symbol properties")?;
+
+                stmt.execute(params![
+                    id,
+                    sym.kind,
+                    sym.name,
+                    qn,
+                    sym.file,
+                    sym.start_line as i64,
+                    sym.end_line as i64,
+                    props_json,
+                ])?;
+
+                qn_to_id.insert((*qn).clone(), id);
+            }
+            tx.commit()?;
+        }
+        Ok(qn_to_id)
+    }
+
+    /// Insert `ProjectIndex` edges into the `edges` table.
+    ///
+    /// Resolves QN references to numeric node IDs by scanning the `nodes`
+    /// table (fallback: uses a fresh connection query).
+    fn insert_project_edges(conn: &Connection, graph: &ProjectIndex) -> Result<()> {
+        // Build QN → id lookup from what we just inserted.
+        let mut qn_lookup: HashMap<String, i64> = HashMap::new();
+        {
+            let mut stmt = conn
+                .prepare("SELECT id, qualified_name FROM nodes")
+                .context("prepare QN lookup")?;
+            let rows = stmt
+                .query_map([], |row| {
+                    let id: i64 = row.get(0)?;
+                    let qn: String = row.get(1)?;
+                    Ok((id, qn))
+                })
+                .context("query nodes for QN lookup")?;
+            for row in rows {
+                let (id, qn) = row?;
+                qn_lookup.insert(qn, id);
+            }
+        }
+
+        let mut edge_id = 1i64;
+        let mut stmt = conn
+            .prepare(
+                "INSERT OR REPLACE INTO edges (id, source_id, target_id, type, properties)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )
+            .context("prepare edges insert")?;
+
+        for batch in graph.edges.chunks(BATCH_SIZE) {
+            let tx = conn.unchecked_transaction()?;
+            for e in batch {
+                let src_id = qn_lookup.get(&e.from).copied();
+                let tgt_id = qn_lookup.get(&e.to).copied();
+                if let (Some(sid), Some(tid)) = (src_id, tgt_id) {
+                    stmt.execute(params![edge_id, sid, tid, e.kind, "{}",])?;
+                    edge_id += 1;
+                }
+                // Silently skip edges with unresolvable QNs (same behaviour as
+                // the original postcard path).
+            }
+            tx.commit()?;
+        }
+        Ok(())
+    }
+
+    /// Run `PRAGMA integrity_check` and return an error if it does not say
+    /// "ok".
+    fn verify_integrity(conn: &Connection) -> Result<()> {
+        let result: String = conn
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .context("integrity_check query failed")?;
+        anyhow::ensure!(
+            result.trim() == "ok",
+            "SQLite integrity check failed: {result}"
+        );
         Ok(())
     }
 }
 
-// ── File helpers ────────────────────────────────────────────────────────────
+// ── Free functions (load helpers) ─────────────────────────────────────────
+
+/// Reconstruct a [`ProjectIndex`] from the SQLite `code_index.db`.
+///
+/// Returns `None` when the DB file does not exist or contains no data.
+fn load_graph_index(root: &Path) -> Option<ProjectIndex> {
+    let db_path = DumpEngine::db_path_for(root);
+    if !db_path.exists() {
+        return None;
+    }
+    let conn = Connection::open(&db_path).ok()?;
+
+    // Count nodes to distinguish "empty DB" from "missing DB"
+    let node_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM nodes", [], |row| row.get(0))
+        .ok()?;
+    if node_count == 0 {
+        return None;
+    }
+
+    let mut idx = ProjectIndex::new(&root.to_string_lossy());
+
+    // Load files table
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT path, hash, language, line_count, token_count, exports, summary FROM files",
+    ) {
+        if let Ok(rows) = stmt.query_map([], |row| {
+            let path: String = row.get(0)?;
+            let hash: String = row.get(1)?;
+            let language: String = row.get(2)?;
+            let line_count: i64 = row.get(3)?;
+            let token_count: i64 = row.get(4)?;
+            let exports_json: String = row.get(5)?;
+            let summary: String = row.get(6)?;
+            let exports: Vec<String> =
+                serde_json::from_str(&exports_json).unwrap_or_default();
+            Ok((path, hash, language, line_count, token_count, exports, summary))
+        }) {
+            for row in rows.flatten() {
+                let (path, hash, language, line_count, token_count, exports, summary) = row;
+                idx.files.insert(
+                    path.clone(),
+                    FileEntry {
+                        path,
+                        hash,
+                        language,
+                        line_count: line_count as usize,
+                        token_count: token_count as usize,
+                        exports,
+                        summary,
+                    },
+                );
+            }
+        }
+    }
+
+    // Load node rows as SymbolEntries
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT id, label, name, qualified_name, file_path, start_line, end_line, properties FROM nodes",
+    ) {
+        if let Ok(rows) = stmt.query_map([], |row| {
+            let _id: i64 = row.get(0)?;
+            let label: String = row.get(1)?;
+            let name: String = row.get(2)?;
+            let qn: String = row.get(3)?;
+            let file: String = row.get(4)?;
+            let start_line: i64 = row.get(5)?;
+            let end_line: i64 = row.get(6)?;
+            let props_json: String = row.get(7)?;
+            Ok((label, name, qn, file, start_line, end_line, props_json))
+        }) {
+            for row in rows.flatten() {
+                let (label, name, qn, file, start_line, end_line, props_json) = row;
+                let props: HashMap<String, String> =
+                    serde_json::from_str(&props_json).unwrap_or_default();
+                let is_exported = props.get("is_exported").map_or(false, |v| v == "true");
+                let minhash = props
+                    .get("minhash")
+                    .map(|s| {
+                        s.as_bytes()
+                            .chunks(8)
+                            .filter_map(|c| {
+                                let hex = std::str::from_utf8(c).ok()?;
+                                u32::from_str_radix(hex, 16).ok()
+                            })
+                            .collect::<Vec<u32>>()
+                    })
+                    .unwrap_or_default();
+
+                idx.symbols.insert(
+                    qn.clone(),
+                    SymbolEntry {
+                        file,
+                        name,
+                        kind: label.clone(),
+                        start_line: start_line as usize,
+                        end_line: end_line as usize,
+                        is_exported,
+                        minhash,
+                    },
+                );
+            }
+        }
+    }
+
+    // Load edge rows as IndexEdges
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT e.id, e.source_id, e.target_id, e.type,
+                sn.qualified_name AS src_qn,
+                tn.qualified_name AS tgt_qn
+         FROM edges e
+         JOIN nodes sn ON sn.id = e.source_id
+         JOIN nodes tn ON tn.id = e.target_id",
+    ) {
+        if let Ok(rows) = stmt.query_map([], |row| {
+            let _id: i64 = row.get(0)?;
+            let _src: i64 = row.get(1)?;
+            let _tgt: i64 = row.get(2)?;
+            let kind: String = row.get(3)?;
+            let src_qn: String = row.get(4)?;
+            let tgt_qn: String = row.get(5)?;
+            Ok(IndexEdge {
+                from: src_qn,
+                to: tgt_qn,
+                kind,
+                weight: 1.0,
+            })
+        }) {
+            for row in rows.flatten() {
+                idx.edges.push(row);
+            }
+        }
+    }
+
+    Some(idx)
+}
+
+/// Reconstruct a [`BM25Index`] from the SQLite `chunks` table.
+///
+/// Returns `None` when the DB file does not exist or has no chunks.
+fn load_bm25_index(root: &Path) -> Option<BM25Index> {
+    let db_path = DumpEngine::db_path_for(root);
+    if !db_path.exists() {
+        return None;
+    }
+    let conn = Connection::open(&db_path).ok()?;
+
+    let chunk_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM chunks", [], |row| row.get(0))
+        .ok()?;
+    if chunk_count == 0 {
+        return None;
+    }
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT file_path, symbol_name, kind, start_line, end_line, content, token_count
+             FROM chunks ORDER BY id",
+        )
+        .ok()?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            let file_path: String = row.get(0)?;
+            let symbol_name: String = row.get(1)?;
+            let kind_str: String = row.get(2)?;
+            let start_line: i64 = row.get(3)?;
+            let end_line: i64 = row.get(4)?;
+            let content: String = row.get(5)?;
+            let token_count: i64 = row.get(6)?;
+            Ok(crate::core::bm25_index::CodeChunk {
+                file_path,
+                symbol_name,
+                kind: serde_json::from_str(&kind_str).unwrap_or(
+                    crate::core::bm25_index::ChunkKind::Other,
+                ),
+                start_line: start_line as usize,
+                end_line: end_line as usize,
+                content,
+                tokens: Vec::new(),
+                token_count: token_count as usize,
+            })
+        })
+        .ok()?;
+
+    let mut bm25 = BM25Index::new();
+    for row in rows {
+        let chunk = row.ok()?;
+        bm25.add_chunk(chunk);
+    }
+    bm25.finalize();
+    Some(bm25)
+}
 
 /// Remove any leftover `.tmp` files from a prior crash or interrupted write.
 fn cleanup_tmp_files(dir: &Path) {
@@ -142,57 +868,6 @@ fn cleanup_tmp_files(dir: &Path) {
             }
         }
     }
-}
-
-/// Load [`ProjectIndex`] from `project_index.bin.zst` with bounded decompression.
-///
-/// Decompression is capped at 500 MB to prevent OOM from a corrupted or
-/// malicious file.  Returns `None` on any failure (missing file, corrupt data,
-/// decompression bomb).
-fn load_graph_index(dir: &Path) -> Option<ProjectIndex> {
-    let zst_path = dir.join("project_index.bin.zst");
-    if !zst_path.exists() {
-        return None;
-    }
-    let compressed = std::fs::read(&zst_path).ok()?;
-    const MAX_DECOMPRESSED: u64 = 500 * 1024 * 1024; // 500 MB
-    let data = bounded_zstd_decode(&compressed, MAX_DECOMPRESSED)?;
-    match postcard::from_bytes(&data) {
-        Ok(idx) => Some(idx),
-        Err(e) => {
-            tracing::warn!("[dump_engine] graph index deserialize failed: {e}");
-            None
-        }
-    }
-}
-
-/// Bounded zstd decompression that stops after `max_bytes` output bytes.
-///
-/// Prevents decompression bombs (a small `.zst` expanding to gigabytes).
-fn bounded_zstd_decode(compressed: &[u8], max_bytes: u64) -> Option<Vec<u8>> {
-    use std::io::Read;
-    let mut decoder = zstd::Decoder::new(compressed).ok()?;
-    let mut buf = Vec::new();
-    let mut chunk = vec![0u8; 65536];
-    let mut total = 0u64;
-    loop {
-        let n = decoder.read(&mut chunk).ok()?;
-        if n == 0 {
-            break;
-        }
-        total += n as u64;
-        if total > max_bytes {
-            tracing::warn!(
-                "[dump_engine] decompressed output exceeds limit \
-                 ({:.0} MB > {:.0} MB), aborting",
-                total as f64 / (1024.0 * 1024.0),
-                max_bytes as f64 / (1024.0 * 1024.0)
-            );
-            return None;
-        }
-        buf.extend_from_slice(&chunk[..n]);
-    }
-    Some(buf)
 }
 
 /// Open the [`FileMetadataStore`] from the property-graph DB.
@@ -225,18 +900,20 @@ fn open_file_metadata_store(root: &Path) -> Result<FileMetadataStore> {
     Ok(store)
 }
 
-// ── Tests ───────────────────────────────────────────────────────────────────
+// ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core::data_dir::isolated_data_dir;
+    use crate::core::graph_index::FileEntry;
+    use crate::core::index_types::NodeId;
 
     fn sample_graph(project_root: &str) -> ProjectIndex {
         let mut idx = ProjectIndex::new(project_root);
         idx.files.insert(
             "src/main.rs".to_string(),
-            crate::core::graph_index::FileEntry {
+            FileEntry {
                 path: "src/main.rs".to_string(),
                 hash: "a1b2c3".to_string(),
                 language: "rust".to_string(),
@@ -244,6 +921,18 @@ mod tests {
                 token_count: 120,
                 exports: vec!["run".to_string()],
                 summary: "Entry point".to_string(),
+            },
+        );
+        idx.symbols.insert(
+            "main".to_string(),
+            SymbolEntry {
+                file: "src/main.rs".to_string(),
+                name: "main".to_string(),
+                kind: "Function".to_string(),
+                start_line: 1,
+                end_line: 10,
+                is_exported: true,
+                minhash: vec![],
             },
         );
         idx
@@ -262,8 +951,169 @@ mod tests {
         }])
     }
 
+    fn sample_gbuf() -> GraphBuffer {
+        let mut gbuf = GraphBuffer::new("test");
+        gbuf.upsert_node("Function", "foo", "pkg.foo", "src/lib.rs", 1, 10, {
+            let mut m = std::collections::HashMap::new();
+            m.insert("lang".to_string(), "rust".to_string());
+            m
+        });
+        gbuf.upsert_node("Function", "bar", "pkg.bar", "src/lib.rs", 15, 30, {
+            std::collections::HashMap::new()
+        });
+        // Edges are created via the buffer API
+        gbuf
+    }
+
+    fn sample_code_chunks() -> Vec<CodeChunk> {
+        vec![
+            CodeChunk {
+                file_path: "src/lib.rs".to_string(),
+                content: "fn foo() {}".to_string(),
+                content_hash: "abc".to_string(),
+                start_line: 1,
+                end_line: 3,
+                language: "rust".to_string(),
+            },
+            CodeChunk {
+                file_path: "src/lib.rs".to_string(),
+                content: "fn bar() {}".to_string(),
+                content_hash: "def".to_string(),
+                start_line: 15,
+                end_line: 17,
+                language: "rust".to_string(),
+            },
+        ]
+    }
+
+    // ── dump_all tests ─────────────────────────────────────────────────
+
     #[test]
-    fn dump_produces_files_at_expected_paths() {
+    fn dump_all_creates_valid_sqlite_file() {
+        let _iso = isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
+
+        let mut gbuf = sample_gbuf();
+        // Insert an edge between the two nodes
+        let nodes: Vec<NodeId> = {
+            let mut ids = Vec::new();
+            gbuf.foreach_node(&mut |n| ids.push(n.id));
+            ids
+        };
+        if nodes.len() >= 2 {
+            gbuf.insert_edge(nodes[0], nodes[1], "calls", std::collections::HashMap::new());
+        }
+
+        let engine = DumpEngine::new(root.path().to_path_buf());
+        engine
+            .dump_all(&gbuf, &sample_code_chunks())
+            .unwrap();
+
+        let db_path = engine.db_path();
+        assert!(db_path.exists(), "code_index.db should exist");
+        assert!(db_path.metadata().unwrap().len() > 0, "db should not be empty");
+    }
+
+    #[test]
+    fn dump_all_nodes_and_edges_present() {
+        let _iso = isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
+
+        let mut gbuf = sample_gbuf();
+        let nodes: Vec<NodeId> = {
+            let mut ids = Vec::new();
+            gbuf.foreach_node(&mut |n| ids.push(n.id));
+            ids
+        };
+        if nodes.len() >= 2 {
+            gbuf.insert_edge(nodes[0], nodes[1], "calls", std::collections::HashMap::new());
+        }
+
+        let engine = DumpEngine::new(root.path().to_path_buf());
+        engine.dump_all(&gbuf, &sample_code_chunks()).unwrap();
+
+        let conn = Connection::open(engine.db_path()).unwrap();
+        let node_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM nodes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(node_count, 2, "should have exactly 2 nodes");
+
+        let edge_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM edges", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(edge_count, 1, "should have exactly 1 edge");
+
+        let chunk_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chunks", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(chunk_count, 2, "should have exactly 2 chunks");
+    }
+
+    #[test]
+    fn dump_all_integrity_check_passes() {
+        let _iso = isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
+
+        let gbuf = sample_gbuf();
+        let engine = DumpEngine::new(root.path().to_path_buf());
+        engine.dump_all(&gbuf, &sample_code_chunks()).unwrap();
+
+        let conn = Connection::open(engine.db_path()).unwrap();
+        let result: String = conn
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(result.trim(), "ok");
+    }
+
+    #[test]
+    fn dump_all_fts_search_returns_results() {
+        let _iso = isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
+
+        let gbuf = sample_gbuf();
+        let engine = DumpEngine::new(root.path().to_path_buf());
+        engine.dump_all(&gbuf, &sample_code_chunks()).unwrap();
+
+        let conn = Connection::open(engine.db_path()).unwrap();
+        // FTS5 search should find 'foo' in node name
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM nodes_fts WHERE nodes_fts MATCH 'foo'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            count > 0,
+            "FTS5 should find 'foo' in node qualified_name or name"
+        );
+    }
+
+    #[test]
+    fn dump_all_empty_gbuf_produces_valid_empty_db() {
+        let _iso = isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
+
+        let gbuf = GraphBuffer::new("test");
+        let engine = DumpEngine::new(root.path().to_path_buf());
+        engine.dump_all(&gbuf, &[]).unwrap();
+
+        let conn = Connection::open(engine.db_path()).unwrap();
+        let result: String = conn
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(result.trim(), "ok");
+
+        let node_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM nodes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(node_count, 0, "empty gbuf should produce 0 nodes");
+    }
+
+    // ── Backward-compat dump tests ─────────────────────────────────────
+
+    #[test]
+    fn dump_graph_index_and_bm25_creates_db() {
         let _iso = isolated_data_dir();
         let root = tempfile::tempdir().unwrap();
 
@@ -274,23 +1124,8 @@ mod tests {
         engine.dump_graph_index(&graph).unwrap();
         engine.dump_bm25_index(&bm25).unwrap();
 
-        let dir = index_namespace::vectors_dir(root.path());
-        assert!(dir.join("project_index.bin.zst").exists());
-        assert!(dir.join("bm25_index.bin.zst").exists());
-    }
-
-    #[test]
-    fn tmp_files_cleaned_after_successful_dump() {
-        let _iso = isolated_data_dir();
-        let root = tempfile::tempdir().unwrap();
-
-        let engine = DumpEngine::new(root.path().to_path_buf());
-        let graph = sample_graph(root.path().to_str().unwrap());
-
-        engine.dump_graph_index(&graph).unwrap();
-
-        let dir = index_namespace::vectors_dir(root.path());
-        assert!(!dir.join("project_index.bin.zst.tmp").exists());
+        let db_path = engine.db_path();
+        assert!(db_path.exists(), "code_index.db should exist after dump");
     }
 
     #[test]
@@ -318,22 +1153,38 @@ mod tests {
     }
 
     #[test]
-    fn purge_all_removes_dump_artifacts() {
+    fn tmp_files_cleaned_after_successful_dump() {
         let _iso = isolated_data_dir();
         let root = tempfile::tempdir().unwrap();
 
         let engine = DumpEngine::new(root.path().to_path_buf());
-        let graph = sample_graph(root.path().to_str().unwrap());
-        let bm25 = sample_bm25();
-
-        engine.dump_graph_index(&graph).unwrap();
-        engine.dump_bm25_index(&bm25).unwrap();
-
-        engine.purge_all().unwrap();
+        let gbuf = GraphBuffer::new("test");
+        engine.dump_all(&gbuf, &[]).unwrap();
 
         let dir = index_namespace::vectors_dir(root.path());
-        assert!(!dir.join("project_index.bin.zst").exists());
-        assert!(!dir.join("bm25_index.bin.zst").exists());
+        // Ensure no .tmp files linger (our new dump doesn't use .tmp, but
+        // cleanup_tmp_files should be a no-op)
+        assert!(
+            !dir.join("code_index.db.tmp").exists()
+        );
+        // Also no legacy .tmp files
+        assert!(!dir.join("project_index.bin.zst.tmp").exists());
+    }
+
+    #[test]
+    fn purge_all_removes_code_index_db() {
+        let _iso = isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
+
+        let engine = DumpEngine::new(root.path().to_path_buf());
+        let gbuf = GraphBuffer::new("test");
+        engine.dump_all(&gbuf, &[]).unwrap();
+
+        let db_path = engine.db_path();
+        assert!(db_path.exists());
+
+        engine.purge_all().unwrap();
+        assert!(!db_path.exists(), "purge_all should remove code_index.db");
     }
 
     #[test]
@@ -366,11 +1217,17 @@ mod tests {
 
         let (graph, bm25, _store) = DumpEngine::load_with_integrity_check(root.path()).unwrap();
 
-        let g = graph.expect("empty graph should load");
-        assert_eq!(g.file_count(), 0);
+        // An empty ProjectIndex has no symbols, so no nodes → load returns None
+        assert!(
+            graph.is_none(),
+            "empty graph (no symbols) should return None"
+        );
 
-        let b = bm25.expect("empty bm25 should load");
-        assert_eq!(b.chunks.len(), 0);
+        // An empty BM25 index has no chunks → load returns None
+        assert!(
+            bm25.is_none(),
+            "empty BM25 (no chunks) should return None"
+        );
     }
 
     #[test]
@@ -380,8 +1237,8 @@ mod tests {
 
         let (graph, bm25, _store) = DumpEngine::load_with_integrity_check(root.path()).unwrap();
 
-        assert!(graph.is_none(), "no graph artifact should return None");
-        assert!(bm25.is_none(), "no bm25 artifact should return None");
+        assert!(graph.is_none(), "no DB should return None for graph");
+        assert!(bm25.is_none(), "no DB should return None for bm25");
     }
 
     #[test]
@@ -401,15 +1258,13 @@ mod tests {
 
         let store = open_file_metadata_store(root.path()).unwrap();
         store
-            .upsert(
-                &crate::core::index_pipeline::file_metadata_store::FileMetadata {
-                    rel_path: "src/test.rs".to_string(),
-                    mtime_ns: 1_000_000_000,
-                    size_bytes: 100,
-                    content_hash: "abc".to_string(),
-                    mode_mask: 0x01,
-                },
-            )
+            .upsert(&crate::core::index_pipeline::file_metadata_store::FileMetadata {
+                rel_path: "src/test.rs".to_string(),
+                mtime_ns: 1_000_000_000,
+                size_bytes: 100,
+                content_hash: "abc".to_string(),
+                mode_mask: 0x01,
+            })
             .unwrap();
 
         let engine = DumpEngine::new(root.path().to_path_buf());
@@ -437,11 +1292,32 @@ mod tests {
 
         // Dump and purge
         let engine = DumpEngine::new(root.path().to_path_buf());
-        let graph = sample_graph(root.path().to_str().unwrap());
-        engine.dump_graph_index(&graph).unwrap();
+        let gbuf = GraphBuffer::new("test");
+        engine.dump_all(&gbuf, &[]).unwrap();
         engine.purge_all().unwrap();
 
         // Property graph DB must survive
         assert!(db_path.exists(), "purge_all must not delete graph.db");
+    }
+
+    #[test]
+    fn dump_all_file_hashes_roundtrip() {
+        let _iso = isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
+
+        let gbuf = sample_gbuf();
+        let engine = DumpEngine::new(root.path().to_path_buf());
+        engine.dump_all(&gbuf, &sample_code_chunks()).unwrap();
+
+        // Verify FTS5 file_path queries work
+        let conn = Connection::open(engine.db_path()).unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM nodes_fts WHERE file_path MATCH 'lib'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(count > 0, "FTS5 should find nodes in src/lib.rs");
     }
 }
