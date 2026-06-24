@@ -191,10 +191,12 @@ impl CtxReadTool {
         // route through the proven density path at the mapped target. An explicit
         // mode (incl. entropy/task) instead has the knob tune it via ReadTuning.
         if !explicit_mode && let Some(a) = aggressiveness {
-            mode = format!(
-                "density:{:.2}",
-                crate::core::aggressiveness::AggressivenessProfile::from_level(a).density_target
-            );
+            // SSOT mode construction via the typed `ReadMode` (#528): the typed
+            // `Density` Display emits the same `density:0.NN` the pipeline parses.
+            mode = crate::tools::ctx_read::ReadMode::Density(
+                crate::core::aggressiveness::AggressivenessProfile::from_level(a).density_target,
+            )
+            .to_string();
         }
         // `start_line` (and its `offset`/`limit` aliases) can pin a line window.
         // The resolution lives in `apply_line_window`/`resolve_line_window` so

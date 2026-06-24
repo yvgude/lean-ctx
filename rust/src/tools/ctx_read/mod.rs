@@ -14,6 +14,10 @@ use crate::tools::CrpMode;
 // accuracy invariants (GL#441).
 pub(crate) mod render;
 pub(crate) use render::*;
+/// Type-safe read-mode vocabulary (#528): single source of truth for which
+/// modes exist and how each is classified.
+pub(crate) mod mode;
+pub(crate) use mode::ReadMode;
 #[cfg(test)]
 mod tests;
 
@@ -29,10 +33,12 @@ pub struct ReadOutput {
 
 const COMPRESSED_HINT: &str = "[lean-ctx: compact view — nothing lost, full source on request]";
 
-const CACHEABLE_MODES: &[&str] = &["map", "signatures"];
-
+/// SSOT via [`ReadMode`] (#528): the `map`/`signatures` summaries whose rendered
+/// body is stored per-file in `compressed_outputs`. Unknown modes are not
+/// cacheable, matching the prior `["map","signatures"].contains(mode)`.
 fn is_cacheable_mode(mode: &str) -> bool {
-    CACHEABLE_MODES.contains(&mode)
+    mode.parse::<ReadMode>()
+        .is_ok_and(|m| m.is_compressed_cacheable())
 }
 
 /// `#361` anti-inflation capping applies to whole-file views (`full` and the
@@ -45,7 +51,10 @@ fn is_cacheable_mode(mode: &str) -> bool {
 /// `diff` a delta, `raw` the bytes — so replacing them with the whole file would
 /// be wrong, not cheaper, and they are never capped.
 fn mode_allows_raw_cap(mode: &str) -> bool {
-    !(mode.starts_with("lines:") || matches!(mode, "reference" | "diff" | "raw"))
+    // SSOT via [`ReadMode`] (#528). Unknown modes keep the prior default of
+    // `true` (only `lines:`/`reference`/`diff`/`raw` opt out of the #361 cap).
+    mode.parse::<ReadMode>()
+        .map_or(true, |m| m.allows_raw_cap())
 }
 
 fn compressed_cache_key(
@@ -388,10 +397,11 @@ fn handle_with_options_resolved(
         entry.last_mode.clone_from(&result.resolved_mode);
     }
 
-    let dedup_allowed = matches!(
-        result.resolved_mode.as_str(),
-        "map" | "signatures" | "aggressive" | "entropy" | "task"
-    );
+    // SSOT via [`ReadMode`] (#528): lossy summaries may elide shared blocks.
+    let dedup_allowed = result
+        .resolved_mode
+        .parse::<ReadMode>()
+        .is_ok_and(|m| m.is_lossy_summary());
     if dedup_allowed && let Some(deduped) = cache.apply_dedup(path, &result.content) {
         let new_tokens = count_tokens(&deduped);
         if new_tokens < result.output_tokens {
@@ -413,7 +423,15 @@ fn handle_with_options_resolved(
         // bounce proves otherwise (the bounce signal outweighs 6:1); large
         // full reads of never-bouncing extensions are wasted compression
         // opportunities and push the learned threshold up.
-        let compressed = !matches!(result.resolved_mode.as_str(), "full" | "diff" | "lines");
+        // SSOT via [`ReadMode`] (#528): only verbatim `full` and the `diff`
+        // delta are uncompressed. A resolved window is always the canonical
+        // `lines:N-M` (parses to `Lines` ⇒ compressed); the default of `true`
+        // for the unreachable bare `"lines"` keeps prior behaviour everywhere a
+        // real resolved mode can occur.
+        let compressed = result
+            .resolved_mode
+            .parse::<ReadMode>()
+            .map_or(true, |m| m.counts_as_compressed());
         if compressed {
             crate::core::adaptive_thresholds::record_quality_signal(
                 path,
