@@ -1124,6 +1124,19 @@ fn allowlist_block_message(base: &str) -> String {
              built-in defaults — this is almost certainly why editing the allowlist had no \
              effect. Fix the TOML error below, then retry:\n  {parse_err}\n  File: {cfg_path}"
         ));
+    } else if let Some(missing) = crate::core::config::Config::missing_config_path() {
+        // The resolved config doesn't exist → lean-ctx is on defaults. An edit
+        // made to a config.toml in a different dir (XDG vs legacy ~/.lean-ctx) or
+        // under a sandboxed/container HOME is never read — say so over MCP (#540).
+        msg.push_str(&format!(
+            "\n\n⚠ No config file exists at {} — lean-ctx is running on built-in defaults. \
+             If you added the command to a config.toml in a DIFFERENT location (XDG \
+             ~/.config/lean-ctx vs legacy ~/.lean-ctx, or your MCP client launches lean-ctx \
+             in a sandbox/container with a different HOME), the runtime never reads it. \
+             `lean-ctx doctor` prints the path actually in effect; pin it with \
+             LEAN_CTX_CONFIG_DIR.",
+            missing.display()
+        ));
     }
 
     // A project-local `shell_allowlist`/`shell_allowlist_extra` is silently

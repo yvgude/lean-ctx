@@ -421,6 +421,17 @@ pub fn jail_path_with_roots(
                 hint.push_str(". ");
                 hint.push_str(&notice);
             }
+            // The global config the runtime reads doesn't exist → on defaults, so
+            // an `allow_paths` edit made to a config.toml elsewhere (XDG vs legacy
+            // dir, or a sandboxed/container HOME) is never seen (#540).
+            if let Some(missing) = crate::core::config::Config::missing_config_path() {
+                hint.push_str(&format!(
+                    ". ⚠ lean-ctx reads no config file at {} (running on defaults) — an \
+                     allow_paths edit in a config.toml elsewhere is not read; \
+                     `lean-ctx doctor` shows the path in effect",
+                    missing.display()
+                ));
+            }
             return Err(format!("{base_msg}{hint}"));
         }
 

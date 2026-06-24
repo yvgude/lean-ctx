@@ -1131,6 +1131,24 @@ impl Config {
             .map(|d| d.join("config.toml"))
     }
 
+    /// `Some(path)` when the global config the runtime *resolves* does not exist,
+    /// so lean-ctx is silently on built-in defaults. `None` when a config file is
+    /// present (or HOME is unresolvable).
+    ///
+    /// The directory is layout-dependent (XDG `~/.config/lean-ctx` vs legacy
+    /// `~/.lean-ctx` vs `$LEAN_CTX_DATA_DIR`) and an MCP client may launch the
+    /// server in a sandbox/container with a different `$HOME`. An edit made to a
+    /// *different* `config.toml` than this one is silently ignored; the block
+    /// messages use this to say so out loud over MCP, where the stderr path is
+    /// invisible (#540).
+    #[must_use]
+    pub fn missing_config_path() -> Option<PathBuf> {
+        match Self::path() {
+            Some(p) if !p.exists() => Some(p),
+            _ => None,
+        }
+    }
+
     /// Returns the path to the project-local config override file.
     pub fn local_path(project_root: &str) -> PathBuf {
         PathBuf::from(project_root).join(".lean-ctx.toml")
