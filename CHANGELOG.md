@@ -3,7 +3,7 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [3.8.12] — 2026-06-24
 
 ### Added
 - **Addon ecosystem — `lean-ctx addon` (#858).** A package manager for community
@@ -176,6 +176,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   behind `LEAN_CTX_EXPERIMENTAL_QUBO`. On clean problems it reaches parity with the
   greedy knapsack (no measurable win), so **greedy remains the default**; promotion
   is conditional on a future measurable gain (`qubo_select`).
+- **Opt-in debug log — `LEAN_CTX_DEBUG_LOG` / `lean-ctx debug-log` (#520).** A
+  human-readable, off-by-default trace of every MCP tool call (tool, arguments,
+  outcome) and every shell-hook routing decision (compress / track / pass-through
+  and why), for diagnosing "why did lean-ctx do X?" without attaching a debugger.
+  Enable via the `LEAN_CTX_DEBUG_LOG` env (truthy) or `lean-ctx config set
+  debug_log true`; read or clear it with `lean-ctx debug-log` (`--clear`). Writes
+  to a single rolling file under the state dir; never on the hot path when
+  disabled, and the body carries no secrets (arguments are redaction-screened).
+- **In-band remote-proxy expansion marker — `<lc_expand:HASH>` (#493).** Lets the
+  cold-prefix/CCR retrieval layer work through a **remote** proxy with no shared
+  filesystem: the model can emit a `<lc_expand:HASH>` marker in its output and the
+  proxy splices the referenced content back in band, across all three providers
+  (OpenAI chat + responses, Anthropic, Gemini). Opt-in and cache-safe by
+  construction (the marker is deterministic), follow-up to #482.
 
 ### Security
 - **Shell allowlist now enforced on the `-t` / track path (external audit, finding 1).**
@@ -243,6 +257,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   skips output compression — the shell allowlist and path jail still apply.
   `lean-ctx bypass` stays as a back-compat alias; model-visible hints now use
   `raw` and state that the allowlist still holds.
+- **Fewer, less-duplicated MCP read tools (#509 Phase 1+2 / #527, #528, #532).**
+  The read-variant cluster (`ctx_smart_read`, `ctx_multi_read`) folds into a
+  single `ctx_read` (multi-path + auto mode); the former tool names stay as
+  **deprecated aliases** that still work but no longer cost schema tokens in
+  `tools/list`, shrinking the always-on surface. Internally, `ctx_read` modes are
+  now a type-safe `ReadMode` vocabulary (parsed once, `FromStr`/`Display`) instead
+  of ad-hoc strings, with behavioural-equivalence tests and the eval A/B gate
+  guarding zero output regression. `SessionCache` is retained (the decoupling
+  thesis was evaluated and rejected as net-negative).
+- **Configurable `ctx_shell` timeouts + opt-in writes (#526 / #523, #529).** The
+  hard-coded 2-min / 10-min shell ceilings are now tunable via `shell_timeout_secs`
+  and `shell_heavy_timeout_secs` (env `LEAN_CTX_SHELL_TIMEOUT*`), and the read-only
+  output doctrine can be relaxed deliberately with `shell_allow_writes` (env
+  `LEAN_CTX_SHELL_ALLOW_WRITES`) so a trusted operator can permit `>`/`tee`/heredoc
+  writes through `ctx_shell` — off by default, part of making prohibitive security
+  opt-in rather than absolute (#526).
+- **Leaner always-on tool & rules schema (#510/#517, #505/#508).** Power-tier tool
+  descriptions are reworked workflow-first and de-duplicated, and the optimized
+  tools schema + canonical rules consolidation land, trimming the fixed
+  per-session token cost of advertised tools and auto-loaded rules without
+  changing behaviour (eval-gated).
 
 ### Fixed
 - **`config set` now accepts every valid `Option` config key (`persona`,
@@ -328,6 +363,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   silently falling back to Free. Successful lookups refresh the cache; only
   never-seen accounts fall to Free. A transient upstream outage can no longer
   lock a Pro subscriber out of paid features mid-session.
+- **Windows PowerShell/cmd no longer rewrites the `lean-ctx` path (#518 / #521).**
+  The terminal-integration shell hook used a Unix-style `/c/...` path that
+  PowerShell and cmd can't execute, so `lean-ctx` invocations failed on Windows.
+  The hook now emits the native binary path on PowerShell/cmd, restoring terminal
+  integration there.
+- **No more flaky ORT SIGSEGV on process exit (#519 / #522).** Short-lived
+  processes that loaded the ONNX Runtime model could crash with a ~30% flaky
+  `SIGSEGV`/`EXC_BAD_ACCESS` during static `OpSchema` teardown at exit (arm64
+  macOS). lean-ctx now skips the detached ORT model load in short-lived processes
+  that won't use it, removing the teardown crash without affecting real search.
+- **Inherited `LEAN_CTX_ACTIVE` no longer silently disables compression (#533 /
+  #537).** `LEAN_CTX_ACTIVE` served double duty as both a shell-hook re-entrancy
+  guard and a compression bypass; when an agent (e.g. Codex) inherited it into the
+  MCP server's environment, every tool output came back uncompressed. Re-entrancy
+  ownership now rides a dedicated `LEAN_CTX_WRAPPED` marker, so an inherited
+  `LEAN_CTX_ACTIVE` no longer turns compression off.
+- **`ctx_read raw:true` / `mode=raw` now honored and documented (#513 / #514).**
+  The verbatim escape hatch was silently ignored on the `raw:true` argument and
+  undocumented for `mode=raw`, so non-Opus models (GLM 5.2 report) fought the
+  compression by retrying reads. Both forms now reliably return uncompressed,
+  un-elided bytes and are documented as the way to get exact file content.
+- **`allow_paths` / `shell_allowlist_extra` failures are no longer silent (#540 /
+  #541, #542).** Two invisible-over-MCP failure modes are surfaced at the point of
+  the block: (1) a project-local `.lean-ctx.toml` whose security-sensitive
+  overrides are **withheld because the workspace is untrusted** now names the
+  ignored keys and the `lean-ctx trust` / global-config remedies; (2) when the
+  runtime resolves a global `config.toml` that **doesn't exist** (an edit that
+  landed in a different dir — XDG vs legacy `~/.lean-ctx`, or a sandboxed/container
+  `$HOME`), both the allowlist and path-jail block messages now say so and name
+  the path actually read. The stderr-only `tracing::warn` was invisible to MCP
+  clients (OpenCode), making these read as "the setting does nothing".
 
 ## [3.8.11] — 2026-06-20
 

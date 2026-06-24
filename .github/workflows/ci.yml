@@ -316,6 +316,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          # tarpaulin's LLVM engine (below) needs llvm-profdata/llvm-cov from
+          # the rustup component — without it the engine silently falls back.
+          components: llvm-tools-preview
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: rust -> target
@@ -329,8 +333,16 @@ jobs:
         working-directory: rust
         env:
           CARGO_BUILD_JOBS: "2"
+        # --engine llvm uses LLVM source-based coverage (instrument-coverage +
+        # llvm-profdata) instead of tarpaulin's default ptrace engine. ptrace
+        # is non-deterministically fragile on hosted runners: it corrupts the
+        # tracee's registers under load, surfacing as a bogus
+        # "memory allocation of 1407…bytes failed" abort followed by
+        # "ECHILD: No child processes" — a flake unrelated to the code (the
+        # Test matrix on the same SHA stays green). The LLVM engine never
+        # ptraces, so the whole class of flake disappears.
         run: |
-          cargo tarpaulin --out xml --skip-clean --all-features --lib --timeout 180 \
+          cargo tarpaulin --engine llvm --out xml --skip-clean --all-features --lib --timeout 180 \
             --exclude-files 'src/cli/*' --exclude-files 'src/main.rs' \
             -- --test-threads=1
           pkill -f 'target.*lean-ctx' 2>/dev/null || true
