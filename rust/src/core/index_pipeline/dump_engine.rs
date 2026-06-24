@@ -17,7 +17,7 @@ use crate::core::index_pipeline::file_metadata_store::FileMetadataStore;
 /// Atomic dump engine for index snapshots.
 ///
 /// Every write goes through a `.tmp` → rename sequence so partial writes from
-/// crashes or OOM never leave a corrupt artifact.  [`load_with_integrity_check`]
+/// crashes or OOM never leave a corrupt artifact.  [`DumpEngine::load_with_integrity_check`]
 /// pairs with this to detect and recover from such scenarios.
 pub struct DumpEngine {
     pub project_root: PathBuf,

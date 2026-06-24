@@ -500,7 +500,7 @@ pub struct IndexBundle {
 }
 
 /// Load both graph and BM25 indexes from disk, building them via IndexPipeline
-/// if not found. Replacement for the deprecated [`BM25Index::load_or_build`]
+/// if not found. Replacement for the deprecated [`BM25Index::build_from_directory`]
 /// and [`BM25Index::build_from_directory`] — routes all callers through the
 /// pipeline so there is a single code path for index construction.
 ///

@@ -51,7 +51,7 @@ impl ParallelExtractor {
     ///
     /// For each entry this extracts:
     /// - Graph signatures via [`crate::core::signatures::extract_signatures`]
-    /// - BM25 chunks via [`crate::core::bm25_index::extract_chunks`]
+    /// - BM25 chunks via `crate::core::bm25_index::extract_chunks`
     ///
     /// The results are sorted by `rel_path` for deterministic output (the
     /// same set of input files always produces the same ordered result).
