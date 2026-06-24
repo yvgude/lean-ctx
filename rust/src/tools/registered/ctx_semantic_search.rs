@@ -15,36 +15,73 @@ impl McpTool for CtxSemanticSearchTool {
     }
 
     fn tool_def(&self) -> Tool {
+        let mut props = serde_json::Map::new();
+        props.insert(
+            "query".into(),
+            json!({ "type": "string", "description": "Natural language or symbol query" }),
+        );
+        props.insert(
+            "path".into(),
+            json!({ "type": "string", "description": "Project root" }),
+        );
+        props.insert(
+            "top_k".into(),
+            json!({ "type": "integer", "description": "Max results (default: 10)" }),
+        );
+        props.insert(
+            "action".into(),
+            json!({
+                "type": "string",
+                "enum": ["search", "reindex", "find_related"]
+            }),
+        );
+
+        let mode_values: Vec<Value> = {
+            #[cfg(not(feature = "embeddings"))]
+            let v: Vec<&str> = vec!["bm25"];
+            #[cfg(feature = "embeddings")]
+            let v: Vec<&str> = vec!["bm25", "dense", "hybrid"];
+            v.into_iter()
+                .map(|s| Value::String(s.to_string()))
+                .collect()
+        };
+        props.insert("mode".into(), json!({
+            "type": "string",
+            "enum": mode_values,
+            "description": "Search algorithm: bm25 (keyword, always available), dense (embedding vector), hybrid (both)"
+        }));
+
+        props.insert(
+            "file_path".into(),
+            json!({ "type": "string", "description": "Source file for find_related" }),
+        );
+        props.insert(
+            "line".into(),
+            json!({ "type": "integer", "description": "Line for find_related" }),
+        );
+        props.insert(
+            "languages".into(),
+            json!({
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Restrict to extensions, e.g. ['rust','ts']"
+            }),
+        );
+        props.insert(
+            "path_glob".into(),
+            json!({ "type": "string", "description": "Glob over relative file paths" }),
+        );
+
         tool_def(
             "ctx_semantic_search",
-            "Search code by MEANING (BM25+embeddings) — use when you know the concept but not the exact\n\
+            "Search code by MEANING (BM25) — use when you know the concept but not the exact\n\
              symbol name. query='user auth' finds relevant code even with no keyword match.\n\
              Different from ctx_search (regex): use ctx_search for exact patterns, this for\n\
              fuzzy/conceptual. For understanding code end-to-end, use ctx_compose FIRST.\n\
-             find_related(file_path, line) for context neighbors. mode=bm25|dense|hybrid.",
+             find_related(file_path, line) for context neighbors.",
             json!({
                 "type": "object",
-                "properties": {
-                    "query": { "type": "string", "description": "Natural language or symbol query" },
-                    "path": { "type": "string", "description": "Project root" },
-                    "top_k": { "type": "integer", "description": "Max results (default: 10)" },
-                    "action": {
-                        "type": "string",
-                        "enum": ["search", "reindex", "find_related"]
-                    },
-                    "mode": {
-                        "type": "string",
-                        "enum": ["bm25", "dense", "hybrid"]
-                    },
-                    "file_path": { "type": "string", "description": "Source file for find_related" },
-                    "line": { "type": "integer", "description": "Line for find_related" },
-                    "languages": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Restrict to extensions, e.g. ['rust','ts']"
-                    },
-                    "path_glob": { "type": "string", "description": "Glob over relative file paths" }
-                },
+                "properties": props,
                 "required": ["query"]
             }),
         )
@@ -76,7 +113,11 @@ impl McpTool for CtxSemanticSearchTool {
         {
             let mode_effective = mode
                 .as_deref()
-                .unwrap_or("hybrid")
+                .unwrap_or(if cfg!(feature = "embeddings") {
+                    "hybrid"
+                } else {
+                    "bm25"
+                })
                 .trim()
                 .to_ascii_lowercase();
             if action != "reindex"

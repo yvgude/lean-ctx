@@ -17,7 +17,9 @@ pub mod tokenizer;
 
 use std::path::{Path, PathBuf};
 
-use model_registry::{EmbeddingModel, ModelConfig, VocabSource};
+use model_registry::{EmbeddingModel, ModelConfig};
+#[cfg(feature = "embeddings")]
+use model_registry::VocabSource;
 use tokenizer::{TokenizedInput, WordPieceTokenizer};
 
 #[cfg(feature = "embeddings")]
@@ -26,8 +28,10 @@ use rayon::prelude::*;
 use std::sync::Mutex;
 
 pub struct EmbeddingEngine {
+    #[allow(dead_code)]
     tokenizer: TokenizerKind,
     dimensions: usize,
+    #[allow(dead_code)]
     max_seq_len: usize,
     model_id: EmbeddingModel,
     model_config: ModelConfig,
@@ -40,6 +44,7 @@ pub struct EmbeddingEngine {
 }
 
 /// Abstraction over different tokenizer backends.
+#[allow(dead_code)]
 enum TokenizerKind {
     WordPiece(WordPieceTokenizer),
     HfTokenizer(tokenizer::HfTokenizerWrapper),
@@ -492,12 +497,14 @@ impl EmbeddingEngine {
     }
 
     #[cfg(not(feature = "embeddings"))]
+    #[allow(dead_code)]
     fn run_inference(&self, _input: &TokenizedInput) -> anyhow::Result<Vec<f32>> {
         anyhow::bail!("Embeddings feature not enabled")
     }
 }
 
 /// Load the appropriate tokenizer for the model config.
+#[cfg(feature = "embeddings")]
 fn load_tokenizer(model_dir: &Path, config: &ModelConfig) -> anyhow::Result<TokenizerKind> {
     match &config.vocab_file {
         VocabSource::VocabTxt(filename) => {
@@ -520,6 +527,7 @@ fn load_tokenizer(model_dir: &Path, config: &ModelConfig) -> anyhow::Result<Toke
 }
 
 /// Tokenize text using whatever tokenizer backend is loaded.
+#[cfg(feature = "embeddings")]
 fn tokenize(tokenizer: &TokenizerKind, text: &str, max_len: usize) -> TokenizedInput {
     match tokenizer {
         TokenizerKind::WordPiece(wp) => wp.encode(text, max_len),

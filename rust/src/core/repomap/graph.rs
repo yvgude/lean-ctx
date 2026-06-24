@@ -6,6 +6,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::core::call_graph::{CallGraph, CallGraphInputs};
+#[cfg(not(test))]
+use crate::core::graph_index::{ProjectIndex, SymbolEntry};
+#[cfg(test)]
 use crate::core::graph_index::{FileEntry, IndexEdge, ProjectIndex, SymbolEntry};
 
 /// A symbol definition with its file context.

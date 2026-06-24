@@ -10,26 +10,8 @@ pub use coordinator::{SearchIndexBuildProgress, get_or_start_build};
 #[cfg(test)]
 mod tests;
 
-const MAX_BM25_FILES: usize = 5000;
 const CHUNK_COUNT_WARNING: usize = 50_000;
 const ZSTD_LEVEL: i32 = 9;
-
-const DEFAULT_BM25_IGNORES: &[&str] = &[
-    "vendor/**",
-    "dist/**",
-    "build/**",
-    "public/vendor/**",
-    "public/js/**",
-    "public/css/**",
-    "public/build/**",
-    ".next/**",
-    ".nuxt/**",
-    "__pycache__/**",
-    "*.min.js",
-    "*.min.css",
-    "*.bundle.js",
-    "*.chunk.js",
-];
 
 fn max_bm25_cache_bytes() -> u64 {
     // Single source of truth: `Config::bm25_max_cache_mb_effective` (env override
@@ -540,9 +522,9 @@ impl BM25Index {
     }
 }
 
-/// Sentinel-based staleness check: samples a subset of tracked files and
-/// skips the expensive full `list_code_files()` walk. Used by the coordinator
-/// as a quick pre-flight check before loading the on-disk index.
+/// Sentinel-based staleness check: samples a subset of tracked files.
+/// Used by the coordinator as a quick pre-flight check before loading
+/// the on-disk index.
 pub fn bm25_index_looks_stale_fast(index: &BM25Index, root: &Path) -> bool {
     if index.chunks.is_empty() {
         return false;
@@ -619,63 +601,6 @@ fn bounded_zstd_decode(compressed: &[u8], max_bytes: u64) -> Option<Vec<u8>> {
 
 fn index_dir(root: &Path) -> PathBuf {
     crate::core::index_namespace::vectors_dir(root)
-}
-
-fn list_code_files(root: &Path) -> Vec<String> {
-    let walker = ignore::WalkBuilder::new(root)
-        .hidden(true)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .require_git(false)
-        .max_depth(Some(20))
-        .filter_entry(crate::core::walk_filter::keep_entry)
-        .build();
-
-    let cfg = crate::core::config::Config::load();
-    let mut ignore_patterns: Vec<glob::Pattern> = DEFAULT_BM25_IGNORES
-        .iter()
-        .filter_map(|p| glob::Pattern::new(p).ok())
-        .collect();
-    ignore_patterns.extend(
-        cfg.extra_ignore_patterns
-            .iter()
-            .filter_map(|p| glob::Pattern::new(p).ok()),
-    );
-
-    let mut files: Vec<String> = Vec::new();
-    for entry in walker.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        if !crate::core::ingestion::is_ingestible(path) {
-            continue;
-        }
-        let rel = path
-            .strip_prefix(root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .to_string();
-        if rel.is_empty() {
-            continue;
-        }
-        if ignore_patterns.iter().any(|p| p.matches(&rel)) {
-            continue;
-        }
-        if files.len() >= MAX_BM25_FILES {
-            tracing::warn!(
-                "[bm25] file cap reached ({MAX_BM25_FILES}), skipping remaining files in {}",
-                root.display()
-            );
-            break;
-        }
-        files.push(rel);
-    }
-
-    files.sort();
-    files.dedup();
-    files
 }
 
 pub fn is_code_file(path: &Path) -> bool {

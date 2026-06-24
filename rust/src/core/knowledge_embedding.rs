@@ -15,8 +15,11 @@ use crate::core::memory_policy::MemoryPolicy;
 #[cfg(feature = "embeddings")]
 use super::embeddings::EmbeddingEngine;
 
+#[cfg(feature = "embeddings")]
 const ALPHA_SEMANTIC: f32 = 0.6;
+#[cfg(feature = "embeddings")]
 const BETA_CONFIDENCE: f32 = 0.25;
+#[cfg(feature = "embeddings")]
 const GAMMA_RECENCY: f32 = 0.15;
 /// Observation tier (#802): additive boost for a synthesized entity-summary in the
 /// semantic recall paths, mirroring the lexical `recall_for_output` boost so the
@@ -24,7 +27,9 @@ const GAMMA_RECENCY: f32 = 0.15;
 /// [0,1] semantic score — a balanced nudge that lifts a relevant summary above
 /// incidental matches yet stays below an exact match (which scores 1.0), so a stale
 /// summary can never bury a precise raw fact.
+#[cfg(any(feature = "embeddings", test))]
 const OBSERVATION_TIER_BOOST: f32 = 0.15;
+#[cfg(any(feature = "embeddings", test))]
 const MAX_RECENCY_DAYS: f32 = 90.0;
 
 /// Cosine threshold above which a freshly-remembered fact is treated as a
@@ -54,6 +59,7 @@ impl FactEmbedding {
     /// Similarity against a full-precision (L2-normalized) query. Scores directly
     /// against the int8 codes when available; falls back to the legacy f32 vector
     /// for not-yet-migrated entries.
+    #[cfg(any(feature = "embeddings", test))]
     fn similarity(&self, query: &[f32]) -> f32 {
         match &self.quant {
             Some(q) => embedding_quant::dot_quant(query, q),
@@ -376,6 +382,7 @@ pub fn compact_against_knowledge(
     index.entries = kept.into_iter().map(|(e, _)| e).collect();
 }
 
+#[cfg(feature = "embeddings")]
 fn lexical_fallback<'a>(
     knowledge: &'a ProjectKnowledge,
     query: &str,
@@ -395,6 +402,7 @@ fn lexical_fallback<'a>(
         .collect()
 }
 
+#[cfg(any(feature = "embeddings", test))]
 fn recency_decay(fact: &KnowledgeFact) -> f32 {
     let days_old = chrono::Utc::now()
         .signed_duration_since(fact.last_confirmed)
@@ -405,6 +413,7 @@ fn recency_decay(fact: &KnowledgeFact) -> f32 {
 /// Add the observation-tier boost (#802) to a base recall score iff `fact` is a
 /// synthesized entity-summary. Pure + deterministic so the tier policy can be
 /// unit-tested without spinning up the embedding engine.
+#[cfg(any(feature = "embeddings", test))]
 fn apply_observation_tier(base: f32, fact: &KnowledgeFact) -> f32 {
     if fact.is_synthesized_observation() {
         base + OBSERVATION_TIER_BOOST
@@ -467,6 +476,7 @@ pub fn find_semantic_duplicates(
 /// `threshold`, maps them back to current facts, and excludes the incoming
 /// fact's own key, non-current facts, and pairs the agent already judged. Pure
 /// and deterministic so the dedup logic is unit-testable with raw vectors.
+#[cfg(any(feature = "embeddings", test))]
 fn semantic_duplicates_from_query(
     index: &KnowledgeEmbeddingIndex,
     knowledge: &ProjectKnowledge,

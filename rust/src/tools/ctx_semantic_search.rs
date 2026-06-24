@@ -4,8 +4,14 @@ use std::path::Path;
 
 use crate::core::bm25_index::{BM25Index, format_search_results};
 #[cfg(feature = "embeddings")]
+use crate::core::embedding_index::EmbeddingIndex;
+#[cfg(feature = "embeddings")]
 use crate::core::embeddings::EmbeddingEngine;
-use crate::core::hybrid_search::{HybridConfig, HybridResult, format_hybrid_results};
+#[cfg(feature = "embeddings")]
+use crate::core::hnsw::FlatEmbeddings;
+#[cfg(any(feature = "embeddings", test))]
+use crate::core::hybrid_search::HybridConfig;
+use crate::core::hybrid_search::{HybridResult, format_hybrid_results};
 use crate::tools::CrpMode;
 
 /// Performs semantic code search using BM25, dense embeddings, or hybrid ranking.
@@ -578,7 +584,10 @@ fn workspace_search(
     mode: &str,
 ) -> String {
     let linked = crate::core::workspace_config::load_linked_projects(root);
+    #[cfg(not(feature = "embeddings"))]
     let warnings = linked.warnings;
+    #[cfg(feature = "embeddings")]
+    let mut warnings = linked.warnings;
 
     let mut roots: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
     roots.extend(linked.roots);
@@ -586,8 +595,10 @@ fn workspace_search(
     roots.dedup();
 
     let mut per_project: Vec<(String, Vec<HybridResult>)> = Vec::new();
-    let avg_cov: Option<f64> = None;
-    let cov_count = 0usize;
+    #[allow(unused_mut)]
+    let mut avg_cov: Option<f64> = None;
+    #[allow(unused_mut)]
+    let mut cov_count = 0usize;
 
     for r in &roots {
         let label = label_for_root(r);
@@ -1091,7 +1102,9 @@ fn cold_start_embed_guard(embed_idx: &EmbeddingIndex, index: &BM25Index) -> Opti
 #[cfg(feature = "embeddings")]
 fn dense_build_hint(pending: usize, compact: bool) -> String {
     if compact {
-        format!("[dense not built: {pending} chunks pending — run: lean-ctx index build --mode full]")
+        format!(
+            "[dense not built: {pending} chunks pending — run: lean-ctx index build --mode full]"
+        )
     } else {
         format!(
             "[lean-ctx: dense index not built ({pending} chunks would embed inline). \
@@ -1240,6 +1253,82 @@ fn hybrid_search_mode(
     }
 }
 
+#[cfg(feature = "embeddings")]
+fn dense_search_mode(
+    query: &str,
+    root: &Path,
+    index: &BM25Index,
+    top_k: usize,
+    compact: bool,
+    filter: &SearchFilter,
+) -> String {
+    let (engine, mut embed_idx) = match load_engine_and_index(root) {
+        Ok(v) => v,
+        Err(e) => return format!("ERR: {e}"),
+    };
+
+    // #512: explicit dense has no BM25 fallback to degrade into, so fail fast
+    // with the same actionable hint rather than embed the whole corpus inline
+    // under the watchdog (the cold-start runaway). A warm/incremental index
+    // passes through untouched.
+    if let Some(pending) = cold_start_embed_guard(&embed_idx, index) {
+        return dense_build_hint(pending, compact);
+    }
+
+    let (aligned, coverage, changed_files) =
+        match ensure_embeddings(root, index, engine, &mut embed_idx) {
+            Ok(v) => v,
+            Err(e) => return format!("ERR: {e}"),
+        };
+
+    let backend = match crate::core::dense_backend::DenseBackendKind::try_from_env() {
+        Ok(v) => v,
+        Err(e) => return format!("ERR: {e}"),
+    };
+
+    let filter_fn = |p: &str| filter.matches(p);
+    let filter_pred: Option<&dyn Fn(&str) -> bool> = filter
+        .is_active()
+        .then_some(&filter_fn as &dyn Fn(&str) -> bool);
+
+    let candidate_k = filtered_candidate_k(top_k, filter.is_active());
+    let mut results = match crate::core::dense_backend::dense_results_as_hybrid(
+        backend,
+        root,
+        index,
+        engine,
+        &aligned,
+        &changed_files,
+        query,
+        candidate_k,
+        filter_pred,
+    ) {
+        Ok(v) => v,
+        Err(e) => return format!("ERR: {e}"),
+    };
+    results.truncate(top_k);
+
+    let header = if compact {
+        format!(
+            "semantic_search(dense,{top_k}) → {} results, {} chunks, embed_cov={:.0}%\n",
+            results.len(),
+            index.doc_count,
+            coverage * 100.0
+        )
+    } else {
+        format!(
+            "Semantic search (Dense): \"{}\" ({} results from {} indexed chunks, embeddings coverage {:.0}%)\n",
+            truncate_query(query, 60),
+            results.len(),
+            index.doc_count,
+            coverage * 100.0
+        )
+    };
+
+    format!("{header}{}", format_hybrid_results(&results, compact))
+}
+
+#[cfg(not(feature = "embeddings"))]
 fn dense_search_mode(
     _query: &str,
     _root: &Path,
@@ -1248,77 +1337,7 @@ fn dense_search_mode(
     _compact: bool,
     _filter: &SearchFilter,
 ) -> String {
-    #[cfg(feature = "embeddings")]
-    {
-        let (engine, mut embed_idx) = match load_engine_and_index(root) {
-            Ok(v) => v,
-            Err(e) => return format!("ERR: {e}"),
-        };
-
-        // #512: explicit dense has no BM25 fallback to degrade into, so fail fast
-        // with the same actionable hint rather than embed the whole corpus inline
-        // under the watchdog (the cold-start runaway). A warm/incremental index
-        // passes through untouched.
-        if let Some(pending) = cold_start_embed_guard(&embed_idx, index) {
-            return dense_build_hint(pending, compact);
-        }
-
-        let (aligned, coverage, changed_files) =
-            match ensure_embeddings(root, index, engine, &mut embed_idx) {
-                Ok(v) => v,
-                Err(e) => return format!("ERR: {e}"),
-            };
-
-        let backend = match crate::core::dense_backend::DenseBackendKind::try_from_env() {
-            Ok(v) => v,
-            Err(e) => return format!("ERR: {e}"),
-        };
-
-        let filter_fn = |p: &str| filter.matches(p);
-        let filter_pred: Option<&dyn Fn(&str) -> bool> = filter
-            .is_active()
-            .then_some(&filter_fn as &dyn Fn(&str) -> bool);
-
-        let candidate_k = filtered_candidate_k(top_k, filter.is_active());
-        let mut results = match crate::core::dense_backend::dense_results_as_hybrid(
-            backend,
-            root,
-            index,
-            engine,
-            &aligned,
-            &changed_files,
-            query,
-            candidate_k,
-            filter_pred,
-        ) {
-            Ok(v) => v,
-            Err(e) => return format!("ERR: {e}"),
-        };
-        results.truncate(top_k);
-
-        let header = if compact {
-            format!(
-                "semantic_search(dense,{top_k}) → {} results, {} chunks, embed_cov={:.0}%\n",
-                results.len(),
-                index.doc_count,
-                coverage * 100.0
-            )
-        } else {
-            format!(
-                "Semantic search (Dense): \"{}\" ({} results from {} indexed chunks, embeddings coverage {:.0}%)\n",
-                truncate_query(query, 60),
-                results.len(),
-                index.doc_count,
-                coverage * 100.0
-            )
-        };
-
-        format!("{header}{}", format_hybrid_results(&results, compact))
-    }
-    #[cfg(not(feature = "embeddings"))]
-    {
-        "ERR: embeddings feature not enabled".to_string()
-    }
+    "ERR: embeddings feature not enabled".to_string()
 }
 
 #[cfg(feature = "embeddings")]
