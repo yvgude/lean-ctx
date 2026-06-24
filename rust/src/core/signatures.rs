@@ -20,6 +20,7 @@ pub struct Signature {
     pub indent: usize,
     pub start_line: Option<usize>,
     pub end_line: Option<usize>,
+    pub minhash: Option<[u32; 64]>,
 }
 
 /// Exports not already named by `key_sigs`. Map-mode renderers list the API
@@ -54,6 +55,7 @@ impl Signature {
             indent: 0,
             start_line: None,
             end_line: None,
+            minhash: None,
         }
     }
 
@@ -321,6 +323,7 @@ fn extract_ts_signatures(content: &str) -> Vec<Signature> {
                 indent: if indent > 0 { 2 } else { 0 },
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         } else if let Some(caps) = class_re().captures(line) {
             sigs.push(Signature {
@@ -333,6 +336,7 @@ fn extract_ts_signatures(content: &str) -> Vec<Signature> {
                 indent: 0,
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         } else if let Some(caps) = iface_re().captures(line) {
             sigs.push(Signature {
@@ -345,6 +349,7 @@ fn extract_ts_signatures(content: &str) -> Vec<Signature> {
                 indent: 0,
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         } else if let Some(caps) = type_re().captures(line) {
             sigs.push(Signature {
@@ -357,6 +362,7 @@ fn extract_ts_signatures(content: &str) -> Vec<Signature> {
                 indent: 0,
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         } else if let Some(caps) = const_re().captures(line)
             && caps.get(2).is_some()
@@ -373,6 +379,7 @@ fn extract_ts_signatures(content: &str) -> Vec<Signature> {
                 indent: 0,
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         }
     }
@@ -404,6 +411,7 @@ fn extract_rust_signatures(content: &str) -> Vec<Signature> {
                 indent: if indent > 0 { 2 } else { 0 },
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         } else if let Some(caps) = rust_struct_re().captures(line) {
             sigs.push(Signature {
@@ -416,6 +424,7 @@ fn extract_rust_signatures(content: &str) -> Vec<Signature> {
                 indent: 0,
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         } else if let Some(caps) = rust_enum_re().captures(line) {
             sigs.push(Signature {
@@ -428,6 +437,7 @@ fn extract_rust_signatures(content: &str) -> Vec<Signature> {
                 indent: 0,
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         } else if let Some(caps) = rust_trait_re().captures(line) {
             sigs.push(Signature {
@@ -440,6 +450,7 @@ fn extract_rust_signatures(content: &str) -> Vec<Signature> {
                 indent: 0,
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         } else if let Some(caps) = rust_impl_re().captures(line) {
             let trait_name = caps.get(2).map(|m| m.as_str());
@@ -459,6 +470,7 @@ fn extract_rust_signatures(content: &str) -> Vec<Signature> {
                 indent: 0,
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         }
     }
@@ -487,6 +499,7 @@ fn extract_python_signatures(content: &str) -> Vec<Signature> {
                 indent: if indent > 0 { 2 } else { 0 },
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         } else if let Some(caps) = py_class.captures(line) {
             sigs.push(Signature {
@@ -499,6 +512,7 @@ fn extract_python_signatures(content: &str) -> Vec<Signature> {
                 indent: 0,
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         }
     }
@@ -530,6 +544,7 @@ fn extract_go_signatures(content: &str) -> Vec<Signature> {
                 indent: if is_method { 2 } else { 0 },
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         } else if let Some(caps) = go_type.captures(line) {
             sigs.push(Signature {
@@ -546,6 +561,7 @@ fn extract_go_signatures(content: &str) -> Vec<Signature> {
                 indent: 0,
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         }
     }
@@ -667,6 +683,7 @@ fn extract_generic_signatures(content: &str) -> Vec<Signature> {
                 indent: 0,
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         } else if let Some(caps) = re_func.captures(trimmed) {
             sigs.push(Signature {
@@ -679,6 +696,7 @@ fn extract_generic_signatures(content: &str) -> Vec<Signature> {
                 indent: 0,
                 start_line: Some(line_no),
                 end_line: Some(line_no),
+                minhash: None,
             });
         }
     }
@@ -700,6 +718,7 @@ mod tests {
             indent: 0,
             start_line: None,
             end_line: None,
+            minhash: None,
         }
     }
 

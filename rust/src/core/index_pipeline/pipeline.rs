@@ -88,8 +88,7 @@ impl IndexPipeline {
             project_root,
             mode: IndexingMode::Full,
             max_file_size: 2 * 1024 * 1024,
-            max_workers: std::thread::available_parallelism()
-                .map_or(4, |n| n.get()),
+            max_workers: std::thread::available_parallelism().map_or(4, std::num::NonZero::get),
         }
     }
 

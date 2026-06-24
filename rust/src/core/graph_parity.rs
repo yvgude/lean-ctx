@@ -215,6 +215,7 @@ mod tests {
                 start_line: a,
                 end_line: b,
                 is_exported: true,
+                minhash: Vec::new(),
             },
         )
     }

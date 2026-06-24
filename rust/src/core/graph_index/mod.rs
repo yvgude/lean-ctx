@@ -11,6 +11,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::core::import_resolver;
+
 mod edges;
 pub(crate) use edges::*;
 #[cfg(test)]
@@ -248,6 +249,7 @@ pub struct SymbolEntry {
     pub start_line: usize,
     pub end_line: usize,
     pub is_exported: bool,
+    pub minhash: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
