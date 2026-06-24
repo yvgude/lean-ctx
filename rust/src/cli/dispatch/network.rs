@@ -379,7 +379,7 @@ fn cmd_team_slo_report(args: &[String]) {
 pub(super) fn cmd_dashboard(rest: &[String]) {
     if rest.iter().any(|a| a == "--help" || a == "-h") {
         println!(
-            "Usage: lean-ctx dashboard [--port=N] [--host=H] [--base-path=PREFIX] [--auth-token=TOKEN] [--project=PATH] [--export]"
+            "Usage: lean-ctx dashboard [--port=N] [--host=H] [--base-path=PREFIX] [--auth-token=TOKEN] [--project=PATH] [--vscode] [--export]"
         );
         println!("Examples:");
         println!("  lean-ctx dashboard");
@@ -396,7 +396,10 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
             "  lean-ctx dashboard --open=none      Start without launching a browser (also --no-open)"
         );
         println!(
-            "  lean-ctx dashboard --open=vscode    Don't launch external browser; show how to open the native VS Code tab"
+            "  lean-ctx dashboard --vscode         Open as a native editor tab (VS Code/Cursor/VSCodium/Windsurf) via the lean-ctx extension"
+        );
+        println!(
+            "  lean-ctx dashboard --open=vscode    Alias for --vscode (falls back to the browser if no editor/extension is found)"
         );
         println!("Environment:");
         println!(
@@ -471,6 +474,50 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
         rest.iter()
             .find_map(|p| p.strip_prefix("--open="))
             .map(String::from)
+    };
+    // `--vscode` / `--open=vscode` (and LEAN_CTX_DASHBOARD_OPEN=vscode): open the
+    // dashboard as a native editor tab by handing off to the lean-ctx extension's
+    // URI handler. On a successful hand-off the extension owns the server, so we
+    // return without binding one here; otherwise fall back to the browser so the
+    // command is never a silent no-op (#875).
+    let want_vscode = rest.iter().any(|a| a == "--vscode")
+        || matches!(open_mode.as_deref(), Some("vscode" | "code" | "editor"))
+        || (open_mode.is_none()
+            && std::env::var("LEAN_CTX_DASHBOARD_OPEN").is_ok_and(|v| {
+                matches!(
+                    v.trim().to_ascii_lowercase().as_str(),
+                    "vscode" | "code" | "editor"
+                )
+            }));
+    let open_mode = if want_vscode {
+        use crate::dashboard::vscode_open::{EditorOpen, open_in_editor};
+        let fallback = if rest.iter().any(|a| a == "--no-open") {
+            "none"
+        } else {
+            "browser"
+        };
+        match open_in_editor() {
+            EditorOpen::Handed(label) => {
+                println!("\x1b[32m✓\x1b[0m Opening the lean-ctx dashboard in {label}…");
+                println!(
+                    "  \x1b[2mIt opens as a native editor tab via the lean-ctx extension.\x1b[0m"
+                );
+                return;
+            }
+            EditorOpen::NeedsExtension(label) => {
+                eprintln!(
+                    "  \x1b[33m⚠\x1b[0m {label} detected, but the lean-ctx extension isn't \
+                     installed — opening in your browser instead."
+                );
+                eprintln!(
+                    "  \x1b[2mInstall \"lean-ctx\" from the {label} Extensions view for a native tab.\x1b[0m"
+                );
+                Some(fallback.to_string())
+            }
+            EditorOpen::NoEditor => Some(fallback.to_string()),
+        }
+    } else {
+        open_mode
     };
     // GH #450: pin the XDG layout before serving, exactly like the daemon/server
     // start paths do. Without this the dashboard was the only writer that could
