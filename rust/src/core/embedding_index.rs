@@ -118,14 +118,24 @@ pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> Embe
             return EmbeddingBuildOutcome::Skipped;
         }
 
-        // Check model files exist before initializing ORT — `shared_engine()`
-        // loads the global ONNX Runtime environment which leaves behind C++
-        // static state; if model files are missing we can bail without touching
-        // ORT at all, avoiding unnecessary TLS-heavy teardown at exit.
+        // Bootstrap the model if it isn't on disk yet. `build_or_update` only
+        // runs for an explicit build request (`index build` / `build-full` /
+        // `build-semantic`), so a cold machine should download the model now
+        // rather than dead-end. `is_available()` is just a file check, so the
+        // earlier short-circuit on it meant the auto-download never started
+        // (#545). `ensure_downloaded()` is pure network/file IO and never
+        // initializes ORT, so the teardown-safety rationale for deferring the
+        // `shared_engine()` load still holds: on download failure we return
+        // without ever having touched the ONNX Runtime.
         if !crate::core::embeddings::EmbeddingEngine::is_available() {
-            let reason = "embedding model not downloaded — auto-download from HuggingFace attempted but failed (check network / logs)";
-            tracing::info!("[embedding_index] build_or_update skipped: {reason}");
-            return EmbeddingBuildOutcome::ModelNotAvailable(reason.to_string());
+            tracing::info!(
+                "[embedding_index] embedding model absent — downloading from HuggingFace"
+            );
+            if let Err(e) = crate::core::embeddings::EmbeddingEngine::ensure_downloaded() {
+                let reason = format!("embedding model auto-download from HuggingFace failed: {e}");
+                tracing::warn!("[embedding_index] build_or_update failed: {reason}");
+                return EmbeddingBuildOutcome::ModelNotAvailable(reason);
+            }
         }
 
         let Some(engine) = crate::core::embeddings::shared_engine() else {
