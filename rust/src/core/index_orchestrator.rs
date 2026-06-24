@@ -107,15 +107,6 @@ fn now_ms() -> u64 {
 
 /// Per-repo lock name for serializing the BM25 build across processes, mirroring
 /// the `graph-idx-<hash>` lock (see LOCK_ORDERING.md). The distinct `bm25-` vs
-/// `graph-` prefix keeps the graph and BM25 builds from serializing against each
-/// other while still preventing N processes from rebuilding either in parallel.
-fn bm25_index_lock_name(root: &Path) -> String {
-    format!(
-        "bm25-idx-{}",
-        &crate::core::index_namespace::namespace_hash(root)[..8]
-    )
-}
-
 fn start_component(c: &mut Component) {
     c.state = State::Building;
     c.started_ms = Some(now_ms());
@@ -876,20 +867,4 @@ mod tests {
         ensure_extra_roots_background(&primary_str, &extra);
     }
 
-    #[test]
-    fn bm25_index_lock_name_is_per_repo_and_distinct_from_graph() {
-        let a = bm25_index_lock_name(Path::new("/tmp/repo-a"));
-        let b = bm25_index_lock_name(Path::new("/tmp/repo-b"));
-        assert!(a.starts_with("bm25-idx-"), "unexpected lock name: {a}");
-        assert_ne!(a, b, "lock name must be per-repo");
-        // Stable for the same repo across calls.
-        assert_eq!(a, bm25_index_lock_name(Path::new("/tmp/repo-a")));
-        // Must NOT collide with the graph lock for the same repo, or the two
-        // builds would serialize against each other unnecessarily.
-        let graph = format!(
-            "graph-idx-{}",
-            &crate::core::index_namespace::namespace_hash(Path::new("/tmp/repo-a"))[..8]
-        );
-        assert_ne!(a, graph, "bm25 and graph locks must be independent");
-    }
 }
