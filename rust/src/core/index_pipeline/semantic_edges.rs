@@ -17,8 +17,8 @@ use crate::core::index_pipeline::semantic_lsh::{
 
 // ── Constants ──
 
-/// Random Indexing dimension (128 is sufficient for <50K symbols).
-pub const RI_DIM: usize = 768;
+/// Random Indexing dimension.
+pub const RI_DIM: usize = 256;
 
 /// Non-zero entries per sparse random vector (matches CBM_SEM_SPARSE_NNZE).
 pub const SPARSE_NNZE: usize = 8;
@@ -209,8 +209,7 @@ fn compute_similar_to(graph: &mut ProjectIndex) {
                 let file_a = file_list[i];
                 let syms_a = &file_symbols[file_a];
                 let mut local: Vec<(String, String, f32)> = Vec::new();
-                for j in (i + 1)..file_list.len() {
-                    let file_b = file_list[j];
+                for &file_b in file_list.iter().skip(i + 1) {
                     let syms_b = &file_symbols[file_b];
 
                     for (key_a, entry_a) in syms_a {
@@ -247,8 +246,7 @@ fn compute_similar_to(graph: &mut ProjectIndex) {
                 let file_a = file_list[i];
                 let syms_a = &file_symbols[file_a];
                 let mut local: Vec<(String, String, f32)> = Vec::new();
-                for j in (i + 1)..file_list.len() {
-                    let file_b = file_list[j];
+                for &file_b in file_list.iter().skip(i + 1) {
                     let syms_b = &file_symbols[file_b];
 
                     for (key_a, entry_a) in syms_a {
@@ -444,30 +442,6 @@ impl RiVector {
         let denom = self.norm() * other.norm() + EPSILON;
         dot / denom
     }
-
-    /// Iterate over non-zero (position, value) pairs.
-    pub(crate) fn components(&self) -> impl Iterator<Item = (usize, f32)> + '_ {
-        (0..self.nnz).map(|i| (self.positions[i], self.values[i]))
-    }
-
-    /// Dot product with a dense hyperplane vector.
-    /// plane is a slice of length RI_DIM.
-    pub(crate) fn hyperplane_dot(&self, plane: &[f32]) -> f32 {
-        let mut dot = 0.0;
-        for i in 0..self.nnz {
-            dot += self.values[i] * plane[self.positions[i]];
-        }
-        dot
-    }
-}
-
-/// Convert a sparse RiVector to a dense f32 slice for LSH signing.
-fn ri_to_dense(vec: &RiVector, dim: usize) -> Vec<f32> {
-    let mut dense = vec![0.0f32; dim];
-    for (pos, val) in vec.components() {
-        dense[pos] = val;
-    }
-    dense
 }
 
 /// Deterministic 64-bit hash from a string (used as RI seed).
@@ -540,8 +514,7 @@ fn compute_semantically_related(graph: &mut ProjectIndex) {
                 let syms_a = &file_symbols[file_a];
                 let mut local: HashMap<(String, String), f32> = HashMap::new();
 
-                for j in (i + 1)..file_list.len() {
-                    let file_b = file_list[j];
+                for &file_b in file_list.iter().skip(i + 1) {
                     let syms_b = &file_symbols[file_b];
 
                     for (key_a, entry_a) in syms_a {
@@ -620,10 +593,7 @@ fn compute_semantically_related(graph: &mut ProjectIndex) {
         // Build LSH signatures for each RiVector.
         let signatures: Vec<LshSignature> = eligible_items
             .iter()
-            .map(|(_, vec)| {
-                let dense = ri_to_dense(vec, RI_DIM);
-                lsh_config.sign(&dense)
-            })
+            .map(|(_, vec)| lsh_config.sign_sparse(&vec.positions, &vec.values, vec.nnz))
             .collect();
 
         // Build CandidateTable (sequential insert).
@@ -1331,31 +1301,6 @@ mod tests {
 
     // ── RiVector::components / hyperplane_dot ──
 
-    #[test]
-    fn test_ri_vector_components() {
-        let vec = RiVector::for_symbol("test_function_components");
-        let comps: Vec<(usize, f32)> = vec.components().collect();
-        assert_eq!(comps.len(), vec.nnz);
-        for (i, (pos, val)) in comps.iter().enumerate() {
-            assert_eq!(*pos, vec.positions[i]);
-            assert!((*val - vec.values[i]).abs() < 1e-6);
-        }
-    }
-
-    #[test]
-    fn test_ri_vector_hyperplane_dot() {
-        let vec = RiVector::for_symbol("test_hyperplane");
-        // Create a plane of all 0.5 values.
-        let plane = vec![0.5f32; RI_DIM];
-        let dot = vec.hyperplane_dot(&plane);
-        // Manual computation: sum over non-zero entries.
-        let mut expected = 0.0;
-        for i in 0..vec.nnz {
-            expected += vec.values[i] * plane[vec.positions[i]];
-        }
-        assert!((dot - expected).abs() < 1e-6);
-    }
-
     // ── compute_semantically_related LSH path ──
 
     fn build_large_graph(num_files: usize, syms_per_file: usize) -> ProjectIndex {
@@ -1436,6 +1381,435 @@ mod tests {
             assert_eq!(e1.to, e2.to);
             assert_eq!(e1.kind, e2.kind);
             assert!((e1.weight - e2.weight).abs() < 1e-6);
+        }
+    }
+
+    // ── Timing benchmarks (no criterion dependency) ──
+
+    #[test]
+    fn test_bruteforce_small_n() {
+        // ≤100 symbols → brute-force path (no LSH overhead).
+        // Just verify it runs; timing is logged for manual inspection.
+        let mut graph = build_large_graph(5, 20); // 100 symbols total
+        let start = std::time::Instant::now();
+        compute_semantically_related(&mut graph);
+        let elapsed = start.elapsed();
+        println!("brute-force (N=100): {elapsed:?}");
+    }
+
+    #[test]
+    fn test_lsh_speedup() {
+        // N=500 → LSH path (>100 eligible symbols).
+        // Assert generous completion bound (non-deterministic on CI).
+        let mut graph_500 = build_large_graph(10, 50); // 500 symbols
+        let start = std::time::Instant::now();
+        compute_semantically_related(&mut graph_500);
+        let elapsed_500 = start.elapsed();
+        println!("LSH (N=500): {elapsed_500:?}");
+        assert!(
+            elapsed_500.as_secs() < 5,
+            "LSH too slow for N=500: {elapsed_500:?}"
+        );
+
+        // N=1000 → LSH path, larger scale.
+        let mut graph_1k = build_large_graph(10, 100); // 1000 symbols
+        let start = std::time::Instant::now();
+        compute_semantically_related(&mut graph_1k);
+        let elapsed_1k = start.elapsed();
+        println!("LSH (N=1000): {elapsed_1k:?}");
+        assert!(
+            elapsed_1k.as_secs() < 10,
+            "LSH too slow for N=1000: {elapsed_1k:?}"
+        );
+    }
+
+    // ── LSH false-negative rate & determinism ──
+
+    use crate::core::prng::{splitmix64, splitmix64_f32};
+
+    /// Build a corpus with >100 symbols where exactly 100 file pairs have
+    /// MinHash Jaccard ≈ 0.66 between their symbols, plus 100 filler symbols
+    /// with disjoint minhash that create no edges (→ 300 total, forces LSH).
+    fn build_fnr_corpus() -> ProjectIndex {
+        let mut graph = ProjectIndex::new("/test");
+        // 100 matching file pairs, 1 symbol each → 200 symbols
+        for pair_idx in 0..100usize {
+            let file_a = format!("src/pair{pair_idx}_a.rs");
+            let file_b = format!("src/pair{pair_idx}_b.rs");
+            for file in [&file_a, &file_b] {
+                graph.files.insert(
+                    file.clone(),
+                    FileEntry {
+                        path: file.clone(),
+                        hash: String::new(),
+                        language: "rs".to_string(),
+                        line_count: 0,
+                        token_count: 0,
+                        exports: Vec::new(),
+                        summary: String::new(),
+                    },
+                );
+            }
+            // Base minhash signature for this pair
+            let base: Vec<u32> = (0..64)
+                .map(|i| splitmix64(pair_idx as u64 * 2000 + i as u64) as u32)
+                .collect();
+            // Variant: each position independently matches with prob ~0.66
+            let mut variant = base.clone();
+            for i in 0..64 {
+                let r = splitmix64_f32(pair_idx as u64 * 2000 + 1000 + i as u64);
+                if r > 0.66f32 {
+                    variant[i] = variant[i].wrapping_add(
+                        1 + (splitmix64(pair_idx as u64 * 2000 + 2000 + i as u64) as u32) % 9999,
+                    );
+                }
+            }
+            let sigs = [&base, &variant];
+            for (idx, file) in [&file_a, &file_b].iter().enumerate() {
+                let key = format!("{file}::sym");
+                graph.symbols.insert(
+                    key,
+                    SymbolEntry {
+                        file: (*file).clone(),
+                        name: "sym".to_string(),
+                        kind: "fn".to_string(),
+                        start_line: 1,
+                        end_line: 10,
+                        is_exported: false,
+                        minhash: sigs[idx].clone(),
+                    },
+                );
+            }
+        }
+        // 100 filler symbols with disjoint minhash → no edges with anything
+        for i in 0..100usize {
+            let file = format!("src/filler_{i}.rs");
+            graph.files.insert(
+                file.clone(),
+                FileEntry {
+                    path: file.clone(),
+                    hash: String::new(),
+                    language: "rs".to_string(),
+                    line_count: 0,
+                    token_count: 0,
+                    exports: Vec::new(),
+                    summary: String::new(),
+                },
+            );
+            let sig: Vec<u32> = (0..64)
+                .map(|j| splitmix64(9000 + i as u64 * 100 + j as u64) as u32)
+                .collect();
+            graph.symbols.insert(
+                format!("{file}::sym"),
+                SymbolEntry {
+                    file,
+                    name: "sym".to_string(),
+                    kind: "fn".to_string(),
+                    start_line: 1,
+                    end_line: 10,
+                    is_exported: false,
+                    minhash: sig,
+                },
+            );
+        }
+        graph
+    }
+
+    /// Brute-force SIMILAR_TO: enumerate all cross-file symbol pairs, compute
+    /// minhash_jaccard (or token jaccard as fallback), and return (from,to)
+    /// file pairs where max Jaccard ≥ SIMILAR_THRESHOLD.
+    fn brute_similar_edges(graph: &ProjectIndex) -> HashSet<(String, String)> {
+        let file_syms = group_symbols_by_file(&graph.symbols);
+        let mut files: Vec<&str> = file_syms.keys().map(String::as_str).collect();
+        files.sort_unstable();
+        let mut edges = HashSet::new();
+        for i in 0..files.len() {
+            let syms_a = &file_syms[files[i]];
+            for j in (i + 1)..files.len() {
+                let syms_b = &file_syms[files[j]];
+                let mut best = 0.0f32;
+                for (_key_a, entry_a) in syms_a {
+                    for (_key_b, entry_b) in syms_b {
+                        let sim = if entry_a.minhash.len() == 64 && entry_b.minhash.len() == 64 {
+                            minhash_jaccard(&entry_a.minhash, &entry_b.minhash)
+                        } else {
+                            let ta = tokenize_name(&entry_a.name);
+                            let tb = tokenize_name(&entry_b.name);
+                            if ta.is_empty() || tb.is_empty() {
+                                continue;
+                            }
+                            jaccard(&ta, &tb)
+                        };
+                        if sim > best {
+                            best = sim;
+                        }
+                        if (best - 1.0).abs() < f32::EPSILON {
+                            break;
+                        }
+                    }
+                    if (best - 1.0).abs() < f32::EPSILON {
+                        break;
+                    }
+                }
+                if best >= SIMILAR_THRESHOLD {
+                    edges.insert((files[i].to_string(), files[j].to_string()));
+                }
+            }
+        }
+        edges
+    }
+
+    /// Build corpus for semantically_related FNR test.
+    /// 200 eligible symbols in 20 files (10 pairs), each pair sharing tokens.
+    fn build_semantic_corpus() -> ProjectIndex {
+        let mut graph = ProjectIndex::new("/test");
+        let prefixes = [
+            "zaq_123", "qwe_456", "rty_789", "uio_012", "pas_345", "dfg_678", "hjk_901", "lzx_234",
+            "cvb_567", "nmq_890",
+        ];
+        let names_a = [
+            "data_import",
+            "data_transform",
+            "data_validate",
+            "data_process",
+            "data_merge",
+            "data_split",
+            "data_clean",
+            "data_normalize",
+            "data_aggregate",
+            "data_filter",
+        ];
+        let names_b = [
+            "data_export",
+            "data_serialize",
+            "data_check",
+            "data_route",
+            "data_join",
+            "data_partition",
+            "data_scrub",
+            "data_standardize",
+            "data_summarize",
+            "data_select",
+        ];
+        for prefix in &prefixes {
+            let file_a = format!("src/{prefix}_a.rs");
+            let file_b = format!("src/{prefix}_b.rs");
+            for file in [&file_a, &file_b] {
+                graph.files.insert(
+                    file.clone(),
+                    FileEntry {
+                        path: file.clone(),
+                        hash: String::new(),
+                        language: "rs".to_string(),
+                        line_count: 0,
+                        token_count: 0,
+                        exports: Vec::new(),
+                        summary: String::new(),
+                    },
+                );
+            }
+            // File A gets names_a symbols, file B gets names_b symbols
+            // Both share token "data" → high cosine
+            for sym_idx in 0..10 {
+                let name_a = format!("{}_{}", prefix, names_a[sym_idx]);
+                let key_a = format!("{file_a}::{name_a}");
+                graph.symbols.insert(
+                    key_a,
+                    SymbolEntry {
+                        file: file_a.clone(),
+                        name: name_a,
+                        kind: "fn".to_string(),
+                        start_line: 1,
+                        end_line: 10,
+                        is_exported: false,
+                        minhash: Vec::new(),
+                    },
+                );
+                let name_b = format!("{}_{}", prefix, names_b[sym_idx]);
+                let key_b = format!("{file_b}::{name_b}");
+                graph.symbols.insert(
+                    key_b,
+                    SymbolEntry {
+                        file: file_b.clone(),
+                        name: name_b,
+                        kind: "fn".to_string(),
+                        start_line: 1,
+                        end_line: 10,
+                        is_exported: false,
+                        minhash: Vec::new(),
+                    },
+                );
+            }
+        }
+        graph
+    }
+
+    /// Brute-force SEMANTICALLY_RELATED: enumerate all eligible cross-file
+    /// symbol pairs, compute cosine, return (from,to) file pairs where any
+    /// eligible pair has cosine > SEMANTIC_THRESHOLD.
+    fn brute_semantic_edges(graph: &ProjectIndex) -> HashSet<(String, String)> {
+        let file_syms = group_symbols_by_file(&graph.symbols);
+        let mut files: Vec<&str> = file_syms.keys().map(String::as_str).collect();
+        files.sort_unstable();
+        let mut edges = HashSet::new();
+        // Build RI vectors once
+        let mut ri_map: HashMap<String, RiVector> = HashMap::new();
+        for syms in file_syms.values() {
+            for (key, entry) in syms {
+                if is_ri_eligible(&entry.kind) {
+                    ri_map.insert(key.clone(), RiVector::for_symbol(&entry.name));
+                }
+            }
+        }
+        for i in 0..files.len() {
+            let syms_a = &file_syms[files[i]];
+            for j in (i + 1)..files.len() {
+                let syms_b = &file_syms[files[j]];
+                let mut best = 0.0f32;
+                for (key_a, entry_a) in syms_a {
+                    let Some(vec_a) = ri_map.get(key_a.as_str()) else {
+                        continue;
+                    };
+                    if (best - 1.0).abs() < f32::EPSILON {
+                        break;
+                    }
+                    for (key_b, entry_b) in syms_b {
+                        if entry_a.file == entry_b.file {
+                            continue;
+                        }
+                        let Some(vec_b) = ri_map.get(key_b.as_str()) else {
+                            continue;
+                        };
+                        let cos = vec_a.cosine(vec_b);
+                        if cos > best {
+                            best = cos;
+                        }
+                        if (best - 1.0).abs() < f32::EPSILON {
+                            break;
+                        }
+                    }
+                }
+                if best > SEMANTIC_THRESHOLD {
+                    edges.insert((files[i].to_string(), files[j].to_string()));
+                }
+            }
+        }
+        edges
+    }
+
+    #[test]
+    fn test_lsh_false_negative_rate_similar_to() {
+        let graph = build_fnr_corpus(); // 300 symbols → forces LSH path
+        // Run LSH path
+        let mut lsh_graph = graph.clone();
+        compute_similar_to(&mut lsh_graph);
+        let lsh_edges: HashSet<(String, String)> = lsh_graph
+            .edges
+            .iter()
+            .filter(|e| e.kind == "SIMILAR_TO")
+            .map(|e| (e.from.clone(), e.to.clone()))
+            .collect();
+        // Run brute-force reference
+        let bf_edges = brute_similar_edges(&graph);
+        let bf_count = bf_edges.len();
+        let lsh_found = lsh_edges.len();
+        // Zero false positives: every LSH edge exists in brute-force set
+        for (from, to) in &lsh_edges {
+            assert!(
+                bf_edges.contains(&(from.clone(), to.clone())),
+                "false positive: LSH added edge {from} → {to} not in brute-force",
+            );
+        }
+        // Statistical validity
+        assert!(
+            bf_count > 50,
+            "need >50 brute-force pairs for validity, got {bf_count}"
+        );
+        // False-negative rate ≤ 5%
+        let missed = bf_count.saturating_sub(lsh_found);
+        let fnr = missed as f32 / bf_count as f32;
+        assert!(
+            fnr <= 0.05,
+            "SIMILAR_TO LSH FNR = {:.2}% ({}/{}) exceeds 5%",
+            fnr * 100.0,
+            missed,
+            bf_count,
+        );
+        eprintln!(
+            "SIMILAR_TO: LSH found {lsh_found}/{bf_count} pairs (FNR {:.2}%)",
+            fnr * 100.0,
+        );
+    }
+
+    #[test]
+    fn test_lsh_false_negative_rate_semantic() {
+        let graph = build_semantic_corpus(); // 200 eligible → LSH path
+        // Run LSH path
+        let mut lsh_graph = graph.clone();
+        compute_semantically_related(&mut lsh_graph);
+        let lsh_edges: HashSet<(String, String)> = lsh_graph
+            .edges
+            .iter()
+            .filter(|e| e.kind == "SEMANTICALLY_RELATED")
+            .map(|e| (e.from.clone(), e.to.clone()))
+            .collect();
+        // Run brute-force reference
+        let bf_edges = brute_semantic_edges(&graph);
+        let bf_count = bf_edges.len();
+        let lsh_found = lsh_edges.len();
+        // Zero false positives
+        for (from, to) in &lsh_edges {
+            assert!(
+                bf_edges.contains(&(from.clone(), to.clone())),
+                "false positive: LSH added semantic edge {from} → {to} not in brute-force",
+            );
+        }
+        // Statistical validity
+        assert!(
+            bf_count > 5,
+            "need >5 brute-force pairs for validity, got {bf_count}"
+        );
+        // False-negative rate ≤ 5%
+        let missed = bf_count.saturating_sub(lsh_found);
+        let fnr = missed as f32 / bf_count as f32;
+        assert!(
+            fnr <= 0.05,
+            "SEMANTICALLY_RELATED LSH FNR = {:.2}% ({}/{}) exceeds 5%",
+            fnr * 100.0,
+            missed,
+            bf_count,
+        );
+        eprintln!(
+            "SEMANTICALLY_RELATED: LSH found {lsh_found}/{bf_count} pairs (FNR {:.2}%)",
+            fnr * 100.0,
+        );
+    }
+
+    #[test]
+    fn test_lsh_determinism() {
+        let graph = build_fnr_corpus();
+        // Run post-passes twice on identical graphs
+        let mut g1 = graph.clone();
+        run_post_passes(&mut g1, IndexingMode::Full);
+        let mut g2 = graph.clone();
+        run_post_passes(&mut g2, IndexingMode::Full);
+        assert_eq!(
+            g1.edges.len(),
+            g2.edges.len(),
+            "determinism: edge count mismatch ({} vs {})",
+            g1.edges.len(),
+            g2.edges.len(),
+        );
+        for (e1, e2) in g1.edges.iter().zip(g2.edges.iter()) {
+            assert_eq!(e1.from, e2.from, "edge from mismatch");
+            assert_eq!(e1.to, e2.to, "edge to mismatch");
+            assert_eq!(e1.kind, e2.kind, "edge kind mismatch");
+            assert!(
+                (e1.weight - e2.weight).abs() < 1e-6,
+                "edge weight mismatch: {} vs {}",
+                e1.weight,
+                e2.weight,
+            );
         }
     }
 }

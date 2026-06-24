@@ -86,8 +86,29 @@ impl LshConfig {
         for plane_idx in 0..total_planes {
             let mut dot = 0.0f32;
             let base = plane_idx * self.dim;
-            for d in 0..self.dim {
-                dot += vec[d] * self.planes[base + d];
+            for (d, &v) in vec.iter().enumerate() {
+                dot += v * self.planes[base + d];
+            }
+            if dot >= 0.0 {
+                bits |= 1u64 << plane_idx;
+            }
+        }
+        Signature(bits)
+    }
+
+    /// Compute LSH signature for a sparse vector (position, value pairs).
+    ///
+    /// Only iterates over non-zero entries, making this O(nnz × n_planes)
+    /// instead of O(dim × n_planes). For RiVector with 8 non-zeros and
+    /// 64 planes, this is 96× fewer multiply-adds vs. `sign({dense})`.
+    pub fn sign_sparse(&self, positions: &[usize], values: &[f32], nnz: usize) -> Signature {
+        let mut bits: u64 = 0;
+        let total_planes = self.bands * self.rows;
+        for plane_idx in 0..total_planes {
+            let mut dot = 0.0f32;
+            let base = plane_idx * self.dim;
+            for i in 0..nnz {
+                dot += values[i] * self.planes[base + positions[i]];
             }
             if dot >= 0.0 {
                 bits |= 1u64 << plane_idx;
@@ -270,7 +291,76 @@ mod tests {
         let err = LshError::InvalidParams {
             reason: "test error",
         };
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("test error"));
+    }
+
+    #[test]
+    fn candidate_table_max_limit() {
+        let lsh = LshConfig::new(8, 2, 2).unwrap();
+        let vec = vec![0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7, -0.8];
+        let sig = lsh.sign(&vec);
+        let mut table = CandidateTable::new(lsh.bands);
+        // Insert 3 different indices in the same band+bucket
+        table.insert(0, lsh.band_index(&sig, 0), 10);
+        table.insert(0, lsh.band_index(&sig, 0), 20);
+        table.insert(0, lsh.band_index(&sig, 0), 30);
+        // Cap at 2 — should return only 2 results
+        let candidates = table.candidates(&lsh, &sig, 2);
+        assert_eq!(candidates.len(), 2);
+    }
+
+    #[test]
+    fn candidate_table_empty_when_no_match() {
+        let lsh = LshConfig::new(8, 2, 2).unwrap();
+        let sig_a = lsh.sign(&[0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7, -0.8]);
+        let sig_b = lsh.sign(&[-0.1, 0.2, -0.3, 0.4, -0.5, 0.6, -0.7, 0.8]);
+        let mut table = CandidateTable::new(lsh.bands);
+        // Insert sig_a but query with sig_b → no common bucket
+        table.insert(0, lsh.band_index(&sig_a, 0), 42);
+        let candidates = table.candidates(&lsh, &sig_b, 100);
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "index out of bounds")]
+    fn candidate_table_new_zero_bands_panics() {
+        // CandidateTable with 0 bands panics because candidates() iterates
+        // `0..lsh.bands` and indexes into self.bands[band] without bounds check.
+        let lsh = LshConfig::new(8, 2, 2).unwrap();
+        let sig = lsh.sign(&[0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7, -0.8]);
+        let table = CandidateTable::new(0);
+        table.candidates(&lsh, &sig, 100);
+    }
+
+    #[test]
+    fn signature_hash_in_set() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(Signature(1));
+        set.insert(Signature(2));
+        set.insert(Signature(1)); // duplicate
+        assert_eq!(set.len(), 2);
+        assert!(set.contains(&Signature(1)));
+        assert!(set.contains(&Signature(2)));
+    }
+
+    #[test]
+    fn sign_different_inputs_different_signatures() {
+        let cfg = LshConfig::new(8, 2, 2).unwrap();
+        let sig_a = cfg.sign(&[0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7, -0.8]);
+        let sig_b = cfg.sign(&[-0.1, 0.2, -0.3, 0.4, -0.5, 0.6, -0.7, 0.8]);
+        // Different inputs should produce different signatures
+        // (vanishingly unlikely to collide with random hyperplanes)
+        assert_ne!(sig_a, sig_b);
+        // Both should be deterministic
+        assert_eq!(
+            sig_a,
+            cfg.sign(&[0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7, -0.8])
+        );
+        assert_eq!(
+            sig_b,
+            cfg.sign(&[-0.1, 0.2, -0.3, 0.4, -0.5, 0.6, -0.7, 0.8])
+        );
     }
 }
