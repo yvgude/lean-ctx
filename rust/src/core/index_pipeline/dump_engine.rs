@@ -53,9 +53,7 @@ impl DumpEngine {
     ///
     /// Delegates to [`BM25Index::save`] which uses the same tmp→rename pattern.
     pub fn dump_bm25_index(&self, bm25: &BM25Index) -> Result<()> {
-        let _outcome = bm25
-            .save(&self.project_root)
-            .context("BM25 save failed")?;
+        let _outcome = bm25.save(&self.project_root).context("BM25 save failed")?;
         Ok(())
     }
 
@@ -119,9 +117,10 @@ impl DumpEngine {
         for name in &artifacts {
             let path = dir.join(name);
             if path.exists()
-                && let Err(e) = std::fs::remove_file(&path) {
-                    tracing::warn!("[dump_engine] failed to remove {}: {e}", path.display());
-                }
+                && let Err(e) = std::fs::remove_file(&path)
+            {
+                tracing::warn!("[dump_engine] failed to remove {}: {e}", path.display());
+            }
         }
         cleanup_tmp_files(&dir);
         Ok(())
@@ -220,9 +219,7 @@ fn open_file_metadata_store(root: &Path) -> Result<FileMetadataStore> {
 
     // Validate the store is readable
     if let Err(e) = store.load_all() {
-        tracing::warn!(
-            "[dump_engine] file_metadata store integrity check failed: {e}"
-        );
+        tracing::warn!("[dump_engine] file_metadata store integrity check failed: {e}");
     }
 
     Ok(store)
@@ -253,18 +250,16 @@ mod tests {
     }
 
     fn sample_bm25() -> BM25Index {
-        BM25Index::from_chunks_for_test(vec![
-            crate::core::bm25_index::CodeChunk {
-                file_path: "src/main.rs".to_string(),
-                symbol_name: "run".to_string(),
-                kind: crate::core::bm25_index::ChunkKind::Function,
-                start_line: 1,
-                end_line: 10,
-                content: "fn run() { println!(\"hello\"); }".to_string(),
-                tokens: vec![],
-                token_count: 6,
-            },
-        ])
+        BM25Index::from_chunks_for_test(vec![crate::core::bm25_index::CodeChunk {
+            file_path: "src/main.rs".to_string(),
+            symbol_name: "run".to_string(),
+            kind: crate::core::bm25_index::ChunkKind::Function,
+            start_line: 1,
+            end_line: 10,
+            content: "fn run() { println!(\"hello\"); }".to_string(),
+            tokens: vec![],
+            token_count: 6,
+        }])
     }
 
     #[test]
@@ -369,8 +364,7 @@ mod tests {
         engine.dump_graph_index(&empty_graph).unwrap();
         engine.dump_bm25_index(&empty_bm25).unwrap();
 
-        let (graph, bm25, _store) =
-            DumpEngine::load_with_integrity_check(root.path()).unwrap();
+        let (graph, bm25, _store) = DumpEngine::load_with_integrity_check(root.path()).unwrap();
 
         let g = graph.expect("empty graph should load");
         assert_eq!(g.file_count(), 0);
@@ -384,8 +378,7 @@ mod tests {
         let _iso = isolated_data_dir();
         let root = tempfile::tempdir().unwrap();
 
-        let (graph, bm25, _store) =
-            DumpEngine::load_with_integrity_check(root.path()).unwrap();
+        let (graph, bm25, _store) = DumpEngine::load_with_integrity_check(root.path()).unwrap();
 
         assert!(graph.is_none(), "no graph artifact should return None");
         assert!(bm25.is_none(), "no bm25 artifact should return None");
@@ -408,13 +401,15 @@ mod tests {
 
         let store = open_file_metadata_store(root.path()).unwrap();
         store
-            .upsert(&crate::core::index_pipeline::file_metadata_store::FileMetadata {
-                rel_path: "src/test.rs".to_string(),
-                mtime_ns: 1_000_000_000,
-                size_bytes: 100,
-                content_hash: "abc".to_string(),
-                mode_mask: 0x01,
-            })
+            .upsert(
+                &crate::core::index_pipeline::file_metadata_store::FileMetadata {
+                    rel_path: "src/test.rs".to_string(),
+                    mtime_ns: 1_000_000_000,
+                    size_bytes: 100,
+                    content_hash: "abc".to_string(),
+                    mode_mask: 0x01,
+                },
+            )
             .unwrap();
 
         let engine = DumpEngine::new(root.path().to_path_buf());
@@ -433,9 +428,7 @@ mod tests {
 
         // Open the store to create graph.db
         let _store = open_file_metadata_store(root.path()).unwrap();
-        let graph_dir = crate::core::property_graph::graph_dir(
-            &root.path().to_string_lossy(),
-        );
+        let graph_dir = crate::core::property_graph::graph_dir(&root.path().to_string_lossy());
         let db_path = graph_dir.join("graph.db");
         assert!(
             db_path.exists(),
@@ -449,9 +442,6 @@ mod tests {
         engine.purge_all().unwrap();
 
         // Property graph DB must survive
-        assert!(
-            db_path.exists(),
-            "purge_all must not delete graph.db"
-        );
+        assert!(db_path.exists(), "purge_all must not delete graph.db");
     }
 }

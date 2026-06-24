@@ -94,7 +94,7 @@ fn try_fts_prefilter(
         .iter()
         .map(|t| {
             let cleaned: String = t.chars().filter(|c| c.is_alphanumeric()).collect();
-            format!("\"{}\"", cleaned)
+            format!("\"{cleaned}\"")
         })
         .collect::<Vec<_>>()
         .join(" AND ");
@@ -112,19 +112,14 @@ fn try_fts_prefilter(
     let paths: Vec<PathBuf> = stmt
         .query_map(rusqlite::params![query], |row| row.get::<_, String>(0))
         .ok()?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|rel_path| {
-            include_patterns.is_empty()
-                || include_patterns.iter().any(|p| p.matches(rel_path))
+            include_patterns.is_empty() || include_patterns.iter().any(|p| p.matches(rel_path))
         })
         .map(|rel_path| root.join(&rel_path))
         .collect();
 
-    if paths.is_empty() {
-        None
-    } else {
-        Some(paths)
-    }
+    if paths.is_empty() { None } else { Some(paths) }
 }
 
 /// Searches files for a regex pattern with compressed output and monorepo scope hints.
@@ -188,9 +183,7 @@ pub fn handle(
     // extracted from the regex pattern and ANDed together in a MATCH query.
     // Falls back to the directory walk when the graph DB is unavailable or
     // the pattern has no indexable tokens (too short, all special chars).
-    let used_index = if let Some(candidates) =
-        try_fts_prefilter(pattern, root, &include_patterns)
-    {
+    let used_index = if let Some(candidates) = try_fts_prefilter(pattern, root, &include_patterns) {
         files = candidates;
         true
     } else {

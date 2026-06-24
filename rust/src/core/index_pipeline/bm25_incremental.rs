@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use crate::core::bm25_index::{extract_chunks, BM25Index, CodeChunk};
+use crate::core::bm25_index::{BM25Index, CodeChunk, extract_chunks};
 use crate::core::index_pipeline::incremental::FileStatus;
 
 /// Incrementally builds a `BM25Index` from a previous index and a set of file
@@ -79,15 +79,16 @@ impl Bm25IncrementalBuilder {
             FileStatus::Changed | FileStatus::New => {
                 // Extract fresh chunks from content
                 if let Some(content) = content
-                    && !content.is_empty() {
-                        let mut chunks = extract_chunks(rel, content);
-                        chunks.sort_by(|a, b| {
-                            a.start_line
-                                .cmp(&b.start_line)
-                                .then_with(|| a.end_line.cmp(&b.end_line))
-                        });
-                        self.chunks.extend(chunks);
-                    }
+                    && !content.is_empty()
+                {
+                    let mut chunks = extract_chunks(rel, content);
+                    chunks.sort_by(|a, b| {
+                        a.start_line
+                            .cmp(&b.start_line)
+                            .then_with(|| a.end_line.cmp(&b.end_line))
+                    });
+                    self.chunks.extend(chunks);
+                }
             }
             FileStatus::Deleted => {
                 // Skip — previous chunks already removed via HashMap::remove above
@@ -220,7 +221,13 @@ mod tests {
 
     #[test]
     fn deleted_file_absent_from_output() {
-        let chunks = vec![make_chunk("gone.rs", "deprecated", 1, 3, "pub fn deprecated() {}")];
+        let chunks = vec![make_chunk(
+            "gone.rs",
+            "deprecated",
+            1,
+            3,
+            "pub fn deprecated() {}",
+        )];
         let prev = build_test_index(chunks);
 
         let mut builder = Bm25IncrementalBuilder::from_previous(&prev);
@@ -284,8 +291,16 @@ mod tests {
         let index = builder.finalize();
         assert_eq!(index.chunks.len(), 2);
 
-        let a_chunks: Vec<&CodeChunk> = index.chunks.iter().filter(|c| c.file_path == "a.rs").collect();
-        let b_chunks: Vec<&CodeChunk> = index.chunks.iter().filter(|c| c.file_path == "b.rs").collect();
+        let a_chunks: Vec<&CodeChunk> = index
+            .chunks
+            .iter()
+            .filter(|c| c.file_path == "a.rs")
+            .collect();
+        let b_chunks: Vec<&CodeChunk> = index
+            .chunks
+            .iter()
+            .filter(|c| c.file_path == "b.rs")
+            .collect();
         assert_eq!(a_chunks.len(), 1);
         assert_eq!(b_chunks.len(), 1);
     }
@@ -313,7 +328,11 @@ mod tests {
 
         // Only one file, chunks should be sorted by start_line
         let index = builder.finalize();
-        let m_chunks: Vec<&CodeChunk> = index.chunks.iter().filter(|c| c.file_path == "m.rs").collect();
+        let m_chunks: Vec<&CodeChunk> = index
+            .chunks
+            .iter()
+            .filter(|c| c.file_path == "m.rs")
+            .collect();
         // Should be 2 chunks sorted by start_line
         assert_eq!(m_chunks.len(), 2);
         // a_first has start_line=1, z_last has start_line=50
@@ -323,7 +342,13 @@ mod tests {
 
     #[test]
     fn mode_skipped_keeps_previous_chunks() {
-        let chunks = vec![make_chunk("a.rs", "mode_shared", 1, 3, "pub fn mode_shared() {}")];
+        let chunks = vec![make_chunk(
+            "a.rs",
+            "mode_shared",
+            1,
+            3,
+            "pub fn mode_shared() {}",
+        )];
         let prev = build_test_index(chunks);
 
         let mut builder = Bm25IncrementalBuilder::from_previous(&prev);

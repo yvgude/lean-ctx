@@ -140,14 +140,12 @@ mod tests {
     }
 
     /// Run sequential extraction for a reference result.
-    fn extract_sequential(
-        entries: &HashMap<String, ContentEntry>,
-    ) -> (Vec<(String, Vec<Signature>)>, Vec<(String, Vec<CodeChunk>)>) {
+    fn extract_sequential(entries: &HashMap<String, ContentEntry>) -> ExtractionOutput {
         let mut sorted: Vec<(&String, &ContentEntry)> = entries.iter().collect();
         sorted.sort_by(|a, b| a.0.cmp(b.0));
 
-        let mut sigs = Vec::with_capacity(sorted.len());
-        let mut chunks = Vec::with_capacity(sorted.len());
+        let mut graph_sigs = Vec::with_capacity(sorted.len());
+        let mut bm25_chunks = Vec::with_capacity(sorted.len());
 
         for (path, entry) in sorted {
             let ext = std::path::Path::new(path)
@@ -156,11 +154,14 @@ mod tests {
                 .unwrap_or("");
             let s = crate::core::signatures::extract_signatures(&entry.content, ext);
             let c = crate::core::bm25_index::extract_chunks(path, &entry.content);
-            sigs.push((path.clone(), s));
-            chunks.push((path.clone(), c));
+            graph_sigs.push((path.clone(), s));
+            bm25_chunks.push((path.clone(), c));
         }
 
-        (sigs, chunks)
+        ExtractionOutput {
+            graph_sigs,
+            bm25_chunks,
+        }
     }
 
     // ── tests ────────────────────────────────────────────────────────────
@@ -169,9 +170,7 @@ mod tests {
     fn empty_entries_returns_empty_output() {
         let extractor = ParallelExtractor::new(4);
         let entries = HashMap::new();
-        let output = extractor
-            .extract_all(&entries, IndexingMode::Full)
-            .unwrap();
+        let output = extractor.extract_all(&entries, IndexingMode::Full).unwrap();
         assert!(output.graph_sigs.is_empty());
         assert!(output.bm25_chunks.is_empty());
     }
@@ -184,17 +183,12 @@ mod tests {
             "test.rs".to_string(),
             make_entry("pub fn hello() -> bool { true }"),
         );
-        let output = extractor
-            .extract_all(&entries, IndexingMode::Full)
-            .unwrap();
+        let output = extractor.extract_all(&entries, IndexingMode::Full).unwrap();
 
         assert_eq!(output.graph_sigs.len(), 1);
         assert_eq!(output.graph_sigs[0].0, "test.rs");
         assert!(
-            output.graph_sigs[0]
-                .1
-                .iter()
-                .any(|s| s.name == "hello"),
+            output.graph_sigs[0].1.iter().any(|s| s.name == "hello"),
             "expected 'hello' signature in graph_sigs"
         );
 
@@ -214,9 +208,7 @@ mod tests {
         entries.insert("b.rs".to_string(), make_entry("fn b() {}"));
         entries.insert("c.rs".to_string(), make_entry("fn c() {}"));
 
-        let output = extractor
-            .extract_all(&entries, IndexingMode::Full)
-            .unwrap();
+        let output = extractor.extract_all(&entries, IndexingMode::Full).unwrap();
 
         assert_eq!(output.graph_sigs.len(), 3);
         assert_eq!(output.bm25_chunks.len(), 3);
@@ -235,9 +227,7 @@ mod tests {
         entries.insert("a.rs".to_string(), make_entry("fn a() {}"));
         entries.insert("m.rs".to_string(), make_entry("fn m() {}"));
 
-        let output = extractor
-            .extract_all(&entries, IndexingMode::Full)
-            .unwrap();
+        let output = extractor.extract_all(&entries, IndexingMode::Full).unwrap();
 
         let paths: Vec<&str> = output.graph_sigs.iter().map(|(p, _)| p.as_str()).collect();
         assert_eq!(paths, vec!["a.rs", "m.rs", "z.rs"]);
@@ -256,14 +246,12 @@ mod tests {
             make_entry("pub fn helper() -> u32 { 42 }"),
         );
 
-        let output = extractor
-            .extract_all(&entries, IndexingMode::Full)
-            .unwrap();
-        let (seq_sigs, seq_chunks) = extract_sequential(&entries);
+        let output = extractor.extract_all(&entries, IndexingMode::Full).unwrap();
+        let seq = extract_sequential(&entries);
 
         // Compare graph signatures per-file: same number of sigs per path.
-        assert_eq!(output.graph_sigs.len(), seq_sigs.len());
-        for ((p1, s1), (p2, s2)) in output.graph_sigs.iter().zip(seq_sigs.iter()) {
+        assert_eq!(output.graph_sigs.len(), seq.graph_sigs.len());
+        for ((p1, s1), (p2, s2)) in output.graph_sigs.iter().zip(seq.graph_sigs.iter()) {
             assert_eq!(p1, p2, "path mismatch");
             assert_eq!(s1.len(), s2.len(), "signature count mismatch for {p1}");
             // Signature names must match (in order since output is sorted).
@@ -273,8 +261,8 @@ mod tests {
         }
 
         // Compare BM25 chunks per-file.
-        assert_eq!(output.bm25_chunks.len(), seq_chunks.len());
-        for ((p1, c1), (p2, c2)) in output.bm25_chunks.iter().zip(seq_chunks.iter()) {
+        assert_eq!(output.bm25_chunks.len(), seq.bm25_chunks.len());
+        for ((p1, c1), (p2, c2)) in output.bm25_chunks.iter().zip(seq.bm25_chunks.iter()) {
             assert_eq!(p1, p2, "path mismatch");
             assert_eq!(c1.len(), c2.len(), "chunk count mismatch for {p1}");
         }
@@ -308,9 +296,7 @@ mod tests {
             "script.py".to_string(),
             make_entry("def calculate(x, y):\n    return x + y\n\nclass Worker:\n    pass"),
         );
-        let output = extractor
-            .extract_all(&entries, IndexingMode::Full)
-            .unwrap();
+        let output = extractor.extract_all(&entries, IndexingMode::Full).unwrap();
 
         assert_eq!(output.graph_sigs.len(), 1);
         let sigs = &output.graph_sigs[0].1;
@@ -332,9 +318,7 @@ mod tests {
             "app.ts".to_string(),
             make_entry("export function greet(name: string): string {\n  return `Hello ${name}`;\n}\n\nexport class Greeter {\n  greet(name: string) { return greet(name); }\n}"),
         );
-        let output = extractor
-            .extract_all(&entries, IndexingMode::Full)
-            .unwrap();
+        let output = extractor.extract_all(&entries, IndexingMode::Full).unwrap();
 
         assert_eq!(output.graph_sigs.len(), 1);
         let sigs = &output.graph_sigs[0].1;
@@ -356,17 +340,10 @@ mod tests {
             "foo.rs".to_string(),
             make_entry("pub struct Foo;\nimpl Foo {\n  pub fn bar() -> u32 { 0 }\n}"),
         );
-        entries.insert(
-            "baz.rs".to_string(),
-            make_entry("fn baz() {}\nfn qux() {}"),
-        );
+        entries.insert("baz.rs".to_string(), make_entry("fn baz() {}\nfn qux() {}"));
 
-        let out1 = extractor
-            .extract_all(&entries, IndexingMode::Full)
-            .unwrap();
-        let out2 = extractor
-            .extract_all(&entries, IndexingMode::Full)
-            .unwrap();
+        let out1 = extractor.extract_all(&entries, IndexingMode::Full).unwrap();
+        let out2 = extractor.extract_all(&entries, IndexingMode::Full).unwrap();
 
         // Same number of results (order is deterministic by sorting).
         assert_eq!(out1.graph_sigs.len(), out2.graph_sigs.len());

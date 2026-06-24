@@ -67,11 +67,10 @@ fn handle_parity(root: &str, fmt: OutputFormat) -> String {
     // invariant. Loading the persisted index would be circular since #696 C4
     // (it is itself materialized from the PG), yielding a meaningless trivially
     // lossless result, so always rescan to keep this a real proof.
-    let handle = crate::core::index_pipeline::pipeline::IndexPipeline::new(
-        std::path::PathBuf::from(root),
-    )
-    .build()
-    .expect("pipeline build failed");
+    let handle =
+        crate::core::index_pipeline::pipeline::IndexPipeline::new(std::path::PathBuf::from(root))
+            .build()
+            .expect("pipeline build failed");
     let (index, _) = handle.run_and_load().expect("pipeline run failed");
 
     let report = match crate::core::graph_parity::compare(&index) {

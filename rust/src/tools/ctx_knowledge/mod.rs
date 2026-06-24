@@ -1,10 +1,10 @@
 use chrono::Utc;
 
+#[cfg(feature = "embeddings")]
+use crate::core::embeddings::EmbeddingEngine;
 use crate::core::knowledge::ProjectKnowledge;
 use crate::core::memory_policy::MemoryPolicy;
 use crate::core::session::SessionState;
-#[cfg(feature = "embeddings")]
-use crate::core::embeddings::EmbeddingEngine;
 #[cfg(feature = "embeddings")]
 pub(crate) mod embeddings;
 #[cfg(feature = "embeddings")]

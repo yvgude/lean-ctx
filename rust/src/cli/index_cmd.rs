@@ -67,7 +67,10 @@ pub(crate) fn cmd_index(args: &[String]) {
                         report.files_changed,
                         report.files_deleted
                     );
-                    eprintln!("  graph:        {} nodes, {} edges", report.nodes, report.edges);
+                    eprintln!(
+                        "  graph:        {} nodes, {} edges",
+                        report.nodes, report.edges
+                    );
                     eprintln!("  BM25 chunks:  {}", report.chunks);
                     eprintln!("  elapsed:      {} ms", report.elapsed_ms);
                     eprintln!("  incremental:  {}", report.is_incremental);
@@ -103,7 +106,9 @@ pub(crate) fn cmd_index(args: &[String]) {
 fn resolve_mode(args: &[String]) -> IndexingMode {
     let mut iter = args.iter().peekable();
     while let Some(arg) = iter.next() {
-        if (arg == "--mode" || arg == "-m") && let Some(val) = iter.next() {
+        if (arg == "--mode" || arg == "-m")
+            && let Some(val) = iter.next()
+        {
             if let Some(mode) = IndexingMode::parse(val) {
                 return mode;
             }
@@ -229,7 +234,14 @@ fn print_human_status(project_root: &str) {
 
     println!("  Project:        {project_root}");
     println!("  Index Mode:     {}", mode.label());
-    println!("  Incremental:    {}", if incremental_ready { "ready (indices exist)" } else { "no (full rebuild needed)" });
+    println!(
+        "  Incremental:    {}",
+        if incremental_ready {
+            "ready (indices exist)"
+        } else {
+            "no (full rebuild needed)"
+        }
+    );
     println!(
         "  Graph Index:    {}",
         format_disk_line(&disk.graph_index, "files")

@@ -152,10 +152,7 @@ pub fn discover_files(root: &Path, config: &DiscoveryConfig) -> Result<Vec<Disco
         }
 
         // File size gate.
-        let meta = match path.metadata() {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
+        let Ok(meta) = path.metadata() else { continue };
         if meta.len() > config.max_file_size {
             continue;
         }
@@ -660,7 +657,7 @@ mod tests {
 
         let paths: Vec<&str> = files.iter().map(|f| f.rel_path.as_str()).collect();
         let mut sorted = paths.clone();
-        sorted.sort();
+        sorted.sort_unstable();
         assert_eq!(paths, sorted, "files must be sorted by rel_path");
     }
 }

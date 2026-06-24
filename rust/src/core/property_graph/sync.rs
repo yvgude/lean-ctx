@@ -90,9 +90,9 @@ fn json_str(s: &str) -> String {
 /// "__rust_begin_short_backtrace" → "__rust_begin_short_backtrace" (underscore-separated stays as-is)
 fn split_camel_case(name: &str) -> String {
     let mut result = String::with_capacity(name.len() + 8);
-    let mut chars = name.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c.is_uppercase() && result.chars().last().map_or(false, |p| p.is_lowercase()) {
+    let chars = name.chars().peekable();
+    for c in chars {
+        if c.is_uppercase() && result.chars().last().is_some_and(char::is_lowercase) {
             result.push(' ');
         }
         result.push(c);

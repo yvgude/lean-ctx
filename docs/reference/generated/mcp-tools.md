@@ -305,9 +305,9 @@ Parameters: `action`, `depth`, `format`, `path`, `root`
 ## `ctx_index`
 
 Index orchestration — manage code graph index.
-WORKFLOW: status → build → build-full (escalate if stale).
-ANTI-PATTERN: build-full is expensive — use incremental build first.
-Actions: status (state), build (incremental), build-full (rebuild).
+Use: status to check state, build to (re)build indexes.
+For a full rebuild: lean-ctx index build --mode full.
+Actions: status (state), build (incremental rebuild).
 
 Parameters: `action`*, `project_root`
 
@@ -575,11 +575,11 @@ Parameters: `ignore_gitignore`, `include`, `max_results`, `path`, `paths`, `patt
 
 ## `ctx_semantic_search`
 
-Search code by MEANING (BM25+embeddings) — use when you know the concept but not the exact
+Search code by MEANING (BM25) — use when you know the concept but not the exact
 symbol name. query='user auth' finds relevant code even with no keyword match.
 Different from ctx_search (regex): use ctx_search for exact patterns, this for
 fuzzy/conceptual. For understanding code end-to-end, use ctx_compose FIRST.
-find_related(file_path, line) for context neighbors. mode=bm25|dense|hybrid.
+find_related(file_path, line) for context neighbors.
 
 Parameters: `action`, `file_path`, `languages`, `line`, `mode`, `path`, `path_glob`, `query`*, `top_k`
 

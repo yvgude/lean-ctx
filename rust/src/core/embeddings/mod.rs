@@ -17,9 +17,9 @@ pub mod tokenizer;
 
 use std::path::{Path, PathBuf};
 
-use model_registry::{EmbeddingModel, ModelConfig};
 #[cfg(feature = "embeddings")]
 use model_registry::VocabSource;
+use model_registry::{EmbeddingModel, ModelConfig};
 use tokenizer::{TokenizedInput, WordPieceTokenizer};
 
 #[cfg(feature = "embeddings")]

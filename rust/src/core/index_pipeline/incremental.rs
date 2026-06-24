@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 
 use crate::core::bm25_index::BM25Index;
 use crate::core::config::IndexingMode;
-use crate::core::graph_index::{build_edges_cached, ProjectIndex};
+use crate::core::graph_index::{ProjectIndex, build_edges_cached};
 use crate::core::index_pipeline::bm25_incremental::Bm25IncrementalBuilder;
 use crate::core::index_pipeline::content_pipeline::ContentPipeline;
 use crate::core::index_pipeline::discovery::DiscoveredFile;
@@ -150,10 +150,9 @@ pub fn classify_files(
     // so the additional `all_stored.contains_key` check is a safety net for
     // internal consistency.
     for path in stored.keys() {
-        if !discovered_set.contains(path.as_str())
-            && all_stored.contains_key(path) {
-                result.deleted.push(path.clone());
-            }
+        if !discovered_set.contains(path.as_str()) && all_stored.contains_key(path) {
+            result.deleted.push(path.clone());
+        }
     }
 
     // ── Step 3: Detect mode-skipped files ──────────────────────────────────
@@ -161,8 +160,11 @@ pub fn classify_files(
     // Files that were indexed by a different mode (present in `all_stored`
     // but NOT in `stored`) and are not found by the current discovery pass.
     // Their metadata is preserved so graph nodes are not dropped.
-    let deleted_set: std::collections::HashSet<&str> =
-        result.deleted.iter().map(std::string::String::as_str).collect();
+    let deleted_set: std::collections::HashSet<&str> = result
+        .deleted
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
 
     for path in all_stored.keys() {
         if !discovered_set.contains(path.as_str())
@@ -288,8 +290,7 @@ pub fn reindex(input: ReindexInput) -> Result<(ProjectIndex, BM25Index)> {
     let mut content_cache: HashMap<String, String> =
         HashMap::with_capacity(changed_new_paths.len());
 
-    let changed_set: HashSet<&str> =
-        classified.changed.iter().map(String::as_str).collect();
+    let changed_set: HashSet<&str> = classified.changed.iter().map(String::as_str).collect();
 
     for path in &changed_new_paths {
         let discovered = input
@@ -522,12 +523,7 @@ mod tests {
 
     #[test]
     fn empty_inputs() {
-        let result = classify_files(
-            &[],
-            &HashMap::new(),
-            IndexingMode::Full,
-            &HashMap::new(),
-        );
+        let result = classify_files(&[], &HashMap::new(), IndexingMode::Full, &HashMap::new());
 
         assert!(result.unchanged.is_empty());
         assert!(result.changed.is_empty());
@@ -542,14 +538,14 @@ mod tests {
     #[test]
     fn all_unchanged_no_changes_flagged() {
         let files: Vec<_> = (0..5)
-            .map(|i| disc(&format!("file_{}.rs", i), 100 + i, 1_000_000 + i as u64))
+            .map(|i| disc(&format!("file_{i}.rs"), 100 + i, 1_000_000 + i))
             .collect();
         let mut stored = HashMap::new();
         for i in 0..5 {
             stored.insert(
-                format!("file_{}.rs", i),
+                format!("file_{i}.rs"),
                 meta(
-                    &format!("file_{}.rs", i),
+                    &format!("file_{i}.rs"),
                     (1_000_000 + i as i64) * 1_000_000_000,
                     100 + i as i64,
                 ),
@@ -571,13 +567,13 @@ mod tests {
     fn large_batch_10k_entries() {
         let count = 10_000;
         let files: Vec<_> = (0..count)
-            .map(|i| disc(&format!("file_{}.rs", i), 100, 1_000_000))
+            .map(|i| disc(&format!("file_{i}.rs"), 100, 1_000_000))
             .collect();
         let mut stored = HashMap::new();
         for i in 0..count {
             stored.insert(
-                format!("file_{}.rs", i),
-                meta(&format!("file_{}.rs", i), 1_000_000_000_000_000, 100),
+                format!("file_{i}.rs"),
+                meta(&format!("file_{i}.rs"), 1_000_000_000_000_000, 100),
             );
         }
         let all_stored = stored.clone();
@@ -595,7 +591,7 @@ mod tests {
             disc("unchanged.rs", 100, 1_000_000),
             disc("also_unchanged.rs", 200, 2_000_000),
             disc("changed.rs", 999, 3_000_000), // size differs from stored
-            disc("new.rs", 50, 4_000_000),       // not in stored
+            disc("new.rs", 50, 4_000_000),      // not in stored
         ];
 
         let mut stored = HashMap::new();
@@ -622,8 +618,7 @@ mod tests {
             meta("mode_skipped.rs", 6_000_000_000_000_000, 400),
         );
 
-        let result =
-            classify_files(&discovered, &stored, IndexingMode::Fast, &all_stored);
+        let result = classify_files(&discovered, &stored, IndexingMode::Fast, &all_stored);
 
         assert_eq!(result.unchanged.len(), 2);
         assert!(result.unchanged.contains(&"unchanged.rs".to_string()));
@@ -690,11 +685,7 @@ mod reindex_tests {
         DiscoveredFile {
             path: abs_path,
             rel_path: rel_path.to_string(),
-            ext: rel_path
-                .rsplit('.')
-                .next()
-                .unwrap_or("")
-                .to_string(),
+            ext: rel_path.rsplit('.').next().unwrap_or("").to_string(),
             size: meta.len(),
             mtime: meta.modified().unwrap(),
         }
@@ -702,10 +693,7 @@ mod reindex_tests {
 
     /// Build a `ProjectIndex` from a list of (rel_path, content) pairs
     /// using `RamGraphBuilder`, with edge building enabled.
-    fn build_prev_graph(
-        dir: &std::path::Path,
-        files: &[(&str, &str)],
-    ) -> ProjectIndex {
+    fn build_prev_graph(dir: &std::path::Path, files: &[(&str, &str)]) -> ProjectIndex {
         let root_str = dir.to_string_lossy().to_string();
         let mut builder = RamGraphBuilder::new(&root_str);
 
@@ -833,16 +821,14 @@ mod reindex_tests {
             ..Default::default()
         };
 
-        let (out_graph, out_bm25) = run_reindex(
-            &dir,
-            &classified,
-            &discovered,
-            Some(graph),
-            Some(bm25),
-        )
-        .expect("reindex should succeed with changed file");
+        let (out_graph, out_bm25) =
+            run_reindex(&dir, &classified, &discovered, Some(graph), Some(bm25))
+                .expect("reindex should succeed with changed file");
 
-        assert!(out_graph.files.contains_key("a.rs"), "changed file must remain in graph");
+        assert!(
+            out_graph.files.contains_key("a.rs"),
+            "changed file must remain in graph"
+        );
 
         // BM25 chunks should contain new symbol, not old symbol.
         let chunk_syms: Vec<&str> = out_bm25
@@ -882,14 +868,9 @@ mod reindex_tests {
             ..Default::default()
         };
 
-        let (out_graph, out_bm25) = run_reindex(
-            &dir,
-            &classified,
-            &discovered,
-            Some(graph),
-            Some(bm25),
-        )
-        .expect("reindex should succeed with new file");
+        let (out_graph, out_bm25) =
+            run_reindex(&dir, &classified, &discovered, Some(graph), Some(bm25))
+                .expect("reindex should succeed with new file");
 
         assert!(
             out_graph.files.contains_key("existing.rs"),
@@ -900,19 +881,25 @@ mod reindex_tests {
             "new file must be added"
         );
 
-        let chunk_paths: Vec<&str> =
-            out_bm25.chunks.iter().map(|c| c.file_path.as_str()).collect();
-        assert!(chunk_paths.contains(&"new.rs"), "new file must have BM25 chunks");
-        assert!(chunk_paths.contains(&"existing.rs"), "existing file must keep BM25 chunks");
+        let chunk_paths: Vec<&str> = out_bm25
+            .chunks
+            .iter()
+            .map(|c| c.file_path.as_str())
+            .collect();
+        assert!(
+            chunk_paths.contains(&"new.rs"),
+            "new file must have BM25 chunks"
+        );
+        assert!(
+            chunk_paths.contains(&"existing.rs"),
+            "existing file must keep BM25 chunks"
+        );
     }
 
     #[test]
     fn single_deleted_file_removed() {
         let dir = TempDir::new().unwrap();
-        let files = [
-            ("keep.rs", "fn keep() {}"),
-            ("remove.rs", "fn remove() {}"),
-        ];
+        let files = [("keep.rs", "fn keep() {}"), ("remove.rs", "fn remove() {}")];
         for (p, c) in &files {
             make_file(dir.path(), p, c);
         }
@@ -928,14 +915,9 @@ mod reindex_tests {
             ..Default::default()
         };
 
-        let (out_graph, out_bm25) = run_reindex(
-            &dir,
-            &classified,
-            &discovered,
-            Some(graph),
-            Some(bm25),
-        )
-        .expect("reindex should succeed with deleted file");
+        let (out_graph, out_bm25) =
+            run_reindex(&dir, &classified, &discovered, Some(graph), Some(bm25))
+                .expect("reindex should succeed with deleted file");
 
         assert!(
             out_graph.files.contains_key("keep.rs"),
@@ -946,8 +928,11 @@ mod reindex_tests {
             "remove.rs must be gone from graph"
         );
 
-        let chunk_paths: Vec<&str> =
-            out_bm25.chunks.iter().map(|c| c.file_path.as_str()).collect();
+        let chunk_paths: Vec<&str> = out_bm25
+            .chunks
+            .iter()
+            .map(|c| c.file_path.as_str())
+            .collect();
         assert!(chunk_paths.contains(&"keep.rs"));
         assert!(!chunk_paths.contains(&"remove.rs"));
     }
@@ -957,10 +942,18 @@ mod reindex_tests {
         let dir = TempDir::new().unwrap();
 
         // Initial: a.rs, b.rs, c.rs
-        for (p, c) in [("a.rs", "fn a() {}"), ("b.rs", "fn b() {}"), ("c.rs", "fn c() {}")] {
+        for (p, c) in [
+            ("a.rs", "fn a() {}"),
+            ("b.rs", "fn b() {}"),
+            ("c.rs", "fn c() {}"),
+        ] {
             make_file(dir.path(), p, c);
         }
-        let files = [("a.rs", "fn a() {}"), ("b.rs", "fn b() {}"), ("c.rs", "fn c() {}")];
+        let files = [
+            ("a.rs", "fn a() {}"),
+            ("b.rs", "fn b() {}"),
+            ("c.rs", "fn c() {}"),
+        ];
         let graph = build_prev_graph(dir.path(), &files);
         let bm25 = build_prev_bm25(&files);
 
@@ -982,17 +975,15 @@ mod reindex_tests {
             ..Default::default()
         };
 
-        let (out_graph, out_bm25) = run_reindex(
-            &dir,
-            &classified,
-            &discovered,
-            Some(graph),
-            Some(bm25),
-        )
-        .expect("mixed reindex should succeed");
+        let (out_graph, out_bm25) =
+            run_reindex(&dir, &classified, &discovered, Some(graph), Some(bm25))
+                .expect("mixed reindex should succeed");
 
         // Graph assertions
-        assert!(out_graph.files.contains_key("a.rs"), "unchanged file present");
+        assert!(
+            out_graph.files.contains_key("a.rs"),
+            "unchanged file present"
+        );
         assert!(out_graph.files.contains_key("b.rs"), "changed file present");
         assert!(out_graph.files.contains_key("d.rs"), "new file present");
         assert!(!out_graph.files.contains_key("c.rs"), "deleted file gone");
@@ -1004,10 +995,7 @@ mod reindex_tests {
             .map(|c| c.file_path.as_str())
             .collect();
         assert!(chunk_paths.contains(&"a.rs"), "unchanged chunks kept");
-        assert!(
-            !chunk_paths.contains(&"c.rs"),
-            "deleted chunks removed"
-        );
+        assert!(!chunk_paths.contains(&"c.rs"), "deleted chunks removed");
         assert!(chunk_paths.contains(&"b.rs"), "changed chunks present");
         assert!(chunk_paths.contains(&"d.rs"), "new chunks present");
 
@@ -1029,10 +1017,16 @@ mod reindex_tests {
         let dir = TempDir::new().unwrap();
 
         // Initial: keep.rs (unchanged), skipped.rs (mode_skipped)
-        for (p, c) in [("keep.rs", "fn keep() {}"), ("skipped.rs", "fn skipped() {}")] {
+        for (p, c) in [
+            ("keep.rs", "fn keep() {}"),
+            ("skipped.rs", "fn skipped() {}"),
+        ] {
             make_file(dir.path(), p, c);
         }
-        let files = [("keep.rs", "fn keep() {}"), ("skipped.rs", "fn skipped() {}")];
+        let files = [
+            ("keep.rs", "fn keep() {}"),
+            ("skipped.rs", "fn skipped() {}"),
+        ];
         let graph = build_prev_graph(dir.path(), &files);
         let bm25 = build_prev_bm25(&files);
 
@@ -1045,14 +1039,9 @@ mod reindex_tests {
             ..Default::default()
         };
 
-        let (out_graph, out_bm25) = run_reindex(
-            &dir,
-            &classified,
-            &discovered,
-            Some(graph),
-            Some(bm25),
-        )
-        .expect("reindex with mode_skipped should succeed");
+        let (out_graph, out_bm25) =
+            run_reindex(&dir, &classified, &discovered, Some(graph), Some(bm25))
+                .expect("reindex with mode_skipped should succeed");
 
         // Both files must still be in the graph.
         assert!(
@@ -1134,7 +1123,11 @@ mod reindex_tests {
 
         // lib.rs exports a function; main.rs uses it (creates an import edge).
         make_file(dir.path(), "lib.rs", "pub fn helper() -> u32 { 42 }");
-        make_file(dir.path(), "main.rs", "mod lib;\nfn main() { lib::helper(); }");
+        make_file(
+            dir.path(),
+            "main.rs",
+            "mod lib;\nfn main() { lib::helper(); }",
+        );
 
         let files = [
             ("lib.rs", "pub fn helper() -> u32 { 42 }"),
@@ -1148,7 +1141,11 @@ mod reindex_tests {
 
         let discovered = vec![
             make_file(dir.path(), "lib.rs", "pub fn helper() -> u32 { 99 }"),
-            make_file(dir.path(), "main.rs", "mod lib;\nfn main() { lib::helper(); }"),
+            make_file(
+                dir.path(),
+                "main.rs",
+                "mod lib;\nfn main() { lib::helper(); }",
+            ),
         ];
 
         let classified = ClassifiedFiles {
@@ -1157,14 +1154,9 @@ mod reindex_tests {
             ..Default::default()
         };
 
-        let (out_graph, _out_bm25) = run_reindex(
-            &dir,
-            &classified,
-            &discovered,
-            Some(graph),
-            Some(bm25),
-        )
-        .expect("reindex should preserve cross-file edges");
+        let (out_graph, _out_bm25) =
+            run_reindex(&dir, &classified, &discovered, Some(graph), Some(bm25))
+                .expect("reindex should preserve cross-file edges");
 
         // Edge check: there should be an edge from main.rs to lib.rs (module edge).
         let has_edge = out_graph.edges.iter().any(|e| {
@@ -1185,7 +1177,11 @@ mod reindex_tests {
         make_file(dir.path(), "b.rs", "fn b() {}");
         make_file(dir.path(), "c.rs", "fn c() {}");
 
-        let files = [("a.rs", "fn a() {}"), ("b.rs", "fn b() {}"), ("c.rs", "fn c() {}")];
+        let files = [
+            ("a.rs", "fn a() {}"),
+            ("b.rs", "fn b() {}"),
+            ("c.rs", "fn c() {}"),
+        ];
         let graph = build_prev_graph(dir.path(), &files);
         let bm25 = build_prev_bm25(&files);
 
@@ -1262,7 +1258,9 @@ mod reindex_tests {
 
         // Change 10 files.
         let changed_indices: std::collections::HashSet<usize> =
-            [10, 50, 100, 150, 200, 300, 400, 500, 600, 700].into_iter().collect();
+            [10, 50, 100, 150, 200, 300, 400, 500, 600, 700]
+                .into_iter()
+                .collect();
         let mut changed_paths: Vec<String> = Vec::new();
         let mut unchanged_paths: Vec<String> = Vec::new();
 
@@ -1298,23 +1296,25 @@ mod reindex_tests {
             ..Default::default()
         };
 
-        let (out_graph, out_bm25) = run_reindex(
-            &dir,
-            &classified,
-            &discovered,
-            Some(graph),
-            Some(bm25),
-        )
-        .expect("large batch reindex should succeed");
+        let (out_graph, out_bm25) =
+            run_reindex(&dir, &classified, &discovered, Some(graph), Some(bm25))
+                .expect("large batch reindex should succeed");
 
         // All 1000 files present.
         assert_eq!(out_graph.files.len(), 1000);
 
         // All 1000 files have BM25 chunks.
-        let mut chunk_paths: Vec<&str> =
-            out_bm25.chunks.iter().map(|c| c.file_path.as_str()).collect();
-        chunk_paths.sort();
+        let mut chunk_paths: Vec<&str> = out_bm25
+            .chunks
+            .iter()
+            .map(|c| c.file_path.as_str())
+            .collect();
+        chunk_paths.sort_unstable();
         chunk_paths.dedup();
-        assert_eq!(chunk_paths.len(), 1000, "all 1000 files must have BM25 chunks");
+        assert_eq!(
+            chunk_paths.len(),
+            1000,
+            "all 1000 files must have BM25 chunks"
+        );
     }
 }

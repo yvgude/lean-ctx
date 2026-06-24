@@ -87,10 +87,9 @@ pub(crate) fn handle_embeddings_status(project_root: &str) -> String {
     let model_available = EmbeddingEngine::is_available();
     let auto = embeddings_auto_download_allowed();
 
-    let entries = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(
-        &knowledge.project_hash,
-    )
-    .map_or(0, |i| i.entries.len());
+    let entries =
+        crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(&knowledge.project_hash)
+            .map_or(0, |i| i.entries.len());
 
     let path = crate::core::data_dir::lean_ctx_data_dir()
         .ok()
@@ -141,9 +140,8 @@ pub(crate) fn handle_embeddings_reindex(project_root: &str) -> String {
     // fetched above, outside the lock, so its load never blocks writers.
     ProjectKnowledge::with_project_lock(project_root, || {
         let knowledge = ProjectKnowledge::load_or_create(project_root);
-        let mut idx = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::new(
-            &knowledge.project_hash,
-        );
+        let mut idx =
+            crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::new(&knowledge.project_hash);
 
         let mut facts: Vec<&crate::core::knowledge::KnowledgeFact> =
             knowledge.facts.iter().filter(|f| f.is_current()).collect();
@@ -172,9 +170,7 @@ pub(crate) fn handle_embeddings_reindex(project_root: &str) -> String {
             }
         }
 
-        crate::core::knowledge_embedding::compact_against_knowledge(
-            &mut idx, &knowledge, &policy,
-        );
+        crate::core::knowledge_embedding::compact_against_knowledge(&mut idx, &knowledge, &policy);
         match idx.save() {
             Ok(()) => format!("Embeddings reindex ok (embedded {embedded} facts)."),
             Err(e) => format!("Embeddings reindex failed: {e}"),

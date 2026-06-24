@@ -87,27 +87,22 @@ pub(super) fn run_mcp_server() -> Result<()> {
     let stop_signal = server.stop_signal.clone();
     let auto_watch = crate::core::config::Config::load().auto_watch_effective();
 
-    let index_fn: crate::watcher::IndexFn = std::sync::Arc::new(
-        move |_name: &str, root: &std::path::Path| {
+    let index_fn: crate::watcher::IndexFn =
+        std::sync::Arc::new(move |_name: &str, root: &std::path::Path| {
             let mode = crate::core::config::Config::load().index_mode_effective();
-            let handle = crate::core::index_pipeline::pipeline::IndexPipeline::new(
-                root.to_path_buf(),
-            )
-            .with_mode(mode)
-            .build()?;
+            let handle =
+                crate::core::index_pipeline::pipeline::IndexPipeline::new(root.to_path_buf())
+                    .with_mode(mode)
+                    .build()?;
             handle.run()?;
             Ok(true)
-        },
-    );
+        });
 
     if auto_watch {
-        let project_root = server
-            .startup_project_root
-            .clone()
-            .map_or_else(
-                || std::env::current_dir().unwrap_or_default(),
-                std::path::PathBuf::from,
-            );
+        let project_root = server.startup_project_root.clone().map_or_else(
+            || std::env::current_dir().unwrap_or_default(),
+            std::path::PathBuf::from,
+        );
         let index_fn = index_fn.clone();
         let thread_stop_signal = stop_signal.clone();
         std::thread::Builder::new()

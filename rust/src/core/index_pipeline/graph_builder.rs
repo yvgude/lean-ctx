@@ -8,7 +8,9 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
-use crate::core::graph_index::{build_edges_cached, FileEntry, IndexEdge, ProjectIndex, SymbolEntry};
+use crate::core::graph_index::{
+    FileEntry, IndexEdge, ProjectIndex, SymbolEntry, build_edges_cached,
+};
 use crate::core::index_pipeline::content_pipeline::ContentEntry;
 use crate::core::signatures::Signature;
 
@@ -444,8 +446,18 @@ mod tests {
             },
         ];
 
-        builder1.add_file("mod.rs", &sigs, "pub fn foo(x: i32) -> i32 { x }\nstruct Bar;", "h1");
-        builder2.add_file("mod.rs", &sigs, "pub fn foo(x: i32) -> i32 { x }\nstruct Bar;", "h1");
+        builder1.add_file(
+            "mod.rs",
+            &sigs,
+            "pub fn foo(x: i32) -> i32 { x }\nstruct Bar;",
+            "h1",
+        );
+        builder2.add_file(
+            "mod.rs",
+            &sigs,
+            "pub fn foo(x: i32) -> i32 { x }\nstruct Bar;",
+            "h1",
+        );
 
         let index1 = builder1.finalize().unwrap();
         let index2 = builder2.finalize().unwrap();

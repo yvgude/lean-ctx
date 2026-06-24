@@ -134,9 +134,8 @@ impl ContentPipeline {
         }
 
         // Cache miss — read from disk.
-        let content_text =
-            std::fs::read_to_string(&file.path)
-                .with_context(|| format!("failed to read {}", file.path.display()))?;
+        let content_text = std::fs::read_to_string(&file.path)
+            .with_context(|| format!("failed to read {}", file.path.display()))?;
 
         let content_arc: Arc<String> = Arc::new(content_text);
 
@@ -309,11 +308,7 @@ mod tests {
         DiscoveredFile {
             path: abs_path,
             rel_path: name.replace('\\', "/"),
-            ext: name
-                .rsplit('.')
-                .next()
-                .unwrap_or("")
-                .to_lowercase(),
+            ext: name.rsplit('.').next().unwrap_or("").to_lowercase(),
             size: meta.len(),
             mtime: meta.modified().unwrap(),
         }
@@ -333,11 +328,7 @@ mod tests {
         DiscoveredFile {
             path: abs_path,
             rel_path: name.replace('\\', "/"),
-            ext: name
-                .rsplit('.')
-                .next()
-                .unwrap_or("")
-                .to_lowercase(),
+            ext: name.rsplit('.').next().unwrap_or("").to_lowercase(),
             size: meta.len(),
             mtime: meta.modified().unwrap(),
         }
@@ -439,7 +430,10 @@ mod tests {
         };
 
         let entry_v2 = pipeline.ingest_file(&file_v2).unwrap();
-        assert_eq!(&*entry_v2.content, "v2-shorter", "re-ingest must return new content");
+        assert_eq!(
+            &*entry_v2.content, "v2-shorter",
+            "re-ingest must return new content"
+        );
         assert_ne!(
             entry_v1.content_hash, entry_v2.content_hash,
             "hash must change when content changes"
@@ -619,7 +613,10 @@ mod tests {
         let entry = pipeline.ingest_file(&file_v2).unwrap();
 
         // Must read v2 from disk, not the stale cached v1.
-        assert_eq!(&*entry.content, "v2 shorter", "must read updated content, not stale cached v1");
+        assert_eq!(
+            &*entry.content, "v2 shorter",
+            "must read updated content, not stale cached v1"
+        );
     }
 
     // -- Deterministic hash property (same content → same hash) --
