@@ -302,6 +302,30 @@ impl BM25Index {
         });
     }
 
+    /// Enrich and tokenize a chunk without touching the index.
+    pub(crate) fn prepare_chunk(chunk: CodeChunk) -> (CodeChunk, Vec<String>) {
+        let enriched = enrich_for_bm25(&chunk);
+        let tokens = tokenize(&enriched);
+        (chunk, tokens)
+    }
+
+    /// Insert a pre-tokenized chunk into the inverted index (sequential).
+    pub(crate) fn add_tokenized_chunk(&mut self, idx: usize, chunk: CodeChunk, tokens: &[String]) {
+        for token in tokens {
+            let lower = token.to_lowercase();
+            let postings = self.inverted.entry(lower.clone()).or_default();
+            if postings.last().map(|(last_idx, _)| *last_idx) != Some(idx) {
+                *self.doc_freqs.entry(lower).or_insert(0) += 1;
+            }
+            postings.push((idx, 1.0));
+        }
+        self.chunks.push(CodeChunk {
+            token_count: tokens.len(),
+            tokens: Vec::new(),
+            ..chunk
+        });
+    }
+
     pub(crate) fn finalize(&mut self) {
         self.doc_count = self.chunks.len();
         if self.doc_count == 0 {

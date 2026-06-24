@@ -18,19 +18,23 @@
 //!                         └── ⑨ PipelineReport
 //! ```
 
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 
-use crate::core::bm25_index::BM25Index;
+use crate::core::bm25_index::{BM25Index, CodeChunk};
 use crate::core::config::IndexingMode;
 use crate::core::embedding_index::EmbeddingBuildOutcome;
 use crate::core::graph_index::ProjectIndex;
-use crate::core::index_pipeline::content_pipeline::ContentPipeline;
+use crate::core::index_pipeline::content_pipeline::{
+    ContentEntry, ContentPipeline, compute_content_hash,
+};
 use crate::core::index_pipeline::discovery::{DiscoveredFile, DiscoveryConfig, discover_files};
 use crate::core::index_pipeline::dump_engine::DumpEngine;
-use crate::core::index_pipeline::extraction::ParallelExtractor;
+use crate::core::index_pipeline::extraction::{ExtractionOutput, ParallelExtractor};
 use crate::core::index_pipeline::file_metadata_store::FileMetadata;
 use crate::core::index_pipeline::file_metadata_store::mode;
 use crate::core::index_pipeline::graph_builder::RamGraphBuilder;
@@ -38,6 +42,26 @@ use crate::core::index_pipeline::incremental::{
     ClassifiedFiles, ReindexInput, classify_files, reindex,
 };
 use crate::core::index_pipeline::semantic_edges;
+use crate::core::signatures::Signature;
+use rayon::prelude::*;
+
+// ---------------------------------------------------------------------------
+// Type aliases
+// ---------------------------------------------------------------------------
+
+/// Per-file result from the parallel ingest+extract phase: (path, content,
+/// mtime, size, content_hash, signatures, chunks).
+type IngestOutput = Result<
+    Option<(
+        String,
+        Arc<String>,
+        SystemTime,
+        u64,
+        String,
+        Vec<Signature>,
+        Vec<CodeChunk>,
+    )>,
+>;
 
 // ---------------------------------------------------------------------------
 // PipelineReport
@@ -340,32 +364,98 @@ impl PipelineHandle {
     /// Perform a full (non-incremental) index build from scratch.
     ///
     /// All discovered files are ingested, extracted, and indexed.
+    /// Reading and extraction run in a single parallel pass (overlapping I/O and
+    /// CPU), then the results are merged and fed to the graph/BM25 builders.
     fn full_build(
         &self,
         discovered: &[DiscoveredFile],
     ) -> Result<(ProjectIndex, BM25Index, Vec<FileMetadata>)> {
-        // 1. Ingest all files into the content pipeline.
-        let mut content_pipeline = ContentPipeline::new(self.max_file_size);
-        for file in discovered {
-            content_pipeline
-                .ingest_file(file)
-                .with_context(|| format!("failed to ingest {}", file.rel_path))?;
+        // ── 1 + 2: Ingest + extract in one parallel pass ───────────────────
+        // Instead of reading every file sequentially (Phase 1) then extracting
+        // (Phase 2), each rayon worker reads its own file AND extracts
+        // signatures+chunks, overlapping I/O with CPU and eliminating the
+        // sequential ingest bottleneck.
+        let raw: Vec<IngestOutput> = discovered
+            .par_iter()
+            .map(|file| {
+                if file.size > self.max_file_size {
+                    return Ok(None);
+                }
+                let content_text = std::fs::read_to_string(&file.path)
+                    .with_context(|| format!("failed to read {}", file.path.display()))?;
+                let content_hash = compute_content_hash(&content_text);
+                let content = Arc::new(content_text);
+
+                let sigs = crate::core::signatures::extract_signatures(&content, &file.ext);
+                let chunks = crate::core::bm25_index::extract_chunks(&file.rel_path, &content);
+                let rel_path = file.rel_path.clone();
+
+                Ok(Some((
+                    rel_path,
+                    content,
+                    file.mtime,
+                    file.size,
+                    content_hash,
+                    sigs,
+                    chunks,
+                )))
+            })
+            .collect();
+
+        let mut entries: HashMap<String, ContentEntry> =
+            HashMap::with_capacity(discovered.len().min(raw.len()));
+        let mut graph_sigs: Vec<(String, Vec<Signature>)> = Vec::with_capacity(raw.len());
+        let mut bm25_chunks: Vec<(String, Vec<CodeChunk>)> = Vec::with_capacity(raw.len());
+
+        for r in raw {
+            let Some((rel_path, content, mtime, size, content_hash, sigs, chunks)) =
+                r.context("file read/extract failed")?
+            else {
+                continue;
+            };
+
+            entries.insert(
+                rel_path.clone(),
+                ContentEntry {
+                    content: Arc::clone(&content),
+                    mtime,
+                    size,
+                    content_hash: content_hash.clone(),
+                },
+            );
+            graph_sigs.push((rel_path.clone(), sigs));
+            bm25_chunks.push((rel_path, chunks));
         }
 
-        // 2. Extract signatures and BM25 chunks via parallel extractor.
-        let entries = content_pipeline.into_graph_consumer().take();
-        let extractor = ParallelExtractor::new(self.max_workers);
-        let output = extractor
-            .extract_all(&entries, self.mode)
-            .context("parallel extraction failed")?;
+        let output = ExtractionOutput {
+            graph_sigs,
+            bm25_chunks,
+        };
 
         // 3. Build graph index from extracted signatures.
         let root_str = self.project_root.to_string_lossy();
+        let num_workers = std::thread::available_parallelism()
+            .map_or(4, std::num::NonZero::get)
+            .max(1);
+        let chunk_size = output.graph_sigs.len().div_ceil(num_workers).max(1);
+
+        let builders: Vec<RamGraphBuilder> = output
+            .graph_sigs
+            .par_chunks(chunk_size)
+            .map(|chunk| {
+                let mut b = RamGraphBuilder::new(&root_str);
+                for (rel, sigs) in chunk {
+                    if let Some(entry) = entries.get(rel) {
+                        b.add_file(rel, sigs, &entry.content, &entry.content_hash);
+                    }
+                }
+                b
+            })
+            .collect();
+
         let mut graph_builder = RamGraphBuilder::new(&root_str);
-        for (rel, sigs) in &output.graph_sigs {
-            if let Some(entry) = entries.get(rel) {
-                graph_builder.add_file(rel, sigs, &entry.content, &entry.content_hash);
-            }
+        for b in builders {
+            graph_builder.merge(b);
         }
         graph_builder.build_edges(&entries);
         let graph = graph_builder
@@ -373,10 +463,27 @@ impl PipelineHandle {
             .context("graph finalization failed")?;
 
         // 4. Build BM25 index from extracted chunks.
+        //    Enrichment + tokenization is pure CPU — run in parallel.  The
+        //    inverted-index mutation that follows is sequential (single-threaded
+        //    cross-check).
         let mut bm25 = BM25Index::new();
-        for (_rel, chunks) in &output.bm25_chunks {
-            for chunk in chunks {
-                bm25.add_chunk(chunk.clone());
+        {
+            // Flatten all per-file chunk vecs into one.
+            let all_chunks: Vec<CodeChunk> = output
+                .bm25_chunks
+                .into_iter()
+                .flat_map(|(_rel, chunks)| chunks)
+                .collect();
+
+            // Enrich + tokenize in parallel (pure functions).
+            let prepared: Vec<(CodeChunk, Vec<String>)> = all_chunks
+                .into_par_iter()
+                .map(BM25Index::prepare_chunk)
+                .collect();
+
+            // Insert into the inverted index sequentially.
+            for (idx, (chunk, tokens)) in prepared.into_iter().enumerate() {
+                bm25.add_tokenized_chunk(idx, chunk, &tokens);
             }
         }
         bm25.finalize();
@@ -392,7 +499,7 @@ impl PipelineHandle {
                     .unwrap_or_default();
                 let mtime_ns = f
                     .mtime
-                    .duration_since(std::time::UNIX_EPOCH)
+                    .duration_since(UNIX_EPOCH)
                     .map_or(0, |d| d.as_nanos() as i64);
                 FileMetadata {
                     rel_path: f.rel_path.clone(),

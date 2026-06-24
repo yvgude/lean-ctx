@@ -16,6 +16,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::deep_queries::ImportInfo;
 
@@ -49,7 +50,7 @@ impl ResolverContext {
     pub fn new(
         project_root: &Path,
         file_paths: Vec<String>,
-        file_contents: &HashMap<String, String>,
+        file_contents: &HashMap<String, Arc<String>>,
     ) -> Self {
         let file_set: std::collections::HashSet<String> = file_paths.iter().cloned().collect();
 
@@ -95,7 +96,7 @@ impl ResolverContext {
 fn build_csharp_namespace_index(
     project_root: &Path,
     file_paths: &[String],
-    file_contents: &HashMap<String, String>,
+    file_contents: &HashMap<String, Arc<String>>,
 ) -> HashMap<String, String> {
     let mut cs_files: Vec<&String> = file_paths
         .iter()

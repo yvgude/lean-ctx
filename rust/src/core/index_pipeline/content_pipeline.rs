@@ -271,7 +271,7 @@ impl BM25Consumer {
 /// The result is a decimal string representation of the 64-bit hash value.
 /// This is **not** cryptographically secure but is collision-resistant enough
 /// for change detection within a single indexing session.
-fn compute_content_hash(content: &str) -> String {
+pub(crate) fn compute_content_hash(content: &str) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     content.hash(&mut hasher);
     hasher.finish().to_string()

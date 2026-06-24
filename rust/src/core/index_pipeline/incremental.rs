@@ -13,6 +13,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use anyhow::{Context, Result};
@@ -287,7 +288,7 @@ pub fn reindex(input: ReindexInput) -> Result<(ProjectIndex, BM25Index)> {
 
     // Content cache for edge building — only holds changed/new files' content.
     // `build_edges_cached` falls back to disk-read for files not in cache.
-    let mut content_cache: HashMap<String, String> =
+    let mut content_cache: HashMap<String, Arc<String>> =
         HashMap::with_capacity(changed_new_paths.len());
 
     let changed_set: HashSet<&str> = classified.changed.iter().map(String::as_str).collect();
@@ -304,8 +305,8 @@ pub fn reindex(input: ReindexInput) -> Result<(ProjectIndex, BM25Index)> {
             .ingest_file(discovered)
             .with_context(|| format!("failed to read file for reindex: {path}"))?;
 
-        // Store content for edge building.
-        content_cache.insert(path.clone(), (*entry.content).clone());
+        // Store content for edge building (Arc clone, not deep string clone).
+        content_cache.insert(path.clone(), Arc::clone(&entry.content));
 
         // Extract signatures for graph index.
         let ext = Path::new(path)

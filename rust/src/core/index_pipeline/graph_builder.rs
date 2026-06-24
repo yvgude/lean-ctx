@@ -5,6 +5,7 @@
 //! phase — all persistence happens in the dump engine.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use anyhow::Result;
 
@@ -107,10 +108,9 @@ impl RamGraphBuilder {
     ///
     /// The `entries` map provides content for all indexed files.
     pub fn build_edges(&mut self, entries: &HashMap<String, ContentEntry>) {
-        // Build a plain-string content cache from ContentEntry values.
-        let mut edge_content_cache: HashMap<String, String> = HashMap::new();
+        let mut edge_content_cache: HashMap<String, Arc<String>> = HashMap::new();
         for (path, entry) in entries {
-            edge_content_cache.insert(path.clone(), (*entry.content).clone());
+            edge_content_cache.insert(path.clone(), Arc::clone(&entry.content));
         }
 
         // Swap files/symbols out temporarily to avoid cloning into a temp
@@ -155,6 +155,20 @@ impl RamGraphBuilder {
         index.edges = self.edges;
 
         Ok(index)
+    }
+
+    /// Merge another builder's files and symbols into this one.
+    /// Both builders must share the same `project_root.
+    /// Edges are not merged here — they are produced by `build_edges()` and
+    /// `finalize()` which run after the merge.
+    pub(crate) fn merge(&mut self, other: Self) {
+        debug_assert_eq!(
+            self.project_root, other.project_root,
+            "cannot merge builders with different project roots"
+        );
+        self.files.extend(other.files);
+        self.symbols.extend(other.symbols);
+        self.content_cache.extend(other.content_cache);
     }
 
     /// Clear all accumulated data, readying the builder for reuse.

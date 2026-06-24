@@ -928,9 +928,10 @@ mod tests {
     fn test_minhash_jaccard_partial() {
         let mut a = [0u32; 64];
         let mut b = [0u32; 64];
-        for i in 0..64 {
-            a[i] = i as u32;
-            b[i] = if i < 32 { i as u32 } else { i as u32 + 100 };
+        for (i, (a_elem, b_elem)) in a.iter_mut().zip(b.iter_mut()).enumerate().take(64) {
+            let val = i as u32;
+            *a_elem = val;
+            *b_elem = val + if i < 32 { 0 } else { 100 };
         }
         let sim = minhash_jaccard(&a, &b);
         assert!((sim - 0.5).abs() < 1e-6, "expected ~0.5, got {sim}");
@@ -1456,12 +1457,17 @@ mod tests {
                 .collect();
             // Variant: each position independently matches with prob ~0.66
             let mut variant = base.clone();
-            for i in 0..64 {
-                let r = splitmix64_f32(pair_idx as u64 * 2000 + 1000 + i as u64);
-                if r > 0.66f32 {
-                    variant[i] = variant[i].wrapping_add(
-                        1 + (splitmix64(pair_idx as u64 * 2000 + 2000 + i as u64) as u32) % 9999,
-                    );
+            let base_f32_seed = pair_idx as u64 * 2000 + 1000;
+            let base_u32_seed = pair_idx as u64 * 2000 + 2000;
+
+            for (i, item) in variant.iter_mut().enumerate().take(64) {
+                let offset = i as u64;
+
+                let r = splitmix64_f32(base_f32_seed + offset);
+
+                if r > 0.66 {
+                    let rand_val = (splitmix64(base_u32_seed + offset) as u32) % 9999;
+                    *item = item.wrapping_add(1 + rand_val);
                 }
             }
             let sigs = [&base, &variant];

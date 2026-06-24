@@ -1,6 +1,8 @@
 //! Unit tests for the graph index. Extracted from `graph_index/mod.rs`;
 //! `super::*` resolves to the `graph_index` module.
 
+use std::sync::Arc;
+
 use super::*;
 use tempfile::tempdir;
 
@@ -243,12 +245,13 @@ public class OrderRepository { public void Persist() {} }\n";
     ];
 
     let mut index = ProjectIndex::new("/proj-does-not-need-to-exist");
-    let mut cache: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut cache: std::collections::HashMap<String, Arc<String>> =
+        std::collections::HashMap::new();
     for (path, content) in files {
         index
             .files
             .insert(path.to_string(), fe(path, content, "cs"));
-        cache.insert(path.to_string(), content.to_string());
+        cache.insert(path.to_string(), Arc::new(content.to_string()));
     }
 
     build_edges_cached(&mut index, &cache);
@@ -288,12 +291,13 @@ public class Bar { }\n";
 
     let files = [("src/Foo.cs", FOO), ("lib/Bar.cs", BAR)];
     let mut index = ProjectIndex::new("/proj-x");
-    let mut cache: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut cache: std::collections::HashMap<String, Arc<String>> =
+        std::collections::HashMap::new();
     for (path, content) in files {
         index
             .files
             .insert(path.to_string(), fe(path, content, "cs"));
-        cache.insert(path.to_string(), content.to_string());
+        cache.insert(path.to_string(), Arc::new(content.to_string()));
     }
 
     build_edges_cached(&mut index, &cache);
@@ -405,12 +409,13 @@ func _ready():\n\tvar level = load(\"res://scenes/Main.tscn\")\n";
     ];
 
     let mut index = ProjectIndex::new("/godot-proj");
-    let mut cache: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut cache: std::collections::HashMap<String, Arc<String>> =
+        std::collections::HashMap::new();
     for (path, content) in files {
         index
             .files
             .insert(path.to_string(), fe(path, content, "gd"));
-        cache.insert(path.to_string(), content.to_string());
+        cache.insert(path.to_string(), Arc::new(content.to_string()));
     }
 
     build_edges_cached(&mut index, &cache);
@@ -460,12 +465,13 @@ local function run()\n\treturn util.add(1, 2)\nend\n";
     ];
 
     let mut index = ProjectIndex::new("/lua-proj");
-    let mut cache: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut cache: std::collections::HashMap<String, Arc<String>> =
+        std::collections::HashMap::new();
     for (path, content, lang) in files {
         index
             .files
             .insert(path.to_string(), fe(path, content, lang));
-        cache.insert(path.to_string(), content.to_string());
+        cache.insert(path.to_string(), Arc::new(content.to_string()));
     }
 
     build_edges_cached(&mut index, &cache);
