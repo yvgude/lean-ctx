@@ -267,6 +267,7 @@ mod tests {
                 start_line: 1,
                 end_line: 5,
                 is_exported: true,
+                minhash: Vec::new(),
             },
         );
         idx.symbols.insert(
@@ -278,6 +279,7 @@ mod tests {
                 start_line: 3,
                 end_line: 9,
                 is_exported: false,
+                minhash: Vec::new(),
             },
         );
         idx.edges.push(IndexEdge {

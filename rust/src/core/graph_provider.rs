@@ -391,6 +391,7 @@ impl GraphProvider {
                     start_line: s.start_line,
                     end_line: s.end_line,
                     is_exported: s.is_exported,
+                    minhash: Vec::new(),
                 },
             );
         }
@@ -776,6 +777,7 @@ mod tests {
                 start_line: 1,
                 end_line: 9,
                 is_exported: true,
+                minhash: Vec::new(),
             },
         );
         a.symbols.insert(
@@ -787,6 +789,7 @@ mod tests {
                 start_line: 3,
                 end_line: 6,
                 is_exported: false,
+                minhash: Vec::new(),
             },
         );
         a.edges.push(IndexEdge {

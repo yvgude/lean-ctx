@@ -457,6 +457,7 @@ mod tests {
                 start_line: 1,
                 end_line: 3,
                 is_exported: false,
+                minhash: Vec::new(),
             },
         );
         index.symbols.insert(
@@ -468,6 +469,7 @@ mod tests {
                 start_line: 1,
                 end_line: 3,
                 is_exported: false,
+                minhash: Vec::new(),
             },
         );
 

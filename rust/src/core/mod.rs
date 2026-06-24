@@ -61,6 +61,7 @@ pub mod memory_consolidation;
 pub mod memory_guard;
 pub mod memory_lifecycle;
 pub mod memory_policy;
+pub mod minhash;
 pub mod multiscale_index;
 pub mod procedural_memory;
 pub mod prospective_memory;

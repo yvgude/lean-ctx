@@ -90,6 +90,7 @@ impl RamGraphBuilder {
                     start_line: sig.start_line.unwrap_or(1),
                     end_line: sig.end_line.unwrap_or(1),
                     is_exported: sig.is_exported,
+                    minhash: sig.minhash.map(|a| a.to_vec()).unwrap_or_default(),
                 },
             );
         }
@@ -228,6 +229,7 @@ mod tests {
             indent: 0,
             start_line: Some(1),
             end_line: Some(3),
+            minhash: None,
         }];
         builder.add_file(
             "main.rs",
@@ -267,6 +269,7 @@ mod tests {
                 indent: 0,
                 start_line: Some(1),
                 end_line: Some(1),
+                minhash: None,
             }],
             "fn foo() {}",
             "hash1",
@@ -283,6 +286,7 @@ mod tests {
                 indent: 0,
                 start_line: Some(1),
                 end_line: Some(1),
+                minhash: None,
             }],
             "pub struct Bar;",
             "hash2",
@@ -323,6 +327,7 @@ mod tests {
                 indent: 0,
                 start_line: Some(1),
                 end_line: Some(1),
+                minhash: None,
             }],
             "pub fn helper() -> u32 { 42 }",
             "hash_lib",
@@ -339,6 +344,7 @@ mod tests {
                 indent: 0,
                 start_line: Some(1),
                 end_line: Some(1),
+                minhash: None,
             }],
             "fn main() {}",
             "hash_a",
@@ -371,6 +377,7 @@ mod tests {
             indent: 0,
             start_line: Some(1),
             end_line: Some(5),
+            minhash: None,
         }];
         builder.add_file(
             "src/main.rs",
@@ -432,6 +439,7 @@ mod tests {
                 indent: 0,
                 start_line: Some(1),
                 end_line: Some(3),
+                minhash: None,
             },
             Signature {
                 kind: "struct",
@@ -443,6 +451,7 @@ mod tests {
                 indent: 0,
                 start_line: Some(5),
                 end_line: Some(5),
+                minhash: None,
             },
         ];
 
