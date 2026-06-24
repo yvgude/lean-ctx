@@ -445,10 +445,11 @@ fn format_num(n: usize) -> String {
 mod tests {
     use super::*;
     use crate::core::benchmark_compare::{competitors, system_info};
-    use std::path::Path;
+    use crate::core::benchmark_compare::metrics::create_synthetic_benchmark_dir;
 
     fn make_test_report() -> CompareReport {
-        let metrics = metrics::measure_all(Path::new("src"));
+        let dir = create_synthetic_benchmark_dir();
+        let metrics = metrics::measure_all(dir.path());
         CompareReport {
             metrics,
             system: system_info::collect(),

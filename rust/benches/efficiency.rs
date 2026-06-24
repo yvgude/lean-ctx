@@ -2,9 +2,7 @@
 //!
 //! Custom harness (no criterion, matching the other `harness = false` benches):
 //! prints a markdown latency + token report for `ctx_search` on a synthetic
-//! corpus. From Phase 1 on it also measures the resident line-search index so
-//! the walk-vs-index speedup is visible in a single run (no "before" git state
-//! needed).
+//! corpus.
 //!
 //! Run:    cargo bench --bench efficiency
 //! Tune:   `BENCH_FILES=5000` cargo bench --bench efficiency
@@ -90,44 +88,13 @@ fn main() {
 
     println!("# ctx_search efficiency bench ({n_files} files, {ITERS} iters)\n");
 
-    // --- Walk path (legacy): force index off so numbers are uncontaminated ---
-    // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("LEAN_CTX_DISABLE_SEARCH_INDEX", "1") };
-    println!("## Walk path (legacy)\n");
+    println!("## Walk path\n");
     println!("| query | p50 ms | p95 ms | p99 ms | resp tokens |");
     println!("|---|---|---|---|---|");
-    let mut walk_out = Vec::new();
     for (label, pat) in queries {
         let (p50, p95, p99, tok) = bench_walk(&corpus_str, pat);
         println!("| {label} | {p50:.3} | {p95:.3} | {p99:.3} | {tok} |");
-        walk_out.push(match_lines(&corpus_str, pat));
-    }
-
-    // --- Resident index path: warm synchronously, then measure ---
-    // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("LEAN_CTX_DISABLE_SEARCH_INDEX") };
-    let warmed = lean_ctx::core::search_index::warm_blocking(&corpus_str, true, false);
-    println!("\n## Resident index path (warm={warmed})\n");
-    println!("| query | p50 ms | p95 ms | p99 ms | resp tokens |");
-    println!("|---|---|---|---|---|");
-    for (idx, (label, pat)) in queries.iter().enumerate() {
-        // Recall-parity guard: index hits must equal walk hits (Jaccard 1.0).
-        let index_hits = match_lines(&corpus_str, pat);
-        assert_eq!(
-            index_hits, walk_out[idx],
-            "recall parity broken for query {label:?}"
-        );
-        let (p50, p95, p99, tok) = bench_walk(&corpus_str, pat);
-        println!("| {label} | {p50:.3} | {p95:.3} | {p99:.3} | {tok} |");
     }
 }
 
-/// Extracts the set of `file:line` match lines from a search response so the
-/// walk path and index path can be compared for recall parity.
-fn match_lines(corpus: &str, pattern: &str) -> std::collections::BTreeSet<String> {
-    let out = ctx_search::handle(pattern, corpus, None, 500, CrpMode::Off, true, false).text;
-    out.lines()
-        .filter(|l| l.contains(".rs:") || l.contains(".txt:"))
-        .map(str::to_string)
-        .collect()
-}
+

@@ -190,12 +190,7 @@ pub fn ensure_warm_for_tool(project_root: &str, tool: &str) -> bool {
     }
     match warm_need_for_tool(tool) {
         WarmNeed::None => false,
-        WarmNeed::Search => {
-            // The search index has its own TTL + background-rebuild dedup, so it
-            // is safe (and cheap) to nudge on every `ctx_search`.
-            crate::core::search_index::ensure_background(project_root, true, false);
-            false
-        }
+        WarmNeed::Search => false,
         WarmNeed::Heavy => {
             let entry = entry_for(project_root);
             let first_warm = {
@@ -282,10 +277,6 @@ pub fn ensure_all_background(project_root: &str) {
 
     let root = project_root.to_string();
     let indexer = move || {
-        // Pre-warm the resident line-search index in parallel (own thread,
-        // deduped internally) so the first ctx_search hits the fast path.
-        crate::core::search_index::ensure_background(&root, true, false);
-
         // ---- Single IndexPipeline run for Graph + BM25 ----
         let state = entry_for(&root);
 
@@ -542,28 +533,47 @@ pub fn try_load_bm25_index(project_root: &str) -> Option<BM25Index> {
     BM25Index::load(Path::new(project_root))
 }
 
-/// Load the BM25 index from disk, building it via IndexPipeline if not found.
-/// Replacement for the deprecated [`BM25Index::load_or_build`] and
-/// [`BM25Index::build_from_directory`] — routes all callers through the
+/// Result of an IndexPipeline run: both graph and BM25 indexes.
+pub struct IndexBundle {
+    pub graph: ProjectIndex,
+    pub bm25: BM25Index,
+}
+
+/// Load both graph and BM25 indexes from disk, building them via IndexPipeline
+/// if not found. Replacement for the deprecated [`BM25Index::load_or_build`]
+/// and [`BM25Index::build_from_directory`] — routes all callers through the
 /// pipeline so there is a single code path for index construction.
 ///
-/// Returns a default (empty) index when the pipeline cannot be built (e.g.
-/// non-existent root) so callers never panic on index access.
-pub fn load_or_build_bm25(project_root: &Path) -> BM25Index {
-    if let Some(idx) = BM25Index::load(project_root) {
-        return idx;
+/// Returns empty defaults when the pipeline cannot be built (e.g. non-existent
+/// root) so callers never panic on index access.
+pub fn load_indexes(project_root: &Path) -> IndexBundle {
+    let root_str = project_root.to_string_lossy();
+    if let (Some(graph), Some(bm25)) = (
+        ProjectIndex::load(root_str.as_ref()),
+        BM25Index::load(project_root),
+    ) {
+        return IndexBundle { graph, bm25 };
     }
-    // Root guard: non-existent/non-dir roots get an empty index, matching
+    // Root guard: non-existent/non-dir roots get empty indexes, matching
     // the graceful fallback in try_build_pipeline.
     if !project_root.exists() || !project_root.is_dir() {
-        return BM25Index::default();
+        return IndexBundle {
+            graph: ProjectIndex::new(root_str.as_ref()),
+            bm25: BM25Index::default(),
+        };
     }
     match IndexPipeline::new(project_root.to_path_buf()).build() {
         Ok(pipeline) => match pipeline.run_and_load() {
-            Ok((_, bm25)) => bm25,
-            Err(_) => BM25Index::default(),
+            Ok((graph, bm25)) => IndexBundle { graph, bm25 },
+            Err(_) => IndexBundle {
+                graph: ProjectIndex::new(root_str.as_ref()),
+                bm25: BM25Index::default(),
+            },
         },
-        Err(_) => BM25Index::default(),
+        Err(_) => IndexBundle {
+            graph: ProjectIndex::new(root_str.as_ref()),
+            bm25: BM25Index::default(),
+        },
     }
 }
 

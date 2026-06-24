@@ -84,7 +84,7 @@ fn baseline_entries(workspace: &Path) -> Vec<(String, String)> {
 
 /// `(relpath, rendered_content)` in lean-ctx order: BM25-ranked by `query`, then compressed.
 fn lean_ctx_entries(workspace: &Path, query: &str) -> Vec<(String, String)> {
-    let index = crate::core::index_orchestrator::load_or_build_bm25(workspace);
+    let index = crate::core::index_orchestrator::load_indexes(workspace).bm25;
     let ranked = index.search(query, 256);
     let mut out = Vec::new();
     let mut seen = std::collections::HashSet::new();

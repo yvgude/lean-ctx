@@ -105,7 +105,7 @@ pub fn build(project_root: &Path, opts: &ExportOptions) -> Result<ContextArtifac
         index_dir: GraphProvider::index_dir(&root_s).map(|p| p.to_string_lossy().to_string()),
     };
 
-    let bm25 = crate::core::index_orchestrator::load_or_build_bm25(project_root);
+    let bm25 = crate::core::index_orchestrator::load_indexes(project_root).bm25;
     let bm25_summary = Bm25IndexSummary {
         files: bm25.files.len(),
         chunks: bm25.doc_count,

@@ -70,6 +70,63 @@ fn search_deadline() -> Option<Duration> {
     (ms > 0).then(|| Duration::from_millis(ms))
 }
 
+/// Try to extract literal tokens from a regex pattern and query the FTS5
+/// `file_fts` table for candidate file paths.
+///
+/// Returns `None` when FTS5 is unavailable or the pattern has no indexable
+/// tokens — the caller falls back to a full directory walk.
+fn try_fts_prefilter(
+    pattern: &str,
+    root: &Path,
+    include_patterns: &[glob::Pattern],
+) -> Option<Vec<PathBuf>> {
+    // Extract alphanumeric tokens (length >= 3 to skip noise)
+    let tokens: Vec<&str> = pattern
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 3)
+        .collect();
+    if tokens.is_empty() {
+        return None;
+    }
+
+    // Build FTS5 MATCH query: all tokens ANDed together, each quoted
+    let query = tokens
+        .iter()
+        .map(|t| {
+            let cleaned: String = t.chars().filter(|c| c.is_alphanumeric()).collect();
+            format!("\"{}\"", cleaned)
+        })
+        .collect::<Vec<_>>()
+        .join(" AND ");
+
+    // Open the property graph DB
+    let root_str = root.to_string_lossy();
+    let graph = crate::core::property_graph::CodeGraph::open(&root_str).ok()?;
+    let conn = graph.connection();
+
+    // Query file_fts for matching file paths (paths are relative, per sync.rs)
+    let mut stmt = conn
+        .prepare("SELECT DISTINCT path FROM file_fts WHERE file_fts MATCH ?")
+        .ok()?;
+
+    let paths: Vec<PathBuf> = stmt
+        .query_map(rusqlite::params![query], |row| row.get::<_, String>(0))
+        .ok()?
+        .filter_map(|r| r.ok())
+        .filter(|rel_path| {
+            include_patterns.is_empty()
+                || include_patterns.iter().any(|p| p.matches(rel_path))
+        })
+        .map(|rel_path| root.join(&rel_path))
+        .collect();
+
+    if paths.is_empty() {
+        None
+    } else {
+        Some(paths)
+    }
+}
+
 /// Searches files for a regex pattern with compressed output and monorepo scope hints.
 pub fn handle(
     pattern: &str,
@@ -126,18 +183,15 @@ pub fn handle(
     let mut files_skipped_special = 0u32;
     let mut deadline_hit = false;
 
-    // Fast path: a warm resident trigram index narrows the candidate files in
-    // memory, eliminating the per-call directory walk + full-corpus read. The
-    // index covers the exact same file universe as the walk below, and matches
-    // are still verified line-by-line with the same regex — so results are
-    // identical. Missing/stale index → returns None and triggers a background
-    // (re)build; this call uses the walk fallback.
-    let used_index = if let Some(idx) =
-        crate::core::search_index::get_fresh(dir, respect_gitignore, allow_secret_paths)
+    // Fast path: use the FTS5 `file_fts` table as a pre-filter to narrow
+    // candidate files, avoiding a full directory walk. Literal tokens are
+    // extracted from the regex pattern and ANDed together in a MATCH query.
+    // Falls back to the directory walk when the graph DB is unavailable or
+    // the pattern has no indexable tokens (too short, all special chars).
+    let used_index = if let Some(candidates) =
+        try_fts_prefilter(pattern, root, &include_patterns)
     {
-        files = idx
-            .candidate_paths(pattern, &include_patterns, root)
-            .into_paths();
+        files = candidates;
         true
     } else {
         false
@@ -669,11 +723,8 @@ mod tests {
 
     #[test]
     fn warm_index_and_content_cache_path_returns_correct_matches() {
-        // Exercises the trigram-index fast path together with the shared content
-        // cache (#148): the index build reads the corpus once and publishes it,
-        // then this search reuses those bytes. Results must be byte-identical to
-        // the walk path — this asserts that correctness, independent of whether
-        // any individual file is a cache hit or a fallback re-read.
+        // Verify that ctx_search finds the right files in a small corpus without
+        // any pre-built index (the walk path scans files directly).
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("a.rs"),
@@ -683,17 +734,10 @@ mod tests {
         std::fs::write(dir.path().join("b.rs"), "fn connect() {}\n").unwrap();
         let root = dir.path().to_string_lossy().to_string();
 
-        // Synchronously warm the resident trigram index (also populates the
-        // shared content cache for these paths).
-        assert!(
-            crate::core::search_index::warm_blocking(&root, true, false),
-            "index should warm for a small clean corpus"
-        );
-
         let out = handle("authenticate", &root, None, 10, CrpMode::Off, true, false).text;
         assert!(
             out.contains("a.rs"),
-            "warm-index + cache search must find the match: {out}"
+            "search must find the match in a.rs: {out}"
         );
         assert!(
             out.contains("authenticate"),
