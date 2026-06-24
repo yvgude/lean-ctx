@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn test_minhash_basic_function() {
-        let src = r#"
+        let src = r"
 pub fn add(a: i32, b: i32) -> i32 {
     let result = a + b;
     if result > 100 {
@@ -160,7 +160,7 @@ pub fn add(a: i32, b: i32) -> i32 {
     }
     result
 }
-"#;
+";
         let tree = parse_rust(src);
         let root = tree.root_node();
         // first named child is the function_item
@@ -175,8 +175,7 @@ pub fn add(a: i32, b: i32) -> i32 {
         for (i, &v) in mh.iter().enumerate() {
             assert!(
                 v != u32::MAX,
-                "seed {} still at MAX — no trigram gave a hash?",
-                i
+                "seed {i} still at MAX — no trigram gave a hash?"
             );
         }
     }
@@ -292,7 +291,7 @@ fn bar(x: i32) -> i32 {
 
     #[test]
     fn test_struct_minhash() {
-        let src = r#"
+        let src = r"
 pub struct Config {
     pub host: String,
     pub port: u16,
@@ -303,7 +302,7 @@ pub struct Config {
     pub cert_path: Option<String>,
     pub key_path: Option<String>,
 }
-"#;
+";
         let tree = parse_rust(src);
         let root = tree.root_node();
         let struct_node = root.named_child(0).expect("struct_item");
@@ -314,7 +313,7 @@ pub struct Config {
 
     #[test]
     fn test_impl_minhash() {
-        let src = r#"
+        let src = r"
 impl Point {
     pub fn new(x: f64, y: f64) -> Self {
         Self { x, y }
@@ -324,7 +323,7 @@ impl Point {
         0.0
     }
 }
-"#;
+";
         let tree = parse_rust(src);
         let root = tree.root_node();
         let impl_node = root.named_child(0).expect("impl_item");
