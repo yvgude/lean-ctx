@@ -54,9 +54,7 @@ pub fn run() {
                 // carries runtime/session vars the MCP server never sees. Bridge
                 // them so ctx_shell can forward them too (#370).
                 core::agent_runtime_env::capture();
-                if std::env::var("LEAN_CTX_ACTIVE").is_ok()
-                    || std::env::var("LEAN_CTX_DISABLED").is_ok()
-                {
+                if crate::shell::reentry::should_pass_through() {
                     passthrough(&command);
                 }
                 if raw {
@@ -81,9 +79,7 @@ pub fn run() {
                     shell::exec_argv(cmd_args)
                 } else {
                     let command = cmd_args[0].clone();
-                    if std::env::var("LEAN_CTX_ACTIVE").is_ok()
-                        || std::env::var("LEAN_CTX_DISABLED").is_ok()
-                    {
+                    if crate::shell::reentry::should_pass_through() {
                         passthrough(&command);
                     }
                     shell::exec(&command)
@@ -822,7 +818,8 @@ fn restore_sigpipe_default() {}
 fn passthrough(command: &str) -> ! {
     let (shell, flag) = shell::shell_and_flag();
     let mut cmd = std::process::Command::new(&shell);
-    cmd.arg(&flag).arg(command).env("LEAN_CTX_ACTIVE", "1");
+    cmd.arg(&flag).arg(command);
+    shell::reentry::mark_child(&mut cmd);
     shell::platform::apply_utf8_locale(&mut cmd);
     let status = cmd.status().map_or(127, |s| s.code().unwrap_or(1));
     std::process::exit(status);

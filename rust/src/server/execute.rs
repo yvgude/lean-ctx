@@ -24,9 +24,9 @@ pub(crate) fn execute_command_with_env(
     }
     cmd.arg(&flag)
         .arg(&normalized_cmd)
-        .env("LEAN_CTX_ACTIVE", "1")
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::null());
+    crate::shell::reentry::mark_child(&mut cmd);
 
     if !extra_env.contains_key("GIT_PAGER") {
         cmd.env("GIT_PAGER", "cat");

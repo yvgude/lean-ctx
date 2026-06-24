@@ -236,7 +236,7 @@ pub fn exec_argv(args: &[String]) -> i32 {
         return code;
     }
 
-    if std::env::var("LEAN_CTX_DISABLED").is_ok() || std::env::var("LEAN_CTX_ACTIVE").is_ok() {
+    if super::reentry::should_pass_through() {
         return exec_direct(args);
     }
 
@@ -257,10 +257,10 @@ pub fn exec_argv(args: &[String]) -> i32 {
 fn exec_direct(args: &[String]) -> i32 {
     let mut cmd = Command::new(&args[0]);
     cmd.args(&args[1..])
-        .env("LEAN_CTX_ACTIVE", "1")
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
+    super::reentry::mark_child(&mut cmd);
     super::platform::apply_utf8_locale(&mut cmd);
     let status = cmd.status();
 
@@ -373,7 +373,7 @@ pub fn exec(command: &str) -> i32 {
     let command = crate::tools::ctx_shell::normalize_command_for_shell(command);
     let command = command.as_str();
 
-    if std::env::var("LEAN_CTX_DISABLED").is_ok() || std::env::var("LEAN_CTX_ACTIVE").is_ok() {
+    if super::reentry::should_pass_through() {
         return exec_inherit(command, &shell, &shell_flag);
     }
 
@@ -427,10 +427,10 @@ fn exec_inherit(command: &str, shell: &str, shell_flag: &str) -> i32 {
     let mut cmd = Command::new(shell);
     cmd.arg(shell_flag)
         .arg(command)
-        .env("LEAN_CTX_ACTIVE", "1")
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
+    super::reentry::mark_child(&mut cmd);
     super::platform::apply_utf8_locale(&mut cmd);
     super::platform::apply_profile_free_env(&mut cmd);
     let status = cmd.status();
@@ -525,9 +525,8 @@ fn exec_buffered(command: &str, shell: &str, shell_flag: &str, cfg: &config::Con
         cmd.arg(command);
     }
 
-    cmd.env("LEAN_CTX_ACTIVE", "1")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    super::reentry::mark_child(&mut cmd);
     super::platform::apply_utf8_locale(&mut cmd);
     super::platform::apply_profile_free_env(&mut cmd);
     let child = cmd.spawn();

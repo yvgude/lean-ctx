@@ -4,6 +4,7 @@ mod interactive;
 pub mod output_policy;
 pub(crate) mod platform;
 mod redact;
+pub(crate) mod reentry;
 pub(crate) mod tee_policy;
 
 pub use compress::compress_if_beneficial_pub;
