@@ -1871,6 +1871,59 @@ pub(super) fn lsp_server_outcomes() -> Vec<Outcome> {
         .collect()
 }
 
+/// Warn if lean-ctx is running as an MCP server from a directory that lacks
+/// a project marker and looks like an IDE/agent tool directory (e.g. .lmstudio,
+/// .claude). This usually means the MCP client launched the process from the
+/// wrong CWD, causing "path escapes project root" errors for every tool call.
+pub(super) fn mcp_server_cwd_outcome() -> Outcome {
+    let is_mcp = std::env::var("LEAN_CTX_MCP_SERVER").is_ok_and(|v| v == "1");
+    if !is_mcp {
+        return Outcome {
+            ok: true,
+            line: format!("{BOLD}MCP server CWD{RST}  {DIM}(not running as MCP server){RST}"),
+        };
+    }
+
+    let Ok(cwd) = std::env::current_dir() else {
+        return Outcome {
+            ok: true,
+            line: format!("{BOLD}MCP server CWD{RST}  {YELLOW}could not resolve{RST}"),
+        };
+    };
+
+    let has_marker = crate::core::pathutil::has_project_marker(&cwd);
+    let cwd_str = cwd.to_string_lossy();
+    let suspicious = cwd_str.contains("/.lmstudio")
+        || cwd_str.contains("/.claude")
+        || cwd_str.contains("/.codebuddy")
+        || cwd_str.contains("/.codex");
+
+    if has_marker {
+        Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}MCP server CWD{RST}  {GREEN}under project root{RST}  {DIM}{}{RST}",
+                cwd.display()
+            ),
+        }
+    } else if suspicious {
+        Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}MCP server CWD{RST}  {RED}suspicious directory without project marker{RST}  {DIM}lean-ctx was launched from {cwd}, which is an IDE/agent config dir without a project root — \"path escapes project root\" errors will occur. Set `cwd` in your MCP client config to a real project directory, or add `allow_auto_reroot = true` + `extra_roots` in config.toml{RST}"
+            ),
+        }
+    } else {
+        Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}MCP server CWD{RST}  {YELLOW}no project marker found in CWD{RST}  {DIM}cwd={} — \"path escapes project root\" errors may occur for files outside this directory. Add `cwd` to your MCP client config or add `extra_roots` / `allow_paths` in config.toml{RST}",
+                cwd.display()
+            ),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

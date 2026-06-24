@@ -546,6 +546,10 @@ pub fn run() {
     let deprecation_check = deprecations::deprecations_outcome();
     board.check(&deprecation_check);
 
+    // MCP server CWD warning (informational, only fires when running as MCP)
+    let mcp_cwd = mcp_server_cwd_outcome();
+    board.check(&mcp_cwd);
+
     // LSP servers (optional, informational)
     println!("\n  {BOLD}{WHITE}LSP (optional — for ctx_refactor):{RST}");
     let lsp_outcomes = lsp_server_outcomes();

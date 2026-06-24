@@ -118,8 +118,10 @@ impl ServerHandler for LeanCtxServer {
                 let root_suspicious = crate::core::pathutil::is_broad_or_unsafe_root(root_path)
                     || root_str.contains("/var/folders/")
                     || root_str.contains("/tmp/")
+                    || root_str.contains("/.lmstudio")
                     || root_str.contains("\\AppData\\Local\\Temp")
-                    || root_str.contains("\\Temp\\");
+                    || root_str.contains("\\Temp\\")
+                    || root_str.contains("\\.lmstudio");
                 if root_suspicious && !root_has_marker {
                     tracing::info!("Dropping suspicious persisted project root: {root}");
                     session.project_root = None;

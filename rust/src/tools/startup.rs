@@ -20,9 +20,11 @@ pub(super) fn is_suspicious_root(dir: &std::path::Path) -> bool {
     s.contains("/.claude")
         || s.contains("/.codebuddy")
         || s.contains("/.codex")
+        || s.contains("/.lmstudio")
         || s.contains("\\.claude")
         || s.contains("\\.codebuddy")
         || s.contains("\\.codex")
+        || s.contains("\\.lmstudio")
 }
 
 pub(super) fn canonicalize_path(path: &std::path::Path) -> String {
