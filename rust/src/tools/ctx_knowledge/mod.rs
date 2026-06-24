@@ -1,12 +1,13 @@
 use chrono::Utc;
 
-#[cfg(feature = "embeddings")]
-use crate::core::embeddings::EmbeddingEngine;
-
 use crate::core::knowledge::ProjectKnowledge;
 use crate::core::memory_policy::MemoryPolicy;
 use crate::core::session::SessionState;
+#[cfg(feature = "embeddings")]
+use crate::core::embeddings::EmbeddingEngine;
+#[cfg(feature = "embeddings")]
 pub(crate) mod embeddings;
+#[cfg(feature = "embeddings")]
 pub(crate) use embeddings::*;
 mod remember;
 pub(crate) use remember::*;
@@ -15,6 +16,33 @@ pub(crate) use search::*;
 
 fn load_policy_or_error() -> Result<MemoryPolicy, String> {
     super::knowledge_shared::load_policy_or_error()
+}
+
+/// Engine status diagnostic — available with or without the `embeddings` feature
+/// so `ctx_metrics` always has a status string to show.
+pub(crate) fn engine_status_line() -> String {
+    #[cfg(feature = "embeddings")]
+    {
+        let cfg = crate::core::config::Config::load();
+        let profile = crate::core::config::MemoryProfile::effective(&cfg);
+        if !profile.embeddings_enabled() {
+            return "off (memory profile: low)".to_string();
+        }
+        if crate::core::embeddings::try_shared_engine().is_some() {
+            return "loaded".to_string();
+        }
+        if EmbeddingEngine::is_available() {
+            return "model present, engine loads on first use".to_string();
+        }
+        if embeddings::embeddings_auto_download_allowed() {
+            return "model missing — downloads in background on first semantic need".to_string();
+        }
+        "off (auto-download disabled, no model present)".to_string()
+    }
+    #[cfg(not(feature = "embeddings"))]
+    {
+        "off (binary built without embeddings feature)".to_string()
+    }
 }
 
 /// Dispatches knowledge base actions (remember, recall, pattern, timeline, etc.).
@@ -78,9 +106,16 @@ pub fn handle(
         "rooms" => handle_rooms(project_root),
         "search" => handle_search(query),
         "wakeup" => handle_wakeup(project_root),
+        #[cfg(feature = "embeddings")]
         "embeddings_status" => handle_embeddings_status(project_root),
+        #[cfg(feature = "embeddings")]
         "embeddings_reset" => handle_embeddings_reset(project_root),
+        #[cfg(feature = "embeddings")]
         "embeddings_reindex" => handle_embeddings_reindex(project_root),
+        #[cfg(not(feature = "embeddings"))]
+        "embeddings_status" | "embeddings_reset" | "embeddings_reindex" => {
+            "ERR: embeddings feature not enabled in this build".to_string()
+        }
         "judge" => handle_judge(project_root, category, key, value, query),
         "cognition_loop" => handle_cognition_loop(project_root),
         "bridge_publish" => handle_bridge_publish(project_root, session_id),

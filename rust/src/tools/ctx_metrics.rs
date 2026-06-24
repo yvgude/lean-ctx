@@ -165,7 +165,7 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
         } else {
             "Embedding engine:"
         },
-        crate::tools::ctx_knowledge::embeddings::engine_status_line()
+        crate::tools::ctx_knowledge::engine_status_line()
     ));
 
     if !tool_calls.is_empty() {

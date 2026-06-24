@@ -427,34 +427,6 @@ pub fn ensure_extra_roots_background(primary_root: &str, extra_roots: &[String])
     }
 }
 
-/// Build a human-readable outcome note for a finished BM25 build, including the
-/// indexed chunk count and whether the index was persisted to disk. A
-/// "too large" refusal carries the exact remedy so the operator (or agent) is
-/// never left guessing why search/ranking stays cold (issue #249).
-fn bm25_build_note(
-    doc_count: usize,
-    save: &std::io::Result<crate::core::bm25_index::SaveOutcome>,
-) -> String {
-    use crate::core::bm25_index::SaveOutcome;
-    match save {
-        Ok(SaveOutcome::Persisted { compressed_bytes }) => format!(
-            "indexed {doc_count} chunks, {:.1} MB persisted",
-            *compressed_bytes as f64 / 1_048_576.0
-        ),
-        Ok(SaveOutcome::SkippedTooLarge {
-            compressed_bytes,
-            limit_bytes,
-        }) => format!(
-            "indexed {doc_count} chunks but NOT persisted to disk: compressed {:.1} MB exceeds the {:.0} MB cap. \
-             Raise it via LEAN_CTX_BM25_MAX_CACHE_MB (or bm25_max_cache_mb in config) or add extra_ignore_patterns, \
-             then run `lean-ctx reindex`. Until then the index is rebuilt from scratch on every cold start.",
-            *compressed_bytes as f64 / 1_048_576.0,
-            *limit_bytes as f64 / 1_048_576.0
-        ),
-        Err(e) => format!("indexed {doc_count} chunks but persisting failed: {e}"),
-    }
-}
-
 /// Lightweight, allocation-frugal snapshot of the BM25 component for the
 /// in-call composer/search messaging. Avoids the heavier [`disk_status`] walk.
 #[derive(Debug, Clone)]
@@ -854,53 +826,6 @@ mod tests {
         assert!(
             !ensure_warm_for_tool(&root, "ctx_semantic_search"),
             "any later heavy tool on the same root is also deduped"
-        );
-    }
-
-    #[test]
-    fn build_note_persisted_reports_size() {
-        let note = bm25_build_note(
-            42,
-            &Ok(crate::core::bm25_index::SaveOutcome::Persisted {
-                compressed_bytes: 3 * 1024 * 1024,
-            }),
-        );
-        assert!(
-            note.contains("42 chunks"),
-            "note should report chunk count: {note}"
-        );
-        assert!(
-            note.contains("persisted"),
-            "note should report persistence: {note}"
-        );
-    }
-
-    #[test]
-    fn build_note_too_large_carries_remedy() {
-        let note = bm25_build_note(
-            1000,
-            &Ok(crate::core::bm25_index::SaveOutcome::SkippedTooLarge {
-                compressed_bytes: 600 * 1024 * 1024,
-                limit_bytes: 512 * 1024 * 1024,
-            }),
-        );
-        assert!(
-            note.contains("NOT persisted"),
-            "must flag non-persistence: {note}"
-        );
-        assert!(
-            note.contains("LEAN_CTX_BM25_MAX_CACHE_MB") && note.contains("reindex"),
-            "too-large note must carry an actionable remedy: {note}"
-        );
-    }
-
-    #[test]
-    fn build_note_persist_error_is_reported() {
-        let note = bm25_build_note(7, &Err(std::io::Error::other("disk full")));
-        assert!(note.contains("persisting failed"), "note: {note}");
-        assert!(
-            note.contains("disk full"),
-            "note should include the io error: {note}"
         );
     }
 
