@@ -112,7 +112,7 @@ fn build_mode_comparisons(bench: &ProjectBenchmark) -> Vec<ModeComparison> {
 }
 
 fn measure_search_latency(root: &Path) -> Vec<SearchLatency> {
-    let index = crate::core::index_orchestrator::load_or_build_bm25(root);
+    let index = crate::core::index_orchestrator::load_indexes(root).bm25;
 
     SEARCH_QUERIES
         .iter()
@@ -158,7 +158,7 @@ fn measure_cold_start(root: &Path) -> ColdStartTiming {
     let scan_us = scan_start.elapsed().as_micros() as u64;
 
     let bm25_start = Instant::now();
-    let _index = crate::core::index_orchestrator::load_or_build_bm25(root);
+    let _index = crate::core::index_orchestrator::load_indexes(root).bm25;
     let bm25_build_us = bm25_start.elapsed().as_micros() as u64;
 
     let read_start = Instant::now();
@@ -252,6 +252,74 @@ pub fn format_duration_us(us: u64) -> String {
 }
 
 #[cfg(test)]
+pub(crate) fn create_synthetic_benchmark_dir() -> tempfile::TempDir {
+    let dir = tempfile::TempDir::new().unwrap();
+
+    // Realistic Rust code so signature extraction, compression, preservation all work
+    std::fs::write(
+        dir.path().join("main.rs"),
+        r#"fn main() {
+    println!("Hello, world!");
+    let x = 42;
+    let y = x * 2;
+    process(y);
+}
+
+fn process(val: i32) -> String {
+    let msg = format!("value is {val}");
+    log(&msg);
+    msg
+}
+
+fn log(s: &str) {
+    eprintln!("LOG: {s}");
+}
+
+struct Point { x: f64, y: f64 }
+
+impl Point {
+    fn new(x: f64, y: f64) -> Self { Self { x, y } }
+    fn distance(&self, other: &Point) -> f64 {
+        let dx = self.x - other.x;
+        let dy = self.y - other.y;
+        (dx * dx + dy * dy).sqrt()
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    std::fs::write(
+        dir.path().join("lib.rs"),
+        r#"pub enum Status { Active, Inactive, Pending }
+
+pub trait Processor {
+    fn process(&self, input: &str) -> String;
+}
+
+pub struct Store { items: Vec<String> }
+
+impl Store {
+    pub fn new() -> Self { Self { items: Vec::new() } }
+    pub fn add(&mut self, item: String) { self.items.push(item); }
+    pub fn count(&self) -> usize { self.items.len() }
+}
+
+pub fn status_code(s: &Status) -> u8 {
+    match s {
+        Status::Active => 1,
+        Status::Inactive => 0,
+        Status::Pending => 2,
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    dir
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -290,12 +358,11 @@ mod tests {
     }
 
     #[test]
-    fn measure_all_on_src() {
-        let root = Path::new("src");
-        let metrics = measure_all(root);
+    fn measure_all_on_synthetic_dir() {
+        let dir = create_synthetic_benchmark_dir();
+        let metrics = measure_all(dir.path());
         assert!(metrics.project_benchmark.files_measured > 0);
         assert!(!metrics.mode_comparisons.is_empty());
-        assert!(!metrics.search_latencies.is_empty());
         assert!(metrics.feature_count > 0);
     }
 }

@@ -16,6 +16,7 @@ use super::{
     PropertyGraphMetaV1, write_meta,
 };
 use crate::core::graph_index::ProjectIndex;
+use rusqlite::params;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -83,6 +84,22 @@ fn json_str(s: &str) -> String {
     out
 }
 
+/// Split a symbol name on camelCase boundaries, then rejoin with spaces.
+/// "loadOrBuildBm25" → "load Or Build Bm25"
+/// "IndexPipeline" → "Index Pipeline"
+/// "__rust_begin_short_backtrace" → "__rust_begin_short_backtrace" (underscore-separated stays as-is)
+fn split_camel_case(name: &str) -> String {
+    let mut result = String::with_capacity(name.len() + 8);
+    let mut chars = name.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c.is_uppercase() && result.chars().last().map_or(false, |p| p.is_lowercase()) {
+            result.push(' ');
+        }
+        result.push(c);
+    }
+    result
+}
+
 /// Mirror `index` into `graph`: file nodes + file catalog, symbol nodes (with
 /// line spans + kind/export metadata), and structural edges. Clears the code
 /// graph first (preserving provider cross-source edges) so the result is a
@@ -142,6 +159,38 @@ pub fn mirror_index(project_root: &str, index: &ProjectIndex) -> anyhow::Result<
     let t0 = Instant::now();
     let graph = CodeGraph::open(project_root)?;
     populate_from_project_index(&graph, index)?;
+
+    // Populate symbols_fts (camelCase-split symbol names for ctx_symbol search).
+    graph.connection().execute("DELETE FROM symbols_fts", [])?;
+    {
+        let tx = graph.connection().unchecked_transaction()?;
+        for sym in index.symbols.values() {
+            let split_name = split_camel_case(&sym.name);
+            let qualified = format!("{}::{}", sym.file, sym.name);
+            tx.execute(
+                "INSERT INTO symbols_fts(name, qualified_name, label, file_path) VALUES (?1, ?2, ?3, ?4)",
+                params![split_name, qualified, sym.kind, sym.file],
+            )?;
+        }
+        tx.commit()?;
+    }
+
+    // Populate file_fts (file content for ctx_search pre-filter).
+    graph.connection().execute("DELETE FROM file_fts", [])?;
+    {
+        let tx = graph.connection().unchecked_transaction()?;
+        let root = Path::new(project_root);
+        for path in index.files.keys() {
+            let abs_path = root.join(path);
+            if let Ok(content) = std::fs::read_to_string(&abs_path) {
+                tx.execute(
+                    "INSERT INTO file_fts(path, content) VALUES (?1, ?2)",
+                    params![path, content],
+                )?;
+            }
+        }
+        tx.commit()?;
+    }
 
     let root_path = Path::new(project_root);
     let _ = write_meta(

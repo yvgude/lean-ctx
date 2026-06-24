@@ -441,7 +441,6 @@ pub mod savings_footer;
 pub mod savings_ledger;
 pub mod scent_field;
 pub mod search_delta;
-pub mod search_index;
 pub mod secret_detection;
 pub mod security_posture;
 pub mod sensitivity;

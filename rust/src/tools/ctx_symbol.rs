@@ -1,8 +1,84 @@
 use std::path::Path;
 
-use crate::core::graph_provider::{self, FileInfo, GraphProvider, SymbolInfo};
+use crate::core::graph_provider::SymbolInfo;
+use crate::core::index_orchestrator;
+use crate::core::property_graph::CodeGraph;
 use crate::core::protocol;
 use crate::core::tokens::count_tokens;
+
+/// Search for symbols using the FTS5 symbols_fts table.
+/// Returns None when FTS5 is unavailable.
+fn try_fts_symbol_search(
+    name: &str,
+    file: Option<&str>,
+    kind: Option<&str>,
+    project_root: &str,
+) -> Option<Vec<SymbolInfo>> {
+    use rusqlite::params;
+
+    let graph = CodeGraph::open(project_root).ok()?;
+    let conn = graph.connection();
+
+    // Tokenize the search name: split on non-alphanumeric, quote each token
+    let tokens: Vec<String> = name
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(|t| format!("\"{}\"", t))
+        .collect();
+    if tokens.is_empty() {
+        return None;
+    }
+    let fts_query = tokens.join(" AND ");
+
+    // Query symbols_fts with JOIN to nodes table for line info and metadata.
+    // symbols_fts rowids match the corresponding nodes rowid (both inserted in
+    // the same order during mirror), but we LEFT JOIN to handle mismatch.
+    let sql = "\
+        SELECT s.file_path, s.name, s.label, \
+               COALESCE(n.line_start, 0), COALESCE(n.line_end, 0), \
+               COALESCE(n.metadata, '{}') \
+        FROM symbols_fts s \
+        LEFT JOIN nodes n ON n.rowid = s.rowid \
+        WHERE symbols_fts MATCH ?1";
+
+    let mut stmt = conn.prepare(sql).ok()?;
+
+    let results: Vec<SymbolInfo> = stmt
+        .query_map(params![fts_query], |row| {
+            let metadata_str: String = row.get(5)?;
+            let is_exported = metadata_str.contains("\"exported\":true");
+            Ok(SymbolInfo {
+                file: row.get(0)?,
+                name: row.get(1)?,
+                kind: row.get(2)?,
+                start_line: row.get::<_, i64>(3)? as usize,
+                end_line: row.get::<_, i64>(4)? as usize,
+                is_exported,
+            })
+        })
+        .ok()?
+        .filter_map(|r| r.ok())
+        .filter(|s| {
+            if let Some(f) = file {
+                if !s.file.contains(f) {
+                    return false;
+                }
+            }
+            if let Some(k) = kind {
+                if s.kind != k {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    if results.is_empty() {
+        None
+    } else {
+        Some(results)
+    }
+}
 
 pub fn handle(
     name: &str,
@@ -10,65 +86,68 @@ pub fn handle(
     kind: Option<&str>,
     project_root: &str,
 ) -> (String, usize) {
-    let Some(open) = graph_provider::open_or_build(project_root) else {
-        return (
-            format!(
-                "Symbol '{name}' not found (no graph available). \
-                 Try ctx_search(pattern=\"{name}\") for a broader search.",
-            ),
-            0,
-        );
-    };
-    let gp = &open.provider;
-
-    let matches = gp.find_symbols(name, file, kind);
-
-    if matches.is_empty() {
-        return (
-            format!(
-                "Symbol '{name}' not found in index ({} symbols indexed). \
-                 Try ctx_search(pattern=\"{name}\") for a broader search.",
-                gp.symbol_count()
-            ),
-            0,
-        );
+    // Fast path: use FTS5 symbols_fts for name search
+    if let Some(matches) = try_fts_symbol_search(name, file, kind, project_root) {
+        return match matches.len() {
+            1 => render_single(&matches[0], project_root),
+            2..=5 => render_multiple(&matches, project_root),
+            n => {
+                let mut out = format!(
+                    "{} matches for '{name}'. Narrow with file= or kind=:\n",
+                    n
+                );
+                for m in matches.iter().take(20) {
+                    out.push_str(&format!(
+                        "  {}::{} ({}:L{}-{})\n",
+                        m.file, m.name, m.kind, m.start_line, m.end_line
+                    ));
+                }
+                if matches.len() > 20 {
+                    out.push_str(&format!("  ... and {} more\n", matches.len() - 20));
+                }
+                (out, 0)
+            }
+        };
     }
 
-    if matches.len() == 1 {
-        return render_single(&matches[0], gp, project_root);
+    // Fallback: trigger index build and retry FTS5
+    index_orchestrator::ensure_all_background(project_root);
+    if let Some(matches) = try_fts_symbol_search(name, file, kind, project_root) {
+        return match matches.len() {
+            1 => render_single(&matches[0], project_root),
+            2..=5 => render_multiple(&matches, project_root),
+            n => {
+                let mut out = format!(
+                    "{} matches for '{name}'. Narrow with file= or kind=:\n",
+                    n
+                );
+                for m in matches.iter().take(20) {
+                    out.push_str(&format!(
+                        "  {}::{} ({}:L{}-{})\n",
+                        m.file, m.name, m.kind, m.start_line, m.end_line
+                    ));
+                }
+                if matches.len() > 20 {
+                    out.push_str(&format!("  ... and {} more\n", matches.len() - 20));
+                }
+                (out, 0)
+            }
+        };
     }
-
-    if matches.len() <= 5 {
-        return render_multiple(&matches, gp, project_root);
-    }
-
-    let mut out = format!(
-        "{} matches for '{name}'. Narrow with file= or kind=:\n",
-        matches.len()
-    );
-    for m in matches.iter().take(20) {
-        out.push_str(&format!(
-            "  {}::{} ({}:L{}-{})\n",
-            m.file, m.name, m.kind, m.start_line, m.end_line
-        ));
-    }
-    if matches.len() > 20 {
-        out.push_str(&format!("  ... and {} more\n", matches.len() - 20));
-    }
-    (out, 0)
+    return (format!("Symbol '{name}' not found in index."), 0);
 }
 
 /// Render the body of the single most relevant symbol named `name`.
 /// Used by `ctx_compose` to inline the top symbol's definition. Returns
-/// `(rendered_with_body, full_file_tokens)` or `None` when no graph/symbol.
+/// `(rendered_with_body, full_file_tokens)` or `None` when not found.
 pub fn best_symbol_snippet(name: &str, project_root: &str) -> Option<(String, usize)> {
-    let open = graph_provider::open_or_build(project_root)?;
-    let gp = &open.provider;
-    let sym = gp.find_symbols(name, None, None).into_iter().next()?;
-    Some(render_single(&sym, gp, project_root))
+    let sym = try_fts_symbol_search(name, None, None, project_root)?
+        .into_iter()
+        .next()?;
+    Some(render_single(&sym, project_root))
 }
 
-fn render_single(sym: &SymbolInfo, gp: &GraphProvider, project_root: &str) -> (String, usize) {
+fn render_single(sym: &SymbolInfo, project_root: &str) -> (String, usize) {
     let abs_path = resolve_file_path(&sym.file, project_root);
 
     if let Err(e) = crate::core::pathjail::jail_path(
@@ -110,15 +189,7 @@ fn render_single(sym: &SymbolInfo, gp: &GraphProvider, project_root: &str) -> (S
         sym.file, sym.name, vis, sym.kind, sym.start_line, sym.end_line
     );
 
-    let file_info: Option<FileInfo> = gp.get_file_entry(&sym.file);
-    let ctx = if let Some(f) = file_info {
-        format!(
-            "File: {} ({} lines, {} tokens)",
-            sym.file, f.line_count, f.token_count
-        )
-    } else {
-        format!("File: {}", sym.file)
-    };
+    let ctx = format!("File: {}", sym.file);
 
     let savings = protocol::format_savings(full_tokens, snippet_tokens);
 
@@ -130,7 +201,6 @@ fn render_single(sym: &SymbolInfo, gp: &GraphProvider, project_root: &str) -> (S
 
 fn render_multiple(
     symbols: &[SymbolInfo],
-    gp: &GraphProvider,
     project_root: &str,
 ) -> (String, usize) {
     let mut out = String::new();
@@ -140,7 +210,7 @@ fn render_multiple(
         if i > 0 {
             out.push_str("\n---\n\n");
         }
-        let (rendered, orig) = render_single(sym, gp, project_root);
+        let (rendered, orig) = render_single(sym, project_root);
         out.push_str(&rendered);
         total_original = total_original.max(orig);
     }
@@ -160,76 +230,4 @@ fn resolve_file_path(relative: &str, project_root: &str) -> String {
     relative.to_string()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::core::graph_index::{ProjectIndex, SymbolEntry};
 
-    fn test_provider() -> GraphProvider {
-        let mut index = ProjectIndex::new("/tmp/test");
-        index.symbols.insert(
-            "src/main.rs::main".to_string(),
-            SymbolEntry {
-                file: "src/main.rs".to_string(),
-                name: "main".to_string(),
-                kind: "fn".to_string(),
-                start_line: 1,
-                end_line: 10,
-                is_exported: false,
-            },
-        );
-        index.symbols.insert(
-            "src/lib.rs::Config".to_string(),
-            SymbolEntry {
-                file: "src/lib.rs".to_string(),
-                name: "Config".to_string(),
-                kind: "struct".to_string(),
-                start_line: 5,
-                end_line: 20,
-                is_exported: true,
-            },
-        );
-        index.symbols.insert(
-            "src/lib.rs::Config::load".to_string(),
-            SymbolEntry {
-                file: "src/lib.rs".to_string(),
-                name: "Config::load".to_string(),
-                kind: "method".to_string(),
-                start_line: 22,
-                end_line: 35,
-                is_exported: true,
-            },
-        );
-        GraphProvider::GraphIndex(index)
-    }
-
-    #[test]
-    fn find_exact_match() {
-        let gp = test_provider();
-        let results = gp.find_symbols("main", None, None);
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].name, "main");
-    }
-
-    #[test]
-    fn find_with_kind_filter() {
-        let gp = test_provider();
-        let results = gp.find_symbols("Config", None, Some("struct"));
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].kind, "struct");
-    }
-
-    #[test]
-    fn find_with_file_filter() {
-        let gp = test_provider();
-        let results = gp.find_symbols("Config", Some("lib.rs"), None);
-        assert_eq!(results.len(), 2);
-    }
-
-    #[test]
-    fn no_match_returns_empty() {
-        let gp = test_provider();
-        let results = gp.find_symbols("nonexistent", None, None);
-        assert!(results.is_empty());
-    }
-}

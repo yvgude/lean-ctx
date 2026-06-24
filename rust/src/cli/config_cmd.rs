@@ -622,7 +622,7 @@ pub fn cmd_benchmark(args: &[String]) {
             let is_json = args.iter().any(|a| a == "--json");
             let root = std::path::Path::new(path);
 
-            let index = crate::core::index_orchestrator::load_or_build_bm25(root);
+            let index = crate::core::index_orchestrator::load_indexes(root).bm25;
             let cfg = crate::core::hybrid_search::HybridConfig::from_config();
             let queries = crate::core::eval_harness::generate_self_eval(&index, 50);
 
@@ -652,7 +652,7 @@ pub fn cmd_benchmark(args: &[String]) {
                 std::process::exit(1);
             }
 
-            let index = crate::core::index_orchestrator::load_or_build_bm25(root);
+            let index = crate::core::index_orchestrator::load_indexes(root).bm25;
             let cfg = crate::core::hybrid_search::HybridConfig::from_config();
 
             let queries = match parse_flag_value(args, "--suite") {

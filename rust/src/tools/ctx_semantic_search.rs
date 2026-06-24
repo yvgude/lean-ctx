@@ -166,7 +166,7 @@ pub fn search_hits(
     let filter =
         SearchFilter::new(languages, path_glob).map_err(|e| format!("invalid filter: {e}"))?;
 
-    let index = crate::core::index_orchestrator::load_or_build_bm25(root);
+    let index = crate::core::index_orchestrator::load_indexes(root).bm25;
     if index.doc_count == 0 {
         return Ok(Vec::new());
     }
@@ -228,7 +228,7 @@ pub fn handle_reindex(path: &str) -> String {
         root
     };
 
-    let idx = crate::core::index_orchestrator::load_or_build_bm25(root);
+    let idx = crate::core::index_orchestrator::load_indexes(root).bm25;
     let files = idx.files.len();
     let chunks = idx.doc_count;
     let _ = idx.save(root);
@@ -292,7 +292,7 @@ pub fn handle_find_related(
         return format!("ERR: path does not exist: {project_root}");
     }
 
-    let index = crate::core::index_orchestrator::load_or_build_bm25(root);
+    let index = crate::core::index_orchestrator::load_indexes(root).bm25;
     if index.doc_count == 0 {
         return "ERR: empty index. Try action=reindex first.".to_string();
     }
@@ -591,7 +591,7 @@ fn workspace_search(
 
     for r in &roots {
         let label = label_for_root(r);
-        let index = crate::core::index_orchestrator::load_or_build_bm25(r);
+        let index = crate::core::index_orchestrator::load_indexes(r).bm25;
         if index.doc_count == 0 {
             continue;
         }

@@ -33,10 +33,12 @@ pub fn run_compare(root: &Path, output_path: Option<&str>) -> CompareReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::benchmark_compare::metrics::create_synthetic_benchmark_dir;
 
     #[test]
     fn run_compare_produces_valid_report() {
-        let report = run_compare(Path::new("src"), None);
+        let dir = create_synthetic_benchmark_dir();
+        let report = run_compare(dir.path(), None);
         assert!(report.metrics.project_benchmark.files_measured > 0);
         assert!(!report.competitors.is_empty());
         assert!(!report.system.lean_ctx_version.is_empty());
@@ -44,11 +46,12 @@ mod tests {
 
     #[test]
     fn run_compare_writes_output_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let out_path = dir.path().join("test_benchmarks.md");
+        let dir = create_synthetic_benchmark_dir();
+        let out_dir = tempfile::tempdir().unwrap();
+        let out_path = out_dir.path().join("test_benchmarks.md");
         let out_str = out_path.to_string_lossy().to_string();
 
-        let report = run_compare(Path::new("src"), Some(&out_str));
+        let report = run_compare(dir.path(), Some(&out_str));
         assert!(out_path.exists());
 
         let content = std::fs::read_to_string(&out_path).unwrap();

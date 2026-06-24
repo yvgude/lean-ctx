@@ -83,6 +83,17 @@ pub(super) fn initialize(conn: &Connection) -> anyhow::Result<()> {
             mode_mask    INTEGER NOT NULL DEFAULT 0,
             updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
+            name, qualified_name, label, file_path,
+            tokenize='unicode61 remove_diacritics 2'
+        );
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS file_fts USING fts5(
+            path UNINDEXED,
+            content,
+            tokenize='unicode61'
+        );
         ",
     )?;
     Ok(())
@@ -110,6 +121,8 @@ mod tests {
         assert!(tables.contains(&"file_catalog".to_string()));
         assert!(tables.contains(&"cross_source_edges".to_string()));
         assert!(tables.contains(&"file_metadata".to_string()));
+        assert!(tables.contains(&"symbols_fts".to_string()));
+        assert!(tables.contains(&"file_fts".to_string()));
     }
 
     #[test]
