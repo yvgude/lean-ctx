@@ -117,6 +117,7 @@ lean-ctx setup
 
 ## More Resources
 
+- [Addons — Community Extensions](addons.md)
 - [Monorepo Guide](monorepo.md)
 - [Custom Embedding Models](custom-embeddings.md)
 - [Context Policy Packs](policy-packs.md)

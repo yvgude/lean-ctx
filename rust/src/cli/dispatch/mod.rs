@@ -151,6 +151,10 @@ pub fn run() {
                 crate::cli::plugin_cmd::cmd_plugin(&rest);
                 return;
             }
+            "addon" | "addons" => {
+                crate::cli::addon_cmd::cmd_addon(&rest);
+                return;
+            }
             "rules" => {
                 crate::cli::rules_cmd::cmd_rules(&rest);
                 return;

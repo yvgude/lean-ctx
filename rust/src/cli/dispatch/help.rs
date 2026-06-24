@@ -226,6 +226,8 @@ COMMANDS:
     visualize [--output F] [--open] Generate interactive HTML report (D3.js graph)
     plugin list|enable|disable|info|init|hooks
                                    Manage lean-ctx plugins
+    addon list|search|info|add|remove
+                                   Community addons: wire external MCP servers via the gateway
     rules sync|diff|lint|status|init
                                    ContextOps: cross-agent rules governance
     policy list|show|validate|coverage|org  Context policy packs (+ signed org-policy floor)

@@ -6,6 +6,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Addon ecosystem — `lean-ctx addon` (#858).** A package manager for community
+  extensions: an *addon* wraps an external MCP server behind a small
+  `lean-ctx-addon.toml` manifest and plugs into the MCP gateway with one
+  `lean-ctx addon add` — no fork, no recompile. `list` / `search` / `info` browse
+  a curated registry (bundled `rust/data/addon_registry.json`, overridable per
+  entry via `<data_dir>/addon_registry.json`); `add` resolves a registry name **or**
+  a local manifest path, discloses the exact transport/command/args/env it will
+  run, then — after confirmation (`--yes` to skip; refuses non-interactively
+  without it) — wires a `[[gateway.servers]]` entry via the safe global-only
+  `Config::update_global` path and records it in `<data_dir>/addons/installed.json`;
+  `remove` unwinds exactly what it wired. Registry entries without a runnable
+  `[mcp]` block are *listed* (directory + homepage link), never installed with
+  fabricated wiring. Reuses the gateway trust model (global-only, opt-in) and the
+  `cli::prompt` confirmation gate; no new config section, so schema parity is
+  untouched. Manifest, registry and install logic live in small, unit-tested
+  `core::addons::{manifest,registry,store,install}` modules. Spec:
+  [`addon-manifest-v1`](docs/contracts/addon-manifest-v1.md) · guide:
+  [`docs/guides/addons.md`](docs/guides/addons.md).
 - **Repo-stack-aware profile recommendation — `lean-ctx profile suggest` (#851).**
   Scans the current repo for deterministic, local signals (languages + source-file
   count, monorepo layout via `pathutil::has_multi_repo_children` + workspace

@@ -1,3 +1,4 @@
+pub mod addon_cmd;
 mod agent_cmd;
 mod allow_cmd;
 pub mod audit_report;
