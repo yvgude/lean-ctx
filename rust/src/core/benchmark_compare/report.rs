@@ -444,8 +444,8 @@ fn format_num(n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::benchmark_compare::{competitors, system_info};
     use crate::core::benchmark_compare::metrics::create_synthetic_benchmark_dir;
+    use crate::core::benchmark_compare::{competitors, system_info};
 
     fn make_test_report() -> CompareReport {
         let dir = create_synthetic_benchmark_dir();

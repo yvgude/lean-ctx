@@ -52,10 +52,7 @@ pub struct EdgeSnapshot {
 ///
 /// Returns the snapshot preserving these edges.
 #[must_use]
-pub fn snapshot_inbound_edges(
-    existing: &ProjectIndex,
-    changed_files: &[String],
-) -> EdgeSnapshot {
+pub fn snapshot_inbound_edges(existing: &ProjectIndex, changed_files: &[String]) -> EdgeSnapshot {
     let changed_set: HashSet<&str> = changed_files.iter().map(String::as_str).collect();
 
     let edges: Vec<CapturedEdge> = existing
@@ -102,9 +99,10 @@ pub fn restore_edges(graph: &mut ProjectIndex, snapshot: &EdgeSnapshot) -> usize
         }
 
         // Dedup: skip if the edge already exists.
-        let already_exists = graph.edges.iter().any(|e| {
-            e.from == cap.source_file && e.to == cap.target_file && e.kind == cap.kind
-        });
+        let already_exists = graph
+            .edges
+            .iter()
+            .any(|e| e.from == cap.source_file && e.to == cap.target_file && e.kind == cap.kind);
 
         if !already_exists {
             graph.edges.push(IndexEdge {
@@ -261,10 +259,7 @@ mod tests {
 
     #[test]
     fn empty_snapshot_when_no_changed_files() {
-        let index = test_index(
-            &["a.rs", "b.rs"],
-            vec![("a.rs", "b.rs", "import", 1.0)],
-        );
+        let index = test_index(&["a.rs", "b.rs"], vec![("a.rs", "b.rs", "import", 1.0)]);
         let changed: Vec<String> = vec![];
 
         let snapshot = snapshot_inbound_edges(&index, &changed);
@@ -496,10 +491,7 @@ mod tests {
 
     #[test]
     fn drop_empty_files_is_noop() {
-        let mut index = test_index(
-            &["a.rs", "b.rs"],
-            vec![("a.rs", "b.rs", "import", 1.0)],
-        );
+        let mut index = test_index(&["a.rs", "b.rs"], vec![("a.rs", "b.rs", "import", 1.0)]);
         let before_count = index.edges.len();
 
         drop_edges_for_files(&mut index, &[]);
@@ -521,10 +513,7 @@ mod tests {
         // 3. Drop all edges for changed files (B).
         // 4. Rebuild (no-op here, just verify graph is clean).
         // 5. Restore the snapshot.
-        let mut index = test_index(
-            &["a.rs", "b.rs"],
-            vec![("a.rs", "b.rs", "import", 1.0)],
-        );
+        let mut index = test_index(&["a.rs", "b.rs"], vec![("a.rs", "b.rs", "import", 1.0)]);
         let changed = vec!["b.rs".to_string()];
 
         // Step 2: snapshot
@@ -538,9 +527,7 @@ mod tests {
         assert!(!index.files.contains_key("b.rs"));
 
         // Step 4: re-add b.rs as if it was re-extracted (fresh, no edges yet).
-        index
-            .files
-            .insert("b.rs".to_string(), file_entry("b.rs"));
+        index.files.insert("b.rs".to_string(), file_entry("b.rs"));
 
         // Step 5: restore
         let count = restore_edges(&mut index, &snapshot);

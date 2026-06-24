@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 /// Bitmask values for `mode_mask`.
 ///
@@ -91,9 +91,9 @@ impl FileMetadataStore {
 
     /// Load every row into a `HashMap` keyed by `rel_path`.
     pub fn load_all(&self) -> anyhow::Result<HashMap<String, FileMetadata>> {
-        let mut stmt = self
-            .db
-            .prepare_cached("SELECT path, mtime_ns, size_bytes, content_hash, mode_mask FROM file_metadata")?;
+        let mut stmt = self.db.prepare_cached(
+            "SELECT path, mtime_ns, size_bytes, content_hash, mode_mask FROM file_metadata",
+        )?;
         let rows = stmt.query_map([], |row| {
             Ok(FileMetadata {
                 rel_path: row.get(0)?,
@@ -241,10 +241,10 @@ mod tests {
         let store = setup();
         let metas: Vec<_> = (0..100)
             .map(|i| FileMetadata {
-                rel_path: format!("src/file_{}.rs", i),
+                rel_path: format!("src/file_{i}.rs"),
                 mtime_ns: i as i64,
                 size_bytes: 100,
-                content_hash: format!("hash_{}", i),
+                content_hash: format!("hash_{i}"),
                 mode_mask: if i % 2 == 0 { mode::FULL } else { mode::FAST },
             })
             .collect();
@@ -284,9 +284,7 @@ mod tests {
     #[test]
     fn load_for_mode_returns_only_matching() {
         let store = setup();
-        store
-            .upsert(&sample("full.rs", mode::FULL))
-            .unwrap();
+        store.upsert(&sample("full.rs", mode::FULL)).unwrap();
         store
             .upsert(&sample("moderate.rs", mode::MODERATE))
             .unwrap();
@@ -324,17 +322,17 @@ mod tests {
         let store = setup();
         for i in 0..10 {
             store
-                .upsert(&sample(&format!("file_{}.rs", i), mode::FULL))
+                .upsert(&sample(&format!("file_{i}.rs"), mode::FULL))
                 .unwrap();
         }
 
-        let to_remove: Vec<String> = (0..5).map(|i| format!("file_{}.rs", i)).collect();
+        let to_remove: Vec<String> = (0..5).map(|i| format!("file_{i}.rs")).collect();
         store.delete_batch(&to_remove).unwrap();
 
         let all = store.load_all().unwrap();
         assert_eq!(all.len(), 5);
         for i in 5..10 {
-            assert!(all.contains_key(&format!("file_{}.rs", i)));
+            assert!(all.contains_key(&format!("file_{i}.rs")));
         }
     }
 
@@ -345,10 +343,10 @@ mod tests {
         let store = setup();
         let metas: Vec<_> = (0..1000)
             .map(|i| FileMetadata {
-                rel_path: format!("file_{}.rs", i),
-                mtime_ns: i as i64,
+                rel_path: format!("file_{i}.rs"),
+                mtime_ns: i,
                 size_bytes: (i * 100) % 65536,
-                content_hash: format!("{:016x}", i),
+                content_hash: format!("{i:016x}"),
                 mode_mask: if i % 3 == 0 {
                     mode::FULL
                 } else if i % 3 == 1 {

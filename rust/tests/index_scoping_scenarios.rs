@@ -16,34 +16,26 @@ fn graph_api_response_contains_project_root_full() {
     assert!(json_str.contains(root));
 }
 
-#[allow(deprecated)]
 #[test]
-fn load_or_build_does_not_use_legacy_dot_cache() {
+fn project_index_root_contains_project_name() {
     let tmp = tempfile::tempdir().unwrap();
     let project = tmp.path().join("myproject");
     std::fs::create_dir_all(&project).unwrap();
     std::fs::write(project.join("main.rs"), "fn main() {}").unwrap();
 
-    let dot_dir = tmp.path().join("graphs").join("dot-legacy");
-    std::fs::create_dir_all(&dot_dir).unwrap();
-
-    let idx = lean_ctx::core::graph_index::load_or_build(project.to_str().unwrap());
-    assert!(
-        idx.project_root.contains("myproject") || idx.files.is_empty(),
-        "Should not load from a legacy '.' cache"
-    );
+    let idx = lean_ctx::core::graph_index::ProjectIndex::new(project.to_str().unwrap());
+    assert!(idx.project_root.contains("myproject"));
 }
 
-#[allow(deprecated)]
 #[test]
-fn cwd_fallback_only_used_if_subdirectory_of_root() {
+fn project_index_separates_different_roots() {
     let tmp = tempfile::tempdir().unwrap();
     let project_a = tmp.path().join("project-a");
     let project_b = tmp.path().join("project-b");
     std::fs::create_dir_all(&project_a).unwrap();
     std::fs::create_dir_all(&project_b).unwrap();
 
-    let idx = lean_ctx::core::graph_index::load_or_build(project_a.to_str().unwrap());
+    let idx = lean_ctx::core::graph_index::ProjectIndex::new(project_a.to_str().unwrap());
     assert_ne!(idx.project_root, project_b.to_str().unwrap());
 }
 

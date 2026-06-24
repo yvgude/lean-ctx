@@ -28,14 +28,16 @@ use crate::core::config::IndexingMode;
 use crate::core::embedding_index::EmbeddingBuildOutcome;
 use crate::core::graph_index::ProjectIndex;
 use crate::core::index_pipeline::content_pipeline::ContentPipeline;
-use crate::core::index_pipeline::discovery::{discover_files, DiscoveryConfig, DiscoveredFile};
+use crate::core::index_pipeline::discovery::{DiscoveredFile, DiscoveryConfig, discover_files};
 use crate::core::index_pipeline::dump_engine::DumpEngine;
 use crate::core::index_pipeline::extraction::ParallelExtractor;
-use crate::core::index_pipeline::semantic_edges;
-use crate::core::index_pipeline::file_metadata_store::mode;
 use crate::core::index_pipeline::file_metadata_store::FileMetadata;
+use crate::core::index_pipeline::file_metadata_store::mode;
 use crate::core::index_pipeline::graph_builder::RamGraphBuilder;
-use crate::core::index_pipeline::incremental::{classify_files, reindex, ClassifiedFiles, ReindexInput};
+use crate::core::index_pipeline::incremental::{
+    ClassifiedFiles, ReindexInput, classify_files, reindex,
+};
+use crate::core::index_pipeline::semantic_edges;
 
 // ---------------------------------------------------------------------------
 // PipelineReport
@@ -190,9 +192,8 @@ impl PipelineHandle {
         // ------------------------------------------------------------------
         // Step 2: Load previous state
         // ------------------------------------------------------------------
-        let (prev_graph, prev_bm25, metadata_store) = DumpEngine::load_with_integrity_check(
-            &self.project_root,
-        )?;
+        let (prev_graph, prev_bm25, metadata_store) =
+            DumpEngine::load_with_integrity_check(&self.project_root)?;
 
         // ------------------------------------------------------------------
         // Step 3: Load stored metadata for this mode
@@ -241,12 +242,7 @@ impl PipelineHandle {
             self.full_build(&discovered)?
         } else {
             // ---- INCREMENTAL BUILD ----
-            self.incremental_build(
-                &discovered,
-                &classified,
-                prev_graph,
-                prev_bm25,
-            )?
+            self.incremental_build(&discovered, &classified, prev_graph, prev_bm25)?
         };
 
         // ------------------------------------------------------------------
@@ -297,10 +293,10 @@ impl PipelineHandle {
 
         // Step 8c: Build embedding index (only for FULL/MODERATE modes — FAST
         // skips semantic passes entirely)
-        let embedding_outcome = if self.mode != IndexingMode::Fast {
-            crate::core::embedding_index::build_or_update(&self.project_root, &bm25)
-        } else {
+        let embedding_outcome = if self.mode == IndexingMode::Fast {
             EmbeddingBuildOutcome::Skipped
+        } else {
+            crate::core::embedding_index::build_or_update(&self.project_root, &bm25)
         };
 
         // Step 9: Report
@@ -331,13 +327,10 @@ impl PipelineHandle {
     /// Propagates errors from the pipeline run and the load-with-integrity-check.
     pub fn run_and_load(&self) -> Result<(ProjectIndex, BM25Index)> {
         self.run()?;
-        let (_graph, _bm25, _metadata) =
-            DumpEngine::load_with_integrity_check(&self.project_root)
-                .context("loading dumped indices after pipeline run")?;
+        let (_graph, _bm25, _metadata) = DumpEngine::load_with_integrity_check(&self.project_root)
+            .context("loading dumped indices after pipeline run")?;
         Ok((
-            _graph.unwrap_or_else(|| ProjectIndex::new(
-                &self.project_root.to_string_lossy(),
-            )),
+            _graph.unwrap_or_else(|| ProjectIndex::new(&self.project_root.to_string_lossy())),
             _bm25.unwrap_or_default(),
         ))
     }
@@ -501,11 +494,7 @@ mod tests {
     /// Helper: create a minimal file tree for testing.
     fn create_minimal_tree(root: &Path) {
         write_file(root, "src/main.rs", "fn main() { println!(\"hello\"); }");
-        write_file(
-            root,
-            "src/lib.rs",
-            "pub fn helper() -> u32 { 42 }",
-        );
+        write_file(root, "src/lib.rs", "pub fn helper() -> u32 { 42 }");
         write_file(root, "README.md", "# Test Project");
     }
 
@@ -646,8 +635,7 @@ mod tests {
         handle.run().unwrap();
 
         // Load back from disk.
-        let (graph, bm25, store) =
-            DumpEngine::load_with_integrity_check(dir.path()).unwrap();
+        let (graph, bm25, store) = DumpEngine::load_with_integrity_check(dir.path()).unwrap();
 
         let g = graph.expect("graph should load from disk");
         assert!(g.file_count() > 0, "loaded graph must have files");
@@ -910,7 +898,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
 
         // Files with inter-dependencies so edges are generated.
-        write_file(dir.path(), "src/main.rs", "mod helper;\nfn main() { helper::util(); }");
+        write_file(
+            dir.path(),
+            "src/main.rs",
+            "mod helper;\nfn main() { helper::util(); }",
+        );
         write_file(dir.path(), "src/helper.rs", "pub fn util() -> u32 { 42 }");
 
         // FAST build.
@@ -997,7 +989,10 @@ mod tests {
         let chunk_paths: Vec<&str> = bm25.chunks.iter().map(|c| c.file_path.as_str()).collect();
         assert!(chunk_paths.contains(&"src/main.rs"));
         assert!(chunk_paths.contains(&"src/lib.rs"));
-        assert!(bm25.chunks.len() >= 2, "BM25 should have chunks for both files");
+        assert!(
+            bm25.chunks.len() >= 2,
+            "BM25 should have chunks for both files"
+        );
     }
 
     // ---- Test 5: All modes produce deterministic output ----
@@ -1027,7 +1022,11 @@ mod tests {
 
         // Create a test tree that produces edges (files with imports).
         let dir = tempfile::tempdir().unwrap();
-        write_file(dir.path(), "src/main.rs", "mod helper;\nfn main() { helper::util(); }");
+        write_file(
+            dir.path(),
+            "src/main.rs",
+            "mod helper;\nfn main() { helper::util(); }",
+        );
         write_file(dir.path(), "src/helper.rs", "pub fn util() -> u32 { 42 }");
         write_file(dir.path(), "README.md", "# Project");
 
@@ -1037,18 +1036,9 @@ mod tests {
             full_1.files_scanned, full_2.files_scanned,
             "FULL: files_scanned must match"
         );
-        assert_eq!(
-            full_1.nodes, full_2.nodes,
-            "FULL: nodes must match"
-        );
-        assert_eq!(
-            full_1.edges, full_2.edges,
-            "FULL: edges must match"
-        );
-        assert_eq!(
-            full_1.chunks, full_2.chunks,
-            "FULL: chunks must match"
-        );
+        assert_eq!(full_1.nodes, full_2.nodes, "FULL: nodes must match");
+        assert_eq!(full_1.edges, full_2.edges, "FULL: edges must match");
+        assert_eq!(full_1.chunks, full_2.chunks, "FULL: chunks must match");
 
         // MODERATE mode: two runs.
         let (mod_1, mod_2) = run_twice(dir.path(), IndexingMode::Moderate);
@@ -1056,18 +1046,9 @@ mod tests {
             mod_1.files_scanned, mod_2.files_scanned,
             "MODERATE: files_scanned must match"
         );
-        assert_eq!(
-            mod_1.nodes, mod_2.nodes,
-            "MODERATE: nodes must match"
-        );
-        assert_eq!(
-            mod_1.edges, mod_2.edges,
-            "MODERATE: edges must match"
-        );
-        assert_eq!(
-            mod_1.chunks, mod_2.chunks,
-            "MODERATE: chunks must match"
-        );
+        assert_eq!(mod_1.nodes, mod_2.nodes, "MODERATE: nodes must match");
+        assert_eq!(mod_1.edges, mod_2.edges, "MODERATE: edges must match");
+        assert_eq!(mod_1.chunks, mod_2.chunks, "MODERATE: chunks must match");
 
         // FAST mode: two runs.
         let (fast_1, fast_2) = run_twice(dir.path(), IndexingMode::Fast);
@@ -1075,17 +1056,8 @@ mod tests {
             fast_1.files_scanned, fast_2.files_scanned,
             "FAST: files_scanned must match"
         );
-        assert_eq!(
-            fast_1.nodes, fast_2.nodes,
-            "FAST: nodes must match"
-        );
-        assert_eq!(
-            fast_1.edges, fast_2.edges,
-            "FAST: edges must match"
-        );
-        assert_eq!(
-            fast_1.chunks, fast_2.chunks,
-            "FAST: chunks must match"
-        );
+        assert_eq!(fast_1.nodes, fast_2.nodes, "FAST: nodes must match");
+        assert_eq!(fast_1.edges, fast_2.edges, "FAST: edges must match");
+        assert_eq!(fast_1.chunks, fast_2.chunks, "FAST: chunks must match");
     }
 }

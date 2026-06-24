@@ -23,7 +23,7 @@ fn try_fts_symbol_search(
     let tokens: Vec<String> = name
         .split(|c: char| !c.is_alphanumeric())
         .filter(|t| !t.is_empty())
-        .map(|t| format!("\"{}\"", t))
+        .map(|t| format!("\"{t}\""))
         .collect();
     if tokens.is_empty() {
         return None;
@@ -57,17 +57,17 @@ fn try_fts_symbol_search(
             })
         })
         .ok()?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|s| {
-            if let Some(f) = file {
-                if !s.file.contains(f) {
-                    return false;
-                }
+            if let Some(f) = file
+                && !s.file.contains(f)
+            {
+                return false;
             }
-            if let Some(k) = kind {
-                if s.kind != k {
-                    return false;
-                }
+            if let Some(k) = kind
+                && s.kind != k
+            {
+                return false;
             }
             true
         })
@@ -92,10 +92,7 @@ pub fn handle(
             1 => render_single(&matches[0], project_root),
             2..=5 => render_multiple(&matches, project_root),
             n => {
-                let mut out = format!(
-                    "{} matches for '{name}'. Narrow with file= or kind=:\n",
-                    n
-                );
+                let mut out = format!("{n} matches for '{name}'. Narrow with file= or kind=:\n");
                 for m in matches.iter().take(20) {
                     out.push_str(&format!(
                         "  {}::{} ({}:L{}-{})\n",
@@ -117,10 +114,7 @@ pub fn handle(
             1 => render_single(&matches[0], project_root),
             2..=5 => render_multiple(&matches, project_root),
             n => {
-                let mut out = format!(
-                    "{} matches for '{name}'. Narrow with file= or kind=:\n",
-                    n
-                );
+                let mut out = format!("{n} matches for '{name}'. Narrow with file= or kind=:\n");
                 for m in matches.iter().take(20) {
                     out.push_str(&format!(
                         "  {}::{} ({}:L{}-{})\n",
@@ -134,7 +128,7 @@ pub fn handle(
             }
         };
     }
-    return (format!("Symbol '{name}' not found in index."), 0);
+    (format!("Symbol '{name}' not found in index."), 0)
 }
 
 /// Render the body of the single most relevant symbol named `name`.
@@ -199,10 +193,7 @@ fn render_single(sym: &SymbolInfo, project_root: &str) -> (String, usize) {
     )
 }
 
-fn render_multiple(
-    symbols: &[SymbolInfo],
-    project_root: &str,
-) -> (String, usize) {
+fn render_multiple(symbols: &[SymbolInfo], project_root: &str) -> (String, usize) {
     let mut out = String::new();
     let mut total_original = 0usize;
 
@@ -229,5 +220,3 @@ fn resolve_file_path(relative: &str, project_root: &str) -> String {
     }
     relative.to_string()
 }
-
-

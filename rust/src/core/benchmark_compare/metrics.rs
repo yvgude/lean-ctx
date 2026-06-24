@@ -291,7 +291,7 @@ impl Point {
 
     std::fs::write(
         dir.path().join("lib.rs"),
-        r#"pub enum Status { Active, Inactive, Pending }
+        r"pub enum Status { Active, Inactive, Pending }
 
 pub trait Processor {
     fn process(&self, input: &str) -> String;
@@ -312,7 +312,7 @@ pub fn status_code(s: &Status) -> u8 {
         Status::Pending => 2,
     }
 }
-"#,
+",
     )
     .unwrap();
 

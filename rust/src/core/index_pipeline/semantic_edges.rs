@@ -117,7 +117,7 @@ fn compute_similar_to(graph: &mut ProjectIndex) {
     let file_symbols = group_symbols_by_file(&graph.symbols);
 
     let mut file_list: Vec<&str> = file_symbols.keys().map(String::as_str).collect();
-    file_list.sort();
+    file_list.sort_unstable();
     if file_list.len() < 2 {
         return;
     }
@@ -179,9 +179,11 @@ fn compute_similar_to(graph: &mut ProjectIndex) {
         if *count >= MAX_EDGES_PER_NODE {
             continue;
         }
-        if graph.edges.iter().any(|e| {
-            e.from == from && e.to == to && e.kind == "SIMILAR_TO"
-        }) {
+        if graph
+            .edges
+            .iter()
+            .any(|e| e.from == from && e.to == to && e.kind == "SIMILAR_TO")
+        {
             continue;
         }
         graph.edges.push(IndexEdge {
@@ -240,7 +242,11 @@ impl RiVector {
                     let pos = (h as usize) % RI_DIM;
                     if seen.insert(pos) {
                         positions.push(pos);
-                        values.push(if h & 1 == 0 { inv_sqrt_nnz } else { -inv_sqrt_nnz });
+                        values.push(if h & 1 == 0 {
+                            inv_sqrt_nnz
+                        } else {
+                            -inv_sqrt_nnz
+                        });
                     }
                 }
             }
@@ -260,17 +266,19 @@ impl RiVector {
             let pos = (h as usize) % RI_DIM;
             if seen.insert(pos) {
                 positions.push(pos);
-                values.push(if h & 1 == 0 { inv_sqrt_nnz } else { -inv_sqrt_nnz });
+                values.push(if h & 1 == 0 {
+                    inv_sqrt_nnz
+                } else {
+                    -inv_sqrt_nnz
+                });
             }
         }
 
         // Build fixed-size arrays
         let mut pos_arr = [0usize; SPARSE_NNZE];
         let mut val_arr = [0.0f32; SPARSE_NNZE];
-        for i in 0..SPARSE_NNZE {
-            pos_arr[i] = positions[i];
-            val_arr[i] = values[i];
-        }
+        pos_arr[..SPARSE_NNZE].copy_from_slice(&positions[..SPARSE_NNZE]);
+        val_arr[..SPARSE_NNZE].copy_from_slice(&values[..SPARSE_NNZE]);
         Self {
             positions: pos_arr,
             values: val_arr,
@@ -319,8 +327,7 @@ fn hash_seed(s: &str) -> u64 {
 fn is_ri_eligible(kind: &str) -> bool {
     matches!(
         kind,
-        "fn"
-            | "method"
+        "fn" | "method"
             | "function"
             | "struct"
             | "class"
@@ -341,7 +348,7 @@ fn compute_semantically_related(graph: &mut ProjectIndex) {
     let file_symbols = group_symbols_by_file(&graph.symbols);
 
     let mut file_list: Vec<&str> = file_symbols.keys().map(String::as_str).collect();
-    file_list.sort();
+    file_list.sort_unstable();
     if file_list.len() < 2 {
         return;
     }
@@ -457,15 +464,12 @@ mod tests {
     use super::*;
     use crate::core::graph_index::FileEntry;
 
-    fn make_graph(
-        files: &[&str],
-        symbols: Vec<(&str, &str, &str)>,
-    ) -> ProjectIndex {
+    fn make_graph(files: &[&str], symbols: Vec<(&str, &str, &str)>) -> ProjectIndex {
         let mut graph = ProjectIndex::new("/test");
         for file in files {
-            graph
-                .files
-                .insert(file.to_string(), FileEntry {
+            graph.files.insert(
+                file.to_string(),
+                FileEntry {
                     path: file.to_string(),
                     hash: String::new(),
                     language: "rs".to_string(),
@@ -473,10 +477,11 @@ mod tests {
                     token_count: 0,
                     exports: Vec::new(),
                     summary: String::new(),
-                });
+                },
+            );
         }
         for (file, name, kind) in symbols {
-            let key = format!("{}::{}", file, name);
+            let key = format!("{file}::{name}");
             graph.symbols.insert(
                 key,
                 SymbolEntry {
@@ -583,10 +588,7 @@ mod tests {
 
         let before = graph.edges.len();
         compute_similar_to(&mut graph);
-        assert!(
-            graph.edges.len() > before,
-            "should add SIMILAR_TO edges"
-        );
+        assert!(graph.edges.len() > before, "should add SIMILAR_TO edges");
         for edge in &graph.edges[before..] {
             assert_eq!(edge.kind, "SIMILAR_TO");
             assert!(edge.weight >= SIMILAR_THRESHOLD);
@@ -634,10 +636,7 @@ mod tests {
 
     #[test]
     fn compute_similar_to_single_file_no_crash() {
-        let mut graph = make_graph(
-            &["src/a.rs"],
-            vec![("src/a.rs", "foo", "fn")],
-        );
+        let mut graph = make_graph(&["src/a.rs"], vec![("src/a.rs", "foo", "fn")]);
         // Should not crash
         compute_similar_to(&mut graph);
     }
@@ -677,7 +676,8 @@ mod tests {
     fn ri_vector_different_symbols_lower_cosine() {
         let v1 = RiVector::for_symbol("parse_json");
         let v2 = RiVector::for_symbol("handle_payment");
-        let cos_similar = RiVector::for_symbol("get_user").cosine(&RiVector::for_symbol("get_user_info"));
+        let cos_similar =
+            RiVector::for_symbol("get_user").cosine(&RiVector::for_symbol("get_user_info"));
         let cos_different = v1.cosine(&v2);
         assert!(
             cos_similar > cos_different,
@@ -698,7 +698,10 @@ mod tests {
     fn ri_vector_self_cosine_is_one() {
         let v = RiVector::for_symbol("self_test");
         let cos = v.cosine(&v);
-        assert!((cos - 1.0).abs() < 0.01, "self cosine should be ~1.0: {cos}");
+        assert!(
+            (cos - 1.0).abs() < 0.01,
+            "self cosine should be ~1.0: {cos}"
+        );
     }
 
     // ── compute_semantically_related tests ──
@@ -816,10 +819,7 @@ mod tests {
 
         let before = graph.edges.len();
         run_post_passes(&mut graph, IndexingMode::Moderate);
-        assert!(
-            graph.edges.len() > before,
-            "MODERATE mode should add edges"
-        );
+        assert!(graph.edges.len() > before, "MODERATE mode should add edges");
     }
 
     // ── Determinism ──
@@ -846,11 +846,7 @@ mod tests {
         );
         run_post_passes(&mut graph2, IndexingMode::Full);
 
-        assert_eq!(
-            graph1.edges.len(),
-            graph2.edges.len(),
-            "same edge count"
-        );
+        assert_eq!(graph1.edges.len(), graph2.edges.len(), "same edge count");
         for (e1, e2) in graph1.edges.iter().zip(graph2.edges.iter()) {
             assert_eq!(e1.from, e2.from);
             assert_eq!(e1.to, e2.to);

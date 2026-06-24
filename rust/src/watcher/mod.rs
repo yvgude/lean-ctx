@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -144,8 +144,7 @@ impl Watcher {
     /// Formula: `BASE_INTERVAL_MS + (file_count / 500) * INTERVAL_PER_500_FILES`,
     /// capped at `MAX_INTERVAL_MS`.
     pub fn poll_interval_ms(file_count: usize) -> u64 {
-        let interval =
-            BASE_INTERVAL_MS + (file_count as u64 / 500) * INTERVAL_PER_500_FILES;
+        let interval = BASE_INTERVAL_MS + (file_count as u64 / 500) * INTERVAL_PER_500_FILES;
         interval.min(MAX_INTERVAL_MS)
     }
 }
@@ -225,11 +224,7 @@ pub fn init_baseline(state: &mut ProjectState) {
 /// Poll a single project for changes and trigger a reindex if needed.
 ///
 /// Returns `true` if a reindex was triggered (the callback returned `Ok`).
-pub fn poll_project(
-    index_fn: &IndexFn,
-    name: &str,
-    state: &mut ProjectState,
-) -> bool {
+pub fn poll_project(index_fn: &IndexFn, name: &str, state: &mut ProjectState) -> bool {
     // Phase A — baseline initialisation (first call only)
     if !state.baseline_done {
         init_baseline(state);

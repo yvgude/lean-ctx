@@ -155,6 +155,42 @@ impl BM25Index {
         }
     }
 
+    /// Walk a directory recursively and build a BM25 index from all found code files.
+    /// Each file is parsed into code chunks (symbol-based via tree-sitter or
+    /// content-defined fallback) and indexed for BM25 search.
+    ///
+    /// File paths inside the index are stored **relative** to `root`, matching the
+    /// convention used by the main indexing pipeline.
+    pub fn build_from_directory(root: &Path) -> Self {
+        let mut index = Self::new();
+
+        let mut entries: Vec<_> = walkdir::WalkDir::new(root)
+            .into_iter()
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.file_type().is_file())
+            .collect();
+        entries.sort_by(|a, b| a.path().cmp(b.path()));
+
+        for entry in &entries {
+            let path = entry.path();
+            let Ok(content) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let rel_path = path
+                .strip_prefix(root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .to_string();
+            let chunks = extract_chunks(&rel_path, &content);
+            for chunk in chunks {
+                index.add_chunk(chunk);
+            }
+        }
+
+        index.finalize();
+        index
+    }
+
     /// Approximate heap memory used by this index in bytes.
     pub fn memory_usage_bytes(&self) -> usize {
         let chunks_size: usize = self

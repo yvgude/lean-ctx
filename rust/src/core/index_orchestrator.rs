@@ -181,8 +181,7 @@ pub fn ensure_warm_for_tool(project_root: &str, tool: &str) -> bool {
         return false;
     }
     match warm_need_for_tool(tool) {
-        WarmNeed::None => false,
-        WarmNeed::Search => false,
+        WarmNeed::None | WarmNeed::Search => false,
         WarmNeed::Heavy => {
             let entry = entry_for(project_root);
             let first_warm = {
@@ -308,18 +307,17 @@ pub fn ensure_all_background(project_root: &str) {
                     // (stamping `graph.meta.json`) so PG mirrors the freshly
                     // scanned index.
                     if let Some(ref idx) = graph_opt
-                        && let Err(e) = idx.save() {
-                            tracing::warn!(
-                                "[index_orchestrator: graph save failed: {e}]"
-                            );
-                        }
+                        && let Err(e) = idx.save()
+                    {
+                        tracing::warn!("[index_orchestrator: graph save failed: {e}]");
+                    }
 
-                    let graph_note =
-                        graph_opt.as_ref().map(|idx| {
-                            format!("{} files, {} edges", idx.file_count(), idx.edge_count())
-                        });
-                    let bm25_note =
-                        bm25_opt.as_ref().map(|idx| format!("{} chunks", idx.chunks.len()));
+                    let graph_note = graph_opt.as_ref().map(|idx| {
+                        format!("{} files, {} edges", idx.file_count(), idx.edge_count())
+                    });
+                    let bm25_note = bm25_opt
+                        .as_ref()
+                        .map(|idx| format!("{} chunks", idx.chunks.len()));
 
                     s.graph.note = graph_note;
                     s.bm25.note = bm25_note;
@@ -337,10 +335,8 @@ pub fn ensure_all_background(project_root: &str) {
                         }
                         EmbeddingBuildOutcome::Skipped => {
                             s.semantic.state = State::Idle;
-                            s.semantic.note = Some(
-                                "embeddings disabled by feature flag or config"
-                                    .to_string(),
-                            );
+                            s.semantic.note =
+                                Some("embeddings disabled by feature flag or config".to_string());
                         }
                         EmbeddingBuildOutcome::ModelNotAvailable(reason) => {
                             s.semantic.state = State::Idle;
@@ -868,5 +864,4 @@ mod tests {
         // Should not spawn more than MAX_EXTRA_ROOT_BUILDS threads
         ensure_extra_roots_background(&primary_str, &extra);
     }
-
 }

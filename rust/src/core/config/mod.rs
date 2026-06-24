@@ -404,6 +404,7 @@ pub struct Config {
     /// - `Full` (default): all files including tests, docs, examples, generated.
     /// - `Moderate`: skip FAST_SKIP dirs/files/patterns.
     /// - `Fast`: skip FAST_SKIP + SIMILAR_TO/SEMANTICALLY_RELATED passes.
+    ///
     /// Override via LEAN_CTX_INDEX_MODE env var.
     #[serde(default)]
     pub index_mode: IndexingMode,
