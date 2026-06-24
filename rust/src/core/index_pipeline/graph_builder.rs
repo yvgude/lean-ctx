@@ -1,7 +1,7 @@
 //! RAM-first graph index builder for the indexing pipeline.
 //!
 //! Collects node/edge/symbol data in memory during the build, then produces
-//! a [`ProjectIndex`] via [`finalize`]. No SQLite writes during the build
+//! a [`ProjectIndex`] via [`RamGraphBuilder::finalize`]. No SQLite writes during the build
 //! phase — all persistence happens in the dump engine.
 
 use std::collections::HashMap;
@@ -17,7 +17,7 @@ use crate::core::signatures::Signature;
 /// RAM-first graph index builder.
 ///
 /// Accumulates files, symbols, and edges in memory, then produces a complete
-/// [`ProjectIndex`] via [`finalize`]. No SQLite writes occur during build.
+/// [`ProjectIndex`] via [`RamGraphBuilder::finalize`]. No SQLite writes occur during build.
 pub struct RamGraphBuilder {
     /// Project root path, used when constructing the final [`ProjectIndex`].
     project_root: String,
@@ -101,7 +101,7 @@ impl RamGraphBuilder {
 
     /// Build cross-file edges using the accumulated data.
     ///
-    /// Delegates to [`build_edges_cached`] from `graph_index` which computes
+    /// Delegates to `build_edges_cached` from `graph_index` which computes
     /// import, module, package, barrel, co-change, and sibling edges.
     ///
     /// The `entries` map provides content for all indexed files.

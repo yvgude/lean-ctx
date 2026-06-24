@@ -319,7 +319,7 @@ impl PipelineHandle {
 
     /// Run the pipeline and load the resulting indices from disk.
     ///
-    /// Convenience method that calls [`run()`] and then loads the graph and
+    /// Convenience method that calls [`PipelineHandle::run`] and then loads the graph and
     /// BM25 indices that were dumped to disk, returning them directly.
     ///
     /// # Errors
