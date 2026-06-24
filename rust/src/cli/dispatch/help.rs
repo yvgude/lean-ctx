@@ -147,7 +147,7 @@ COMMANDS:
     learning [status|export|import]  Adaptive-learning state: inspect, share with team, merge
          token-report [--json]          Token + memory report (project + session + CEP)
     pack --pr                      PR Context Pack (changed files, impact, tests, artifacts)
-    index <status|build|build-full|watch>  Codebase index utilities
+    index <status|build|watch>             Codebase index utilities
     cep                            CEP report (compression metrics, cache, modes, trends)
     verify-cache [path] [--json]   Prove the session cache: re-read collapses to a ~13-token stub
     watch                          Live TUI dashboard (real-time event stream)

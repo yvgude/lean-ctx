@@ -344,7 +344,17 @@ mod tests {
     #[test]
     fn session_total_shown_at_interval() {
         reset_session();
-        for _ in 0..(SESSION_TOTAL_INTERVAL - 1) {
+        // Record until we reach N-1 (mod N), tolerating parallel test threads
+        // that concurrently increment the shared global counter.
+        loop {
+            let (_, _, count) = session_totals();
+            if count > 0 && (count + 1) % SESSION_TOTAL_INTERVAL == 0 {
+                break;
+            }
+            if count + 1 >= SESSION_TOTAL_INTERVAL * 100 {
+                // Safety valve — should never trigger.
+                break;
+            }
             record_savings(100, 50);
         }
         let info = SavingsInfo {

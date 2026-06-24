@@ -1,3 +1,4 @@
+#![cfg(any(feature = "embeddings", feature = "neural"))]
 //! GPU execution provider selection: per-vendor feature flags, session-level config.
 //!
 //! Each GPU EP is gated behind its own Cargo feature (`ort-cuda`, `ort-rocm`, etc.).

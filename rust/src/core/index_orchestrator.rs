@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 
 use crate::core::bm25_index::BM25Index;
+use crate::core::embedding_index::EmbeddingBuildOutcome;
 use crate::core::graph_index::{self, ProjectIndex};
 use crate::core::index_pipeline::dump_engine::DumpEngine;
 use crate::core::index_pipeline::pipeline::{IndexPipeline, PipelineReport};
@@ -320,8 +321,6 @@ pub fn ensure_all_background(project_root: &str) {
 
             match pipeline_result {
                 Ok(Ok((report, graph_opt, bm25_opt))) => {
-                    s.pipeline_report = Some(report);
-
                     // #696 C4: persist graph index to the property graph
                     // (stamping `graph.meta.json`) so PG mirrors the freshly
                     // scanned index.
@@ -343,6 +342,38 @@ pub fn ensure_all_background(project_root: &str) {
                     s.bm25.note = bm25_note;
                     finish_ok(&mut s.graph);
                     finish_ok(&mut s.bm25);
+
+                    // Update semantic component from the pipeline report.
+                    // The pipeline's Step 8c already ran build_or_update, so we
+                    // simply reflect its outcome in the orchestrator's state.
+                    // Match BEFORE moving report into pipeline_report.
+                    let embedding_outcome = &report.embedding_ready;
+                    match embedding_outcome {
+                        EmbeddingBuildOutcome::Ready => {
+                            finish_ok(&mut s.semantic);
+                        }
+                        EmbeddingBuildOutcome::Skipped => {
+                            s.semantic.state = State::Idle;
+                            s.semantic.note = Some(
+                                "embeddings disabled by feature flag or config"
+                                    .to_string(),
+                            );
+                        }
+                        EmbeddingBuildOutcome::ModelNotAvailable(reason) => {
+                            s.semantic.state = State::Idle;
+                            s.semantic.note =
+                                Some(format!("embedding model not available: {reason}"));
+                        }
+                        EmbeddingBuildOutcome::Failed => {
+                            finish_err(
+                                &mut s.semantic,
+                                "embedding build failed (see logs)".to_string(),
+                            );
+                        }
+                    }
+
+                    // Store the report after all field reads are done.
+                    s.pipeline_report = Some(report);
                 }
                 Ok(Err(e)) => {
                     finish_err(&mut s.graph, e.clone());
@@ -373,64 +404,6 @@ pub fn ensure_all_background(project_root: &str) {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         s.worker_running = false;
-    }
-}
-
-/// Build only the semantic (dense embedding) index from the existing BM25 index.
-/// The BM25 index must already exist on disk — this function loads it and runs
-/// `embedding_index::build_or_update`. Updates the in-memory semantic component
-/// state on completion.
-pub fn build_semantic(project_root: &str) {
-    let state = entry_for(project_root);
-    let root = Path::new(project_root);
-
-    {
-        let mut s = state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        start_component(&mut s.semantic);
-    }
-
-    let bm25_idx = try_load_bm25_index(project_root);
-    match bm25_idx.as_ref() {
-        Some(idx) if idx.doc_count > 0 => {
-            let outcome = crate::core::embedding_index::build_or_update(root, idx);
-            let mut s = state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            match outcome {
-                crate::core::embedding_index::EmbeddingBuildOutcome::Ready => {
-                    finish_ok(&mut s.semantic);
-                }
-                crate::core::embedding_index::EmbeddingBuildOutcome::Skipped => {
-                    finish_ok(&mut s.semantic);
-                    s.semantic.note = Some(
-                        "embeddings disabled by feature flag or config (search.dense_enabled / memory_profile)"
-                            .to_string(),
-                    );
-                }
-                crate::core::embedding_index::EmbeddingBuildOutcome::ModelNotAvailable(
-                    ref reason,
-                ) => {
-                    s.semantic.state = State::Idle;
-                    s.semantic.note = Some(format!("embedding model not available: {reason}"));
-                }
-                crate::core::embedding_index::EmbeddingBuildOutcome::Failed => {
-                    finish_err(
-                        &mut s.semantic,
-                        "embedding build failed (see logs)".to_string(),
-                    );
-                }
-            }
-        }
-        _ => {
-            let mut s = state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            s.semantic.state = State::Idle;
-            s.semantic.note =
-                Some("BM25 index is empty or unavailable — nothing to embed".to_string());
-        }
     }
 }
 

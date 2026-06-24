@@ -18,16 +18,16 @@ impl McpTool for CtxIndexTool {
         tool_def(
             "ctx_index",
             "Index orchestration — manage code graph index.\n\
-             WORKFLOW: status → build → build-full (escalate if stale).\n\
-             ANTI-PATTERN: build-full is expensive — use incremental build first.\n\
-             Actions: status (state), build (incremental), build-full (rebuild).",
+             Use: status to check state, build to (re)build indexes.\n\
+             For a full rebuild: lean-ctx index build --mode full.\n\
+             Actions: status (state), build (incremental rebuild).",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["status", "build", "build-full"],
-                        "description": "status|build|build-full"
+                        "enum": ["status", "build"],
+                        "description": "status|build"
                     },
                     "project_root": {
                         "type": "string",
@@ -61,18 +61,6 @@ impl McpTool for CtxIndexTool {
         };
 
         let result = crate::tools::ctx_index::handle(&action, Path::new(root));
-
-        // #420: `build-full` is an explicit "make everything fresh". The CLI path
-        // flushes the running daemon's read cache via `notify_cache_clear()`; the
-        // MCP tool runs in the process that owns this session's `SessionCache`, so
-        // clear it in-process here. Otherwise `ctx_read` map/signatures keep
-        // serving pre-rebuild output from the long-lived cache.
-        if action == "build-full"
-            && let Some(cache) = ctx.cache.as_ref()
-            && let Some(mut guard) = crate::server::bounded_lock::write(cache, "ctx_index")
-        {
-            guard.clear();
-        }
 
         Ok(ToolOutput::simple(result))
     }

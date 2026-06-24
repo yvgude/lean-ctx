@@ -3,10 +3,8 @@ use std::fmt::Write;
 use std::path::Path;
 
 use crate::core::bm25_index::{BM25Index, format_search_results};
-use crate::core::embedding_index::EmbeddingIndex;
 #[cfg(feature = "embeddings")]
 use crate::core::embeddings::EmbeddingEngine;
-use crate::core::hnsw::FlatEmbeddings;
 use crate::core::hybrid_search::{HybridConfig, HybridResult, format_hybrid_results};
 use crate::tools::CrpMode;
 
@@ -580,7 +578,7 @@ fn workspace_search(
     mode: &str,
 ) -> String {
     let linked = crate::core::workspace_config::load_linked_projects(root);
-    let mut warnings = linked.warnings;
+    let warnings = linked.warnings;
 
     let mut roots: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
     roots.extend(linked.roots);
@@ -588,8 +586,8 @@ fn workspace_search(
     roots.dedup();
 
     let mut per_project: Vec<(String, Vec<HybridResult>)> = Vec::new();
-    let mut avg_cov: Option<f64> = None;
-    let mut cov_count = 0usize;
+    let avg_cov: Option<f64> = None;
+    let cov_count = 0usize;
 
     for r in &roots {
         let label = label_for_root(r);
@@ -881,7 +879,7 @@ fn hybrid_results_for_root(
         tracing::info!(
             pending,
             "hybrid cold-start guard: dense index not built — degrading to BM25 \
-             (build once: lean-ctx index build-semantic)"
+             (build once: lean-ctx index build --mode full)"
         );
         return Ok((bm25_hits(index, query, top_k, filter), 0.0));
     }
@@ -1093,12 +1091,12 @@ fn cold_start_embed_guard(embed_idx: &EmbeddingIndex, index: &BM25Index) -> Opti
 #[cfg(feature = "embeddings")]
 fn dense_build_hint(pending: usize, compact: bool) -> String {
     if compact {
-        format!("[dense not built: {pending} chunks pending — run: lean-ctx index build-semantic]")
+        format!("[dense not built: {pending} chunks pending — run: lean-ctx index build --mode full]")
     } else {
         format!(
             "[lean-ctx: dense index not built ({pending} chunks would embed inline). \
              Build it once — no per-query embed, no cold-start hang: \
-             lean-ctx index build-semantic]"
+             lean-ctx index build --mode full]"
         )
     }
 }
@@ -1243,12 +1241,12 @@ fn hybrid_search_mode(
 }
 
 fn dense_search_mode(
-    query: &str,
-    root: &Path,
-    index: &BM25Index,
-    top_k: usize,
-    compact: bool,
-    filter: &SearchFilter,
+    _query: &str,
+    _root: &Path,
+    _index: &BM25Index,
+    _top_k: usize,
+    _compact: bool,
+    _filter: &SearchFilter,
 ) -> String {
     #[cfg(feature = "embeddings")]
     {
@@ -1649,10 +1647,10 @@ mod cold_start_guard_tests {
     #[test]
     fn dense_build_hint_always_points_at_the_cli_build() {
         let full = dense_build_hint(22_741, false);
-        assert!(full.contains("lean-ctx index build-semantic"));
+        assert!(full.contains("lean-ctx index build --mode full"));
         assert!(full.contains("22741"));
         let compact = dense_build_hint(22_741, true);
-        assert!(compact.contains("lean-ctx index build-semantic"));
+        assert!(compact.contains("lean-ctx index build --mode full"));
         assert!(compact.contains("22741"));
     }
 }

@@ -24,12 +24,14 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 
 use crate::core::bm25_index::BM25Index;
-use crate::core::graph_index::ProjectIndex;
 use crate::core::config::IndexingMode;
+use crate::core::embedding_index::EmbeddingBuildOutcome;
+use crate::core::graph_index::ProjectIndex;
 use crate::core::index_pipeline::content_pipeline::ContentPipeline;
 use crate::core::index_pipeline::discovery::{discover_files, DiscoveryConfig, DiscoveredFile};
 use crate::core::index_pipeline::dump_engine::DumpEngine;
 use crate::core::index_pipeline::extraction::ParallelExtractor;
+use crate::core::index_pipeline::semantic_edges;
 use crate::core::index_pipeline::file_metadata_store::mode;
 use crate::core::index_pipeline::file_metadata_store::FileMetadata;
 use crate::core::index_pipeline::graph_builder::RamGraphBuilder;
@@ -52,7 +54,11 @@ pub struct PipelineReport {
     pub chunks: usize,
     pub elapsed_ms: u64,
     pub is_incremental: bool,
-    pub embedding_ready: bool,
+    /// Detailed outcome of the embedding build step.
+    /// When the `embeddings` feature is not compiled in, this is always
+    /// [`EmbeddingBuildOutcome::Skipped`]; when enabled it reflects the
+    /// actual build outcome (Ready, ModelNotAvailable, Failed, Skipped).
+    pub embedding_ready: EmbeddingBuildOutcome,
 }
 
 // ---------------------------------------------------------------------------
@@ -218,7 +224,7 @@ impl PipelineHandle {
                     chunks: bm25.chunks.len(),
                     elapsed_ms: elapsed,
                     is_incremental: true,
-                    embedding_ready: false,
+                    embedding_ready: EmbeddingBuildOutcome::Skipped,
                 });
             }
         }
@@ -242,6 +248,14 @@ impl PipelineHandle {
                 prev_bm25,
             )?
         };
+
+        // ------------------------------------------------------------------
+        // Step 6.5: Post-passes (SIMILAR_TO, SEMANTICALLY_RELATED) for FULL/MODERATE
+        // ------------------------------------------------------------------
+        let mut graph = graph;
+        if self.mode != IndexingMode::Fast {
+            semantic_edges::run_post_passes(&mut graph, self.mode);
+        }
 
         // ------------------------------------------------------------------
         // Step 7: Update file metadata store
@@ -281,6 +295,14 @@ impl PipelineHandle {
             });
         }
 
+        // Step 8c: Build embedding index (only for FULL/MODERATE modes — FAST
+        // skips semantic passes entirely)
+        let embedding_outcome = if self.mode != IndexingMode::Fast {
+            crate::core::embedding_index::build_or_update(&self.project_root, &bm25)
+        } else {
+            EmbeddingBuildOutcome::Skipped
+        };
+
         // Step 9: Report
         // ------------------------------------------------------------------
         let elapsed = start.elapsed().as_millis() as u64;
@@ -295,7 +317,7 @@ impl PipelineHandle {
             chunks: bm25.chunks.len(),
             elapsed_ms: elapsed,
             is_incremental: has_prev,
-            embedding_ready: false,
+            embedding_ready: embedding_outcome,
         })
     }
 
@@ -657,9 +679,10 @@ mod tests {
         assert!(report.files_scanned >= 2);
         assert!(report.nodes > 0);
         assert!(report.elapsed_ms > 0);
-        assert!(
-            !report.embedding_ready,
-            "embedding not ready after pipeline build"
+        assert_eq!(
+            report.embedding_ready,
+            EmbeddingBuildOutcome::Skipped,
+            "embeddings skipped without --features embeddings"
         );
     }
 

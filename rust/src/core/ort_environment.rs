@@ -1,3 +1,4 @@
+#![cfg(any(feature = "embeddings", feature = "neural"))]
 //! ONNX Runtime global environment: single init per process, runtime dylib loading.
 //!
 //! With the `load-dynamic` Cargo feature (always enabled in lean-ctx's `ort`

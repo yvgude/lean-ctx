@@ -1,8 +1,5 @@
 //! Unit tests for the graph index. Extracted from `graph_index/mod.rs`;
 //! `super::*` resolves to the `graph_index` module.
-// These test the deprecated entry points which are still available until Phase B (T23).
-
-#![allow(deprecated)]
 
 use super::*;
 use tempfile::tempdir;
@@ -55,34 +52,6 @@ fn dir_marker_detects_each_project_type() {
 }
 
 #[test]
-fn test_short_hash_deterministic() {
-    let h1 = short_hash("/Users/test/project");
-    let h2 = short_hash("/Users/test/project");
-    assert_eq!(h1, h2);
-    assert_eq!(h1.len(), 8);
-}
-
-#[test]
-fn test_make_relative() {
-    assert_eq!(
-        make_relative("/foo/bar/src/main.rs", "/foo/bar"),
-        graph_relative_key("/foo/bar/src/main.rs", "/foo/bar")
-    );
-    assert_eq!(
-        make_relative("src/main.rs", "/foo/bar"),
-        graph_relative_key("src/main.rs", "/foo/bar")
-    );
-    assert_eq!(
-        make_relative("C:\\repo\\src\\main\\kotlin\\Example.kt", "C:\\repo"),
-        graph_relative_key("C:\\repo\\src\\main\\kotlin\\Example.kt", "C:\\repo")
-    );
-    assert_eq!(
-        make_relative("//?/C:/repo/src/main/kotlin/Example.kt", "//?/C:/repo"),
-        graph_relative_key("//?/C:/repo/src/main/kotlin/Example.kt", "//?/C:/repo")
-    );
-}
-
-#[test]
 fn test_normalize_project_root() {
     assert_eq!(normalize_project_root("C:\\repo\\"), "C:\\repo");
     assert_eq!(normalize_project_root("C:\\repo\\."), "C:\\repo");
@@ -103,21 +72,6 @@ fn test_graph_match_key_normalizes_windows_forms() {
 }
 
 #[test]
-fn test_extract_summary() {
-    let content = "// comment\nuse std::io;\n\npub fn main() {\n    println!(\"hello\");\n}";
-    let summary = extract_summary(content);
-    assert_eq!(summary, "pub fn main() {");
-}
-
-#[test]
-fn test_compute_hash_deterministic() {
-    let h1 = compute_hash("hello world");
-    let h2 = compute_hash("hello world");
-    assert_eq!(h1, h2);
-    assert_ne!(h1, compute_hash("hello world!"));
-}
-
-#[test]
 fn test_project_index_new() {
     let idx = ProjectIndex::new("/test");
     assert_eq!(idx.version, INDEX_VERSION);
@@ -126,47 +80,41 @@ fn test_project_index_new() {
 }
 
 fn fe(path: &str, content: &str, language: &str) -> FileEntry {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    content.hash(&mut hasher);
+    let hash = format!("{:016x}", hasher.finish());
+    let line_count = content.lines().count();
+    let token_count = crate::core::tokens::count_tokens(content);
+    let summary = content
+        .lines()
+        .map(str::trim)
+        .find(|l| {
+            !l.is_empty()
+                && !l.starts_with("//")
+                && !l.starts_with('#')
+                && !l.starts_with("/*")
+                && !l.starts_with('*')
+                && !l.starts_with("use ")
+                && !l.starts_with("import ")
+                && !l.starts_with("from ")
+                && !l.starts_with("require(")
+                && !l.starts_with("package ")
+        })
+        .unwrap_or("")
+        .chars()
+        .take(120)
+        .collect();
     FileEntry {
         path: path.to_string(),
-        hash: compute_hash(content),
+        hash,
         language: language.to_string(),
-        line_count: content.lines().count(),
-        token_count: crate::core::tokens::count_tokens(content),
+        line_count,
+        token_count,
         exports: Vec::new(),
-        summary: extract_summary(content),
+        summary,
     }
-}
-
-#[test]
-fn test_index_looks_stale_when_any_file_missing() {
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-    std::fs::write(root.join("a.rs"), "pub fn a() {}\n").expect("write a.rs");
-
-    let root_s = normalize_project_root(&root.to_string_lossy());
-    let mut idx = ProjectIndex::new(&root_s);
-    idx.files
-        .insert("a.rs".to_string(), fe("a.rs", "pub fn a() {}\n", "rs"));
-    idx.files.insert(
-        "missing.rs".to_string(),
-        fe("missing.rs", "pub fn m() {}\n", "rs"),
-    );
-
-    assert!(index_looks_stale(&idx, &root_s));
-}
-
-#[test]
-fn test_index_looks_fresh_when_all_files_exist() {
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-    std::fs::write(root.join("a.rs"), "pub fn a() {}\n").expect("write a.rs");
-
-    let root_s = normalize_project_root(&root.to_string_lossy());
-    let mut idx = ProjectIndex::new(&root_s);
-    idx.files
-        .insert("a.rs".to_string(), fe("a.rs", "pub fn a() {}\n", "rs"));
-
-    assert!(!index_looks_stale(&idx, &root_s));
 }
 
 #[test]
@@ -217,53 +165,6 @@ fn get_forward_deps_follows_import_edges_outward() {
 }
 
 #[test]
-fn test_find_symbol_range_kotlin_function() {
-    let content = r#"
-package com.example
-
-class UserService {
-    fun greet(name: String): String {
-        return "hi $name"
-    }
-}
-"#;
-    let sig = signatures::Signature {
-        kind: "method",
-        name: "greet".to_string(),
-        params: "name:String".to_string(),
-        return_type: "String".to_string(),
-        is_async: false,
-        is_exported: true,
-        indent: 2,
-        ..signatures::Signature::no_span()
-    };
-    let (start, end) = find_symbol_range(content, &sig);
-    assert_eq!(start, 5);
-    assert!(end >= start);
-}
-
-#[test]
-fn test_signature_spans_override_fallback_range() {
-    let sig = signatures::Signature {
-        kind: "method",
-        name: "release".to_string(),
-        params: "id:String".to_string(),
-        return_type: "Boolean".to_string(),
-        is_async: true,
-        is_exported: true,
-        indent: 2,
-        start_line: Some(42),
-        end_line: Some(43),
-    };
-
-    let (start, end) = sig
-        .start_line
-        .zip(sig.end_line)
-        .unwrap_or_else(|| find_symbol_range("ignored", &sig));
-    assert_eq!((start, end), (42, 43));
-}
-
-#[test]
 fn test_parse_stale_index_version() {
     let json = format!(
         r#"{{"version":{},"project_root":"/test","last_scan":"now","files":{{}},"edges":[],"symbols":{{}}}}"#,
@@ -271,15 +172,6 @@ fn test_parse_stale_index_version() {
     );
     let parsed: ProjectIndex = serde_json::from_str(&json).unwrap();
     assert_ne!(parsed.version, INDEX_VERSION);
-}
-
-#[test]
-fn test_kotlin_package_name() {
-    let content = "package com.example.feature\n\nclass UserService";
-    assert_eq!(
-        kotlin_package_name(content).as_deref(),
-        Some("com.example.feature")
-    );
 }
 
 #[test]
@@ -324,207 +216,6 @@ fn safe_scan_root_rejects_broad_dir() {
     }
     let root = tmp.path().to_string_lossy().to_string();
     assert!(!is_safe_scan_root(&root));
-}
-
-#[test]
-fn no_index_env_skips_scan() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let tmp = tempdir().unwrap();
-    std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
-    std::fs::write(tmp.path().join("main.rs"), "fn main() {}").unwrap();
-
-    crate::test_env::set_var("LEAN_CTX_NO_INDEX", "1");
-    let idx = scan(&tmp.path().to_string_lossy());
-    crate::test_env::remove_var("LEAN_CTX_NO_INDEX");
-    assert!(idx.files.is_empty(), "LEAN_CTX_NO_INDEX should skip scan");
-}
-
-#[test]
-fn stale_index_detected_by_contamination() {
-    let root_s = "/home/testuser/myproject";
-    let mut idx = ProjectIndex::new(root_s);
-    // Simulate a contaminated index with Desktop files
-    idx.files.insert(
-        "Desktop/random.py".to_string(),
-        fe("Desktop/random.py", "x = 1\n", "py"),
-    );
-    idx.files.insert(
-        "src/main.rs".to_string(),
-        fe("src/main.rs", "fn main() {}\n", "rs"),
-    );
-    assert!(
-        index_looks_stale(&idx, root_s),
-        "Index with Desktop/ files should be considered stale"
-    );
-}
-
-#[test]
-fn stale_index_detected_by_age() {
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-    std::fs::write(root.join("a.rs"), "fn a() {}\n").unwrap();
-
-    let root_s = normalize_project_root(&root.to_string_lossy());
-    let mut idx = ProjectIndex::new(&root_s);
-    idx.files
-        .insert("a.rs".to_string(), fe("a.rs", "fn a() {}\n", "rs"));
-    // Set last_scan to 100 hours ago (default max_age_hours is 48)
-    let old_time = chrono::Local::now().naive_local() - chrono::Duration::hours(100);
-    idx.last_scan = old_time.format("%Y-%m-%d %H:%M:%S").to_string();
-
-    assert!(
-        index_looks_stale(&idx, &root_s),
-        "Index older than max_age_hours should be stale"
-    );
-}
-
-#[test]
-fn content_aware_staleness_detects_edits_and_additions() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let td = tempdir().expect("tempdir");
-    std::fs::write(
-        td.path().join("Cargo.toml"),
-        "[package]\nname = \"t\"\nversion = \"0.1.0\"\n",
-    )
-    .unwrap();
-    std::fs::write(td.path().join("a.rs"), "fn a() {}\n").unwrap();
-    let root_s = normalize_project_root(&td.path().to_string_lossy());
-
-    // Build + persist the index, then it must look fresh.
-    let idx = scan(&root_s);
-    assert!(!idx.files.is_empty(), "scan should index a.rs");
-    assert!(
-        !index_looks_stale(&idx, &root_s),
-        "a just-built index must be fresh"
-    );
-
-    // mtime resolution can be coarse; ensure the next writes are strictly newer.
-    std::thread::sleep(std::time::Duration::from_millis(1100));
-
-    // Edit detection.
-    std::fs::write(td.path().join("a.rs"), "fn a() { let _x = 1; }\n").unwrap();
-    assert!(
-        index_looks_stale(&idx, &root_s),
-        "an edited source file must mark the index stale"
-    );
-
-    // Addition detection.
-    std::fs::write(td.path().join("b.rs"), "fn b() {}\n").unwrap();
-    assert!(
-        index_looks_stale(&idx, &root_s),
-        "a new source file must mark the index stale"
-    );
-}
-
-#[test]
-fn touch_without_content_change_keeps_index_fresh() {
-    // #324: an mtime bump with identical bytes (touch / git checkout / no-op
-    // format) must NOT trigger a rescan — only a real content change does.
-    let _env = crate::core::data_dir::test_env_lock();
-    let td = tempdir().expect("tempdir");
-    std::fs::write(
-        td.path().join("Cargo.toml"),
-        "[package]\nname = \"t\"\nversion = \"0.1.0\"\n",
-    )
-    .unwrap();
-    std::fs::write(td.path().join("a.rs"), "fn a() {}\n").unwrap();
-    let root_s = normalize_project_root(&td.path().to_string_lossy());
-
-    let idx = scan(&root_s);
-    assert!(!idx.files.is_empty(), "scan should index a.rs");
-    assert!(
-        !index_looks_stale(&idx, &root_s),
-        "a just-built index must be fresh"
-    );
-
-    // mtime resolution can be coarse; ensure the rewrite is strictly newer.
-    std::thread::sleep(std::time::Duration::from_millis(1100));
-
-    // Rewrite identical bytes: mtime advances but the content hash is unchanged.
-    std::fs::write(td.path().join("a.rs"), "fn a() {}\n").unwrap();
-    assert!(
-        !index_looks_stale(&idx, &root_s),
-        "a content-identical rewrite must NOT mark the index stale"
-    );
-}
-
-#[test]
-fn safe_scan_root_rejects_home_downloads() {
-    if let Some(home) = dirs::home_dir() {
-        let downloads = home.join("Downloads");
-        // Only test if Downloads doesn't contain a .git (unlikely but possible)
-        if !downloads.join(".git").exists() {
-            let downloads_str = downloads.to_string_lossy().to_string();
-            assert!(
-                !is_safe_scan_root(&downloads_str),
-                "~/Downloads should be rejected without project markers"
-            );
-        }
-    }
-}
-
-#[test]
-fn safe_scan_root_rejects_cloud_sync_roots() {
-    // ~/OneDrive (and friends) must never be a scan root: walking them forces
-    // OneDrive/Dropbox/Drive to hydrate every on-demand placeholder (#363).
-    if let Some(home) = dirs::home_dir() {
-        for dir in ["OneDrive", "Dropbox", "Google Drive"] {
-            let cloud = home.join(dir);
-            if cloud.join(".git").exists() {
-                continue; // a real repo there legitimately overrides the block
-            }
-            let cloud_str = cloud.to_string_lossy().to_string();
-            assert!(
-                !is_safe_scan_root(&cloud_str),
-                "~/{dir} should be rejected as a scan root"
-            );
-        }
-    }
-}
-
-#[test]
-#[cfg(target_os = "macos")]
-#[serial_test::serial]
-fn safe_scan_root_refused_for_standalone_under_documents() {
-    // #356: a launchd-standalone process (daemon/proxy, ppid 1) must refuse to
-    // scan *any* path under ~/Documents — including a real nested project —
-    // before normalize/marker-probe/read_dir touches the filesystem. Editor- and
-    // CLI-attached processes (covered by the other tests) keep indexing them.
-    let Some(home) = dirs::home_dir() else {
-        return;
-    };
-    let doc_proj = home.join("Documents/some-project");
-    let doc_proj_str = doc_proj.to_string_lossy().to_string();
-
-    crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
-    assert!(
-        !is_safe_scan_root(&doc_proj_str),
-        "standalone process must refuse ~/Documents scan roots"
-    );
-    assert!(!is_safe_scan_root_public(&doc_proj_str));
-    crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
-}
-
-#[test]
-fn safe_scan_root_accepts_multi_repo_parent() {
-    let tmp = tempdir().unwrap();
-    let parent = tmp.path().join("code");
-    std::fs::create_dir_all(&parent).unwrap();
-
-    // Create 2 child repos
-    std::fs::create_dir_all(parent.join("repo-a").join(".git")).unwrap();
-    std::fs::create_dir_all(parent.join("repo-b").join(".git")).unwrap();
-
-    // Add >50 empty subdirs to trigger the breadth guard
-    for i in 0..55 {
-        std::fs::create_dir(parent.join(format!("dir-{i}"))).unwrap();
-    }
-
-    let parent_str = parent.to_string_lossy().to_string();
-    assert!(
-        is_safe_scan_root(&parent_str),
-        "Multi-repo parent with >50 subdirs should be accepted"
-    );
 }
 
 #[test]
@@ -618,18 +309,81 @@ public class Bar { }\n";
 }
 
 #[test]
-fn safe_scan_root_accepts_dotnet_project() {
-    // A `*.csproj` at the root must mark a valid scan root even with many
-    // subdirectories that would otherwise be rejected as a broad directory.
-    let tmp = tempdir().unwrap();
-    std::fs::write(tmp.path().join("MyApp.csproj"), "<Project></Project>\n").unwrap();
-    for i in 0..55 {
-        std::fs::create_dir(tmp.path().join(format!("dir{i}"))).unwrap();
+fn safe_scan_root_rejects_home_downloads() {
+    if let Some(home) = dirs::home_dir() {
+        let downloads = home.join("Downloads");
+        // Only test if Downloads doesn't contain a .git (unlikely but possible)
+        if !downloads.join(".git").exists() {
+            let downloads_str = downloads.to_string_lossy().to_string();
+            assert!(
+                !is_safe_scan_root(&downloads_str),
+                "~/Downloads should be rejected without project markers"
+            );
+        }
     }
-    let root = tmp.path().to_string_lossy().to_string();
+}
+
+#[test]
+fn safe_scan_root_rejects_cloud_sync_roots() {
+    // ~/OneDrive (and friends) must never be a scan root: walking them forces
+    // OneDrive/Dropbox/Drive to hydrate every on-demand placeholder (#363).
+    if let Some(home) = dirs::home_dir() {
+        for dir in ["OneDrive", "Dropbox", "Google Drive"] {
+            let cloud = home.join(dir);
+            if cloud.join(".git").exists() {
+                continue; // a real repo there legitimately overrides the block
+            }
+            let cloud_str = cloud.to_string_lossy().to_string();
+            assert!(
+                !is_safe_scan_root(&cloud_str),
+                "~/{dir} should be rejected as a scan root"
+            );
+        }
+    }
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+#[serial_test::serial]
+fn safe_scan_root_refused_for_standalone_under_documents() {
+    // #356: a launchd-standalone process (daemon/proxy, ppid 1) must refuse to
+    // scan *any* path under ~/Documents — including a real nested project —
+    // before normalize/marker-probe/read_dir touches the filesystem. Editor- and
+    // CLI-attached processes (covered by the other tests) keep indexing them.
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    let doc_proj = home.join("Documents/some-project");
+    let doc_proj_str = doc_proj.to_string_lossy().to_string();
+
+    crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
     assert!(
-        is_safe_scan_root(&root),
-        "a .csproj should mark a valid .NET scan root"
+        !is_safe_scan_root(&doc_proj_str),
+        "standalone process must refuse ~/Documents scan roots"
+    );
+    assert!(!is_safe_scan_root_public(&doc_proj_str));
+    crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
+}
+
+#[test]
+fn safe_scan_root_accepts_multi_repo_parent() {
+    let tmp = tempdir().unwrap();
+    let parent = tmp.path().join("code");
+    std::fs::create_dir_all(&parent).unwrap();
+
+    // Create 2 child repos
+    std::fs::create_dir_all(parent.join("repo-a").join(".git")).unwrap();
+    std::fs::create_dir_all(parent.join("repo-b").join(".git")).unwrap();
+
+    // Add >50 empty subdirs to trigger the breadth guard
+    for i in 0..55 {
+        std::fs::create_dir(parent.join(format!("dir-{i}"))).unwrap();
+    }
+
+    let parent_str = parent.to_string_lossy().to_string();
+    assert!(
+        is_safe_scan_root(&parent_str),
+        "Multi-repo parent with >50 subdirs should be accepted"
     );
 }
 
@@ -744,121 +498,18 @@ local function run()\n\treturn util.add(1, 2)\nend\n";
 }
 
 #[test]
-fn tscn_scene_indexed_with_script_edges() {
-    // #316: a real on-disk Godot project. The `.tscn` scene is indexed as a
-    // graph node, its `[ext_resource]` script becomes a Scene→Script import
-    // edge, and GDScript member symbols (`@export var`) surface in the graph.
-    // Acquire the env lock (scan reads LEAN_CTX_DATA_DIR) but do not mutate it,
-    // so we never race data-dir-sensitive tests.
-    let _env = crate::core::data_dir::test_env_lock();
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-
-    // `project.godot` is the sole project marker → also exercises detection.
-    std::fs::write(root.join("project.godot"), "config_version=5\n").unwrap();
-    std::fs::create_dir_all(root.join("actors")).unwrap();
-    std::fs::create_dir_all(root.join("scenes")).unwrap();
-    std::fs::write(
-        root.join("actors/Player.gd"),
-        "extends CharacterBody2D\n\n@export var speed: float = 200.0\n\nfunc _ready():\n\tpass\n",
-    )
-    .unwrap();
-    std::fs::write(
-        root.join("scenes/Main.tscn"),
-        "[gd_scene load_steps=2 format=3]\n\n\
-         [ext_resource type=\"Script\" path=\"res://actors/Player.gd\" id=\"1_p\"]\n\n\
-         [node name=\"Main\" type=\"Node2D\"]\n\
-         script = ExtResource(\"1_p\")\n",
-    )
-    .unwrap();
-
-    let root_s = normalize_project_root(&root.to_string_lossy());
-    let idx = scan(&root_s);
-
-    // AC1: the `.tscn` scene is indexed as a graph node.
+fn safe_scan_root_accepts_dotnet_project() {
+    // A `*.csproj` at the root must mark a valid scan root even with many
+    // subdirectories that would otherwise be rejected as a broad directory.
+    let tmp = tempdir().unwrap();
+    std::fs::write(tmp.path().join("MyApp.csproj"), "<Project></Project>\n").unwrap();
+    for i in 0..55 {
+        std::fs::create_dir(tmp.path().join(format!("dir{i}"))).unwrap();
+    }
+    let root = tmp.path().to_string_lossy().to_string();
     assert!(
-        idx.files.contains_key("scenes/Main.tscn"),
-        "scene must be indexed; files: {:?}",
-        idx.files.keys().collect::<Vec<_>>()
-    );
-
-    // AC1/AC2: Scene→Script import edge from the scene to its attached script.
-    assert!(
-        idx.edges.iter().any(|e| e.kind == "import"
-            && e.from == "scenes/Main.tscn"
-            && e.to == "actors/Player.gd"),
-        "expected Scene→Script edge, got {:?}",
-        idx.edges
-    );
-
-    // AC2: GDScript `@export var` member symbol surfaces in the graph.
-    assert!(
-        idx.symbols.values().any(|s| s.name == "speed"),
-        "expected @export member symbol `speed` in the graph"
-    );
-}
-
-#[test]
-fn scan_skips_node_modules_without_git_dir() {
-    // #400: a monorepo without a top-level `.git` used to index node_modules
-    // wholesale, because the ignore crate only applies `.gitignore` files
-    // inside git repositories. The vendor-dir walk filter must skip them
-    // regardless of git state.
-    let _env = crate::core::data_dir::test_env_lock();
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-
-    std::fs::create_dir_all(root.join("api/node_modules/lodash")).unwrap();
-    std::fs::create_dir_all(root.join("api/src")).unwrap();
-    std::fs::write(root.join("api/package.json"), "{\"name\":\"api\"}").unwrap();
-    std::fs::write(
-        root.join("api/node_modules/lodash/index.js"),
-        "module.exports = 1;",
-    )
-    .unwrap();
-    std::fs::write(root.join("api/src/server.js"), "const x = 1;").unwrap();
-
-    let root_s = normalize_project_root(&root.to_string_lossy());
-    let idx = scan(&root_s);
-
-    assert!(
-        idx.files.keys().any(|p| p.contains("server.js")),
-        "real source must be indexed; files: {:?}",
-        idx.files.keys().collect::<Vec<_>>()
-    );
-    assert!(
-        !idx.files.keys().any(|p| p.contains("node_modules")),
-        "node_modules must never be indexed; files: {:?}",
-        idx.files.keys().collect::<Vec<_>>()
-    );
-}
-
-#[test]
-fn scan_respects_gitignore_without_git_dir() {
-    // #400 second half: `require_git(false)` makes `.gitignore` files
-    // effective even when no `.git` directory exists.
-    let _env = crate::core::data_dir::test_env_lock();
-    let td = tempdir().expect("tempdir");
-    let root = td.path();
-
-    std::fs::create_dir_all(root.join("src")).unwrap();
-    std::fs::create_dir_all(root.join("generated")).unwrap();
-    std::fs::write(root.join(".gitignore"), "generated/\n").unwrap();
-    std::fs::write(root.join("src/app.js"), "const y = 2;").unwrap();
-    std::fs::write(root.join("generated/bundle.js"), "var b = 3;").unwrap();
-
-    let root_s = normalize_project_root(&root.to_string_lossy());
-    let idx = scan(&root_s);
-
-    assert!(
-        idx.files.keys().any(|p| p.contains("app.js")),
-        "real source must be indexed; files: {:?}",
-        idx.files.keys().collect::<Vec<_>>()
-    );
-    assert!(
-        !idx.files.keys().any(|p| p.contains("bundle.js")),
-        "gitignored dir must be skipped without .git; files: {:?}",
-        idx.files.keys().collect::<Vec<_>>()
+        is_safe_scan_root(&root),
+        "a .csproj should mark a valid .NET scan root"
     );
 }
 

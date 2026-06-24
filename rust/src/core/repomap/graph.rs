@@ -6,8 +6,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::core::call_graph::{CallGraph, CallGraphInputs};
-use crate::core::graph_index;
-use crate::core::graph_index::{ProjectIndex, SymbolEntry};
+use crate::core::graph_index::{FileEntry, IndexEdge, ProjectIndex, SymbolEntry};
 
 /// A symbol definition with its file context.
 #[derive(Debug, Clone)]
@@ -254,13 +253,13 @@ mod tests {
         let mut index = ProjectIndex::new("/tmp");
         index.files.insert("a.rs".into(), dummy_file_entry("a.rs"));
         index.files.insert("b.rs".into(), dummy_file_entry("b.rs"));
-        index.edges.push(graph_index::IndexEdge {
+        index.edges.push(IndexEdge {
             from: "a.rs".into(),
             to: "b.rs".into(),
             kind: "import".into(),
             weight: 1.0,
         });
-        index.edges.push(graph_index::IndexEdge {
+        index.edges.push(IndexEdge {
             from: "a.rs".into(),
             to: "b.rs".into(),
             kind: "import".into(),
@@ -278,7 +277,7 @@ mod tests {
     fn repo_graph_ignores_self_edges() {
         let mut index = ProjectIndex::new("/tmp");
         index.files.insert("a.rs".into(), dummy_file_entry("a.rs"));
-        index.edges.push(graph_index::IndexEdge {
+        index.edges.push(IndexEdge {
             from: "a.rs".into(),
             to: "a.rs".into(),
             kind: "import".into(),
@@ -294,8 +293,8 @@ mod tests {
         );
     }
 
-    fn dummy_file_entry(path: &str) -> graph_index::FileEntry {
-        graph_index::FileEntry {
+    fn dummy_file_entry(path: &str) -> FileEntry {
+        FileEntry {
             path: path.into(),
             hash: "abc".into(),
             language: "rust".into(),

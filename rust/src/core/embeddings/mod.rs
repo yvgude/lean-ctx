@@ -196,6 +196,7 @@ impl EmbeddingEngine {
     }
 
     /// Generate an embedding vector for a single text (document/code).
+    #[cfg(feature = "embeddings")]
     pub fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>> {
         let prefixed;
         let input_text = if let Some(prefix) = &self.model_config.document_prefix {
@@ -210,6 +211,7 @@ impl EmbeddingEngine {
 
     /// Generate an embedding vector for a query string.
     /// Applies query-specific prefix if the model requires one.
+    #[cfg(feature = "embeddings")]
     pub fn embed_query(&self, query: &str) -> anyhow::Result<Vec<f32>> {
         let prefixed;
         let input_text = if let Some(prefix) = &self.model_config.query_prefix {
@@ -227,6 +229,7 @@ impl EmbeddingEngine {
     /// instead of `batch` separate calls — up to 50× faster on CPU for typical
     /// batch sizes (64–128) by leveraging matrix-matrix instead of matrix-vector
     /// operations inside the transformer.
+    #[cfg(feature = "embeddings")]
     pub fn embed_batch(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
         if texts.is_empty() {
             return Ok(Vec::new());
