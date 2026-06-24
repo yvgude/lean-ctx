@@ -406,7 +406,7 @@ pub fn jail_path_with_roots(
                 candidate.display(),
                 root.display(),
             );
-            let hint = if crate::core::protocol::meta_visible() {
+            let mut hint = if crate::core::protocol::meta_visible() {
                 format!(
                     ". Hint: set LEAN_CTX_ALLOW_PATH={} or add it to allow_paths in ~/.lean-ctx/config.toml",
                     candidate.parent().unwrap_or(candidate).display()
@@ -414,6 +414,13 @@ pub fn jail_path_with_roots(
             } else {
                 String::new()
             };
+            // An untrusted workspace's project-local `allow_paths` is silently
+            // withheld; always surface that reason (the stderr warning is
+            // invisible over MCP, and the hint above is meta-gated off) (#540).
+            if let Some(notice) = crate::core::workspace_trust::untrusted_override_notice() {
+                hint.push_str(". ");
+                hint.push_str(&notice);
+            }
             return Err(format!("{base_msg}{hint}"));
         }
 

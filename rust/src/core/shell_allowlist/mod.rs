@@ -1126,6 +1126,14 @@ fn allowlist_block_message(base: &str) -> String {
         ));
     }
 
+    // A project-local `shell_allowlist`/`shell_allowlist_extra` is silently
+    // withheld for an untrusted workspace; surface that here so the edit's
+    // no-op reason isn't buried in an MCP-invisible stderr warning (#540).
+    if let Some(notice) = crate::core::workspace_trust::untrusted_override_notice() {
+        msg.push_str("\n\n⚠ ");
+        msg.push_str(&notice);
+    }
+
     msg
 }
 

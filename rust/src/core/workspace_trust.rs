@@ -215,6 +215,47 @@ pub fn list() -> Vec<TrustedWorkspace> {
     load().map(|s| s.workspaces).unwrap_or_default()
 }
 
+/// Actionable, single-paragraph explanation for the MCP tool surfaces (#540):
+/// when the active project's `.lean-ctx.toml` carries SECURITY-sensitive
+/// overrides that are being withheld because the workspace is untrusted, name the
+/// ignored keys and the two ways to make them take effect. `None` when the
+/// workspace is trusted, has no project root, has no local config, or its local
+/// config carries no sensitive overrides.
+///
+/// `Config::merge_local` already logs the identical fact via `tracing::warn`, but
+/// that goes to stderr — invisible over an MCP/stdio transport. So a blocked
+/// command (`shell_allowlist*`) or read (`allow_paths`) otherwise gives the agent
+/// no clue why an edit "did nothing"; this surfaces it inside the error itself.
+#[must_use]
+pub fn untrusted_override_notice() -> Option<String> {
+    let root = crate::core::config::Config::find_project_root()?;
+    untrusted_override_notice_for(Path::new(&root))
+}
+
+/// Root-parameterized core of [`untrusted_override_notice`] (the public wrapper
+/// resolves the active project root; this stays testable with an explicit path).
+fn untrusted_override_notice_for(root: &Path) -> Option<String> {
+    let local = crate::core::config::Config::local_path(&root.to_string_lossy());
+    let toml = std::fs::read_to_string(&local).ok()?;
+    let withheld = crate::core::config::local_sensitive_overrides(&toml);
+    if withheld.is_empty() || is_trusted(root) {
+        return None;
+    }
+    let cfg_path = crate::core::config::Config::path().map_or_else(
+        || "the global config".to_string(),
+        |p| p.display().to_string(),
+    );
+    Some(format!(
+        "This workspace's .lean-ctx.toml sets security-sensitive override(s) [{keys}] that \
+         lean-ctx IGNORES because the workspace is untrusted — the usual reason such an edit \
+         appears to do nothing. To apply them, review the file then run `lean-ctx trust` in \
+         {root}, or move the key(s) into the global config ({cfg_path}), which is never \
+         trust-gated.",
+        keys = withheld.join(", "),
+        root = root.display(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,5 +323,52 @@ mod tests {
         assert!(!is_trusted(dir.path()));
         trust(dir.path()).unwrap();
         assert!(is_trusted(dir.path()));
+    }
+
+    // #540: the notice is the visible counterpart to the stderr-only merge_local
+    // warning — an untrusted workspace with sensitive overrides must explain the
+    // gate (and the `lean-ctx trust` remedy) right where the tool blocks.
+    #[test]
+    fn untrusted_sensitive_override_yields_actionable_notice() {
+        let _iso = isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(".lean-ctx.toml"),
+            "allow_paths = [\"/srv/data\"]\nshell_allowlist_extra = [\"glab\"]\n",
+        )
+        .unwrap();
+        let notice = untrusted_override_notice_for(dir.path()).expect("untrusted → notice");
+        assert!(notice.contains("allow_paths"), "{notice}");
+        assert!(notice.contains("shell_allowlist_extra"), "{notice}");
+        assert!(notice.contains("lean-ctx trust"), "{notice}");
+    }
+
+    #[test]
+    fn trusted_workspace_yields_no_notice() {
+        let _iso = isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(".lean-ctx.toml"),
+            "allow_paths = [\"/srv/data\"]\n",
+        )
+        .unwrap();
+        trust(dir.path()).unwrap();
+        assert!(untrusted_override_notice_for(dir.path()).is_none());
+    }
+
+    #[test]
+    fn no_local_config_yields_no_notice() {
+        let _iso = isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        assert!(untrusted_override_notice_for(dir.path()).is_none());
+    }
+
+    #[test]
+    fn comfort_only_override_yields_no_notice() {
+        let _iso = isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        // Comfort knobs are never gated, so they never trigger the trust notice.
+        std::fs::write(dir.path().join(".lean-ctx.toml"), "theme = \"dark\"\n").unwrap();
+        assert!(untrusted_override_notice_for(dir.path()).is_none());
     }
 }
