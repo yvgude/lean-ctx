@@ -18,14 +18,14 @@ use crate::tools::ctx_semantic_search;
 #[derive(Debug, PartialEq)]
 struct Args {
     query: Option<String>,
-    path: Option<String>,          // None = auto-detect
+    path: Option<String>, // None = auto-detect
     mode: String,
     top_k: usize,
     json: bool,
     languages: Vec<String>,
     path_glob: Option<String>,
     help: bool,
-    explicit_path: bool,           // true when --path/-p was given
+    explicit_path: bool, // true when --path/-p was given
 }
 
 impl Default for Args {

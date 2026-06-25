@@ -195,27 +195,8 @@ fn load_chunk_data(
     std::sync::Arc::new(data)
 }
 
-/// Performs semantic code search using BM25, dense embeddings, or hybrid ranking.
-/// Returns compact JSON array.
 #[allow(clippy::too_many_arguments)]
-pub fn handle(
-    query: &str,
-    path: &str,
-    top_k: usize,
-    crp_mode: CrpMode,
-    languages: Option<&[String]>,
-    path_glob: Option<&str>,
-    mode: Option<&str>,
-    workspace: Option<bool>,
-    artifacts: Option<bool>,
-) -> String {
-    handle_impl(
-        query, path, top_k, crp_mode, languages, path_glob, mode, workspace, artifacts,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn handle_impl(
+pub(crate) fn handle_impl(
     query: &str,
     path: &str,
     top_k: usize,
@@ -321,12 +302,12 @@ fn handle_impl(
 }
 
 /// Structured single-root search used by the `semantic-search` CLI (`--json`)
-/// and any programmatic caller (editor extensions). Mirrors `handle`'s
+/// and any programmatic caller (editor extensions). Mirrors `handle_impl`'s
 /// single-root logic but returns the ranked [`HybridResult`]s instead of a
 /// formatted report, so callers control their own serialization. Reuses the
-/// exact same hybrid/dense/BM25 ranking as the `ctx_semantic_search` MCP tool —
+/// exact same hybrid/dense/BM25 ranking as the search tool —
 /// no second code path to drift.
-pub fn search_hits(
+pub(crate) fn search_hits(
     query: &str,
     path: &str,
     top_k: usize,
@@ -402,7 +383,7 @@ fn bm25_hits(
 
 /// Rebuilds the BM25 search index for the given directory from scratch.
 #[must_use]
-pub fn handle_reindex(path: &str) -> String {
+pub(crate) fn handle_reindex(path: &str) -> String {
     let root = Path::new(path);
     if !root.exists() {
         return format!("ERR: path does not exist: {path}");
@@ -421,7 +402,7 @@ pub fn handle_reindex(path: &str) -> String {
 }
 
 #[must_use]
-pub fn handle_reindex_artifacts(path: &str, workspace: bool) -> String {
+pub(crate) fn handle_reindex_artifacts(path: &str, workspace: bool) -> String {
     let root = Path::new(path);
     if !root.exists() {
         return format!("ERR: path does not exist: {path}");
@@ -464,7 +445,7 @@ pub fn handle_reindex_artifacts(path: &str, workspace: bool) -> String {
 ///
 /// Marchionini (2006): Exploratory search navigates from known points.
 /// This enables "show me similar code" workflows.
-pub fn handle_find_related(
+pub(crate) fn handle_find_related(
     file_path: &str,
     line: usize,
     project_root: &str,

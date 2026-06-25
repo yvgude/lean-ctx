@@ -253,7 +253,7 @@ fn ranked_files_budgeted(task: &str, project_root: &str, crp_mode: CrpMode) -> S
 
     std::thread::spawn(move || {
         let ranked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::tools::ctx_semantic_search::handle(
+            crate::tools::ctx_semantic_search::handle_impl(
                 &task_owned,
                 &root_owned,
                 8,

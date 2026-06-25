@@ -79,56 +79,6 @@ fn try_fts_symbol_search(
     }
 }
 
-pub fn handle(
-    name: &str,
-    file: Option<&str>,
-    kind: Option<&str>,
-    project_root: &str,
-) -> (String, usize) {
-    // Fast path: use FTS5 symbols_fts for name search
-    if let Some(matches) = try_fts_symbol_search(name, file, kind, project_root) {
-        return match matches.len() {
-            1 => render_single(&matches[0], project_root),
-            2..=5 => render_multiple(&matches, project_root),
-            n => {
-                let mut out = format!("{n} matches for '{name}'. Narrow with file= or kind=:\n");
-                for m in matches.iter().take(20) {
-                    out.push_str(&format!(
-                        "  {}:{}  {}  {}\n",
-                        m.file, m.start_line, m.kind, m.name
-                    ));
-                }
-                if matches.len() > 20 {
-                    out.push_str(&format!("  ... and {} more\n", matches.len() - 20));
-                }
-                (out, 0)
-            }
-        };
-    }
-
-    // Fallback: FTS5 fallback (SQLite-backed, no explicit trigger needed)
-    if let Some(matches) = try_fts_symbol_search(name, file, kind, project_root) {
-        return match matches.len() {
-            1 => render_single(&matches[0], project_root),
-            2..=5 => render_multiple(&matches, project_root),
-            n => {
-                let mut out = format!("{n} matches for '{name}'. Narrow with file= or kind=:\n");
-                for m in matches.iter().take(20) {
-                    out.push_str(&format!(
-                        "  {}:{}  {}  {}\n",
-                        m.file, m.start_line, m.kind, m.name
-                    ));
-                }
-                if matches.len() > 20 {
-                    out.push_str(&format!("  ... and {} more\n", matches.len() - 20));
-                }
-                (out, 0)
-            }
-        };
-    }
-    (format!("Symbol '{name}' not found in index."), 0)
-}
-
 /// Render the body of the single most relevant symbol named `name`.
 /// Used by `ctx_compose` to inline the top symbol's definition. Returns
 /// `(rendered_with_body, full_file_tokens)` or `None` when not found.
