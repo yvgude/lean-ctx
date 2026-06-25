@@ -56,6 +56,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   (gitlab #868–#871)
 
 ### Fixed
+- **Copilot/VS Code Claude models ignored lean-ctx — no `.github/copilot-instructions.md` (#555).**
+  `lean-ctx init --agent copilot` installed the MCP server plus a deliberately
+  weak `AGENTS.md` pointer but never wrote `.github/copilot-instructions.md`, the
+  repo-level file VS Code Copilot Chat auto-applies to every request. Claude-
+  family models (Sonnet/Opus) therefore ignored the tool mapping while GPT-5.x
+  followed it ~95% of the time. `init` now writes the strong dedicated ruleset
+  into `.github/copilot-instructions.md` as an idempotent `<!-- lean-ctx-rules -->`
+  block (user content is preserved, never clobbered) and pins
+  `github.copilot.chat.codeGeneration.useInstructionFiles: true` in the project
+  `.vscode/settings.json` as a safety net (an explicit user value is honoured);
+  uninstall removes the block.
 - **Codex proxy never compressed — ChatGPT login bypasses it; the API-key config
   was a no-op (#554).** `lean-ctx proxy enable` reported success for Codex yet
   `Requests/Compressed/Tokens saved` stayed at `0`, for two reasons. (1) A Codex

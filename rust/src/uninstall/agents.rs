@@ -74,7 +74,13 @@ pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
     }
 
     // Shared project files: surgically remove lean-ctx content, keep user content
-    let shared_project_files = [".cursorrules", ".windsurfrules", ".clinerules"];
+    let shared_project_files = [
+        ".cursorrules",
+        ".windsurfrules",
+        ".clinerules",
+        // #555: lean-ctx writes a marked block into the repo Copilot instructions.
+        ".github/copilot-instructions.md",
+    ];
     for rel in &shared_project_files {
         let path = cwd.join(rel);
         if !path.exists() {

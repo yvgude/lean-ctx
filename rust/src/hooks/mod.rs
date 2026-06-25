@@ -481,6 +481,11 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
             }
         }
     }
+
+    if wants("copilot") || wants("vscode") {
+        ensure_copilot_instructions(&cwd);
+        ensure_vscode_instruction_files_setting(&cwd);
+    }
 }
 
 const PROJECT_LEAN_CTX_MD_MARKER: &str = "<!-- lean-ctx-owned: PROJECT-LEAN-CTX.md v1 -->";
@@ -573,6 +578,90 @@ Full rules: {PROJECT_LEAN_CTX_MD} (open on demand — do not auto-load).\n\
     write_file(&agents_md, &out);
     if !mcp_server_quiet_mode() {
         eprintln!("Updated AGENTS.md (added lean-ctx reference block).");
+    }
+}
+
+/// #555: VS Code Copilot Chat auto-applies `.github/copilot-instructions.md` to
+/// every request, but `init --agent copilot` previously wrote only a weak
+/// AGENTS.md pointer — Claude-family models then ignored the lean-ctx tool
+/// mapping while GPT-5.x mostly followed it. Write the strong dedicated ruleset
+/// into a `<!-- lean-ctx-rules -->` marked block so it merges idempotently and
+/// never clobbers the user's own instructions.
+fn ensure_copilot_instructions(cwd: &std::path::Path) {
+    let path = cwd.join(".github").join("copilot-instructions.md");
+    let block = crate::rules_inject::rules_dedicated_markdown();
+    let start = crate::core::rules_canonical::START_MARK;
+    let end = crate::core::rules_canonical::END_MARK;
+    let owned = format!("{}\n", block.trim_end());
+
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let desired = if existing.trim().is_empty() {
+        owned
+    } else if existing.contains(start) {
+        // Refresh our block; keep any surrounding user-authored content.
+        let user = crate::marked_block::remove_content(&existing, start, end);
+        if user.trim().is_empty() {
+            owned
+        } else {
+            format!("{}\n\n{}\n", user.trim_end(), block.trim_end())
+        }
+    } else {
+        // User-authored file with no lean-ctx block yet: append ours once.
+        format!("{}\n\n{}\n", existing.trim_end(), block.trim_end())
+    };
+
+    if desired == existing {
+        return;
+    }
+    if let Some(parent) = path.parent()
+        && std::fs::create_dir_all(parent).is_err()
+    {
+        return;
+    }
+    write_file(&path, &desired);
+    if !mcp_server_quiet_mode() {
+        eprintln!("Created/updated .github/copilot-instructions.md (Copilot/VS Code rules).");
+    }
+}
+
+/// #555 safety net: VS Code applies instruction files when
+/// `github.copilot.chat.codeGeneration.useInstructionFiles` is on (the default).
+/// A user or org policy may have disabled it globally, so pin it on for this
+/// project. Set only when the key is absent — an explicit user value is honoured.
+fn ensure_vscode_instruction_files_setting(cwd: &std::path::Path) {
+    const KEY: &str = "github.copilot.chat.codeGeneration.useInstructionFiles";
+    let path = cwd.join(".vscode").join("settings.json");
+
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut json = if existing.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        match crate::core::jsonc::parse_jsonc(&existing) {
+            Ok(v) if v.is_object() => v,
+            // Never clobber an unparseable or non-object settings file.
+            _ => return,
+        }
+    };
+    let Some(obj) = json.as_object_mut() else {
+        return;
+    };
+    if obj.contains_key(KEY) {
+        return;
+    }
+    obj.insert(KEY.to_string(), serde_json::Value::Bool(true));
+
+    if let Some(parent) = path.parent()
+        && std::fs::create_dir_all(parent).is_err()
+    {
+        return;
+    }
+    let Ok(formatted) = serde_json::to_string_pretty(&json) else {
+        return;
+    };
+    if crate::config_io::write_atomic_with_backup(&path, &formatted).is_ok()
+        && !mcp_server_quiet_mode()
+    {
+        eprintln!("Set {KEY} in .vscode/settings.json.");
     }
 }
 
@@ -892,6 +981,128 @@ mod tests {
                 "exempt agent `{agent}` is not a Hybrid agent (stale exemption?)"
             );
         }
+    }
+
+    // ── #555: .github/copilot-instructions.md ──────────────────────────────
+
+    #[test]
+    fn copilot_instructions_created_with_lean_ctx_block() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        ensure_copilot_instructions(tmp.path());
+
+        let path = tmp.path().join(".github/copilot-instructions.md");
+        let content = std::fs::read_to_string(&path).expect("copilot-instructions.md created");
+        assert!(content.contains(crate::core::rules_canonical::START_MARK));
+        assert!(content.contains(crate::core::rules_canonical::END_MARK));
+        assert!(content.contains("lean-ctx"));
+    }
+
+    #[test]
+    fn copilot_instructions_idempotent() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".github/copilot-instructions.md");
+
+        ensure_copilot_instructions(tmp.path());
+        let first = std::fs::read_to_string(&path).unwrap();
+        ensure_copilot_instructions(tmp.path());
+        let second = std::fs::read_to_string(&path).unwrap();
+
+        assert_eq!(first, second, "re-running must produce identical bytes");
+        assert_eq!(
+            first
+                .matches(crate::core::rules_canonical::START_MARK)
+                .count(),
+            1,
+            "exactly one lean-ctx block, no duplication"
+        );
+    }
+
+    #[test]
+    fn copilot_instructions_preserve_user_content() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".github/copilot-instructions.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "# House rules\n\nAlways write tests.\n").unwrap();
+
+        ensure_copilot_instructions(tmp.path());
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("# House rules"));
+        assert!(content.contains("Always write tests."));
+        assert!(content.contains(crate::core::rules_canonical::START_MARK));
+
+        // Idempotent on a user-authored file as well.
+        ensure_copilot_instructions(tmp.path());
+        let again = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(content, again);
+        assert_eq!(
+            again
+                .matches(crate::core::rules_canonical::START_MARK)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn copilot_instructions_block_is_removable() {
+        // Mirrors the uninstall path: the marked block must be strippable while
+        // user content survives.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".github/copilot-instructions.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "# House rules\n\nKeep it tidy.\n").unwrap();
+        ensure_copilot_instructions(tmp.path());
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let cleaned = crate::marked_block::remove_content(
+            &content,
+            crate::core::rules_canonical::START_MARK,
+            crate::core::rules_canonical::END_MARK,
+        );
+        assert!(!cleaned.contains(crate::core::rules_canonical::START_MARK));
+        assert!(cleaned.contains("# House rules"));
+    }
+
+    #[test]
+    fn vscode_instruction_setting_set_when_absent_and_preserves() {
+        let tmp = tempfile::tempdir().unwrap();
+        let vscode = tmp.path().join(".vscode");
+        std::fs::create_dir_all(&vscode).unwrap();
+        let settings = vscode.join("settings.json");
+        std::fs::write(&settings, "{\n  \"editor.fontSize\": 13\n}\n").unwrap();
+
+        ensure_vscode_instruction_files_setting(tmp.path());
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(v["editor.fontSize"], 13);
+        assert_eq!(
+            v["github.copilot.chat.codeGeneration.useInstructionFiles"],
+            true
+        );
+    }
+
+    #[test]
+    fn vscode_instruction_setting_respects_explicit_user_value() {
+        let tmp = tempfile::tempdir().unwrap();
+        let vscode = tmp.path().join(".vscode");
+        std::fs::create_dir_all(&vscode).unwrap();
+        let settings = vscode.join("settings.json");
+        std::fs::write(
+            &settings,
+            "{\n  \"github.copilot.chat.codeGeneration.useInstructionFiles\": false\n}\n",
+        )
+        .unwrap();
+
+        ensure_vscode_instruction_files_setting(tmp.path());
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(
+            v["github.copilot.chat.codeGeneration.useInstructionFiles"], false,
+            "an explicit user value must not be overridden"
+        );
     }
 
     #[test]
