@@ -648,7 +648,7 @@ fn extract_fallback(
         });
     }
 
-    let old_chunks = crate::core::bm25_index::extract_chunks(file_path, content);
+    let old_chunks = crate::core::chunk_data::extract_chunks(file_path, content);
     let chunks: Vec<CodeChunk> = old_chunks
         .into_iter()
         .map(|c| CodeChunk {

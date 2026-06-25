@@ -207,7 +207,7 @@ fn print_help() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::bm25_index::ChunkKind;
+    use crate::core::chunk_data::ChunkKind;
 
     fn args(parts: &[&str]) -> Vec<String> {
         parts.iter().map(|s| (*s).to_string()).collect()

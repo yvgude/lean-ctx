@@ -4,7 +4,7 @@
 //! query batch) so ranking behaviour matches `ctx_search`/`ctx_semantic_search`
 //! and stays deterministic for a fixed catalog.
 
-use crate::core::bm25_index::{bm25_search, ChunkData};
+use crate::core::chunk_data::{bm25_search, ChunkData};
 use crate::core::content_chunk::{ContentChunk, ContentSource};
 
 use super::catalog::{Catalog, CatalogEntry};
@@ -83,7 +83,7 @@ fn entry_to_chunk(e: &CatalogEntry) -> ContentChunk {
     ContentChunk {
         file_path: e.namespaced.clone(),
         symbol_name: e.tool.clone(),
-        kind: crate::core::bm25_index::ChunkKind::Other,
+        kind: crate::core::chunk_data::ChunkKind::Other,
         start_line: 0,
         end_line: 0,
         content,

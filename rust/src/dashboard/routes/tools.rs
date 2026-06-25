@@ -26,9 +26,9 @@ pub(super) fn handle(
         "/api/search-index" => {
             let root_s = detect_project_root_for_dashboard();
             let root = Path::new(&root_s);
-            match crate::core::bm25_index::get_or_start_build(root) {
+            match crate::core::chunk_data::get_or_start_build(root) {
                 Ok(()) => {
-                    let index = crate::core::bm25_index::ChunkData::build_from_directory(root);
+                    let index = crate::core::chunk_data::ChunkData::build_from_directory(root);
                     let summary = bm25_index_summary_json(&index);
                     let json = serde_json::to_string(&summary).unwrap_or_else(|_| {
                         "{\"error\":\"failed to serialize search index summary\"}".to_string()
@@ -52,10 +52,10 @@ pub(super) fn handle(
             } else {
                 let root_s = detect_project_root_for_dashboard();
                 let root = Path::new(&root_s);
-                match crate::core::bm25_index::get_or_start_build(root) {
+                match crate::core::chunk_data::get_or_start_build(root) {
                     Ok(()) => {
-                        let index = crate::core::bm25_index::ChunkData::build_from_directory(root);
-                        let hits = crate::core::bm25_index::bm25_search(&index, &q, limit);
+                        let index = crate::core::chunk_data::ChunkData::build_from_directory(root);
+                        let hits = crate::core::chunk_data::bm25_search(&index, &q, limit);
                         let results: Vec<serde_json::Value> = hits
                             .iter()
                             .map(|r| {
@@ -278,15 +278,15 @@ fn compression_demo_modes_json(
 /// the background (#452). The dashboard polls the same route and renders once it
 /// returns `200`.
 fn search_building_response(
-    progress: &crate::core::bm25_index::SearchIndexBuildProgress,
+    progress: &crate::core::chunk_data::SearchIndexBuildProgress,
 ) -> (&'static str, &'static str, String) {
     let json =
         serde_json::to_string(progress).unwrap_or_else(|_| "{\"status\":\"building\"}".to_string());
     ("202 Accepted", "application/json", json)
 }
 
-fn bm25_index_summary_json(index: &crate::core::bm25_index::ChunkData) -> serde_json::Value {
-    let mut sorted: Vec<&crate::core::bm25_index::CodeChunk> = index.chunks.iter().collect();
+fn bm25_index_summary_json(index: &crate::core::chunk_data::ChunkData) -> serde_json::Value {
+    let mut sorted: Vec<&crate::core::chunk_data::CodeChunk> = index.chunks.iter().collect();
     sorted.sort_by_key(|c| std::cmp::Reverse(c.token_count));
     let top: Vec<serde_json::Value> = sorted
         .into_iter()

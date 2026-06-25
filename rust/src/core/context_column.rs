@@ -185,14 +185,14 @@ impl ContextColumn for FilesystemColumn {
         let content = std::fs::read_to_string(path).map_err(|e| format!("Read error: {e}"))?;
 
         let token_count = content.split_whitespace().count();
-        let chunk = ContentChunk::from(crate::core::bm25_index::CodeChunk {
+        let chunk = ContentChunk::from(crate::core::chunk_data::CodeChunk {
             file_path: query.to_string(),
             symbol_name: path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or(query)
                 .to_string(),
-            kind: crate::core::bm25_index::ChunkKind::Module,
+            kind: crate::core::chunk_data::ChunkKind::Module,
             start_line: 1,
             end_line: content.lines().count(),
             content,

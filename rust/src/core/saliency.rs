@@ -203,7 +203,7 @@ fn max_similarity_to_selected(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::bm25_index::ChunkKind;
+    use crate::core::chunk_data::ChunkKind;
 
     fn make_chunk(title: &str, content: &str) -> ContentChunk {
         ContentChunk::from_provider(

@@ -4,7 +4,7 @@
 
 use serde::Serialize;
 
-use super::bm25_index::ChunkKind;
+use super::chunk_data::ChunkKind;
 
 /// Added / removed / modified structural symbol (declaration identified by name + start line).
 #[derive(Debug, Clone, PartialEq, Serialize)]

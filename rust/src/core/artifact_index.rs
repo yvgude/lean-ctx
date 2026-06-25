@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use crate::core::bm25_index::{ChunkData, ChunkKind, CodeChunk, IndexedFileState};
+use crate::core::chunk_data::{ChunkData, ChunkKind, CodeChunk, IndexedFileState};
 
 const MAX_ARTIFACT_BYTES: u64 = 2_000_000;
 const MAX_CHUNKS_PER_FILE: usize = 50;
@@ -195,7 +195,7 @@ fn rebuild_incremental(
 
 fn add_chunk(idx: &mut ChunkData, chunk: CodeChunk) {
     let chunk_idx = idx.chunks.len();
-    let tokens = crate::core::bm25_index::tokenize_for_index(&chunk.content);
+    let tokens = crate::core::chunk_data::tokenize_for_index(&chunk.content);
     for token in &tokens {
         let lower = token.to_lowercase();
         idx.inverted
@@ -373,7 +373,7 @@ fn extract_artifact_chunks(file_path: &str, content: &str) -> Vec<CodeChunk> {
             let end = (c.offset + c.length).min(bytes.len());
             let slice = &bytes[c.offset..end];
             let chunk_text = String::from_utf8_lossy(slice).into_owned();
-            let token_count = crate::core::bm25_index::tokenize_for_index(&chunk_text).len();
+            let token_count = crate::core::chunk_data::tokenize_for_index(&chunk_text).len();
             let start_line = 1 + bytecount::count(&bytes[..c.offset], b'\n');
             let end_line = start_line + bytecount::count(slice, b'\n');
             out.push(CodeChunk {
@@ -390,7 +390,7 @@ fn extract_artifact_chunks(file_path: &str, content: &str) -> Vec<CodeChunk> {
         return out;
     }
 
-    let token_count = crate::core::bm25_index::tokenize_for_index(content).len();
+    let token_count = crate::core::chunk_data::tokenize_for_index(content).len();
     let snippet = lines
         .iter()
         .take(50)

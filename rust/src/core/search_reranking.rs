@@ -16,7 +16,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use super::bm25_index::ChunkKind;
+use super::chunk_data::ChunkKind;
 use super::hybrid_search::HybridResult;
 
 // --- Constants (empirically validated by semble's ablation study) ---

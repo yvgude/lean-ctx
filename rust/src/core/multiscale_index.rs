@@ -44,7 +44,7 @@ impl MultiScaleIndex {
     }
 
     /// Build meso and macro scales from chunk-level data.
-    pub fn build_from_chunks(chunks: &[super::bm25_index::CodeChunk]) -> Self {
+    pub fn build_from_chunks(chunks: &[super::chunk_data::CodeChunk]) -> Self {
         let mut meso: HashMap<String, FileAccumulator> = HashMap::new();
 
         // Aggregate chunks into file-level entries
@@ -219,7 +219,7 @@ fn query_match_score(query_tokens: &[String], keywords: &[(String, f64)]) -> f64
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::bm25_index::{ChunkKind, CodeChunk};
+    use crate::core::chunk_data::{ChunkKind, CodeChunk};
 
     fn make_chunk(path: &str, content: &str, tokens: &[&str]) -> CodeChunk {
         CodeChunk {

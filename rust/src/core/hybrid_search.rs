@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use super::bm25_index::{ChunkData, ChunkKind, SearchResult};
+use super::chunk_data::{ChunkData, ChunkKind, SearchResult};
 #[cfg(feature = "embeddings")]
 use super::embeddings::EmbeddingEngine;
 #[cfg(feature = "embeddings")]
@@ -163,7 +163,7 @@ pub fn hybrid_search(
     config: &HybridConfig,
     graph_file_ranks: Option<&HashMap<String, usize>>,
 ) -> Vec<HybridResult> {
-    let bm25_results = super::bm25_index::bm25_search(index, query, config.bm25_candidates);
+    let bm25_results = super::chunk_data::bm25_search(index, query, config.bm25_candidates);
 
     let dense_results = match (engine, chunk_embeddings) {
         (Some(eng), Some(embeddings)) => dense_search(
@@ -214,7 +214,7 @@ pub fn hybrid_search(
 #[cfg(not(feature = "embeddings"))]
 pub fn hybrid_search(query: &str, index: &ChunkData, top_k: usize) -> Vec<HybridResult> {
     let candidate_count = (top_k * 5).min(50);
-    let mut results: Vec<HybridResult> = super::bm25_index::bm25_search(index, query, candidate_count)
+    let mut results: Vec<HybridResult> = super::chunk_data::bm25_search(index, query, candidate_count)
         .into_iter()
         .map(HybridResult::from_bm25)
         .collect();
@@ -228,7 +228,7 @@ pub fn hybrid_search(query: &str, index: &ChunkData, top_k: usize) -> Vec<Hybrid
 fn dense_search(
     query: &str,
     engine: &EmbeddingEngine,
-    chunks: &[super::bm25_index::CodeChunk],
+    chunks: &[super::chunk_data::CodeChunk],
     embeddings: &FlatEmbeddings,
     top_k: usize,
 ) -> Vec<DenseSearchResult> {

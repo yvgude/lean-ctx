@@ -131,7 +131,7 @@ pub struct CacheableProviderResult {
 /// thread or after a provider query returns.
 pub fn apply_artifacts(
     artifacts: &ConsolidationArtifacts,
-    bm25: Option<&mut crate::core::bm25_index::ChunkData>,
+    bm25: Option<&mut crate::core::chunk_data::ChunkData>,
     graph_edges: Option<&mut Vec<IndexEdge>>,
     session_cache: Option<&mut crate::core::cache::SessionCache>,
 ) -> ConsolidationResult {
@@ -140,7 +140,7 @@ pub fn apply_artifacts(
 
 pub fn apply_artifacts_with_pg(
     artifacts: &ConsolidationArtifacts,
-    bm25: Option<&mut crate::core::bm25_index::ChunkData>,
+    bm25: Option<&mut crate::core::chunk_data::ChunkData>,
     graph_edges: Option<&mut Vec<IndexEdge>>,
     session_cache: Option<&mut crate::core::cache::SessionCache>,
     property_graph: Option<&crate::core::property_graph::CodeGraph>,
@@ -182,7 +182,7 @@ fn write_edges_to_property_graph(pg: &crate::core::property_graph::CodeGraph, ed
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::bm25_index::{ChunkData, ChunkKind};
+    use crate::core::chunk_data::{ChunkData, ChunkKind};
     use crate::core::cache::SessionCache;
     use crate::core::content_chunk::ContentChunk;
 
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn consolidate_code_only_produces_empty_external_artifacts() {
-        let code = ContentChunk::from(crate::core::bm25_index::CodeChunk {
+        let code = ContentChunk::from(crate::core::chunk_data::CodeChunk {
             file_path: "src/main.rs".into(),
             symbol_name: "main".into(),
             kind: ChunkKind::Function,

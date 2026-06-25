@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use crate::core::bm25_index::ChunkData;
+use crate::core::chunk_data::ChunkData;
 use crate::core::hybrid_search::HybridConfig;
 use crate::core::tokens::count_tokens;
 
@@ -243,7 +243,7 @@ fn explore_arm(project_root: &Path, query: &str) -> ArmRun {
 }
 
 fn bm25_only_search(index: &ChunkData, query: &str, config: &HybridConfig) -> Vec<String> {
-    crate::core::bm25_index::bm25_search(index, query, config.bm25_candidates)
+    crate::core::chunk_data::bm25_search(index, query, config.bm25_candidates)
         .iter()
         .map(|r| r.file_path.clone())
         .collect()
@@ -763,7 +763,7 @@ mod tests {
 
     #[test]
     fn run_ab_plumbing_on_synthetic_index() {
-        use crate::core::bm25_index::{ChunkData, ChunkKind, CodeChunk, tokenize};
+        use crate::core::chunk_data::{ChunkData, ChunkKind, CodeChunk, tokenize};
 
         let index = ChunkData::from_chunks_for_test(vec![CodeChunk {
             file_path: "core/hybrid_search.rs".into(),

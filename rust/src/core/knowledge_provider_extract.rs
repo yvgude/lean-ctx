@@ -33,17 +33,17 @@ pub fn extract_facts(chunks: &[ContentChunk]) -> Vec<ExtractedFact> {
 
         let provider = chunk.provider_id().unwrap_or("unknown");
         match chunk.kind {
-            crate::core::bm25_index::ChunkKind::Issue
-            | crate::core::bm25_index::ChunkKind::Ticket => {
+            crate::core::chunk_data::ChunkKind::Issue
+            | crate::core::chunk_data::ChunkKind::Ticket => {
                 extract_issue_facts(chunk, provider, &mut facts);
             }
-            crate::core::bm25_index::ChunkKind::PullRequest => {
+            crate::core::chunk_data::ChunkKind::PullRequest => {
                 extract_pr_facts(chunk, provider, &mut facts);
             }
-            crate::core::bm25_index::ChunkKind::WikiPage => {
+            crate::core::chunk_data::ChunkKind::WikiPage => {
                 extract_wiki_facts(chunk, provider, &mut facts);
             }
-            crate::core::bm25_index::ChunkKind::DbSchema => {
+            crate::core::chunk_data::ChunkKind::DbSchema => {
                 extract_db_facts(chunk, provider, &mut facts);
             }
             _ => {}
@@ -179,7 +179,7 @@ fn extract_db_facts(chunk: &ContentChunk, provider: &str, facts: &mut Vec<Extrac
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::bm25_index::ChunkKind;
+    use crate::core::chunk_data::ChunkKind;
     use crate::core::content_chunk::ContentChunk;
 
     fn issue_with_labels(id: &str, title: &str, labels: &[&str], refs: Vec<&str>) -> ContentChunk {
@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn code_chunks_are_skipped() {
-        let chunk = ContentChunk::from(crate::core::bm25_index::CodeChunk {
+        let chunk = ContentChunk::from(crate::core::chunk_data::CodeChunk {
             file_path: "src/main.rs".into(),
             symbol_name: "main".into(),
             kind: ChunkKind::Function,
