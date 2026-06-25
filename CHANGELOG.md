@@ -67,6 +67,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   `github.copilot.chat.codeGeneration.useInstructionFiles: true` in the project
   `.vscode/settings.json` as a safety net (an explicit user value is honoured);
   uninstall removes the block.
+- **Shadow mode ignored `glob` and Windows `powershell` tool calls (#556).**
+  Shadow/harden mode silently passed two documented Copilot CLI tools straight
+  through: the `glob` tool ("find files matching patterns") had no arm in the
+  redirect hook, and the `powershell` shell tool (paired with `bash` on Windows)
+  was not recognised as a shell, so command rewrites never fired there.
+  `handle_redirect` now intercepts `Glob`/`glob` — warming the shared `ctx_glob`
+  core via a new `lean-ctx glob` subcommand and recording the intercept in
+  `shadow.log`, then letting the native path-list result through — `is_shell_tool`
+  (now shared by both hook entry points) covers `PowerShell`/`powershell`/`pwsh`,
+  and the Claude/Cursor/CodeBuddy redirect matchers include `Glob` so the hook
+  fires for it. Copilot CLI already dispatches every tool, so its `glob`/
+  `powershell` calls are covered automatically.
 - **Codex proxy never compressed — ChatGPT login bypasses it; the API-key config
   was a no-op (#554).** `lean-ctx proxy enable` reported success for Codex yet
   `Requests/Compressed/Tokens saved` stayed at `0`, for two reasons. (1) A Codex

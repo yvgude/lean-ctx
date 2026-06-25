@@ -588,3 +588,34 @@ fn session_start_uses_codex_additional_context_channel() {
         "prefer lean-ctx -c"
     );
 }
+
+#[test]
+fn is_shell_tool_matches_powershell_variants() {
+    // #556: Copilot CLI's `powershell` shell tool was bypassing rewrite on
+    // Windows because it was not recognised as a shell tool.
+    assert!(is_shell_tool("powershell"));
+    assert!(is_shell_tool("PowerShell"));
+    assert!(is_shell_tool("pwsh"));
+}
+
+#[test]
+fn is_shell_tool_matches_existing_shell_names() {
+    for name in [
+        "Bash",
+        "bash",
+        "Shell",
+        "shell",
+        "runInTerminal",
+        "run_in_terminal",
+        "terminal",
+    ] {
+        assert!(is_shell_tool(name), "{name} should be a shell tool");
+    }
+}
+
+#[test]
+fn is_shell_tool_rejects_non_shell_tools() {
+    for name in ["Read", "read", "Grep", "Glob", "glob", "view", "edit", ""] {
+        assert!(!is_shell_tool(name), "{name} must not be a shell tool");
+    }
+}

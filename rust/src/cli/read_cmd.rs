@@ -383,6 +383,49 @@ pub fn cmd_grep(args: &[String]) {
     }
 }
 
+/// `lean-ctx glob <pattern> [path]` — find files by glob pattern, shares the
+/// exact `ctx_glob` core so the CLI, the MCP tool, and the shadow-mode redirect
+/// (#556) all return identical results. Prefers the daemon (warms its cache),
+/// falling back to an in-process call.
+pub fn cmd_glob(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Usage: lean-ctx glob <pattern> [path]");
+        std::process::exit(1);
+    }
+
+    let pattern = &args[0];
+    let raw_path = args.get(1).map_or(".", std::string::String::as_str);
+    let abs_path = resolve_cli_path(raw_path);
+    let path = abs_path.as_str();
+
+    #[cfg(unix)]
+    if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
+        "ctx_glob",
+        Some(serde_json::json!({
+            "pattern": pattern,
+            "path": path,
+        })),
+    ) {
+        let out = super::common::filter_daemon_output(&out);
+        println!("{out}");
+        return;
+    }
+    super::common::daemon_fallback_hint();
+
+    let (out, _original) = crate::tools::ctx_glob::handle(
+        pattern,
+        path,
+        true,
+        roles::active_role().io.allow_secret_paths,
+        200,
+    );
+    println!("{out}");
+    crate::core::stats::record("cli_glob", 0, 0);
+    if out.starts_with("ERROR:") {
+        std::process::exit(1);
+    }
+}
+
 pub fn cmd_find(args: &[String]) {
     if args.is_empty() {
         eprintln!("Usage: lean-ctx find <pattern> [path]");
