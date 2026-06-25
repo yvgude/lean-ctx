@@ -258,33 +258,11 @@ impl PipelineHandle {
         // ── ⑪ Property graph mirror (fire-and-forget, background) ───────────
         {
             let root = root_str.clone();
-            let project_root = self.project_root.clone();
-            // Clone gbuf data for the background thread.
-            let mut gbuf_clone = GraphBuffer::new(&root);
-            {
-                let mut tmp = GraphBuffer::new(&root);
-                std::mem::swap(&mut gbuf_clone, &mut tmp);
-            }
-            // Rebuild the clone by copying nodes/edges from gbuf.
-            // Since GraphBuffer doesn't expose its internals, we use the
-            // available iteration API.
-            gbuf.foreach_node(&mut |n| {
-                let _ = gbuf_clone.upsert_node(
-                    &n.label,
-                    &n.name,
-                    &n.qualified_name,
-                    &n.file_path,
-                    n.start_line,
-                    n.end_line,
-                    n.properties.clone(),
-                );
-            });
-
+            let index = gbuf.finalize();
             std::thread::spawn(move || {
-                // finalize() will be implemented in T19 — for now the mirror
-                // is best-effort.  When finalize is ready, uncomment the block.
-                let _ = (root, project_root, gbuf_clone);
-                tracing::info!("[pipeline] property graph mirror: T19 bridge pending — skipped");
+                if let Err(e) = crate::core::property_graph::mirror_index(&root, &index) {
+                    tracing::warn!("[pipeline] property graph mirror failed: {e}");
+                }
             });
         }
 

@@ -39,7 +39,7 @@ use crate::core::bm25_index::BM25Index;
 use crate::core::graph_buffer::GraphBuffer;
 use crate::core::graph_index::{FileEntry, IndexEdge, ProjectIndex, SymbolEntry};
 use crate::core::index_namespace;
-use crate::core::index_pipeline::file_metadata_store::FileMetadataStore;
+// FileMetadataStore now defined in this module (was file_metadata_store.rs).
 use crate::core::index_types::{CodeChunk, GbufEdge, GbufNode};
 
 // ---------------------------------------------------------------------------
@@ -904,6 +904,146 @@ fn open_file_metadata_store(root: &Path) -> Result<FileMetadataStore> {
     Ok(store)
 }
 
+// ── FileMetadataStore (was file_metadata_store.rs) ─────────────────────────
+
+/// Bitmask values for `mode_mask`.
+pub mod mode {
+    pub const FULL: u32 = 0x01;
+    pub const MODERATE: u32 = 0x02;
+    pub const FAST: u32 = 0x04;
+}
+
+/// Per-file metadata row.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FileMetadata {
+    pub rel_path: String,
+    pub mtime_ns: i64,
+    pub size_bytes: i64,
+    pub content_hash: String,
+    pub mode_mask: u32,
+}
+
+/// CRUD store for `file_metadata` backed by a SQLite connection.
+pub struct FileMetadataStore {
+    db: Connection,
+}
+
+impl FileMetadataStore {
+    pub fn open(path: &std::path::Path) -> anyhow::Result<Self> {
+        let db = Connection::open(path)?;
+        Ok(Self { db })
+    }
+
+    pub fn new(db: Connection) -> Self {
+        Self { db }
+    }
+
+    pub fn upsert(&self, meta: &FileMetadata) -> anyhow::Result<()> {
+        let mut stmt = self.db.prepare_cached(
+            "INSERT OR REPLACE INTO file_metadata (path, mtime_ns, size_bytes, content_hash, mode_mask)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )?;
+        stmt.execute(params![
+            meta.rel_path,
+            meta.mtime_ns,
+            meta.size_bytes,
+            meta.content_hash,
+            meta.mode_mask,
+        ])?;
+        Ok(())
+    }
+
+    pub fn upsert_batch(&self, metas: &[FileMetadata]) -> anyhow::Result<()> {
+        let tx = self.db.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT OR REPLACE INTO file_metadata (path, mtime_ns, size_bytes, content_hash, mode_mask)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?;
+            for meta in metas {
+                stmt.execute(params![
+                    meta.rel_path,
+                    meta.mtime_ns,
+                    meta.size_bytes,
+                    meta.content_hash,
+                    meta.mode_mask,
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn load_all(&self) -> anyhow::Result<HashMap<String, FileMetadata>> {
+        let mut stmt = self.db.prepare_cached(
+            "SELECT path, mtime_ns, size_bytes, content_hash, mode_mask FROM file_metadata",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(FileMetadata {
+                rel_path: row.get(0)?,
+                mtime_ns: row.get(1)?,
+                size_bytes: row.get(2)?,
+                content_hash: row.get(3)?,
+                mode_mask: row.get::<_, i64>(4)? as u32,
+            })
+        })?;
+
+        let mut map = HashMap::new();
+        for row in rows {
+            let meta = row?;
+            map.insert(meta.rel_path.clone(), meta);
+        }
+        Ok(map)
+    }
+
+    pub fn load_for_mode(&self, mode_mask: u32) -> anyhow::Result<HashMap<String, FileMetadata>> {
+        let mut stmt = self.db.prepare_cached(
+            "SELECT path, mtime_ns, size_bytes, content_hash, mode_mask FROM file_metadata
+             WHERE (mode_mask & ?1) != 0",
+        )?;
+        let rows = stmt.query_map(params![mode_mask as i64], |row| {
+            Ok(FileMetadata {
+                rel_path: row.get(0)?,
+                mtime_ns: row.get(1)?,
+                size_bytes: row.get(2)?,
+                content_hash: row.get(3)?,
+                mode_mask: row.get::<_, i64>(4)? as u32,
+            })
+        })?;
+
+        let mut map = HashMap::new();
+        for row in rows {
+            let meta = row?;
+            map.insert(meta.rel_path.clone(), meta);
+        }
+        Ok(map)
+    }
+
+    pub fn delete(&self, path: &str) -> anyhow::Result<()> {
+        let mut stmt = self
+            .db
+            .prepare_cached("DELETE FROM file_metadata WHERE path = ?1")?;
+        stmt.execute(params![path])?;
+        Ok(())
+    }
+
+    pub fn delete_batch(&self, paths: &[String]) -> anyhow::Result<()> {
+        let tx = self.db.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare_cached("DELETE FROM file_metadata WHERE path = ?1")?;
+            for p in paths {
+                stmt.execute(params![p])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn connection(&self) -> &Connection {
+        &self.db
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1262,7 +1402,7 @@ mod tests {
 
         let store = open_file_metadata_store(root.path()).unwrap();
         store
-            .upsert(&crate::core::index_pipeline::file_metadata_store::FileMetadata {
+            .upsert(&FileMetadata {
                 rel_path: "src/test.rs".to_string(),
                 mtime_ns: 1_000_000_000,
                 size_bytes: 100,

@@ -441,15 +441,100 @@ impl GraphBuffer {
         }
     }
 
-    /// Finalize the buffer into a `ProjectIndex`.
+    /// Finalize the buffer into a `ProjectIndex` for the property graph mirror.
     ///
-    /// # Panics
-    ///
-    /// This is a placeholder — panics with `unimplemented!()`. The full
-    /// implementation will be added in T19 (ProjectIndex bridge).
-    #[allow(unused_variables)]
+    /// Converts `GbufNode`s into `FileEntry` or `SymbolEntry` depending on
+    /// their label, and converts `GbufEdge`s into `IndexEdge`s.
+    #[allow(clippy::cast_possible_truncation)]
     pub fn finalize(&self) -> ProjectIndex {
-        unimplemented!("finalize() will be implemented in T19 (ProjectIndex bridge)")
+        use crate::core::graph_index::{FileEntry, SymbolEntry};
+        use crate::core::index_types::Minhash;
+
+        let mut files = HashMap::new();
+        let mut symbols = HashMap::new();
+        let mut edges = Vec::new();
+
+        // Convert File nodes → FileEntry, other typed nodes → SymbolEntry.
+        self.foreach_node(&mut |n| {
+            if n.label == "File" {
+                let language = n
+                    .file_path
+                    .rsplit('.')
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+                files.insert(
+                    n.qualified_name.clone(),
+                    FileEntry {
+                        path: n.qualified_name.clone(),
+                        hash: n
+                            .properties
+                            .get("content_hash")
+                            .cloned()
+                            .unwrap_or_default(),
+                        language,
+                        line_count: n.end_line as usize,
+                        token_count: 0,
+                        exports: vec![],
+                        summary: String::new(),
+                    },
+                );
+            }
+
+            if matches!(
+                n.label.as_str(),
+                "Function" | "Method" | "Class" | "Struct" | "Interface" | "Enum" | "Variable"
+            ) {
+                let minhash: Vec<u32> = n
+                    .properties
+                    .get("fp")
+                    .and_then(|hex| Minhash::from_hex(hex))
+                    .map(|mh| mh.0.to_vec())
+                    .unwrap_or_default();
+
+                symbols.insert(
+                    n.qualified_name.clone(),
+                    SymbolEntry {
+                        file: n.file_path.clone(),
+                        name: n.name.clone(),
+                        kind: n.label.clone(),
+                        start_line: n.start_line as usize,
+                        end_line: n.end_line as usize,
+                        is_exported: n
+                            .properties
+                            .get("is_exported")
+                            .map(|v| v == "true")
+                            .unwrap_or(false),
+                        minhash,
+                    },
+                );
+            }
+        });
+
+        // Convert GbufEdge → IndexEdge
+        self.foreach_edge(&mut |e| {
+            edges.push(crate::core::graph_index::IndexEdge {
+                from: self
+                    .find_by_id(e.source_id)
+                    .map(|n| n.qualified_name.clone())
+                    .unwrap_or_default(),
+                to: self
+                    .find_by_id(e.target_id)
+                    .map(|n| n.qualified_name.clone())
+                    .unwrap_or_default(),
+                kind: e.edge_type.clone(),
+                weight: 1.0,
+            });
+        });
+
+        ProjectIndex {
+            version: 6,
+            project_root: self.project_root.clone(),
+            last_scan: chrono::Utc::now().to_rfc3339(),
+            files,
+            edges,
+            symbols,
+        }
     }
 }
 
@@ -829,5 +914,40 @@ mod tests {
         let mut gb = GraphBuffer::new("test");
         let id = gb.upsert_node("Function", "safe", "pkg.safe", "safe.rs", 1, 1, props(&[]));
         assert!(gb.find_by_id(id).is_some());
+    }
+
+    // ── finalize ──────────────────────────────────────────────────
+
+    #[test]
+    fn finalize_produces_valid_project_index() {
+        let mut gbuf = GraphBuffer::new("test_proj");
+        gbuf.upsert_node("File", "main.rs", "main.rs", "main.rs", 0, 0, HashMap::new());
+        gbuf.upsert_node(
+            "Function",
+            "hello",
+            "main::hello",
+            "main.rs",
+            1,
+            10,
+            HashMap::new(),
+        );
+        gbuf.upsert_node(
+            "Method",
+            "do",
+            "main::MyStruct::do",
+            "main.rs",
+            5,
+            8,
+            HashMap::new(),
+        );
+        // add an edge
+        let file = gbuf.find_by_qn("main.rs").unwrap().id;
+        let func = gbuf.find_by_qn("main::hello").unwrap().id;
+        gbuf.insert_edge(file, func, "DEFINES", HashMap::new());
+
+        let pi = gbuf.finalize();
+        assert_eq!(pi.file_count(), 1);
+        assert_eq!(pi.symbols.len(), 2);
+        assert_eq!(pi.edges.len(), 1);
     }
 }
