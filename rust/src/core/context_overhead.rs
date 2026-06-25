@@ -180,7 +180,7 @@ mod tests {
         // (no rules block) must keep the fixed per-turn prefix tiny. This is the
         // regression guard for the "~3K tokens/turn injected" critique — if any
         // knob silently stops applying, the total balloons and this fails.
-        const MINIMAL_ARM_PREFIX_BUDGET_TOKENS: usize = 1700;
+        const MINIMAL_ARM_PREFIX_BUDGET_TOKENS: usize = 1900;
 
         let _iso = crate::core::data_dir::isolated_data_dir();
         crate::test_env::set_var("LEAN_CTX_TOOL_PROFILE", "minimal");

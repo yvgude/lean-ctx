@@ -42,6 +42,8 @@ impl McpTool for CtxSearchTool {
                     "include": { "type": "string", "description": "Glob (grep)" },
                     "max_results": { "type": "integer", "description": "Max (deprecated, use limit)" },
                     "limit": { "type": "integer", "description": "Max results" },
+                    "offset": { "type": "integer", "description": "Result offset (pagination)" },
+                    "context": { "type": "boolean", "description": "Show source context around matches" },
                     "ignore_gitignore": { "type": "boolean", "description": "Scan gitignored (grep)" },
                     "query": { "type": "string", "description": "Query (search)" },
                     "method": { "type": "string", "enum": ["bm25", "dense", "hybrid"], "description": "bm25|dense|hybrid" },

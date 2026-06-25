@@ -70,6 +70,7 @@ pub mod ctx_tree;
 pub mod ctx_verify;
 pub mod ctx_workflow;
 pub(crate) mod edit_recovery;
+pub mod graph_enrich;
 pub(crate) mod knowledge_shared;
 pub mod output_format;
 pub mod registered;

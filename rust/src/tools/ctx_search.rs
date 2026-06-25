@@ -10,6 +10,7 @@ use regex::RegexBuilder;
 use crate::core::protocol;
 use crate::core::symbol_map::{self, SymbolMap};
 use crate::core::tokens::count_tokens;
+use crate::tools::output_format::{format_context, format_footer};
 use crate::tools::CrpMode;
 
 pub(crate) const MAX_FILE_SIZE: u64 = 512_000;
@@ -601,7 +602,85 @@ pub fn handle_enum(action: CtxSearch, crp_mode: CrpMode, ctx_path: &str) -> Sear
             let max_results = params.limit.unwrap_or(20).min(500);
             let respect_gitignore = !params.ignore_gitignore.unwrap_or(false);
             let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;
-            handle(&params.pattern, &dir, include, max_results, crp_mode, respect_gitignore, allow_secret_paths)
+
+            let outcome = handle(
+                &params.pattern, &dir, include, max_results, crp_mode,
+                respect_gitignore, allow_secret_paths,
+            );
+
+            // Return ERROR or empty results as-is
+            if outcome.text.starts_with("ERROR:") || !outcome.text.contains(" matches in ") {
+                return outcome;
+            }
+
+            let offset = params.offset.unwrap_or(0);
+            let limit = params.limit.unwrap_or(20);
+
+            // Parse match lines from handle() output
+            let text = &outcome.text;
+
+            // Split at ":\n" to separate header from match body
+            let (header, body) = match text.find(":\n") {
+                Some(idx) => (text[..=idx].to_string(), &text[idx + 2..]),
+                None => return outcome,
+            };
+
+            // Collect match lines (skip empty, footer lines starting with '(',
+            // and the scope-hint "Results span ..." line)
+            let all_matches: Vec<&str> = body
+                .lines()
+                .filter(|l| {
+                    !l.is_empty()
+                        && !l.starts_with('(')
+                        && !l.starts_with("Results span")
+                })
+                .collect();
+
+            let total = all_matches.len();
+            if total == 0 {
+                return outcome;
+            }
+
+            let start = offset.min(total);
+            let end = (offset + limit).min(total);
+            let page = &all_matches[start..end];
+
+            let mut result = header;
+            result.push('\n');
+
+            if params.context.unwrap_or(false) && !page.is_empty() {
+                let ctx_radius: usize = 2;
+                for (i, &m) in page.iter().enumerate() {
+                    if i > 0 {
+                        result.push('\n');
+                    }
+                    result.push_str(m);
+                    result.push('\n');
+
+                    if let Some((path, line)) = parse_match_location(m) {
+                        let full_path = std::path::Path::new(&dir).join(path);
+                        let ctx_start = line.saturating_sub(ctx_radius);
+                        let ctx_end = line + ctx_radius;
+                        if let Some(body_content) = read_file_body(
+                            &full_path.to_string_lossy(),
+                            ctx_start,
+                            ctx_end,
+                        ) {
+                            let match_idx = line - ctx_start + 1; // 1-based within context
+                            result.push_str(&format_context(&body_content, &[match_idx]));
+                            result.push('\n');
+                        }
+                    }
+                }
+            } else {
+                result.push_str(&page.join("\n"));
+                result.push('\n');
+            }
+
+            result.push_str(&format_footer(offset, limit, total));
+            result.push('\n');
+
+            SearchOutcome::from_observed(result, outcome.observed_tokens)
         }
         CtxSearch::Search(_) => {
             SearchOutcome::error(
@@ -822,10 +901,36 @@ fn monorepo_scope_hint(matches: &[String], search_dir: &str) -> Option<String> {
     }
 }
 
+/// Parse a match line into (file_path, line_number).
+///
+/// Match lines from `handle()` have the format `<path>:<linenum> <content>`.
+/// On Linux the path never contains `:`, so the first `:` is the separator.
+fn parse_match_location(line: &str) -> Option<(&str, usize)> {
+    let colon = line.find(':')?;
+    let path = &line[..colon];
+    let rest = &line[colon + 1..];
+    let line_end = rest.find(' ').unwrap_or(rest.len());
+    let line_num = rest[..line_end].parse::<usize>().ok()?;
+    Some((path, line_num))
+}
+
+/// Read a source file and return lines `start_line..=end_line` (1-based).
+fn read_file_body(path: &str, start_line: usize, end_line: usize) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let lines: Vec<&str> = content.lines().collect();
+    let start = start_line.saturating_sub(1);
+    let end = end_line.min(lines.len());
+    if start >= end {
+        return None;
+    }
+    Some(lines[start..end].join("\n"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::CrpMode;
+use crate::tools::output_format::{format_context, format_footer};
+use crate::tools::CrpMode;
 
     /// Determinism contract (#498): identical search over identical files
     /// must produce byte-identical output — a prerequisite for provider

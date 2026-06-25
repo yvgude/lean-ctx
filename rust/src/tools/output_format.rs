@@ -1,6 +1,6 @@
-/// Compact aligned text output formatters for ctx_search and ctx_graph tools.
-///
-/// All functions produce plain text — no JSON, no serde, no external dependencies.
+///! Compact aligned text output formatters for ctx_search and ctx_graph tools.
+///!
+///! All functions produce plain text — no JSON, no serde, no external dependencies.
 
 /// Format the header line for a tool output section.
 ///
@@ -24,18 +24,18 @@
 /// ```
 pub fn format_header(action: &str, total: usize, extra: &str) -> String {
     let body = match action {
-        "grep" => format!("{} enriched / {}", total, extra),
-        "search" => format!("{} results ({})", total, extra),
-        "reindex" => format!("Reindexed: {} files, 0 chunks", total),
+        "grep" => format!("{total} enriched / {extra}"),
+        "search" => format!("{total} results ({extra})"),
+        "reindex" => format!("Reindexed: {total} files, 0 chunks"),
         _ => {
             if extra.is_empty() {
-                format!("{} results", total)
+                format!("{total} results")
             } else {
-                format!("{} results ({})", total, extra)
+                format!("{total} results ({extra})")
             }
         }
     };
-    format!("─── {} ───", body)
+    format!("─── {body} ───")
 }
 
 /// Format a single result row with aligned columns.
@@ -64,8 +64,8 @@ pub fn format_row(
     extra: &str,
 ) -> String {
     let label = if label.is_empty() { "?" } else { label };
-    let location = format!("{}:{}-{}", file, start_line, end_line);
-    format!("{:>3}  {}  {}  [{}]  {}", rank, location, name, label, extra)
+    let location = format!("{file}:{start_line}-{end_line}");
+    format!("{rank:>3}  {location}  {name}  [{label}]  {extra}")
 }
 
 /// Format pagination footer.
@@ -87,20 +87,13 @@ pub fn format_row(
 /// );
 /// ```
 pub fn format_footer(offset: usize, limit: usize, total: usize) -> String {
-    let current_page = if limit == 0 {
-        1
-    } else {
-        (offset / limit) + 1
-    };
+    let current_page = if limit == 0 { 1 } else { (offset / limit) + 1 };
     let total_pages = if limit == 0 || total == 0 {
         1
     } else {
-        (total + limit - 1) / limit
+        total.div_ceil(limit)
     };
-    format!(
-        "  page {}/{} offset={} limit={}",
-        current_page, total_pages, offset, limit
-    )
+    format!("  page {current_page}/{total_pages} offset={offset} limit={limit}")
 }
 
 /// Format context source lines with match markers.
@@ -128,9 +121,9 @@ pub fn format_context(source: &str, match_lines: &[usize]) -> String {
         }
         let lineno = i + 1; // 1-based
         if match_lines.contains(&lineno) {
-            out.push_str(&format!("│ {} ←", line));
+            out.push_str(&format!("│ {line} ←"));
         } else {
-            out.push_str(&format!("│ {}", line));
+            out.push_str(&format!("│ {line}"));
         }
     }
     out
@@ -181,7 +174,10 @@ mod tests {
 
     #[test]
     fn header_zero_total() {
-        assert_eq!(format_header("search", 0, "bm25"), "─── 0 results (bm25) ───");
+        assert_eq!(
+            format_header("search", 0, "bm25"),
+            "─── 0 results (bm25) ───"
+        );
     }
 
     // ── format_row ───────────────────────────────────────────────────────
@@ -230,26 +226,17 @@ mod tests {
 
     #[test]
     fn footer_first_page_all_fit() {
-        assert_eq!(
-            format_footer(0, 20, 5),
-            "  page 1/1 offset=0 limit=20"
-        );
+        assert_eq!(format_footer(0, 20, 5), "  page 1/1 offset=0 limit=20");
     }
 
     #[test]
     fn footer_second_page() {
-        assert_eq!(
-            format_footer(20, 20, 45),
-            "  page 2/3 offset=20 limit=20"
-        );
+        assert_eq!(format_footer(20, 20, 45), "  page 2/3 offset=20 limit=20");
     }
 
     #[test]
     fn footer_last_page_exact() {
-        assert_eq!(
-            format_footer(40, 20, 60),
-            "  page 3/3 offset=40 limit=20"
-        );
+        assert_eq!(format_footer(40, 20, 60), "  page 3/3 offset=40 limit=20");
     }
 
     #[test]
@@ -275,18 +262,12 @@ mod tests {
 
     #[test]
     fn context_no_match() {
-        assert_eq!(
-            format_context("hello\nworld", &[]),
-            "│ hello\n│ world"
-        );
+        assert_eq!(format_context("hello\nworld", &[]), "│ hello\n│ world");
     }
 
     #[test]
     fn context_all_match() {
-        assert_eq!(
-            format_context("a\nb\nc", &[1, 2, 3]),
-            "│ a ←\n│ b ←\n│ c ←"
-        );
+        assert_eq!(format_context("a\nb\nc", &[1, 2, 3]), "│ a ←\n│ b ←\n│ c ←");
     }
 
     #[test]
