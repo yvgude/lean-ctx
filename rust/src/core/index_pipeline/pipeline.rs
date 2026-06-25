@@ -496,24 +496,23 @@ impl PipelineHandle {
     /// Propagates errors from the pipeline run and the load-with-integrity-check.
     pub fn run_and_load(&self) -> Result<(ProjectIndex, ChunkData)> {
         self.run()?;
-        let (graph, chunks, _metadata) = DumpEngine::load_with_integrity_check(&self.project_root)
+        let (graph, chunks) = DumpEngine::load_with_integrity_check(&self.project_root)
             .context("loading dumped indices after pipeline run")?;
-        let index = match chunks {
-            Some(chunks) if !chunks.is_empty() => {
-                let converted: Vec<crate::core::index_types::CodeChunk> = chunks
-                    .iter()
-                    .map(|c| crate::core::index_types::CodeChunk {
-                        file_path: c.file_path.clone(),
-                        content: c.content.clone(),
-                        content_hash: String::new(),
-                        start_line: c.start_line as u32,
-                        end_line: c.end_line as u32,
-                        language: String::new(),
-                    })
-                    .collect();
-                ChunkData::from_chunks(&converted)
-            }
-            _ => ChunkData::new(),
+        let index = if !chunks.is_empty() {
+            let converted: Vec<crate::core::index_types::CodeChunk> = chunks
+                .iter()
+                .map(|c| crate::core::index_types::CodeChunk {
+                    file_path: c.file_path.clone(),
+                    content: c.content.clone(),
+                    content_hash: String::new(),
+                    start_line: c.start_line as u32,
+                    end_line: c.end_line as u32,
+                    language: String::new(),
+                })
+                .collect();
+            ChunkData::from_chunks(&converted)
+        } else {
+            ChunkData::new()
         };
         Ok((
             graph.unwrap_or_else(|| ProjectIndex::new(&self.project_root.to_string_lossy())),

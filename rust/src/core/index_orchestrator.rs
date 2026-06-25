@@ -123,47 +123,9 @@ pub fn disk_status(project_root: &str) -> DiskStatusAll {
     }
 }
 
-// ── BM25 summary (disk-backed, no in-memory state) ───────────────────────────
-
-#[derive(Debug, Clone)]
-pub struct Bm25Summary {
-    pub state: &'static str,
-    pub elapsed_ms: Option<u64>,
-    pub note: Option<String>,
-    pub last_error: Option<String>,
-}
-
-pub fn bm25_summary(project_root: &str) -> Bm25Summary {
-    let db_path = index_namespace::vectors_dir(Path::new(project_root)).join("code_index.db");
-    if db_path.exists() {
-        let note = rusqlite::Connection::open(&db_path).ok().and_then(|conn| {
-            conn.query_row("SELECT COUNT(*) FROM chunks", [], |r| r.get::<_, i64>(0))
-                .ok()
-                .map(|c| format!("{c} chunks"))
-        });
-        Bm25Summary {
-            state: "ready",
-            elapsed_ms: None,
-            note,
-            last_error: None,
-        }
-    } else {
-        Bm25Summary {
-            state: "idle",
-            elapsed_ms: None,
-            note: None,
-            last_error: None,
-        }
-    }
-}
-
-// ── Status JSON ──────────────────────────────────────────────────────────────
-
 pub fn status_json(project_root: &str) -> String {
     serde_json::to_string(&disk_status(project_root)).unwrap_or_else(|_| "{}".to_string())
 }
-
-// ── Building check (via PipelineLock) ────────────────────────────────────────
 
 /// Returns `true` if any process currently holds the index-pipeline lock.
 pub fn is_building() -> bool {
@@ -188,14 +150,5 @@ mod tests {
     fn status_json_is_valid_json() {
         let s = status_json("/tmp");
         let _: serde_json::Value = serde_json::from_str(&s).unwrap();
-    }
-
-    #[test]
-    fn bm25_summary_unknown_project_is_idle() {
-        let tmp = tempfile::tempdir().unwrap();
-        let summary = bm25_summary(tmp.path().to_string_lossy().as_ref());
-        assert_eq!(summary.state, "idle");
-        assert!(summary.note.is_none());
-        assert!(summary.last_error.is_none());
     }
 }

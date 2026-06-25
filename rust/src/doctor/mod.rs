@@ -480,11 +480,7 @@ pub fn run() {
         board.check(cbt);
     }
 
-    // 15) BM25 cache health
-    let bm25_health = bm25_cache_health_outcome();
-    board.check(&bm25_health);
-
-    // 15a) Semantic index runtime status (state/timing/persistence) for the
+    // 15) Semantic index runtime status (state/timing/persistence) for the
     // active project — surfaces a stuck "warming" index (issue #249).
     let semantic_index = semantic_index_outcome();
     if let Some(ref check) = semantic_index {
