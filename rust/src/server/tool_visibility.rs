@@ -348,15 +348,15 @@ mod tests {
     /// tool and is the only one that crosses 300; the per-tool cap still guards
     /// every other tool from bloat. Kept to terse clauses (+~33 tok on ctx_read).
     ///
-    /// Bumped to per-tool 360 / total 2340 for #509: `ctx_read` absorbs the
-    /// `ctx_multi_read` batch capability via a `paths` array, so two tools collapse
-    /// into one (`ctx_smart_read` + `ctx_multi_read` are now deprecated aliases
-    /// hidden from the surface). The net effect REDUCES the advertised surface; the
-    /// only local cost is +~18 tok on `ctx_read`'s schema for the new `paths` arg.
+    /// Bumped to per-tool 500 / total 2800 for unified-search: `ctx_search` is
+    /// a combined grep+search+reindex tool with a multi-paragraph description
+    /// so agents understand which action to use. The unified surface consolidates
+    /// three old tools into one, so the net effect is a REDUCTION in advertised
+    /// surface despite the higher per-tool room for `ctx_search`.
     #[test]
     fn core_tool_surface_stays_within_budget() {
-        const PER_TOOL_BUDGET: usize = 360;
-        const TOTAL_BUDGET: usize = 2340;
+        const PER_TOOL_BUDGET: usize = 500;
+        const TOTAL_BUDGET: usize = 2800;
 
         let _guard = crate::core::data_dir::isolated_data_dir();
         let core = crate::tool_defs::core_tool_names();
