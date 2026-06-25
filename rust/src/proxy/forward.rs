@@ -5,6 +5,10 @@ use axum::{
     response::Response,
 };
 
+use flate2::{Compression, read::GzDecoder, write::GzEncoder};
+use std::borrow::Cow;
+use std::io::{Read, Write};
+
 use super::ProxyState;
 
 /// Default request-body ceiling (MiB). A large-codebase refactor with several
@@ -43,17 +47,11 @@ pub async fn forward_request(
 
     state.stats.record_request();
 
-    let original_size = body_bytes.len();
-    let preserve_content_encoding = has_non_identity_content_encoding(&parts);
-
-    // Parse once; the parsed value is shared between introspection, cost
-    // attribution, and compression — eliminating the redundant re-parse that
-    // each compress_body function previously performed internally.
-    let parsed = if preserve_content_encoding {
-        None
-    } else {
-        serde_json::from_slice::<serde_json::Value>(&body_bytes).ok()
-    };
+    let prepared = prepare_request_body(&parts, &body_bytes, compress_body)?;
+    let original_size = prepared.original_size;
+    let compressed_size = prepared.compressed_size;
+    let preserve_content_encoding = prepared.preserve_content_encoding;
+    let parsed = prepared.parsed;
     if let Some(ref parsed) = parsed {
         let provider = match provider_label {
             "Anthropic" => super::introspect::Provider::Anthropic,
@@ -64,18 +62,11 @@ pub async fn forward_request(
         state.introspect.record(breakdown);
     }
 
-    // #895 Track B: recompute the output-savings arm from the same pristine body
-    // each provider's compress_body keys on, so the metered arm matches the arm
-    // that decided output-shaping. Only when a holdout is active (fraction > 0).
+    // #895 Track B: assign output-savings holdout from the same pristine parsed
+    // body that each provider's compressor receives. Only when active.
     let cohort = parsed
         .as_ref()
         .and_then(|p| cohort_arm(p, provider_label, default_path));
-
-    let (compressed_body, _, compressed_size) = if let Some(value) = parsed.clone() {
-        compress_body(value, original_size)
-    } else {
-        (body_bytes.to_vec(), original_size, original_size)
-    };
 
     if compressed_size < original_size {
         state
@@ -102,7 +93,7 @@ pub async fn forward_request(
         &state,
         &parts,
         &upstream_url,
-        compressed_body,
+        prepared.body,
         provider_label,
         preserve_content_encoding,
     )
@@ -153,6 +144,71 @@ fn cohort_arm(
         _ => super::holdout::google_key(parsed),
     };
     Some(super::holdout::assign(&key, holdout))
+}
+
+struct PreparedRequestBody {
+    body: Vec<u8>,
+    parsed: Option<serde_json::Value>,
+    original_size: usize,
+    compressed_size: usize,
+    preserve_content_encoding: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RequestBodyEncoding {
+    Identity,
+    Gzip,
+    Zstd,
+    Passthrough,
+}
+
+fn prepare_request_body(
+    parts: &Parts,
+    body_bytes: &[u8],
+    compress_body: impl FnOnce(serde_json::Value, usize) -> (Vec<u8>, usize, usize),
+) -> Result<PreparedRequestBody, StatusCode> {
+    let encoding = request_body_encoding(parts);
+    let decoded = match encoding {
+        RequestBodyEncoding::Identity => Cow::Borrowed(body_bytes),
+        RequestBodyEncoding::Gzip => Cow::Owned(decode_gzip_bounded(body_bytes, max_body_bytes())?),
+        RequestBodyEncoding::Zstd => Cow::Owned(decode_zstd_bounded(body_bytes, max_body_bytes())?),
+        RequestBodyEncoding::Passthrough => {
+            return Ok(PreparedRequestBody {
+                body: body_bytes.to_vec(),
+                parsed: None,
+                original_size: body_bytes.len(),
+                compressed_size: body_bytes.len(),
+                preserve_content_encoding: true,
+            });
+        }
+    };
+
+    let Some(parsed) = serde_json::from_slice::<serde_json::Value>(&decoded).ok() else {
+        return Ok(PreparedRequestBody {
+            body: body_bytes.to_vec(),
+            parsed: None,
+            original_size: body_bytes.len(),
+            compressed_size: body_bytes.len(),
+            preserve_content_encoding: encoding != RequestBodyEncoding::Identity,
+        });
+    };
+
+    let original_size = decoded.len();
+    let (logical_body, _, compressed_size) = compress_body(parsed.clone(), original_size);
+    let body = match encoding {
+        RequestBodyEncoding::Identity => logical_body,
+        RequestBodyEncoding::Gzip => encode_gzip(&logical_body)?,
+        RequestBodyEncoding::Zstd => encode_zstd(&logical_body)?,
+        RequestBodyEncoding::Passthrough => unreachable!("passthrough returned above"),
+    };
+
+    Ok(PreparedRequestBody {
+        body,
+        parsed: Some(parsed),
+        original_size,
+        compressed_size,
+        preserve_content_encoding: encoding != RequestBodyEncoding::Identity,
+    })
 }
 
 fn build_upstream_url(parts: &Parts, base: &str, default_path: &str) -> String {
@@ -218,15 +274,73 @@ fn should_forward_request_header(name: &str, preserve_content_encoding: bool) ->
         || (preserve_content_encoding && name.eq_ignore_ascii_case("content-encoding"))
 }
 
-fn has_non_identity_content_encoding(parts: &Parts) -> bool {
-    parts
+fn request_body_encoding(parts: &Parts) -> RequestBodyEncoding {
+    let Some(value) = parts
         .headers
         .get(axum::http::header::CONTENT_ENCODING)
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| {
-            let value = value.trim();
-            !value.is_empty() && !value.eq_ignore_ascii_case("identity")
-        })
+    else {
+        return RequestBodyEncoding::Identity;
+    };
+
+    let encodings = value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty() && !part.eq_ignore_ascii_case("identity"))
+        .collect::<Vec<_>>();
+    match encodings.as_slice() {
+        [] => RequestBodyEncoding::Identity,
+        [encoding] if encoding.eq_ignore_ascii_case("gzip") => RequestBodyEncoding::Gzip,
+        [encoding] if encoding.eq_ignore_ascii_case("zstd") => RequestBodyEncoding::Zstd,
+        _ => RequestBodyEncoding::Passthrough,
+    }
+}
+
+fn decode_zstd_bounded(data: &[u8], max_bytes: usize) -> Result<Vec<u8>, StatusCode> {
+    let decoder = zstd::Decoder::new(data).map_err(|e| {
+        tracing::warn!("lean-ctx proxy: invalid zstd request body: {e}");
+        StatusCode::BAD_REQUEST
+    })?;
+    read_bounded(decoder, max_bytes).inspect_err(|e| {
+        tracing::warn!("lean-ctx proxy: zstd request decode failed: {e}");
+    })
+}
+
+fn encode_zstd(data: &[u8]) -> Result<Vec<u8>, StatusCode> {
+    zstd::encode_all(data, 3).map_err(|e| {
+        tracing::error!("lean-ctx proxy: zstd request encode failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })
+}
+
+fn decode_gzip_bounded(data: &[u8], max_bytes: usize) -> Result<Vec<u8>, StatusCode> {
+    read_bounded(GzDecoder::new(data), max_bytes).inspect_err(|e| {
+        tracing::warn!("lean-ctx proxy: gzip request decode failed: {e}");
+    })
+}
+
+fn encode_gzip(data: &[u8]) -> Result<Vec<u8>, StatusCode> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(data).map_err(|e| {
+        tracing::error!("lean-ctx proxy: gzip request encode failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    encoder.finish().map_err(|e| {
+        tracing::error!("lean-ctx proxy: gzip request encode failed: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })
+}
+
+fn read_bounded<R: Read>(reader: R, max_bytes: usize) -> Result<Vec<u8>, StatusCode> {
+    let mut limited = reader.take(max_bytes as u64 + 1);
+    let mut out = Vec::new();
+    limited
+        .read_to_end(&mut out)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    if out.len() > max_bytes {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    Ok(out)
 }
 
 async fn send_upstream(
@@ -352,8 +466,21 @@ mod tests {
         Request::builder().uri(uri).body(()).unwrap().into_parts().0
     }
 
+    fn add_test_marker(
+        mut value: serde_json::Value,
+        original_size: usize,
+    ) -> (Vec<u8>, usize, usize) {
+        value["lean_ctx_touched"] = serde_json::Value::Bool(true);
+        let out = serde_json::to_vec(&value).unwrap();
+        let compressed_size = out.len();
+        (out, original_size, compressed_size)
+    }
+
     #[test]
-    fn encoded_request_bodies_skip_json_rewrite_and_preserve_encoding() {
+    fn zstd_request_bodies_are_rewritten_and_reencoded() {
+        let body = serde_json::json!({"model": "gpt-5", "input": []});
+        let json = serde_json::to_vec(&body).unwrap();
+        let encoded = encode_zstd(&json).unwrap();
         let parts = Request::builder()
             .uri("/backend-api/codex/responses")
             .header(axum::http::header::CONTENT_ENCODING, "zstd")
@@ -362,9 +489,41 @@ mod tests {
             .into_parts()
             .0;
 
-        assert!(has_non_identity_content_encoding(&parts));
+        let prepared = prepare_request_body(&parts, &encoded, add_test_marker).unwrap();
+        assert_eq!(request_body_encoding(&parts), RequestBodyEncoding::Zstd);
+        assert_eq!(prepared.original_size, json.len());
+        assert!(prepared.preserve_content_encoding);
         assert!(should_forward_request_header("content-encoding", true));
         assert!(!should_forward_request_header("content-encoding", false));
+
+        let decoded = zstd::decode_all(prepared.body.as_slice()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
+        assert_eq!(parsed["lean_ctx_touched"], true);
+        assert_eq!(parsed["model"], "gpt-5");
+    }
+
+    #[test]
+    fn gzip_request_bodies_are_rewritten_and_reencoded() {
+        let body = serde_json::json!({"model": "gpt-5", "input": []});
+        let json = serde_json::to_vec(&body).unwrap();
+        let encoded = encode_gzip(&json).unwrap();
+        let parts = Request::builder()
+            .uri("/backend-api/codex/responses")
+            .header(axum::http::header::CONTENT_ENCODING, "gzip")
+            .body(())
+            .unwrap()
+            .into_parts()
+            .0;
+
+        let prepared = prepare_request_body(&parts, &encoded, add_test_marker).unwrap();
+        assert_eq!(request_body_encoding(&parts), RequestBodyEncoding::Gzip);
+        assert_eq!(prepared.original_size, json.len());
+        assert!(prepared.preserve_content_encoding);
+
+        let decoded = decode_gzip_bounded(&prepared.body, max_body_bytes()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
+        assert_eq!(parsed["lean_ctx_touched"], true);
+        assert_eq!(parsed["model"], "gpt-5");
     }
 
     #[test]
@@ -377,7 +536,32 @@ mod tests {
             .into_parts()
             .0;
 
-        assert!(!has_non_identity_content_encoding(&parts));
+        assert_eq!(request_body_encoding(&parts), RequestBodyEncoding::Identity);
+    }
+
+    #[test]
+    fn unknown_encoded_request_bodies_stay_passthrough() {
+        let parts = Request::builder()
+            .uri("/v1/responses")
+            .header(axum::http::header::CONTENT_ENCODING, "br")
+            .body(())
+            .unwrap()
+            .into_parts()
+            .0;
+        let body = b"not-json";
+
+        let prepared = prepare_request_body(&parts, body, |_, _| {
+            panic!("unknown encodings must not be JSON-rewritten")
+        })
+        .unwrap();
+
+        assert_eq!(
+            request_body_encoding(&parts),
+            RequestBodyEncoding::Passthrough
+        );
+        assert_eq!(prepared.body, body);
+        assert!(prepared.parsed.is_none());
+        assert!(prepared.preserve_content_encoding);
     }
 
     #[test]
