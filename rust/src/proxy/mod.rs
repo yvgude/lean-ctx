@@ -2,6 +2,7 @@ pub mod anthropic;
 pub mod cache_safety;
 pub mod ccr;
 pub mod chatgpt;
+pub mod chatgpt_cookies;
 pub mod cold_prefix;
 pub mod compress;
 pub mod compress_api;
@@ -222,7 +223,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     // a big refactor) mid-response. Use a connect timeout plus a read (idle)
     // timeout instead: a genuinely hung upstream still fails, but a slow-but-
     // alive stream is never cut off. Both are configurable for edge networks.
-    let client = reqwest::Client::builder()
+    let client = chatgpt_cookies::with_chatgpt_cloudflare_cookie_store(reqwest::Client::builder())
         .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs()))
         .read_timeout(std::time::Duration::from_secs(read_idle_timeout_secs()))
         .build()?;

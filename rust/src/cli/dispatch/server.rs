@@ -191,10 +191,50 @@ fn is_orphan_mcp(pid: u32) -> bool {
     if line.is_empty() {
         return false;
     }
-    let ppid_str = line.split_whitespace().next().unwrap_or("");
-    let ppid: u32 = ppid_str.trim().parse().unwrap_or(0);
-    // Parent is init (1) = orphaned, and it looks like an MCP/serve process
-    ppid <= 1 && (line.contains("serve") || line.contains("mcp") || !line.contains("daemon"))
+    is_orphan_mcp_ps_line(line)
+}
+
+#[cfg(unix)]
+fn is_orphan_mcp_ps_line(line: &str) -> bool {
+    let Some((ppid_str, command)) = split_ppid_and_command(line) else {
+        return false;
+    };
+    let Ok(ppid) = ppid_str.parse::<u32>() else {
+        return false;
+    };
+    if ppid > 1 {
+        return false;
+    }
+
+    let mut parts = command.split_whitespace();
+    let Some(exe) = parts.next() else {
+        return false;
+    };
+    if !is_lean_ctx_executable(exe) {
+        return false;
+    }
+
+    let mut first_arg = parts.next();
+    if first_arg == Some("(deleted)") {
+        first_arg = parts.next();
+    }
+
+    matches!(first_arg, None | Some("mcp"))
+}
+
+#[cfg(unix)]
+fn split_ppid_and_command(line: &str) -> Option<(&str, &str)> {
+    let trimmed = line.trim();
+    let split = trimmed
+        .char_indices()
+        .find_map(|(idx, ch)| ch.is_whitespace().then_some(idx))?;
+    let (ppid, rest) = trimmed.split_at(split);
+    Some((ppid, rest.trim_start()))
+}
+
+#[cfg(unix)]
+fn is_lean_ctx_executable(value: &str) -> bool {
+    value == "lean-ctx" || value.ends_with("/lean-ctx")
 }
 
 /// Spawns a background thread that monitors the parent process.
@@ -261,7 +301,7 @@ pub(super) fn herd_aware_index_threads(cores: usize, concurrent: usize) -> usize
 
 #[cfg(test)]
 mod tests {
-    use super::herd_aware_index_threads;
+    use super::*;
 
     #[test]
     fn lone_session_keeps_all_cores() {
@@ -288,5 +328,29 @@ mod tests {
         // zero-thread pool that rayon would reject.
         assert_eq!(herd_aware_index_threads(4, 32), 1);
         assert_eq!(herd_aware_index_threads(0, 0), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn orphan_mcp_cleanup_matches_only_stdio_mcp_processes() {
+        assert!(is_orphan_mcp_ps_line("1 /Users/me/.local/bin/lean-ctx"));
+        assert!(is_orphan_mcp_ps_line("1 /opt/homebrew/bin/lean-ctx mcp"));
+        assert!(is_orphan_mcp_ps_line(
+            "1 /opt/homebrew/bin/lean-ctx (deleted) mcp"
+        ));
+
+        assert!(!is_orphan_mcp_ps_line("99 /Users/me/.local/bin/lean-ctx"));
+        assert!(!is_orphan_mcp_ps_line(
+            "1 /Users/me/.local/bin/lean-ctx proxy start --port=4444"
+        ));
+        assert!(!is_orphan_mcp_ps_line(
+            "1 /Users/me/.local/bin/lean-ctx serve --port=8080"
+        ));
+        assert!(!is_orphan_mcp_ps_line(
+            "1 /Users/me/.local/bin/lean-ctx daemon start"
+        ));
+        assert!(!is_orphan_mcp_ps_line(
+            "1 /usr/bin/sandbox-exec -f /tmp/seatbelt.sb /Users/me/.local/bin/lean-ctx proxy start --port=4444"
+        ));
     }
 }

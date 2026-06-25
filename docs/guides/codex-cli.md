@@ -24,6 +24,8 @@ lean-ctx doctor
 lean-ctx auto-detects Codex CLI by checking for `~/.codex/` or the `codex` binary in `$PATH`.
 
 > **Note**: The Codex CLI config directory can be customized via the `CODEX_HOME` environment variable. lean-ctx respects this setting.
+> 
+> Proxy (`lean-ctx proxy`) will work only with `proxy_require_token=false` for ChatGPT subscriptions. You can set it in `~/.config/lean-ctx/config.toml` or via `lean-ctx config set proxy_require_token false`
 
 ## Manual Setup
 

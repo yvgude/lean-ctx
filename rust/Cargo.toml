@@ -256,6 +256,7 @@ reqwest = { version = "0.13", default-features = false, features = [
   "rustls",
   "stream",
   "json",
+  "cookies",
 ], optional = true }
 bytecount = "0.6"
 libc = "0.2"
