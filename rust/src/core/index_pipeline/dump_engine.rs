@@ -1336,20 +1336,37 @@ mod tests {
         let graph = sample_graph(root.path().to_str().unwrap());
         let chunks = sample_chunks();
 
-        engine.dump_graph_index(&graph).unwrap();
-        // Use dump_all to store chunks (replaces dump_bm25_index)
-        engine.dump_all(&sample_gbuf(), &sample_code_chunks()).unwrap();
+        // dump_all (which uses the new gbuf-based path) should produce a DB
+        // that load_with_integrity_check can read back.
+        // Convert bm25_index::CodeChunk to index_types::CodeChunk for dump_all.
+        let code_chunks: Vec<crate::core::index_types::CodeChunk> = chunks
+            .iter()
+            .map(|c| crate::core::index_types::CodeChunk {
+                file_path: c.file_path.clone(),
+                content: c.content.clone(),
+                content_hash: String::new(),
+                start_line: c.start_line as u32,
+                end_line: c.end_line as u32,
+                language: String::new(),
+            })
+            .collect();
+        engine.dump_all(&sample_gbuf(), &code_chunks).unwrap();
 
         let (loaded_graph, loaded_chunks, _store) =
             DumpEngine::load_with_integrity_check(root.path()).unwrap();
 
+        // dump_all writes nodes/edges to the nodes/edges tables but does not
+        // populate the legacy files table — that path is covered by the
+        // dump_graph_index test above. Here we verify nodes and chunks.
         let lg = loaded_graph.expect("graph should load");
-        assert_eq!(lg.file_count(), graph.file_count());
-        assert!(lg.files.contains_key("src/main.rs"));
+        assert!(
+            lg.symbols.len() >= 2,
+            "dump_all must persist Function nodes as symbols"
+        );
 
         let lb = loaded_chunks.expect("chunks should load");
         assert_eq!(lb.len(), chunks.len());
-        assert_eq!(lb[0].symbol_name, "run");
+        assert_eq!(lb[0].file_path, "src/main.rs");
     }
 
     #[test]
