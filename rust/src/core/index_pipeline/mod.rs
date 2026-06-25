@@ -1,5 +1,8 @@
+pub mod classification;
 pub mod discovery;
+pub mod migration;
 pub mod dump_engine;
+pub mod edge_preserve;
 pub mod parallel_extract;
 pub mod parallel_resolve;
 pub mod pipeline;

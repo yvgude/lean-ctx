@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::core::bm25_index::{BM25Index, tokenize_for_index};
+use crate::core::bm25_index::{ChunkData, tokenize_for_index};
 
 /// Result row after hybrid retrieval + re-ranking.
 #[derive(Debug, Clone, PartialEq)]
@@ -123,7 +123,7 @@ fn build_expanded_weights(query_tokens: &[String]) -> HashMap<String, f64> {
 }
 
 fn expansion_bm25_for_chunk(
-    index: &BM25Index,
+    index: &ChunkData,
     chunk_idx: usize,
     expanded: &HashMap<String, f64>,
     original_terms: &HashSet<String>,
@@ -168,7 +168,7 @@ fn expansion_bm25_for_chunk(
 }
 
 /// BM25 top-100 → SPLADE-like expansion → combined re-rank.
-pub fn hybrid_retrieve(query: &str, bm25_index: &BM25Index, top_k: usize) -> Vec<SpladeResult> {
+pub fn hybrid_retrieve(query: &str, bm25_index: &ChunkData, top_k: usize) -> Vec<SpladeResult> {
     if bm25_index.doc_count == 0 || top_k == 0 {
         return Vec::new();
     }
@@ -182,7 +182,7 @@ pub fn hybrid_retrieve(query: &str, bm25_index: &BM25Index, top_k: usize) -> Vec
 
     let expanded = build_expanded_weights(&query_tokens);
 
-    let stage1 = bm25_index.search(query, 100.min(bm25_index.doc_count.max(1)));
+    let stage1 = crate::core::bm25_index::bm25_search(bm25_index, query, 100.min(bm25_index.doc_count.max(1)));
 
     let bm25_by_chunk: HashMap<usize, f64> =
         stage1.iter().map(|r| (r.chunk_idx, r.score)).collect();
@@ -248,8 +248,8 @@ mod tests {
     use super::*;
     use crate::core::bm25_index::{ChunkKind, CodeChunk};
 
-    fn sample_index() -> BM25Index {
-        BM25Index::from_chunks_for_test(vec![
+    fn sample_index() -> ChunkData {
+        ChunkData::from_chunks_for_test(vec![
             CodeChunk {
                 file_path: "login.rs".into(),
                 symbol_name: "login_user".into(),

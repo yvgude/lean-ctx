@@ -45,6 +45,5 @@ pub fn get_or_start_build(project_root: &str) -> Result<OpenGraphProvider, Graph
     if let Some(open) = graph_provider::open_best_effort(project_root) {
         return Ok(open);
     }
-    crate::core::index_orchestrator::ensure_all_background(project_root);
     Err(GraphBuildProgress::building())
 }

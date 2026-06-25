@@ -107,8 +107,7 @@ pub fn handle(
         };
     }
 
-    // Fallback: trigger index build and retry FTS5
-    index_orchestrator::ensure_all_background(project_root);
+    // Fallback: FTS5 fallback (SQLite-backed, no explicit trigger needed)
     if let Some(matches) = try_fts_symbol_search(name, file, kind, project_root) {
         return match matches.len() {
             1 => render_single(&matches[0], project_root),

@@ -155,6 +155,10 @@ pub fn populate_from_project_index(graph: &CodeGraph, index: &ProjectIndex) -> a
 /// `graph_provider` builder (after a load-or-scan), so the property graph is
 /// built by the same worker that builds the JSON index — no dedicated
 /// fire-and-forget thread that dies in short-lived processes.
+///
+/// # Deprecated
+/// Writes to `graph.db` — use the `DumpEngine` / `code_index.db` pipeline instead.
+#[deprecated(note = "Use DumpEngine with code_index.db. mirror_index writes to graph.db which is being phased out.")]
 pub fn mirror_index(project_root: &str, index: &ProjectIndex) -> anyhow::Result<()> {
     let t0 = Instant::now();
     let graph = CodeGraph::open(project_root)?;

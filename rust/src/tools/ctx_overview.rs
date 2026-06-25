@@ -18,7 +18,6 @@ pub fn handle(task: Option<&str>, path: Option<&str>) -> String {
     let auto_loaded = crate::core::context_package::auto_load_packages(&project_root);
 
     let Some(open) = graph_provider::open_or_build(&project_root) else {
-        crate::core::index_orchestrator::ensure_all_background(&project_root);
         return partial_overview(&project_root);
     };
     let gp = &open.provider;

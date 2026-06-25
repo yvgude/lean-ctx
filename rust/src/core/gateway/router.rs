@@ -4,7 +4,7 @@
 //! query batch) so ranking behaviour matches `ctx_search`/`ctx_semantic_search`
 //! and stays deterministic for a fixed catalog.
 
-use crate::core::bm25_index::BM25Index;
+use crate::core::bm25_index::{bm25_search, ChunkData};
 use crate::core::content_chunk::{ContentChunk, ContentSource};
 
 use super::catalog::{Catalog, CatalogEntry};
@@ -37,11 +37,11 @@ pub fn shortlist(catalog: &Catalog, query: &str, top_n: usize) -> Vec<ScoredTool
             .collect();
     }
 
-    let mut index = BM25Index::new();
+    let mut index = ChunkData::new();
     index.ingest_content_chunks(catalog.entries.iter().map(entry_to_chunk));
 
     // Over-fetch so post-dedup we can still fill top_n.
-    let raw = index.search(q, top_n.saturating_mul(2).max(top_n));
+    let raw = bm25_search(&index, q, top_n.saturating_mul(2).max(top_n));
     let mut seen = std::collections::HashSet::new();
     let mut scored: Vec<ScoredTool> = Vec::new();
     for r in raw {

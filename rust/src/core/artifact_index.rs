@@ -2,24 +2,23 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use crate::core::bm25_index::{BM25Index, ChunkKind, CodeChunk, IndexedFileState};
+use crate::core::bm25_index::{ChunkData, ChunkKind, CodeChunk, IndexedFileState};
 
 const MAX_ARTIFACT_BYTES: u64 = 2_000_000;
 const MAX_CHUNKS_PER_FILE: usize = 50;
 
 pub fn index_file_path(project_root: &Path) -> PathBuf {
-    let code_idx = BM25Index::index_file_path(project_root);
-    let dir = code_idx.parent().unwrap_or_else(|| Path::new("."));
+    let dir = crate::core::index_namespace::vectors_dir(project_root);
     dir.join("bm25_artifacts_index.json")
 }
 
-pub fn load(project_root: &Path) -> Option<BM25Index> {
+pub fn load(project_root: &Path) -> Option<ChunkData> {
     let path = index_file_path(project_root);
     let data = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&data).ok()
 }
 
-pub fn save(project_root: &Path, idx: &BM25Index) -> std::io::Result<()> {
+pub fn save(project_root: &Path, idx: &ChunkData) -> std::io::Result<()> {
     let path = index_file_path(project_root);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -31,7 +30,7 @@ pub fn save(project_root: &Path, idx: &BM25Index) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn load_or_build(project_root: &Path) -> (BM25Index, Vec<String>) {
+pub fn load_or_build(project_root: &Path) -> (ChunkData, Vec<String>) {
     let (files_now, mut warnings) = list_artifact_files(project_root);
     if files_now.is_empty() {
         return (load(project_root).unwrap_or_default(), warnings);
@@ -55,14 +54,14 @@ pub fn load_or_build(project_root: &Path) -> (BM25Index, Vec<String>) {
     (built, warnings)
 }
 
-pub fn rebuild_from_scratch(project_root: &Path) -> (BM25Index, Vec<String>) {
+pub fn rebuild_from_scratch(project_root: &Path) -> (ChunkData, Vec<String>) {
     let (files_now, mut warnings) = list_artifact_files(project_root);
     let idx = build_full(project_root, &files_now, &mut warnings);
     let _ = save(project_root, &idx);
     (idx, warnings)
 }
 
-fn index_looks_stale(idx: &BM25Index, project_root: &Path, files_now: &[String]) -> bool {
+fn index_looks_stale(idx: &ChunkData, project_root: &Path, files_now: &[String]) -> bool {
     if files_now.is_empty() {
         return false;
     }
@@ -97,8 +96,8 @@ fn index_looks_stale(idx: &BM25Index, project_root: &Path, files_now: &[String])
     false
 }
 
-fn build_full(project_root: &Path, files: &[String], warnings: &mut Vec<String>) -> BM25Index {
-    let mut idx = BM25Index::new();
+fn build_full(project_root: &Path, files: &[String], warnings: &mut Vec<String>) -> ChunkData {
+    let mut idx = ChunkData::new();
 
     for rel in files {
         let abs = project_root.join(rel);
@@ -132,10 +131,10 @@ fn build_full(project_root: &Path, files: &[String], warnings: &mut Vec<String>)
 
 fn rebuild_incremental(
     project_root: &Path,
-    prev: &BM25Index,
+    prev: &ChunkData,
     files: &[String],
     warnings: &mut Vec<String>,
-) -> BM25Index {
+) -> ChunkData {
     let mut old_by_file: HashMap<String, Vec<CodeChunk>> = HashMap::new();
     for c in &prev.chunks {
         old_by_file
@@ -152,7 +151,7 @@ fn rebuild_incremental(
         });
     }
 
-    let mut idx = BM25Index::new();
+    let mut idx = ChunkData::new();
 
     for rel in files {
         let abs = project_root.join(rel);
@@ -194,7 +193,7 @@ fn rebuild_incremental(
     idx
 }
 
-fn add_chunk(idx: &mut BM25Index, chunk: CodeChunk) {
+fn add_chunk(idx: &mut ChunkData, chunk: CodeChunk) {
     let chunk_idx = idx.chunks.len();
     let tokens = crate::core::bm25_index::tokenize_for_index(&chunk.content);
     for token in &tokens {
@@ -211,7 +210,7 @@ fn add_chunk(idx: &mut BM25Index, chunk: CodeChunk) {
     });
 }
 
-fn finalize(idx: &mut BM25Index) {
+fn finalize(idx: &mut ChunkData) {
     idx.doc_count = idx.chunks.len();
     if idx.doc_count == 0 {
         idx.avg_doc_len = 0.0;

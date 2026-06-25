@@ -180,7 +180,7 @@ pub mod knowledge_domain {
 // ---------------------------------------------------------------------------
 // Domain: Search & Retrieval
 // ---------------------------------------------------------------------------
-pub mod bm25_cache;
+// pub mod bm25_cache; // removed — unified into SQLite code_index.db
 pub mod bm25_index;
 pub mod content_cache;
 pub mod content_chunk;
@@ -373,7 +373,7 @@ pub mod compliance_report;
 pub mod edit_quality;
 pub mod efficacy;
 pub mod evidence_bundle;
-pub mod graph_cache;
+// pub mod graph_cache; // removed — unified into SQLite code_index.db
 pub mod ide_permissions;
 pub mod import_resolver;
 pub mod index_bundle;

@@ -10,7 +10,7 @@ use std::path::Path;
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 
-use crate::core::bm25_index::{BM25Index, CodeChunk};
+use crate::core::bm25_index::{ChunkData, CodeChunk};
 
 #[derive(Debug, Clone)]
 pub struct QdrantConfig {
@@ -128,7 +128,7 @@ impl QdrantStore {
     pub fn sync_index(
         &self,
         collection: &str,
-        index: &BM25Index,
+        index: &ChunkData,
         aligned_embeddings: &[Vec<f32>],
         changed_files: &[String],
         created_new: bool,
@@ -220,7 +220,7 @@ impl QdrantStore {
     fn upsert_all(
         &self,
         collection: &str,
-        index: &BM25Index,
+        index: &ChunkData,
         aligned_embeddings: &[Vec<f32>],
     ) -> Result<(), String> {
         let mut batch: Vec<QdrantPoint<'_>> = Vec::new();
@@ -243,7 +243,7 @@ impl QdrantStore {
     fn upsert_files(
         &self,
         collection: &str,
-        index: &BM25Index,
+        index: &ChunkData,
         aligned_embeddings: &[Vec<f32>],
         changed_set: &HashSet<&str>,
     ) -> Result<(), String> {

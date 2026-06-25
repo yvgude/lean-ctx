@@ -7,9 +7,7 @@ pub fn handle(action: &str, project_root: &Path) -> String {
             crate::core::index_orchestrator::status_json(project_root.to_string_lossy().as_ref())
         }
         "build" => {
-            crate::core::index_orchestrator::ensure_all_background(
-                project_root.to_string_lossy().as_ref(),
-            );
+            // Indexes are SQLite-backed — no explicit build trigger needed.
             "started".to_string()
         }
         _ => "Unknown action. Use: status, build".to_string(),

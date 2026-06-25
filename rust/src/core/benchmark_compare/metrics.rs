@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crate::core::benchmark::{self, ModeSummary, ProjectBenchmark};
-use crate::core::bm25_index::BM25Index;
+
 use crate::core::tokens::count_tokens;
 
 #[derive(Debug, Clone)]
@@ -112,13 +112,13 @@ fn build_mode_comparisons(bench: &ProjectBenchmark) -> Vec<ModeComparison> {
 }
 
 fn measure_search_latency(root: &Path) -> Vec<SearchLatency> {
-    let index = crate::core::index_orchestrator::load_indexes(root).bm25;
+    let index = crate::core::bm25_index::BM25Index::build_from_directory(root);
 
     SEARCH_QUERIES
         .iter()
         .map(|query| {
             let start = Instant::now();
-            let results = index.search(query, 10);
+            let results = crate::core::bm25_index::bm25_search(&index, query, 10);
             let elapsed = start.elapsed();
 
             SearchLatency {
@@ -131,7 +131,7 @@ fn measure_search_latency(root: &Path) -> Vec<SearchLatency> {
 }
 
 fn measure_disk_footprint(root: &Path) -> DiskFootprint {
-    let bm25_path = BM25Index::index_file_path(root);
+    let bm25_path = crate::core::index_namespace::vectors_dir(root).join("code_index.db");
     let bm25_bytes = std::fs::metadata(&bm25_path).map_or(0, |m| m.len());
 
     let index_dir = root.join(".lean-ctx");
@@ -158,7 +158,7 @@ fn measure_cold_start(root: &Path) -> ColdStartTiming {
     let scan_us = scan_start.elapsed().as_micros() as u64;
 
     let bm25_start = Instant::now();
-    let _index = crate::core::index_orchestrator::load_indexes(root).bm25;
+    let _index = crate::core::bm25_index::BM25Index::build_from_directory(root);
     let bm25_build_us = bm25_start.elapsed().as_micros() as u64;
 
     let read_start = Instant::now();

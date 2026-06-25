@@ -100,7 +100,7 @@ impl EmbeddingBuildOutcome {
 ///
 /// Feature-gated: when `embeddings` is not compiled in, this is a no-op that
 /// returns `Skipped`.
-pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> EmbeddingBuildOutcome {
+pub fn build_or_update(root: &Path, bm25: &super::bm25_index::ChunkData) -> EmbeddingBuildOutcome {
     #[cfg(feature = "embeddings")]
     {
         // Respect the config gates so the orchestrator does not force-embed when

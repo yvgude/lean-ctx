@@ -1,8 +1,5 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
 
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 mod build;
 mod chunking;
@@ -13,45 +10,7 @@ pub use coordinator::{SearchIndexBuildProgress, get_or_start_build};
 #[cfg(test)]
 mod tests;
 
-const CHUNK_COUNT_WARNING: usize = 50_000;
-const ZSTD_LEVEL: i32 = 9;
-
-fn max_bm25_cache_bytes() -> u64 {
-    // Single source of truth: `Config::bm25_max_cache_mb_effective` (env override
-    // › explicit config › disk-budget › generous default). Decoupled from the RAM
-    // profile so large repos persist instead of rebuilding forever (issue #249).
-    let mb = std::env::var("LEAN_CTX_BM25_MAX_CACHE_MB")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or_else(|| crate::core::config::Config::load().bm25_max_cache_mb_effective());
-    mb * 1024 * 1024
-}
-
-/// Effective on-disk ceiling (bytes) for the persisted BM25 index. Single source
-/// of truth shared with `doctor` so its "oversized index" warning matches what
-/// `save`/`load` actually enforce.
-pub fn persist_ceiling_bytes() -> u64 {
-    max_bm25_cache_bytes()
-}
-
-/// Outcome of persisting a BM25 index to disk. Distinguishes a real write from a
-/// size-capped refusal so callers never mistake "refused to persist" for
-/// success (the bug behind the perpetual "index warming" report, issue #249).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SaveOutcome {
-    /// Written to disk. Carries the compressed (zstd) size in bytes.
-    Persisted { compressed_bytes: u64 },
-    /// Built fine but NOT written — the compressed size exceeds the disk
-    /// ceiling. The in-memory index is still usable for this process; callers
-    /// should surface the remedy (raise the cap / add ignore patterns) instead
-    /// of silently rebuilding on every call.
-    SkippedTooLarge {
-        compressed_bytes: u64,
-        limit_bytes: u64,
-    },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeChunk {
     pub file_path: String,
     pub symbol_name: String,
@@ -89,40 +48,6 @@ pub struct IndexedFileState {
     pub size_bytes: u64,
 }
 
-impl IndexedFileState {
-    fn from_path(path: &Path) -> Option<Self> {
-        let meta = path.metadata().ok()?;
-        let size_bytes = meta.len();
-        let mtime_ms = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as u64)?;
-        Some(Self {
-            mtime_ms,
-            size_bytes,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BM25Index {
-    pub chunks: Vec<CodeChunk>,
-    pub inverted: HashMap<String, Vec<(usize, f64)>>,
-    pub avg_doc_len: f64,
-    pub doc_count: usize,
-    pub doc_freqs: HashMap<String, usize>,
-    #[serde(default)]
-    pub files: HashMap<String, IndexedFileState>,
-    /// True once `shrink_resident_content_to_snippet` has trimmed each chunk's
-    /// `content` down to the snippet lines. Resident-only RAM-saving state: never
-    /// persisted (`skip`) so the on-disk index keeps full content, and a reload
-    /// always starts as `false`. Guards the embedding pass against re-embedding
-    /// truncated bodies (see `ensure_embeddings`).
-    #[serde(default, skip)]
-    pub content_truncated: bool,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
     pub chunk_idx: usize,
@@ -135,16 +60,38 @@ pub struct SearchResult {
     pub snippet: String,
 }
 
-const BM25_K1: f64 = 1.2;
-const BM25_B: f64 = 0.75;
+/// Data container for code chunks and their inverted index.
+///
+/// Replaces the former `BM25Index` struct. No longer provides BM25
+/// ranking or search — use FTS5's native `bm25()` for that. This type
+/// exists to hold chunk data for embedding, SPLADE expansion, and
+/// dense/hybrid search paths that operate on chunk metadata rather than
+/// BM25 scores.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChunkData {
+    pub chunks: Vec<CodeChunk>,
+    pub inverted: HashMap<String, Vec<(usize, f64)>>,
+    pub avg_doc_len: f64,
+    pub doc_count: usize,
+    pub doc_freqs: HashMap<String, usize>,
+    #[serde(default)]
+    pub files: HashMap<String, IndexedFileState>,
+    #[serde(default, skip)]
+    pub content_truncated: bool,
+}
 
-impl Default for BM25Index {
+/// Backward-compatible alias — struct was renamed to ChunkData.
+/// New code should use `ChunkData` directly.
+pub type BM25Index = ChunkData;
+
+impl Default for ChunkData {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl BM25Index {
+impl ChunkData {
+    /// Create an empty ChunkData.
     pub fn new() -> Self {
         Self {
             chunks: Vec::new(),
@@ -157,128 +104,80 @@ impl BM25Index {
         }
     }
 
-    /// Walk a directory recursively and build a BM25 index from all found code files.
-    /// Each file is parsed into code chunks (symbol-based via tree-sitter or
-    /// content-defined fallback) and indexed for BM25 search.
+    /// Build a `ChunkData` from the chunks stored in `code_index.db`.
     ///
-    /// File paths inside the index are stored **relative** to `root`, matching the
-    /// convention used by the main indexing pipeline.
-    pub fn build_from_directory(root: &Path) -> Self {
-        let mut index = Self::new();
-
-        let mut entries: Vec<_> = walkdir::WalkDir::new(root)
-            .into_iter()
-            .filter_map(std::result::Result::ok)
-            .filter(|e| e.file_type().is_file())
-            .collect();
-        entries.sort_by(|a, b| a.path().cmp(b.path()));
-
-        for entry in &entries {
-            let path = entry.path();
-            let Ok(content) = std::fs::read_to_string(path) else {
-                continue;
-            };
-            let rel_path = path
-                .strip_prefix(root)
-                .unwrap_or(path)
-                .to_string_lossy()
-                .to_string();
-            let chunks = chunking::extract_chunks(&rel_path, &content);
-            for chunk in chunks {
-                index.add_chunk(chunk);
-            }
+    /// Opens the SQLite database at `{vectors_dir}/code_index.db`, reads all
+    /// rows from the `chunks` table (ordered by `id`), converts them to
+    /// [`index_types::CodeChunk`] (the format `from_chunks` expects), and
+    /// runs the full tokenisation + inverted-index pipeline.
+    ///
+    /// Returns an empty `ChunkData` when the database is missing or empty.
+    pub fn build_from_directory(project_root: impl AsRef<std::path::Path>) -> Self {
+        let dir = crate::core::index_namespace::vectors_dir(project_root.as_ref());
+        let db_path = dir.join("code_index.db");
+        if !db_path.exists() {
+            return ChunkData::new();
         }
 
-        index.finalize();
-        index
-    }
+        let conn = match crate::core::db::WalConnection::open(&db_path) {
+            Ok(c) => c,
+            Err(_) => return ChunkData::new(),
+        };
 
-    /// Approximate heap memory used by this index in bytes.
-    pub fn memory_usage_bytes(&self) -> usize {
-        let chunks_size: usize = self
-            .chunks
-            .iter()
-            .map(|c| {
-                c.content.len()
-                    + c.file_path.len()
-                    + c.symbol_name.len()
-                    + c.tokens.iter().map(String::len).sum::<usize>()
-                    + 64
+        let mut stmt = match conn.prepare(
+            "SELECT file_path, content, content_hash, start_line, end_line, language
+             FROM chunks ORDER BY id",
+        ) {
+            Ok(s) => s,
+            Err(_) => return ChunkData::new(),
+        };
+
+        let rows = match stmt.query_map([], |row| {
+            Ok(crate::core::index_types::CodeChunk {
+                file_path: row.get(0)?,
+                content: row.get(1)?,
+                content_hash: row.get(2)?,
+                start_line: row.get::<_, i64>(3)? as u32,
+                end_line: row.get::<_, i64>(4)? as u32,
+                language: row.get(5)?,
             })
-            .sum();
-        let inverted_size: usize = self
-            .inverted
-            .iter()
-            .map(|(k, v)| k.len() + v.len() * 16 + 32)
-            .sum();
-        let files_size: usize = self.files.keys().map(|k| k.len() + 24).sum();
-        let freqs_size: usize = self.doc_freqs.keys().map(|k| k.len() + 16).sum();
-        chunks_size + inverted_size + files_size + freqs_size
-    }
+        }) {
+            Ok(r) => r,
+            Err(_) => return ChunkData::new(),
+        };
 
-    /// Drops all in-memory data, effectively freeing heap. Index can be re-loaded from disk.
-    pub fn unload(&mut self) {
-        let usage = self.memory_usage_bytes();
-        self.chunks = Vec::new();
-        self.inverted = HashMap::new();
-        self.doc_freqs = HashMap::new();
-        self.files = HashMap::new();
-        self.avg_doc_len = 0.0;
-        self.doc_count = 0;
-        tracing::info!(
-            "[bm25] unloaded index, freed ~{:.1}MB",
-            usage as f64 / 1_048_576.0
-        );
-    }
-
-    /// Shrinks each resident chunk's `content` to its first `keep_lines` lines,
-    /// reclaiming the RAM held by the full source bodies once the embedding pass
-    /// has already consumed them. The search path only ever reads
-    /// `content.lines().take(5)` for snippets, so the trimmed copy is functionally
-    /// complete for BM25/dense/hybrid result rendering.
-    ///
-    /// RESIDENT-ONLY: this mutates the in-memory copy. The persisted `.bin.zst`
-    /// keeps full content (truncation never runs before `save`), so a reload
-    /// restores complete bodies. Sets `content_truncated` so a later
-    /// `ensure_embeddings` against this same resident index skips re-embedding
-    /// (which would otherwise feed truncated bodies to the embedder).
-    ///
-    /// Idempotent and only ever shrinks: chunks shorter than `keep_lines` are
-    /// left untouched.
-    pub fn shrink_resident_content_to_snippet(&mut self, keep_lines: usize) {
-        let before = self.memory_usage_bytes();
-        for chunk in &mut self.chunks {
-            // Cheap line-count gate: only allocate a new string when the body is
-            // actually longer than the snippet window.
-            if chunk.content.lines().nth(keep_lines).is_some() {
-                let trimmed: String = chunk
-                    .content
-                    .lines()
-                    .take(keep_lines)
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                chunk.content = trimmed;
-                // Reclaim the spare capacity left by the larger original body.
-                chunk.content.shrink_to_fit();
+        let mut code_chunks: Vec<crate::core::index_types::CodeChunk> = Vec::new();
+        for row in rows {
+            match row {
+                Ok(chunk) => code_chunks.push(chunk),
+                Err(_) => continue,
             }
         }
-        self.content_truncated = true;
-        let after = self.memory_usage_bytes();
-        tracing::debug!(
-            "[bm25] shrank resident content to {keep_lines} lines/chunk, freed ~{:.1}MB",
-            before.saturating_sub(after) as f64 / 1_048_576.0
-        );
+
+        if code_chunks.is_empty() {
+            return ChunkData::new();
+        }
+
+        ChunkData::from_chunks(&code_chunks)
     }
 
-    /// Build a BM25 index from pre-extracted pipeline chunks (Phase 5).
+    /// Build a ChunkData from pre-extracted pipeline chunks.
     ///
-    /// Takes chunks already extracted by the tree-sitter pipeline (Phase 3A),
-    /// converts them to the internal `CodeChunk` format, tokenizes in parallel
-    /// via rayon, and inserts into the inverted index sequentially.
-    ///
-    /// No file I/O — chunks are already in memory.
+    /// Takes chunks already extracted by the tree-sitter pipeline,
+    /// converts to the internal `CodeChunk` format, tokenizes in parallel
+    /// via rayon, and builds the inverted index sequentially.
     pub fn from_chunks(chunks: &[crate::core::index_types::CodeChunk]) -> Self {
-        let mut idx = Self::new();
+        use rayon::prelude::*;
+
+        let mut data = Self {
+            chunks: Vec::new(),
+            inverted: HashMap::new(),
+            avg_doc_len: 0.0,
+            doc_count: 0,
+            doc_freqs: HashMap::new(),
+            files: HashMap::new(),
+            content_truncated: false,
+        };
 
         // Phase 1: convert + enrich + tokenize in parallel
         let prepared: Vec<(CodeChunk, Vec<String>)> = chunks
@@ -302,303 +201,76 @@ impl BM25Index {
 
         // Phase 2: sequential inverted index insert
         for (code_chunk, tokens) in prepared {
-            idx.add_tokenized_chunk(idx.chunks.len(), code_chunk, &tokens);
-        }
-
-        idx.finalize();
-        idx
-    }
-
-    /// Builds an index from explicit chunks (unit tests; avoids filesystem walking).
-    #[cfg(test)]
-    pub(crate) fn from_chunks_for_test(chunks: Vec<CodeChunk>) -> Self {
-        let mut index = Self::new();
-        for mut chunk in chunks {
-            if chunk.token_count == 0 {
-                chunk.token_count = tokenize(&chunk.content).len();
-            }
-            index.add_chunk(chunk);
-        }
-        index.finalize();
-        index
-    }
-
-    pub(crate) fn add_chunk(&mut self, chunk: CodeChunk) {
-        let idx = self.chunks.len();
-
-        let enriched = enrich_for_bm25(&chunk);
-        let tokens = tokenize(&enriched);
-        for token in &tokens {
-            let lower = token.to_lowercase();
-            let postings = self.inverted.entry(lower.clone()).or_default();
-            if postings.last().map(|(last_idx, _)| *last_idx) != Some(idx) {
-                *self.doc_freqs.entry(lower).or_insert(0) += 1;
-            }
-            postings.push((idx, 1.0));
-        }
-
-        self.chunks.push(CodeChunk {
-            token_count: tokens.len(),
-            tokens: Vec::new(),
-            ..chunk
-        });
-    }
-
-    /// Enrich and tokenize a chunk without touching the index.
-    #[allow(dead_code)]
-    pub(crate) fn prepare_chunk(chunk: CodeChunk) -> (CodeChunk, Vec<String>) {
-        let enriched = enrich_for_bm25(&chunk);
-        let tokens = tokenize(&enriched);
-        (chunk, tokens)
-    }
-
-    /// Insert a pre-tokenized chunk into the inverted index (sequential).
-    pub(crate) fn add_tokenized_chunk(&mut self, idx: usize, chunk: CodeChunk, tokens: &[String]) {
-        for token in tokens {
-            let lower = token.to_lowercase();
-            let postings = self.inverted.entry(lower.clone()).or_default();
-            if postings.last().map(|(last_idx, _)| *last_idx) != Some(idx) {
-                *self.doc_freqs.entry(lower).or_insert(0) += 1;
-            }
-            postings.push((idx, 1.0));
-        }
-        self.chunks.push(CodeChunk {
-            token_count: tokens.len(),
-            tokens: Vec::new(),
-            ..chunk
-        });
-    }
-
-    pub(crate) fn finalize(&mut self) {
-        self.doc_count = self.chunks.len();
-        if self.doc_count == 0 {
-            return;
-        }
-
-        let total_len: usize = self.chunks.iter().map(|c| c.token_count).sum();
-        self.avg_doc_len = total_len as f64 / self.doc_count as f64;
-    }
-
-    pub fn search(&self, query: &str, top_k: usize) -> Vec<SearchResult> {
-        let query_tokens = tokenize(query);
-        if query_tokens.is_empty() || self.doc_count == 0 {
-            return Vec::new();
-        }
-
-        // Pre-allocated score array: O(1) per-access vs HashMap overhead.
-        // Kolmogorov-optimal: minimal allocation for the scoring operation.
-        let n = self.chunks.len();
-        let mut scores = vec![0.0f64; n];
-        let mut touched = Vec::with_capacity(n.min(256));
-
-        for token in &query_tokens {
-            let lower = token.to_lowercase();
-            let df = *self.doc_freqs.get(&lower).unwrap_or(&0) as f64;
-            if df == 0.0 {
-                continue;
-            }
-
-            let idf = ((self.doc_count as f64 - df + 0.5) / (df + 0.5) + 1.0).ln();
-
-            if let Some(postings) = self.inverted.get(&lower) {
-                for &(idx, weight) in postings {
-                    let doc_len = self.chunks[idx].token_count as f64;
-                    let norm_len = doc_len / self.avg_doc_len.max(1.0);
-                    let bm25 = idf * (weight * (BM25_K1 + 1.0))
-                        / (weight + BM25_K1 * (1.0 - BM25_B + BM25_B * norm_len));
-
-                    if scores[idx] == 0.0 {
-                        touched.push(idx);
-                    }
-                    scores[idx] += bm25;
+            let idx = data.chunks.len();
+            for token in &tokens {
+                let lower = token.to_lowercase();
+                let postings = data.inverted.entry(lower.clone()).or_default();
+                if postings.last().map(|(last_idx, _)| *last_idx) != Some(idx) {
+                    *data.doc_freqs.entry(lower).or_insert(0) += 1;
                 }
+                postings.push((idx, 1.0));
             }
-        }
-
-        let mut results: Vec<SearchResult> = touched
-            .iter()
-            .filter(|&&idx| scores[idx] > 0.0)
-            .map(|&idx| {
-                let chunk = &self.chunks[idx];
-                let snippet = chunk.content.lines().take(5).collect::<Vec<_>>().join("\n");
-                SearchResult {
-                    chunk_idx: idx,
-                    score: scores[idx],
-                    file_path: chunk.file_path.clone(),
-                    symbol_name: chunk.symbol_name.clone(),
-                    kind: chunk.kind.clone(),
-                    start_line: chunk.start_line,
-                    end_line: chunk.end_line,
-                    snippet,
-                }
-            })
-            .collect();
-
-        results.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.file_path.cmp(&b.file_path))
-                .then_with(|| a.symbol_name.cmp(&b.symbol_name))
-                .then_with(|| a.start_line.cmp(&b.start_line))
-                .then_with(|| a.end_line.cmp(&b.end_line))
-        });
-        results.truncate(top_k);
-        results
-    }
-
-    pub fn save(&self, root: &Path) -> std::io::Result<SaveOutcome> {
-        if self.chunks.len() > CHUNK_COUNT_WARNING {
-            tracing::warn!(
-                "[bm25] index has {} chunks (threshold {}), consider adding extra_ignore_patterns",
-                self.chunks.len(),
-                CHUNK_COUNT_WARNING
-            );
-        }
-
-        let dir = index_dir(root);
-        std::fs::create_dir_all(&dir)?;
-        let data = postcard::to_allocvec(self).map_err(|e| std::io::Error::other(e.to_string()))?;
-
-        let compressed = zstd::encode_all(data.as_slice(), ZSTD_LEVEL)
-            .map_err(|e| std::io::Error::other(format!("zstd compress: {e}")))?;
-        let compressed_bytes = compressed.len() as u64;
-
-        let max_bytes = max_bm25_cache_bytes();
-        if compressed_bytes > max_bytes {
-            // Do NOT pretend success: a silent `Ok(())` here made `load` return
-            // `None` forever and the index rebuild on every call (issue #249).
-            // Report the refusal so the orchestrator can record an actionable
-            // note and the agent-facing tools can stop claiming the index will
-            // be "ready next call".
-            tracing::warn!(
-                "[bm25] compressed index too large ({:.1} MB, limit {:.0} MB), refusing to persist: {}",
-                compressed_bytes as f64 / 1_048_576.0,
-                max_bytes / (1024 * 1024),
-                dir.display()
-            );
-            return Ok(SaveOutcome::SkippedTooLarge {
-                compressed_bytes,
-                limit_bytes: max_bytes,
+            data.chunks.push(CodeChunk {
+                token_count: tokens.len(),
+                tokens: Vec::new(),
+                ..code_chunk
             });
         }
 
-        tracing::info!(
-            "[bm25] index: {:.1} MB postcard → {:.1} MB zstd ({:.0}% saved)",
-            data.len() as f64 / 1_048_576.0,
-            compressed_bytes as f64 / 1_048_576.0,
-            (1.0 - compressed_bytes as f64 / data.len().max(1) as f64) * 100.0
-        );
-
-        let target = dir.join("bm25_index.bin.zst");
-        let tmp = dir.join("bm25_index.bin.zst.tmp");
-        std::fs::write(&tmp, &compressed)?;
-        std::fs::rename(&tmp, &target)?;
-
-        let _ = std::fs::remove_file(dir.join("bm25_index.bin"));
-        let _ = std::fs::remove_file(dir.join("bm25_index.json"));
-
-        let _ = std::fs::write(
-            dir.join("project_root.txt"),
-            root.to_string_lossy().as_bytes(),
-        );
-
-        Ok(SaveOutcome::Persisted { compressed_bytes })
-    }
-
-    pub fn load(root: &Path) -> Option<Self> {
-        let dir = index_dir(root);
-        let max_bytes = max_bm25_cache_bytes();
-
-        let zst_path = dir.join("bm25_index.bin.zst");
-        if zst_path.exists() {
-            let meta = std::fs::metadata(&zst_path).ok()?;
-            if meta.len() > max_bytes {
-                tracing::warn!(
-                    "[bm25] compressed index too large ({:.1} GB, limit {:.0} MB), quarantining: {}",
-                    meta.len() as f64 / 1_073_741_824.0,
-                    max_bytes / (1024 * 1024),
-                    zst_path.display()
-                );
-                let quarantined = zst_path.with_extension("zst.quarantined");
-                let _ = std::fs::rename(&zst_path, &quarantined);
-                return None;
-            }
-            let compressed = std::fs::read(&zst_path).ok()?;
-            let max_decompressed = max_bytes * 20; // allow 20x expansion ratio
-            let data = bounded_zstd_decode(&compressed, max_decompressed)?;
-            let idx: Self = postcard::from_bytes(&data).ok()?;
-            return Some(idx);
+        data.doc_count = data.chunks.len();
+        if data.doc_count > 0 {
+            let total_len: usize = data.chunks.iter().map(|c| c.token_count).sum();
+            data.avg_doc_len = total_len as f64 / data.doc_count as f64;
         }
 
-        let bin_path = dir.join("bm25_index.bin");
-        if bin_path.exists() {
-            let meta = std::fs::metadata(&bin_path).ok()?;
-            if meta.len() > max_bytes {
-                tracing::warn!(
-                    "[bm25] index too large ({:.1} GB, limit {:.0} MB), quarantining: {}",
-                    meta.len() as f64 / 1_073_741_824.0,
-                    max_bytes / (1024 * 1024),
-                    bin_path.display()
-                );
-                let quarantined = bin_path.with_extension("bin.quarantined");
-                let _ = std::fs::rename(&bin_path, &quarantined);
-                return None;
+        data
+    }
+
+    /// Build a ChunkData from explicit CodeChunks (unit tests).
+    #[cfg(test)]
+    pub(crate) fn from_chunks_for_test(chunks: Vec<CodeChunk>) -> Self {
+        let mut data = Self {
+            chunks: Vec::new(),
+            inverted: HashMap::new(),
+            avg_doc_len: 0.0,
+            doc_count: 0,
+            doc_freqs: HashMap::new(),
+            files: HashMap::new(),
+            content_truncated: false,
+        };
+
+        for chunk in chunks {
+            if chunk.token_count == 0 {
+                tokenize(&chunk.content);
             }
-            let data = std::fs::read(&bin_path).ok()?;
-            let idx: Self = postcard::from_bytes(&data).ok()?;
-            // Auto-migrate: compress legacy .bin to .bin.zst
-            if let Ok(compressed) = zstd::encode_all(data.as_slice(), ZSTD_LEVEL) {
-                let zst_tmp = zst_path.with_extension("zst.tmp");
-                if std::fs::write(&zst_tmp, &compressed).is_ok()
-                    && std::fs::rename(&zst_tmp, &zst_path).is_ok()
-                {
-                    tracing::info!(
-                        "[bm25] migrated {:.1} MB → {:.1} MB zstd",
-                        data.len() as f64 / 1_048_576.0,
-                        compressed.len() as f64 / 1_048_576.0
-                    );
-                    let _ = std::fs::remove_file(&bin_path);
+            let idx = data.chunks.len();
+            let enriched = enrich_for_bm25(&chunk);
+            let tokens = tokenize(&enriched);
+            for token in &tokens {
+                let lower = token.to_lowercase();
+                let postings = data.inverted.entry(lower.clone()).or_default();
+                if postings.last().map(|(last_idx, _)| *last_idx) != Some(idx) {
+                    *data.doc_freqs.entry(lower).or_insert(0) += 1;
                 }
+                postings.push((idx, 1.0));
             }
-            return Some(idx);
+            data.chunks.push(CodeChunk {
+                token_count: tokens.len(),
+                tokens: Vec::new(),
+                ..chunk
+            });
         }
 
-        let json_path = dir.join("bm25_index.json");
-        if json_path.exists() {
-            let meta = std::fs::metadata(&json_path).ok()?;
-            if meta.len() > max_bytes {
-                tracing::warn!(
-                    "[bm25] index too large ({:.1} GB, limit {:.0} MB), quarantining: {}",
-                    meta.len() as f64 / 1_073_741_824.0,
-                    max_bytes / (1024 * 1024),
-                    json_path.display()
-                );
-                let quarantined = json_path.with_extension("json.quarantined");
-                let _ = std::fs::rename(&json_path, &quarantined);
-                return None;
-            }
-            let data = std::fs::read_to_string(&json_path).ok()?;
-            return serde_json::from_str(&data).ok();
+        data.doc_count = data.chunks.len();
+        if data.doc_count > 0 {
+            let total_len: usize = data.chunks.iter().map(|c| c.token_count).sum();
+            data.avg_doc_len = total_len as f64 / data.doc_count as f64;
         }
 
-        None
+        data
     }
 
-    pub fn index_file_path(root: &Path) -> PathBuf {
-        let dir = index_dir(root);
-        let zst = dir.join("bm25_index.bin.zst");
-        if zst.exists() {
-            return zst;
-        }
-        let bin = dir.join("bm25_index.bin");
-        if bin.exists() {
-            return bin;
-        }
-        dir.join("bm25_index.json")
-    }
-
-    /// Ingest external `ContentChunk`s into the BM25 index.
+    /// Ingest external `ContentChunk`s into the chunk data.
     /// Converts each chunk to a `CodeChunk` (backward-compatible) and
     /// rebuilds the inverted index. Returns the number of chunks ingested.
     pub fn ingest_content_chunks(
@@ -607,11 +279,31 @@ impl BM25Index {
     ) -> usize {
         let mut count = 0usize;
         for cc in chunks {
-            self.add_chunk(cc.into());
+            let code_chunk: CodeChunk = cc.into();
+            let idx = self.chunks.len();
+            let enriched = enrich_for_bm25(&code_chunk);
+            let tokens = tokenize(&enriched);
+            for token in &tokens {
+                let lower = token.to_lowercase();
+                let postings = self.inverted.entry(lower.clone()).or_default();
+                if postings.last().map(|(last_idx, _)| *last_idx) != Some(idx) {
+                    *self.doc_freqs.entry(lower).or_insert(0) += 1;
+                }
+                postings.push((idx, 1.0));
+            }
+            self.chunks.push(CodeChunk {
+                token_count: tokens.len(),
+                tokens: Vec::new(),
+                ..code_chunk
+            });
             count += 1;
         }
         if count > 0 {
-            self.finalize();
+            self.doc_count = self.chunks.len();
+            if self.doc_count > 0 {
+                let total_len: usize = self.chunks.iter().map(|c| c.token_count).sum();
+                self.avg_doc_len = total_len as f64 / self.doc_count as f64;
+            }
         }
         count
     }
@@ -623,90 +315,145 @@ impl BM25Index {
             .filter(|c| c.file_path.contains("://"))
             .count()
     }
-}
 
-/// Sentinel-based staleness check: samples a subset of tracked files.
-/// Used by the coordinator as a quick pre-flight check before loading
-/// the on-disk index.
-pub fn bm25_index_looks_stale_fast(index: &BM25Index, root: &Path) -> bool {
-    if index.chunks.is_empty() {
-        return false;
+    /// Approximate heap memory used by this data in bytes.
+    pub fn memory_usage_bytes(&self) -> usize {
+        let chunks_size: usize = self
+            .chunks
+            .iter()
+            .map(|c| {
+                c.content.len()
+                    + c.file_path.len()
+                    + c.symbol_name.len()
+                    + c.tokens.iter().map(String::len).sum::<usize>()
+                    + 64
+            })
+            .sum();
+        let inverted_size: usize = self
+            .inverted
+            .iter()
+            .map(|(k, v)| k.len() + v.len() * 16 + 32)
+            .sum();
+        let files_size: usize = self.files.keys().map(|k| k.len() + 24).sum();
+        let freqs_size: usize = self.doc_freqs.keys().map(|k| k.len() + 16).sum();
+        chunks_size + inverted_size + files_size + freqs_size
     }
 
-    if index.files.is_empty() {
-        let mut seen = std::collections::HashSet::<&str>::new();
-        for chunk in &index.chunks {
-            let rel = chunk.file_path.trim_start_matches(['/', '\\']);
-            if rel.is_empty() {
-                continue;
-            }
-            if !seen.insert(rel) {
-                continue;
-            }
-            if !root.join(rel).exists() {
-                return true;
+    /// Drops all in-memory data, effectively freeing heap.
+    pub fn unload(&mut self) {
+        let usage = self.memory_usage_bytes();
+        self.chunks = Vec::new();
+        self.inverted = HashMap::new();
+        self.doc_freqs = HashMap::new();
+        self.files = HashMap::new();
+        self.avg_doc_len = 0.0;
+        self.doc_count = 0;
+        tracing::info!(
+            "[bm25] unloaded chunk data, freed ~{:.1}MB",
+            usage as f64 / 1_048_576.0
+        );
+    }
+
+    /// Shrinks each resident chunk's `content` to its first `keep_lines` lines.
+    pub fn shrink_resident_content_to_snippet(&mut self, keep_lines: usize) {
+        let before = self.memory_usage_bytes();
+        for chunk in &mut self.chunks {
+            if chunk.content.lines().nth(keep_lines).is_some() {
+                let trimmed: String = chunk
+                    .content
+                    .lines()
+                    .take(keep_lines)
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                chunk.content = trimmed;
+                chunk.content.shrink_to_fit();
             }
         }
-        return false;
+        self.content_truncated = true;
+        let after = self.memory_usage_bytes();
+        tracing::debug!(
+            "[bm25] shrank resident content to {keep_lines} lines/chunk, freed ~{:.1}MB",
+            before.saturating_sub(after) as f64 / 1_048_576.0
+        );
+    }
+}
+
+const BM25_K1: f64 = 1.2;
+const BM25_B: f64 = 0.75;
+
+/// BM25 search on [`ChunkData`] (used by artifact index, dense/hybrid fusion,
+/// and SPLADE expansion paths that have no direct FTS5 access).
+///
+/// For code index search, prefer FTS5's native `bm25()` via the `chunks_fts`
+/// virtual table — it's faster, deterministic, and avoids maintaining a separate
+/// in-memory inverted index copy.
+pub fn bm25_search(data: &ChunkData, query: &str, top_k: usize) -> Vec<SearchResult> {
+    let query_tokens = tokenize(query);
+    if query_tokens.is_empty() || data.doc_count == 0 {
+        return Vec::new();
     }
 
-    let sample_size = index.files.len().min(SENTINEL_SAMPLE_SIZE);
-    let step = if index.files.len() > sample_size {
-        index.files.len() / sample_size
-    } else {
-        1
-    };
-    for (i, (rel, old_state)) in index.files.iter().enumerate() {
-        if i % step != 0 {
+    let n = data.chunks.len();
+    let mut scores = vec![0.0f64; n];
+    let mut touched = Vec::with_capacity(n.min(256));
+
+    for token in &query_tokens {
+        let lower = token.to_lowercase();
+        let df = *data.doc_freqs.get(&lower).unwrap_or(&0) as f64;
+        if df == 0.0 {
             continue;
         }
-        let abs = root.join(rel);
-        if !abs.exists() {
-            return true;
-        }
-        let Some(cur) = IndexedFileState::from_path(&abs) else {
-            return true;
-        };
-        if &cur != old_state {
-            return true;
+
+        let idf = ((data.doc_count as f64 - df + 0.5) / (df + 0.5) + 1.0).ln();
+
+        if let Some(postings) = data.inverted.get(&lower) {
+            for &(idx, weight) in postings {
+                let doc_len = data.chunks[idx].token_count as f64;
+                let norm_len = doc_len / data.avg_doc_len.max(1.0);
+                let bm25 = idf * (weight * (BM25_K1 + 1.0))
+                    / (weight + BM25_K1 * (1.0 - BM25_B + BM25_B * norm_len));
+
+                if scores[idx] == 0.0 {
+                    touched.push(idx);
+                }
+                scores[idx] += bm25;
+            }
         }
     }
 
-    false
+    let mut results: Vec<SearchResult> = touched
+        .iter()
+        .filter(|&&idx| scores[idx] > 0.0)
+        .map(|&idx| {
+            let chunk = &data.chunks[idx];
+            let snippet = chunk.content.lines().take(5).collect::<Vec<_>>().join("\n");
+            SearchResult {
+                chunk_idx: idx,
+                score: scores[idx],
+                file_path: chunk.file_path.clone(),
+                symbol_name: chunk.symbol_name.clone(),
+                kind: chunk.kind.clone(),
+                start_line: chunk.start_line,
+                end_line: chunk.end_line,
+                snippet,
+            }
+        })
+        .collect();
+
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.file_path.cmp(&b.file_path))
+            .then_with(|| a.symbol_name.cmp(&b.symbol_name))
+            .then_with(|| a.start_line.cmp(&b.start_line))
+            .then_with(|| a.end_line.cmp(&b.end_line))
+    });
+    results.truncate(top_k);
+    results
 }
 
-const SENTINEL_SAMPLE_SIZE: usize = 10;
-
-fn bounded_zstd_decode(compressed: &[u8], max_bytes: u64) -> Option<Vec<u8>> {
-    use std::io::Read;
-    let mut decoder = zstd::Decoder::new(compressed).ok()?;
-    let mut buf = Vec::new();
-    let mut chunk = vec![0u8; 65536];
-    let mut total = 0u64;
-    loop {
-        let n = decoder.read(&mut chunk).ok()?;
-        if n == 0 {
-            break;
-        }
-        total += n as u64;
-        if total > max_bytes {
-            tracing::warn!(
-                "[bm25] decompressed index exceeds limit ({:.0} MB > {:.0} MB), aborting load",
-                total as f64 / (1024.0 * 1024.0),
-                max_bytes as f64 / (1024.0 * 1024.0)
-            );
-            return None;
-        }
-        buf.extend_from_slice(&chunk[..n]);
-    }
-    Some(buf)
-}
-
-fn index_dir(root: &Path) -> PathBuf {
-    crate::core::index_namespace::vectors_dir(root)
-}
-
-pub fn is_code_file(path: &Path) -> bool {
+pub fn is_code_file(path: &std::path::Path) -> bool {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())

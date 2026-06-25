@@ -136,10 +136,6 @@ impl McpTool for CtxSemanticSearchTool {
             }
         }
 
-        if let Some(ref cache) = ctx.bm25_cache {
-            crate::tools::ctx_semantic_search::set_thread_cache(cache.clone());
-        }
-
         let send_progress = |progress: f64, msg: &str| {
             #[allow(clippy::unwrap_or_default)]
             if let Some(ref ps) = ctx.progress_sender

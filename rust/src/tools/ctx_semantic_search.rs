@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::fmt::Write;
 use std::path::Path;
 
-use crate::core::bm25_index::{BM25Index, format_search_results};
+use crate::core::bm25_index::{ChunkData, format_search_results, bm25_search};
 #[cfg(feature = "embeddings")]
 use crate::core::embedding_index::EmbeddingIndex;
 #[cfg(feature = "embeddings")]
@@ -13,6 +13,143 @@ use crate::core::hnsw::FlatEmbeddings;
 use crate::core::hybrid_search::HybridConfig;
 use crate::core::hybrid_search::{HybridResult, format_hybrid_results};
 use crate::tools::CrpMode;
+
+/// FTS5 search result hit.
+pub(crate) struct SearchHit {
+    pub file_path: String,
+    pub content: String,
+    pub start_line: usize,
+    pub end_line: usize,
+    pub rank: f64,
+}
+
+/// Run an FTS5 bm25() query against `chunks_fts` in the given database.
+fn fts5_search(db_path: &std::path::Path, query: &str, limit: usize) -> anyhow::Result<Vec<SearchHit>> {
+    use rusqlite::params;
+
+    let conn = rusqlite::Connection::open(db_path)?;
+
+    // Build FTS5 query: tokenize and join with OR for individual terms
+    let tokens: Vec<&str> = query.split_whitespace().collect();
+    let fts_query = if tokens.is_empty() {
+        return Ok(Vec::new());
+    } else if tokens.len() == 1 {
+        format!("\"{}\"", tokens[0])
+    } else {
+        tokens.iter().map(|t| format!("\"{}\"", t)).collect::<Vec<_>>().join(" OR ")
+    };
+
+    let mut stmt = conn.prepare(
+        "SELECT content, file_path, start_line, end_line, bm25(chunks_fts, 0, 1) AS rank
+         FROM chunks_fts WHERE chunks_fts MATCH ?1
+         ORDER BY rank
+         LIMIT ?2",
+    )?;
+
+    let rows = stmt.query_map(params![fts_query, limit as i64], |row| {
+        let content: String = row.get(0)?;
+        let file_path: String = row.get(1)?;
+        let start_line: i64 = row.get(2)?;
+        let end_line: i64 = row.get(3)?;
+        let rank: f64 = row.get(4)?;
+        Ok(SearchHit {
+            file_path,
+            content,
+            start_line: start_line as usize,
+            end_line: end_line as usize,
+            rank,
+        })
+    })?;
+
+    let mut results: Vec<SearchHit> = rows.filter_map(|r| r.ok()).collect();
+    // FTS5 bm25() returns 0 for best match, increasing for worse — negate so
+    // higher = better (consistent with old BM25Index::search convention).
+    for r in &mut results {
+        r.rank = -r.rank;
+    }
+    results.sort_by(|a, b| b.rank.partial_cmp(&a.rank).unwrap_or(std::cmp::Ordering::Equal));
+    results.truncate(limit);
+    Ok(results)
+}
+
+/// Load ChunkData from the SQLite DB for dense/hybrid/SPLADE paths.
+fn load_chunk_data(_root: &std::path::Path, db_path: &std::path::Path) -> std::sync::Arc<ChunkData> {
+    if !db_path.exists() {
+        return std::sync::Arc::new(ChunkData::new());
+    }
+
+    let conn = match rusqlite::Connection::open(db_path) {
+        Ok(c) => c,
+        Err(_) => return std::sync::Arc::new(ChunkData::new()),
+    };
+
+    let mut stmt = match conn.prepare(
+        "SELECT file_path, symbol_name, kind, start_line, end_line, content, token_count
+         FROM chunks ORDER BY id",
+    ) {
+        Ok(s) => s,
+        Err(_) => return std::sync::Arc::new(ChunkData::new()),
+    };
+
+    let rows = match stmt.query_map([], |row| {
+        let file_path: String = row.get(0)?;
+        let symbol_name: String = row.get(1)?;
+        let kind_str: String = row.get(2)?;
+        let start_line: i64 = row.get(3)?;
+        let end_line: i64 = row.get(4)?;
+        let content: String = row.get(5)?;
+        let token_count: i64 = row.get(6)?;
+        Ok(crate::core::bm25_index::CodeChunk {
+            file_path,
+            symbol_name,
+            kind: serde_json::from_str(&kind_str)
+                .unwrap_or(crate::core::bm25_index::ChunkKind::Other),
+            start_line: start_line as usize,
+            end_line: end_line as usize,
+            content,
+            tokens: Vec::new(),
+            token_count: token_count as usize,
+        })
+    }) {
+        Ok(r) => r,
+        Err(_) => return std::sync::Arc::new(ChunkData::new()),
+    };
+
+    let code_chunks: Vec<crate::core::bm25_index::CodeChunk> =
+        rows.filter_map(|r| r.ok()).collect();
+
+    if code_chunks.is_empty() {
+        return std::sync::Arc::new(ChunkData::new());
+    }
+
+    // Build full ChunkData with inverted index
+    let mut data = ChunkData::new();
+    for chunk in code_chunks {
+        let idx = data.chunks.len();
+        let enriched = crate::core::bm25_index::enrich_for_bm25(&chunk);
+        let tokens = crate::core::bm25_index::tokenize(&enriched);
+        for token in &tokens {
+            let lower = token.to_lowercase();
+            let postings = data.inverted.entry(lower.clone()).or_default();
+            if postings.last().map(|(last_idx, _)| *last_idx) != Some(idx) {
+                *data.doc_freqs.entry(lower).or_insert(0) += 1;
+            }
+            postings.push((idx, 1.0));
+        }
+        data.chunks.push(crate::core::bm25_index::CodeChunk {
+            token_count: tokens.len(),
+            tokens: Vec::new(),
+            ..chunk
+        });
+    }
+    data.doc_count = data.chunks.len();
+    if data.doc_count > 0 {
+        let total_len: usize = data.chunks.iter().map(|c| c.token_count).sum();
+        data.avg_doc_len = total_len as f64 / data.doc_count as f64;
+    }
+
+    std::sync::Arc::new(data)
+}
 
 /// Performs semantic code search using BM25, dense embeddings, or hybrid ranking.
 #[allow(clippy::too_many_arguments)]
@@ -65,83 +202,70 @@ pub fn handle(
         return workspace_search(query, root, top_k, compact, &filter, &mode);
     }
 
-    let index = match load_or_refresh_bm25(root) {
-        Bm25LoadResult::Ready(idx) => idx,
-        Bm25LoadResult::Building => {
-            return "BM25 index is being built in the background. \
-                    Run ctx_semantic_search again in ~30s, or use action=reindex to wait for completion."
-                .to_string();
-        }
-    };
-    if index.doc_count == 0 {
-        return "No code files found to index.".to_string();
-    }
+    let db_path = crate::core::index_namespace::vectors_dir(root).join("code_index.db");
 
     match mode.as_str() {
         "bm25" => {
-            let mut results = index.search(query, filtered_candidate_k(top_k, filter.is_active()));
-            if filter.is_active() {
-                results.retain(|x| filter.matches(&x.file_path));
-            }
-            results.truncate(top_k);
+            let results = if db_path.exists() {
+                fts5_search(&db_path, query, filtered_candidate_k(top_k, filter.is_active()))
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            let results = if filter.is_active() {
+                results
+                    .into_iter()
+                    .filter(|x| filter.matches(&x.file_path))
+                    .take(top_k)
+                    .collect::<Vec<_>>()
+            } else {
+                results.into_iter().take(top_k).collect::<Vec<_>>()
+            };
 
             let header = if compact {
                 format!(
-                    "semantic_search(bm25,{top_k}) → {} results, {} chunks indexed\n",
+                    "semantic_search(bm25,{top_k}) → {} results\n",
                     results.len(),
-                    index.doc_count
                 )
             } else {
                 format!(
-                    "Semantic search (BM25): \"{}\" ({} results from {} indexed chunks)\n",
+                    "Semantic search (BM25): \"{}\" ({} results from FTS5 index)\n",
                     truncate_query(query, 60),
                     results.len(),
-                    index.doc_count,
                 )
             };
-            format!("{header}{}", format_search_results(&results, compact))
+            let search_results: Vec<crate::core::bm25_index::SearchResult> = results
+                .into_iter()
+                .enumerate()
+                .map(|(i, r)| crate::core::bm25_index::SearchResult {
+                    chunk_idx: i,
+                    score: r.rank,
+                    file_path: r.file_path,
+                    symbol_name: String::new(),
+                    kind: crate::core::bm25_index::ChunkKind::Other,
+                    start_line: r.start_line,
+                    end_line: r.end_line,
+                    snippet: r.content,
+                })
+                .collect();
+            format!("{header}{}", format_search_results(&search_results, compact))
         }
         "dense" => {
-            let out = dense_search_mode(query, root, &index, top_k, compact, &filter);
-            shrink_resident_after_embedding(root, index);
+            let chunk_data = load_chunk_data(root, &db_path);
+            if chunk_data.doc_count == 0 {
+                return "No code files found to index.".to_string();
+            }
+            let out = dense_search_mode(query, root, &chunk_data, top_k, compact, &filter);
             out
         }
         _ => {
-            let out = hybrid_search_mode(query, root, &index, top_k, compact, &filter);
-            shrink_resident_after_embedding(root, index);
+            let chunk_data = load_chunk_data(root, &db_path);
+            if chunk_data.doc_count == 0 {
+                return "No code files found to index.".to_string();
+            }
+            let out = hybrid_search_mode(query, root, &chunk_data, top_k, compact, &filter);
             out
         }
-    }
-}
-
-/// Reclaim the RAM held by full chunk bodies in the resident BM25 cache once the
-/// dense/hybrid embedding pass has consumed and persisted them. Drops this
-/// handler's `Arc` clone first so the cache becomes the sole owner and the trim
-/// is zero-copy (see `bm25_cache::shrink_resident_to_snippet`).
-///
-/// `keep_lines = 5` matches the snippet window used everywhere results are
-/// rendered (`bm25_index::search`, `dense_backend`, `hybrid_search`). Only fires
-/// when embeddings are actually built (feature-gated); a BM25-only fallback build
-/// must keep full bodies for a later real embedding pass.
-fn shrink_resident_after_embedding(root: &Path, index: std::sync::Arc<BM25Index>) {
-    #[cfg(feature = "embeddings")]
-    {
-        // Release our clone so the cache is the sole Arc owner; otherwise the
-        // in-place trim is skipped and retried on the next search.
-        drop(index);
-        if let Some(cache) = get_thread_cache() {
-            let freed = crate::core::bm25_cache::shrink_resident_to_snippet(&cache, root, 5);
-            if freed > 0 {
-                tracing::info!(
-                    "[bm25_cache] reclaimed ~{:.1}MB of resident chunk bodies post-embedding",
-                    freed as f64 / 1_048_576.0
-                );
-            }
-        }
-    }
-    #[cfg(not(feature = "embeddings"))]
-    {
-        let _ = (root, index);
     }
 }
 
@@ -172,7 +296,7 @@ pub fn search_hits(
     let filter =
         SearchFilter::new(languages, path_glob).map_err(|e| format!("invalid filter: {e}"))?;
 
-    let index = crate::core::index_orchestrator::load_indexes(root).bm25;
+    let index = crate::core::bm25_index::BM25Index::build_from_directory(root);
     if index.doc_count == 0 {
         return Ok(Vec::new());
     }
@@ -205,12 +329,12 @@ pub fn search_hits(
 }
 
 fn bm25_hits(
-    index: &BM25Index,
+    index: &ChunkData,
     query: &str,
     top_k: usize,
     filter: &SearchFilter,
 ) -> Vec<HybridResult> {
-    let mut results = index.search(query, filtered_candidate_k(top_k, filter.is_active()));
+    let mut results = bm25_search(index, query, filtered_candidate_k(top_k, filter.is_active()));
     if filter.is_active() {
         results.retain(|x| filter.matches(&x.file_path));
     }
@@ -234,10 +358,9 @@ pub fn handle_reindex(path: &str) -> String {
         root
     };
 
-    let idx = crate::core::index_orchestrator::load_indexes(root).bm25;
+    let idx = crate::core::bm25_index::BM25Index::build_from_directory(root);
     let files = idx.files.len();
     let chunks = idx.doc_count;
-    let _ = idx.save(root);
 
     format!("Reindexed {path}: {files} files, {chunks} chunks")
 }
@@ -298,7 +421,7 @@ pub fn handle_find_related(
         return format!("ERR: path does not exist: {project_root}");
     }
 
-    let index = crate::core::index_orchestrator::load_indexes(root).bm25;
+    let index = crate::core::bm25_index::BM25Index::build_from_directory(root);
     if index.doc_count == 0 {
         return "ERR: empty index. Try action=reindex first.".to_string();
     }
@@ -344,7 +467,7 @@ pub fn handle_find_related(
 fn find_related_internal(
     query: &str,
     root: &Path,
-    index: &BM25Index,
+    index: &ChunkData,
     top_k: usize,
     compact: bool,
 ) -> Vec<String> {
@@ -363,102 +486,6 @@ fn truncate_query(q: &str, max: usize) -> &str {
         Some((byte_idx, _)) => &q[..byte_idx],
         None => q,
     }
-}
-
-std::thread_local! {
-    static BM25_SHARED_CACHE: std::cell::RefCell<Option<crate::core::bm25_cache::SharedBm25Cache>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// Set the shared BM25 cache for the current thread (called from the registered handler).
-pub fn set_thread_cache(cache: crate::core::bm25_cache::SharedBm25Cache) {
-    BM25_SHARED_CACHE.with(|c| {
-        *c.borrow_mut() = Some(cache);
-    });
-}
-
-/// Clone the current thread's shared BM25 cache, if any. Lets composer tools
-/// propagate the resident cache into a budgeted worker thread so a slow cold
-/// build warms the *same* cache instead of being wasted work.
-pub fn get_thread_cache() -> Option<crate::core::bm25_cache::SharedBm25Cache> {
-    BM25_SHARED_CACHE.with(|c| c.borrow().clone())
-}
-
-/// Result of BM25 index loading — may indicate background build in progress.
-pub(crate) enum Bm25LoadResult {
-    Ready(std::sync::Arc<BM25Index>),
-    Building,
-}
-
-fn load_or_refresh_bm25(root: &Path) -> Bm25LoadResult {
-    let cached = BM25_SHARED_CACHE.with(|c| {
-        let borrow = c.borrow();
-        borrow
-            .as_ref()
-            .and_then(|cache| crate::core::bm25_cache::get_or_background(cache, root))
-    });
-    if let Some(idx) = cached {
-        return Bm25LoadResult::Ready(idx);
-    }
-
-    let root_str = root.to_string_lossy().to_string();
-
-    if let Some(idx) = crate::core::index_orchestrator::try_load_bm25_index(&root_str) {
-        let idx = std::sync::Arc::new(idx);
-        store_in_thread_cache(root, &idx);
-        return Bm25LoadResult::Ready(idx);
-    }
-
-    if crate::core::index_orchestrator::is_building() {
-        return Bm25LoadResult::Building;
-    }
-
-    // Cold path: kick off the background build (which persists the index to
-    // disk) instead of doing an unbounded synchronous build in the MCP handler.
-    // Wait briefly so small/medium repos still return Ready on the first call;
-    // larger repos return Building and the agent retries against the warm cache
-    // once the worker has persisted the index (#150).
-    crate::core::index_orchestrator::ensure_all_background(&root_str);
-
-    let deadline = std::time::Instant::now() + bm25_cold_build_budget();
-    loop {
-        if let Some(idx) = crate::core::index_orchestrator::try_load_bm25_index(&root_str) {
-            let idx = std::sync::Arc::new(idx);
-            store_in_thread_cache(root, &idx);
-            return Bm25LoadResult::Ready(idx);
-        }
-        if std::time::Instant::now() >= deadline {
-            return Bm25LoadResult::Building;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
-}
-
-/// Time budget for waiting on a cold BM25 build in the MCP handler before
-/// returning `Building`. Overridable via `LEAN_CTX_BM25_COLD_BUDGET_MS`.
-fn bm25_cold_build_budget() -> std::time::Duration {
-    let ms = std::env::var("LEAN_CTX_BM25_COLD_BUDGET_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(60_000);
-    std::time::Duration::from_millis(ms)
-}
-
-fn store_in_thread_cache(root: &Path, idx: &std::sync::Arc<BM25Index>) {
-    BM25_SHARED_CACHE.with(|c| {
-        let borrow = c.borrow();
-        if let Some(cache) = borrow.as_ref() {
-            let mut guard = cache
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            *guard = Some(crate::core::bm25_cache::Bm25CacheEntry {
-                root: root.to_path_buf(),
-                index: std::sync::Arc::clone(idx),
-                loaded_at: std::time::Instant::now(),
-                fingerprint: crate::core::bm25_cache::index_fingerprint(root),
-            });
-        }
-    });
 }
 
 fn filtered_candidate_k(top_k: usize, filtered: bool) -> usize {
@@ -502,7 +529,7 @@ fn artifacts_search(
             continue;
         }
 
-        let mut results = idx.search(query, filtered_candidate_k(top_k, filter.is_active()));
+        let mut results = crate::core::bm25_index::bm25_search(&idx, query, filtered_candidate_k(top_k, filter.is_active()));
         if filter.is_active() {
             results.retain(|x| filter.matches(&x.file_path));
         }
@@ -602,14 +629,14 @@ fn workspace_search(
 
     for r in &roots {
         let label = label_for_root(r);
-        let index = crate::core::index_orchestrator::load_indexes(r).bm25;
+        let index = crate::core::bm25_index::BM25Index::build_from_directory(r);
         if index.doc_count == 0 {
             continue;
         }
 
         let mut results: Vec<HybridResult> = match mode {
             "bm25" => {
-                let mut bm25 = index.search(query, filtered_candidate_k(top_k, filter.is_active()));
+                let mut bm25 = crate::core::bm25_index::bm25_search(&index, query, filtered_candidate_k(top_k, filter.is_active()));
                 if filter.is_active() {
                     bm25.retain(|x| filter.matches(&x.file_path));
                 }
@@ -629,8 +656,8 @@ fn workspace_search(
                         }
                         Err(e) => {
                             warnings.push(format!("[{label}] dense search failed: {e}"));
-                            let mut bm25 = index
-                                .search(query, filtered_candidate_k(top_k, filter.is_active()));
+                            let mut bm25 = crate::core::bm25_index::bm25_search(
+                                &index, query, filtered_candidate_k(top_k, filter.is_active()));
                             if filter.is_active() {
                                 bm25.retain(|x| filter.matches(&x.file_path));
                             }
@@ -644,8 +671,8 @@ fn workspace_search(
                 #[cfg(not(feature = "embeddings"))]
                 {
                     let _ = (&label, &warnings);
-                    let mut bm25 =
-                        index.search(query, filtered_candidate_k(top_k, filter.is_active()));
+                    let mut bm25 = crate::core::bm25_index::bm25_search(
+                        &index, query, filtered_candidate_k(top_k, filter.is_active()));
                     if filter.is_active() {
                         bm25.retain(|x| filter.matches(&x.file_path));
                     }
@@ -666,8 +693,8 @@ fn workspace_search(
                         }
                         Err(e) => {
                             warnings.push(format!("[{label}] hybrid search failed: {e}"));
-                            let mut bm25 = index
-                                .search(query, filtered_candidate_k(top_k, filter.is_active()));
+                            let mut bm25 = crate::core::bm25_index::bm25_search(
+                                &index, query, filtered_candidate_k(top_k, filter.is_active()));
                             if filter.is_active() {
                                 bm25.retain(|x| filter.matches(&x.file_path));
                             }
@@ -681,8 +708,8 @@ fn workspace_search(
                 #[cfg(not(feature = "embeddings"))]
                 {
                     let _ = (&label, &warnings);
-                    let mut bm25 =
-                        index.search(query, filtered_candidate_k(top_k, filter.is_active()));
+                    let mut bm25 = crate::core::bm25_index::bm25_search(
+                        &index, query, filtered_candidate_k(top_k, filter.is_active()));
                     if filter.is_active() {
                         bm25.retain(|x| filter.matches(&x.file_path));
                     }
@@ -837,7 +864,7 @@ fn rrf_merge_bm25(
 fn dense_results_for_root(
     query: &str,
     root: &Path,
-    index: &BM25Index,
+    index: &ChunkData,
     top_k: usize,
     filter: &SearchFilter,
 ) -> Result<(Vec<HybridResult>, f64), String> {
@@ -878,7 +905,7 @@ fn dense_results_for_root(
 fn hybrid_results_for_root(
     query: &str,
     root: &Path,
-    index: &BM25Index,
+    index: &ChunkData,
     top_k: usize,
     filter: &SearchFilter,
 ) -> Result<(Vec<HybridResult>, f64), String> {
@@ -1015,7 +1042,7 @@ fn path_under_search_root(path: &str, root: &Path) -> bool {
 fn bm25_graph_search(
     query: &str,
     root: &Path,
-    index: &BM25Index,
+    index: &ChunkData,
     top_k: usize,
     compact: bool,
     filter: &SearchFilter,
@@ -1092,7 +1119,7 @@ fn exceeds_inline_embed_budget(pending: usize, max: usize) -> bool {
 /// should degrade instead of embedding inline; `None` keeps the normal path
 /// (warm index, or an incremental embed of only a few changed chunks).
 #[cfg(feature = "embeddings")]
-fn cold_start_embed_guard(embed_idx: &EmbeddingIndex, index: &BM25Index) -> Option<usize> {
+fn cold_start_embed_guard(embed_idx: &EmbeddingIndex, index: &ChunkData) -> Option<usize> {
     let pending = embed_idx.pending_chunk_count(&index.chunks);
     exceeds_inline_embed_budget(pending, inline_embed_max_chunks()).then_some(pending)
 }
@@ -1117,7 +1144,7 @@ fn dense_build_hint(pending: usize, compact: bool) -> String {
 fn hybrid_search_mode(
     query: &str,
     root: &Path,
-    index: &BM25Index,
+    index: &ChunkData,
     top_k: usize,
     compact: bool,
     filter: &SearchFilter,
@@ -1213,7 +1240,7 @@ fn hybrid_search_mode(
     }
     #[cfg(not(feature = "embeddings"))]
     {
-        let mut results = index.search(query, filtered_candidate_k(top_k, filter.is_active()));
+        let mut results: Vec<crate::core::bm25_index::SearchResult> = crate::core::bm25_index::bm25_search(index, query, filtered_candidate_k(top_k, filter.is_active()));
         if filter.is_active() {
             results.retain(|x| filter.matches(&x.file_path));
         }
@@ -1257,7 +1284,7 @@ fn hybrid_search_mode(
 fn dense_search_mode(
     query: &str,
     root: &Path,
-    index: &BM25Index,
+    index: &ChunkData,
     top_k: usize,
     compact: bool,
     filter: &SearchFilter,
@@ -1332,7 +1359,7 @@ fn dense_search_mode(
 fn dense_search_mode(
     _query: &str,
     _root: &Path,
-    _index: &BM25Index,
+    _index: &ChunkData,
     _top_k: usize,
     _compact: bool,
     _filter: &SearchFilter,
@@ -1388,7 +1415,7 @@ type AlignedEmbeddings = (FlatEmbeddings, f64, Vec<String>);
 #[cfg(feature = "embeddings")]
 fn ensure_embeddings(
     root: &Path,
-    index: &BM25Index,
+    index: &ChunkData,
     engine: &EmbeddingEngine,
     embed_idx: &mut EmbeddingIndex,
 ) -> Result<AlignedEmbeddings, String> {
@@ -1597,7 +1624,7 @@ pub fn load_engine_and_index_pub(
 #[cfg(feature = "embeddings")]
 pub fn ensure_embeddings_for_eval(
     root: &Path,
-    index: &BM25Index,
+    index: &ChunkData,
     engine: &EmbeddingEngine,
     embed_idx: &mut EmbeddingIndex,
 ) -> Result<AlignedEmbeddings, String> {
@@ -1745,10 +1772,10 @@ mod dense_config_tests {
 #[cfg(all(test, feature = "embeddings"))]
 mod dense_toggle_tests {
     use super::*;
-    use crate::core::bm25_index::{BM25Index, ChunkKind, CodeChunk, tokenize};
+    use crate::core::bm25_index::{ChunkData, ChunkKind, CodeChunk, tokenize};
 
-    fn small_index() -> BM25Index {
-        BM25Index::from_chunks_for_test(vec![
+    fn small_index() -> ChunkData {
+        ChunkData::from_chunks_for_test(vec![
             CodeChunk {
                 file_path: "auth.rs".into(),
                 symbol_name: "validate_token".into(),

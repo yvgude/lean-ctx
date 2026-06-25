@@ -3,7 +3,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use crate::core::bm25_index::BM25Index;
 use crate::core::graph_provider::{self, GraphProvider};
 
 #[derive(Debug, Clone, Copy)]
@@ -105,11 +104,12 @@ pub fn build(project_root: &Path, opts: &ExportOptions) -> Result<ContextArtifac
         index_dir: GraphProvider::index_dir(&root_s).map(|p| p.to_string_lossy().to_string()),
     };
 
-    let bm25 = crate::core::index_orchestrator::load_indexes(project_root).bm25;
+    let bm25 = crate::core::bm25_index::BM25Index::build_from_directory(Path::new(project_root));
     let bm25_summary = Bm25IndexSummary {
         files: bm25.files.len(),
         chunks: bm25.doc_count,
-        index_file: BM25Index::index_file_path(project_root)
+        index_file: crate::core::index_namespace::vectors_dir(Path::new(project_root))
+            .join("code_index.db")
             .to_string_lossy()
             .to_string(),
     };

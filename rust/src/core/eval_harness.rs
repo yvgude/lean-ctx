@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use crate::core::bm25_index::BM25Index;
+use crate::core::bm25_index::ChunkData;
 use crate::core::hybrid_search::HybridConfig;
 use crate::core::tokens::count_tokens;
 
@@ -78,7 +78,7 @@ impl std::fmt::Display for EvalScorecard {
 pub fn run_eval(
     project_root: &Path,
     queries: &[EvalQuery],
-    index: &BM25Index,
+    index: &ChunkData,
     config: &HybridConfig,
 ) -> EvalScorecard {
     let label = project_root
@@ -163,7 +163,7 @@ impl SearchArm {
 fn hybrid_eval_search(
     project_root: &Path,
     query: &str,
-    index: &BM25Index,
+    index: &ChunkData,
     config: &HybridConfig,
 ) -> Vec<String> {
     search_arm(project_root, query, index, config, SearchArm::Hybrid).files
@@ -186,7 +186,7 @@ struct ArmRun {
 fn search_arm(
     project_root: &Path,
     query: &str,
-    index: &BM25Index,
+    index: &ChunkData,
     config: &HybridConfig,
     arm: SearchArm,
 ) -> ArmRun {
@@ -242,9 +242,8 @@ fn explore_arm(project_root: &Path, query: &str) -> ArmRun {
     }
 }
 
-fn bm25_only_search(index: &BM25Index, query: &str, config: &HybridConfig) -> Vec<String> {
-    index
-        .search(query, config.bm25_candidates)
+fn bm25_only_search(index: &ChunkData, query: &str, config: &HybridConfig) -> Vec<String> {
+    crate::core::bm25_index::bm25_search(index, query, config.bm25_candidates)
         .iter()
         .map(|r| r.file_path.clone())
         .collect()
@@ -254,7 +253,7 @@ fn bm25_only_search(index: &BM25Index, query: &str, config: &HybridConfig) -> Ve
 fn try_hybrid_search(
     project_root: &Path,
     query: &str,
-    index: &BM25Index,
+    index: &ChunkData,
     config: &HybridConfig,
 ) -> Result<Vec<String>, String> {
     use crate::core::dense_backend;
@@ -299,7 +298,7 @@ fn try_hybrid_search(
 
 /// Generate self-eval queries from an indexed codebase.
 /// Picks random symbols/files and constructs retrieval queries.
-pub fn generate_self_eval(index: &BM25Index, max_queries: usize) -> Vec<EvalQuery> {
+pub fn generate_self_eval(index: &ChunkData, max_queries: usize) -> Vec<EvalQuery> {
     let mut queries = Vec::new();
 
     for chunk in index.chunks.iter().take(max_queries * 2) {
@@ -419,7 +418,7 @@ pub struct AbReport {
 fn run_arm(
     project_root: &Path,
     queries: &[EvalQuery],
-    index: &BM25Index,
+    index: &ChunkData,
     config: &HybridConfig,
     arm: SearchArm,
 ) -> ArmScore {
@@ -457,7 +456,7 @@ fn run_arm(
 pub fn run_ab(
     project_root: &Path,
     queries: &[EvalQuery],
-    index: &BM25Index,
+    index: &ChunkData,
     config: &HybridConfig,
 ) -> AbReport {
     // Canonicalize first so a relative root like "." still yields a real label.
@@ -764,9 +763,9 @@ mod tests {
 
     #[test]
     fn run_ab_plumbing_on_synthetic_index() {
-        use crate::core::bm25_index::{BM25Index, ChunkKind, CodeChunk, tokenize};
+        use crate::core::bm25_index::{ChunkData, ChunkKind, CodeChunk, tokenize};
 
-        let index = BM25Index::from_chunks_for_test(vec![CodeChunk {
+        let index = ChunkData::from_chunks_for_test(vec![CodeChunk {
             file_path: "core/hybrid_search.rs".into(),
             symbol_name: "reciprocal_rank_fusion".into(),
             kind: ChunkKind::Function,

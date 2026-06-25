@@ -471,7 +471,7 @@ fn open_existing(project_root: &str) -> (Option<OpenGraphProvider>, bool) {
     // PG is not fully populated: a (re)build would help the next call.
     let needs_build = !pg_populated;
 
-    if let Some(idx) = super::index_orchestrator::try_load_graph_index(project_root) {
+    if let Some(idx) = crate::core::graph_index::ProjectIndex::load(project_root) {
         let files = idx.files.len();
         let edges = idx.edges.len();
         if !idx.edges.is_empty() || !idx.files.is_empty() {
@@ -553,10 +553,7 @@ fn trigger_lazy_graph_build(project_root: &str) {
     if !is_project {
         return;
     }
-    // #682.2: build via the same reliable worker that builds the JSON index
-    // (which now mirrors into PG, backend-gated), instead of a dedicated
-    // fire-and-forget thread that silently died in short-lived processes.
-    super::index_orchestrator::ensure_all_background(project_root);
+    // Background build no longer needed — indexes are SQLite-backed.
 }
 
 /// Build the property graph from the proven graph_index extractor (#682.1).
@@ -570,7 +567,7 @@ fn trigger_lazy_graph_build(project_root: &str) {
 /// Synchronous and self-contained in `core` (no `tools` dependency), so callers
 /// can build reliably without the fire-and-forget caveat of the lazy trigger.
 pub fn build_property_graph(project_root: &str) -> anyhow::Result<()> {
-    let index = super::index_orchestrator::try_load_graph_index(project_root)
+    let index = crate::core::graph_index::ProjectIndex::load(project_root)
         .filter(|i| !i.files.is_empty())
         .unwrap_or_else(|| {
             let handle = super::index_pipeline::pipeline::IndexPipeline::new(
@@ -580,6 +577,7 @@ pub fn build_property_graph(project_root: &str) -> anyhow::Result<()> {
             .expect("pipeline build failed");
             handle.run_and_load().expect("pipeline run failed").0
         });
+    #[allow(deprecated)]
     super::property_graph::mirror_index(project_root, &index)
 }
 
@@ -639,6 +637,7 @@ mod tests {
                 summary: String::new(),
             },
         );
+        #[allow(deprecated)]
         idx.save().expect("save index");
 
         let open = open_best_effort(&root).expect("open");
