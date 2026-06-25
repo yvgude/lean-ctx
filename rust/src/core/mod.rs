@@ -152,6 +152,7 @@ pub mod context {
 // ---------------------------------------------------------------------------
 // Domain: Knowledge
 // ---------------------------------------------------------------------------
+pub mod db;
 pub mod claim_extractor;
 pub mod cognition_loop;
 pub mod cognition_scheduler;

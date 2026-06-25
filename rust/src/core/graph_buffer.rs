@@ -16,19 +16,23 @@
 //! Uses the types from `index_types.rs` (`NodeId`, `EdgeId`, `GbufNode`, `GbufEdge`).
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use anyhow::{Context, Result};
+
+use crate::core::db::{WalConnection, SCHEMA_VERSION};
 use crate::core::graph_index::ProjectIndex;
 use crate::core::index_types::{EdgeId, GbufEdge, GbufNode, NodeId};
 
-/// Contiguous-array graph buffer with O(1) QN → NodeId lookup.
-///
-/// Nodes and edges are stored in append-only `Vec`s. The `qn_index` provides
-/// fast qualified-name lookups. Edges are deduplicated by
-/// `(source_id, target_id, edge_type)`.
-pub struct GraphBuffer {
-    #[allow(dead_code)]
+// ---------------------------------------------------------------------------
+// Inner data shared by the `Loaded` variant
+// ---------------------------------------------------------------------------
+
+/// Holds the fields for a non-empty [`GraphBuffer`].
+#[derive(Clone)]
+pub(crate) struct GraphBufferInner {
     project_root: String,
     nodes: Vec<GbufNode>,
     edges: Vec<GbufEdge>,
@@ -39,46 +43,49 @@ pub struct GraphBuffer {
     shared_ids: Option<Arc<AtomicU32>>,
 }
 
-impl GraphBuffer {
-    // ── Construction ────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// GraphBuffer (enum)
+// ---------------------------------------------------------------------------
 
-    /// Create a new graph buffer.
-    ///
-    /// IDs start at 1 (sequential). The buffer owns all data.
-    pub fn new(project_root: &str) -> Self {
-        Self {
-            project_root: project_root.to_string(),
-            nodes: Vec::new(),
-            edges: Vec::new(),
-            qn_index: HashMap::new(),
-            edge_dedup: HashMap::new(),
-            next_node_id: 1,
-            next_edge_id: 1,
-            shared_ids: None,
-        }
-    }
+/// In-memory graph buffer — contiguous arrays with O(1) QN → NodeId lookup.
+///
+/// This is the in-memory graph store that replaces `RamGraphBuilder` during
+/// the new pipeline. It holds all nodes and edges in contiguous `Vec`s during
+/// indexing and provides fast lookup by qualified name.
+///
+/// ## Design
+/// - `nodes`: append-only `Vec<GbufNode>`, IDs are sequential from 1
+/// - `qn_index`: `HashMap<String, NodeId>` for O(1) QN lookup
+/// - `edge_dedup`: deduplicates edges by `(source_id, target_id, edge_type)`
+/// - `delete_by_file`: cascading delete — removes edges referencing deleted nodes
+/// - `merge`: QN-collision-aware merge (source wins) with edge ID remapping
+///
+/// ## Compatibility
+/// Maps to C's `cbm_gbuf_t` — see `/tmp/codebase-memory-mcp/src/graph_buffer/`.
+/// Uses the types from `index_types.rs` (`NodeId`, `EdgeId`, `GbufNode`, `GbufEdge`).
+///
+/// ## Variants
+///
+/// | Variant | Meaning |
+/// |---------|---------|
+/// | `Empty` | Fresh buffer with no data; `finalize()` panics |
+/// | `Loaded` | Contains nodes, edges, indexes, and next-ID counters |
+///
+/// [`GbufNode`]: crate::core::index_types::GbufNode
+/// [`GbufEdge`]: crate::core::index_types::GbufEdge
+#[allow(private_interfaces)]
+pub enum GraphBuffer {
+    /// Fresh buffer — has not been populated yet. Calling `finalize` on this
+    /// variant panics.
+    Empty,
+    /// Buffer containing graph data, either built via indexing or loaded from
+    /// a persisted `code_index.db`.
+    Loaded(Box<GraphBufferInner>),
+}
 
-    /// Create a graph buffer with a shared atomic ID source.
-    ///
-    /// IDs are allocated via `fetch_add` on `id_source`. Used for parallel
-    /// extraction where multiple gbufs in different threads need globally
-    /// unique IDs without coordination.
-    pub fn new_shared_ids(project_root: &str, id_source: Arc<AtomicU32>) -> Self {
-        Self {
-            project_root: project_root.to_string(),
-            nodes: Vec::new(),
-            edges: Vec::new(),
-            qn_index: HashMap::new(),
-            edge_dedup: HashMap::new(),
-            next_node_id: 1,
-            next_edge_id: 1,
-            shared_ids: Some(id_source),
-        }
-    }
+// ── Internal helpers ───────────────────────────────────────────────────────
 
-    // ── Internal helpers ────────────────────────────────────────────
-
-    /// Allocate the next node ID from the shared atomic or local counter.
+impl GraphBufferInner {
     fn alloc_node_id(&mut self) -> NodeId {
         if let Some(ref shared) = self.shared_ids {
             NodeId(shared.fetch_add(1, Ordering::Relaxed))
@@ -89,7 +96,6 @@ impl GraphBuffer {
         }
     }
 
-    /// Allocate the next edge ID from the shared atomic or local counter.
     fn alloc_edge_id(&mut self) -> EdgeId {
         if let Some(ref shared) = self.shared_ids {
             EdgeId(shared.fetch_add(1, Ordering::Relaxed))
@@ -98,6 +104,188 @@ impl GraphBuffer {
             self.next_edge_id += 1;
             EdgeId(id)
         }
+    }
+}
+
+impl GraphBuffer {
+    /// Panic unless this is the `Loaded` variant.
+    fn inner(&self) -> &GraphBufferInner {
+        match self {
+            GraphBuffer::Loaded(inner) => inner,
+            GraphBuffer::Empty => panic!("GraphBuffer::Empty has no data"),
+        }
+    }
+
+    /// Panic unless this is the `Loaded` variant (mutable).
+    fn inner_mut(&mut self) -> &mut GraphBufferInner {
+        match self {
+            GraphBuffer::Loaded(inner) => inner,
+            GraphBuffer::Empty => panic!("GraphBuffer::Empty has no data"),
+        }
+    }
+}
+
+impl GraphBuffer {
+    // ── Construction ────────────────────────────────────────────────
+
+    /// Create a new empty graph buffer.
+    ///
+    /// IDs start at 1 (sequential). The buffer owns all data.
+    pub fn new(project_root: &str) -> Self {
+        GraphBuffer::Loaded(Box::new(GraphBufferInner {
+            project_root: project_root.to_string(),
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            qn_index: HashMap::new(),
+            edge_dedup: HashMap::new(),
+            next_node_id: 1,
+            next_edge_id: 1,
+            shared_ids: None,
+        }))
+    }
+
+    /// Create a graph buffer with a shared atomic ID source.
+    ///
+    /// IDs are allocated via `fetch_add` on `id_source`. Used for parallel
+    /// extraction where multiple gbufs in different threads need globally
+    /// unique IDs without coordination.
+    pub fn new_shared_ids(project_root: &str, id_source: Arc<AtomicU32>) -> Self {
+        GraphBuffer::Loaded(Box::new(GraphBufferInner {
+            project_root: project_root.to_string(),
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            qn_index: HashMap::new(),
+            edge_dedup: HashMap::new(),
+            next_node_id: 1,
+            next_edge_id: 1,
+            shared_ids: Some(id_source),
+        }))
+    }
+
+    /// Load a `GraphBuffer` from an existing `code_index.db`.
+    ///
+    /// Opens the database at `db_path`, verifies the schema version, runs
+    /// `PRAGMA integrity_check`, then reads all nodes and edges into memory.
+    /// Reconstructs the `qn_index` and `edge_dedup` maps, and sets
+    /// `next_node_id` / `next_edge_id` to `MAX(id) + 1`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the DB is missing, corrupt, has a mismatched schema
+    /// version, or fails integrity check.
+    pub fn load_from_db(db_path: &Path, project_root: &str) -> Result<Self> {
+        let conn = WalConnection::open(db_path)
+            .with_context(|| format!("open code_index.db: {}", db_path.display()))?;
+
+        // Verify schema version.
+        // Read as String first (column is TEXT) then parse to i64.
+        let stored_version: Option<i64> = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok());
+
+        anyhow::ensure!(
+            stored_version == Some(SCHEMA_VERSION),
+            "schema version mismatch: code expects {SCHEMA_VERSION}, DB has {stored_version:?}"
+        );
+
+        // Integrity check.
+        let result: String = conn
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .context("integrity_check query failed")?;
+        anyhow::ensure!(
+            result.trim() == "ok",
+            "SQLite integrity check failed: {result}"
+        );
+
+        // Read all nodes.
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, label, name, qualified_name, file_path, start_line, end_line, properties
+                 FROM nodes ORDER BY id",
+            )
+            .context("prepare nodes select")?;
+        let nodes: Vec<GbufNode> = stmt
+            .query_map([], |row| {
+                let raw_id: i64 = row.get(0)?;
+                let label: String = row.get(1)?;
+                let name: String = row.get(2)?;
+                let qn: String = row.get(3)?;
+                let file_path: String = row.get(4)?;
+                let start_line: i64 = row.get(5)?;
+                let end_line: i64 = row.get(6)?;
+                let props_json: String = row.get(7)?;
+                let properties: HashMap<String, String> =
+                    serde_json::from_str(&props_json).unwrap_or_default();
+                Ok(GbufNode {
+                    id: NodeId(raw_id as u32),
+                    label,
+                    name,
+                    qualified_name: qn,
+                    file_path,
+                    start_line: start_line as u32,
+                    end_line: end_line as u32,
+                    properties,
+                })
+            })
+            .context("query nodes")?
+            .filter_map(std::result::Result::ok)
+            .collect();
+
+        // Read all edges.
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, source_id, target_id, type, properties
+                 FROM edges ORDER BY id",
+            )
+            .context("prepare edges select")?;
+        let edges: Vec<GbufEdge> = stmt
+            .query_map([], |row| {
+                let raw_id: i64 = row.get(0)?;
+                let source_id: i64 = row.get(1)?;
+                let target_id: i64 = row.get(2)?;
+                let edge_type: String = row.get(3)?;
+                let props_json: String = row.get(4)?;
+                let properties: HashMap<String, String> =
+                    serde_json::from_str(&props_json).unwrap_or_default();
+                Ok(GbufEdge {
+                    id: EdgeId(raw_id as u32),
+                    source_id: NodeId(source_id as u32),
+                    target_id: NodeId(target_id as u32),
+                    edge_type,
+                    properties,
+                })
+            })
+            .context("query edges")?
+            .filter_map(std::result::Result::ok)
+            .collect();
+
+        // Reconstruct indexes.
+        let qn_index: HashMap<String, NodeId> =
+            nodes.iter().map(|n| (n.qualified_name.clone(), n.id)).collect();
+
+        let edge_dedup: HashMap<(NodeId, NodeId, String), EdgeId> = edges
+            .iter()
+            .map(|e| ((e.source_id, e.target_id, e.edge_type.clone()), e.id))
+            .collect();
+
+        let next_node_id = nodes.iter().map(|n| n.id.0).max().unwrap_or(0) + 1;
+        let next_edge_id = edges.iter().map(|e| e.id.0).max().unwrap_or(0) + 1;
+
+        Ok(GraphBuffer::Loaded(Box::new(GraphBufferInner {
+            project_root: project_root.to_string(),
+            nodes,
+            edges,
+            qn_index,
+            edge_dedup,
+            next_node_id,
+            next_edge_id,
+            shared_ids: None,
+        })))
     }
 
     // ── Node operations ─────────────────────────────────────────────
@@ -120,8 +308,9 @@ impl GraphBuffer {
         end_line: u32,
         properties: HashMap<String, String>,
     ) -> NodeId {
-        if let Some(&existing_id) = self.qn_index.get(qualified_name) {
-            let existing = self
+        let inner = self.inner_mut();
+        if let Some(&existing_id) = inner.qn_index.get(qualified_name) {
+            let existing = inner
                 .nodes
                 .iter_mut()
                 .find(|n| n.id == existing_id)
@@ -135,7 +324,7 @@ impl GraphBuffer {
             existing.properties = properties;
             existing_id
         } else {
-            let id = self.alloc_node_id();
+            let id = inner.alloc_node_id();
             let node = GbufNode {
                 id,
                 label: label.to_string(),
@@ -146,8 +335,8 @@ impl GraphBuffer {
                 end_line,
                 properties,
             };
-            self.qn_index.insert(qualified_name.to_string(), id);
-            self.nodes.push(node);
+            inner.qn_index.insert(qualified_name.to_string(), id);
+            inner.nodes.push(node);
             id
         }
     }
@@ -156,26 +345,31 @@ impl GraphBuffer {
     ///
     /// Returns `None` when the QN has not been upserted or has been deleted.
     pub fn find_by_qn(&self, qn: &str) -> Option<&GbufNode> {
-        self.qn_index
+        let inner = self.inner();
+        inner
+            .qn_index
             .get(qn)
-            .and_then(|id| self.nodes.iter().find(|n| n.id == *id))
+            .and_then(|id| inner.nodes.iter().find(|n| n.id == *id))
     }
 
     /// Find a node by its `NodeId`.
     ///
     /// Returns `None` when no node with this ID exists (e.g. it was deleted).
     pub fn find_by_id(&self, id: NodeId) -> Option<&GbufNode> {
-        self.nodes.iter().find(|n| n.id == id)
+        self.inner().nodes.iter().find(|n| n.id == id)
     }
 
     /// Find all nodes with a given label. O(n) scan — no secondary index.
     pub fn find_nodes_by_label(&self, label: &str) -> Vec<&GbufNode> {
-        self.nodes.iter().filter(|n| n.label == label).collect()
+        self.inner().nodes.iter().filter(|n| n.label == label).collect()
     }
 
     /// Return the number of live (indexed) nodes.
     pub fn node_count(&self) -> usize {
-        self.qn_index.len()
+        match self {
+            GraphBuffer::Empty => 0,
+            GraphBuffer::Loaded(inner) => inner.qn_index.len(),
+        }
     }
 
     /// Return the next available node ID.
@@ -183,9 +377,11 @@ impl GraphBuffer {
     /// When a shared atomic source is configured, this loads the current value
     /// from the atomic. Otherwise returns the local counter.
     pub fn next_node_id(&self) -> u32 {
-        self.shared_ids
+        let inner = self.inner();
+        inner
+            .shared_ids
             .as_ref()
-            .map_or(self.next_node_id, |atomic| atomic.load(Ordering::Relaxed))
+            .map_or(inner.next_node_id, |atomic| atomic.load(Ordering::Relaxed))
     }
 
     /// Set the local next-node-ID counter.
@@ -194,7 +390,7 @@ impl GraphBuffer {
     /// when a shared atomic source is configured (the atomic always takes
     /// precedence during allocation).
     pub fn set_next_node_id(&mut self, id: u32) {
-        self.next_node_id = id;
+        self.inner_mut().next_node_id = id;
     }
 
     /// Delete all nodes for a given file path.
@@ -203,11 +399,12 @@ impl GraphBuffer {
     /// Nodes whose `file_path` does not match, or that have already been
     /// removed from the QN index, are left untouched.
     pub fn delete_by_file(&mut self, file_path: &str) {
+        let inner = self.inner_mut();
         // Collect NodeIds of nodes matching the file path.
-        let deleted: HashSet<NodeId> = self
+        let deleted: HashSet<NodeId> = inner
             .nodes
             .iter()
-            .filter(|n| n.file_path == file_path && self.qn_index.contains_key(&n.qualified_name))
+            .filter(|n| n.file_path == file_path && inner.qn_index.contains_key(&n.qualified_name))
             .map(|n| n.id)
             .collect();
 
@@ -216,18 +413,20 @@ impl GraphBuffer {
         }
 
         // Remove from QN index.
-        self.qn_index.retain(|_, id| !deleted.contains(id));
+        inner.qn_index.retain(|_, id| !deleted.contains(id));
 
         // Remove referencing edges from dedup index.
-        self.edge_dedup
+        inner
+            .edge_dedup
             .retain(|(src, tgt, _), _| !deleted.contains(src) && !deleted.contains(tgt));
 
         // Remove referencing edges from edges vec.
-        self.edges
+        inner
+            .edges
             .retain(|e| !deleted.contains(&e.source_id) && !deleted.contains(&e.target_id));
 
         // Remove deleted nodes from nodes vec.
-        self.nodes.retain(|n| !deleted.contains(&n.id));
+        inner.nodes.retain(|n| !deleted.contains(&n.id));
     }
 
     // ── Edge operations ─────────────────────────────────────────────
@@ -246,26 +445,27 @@ impl GraphBuffer {
         edge_type: &str,
         properties: HashMap<String, String>,
     ) -> Option<EdgeId> {
+        let inner = self.inner_mut();
         // Validate source and target exist.
-        if !self.nodes.iter().any(|n| n.id == source_id) {
+        if !inner.nodes.iter().any(|n| n.id == source_id) {
             return None;
         }
-        if !self.nodes.iter().any(|n| n.id == target_id) {
+        if !inner.nodes.iter().any(|n| n.id == target_id) {
             return None;
         }
 
         // Check for dedup.
         let dedup_key = (source_id, target_id, edge_type.to_string());
-        if let Some(&existing_id) = self.edge_dedup.get(&dedup_key) {
+        if let Some(&existing_id) = inner.edge_dedup.get(&dedup_key) {
             // Merge properties (later wins).
-            if let Some(edge) = self.edges.iter_mut().find(|e| e.id == existing_id) {
+            if let Some(edge) = inner.edges.iter_mut().find(|e| e.id == existing_id) {
                 edge.properties = properties;
             }
             return Some(existing_id);
         }
 
         // Allocate new ID and insert.
-        let id = self.alloc_edge_id();
+        let id = inner.alloc_edge_id();
         let edge = GbufEdge {
             id,
             source_id,
@@ -273,14 +473,15 @@ impl GraphBuffer {
             edge_type: edge_type.to_string(),
             properties,
         };
-        self.edge_dedup.insert(dedup_key, id);
-        self.edges.push(edge);
+        inner.edge_dedup.insert(dedup_key, id);
+        inner.edges.push(edge);
         Some(id)
     }
 
     /// Find all edges from `source_id` with a given `edge_type`. O(n) scan.
     pub fn find_edges_by_source_type(&self, source_id: NodeId, edge_type: &str) -> Vec<&GbufEdge> {
-        self.edges
+        self.inner()
+            .edges
             .iter()
             .filter(|e| e.source_id == source_id && e.edge_type == edge_type)
             .collect()
@@ -288,7 +489,10 @@ impl GraphBuffer {
 
     /// Return the total number of edges.
     pub fn edge_count(&self) -> usize {
-        self.edges.len()
+        match self {
+            GraphBuffer::Empty => 0,
+            GraphBuffer::Loaded(inner) => inner.edges.len(),
+        }
     }
 
     /// Check whether an edge `(source_id, target_id, edge_type)` exists.
@@ -296,7 +500,7 @@ impl GraphBuffer {
     /// Returns `true` if a matching edge has been inserted.
     pub fn edge_dedup_key(&self, source_id: NodeId, target_id: NodeId, edge_type: &str) -> bool {
         let key = (source_id, target_id, edge_type.to_string());
-        self.edge_dedup.contains_key(&key)
+        self.inner().edge_dedup.contains_key(&key)
     }
 
     // ── Merge + Finalize ────────────────────────────────────────────
@@ -320,26 +524,33 @@ impl GraphBuffer {
     ///
     /// After merge, `other` is emptied (all data is moved into `self`).
     pub fn merge(&mut self, other: &mut GraphBuffer) {
-        if other.nodes.is_empty() && other.edges.is_empty() {
+        let other_inner = match other {
+            GraphBuffer::Loaded(inner) => inner,
+            GraphBuffer::Empty => return,
+        };
+
+        if other_inner.nodes.is_empty() && other_inner.edges.is_empty() {
             return;
         }
 
         // Take ownership of other's data.
-        let other_nodes = std::mem::take(&mut other.nodes);
-        let other_edges = std::mem::take(&mut other.edges);
-        other.qn_index.clear();
-        other.edge_dedup.clear();
+        let other_nodes = std::mem::take(&mut other_inner.nodes);
+        let other_edges = std::mem::take(&mut other_inner.edges);
+        other_inner.qn_index.clear();
+        other_inner.edge_dedup.clear();
+
+        let inner = self.inner_mut();
 
         // ID remap: src NodeId → dst NodeId.
         let mut remap: HashMap<NodeId, NodeId> = HashMap::new();
 
         // Track existing IDs in self to detect conflicts.
-        let mut existing_ids: HashSet<NodeId> = self.nodes.iter().map(|n| n.id).collect();
+        let mut existing_ids: HashSet<NodeId> = inner.nodes.iter().map(|n| n.id).collect();
 
         for node in other_nodes {
-            if let Some(&existing_id) = self.qn_index.get(&node.qualified_name) {
+            if let Some(&existing_id) = inner.qn_index.get(&node.qualified_name) {
                 // QN collision: update dest in place (src wins).
-                let existing = self
+                let existing = inner
                     .nodes
                     .iter_mut()
                     .find(|n| n.id == existing_id)
@@ -358,7 +569,7 @@ impl GraphBuffer {
             } else {
                 // New node: detect ID conflict with existing nodes in self.
                 let final_id = if existing_ids.contains(&node.id) {
-                    let new_id = self.alloc_node_id();
+                    let new_id = inner.alloc_node_id();
                     remap.insert(node.id, new_id);
                     new_id
                 } else {
@@ -366,15 +577,15 @@ impl GraphBuffer {
                 };
 
                 existing_ids.insert(final_id);
-                self.qn_index.insert(node.qualified_name.clone(), final_id);
+                inner.qn_index.insert(node.qualified_name.clone(), final_id);
 
                 let mut merged_node = node;
                 merged_node.id = final_id;
-                self.nodes.push(merged_node);
+                inner.nodes.push(merged_node);
 
                 // Bump the local counter if the incoming ID is past it.
-                if final_id.0 >= self.next_node_id {
-                    self.next_node_id = final_id.0 + 1;
+                if final_id.0 >= inner.next_node_id {
+                    inner.next_node_id = final_id.0 + 1;
                 }
             }
         }
@@ -391,21 +602,21 @@ impl GraphBuffer {
                 .unwrap_or(edge.target_id);
 
             // Skip dangling edges (referencing nodes not in self).
-            if !self.nodes.iter().any(|n| n.id == new_src) {
+            if !inner.nodes.iter().any(|n| n.id == new_src) {
                 continue;
             }
-            if !self.nodes.iter().any(|n| n.id == new_tgt) {
+            if !inner.nodes.iter().any(|n| n.id == new_tgt) {
                 continue;
             }
 
             // Edge dedup check.
             let dedup_key = (new_src, new_tgt, edge.edge_type.clone());
-            if self.edge_dedup.contains_key(&dedup_key) {
+            if inner.edge_dedup.contains_key(&dedup_key) {
                 continue;
             }
 
             // Allocate new edge ID in self.
-            let edge_id = self.alloc_edge_id();
+            let edge_id = inner.alloc_edge_id();
             let new_edge = GbufEdge {
                 id: edge_id,
                 source_id: new_src,
@@ -413,8 +624,8 @@ impl GraphBuffer {
                 edge_type: edge.edge_type,
                 properties: edge.properties,
             };
-            self.edge_dedup.insert(dedup_key, edge_id);
-            self.edges.push(new_edge);
+            inner.edge_dedup.insert(dedup_key, edge_id);
+            inner.edges.push(new_edge);
         }
     }
 
@@ -423,8 +634,9 @@ impl GraphBuffer {
     /// Skips nodes whose QN has been deleted from the index. Matches C's
     /// `cbm_gbuf_foreach_node` semantics.
     pub fn foreach_node(&self, f: &mut dyn FnMut(&GbufNode)) {
-        for node in &self.nodes {
-            if self.qn_index.contains_key(&node.qualified_name) {
+        let inner = self.inner();
+        for node in &inner.nodes {
+            if inner.qn_index.contains_key(&node.qualified_name) {
                 f(node);
             }
         }
@@ -432,7 +644,8 @@ impl GraphBuffer {
 
     /// Iterate over all edges.
     pub fn foreach_edge(&self, f: &mut dyn FnMut(&GbufEdge)) {
-        for edge in &self.edges {
+        let inner = self.inner();
+        for edge in &inner.edges {
             f(edge);
         }
     }
@@ -441,8 +654,13 @@ impl GraphBuffer {
     ///
     /// Converts `GbufNode`s into `FileEntry` or `SymbolEntry` depending on
     /// their label, and converts `GbufEdge`s into `IndexEdge`s.
+    ///
+    /// # Panics
+    ///
+    /// Panics when called on the `Empty` variant (no data to finalize).
     #[allow(clippy::cast_possible_truncation)]
     pub fn finalize(&self) -> ProjectIndex {
+        let inner = self.inner();
         use crate::core::graph_index::{FileEntry, SymbolEntry};
         use crate::core::index_types::Minhash;
 
@@ -451,72 +669,81 @@ impl GraphBuffer {
         let mut edges = Vec::new();
 
         // Convert File nodes → FileEntry, other typed nodes → SymbolEntry.
-        self.foreach_node(&mut |n| {
-            if n.label == "File" {
-                let language = n.file_path.rsplit('.').next().unwrap_or("").to_string();
-                files.insert(
-                    n.qualified_name.clone(),
-                    FileEntry {
-                        path: n.qualified_name.clone(),
-                        hash: n
-                            .properties
-                            .get("content_hash")
-                            .cloned()
-                            .unwrap_or_default(),
-                        language,
-                        line_count: n.end_line as usize,
-                        token_count: 0,
-                        exports: vec![],
-                        summary: String::new(),
-                    },
-                );
-            }
+        for node in &inner.nodes {
+            if inner.qn_index.contains_key(&node.qualified_name) {
+                if node.label == "File" {
+                    let language = node.file_path.rsplit('.').next().unwrap_or("").to_string();
+                    files.insert(
+                        node.qualified_name.clone(),
+                        FileEntry {
+                            path: node.qualified_name.clone(),
+                            hash: node
+                                .properties
+                                .get("content_hash")
+                                .cloned()
+                                .unwrap_or_default(),
+                            language,
+                            line_count: node.end_line as usize,
+                            token_count: 0,
+                            exports: vec![],
+                            summary: String::new(),
+                        },
+                    );
+                }
 
-            if matches!(
-                n.label.as_str(),
-                "Function" | "Method" | "Class" | "Struct" | "Interface" | "Enum" | "Variable"
-            ) {
-                let minhash: Vec<u32> = n
-                    .properties
-                    .get("fp")
-                    .and_then(|hex| Minhash::from_hex(hex))
-                    .map(|mh| mh.0.to_vec())
-                    .unwrap_or_default();
+                if matches!(
+                    node.label.as_str(),
+                    "Function" | "Method" | "Class" | "Struct" | "Interface" | "Enum" | "Variable"
+                ) {
+                    let minhash: Vec<u32> = node
+                        .properties
+                        .get("fp")
+                        .and_then(|hex| Minhash::from_hex(hex))
+                        .map(|mh| mh.0.to_vec())
+                        .unwrap_or_default();
 
-                symbols.insert(
-                    n.qualified_name.clone(),
-                    SymbolEntry {
-                        file: n.file_path.clone(),
-                        name: n.name.clone(),
-                        kind: n.label.clone(),
-                        start_line: n.start_line as usize,
-                        end_line: n.end_line as usize,
-                        is_exported: n.properties.get("is_exported").is_some_and(|v| v == "true"),
-                        minhash,
-                    },
-                );
+                    symbols.insert(
+                        node.qualified_name.clone(),
+                        SymbolEntry {
+                            file: node.file_path.clone(),
+                            name: node.name.clone(),
+                            kind: node.label.clone(),
+                            start_line: node.start_line as usize,
+                            end_line: node.end_line as usize,
+                            is_exported: node
+                                .properties
+                                .get("is_exported")
+                                .is_some_and(|v| v == "true"),
+                            minhash,
+                        },
+                    );
+                }
             }
-        });
+        }
 
         // Convert GbufEdge → IndexEdge
-        self.foreach_edge(&mut |e| {
+        for edge in &inner.edges {
             edges.push(crate::core::graph_index::IndexEdge {
-                from: self
-                    .find_by_id(e.source_id)
+                from: inner
+                    .nodes
+                    .iter()
+                    .find(|n| n.id == edge.source_id)
                     .map(|n| n.qualified_name.clone())
                     .unwrap_or_default(),
-                to: self
-                    .find_by_id(e.target_id)
+                to: inner
+                    .nodes
+                    .iter()
+                    .find(|n| n.id == edge.target_id)
                     .map(|n| n.qualified_name.clone())
                     .unwrap_or_default(),
-                kind: e.edge_type.clone(),
+                kind: edge.edge_type.clone(),
                 weight: 1.0,
             });
-        });
+        }
 
         ProjectIndex {
             version: 6,
-            project_root: self.project_root.clone(),
+            project_root: inner.project_root.clone(),
             last_scan: chrono::Utc::now().to_rfc3339(),
             files,
             edges,
@@ -660,7 +887,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(e1, e2, "duplicate edge should return same ID");
-        let edge = gb.edges.iter().find(|e| e.id == e1).unwrap();
+        let inner = match &gb {
+            GraphBuffer::Loaded(inner) => inner,
+            GraphBuffer::Empty => panic!("expected Loaded"),
+        };
+        let edge = inner.edges.iter().find(|e| e.id == e1).unwrap();
         assert_eq!(
             edge.properties.get("k").unwrap(),
             "v2",
@@ -792,8 +1023,14 @@ mod tests {
 
         gb1.merge(&mut gb2);
 
-        let valid_ids: HashSet<NodeId> = gb1.nodes.iter().map(|n| n.id).collect();
-        for edge in &gb1.edges {
+        let (valid_ids, gb1_edges): (HashSet<NodeId>, Vec<&GbufEdge>) = match &gb1 {
+            GraphBuffer::Loaded(inner) => (
+                inner.nodes.iter().map(|n| n.id).collect(),
+                inner.edges.iter().collect(),
+            ),
+            GraphBuffer::Empty => panic!("expected Loaded"),
+        };
+        for edge in gb1_edges {
             assert!(
                 valid_ids.contains(&edge.source_id),
                 "edge source_id {:?} not found in nodes",
@@ -822,9 +1059,15 @@ mod tests {
             edge_type: "calls".to_string(),
             properties: HashMap::new(),
         };
-        gb2.edges.push(fake_edge);
-        gb2.edge_dedup
-            .insert((NodeId(999), NodeId(1000), "calls".to_string()), EdgeId(1));
+        if let GraphBuffer::Loaded(inner) = &mut gb2 {
+            inner.edges.push(fake_edge);
+            inner.edge_dedup.insert(
+                (NodeId(999), NodeId(1000), "calls".to_string()),
+                EdgeId(1),
+            );
+        } else {
+            panic!("expected Loaded");
+        }
 
         gb1.merge(&mut gb2);
 

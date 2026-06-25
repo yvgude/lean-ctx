@@ -37,6 +37,7 @@ use anyhow::{Context, Result};
 use rusqlite::{Connection, params};
 
 use crate::core::bm25_index::BM25Index;
+use crate::core::db::WalConnection;
 use crate::core::graph_buffer::GraphBuffer;
 use crate::core::graph_index::{FileEntry, IndexEdge, ProjectIndex, SymbolEntry};
 use crate::core::index_namespace;
@@ -77,13 +78,13 @@ impl DumpEngine {
     // ── Path helpers ────────────────────────────────────────────────────
 
     /// Full path to the SQLite database file.
-    fn db_path(&self) -> PathBuf {
+    pub(crate) fn db_path(&self) -> PathBuf {
         let dir = index_namespace::vectors_dir(&self.project_root);
         dir.join(DB_FILENAME)
     }
 
     /// Full path to the SQLite database file for a given root (static variant).
-    fn db_path_for(root: &Path) -> PathBuf {
+    pub(crate) fn db_path_for(root: &Path) -> PathBuf {
         let dir = index_namespace::vectors_dir(root);
         dir.join(DB_FILENAME)
     }
@@ -149,6 +150,11 @@ impl DumpEngine {
             CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
             CREATE INDEX IF NOT EXISTS idx_nodes_file    ON nodes(file_path);
             CREATE INDEX IF NOT EXISTS idx_nodes_qn      ON nodes(qualified_name);
+
+            CREATE TABLE IF NOT EXISTS meta (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             ",
         )
         .context("create schema")?;
@@ -168,7 +174,7 @@ impl DumpEngine {
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let conn = Connection::open(&db_path).context("open code_index.db")?;
+        let conn = WalConnection::open(&db_path).context("open code_index.db")?;
 
         // ══ DDL phase (auto-commit) ════════════════════════════════════
         // SQLite auto-commits before DDL, so never wrap these in BEGIN/COMMIT.
@@ -212,6 +218,12 @@ impl DumpEngine {
         // 8. Integrity check
         Self::verify_integrity(&conn)?;
 
+        // 9. Write schema version
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?1)",
+            params![crate::core::db::SCHEMA_VERSION],
+        )?;
+
         Ok(())
     }
 
@@ -227,7 +239,7 @@ impl DumpEngine {
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let conn = Connection::open(&db_path).context("open code_index.db")?;
+        let conn = WalConnection::open(&db_path).context("open code_index.db")?;
 
         // ══ DDL phase (auto-commit) ════════════════════════════════════
         conn.execute("DROP TABLE IF EXISTS nodes_fts", [])?;
@@ -261,7 +273,7 @@ impl DumpEngine {
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let conn = Connection::open(&db_path).context("open code_index.db")?;
+        let conn = WalConnection::open(&db_path).context("open code_index.db")?;
         Self::create_schema(&conn)?;
 
         // Clear existing chunks (auto-commit DML).
@@ -297,18 +309,6 @@ impl DumpEngine {
         }
 
         Self::verify_integrity(&conn)?;
-        Ok(())
-    }
-
-    /// WAL-checkpoint the file-metadata SQLite database.
-    ///
-    /// This is the **only** dump method that touches the property-graph
-    /// `graph.db` rather than `code_index.db`.
-    pub fn dump_file_metadata(&self, store: &FileMetadataStore) -> Result<()> {
-        store
-            .connection()
-            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
-            .context("WAL checkpoint failed")?;
         Ok(())
     }
 
@@ -674,7 +674,7 @@ fn load_graph_index(root: &Path) -> Option<ProjectIndex> {
     if !db_path.exists() {
         return None;
     }
-    let conn = Connection::open(&db_path).ok()?;
+    let conn = WalConnection::open(&db_path).ok()?;
 
     // Count nodes to distinguish "empty DB" from "missing DB"
     let node_count: i64 = conn
@@ -811,7 +811,7 @@ fn load_bm25_index(root: &Path) -> Option<BM25Index> {
     if !db_path.exists() {
         return None;
     }
-    let conn = Connection::open(&db_path).ok()?;
+    let conn = WalConnection::open(&db_path).ok()?;
 
     let chunk_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM chunks", [], |row| row.get(0))
@@ -1402,55 +1402,6 @@ mod tests {
     }
 
     #[test]
-    fn dump_file_metadata_checkpoint() {
-        let _iso = isolated_data_dir();
-        let root = tempfile::tempdir().unwrap();
-
-        let store = open_file_metadata_store(root.path()).unwrap();
-        store
-            .upsert(&FileMetadata {
-                rel_path: "src/test.rs".to_string(),
-                mtime_ns: 1_000_000_000,
-                size_bytes: 100,
-                content_hash: "abc".to_string(),
-                mode_mask: 0x01,
-            })
-            .unwrap();
-
-        let engine = DumpEngine::new(root.path().to_path_buf());
-        engine.dump_file_metadata(&store).unwrap();
-
-        // Data still readable after checkpoint
-        let all = store.load_all().unwrap();
-        assert_eq!(all.len(), 1);
-        assert_eq!(all.get("src/test.rs").unwrap().content_hash, "abc");
-    }
-
-    #[test]
-    fn purge_all_preserves_property_graph_db() {
-        let _iso = isolated_data_dir();
-        let root = tempfile::tempdir().unwrap();
-
-        // Open the store to create graph.db
-        let _store = open_file_metadata_store(root.path()).unwrap();
-        let graph_dir = crate::core::property_graph::graph_dir(&root.path().to_string_lossy());
-        let db_path = graph_dir.join("graph.db");
-        assert!(
-            db_path.exists(),
-            "property graph DB should have been created"
-        );
-
-        // Dump and purge
-        let engine = DumpEngine::new(root.path().to_path_buf());
-        let gbuf = GraphBuffer::new("test");
-        engine.dump_all(&gbuf, &[]).unwrap();
-        engine.purge_all().unwrap();
-
-        // Property graph DB must survive
-        assert!(db_path.exists(), "purge_all must not delete graph.db");
-    }
-
-    #[test]
     fn dump_all_file_hashes_roundtrip() {
         let _iso = isolated_data_dir();
         let root = tempfile::tempdir().unwrap();
@@ -1469,5 +1420,75 @@ mod tests {
             )
             .unwrap();
         assert!(count > 0, "FTS5 should find nodes in src/lib.rs");
+    }
+
+    // ── GraphBuffer roundtrip via SQLite ──────────────────────────
+
+    #[test]
+    fn graph_buffer_roundtrip_via_sqlite() {
+        let _iso = isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
+
+        let mut original = GraphBuffer::new("test");
+        let n1 = {
+            let mut m = std::collections::HashMap::new();
+            m.insert("lang".to_string(), "rust".to_string());
+            original.upsert_node("Function", "foo", "pkg.foo", "src/lib.rs", 1, 10, m)
+        };
+        let n2 = original.upsert_node(
+            "Function",
+            "bar",
+            "pkg.bar",
+            "src/lib.rs",
+            15,
+            30,
+            std::collections::HashMap::new(),
+        );
+        {
+            let mut m = std::collections::HashMap::new();
+            m.insert("inline".to_string(), "false".to_string());
+            original.insert_edge(n1, n2, "calls", m);
+        }
+
+        // Dump to SQLite.
+        let engine = DumpEngine::new(root.path().to_path_buf());
+        engine.dump_all(&original, &[]).unwrap();
+
+        // Load back.
+        let db_path = engine.db_path();
+        let loaded = GraphBuffer::load_from_db(&db_path, "test").unwrap();
+
+        // Verify nodes.
+        assert_eq!(loaded.node_count(), 2, "node count must match");
+        let foo = loaded.find_by_qn("pkg.foo").expect("pkg.foo must exist");
+        assert_eq!(foo.name, "foo");
+        assert_eq!(foo.label, "Function");
+        assert_eq!(foo.properties.get("lang").unwrap(), "rust");
+
+        let bar = loaded.find_by_qn("pkg.bar").expect("pkg.bar must exist");
+        assert_eq!(bar.name, "bar");
+
+        // Verify edges.
+        assert_eq!(loaded.edge_count(), 1, "edge count must match");
+        let n1_loaded = foo.id;
+        let n2_loaded = bar.id;
+        assert!(
+            loaded.edge_dedup_key(n1_loaded, n2_loaded, "calls"),
+            "edge (pkg.foo) → (pkg.bar) must exist"
+        );
+    }
+
+    #[test]
+    fn graph_buffer_load_corrupt_db_returns_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("corrupt.db");
+        // Write garbage that is not a valid SQLite database.
+        std::fs::write(&db_path, b"this is not a valid SQLite database").unwrap();
+
+        let result = GraphBuffer::load_from_db(&db_path, "test");
+        assert!(
+            result.is_err(),
+            "loading a corrupt DB should return Err"
+        );
     }
 }

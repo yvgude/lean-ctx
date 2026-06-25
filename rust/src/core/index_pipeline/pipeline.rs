@@ -17,8 +17,7 @@
 //!                         ├── ⑧ Phase 6: Post-passes (SIMILAR_TO)
 //!                         ├── ⑨ Phase 7: SQLite dump
 //!                         ├── ⑩ Embedding index
-//!                         ├── ⑪ Property graph mirror (fire-and-forget)
-//!                         └── ⑫ PipelineReport
+//!                         └── ⑪ PipelineReport
 //! ```
 
 use std::path::PathBuf;
@@ -170,8 +169,7 @@ impl PipelineHandle {
     /// 8. **Phase 6 (post-passes)** — SIMILAR_TO edges (FULL/MODERATE only).
     /// 9. **Phase 7 (dump)** — SQLite dump of graph + chunks.
     /// 10. **Embedding index** — build/update for FULL/MODERATE.
-    /// 11. **Property graph mirror** — fire-and-forget background thread.
-    /// 12. **Report** — elapsed time and stats.
+    /// 11. **Report** — elapsed time and stats.
     ///
     /// # Errors
     ///
@@ -253,17 +251,6 @@ impl PipelineHandle {
         } else {
             crate::core::embedding_index::build_or_update(&self.project_root, &bm25)
         };
-
-        // ── ⑪ Property graph mirror (fire-and-forget, background) ───────────
-        {
-            let root = root_str.clone();
-            let index = gbuf.finalize();
-            std::thread::spawn(move || {
-                if let Err(e) = crate::core::property_graph::mirror_index(&root, &index) {
-                    tracing::warn!("[pipeline] property graph mirror failed: {e}");
-                }
-            });
-        }
 
         // ── Report ───────────────────────────────────────────────────────────
         let elapsed = start.elapsed().as_millis() as u64;
