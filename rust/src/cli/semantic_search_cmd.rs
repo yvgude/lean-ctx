@@ -18,20 +18,21 @@ use crate::tools::ctx_semantic_search;
 #[derive(Debug, PartialEq)]
 struct Args {
     query: Option<String>,
-    path: String,
+    path: Option<String>,          // None = auto-detect
     mode: String,
     top_k: usize,
     json: bool,
     languages: Vec<String>,
     path_glob: Option<String>,
     help: bool,
+    explicit_path: bool,           // true when --path/-p was given
 }
 
 impl Default for Args {
     fn default() -> Self {
         Self {
             query: None,
-            path: ".".to_string(),
+            path: None,
             // Instant and model-load-free — the right default for a one-shot
             // process. Embedding-based ranking is opt-in via `--mode`.
             mode: "bm25".to_string(),
@@ -40,6 +41,7 @@ impl Default for Args {
             languages: Vec::new(),
             path_glob: None,
             help: false,
+            explicit_path: false,
         }
     }
 }
@@ -58,7 +60,8 @@ fn parse_args(args: &[String]) -> Args {
             "--path" | "-p" => {
                 i += 1;
                 if let Some(v) = args.get(i) {
-                    parsed.path.clone_from(v);
+                    parsed.path = Some(v.clone());
+                    parsed.explicit_path = true;
                 }
             }
             "--mode" | "-m" => {
@@ -110,6 +113,16 @@ pub(crate) fn cmd_semantic_search(args: &[String]) {
         std::process::exit(2);
     };
 
+    // Resolve search root: use explicit --path if given, otherwise detect
+    // project root the same way as `index build` (promote CWD to git root).
+    // Without this, `vectors_dir()` produces a different namespace hash for
+    // "." vs the git-root path, causing semantic-search to miss the index.
+    let root = if parsed.explicit_path {
+        parsed.path.clone().unwrap_or_else(|| ".".to_string())
+    } else {
+        super::common::detect_project_root(args)
+    };
+
     let languages = if parsed.languages.is_empty() {
         None
     } else {
@@ -118,7 +131,7 @@ pub(crate) fn cmd_semantic_search(args: &[String]) {
 
     match ctx_semantic_search::search_hits(
         &query,
-        &parsed.path,
+        &root,
         parsed.top_k,
         &parsed.mode,
         languages,
@@ -231,7 +244,8 @@ mod tests {
         assert_eq!(a.mode, "bm25");
         assert_eq!(a.top_k, 10);
         assert!(!a.json);
-        assert_eq!(a.path, ".");
+        assert_eq!(a.path, None, "path defaults to None (auto-detect)");
+        assert!(!a.explicit_path, "no --path flag given");
     }
 
     #[test]
@@ -255,7 +269,8 @@ mod tests {
         assert_eq!(a.query.as_deref(), Some("auth flow"));
         assert_eq!(a.mode, "bm25");
         assert_eq!(a.top_k, 5);
-        assert_eq!(a.path, "/tmp/p");
+        assert_eq!(a.path.as_deref(), Some("/tmp/p"));
+        assert!(a.explicit_path, "--path was given");
         assert_eq!(a.languages, vec!["rust".to_string()]);
         assert_eq!(a.path_glob.as_deref(), Some("src/**"));
     }
