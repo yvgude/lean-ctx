@@ -108,6 +108,30 @@ fn quotes_ranked(text: &str, query: Option<&str>) -> Vec<(f64, usize, String)> {
     scored
 }
 
+/// Summarize prose to a `max_chars` budget, query-aware.
+///
+/// For inputs that already fit the budget this is exactly [`transcript_summary`]
+/// (filler-strip + adjacent-dedup, no truncation) — no behaviour change. For
+/// OVERSIZED inputs, where [`transcript_summary`] would FIFO-truncate to the
+/// prefix, it instead uses extractive ranking ([`crate::core::extractive`]) to
+/// keep the most query-relevant (or, without a query, the most central)
+/// sentences. Falls back to [`transcript_summary`] when the embedding engine is
+/// unavailable, so no build/OS regresses.
+pub fn summarize_prose(text: &str, max_chars: usize, query: Option<&str>) -> String {
+    if text.len() <= max_chars {
+        return transcript_summary(text, max_chars);
+    }
+    let mode = if query.is_some() {
+        crate::core::extractive::RankMode::Query
+    } else {
+        crate::core::extractive::RankMode::Centrality
+    };
+    if let Some(ranked) = crate::core::extractive::rank_and_squeeze(text, max_chars, mode, query) {
+        return ranked;
+    }
+    transcript_summary(text, max_chars)
+}
+
 /// Condense a transcript: strip filler, drop near-duplicate runs, cap length.
 #[must_use]
 pub fn transcript_summary(text: &str, max_chars: usize) -> String {
@@ -190,7 +214,7 @@ pub fn squeeze_prose(text: &str, max_chars: usize) -> String {
 
 /// Lines that must survive dedup: citations, links, headings and quote/list
 /// markers carry attribution or structure even when textually similar.
-fn is_protected_line(line: &str) -> bool {
+pub(crate) fn is_protected_line(line: &str) -> bool {
     let t = line.trim_start();
     t.starts_with("Source:")
         || t.starts_with("Site:")
@@ -542,6 +566,29 @@ mod tests {
         let summary = transcript_summary(text, 30);
         assert!(summary.len() <= 60, "got {} chars", summary.len());
         assert!(summary.contains("Alpha"));
+    }
+
+    #[test]
+    fn summarize_prose_below_budget_matches_transcript_summary() {
+        // When the text already fits, summarize_prose is exactly the
+        // filler-stripping transcript_summary — no extractive path, no change.
+        let text = "Um so basically the cache is fast. Actually it also persists.";
+        assert_eq!(
+            summarize_prose(text, 10_000, Some("cache")),
+            transcript_summary(text, 10_000)
+        );
+    }
+
+    #[test]
+    fn summarize_prose_is_deterministic_and_bounded_when_oversized() {
+        // Oversized input: in `cargo test` the engine is never loaded, so this
+        // exercises the graceful fallback to transcript_summary. Determinism and
+        // the budget must hold on every build.
+        let text = "Sentence about alpha topic here. ".repeat(40);
+        let a = summarize_prose(&text, 120, Some("alpha"));
+        let b = summarize_prose(&text, 120, Some("alpha"));
+        assert_eq!(a, b);
+        assert!(!a.is_empty() && a.len() < text.len());
     }
 
     #[test]

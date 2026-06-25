@@ -234,6 +234,25 @@ knowledge, agents. The richest way to explore; ideal for a second monitor.
 > This dashboard is the home for the UX feedback in issue #249 — it's where
 > context-management visualization lives, distinct from the CLI numbers.
 
+### Open it inside your editor
+
+```bash
+lean-ctx dashboard --vscode        # open as a native editor tab (no browser)
+```
+
+With the [lean-ctx editor extension](https://marketplace.visualstudio.com/items?itemName=LeanCTX.lean-ctx)
+installed, `--vscode` opens the dashboard as a real editor tab instead of a
+browser window. The CLI detects the editor that launched your terminal — VS
+Code, Cursor, VSCodium, Windsurf or VS Code Insiders — and hands off to the
+extension, which runs the dashboard on a private loopback port and tears it down
+when you close the tab. You can also open it from the command palette
+(`lean-ctx: Open Web Dashboard`) or the deep link
+`vscode://LeanCTX.lean-ctx/dashboard`.
+
+If no editor (or the extension) is found, `--vscode` falls back to the browser,
+so the command is never a no-op. `--open=vscode` and
+`LEAN_CTX_DASHBOARD_OPEN=vscode` behave the same way.
+
 ---
 
 ## 8. The live TUI — `watch`

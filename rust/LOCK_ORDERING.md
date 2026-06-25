@@ -65,6 +65,7 @@ All `std::sync::Mutex` unless noted otherwise.
 | L52 | `ACTIVE_PROFILE_OVERRIDE` | `core/profiles.rs:1008` | `RwLock<Option<String>>` | In-process active-profile override set by `set_active_profile`; replaces the former `std::env::set_var("LEAN_CTX_PROFILE")` so profile switching is data-race-free under the multi-threaded MCP runtime (Edition 2024). Read on every `active_profile_name()` (override → env → config → "coder") |
 | L53 | `REGISTRY` (introspect) | `core/introspect.rs:112` | `LazyLock<Mutex<Registry>>` | Cognition v2 activity registry — per-subsystem tick counters + last-run; flushed debounced to a project-scoped JSON so `introspect cognition` / `doctor` can report wired/active across processes (#cognition-v2) |
 | L54 | `ACTIVE_WEIGHTS` | `core/context_field.rs:266` | `RwLock<Option<FieldWeights>>` | In-process learned Φ field-weights cache set by `set_active_weights` (bandit-chosen arm), read by `active_weights()` / `compute_phi`; deterministic by default, sampling only under `LEAN_CTX_STOCHASTIC` (#cognition-v2) |
+| L55 | `WRITE_LOCK` | `core/addons/meter.rs:48` | `Mutex<()>` | Serialises read-modify-write of the addons usage ledger (`<data_dir>/addons/usage.json`) so concurrent gateway proxy calls don't clobber each other's increments (P5 metering); independent leaf lock, never nested |
 
 ### Test / Environment Locks (serialise env-var mutations)
 
@@ -174,9 +175,9 @@ Override via `LEAN_CTX_WORKER_THREADS` (positive integer) for environments with 
 concurrent subagents. Example: `LEAN_CTX_WORKER_THREADS=8`. The blocking thread pool
 is always `worker_threads * 4`, clamped to `[8, 32]`.
 
-### Independent Static Locks (L3–L54)
+### Independent Static Locks (L3–L55)
 
-All other static locks (L3–L54) — **except the L22 → L4 pair documented above** — are
+All other static locks (L3–L55) — **except the L22 → L4 pair documented above** — are
 **independent singletons**: they protect isolated subsystem state and are never nested inside
 each other. Each should be acquired in isolation:
 

@@ -5,6 +5,7 @@ import { registerCommands } from "./commands";
 import { disposeOutputChannel, offerMcpSetup } from "./cli-commands";
 import { isAvailable } from "./leanctx";
 import { registerEditorSignal } from "./editor-signal";
+import { registerUriHandler } from "./uri-handler";
 
 let statusBar: StatusBarManager | undefined;
 
@@ -40,6 +41,7 @@ export async function activate(
   statusBar.start();
 
   registerCommands(context, sidebarProvider);
+  registerUriHandler(context);
   registerEditorSignal(context);
 }
 

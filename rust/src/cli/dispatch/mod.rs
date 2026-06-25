@@ -67,10 +67,7 @@ pub fn run() {
                     unsafe { std::env::set_var("LEAN_CTX_COMPRESS", "1") };
                 }
                 let code = shell::exec(&command);
-                core::stats::flush();
-                core::heatmap::flush();
-                core::path_mode_memory::flush();
-                core::auto_mode_resolver::flush_sources();
+                core::tool_lifecycle::flush_all();
                 std::process::exit(code);
             }
             "-t" | "--track" => {
@@ -84,10 +81,7 @@ pub fn run() {
                     }
                     shell::exec(&command)
                 };
-                core::stats::flush();
-                core::heatmap::flush();
-                core::path_mode_memory::flush();
-                core::auto_mode_resolver::flush_sources();
+                core::tool_lifecycle::flush_all();
                 std::process::exit(code);
             }
             "shell" | "--shell" => {
@@ -126,6 +120,12 @@ pub fn run() {
                 // Local ROI is individual + free. The team roll-up lives on its own
                 // surface (`savings team` / the web account), not under `roi`.
                 super::cmd_roi(&rest);
+                return;
+            }
+            "output-savings" | "output_savings" => {
+                // #895 Track B: measured (A/B holdout) or estimated output-token
+                // reduction. Local + free, like `roi`.
+                super::cmd_output_savings(&rest);
                 return;
             }
             "token-report" | "report-tokens" => {
@@ -369,7 +369,7 @@ pub fn run() {
             }
             "read" => {
                 super::cmd_read(&rest);
-                core::stats::flush();
+                core::tool_lifecycle::flush_all();
                 return;
             }
             "call" => {
@@ -378,27 +378,32 @@ pub fn run() {
             }
             "diff" => {
                 super::cmd_diff(&rest);
-                core::stats::flush();
+                core::tool_lifecycle::flush_all();
                 return;
             }
             "grep" => {
                 super::cmd_grep(&rest);
+                core::tool_lifecycle::flush_all();
+                return;
+            }
+            "glob" => {
+                super::cmd_glob(&rest);
                 core::stats::flush();
                 return;
             }
             "find" => {
                 super::cmd_find(&rest);
-                core::stats::flush();
+                core::tool_lifecycle::flush_all();
                 return;
             }
             "ls" => {
                 super::cmd_ls(&rest);
-                core::stats::flush();
+                core::tool_lifecycle::flush_all();
                 return;
             }
             "deps" => {
                 super::cmd_deps(&rest);
-                core::stats::flush();
+                core::tool_lifecycle::flush_all();
                 return;
             }
             "discover" => {

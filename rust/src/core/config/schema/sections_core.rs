@@ -251,6 +251,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
+        "allow_ide_config_dirs".into(),
+        key_with_env(
+            "bool",
+            serde_json::json!(cfg.allow_ide_config_dirs),
+            "Allow jailed ctx_* tools to read home-level IDE config dirs (registry-derived; covers all editors). Off by default — exposes other agents' sessions/credentials",
+            "LEAN_CTX_ALLOW_IDE_DIRS",
+        ),
+    );
+    root.insert(
         "extra_roots".into(),
         key_with_env(
             "string[]",
@@ -937,6 +946,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             serde_json::json!(null),
             "Download the embedding model in the background on first semantic need (default: allowed). Set false for air-gapped machines; semantic features then stay off until a model is provided manually.",
             "LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD",
+        ),
+    );
+    embedding.insert(
+        "deterministic".into(),
+        key_with_env(
+            "bool",
+            serde_json::json!(null),
+            "Pin embedding inference to a single CPU thread with no GPU provider so vectors are bit-identical across machines (default: off, multi-threaded GPU-capable path). Extractive prose ranking is already deterministic via score quantization; enable this only for cross-machine reproducibility, at a throughput cost.",
+            "LEAN_CTX_EMBEDDING_DETERMINISTIC",
         ),
     );
     sections.insert(

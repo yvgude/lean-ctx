@@ -97,8 +97,22 @@ impl EmbeddingEngine {
         let tokenizer = load_tokenizer(&model_dir, &config)?;
         let model_path = model_dir.join("model.onnx");
 
-        let eps = crate::core::ort_execution_providers::gpu_execution_providers();
-        let num_cpus = std::thread::available_parallelism().map_or(4, |n| n.get().max(1));
+        // Deterministic mode (#895): single CPU thread + no GPU EP makes the
+        // model's output bit-identical across machines (reproducible embeddings),
+        // at the cost of throughput. Off by default — the normal path keeps the
+        // multi-threaded, GPU-capable providers. Extractive ranking stays
+        // deterministic regardless via score quantization; this is extra hardening.
+        let deterministic = deterministic_inference();
+        let eps = if deterministic {
+            Vec::new()
+        } else {
+            crate::core::ort_execution_providers::gpu_execution_providers()
+        };
+        let num_cpus = if deterministic {
+            1
+        } else {
+            std::thread::available_parallelism().map_or(4, |n| n.get().max(1))
+        };
         crate::core::ort_environment::ensure_ort_env(&eps)?;
         let mut session = ort::session::Session::builder()
             .map_err(|e| anyhow::anyhow!("ORT builder: {e}"))?
@@ -306,6 +320,25 @@ impl EmbeddingEngine {
         let model_dir = base_dir.join(selected.storage_dir_name());
         model_dir.join("model.onnx").exists()
             && model_dir.join(config.vocab_file.filename()).exists()
+    }
+
+    /// Ensure the selected model's files exist on disk, downloading them from
+    /// HuggingFace if absent. Pure network/file IO — this never initializes the
+    /// ONNX Runtime, so a failed bootstrap costs nothing in ORT teardown (the
+    /// caller only loads ORT via [`shared_engine`] once the files are present).
+    /// After `Ok`, [`is_available`](Self::is_available) is guaranteed true; on a
+    /// warm cache it short-circuits without touching the network.
+    ///
+    /// The explicit index-build path uses this to cold-start a fresh machine.
+    /// `is_available()` alone is only a file check, so the build path must call
+    /// this to actually trigger the download instead of bailing (#545).
+    pub fn ensure_downloaded() -> anyhow::Result<()> {
+        let base_dir = Self::model_directory();
+        let selected = model_registry::resolve_model();
+        let config = selected.config();
+        let model_dir = base_dir.join(selected.storage_dir_name());
+        download::ensure_model(&model_dir, &config)?;
+        Ok(())
     }
 
     #[cfg(feature = "embeddings")]
@@ -668,6 +701,23 @@ pub fn try_shared_engine() -> Option<&'static EmbeddingEngine> {
     SHARED_ENGINE.get()?.as_ref().ok()
 }
 
+/// Resolve the deterministic-inference policy (#895): the
+/// `LEAN_CTX_EMBEDDING_DETERMINISTIC` env var wins in either direction,
+/// otherwise `[embedding].deterministic` from config, otherwise `false`.
+#[cfg(feature = "embeddings")]
+fn deterministic_inference() -> bool {
+    if let Ok(v) = std::env::var("LEAN_CTX_EMBEDDING_DETERMINISTIC") {
+        return matches!(
+            v.trim().to_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        );
+    }
+    crate::core::config::Config::load()
+        .embedding
+        .deterministic
+        .unwrap_or(false)
+}
+
 /// Whether this process may load the ONNX model on a **detached background
 /// thread** (#519).
 ///
@@ -760,12 +810,43 @@ mod tests {
 
     #[test]
     fn model_directory_env_override_and_availability() {
+        // Serialize env mutation: LEAN_CTX_MODELS_DIR is process-global and
+        // shared with `ensure_downloaded_is_offline_noop_when_model_present`.
+        let _lock = crate::core::data_dir::test_env_lock();
         let unique = "/tmp/lean_ctx_test_embed_42xyz";
         crate::test_env::set_var("LEAN_CTX_MODELS_DIR", unique);
         let dir = EmbeddingEngine::model_directory();
         assert_eq!(dir.to_string_lossy(), unique);
         assert!(!EmbeddingEngine::is_available());
         crate::test_env::remove_var("LEAN_CTX_MODELS_DIR");
+    }
+
+    /// #545: with a complete model cache, `ensure_downloaded` is a no-op that
+    /// never touches the network and agrees with `is_available` on the model
+    /// directory. The build path relies on this so a cold availability check can
+    /// route through the (real) download without redundantly re-fetching a model
+    /// that is already present. Both gates use plain existence checks, so tiny
+    /// placeholder files are enough to exercise the short-circuit offline.
+    #[test]
+    fn ensure_downloaded_is_offline_noop_when_model_present() {
+        // Serialize env mutation (LEAN_CTX_MODELS_DIR is process-global) so a
+        // sibling env test can't clobber the dir between set_var and the checks.
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = std::env::temp_dir().join(format!("lc-embed-545-{}", std::process::id()));
+        crate::test_env::set_var("LEAN_CTX_MODELS_DIR", tmp.to_str().unwrap());
+
+        let selected = model_registry::resolve_model();
+        let config = selected.config();
+        let model_dir = tmp.join(selected.storage_dir_name());
+        std::fs::create_dir_all(&model_dir).unwrap();
+        std::fs::write(model_dir.join("model.onnx"), b"onnx").unwrap();
+        std::fs::write(model_dir.join(config.vocab_file.filename()), b"vocab").unwrap();
+
+        assert!(EmbeddingEngine::is_available());
+        assert!(EmbeddingEngine::ensure_downloaded().is_ok());
+
+        crate::test_env::remove_var("LEAN_CTX_MODELS_DIR");
+        std::fs::remove_dir_all(&tmp).ok();
     }
 
     /// #519: Cargo test/bench/doctest binaries live under `…/deps/`; the shipped

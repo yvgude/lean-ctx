@@ -10,6 +10,7 @@ pub mod mcp_bridge;
 pub mod postgres;
 pub mod provider_trait;
 pub mod registry;
+pub mod scaffold;
 
 pub use provider_trait::{ContextPacket, ContextProvider, ProviderParams};
 pub use registry::{ProviderRegistry, global_registry};

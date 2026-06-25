@@ -38,11 +38,16 @@ pub fn compress_prose(text: &str, aggressiveness: f64) -> Option<String> {
     }
     let profile = AggressivenessProfile::from_level(aggressiveness);
     // `density_target` is the fraction of content to keep; map it to a char
-    // budget. `squeeze_prose` dedups near-duplicate lines and collapses blank
-    // runs, only truncating beyond the budget — so low aggressiveness is a
-    // near-lossless dedup pass and high aggressiveness adds a hard ceiling.
+    // budget. Below the budget the squeeze is a near-lossless dedup pass; when it
+    // must actually shrink (budget < len) we use cache-safe extractive ranking
+    // (#895) — keeping the most central sentences instead of just the prefix —
+    // which falls back to truncation when the embedding engine is unavailable.
     let budget = ((text.len() as f64) * profile.density_target).ceil() as usize;
-    let squeezed = squeeze_prose(text, budget);
+    let squeezed = if budget < text.len() {
+        crate::proxy::prose_ranker::squeeze(text, budget)
+    } else {
+        squeeze_prose(text, budget)
+    };
     let before = count_tokens(text);
     let after = count_tokens(&squeezed);
     (after < before).then_some(squeezed)

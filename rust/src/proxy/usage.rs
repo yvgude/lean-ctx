@@ -59,6 +59,10 @@ pub struct RealUsage {
     pub cache_write_tokens: u64,
     /// Reasoning/thinking subset of `output_tokens` (display only).
     pub reasoning_tokens: u64,
+    /// Output-savings experiment arm for this turn (#895 Track B), or `None` when
+    /// no holdout is active. Stamped from the request, not parsed from the
+    /// response — it identifies whether this turn was output-shaped.
+    pub cohort: Option<super::holdout::Arm>,
 }
 
 impl RealUsage {
@@ -86,6 +90,8 @@ pub struct Scanner {
     provider: Provider,
     /// Model parsed from the request URL (Gemini puts it there, not in the body).
     url_model: Option<String>,
+    /// Output-savings arm (#895), stamped onto the usage at finalize.
+    cohort: Option<super::holdout::Arm>,
     buf: Vec<u8>,
     usage: RealUsage,
 }
@@ -96,9 +102,17 @@ impl Scanner {
         Self {
             provider,
             url_model,
+            cohort: None,
             buf: Vec::new(),
             usage: RealUsage::default(),
         }
+    }
+
+    /// Tags the usage this scanner produces with an output-savings arm (#895).
+    #[must_use]
+    pub fn with_cohort(mut self, cohort: Option<super::holdout::Arm>) -> Self {
+        self.cohort = cohort;
+        self
     }
 
     /// Feeds a raw streaming chunk, scanning every complete line it completes.
@@ -133,6 +147,7 @@ impl Scanner {
             self.scan_line(&line);
         }
         if self.usage.is_meaningful() {
+            self.usage.cohort = self.cohort;
             Some(self.usage)
         } else {
             None

@@ -2429,6 +2429,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lean-ctx-sdk"
+version = "0.1.0"
+dependencies = [
+ "lean-ctx",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "leb128fmt"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

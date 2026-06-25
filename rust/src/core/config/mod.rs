@@ -30,9 +30,9 @@ pub use enums::{
 pub use memory::{MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter};
 pub use provenance::{ConfigProvenance, EnvOverride};
 pub use proxy::{
-    HistoryMode, ProseRole, ProxyConfig, ProxyProvider, RoleAggressiveness, UpstreamDrift,
-    Upstreams, diagnose_drift, env_upstream_override, is_local_proxy_url, normalize_url,
-    normalize_url_opt,
+    HistoryMode, ProseRanker, ProseRole, ProxyConfig, ProxyProvider, RoleAggressiveness,
+    UpstreamDrift, Upstreams, diagnose_drift, env_upstream_override, is_local_proxy_url,
+    normalize_url, normalize_url_opt,
 };
 pub use shell_activation::ShellActivation;
 
@@ -235,12 +235,15 @@ pub struct Config {
     /// Override via `LEAN_CTX_ALLOW_PATH` env var (path-list separator).
     #[serde(default)]
     pub allow_paths: Vec<String>,
-    /// Allow jailed tool access to home-level IDE config dirs (~/.cursor,
-    /// ~/.claude, ~/.codebuddy, …). Default false: those dirs expose other projects'
-    /// sessions, MCP configs and credentials. `~/.lean-ctx` (own data dir)
-    /// is always allowed. Override via `LEAN_CTX_ALLOW_IDE_DIRS=1`.
+    /// Allow jailed tool access to home-level IDE config dirs (~/.cursor, VS Code,
+    /// Cline/Roo, JetBrains, …). Tri-state: `None` = not asked yet (setup prompts
+    /// once), `Some(false)` = declined, `Some(true)` = opted in. Those dirs can
+    /// expose other agents' sessions, MCP configs and credentials, so the effective
+    /// default is off. `~/.lean-ctx` (own data dir) is always allowed. The opt-in
+    /// set is registry-derived, covering every supported editor. Override via
+    /// LEAN_CTX_ALLOW_IDE_DIRS=1.
     #[serde(default)]
-    pub allow_ide_config_dirs: bool,
+    pub allow_ide_config_dirs: Option<bool>,
     /// Extra project roots for multi-root workspaces.
     /// Tools like `ctx_tree` and `ctx_search` can scan across all roots in a single call.
     /// These paths are automatically added to `PathJail`'s allow-list.
@@ -468,6 +471,11 @@ pub struct Config {
     /// no-op until `gateway.enabled = true`.
     #[serde(default)]
     pub gateway: crate::core::gateway::GatewayConfig,
+    /// Addon ecosystem security floor (#863): install policy, registry-signature
+    /// requirement and sandboxing for spawned addon servers. Global-only (never
+    /// merged from project-local config) and fully permissive by default.
+    #[serde(default)]
+    pub addons: crate::core::addons::AddonsConfig,
     /// Allow automatic project-root re-rooting when absolute paths outside the jail are seen.
     /// When false (default), absolute paths outside the jail are rejected without re-rooting.
     /// Override via `LEAN_CTX_ALLOW_REROOT` env var.
@@ -594,7 +602,7 @@ impl Default for Config {
             archive: ArchiveConfig::default(),
             memory: MemoryPolicy::default(),
             allow_paths: Vec::new(),
-            allow_ide_config_dirs: false,
+            allow_ide_config_dirs: None,
             extra_roots: Vec::new(),
             read_only_roots: Vec::new(),
             content_defined_chunking: false,
@@ -642,6 +650,7 @@ impl Default for Config {
             secret_detection: SecretDetectionConfig::default(),
             sensitivity: crate::core::sensitivity::SensitivityConfig::default(),
             gateway: crate::core::gateway::GatewayConfig::default(),
+            addons: crate::core::addons::AddonsConfig::default(),
             allow_auto_reroot: false,
             path_jail: None,
             sandbox_level: 0,

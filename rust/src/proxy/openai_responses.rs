@@ -64,6 +64,13 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
     // before the meter-only short-circuit so an explicit expand request is
     // honored even when the proxy is otherwise byte-passthrough.
     let mut modified = false;
+    // #895 Track B: output-savings holdout arm, from the pristine body (before any
+    // mutation below) so it matches the arm the response meter records. Control
+    // conversations skip output-shaping but are still metered. Default 0 → Treatment.
+    let arm = super::holdout::assign(
+        &super::holdout::openai_responses_key(&doc),
+        cfg.proxy.output_holdout_fraction(),
+    );
     if cfg.proxy.ccr_inband_enabled() {
         modified |= super::ccr::splice_inband_in_place(&mut doc);
     }
@@ -71,8 +78,14 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
     // value is a constant, so it never perturbs the prompt-cache prefix; it sets
     // `reasoning.effort` only on reasoning models and never overrides a
     // client-set value.
-    if let Some(effort) = cfg.proxy.resolved_effort() {
-        modified |= super::effort::apply_openai_responses(&mut doc, effort);
+    if arm == super::holdout::Arm::Treatment {
+        if let Some(effort) = cfg.proxy.resolved_effort() {
+            modified |= super::effort::apply_openai_responses(&mut doc, effort);
+        }
+        // #895: cache-safe wire verbosity steer; control arm skips it (measured).
+        if cfg.proxy.verbosity_steer_enabled() {
+            modified |= super::verbosity::apply_openai_responses(&mut doc);
+        }
     }
     // Meter-only (#481): live compression off and history pruning off → forward
     // the body unchanged while upstream usage metering still runs. A pending

@@ -123,6 +123,7 @@ COMMANDS:
     gain --cost                    Agent cost attribution report (estimated)
     spend                          Measured provider bill (real model + billed tokens)
     spend --json                   Machine-readable measured spend
+    output-savings [--json]        Output-token reduction (A/B measured w/ 95% CI, else estimated)
     gain --tasks                   Task breakdown by category
     gain --agents                  Top agents by tool spend
     gain --heatmap                 Top files by tokens saved

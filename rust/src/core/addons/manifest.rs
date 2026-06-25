@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use super::capabilities::AddonCapabilities;
 use crate::core::gateway::{GatewayServer, TransportKind};
 
 /// `[addon]` — human + catalog metadata.
@@ -37,6 +38,11 @@ pub struct AddonMeta {
     pub keywords: Vec<String>,
     /// Minimum lean-ctx version the addon targets (informational).
     pub min_lean_ctx: String,
+    /// Trust tier. `true` **only** for entries audited and vouched by
+    /// maintainers in the curated registry; community submissions stay `false`.
+    /// Author-set in a local manifest is meaningless — trust is conferred by the
+    /// registry the entry ships in, not by the entry claiming it.
+    pub verified: bool,
 }
 
 /// `[mcp]` — how lean-ctx launches/connects to the addon's MCP server.
@@ -54,6 +60,10 @@ pub struct AddonMcp {
     pub args: Vec<String>,
     /// Extra environment variables for the child process.
     pub env: BTreeMap<String, String>,
+    /// Optional SHA-256 pin of the stdio `command` binary (P3 supply-chain). The
+    /// value `sha256sum`/`shasum -a 256` prints; the gateway refuses to spawn a
+    /// binary whose hash does not match. Empty = unpinned.
+    pub sha256: String,
     /// Streamable-HTTP endpoint (http transport).
     pub url: String,
     /// Extra request headers (e.g. auth) for the http transport.
@@ -66,6 +76,16 @@ pub struct AddonManifest {
     pub addon: AddonMeta,
     #[serde(default)]
     pub mcp: AddonMcp,
+    /// `[capabilities]` — declared permissions (network/filesystem/env). Absent
+    /// (`None`) keeps the legacy `addons.sandbox` behaviour; present opts the
+    /// addon into the per-addon, secure-by-default capability model (P1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<AddonCapabilities>,
+    /// `[pricing]` — optional commerce metadata for a sellable addon (Track B).
+    /// Absent (`None`) ⇒ free. A paid entry must clear
+    /// [`super::commerce::paid_listing_gate`] before it may be listed/sold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pricing: Option<super::commerce::AddonPricing>,
 }
 
 impl AddonManifest {
@@ -106,6 +126,9 @@ impl AddonManifest {
                  no leading/trailing dash)"
             ));
         }
+        if let Some(caps) = &self.capabilities {
+            caps.validate()?;
+        }
         Ok(())
     }
 
@@ -119,8 +142,10 @@ impl AddonManifest {
             command: self.mcp.command.clone(),
             args: self.mcp.args.clone(),
             env: self.mcp.env.clone(),
+            binary_sha256: self.mcp.sha256.clone(),
             url: self.mcp.url.clone(),
             headers: self.mcp.headers.clone(),
+            capabilities: self.capabilities.clone(),
         }
     }
 
@@ -216,6 +241,48 @@ url = "https://example.com/mcp"
     fn display_name_falls_back_to_slug() {
         let m = AddonManifest::from_toml("[addon]\nname = \"slug-only\"\n").expect("parse");
         assert_eq!(m.display_name(), "slug-only");
+    }
+
+    #[test]
+    fn capabilities_block_parses_and_threads_to_gateway() {
+        let m = AddonManifest::from_toml(
+            r#"
+[addon]
+name = "caps"
+
+[mcp]
+transport = "stdio"
+command = "caps-mcp"
+
+[capabilities]
+network = "full"
+filesystem = "read_write"
+env = ["GITHUB_TOKEN"]
+"#,
+        )
+        .expect("parse");
+        let caps = m.capabilities.as_ref().expect("capabilities present");
+        assert!(caps.network_allowed());
+        assert!(caps.filesystem_writable());
+        assert_eq!(caps.env, vec!["GITHUB_TOKEN".to_string()]);
+        // Flows into the gateway server entry that actually runs.
+        assert_eq!(m.to_gateway_server().capabilities, m.capabilities);
+    }
+
+    #[test]
+    fn absent_capabilities_is_none() {
+        let m = stdio_manifest();
+        assert!(m.capabilities.is_none(), "no [capabilities] → legacy path");
+        assert!(m.to_gateway_server().capabilities.is_none());
+    }
+
+    #[test]
+    fn invalid_capability_env_name_fails_validation() {
+        let m = AddonManifest::from_toml(
+            "[addon]\nname = \"bad\"\n[capabilities]\nenv = [\"bad name\"]\n",
+        )
+        .expect("parse");
+        assert!(m.validate().is_err());
     }
 
     #[test]

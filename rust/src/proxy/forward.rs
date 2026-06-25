@@ -59,6 +59,13 @@ pub async fn forward_request(
         state.introspect.record(breakdown);
     }
 
+    // #895 Track B: recompute the output-savings arm from the same pristine body
+    // each provider's compress_body keys on, so the metered arm matches the arm
+    // that decided output-shaping. Only when a holdout is active (fraction > 0).
+    let cohort = parsed
+        .as_ref()
+        .and_then(|p| cohort_arm(p, provider_label, default_path));
+
     let (compressed_body, _, compressed_size) = if let Some(value) = parsed.clone() {
         compress_body(value, original_size)
     } else {
@@ -104,7 +111,42 @@ pub async fn forward_request(
         None
     };
 
-    build_response(response, extra_stream_types, usage_provider, url_model).await
+    build_response(
+        response,
+        extra_stream_types,
+        usage_provider,
+        url_model,
+        cohort,
+    )
+    .await
+}
+
+/// Output-savings arm (#895) for a request body, or `None` when no holdout is
+/// active. Keyed per provider; OpenAI's Chat vs Responses bodies are
+/// distinguished by the request path so each uses the matching cohort key.
+fn cohort_arm(
+    parsed: &serde_json::Value,
+    provider_label: &str,
+    default_path: &str,
+) -> Option<super::holdout::Arm> {
+    let holdout = crate::core::config::Config::load()
+        .proxy
+        .output_holdout_fraction();
+    if holdout <= 0.0 {
+        return None;
+    }
+    let key = match provider_label {
+        "Anthropic" => super::holdout::anthropic_key(parsed),
+        "OpenAI" => {
+            if default_path.contains("responses") {
+                super::holdout::openai_responses_key(parsed)
+            } else {
+                super::holdout::openai_chat_key(parsed)
+            }
+        }
+        _ => super::holdout::google_key(parsed),
+    };
+    Some(super::holdout::assign(&key, holdout))
 }
 
 fn build_upstream_url(parts: &Parts, base: &str, default_path: &str) -> String {
@@ -186,6 +228,7 @@ async fn build_response(
     extra_stream_types: &[&str],
     usage_provider: super::usage::Provider,
     url_model: Option<String>,
+    cohort: Option<super::holdout::Arm>,
 ) -> Result<Response, StatusCode> {
     let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
     let resp_headers = response.headers().clone();
@@ -201,7 +244,7 @@ async fn build_response(
         // Tee the stream through a usage Scanner: each chunk is forwarded
         // byte-for-byte while the real model + billed tokens are extracted from
         // the final event and recorded when the stream ends.
-        let scanner = super::usage::Scanner::new(usage_provider, url_model);
+        let scanner = super::usage::Scanner::new(usage_provider, url_model).with_cohort(cohort);
         let inner = Box::pin(response.bytes_stream());
         let body = Body::from_stream(super::usage::tee_stream(inner, scanner));
         let mut resp = Response::builder().status(status);
@@ -222,7 +265,7 @@ async fn build_response(
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
 
     // Non-streaming: the whole body is one JSON object carrying `usage`.
-    let mut scanner = super::usage::Scanner::new(usage_provider, url_model);
+    let mut scanner = super::usage::Scanner::new(usage_provider, url_model).with_cohort(cohort);
     scanner.feed_body(&resp_bytes);
     if let Some(usage) = scanner.finalize() {
         super::usage_meter::record(&usage);

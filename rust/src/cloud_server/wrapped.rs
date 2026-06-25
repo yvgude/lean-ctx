@@ -8,7 +8,7 @@
 
 use axum::Json;
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use serde::{Deserialize, Serialize};
 
@@ -444,18 +444,49 @@ pub(super) struct LeaderRow {
 
 #[derive(Serialize)]
 pub(super) struct Leaderboard {
+    /// The requested page of ranked entries (global 1-based ranks preserved).
     entries: Vec<LeaderRow>,
+    /// 1-based page index actually returned (clamped to `1..=total_pages`).
+    page: i64,
+    /// Entries per page actually applied (clamped to `1..=LEADERBOARD_PER_PAGE_MAX`).
+    per_page: i64,
+    /// Size of the result set (after the optional `q` filter) — basis for `total_pages`.
+    total_entries: i64,
+    /// Number of pages over `total_entries` at `per_page` (always >= 1).
+    total_pages: i64,
+    /// Sum of `tokens_saved` across **all** opted-in accounts — uncapped and
+    /// independent of `page`/`q`, so callers can show the true community total
+    /// without walking every page. Grouping-invariant (#488): summing per-account
+    /// equals summing per-machine, so the value is unaffected by stacking.
+    total_tokens_saved: i64,
+    /// Sum of `cost_avoided_usd` across **all** opted-in accounts — the USD
+    /// counterpart to `total_tokens_saved` (same uncapped, page-independent basis).
+    total_cost_avoided_usd: f64,
 }
 
-const LEADERBOARD_LIMIT: i64 = 50;
+/// Query for both the JSON API and the SSR page: 1-based `page`, `per_page`
+/// (clamped), and an optional case-insensitive `q` substring over `display_name`.
+/// All fields optional so a bare `/api/leaderboard` stays back-compatible.
+#[derive(Debug, Default, Deserialize)]
+pub(super) struct LeaderboardQuery {
+    page: Option<i64>,
+    per_page: Option<i64>,
+    q: Option<String>,
+}
 
-/// Safety cap on how many per-machine rows we pull before account aggregation.
-/// Account stacking (#488) sums a user's machines in Rust, so we must fetch all
-/// of a user's machines — a pre-aggregation top-N could drop the smaller ones
-/// and undercount the account. Comfortably above the current opted-in
-/// population; revisit with a SQL-side `GROUP BY` (and a Postgres test harness)
-/// if the board ever approaches this many distinct machines.
-const LEADERBOARD_FETCH_CAP: i64 = 2_000;
+/// Page size when the caller does not specify `per_page`.
+const LEADERBOARD_PER_PAGE_DEFAULT: i64 = 50;
+/// Upper bound on `per_page` so a single request can't pull an unbounded page.
+const LEADERBOARD_PER_PAGE_MAX: i64 = 100;
+
+/// Hard safety guardrail on how many per-machine rows we pull before account
+/// aggregation. The whole opted-in set is aggregated, ranked and paginated in
+/// Rust — account stacking (#488) sums a user's machines, so we must see all of a
+/// user's machines (a pre-aggregation top-N could undercount an account). Set far
+/// above the current opted-in population so there is no visible cap; revisit with
+/// SQL-side keyset pagination (`GROUP BY` + a Postgres harness) only if the board
+/// ever approaches this many distinct machines.
+const LEADERBOARD_MAX_CARDS: i64 = 50_000;
 
 /// Compression rate (percent) at/above which a card is treated as implausible *when paired with
 /// high volume*. Organic agent usage compresses reads by ~60-90% on average; a sustained rate
@@ -488,27 +519,96 @@ fn rank_and_demote_flagged(entries: &mut [LeaderRow]) {
     }
 }
 
-/// `GET /api/wrapped/leaderboard` — top opted-in cards by tokens saved. Public; the only
-/// person-facing field is the user-chosen `display_name`.
-pub(super) async fn leaderboard(State(state): State<AppState>) -> ApiResult<Json<Leaderboard>> {
-    Ok(Json(Leaderboard {
-        entries: top_cards(&state).await?,
-    }))
+/// `GET /api/wrapped/leaderboard` — paginated opted-in cards by tokens saved. Public; the only
+/// person-facing field is the user-chosen `display_name`. Supports `?page=&per_page=&q=`.
+pub(super) async fn leaderboard(
+    State(state): State<AppState>,
+    Query(query): Query<LeaderboardQuery>,
+) -> ApiResult<Json<Leaderboard>> {
+    Ok(Json(build_leaderboard(&state, &query).await?))
 }
 
 /// `GET /leaderboard` — server-rendered leaderboard page (static hosts proxy `/leaderboard` here).
+/// Honors the same `?page=&per_page=&q=` query as the JSON API.
 pub(super) async fn get_leaderboard_page(
     State(state): State<AppState>,
+    Query(query): Query<LeaderboardQuery>,
 ) -> ApiResult<axum::response::Response> {
-    let rows = top_cards(&state).await?;
-    let html = render_leaderboard_html(&rows, &state.cfg.public_base_url);
+    let board = build_leaderboard(&state, &query).await?;
+    let html = render_leaderboard_html(&board, query.q.as_deref(), &state.cfg.public_base_url);
 
     use axum::http::header::CONTENT_TYPE;
     use axum::response::IntoResponse;
     Ok(([(CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response())
 }
 
-async fn top_cards(state: &AppState) -> ApiResult<Vec<LeaderRow>> {
+/// Fetch → aggregate → rank the full opted-in board, then apply the optional `q`
+/// filter and slice the requested page.
+async fn build_leaderboard(state: &AppState, query: &LeaderboardQuery) -> ApiResult<Leaderboard> {
+    let all = all_ranked_cards(state).await?;
+    Ok(paginate(all, query))
+}
+
+/// Slice a fully-ranked board into one page. Pure (no I/O) so the pagination,
+/// clamping and `q`-filter rules are unit-tested without a database.
+fn paginate(all: Vec<LeaderRow>, query: &LeaderboardQuery) -> Leaderboard {
+    // Community totals are grouping-invariant and must ignore both page and
+    // filter, so they are summed over the full board before anything is dropped.
+    let total_tokens_saved = all
+        .iter()
+        .map(|e| e.tokens_saved)
+        .fold(0i64, i64::saturating_add);
+    let total_cost_avoided_usd = all.iter().map(|e| e.cost_avoided_usd).sum();
+
+    // Optional case-insensitive substring on the display name. Ranks were assigned
+    // over the full board, so a matched user keeps their real (global) rank.
+    let filtered: Vec<LeaderRow> = match query.q.as_deref().map(str::trim) {
+        Some(needle) if !needle.is_empty() => {
+            let needle = needle.to_lowercase();
+            all.into_iter()
+                .filter(|e| {
+                    e.display_name
+                        .as_deref()
+                        .is_some_and(|n| n.to_lowercase().contains(&needle))
+                })
+                .collect()
+        }
+        _ => all,
+    };
+
+    let per_page = query
+        .per_page
+        .unwrap_or(LEADERBOARD_PER_PAGE_DEFAULT)
+        .clamp(1, LEADERBOARD_PER_PAGE_MAX);
+    let total_entries = filtered.len() as i64;
+    // Ceiling division, computed by hand: `i64::div_ceil` is still unstable on our
+    // toolchain. `per_page >= 1`, so this never divides by zero; an empty board
+    // still reports a single (empty) page.
+    let total_pages = ((total_entries + per_page - 1) / per_page).max(1);
+    let page = query.page.unwrap_or(1).clamp(1, total_pages);
+
+    let start = ((page - 1) * per_page) as usize;
+    let entries: Vec<LeaderRow> = filtered
+        .into_iter()
+        .skip(start)
+        .take(per_page as usize)
+        .collect();
+
+    Leaderboard {
+        entries,
+        page,
+        per_page,
+        total_entries,
+        total_pages,
+        total_tokens_saved,
+        total_cost_avoided_usd,
+    }
+}
+
+/// The entire opted-in board: one representative row per machine, account-stacked
+/// (#488), then ranked with flagged cards demoted. Ranks are global (1-based over
+/// the whole board) so pagination shows true ranks (page 2 starts at `per_page+1`).
+async fn all_ranked_cards(state: &AppState) -> ApiResult<Vec<LeaderRow>> {
     let client = state.pool.get().await.map_err(internal_error)?;
     // One representative row per machine (its highest-saving card); legacy anonymous rows
     // (publisher_id NULL) stay distinct via COALESCE(publisher_id, id). `user_id` is carried
@@ -523,7 +623,7 @@ async fn top_cards(state: &AppState) -> ApiResult<Vec<LeaderRow>> {
                ORDER BY COALESCE(publisher_id, id), tokens_saved DESC, created_at DESC \
              ) t \
              ORDER BY tokens_saved DESC, created_at DESC LIMIT $1",
-            &[&LEADERBOARD_FETCH_CAP],
+            &[&LEADERBOARD_MAX_CARDS],
         )
         .await
         .map_err(internal_error)?;
@@ -544,7 +644,6 @@ async fn top_cards(state: &AppState) -> ApiResult<Vec<LeaderRow>> {
     // Plausible cards rank first; flagged (implausible, unverifiable) cards sink to the bottom
     // regardless of raw `tokens_saved`, so one unverifiable card can't top the board.
     rank_and_demote_flagged(&mut entries);
-    entries.truncate(LEADERBOARD_LIMIT as usize);
     Ok(entries)
 }
 
@@ -662,10 +761,12 @@ fn aggregate_by_account(raw: Vec<RawLeaderCard>, base: &str) -> Vec<LeaderRow> {
     rows
 }
 
-fn render_leaderboard_html(rows: &[LeaderRow], public_base: &str) -> String {
+fn render_leaderboard_html(board: &Leaderboard, q: Option<&str>, public_base: &str) -> String {
     let base = public_base.trim_end_matches('/');
+    let needle = q.map(str::trim).filter(|s| !s.is_empty());
+
     let mut items = String::new();
-    for row in rows {
+    for row in &board.entries {
         let name = row
             .display_name
             .as_deref()
@@ -699,10 +800,86 @@ fn render_leaderboard_html(rows: &[LeaderRow], public_base: &str) -> String {
             period = html_escape(&row.period),
         ));
     }
-    let board = if items.is_empty() {
-        r#"<div class="lc-empty">No one has opted in yet — be the first:<br/><code>lean-ctx gain --publish --leaderboard</code></div>"#.to_string()
+
+    let board_html = if board.entries.is_empty() {
+        match needle {
+            Some(term) => format!(
+                r#"<div class="lc-empty">No one on the board matches <strong>{term}</strong>.<br/><a href="{base}/leaderboard">Clear search</a></div>"#,
+                term = html_escape(term)
+            ),
+            None => r#"<div class="lc-empty">No one has opted in yet — be the first:<br/><code>lean-ctx gain --publish --leaderboard</code></div>"#.to_string(),
+        }
     } else {
         format!(r#"<ol class="lc-board">{items}</ol>"#)
+    };
+
+    // Search box — a GET to /leaderboard, so submitting resets to page 1 at the
+    // default page size. Makes any entry findable by name, not just by paging.
+    let q_attr = needle.map(html_escape).unwrap_or_default();
+    let clear = if needle.is_some() {
+        format!(r#"<a class="lc-search-clear" href="{base}/leaderboard">Clear</a>"#)
+    } else {
+        String::new()
+    };
+    let search = format!(
+        r#"<form class="lc-search" method="get" action="{base}/leaderboard" role="search">
+<input class="lc-search-input" type="search" name="q" value="{q_attr}" placeholder="Search by name…" aria-label="Search the leaderboard by name" autocomplete="off"/>
+<button class="lc-search-btn" type="submit">Search</button>
+{clear}
+</form>"#
+    );
+
+    // Count line doubles as the "no cap" signal: it states the full result size.
+    let count_line = if board.total_entries > 0 {
+        let n = board.total_entries;
+        let label = if n == 1 { "entry" } else { "entries" };
+        match needle {
+            Some(term) => format!(
+                r#"<p class="lc-count">{n} {label} matching <strong>{term}</strong></p>"#,
+                term = html_escape(term)
+            ),
+            None => format!(r#"<p class="lc-count">{n} {label} on the board</p>"#),
+        }
+    } else {
+        String::new()
+    };
+
+    // Pagination links preserve the active search and any non-default page size.
+    let q_param = needle
+        .map(|t| format!("&q={}", urlencoding::encode(t)))
+        .unwrap_or_default();
+    let pp_param = if board.per_page == LEADERBOARD_PER_PAGE_DEFAULT {
+        String::new()
+    } else {
+        format!("&per_page={}", board.per_page)
+    };
+    let page_url = |n: i64| format!("{base}/leaderboard?page={n}{pp_param}{q_param}");
+    let pagination = if board.total_pages > 1 {
+        let prev = if board.page > 1 {
+            format!(
+                r#"<a class="lc-page-btn" href="{}" rel="prev">← Prev</a>"#,
+                page_url(board.page - 1)
+            )
+        } else {
+            r#"<span class="lc-page-btn lc-page-btn-off" aria-disabled="true">← Prev</span>"#
+                .to_string()
+        };
+        let next = if board.page < board.total_pages {
+            format!(
+                r#"<a class="lc-page-btn" href="{}" rel="next">Next →</a>"#,
+                page_url(board.page + 1)
+            )
+        } else {
+            r#"<span class="lc-page-btn lc-page-btn-off" aria-disabled="true">Next →</span>"#
+                .to_string()
+        };
+        format!(
+            r#"<nav class="lc-pagination" aria-label="Leaderboard pages">{prev}<span class="lc-page-info">Page {page} / {total}</span>{next}</nav>"#,
+            page = board.page,
+            total = board.total_pages,
+        )
+    } else {
+        String::new()
     };
 
     let head = format!(
@@ -731,7 +908,10 @@ fn render_leaderboard_html(rows: &[LeaderRow], public_base: &str) -> String {
 <h1>Leaderboard</h1>
 <p>The most realized token savings, opted in by lean-ctx users. Figures are self-reported from each user's local ledger — not server-verified. Cards whose stats look statistically implausible are flagged <span class="lc-flag">unverified</span> and ranked last.</p>
 </section>
-{board}
+{search}
+{count_line}
+{board_html}
+{pagination}
 <section class="lc-cta-section">
 <h2>Put your savings on the board</h2>
 <p>Install lean-ctx, then publish your Wrapped recap.</p>
@@ -1262,7 +1442,8 @@ mod tests {
                 flagged: false,
             },
         ];
-        let html = render_leaderboard_html(&rows, "https://leanctx.com");
+        let board = paginate(rows, &LeaderboardQuery::default());
+        let html = render_leaderboard_html(&board, None, "https://leanctx.com");
         // Brand shell + design tokens mirrored from the marketing site.
         assert!(
             html.contains("--accent:#34d399"),
@@ -1341,6 +1522,159 @@ mod tests {
         );
     }
 
+    /// N ranked rows (rank i+1, tokens descending, names `user{i}`) for pagination tests.
+    fn ranked_rows(n: usize) -> Vec<LeaderRow> {
+        (0..n)
+            .map(|i| LeaderRow {
+                rank: i + 1,
+                id: format!("id{i}"),
+                url: format!("https://leanctx.com/w/id{i}"),
+                display_name: Some(format!("user{i}")),
+                tokens_saved: ((n - i) as i64) * 1_000,
+                cost_avoided_usd: ((n - i) as f64) * 0.5,
+                compression_rate_pct: 60.0,
+                period: "all".into(),
+                pricing_estimated: false,
+                flagged: false,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn paginate_slices_pages_and_preserves_global_ranks() {
+        let q = |page: i64, per: i64| LeaderboardQuery {
+            page: Some(page),
+            per_page: Some(per),
+            q: None,
+        };
+        // 120 entries, 50 per page → 3 pages (50 / 50 / 20).
+        let p1 = paginate(ranked_rows(120), &q(1, 50));
+        assert_eq!(p1.total_entries, 120);
+        assert_eq!(p1.total_pages, 3);
+        assert_eq!(p1.page, 1);
+        assert_eq!(p1.entries.len(), 50);
+        assert_eq!(p1.entries.first().unwrap().rank, 1);
+
+        // Page 2 keeps GLOBAL ranks: its first row is rank 51, not 1.
+        let p2 = paginate(ranked_rows(120), &q(2, 50));
+        assert_eq!(p2.entries.len(), 50);
+        assert_eq!(p2.entries.first().unwrap().rank, 51);
+
+        let p3 = paginate(ranked_rows(120), &q(3, 50));
+        assert_eq!(p3.entries.len(), 20);
+        assert_eq!(p3.entries.last().unwrap().rank, 120);
+    }
+
+    #[test]
+    fn paginate_clamps_out_of_range_inputs() {
+        // per_page above the max is clamped; a page past the end lands on the last page.
+        let over = paginate(
+            ranked_rows(30),
+            &LeaderboardQuery {
+                page: Some(999),
+                per_page: Some(10_000),
+                q: None,
+            },
+        );
+        assert_eq!(over.per_page, LEADERBOARD_PER_PAGE_MAX);
+        assert_eq!(over.total_pages, 1); // 30 entries at per_page 100 → 1 page
+        assert_eq!(over.page, 1);
+        // page 0 / negative clamps up to 1.
+        let under = paginate(
+            ranked_rows(30),
+            &LeaderboardQuery {
+                page: Some(0),
+                per_page: Some(10),
+                q: None,
+            },
+        );
+        assert_eq!(under.page, 1);
+        assert_eq!(under.per_page, 10);
+    }
+
+    #[test]
+    fn paginate_total_tokens_is_uncapped_and_page_independent() {
+        let expected: i64 = ranked_rows(120).iter().map(|r| r.tokens_saved).sum();
+        let expected_usd: f64 = ranked_rows(120).iter().map(|r| r.cost_avoided_usd).sum();
+        // The community totals sum ALL entries, not just the returned page…
+        let p1 = paginate(ranked_rows(120), &LeaderboardQuery::default());
+        assert_eq!(p1.total_tokens_saved, expected);
+        assert!((p1.total_cost_avoided_usd - expected_usd).abs() < 1e-6);
+        // …and are identical on a later page even though the entries differ.
+        let p2 = paginate(
+            ranked_rows(120),
+            &LeaderboardQuery {
+                page: Some(2),
+                per_page: Some(50),
+                q: None,
+            },
+        );
+        assert_eq!(p2.total_tokens_saved, expected);
+        assert!((p2.total_cost_avoided_usd - expected_usd).abs() < 1e-6);
+    }
+
+    #[test]
+    fn paginate_q_filters_by_name_but_keeps_global_rank_and_total() {
+        let total: i64 = ranked_rows(30).iter().map(|r| r.tokens_saved).sum();
+        // "user1" is a substring of user1 and user10..user19 → 11 rows.
+        let res = paginate(
+            ranked_rows(30),
+            &LeaderboardQuery {
+                page: Some(1),
+                per_page: Some(50),
+                q: Some("user1".into()),
+            },
+        );
+        assert_eq!(res.total_entries, 11);
+        assert!(
+            res.entries
+                .iter()
+                .all(|e| e.display_name.as_deref().unwrap().contains("user1"))
+        );
+        // user1 has global rank 2 (rank 1 is user0); filtering must not renumber.
+        assert!(
+            res.entries
+                .iter()
+                .any(|e| e.rank == 2 && e.display_name.as_deref() == Some("user1"))
+        );
+        // total_tokens_saved still spans the full board, ignoring the filter.
+        assert_eq!(res.total_tokens_saved, total);
+    }
+
+    #[test]
+    fn paginate_empty_board_is_one_page() {
+        let res = paginate(Vec::new(), &LeaderboardQuery::default());
+        assert_eq!(res.total_entries, 0);
+        assert_eq!(res.total_pages, 1);
+        assert_eq!(res.page, 1);
+        assert!(res.entries.is_empty());
+        assert_eq!(res.total_tokens_saved, 0);
+    }
+
+    #[test]
+    fn render_paginated_board_shows_search_and_pagination() {
+        let board = paginate(
+            ranked_rows(120),
+            &LeaderboardQuery {
+                page: Some(2),
+                per_page: Some(50),
+                q: None,
+            },
+        );
+        let html = render_leaderboard_html(&board, None, "https://leanctx.com");
+        assert!(
+            html.contains(r#"class="lc-search""#),
+            "search box is always present"
+        );
+        assert!(
+            html.contains(r#"class="lc-pagination""#),
+            "a multi-page board shows pagination"
+        );
+        assert!(html.contains("?page=1"), "prev links to page 1");
+        assert!(html.contains("?page=3"), "next links to page 3");
+        assert!(html.contains("Page 2 / 3"), "shows the current position");
+    }
+
     #[test]
     fn flagged_card_renders_unverified_badge_and_no_gold() {
         let rows = vec![LeaderRow {
@@ -1355,7 +1689,8 @@ mod tests {
             pricing_estimated: true,
             flagged: true,
         }];
-        let html = render_leaderboard_html(&rows, "https://leanctx.com");
+        let board = paginate(rows, &LeaderboardQuery::default());
+        let html = render_leaderboard_html(&board, None, "https://leanctx.com");
         assert!(
             html.contains("lc-flagged"),
             "flagged row carries the muted style"

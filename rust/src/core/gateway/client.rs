@@ -30,12 +30,30 @@ pub async fn open(
 ) -> Result<ClientService, String> {
     let connect = async {
         match transport {
-            ResolvedTransport::Stdio { command, args, env } => {
-                let mut cmd = tokio::process::Command::new(command);
-                cmd.args(args);
-                for (k, v) in env {
-                    cmd.env(k, v);
-                }
+            ResolvedTransport::Stdio {
+                command,
+                args,
+                env,
+                binary_sha256,
+                capabilities,
+            } => {
+                // Binary-hash pin (#403, P3): if the addon pinned its binary's
+                // sha256, verify the file on PATH before doing anything else, so
+                // a swapped executable is refused (fail-closed). No-op when
+                // unpinned.
+                crate::core::addons::binhash::verify_binary(command, binary_sha256)?;
+                // Per-addon OS sandbox (#865, P1): declared capabilities drive
+                // the profile (network/filesystem); absent caps fall back to the
+                // legacy `addons.sandbox` mode. May wrap with sandbox-exec /
+                // bwrap, or refuse to spawn (strict / enforce_capabilities).
+                let (spawn_cmd, spawn_args) =
+                    crate::core::addons::sandbox::apply_for(command, args, capabilities.as_ref())?;
+                let mut cmd = tokio::process::Command::new(&spawn_cmd);
+                cmd.args(&spawn_args);
+                // Secure-by-default environment (P1): a capability-declaring
+                // addon gets a scrubbed env (base allowlist + declared names);
+                // legacy addons inherit the host env unchanged.
+                crate::core::addons::env_scrub::apply_env(&mut cmd, env, capabilities.as_ref());
                 let child = TokioChildProcess::new(cmd)
                     .map_err(|e| format!("spawn `{command}` failed: {e}"))?;
                 ().serve(child)

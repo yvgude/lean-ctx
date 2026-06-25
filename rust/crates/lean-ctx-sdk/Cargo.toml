@@ -1,0 +1,43 @@
+[package]
+name = "lean-ctx-sdk"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+description = "In-process embedding SDK for lean-ctx — a stable Rust façade over the context engine (Engine handle with a shared session cache, read/search/symbol surface, compression, tokenization, addon authoring/audit)."
+repository = "https://github.com/yvgude/lean-ctx"
+keywords = ["mcp", "llm", "tokens", "context", "embedding"]
+categories = ["development-tools", "api-bindings"]
+readme = "README.md"
+publish = false
+
+[lib]
+name = "lean_ctx_sdk"
+path = "src/lib.rs"
+
+[dependencies]
+# Path dependency on the engine. The SDK is a *thin façade*: it re-exposes a
+# curated, stable subset behind its own types so consumers are insulated from
+# internal churn. (Surface map + workspace-split rationale: docs/rfcs/sdk-embedding-v1.md.)
+#
+# `default-features = false` drops the engine's `jemalloc` feature so embedding
+# the SDK does NOT force a `#[global_allocator]` onto the host binary — the one
+# real embedder landmine. Every other default feature is kept verbatim because
+# the engine currently references `proxy`/`http_server`/`ort` unconditionally;
+# `tree-sitter` in particular powers the AST read modes (signatures/map).
+lean-ctx = { path = "../..", default-features = false, features = [
+  "tree-sitter",
+  "embeddings",
+  "http-server",
+  "team-server",
+  "secure-update",
+] }
+# Multi-thread runtime: the engine's tool handlers use `block_in_place` /
+# `Handle::block_on` internally, which require a multi-threaded Tokio runtime.
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+serde_json = "1"
+thiserror = "2"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

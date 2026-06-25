@@ -117,7 +117,9 @@ lean-ctx setup
 
 ## More Resources
 
+- [Extending lean-ctx — which mechanism to use](extensions.md)
 - [Addons — Community Extensions](addons.md)
+- [Embed lean-ctx (Rust SDK)](embed-sdk.md)
 - [Monorepo Guide](monorepo.md)
 - [Custom Embedding Models](custom-embeddings.md)
 - [Context Policy Packs](policy-packs.md)

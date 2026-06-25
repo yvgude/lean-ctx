@@ -7,6 +7,7 @@ use std::time::Duration;
 
 const HOOK_STDIN_TIMEOUT: Duration = Duration::from_secs(3);
 mod observe;
+mod payload;
 pub use observe::*;
 #[cfg(test)]
 mod tests;
@@ -108,19 +109,44 @@ fn build_dual_rewrite_output(tool_input: Option<&serde_json::Value>, rewritten: 
     };
 
     serde_json::json!({
-        // Cursor hook output format
+        // Cursor hook output format.
         "permission": "allow",
-        "updated_input": updated_input,
-        // Claude Code / CodeBuddy hook output format (extra fields are ignored by other hosts)
+        "updated_input": updated_input.clone(),
+        // GitHub Copilot CLI preToolUse format: top-level `permissionDecision`
+        // + `modifiedArgs` (a full substitute-args object). Copilot ignores
+        // `hookSpecificOutput`, so without these fields it runs the command
+        // unmodified even after the camelCase payload parses correctly (#551).
+        "permissionDecision": "allow",
+        "modifiedArgs": updated_input.clone(),
+        // Claude Code / CodeBuddy hook output format (other hosts ignore it).
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
-            "updatedInput": {
-                "command": rewritten
-            }
+            "updatedInput": updated_input
         }
     })
     .to_string()
+}
+
+/// True when a host tool name denotes a shell/terminal command tool.
+///
+/// Copilot CLI exposes `powershell` as a first-class shell tool on Windows
+/// (paired with `bash` per the CLI tool reference); without it Windows shell
+/// calls bypass rewrite (#556). Shared by `handle_rewrite` and `handle_copilot`.
+fn is_shell_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "Bash"
+            | "bash"
+            | "Shell"
+            | "shell"
+            | "runInTerminal"
+            | "run_in_terminal"
+            | "terminal"
+            | "PowerShell"
+            | "powershell"
+            | "pwsh"
+    )
 }
 
 pub fn handle_rewrite() {
@@ -141,47 +167,44 @@ pub fn handle_rewrite() {
         return;
     };
 
-    let tool = v.get("tool_name").and_then(|t| t.as_str());
-    let Some(tool_name) = tool else {
+    // Resolve across host shapes: Claude/Cursor send snake_case `tool_name` +
+    // `tool_input`; Copilot CLI sends camelCase `toolName` + `toolArgs` (a
+    // JSON-encoded string). Before #551 only the snake_case path was read.
+    let Some(tool_name) = payload::resolve_tool_name(&v) else {
         print!("{allow}");
         return;
     };
 
-    let is_shell_tool = matches!(
-        tool_name,
-        "Bash" | "bash" | "Shell" | "shell" | "runInTerminal" | "run_in_terminal" | "terminal"
-    );
-    if !is_shell_tool {
+    if !is_shell_tool(&tool_name) {
         print!("{allow}");
         return;
     }
 
-    let tool_input = v.get("tool_input");
-    let Some(cmd) = tool_input
-        .and_then(|ti| ti.get("command"))
-        .and_then(|c| c.as_str())
-        .or_else(|| v.get("command").and_then(|c| c.as_str()))
-    else {
+    let tool_args = payload::resolve_tool_args(&v);
+    let Some(cmd) = payload::resolve_command(&v, tool_args.as_ref()) else {
         print!("{allow}");
         return;
     };
 
-    if let Some(rewritten) = rewrite_candidate(cmd, &binary) {
+    if let Some(rewritten) = rewrite_candidate(&cmd, &binary) {
         debug_log::log_hook_decision(
             "rewrite",
-            tool_name,
+            &tool_name,
             Route::LeanCtx,
-            cmd,
+            &cmd,
             "rewritable command",
         );
-        print!("{}", build_dual_rewrite_output(tool_input, &rewritten));
+        print!(
+            "{}",
+            build_dual_rewrite_output(tool_args.as_ref(), &rewritten)
+        );
     } else {
         debug_log::log_hook_decision(
             "rewrite",
-            tool_name,
+            &tool_name,
             Route::Native,
-            cmd,
-            rewrite_skip_reason(cmd),
+            &cmd,
+            rewrite_skip_reason(&cmd),
         );
         print!("{allow}");
     }
@@ -251,7 +274,10 @@ fn rewrite_candidate(cmd: &str, binary: &str) -> Option<String> {
 /// Rewrites cat/head/tail to lean-ctx read with appropriate arguments.
 /// Only rewrites simple single-file reads within the project scope.
 fn rewrite_file_read_command(cmd: &str, binary: &str) -> Option<String> {
-    if !rewrite_registry::is_file_read_command(cmd) {
+    // Unix file-read commands come from the central registry; PowerShell-native
+    // cmdlets (Get-Content/gc) are detected here so they are not added to the POSIX
+    // shell-alias/registry surface (#561).
+    if !rewrite_registry::is_file_read_command(cmd) && !is_powershell_file_read(cmd) {
         return None;
     }
 
@@ -302,7 +328,52 @@ fn rewrite_file_read_command(cmd: &str, binary: &str) -> Option<String> {
             let lines = n.unwrap_or(10);
             Some(format!("{binary} read {qp} -m lines:-{lines}"))
         }
+        "Get-Content" | "gc" => rewrite_get_content(&parts, binary),
         _ => None,
+    }
+}
+
+/// True if the command is a PowerShell-native file-read cmdlet (`Get-Content`/`gc`).
+fn is_powershell_file_read(cmd: &str) -> bool {
+    matches!(cmd.split_whitespace().next(), Some("Get-Content" | "gc"))
+}
+
+/// Maps `Get-Content`/`gc` to `lean-ctx read`, honoring `-Path`/`-LiteralPath`, the
+/// positional path, `-TotalCount`/`-Head`/`-First` (first N lines) and `-Tail`/`-Last`
+/// (last N lines). PowerShell parameter names are case-insensitive. Any other flag, a
+/// missing path, multiple files, or both head+tail makes it pass through (conservative,
+/// mirroring the Unix cat/head/tail handling).
+fn rewrite_get_content(parts: &[String], binary: &str) -> Option<String> {
+    let mut path: Option<String> = None;
+    let mut head_n: Option<u64> = None;
+    let mut tail_n: Option<u64> = None;
+    let mut i = 1;
+    while i < parts.len() {
+        if let Some(flag) = parts[i].strip_prefix('-') {
+            let value = parts.get(i + 1);
+            match flag.to_ascii_lowercase().as_str() {
+                "path" | "literalpath" => path = Some(value?.clone()),
+                "totalcount" | "head" | "first" => head_n = Some(value?.parse().ok()?),
+                "tail" | "last" => tail_n = Some(value?.parse().ok()?),
+                _ => return None,
+            }
+            i += 2;
+        } else if path.is_none() {
+            path = Some(parts[i].clone());
+            i += 1;
+        } else {
+            return None;
+        }
+    }
+    let path = path?;
+    if is_outside_project_path(&path) || (head_n.is_some() && tail_n.is_some()) {
+        return None;
+    }
+    let qp = shell_quote(&path);
+    match (head_n, tail_n) {
+        (Some(n), None) => Some(format!("{binary} read {qp} -m lines:1-{n}")),
+        (None, Some(n)) => Some(format!("{binary} read {qp} -m lines:-{n}")),
+        _ => Some(format!("{binary} read {qp}")),
     }
 }
 
@@ -349,36 +420,103 @@ fn is_outside_project_path(path: &str) -> bool {
     false
 }
 
-/// Rewrites `rg <pattern> [path]` to `lean-ctx grep <pattern> [path]` for simple forms.
+/// Rewrites `rg <pattern> [path]` (and PowerShell `Select-String`/`sls`, #561) to
+/// `lean-ctx grep <pattern> [path]` for simple forms.
 fn rewrite_search_command(cmd: &str, binary: &str) -> Option<String> {
     let parts = shell_tokenize(cmd);
-    if parts.first().map(String::as_str) != Some("rg") {
-        return None;
+    match parts.first().map(String::as_str) {
+        Some("rg") => {
+            if parts.len() < 2 || parts.len() > 3 || parts[1].starts_with('-') {
+                return None;
+            }
+            let pattern = &parts[1];
+            match parts.get(2) {
+                Some(p) if p.starts_with('-') => None,
+                Some(p) => Some(format!("{binary} grep {pattern} {}", shell_quote(p))),
+                None => Some(format!("{binary} grep {pattern}")),
+            }
+        }
+        Some("Select-String" | "sls") => rewrite_select_string(&parts, binary),
+        _ => None,
     }
-    if parts.len() < 2 || parts.len() > 3 {
-        return None;
+}
+
+/// Maps `Select-String`/`sls` to `lean-ctx grep`, honoring `-Pattern` and
+/// `-Path`/`-LiteralPath` plus the positional `<pattern> [path]` form. Patterns are
+/// quoted (PowerShell patterns often contain spaces). Any other flag, a missing
+/// pattern, or extra operands makes it pass through.
+fn rewrite_select_string(parts: &[String], binary: &str) -> Option<String> {
+    let mut pattern: Option<String> = None;
+    let mut path: Option<String> = None;
+    let mut i = 1;
+    while i < parts.len() {
+        if let Some(flag) = parts[i].strip_prefix('-') {
+            let value = parts.get(i + 1);
+            match flag.to_ascii_lowercase().as_str() {
+                "pattern" => pattern = Some(value?.clone()),
+                "path" | "literalpath" => path = Some(value?.clone()),
+                _ => return None,
+            }
+            i += 2;
+        } else if pattern.is_none() {
+            pattern = Some(parts[i].clone());
+            i += 1;
+        } else if path.is_none() {
+            path = Some(parts[i].clone());
+            i += 1;
+        } else {
+            return None;
+        }
     }
-    if parts[1].starts_with('-') {
-        return None;
-    }
-    let pattern = &parts[1];
-    match parts.get(2) {
-        Some(p) if p.starts_with('-') => None,
-        Some(p) => Some(format!("{binary} grep {pattern} {}", shell_quote(p))),
+    let pattern = shell_quote(&pattern?);
+    match path {
+        Some(p) if is_outside_project_path(&p) => None,
+        Some(p) => Some(format!("{binary} grep {pattern} {}", shell_quote(&p))),
         None => Some(format!("{binary} grep {pattern}")),
     }
 }
 
-/// Rewrites simple `ls [path]` to `lean-ctx ls [path]`.
+/// Rewrites simple `ls [path]` (and PowerShell `Get-ChildItem`/`gci`, #561) to
+/// `lean-ctx ls [path]`.
 fn rewrite_dir_list_command(cmd: &str, binary: &str) -> Option<String> {
     let parts = shell_tokenize(cmd);
-    if parts.first().map(String::as_str) != Some("ls") {
-        return None;
-    }
-    match parts.len() {
-        1 => Some(format!("{binary} ls")),
-        2 if !parts[1].starts_with('-') => Some(format!("{binary} ls {}", shell_quote(&parts[1]))),
+    match parts.first().map(String::as_str) {
+        Some("ls") => match parts.len() {
+            1 => Some(format!("{binary} ls")),
+            2 if !parts[1].starts_with('-') => {
+                Some(format!("{binary} ls {}", shell_quote(&parts[1])))
+            }
+            _ => None,
+        },
+        Some("Get-ChildItem" | "gci") => rewrite_get_childitem(&parts, binary),
         _ => None,
+    }
+}
+
+/// Maps `Get-ChildItem`/`gci` to `lean-ctx ls`, honoring `-Path`/`-LiteralPath` and the
+/// positional path. Other flags (e.g. `-Recurse`, `-Filter`) or extra operands pass
+/// through.
+fn rewrite_get_childitem(parts: &[String], binary: &str) -> Option<String> {
+    let mut path: Option<String> = None;
+    let mut i = 1;
+    while i < parts.len() {
+        if let Some(flag) = parts[i].strip_prefix('-') {
+            let value = parts.get(i + 1);
+            match flag.to_ascii_lowercase().as_str() {
+                "path" | "literalpath" => path = Some(value?.clone()),
+                _ => return None,
+            }
+            i += 2;
+        } else if path.is_none() {
+            path = Some(parts[i].clone());
+            i += 1;
+        } else {
+            return None;
+        }
+    }
+    match path {
+        Some(p) => Some(format!("{binary} ls {}", shell_quote(&p))),
+        None => Some(format!("{binary} ls")),
     }
 }
 
@@ -463,11 +601,28 @@ fn build_rewrite_compound(cmd: &str, binary: &str) -> Option<String> {
     })
 }
 
-fn emit_rewrite(rewritten: &str) {
-    let json_escaped = rewritten.replace('\\', "\\\\").replace('"', "\\\"");
-    print!(
-        "{{\"hookSpecificOutput\":{{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":{{\"command\":\"{json_escaped}\"}}}}}}"
-    );
+/// The lean-ctx redirect a host tool name maps to, if any.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RedirectKind {
+    Read,
+    Grep,
+    Glob,
+    None,
+}
+
+/// Classify a host tool name into the lean-ctx redirect it should take.
+///
+/// Covers the documented read/search/glob tool names across hosts. Copilot CLI
+/// fires the redirect hook for *every* tool call and dispatches purely on the tool
+/// name, so its aliases must be listed here: `view` (its read tool) and `rg` (its
+/// search alias) were previously unmatched and passed through uncompressed (#562).
+fn classify_redirect(tool_name: &str) -> RedirectKind {
+    match tool_name {
+        "Read" | "read" | "read_file" | "view" => RedirectKind::Read,
+        "Grep" | "grep" | "search" | "ripgrep" | "rg" => RedirectKind::Grep,
+        "Glob" | "glob" => RedirectKind::Glob,
+        _ => RedirectKind::None,
+    }
 }
 
 pub fn handle_redirect() {
@@ -489,13 +644,15 @@ pub fn handle_redirect() {
         return;
     };
 
-    let tool_name = v.get("tool_name").and_then(|t| t.as_str()).unwrap_or("");
-    let tool_input = v.get("tool_input");
+    // Normalise host payload shapes (snake_case vs Copilot CLI camelCase, #551).
+    let tool_name = payload::resolve_tool_name(&v).unwrap_or_default();
+    let tool_args = payload::resolve_tool_args(&v);
 
-    match tool_name {
-        "Read" | "read" | "read_file" => redirect_read(tool_input),
-        "Grep" | "grep" | "search" | "ripgrep" => redirect_grep(tool_input),
-        _ => print!("{allow}"),
+    match classify_redirect(&tool_name) {
+        RedirectKind::Read => redirect_read(tool_args.as_ref()),
+        RedirectKind::Grep => redirect_grep(tool_args.as_ref()),
+        RedirectKind::Glob => redirect_glob(tool_args.as_ref()),
+        RedirectKind::None => print!("{allow}"),
     }
 }
 
@@ -651,6 +808,68 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) {
     print!("{}", build_dual_allow_output());
 }
 
+/// Redirect Glob through lean-ctx in shadow/harden mode (#556).
+///
+/// Glob differs from Read/Grep: its result is a list of paths matched against
+/// the filesystem, not file content, so `build_redirect_output` (which swaps a
+/// field to a temp file the host then *reads*) cannot carry it. We therefore
+/// only act when shadow or harden mode is active — warm lean-ctx's own glob
+/// path (parity with `ctx_glob`) and record the intercept in shadow.log — then
+/// allow the native call through unchanged. Outside those modes there is nothing
+/// to gain, so we pass through immediately without spawning a subprocess.
+fn redirect_glob(tool_input: Option<&serde_json::Value>) {
+    let allow = build_dual_allow_output();
+    let shadow = is_shadow_mode_active();
+    if !shadow && !is_harden_active() {
+        print!("{allow}");
+        return;
+    }
+
+    let pattern = tool_input
+        .and_then(|ti| ti.get("pattern"))
+        .and_then(|p| p.as_str())
+        .unwrap_or("");
+    if pattern.is_empty() {
+        debug_log::log_hook_decision(
+            "redirect",
+            "Glob",
+            Route::Native,
+            "<none>",
+            "no pattern in tool input",
+        );
+        print!("{allow}");
+        return;
+    }
+    let search_path = tool_input
+        .and_then(|ti| ti.get("path"))
+        .and_then(|p| p.as_str())
+        .unwrap_or(".");
+
+    tracing::info!(
+        "[hook redirect] {} active, warming ctx_glob for {pattern}",
+        if shadow { "shadow mode" } else { "harden mode" }
+    );
+
+    // Warm lean-ctx's glob path (populates caches, parity with the ctx_glob the
+    // shadow header nudges toward); the native result is kept untouched.
+    let binary = resolve_binary();
+    let _ = run_with_timeout(
+        &binary,
+        &["glob", pattern, search_path],
+        REDIRECT_SUBPROCESS_TIMEOUT,
+    );
+
+    debug_log::log_hook_decision(
+        "redirect",
+        "Glob",
+        Route::Native,
+        &format!("{pattern} in {search_path}"),
+        "shadow/harden warm — native passthrough",
+    );
+    log_shadow_intercept("Glob", &format!("{pattern} in {search_path}"));
+    print!("{allow}");
+}
+
 const REDIRECT_SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Run a lean-ctx subprocess with a hard timeout. Returns stdout on success.
@@ -726,12 +945,19 @@ fn build_redirect_output(
     };
 
     serde_json::json!({
+        // Cursor hook output format.
         "permission": "allow",
-        "updated_input": updated_input,
+        "updated_input": updated_input.clone(),
+        // GitHub Copilot CLI preToolUse format: top-level `permissionDecision`
+        // + `modifiedArgs` (full substitute args) so the read/grep redirect to
+        // the lean-ctx temp file actually takes effect on Copilot (#551).
+        "permissionDecision": "allow",
+        "modifiedArgs": updated_input.clone(),
+        // Claude Code / CodeBuddy hook output format (other hosts ignore it).
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
-            "updatedInput": { field: temp_path }
+            "updatedInput": updated_input
         }
     })
     .to_string()
@@ -846,9 +1072,14 @@ pub fn handle_codex_session_start() {
     );
 }
 
-/// Copilot-specific `PreToolUse` handler.
-/// VS Code Copilot Chat uses the same hook format as Claude Code.
-/// Tool names differ: "runInTerminal" / "editFile" instead of "Bash" / "Read".
+/// Dedicated Copilot PreToolUse handler (dispatched via `hook copilot`).
+///
+/// NOTE: the live Copilot CLI integration installed by `init --agent copilot`
+/// registers `hook rewrite` + `hook redirect` (see `hooks::agents::copilot`),
+/// so this entry point is currently unused by setup. It is kept correct for any
+/// host wired to `hook copilot` directly. It parses the same normalised payload
+/// as the other handlers so Copilot CLI's camelCase `toolName`/`toolArgs`
+/// (JSON-encoded string) are read correctly (#551).
 pub fn handle_copilot() {
     if is_disabled() {
         return;
@@ -858,25 +1089,28 @@ pub fn handle_copilot() {
         return;
     };
 
-    let tool = extract_json_field(&input, "tool_name");
-    let Some(tool_name) = tool.as_deref() else {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) else {
         return;
     };
 
-    let is_shell_tool = matches!(
-        tool_name,
-        "Bash" | "bash" | "runInTerminal" | "run_in_terminal" | "terminal" | "shell"
-    );
-    if !is_shell_tool {
+    let Some(tool_name) = payload::resolve_tool_name(&v) else {
+        return;
+    };
+
+    if !is_shell_tool(&tool_name) {
         return;
     }
 
-    let Some(cmd) = extract_json_field(&input, "command") else {
+    let tool_args = payload::resolve_tool_args(&v);
+    let Some(cmd) = payload::resolve_command(&v, tool_args.as_ref()) else {
         return;
     };
 
     if let Some(rewritten) = rewrite_candidate(&cmd, &binary) {
-        emit_rewrite(&rewritten);
+        print!(
+            "{}",
+            build_dual_rewrite_output(tool_args.as_ref(), &rewritten)
+        );
     }
 }
 

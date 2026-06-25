@@ -90,6 +90,12 @@ pub async fn build(cfg: &GatewayConfig) -> Catalog {
     let mut errors: Vec<String> = Vec::new();
 
     for server in cfg.active_servers() {
+        // Kill-switch (P2): a revoked server is dropped from the catalog so its
+        // tools cannot be discovered or called; the reason is surfaced.
+        if let Some(reason) = crate::core::addons::revocation::blocked_reason(&server.name) {
+            errors.push(format!("{}: revoked — {reason}", server.name));
+            continue;
+        }
         let resolved = match server.resolve() {
             Ok(r) => r,
             Err(e) => {
@@ -176,6 +182,33 @@ mod tests {
     fn summarize_schema_empty_when_no_props() {
         let schema = json!({ "type": "object" });
         assert_eq!(summarize_schema(schema.as_object().unwrap()), "");
+    }
+
+    #[tokio::test]
+    async fn revoked_server_is_dropped_from_catalog() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let mut list = crate::core::addons::revocation::RevocationList::load();
+        list.revoke("blocked", "kill-switch test", None);
+        list.save().expect("save");
+
+        let cfg = GatewayConfig {
+            enabled: true,
+            servers: vec![crate::core::gateway::GatewayServer {
+                name: "blocked".into(),
+                command: "true".into(),
+                enabled: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let cat = build(&cfg).await;
+        // Revoked server never spawned; it contributes no tools, only an error.
+        assert!(cat.entries.is_empty());
+        assert!(
+            cat.errors.iter().any(|e| e.contains("revoked")),
+            "errors: {:?}",
+            cat.errors
+        );
     }
 
     #[test]

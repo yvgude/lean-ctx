@@ -57,10 +57,25 @@ pub async fn proxy(
         .active_servers()
         .find(|s| s.name == server_name)
         .ok_or_else(|| format!("unknown or disabled gateway server `{server_name}`"))?;
+    // Kill-switch (P2): refuse to proxy a call to a revoked server.
+    if let Some(reason) = crate::core::addons::revocation::blocked_reason(server_name) {
+        return Err(format!(
+            "gateway server `{server_name}` is revoked and will not run: {reason}"
+        ));
+    }
     let resolved = server.resolve()?;
     let timeout = std::time::Duration::from_secs(cfg.call_timeout_secs.max(1));
-    let result = client::proxy_call(&resolved, tool, arguments, timeout).await?;
-    let text = client::result_to_text(&result);
+    let call = client::proxy_call(&resolved, tool, arguments, timeout).await;
+    // Per-addon usage metering (P5): attribute every proxied call to its server +
+    // tool. A transport failure or a downstream `is_error` counts as an error.
+    // Side-channel only — never touches the returned text (output determinism).
+    let ok = matches!(&call, Ok(r) if !r.is_error.unwrap_or(false));
+    crate::core::addons::meter::record(server_name, tool, ok);
+    let result = call?;
+    // Downstream output is untrusted content (#866): redact secrets + audit it
+    // before it enters the model context.
+    let text =
+        crate::core::addons::runtime::scrub_output(server_name, &client::result_to_text(&result));
     if result.is_error.unwrap_or(false) {
         return Err(format!("downstream `{handle}` reported an error:\n{text}"));
     }

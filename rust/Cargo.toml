@@ -1,3 +1,11 @@
+# Workspace root. The SDK (Track A) is an opt-in member; `default-members` keeps
+# every existing `cargo build`/`test`/`clippy`/`publish` scoped to the engine
+# crate exactly as before — build the SDK explicitly with `-p lean-ctx-sdk` or
+# the whole workspace with `--workspace`.
+[workspace]
+members = [".", "crates/lean-ctx-sdk"]
+default-members = ["."]
+
 [package]
 name = "lean-ctx"
 version = "3.8.12"
@@ -10,7 +18,7 @@ homepage = "https://leanctx.com"
 readme = "README.md"
 keywords = ["mcp", "llm", "tokens", "compression", "ai"]
 categories = ["command-line-utilities", "development-tools"]
-exclude = ["examples/", "tests/"]
+exclude = ["examples/", "tests/", "crates/"]
 
 [package.metadata.binstall]
 bin-dir = "{ bin }{ binary-ext }"

@@ -772,7 +772,7 @@ mod tests {
             handles.push(std::thread::spawn(move || {
                 let agent = format!("agent-{client_idx}");
                 for event_idx in 0..n_events_per_client {
-                    bus.append(
+                    let _ = bus.append(
                         &ws,
                         &ch,
                         &ContextEventKindV1::ToolCallRecorded,
@@ -817,21 +817,21 @@ mod tests {
         let ch1 = format!("ch-iso-1-{pid}");
         let ch2 = format!("ch-iso-2-{pid}");
 
-        bus.append(
+        let _ = bus.append(
             &ws_a,
             &ch1,
             &ContextEventKindV1::SessionMutated,
             Some("agent-a"),
             serde_json::json!({"ws":"a","ch":"1"}),
         );
-        bus.append(
+        let _ = bus.append(
             &ws_a,
             &ch2,
             &ContextEventKindV1::KnowledgeRemembered,
             Some("agent-a"),
             serde_json::json!({"ws":"a","ch":"2"}),
         );
-        bus.append(
+        let _ = bus.append(
             &ws_b,
             &ch1,
             &ContextEventKindV1::ArtifactStored,

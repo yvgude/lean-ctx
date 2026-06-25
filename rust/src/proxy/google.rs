@@ -47,6 +47,13 @@ fn compress_request_body(
     let user_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::User);
     let live_compress = cfg.proxy.live_compresses();
     let mode = cfg.proxy.resolved_history_mode();
+    // #895 Track B: output-savings holdout arm, from the pristine body (before any
+    // mutation below) so it matches the arm the response meter records. Control
+    // conversations skip output-shaping but are still metered. Default 0 → Treatment.
+    let arm = super::holdout::assign(
+        &super::holdout::google_key(&doc),
+        cfg.proxy.output_holdout_fraction(),
+    );
     // #493: in-band CCR expansion (opt-in). Splice any <lc_expand:HASH> the model
     // echoed back into the verbatim original from the local tee store. A strict
     // no-op when no marker is present (byte-identical body → cache-safe). Runs
@@ -60,8 +67,14 @@ fn compress_request_body(
     // sets generationConfig.thinkingConfig (thinkingLevel on 3.x, thinkingBudget
     // on 2.5 pro/flash) only for models that accept it and only when the client
     // didn't pin its own thinking field. `model` is read from the URL path.
-    if let Some(effort) = cfg.proxy.resolved_effort() {
-        modified |= super::effort::apply_google(&mut doc, effort, model);
+    if arm == super::holdout::Arm::Treatment {
+        if let Some(effort) = cfg.proxy.resolved_effort() {
+            modified |= super::effort::apply_google(&mut doc, effort, model);
+        }
+        // #895: cache-safe wire verbosity steer; control arm skips it (measured).
+        if cfg.proxy.verbosity_steer_enabled() {
+            modified |= super::verbosity::apply_google(&mut doc);
+        }
     }
     // Meter-only (#481): no live compression, no history pruning, no prose → the
     // body is forwarded unchanged while usage metering still runs. A pending

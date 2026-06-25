@@ -10,6 +10,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use super::capabilities::AddonCapabilities;
+
 /// One installed addon and the gateway server it owns.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstalledAddon {
@@ -19,6 +21,16 @@ pub struct InstalledAddon {
     pub source: String,
     /// The `[[gateway.servers]]` entry this addon installed.
     pub gateway_server: String,
+    /// The capabilities the user consented to at install (P1). `None` for
+    /// addons installed before the capability model / without a declaration —
+    /// a record of the granted permissions, for audit and later re-prompting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub granted_capabilities: Option<AddonCapabilities>,
+    /// Integrity lock (P2): content hash of the gateway wiring pinned at install.
+    /// `None` for addons installed before integrity pinning. Re-verified by
+    /// [`super::integrity::verify_all`] to detect post-install drift.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_hash: Option<String>,
 }
 
 /// The on-disk installed-addons index.
@@ -88,6 +100,8 @@ mod tests {
             version: "1.0.0".into(),
             source: "registry".into(),
             gateway_server: name.to_string(),
+            granted_capabilities: None,
+            content_hash: None,
         }
     }
 

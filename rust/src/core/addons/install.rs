@@ -34,6 +34,22 @@ pub fn install(manifest: &AddonManifest, source: &str) -> Result<InstallOutcome,
         )
     })?;
 
+    // Kill-switch (P2): a revoked addon never installs.
+    if let Some(reason) =
+        super::revocation::install_block(&manifest.addon.name, &manifest.addon.version)
+    {
+        return Err(format!(
+            "addon `{}` is revoked and cannot be installed: {reason}",
+            manifest.addon.name
+        ));
+    }
+
+    // Security floor (#865): enforce the global-only install policy before any
+    // gateway mutation, so a blocked addon never touches config.
+    let cfg = Config::load();
+    let findings = super::trust::assess(manifest);
+    super::policy::gate(manifest, &cfg.addons, &findings)?;
+
     let name = manifest.addon.name.clone();
     let server_name = server.name.clone();
     let mut enabled_gateway = false;
@@ -54,6 +70,8 @@ pub fn install(manifest: &AddonManifest, source: &str) -> Result<InstallOutcome,
         version: manifest.addon.version.clone(),
         source: source.to_string(),
         gateway_server: server_name.clone(),
+        granted_capabilities: manifest.capabilities.clone(),
+        content_hash: Some(super::integrity::wiring_hash(&server)),
     });
     store.save()?;
 
@@ -162,5 +180,26 @@ mod tests {
         let _iso = isolated_data_dir();
         let listed = AddonManifest::from_toml("[addon]\nname = \"listed\"\n").expect("parse");
         assert!(install(&listed, "registry").is_err());
+    }
+
+    #[test]
+    fn revoked_addon_refuses_install() {
+        let _iso = isolated_data_dir();
+        let mut list = super::super::revocation::RevocationList::load();
+        list.revoke("demo", "kill-switch test", None);
+        list.save().expect("save");
+        let Err(err) = install(&manifest("demo"), "registry") else {
+            panic!("revoked addon must refuse to install");
+        };
+        assert!(err.contains("revoked"), "got: {err}");
+        // Nothing was wired.
+        assert!(
+            !Config::load()
+                .gateway
+                .servers
+                .iter()
+                .any(|s| s.name == "demo")
+        );
+        assert!(InstalledStore::load().get("demo").is_none());
     }
 }

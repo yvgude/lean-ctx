@@ -1,23 +1,5 @@
 use std::path::{Path, PathBuf};
 
-const IDE_CONFIG_DIRS: &[&str] = &[
-    ".lean-ctx",
-    ".cursor",
-    ".claude",
-    ".codex",
-    ".codeium",
-    ".gemini",
-    ".qwen",
-    ".trae",
-    ".kiro",
-    ".verdent",
-    ".pi",
-    ".amp",
-    ".aider",
-    ".continue",
-    ".codebuddy",
-];
-
 /// `allow_paths` / `extra_roots` come from `config.toml`, where no shell ever
 /// runs — users writing `"$HOME/code"` or `"~/code"` got a literal,
 /// never-matching prefix and concluded the whole option was broken (GH #392).
@@ -71,12 +53,18 @@ pub fn allow_paths_from_env_and_config() -> Vec<PathBuf> {
     // against — otherwise a guarded (lexical) root vs a resolved candidate would
     // break `is_under_prefix`. These entries are data_dir / IDE-config dirs /
     // user-configured paths, virtually never under ~/Documents.
+    //
+    // This is also lean-ctx's own state dir (sessions, knowledge, …) — always
+    // readable even while foreign editor dirs stay jailed. On a legacy install
+    // the resolver returns `~/.lean-ctx`; on a split install it returns the XDG
+    // data dir. Going through the resolver (not a hardcoded `~/.lean-ctx` join)
+    // is what keeps `home_allow_dirs` free of the legacy-path firewall trip.
     if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
         out.push(canonicalize_secure(&data_dir));
     }
 
     if let Some(home) = dirs::home_dir() {
-        let ide_dirs_allowed = cfg.allow_ide_config_dirs
+        let ide_dirs_allowed = cfg.allow_ide_config_dirs.unwrap_or(false)
             || std::env::var("LEAN_CTX_ALLOW_IDE_DIRS").is_ok_and(|v| v == "1");
         out.extend(home_allow_dirs(&home, ide_dirs_allowed));
     }
@@ -200,7 +188,11 @@ pub fn active_relaxations() -> Vec<JailRelaxation> {
     }
 
     let ide_env = std::env::var("LEAN_CTX_ALLOW_IDE_DIRS").is_ok_and(|v| v == "1");
-    if ide_env || crate::core::config::Config::load().allow_ide_config_dirs {
+    if ide_env
+        || crate::core::config::Config::load()
+            .allow_ide_config_dirs
+            .unwrap_or(false)
+    {
         out.push(JailRelaxation {
             source: if ide_env {
                 "LEAN_CTX_ALLOW_IDE_DIRS=1"
@@ -279,23 +271,54 @@ pub fn enforce_writable(candidate: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Home-level allow-dirs for the jail. `~/.lean-ctx` (own state) is always
-/// allowed; the *other* IDE config dirs (~/.cursor, ~/.claude, …) expose
-/// foreign projects' sessions, MCP configs and credentials to any agent, so
-/// they are opt-in only (config `allow_ide_config_dirs = true` or
-/// `LEAN_CTX_ALLOW_IDE_DIRS=1`).
+/// Foreign editor config dirs for the jail (~/.cursor, ~/.claude, VS Code, …).
+///
+/// These expose other projects' sessions, MCP configs and credentials to any
+/// agent, so they are opt-in only (config `allow_ide_config_dirs = true` or
+/// `LEAN_CTX_ALLOW_IDE_DIRS=1`). lean-ctx's *own* state dir is intentionally NOT
+/// handled here: the caller already adds it via the sanctioned `data_dir`
+/// resolver (the legacy `~/.lean-ctx` is just one resolution of it). Keeping this
+/// a pure foreign-editor list means no legacy `~/.lean-ctx` literal is built in
+/// this module, so the legacy-path firewall (tests/legacy_path_firewall) has
+/// nothing to flag.
 fn home_allow_dirs(home: &Path, ide_dirs_allowed: bool) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    for dir in IDE_CONFIG_DIRS {
-        if *dir != ".lean-ctx" && !ide_dirs_allowed {
-            continue;
-        }
-        let p = home.join(dir);
-        if p.exists() {
-            out.push(canonicalize_secure(&p));
-        }
+    if ide_dirs_allowed {
+        let targets = crate::core::editor_registry::build_targets(home);
+        collect_ide_allow_dirs(home, &targets, &mut out);
     }
     out
+}
+
+/// Collect the in-home config/detect directories of every supported editor.
+///
+/// Derived from the editor registry (the single source of truth) so it covers
+/// non-dotfile layouts too — VS Code's `Library/Application Support/Code/User`,
+/// Cline/Roo globalStorage, JetBrains — and never drifts as editors are added.
+/// A config file that sits directly in `$HOME` (`~/.claude.json`,
+/// `~/.jb-mcp.json`) resolves its parent to `$HOME`; those entries are skipped
+/// so the jail is never widened to the entire home directory.
+fn collect_ide_allow_dirs(
+    home: &Path,
+    targets: &[crate::core::editor_registry::EditorTarget],
+    out: &mut Vec<PathBuf>,
+) {
+    let mut seen: std::collections::HashSet<PathBuf> = out.iter().cloned().collect();
+    for target in targets {
+        let candidates = [
+            target.config_path.parent().map(Path::to_path_buf),
+            Some(target.detect_path.clone()),
+        ];
+        for cand in candidates.into_iter().flatten() {
+            if cand.as_path() == home || !cand.starts_with(home) || !cand.is_dir() {
+                continue;
+            }
+            let resolved = canonicalize_secure(&cand);
+            if seen.insert(resolved.clone()) {
+                out.push(resolved);
+            }
+        }
+    }
 }
 
 fn is_under_prefix(path: &Path, prefix: &Path) -> bool {
@@ -657,33 +680,86 @@ mod tests {
     }
 
     #[test]
-    fn ide_config_dirs_list_is_not_empty() {
-        assert!(IDE_CONFIG_DIRS.len() >= 10);
-        assert!(IDE_CONFIG_DIRS.contains(&".codex"));
-        assert!(IDE_CONFIG_DIRS.contains(&".cursor"));
-        assert!(IDE_CONFIG_DIRS.contains(&".claude"));
-        assert!(IDE_CONFIG_DIRS.contains(&".gemini"));
+    fn ide_allow_dirs_are_registry_derived_and_skip_home() {
+        use crate::core::editor_registry::{ConfigType, EditorTarget};
+
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path();
+        // VS Code keeps its config outside a dotfile dir — the old hard-coded
+        // list missed this entirely.
+        std::fs::create_dir_all(h.join("Library/Application Support/Code/User")).unwrap();
+        std::fs::create_dir_all(h.join(".cursor")).unwrap();
+
+        let targets = vec![
+            EditorTarget {
+                name: "VS Code",
+                agent_key: "vscode".into(),
+                config_path: h.join("Library/Application Support/Code/User/mcp.json"),
+                detect_path: h.join("Library/Application Support/Code"),
+                config_type: ConfigType::VsCodeMcp,
+            },
+            EditorTarget {
+                name: "Cursor",
+                agent_key: "cursor".into(),
+                config_path: h.join(".cursor/mcp.json"),
+                detect_path: h.join(".cursor"),
+                config_type: ConfigType::McpJson,
+            },
+            // A $HOME-level config file: its parent is $HOME and must be skipped.
+            EditorTarget {
+                name: "Claude Code",
+                agent_key: "claude".into(),
+                config_path: h.join(".claude.json"),
+                detect_path: h.join(".no-such-dir"),
+                config_type: ConfigType::McpJson,
+            },
+        ];
+
+        let mut out = Vec::new();
+        collect_ide_allow_dirs(h, &targets, &mut out);
+
+        assert!(
+            out.iter().any(|p| p.ends_with("Code/User")),
+            "non-dotfile VS Code dir must be covered: {out:?}"
+        );
+        assert!(out.iter().any(|p| p.ends_with(".cursor")), "{out:?}");
+        let home_canon = canonicalize_secure(h);
+        assert!(
+            !out.contains(&home_canon),
+            "must never widen the jail to $HOME: {out:?}"
+        );
     }
 
-    // P0-10 (#422): home-level IDE config dirs are opt-in; only ~/.lean-ctx
-    // is allowed unconditionally.
+    // P0-10 (#422): foreign editor config dirs are opt-in. lean-ctx's own state
+    // dir is added by the caller via the data_dir root, NOT by `home_allow_dirs`,
+    // so the default home allow-list is empty and `~/.lean-ctx` (not an editor)
+    // never appears here.
     #[test]
     fn ide_config_dirs_are_excluded_by_default() {
         let home = tempfile::tempdir().unwrap();
-        for d in [".lean-ctx", ".cursor", ".claude", ".codex"] {
+        for d in [".lean-ctx", ".cursor", ".codex"] {
             std::fs::create_dir_all(home.path().join(d)).unwrap();
         }
 
         let denied = home_allow_dirs(home.path(), false);
-        assert_eq!(
-            denied.len(),
-            1,
-            "only ~/.lean-ctx may be allowed: {denied:?}"
+        assert!(
+            denied.is_empty(),
+            "foreign editor dirs must stay jailed by default: {denied:?}"
         );
-        assert!(denied[0].ends_with(".lean-ctx"));
 
+        // Opt-in exposes the editor dirs that actually exist under this home.
+        // Entries are registry-derived (foreign real-$HOME paths are filtered out
+        // by the in-home guard), so the result stays hermetic — and `~/.lean-ctx`
+        // is never added here because it is not an editor.
         let allowed = home_allow_dirs(home.path(), true);
-        assert_eq!(allowed.len(), 4, "opt-in must allow all existing IDE dirs");
+        assert!(
+            allowed.iter().any(|p| p.ends_with(".cursor")),
+            "opt-in must expose editor dirs: {allowed:?}"
+        );
+        assert!(
+            !allowed.iter().any(|p| p.ends_with(".lean-ctx")),
+            "lean-ctx's own dir is covered by the data_dir root, not home_allow_dirs: {allowed:?}"
+        );
     }
 
     #[test]

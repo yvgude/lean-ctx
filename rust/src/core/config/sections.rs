@@ -679,4 +679,12 @@ pub struct EmbeddingConfig {
     /// overrides this in either direction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_download: Option<bool>,
+    /// Pin embedding inference to a single CPU thread (no GPU EP) so vectors are
+    /// bit-identical across machines, not just run-to-run on one host (#895).
+    /// `None`/`false` keeps the multi-threaded GPU-capable path. Extractive prose
+    /// ranking is already deterministic via score quantization + stable tiebreak;
+    /// this flag is the extra hardening for cross-machine reproducibility. The
+    /// `LEAN_CTX_EMBEDDING_DETERMINISTIC` env var overrides this either way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deterministic: Option<bool>,
 }

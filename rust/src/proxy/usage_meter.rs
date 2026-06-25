@@ -60,11 +60,68 @@ pub struct ModelSpend {
     pub pricing_estimated: bool,
 }
 
+/// Cumulative output-savings cohort totals (#895 Track B). Keyed by arm name
+/// (`"control"` | `"treatment"`); the average output tokens per turn is
+/// `output_tokens / requests`. Only populated while a holdout is active.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct CohortUsage {
+    pub requests: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    /// Sum of squared per-turn output tokens, enabling an online sample variance
+    /// (and therefore a confidence interval) without retaining every turn.
+    /// `#[serde(default)]` keeps pre-#895 files loadable.
+    #[serde(default)]
+    pub sum_sq_output: u64,
+}
+
+impl CohortUsage {
+    fn add(&mut self, u: &super::usage::RealUsage) {
+        self.requests += 1;
+        self.input_tokens += u.input_tokens;
+        self.output_tokens += u.output_tokens;
+        self.sum_sq_output += u.output_tokens.saturating_mul(u.output_tokens);
+    }
+
+    /// Average output tokens per turn, or `None` with no observations.
+    #[must_use]
+    pub fn avg_output(&self) -> Option<f64> {
+        if self.requests == 0 {
+            None
+        } else {
+            #[allow(clippy::cast_precision_loss)]
+            Some(self.output_tokens as f64 / self.requests as f64)
+        }
+    }
+
+    /// Unbiased sample variance of per-turn output tokens, or `None` with < 2
+    /// observations. Computed from the running sum / sum-of-squares (clamped at
+    /// 0 to absorb floating-point error on near-constant samples).
+    #[must_use]
+    pub fn variance_output(&self) -> Option<f64> {
+        if self.requests < 2 {
+            return None;
+        }
+        #[allow(clippy::cast_precision_loss)]
+        let n = self.requests as f64;
+        #[allow(clippy::cast_precision_loss)]
+        let sum = self.output_tokens as f64;
+        #[allow(clippy::cast_precision_loss)]
+        let sum_sq = self.sum_sq_output as f64;
+        let var = (sum_sq - sum * sum / n) / (n - 1.0);
+        Some(var.max(0.0))
+    }
+}
+
 /// On-disk shape of the measured spend totals.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PersistedUsage {
     pub ts: u64,
     pub models: HashMap<String, ModelUsage>,
+    /// Output-savings cohort totals (#895). `#[serde(default)]` keeps older
+    /// `proxy_usage.json` files (written before the holdout existed) loadable.
+    #[serde(default)]
+    pub cohorts: HashMap<String, CohortUsage>,
 }
 
 /// Distinct-model bucket cap. `record` keys on the raw response model string, so
@@ -75,6 +132,11 @@ const PROXY_USAGE_FILE: &str = "proxy_usage.json";
 
 fn store() -> &'static Mutex<HashMap<String, ModelUsage>> {
     static STORE: OnceLock<Mutex<HashMap<String, ModelUsage>>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn cohort_store() -> &'static Mutex<HashMap<String, CohortUsage>> {
+    static STORE: OnceLock<Mutex<HashMap<String, CohortUsage>>> = OnceLock::new();
     STORE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -97,9 +159,20 @@ pub fn resume_from_disk() {
         acc.cache_write_tokens += usage.cache_write_tokens;
         acc.reasoning_tokens += usage.reasoning_tokens;
     }
+    drop(map);
+    let mut cohorts = cohort_store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    for (arm, usage) in persisted.cohorts {
+        let acc = cohorts.entry(arm).or_default();
+        acc.requests += usage.requests;
+        acc.input_tokens += usage.input_tokens;
+        acc.output_tokens += usage.output_tokens;
+    }
 }
 
-/// Records one turn's measured usage against its model bucket and persists.
+/// Records one turn's measured usage against its model bucket (and its
+/// output-savings cohort, when tagged) and persists.
 pub fn record(u: &super::usage::RealUsage) {
     let key = normalize_key(&u.model);
     {
@@ -113,7 +186,28 @@ pub fn record(u: &super::usage::RealUsage) {
         };
         map.entry(key).or_default().add(u);
     }
+    if let Some(arm) = u.cohort {
+        let mut cohorts = cohort_store()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        cohorts.entry(arm.as_str().to_string()).or_default().add(u);
+    }
     persist();
+}
+
+/// Live output-savings cohort totals (#895). Empty until a holdout runs.
+#[must_use]
+pub fn cohort_snapshot() -> HashMap<String, CohortUsage> {
+    cohort_store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+/// Cross-process read of the persisted output-savings cohort totals.
+#[must_use]
+pub fn persisted_cohorts() -> HashMap<String, CohortUsage> {
+    load_persisted().map(|p| p.cohorts).unwrap_or_default()
 }
 
 fn normalize_key(model: &str) -> String {
@@ -194,12 +288,19 @@ fn persist() {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         map.clone()
     };
+    let cohorts = {
+        let map = cohort_store()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        map.clone()
+    };
     let payload = PersistedUsage {
         ts: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs(),
         models,
+        cohorts,
     };
     let Ok(json) = serde_json::to_string(&payload) else {
         return;
@@ -258,6 +359,7 @@ mod tests {
             cache_read_tokens: cache_read,
             cache_write_tokens: 0,
             reasoning_tokens: 0,
+            cohort: None,
         }
     }
 
@@ -324,5 +426,43 @@ mod tests {
         assert_eq!(normalize_key("  "), "unknown");
         assert_eq!(normalize_key(""), "unknown");
         assert_eq!(normalize_key("gpt-5.4"), "gpt-5.4");
+    }
+
+    #[test]
+    fn cohort_avg_output_is_mean_per_turn() {
+        let mut c = CohortUsage::default();
+        assert_eq!(c.avg_output(), None, "no observations → None");
+        c.add(&usage("m", 10, 100, 0));
+        c.add(&usage("m", 10, 50, 0));
+        assert_eq!(c.requests, 2);
+        assert_eq!(c.output_tokens, 150);
+        assert!((c.avg_output().unwrap() - 75.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn persisted_usage_without_cohorts_field_loads() {
+        // proxy_usage.json written before #895 has no `cohorts` key; serde(default)
+        // must backfill an empty map so old files stay loadable.
+        let json = r#"{"ts":1,"models":{"gpt-5.4":{"requests":1,"input_tokens":10,"output_tokens":5,"cache_read_tokens":0,"cache_write_tokens":0,"reasoning_tokens":0}}}"#;
+        let p: PersistedUsage = serde_json::from_str(json).expect("loads legacy file");
+        assert_eq!(p.models.len(), 1);
+        assert!(p.cohorts.is_empty());
+    }
+
+    #[test]
+    fn persisted_usage_roundtrips_cohorts() {
+        let mut p = PersistedUsage::default();
+        p.cohorts.insert(
+            "control".into(),
+            CohortUsage {
+                requests: 3,
+                input_tokens: 30,
+                output_tokens: 300,
+                sum_sq_output: 30_000,
+            },
+        );
+        let json = serde_json::to_string(&p).unwrap();
+        let back: PersistedUsage = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.cohorts.get("control").unwrap().output_tokens, 300);
     }
 }

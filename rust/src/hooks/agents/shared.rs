@@ -50,3 +50,42 @@ pub(super) fn prepare_project_rules_path(global: bool, file_name: &str) -> Optio
 
     Some(rules_path)
 }
+
+/// Remove the first lean-ctx block delimited by `start`..`end` from `content`.
+/// Shared by the Claude/CodeBuddy CLAUDE.md/CODEBUDDY.md installers and `doctor`.
+pub(super) fn remove_block(content: &str, start: &str, end: &str) -> String {
+    let s = content.find(start);
+    let e = content.find(end);
+    match (s, e) {
+        (Some(si), Some(ei)) if ei >= si => {
+            let after_end = ei + end.len();
+            let before = content[..si].trim_end_matches('\n');
+            let after = &content[after_end..];
+            let mut out = before.to_string();
+            out.push('\n');
+            if !after.trim().is_empty() {
+                out.push('\n');
+                out.push_str(after.trim_start_matches('\n'));
+            }
+            out
+        }
+        _ => content.to_string(),
+    }
+}
+
+/// Remove *every* lean-ctx block delimited by `start`..`end`. Heals files that
+/// accumulated duplicate blocks from the pre-#549 marker mismatch (the detector
+/// constant pointed at `<!-- lean-ctx-rules -->` while the written block used
+/// `<!-- lean-ctx -->`, so every `setup`/`doctor --fix` appended a fresh copy).
+/// Callers then write exactly one canonical block back.
+pub(super) fn remove_all_blocks(content: &str, start: &str, end: &str) -> String {
+    let mut out = content.to_string();
+    while out.contains(start) {
+        let next = remove_block(&out, start, end);
+        if next == out {
+            break; // malformed (start without end) — avoid an infinite loop
+        }
+        out = next;
+    }
+    out
+}

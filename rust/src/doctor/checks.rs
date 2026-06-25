@@ -1754,8 +1754,8 @@ mod tests {
             ".claude/CLAUDE.md",
             &format!(
                 "{}\ncontent\n{}",
-                crate::core::rules_canonical::START_MARK,
-                crate::core::rules_canonical::END_MARK,
+                crate::core::rules_canonical::AGENTS_BLOCK_START,
+                crate::core::rules_canonical::AGENTS_BLOCK_END,
             ),
         );
         write(tmp.path(), ".claude/skills/lean-ctx/SKILL.md", "skill");
@@ -1771,7 +1771,7 @@ mod tests {
         write(
             tmp.path(),
             ".claude/CLAUDE.md",
-            &format!("{}\nx", crate::core::rules_canonical::START_MARK),
+            &format!("{}\nx", crate::core::rules_canonical::AGENTS_BLOCK_START),
         );
         let out = check(tmp.path(), RulesScope::Global, RulesInjection::Shared);
         assert!(out.ok, "{}", out.line);

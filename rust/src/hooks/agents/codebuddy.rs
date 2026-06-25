@@ -2,6 +2,7 @@ use super::super::{
     HookMode, REDIRECT_SCRIPT_CLAUDE, generate_rewrite_script, make_executable,
     mcp_server_quiet_mode, resolve_binary_path, resolve_binary_path_for_bash, write_file,
 };
+use super::shared::remove_all_blocks;
 
 pub(crate) fn install_codebuddy_hook_with_mode(global: bool, mode: HookMode) {
     let Some(home) = crate::core::home::resolve_home_dir() else {
@@ -79,9 +80,12 @@ fn install_codebuddy_mcp_server(home: &std::path::Path) {
 }
 
 /// Shared with `doctor` so the instructions check recognises the same block
-/// this installer writes.
-pub(crate) const CODEBUDDY_MD_BLOCK_START: &str = crate::core::rules_canonical::START_MARK;
-const CODEBUDDY_MD_BLOCK_END: &str = crate::core::rules_canonical::END_MARK;
+/// this installer writes. The CODEBUDDY.md block is a lightweight *pointer*
+/// block, so it uses `AGENTS_BLOCK_START`/`END` (`<!-- lean-ctx -->`), not the
+/// full-rules markers (`<!-- lean-ctx-rules -->`) — pointing them at the rules
+/// markers broke detection and caused duplicate blocks (GH #549).
+pub(crate) const CODEBUDDY_MD_BLOCK_START: &str = crate::core::rules_canonical::AGENTS_BLOCK_START;
+const CODEBUDDY_MD_BLOCK_END: &str = crate::core::rules_canonical::AGENTS_BLOCK_END;
 const CODEBUDDY_MD_BLOCK_VERSION: &str = "lean-ctx-codebuddy-v1";
 
 const CODEBUDDY_MD_BLOCK_CONTENT_MCP: &str = "\
@@ -126,22 +130,21 @@ fn install_codebuddy_global_codebuddy_md_for_mode(home: &std::path::Path, mode: 
         HookMode::Mcp | HookMode::Hybrid => CODEBUDDY_MD_BLOCK_VERSION,
     };
 
-    if existing.contains(CODEBUDDY_MD_BLOCK_START) {
-        if existing.contains(block_version) {
-            return;
-        }
-        let cleaned = remove_block(&existing, CODEBUDDY_MD_BLOCK_START, CODEBUDDY_MD_BLOCK_END);
-        let updated = format!("{}\n\n{}\n", cleaned.trim(), block);
-        write_file(&codebuddy_md_path, &updated);
+    // A single up-to-date block needs no rewrite. Otherwise — a stale version
+    // *or* duplicate blocks accumulated from the pre-#549 marker mismatch —
+    // collapse every lean-ctx block and write exactly one canonical copy back.
+    let block_count = existing.matches(CODEBUDDY_MD_BLOCK_START).count();
+    if block_count == 1 && existing.contains(block_version) {
         return;
     }
-
-    if existing.trim().is_empty() {
-        write_file(&codebuddy_md_path, block);
+    let cleaned = remove_all_blocks(&existing, CODEBUDDY_MD_BLOCK_START, CODEBUDDY_MD_BLOCK_END);
+    let cleaned = cleaned.trim();
+    let updated = if cleaned.is_empty() {
+        format!("{block}\n")
     } else {
-        let updated = format!("{}\n\n{}\n", existing.trim(), block);
-        write_file(&codebuddy_md_path, &updated);
-    }
+        format!("{cleaned}\n\n{block}\n")
+    };
+    write_file(&codebuddy_md_path, &updated);
 }
 
 fn strip_codebuddy_md_block(codebuddy_md_path: &std::path::Path) {
@@ -151,31 +154,11 @@ fn strip_codebuddy_md_block(codebuddy_md_path: &std::path::Path) {
     if !existing.contains(CODEBUDDY_MD_BLOCK_START) {
         return;
     }
-    let cleaned = remove_block(&existing, CODEBUDDY_MD_BLOCK_START, CODEBUDDY_MD_BLOCK_END);
+    let cleaned = remove_all_blocks(&existing, CODEBUDDY_MD_BLOCK_START, CODEBUDDY_MD_BLOCK_END);
     if cleaned.trim().is_empty() {
         let _ = std::fs::remove_file(codebuddy_md_path);
     } else {
         write_file(codebuddy_md_path, &format!("{}\n", cleaned.trim_end()));
-    }
-}
-
-fn remove_block(content: &str, start: &str, end: &str) -> String {
-    let s = content.find(start);
-    let e = content.find(end);
-    match (s, e) {
-        (Some(si), Some(ei)) if ei >= si => {
-            let after_end = ei + end.len();
-            let before = content[..si].trim_end_matches('\n');
-            let after = &content[after_end..];
-            let mut out = before.to_string();
-            out.push('\n');
-            if !after.trim().is_empty() {
-                out.push('\n');
-                out.push_str(after.trim_start_matches('\n'));
-            }
-            out
-        }
-        _ => content.to_string(),
     }
 }
 
@@ -285,7 +268,7 @@ pub(crate) fn install_codebuddy_hook_scripts(home: &std::path::Path) {
     let _ = wrapper;
 }
 
-const REDIRECT_MATCHER: &str = "Read|read|ReadFile|read_file|View|view|Grep|grep|Search|search|ListFiles|list_files|ListDirectory|list_directory";
+const REDIRECT_MATCHER: &str = "Read|read|ReadFile|read_file|View|view|Grep|grep|Search|search|ListFiles|list_files|ListDirectory|list_directory|Glob|glob";
 
 fn lean_ctx_action_token(command: &str) -> &str {
     match command.rfind(" hook ") {
@@ -629,5 +612,64 @@ mod tests {
         assert!(home.join(".codebuddy/skills/lean-ctx/SKILL.md").exists());
         remove_codebuddy_skill(home);
         assert!(!home.join(".codebuddy/skills/lean-ctx").exists());
+    }
+
+    #[test]
+    fn codebuddy_block_content_carries_detection_markers() {
+        // GH #549 regression guard (see claude.rs for the full rationale).
+        assert!(
+            CODEBUDDY_MD_BLOCK_CONTENT_MCP.contains(CODEBUDDY_MD_BLOCK_START),
+            "block content must contain its own start marker"
+        );
+        assert!(
+            CODEBUDDY_MD_BLOCK_CONTENT_MCP.contains(CODEBUDDY_MD_BLOCK_END),
+            "block content must contain its own end marker"
+        );
+    }
+
+    #[test]
+    fn installer_writes_single_codebuddy_block_and_is_idempotent() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let md = crate::core::editor_registry::codebuddy_state_dir(home).join("CODEBUDDY.md");
+
+        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "shared");
+        install_codebuddy_global_codebuddy_md_for_mode(home, HookMode::Mcp);
+        install_codebuddy_global_codebuddy_md_for_mode(home, HookMode::Mcp);
+        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+
+        let after = std::fs::read_to_string(&md).unwrap();
+        assert_eq!(
+            after.matches(CODEBUDDY_MD_BLOCK_START).count(),
+            1,
+            "exactly one block after repeated installs, got:\n{after}"
+        );
+        assert!(after.contains(CODEBUDDY_MD_BLOCK_VERSION));
+    }
+
+    #[test]
+    fn installer_heals_duplicate_codebuddy_blocks() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let dir = crate::core::editor_registry::codebuddy_state_dir(home);
+        std::fs::create_dir_all(&dir).unwrap();
+        let md = dir.join("CODEBUDDY.md");
+        let b = CODEBUDDY_MD_BLOCK_CONTENT_MCP;
+        let dupes = format!("# my notes\n\n{b}\n\n{b}\n\n{b}\n");
+        std::fs::write(&md, dupes).unwrap();
+
+        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "shared");
+        install_codebuddy_global_codebuddy_md_for_mode(home, HookMode::Mcp);
+        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+
+        let after = std::fs::read_to_string(&md).unwrap();
+        assert_eq!(
+            after.matches(CODEBUDDY_MD_BLOCK_START).count(),
+            1,
+            "duplicates must collapse to one, got:\n{after}"
+        );
+        assert!(after.contains("# my notes"), "user content must survive");
     }
 }

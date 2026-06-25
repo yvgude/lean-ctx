@@ -40,10 +40,15 @@ fn roi() -> (&'static str, &'static str, String) {
     let entitlements = eff.plan.entitlements();
     let logged_in = crate::cloud_client::is_logged_in();
 
+    // #895 Track B: measured (A/B holdout) or estimated output-token reduction.
+    // Same JSON shape the `lean-ctx output-savings --json` CLI emits.
+    let output = crate::proxy::output_savings::to_json(&crate::proxy::output_savings::current());
+
     let payload = json!({
         "roi": report,
         // [[YYYY-MM-DD, saved_tokens, saved_usd], ...] ascending — drives the trend chart.
         "trend": summary.by_day,
+        "output": output,
         "plan": {
             "plan": eff.plan.as_str(),
             "source": plan_source_label(eff.source),

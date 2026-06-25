@@ -181,6 +181,121 @@ fn file_read_still_rewrites_project_relative_paths() {
     );
 }
 
+// --- #561: PowerShell-native cmdlet rewrites ---
+
+#[test]
+fn ps_get_content_basic_and_alias() {
+    assert_eq!(
+        rewrite_file_read_command("Get-Content src/main.rs", "lean-ctx"),
+        Some("lean-ctx read src/main.rs".to_string())
+    );
+    assert_eq!(
+        rewrite_file_read_command("gc src/main.rs", "lean-ctx"),
+        Some("lean-ctx read src/main.rs".to_string())
+    );
+    assert_eq!(
+        rewrite_file_read_command("Get-Content -Path src/lib.rs", "lean-ctx"),
+        Some("lean-ctx read src/lib.rs".to_string())
+    );
+}
+
+#[test]
+fn ps_get_content_head_and_tail() {
+    // -TotalCount / -Head / -First == head; -Tail / -Last == tail. Case-insensitive.
+    assert_eq!(
+        rewrite_file_read_command("Get-Content -TotalCount 20 src/main.rs", "lean-ctx"),
+        Some("lean-ctx read src/main.rs -m lines:1-20".to_string())
+    );
+    assert_eq!(
+        rewrite_file_read_command("Get-Content src/main.rs -head 5", "lean-ctx"),
+        Some("lean-ctx read src/main.rs -m lines:1-5".to_string())
+    );
+    assert_eq!(
+        rewrite_file_read_command("gc -Tail 10 src/main.rs", "lean-ctx"),
+        Some("lean-ctx read src/main.rs -m lines:-10".to_string())
+    );
+}
+
+#[test]
+fn ps_get_content_passthrough() {
+    // Unknown flag, both head+tail, outside-project path, and pipelines pass through.
+    assert_eq!(
+        rewrite_file_read_command("Get-Content -Raw src/main.rs", "lean-ctx"),
+        None
+    );
+    assert_eq!(
+        rewrite_file_read_command("Get-Content -TotalCount 5 -Tail 5 src/main.rs", "lean-ctx"),
+        None
+    );
+    assert_eq!(
+        rewrite_file_read_command("Get-Content ~/secret.txt", "lean-ctx"),
+        None
+    );
+    assert_eq!(
+        rewrite_file_read_command("Get-Content a.txt | Select-String x", "lean-ctx"),
+        None
+    );
+}
+
+#[test]
+fn ps_select_string_forms() {
+    assert_eq!(
+        rewrite_search_command("Select-String TODO src/main.rs", "lean-ctx"),
+        Some("lean-ctx grep TODO src/main.rs".to_string())
+    );
+    assert_eq!(
+        rewrite_search_command("sls TODO", "lean-ctx"),
+        Some("lean-ctx grep TODO".to_string())
+    );
+    assert_eq!(
+        rewrite_search_command("Select-String -Pattern TODO -Path src/lib.rs", "lean-ctx"),
+        Some("lean-ctx grep TODO src/lib.rs".to_string())
+    );
+    // Unknown flag passes through.
+    assert_eq!(
+        rewrite_search_command("Select-String -CaseSensitive TODO", "lean-ctx"),
+        None
+    );
+}
+
+#[test]
+fn ps_get_childitem_forms() {
+    assert_eq!(
+        rewrite_dir_list_command("Get-ChildItem", "lean-ctx"),
+        Some("lean-ctx ls".to_string())
+    );
+    assert_eq!(
+        rewrite_dir_list_command("gci src", "lean-ctx"),
+        Some("lean-ctx ls src".to_string())
+    );
+    assert_eq!(
+        rewrite_dir_list_command("Get-ChildItem -Path src", "lean-ctx"),
+        Some("lean-ctx ls src".to_string())
+    );
+    // -Recurse and other flags pass through.
+    assert_eq!(
+        rewrite_dir_list_command("Get-ChildItem -Recurse", "lean-ctx"),
+        None
+    );
+}
+
+#[test]
+fn ps_cmdlets_route_through_rewrite_candidate() {
+    // End-to-end: the dispatcher picks the right rewrite for PowerShell cmdlets.
+    assert_eq!(
+        rewrite_candidate("Get-Content src/main.rs", "lean-ctx"),
+        Some("lean-ctx read src/main.rs".to_string())
+    );
+    assert_eq!(
+        rewrite_candidate("Select-String TODO src/main.rs", "lean-ctx"),
+        Some("lean-ctx grep TODO src/main.rs".to_string())
+    );
+    assert_eq!(
+        rewrite_candidate("gci src", "lean-ctx"),
+        Some("lean-ctx ls src".to_string())
+    );
+}
+
 #[test]
 fn is_outside_project_path_tests() {
     assert!(is_outside_project_path("~/foo"));
@@ -296,6 +411,49 @@ fn codex_rewrite_output_uses_native_updated_input_contract() {
         parsed["hookSpecificOutput"]["updatedInput"]["command"],
         "lean-ctx -c 'git status'"
     );
+}
+
+#[test]
+fn dual_rewrite_output_carries_claude_cursor_and_copilot_fields() {
+    // #551: one JSON object must satisfy Claude (hookSpecificOutput.updatedInput),
+    // Cursor (updated_input) AND Copilot CLI (top-level permissionDecision +
+    // modifiedArgs). Copilot reads modifiedArgs; without it the rewrite no-ops.
+    let tool_input = serde_json::json!({ "command": "cat foo.txt", "cwd": "/repo" });
+    let out = build_dual_rewrite_output(Some(&tool_input), "lean-ctx read foo.txt");
+    let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
+
+    // Copilot CLI contract (top-level).
+    assert_eq!(p["permissionDecision"], "allow");
+    assert_eq!(p["modifiedArgs"]["command"], "lean-ctx read foo.txt");
+    assert_eq!(
+        p["modifiedArgs"]["cwd"], "/repo",
+        "modifiedArgs must preserve the other original args"
+    );
+    // Claude / CodeBuddy contract.
+    assert_eq!(p["hookSpecificOutput"]["permissionDecision"], "allow");
+    assert_eq!(
+        p["hookSpecificOutput"]["updatedInput"]["command"],
+        "lean-ctx read foo.txt"
+    );
+    // Cursor contract.
+    assert_eq!(p["updated_input"]["command"], "lean-ctx read foo.txt");
+}
+
+#[test]
+fn redirect_output_carries_copilot_modified_args() {
+    // #551: the read/grep redirect must also surface modifiedArgs so Copilot CLI
+    // swaps in the lean-ctx temp-file path instead of reading the original.
+    let tool_input = serde_json::json!({ "path": "src/main.rs" });
+    let out = build_redirect_output(Some(&tool_input), "path", "/tmp/x.lctx");
+    let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
+
+    assert_eq!(p["permissionDecision"], "allow");
+    assert_eq!(p["modifiedArgs"]["path"], "/tmp/x.lctx");
+    assert_eq!(
+        p["hookSpecificOutput"]["updatedInput"]["path"],
+        "/tmp/x.lctx"
+    );
+    assert_eq!(p["updated_input"]["path"], "/tmp/x.lctx");
 }
 
 #[test]
@@ -544,4 +702,74 @@ fn session_start_uses_codex_additional_context_channel() {
             .unwrap_or_default(),
         "prefer lean-ctx -c"
     );
+}
+
+#[test]
+fn is_shell_tool_matches_powershell_variants() {
+    // #556: Copilot CLI's `powershell` shell tool was bypassing rewrite on
+    // Windows because it was not recognised as a shell tool.
+    assert!(is_shell_tool("powershell"));
+    assert!(is_shell_tool("PowerShell"));
+    assert!(is_shell_tool("pwsh"));
+}
+
+#[test]
+fn is_shell_tool_matches_existing_shell_names() {
+    for name in [
+        "Bash",
+        "bash",
+        "Shell",
+        "shell",
+        "runInTerminal",
+        "run_in_terminal",
+        "terminal",
+    ] {
+        assert!(is_shell_tool(name), "{name} should be a shell tool");
+    }
+}
+
+#[test]
+fn is_shell_tool_rejects_non_shell_tools() {
+    for name in ["Read", "read", "Grep", "Glob", "glob", "view", "edit", ""] {
+        assert!(!is_shell_tool(name), "{name} must not be a shell tool");
+    }
+}
+
+#[test]
+fn classify_redirect_covers_copilot_view_and_rg() {
+    // #562: Copilot CLI's documented `view` (read) and `rg` (search) tool names must
+    // be redirected, not passed through uncompressed in shadow/harden mode.
+    assert_eq!(classify_redirect("view"), RedirectKind::Read);
+    assert_eq!(classify_redirect("rg"), RedirectKind::Grep);
+}
+
+#[test]
+fn classify_redirect_covers_existing_tool_names() {
+    for n in ["Read", "read", "read_file"] {
+        assert_eq!(classify_redirect(n), RedirectKind::Read, "{n}");
+    }
+    for n in ["Grep", "grep", "search", "ripgrep"] {
+        assert_eq!(classify_redirect(n), RedirectKind::Grep, "{n}");
+    }
+    for n in ["Glob", "glob"] {
+        assert_eq!(classify_redirect(n), RedirectKind::Glob, "{n}");
+    }
+}
+
+#[test]
+fn classify_redirect_passes_through_shell_and_unknown() {
+    // Shell tools are rewritten by handle_rewrite, not redirected; edits/writes and
+    // unknown names must not be intercepted here.
+    for n in [
+        "Bash",
+        "bash",
+        "powershell",
+        "pwsh",
+        "edit",
+        "Write",
+        "Unknown",
+        "",
+    ] {
+        assert_eq!(classify_redirect(n), RedirectKind::None, "{n}");
+    }
 }

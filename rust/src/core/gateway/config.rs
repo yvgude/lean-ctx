@@ -8,6 +8,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use crate::core::addons::capabilities::AddonCapabilities;
+
 /// Which transport a downstream MCP server speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -51,12 +53,27 @@ pub struct GatewayServer {
     pub args: Vec<String>,
     /// Extra environment variables for the child process.
     pub env: BTreeMap<String, String>,
+    /// Optional SHA-256 pin of the stdio `command` binary (P3). When set, the
+    /// spawn point ([`crate::core::gateway::client`]) verifies the resolved
+    /// binary's hash and refuses to launch a swapped executable. Empty =
+    /// unpinned (legacy behaviour). Part of the wiring, so it is covered by the
+    /// install-time integrity hash ([`crate::core::addons::integrity`]).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub binary_sha256: String,
 
     // --- http transport ---
     /// Streamable-HTTP endpoint (http transport).
     pub url: String,
     /// Extra request headers (e.g. auth) for the http transport.
     pub headers: BTreeMap<String, String>,
+
+    /// Declared capabilities (P1). `None` keeps the legacy `addons.sandbox`
+    /// behaviour; `Some` enforces a per-server OS sandbox + env allowlist
+    /// derived from the declared permissions at the spawn point. Carried here so
+    /// the live `[[gateway.servers]]` config — the single source of truth for
+    /// what runs — also records what each server is allowed to do.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<AddonCapabilities>,
 }
 
 impl Default for GatewayServer {
@@ -68,8 +85,10 @@ impl Default for GatewayServer {
             command: String::new(),
             args: Vec::new(),
             env: BTreeMap::new(),
+            binary_sha256: String::new(),
             url: String::new(),
             headers: BTreeMap::new(),
+            capabilities: None,
         }
     }
 }
@@ -81,6 +100,10 @@ pub enum ResolvedTransport {
         command: String,
         args: Vec<String>,
         env: BTreeMap<String, String>,
+        /// SHA-256 pin of `command` to verify before spawn (empty = unpinned).
+        binary_sha256: String,
+        /// Declared capabilities to enforce at spawn (`None` = legacy path).
+        capabilities: Option<AddonCapabilities>,
     },
     Http {
         url: String,
@@ -107,6 +130,8 @@ impl GatewayServer {
                     command: self.command.clone(),
                     args: self.args.clone(),
                     env: self.env.clone(),
+                    binary_sha256: self.binary_sha256.clone(),
+                    capabilities: self.capabilities.clone(),
                 })
             }
             TransportKind::Http => {
@@ -206,6 +231,8 @@ mod tests {
                 command: "mcp-fs".into(),
                 args: vec!["/tmp".into()],
                 env: BTreeMap::new(),
+                binary_sha256: String::new(),
+                capabilities: None,
             }
         );
     }

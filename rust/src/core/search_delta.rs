@@ -156,7 +156,7 @@ mod tests {
             "b.rs:2 fn bar()".to_string(),
             "c.rs:3 fn baz()".to_string(),
         ];
-        compute_delta("test_ident", &matches);
+        let _ = compute_delta("test_ident", &matches);
         let delta = compute_delta("test_ident", &matches);
         // All unchanged → 0 new / 3 total → 0% < 60% → delta sent
         // But 0 new means formatted is None
@@ -171,7 +171,7 @@ mod tests {
             "b.rs:2 fn bar()".to_string(),
             "c.rs:3 fn baz()".to_string(),
         ];
-        compute_delta("test_partial", &m1);
+        let _ = compute_delta("test_partial", &m1);
         let m2 = vec![
             "a.rs:1 fn foo()".to_string(),
             "b.rs:2 fn bar()".to_string(),

@@ -154,6 +154,43 @@ Tip: open a ticket via the [New Compression Pattern](.github/ISSUE_TEMPLATE/comp
 - Tool schemas/registration live in `rust/src/tool_defs/` (keep names/counts in sync)
 - If you change the public tool surface, update `LEANCTX_FEATURE_CATALOG.md` (SSOT snapshot) and any affected docs
 
+### Add an addon to the registry
+
+An addon entry in `rust/data/addon_registry.json` ships **executable trust** to
+every user (a `stdio` addon runs code on their machine; an `http` addon receives
+their context). Registry submissions are therefore reviewed like a security
+change, not a docs change. See the
+[addon manifest contract](docs/contracts/addon-manifest-v1.md#security-model).
+
+**Your submission must:**
+
+1. Use a unique slug `[a-z0-9-]` and fill `author`, `homepage`, `license`,
+   `description` (the CI validator rejects installable entries that don't).
+2. **Pin the upstream.** No `latest`, no `npx/uvx`-without-a-version. The exact
+   command + version must be reproducible.
+3. Not shell out (`sh -c`, `bash -c`), fetch-and-exec (`curl`, `wget`), or use a
+   non-HTTPS `url`. The validator flags all of these.
+4. Point `homepage` at **public, inspectable source** for the MCP server.
+5. Default to the **community** tier (`verified` stays `false`) — verification is
+   conferred by review, never self-asserted.
+
+Run the validator locally — it runs in CI on every change to the registry:
+
+```bash
+cd rust && cargo test --lib addons::registry
+```
+
+**Maintainer review checklist (binding):**
+
+- [ ] Source is public and the MCP server's behaviour matches its description.
+- [ ] Command/args/url are pinned and reproducible; no shell/fetch primitives.
+- [ ] `env` / `headers` carry no embedded secrets; any required secret is the
+      user's to supply, documented on the homepage.
+- [ ] License is a real SPDX id and compatible with redistribution of the entry.
+- [ ] `verified = true` requires **two** maintainer approvals **and** a clean
+      run with **no** `warn`/`danger` finding. Otherwise it stays community-tier.
+- [ ] When in doubt, merge as a **listed** entry (no `[mcp]` block) first.
+
 ### Docs & examples
 
 - Prefer real, runnable examples (no mock data)

@@ -3,10 +3,6 @@
 //! Allows lean-ctx to query resources from other MCP servers (e.g., a
 //! custom internal knowledge base MCP server) and integrate them into
 //! the context pipeline.
-//!
-//! Configuration via lean-ctx config:
-//!   [`providers.mcp_bridges`]
-//!   my-kb = { url = "<http://localhost:8080>", description = "Internal KB" }
 
 use crate::core::providers::{ContextProvider, ProviderItem, ProviderParams, ProviderResult};
 

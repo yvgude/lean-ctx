@@ -79,7 +79,7 @@ npm run watch
 | `lean-ctx: Doctor` | Runs diagnostics (`lean-ctx doctor`) in an output channel |
 | `lean-ctx: Show Token Savings` | Shows the savings recap (`lean-ctx gain`) |
 | `lean-ctx: Show Context Heatmap` | Shows the context heatmap (`lean-ctx heatmap`) |
-| `lean-ctx: Open Web Dashboard` | Launches the web dashboard in an integrated terminal |
+| `lean-ctx: Open Web Dashboard` | Opens the dashboard as a native editor tab (webview). Also reachable from the terminal via `lean-ctx dashboard --vscode` |
 | `lean-ctx: Configure MCP for this workspace` | Writes a `.vscode/mcp.json` stdio entry for lean-ctx |
 
 ## Architecture
@@ -89,7 +89,9 @@ src/
 ├── extension.ts          # Entry point: activate/deactivate
 ├── leanctx.ts            # CLI interface + binary auto-detection
 ├── commands.ts           # Sidebar command handlers (search, repomap, …)
-├── cli-commands.ts       # CLI-backed commands (setup, doctor, MCP wiring, dashboard)
+├── cli-commands.ts       # CLI-backed commands (setup, doctor, MCP wiring)
+├── dashboard-panel.ts    # Native dashboard webview tab (owns a private server)
+├── uri-handler.ts        # vscode://LeanCTX.lean-ctx/… deep links (--vscode)
 ├── statusbar.ts          # Status bar item with auto-refresh
 └── sidebar/
     ├── provider.ts       # Webview view provider

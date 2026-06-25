@@ -106,6 +106,7 @@ mod embed {
             .collect())
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn hybrid_results(
         backend: DenseBackendKind,

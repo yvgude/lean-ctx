@@ -210,7 +210,11 @@ fn read_youtube(video_id: &str, opts: &ReadOptions) -> Result<ReadResult, String
             &transcript.source_url,
         )),
         ReadMode::Links => "Links are not available for video transcripts.".to_string(),
-        _ => distill::transcript_summary(&transcript.full_text, opts.max_tokens.saturating_mul(4)),
+        _ => distill::summarize_prose(
+            &transcript.full_text,
+            opts.max_tokens.saturating_mul(4),
+            opts.query,
+        ),
     };
 
     let trimmed = enforce_budget(&body, opts.max_tokens);
@@ -253,7 +257,7 @@ fn render_mode(
         }
         ReadMode::Transcript => {
             let plain = html_to_text::markdown_to_text(markdown);
-            distill::transcript_summary(&plain, opts.max_tokens.saturating_mul(4))
+            distill::summarize_prose(&plain, opts.max_tokens.saturating_mul(4), opts.query)
         }
     }
 }

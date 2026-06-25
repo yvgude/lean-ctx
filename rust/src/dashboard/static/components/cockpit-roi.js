@@ -168,6 +168,7 @@ class CockpitRoi extends HTMLElement {
     var body = this._renderHero(esc);
     body += this._renderLiveStamp(esc);
     body += this._renderOutputEfficiency(esc);
+    body += this._renderOutputSavings(esc);
     body += this._renderVerification(esc);
     body += this._renderMethodology();
     body += this._renderMeasuredSpend(esc);
@@ -400,6 +401,70 @@ class CockpitRoi extends HTMLElement {
       '</div>' +
       '<p class="hs" style="margin-top:6px;color:var(--muted)">' + esc(verdict) + '</p>' +
       trendHtml +
+      '</div>'
+    );
+  }
+
+  /**
+   * Output Tokens Saved (#895). lean-ctx shapes output via cache-safe effort
+   * control + verbosity steering; this card reports how much that saved. It is
+   * honestly labelled: a real A/B **measured** reduction with a 95% CI when an
+   * output_holdout is running, otherwise a model-based **estimate** band.
+   */
+  _renderOutputSavings(esc) {
+    var o = this._data && this._data.output;
+    if (!o || !o.status) return '';
+    var n = function (x) { return Number(x || 0); };
+    var fix1 = function (x) { return n(x).toFixed(1); };
+    var round = function (x) { return Math.round(n(x)); };
+
+    if (o.status === 'measured') {
+      return (
+        '<div class="card" style="margin-bottom:16px">' +
+        '<div class="card-header"><h3>Output Tokens Saved</h3>' +
+        '<span class="tag tg">measured</span></div>' +
+        '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">' +
+        '<div class="hv" style="color:var(--green)">' + esc(fix1(o.reduction_pct)) + '%</div>' +
+        '<span class="hs">fewer output tokens \u00b7 95% CI ' +
+        esc(fix1(o.ci95_low_pct)) + '\u2013' + esc(fix1(o.ci95_high_pct)) + '%</span></div>' +
+        '<div class="sr"><span class="sl">Avg output / turn</span><span class="sv">' +
+        esc(String(round(o.control_avg_output))) + ' \u2192 ' +
+        esc(String(round(o.treatment_avg_output))) + ' tok ' +
+        '(\u2212' + esc(String(round(o.tokens_saved_per_turn))) + ')</span></div>' +
+        '<div class="sr"><span class="sl">Sample</span><span class="sv">' +
+        esc(String(n(o.control_n))) + ' control \u00b7 ' +
+        esc(String(n(o.treatment_n))) + ' shaped turns</span></div>' +
+        '<p class="hs" style="margin-top:8px;color:var(--muted)">' +
+        'Real A/B result from your <code>output_holdout</code> control arm.</p>' +
+        '</div>'
+      );
+    }
+    if (o.status === 'pending') {
+      var need = n(o.needed_per_arm);
+      return (
+        '<div class="card" style="margin-bottom:16px">' +
+        '<div class="card-header"><h3>Output Tokens Saved</h3>' +
+        '<span class="tag tb">holdout running</span></div>' +
+        '<p class="hs">Collecting paired turns: <b>' + esc(String(n(o.control_n))) + '/' + esc(String(need)) +
+        '</b> control, <b>' + esc(String(n(o.treatment_n))) + '/' + esc(String(need)) + '</b> shaped. ' +
+        'A measured reduction with a 95% CI appears once both arms reach ' + esc(String(need)) + ' turns.</p>' +
+        '</div>'
+      );
+    }
+    // estimated
+    return (
+      '<div class="card" style="margin-bottom:16px">' +
+      '<div class="card-header"><h3>Output Tokens Saved</h3>' +
+      '<span class="tag ty">estimated</span></div>' +
+      '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">' +
+      '<div class="hv">~' + esc(String(round(o.point_pct))) + '%</div>' +
+      '<span class="hs">model-based estimate \u00b7 band ' +
+      esc(String(round(o.low_pct))) + '\u2013' + esc(String(round(o.high_pct))) + '%</span></div>' +
+      '<p class="hs" style="margin-top:6px;color:var(--muted)">' +
+      'This is an estimate, not a measurement. Enable a holdout control arm to ' +
+      'measure your real output savings:</p>' +
+      '<pre class="mono" style="background:var(--bg-elev,#0d1117);padding:10px;border-radius:8px;overflow:auto">' +
+      'lean-ctx config set proxy.output_holdout 0.1</pre>' +
       '</div>'
     );
   }

@@ -537,6 +537,71 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         },
     );
 
+    let mut addons = BTreeMap::new();
+    addons.insert(
+        "policy".into(),
+        key_enum(
+            &["open", "verified_only", "allowlist", "locked"],
+            cfg.addons.policy.as_str(),
+            "Addon install policy: open (any) | verified_only | allowlist | locked",
+        ),
+    );
+    addons.insert(
+        "allowlist".into(),
+        key(
+            "array",
+            serde_json::json!(cfg.addons.allowlist),
+            "Addon slugs permitted when policy = allowlist",
+        ),
+    );
+    addons.insert(
+        "require_signature".into(),
+        key(
+            "bool",
+            serde_json::json!(cfg.addons.require_signature),
+            "Honour a user-override registry only if signed by a trusted org key",
+        ),
+    );
+    addons.insert(
+        "sandbox".into(),
+        key_enum(
+            &["off", "auto", "strict"],
+            cfg.addons.sandbox.as_str(),
+            "Sandbox spawned addon stdio servers: off | auto (block network) | strict (read-only fs + refuse if no launcher)",
+        ),
+    );
+    addons.insert(
+        "block_risky".into(),
+        key(
+            "bool",
+            serde_json::json!(cfg.addons.block_risky),
+            "Refuse to install an addon that has a high-risk (Danger) capability",
+        ),
+    );
+    addons.insert(
+        "enforce_capabilities".into(),
+        key(
+            "bool",
+            serde_json::json!(cfg.addons.enforce_capabilities),
+            "Fail closed when an addon declares restricted [capabilities] but no OS sandbox launcher is available to enforce them",
+        ),
+    );
+    addons.insert(
+        "metering".into(),
+        key(
+            "bool",
+            serde_json::json!(cfg.addons.metering),
+            "Record per-addon / per-tool gateway usage to <data_dir>/addons/usage.json (analytics + billing base)",
+        ),
+    );
+    sections.insert(
+        "addons".into(),
+        SectionSchema {
+            description: "Addon ecosystem security floor: install policy, signature requirement, per-addon capability sandbox (#863, P1). Global-only.".into(),
+            keys: addons,
+        },
+    );
+
     let mut cloud = BTreeMap::new();
     cloud.insert(
         "contribute_enabled".into(),

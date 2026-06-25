@@ -2,7 +2,7 @@
   "name": "lean-ctx",
   "displayName": "lean-ctx — Context Engineering",
   "description": "AI context optimization with live token savings, knowledge graph, repo-map, semantic search, and one-click MCP setup. Works with Copilot, Cursor, VSCodium & Windsurf.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "LeanCTX",
   "license": "Apache-2.0",
   "icon": "resources/icon.png",

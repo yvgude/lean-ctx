@@ -2,6 +2,7 @@ use super::super::{
     HookMode, REDIRECT_SCRIPT_CLAUDE, generate_rewrite_script, make_executable,
     mcp_server_quiet_mode, resolve_binary_path, resolve_binary_path_for_bash, write_file,
 };
+use super::shared::remove_all_blocks;
 
 pub(crate) fn install_claude_hook_with_mode(global: bool, mode: HookMode) {
     let Some(home) = crate::core::home::resolve_home_dir() else {
@@ -83,8 +84,15 @@ fn install_claude_mcp_server(home: &std::path::Path) {
 
 /// Shared with `doctor` so the instructions check recognises the same block
 /// this installer writes (GH #396: doctor must not demand the retired rules file).
-pub(crate) const CLAUDE_MD_BLOCK_START: &str = crate::core::rules_canonical::START_MARK;
-const CLAUDE_MD_BLOCK_END: &str = crate::core::rules_canonical::END_MARK;
+///
+/// The CLAUDE.md block is a lightweight *pointer* block, so it is delimited by
+/// `AGENTS_BLOCK_START`/`END` (`<!-- lean-ctx -->`), NOT the full-rules markers
+/// `START_MARK`/`END_MARK` (`<!-- lean-ctx-rules -->`). Pointing these at the
+/// rules markers made `contains()` never match the block lean-ctx actually
+/// writes, so `doctor` reported it missing and every `setup`/`doctor --fix`
+/// appended a duplicate (GH #549).
+pub(crate) const CLAUDE_MD_BLOCK_START: &str = crate::core::rules_canonical::AGENTS_BLOCK_START;
+const CLAUDE_MD_BLOCK_END: &str = crate::core::rules_canonical::AGENTS_BLOCK_END;
 const CLAUDE_MD_BLOCK_VERSION: &str = "lean-ctx-claude-v3";
 
 // v3 (GL #555): self-contained, no `@rules/lean-ctx.md` import. Claude Code
@@ -134,22 +142,21 @@ fn install_claude_global_claude_md_for_mode(home: &std::path::Path, mode: HookMo
         HookMode::Mcp | HookMode::Hybrid => CLAUDE_MD_BLOCK_VERSION,
     };
 
-    if existing.contains(CLAUDE_MD_BLOCK_START) {
-        if existing.contains(block_version) {
-            return;
-        }
-        let cleaned = remove_block(&existing, CLAUDE_MD_BLOCK_START, CLAUDE_MD_BLOCK_END);
-        let updated = format!("{}\n\n{}\n", cleaned.trim(), block);
-        write_file(&claude_md_path, &updated);
+    // A single up-to-date block needs no rewrite. Otherwise — a stale version
+    // *or* duplicate blocks accumulated from the pre-#549 marker mismatch —
+    // collapse every lean-ctx block and write exactly one canonical copy back.
+    let block_count = existing.matches(CLAUDE_MD_BLOCK_START).count();
+    if block_count == 1 && existing.contains(block_version) {
         return;
     }
-
-    if existing.trim().is_empty() {
-        write_file(&claude_md_path, block);
+    let cleaned = remove_all_blocks(&existing, CLAUDE_MD_BLOCK_START, CLAUDE_MD_BLOCK_END);
+    let cleaned = cleaned.trim();
+    let updated = if cleaned.is_empty() {
+        format!("{block}\n")
     } else {
-        let updated = format!("{}\n\n{}\n", existing.trim(), block);
-        write_file(&claude_md_path, &updated);
-    }
+        format!("{cleaned}\n\n{block}\n")
+    };
+    write_file(&claude_md_path, &updated);
 }
 
 /// Remove the lean-ctx block from `CLAUDE.md` (dedicated mode). Deletes the file
@@ -161,31 +168,11 @@ fn strip_claude_md_block(claude_md_path: &std::path::Path) {
     if !existing.contains(CLAUDE_MD_BLOCK_START) {
         return;
     }
-    let cleaned = remove_block(&existing, CLAUDE_MD_BLOCK_START, CLAUDE_MD_BLOCK_END);
+    let cleaned = remove_all_blocks(&existing, CLAUDE_MD_BLOCK_START, CLAUDE_MD_BLOCK_END);
     if cleaned.trim().is_empty() {
         let _ = std::fs::remove_file(claude_md_path);
     } else {
         write_file(claude_md_path, &format!("{}\n", cleaned.trim_end()));
-    }
-}
-
-fn remove_block(content: &str, start: &str, end: &str) -> String {
-    let s = content.find(start);
-    let e = content.find(end);
-    match (s, e) {
-        (Some(si), Some(ei)) if ei >= si => {
-            let after_end = ei + end.len();
-            let before = content[..si].trim_end_matches('\n');
-            let after = &content[after_end..];
-            let mut out = before.to_string();
-            out.push('\n');
-            if !after.trim().is_empty() {
-                out.push('\n');
-                out.push_str(after.trim_start_matches('\n'));
-            }
-            out
-        }
-        _ => content.to_string(),
     }
 }
 
@@ -299,7 +286,7 @@ pub(crate) fn install_claude_hook_scripts(home: &std::path::Path) {
 }
 
 /// The `Read|…` tool matcher shared by every Claude redirect hook (global + project).
-const REDIRECT_MATCHER: &str = "Read|read|ReadFile|read_file|View|view|Grep|grep|Search|search|ListFiles|list_files|ListDirectory|list_directory";
+const REDIRECT_MATCHER: &str = "Read|read|ReadFile|read_file|View|view|Grep|grep|Search|search|ListFiles|list_files|ListDirectory|list_directory|Glob|glob";
 
 /// The trailing action token of a lean-ctx hook command, e.g. `"hook rewrite"`.
 ///
@@ -748,6 +735,14 @@ mod tests {
     }
 
     #[test]
+    fn redirect_matcher_covers_glob() {
+        // #556: shadow mode must intercept the Glob tool, so it has to be part
+        // of the redirect matcher Claude installs.
+        assert!(REDIRECT_MATCHER.contains("Glob"));
+        assert!(REDIRECT_MATCHER.contains("glob"));
+    }
+
+    #[test]
     fn rules_injection_off_strips_claude_md_block() {
         // #361: with instructions opted out, the installer must not leave a
         // lean-ctx block in CLAUDE.md (and must strip one left by a prior install).
@@ -785,5 +780,69 @@ mod tests {
         assert!(home.join(".claude/skills/lean-ctx/SKILL.md").exists());
         remove_claude_skill(home);
         assert!(!home.join(".claude/skills/lean-ctx").exists());
+    }
+
+    #[test]
+    fn claude_block_content_carries_detection_markers() {
+        // GH #549 regression guard: the written block MUST contain the markers the
+        // doctor + installer detect with — otherwise detection silently fails and
+        // every `setup`/`doctor --fix` appends a fresh duplicate.
+        assert!(
+            CLAUDE_MD_BLOCK_CONTENT_MCP.contains(CLAUDE_MD_BLOCK_START),
+            "block content must contain its own start marker"
+        );
+        assert!(
+            CLAUDE_MD_BLOCK_CONTENT_MCP.contains(CLAUDE_MD_BLOCK_END),
+            "block content must contain its own end marker"
+        );
+    }
+
+    #[test]
+    fn installer_writes_single_claude_block_and_is_idempotent() {
+        // GH #549: repeated installs must converge on exactly one block.
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let md = crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md");
+
+        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "shared");
+        install_claude_global_claude_md_for_mode(home, HookMode::Mcp);
+        install_claude_global_claude_md_for_mode(home, HookMode::Mcp);
+        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+
+        let after = std::fs::read_to_string(&md).unwrap();
+        assert_eq!(
+            after.matches(CLAUDE_MD_BLOCK_START).count(),
+            1,
+            "exactly one block after repeated installs, got:\n{after}"
+        );
+        assert!(after.contains(CLAUDE_MD_BLOCK_VERSION));
+    }
+
+    #[test]
+    fn installer_heals_duplicate_claude_blocks() {
+        // GH #549: pre-fix installs accumulated duplicate blocks; a re-run must
+        // collapse them to exactly one while preserving the user's own content.
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let dir = crate::core::editor_registry::claude_state_dir(home);
+        std::fs::create_dir_all(&dir).unwrap();
+        let md = dir.join("CLAUDE.md");
+        let b = CLAUDE_MD_BLOCK_CONTENT_MCP;
+        let dupes = format!("# my notes\n\n{b}\n\n{b}\n\n{b}\n");
+        std::fs::write(&md, dupes).unwrap();
+
+        crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "shared");
+        install_claude_global_claude_md_for_mode(home, HookMode::Mcp);
+        crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+
+        let after = std::fs::read_to_string(&md).unwrap();
+        assert_eq!(
+            after.matches(CLAUDE_MD_BLOCK_START).count(),
+            1,
+            "duplicates must collapse to one, got:\n{after}"
+        );
+        assert!(after.contains("# my notes"), "user content must survive");
     }
 }

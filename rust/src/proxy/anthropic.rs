@@ -41,6 +41,14 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
     let user_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::User);
     let live_compress = cfg.proxy.live_compresses();
     let mode = cfg.proxy.resolved_history_mode();
+    // #895 Track B: output-savings holdout arm, from the pristine body (before any
+    // mutation below) so it matches the arm the response meter records. Control
+    // conversations skip output-shaping (effort + verbosity steer) but are still
+    // metered. Default holdout=0 → always Treatment (no behaviour change).
+    let arm = super::holdout::assign(
+        &super::holdout::anthropic_key(&doc),
+        cfg.proxy.output_holdout_fraction(),
+    );
     // #493: in-band CCR expansion (opt-in). Splice any <lc_expand:HASH> the model
     // echoed back into the verbatim original from the local tee store. A strict
     // no-op when no marker is present (byte-identical body → cache-safe). Runs
@@ -53,8 +61,16 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
     // value is a constant, so it never perturbs the prompt-cache prefix; it only
     // dials an *existing* adaptive thinking request (never enables thinking the
     // client didn't ask for).
-    if let Some(effort) = cfg.proxy.resolved_effort() {
-        modified |= super::effort::apply_anthropic(&mut doc, effort);
+    if arm == super::holdout::Arm::Treatment {
+        if let Some(effort) = cfg.proxy.resolved_effort() {
+            modified |= super::effort::apply_anthropic(&mut doc, effort);
+        }
+        // #895: cache-safe wire verbosity steer (constant suffix after the last
+        // cache_control breakpoint). Control arm skips it so the holdout measures
+        // its effect.
+        if cfg.proxy.verbosity_steer_enabled() {
+            modified |= super::verbosity::apply_anthropic(&mut doc);
+        }
     }
     // Meter-only (#481): live compression off, no history pruning, no prose
     // rewriting → forward + usage metering still run, but the body is left
@@ -732,6 +748,53 @@ mod tests {
                 .unwrap()
                 .get("output_config")
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn verbosity_steer_applies_to_treatment_skips_control() {
+        // #895: the holdout control arm must be byte-unchanged (so its output is
+        // the measurement baseline); the treatment arm gets the constant steer.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::remove_var("LEAN_CTX_PROXY_VERBOSITY_STEER");
+        crate::test_env::remove_var("LEAN_CTX_PROXY_OUTPUT_HOLDOUT");
+        crate::test_env::remove_var("LEAN_CTX_PROXY_EFFORT");
+
+        let req = serde_json::json!({
+            "model": "claude-opus-4-8",
+            "messages": [{"role": "user", "content": "Summarize the design."}]
+        });
+        let bytes = serde_json::to_vec(&req).unwrap();
+
+        // Steer on, holdout = 0 → everyone Treatment → steered.
+        crate::core::config::Config::update_global(|c| {
+            c.proxy.verbosity_steer = Some(true);
+            c.proxy.output_holdout = Some(0.0);
+        })
+        .unwrap();
+        let (out, _o, _c) = compress_request_body(req.clone(), bytes.len());
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert!(
+            v["messages"][0]["content"]
+                .as_str()
+                .unwrap()
+                .contains(crate::proxy::verbosity::STEER),
+            "treatment arm must receive the verbosity steer"
+        );
+
+        // Steer on, holdout = 1.0 → everyone Control → byte-unchanged, no steer.
+        crate::core::config::Config::update_global(|c| {
+            c.proxy.output_holdout = Some(1.0);
+        })
+        .unwrap();
+        let (out2, _o, _c) = compress_request_body(req, bytes.len());
+        let v2: Value = serde_json::from_slice(&out2).unwrap();
+        assert!(
+            !v2["messages"][0]["content"]
+                .as_str()
+                .unwrap()
+                .contains(crate::proxy::verbosity::STEER),
+            "control arm must NOT be steered (measurement baseline)"
         );
     }
 }

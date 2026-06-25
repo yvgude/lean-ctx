@@ -66,6 +66,7 @@ fn match_font_asset(path: &str) -> Option<&'static [u8]> {
 
 pub mod base_path;
 pub mod routes;
+pub(crate) mod vscode_open;
 
 pub async fn start(
     port: Option<u16>,

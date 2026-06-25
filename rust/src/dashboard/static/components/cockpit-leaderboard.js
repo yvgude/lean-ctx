@@ -29,7 +29,12 @@ class CockpitLeaderboard extends HTMLElement {
     this._loading = true;
     this._error = null;
     this._busy = null; // 'submit' | 'auto' while a write is in flight
-    this._notice = null;
+    // Feedback is rendered *inline* at the control that produced it, never at the
+    // top of the card: the card is long (standing + full board + submit), so a
+    // top banner is off-screen when you act on the submit/auto controls at the
+    // bottom — a failed write then looks like "nothing happened" (#466 follow-up).
+    this._submitNotice = null;
+    this._autoNotice = null;
     this._name = '';
     // Public board (#466 item 2) — loaded independently so a board outage never
     // blocks the submit/auto controls.
@@ -93,7 +98,9 @@ class CockpitLeaderboard extends HTMLElement {
     if (!fetchJson) return;
     this._boardError = null;
     try {
-      var resp = await fetchJson('/api/leaderboard', { timeoutMs: 12000 });
+      // The public board is paginated now; pull a generous first page for the
+      // in-app view and link out to the full board for everyone beyond it.
+      var resp = await fetchJson('/api/leaderboard?per_page=100', { timeoutMs: 12000 });
       var entries = (resp && resp.entries) || [];
       // Drop entries the server flagged for review (anomalous / under audit).
       this._board = entries.filter(function (e) {
@@ -112,7 +119,7 @@ class CockpitLeaderboard extends HTMLElement {
     var fetchJson = api();
     if (!fetchJson || this._busy) return;
     this._busy = 'submit';
-    this._notice = null;
+    this._submitNotice = null;
     this.render();
     this._bind();
     var name = (this._name || '').trim();
@@ -124,7 +131,7 @@ class CockpitLeaderboard extends HTMLElement {
         timeoutMs: 20000,
       });
       var url = resp && resp.url ? String(resp.url) : null;
-      this._notice = {
+      this._submitNotice = {
         kind: 'ok',
         msg: 'Submitted to the community leaderboard.',
         url: url,
@@ -134,7 +141,7 @@ class CockpitLeaderboard extends HTMLElement {
       this._bind();
       return;
     } catch (e) {
-      this._notice = {
+      this._submitNotice = {
         kind: 'err',
         msg: e && e.error ? String(e.error) : 'Submit failed.',
       };
@@ -148,7 +155,7 @@ class CockpitLeaderboard extends HTMLElement {
     var fetchJson = api();
     if (!fetchJson || this._busy) return;
     this._busy = 'auto';
-    this._notice = null;
+    this._autoNotice = null;
     this.render();
     this._bind();
     try {
@@ -159,12 +166,12 @@ class CockpitLeaderboard extends HTMLElement {
         timeoutMs: 12000,
       });
       this._status = resp || this._status;
-      this._notice = {
+      this._autoNotice = {
         kind: 'ok',
         msg: on ? 'Auto-submit is on.' : 'Auto-submit is off.',
       };
     } catch (e) {
-      this._notice = {
+      this._autoNotice = {
         kind: 'err',
         msg: e && e.error ? String(e.error) : 'Could not change auto-submit.',
       };
@@ -197,7 +204,6 @@ class CockpitLeaderboard extends HTMLElement {
     }
 
     this.innerHTML =
-      this._renderNotice(esc) +
       '<div style="display:grid;gap:14px">' +
       this._renderStanding(esc) +
       this._renderBoard(esc) +
@@ -207,25 +213,36 @@ class CockpitLeaderboard extends HTMLElement {
       this._renderFooter(shared());
   }
 
-  _renderNotice(esc) {
-    if (!this._notice) return '';
-    var color = this._notice.kind === 'ok' ? 'var(--green)' : 'var(--red)';
-    var link = this._notice.url
+  /**
+   * Inline feedback shown directly under the control that triggered a write.
+   * `notice` is `{ kind: 'ok' | 'err', msg, url? }` or null. Errors wrap rather
+   * than truncate so an actionable message (e.g. "run lean-ctx doctor --fix")
+   * is always fully readable at the point of action.
+   */
+  _renderInlineNotice(esc, notice) {
+    if (!notice) return '';
+    var ok = notice.kind === 'ok';
+    var color = ok ? 'var(--green)' : 'var(--red)';
+    var bg = ok ? 'rgba(34,197,94,.08)' : 'rgba(239,68,68,.08)';
+    var link = notice.url
       ? ' <a href="' +
-        esc(this._notice.url) +
+        esc(notice.url) +
         '" target="_blank" rel="noopener noreferrer" style="color:' +
         color +
         '">View your card \u2192</a>'
       : '';
     return (
-      '<div class="card" style="margin-bottom:14px;border-left:2px solid ' +
+      '<p class="hs" role="status" style="margin:10px 0 0;padding:8px 10px;' +
+      'border-left:2px solid ' +
       color +
-      '"><p class="hs" style="margin:0;color:' +
+      ';background:' +
+      bg +
+      ';border-radius:6px;color:' +
       color +
-      '">' +
-      esc(this._notice.msg) +
+      ';font-size:12px;line-height:1.5;word-break:break-word">' +
+      esc(notice.msg) +
       link +
-      '</p></div>'
+      '</p>'
     );
   }
 
@@ -307,7 +324,11 @@ class CockpitLeaderboard extends HTMLElement {
     } else if (!this._board || this._board.length === 0) {
       inner = '<p class="hs" style="margin:0;opacity:.7;font-size:12px">No entries yet \u2014 be the first to submit.</p>';
     } else {
-      inner = this._boardTable(esc, F);
+      inner =
+        this._boardTable(esc, F) +
+        '<p class="hs" style="margin:12px 0 0;font-size:12px">' +
+        '<a href="https://leanctx.com/metrics" target="_blank" rel="noopener noreferrer">' +
+        'See the full leaderboard \u2192</a></p>';
     }
     return '<div class="card">' + head + inner + '</div>';
   }
@@ -393,6 +414,7 @@ class CockpitLeaderboard extends HTMLElement {
       '<strong>Shared (aggregate only):</strong> tokens saved, estimated USD, compression rate' +
       (this._name && this._name.trim() ? ', and the handle you chose' : '') +
       '.<br><strong>Never shared:</strong> your code, file contents, paths, repo names, prompts or messages.</p>' +
+      this._renderInlineNotice(esc, this._submitNotice) +
       '</div>'
     );
   }
@@ -426,6 +448,9 @@ class CockpitLeaderboard extends HTMLElement {
       btn(true, 'On') +
       btn(false, 'Off') +
       '</div>' +
+      (busy
+        ? '<p class="hs" role="status" style="margin:10px 0 0;font-size:12px;opacity:.7">Saving\u2026</p>'
+        : this._renderInlineNotice(esc, this._autoNotice)) +
       '</div>'
     );
   }

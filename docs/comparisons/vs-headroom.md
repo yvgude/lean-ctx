@@ -38,7 +38,7 @@ OpenAI (50%) prompt-cache discounts survive compression.
 | Drop-in `compress()` (Py + TS) | Yes | Yes |
 | Transparent proxy | Yes (multi-provider) | Yes |
 | MCP server | 77 tools | `headroom_compress/retrieve/stats` |
-| Reversible (reference retrieval) | `/v1/references/{id}` | CCR store |
+| Reversible (reference retrieval) | CCR (#482/#493) + `/v1/references/{id}`, `ctx_expand`/`ctx_retrieve` | `headroom_retrieve` store |
 | Deterministic / prompt-cache safe | Yes (#498, CI-guarded) | Not stated |
 | Vercel AI SDK middleware | `leanCtxMiddleware` / `withLeanCtx` | `headroomMiddleware` / `withHeadroom` |
 | LiteLLM hook | `LeanCtxLiteLLMHandler` | `HeadroomCallback` |
@@ -65,6 +65,33 @@ cost of a `torch` dependency and non-deterministic output.
 **Rule of thumb:** choose lean-ctx when the payload is code, tool output, logs or
 RAG context and you need local, deterministic, cache-preserving output; consider
 Headroom's ML mode when you specifically need learned prose compression.
+
+## Reversibility
+
+Compression is only safe if the model can get the original bytes back when it
+needs them. lean-ctx never throws content away — it moves it to a
+content-addressed store and leaves a deterministic handle. There are **five**
+recovery paths, so reversibility holds whether you drive lean-ctx as a proxy, an
+SDK or an MCP server:
+
+1. **Archive + `ctx_expand`** — any truncated tool output keeps an archive id; the
+   agent calls `ctx_expand(id, …)` (or `head`/`tail`/`grep`) to stream the rest.
+2. **`ctx_retrieve`** — fetches the verbatim original for a stored reference id.
+3. **Proxy CCR (#482)** — when the proxy prunes an old `tool_result`, it persists
+   the verbatim original to the shared tee store and embeds the file path as the
+   retrieval handle, recoverable with the agent's *native* file read (no MCP
+   needed). The handle is a pure function of the content hash, so it never breaks
+   the prompt cache (#448).
+4. **In-band CCR (#493)** — for a remote proxy with no shared filesystem, the stub
+   advertises a compact `<lc_expand:HASH>` marker; when the model echoes it, the
+   proxy splices the verbatim original back inline next turn.
+5. **`GET /v1/references/{id}`** — an HTTP endpoint that resolves a reference id to
+   its original, for SDK/HTTP clients.
+
+All five are deterministic and content-addressed (see
+[`rust/src/proxy/ccr.rs`](../../rust/src/proxy/ccr.rs)). Headroom is also
+reversible — via its `headroom_retrieve` store — so any third-party table that
+lists lean-ctx as "Reversible: No" is simply out of date.
 
 ## Benchmark (reproduce it yourself)
 

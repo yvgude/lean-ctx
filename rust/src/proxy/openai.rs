@@ -40,6 +40,13 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
     let user_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::User);
     let live_compress = cfg.proxy.live_compresses();
     let mode = cfg.proxy.resolved_history_mode();
+    // #895 Track B: output-savings holdout arm, from the pristine body (before any
+    // mutation below) so it matches the arm the response meter records. Control
+    // conversations skip output-shaping but are still metered. Default 0 → Treatment.
+    let arm = super::holdout::assign(
+        &super::holdout::openai_chat_key(&doc),
+        cfg.proxy.output_holdout_fraction(),
+    );
     // #493: in-band CCR expansion (opt-in). Splice any <lc_expand:HASH> the model
     // echoed back into the verbatim original from the local tee store. A strict
     // no-op when no marker is present (byte-identical body → cache-safe). Runs
@@ -52,8 +59,14 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
     // value is a constant, so it never perturbs the prompt-cache prefix; it sets
     // `reasoning_effort` only on reasoning models and never overrides a
     // client-set value.
-    if let Some(effort) = cfg.proxy.resolved_effort() {
-        modified |= super::effort::apply_openai_chat(&mut doc, effort);
+    if arm == super::holdout::Arm::Treatment {
+        if let Some(effort) = cfg.proxy.resolved_effort() {
+            modified |= super::effort::apply_openai_chat(&mut doc, effort);
+        }
+        // #895: cache-safe wire verbosity steer; control arm skips it (measured).
+        if cfg.proxy.verbosity_steer_enabled() {
+            modified |= super::verbosity::apply_openai_chat(&mut doc);
+        }
     }
     // Meter-only (#481): nothing rewrites the body, so skip all work and let
     // forward + usage metering run against the byte-unchanged request. A pending

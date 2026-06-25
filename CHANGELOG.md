@@ -3,6 +3,178 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- **Shadow-mode CLI reads/searches now record Context IR lineage (#566).**
+  Follow-up to #550. The MCP dispatcher records a Context IR provenance entry for
+  every tool call (`server/call_tool.rs`), but the shadow-mode hook's single-shot
+  `lean-ctx read`/`grep` subprocess dropped it — so `ctx_proof` and IR exports
+  were blind to compressed shadow reads. `record_file_read`/`record_search` now
+  thread the rendered-output excerpt + measured tool duration into a disk-backed
+  `ContextIrV1` load→record→save, mirroring the MCP path (same 200-char
+  char-boundary excerpt bound; `mode`/`pattern` ride the IR `pattern` slot; the
+  read's `original_tokens` and the search's raw matched-line estimate are the IR
+  input so the stored compression ratio is accurate — no fabricated values). The
+  remaining two deferred items from #550 — the in-memory loop/correction
+  detectors and the bounce/adaptive-threshold signals — stay deferred: both need
+  cross-call state a single-shot process cannot hold, so they are gated on the
+  "connect-only daemon routing for hooks" design decision (tracked in #566).
+- **PowerShell-native cmdlets route through lean-ctx (#561).** Follow-up to #556:
+  shadow/harden mode already recognised the Windows `powershell` shell tool, covering
+  the Unix-style PS *aliases* (`cat`/`ls`/`rg`). The command-rewrite layer now also
+  maps the PowerShell-**native** cmdlets and their short aliases — `Get-Content`/`gc`
+  → `lean-ctx read` (honoring `-Path`, `-TotalCount`/`-Head`/`-First` and
+  `-Tail`/`-Last`), `Select-String`/`sls` → `lean-ctx grep` (`-Pattern`, `-Path`),
+  and `Get-ChildItem`/`gci` → `lean-ctx ls` (`-Path`). Parameter names are matched
+  case-insensitively; anything with an unrecognised flag, a pipeline, multiple
+  operands, or an out-of-project path passes through untouched (same conservative
+  contract as the Unix rewrites), so determinism and redaction guarantees are
+  inherited. The PowerShell cmdlets are detected only in the rewrite path and are
+  deliberately kept out of the POSIX shell-alias surface.
+- **Addon security hardening — trust, policy, signing, sandbox, audit (#863).**
+  Because an addon is executable trust (a stdio addon runs code on your machine;
+  an http addon receives your context; its output enters the model), the
+  ecosystem ships with defense-in-depth across three tiers:
+  - **Trust tier + risk review.** A registry-controlled `addon.verified` flag
+    splits the catalog into *verified* (maintainer-audited) and *community*, shown
+    in `addon list`/`info` and the install preview. `core::addons::trust::assess`
+    statically reviews the `[mcp]` wiring (remote endpoint, non-HTTPS, inline
+    shell, fetch-and-exec, unpinned upstream, secret-bearing env) at info/warn/
+    danger severity. The same logic backs a **registry CI validator**
+    (`registry::validate_entries`, run by `cargo test`): unique slugs, required
+    provenance for installable entries, no shell/fetch/non-HTTPS/unpinned wiring,
+    and zero findings for verified entries.
+  - **Install policy floor — `[addons]`.** A global-only config block (never
+    merged from a project-local file): `policy` (`open`/`verified_only`/
+    `allowlist`/`locked`), `allowlist`, `require_signature`, `sandbox`,
+    `block_risky`. `policy::gate` enforces it in `install` before any gateway
+    mutation. Fully permissive by default; distribute via MDM or pin through the
+    signed org-policy floor.
+  - **Registry signing.** A user-override registry can shadow trusted names; with
+    `require_signature = true` it is honoured only if a sidecar
+    `addon_registry.json.sig` carries a valid Ed25519 signature by a trusted org
+    key (same anchor as `policy org trust`).
+  - **Opt-in OS sandbox.** `addons.sandbox = auto|strict` wraps spawned stdio
+    servers in `sandbox-exec` (macOS) / `bwrap` (Linux) at the single spawn point
+    — outbound-network isolation in `auto`, read-only fs + refuse-if-no-launcher
+    in `strict`. Off by default.
+  - **Runtime redaction + audit.** Downstream tool output is run through the
+    shell-layer secret redaction and audit-tagged as untrusted before it reaches
+    the model (`runtime::scrub_output`).
+  New small, unit-tested modules `core::addons::{trust,policy,signing,sandbox,
+  runtime}`; binding registry-review checklist in `CONTRIBUTING.md`.
+
+### Changed
+- **Leaderboard — no top-50 cap, real pagination, everyone findable.** The
+  community leaderboard previously truncated to the top 50 accounts, so most
+  contributors never appeared and the headline community energy could silently
+  drop when the cut-off shifted. `GET /api/leaderboard` now paginates
+  (`?page`, `?per_page`, default 50 / max 200) and supports case-insensitive
+  name search (`?q=`), while two new fields — `total_tokens_saved` and
+  `total_cost_avoided_usd` — report the **uncapped** community totals across all
+  opted-in accounts, independent of the displayed page or any filter. The
+  server-rendered `/leaderboard` page and the website `/metrics` page gained
+  matching search + pagination controls; the landing-page hero energy stat and
+  the in-app cockpit now read the uncapped totals so headline numbers stay
+  stable. Global ranks are preserved across pages. Pagination, ranking, totals
+  and search are pure, unit-tested functions (`paginate`, `all_ranked_cards`).
+  (gitlab #868–#871)
+
+### Fixed
+- **Shadow-mode hook reads dropped ~75% of the MCP read side effects (#550).** When
+  shadow/harden mode intercepts a native `view`/`grep` call it spawns `lean-ctx read`
+  as a single-shot subprocess. That CLI path recorded only a fraction of what the MCP
+  `ctx_read` pipeline does, and — crucially — never *flushed* its buffered telemetry
+  before the process exited, so `lean-ctx heatmap` stayed empty and `lean-ctx gain`
+  reported nothing for compressed reads. Three fixes:
+  - **One flush set, no drift.** A new `tool_lifecycle::flush_all()` is the single
+    source of truth for the buffered-telemetry flush (stats, heatmap, path-mode
+    memory, auto-mode resolver, edit-quality, mode predictor, feedback, threshold
+    learning, LiTM calibration). The daemon shutdown, the parent watchdog and every
+    CLI tool arm (`read`/`grep`/`ls`/`find`/`deps`/`diff`/`-c`/`-t`) now call it — the
+    hand-rolled per-arm copies had drifted (the `read` arm flushed only `stats`), which
+    is exactly how the gap went unnoticed.
+  - **CLI read learning parity.** `record_file_read`/`record_search` now run the same
+    disk-backed learning sinks the MCP background thread does — mode-predictor training,
+    the per-language compression feedback outcome, and the per-call anomaly metric — so
+    auto-mode selection, the feedback loop and dashboard signals improve from
+    shadow-mode reads too (not just direct MCP calls).
+  - **Mode predictor actually persists now.** `ModePredictor` stored its history in a
+    struct-keyed `HashMap<FileSignature, _>`, which `serde_json` cannot serialize
+    ("key must be a string") — so `mode_stats.json` was *never* written and the
+    predictor relearned from zero every process. The history now serializes as an entry
+    list (round-trip tested). The in-memory-only loop/correction detectors and the
+    bounce/adaptive signals that need routing through `ctx_read::handle` are tracked as
+    a follow-up (they cannot be honored from a single-shot subprocess without
+    cross-process state).
+- **Windows PowerShell profile path hardcoded to `~\Documents` — broke under OneDrive
+  redirection (#558).** `proxy enable` and the shell-hook install resolved the
+  PowerShell profile by hardcoding `home\Documents\PowerShell\…`. Windows OneDrive
+  folder backup (on by default on most installs) redirects *Documents* to e.g.
+  `…\OneDrive\Documents\…`, so lean-ctx wrote to a file PowerShell never reads — the
+  active `$PROFILE` was never updated and the proxy received no traffic in new
+  terminals. A new `resolve_powershell_profile_path` asks PowerShell itself for
+  `$PROFILE.CurrentUserCurrentHost` (authoritative under any folder redirection,
+  preferring `pwsh` then Windows PowerShell, UTF-8 output) and falls back to the
+  documented default only when no PowerShell host can be launched. Non-Windows hosts
+  keep the static `~/.config/powershell` path and never spawn a process (#356).
+- **Copilot CLI `view` (read) and `rg` (search) tool calls passed through uncompressed (#562).**
+  `handle_redirect` dispatched on the tool name but only matched `Read`/`read`/
+  `read_file` and `Grep`/`grep`/`search`/`ripgrep`, so two documented GitHub Copilot
+  CLI tool names — `view` (its read tool) and `rg` (its search alias) — slipped
+  through without compression in shadow/harden mode. The dispatch is now a tested
+  `classify_redirect` helper that includes `view` (→ read) and `rg` (→ grep); the
+  Claude/Cursor/CodeBuddy matchers are unchanged because those hosts never emit
+  those names and Copilot CLI fires the hook for every tool call.
+- **Copilot/VS Code Claude models ignored lean-ctx — no `.github/copilot-instructions.md` (#555).**
+  `lean-ctx init --agent copilot` installed the MCP server plus a deliberately
+  weak `AGENTS.md` pointer but never wrote `.github/copilot-instructions.md`, the
+  repo-level file VS Code Copilot Chat auto-applies to every request. Claude-
+  family models (Sonnet/Opus) therefore ignored the tool mapping while GPT-5.x
+  followed it ~95% of the time. `init` now writes the strong dedicated ruleset
+  into `.github/copilot-instructions.md` as an idempotent `<!-- lean-ctx-rules -->`
+  block (user content is preserved, never clobbered) and pins
+  `github.copilot.chat.codeGeneration.useInstructionFiles: true` in the project
+  `.vscode/settings.json` as a safety net (an explicit user value is honoured);
+  uninstall removes the block.
+- **Shadow mode ignored `glob` and Windows `powershell` tool calls (#556).**
+  Shadow/harden mode silently passed two documented Copilot CLI tools straight
+  through: the `glob` tool ("find files matching patterns") had no arm in the
+  redirect hook, and the `powershell` shell tool (paired with `bash` on Windows)
+  was not recognised as a shell, so command rewrites never fired there.
+  `handle_redirect` now intercepts `Glob`/`glob` — warming the shared `ctx_glob`
+  core via a new `lean-ctx glob` subcommand and recording the intercept in
+  `shadow.log`, then letting the native path-list result through — `is_shell_tool`
+  (now shared by both hook entry points) covers `PowerShell`/`powershell`/`pwsh`,
+  and the Claude/Cursor/CodeBuddy redirect matchers include `Glob` so the hook
+  fires for it. Copilot CLI already dispatches every tool, so its `glob`/
+  `powershell` calls are covered automatically.
+- **Codex proxy never compressed — ChatGPT login bypasses it; the API-key config
+  was a no-op (#554).** `lean-ctx proxy enable` reported success for Codex yet
+  `Requests/Compressed/Tokens saved` stayed at `0`, for two reasons. (1) A Codex
+  **ChatGPT login** (the default) authenticates via OAuth directly against
+  `chatgpt.com/backend-api`, so a custom `openai_base_url` is ignored and the
+  proxy never sees the traffic — the Claude Pro/Max situation, but with no
+  warning. lean-ctx now detects a ChatGPT login (`~/.codex/auth.json`
+  `auth_mode = "chatgpt"`, overridable by an explicit `OPENAI_API_KEY`) and
+  prints an honest skip notice pointing at the MCP tools instead of writing dead
+  config. (2) In **API-key** mode lean-ctx wrote `[env] OPENAI_BASE_URL` into
+  `~/.codex/config.toml`, which Codex does not read; it now writes the documented
+  top-level `openai_base_url` key (openai/codex#12031), migrates the dead legacy
+  entry, and preserves any custom remote endpoint. Uninstall/cleanup/preview
+  handle both forms.
+- **`lean-ctx index build-semantic` cold-starts the embedding model again
+  (#545).** On a machine without the model cached, the build dead-ended with
+  *"embedding model not downloaded — auto-download … failed"* even though no
+  download was ever attempted: the build path checked `is_available()` (a pure
+  file-existence check) and bailed before the download could run — a regression
+  from the #519 ORT-teardown guard. `build_or_update` now downloads the model
+  first via a new `EmbeddingEngine::ensure_downloaded()` (pure network/file IO,
+  no ORT init) and only loads the ONNX Runtime once the files are present, so the
+  cold bootstrap works again and the #519 teardown safety is preserved. The
+  passive search path is unchanged.
+
 ## [3.8.12] — 2026-06-24
 
 ### Added

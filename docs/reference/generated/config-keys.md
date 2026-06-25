@@ -12,6 +12,7 @@ Top-level configuration keys
 
 - `agent_token_budget` (usize, default `0`) — Default per-agent token budget. 0 = unlimited
 - `allow_auto_reroot` (bool, default `false` — env `LEAN_CTX_ALLOW_REROOT`) — Allow automatic project-root re-rooting when absolute paths outside the jail are seen
+- `allow_ide_config_dirs` (bool, default `null` — env `LEAN_CTX_ALLOW_IDE_DIRS`) — Allow jailed ctx_* tools to read home-level IDE config dirs (registry-derived; covers all editors). Off by default — exposes other agents' sessions/credentials
 - `allow_paths` (string[], default `[]` — env `LEAN_CTX_ALLOW_PATH`) — Additional paths allowed by PathJail (absolute)
 - `auto_capture` (bool, default `true`) — Automatic knowledge capture from tool findings
 - `auto_mode_learning` (bool, default `false` — env `LEAN_CTX_AUTO_MODE_LEARNING`) — Opt-in: let adaptive learning signals (predictor, bandit, heatmap, adaptive policy, bounce/path memory) influence `auto` mode. Off by default for a deterministic, I/O-light cascade (capability guards + size/task heuristic only) that keeps output byte-stable for prompt caching. Override via LEAN_CTX_AUTO_MODE_LEARNING
@@ -87,6 +88,18 @@ Top-level configuration keys
 - `ultra_compact` (bool, default `false`) — Legacy flag for maximum compression (use compression_level instead)
 - `update_check_disabled` (bool, default `false` — env `LEAN_CTX_NO_UPDATE_CHECK`) — Disable the daily version check
 
+## `[addons]`
+
+Addon ecosystem security floor: install policy, signature requirement, per-addon capability sandbox (#863, P1). Global-only.
+
+- `allowlist` (array, default `[]`) — Addon slugs permitted when policy = allowlist
+- `block_risky` (bool, default `false`) — Refuse to install an addon that has a high-risk (Danger) capability
+- `enforce_capabilities` (bool, default `false`) — Fail closed when an addon declares restricted [capabilities] but no OS sandbox launcher is available to enforce them
+- `metering` (bool, default `true`) — Record per-addon / per-tool gateway usage to <data_dir>/addons/usage.json (analytics + billing base)
+- `policy` (enum: open | verified_only | allowlist | locked, default `open`) — Addon install policy: open (any) | verified_only | allowlist | locked
+- `require_signature` (bool, default `false`) — Honour a user-override registry only if signed by a trusted org key
+- `sandbox` (enum: off | auto | strict, default `off`) — Sandbox spawned addon stdio servers: off | auto (block network) | strict (read-only fs + refuse if no launcher)
+
 ## `[archive]`
 
 Settings for the zero-loss compression archive (large tool outputs saved to disk)
@@ -150,6 +163,7 @@ Custom command aliases (array of {command, alias} entries). Note: field names ar
 Semantic-embedding engine settings (model selection for ctx_semantic_search)
 
 - `auto_download` (bool, default `null` — env `LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD`) — Download the embedding model in the background on first semantic need (default: allowed). Set false for air-gapped machines; semantic features then stay off until a model is provided manually.
+- `deterministic` (bool, default `null` — env `LEAN_CTX_EMBEDDING_DETERMINISTIC`) — Pin embedding inference to a single CPU thread with no GPU provider so vectors are bit-identical across machines (default: off, multi-threaded GPU-capable path). Extractive prose ranking is already deterministic via score quantization; enable this only for cross-machine reproducibility, at a throughput cost.
 - `dimensions` (integer, default `null`) — Declared embedding width for hf: custom models (fallback only — the real width is probed from the ONNX graph at load time). Built-in models ignore this key.
 - `model` (string, default `minilm` — env `LEAN_CTX_EMBEDDING_MODEL`) — Local ONNX embedding model for ctx_semantic_search. One of: minilm (all-MiniLM-L6-v2, 384d, default), nomic (768d) — or any HuggingFace repo with an ONNX export via hf:org/repo[@revision] (e.g. hf:jinaai/jina-embeddings-v2-base-code for code). Switching models re-indexes once on the next search.
 
@@ -314,6 +328,9 @@ Proxy upstream configuration for API routing
 - `live_compress_exclude` (string[], default `["serena"]`) — Tool-name patterns (case-insensitive substring) whose tool_result is never live-compressed — treated as protected, like a file read (#481). Unset protects Serena's code-reading tools; set an explicit list to narrow it, or [] to disable
 - `meter_openai_usage` (bool, default `true`) — Inject stream_options.include_usage into streamed OpenAI Chat Completions so the final chunk reports real token usage for the measured spend meter. Default true
 - `openai_upstream` (string?, default `null`) — Custom upstream URL for OpenAI API proxy
+- `output_holdout` (f64, default `0.0` — env `LEAN_CTX_PROXY_OUTPUT_HOLDOUT`) — Fraction 0.0-1.0 of conversations placed in the output-savings control arm (#895). 0 (default) = no holdout (every conversation is output-shaped). When > 0, a deterministic cohort = blake3(system + first user message) puts ~this fraction in a control arm that skips output-shaping (effort control + verbosity steer) but is still metered, yielding an honest measured output-token reduction (lean-ctx output-savings). The cohort is a pure function of conversation identity, so a conversation keeps one arm across all turns - cache-safe
+- `prose_ranker` (enum: auto | extractive | truncate, default `auto` — env `LEAN_CTX_PROXY_PROSE_RANKER`) — How the proxy squeezes prose it must shrink (#895). auto (default) and extractive use embedding-based extractive ranking — keeping the most central sentences instead of just the prefix — when the local embedding engine is available, else fall back to truncation; truncate keeps the original deterministic FIFO squeeze and never loads the engine. Wire rewrites are memoized per content so the engine's cold→warm transition never changes an already-emitted frozen-region rewrite (cache-safe, #448/#498)
+- `verbosity_steer` (bool, default `false` — env `LEAN_CTX_PROXY_VERBOSITY_STEER`) — Opt-in cache-safe wire verbosity steer (#895). When true, the proxy appends a single constant 'be concise' instruction to the last user turn of each request - output-shaping for raw API clients that do not load lean-ctx rules. The suffix is constant and appended strictly after the last cache_control breakpoint (a new trailing text block, never modifying a cache-anchored block), so the provider prompt-cache prefix stays byte-stable. Under an output_holdout the control arm skips it so its effect is measured. Default false
 
 ## `[proxy.role_aggressiveness]`
 

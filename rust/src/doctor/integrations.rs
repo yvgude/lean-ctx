@@ -1344,7 +1344,7 @@ fn check_cursor_hooks(path: &std::path::Path, binary: &str) -> NamedCheck {
     let has_redirect = pre.iter().any(|e| {
         matches!(
             e.get("matcher").and_then(|m| m.as_str()),
-            Some("Read|Grep" | "Read" | "Grep")
+            Some("Read|Grep|Glob" | "Read|Grep" | "Read" | "Grep")
         ) && e
             .get("command")
             .and_then(|c| c.as_str())

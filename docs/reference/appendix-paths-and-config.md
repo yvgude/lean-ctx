@@ -186,6 +186,7 @@ they overlap, so here is exactly what each one does:
 | `allow_paths = ["…"]` (root key) | **Adds** directories to PathJail's whitelist. Tools may read/edit under them, but `ctx_tree`/`ctx_search` do **not** scan them. | One extra directory needs to be readable/editable (e.g. a shared skills folder). |
 | `extra_roots = ["…"]` (root key) | Same whitelist effect as `allow_paths` **plus** multi-root scanning: `ctx_tree`, `ctx_search`, overview treat them as additional project roots. | Multi-repo workspaces. |
 | `path_jail = false` (root key) | **Disables PathJail entirely** — every absolute path is allowed. | Sandboxed environments (bwrap, containers, VMs) where the OS is the boundary. |
+| `allow_ide_config_dirs = true` (root key) | **Adds every supported editor's config dir** to the read whitelist — registry-derived (`~/.cursor`, VS Code, Cline/Roo, JetBrains, …). Opt-in; exposes other agents' sessions/credentials. | Letting the agent manage MCP setup across editors. |
 
 Env equivalents (path-list syntax, `:` on Unix / `;` on Windows):
 `LEAN_CTX_ALLOW_PATH` (= `allow_paths`), `LEAN_CTX_EXTRA_ROOTS` (= `extra_roots`).
@@ -207,6 +208,13 @@ Notes that save debugging time:
 - **Removed:** the `LEAN_CTX_NO_JAIL=1` env var (≤ 3.7.3). It was replaced by
   the `path_jail = false` config key and the `no-jail` compile feature; setting
   the old env var has no effect on current versions.
-- Home-level IDE config dirs (`~/.cursor`, `~/.claude`, …) are excluded from
-  the jail's whitelist by default; opt in with `allow_ide_config_dirs = true`
-  (they expose other projects' sessions and credentials).
+- Home-level IDE config dirs are excluded from the jail's whitelist by default.
+  Opt in with `allow_ide_config_dirs = true` (or `LEAN_CTX_ALLOW_IDE_DIRS=1`):
+  the allow-list is **derived from the editor registry**, so it covers every
+  supported editor — including non-dotfile layouts like VS Code
+  (`~/Library/Application Support/Code/User`), Cline/Roo and JetBrains — and
+  never drifts as editors are added. `~/.lean-ctx` is always allowed, and a
+  config file that lives directly in `$HOME` never widens the jail to the whole
+  home directory. `lean-ctx setup` asks once (informed consent) and the
+  relaxation is audited by `lean-ctx doctor`. These dirs expose other agents'
+  sessions and credentials.

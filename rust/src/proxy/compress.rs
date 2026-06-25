@@ -189,7 +189,7 @@ fn looks_like_prose(content: &str) -> bool {
 /// actually saves tokens; otherwise `None` so the normal pipeline can try.
 fn squeeze_research_prose(content: &str) -> Option<String> {
     let before = count_tokens(content);
-    let squeezed = distill::squeeze_prose(content, RESEARCH_PROSE_CAP);
+    let squeezed = squeeze_research_prose_body(content);
     if squeezed.trim().is_empty() {
         return None;
     }
@@ -204,6 +204,20 @@ fn squeeze_research_prose(content: &str) -> Option<String> {
         Some("research"),
         None,
     ))
+}
+
+/// Choose the prose-squeeze body. Only when the content would actually be
+/// TRUNCATED (over the cap) do we upgrade from FIFO prefix truncation to
+/// extractive centrality ranking — which keeps the most representative sentences
+/// instead of just the first ones — via the cache-safe, memoized wire squeeze
+/// ([`crate::proxy::prose_ranker`]), so the cold→warm engine transition never
+/// changes a frozen-region rewrite (#448/#498). Below the cap the squeeze is a
+/// lossless dedup pass, so the cheaper truncating squeeze is used.
+fn squeeze_research_prose_body(content: &str) -> String {
+    if content.len() > RESEARCH_PROSE_CAP {
+        return super::prose_ranker::squeeze(content, RESEARCH_PROSE_CAP);
+    }
+    distill::squeeze_prose(content, RESEARCH_PROSE_CAP)
 }
 
 /// True when `name` refers to one of lean-ctx's own `ctx_*` MCP tools, whose

@@ -91,8 +91,8 @@ fn merge_cursor_hooks(existing: &mut serde_json::Value, rewrite_cmd: &str, redir
     ensure_pretooluse_hook(pre_arr, &["Shell"], "Shell", rewrite_cmd);
     ensure_pretooluse_hook(
         pre_arr,
-        &["Read|Grep", "Read", "Grep"],
-        "Read|Grep",
+        &["Read|Grep|Glob", "Read|Grep", "Read", "Grep"],
+        "Read|Grep|Glob",
         redirect_cmd,
     );
 
@@ -313,7 +313,7 @@ mod tests {
                 && e.get("command").and_then(|c| c.as_str()) == Some("/new/bin hook rewrite")
         }));
         assert!(pre.iter().any(|e| {
-            e.get("matcher").and_then(|m| m.as_str()) == Some("Read|Grep")
+            e.get("matcher").and_then(|m| m.as_str()) == Some("Read|Grep|Glob")
                 && e.get("command").and_then(|c| c.as_str()) == Some("/new/bin hook redirect")
         }));
     }
