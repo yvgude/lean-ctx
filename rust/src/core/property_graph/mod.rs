@@ -20,7 +20,8 @@ pub use file_catalog::FileCatalogEntry;
 pub use meta::{PropertyGraphMetaV1, load_meta, meta_path, write_meta};
 pub use node::{Node, NodeKind};
 pub use queries::{
-    DependencyChain, GraphQuery, ImpactResult, edge_weight, file_connectivity, related_files,
+    AffectedEntry, DependencyChain, GraphQuery, ImpactResult, edge_weight, file_connectivity,
+    related_files,
 };
 #[allow(deprecated)]
 pub use sync::mirror_index;

@@ -150,9 +150,26 @@ fn handle_overview(root: &str, fmt: OutputFormat) -> String {
     };
 
     let clusters = compute_clusters(&data);
-    let layers = compute_layers(&data);
+    let packages = compute_packages(&data);
     let entrypoints = find_entrypoints(&data);
-    let cycles = find_cycles(&data);
+
+    // Hotspot computation (compact)
+    let pr_input = crate::core::pagerank::PageRankInput {
+        files: data.all_files.clone(),
+        forward: data.forward.clone(),
+    };
+    let pagerank = crate::core::pagerank::compute(&pr_input, 0.85, 30);
+
+    let mut hotspots: Vec<(String, f64, f64)> = pagerank
+        .iter()
+        .map(|(file, &rank)| {
+            let in_edges = data.reverse.get(file).map_or(0, Vec::len);
+            let out_edges = data.forward.get(file).map_or(0, Vec::len);
+            let score = rank * 0.4 + (in_edges + out_edges) as f64 * 0.01 * 0.6;
+            (file.clone(), score, rank)
+        })
+        .collect();
+    hotspots.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let files_total = data.all_files.len();
     let import_edges = data.forward.values().map(std::vec::Vec::len).sum::<usize>();
@@ -161,17 +178,15 @@ fn handle_overview(root: &str, fmt: OutputFormat) -> String {
     let clusters_limit = crate::core::budgets::ARCHITECTURE_OVERVIEW_CLUSTERS_LIMIT.max(1);
     let clusters_truncated = clusters_total > clusters_limit;
 
-    let layers_total = layers.len();
-    let layers_limit = crate::core::budgets::ARCHITECTURE_OVERVIEW_LAYERS_LIMIT.max(1);
-    let layers_truncated = layers_total > layers_limit;
+    let packages_total = packages.len();
+    let packages_limit = crate::core::budgets::ARCHITECTURE_OVERVIEW_PACKAGES_LIMIT.max(1);
+    let packages_truncated = packages_total > packages_limit;
 
     let entrypoints_total = entrypoints.len();
     let entrypoints_limit = crate::core::budgets::ARCHITECTURE_OVERVIEW_ENTRYPOINTS_LIMIT.max(1);
     let entrypoints_truncated = entrypoints_total > entrypoints_limit;
 
-    let cycles_total = cycles.len();
-    let cycles_limit = crate::core::budgets::ARCHITECTURE_OVERVIEW_CYCLES_LIMIT.max(1);
-    let cycles_truncated = cycles_total > cycles_limit;
+    let hotspots_limit = 5usize;
 
     match fmt {
         OutputFormat::Json => {
@@ -181,20 +196,22 @@ fn handle_overview(root: &str, fmt: OutputFormat) -> String {
                 .take(clusters_limit)
                 .map(|c| {
                     json!({
-                        "dir": common_prefix(&c.files),
-                        "file_count": c.files.len(),
-                        "internal_edges": c.internal_edges
+                        "name": c.name,
+                        "members": c.members.len(),
+                        "cohesion": (c.cohesion * 1000.0).round() / 1000.0
                     })
                 })
                 .collect();
 
-            let layers_json: Vec<Value> = layers
+            let packages_json: Vec<Value> = packages
                 .iter()
-                .take(layers_limit)
-                .map(|l| {
+                .take(packages_limit)
+                .map(|p| {
                     json!({
-                        "depth": l.depth,
-                        "file_count": l.files.len()
+                        "name": p.name,
+                        "node_count": p.node_count,
+                        "fan_in": p.fan_in,
+                        "fan_out": p.fan_out
                     })
                 })
                 .collect();
@@ -208,10 +225,16 @@ fn handle_overview(root: &str, fmt: OutputFormat) -> String {
                 })
                 .collect();
 
-            let cycles_json: Vec<Value> = cycles
+            let hotspots_json: Vec<Value> = hotspots
                 .iter()
-                .take(cycles_limit)
-                .map(|c| json!({ "path": c, "len": c.len().saturating_sub(1) }))
+                .take(hotspots_limit)
+                .map(|(file, score, rank)| {
+                    json!({
+                        "file": file,
+                        "score": (score * 1000.0).round() / 1000.0,
+                        "pagerank": (rank * 10000.0).round() / 10000.0
+                    })
+                })
                 .collect();
 
             let v = json!({
@@ -220,37 +243,37 @@ fn handle_overview(root: &str, fmt: OutputFormat) -> String {
                 "action": "overview",
                 "project": project_meta(root),
                 "graph": graph_summary(root_path),
-                "graph_meta": crate::core::property_graph::load_meta(root),
                 "files_total": files_total,
                 "import_edges": import_edges,
                 "clusters_total": clusters_total,
                 "clusters": clusters_json,
                 "clusters_truncated": clusters_truncated,
-                "layers_total": layers_total,
-                "layers": layers_json,
-                "layers_truncated": layers_truncated,
+                "packages_total": packages_total,
+                "packages": packages_json,
+                "packages_truncated": packages_truncated,
                 "entrypoints_total": entrypoints_total,
                 "entrypoints": entrypoints_json,
                 "entrypoints_truncated": entrypoints_truncated,
-                "cycles_total": cycles_total,
-                "cycles": cycles_json,
-                "cycles_truncated": cycles_truncated
+                "hotspots_total": hotspots.len(),
+                "hotspots": hotspots_json
             });
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
         }
         OutputFormat::Text => {
             let mut result = format!(
-                "Architecture Overview ({files_total} files, {import_edges} import edges)\n"
+                "Architecture Overview ({files_total} files, {import_edges} import edges)
+"
             );
 
-            result.push_str(&format!("\nClusters: {clusters_total}\n"));
-            for (i, cluster) in clusters.iter().enumerate().take(clusters_limit) {
-                let dir = common_prefix(&cluster.files);
+            result.push_str(&format!("
+Clusters: {clusters_total}
+"));
+            for cluster in clusters.iter().take(clusters_limit) {
                 result.push_str(&format!(
-                    "  #{}: {} files ({})\n",
-                    i + 1,
-                    cluster.files.len(),
-                    dir
+                    "  {:<30} {:>4} members  cohesion {:.0}%\n",
+                    cluster.name,
+                    cluster.members.len(),
+                    cluster.cohesion * 100.0
                 ));
             }
             if clusters_truncated {
@@ -260,21 +283,25 @@ fn handle_overview(root: &str, fmt: OutputFormat) -> String {
                 ));
             }
 
-            result.push_str(&format!("\nLayers: {layers_total}\n"));
-            for layer in layers.iter().take(layers_limit) {
+            result.push_str(&format!("
+Packages: {packages_total}
+"));
+            for pkg in packages.iter().take(packages_limit) {
                 result.push_str(&format!(
-                    "  L{}: {} files\n",
-                    layer.depth,
-                    layer.files.len()
+                    "  {:<30} {:>4} files  fan_in={:<3} fan_out={:<3}\n",
+                    pkg.name, pkg.node_count, pkg.fan_in, pkg.fan_out
                 ));
             }
-            if layers_truncated {
-                result.push_str(&format!("  ... +{} more\n", layers_total - layers_limit));
+            if packages_truncated {
+                result.push_str(&format!("  ... +{} more\n", packages_total - packages_limit));
             }
 
-            result.push_str(&format!("\nEntrypoints: {entrypoints_total}\n"));
+            result.push_str(&format!("
+Entrypoints: {entrypoints_total}
+"));
             for ep in entrypoints.iter().take(entrypoints_limit) {
-                result.push_str(&format!("  {ep}\n"));
+                let dep_count = data.forward.get(ep).map_or(0, std::vec::Vec::len);
+                result.push_str(&format!("  {ep} (imports {dep_count} files)\n"));
             }
             if entrypoints_truncated {
                 result.push_str(&format!(
@@ -283,12 +310,13 @@ fn handle_overview(root: &str, fmt: OutputFormat) -> String {
                 ));
             }
 
-            result.push_str(&format!("\nCycles: {cycles_total}\n"));
-            for cycle in cycles.iter().take(cycles_limit) {
-                result.push_str(&format!("  {}\n", cycle.join(" -> ")));
+            result.push_str(&format!("
+Hotspots (top {}):\n", hotspots_limit));
+            for (file, score, _rank) in hotspots.iter().take(hotspots_limit) {
+                result.push_str(&format!("  {score:.3}  {file}\n"));
             }
-            if cycles_truncated {
-                result.push_str(&format!("  ... +{} more\n", cycles_total - cycles_limit));
+            if hotspots.len() > hotspots_limit {
+                result.push_str(&format!("  ... +{} more\n", hotspots.len() - hotspots_limit));
             }
 
             let tokens = count_tokens(&result);
@@ -322,19 +350,18 @@ fn handle_clusters(root: &str, fmt: OutputFormat) -> String {
                 .iter()
                 .take(limit)
                 .map(|c| {
-                    let dir = common_prefix(&c.files);
-                    let files_total = c.files.len();
-                    let files_truncated = files_total > file_limit;
-                    let mut files = c.files.clone();
-                    if files_truncated {
-                        files.truncate(file_limit);
+                    let members_total = c.members.len();
+                    let members_truncated = members_total > file_limit;
+                    let mut members = c.members.clone();
+                    if members_truncated {
+                        members.truncate(file_limit);
                     }
                     json!({
-                        "dir": dir,
-                        "file_count": files_total,
-                        "internal_edges": c.internal_edges,
-                        "files": files,
-                        "files_truncated": files_truncated
+                        "name": c.name,
+                        "members": members,
+                        "members_count": members_total,
+                        "cohesion": (c.cohesion * 1000.0).round() / 1000.0,
+                        "members_truncated": members_truncated
                     })
                 })
                 .collect();
@@ -355,21 +382,20 @@ fn handle_clusters(root: &str, fmt: OutputFormat) -> String {
             let mut result = format!("Module Clusters ({total}):\n");
 
             for (i, cluster) in clusters.iter().take(limit).enumerate() {
-                let dir = common_prefix(&cluster.files);
                 result.push_str(&format!(
-                    "\n#{} — {} ({} files, {} internal edges)\n",
+                    "\n#{} — {} ({} members, cohesion {:.0}%)\n",
                     i + 1,
-                    dir,
-                    cluster.files.len(),
-                    cluster.internal_edges
+                    cluster.name,
+                    cluster.members.len(),
+                    cluster.cohesion * 100.0
                 ));
-                for file in cluster.files.iter().take(file_limit) {
+                for file in cluster.members.iter().take(file_limit) {
                     result.push_str(&format!("  {file}\n"));
                 }
-                if cluster.files.len() > file_limit {
+                if cluster.members.len() > file_limit {
                     result.push_str(&format!(
                         "  ... +{} more\n",
-                        cluster.files.len() - file_limit
+                        cluster.members.len() - file_limit
                     ));
                 }
             }
@@ -1072,8 +1098,17 @@ fn handle_module(path: Option<&str>, root: &str, fmt: OutputFormat) -> String {
 
 #[derive(Debug)]
 struct Cluster {
-    files: Vec<String>,
-    internal_edges: usize,
+    name: String,
+    members: Vec<String>,
+    cohesion: f64,
+}
+
+#[derive(Debug)]
+struct Package {
+    name: String,
+    node_count: usize,
+    fan_in: usize,
+    fan_out: usize,
 }
 
 fn compute_clusters(data: &GraphData) -> Vec<Cluster> {
@@ -1084,37 +1119,111 @@ fn compute_clusters(data: &GraphData) -> Vec<Cluster> {
     }
 
     let mut clusters: Vec<Cluster> = Vec::new();
-    for files in dir_groups.values() {
+    for (dir_name, files) in &dir_groups {
         if files.len() < 2 {
             continue;
         }
         let file_set: HashSet<&str> = files.iter().map(std::string::String::as_str).collect();
         let mut internal = 0;
+        let mut external = 0;
         for file in files {
             if let Some(deps) = data.forward.get(file) {
                 for dep in deps {
                     if file_set.contains(dep.as_str()) {
                         internal += 1;
+                    } else {
+                        external += 1;
                     }
                 }
             }
         }
 
+        let total = internal + external;
+        let cohesion = if total > 0 {
+            internal as f64 / total as f64
+        } else {
+            1.0
+        };
+
         let mut sorted = files.clone();
         sorted.sort();
         clusters.push(Cluster {
-            files: sorted,
-            internal_edges: internal,
+            name: dir_name.clone(),
+            members: sorted,
+            cohesion,
         });
     }
 
     clusters.sort_by(|a, b| {
-        b.files
+        b.members
             .len()
-            .cmp(&a.files.len())
-            .then_with(|| a.files[0].cmp(&b.files[0]))
+            .cmp(&a.members.len())
+            .then_with(|| a.members[0].cmp(&b.members[0]))
     });
     clusters
+}
+
+fn compute_packages(data: &GraphData) -> Vec<Package> {
+    // Group files by parent directory
+    let mut dir_groups: HashMap<String, Vec<String>> = HashMap::new();
+    for file in &data.all_files {
+        let dir = file.rsplitn(2, '/').last().unwrap_or("").to_string();
+        dir_groups.entry(dir).or_default().push(file.clone());
+    }
+
+    // Map each file to its package directory
+    let file_to_pkg: HashMap<&str, &str> = data
+        .all_files
+        .iter()
+        .map(|f| {
+            let dir = f.rsplitn(2, '/').last().unwrap_or("");
+            (f.as_str(), dir)
+        })
+        .collect();
+
+    let mut packages: Vec<Package> = Vec::new();
+    for (pkg_name, files) in &dir_groups {
+        let mut fan_in_pkgs: HashSet<&str> = HashSet::new();
+        let mut fan_out_pkgs: HashSet<&str> = HashSet::new();
+
+        for file in files {
+            // Fan-out: which packages does this package import from?
+            if let Some(deps) = data.forward.get(file) {
+                for dep in deps {
+                    if let Some(&dep_pkg) = file_to_pkg.get(dep.as_str()) {
+                        if dep_pkg != pkg_name.as_str() {
+                            fan_out_pkgs.insert(dep_pkg);
+                        }
+                    }
+                }
+            }
+
+            // Fan-in: which packages import from this package?
+            if let Some(dependents) = data.reverse.get(file) {
+                for dep in dependents {
+                    if let Some(&dep_pkg) = file_to_pkg.get(dep.as_str()) {
+                        if dep_pkg != pkg_name.as_str() {
+                            fan_in_pkgs.insert(dep_pkg);
+                        }
+                    }
+                }
+            }
+        }
+
+        packages.push(Package {
+            name: pkg_name.clone(),
+            node_count: files.len(),
+            fan_in: fan_in_pkgs.len(),
+            fan_out: fan_out_pkgs.len(),
+        });
+    }
+
+    packages.sort_by(|a, b| {
+        b.node_count
+            .cmp(&a.node_count)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    packages
 }
 
 struct Layer {

@@ -474,7 +474,7 @@ fn find_related_internal(
     let Ok(filter) = SearchFilter::new(None, None) else {
         return vec!["ERR: filter init failed\n".to_string()];
     };
-    let output = hybrid_search_mode(query, root, index, top_k, compact, &filter);
+    let output = hybrid_search_mode(query, root, index, top_k, compact, &filter, false);
     output.lines().map(|l| format!("{l}\n")).collect()
 }
 
@@ -1047,6 +1047,7 @@ fn bm25_graph_search(
     compact: bool,
     filter: &SearchFilter,
     cfg: &HybridConfig,
+    json_output: bool,
 ) -> String {
     let graph_ranks = graph_rrf_ranks_for_search_root(root);
     let graph_enhances = graph_ranks.as_ref().is_some_and(|m| !m.is_empty());
@@ -1072,6 +1073,10 @@ fn bm25_graph_search(
         }
     }
     results.truncate(top_k);
+
+    if json_output {
+        return json_string_from_hybrid_results(&results);
+    }
 
     let graph_tag = if graph_enhances { "+graph" } else { "" };
     let header = if compact {
@@ -1148,6 +1153,7 @@ fn hybrid_search_mode(
     top_k: usize,
     compact: bool,
     filter: &SearchFilter,
+    json_output: bool,
 ) -> String {
     #[cfg(feature = "embeddings")]
     {
@@ -1158,12 +1164,12 @@ fn hybrid_search_mode(
         // exact fallback the pipeline uses when embeddings are absent, so results
         // stay coherent while the vector footprint and embed latency disappear.
         if !cfg.dense_enabled {
-            return bm25_graph_search(query, root, index, top_k, compact, filter, &cfg);
+            return bm25_graph_search(query, root, index, top_k, compact, filter, &cfg, json_output);
         }
 
         let (engine, mut embed_idx) = match load_engine_and_index(root) {
             Ok(v) => v,
-            Err(e) => return format!("ERR: {e}"),
+            Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
         };
 
         // #512: cold-start guard. Never embed a large corpus inline under the
@@ -1173,19 +1179,22 @@ fn hybrid_search_mode(
         // dense index once, out of band. Incremental embeds (few changed chunks
         // on a warm index) stay inline and fast.
         if let Some(pending) = cold_start_embed_guard(&embed_idx, index) {
-            let base = bm25_graph_search(query, root, index, top_k, compact, filter, &cfg);
+            let base = bm25_graph_search(query, root, index, top_k, compact, filter, &cfg, json_output);
+            if json_output {
+                return base;
+            }
             return format!("{base}\n{}", dense_build_hint(pending, compact));
         }
 
         let (aligned, coverage, changed_files) =
             match ensure_embeddings(root, index, engine, &mut embed_idx) {
                 Ok(v) => v,
-                Err(e) => return format!("ERR: {e}"),
+                Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
             };
 
         let backend = match crate::core::dense_backend::DenseBackendKind::try_from_env() {
             Ok(v) => v,
-            Err(e) => return format!("ERR: {e}"),
+            Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
         };
         let filter_fn = |p: &str| filter.matches(p);
         let filter_pred: Option<&dyn Fn(&str) -> bool> = filter
@@ -1207,7 +1216,7 @@ fn hybrid_search_mode(
             graph_ranks_ref,
         ) {
             Ok(v) => v,
-            Err(e) => return format!("ERR: {e}"),
+            Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
         };
 
         if cfg.splade_weight > 0.0 {
@@ -1218,6 +1227,10 @@ fn hybrid_search_mode(
         }
 
         results.truncate(top_k);
+
+        if json_output {
+            return json_string_from_hybrid_results(&results);
+        }
 
         let header = if compact {
             format!(
@@ -1261,6 +1274,11 @@ fn hybrid_search_mode(
         }
 
         results.truncate(top_k);
+
+        if json_output {
+            return json_string_from_search_results(&results);
+        }
+
         let graph_tag = if graph_ranks.is_some() { "+graph" } else { "" };
         let header = if compact {
             format!(
@@ -1288,10 +1306,11 @@ fn dense_search_mode(
     top_k: usize,
     compact: bool,
     filter: &SearchFilter,
+    json_output: bool,
 ) -> String {
     let (engine, mut embed_idx) = match load_engine_and_index(root) {
         Ok(v) => v,
-        Err(e) => return format!("ERR: {e}"),
+        Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
     };
 
     // #512: explicit dense has no BM25 fallback to degrade into, so fail fast
@@ -1299,18 +1318,21 @@ fn dense_search_mode(
     // under the watchdog (the cold-start runaway). A warm/incremental index
     // passes through untouched.
     if let Some(pending) = cold_start_embed_guard(&embed_idx, index) {
+        if json_output {
+            return err_json_or_text(json_output, &dense_build_hint(pending, false));
+        }
         return dense_build_hint(pending, compact);
     }
 
     let (aligned, coverage, changed_files) =
         match ensure_embeddings(root, index, engine, &mut embed_idx) {
             Ok(v) => v,
-            Err(e) => return format!("ERR: {e}"),
+            Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
         };
 
     let backend = match crate::core::dense_backend::DenseBackendKind::try_from_env() {
         Ok(v) => v,
-        Err(e) => return format!("ERR: {e}"),
+        Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
     };
 
     let filter_fn = |p: &str| filter.matches(p);
@@ -1331,9 +1353,13 @@ fn dense_search_mode(
         filter_pred,
     ) {
         Ok(v) => v,
-        Err(e) => return format!("ERR: {e}"),
+        Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
     };
     results.truncate(top_k);
+
+    if json_output {
+        return json_string_from_hybrid_results(&results);
+    }
 
     let header = if compact {
         format!(
@@ -1363,8 +1389,9 @@ fn dense_search_mode(
     _top_k: usize,
     _compact: bool,
     _filter: &SearchFilter,
+    json_output: bool,
 ) -> String {
-    "ERR: embeddings feature not enabled".to_string()
+    err_json_or_text(json_output, "ERR: embeddings feature not enabled")
 }
 
 #[cfg(feature = "embeddings")]

@@ -102,16 +102,22 @@ fn format_time(t: SystemTime) -> String {
 
 pub fn disk_status_for_semantic(project_root: &str) -> DiskStatus {
     let root = Path::new(project_root);
-    let dir = index_namespace::vectors_dir(root);
-    let bin_path = dir.join("embeddings.bin");
-    if !bin_path.exists() {
+    let db_path = index_namespace::vectors_dir(root).join("code_index.db");
+    if !db_path.exists() {
         return DiskStatus::default();
     }
-    let meta = std::fs::metadata(&bin_path).ok();
+    let meta = std::fs::metadata(&db_path).ok();
+    let embedding_count = rusqlite::Connection::open(&db_path)
+        .ok()
+        .and_then(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM embeddings", [], |r| r.get::<_, i64>(0))
+                .ok()
+        })
+        .unwrap_or(0);
     DiskStatus {
-        exists: true,
+        exists: embedding_count > 0,
         size_bytes: meta.as_ref().map(std::fs::Metadata::len),
-        file_count: None,
+        file_count: Some(embedding_count as u64),
         modified_at: meta.and_then(|m| m.modified().ok()).map(format_time),
     }
 }
