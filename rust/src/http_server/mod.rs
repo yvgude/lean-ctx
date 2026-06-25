@@ -354,12 +354,8 @@ async fn v1_index_ensure(Json(body): Json<IndexEnsureBody>) -> impl IntoResponse
     }
     let root = body.root;
     let extra = body.extra_roots;
-    tokio::task::spawn_blocking(move || {
-        crate::core::index_orchestrator::ensure_all_background(&root);
-        if !extra.is_empty() {
-            crate::core::index_orchestrator::ensure_extra_roots_background(&root, &extra);
-        }
-    });
+    // Indexes are SQLite-backed — no explicit build trigger needed.
+    let _ = (root, extra);
     (StatusCode::OK, "{\"status\":\"ok\"}\n")
 }
 
@@ -1066,9 +1062,8 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
     // The build is deduped per root and idle CPU settles flat once it completes
     // (the memory guard backs off), so #453 idle hygiene is preserved.
     let warm_root = cfg.project_root.to_string_lossy().to_string();
-    if !warm_root.is_empty() {
-        crate::core::index_orchestrator::ensure_all_background(&warm_root);
-    }
+    let _ = warm_root;
+    // Indexes are SQLite-backed; no warm-up required.
 
     let addr: SocketAddr = format!("{}:{}", cfg.host, cfg.port)
         .parse()

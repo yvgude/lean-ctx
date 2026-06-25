@@ -289,6 +289,11 @@ impl ProjectIndex {
     /// former JSON index, so this is a faithful round-trip (see
     /// `graph_provider::materialize_project_index` + its round-trip test).
     /// `None` when the graph has not been built yet (empty file catalog).
+    ///
+    /// # Deprecated
+    /// Reads from `graph.db` (property graph). Callers should read from
+    /// `code_index.db` via `DumpEngine` instead.
+    #[deprecated(note = "Use DumpEngine / code_index.db instead of loading from property graph")]
     pub fn load(project_root: &str) -> Option<Self> {
         let graph = crate::core::property_graph::CodeGraph::open(project_root).ok()?;
         if graph.file_catalog_count().unwrap_or(0) == 0 {
@@ -302,6 +307,11 @@ impl ProjectIndex {
     /// since #696 C4). Replaces the former `index.json.zst` write; the mirror
     /// also stamps `graph.meta.json`, which the resident graph cache fingerprints
     /// for invalidation.
+    ///
+    /// # Deprecated
+    /// Writes to `graph.db` — use the `DumpEngine` / `code_index.db` pipeline instead.
+    #[deprecated(note = "Use DumpEngine with code_index.db instead of mirroring to graph.db")]
+    #[allow(deprecated)]
     pub fn save(&self) -> Result<(), String> {
         crate::core::property_graph::mirror_index(&self.project_root, self)
             .map_err(|e| e.to_string())

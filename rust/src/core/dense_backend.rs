@@ -57,7 +57,7 @@ impl DenseBackendKind {
 mod embed {
     use std::path::Path;
 
-    use crate::core::bm25_index::BM25Index;
+    use crate::core::bm25_index::ChunkData;
     use crate::core::hnsw::FlatEmbeddings;
     use crate::core::hybrid_search::{DenseSearchResult, HybridConfig, HybridResult};
 
@@ -67,7 +67,7 @@ mod embed {
     pub(crate) fn dense_results_as_hybrid(
         backend: DenseBackendKind,
         root: &Path,
-        index: &BM25Index,
+        index: &ChunkData,
         engine: &crate::core::embeddings::EmbeddingEngine,
         aligned_embeddings: &FlatEmbeddings,
         changed_files: &[String],
@@ -109,7 +109,7 @@ mod embed {
     pub(crate) fn hybrid_results(
         backend: DenseBackendKind,
         root: &Path,
-        index: &BM25Index,
+        index: &ChunkData,
         engine: &crate::core::embeddings::EmbeddingEngine,
         aligned_embeddings: &FlatEmbeddings,
         changed_files: &[String],
@@ -142,7 +142,7 @@ mod embed {
                 let bm25_k = config.bm25_candidates.max(top_k);
                 let dense_k = config.dense_candidates.max(top_k);
 
-                let mut bm25 = index.search(query, bm25_k);
+                let mut bm25 = crate::core::bm25_index::bm25_search(index, query, bm25_k);
                 if let Some(pred) = filter {
                     bm25.retain(|r| pred(&r.file_path));
                 }
@@ -179,7 +179,7 @@ mod embed {
     fn dense_results(
         backend: DenseBackendKind,
         root: &Path,
-        index: &BM25Index,
+        index: &ChunkData,
         engine: &crate::core::embeddings::EmbeddingEngine,
         aligned_embeddings: &FlatEmbeddings,
         changed_files: &[String],
@@ -212,7 +212,7 @@ mod embed {
     }
 
     fn dense_results_local(
-        index: &BM25Index,
+        index: &ChunkData,
         engine: &crate::core::embeddings::EmbeddingEngine,
         aligned_embeddings: &FlatEmbeddings,
         query: &str,
@@ -309,7 +309,7 @@ mod embed {
     #[cfg(feature = "qdrant")]
     fn dense_results_qdrant(
         root: &Path,
-        index: &BM25Index,
+        index: &ChunkData,
         engine: &crate::core::embeddings::EmbeddingEngine,
         aligned_embeddings: &[Vec<f32>],
         changed_files: &[String],

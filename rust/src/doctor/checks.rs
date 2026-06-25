@@ -1304,10 +1304,9 @@ pub(super) fn bm25_cache_health_outcome() -> Outcome {
         };
     };
 
-    // Single source of truth with `save`/`load` (decoupled from the RAM profile;
-    // see bm25_index::persist_ceiling_bytes) so the warning threshold here always
-    // matches what is actually enforced on disk.
-    let max_bytes = crate::core::bm25_index::persist_ceiling_bytes();
+    // Hardcoded ceiling: 256 MB (legacy `persist_ceiling_bytes` removed with
+    // the old BM25 persistence; the SQLite-backed architecture has no ceiling).
+    let max_bytes: u64 = 256 * 1024 * 1024;
     let effective_mb = max_bytes / (1024 * 1024);
     let warn_bytes = max_bytes * 80 / 100; // 80% of effective limit
     let mut total_dirs = 0u32;

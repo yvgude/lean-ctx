@@ -171,23 +171,7 @@ impl LeanCtxServer {
                 session.project_root.clone().unwrap_or_default()
             };
 
-            // Lazy, demand-driven index warming (#152): only tools that actually
-            // need a prebuilt index trigger a (background, once-per-root) scan.
-            // The first heavy pre-warm also warms any configured extra roots once.
-            if !project_root.is_empty()
-                && crate::core::index_orchestrator::ensure_warm_for_tool(&project_root, name)
-            {
-                let extra_roots = self.session.read().await.extra_roots.clone();
-                if !extra_roots.is_empty() {
-                    let primary = project_root.clone();
-                    std::thread::spawn(move || {
-                        crate::core::index_orchestrator::ensure_extra_roots_background(
-                            &primary,
-                            &extra_roots,
-                        );
-                    });
-                }
-            }
+            // Index warming removed — indexes are SQLite-backed.
 
             let mut resolved_paths = std::collections::HashMap::new();
             let mut path_errors: std::collections::HashMap<String, String> =
@@ -252,7 +236,6 @@ impl LeanCtxServer {
                 autonomy: Some(self.autonomy.clone()),
                 pressure_snapshot,
                 path_errors,
-                bm25_cache: Some(self.bm25_cache.clone()),
                 progress_sender: Some(self.progress_sender.clone()),
             };
             // Run the (synchronous) handler on the dedicated blocking pool under

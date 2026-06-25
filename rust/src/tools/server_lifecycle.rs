@@ -118,15 +118,12 @@ impl LeanCtxServer {
         // it was the root cause of the idle-high-CPU report (#453).
 
         let cache = Arc::new(RwLock::new(SessionCache::new()));
-        let bm25_cache: Arc<std::sync::Mutex<Option<crate::core::bm25_cache::Bm25CacheEntry>>> =
-            Arc::new(std::sync::Mutex::new(None));
 
         // Start the RAM guardian with real eviction via EvictionOrchestrator.
         // Bridges memory_guard (RSS monitoring) → HomeostasisController (graduated actions).
         let orchestrator = std::sync::Arc::new(
             crate::core::eviction_orchestrator::EvictionOrchestrator::new(
                 cache.clone(),
-                bm25_cache.clone(),
             ),
         );
         crate::core::memory_guard::start_guard(std::sync::Arc::new(move |level| {
@@ -181,7 +178,6 @@ impl LeanCtxServer {
             peer: Arc::new(tokio::sync::RwLock::new(None)),
             has_client_roots: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             roots_resolved: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            bm25_cache,
             progress_sender: Arc::new(std::sync::Mutex::new(None)),
             stop_signal: Arc::new(AtomicBool::new(false)),
         }

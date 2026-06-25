@@ -32,17 +32,18 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 use rusqlite::{Connection, params};
 
-use crate::core::bm25_index::BM25Index;
 use crate::core::db::WalConnection;
 use crate::core::graph_buffer::GraphBuffer;
 use crate::core::graph_index::{FileEntry, IndexEdge, ProjectIndex, SymbolEntry};
 use crate::core::index_namespace;
+use crate::core::index_pipeline::discovery::DiscoveredFile;
 // FileMetadataStore now defined in this module (was file_metadata_store.rs).
-use crate::core::index_types::{CodeChunk, GbufEdge, GbufNode};
+use crate::core::index_types::{CodeChunk, FileHash, GbufEdge, GbufNode};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -127,10 +128,12 @@ impl DumpEngine {
             );
 
             CREATE TABLE IF NOT EXISTS file_hashes (
-                file_path   TEXT    PRIMARY KEY,
-                hash        TEXT    NOT NULL,
-                mode_mask   INTEGER DEFAULT 0,
-                updated_at  TEXT    DEFAULT (datetime('now'))
+                project   TEXT    NOT NULL,
+                rel_path  TEXT    NOT NULL,
+                mtime_ns  INTEGER DEFAULT 0,
+                size      INTEGER DEFAULT 0,
+                sha256    TEXT    DEFAULT '',
+                PRIMARY KEY (project, rel_path)
             );
 
             CREATE TABLE IF NOT EXISTS chunks (
@@ -179,8 +182,9 @@ impl DumpEngine {
         // ══ DDL phase (auto-commit) ════════════════════════════════════
         // SQLite auto-commits before DDL, so never wrap these in BEGIN/COMMIT.
 
-        // 1. Drop FTS5 virtual table (fast rebuild)
+        // 1. Drop FTS5 virtual tables (fast rebuild)
         conn.execute("DROP TABLE IF EXISTS nodes_fts", [])?;
+        conn.execute("DROP TABLE IF EXISTS chunks_fts", [])?;
 
         // 2. Create / ensure schema
         Self::create_schema(&conn)?;
@@ -212,6 +216,9 @@ impl DumpEngine {
 
         // 7. Insert chunks in batches of BATCH_SIZE
         Self::insert_chunks(&conn, code_chunks)?;
+
+        // 8. Rebuild chunks_fts FTS5 index (DDL — auto-commit)
+        Self::rebuild_chunks_fts(&conn)?;
 
         // ══ Verification ═══════════════════════════════════════════════
 
@@ -263,54 +270,7 @@ impl DumpEngine {
         Ok(())
     }
 
-    /// Persist [`BM25Index`] chunks to the SQLite `chunks` table.
-    ///
-    /// Only the chunk list is stored — the BM25 statistical data (inverted
-    /// index, doc freqs, avg doc length) is reconstructed on load via
-    /// [`BM25Index::add_chunk`] + [`BM25Index::finalize`].
-    pub fn dump_bm25_index(&self, bm25: &BM25Index) -> Result<()> {
-        let db_path = self.db_path();
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let conn = WalConnection::open(&db_path).context("open code_index.db")?;
-        Self::create_schema(&conn)?;
 
-        // Clear existing chunks (auto-commit DML).
-        conn.execute("DELETE FROM chunks", [])?;
-
-        if bm25.chunks.is_empty() {
-            Self::verify_integrity(&conn)?;
-            return Ok(());
-        }
-
-        let mut stmt = conn
-            .prepare(
-                "INSERT INTO chunks (file_path, symbol_name, kind, start_line, end_line, content, token_count)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            )
-            .context("prepare chunks insert")?;
-
-        for batch in bm25.chunks.chunks(BATCH_SIZE) {
-            let tx = conn.unchecked_transaction()?;
-            for c in batch {
-                let kind_str = serde_json::to_string(&c.kind).unwrap_or_else(|_| String::new());
-                stmt.execute(params![
-                    c.file_path,
-                    c.symbol_name,
-                    kind_str,
-                    c.start_line as i64,
-                    c.end_line as i64,
-                    c.content,
-                    c.token_count as i64,
-                ])?;
-            }
-            tx.commit()?;
-        }
-
-        Self::verify_integrity(&conn)?;
-        Ok(())
-    }
 
     // ── Load / Integrity ───────────────────────────────────────────────
 
@@ -320,14 +280,17 @@ impl DumpEngine {
     /// corrupted.  Callers should trigger a full rebuild for the failed parts.
     ///
     /// Steps:
-    /// 1. Open `code_index.db` (return `None` for graph/BM25 if absent).
+    /// 1. Open `code_index.db` (return `None` for graph/chunks if absent).
     /// 2. Load graph: read files + nodes + edges → reconstruct `ProjectIndex`.
-    /// 3. Load BM25: read chunks → rebuild BM25 index (tokenise + finalise).
-    /// 4. Open `FileMetadataStore` from the property-graph DB (creates schema
-    ///    if absent).
+    /// 3. Load chunks: read chunks table as raw data.
+    ///
+    /// The third element (`FileMetadataStore`) is retained for backward
+    /// compatibility but returns an in-memory store; file metadata now lives
+    /// in `code_index.db`'s `file_hashes` table.
     pub fn load_with_integrity_check(
         root: &Path,
-    ) -> Result<(Option<ProjectIndex>, Option<BM25Index>, FileMetadataStore)> {
+    ) -> Result<(Option<ProjectIndex>, Option<Vec<crate::core::bm25_index::CodeChunk>>, FileMetadataStore)>
+    {
         let dir = index_namespace::vectors_dir(root);
 
         // 1. Clean up leftover .tmp files from crashes
@@ -336,13 +299,14 @@ impl DumpEngine {
         // 2. Load graph index from SQLite
         let graph = load_graph_index(root);
 
-        // 3. Load BM25 index from SQLite
-        let bm25 = load_bm25_index(root);
+        // 3. Load chunks from SQLite (raw data, no BM25 index built)
+        let chunks = load_chunks(root);
 
-        // 4. Open file metadata store
-        let fm_store = open_file_metadata_store(root)?;
+        // 4. Return empty in-memory FileMetadataStore (legacy compat — metadata
+        //    now lives in code_index.db's file_hashes table).
+        let fm_store = FileMetadataStore::new(rusqlite::Connection::open_in_memory()?);
 
-        Ok((graph, bm25, fm_store))
+        Ok((graph, chunks, fm_store))
     }
 
     // ── Purge ──────────────────────────────────────────────────────────
@@ -466,7 +430,7 @@ impl DumpEngine {
             )",
             [],
         )
-        .context("create FTS5 table")?;
+        .context("create nodes_fts")?;
 
         // Populate from nodes
         conn.execute(
@@ -474,7 +438,31 @@ impl DumpEngine {
              SELECT id, qualified_name, name, label, file_path FROM nodes",
             [],
         )
-        .context("rebuild FTS5 index")?;
+        .context("rebuild nodes_fts")?;
+
+        Ok(())
+    }
+
+    /// Rebuild the FTS5 `chunks_fts` virtual table from the `chunks` table.
+    fn rebuild_chunks_fts(conn: &Connection) -> Result<()> {
+        // Re-create the FTS5 table (content-sync with chunks table)
+        conn.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+                content, file_path, symbol_name,
+                content='chunks',
+                content_rowid='id'
+            )",
+            [],
+        )
+        .context("create chunks_fts")?;
+
+        // Populate from chunks
+        conn.execute(
+            "INSERT INTO chunks_fts(rowid, content, file_path, symbol_name)
+             SELECT id, content, file_path, symbol_name FROM chunks",
+            [],
+        )
+        .context("rebuild chunks_fts")?;
 
         Ok(())
     }
@@ -662,6 +650,95 @@ impl DumpEngine {
         );
         Ok(())
     }
+
+    // ── File hashes (incremental rebuild support) ──────────────────────────
+
+    /// Derive a project identifier from `project_root` for the `file_hashes`
+    /// table.
+    fn project_name(&self) -> String {
+        self.project_root
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default()
+    }
+
+    /// Persist [`DiscoveredFile`] metadata into the `file_hashes` table.
+    ///
+    /// Each row stores `(project, rel_path, mtime_ns, size, sha256)` where
+    /// `sha256` is left as an empty string (callers that want content hashing
+    /// can fill it separately).
+    pub fn insert_file_hashes(&self, files: &[DiscoveredFile]) -> Result<()> {
+        let db_path = self.db_path();
+        let wal_conn = WalConnection::open(&db_path).context("open code_index.db for file_hashes")?;
+        let conn = wal_conn.connection();
+        let project = self.project_name();
+
+        let mut stmt = conn
+            .prepare(
+                "INSERT OR REPLACE INTO file_hashes (project, rel_path, mtime_ns, size, sha256)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )
+            .context("prepare file_hashes insert")?;
+
+        for batch in files.chunks(BATCH_SIZE) {
+            let tx = conn.unchecked_transaction()?;
+            for f in batch {
+                let mtime_ns = f
+                    .mtime
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map(|d| d.as_nanos() as i64)
+                    .unwrap_or(0);
+                stmt.execute(params![
+                    project,
+                    f.rel_path,
+                    mtime_ns,
+                    f.size as i64,
+                    "", // sha256 — empty by default
+                ])?;
+            }
+            tx.commit()?;
+        }
+        Ok(())
+    }
+
+    /// Load all [`FileHash`] rows for a given project.
+    ///
+    /// Returns an empty `Vec` when the database does not exist or contains no
+    /// matching rows.
+    pub fn load_file_hashes(&self, project: &str) -> Result<Vec<FileHash>> {
+        let db_path = self.db_path();
+        if !db_path.exists() {
+            return Ok(Vec::new());
+        }
+        let conn = Connection::open(&db_path).context("open code_index.db for load_file_hashes")?;
+
+        // Re-create schema so the table exists even if dump_all was not called.
+        Self::create_schema(&conn)?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT project, rel_path, mtime_ns, size FROM file_hashes WHERE project = ?1",
+            )
+            .context("prepare file_hashes select")?;
+
+        let rows = stmt
+            .query_map(params![project], |row| {
+                Ok(FileHash {
+                    project: row.get(0)?,
+                    rel_path: row.get(1)?,
+                    mtime_ns: row.get(2)?,
+                    size: row.get(3)?,
+                    sha256: String::new(),
+                })
+            })
+            .context("query file_hashes")?;
+
+        let mut hashes = Vec::new();
+        for row in rows {
+            hashes.push(row?);
+        }
+        Ok(hashes)
+    }
 }
 
 // ── Free functions (load helpers) ─────────────────────────────────────────
@@ -803,10 +880,10 @@ fn load_graph_index(root: &Path) -> Option<ProjectIndex> {
     Some(idx)
 }
 
-/// Reconstruct a [`BM25Index`] from the SQLite `chunks` table.
+/// Load chunks from the SQLite `chunks` table as raw data.
 ///
 /// Returns `None` when the DB file does not exist or has no chunks.
-fn load_bm25_index(root: &Path) -> Option<BM25Index> {
+fn load_chunks(root: &Path) -> Option<Vec<crate::core::bm25_index::CodeChunk>> {
     let db_path = DumpEngine::db_path_for(root);
     if !db_path.exists() {
         return None;
@@ -850,13 +927,12 @@ fn load_bm25_index(root: &Path) -> Option<BM25Index> {
         })
         .ok()?;
 
-    let mut bm25 = BM25Index::new();
+    let mut chunks: Vec<crate::core::bm25_index::CodeChunk> = Vec::new();
     for row in rows {
         let chunk = row.ok()?;
-        bm25.add_chunk(chunk);
+        chunks.push(chunk);
     }
-    bm25.finalize();
-    Some(bm25)
+    Some(chunks)
 }
 
 /// Remove any leftover `.tmp` files from a prior crash or interrupted write.
@@ -872,36 +948,6 @@ fn cleanup_tmp_files(dir: &Path) {
             }
         }
     }
-}
-
-/// Open the [`FileMetadataStore`] from the property-graph DB.
-///
-/// Creates the DB and `file_metadata` table if they do not exist, so the store
-/// is always usable after this call.
-fn open_file_metadata_store(root: &Path) -> Result<FileMetadataStore> {
-    let graph_dir = crate::core::property_graph::graph_dir(&root.to_string_lossy());
-    std::fs::create_dir_all(&graph_dir)?;
-    let db_path = graph_dir.join("graph.db");
-
-    let store = FileMetadataStore::open(&db_path)?;
-    // Ensure the file_metadata table exists (idempotent).
-    store.connection().execute_batch(
-        "CREATE TABLE IF NOT EXISTS file_metadata (
-            path         TEXT NOT NULL PRIMARY KEY,
-            mtime_ns     INTEGER NOT NULL,
-            size_bytes   INTEGER NOT NULL,
-            content_hash TEXT NOT NULL DEFAULT '',
-            mode_mask    INTEGER NOT NULL DEFAULT 0,
-            updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
-        );",
-    )?;
-
-    // Validate the store is readable
-    if let Err(e) = store.load_all() {
-        tracing::warn!("[dump_engine] file_metadata store integrity check failed: {e}");
-    }
-
-    Ok(store)
 }
 
 // ── FileMetadataStore (was file_metadata_store.rs) ─────────────────────────
@@ -1082,8 +1128,8 @@ mod tests {
         idx
     }
 
-    fn sample_bm25() -> BM25Index {
-        BM25Index::from_chunks_for_test(vec![crate::core::bm25_index::CodeChunk {
+    fn sample_chunks() -> Vec<crate::core::bm25_index::CodeChunk> {
+        vec![crate::core::bm25_index::CodeChunk {
             file_path: "src/main.rs".to_string(),
             symbol_name: "run".to_string(),
             kind: crate::core::bm25_index::ChunkKind::Function,
@@ -1092,7 +1138,7 @@ mod tests {
             content: "fn run() { println!(\"hello\"); }".to_string(),
             tokens: vec![],
             token_count: 6,
-        }])
+        }]
     }
 
     fn sample_gbuf() -> GraphBuffer {
@@ -1268,16 +1314,14 @@ mod tests {
     // ── Backward-compat dump tests ─────────────────────────────────────
 
     #[test]
-    fn dump_graph_index_and_bm25_creates_db() {
+    fn dump_graph_index_creates_db() {
         let _iso = isolated_data_dir();
         let root = tempfile::tempdir().unwrap();
 
         let engine = DumpEngine::new(root.path().to_path_buf());
         let graph = sample_graph(root.path().to_str().unwrap());
-        let bm25 = sample_bm25();
 
         engine.dump_graph_index(&graph).unwrap();
-        engine.dump_bm25_index(&bm25).unwrap();
 
         let db_path = engine.db_path();
         assert!(db_path.exists(), "code_index.db should exist after dump");
@@ -1290,21 +1334,22 @@ mod tests {
 
         let engine = DumpEngine::new(root.path().to_path_buf());
         let graph = sample_graph(root.path().to_str().unwrap());
-        let bm25 = sample_bm25();
+        let chunks = sample_chunks();
 
         engine.dump_graph_index(&graph).unwrap();
-        engine.dump_bm25_index(&bm25).unwrap();
+        // Use dump_all to store chunks (replaces dump_bm25_index)
+        engine.dump_all(&sample_gbuf(), &sample_code_chunks()).unwrap();
 
-        let (loaded_graph, loaded_bm25, _store) =
+        let (loaded_graph, loaded_chunks, _store) =
             DumpEngine::load_with_integrity_check(root.path()).unwrap();
 
         let lg = loaded_graph.expect("graph should load");
         assert_eq!(lg.file_count(), graph.file_count());
         assert!(lg.files.contains_key("src/main.rs"));
 
-        let lb = loaded_bm25.expect("bm25 should load");
-        assert_eq!(lb.chunks.len(), 1);
-        assert_eq!(lb.chunks[0].symbol_name, "run");
+        let lb = loaded_chunks.expect("chunks should load");
+        assert_eq!(lb.len(), chunks.len());
+        assert_eq!(lb[0].symbol_name, "run");
     }
 
     #[test]
@@ -1363,12 +1408,10 @@ mod tests {
 
         let engine = DumpEngine::new(root.path().to_path_buf());
         let empty_graph = ProjectIndex::new(root.path().to_str().unwrap());
-        let empty_bm25 = BM25Index::new();
 
         engine.dump_graph_index(&empty_graph).unwrap();
-        engine.dump_bm25_index(&empty_bm25).unwrap();
 
-        let (graph, bm25, _store) = DumpEngine::load_with_integrity_check(root.path()).unwrap();
+        let (graph, chunks, _store) = DumpEngine::load_with_integrity_check(root.path()).unwrap();
 
         // An empty ProjectIndex has no symbols, so no nodes → load returns None
         assert!(
@@ -1376,8 +1419,8 @@ mod tests {
             "empty graph (no symbols) should return None"
         );
 
-        // An empty BM25 index has no chunks → load returns None
-        assert!(bm25.is_none(), "empty BM25 (no chunks) should return None");
+        // No chunks written → load returns None
+        assert!(chunks.is_none(), "no chunks should return None");
     }
 
     #[test]
@@ -1385,10 +1428,10 @@ mod tests {
         let _iso = isolated_data_dir();
         let root = tempfile::tempdir().unwrap();
 
-        let (graph, bm25, _store) = DumpEngine::load_with_integrity_check(root.path()).unwrap();
+        let (graph, chunks, _store) = DumpEngine::load_with_integrity_check(root.path()).unwrap();
 
         assert!(graph.is_none(), "no DB should return None for graph");
-        assert!(bm25.is_none(), "no DB should return None for bm25");
+        assert!(chunks.is_none(), "no DB should return None for chunks");
     }
 
     #[test]
@@ -1402,24 +1445,79 @@ mod tests {
     }
 
     #[test]
+    #[test]
     fn dump_all_file_hashes_roundtrip() {
         let _iso = isolated_data_dir();
         let root = tempfile::tempdir().unwrap();
 
+        // Create test files on disk so DiscoveredFile instances have real metadata.
+        let test_dir = root.path().join("test_project_root");
+        std::fs::create_dir_all(&test_dir).unwrap();
+        std::fs::write(test_dir.join("a.rs"), "fn a() {}").unwrap();
+        std::fs::write(test_dir.join("b.rs"), "fn b() {}").unwrap();
+
+        // Discover files so we get real mtime/size.
+        let config = crate::core::index_pipeline::discovery::DiscoveryConfig {
+            mode: crate::core::config::IndexingMode::Full,
+            max_file_size: 10_000_000,
+        };
+        let files =
+            crate::core::index_pipeline::discovery::discover_files(&test_dir, &config).unwrap();
+        assert!(
+            files.len() >= 2,
+            "should discover at least a.rs and b.rs"
+        );
+
+        // Dump (fresh schema, file_hashes table is created but empty).
         let gbuf = sample_gbuf();
-        let engine = DumpEngine::new(root.path().to_path_buf());
+        let engine = DumpEngine::new(test_dir.clone());
         engine.dump_all(&gbuf, &sample_code_chunks()).unwrap();
 
-        // Verify FTS5 file_path queries work
+        // Persist file hashes.
+        engine.insert_file_hashes(&files).unwrap();
+
+        // Load and verify.
+        let project = engine.project_name();
+        let loaded = engine.load_file_hashes(&project).unwrap();
+
+        assert_eq!(
+            loaded.len(),
+            files.len(),
+            "should roundtrip all discovered files"
+        );
+
+        for f in &files {
+            let mtime_ns = f
+                .mtime
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as i64)
+                .unwrap_or(0);
+            let loaded_fh = loaded.iter().find(|h| h.rel_path == f.rel_path).unwrap();
+            assert_eq!(loaded_fh.rel_path, f.rel_path);
+            assert_eq!(loaded_fh.mtime_ns, mtime_ns);
+            assert_eq!(loaded_fh.size, f.size as i64);
+            assert_eq!(loaded_fh.project, project);
+        }
+
+        // Verify sha256 is empty string in DB.
         let conn = Connection::open(engine.db_path()).unwrap();
-        let count: i64 = conn
+        let sha256: String = conn
             .query_row(
-                "SELECT COUNT(*) FROM nodes_fts WHERE file_path MATCH 'lib'",
-                [],
+                "SELECT sha256 FROM file_hashes WHERE rel_path = ?1",
+                params![files[0].rel_path],
                 |row| row.get(0),
             )
             .unwrap();
-        assert!(count > 0, "FTS5 should find nodes in src/lib.rs");
+        assert_eq!(sha256, "", "sha256 should default to empty string");
+    }
+
+    #[test]
+    fn load_file_hashes_empty_db_returns_empty_vec() {
+        let _iso = isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
+        let engine = DumpEngine::new(root.path().to_path_buf());
+        let loaded = engine.load_file_hashes("nonexistent").unwrap();
+        assert!(loaded.is_empty(), "no DB should return empty vec");
     }
 
     // ── GraphBuffer roundtrip via SQLite ──────────────────────────

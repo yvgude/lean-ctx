@@ -209,7 +209,6 @@ mod tests {
             autonomy: None,
             pressure_snapshot: None,
             path_errors: std::collections::HashMap::new(),
-            bm25_cache: None,
             progress_sender: None,
         }
     }

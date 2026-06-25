@@ -574,9 +574,8 @@ impl CtxReadTool {
             }
         }
 
-        if let Some(root) = ensured_root.as_deref() {
-            crate::core::index_orchestrator::ensure_all_background(root);
-        }
+        // Index warming removed — indexes are SQLite-backed.
+        let _ = ensured_root;
 
         // Telemetry + learning are pure side-effects that never influence this
         // response, yet they did synchronous disk I/O on every read (heatmap

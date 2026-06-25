@@ -47,11 +47,6 @@ impl McpTool for CtxComposeTool {
             ctx.project_root.clone()
         };
 
-        // Share the resident BM25 cache with the composed semantic search.
-        if let Some(ref cache) = ctx.bm25_cache {
-            crate::tools::ctx_semantic_search::set_thread_cache(cache.clone());
-        }
-
         let (text, sent) = tokio::task::block_in_place(|| {
             crate::tools::ctx_compose::handle(&task, &path, ctx.crp_mode)
         });

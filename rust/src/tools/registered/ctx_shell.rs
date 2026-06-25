@@ -125,7 +125,7 @@ impl McpTool for CtxShellTool {
                         && home.as_deref() != Some(root.as_str())
                     {
                         session.project_root = Some(root.clone());
-                        crate::core::index_orchestrator::ensure_all_background(&root);
+                        // Index warming removed — indexes are SQLite-backed.
                     }
                 }
             }

@@ -53,7 +53,7 @@ pub(in crate::cli::dispatch) fn cmd_graph(rest: &[String]) {
                 // running daemon's read cache, which lives in another process and
                 // would otherwise keep serving pre-rebuild ctx_read map/signatures
                 // (#420).
-                core::graph_cache::invalidate(Some(&root));
+                // graph_cache removed — unified into SQLite code_index.db
                 if crate::daemon_client::notify_cache_clear() {
                     println!("Daemon read cache flushed — ctx_read re-derives map/signatures.");
                 }

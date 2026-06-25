@@ -260,3 +260,30 @@ pub struct GbufEdge {
     pub edge_type: String,
     pub properties: HashMap<String, String>,
 }
+
+// ---------------------------------------------------------------------------
+// Classification  (incremental rebuild support)
+// ---------------------------------------------------------------------------
+
+/// Four disjoint sets of file paths produced by [`classify_files`].
+#[derive(Debug, Clone, Default)]
+pub struct Classification {
+    pub new: Vec<String>,
+    pub changed: Vec<String>,
+    pub unchanged: Vec<String>,
+    pub deleted: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// FileHash  (incremental rebuild support)
+// ---------------------------------------------------------------------------
+
+/// Per-file metadata for incremental rebuild classification.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FileHash {
+    pub project: String,
+    pub rel_path: String,
+    pub mtime_ns: i64,
+    pub size: i64,
+    pub sha256: String,
+}

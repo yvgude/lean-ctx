@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::bm25_index::{BM25Index, SearchResult};
+use crate::core::bm25_index::{bm25_search, ChunkData, SearchResult};
 
 /// Default RRF parameter (controls how quickly rank decay affects fusion scores).
 const DEFAULT_RRF_K: f64 = 60.0;
@@ -98,7 +98,7 @@ impl MultiRepoConfig {
 pub struct ActiveRepoRoot {
     pub config: RepoRootConfig,
     pub path: PathBuf,
-    index: Option<BM25Index>,
+    index: Option<ChunkData>,
 }
 
 impl std::fmt::Debug for ActiveRepoRoot {
@@ -134,7 +134,7 @@ impl ActiveRepoRoot {
         if self.index.is_some() {
             return;
         }
-        self.index = Some(crate::core::index_orchestrator::load_indexes(&self.path).bm25);
+        self.index = Some(crate::core::bm25_index::BM25Index::build_from_directory(&self.path));
     }
 
     pub fn alias(&self) -> String {
@@ -147,7 +147,7 @@ impl ActiveRepoRoot {
             return Vec::new();
         };
 
-        let results: Vec<SearchResult> = index.search(query, max_results);
+        let results: Vec<SearchResult> = bm25_search(index, query, max_results);
         let alias = self.alias();
         let repo_path = self.path.to_string_lossy().to_string();
 

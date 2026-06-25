@@ -131,7 +131,7 @@ pub struct CacheableProviderResult {
 /// thread or after a provider query returns.
 pub fn apply_artifacts(
     artifacts: &ConsolidationArtifacts,
-    bm25: Option<&mut crate::core::bm25_index::BM25Index>,
+    bm25: Option<&mut crate::core::bm25_index::ChunkData>,
     graph_edges: Option<&mut Vec<IndexEdge>>,
     session_cache: Option<&mut crate::core::cache::SessionCache>,
 ) -> ConsolidationResult {
@@ -140,7 +140,7 @@ pub fn apply_artifacts(
 
 pub fn apply_artifacts_with_pg(
     artifacts: &ConsolidationArtifacts,
-    bm25: Option<&mut crate::core::bm25_index::BM25Index>,
+    bm25: Option<&mut crate::core::bm25_index::ChunkData>,
     graph_edges: Option<&mut Vec<IndexEdge>>,
     session_cache: Option<&mut crate::core::cache::SessionCache>,
     property_graph: Option<&crate::core::property_graph::CodeGraph>,
@@ -182,7 +182,7 @@ fn write_edges_to_property_graph(pg: &crate::core::property_graph::CodeGraph, ed
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::bm25_index::{BM25Index, ChunkKind};
+    use crate::core::bm25_index::{ChunkData, ChunkKind};
     use crate::core::cache::SessionCache;
     use crate::core::content_chunk::ContentChunk;
 
@@ -295,7 +295,7 @@ mod tests {
         let chunks = sample_chunks();
         let artifacts = consolidate(&chunks);
 
-        let mut index = BM25Index::new();
+        let mut index = ChunkData::new();
 
         let result = apply_artifacts(&artifacts, Some(&mut index), None, None);
         assert_eq!(result.chunks_indexed, 2);
@@ -334,7 +334,7 @@ mod tests {
         let chunks = sample_chunks();
         let artifacts = consolidate(&chunks);
 
-        let mut index = BM25Index::new();
+        let mut index = ChunkData::new();
         let mut edges: Vec<IndexEdge> = Vec::new();
         let mut cache = SessionCache::new();
 

@@ -245,18 +245,13 @@ fn extract_keywords(task: &str, max: usize) -> Vec<String> {
 }
 
 /// Run the semantic ranking stage under a wall-time budget. Returns the ranked
-/// block on time, or a short "deferred" note if the (cold) build overruns —
-/// in which case the detached worker keeps running to warm the resident cache.
+/// block on time, or a short "deferred" note if the (cold) build overruns.
 fn ranked_files_budgeted(task: &str, project_root: &str, crp_mode: CrpMode) -> String {
-    let shared_cache = crate::tools::ctx_semantic_search::get_thread_cache();
     let (tx, rx) = mpsc::channel::<String>();
     let task_owned = task.to_string();
     let root_owned = project_root.to_string();
 
     std::thread::spawn(move || {
-        if let Some(cache) = shared_cache {
-            crate::tools::ctx_semantic_search::set_thread_cache(cache);
-        }
         let ranked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             crate::tools::ctx_semantic_search::handle(
                 &task_owned,

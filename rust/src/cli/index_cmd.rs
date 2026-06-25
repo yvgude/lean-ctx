@@ -38,9 +38,7 @@ pub(crate) fn cmd_index(args: &[String]) {
                         let _ = std::fs::remove_file(&p);
                     }
                 }
-                // Legacy BM25 files
-                let bm25_path = crate::core::bm25_index::BM25Index::index_file_path(root);
-                let _ = std::fs::remove_file(&bm25_path);
+                // Legacy BM25 files (removed; replaced by code_index.db)
                 // Graph index dir (graph.db, graph.meta.json, legacy artifacts)
                 crate::core::graph_index::purge_index(&project_root);
                 // Embeddings (semantic search)
@@ -85,7 +83,7 @@ pub(crate) fn cmd_index(args: &[String]) {
                     eprintln!("  elapsed:      {} ms", report.elapsed_ms);
                     eprintln!("  incremental:  {}", report.is_incremental);
                     if mode == IndexingMode::Full {
-                        crate::core::graph_cache::invalidate(Some(&project_root));
+                        // graph_cache removed — unified into SQLite code_index.db
                         if crate::daemon_client::notify_cache_clear() {
                             eprintln!("  Daemon read cache flushed.");
                         }
@@ -172,9 +170,7 @@ fn run_watcher(project_root: &Path) {
         if let Some(t) = pending
             && t.elapsed() >= debounce
         {
-            crate::core::index_orchestrator::ensure_all_background(
-                project_root.to_string_lossy().as_ref(),
-            );
+            // Index build no longer needs an explicit trigger — SQLite-backed
             pending = None;
         }
     }

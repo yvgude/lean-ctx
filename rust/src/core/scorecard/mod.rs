@@ -160,14 +160,14 @@ fn run_one(sc: &scenarios::Scenario) -> std::io::Result<ScenarioScore> {
         .map_or_else(|| ("none".to_string(), 0.0), |(m, v)| (m.clone(), *v));
 
     // --- Retrieval quality (pure BM25 → deterministic, feature-independent) ---
-    let index = crate::core::index_orchestrator::load_indexes(root).bm25;
+    let index = crate::core::bm25_index::BM25Index::build_from_directory(root);
     let mut sum_r5 = 0.0;
     let mut sum_r10 = 0.0;
     let mut sum_mrr = 0.0;
     let mut latencies: Vec<u64> = Vec::with_capacity(queries.len());
     for q in &queries {
         let start = Instant::now();
-        let results = index.search(&q.query, 10);
+        let results = crate::core::bm25_index::bm25_search(&index, &q.query, 10);
         latencies.push(start.elapsed().as_micros() as u64);
         let files = dedup_files(&results);
         sum_r5 += recall_at_k(&files, &q.expected_file, 5);

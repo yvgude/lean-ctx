@@ -87,7 +87,6 @@ pub struct LeanCtxServer {
     pub(crate) peer: Arc<RwLock<Option<Peer<RoleServer>>>>,
     pub(crate) has_client_roots: Arc<std::sync::atomic::AtomicBool>,
     pub(crate) roots_resolved: Arc<std::sync::atomic::AtomicBool>,
-    pub(crate) bm25_cache: Arc<std::sync::Mutex<Option<crate::core::bm25_cache::Bm25CacheEntry>>>,
     pub(crate) progress_sender: crate::server::progress::SharedProgressSender,
     pub stop_signal: Arc<AtomicBool>,
 }

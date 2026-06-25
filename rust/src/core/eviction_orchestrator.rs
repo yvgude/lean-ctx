@@ -9,7 +9,6 @@
 
 use std::sync::{Arc, Mutex};
 
-use super::bm25_cache::SharedBm25Cache;
 use super::cache::SessionCache;
 use super::homeostasis::{HomeostasisAction, HomeostasisController};
 use super::memory_guard;
@@ -18,17 +17,15 @@ type SharedCache = Arc<tokio::sync::RwLock<SessionCache>>;
 
 pub struct EvictionOrchestrator {
     cache: SharedCache,
-    bm25_cache: SharedBm25Cache,
     controller: Mutex<HomeostasisController>,
     token_budget: usize,
 }
 
 impl EvictionOrchestrator {
-    pub fn new(cache: SharedCache, bm25_cache: SharedBm25Cache) -> Self {
+    pub fn new(cache: SharedCache) -> Self {
         let token_budget = super::cache::max_cache_tokens();
         Self {
             cache,
-            bm25_cache,
             controller: Mutex::new(HomeostasisController::new(token_budget)),
             token_budget,
         }
@@ -42,20 +39,13 @@ impl EvictionOrchestrator {
         }
 
         let current_tokens = self.try_read_cache_tokens();
-        let bm25_bytes = super::bm25_cache::memory_usage(&self.bm25_cache);
-
-        let effective_tokens = if bm25_bytes > 0 {
-            current_tokens + bm25_bytes / 4
-        } else {
-            current_tokens
-        };
 
         let action = {
             let mut ctrl = self
                 .controller
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            ctrl.evaluate(effective_tokens)
+            ctrl.evaluate(current_tokens)
         };
 
         if action == HomeostasisAction::None {
@@ -63,12 +53,11 @@ impl EvictionOrchestrator {
         }
 
         tracing::info!(
-            "[eviction] pressure={level:?} tokens={current_tokens}/{} bm25={:.1}MB action={action:?}",
+            "[eviction] pressure={level:?} tokens={current_tokens}/{} action={action:?}",
             self.token_budget,
-            bm25_bytes as f64 / 1_048_576.0,
         );
 
-        let pressure_reduced = self.execute_action(&action, bm25_bytes);
+        let pressure_reduced = self.execute_action(&action);
 
         let mut ctrl = self
             .controller
@@ -77,7 +66,7 @@ impl EvictionOrchestrator {
         ctrl.report_outcome(pressure_reduced);
     }
 
-    fn execute_action(&self, action: &HomeostasisAction, bm25_bytes: usize) -> bool {
+    fn execute_action(&self, action: &HomeostasisAction) -> bool {
         match action {
             HomeostasisAction::None => true,
 
@@ -98,19 +87,15 @@ impl EvictionOrchestrator {
             }
 
             HomeostasisAction::UnloadIndices => {
-                if bm25_bytes > 0 {
-                    super::bm25_cache::unload(&self.bm25_cache);
-                }
                 let content_freed = super::content_cache::memory_usage_bytes();
                 super::content_cache::clear();
                 let trimmed = self.try_write_cache(SessionCache::trim_compressed_outputs);
                 memory_guard::jemalloc_purge();
                 tracing::info!(
-                    "[eviction] unloaded indices (bm25={:.1}MB + content={:.1}MB freed, {trimmed} outputs trimmed)",
-                    bm25_bytes as f64 / 1_048_576.0,
+                    "[eviction] unloaded indices (content={:.1}MB freed, {trimmed} outputs trimmed)",
                     content_freed as f64 / 1_048_576.0,
                 );
-                bm25_bytes > 0 || content_freed > 0 || trimmed > 0
+                content_freed > 0 || trimmed > 0
             }
 
             HomeostasisAction::EvictProtected { target_tokens } => {
@@ -124,7 +109,6 @@ impl EvictionOrchestrator {
 
             HomeostasisAction::EmergencyDrop => {
                 let cleared = self.try_write_cache(SessionCache::clear);
-                super::bm25_cache::unload(&self.bm25_cache);
                 super::content_cache::clear();
                 memory_guard::jemalloc_purge();
                 tracing::warn!(
@@ -165,8 +149,7 @@ mod tests {
 
     fn make_orchestrator() -> EvictionOrchestrator {
         let cache = Arc::new(tokio::sync::RwLock::new(SessionCache::new()));
-        let bm25_cache: SharedBm25Cache = Arc::new(std::sync::Mutex::new(None));
-        EvictionOrchestrator::new(cache, bm25_cache)
+        EvictionOrchestrator::new(cache)
     }
 
     #[test]
@@ -189,15 +172,13 @@ mod tests {
             c.store("/a.rs", "fn a() {}");
             c.store("/b.rs", "fn b() {}");
         }
-        let bm25: SharedBm25Cache = Arc::new(std::sync::Mutex::new(None));
         let orch = EvictionOrchestrator {
             cache: cache.clone(),
-            bm25_cache: bm25,
             controller: Mutex::new(HomeostasisController::new(100)),
             token_budget: 100,
         };
 
-        orch.execute_action(&HomeostasisAction::EmergencyDrop, 0);
+        orch.execute_action(&HomeostasisAction::EmergencyDrop);
         let c = cache.blocking_read();
         assert_eq!(c.total_cached_tokens(), 0);
     }
@@ -210,15 +191,13 @@ mod tests {
             c.store("/a.rs", "fn main() {}");
             c.set_compressed("/a.rs", "map", "compressed map".to_string());
         }
-        let bm25: SharedBm25Cache = Arc::new(std::sync::Mutex::new(None));
         let orch = EvictionOrchestrator {
             cache: cache.clone(),
-            bm25_cache: bm25,
             controller: Mutex::new(HomeostasisController::new(100_000)),
             token_budget: 100_000,
         };
 
-        let result = orch.execute_action(&HomeostasisAction::TrimOutputs, 0);
+        let result = orch.execute_action(&HomeostasisAction::TrimOutputs);
         assert!(result);
         let c = cache.blocking_read();
         assert!(c.get_compressed("/a.rs", "map").is_none());
@@ -233,17 +212,14 @@ mod tests {
             c.store("/twice.rs", "fn twice() {}");
             c.store("/twice.rs", "fn twice() {}"); // second read → read_count=2
         }
-        let bm25: SharedBm25Cache = Arc::new(std::sync::Mutex::new(None));
         let orch = EvictionOrchestrator {
             cache: cache.clone(),
-            bm25_cache: bm25,
             controller: Mutex::new(HomeostasisController::new(100_000)),
             token_budget: 100_000,
         };
 
         let result = orch.execute_action(
             &HomeostasisAction::EvictProbationary { target_tokens: 0 },
-            0,
         );
         assert!(result);
         let c = cache.blocking_read();
