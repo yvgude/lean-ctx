@@ -68,6 +68,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   (gitlab #868–#871)
 
 ### Fixed
+- **Shadow-mode hook reads dropped ~75% of the MCP read side effects (#550).** When
+  shadow/harden mode intercepts a native `view`/`grep` call it spawns `lean-ctx read`
+  as a single-shot subprocess. That CLI path recorded only a fraction of what the MCP
+  `ctx_read` pipeline does, and — crucially — never *flushed* its buffered telemetry
+  before the process exited, so `lean-ctx heatmap` stayed empty and `lean-ctx gain`
+  reported nothing for compressed reads. Three fixes:
+  - **One flush set, no drift.** A new `tool_lifecycle::flush_all()` is the single
+    source of truth for the buffered-telemetry flush (stats, heatmap, path-mode
+    memory, auto-mode resolver, edit-quality, mode predictor, feedback, threshold
+    learning, LiTM calibration). The daemon shutdown, the parent watchdog and every
+    CLI tool arm (`read`/`grep`/`ls`/`find`/`deps`/`diff`/`-c`/`-t`) now call it — the
+    hand-rolled per-arm copies had drifted (the `read` arm flushed only `stats`), which
+    is exactly how the gap went unnoticed.
+  - **CLI read learning parity.** `record_file_read`/`record_search` now run the same
+    disk-backed learning sinks the MCP background thread does — mode-predictor training,
+    the per-language compression feedback outcome, and the per-call anomaly metric — so
+    auto-mode selection, the feedback loop and dashboard signals improve from
+    shadow-mode reads too (not just direct MCP calls).
+  - **Mode predictor actually persists now.** `ModePredictor` stored its history in a
+    struct-keyed `HashMap<FileSignature, _>`, which `serde_json` cannot serialize
+    ("key must be a string") — so `mode_stats.json` was *never* written and the
+    predictor relearned from zero every process. The history now serializes as an entry
+    list (round-trip tested). The in-memory-only loop/correction detectors and the
+    bounce/adaptive signals that need routing through `ctx_read::handle` are tracked as
+    a follow-up (they cannot be honored from a single-shot subprocess without
+    cross-process state).
 - **Windows PowerShell profile path hardcoded to `~\Documents` — broke under OneDrive
   redirection (#558).** `proxy enable` and the shell-hook install resolved the
   PowerShell profile by hardcoding `home\Documents\PowerShell\…`. Windows OneDrive

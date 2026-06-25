@@ -55,8 +55,39 @@ impl FileSignature {
 /// Learns the best read mode per file signature from historical outcomes.
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModePredictor {
+    // `FileSignature` is a struct, so a plain `HashMap<FileSignature, _>`
+    // serializes to a JSON object with non-string keys — which `serde_json`
+    // rejects ("key must be a string"). That made `save_to_disk` fail silently,
+    // so `mode_stats.json` was never written and the predictor relearned from
+    // scratch every process (#550). Persist the history as a list of
+    // (signature, outcomes) entries, which round-trips in any serde format. No
+    // migration is needed: the broken format never produced a file to read back.
+    #[serde(with = "history_serde")]
     history: HashMap<FileSignature, Vec<ModeOutcome>>,
     project_root: Option<String>,
+}
+
+/// (De)serializes [`ModePredictor::history`] as a sequence of entries so the
+/// struct-keyed map survives `serde_json` (see the field comment, #550).
+mod history_serde {
+    use super::{FileSignature, ModeOutcome};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::HashMap;
+
+    pub(super) fn serialize<S: Serializer>(
+        history: &HashMap<FileSignature, Vec<ModeOutcome>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let entries: Vec<(&FileSignature, &Vec<ModeOutcome>)> = history.iter().collect();
+        entries.serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<HashMap<FileSignature, Vec<ModeOutcome>>, D::Error> {
+        let entries: Vec<(FileSignature, Vec<ModeOutcome>)> = Vec::deserialize(deserializer)?;
+        Ok(entries.into_iter().collect())
+    }
 }
 
 impl ModePredictor {
@@ -390,6 +421,35 @@ mod tests {
         }
         let best = predictor.predict_best_mode(&sig);
         assert_eq!(best, Some("map".to_string()));
+    }
+
+    #[test]
+    fn history_round_trips_through_json() {
+        // #550 regression: the struct-keyed `HashMap<FileSignature, _>` made
+        // `serde_json` error ("key must be a string"), so `save_to_disk` failed
+        // silently and the predictor never persisted. The history must survive a
+        // JSON round-trip via the entry-list representation.
+        let mut predictor = ModePredictor::default();
+        let sig = FileSignature::from_path("main.rs", 1000);
+        predictor.record(
+            sig.clone(),
+            ModeOutcome {
+                mode: "map".to_string(),
+                tokens_in: 1000,
+                tokens_out: 200,
+                density: 0.8,
+            },
+        );
+
+        let json = serde_json::to_string(&predictor).expect("predictor must serialize to JSON");
+        let restored: ModePredictor =
+            serde_json::from_str(&json).expect("predictor must deserialize from JSON");
+
+        assert_eq!(
+            restored.history.get(&sig).map(Vec::len),
+            Some(1),
+            "recorded outcome must survive the round-trip"
+        );
     }
 
     #[test]

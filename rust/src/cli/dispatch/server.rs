@@ -149,15 +149,9 @@ pub(super) fn run_mcp_server() -> Result<()> {
             );
         }
 
-        core::stats::flush();
-        core::heatmap::flush();
-        core::path_mode_memory::flush();
-        core::auto_mode_resolver::flush_sources();
-        core::edit_quality::flush();
-        core::mode_predictor::ModePredictor::flush();
-        core::feedback::FeedbackStore::flush();
-        core::threshold_learning::flush();
-        core::litm_calibration::flush();
+        // Single source of truth for the buffered-telemetry flush set, shared
+        // with the CLI tool arms and the parent watchdog so they can't drift (#550).
+        core::tool_lifecycle::flush_all();
         core::efficacy::capture();
 
         Ok(())
@@ -230,13 +224,9 @@ fn spawn_parent_watchdog() {
                             "[parent-watchdog] parent PID changed ({ppid} → {current_ppid}), \
                              IDE likely closed — exiting to prevent orphan"
                         );
-                        core::stats::flush();
-                        core::heatmap::flush();
-                        core::path_mode_memory::flush();
-                        core::auto_mode_resolver::flush_sources();
-                        core::edit_quality::flush();
-                        core::threshold_learning::flush();
-                        core::litm_calibration::flush();
+                        // Same flush set as the clean shutdown path (#550) — the
+                        // hand-rolled copy here used to miss the predictor + feedback.
+                        core::tool_lifecycle::flush_all();
                         std::process::exit(0);
                     }
                 }

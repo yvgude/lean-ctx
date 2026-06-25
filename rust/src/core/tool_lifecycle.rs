@@ -60,6 +60,11 @@ pub fn record_file_read(
     // identical anyway.
     crate::core::savings_ledger::record_read_event(original_tokens, saved);
 
+    // Project root the learning sinks below are scoped to. Defaults to "." (the
+    // MCP path's `project_root_snapshot` fallback) so a rootless read still
+    // trains a global model rather than being dropped.
+    let mut learning_root = String::from(".");
+
     if let Some(mut session) = SessionState::load_latest() {
         session.touch_file(path, None, mode, original_tokens);
         if is_cache_hit {
@@ -79,6 +84,9 @@ pub fn record_file_read(
         }
 
         let project_root = session.project_root.clone();
+        if let Some(root) = usable_root(project_root.as_deref()) {
+            learning_root = root.to_string();
+        }
         let calls = session.stats.total_tool_calls;
 
         // Traversal edges: associate this read with the recent working set so the
@@ -101,6 +109,95 @@ pub fn record_file_read(
         ledger.record(path, mode, original_tokens, output_tokens);
         ledger.save();
     }
+
+    // Learning sinks the MCP read path runs in a background thread but the CLI
+    // path historically skipped — the mode predictor never trained, the
+    // compression feedback loop stayed blind and dashboard anomaly signals were
+    // missing for every shadow-mode (`view`/`grep` → `lean-ctx read`) hook read
+    // (#550). Run inline: a single-shot CLI process must finish them before it
+    // flushes and exits, so the off-hot-path thread the daemon uses is moot here.
+    record_read_learning(
+        path,
+        mode,
+        original_tokens,
+        output_tokens,
+        is_cache_hit,
+        &learning_root,
+    );
+}
+
+/// Replicate the MCP read path's learning side effects (`registered/ctx_read.rs`
+/// background thread) for the standalone CLI path (#550): mode-predictor
+/// training, the compression feedback outcome and the per-call anomaly metric.
+/// All three are disk-backed and therefore work from a single-shot process; the
+/// in-memory-only detectors (loop/correction) and the bounce/adaptive signals
+/// that require routing through `ctx_read::handle` are tracked separately.
+fn record_read_learning(
+    path: &str,
+    resolved_mode: &str,
+    original_tokens: usize,
+    output_tokens: usize,
+    is_cache_hit: bool,
+    project_root: &str,
+) {
+    // Mode predictor: train auto-mode selection on the realized compression
+    // density, exactly as the MCP background thread does.
+    let sig = crate::core::mode_predictor::FileSignature::from_path(path, original_tokens);
+    let density = if output_tokens > 0 {
+        original_tokens as f64 / output_tokens as f64
+    } else {
+        1.0
+    };
+    let outcome = crate::core::mode_predictor::ModeOutcome {
+        mode: resolved_mode.to_string(),
+        tokens_in: original_tokens,
+        tokens_out: output_tokens,
+        density: density.min(1.0),
+    };
+    let mut predictor = crate::core::mode_predictor::ModePredictor::new();
+    predictor.set_project_root(project_root);
+    predictor.record(sig, outcome);
+    predictor.save();
+
+    // Compression feedback: the per-language outcome the adaptive thresholds and
+    // bounce-aware tuning learn from. `total_turns`/`total_reads` are 1 — the
+    // accurate count for this single-shot invocation, not a placeholder.
+    let saved = original_tokens.saturating_sub(output_tokens);
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_string();
+    let thresholds = crate::core::adaptive_thresholds::thresholds_for_path(path);
+    let feedback_outcome = crate::core::feedback::CompressionOutcome {
+        session_id: format!("{}", std::process::id()),
+        language: ext,
+        entropy_threshold: thresholds.bpe_entropy,
+        jaccard_threshold: thresholds.jaccard,
+        total_turns: 1,
+        tokens_saved: saved as u64,
+        tokens_original: original_tokens as u64,
+        cache_hits: u32::from(is_cache_hit),
+        total_reads: 1,
+        // A compressed read only counts as task-completing when this extension
+        // is not in a high-bounce state (#593); unknown stays optimistic so the
+        // cold start matches the MCP path. 0.30 mirrors BOUNCE_RATE_THRESHOLD.
+        task_completed: crate::core::bounce_tracker::global()
+            .lock()
+            .ok()
+            .and_then(|bt| bt.bounce_rate_for_extension(path))
+            .is_none_or(|rate| rate < 0.30),
+        timestamp: chrono::Local::now().to_rfc3339(),
+    };
+    let mut store = crate::core::feedback::FeedbackStore::load();
+    store.project_root = Some(project_root.to_string());
+    store.record_outcome(feedback_outcome);
+
+    // Anomaly detector: the same per-call metric the MCP post-dispatch records.
+    // `save_debounced` writes on the first call of a fresh process (last-save
+    // marker starts at 0), so the single shadow read persists before exit.
+    crate::core::anomaly::record_metric("tokens_per_call", output_tokens as f64);
+    crate::core::anomaly::save_debounced();
 }
 
 /// Record a search/grep operation with full Context OS side effects.
@@ -120,6 +217,11 @@ pub fn record_search(modeled_baseline: usize, observed_tokens: usize, output_tok
 
         maybe_consolidate(project_root.as_deref(), calls);
     }
+
+    // Per-call anomaly metric, mirroring the MCP post-dispatch (#550). Missing it
+    // left dashboard signals blind to shadow-mode (`grep` → `lean-ctx grep`) hooks.
+    crate::core::anomaly::record_metric("tokens_per_call", output_tokens as f64);
+    crate::core::anomaly::save_debounced();
 }
 
 /// Record a tree/ls operation with full Context OS side effects.
@@ -153,6 +255,31 @@ pub fn record_shell_command(original_tokens: usize, output_tokens: usize) {
     }
 }
 
+/// Flush every buffered telemetry sink to disk.
+///
+/// The long-lived MCP daemon flushes these once at shutdown
+/// (`cli/dispatch/server.rs`). Single-shot CLI commands — and the shadow-mode
+/// hook subprocesses that spawn `lean-ctx read`/`grep` — exit immediately, so
+/// without this the buffered heatmap, mode-predictor, feedback and threshold
+/// writes are silently lost the moment the process ends: `lean-ctx heatmap`
+/// stays empty and `lean-ctx gain` reports nothing for compressed reads (#550).
+///
+/// Centralized so the daemon shutdown, the parent watchdog and every CLI tool
+/// command flush the *exact same* set — the historical per-arm copies had
+/// drifted (the `read` arm flushed only `stats`, the `-c` arm four sinks, the
+/// daemon nine), which is precisely how the gap went unnoticed.
+pub fn flush_all() {
+    stats::flush();
+    heatmap::flush();
+    crate::core::path_mode_memory::flush();
+    crate::core::auto_mode_resolver::flush_sources();
+    crate::core::edit_quality::flush();
+    crate::core::mode_predictor::ModePredictor::flush();
+    crate::core::feedback::FeedbackStore::flush();
+    crate::core::threshold_learning::flush();
+    crate::core::litm_calibration::flush();
+}
+
 // TODO(arch): crate::tools::autonomy is still referenced here. Move AutonomyState
 // and should_auto_consolidate to core::autonomy_drivers for a clean layer boundary.
 fn maybe_consolidate(project_root: Option<&str>, calls: u32) {
@@ -171,23 +298,71 @@ fn maybe_consolidate(project_root: Option<&str>, calls: u32) {
 mod tests {
     use super::*;
 
+    // The record_* paths now drive process-global telemetry sinks (mode
+    // predictor buffer, anomaly singleton) and read the data-dir env (#550), so
+    // every test here takes the shared isolation lock to serialize that state
+    // and keep its disk writes inside a throwaway dir.
+
     #[test]
     fn record_file_read_does_not_panic_without_session() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
         record_file_read("/tmp/nonexistent.rs", "full", 100, 50, false);
     }
 
     #[test]
     fn record_search_does_not_panic_without_session() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
         record_search(500, 200, 150);
     }
 
     #[test]
     fn record_tree_does_not_panic_without_session() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
         record_tree(100, 80);
     }
 
     #[test]
     fn record_shell_does_not_panic_without_session() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
         record_shell_command(500, 200);
+    }
+
+    #[test]
+    fn flush_all_is_idempotent_and_safe_without_state() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        // Empty buffers: flushing must be a harmless no-op, and calling it twice
+        // (e.g. a CLI arm followed by an atexit path) must never panic.
+        flush_all();
+        flush_all();
+    }
+
+    #[test]
+    fn cli_read_persists_learning_sinks_to_disk() {
+        // #550 regression: a single-shot CLI read must leave the mode predictor,
+        // compression feedback and heatmap on disk. The daemon used to be the
+        // only path that flushed them, so shadow-mode hook reads (`view`/`grep` →
+        // `lean-ctx read`) recorded nothing and `lean-ctx heatmap` stayed empty.
+        let dir = crate::core::data_dir::isolated_data_dir();
+        let file = dir.path().join("sample.rs");
+        std::fs::write(&file, "fn main() {\n    println!(\"hi\");\n}\n").unwrap();
+        let path = file.to_string_lossy();
+
+        record_file_read(&path, "full", 1000, 200, false);
+        flush_all();
+
+        let data = crate::core::data_dir::lean_ctx_data_dir().expect("data dir");
+        let state = crate::core::paths::state_dir().expect("state dir");
+        assert!(
+            data.join("mode_stats.json").exists(),
+            "mode predictor must persist after a CLI read + flush"
+        );
+        assert!(
+            state.join("feedback.json").exists(),
+            "compression feedback must persist after a CLI read + flush"
+        );
+        assert!(
+            state.join("heatmap.json").exists(),
+            "heatmap must persist after a CLI read + flush"
+        );
     }
 }
