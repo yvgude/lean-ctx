@@ -750,7 +750,11 @@ fn compute_semantically_related_gbuf(gbuf: &mut GraphBuffer) {
     for label in &["Function", "Method"] {
         let nodes = gbuf.find_nodes_by_label(label);
         for n in &nodes {
-            let kind = if n.label == "Function" { "function" } else { "method" };
+            let kind = if n.label == "Function" {
+                "function"
+            } else {
+                "method"
+            };
             node_ptrs.push((n.id, n.name.clone(), kind.to_string(), n.file_path.clone()));
         }
     }
@@ -780,7 +784,10 @@ fn compute_semantically_related_gbuf(gbuf: &mut GraphBuffer) {
     };
 
     // Map node_id → file_path for cross-file check
-    let id_to_file: HashMap<NodeId, &str> = node_ptrs.iter().map(|(id, _, _, fp)| (*id, fp.as_str())).collect();
+    let id_to_file: HashMap<NodeId, &str> = node_ptrs
+        .iter()
+        .map(|(id, _, _, fp)| (*id, fp.as_str()))
+        .collect();
 
     // ── Pair-score collection ──
     let pair_scores: HashMap<(NodeId, NodeId), f32> = if eligible_count <= 100 {
@@ -790,8 +797,7 @@ fn compute_semantically_related_gbuf(gbuf: &mut GraphBuffer) {
             let id_a = sorted_ids[i];
             let vec_a = &ri_vectors[&id_a];
             let file_a = id_to_file[&id_a];
-            for j in (i + 1)..sorted_ids.len() {
-                let id_b = sorted_ids[j];
+            for &id_b in sorted_ids.iter().skip(i + 1) {
                 let file_b = id_to_file[&id_b];
                 if file_a == file_b {
                     continue;
@@ -800,14 +806,22 @@ fn compute_semantically_related_gbuf(gbuf: &mut GraphBuffer) {
                 let cos = vec_a.cosine(vec_b);
                 if cos > SEMANTIC_THRESHOLD {
                     let pair = (id_a, id_b);
-                    scores.entry(pair).and_modify(|best| { if cos > *best { *best = cos; } }).or_insert(cos);
+                    scores
+                        .entry(pair)
+                        .and_modify(|best| {
+                            if cos > *best {
+                                *best = cos;
+                            }
+                        })
+                        .or_insert(cos);
                 }
             }
         }
         scores
     } else {
         // LSH pre-filtering
-        let mut eligible_items: Vec<(NodeId, &RiVector)> = sorted_ids.iter().map(|id| (*id, &ri_vectors[id])).collect();
+        let mut eligible_items: Vec<(NodeId, &RiVector)> =
+            sorted_ids.iter().map(|id| (*id, &ri_vectors[id])).collect();
         eligible_items.sort_by_key(|(id, _)| id.0);
 
         let idx_to_id: Vec<NodeId> = eligible_items.iter().map(|(id, _)| *id).collect();
@@ -815,7 +829,8 @@ fn compute_semantically_related_gbuf(gbuf: &mut GraphBuffer) {
         let lsh_config = LshConfig::new(RI_DIM, 16, 4)
             .expect("RI_DIM=256, bands=16, rows=4 is always a valid LSH config");
 
-        let signatures: Vec<LshSignature> = eligible_items.iter()
+        let signatures: Vec<LshSignature> = eligible_items
+            .iter()
             .map(|(_, vec)| lsh_config.sign_sparse(&vec.positions, &vec.values, vec.nnz))
             .collect();
 
@@ -838,15 +853,26 @@ fn compute_semantically_related_gbuf(gbuf: &mut GraphBuffer) {
                 let mut local: HashMap<(NodeId, NodeId), f32> = HashMap::new();
 
                 for &j in &candidates {
-                    if j <= i { continue; }
+                    if j <= i {
+                        continue;
+                    }
                     let id_j = idx_to_id[j];
                     let file_j = id_to_file[&id_j];
-                    if file_i == file_j { continue; }
+                    if file_i == file_j {
+                        continue;
+                    }
                     let vec_j = &eligible_items[j].1;
                     let cos = vec_i.cosine(vec_j);
                     if cos > SEMANTIC_THRESHOLD {
                         let pair = (id_i, id_j);
-                        local.entry(pair).and_modify(|best| { if cos > *best { *best = cos; } }).or_insert(cos);
+                        local
+                            .entry(pair)
+                            .and_modify(|best| {
+                                if cos > *best {
+                                    *best = cos;
+                                }
+                            })
+                            .or_insert(cos);
                     }
                 }
                 local
@@ -856,7 +882,14 @@ fn compute_semantically_related_gbuf(gbuf: &mut GraphBuffer) {
         let mut merged: HashMap<(NodeId, NodeId), f32> = HashMap::new();
         for local in per_thread {
             for (pair, cos) in local {
-                merged.entry(pair).and_modify(|best| { if cos > *best { *best = cos; } }).or_insert(cos);
+                merged
+                    .entry(pair)
+                    .and_modify(|best| {
+                        if cos > *best {
+                            *best = cos;
+                        }
+                    })
+                    .or_insert(cos);
             }
         }
         merged
@@ -867,12 +900,16 @@ fn compute_semantically_related_gbuf(gbuf: &mut GraphBuffer) {
     }
 
     // Sort candidates by weight descending
-    let mut candidates: Vec<(NodeId, NodeId, f32)> = pair_scores.into_iter()
+    let mut candidates: Vec<(NodeId, NodeId, f32)> = pair_scores
+        .into_iter()
         .map(|((a, b), cos)| (a, b, cos))
         .collect();
-    candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal)
-        .then_with(|| a.0.cmp(&b.0))
-        .then_with(|| a.1.cmp(&b.1)));
+    candidates.sort_by(|a, b| {
+        b.2.partial_cmp(&a.2)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+            .then_with(|| a.1.cmp(&b.1))
+    });
 
     // Emit edges respecting MAX_EDGES_PER_NODE
     let mut edge_counts: HashMap<NodeId, usize> = HashMap::new();
@@ -889,7 +926,7 @@ fn compute_semantically_related_gbuf(gbuf: &mut GraphBuffer) {
             }
             gbuf.insert_edge(tgt, src, "SEMANTICALLY_RELATED", {
                 let mut p = HashMap::new();
-                p.insert("score".to_string(), format!("{:.3}", weight));
+                p.insert("score".to_string(), format!("{weight:.3}"));
                 p
             });
             *count_rev += 1;
@@ -897,7 +934,7 @@ fn compute_semantically_related_gbuf(gbuf: &mut GraphBuffer) {
         }
         gbuf.insert_edge(src, tgt, "SEMANTICALLY_RELATED", {
             let mut p = HashMap::new();
-            p.insert("score".to_string(), format!("{:.3}", weight));
+            p.insert("score".to_string(), format!("{weight:.3}"));
             p
         });
         *count += 1;

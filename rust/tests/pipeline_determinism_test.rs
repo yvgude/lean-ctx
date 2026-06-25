@@ -39,6 +39,15 @@ fn pipeline_runs_are_deterministic() {
     let report2 = handle2.run().expect("pipeline 2 run should succeed");
 
     // ── Assert identical counts ──────────────────────────────────────────────
+    //
+    // Note: Edge tuple comparison (source_qn, target_qn, edge_type) is a
+    // future enhancement. PipelineReport currently only exposes aggregate edge
+    // counts via `report.edges`. The GraphBuffer's internal edge list is not
+    // surfaced through PipelineReport. To add tuple-level comparison, either:
+    //   - Expose a method on GraphBuffer that returns
+    //     (source_qn, target_qn, edge_type) triples
+    //   - Query the SQLite dump's `edges` table after each run and compare
+    //     sorted tuples
     assert_eq!(
         report1.nodes, report2.nodes,
         "node count mismatch: run1={}, run2={}",

@@ -16,8 +16,8 @@
 //! Uses the types from `index_types.rs` (`NodeId`, `EdgeId`, `GbufNode`, `GbufEdge`).
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::core::graph_index::ProjectIndex;
 use crate::core::index_types::{EdgeId, GbufEdge, GbufNode, NodeId};
@@ -279,11 +279,7 @@ impl GraphBuffer {
     }
 
     /// Find all edges from `source_id` with a given `edge_type`. O(n) scan.
-    pub fn find_edges_by_source_type(
-        &self,
-        source_id: NodeId,
-        edge_type: &str,
-    ) -> Vec<&GbufEdge> {
+    pub fn find_edges_by_source_type(&self, source_id: NodeId, edge_type: &str) -> Vec<&GbufEdge> {
         self.edges
             .iter()
             .filter(|e| e.source_id == source_id && e.edge_type == edge_type)
@@ -457,12 +453,7 @@ impl GraphBuffer {
         // Convert File nodes → FileEntry, other typed nodes → SymbolEntry.
         self.foreach_node(&mut |n| {
             if n.label == "File" {
-                let language = n
-                    .file_path
-                    .rsplit('.')
-                    .next()
-                    .unwrap_or("")
-                    .to_string();
+                let language = n.file_path.rsplit('.').next().unwrap_or("").to_string();
                 files.insert(
                     n.qualified_name.clone(),
                     FileEntry {
@@ -500,11 +491,7 @@ impl GraphBuffer {
                         kind: n.label.clone(),
                         start_line: n.start_line as usize,
                         end_line: n.end_line as usize,
-                        is_exported: n
-                            .properties
-                            .get("is_exported")
-                            .map(|v| v == "true")
-                            .unwrap_or(false),
+                        is_exported: n.properties.get("is_exported").is_some_and(|v| v == "true"),
                         minhash,
                     },
                 );
@@ -556,8 +543,24 @@ mod tests {
     #[test]
     fn test_upsert_node_same_qn_returns_same_id() {
         let mut gb = GraphBuffer::new("test");
-        let id1 = gb.upsert_node("Function", "foo", "pkg.foo", "src/lib.rs", 1, 10, props(&[]));
-        let id2 = gb.upsert_node("Function", "foo", "pkg.foo", "src/lib.rs", 1, 10, props(&[]));
+        let id1 = gb.upsert_node(
+            "Function",
+            "foo",
+            "pkg.foo",
+            "src/lib.rs",
+            1,
+            10,
+            props(&[]),
+        );
+        let id2 = gb.upsert_node(
+            "Function",
+            "foo",
+            "pkg.foo",
+            "src/lib.rs",
+            1,
+            10,
+            props(&[]),
+        );
         assert_eq!(id1, id2, "same QN must return same NodeId");
         assert_eq!(gb.node_count(), 1, "should have exactly one node");
     }
@@ -590,8 +593,7 @@ mod tests {
     #[test]
     fn test_upsert_node_updates_in_place() {
         let mut gb = GraphBuffer::new("test");
-        let id =
-            gb.upsert_node("Function", "old", "pkg.x", "old.rs", 1, 5, props(&[]));
+        let id = gb.upsert_node("Function", "old", "pkg.x", "old.rs", 1, 5, props(&[]));
         let id2 = gb.upsert_node(
             "Class",
             "new",
@@ -613,8 +615,7 @@ mod tests {
     #[test]
     fn test_upsert_updates_properties_only() {
         let mut gb = GraphBuffer::new("test");
-        let id =
-            gb.upsert_node("Function", "x", "pkg.x", "x.rs", 1, 5, props(&[("a", "1")]));
+        let id = gb.upsert_node("Function", "x", "pkg.x", "x.rs", 1, 5, props(&[("a", "1")]));
         gb.upsert_node(
             "Function",
             "x",
@@ -773,7 +774,11 @@ mod tests {
             edge_count_before,
             "edge count after merge should equal sum"
         );
-        assert_eq!(gb2.edge_count(), 0, "other should have no edges after merge");
+        assert_eq!(
+            gb2.edge_count(),
+            0,
+            "other should have no edges after merge"
+        );
     }
 
     #[test]
@@ -921,7 +926,15 @@ mod tests {
     #[test]
     fn finalize_produces_valid_project_index() {
         let mut gbuf = GraphBuffer::new("test_proj");
-        gbuf.upsert_node("File", "main.rs", "main.rs", "main.rs", 0, 0, HashMap::new());
+        gbuf.upsert_node(
+            "File",
+            "main.rs",
+            "main.rs",
+            "main.rs",
+            0,
+            0,
+            HashMap::new(),
+        );
         gbuf.upsert_node(
             "Function",
             "hello",

@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use crate::core::import_resolver;
 
 mod edges;
-pub(crate) use edges::*;
 #[cfg(test)]
 mod tests;
 

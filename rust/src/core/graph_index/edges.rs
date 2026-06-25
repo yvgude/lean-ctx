@@ -2,7 +2,10 @@
 //! sibling, barrel and language-specific edges). Split out of `graph_index/mod.rs`.
 //! `use super::*` re-imports the parent module’s types and helpers.
 
-#[allow(clippy::wildcard_imports)]
+// Several edge-builders are called from test-only entry points (`tests.rs`);
+// suppress dead-code since the call tree is compiled in test builds only.
+#![allow(dead_code)]
+
 use std::sync::Arc;
 
 use rayon::prelude::*;

@@ -406,7 +406,7 @@ pub fn jail_path_with_roots(
                 candidate.display(),
                 root.display(),
             );
-            let hint = if crate::core::protocol::meta_visible() {
+            let mut hint = if crate::core::protocol::meta_visible() {
                 let dir = candidate.parent().unwrap_or(candidate).display();
                 format!(
                     ". Hint: set LEAN_CTX_READ_ONLY_ROOTS={dir} for read-only access, \

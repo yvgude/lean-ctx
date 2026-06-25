@@ -1,0 +1,28 @@
+{
+  "pipeline_version": "3.8.12",
+  "mode": "full",
+  "files_scanned": 11,
+  "files_new": 11,
+  "files_changed": 0,
+  "files_deleted": 0,
+  "nodes": 11,
+  "edges": 17,
+  "chunks": 36,
+  "elapsed_ms": 785,
+  "is_incremental": false,
+  "embedding_ready": "Skipped",
+  "fixture_description": "Frozen test repo with 11 files across 8 languages (Rust, Python, TypeScript, JavaScript, CSS, HTML, Markdown, Go)",
+  "fixture_files": [
+    "src/main.rs",
+    "src/lib.rs",
+    "src/utils.py",
+    "src/server.ts",
+    "src/config.js",
+    "src/styles.css",
+    "src/index.html",
+    "docs/README.md",
+    "src/go.mod",
+    "src/main.go",
+    "src/handler.ts"
+  ]
+}

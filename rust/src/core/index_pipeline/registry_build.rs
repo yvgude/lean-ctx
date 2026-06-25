@@ -63,8 +63,7 @@ impl Registry {
     /// All definitions are stored in the full `defs` map regardless of label.
     pub fn register(&mut self, def: &Definition) {
         // Store full definition keyed by qualified_name.
-        self.defs
-            .insert(def.qualified_name.clone(), def.clone());
+        self.defs.insert(def.qualified_name.clone(), def.clone());
 
         // Index by short name for lookups — only for callable/useable labels.
         match def.label.as_str() {
@@ -100,6 +99,12 @@ impl Registry {
     #[must_use]
     pub fn len(&self) -> usize {
         self.defs.len()
+    }
+
+    /// Returns `true` when no definitions are registered.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.defs.is_empty()
     }
 }
 
@@ -147,10 +152,7 @@ impl Default for Registry {
 ///
 /// Maps to `cbm_build_registry_from_cache` in
 /// `/tmp/codebase-memory-mcp/src/pipeline/pass_parallel.c:922-970`.
-pub fn build_registry(
-    extracted_files: &[ExtractedFile],
-    gbuf: &mut GraphBuffer,
-) -> Registry {
+pub fn build_registry(extracted_files: &[ExtractedFile], gbuf: &mut GraphBuffer) -> Registry {
     let mut registry = Registry::new();
 
     // ── Pass 1: Register all definitions ──────────────────────────
@@ -166,28 +168,19 @@ pub fn build_registry(
         let file_id = gbuf.find_by_qn(&ef.file_path).map(|n| n.id);
         for def in &ef.defs {
             // DEFINES edge: File node → Definition node
-            if let Some(fid) = file_id {
-                if let Some(def_id) = gbuf.find_by_qn(&def.qualified_name).map(|n| n.id) {
-                    gbuf.insert_edge(fid, def_id, "DEFINES", HashMap::new());
-                }
+            if let Some(fid) = file_id
+                && let Some(def_id) = gbuf.find_by_qn(&def.qualified_name).map(|n| n.id)
+            {
+                gbuf.insert_edge(fid, def_id, "DEFINES", HashMap::new());
             }
 
             // DEFINES_METHOD edge: Class node → Method node
-            if let Some(parent_class) = &def.parent_class {
-                if def.label == "Method" {
-                    if let Some(class_id) = gbuf.find_by_qn(parent_class).map(|n| n.id) {
-                        if let Some(def_id) =
-                            gbuf.find_by_qn(&def.qualified_name).map(|n| n.id)
-                        {
-                            gbuf.insert_edge(
-                                class_id,
-                                def_id,
-                                "DEFINES_METHOD",
-                                HashMap::new(),
-                            );
-                        }
-                    }
-                }
+            if let Some(parent_class) = &def.parent_class
+                && def.label == "Method"
+                && let Some(class_id) = gbuf.find_by_qn(parent_class).map(|n| n.id)
+                && let Some(def_id) = gbuf.find_by_qn(&def.qualified_name).map(|n| n.id)
+            {
+                gbuf.insert_edge(class_id, def_id, "DEFINES_METHOD", HashMap::new());
             }
         }
     }
@@ -196,17 +189,14 @@ pub fn build_registry(
     for ef in extracted_files {
         let file_id = gbuf.find_by_qn(&ef.file_path).map(|n| n.id);
         for import in &ef.imports {
-            if let Some(fid) = file_id {
-                if let Some(target_qns) = registry.lookup(&import.local_name) {
-                    for target_qn in target_qns {
-                        if let Some(target_id) = gbuf.find_by_qn(target_qn).map(|n| n.id) {
-                            let mut props = HashMap::new();
-                            props.insert(
-                                "local_name".to_string(),
-                                import.local_name.clone(),
-                            );
-                            gbuf.insert_edge(fid, target_id, "IMPORTS", props);
-                        }
+            if let Some(fid) = file_id
+                && let Some(target_qns) = registry.lookup(&import.local_name)
+            {
+                for target_qn in target_qns {
+                    if let Some(target_id) = gbuf.find_by_qn(target_qn).map(|n| n.id) {
+                        let mut props = HashMap::new();
+                        props.insert("local_name".to_string(), import.local_name.clone());
+                        gbuf.insert_edge(fid, target_id, "IMPORTS", props);
                     }
                 }
             }
@@ -228,12 +218,7 @@ mod tests {
     // ── Test helpers ──────────────────────────────────────────────
 
     /// Build a minimal `Definition` for testing.
-    fn make_def(
-        name: &str,
-        qn: &str,
-        label: &str,
-        parent_class: Option<&str>,
-    ) -> Definition {
+    fn make_def(name: &str, qn: &str, label: &str, parent_class: Option<&str>) -> Definition {
         Definition {
             name: name.to_string(),
             qualified_name: qn.to_string(),
@@ -432,7 +417,15 @@ mod tests {
     #[test]
     fn defines_edge_from_file_to_def() {
         let mut gbuf = GraphBuffer::new("test");
-        gbuf.upsert_node("File", "test.rs", "test.rs", "test.rs", 0, 0, HashMap::new());
+        gbuf.upsert_node(
+            "File",
+            "test.rs",
+            "test.rs",
+            "test.rs",
+            0,
+            0,
+            HashMap::new(),
+        );
         gbuf.upsert_node(
             "Function",
             "hello",
@@ -443,7 +436,10 @@ mod tests {
             HashMap::new(),
         );
 
-        let ef = make_ef("test.rs", vec![make_def("hello", "test.rs::hello", "Function", None)]);
+        let ef = make_ef(
+            "test.rs",
+            vec![make_def("hello", "test.rs::hello", "Function", None)],
+        );
         let _reg = build_registry(&[ef], &mut gbuf);
 
         assert_eq!(gbuf.edge_count(), 1);
@@ -467,7 +463,10 @@ mod tests {
             HashMap::new(),
         );
 
-        let ef = make_ef("ghost.rs", vec![make_def("orphan", "ghost.rs::orphan", "Function", None)]);
+        let ef = make_ef(
+            "ghost.rs",
+            vec![make_def("orphan", "ghost.rs::orphan", "Function", None)],
+        );
         let _reg = build_registry(&[ef], &mut gbuf);
 
         // No File node → no edge.
@@ -477,7 +476,15 @@ mod tests {
     #[test]
     fn defines_method_edge_for_method_with_parent_class() {
         let mut gbuf = GraphBuffer::new("test");
-        gbuf.upsert_node("File", "test.rs", "test.rs", "test.rs", 0, 0, HashMap::new());
+        gbuf.upsert_node(
+            "File",
+            "test.rs",
+            "test.rs",
+            "test.rs",
+            0,
+            0,
+            HashMap::new(),
+        );
         gbuf.upsert_node(
             "Class",
             "MyClass",
@@ -517,7 +524,15 @@ mod tests {
     #[test]
     fn method_without_parent_class_no_defines_method() {
         let mut gbuf = GraphBuffer::new("test");
-        gbuf.upsert_node("File", "test.rs", "test.rs", "test.rs", 0, 0, HashMap::new());
+        gbuf.upsert_node(
+            "File",
+            "test.rs",
+            "test.rs",
+            "test.rs",
+            0,
+            0,
+            HashMap::new(),
+        );
         gbuf.upsert_node(
             "Method",
             "standalone",
@@ -539,7 +554,15 @@ mod tests {
     #[test]
     fn non_method_label_with_parent_class_no_defines_method() {
         let mut gbuf = GraphBuffer::new("test");
-        gbuf.upsert_node("File", "test.rs", "test.rs", "test.rs", 0, 0, HashMap::new());
+        gbuf.upsert_node(
+            "File",
+            "test.rs",
+            "test.rs",
+            "test.rs",
+            0,
+            0,
+            HashMap::new(),
+        );
         gbuf.upsert_node(
             "Function",
             "helper",
@@ -568,7 +591,15 @@ mod tests {
     fn imports_edge_resolved_via_registry() {
         let mut gbuf = GraphBuffer::new("test");
         // File node for the importing file.
-        gbuf.upsert_node("File", "main.rs", "main.rs", "main.rs", 0, 0, HashMap::new());
+        gbuf.upsert_node(
+            "File",
+            "main.rs",
+            "main.rs",
+            "main.rs",
+            0,
+            0,
+            HashMap::new(),
+        );
         // File node for the target (needed for DEFINES edge in Pass 2).
         gbuf.upsert_node(
             "File",
@@ -611,7 +642,15 @@ mod tests {
     #[test]
     fn imports_has_local_name_property() {
         let mut gbuf = GraphBuffer::new("test");
-        gbuf.upsert_node("File", "main.rs", "main.rs", "main.rs", 0, 0, HashMap::new());
+        gbuf.upsert_node(
+            "File",
+            "main.rs",
+            "main.rs",
+            "main.rs",
+            0,
+            0,
+            HashMap::new(),
+        );
         gbuf.upsert_node(
             "File",
             "std/collections.rs",
@@ -644,7 +683,7 @@ mod tests {
 
         // Verify the IMPORTS edge has the local_name property.
         let file_node = gbuf.find_by_qn("main.rs").unwrap();
-        let target_node = gbuf.find_by_qn("std::collections::HashMap").unwrap();
+        let _target_node = gbuf.find_by_qn("std::collections::HashMap").unwrap();
         let edges = gbuf.find_edges_by_source_type(file_node.id, "IMPORTS");
         assert_eq!(edges.len(), 1);
 
@@ -659,7 +698,15 @@ mod tests {
     #[test]
     fn import_unresolved_name_no_edge() {
         let mut gbuf = GraphBuffer::new("test");
-        gbuf.upsert_node("File", "main.rs", "main.rs", "main.rs", 0, 0, HashMap::new());
+        gbuf.upsert_node(
+            "File",
+            "main.rs",
+            "main.rs",
+            "main.rs",
+            0,
+            0,
+            HashMap::new(),
+        );
 
         // Import for "NonexistentType" which is not in the registry.
         let ef = make_ef_with_imports("main.rs", vec![], vec![("NonexistentType", "unknown")]);
@@ -713,7 +760,15 @@ mod tests {
         // File 1
         gbuf.upsert_node("File", "a.rs", "a.rs", "a.rs", 0, 0, HashMap::new());
         gbuf.upsert_node("Function", "foo", "a.rs::foo", "a.rs", 1, 5, HashMap::new());
-        gbuf.upsert_node("Function", "bar", "a.rs::bar", "a.rs", 10, 15, HashMap::new());
+        gbuf.upsert_node(
+            "Function",
+            "bar",
+            "a.rs::bar",
+            "a.rs",
+            10,
+            15,
+            HashMap::new(),
+        );
 
         // File 2
         gbuf.upsert_node("File", "b.rs", "b.rs", "b.rs", 0, 0, HashMap::new());
@@ -768,7 +823,15 @@ mod tests {
     #[test]
     fn duplicate_defines_edge_is_deduplicated() {
         let mut gbuf = GraphBuffer::new("test");
-        gbuf.upsert_node("File", "test.rs", "test.rs", "test.rs", 0, 0, HashMap::new());
+        gbuf.upsert_node(
+            "File",
+            "test.rs",
+            "test.rs",
+            "test.rs",
+            0,
+            0,
+            HashMap::new(),
+        );
         gbuf.upsert_node(
             "Function",
             "dup",

@@ -30,11 +30,7 @@ use crate::core::index_types::NodeId;
 ///
 /// Panics if `project_root` is empty (needs a non-empty string for the
 /// Project-node qualified name).
-pub fn build_structure(
-    project_root: &str,
-    files: &[DiscoveredFile],
-    gbuf: &mut GraphBuffer,
-) {
+pub fn build_structure(project_root: &str, files: &[DiscoveredFile], gbuf: &mut GraphBuffer) {
     assert!(!project_root.is_empty(), "project_root must not be empty");
 
     // 1. Create the Project node.
@@ -49,12 +45,16 @@ pub fn build_structure(
     );
 
     // 2. Create the root Folder node (empty string represents root).
-    let root_folder_qn = format!("{}::", project_root);
-    let root_folder_id =
-        gbuf.upsert_node("Folder", "", &root_folder_qn, "", 0, 0, HashMap::new());
+    let root_folder_qn = format!("{project_root}::");
+    let root_folder_id = gbuf.upsert_node("Folder", "", &root_folder_qn, "", 0, 0, HashMap::new());
 
     // 3. Edge: Project ──CONTAINS_FOLDER──→ root Folder.
-    gbuf.insert_edge(project_id, root_folder_id, "CONTAINS_FOLDER", HashMap::new());
+    gbuf.insert_edge(
+        project_id,
+        root_folder_id,
+        "CONTAINS_FOLDER",
+        HashMap::new(),
+    );
 
     // 4. Process every file: build folder chain and create File nodes.
     for file in files {
@@ -77,15 +77,7 @@ pub fn build_structure(
         };
 
         // Create the File node.
-        let file_id = gbuf.upsert_node(
-            "File",
-            rel_path,
-            rel_path,
-            rel_path,
-            0,
-            0,
-            HashMap::new(),
-        );
+        let file_id = gbuf.upsert_node("File", rel_path, rel_path, rel_path, 0, 0, HashMap::new());
 
         // Edge: parent Folder ──CONTAINS_FILE──→ File.
         gbuf.insert_edge(parent_folder_id, file_id, "CONTAINS_FILE", HashMap::new());
@@ -130,7 +122,7 @@ fn ensure_folder_chain(
         }
         accumulated.push_str(segment);
 
-        let folder_qn = format!("{}::{}", project_root, accumulated);
+        let folder_qn = format!("{project_root}::{accumulated}");
         let folder_id = gbuf.upsert_node(
             "Folder",
             segment,
@@ -152,7 +144,7 @@ fn ensure_folder_chain(
     }
 
     // Return the deepest folder's NodeId.
-    let deepest_qn = format!("{}::{}", project_root, dir_path);
+    let deepest_qn = format!("{project_root}::{dir_path}");
     gbuf.find_by_qn(&deepest_qn)
         .expect("deepest folder must exist after ensure_folder_chain")
         .id
@@ -194,14 +186,16 @@ mod tests {
         assert_eq!(project.label, "Project");
 
         // Root folder.
-        let root_qn = format!("{}::", project_root);
+        let root_qn = format!("{project_root}::");
         let root = gbuf.find_by_qn(&root_qn).expect("Root folder");
         assert_eq!(root.label, "Folder");
         assert_eq!(root.name, "");
 
         // 3 File nodes (rel_path used as QN).
         for path in &["src/main.rs", "src/lib.rs", "README.md"] {
-            let f = gbuf.find_by_qn(path).unwrap_or_else(|| panic!("File node {path}"));
+            let f = gbuf
+                .find_by_qn(path)
+                .unwrap_or_else(|| panic!("File node {path}"));
             assert_eq!(f.label, "File", "{path} should be File");
             assert_eq!(f.file_path, *path, "{path} file_path mismatch");
         }
@@ -230,14 +224,19 @@ mod tests {
 
         // Verify folder chain exists.
         let folders = [
-            ("", format!("{}::", project_root)),               // root
-            ("src", format!("{}::src", project_root)),         // src
-            ("core", format!("{}::src/core", project_root)),   // core
-            ("index_pipeline", format!("{}::src/core/index_pipeline", project_root)),
+            ("", format!("{project_root}::")),             // root
+            ("src", format!("{project_root}::src")),       // src
+            ("core", format!("{project_root}::src/core")), // core
+            (
+                "index_pipeline",
+                format!("{project_root}::src/core/index_pipeline"),
+            ),
         ];
 
         for (name, qn) in &folders {
-            let node = gbuf.find_by_qn(qn).unwrap_or_else(|| panic!("Folder {name} not found"));
+            let node = gbuf
+                .find_by_qn(qn)
+                .unwrap_or_else(|| panic!("Folder {name} not found"));
             assert_eq!(node.label, "Folder");
             assert_eq!(node.name, *name);
         }
@@ -302,10 +301,14 @@ mod tests {
 
         // Every node in gbuf1 must exist in gbuf2 with matching fields.
         gbuf1.foreach_node(&mut |n1| {
-            let n2 = gbuf2.find_by_qn(&n1.qualified_name).unwrap_or_else(|| {
-                panic!("node {} not in gbuf2", n1.qualified_name)
-            });
-            assert_eq!(n1.label, n2.label, "label mismatch for {}", n1.qualified_name);
+            let n2 = gbuf2
+                .find_by_qn(&n1.qualified_name)
+                .unwrap_or_else(|| panic!("node {} not in gbuf2", n1.qualified_name));
+            assert_eq!(
+                n1.label, n2.label,
+                "label mismatch for {}",
+                n1.qualified_name
+            );
             assert_eq!(n1.name, n2.name, "name mismatch for {}", n1.qualified_name);
         });
     }

@@ -32,8 +32,11 @@ use anyhow::Result;
 use crate::core::config::IndexingMode;
 use crate::core::graph_buffer::GraphBuffer;
 use crate::core::index_pipeline::discovery::DiscoveredFile;
-use crate::core::index_types::*;
-use crate::core::thread_pool::{CancelToken, ThreadPool};
+use crate::core::index_types::{
+    Call, CodeChunk, DefKind, Definition, ExtractedFile, Import, Minhash,
+};
+use crate::core::pipeline_lock::CancelToken;
+use crate::core::thread_pool::ThreadPool;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -102,7 +105,7 @@ impl ParallelExtractor {
         // 1. Sort by descending file size (tail-latency reduction).
         //    Like C's `pass_parallel.c:740-746`.
         let mut sorted_files: Vec<DiscoveredFile> = files.to_vec();
-        sorted_files.sort_unstable_by(|a, b| b.size.cmp(&a.size));
+        sorted_files.sort_unstable_by_key(|b| std::cmp::Reverse(b.size));
         let n = sorted_files.len();
         let files_arc: Arc<[DiscoveredFile]> = sorted_files.into_boxed_slice().into();
 
@@ -134,8 +137,9 @@ impl ParallelExtractor {
 
                 move |idx| {
                     let file = &files[idx];
-                    let content = std::fs::read_to_string(&file.path)
-                        .map_err(|e| anyhow::anyhow!("failed to read {}: {e}", file.path.display()))?;
+                    let content = std::fs::read_to_string(&file.path).map_err(|e| {
+                        anyhow::anyhow!("failed to read {}: {e}", file.path.display())
+                    })?;
 
                     // Each worker creates its own gbuf with shared atomic IDs.
                     let mut worker_gbuf = GraphBuffer::new_shared_ids(&pr, Arc::clone(&id_src));
@@ -171,11 +175,8 @@ impl ParallelExtractor {
 
         // 5. Merge all worker gbufs into the main gbuf.
         let mut main_gbuf = GraphBuffer::new(project_root);
-        let gbufs = std::mem::take(
-            &mut *worker_gbufs
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner),
-        );
+        let gbufs =
+            std::mem::take(&mut *worker_gbufs.lock().unwrap_or_else(PoisonError::into_inner));
         for mut gbuf in gbufs {
             main_gbuf.merge(&mut gbuf);
         }
@@ -275,10 +276,10 @@ fn extract_with_treesitter(
             for cap in m.captures {
                 if cap.index == def_idx {
                     def_node = Some(cap.node);
-                } else if cap.index == name_idx {
-                    if let Ok(text) = cap.node.utf8_text(source) {
-                        name_text = text.to_string();
-                    }
+                } else if cap.index == name_idx
+                    && let Ok(text) = cap.node.utf8_text(source)
+                {
+                    name_text = text.to_string();
                 }
             }
 
@@ -304,8 +305,10 @@ fn extract_with_treesitter(
             let qn = build_qualified_name(file_path, &name_text);
 
             // Compute minhash from the definition node's subtree.
-            let minhash = crate::core::minhash::compute_minhash(&node).map(|a| Minhash(a));
-            let minhash_hex = minhash.as_ref().map(|m| m.to_hex());
+            let minhash = crate::core::minhash::compute_minhash(&node).map(Minhash);
+            let minhash_hex = minhash
+                .as_ref()
+                .map(super::super::index_types::Minhash::to_hex);
 
             // Build a one-line signature from the node's text.
             let signature = build_signature_str(&node, source);
@@ -405,18 +408,15 @@ fn extract_chunks_from_ast(
     source: &[u8],
     lines: &[&str],
 ) -> Vec<CodeChunk> {
-    let chunk_query = match get_chunk_query(ext) {
-        Some(q) => q,
-        None => return Vec::new(),
+    let Some(chunk_query) = get_chunk_query(ext) else {
+        return Vec::new();
     };
 
-    let chunk_idx = match find_capture_index(chunk_query, "chunk") {
-        Some(i) => i,
-        None => return Vec::new(),
+    let Some(chunk_idx) = find_capture_index(chunk_query, "chunk") else {
+        return Vec::new();
     };
-    let name_idx = match find_capture_index(chunk_query, "name") {
-        Some(i) => i,
-        None => return Vec::new(),
+    let Some(name_idx) = find_capture_index(chunk_query, "name") else {
+        return Vec::new();
     };
 
     let mut chunks: Vec<CodeChunk> = Vec::new();
@@ -431,16 +431,15 @@ fn extract_chunks_from_ast(
         for cap in m.captures {
             if cap.index == chunk_idx {
                 chunk_node = Some(cap.node);
-            } else if cap.index == name_idx {
-                if let Ok(text) = cap.node.utf8_text(source) {
-                    name_text = text.to_string();
-                }
+            } else if cap.index == name_idx
+                && let Ok(text) = cap.node.utf8_text(source)
+            {
+                name_text = text.to_string();
             }
         }
 
-        let node = match chunk_node {
-            Some(n) => n,
-            None => continue,
+        let Some(node) = chunk_node else {
+            continue;
         };
         if name_text.is_empty() {
             continue;
@@ -499,17 +498,17 @@ fn extract_calls_from_ast(root: Node, source: &[u8]) -> Vec<Call> {
 
         if kind == "call_expression" || kind == "call" {
             // Extract the function name from the first named child.
-            if let Some(func) = node.child_by_field_name("function") {
-                if let Ok(name) = func.utf8_text(source) {
-                    let start_line = node.start_position().row as u32 + 1;
-                    calls.push(Call {
-                        callee_name: name.to_string(),
-                        enclosing_func_qn: String::new(), // will be filled in T8
-                        start_line,
-                        arg_count: 0,
-                        args: Vec::new(),
-                    });
-                }
+            if let Some(func) = node.child_by_field_name("function")
+                && let Ok(name) = func.utf8_text(source)
+            {
+                let start_line = node.start_position().row as u32 + 1;
+                calls.push(Call {
+                    callee_name: name.to_string(),
+                    enclosing_func_qn: String::new(), // will be filled in T8
+                    start_line,
+                    arg_count: 0,
+                    args: Vec::new(),
+                });
             }
         }
 
@@ -547,19 +546,17 @@ fn extract_imports_from_ast(root: Node, ext: &str, source: &[u8]) -> Vec<Import>
     loop {
         let node = cursor.node();
         let kind = node.kind();
-        let kind_matches = import_kinds.iter().any(|k| *k == kind);
+        let kind_matches = import_kinds.contains(&kind);
 
-        if kind_matches {
-            if let Ok(text) = node.utf8_text(source) {
-                let text = text.to_string();
-                // Use the first line or first 80 chars as the import descriptor.
-                let line = text.lines().next().unwrap_or(&text).to_string();
-                let desc = line.chars().take(80).collect::<String>();
-                imports.push(Import {
-                    local_name: desc.clone(),
-                    module_path: desc,
-                });
-            }
+        if kind_matches && let Ok(text) = node.utf8_text(source) {
+            let text = text.to_string();
+            // Use the first line or first 80 chars as the import descriptor.
+            let line = text.lines().next().unwrap_or(&text).to_string();
+            let desc = line.chars().take(80).collect::<String>();
+            imports.push(Import {
+                local_name: desc.clone(),
+                module_path: desc,
+            });
         }
 
         if cursor.goto_first_child() {
@@ -805,8 +802,7 @@ fn get_chunk_query(ext: &str) -> Option<&'static Query> {
     let cache = CHUNK_QUERY_CACHE.get_or_init(|| {
         let mut map = HashMap::new();
         let exts: &[&str] = &[
-            "rs", "ts", "tsx", "js", "jsx", "py", "go", "java", "c", "h", "cpp", "cc", "cxx",
-            "hpp",
+            "rs", "ts", "tsx", "js", "jsx", "py", "go", "java", "c", "h", "cpp", "cc", "cxx", "hpp",
         ];
         for &e in exts {
             if let (Some(lang), Some(src)) = (get_ts_language(e), get_chunk_query_source(e))
@@ -1120,6 +1116,7 @@ const CHUNK_QUERY_CPP: &str = r"
 
 /// Map a tree-sitter node kind to a `DefKind`.
 fn node_kind_to_defkind(kind: &str) -> DefKind {
+    #![allow(clippy::match_same_arms)]
     match kind {
         "function_item"
         | "function_declaration"
@@ -1151,10 +1148,7 @@ fn node_kind_to_defkind(kind: &str) -> DefKind {
         | "trait_declaration"
         | "trait_definition" => DefKind::Interface,
 
-        "enum_item"
-        | "enum_declaration"
-        | "enum_specifier"
-        | "enum_definition" => DefKind::Enum,
+        "enum_item" | "enum_declaration" | "enum_specifier" | "enum_definition" => DefKind::Enum,
 
         "variable_declarator"
         | "variable_statement"
@@ -1165,10 +1159,9 @@ fn node_kind_to_defkind(kind: &str) -> DefKind {
 
         "field_declaration" | "field_definition" => DefKind::Field,
 
-        "namespace_declaration"
-        | "namespace_definition"
-        | "module"
-        | "mixin_declaration" => DefKind::Module,
+        "namespace_declaration" | "namespace_definition" | "module" | "mixin_declaration" => {
+            DefKind::Module
+        }
 
         // Default for type_alias, type_spec, type_item, signal_statement, etc.
         _ => DefKind::Variable,
@@ -1177,6 +1170,7 @@ fn node_kind_to_defkind(kind: &str) -> DefKind {
 
 /// Map a signature kind string (from regex fallback) to a `DefKind`.
 fn sig_kind_to_defkind(kind: &str) -> DefKind {
+    #![allow(clippy::match_same_arms)]
     match kind {
         "fn" => DefKind::Function,
         "method" => DefKind::Method,
@@ -1212,15 +1206,17 @@ fn build_qualified_name(file_path: &str, name: &str) -> String {
     // Strip file extension from the path.
     let path = Path::new(file_path);
     // Use the full path without extension as the module path.
-    let without_ext = match path.extension().and_then(|e| path.to_str().and_then(|s| {
-        let ext_str = e.to_str()?;
-        s.strip_suffix(&format!(".{ext_str}"))
-    })) {
+    let without_ext = match path.extension().and_then(|e| {
+        path.to_str().and_then(|s| {
+            let ext_str = e.to_str()?;
+            s.strip_suffix(&format!(".{ext_str}"))
+        })
+    }) {
         Some(s) => s,
         None => file_path,
     };
     // Replace path separators with `::` for a Rust-style module path.
-    let module_path = without_ext.replace('/', "::").replace('\\', "::");
+    let module_path = without_ext.replace(['/', '\\'], "::");
     format!("{module_path}::{name}")
 }
 
@@ -1248,18 +1244,17 @@ fn has_export_modifier(node: &Node, source: &[u8]) -> bool {
     for i in 0..node.named_child_count() {
         let iu = i as u32;
         if let Some(child) = node.named_child(iu) {
-            if let Ok(text) = child.utf8_text(source) {
-                if text == "pub" || text == "export" || text == "export default" {
-                    return true;
-                }
+            if let Ok(text) = child.utf8_text(source)
+                && (text == "pub" || text == "export" || text == "export default")
+            {
+                return true;
             }
             let child_kind = child.kind();
-            if child_kind == "visibility_modifier" || child_kind == "modifier" {
-                if let Ok(text) = child.utf8_text(source) {
-                    if text.contains("pub") || text.contains("export") {
-                        return true;
-                    }
-                }
+            if (child_kind == "visibility_modifier" || child_kind == "modifier")
+                && let Ok(text) = child.utf8_text(source)
+                && (text.contains("pub") || text.contains("export"))
+            {
+                return true;
             }
         }
     }
@@ -1267,21 +1262,20 @@ fn has_export_modifier(node: &Node, source: &[u8]) -> bool {
     if let Some(parent) = node.parent() {
         for i in 0..parent.named_child_count() {
             let iu = i as u32;
-            if let Some(child) = parent.named_child(iu) {
-                if child.id() == node.id() {
-                    // Check any preceding siblings as modifiers.
-                    for j in 0..i {
-                        let ju = j as u32;
-                        if let Some(sibling) = parent.named_child(ju) {
-                            if let Ok(text) = sibling.utf8_text(source) {
-                                if text == "pub" || text == "export" {
-                                    return true;
-                                }
-                            }
-                        }
+            if let Some(child) = parent.named_child(iu)
+                && child.id() == node.id()
+            {
+                // Check any preceding siblings as modifiers.
+                for j in 0..i {
+                    let ju = j as u32;
+                    if let Some(sibling) = parent.named_child(ju)
+                        && let Ok(text) = sibling.utf8_text(source)
+                        && (text == "pub" || text == "export")
+                    {
+                        return true;
                     }
-                    break;
                 }
+                break;
             }
         }
     }
@@ -1303,7 +1297,6 @@ fn compute_content_hash(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::AtomicBool;
 
     /// Helper: create a `DiscoveredFile` for testing.
     fn make_file(rel_path: &str, size: u64) -> DiscoveredFile {
@@ -1322,11 +1315,7 @@ mod tests {
 
     /// Helper: run extraction on an in-memory string without filesystem.
     /// Returns the `ExtractedFile` for the single file.
-    fn extract_in_memory(
-        file_path: &str,
-        content: &str,
-        mode: IndexingMode,
-    ) -> ExtractedFile {
+    fn extract_in_memory(file_path: &str, content: &str, mode: IndexingMode) -> ExtractedFile {
         let ext = std::path::Path::new(file_path)
             .extension()
             .and_then(|e| e.to_str())
@@ -1355,14 +1344,16 @@ mod tests {
         let file_path = dir.path().join("test.rs");
         std::fs::write(&file_path, "fn hello() -> bool { true }").unwrap();
 
-        let files = vec![make_file(
-            file_path.to_str().unwrap(),
-            100,
-        )];
+        let files = vec![make_file(file_path.to_str().unwrap(), 100)];
 
         let extractor = ParallelExtractor::new(2);
         let output = extractor
-            .extract_all(&files, dir.path().to_str().unwrap(), IndexingMode::Full, None)
+            .extract_all(
+                &files,
+                dir.path().to_str().unwrap(),
+                IndexingMode::Full,
+                None,
+            )
             .unwrap();
 
         assert_eq!(output.extracted_files.len(), 1);
@@ -1388,7 +1379,12 @@ mod tests {
 
         let extractor = ParallelExtractor::new(4);
         let output = extractor
-            .extract_all(&files, dir.path().to_str().unwrap(), IndexingMode::Full, None)
+            .extract_all(
+                &files,
+                dir.path().to_str().unwrap(),
+                IndexingMode::Full,
+                None,
+            )
             .unwrap();
 
         assert_eq!(output.extracted_files.len(), 3);
@@ -1413,7 +1409,12 @@ mod tests {
 
         let extractor = ParallelExtractor::new(4);
         let output = extractor
-            .extract_all(&files, dir.path().to_str().unwrap(), IndexingMode::Full, Some(&token))
+            .extract_all(
+                &files,
+                dir.path().to_str().unwrap(),
+                IndexingMode::Full,
+                Some(&token),
+            )
             .unwrap();
 
         // May have partial result or be fully cancelled — either is fine.
@@ -1425,12 +1426,7 @@ mod tests {
         // Non-existent file → I/O error should propagate.
         let files = vec![make_file("/nonexistent/path.rs", 100)];
         let extractor = ParallelExtractor::new(2);
-        let result = extractor.extract_all(
-            &files,
-            "/nonexistent",
-            IndexingMode::Full,
-            None,
-        );
+        let result = extractor.extract_all(&files, "/nonexistent", IndexingMode::Full, None);
         assert!(result.is_err());
     }
 
@@ -1438,11 +1434,7 @@ mod tests {
 
     #[test]
     fn rust_function_extracted() {
-        let ef = extract_in_memory(
-            "test.rs",
-            "fn hello() -> bool { true }",
-            IndexingMode::Full,
-        );
+        let ef = extract_in_memory("test.rs", "fn hello() -> bool { true }", IndexingMode::Full);
         assert!(
             ef.defs.iter().any(|d| d.name == "hello"),
             "expected 'hello' in defs, got: {:?}",
@@ -1490,18 +1482,20 @@ mod tests {
     fn empty_body_no_minhash() {
         let ef = extract_in_memory("test.rs", "fn f() {}", IndexingMode::Full);
         let f = ef.defs.iter().find(|d| d.name == "f").unwrap();
-        assert!(f.minhash.is_none(), "short function should not have minhash");
+        assert!(
+            f.minhash.is_none(),
+            "short function should not have minhash"
+        );
     }
 
     #[test]
     fn parse_error_fallback_sets_flag() {
         // Truly unsupported extension → always uses regex fallback with error flag.
-        let ef = extract_in_memory(
-            "broken.xyz",
-            "fn hello() {}",
-            IndexingMode::Full,
+        let ef = extract_in_memory("broken.xyz", "fn hello() {}", IndexingMode::Full);
+        assert!(
+            ef.has_parse_error,
+            "unsupported ext should set has_parse_error"
         );
-        assert!(ef.has_parse_error, "unsupported ext should set has_parse_error");
         // Even with has_parse_error, fallback should still produce defs.
         assert!(
             !ef.defs.is_empty(),
@@ -1569,10 +1563,20 @@ mod tests {
 
         let extractor = ParallelExtractor::new(2);
         let out1 = extractor
-            .extract_all(&files, dir.path().to_str().unwrap(), IndexingMode::Full, None)
+            .extract_all(
+                &files,
+                dir.path().to_str().unwrap(),
+                IndexingMode::Full,
+                None,
+            )
             .unwrap();
         let out2 = extractor
-            .extract_all(&files, dir.path().to_str().unwrap(), IndexingMode::Full, None)
+            .extract_all(
+                &files,
+                dir.path().to_str().unwrap(),
+                IndexingMode::Full,
+                None,
+            )
             .unwrap();
 
         assert_eq!(out1.extracted_files.len(), out2.extracted_files.len());
@@ -1590,7 +1594,7 @@ mod tests {
 
     #[test]
     fn file_sorting_by_descending_size() {
-        let mut files = vec![
+        let mut files = [
             make_file("small.rs", 10),
             make_file("large.rs", 1000),
             make_file("medium.rs", 100),
@@ -1598,7 +1602,7 @@ mod tests {
 
         // The sort is internal to extract_all, but we verify sort_unstable_by
         // logic directly.
-        files.sort_unstable_by(|a, b| b.size.cmp(&a.size));
+        files.sort_unstable_by_key(|b| std::cmp::Reverse(b.size));
         assert_eq!(files[0].rel_path, "large.rs");
         assert_eq!(files[1].rel_path, "medium.rs");
         assert_eq!(files[2].rel_path, "small.rs");
@@ -1615,7 +1619,12 @@ mod tests {
 
         let extractor = ParallelExtractor::new(2);
         let output = extractor
-            .extract_all(&files, dir.path().to_str().unwrap(), IndexingMode::Full, None)
+            .extract_all(
+                &files,
+                dir.path().to_str().unwrap(),
+                IndexingMode::Full,
+                None,
+            )
             .unwrap();
 
         // The merged graph should have at least one node (the function def).
@@ -1649,10 +1658,7 @@ mod tests {
     #[test]
     fn test_file_detection() {
         let ef = extract_in_memory("test_module.rs", "fn test_stuff() {}", IndexingMode::Full);
-        assert!(
-            ef.is_test_file,
-            "path containing 'test' should be flagged"
-        );
+        assert!(ef.is_test_file, "path containing 'test' should be flagged");
     }
 
     #[test]

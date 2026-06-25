@@ -1,6 +1,7 @@
 //! Tests for the BM25 index. Extracted from `bm25_index/mod.rs`;
 //! `super::*` resolves to the `bm25_index` module.
 
+use super::chunking::{detect_symbol, split_camel_case_tokens};
 use super::*;
 use crate::core::index_types;
 use tempfile::tempdir;

@@ -16,8 +16,8 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use fs2::FileExt;
 
@@ -97,6 +97,7 @@ impl PipelineLock {
 
         let file = std::fs::OpenOptions::new()
             .create(true)
+            .truncate(false) // must read stale PID before overwriting
             .read(true)
             .write(true)
             .open(&lock_file)?;
@@ -109,9 +110,10 @@ impl PipelineLock {
         // us trample our own lock.  Guard against this by checking the PID
         // recorded in the lock file before trying the flock.
         if let Ok(contents) = std::fs::read_to_string(&lock_file)
-            && contents.trim().parse::<u32>().ok() == Some(my_pid) {
-                return Err(PipelineLockError::AlreadyLocked(Some(my_pid)));
-            }
+            && contents.trim().parse::<u32>().ok() == Some(my_pid)
+        {
+            return Err(PipelineLockError::AlreadyLocked(Some(my_pid)));
+        }
 
         // ── Acquire exclusive lock ──────────────────────────────
         if let Ok(()) = file.try_lock_exclusive() {
@@ -127,16 +129,18 @@ impl PipelineLock {
                 .and_then(|s| s.trim().parse::<u32>().ok());
 
             if let Some(pid) = holder_pid
-                && pid != my_pid && !is_pid_alive(pid) {
-                    // Stale lock: OS already released the flock.  Retry.
-                    if let Ok(()) = file.try_lock_exclusive() {
-                        Self::write_pid(&file, my_pid)?;
-                        return Ok(Self {
-                            _lock_file: lock_file,
-                            file: Some(file),
-                        });
-                    }
+                && pid != my_pid
+                && !is_pid_alive(pid)
+            {
+                // Stale lock: OS already released the flock.  Retry.
+                if let Ok(()) = file.try_lock_exclusive() {
+                    Self::write_pid(&file, my_pid)?;
+                    return Ok(Self {
+                        _lock_file: lock_file,
+                        file: Some(file),
+                    });
                 }
+            }
 
             Err(PipelineLockError::AlreadyLocked(holder_pid))
         }
@@ -171,6 +175,9 @@ fn is_pid_alive(pid: u32) -> bool {
         return false;
     }
     // POSIX: kill(pid, 0) returns 0 if process exists, -1 + ESRCH if not.
+    // SAFETY: `libc::kill` with signal 0 is safe when `pid` is a valid i32.
+    // PID 0 was already filtered above, and real PIDs fit in i32 on all Unix
+    // platforms.
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
@@ -273,10 +280,7 @@ mod tests {
 
         // Now acquire — should succeed because PID 57005 is unlikely to exist.
         let lock = PipelineLock::try_acquire(dir.path());
-        assert!(
-            lock.is_ok(),
-            "stale PID should be overridden: {lock:?}"
-        );
+        assert!(lock.is_ok(), "stale PID should be overridden: {lock:?}");
     }
 
     // ── CancelToken ──

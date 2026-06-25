@@ -30,10 +30,11 @@
 //! the caller must still serialise all dump calls.
 
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 use crate::core::bm25_index::BM25Index;
 use crate::core::graph_buffer::GraphBuffer;
@@ -406,8 +407,8 @@ impl DumpEngine {
         for batch in nodes.chunks(BATCH_SIZE) {
             let tx = conn.unchecked_transaction()?;
             for node in batch {
-                let props_json = serde_json::to_string(&node.properties)
-                    .context("serialize node properties")?;
+                let props_json =
+                    serde_json::to_string(&node.properties).context("serialize node properties")?;
                 stmt.execute(params![
                     node.id.0 as i64,
                     node.label,
@@ -439,8 +440,8 @@ impl DumpEngine {
         for batch in edges.chunks(BATCH_SIZE) {
             let tx = conn.unchecked_transaction()?;
             for edge in batch {
-                let props_json = serde_json::to_string(&edge.properties)
-                    .context("serialize edge properties")?;
+                let props_json =
+                    serde_json::to_string(&edge.properties).context("serialize edge properties")?;
                 stmt.execute(params![
                     edge.id.0 as i64,
                     edge.source_id.0 as i64,
@@ -573,12 +574,10 @@ impl DumpEngine {
                     if sym.is_exported { "true" } else { "false" }.to_string(),
                 );
                 if !sym.minhash.is_empty() {
-                    let mh_str = sym
-                        .minhash
-                        .iter()
-                        .map(|v| format!("{v:08x}"))
-                        .collect::<Vec<_>>()
-                        .join("");
+                    let mut mh_str = String::with_capacity(sym.minhash.len() * 8);
+                    for v in &sym.minhash {
+                        let _ = write!(mh_str, "{v:08x}");
+                    }
                     props.insert("minhash".to_string(), mh_str);
                 }
                 let props_json =
@@ -690,42 +689,47 @@ fn load_graph_index(root: &Path) -> Option<ProjectIndex> {
     // Load files table
     if let Ok(mut stmt) = conn.prepare(
         "SELECT path, hash, language, line_count, token_count, exports, summary FROM files",
-    ) {
-        if let Ok(rows) = stmt.query_map([], |row| {
-            let path: String = row.get(0)?;
-            let hash: String = row.get(1)?;
-            let language: String = row.get(2)?;
-            let line_count: i64 = row.get(3)?;
-            let token_count: i64 = row.get(4)?;
-            let exports_json: String = row.get(5)?;
-            let summary: String = row.get(6)?;
-            let exports: Vec<String> =
-                serde_json::from_str(&exports_json).unwrap_or_default();
-            Ok((path, hash, language, line_count, token_count, exports, summary))
-        }) {
-            for row in rows.flatten() {
-                let (path, hash, language, line_count, token_count, exports, summary) = row;
-                idx.files.insert(
-                    path.clone(),
-                    FileEntry {
-                        path,
-                        hash,
-                        language,
-                        line_count: line_count as usize,
-                        token_count: token_count as usize,
-                        exports,
-                        summary,
-                    },
-                );
-            }
+    ) && let Ok(rows) = stmt.query_map([], |row| {
+        let path: String = row.get(0)?;
+        let hash: String = row.get(1)?;
+        let language: String = row.get(2)?;
+        let line_count: i64 = row.get(3)?;
+        let token_count: i64 = row.get(4)?;
+        let exports_json: String = row.get(5)?;
+        let summary: String = row.get(6)?;
+        let exports: Vec<String> = serde_json::from_str(&exports_json).unwrap_or_default();
+        Ok((
+            path,
+            hash,
+            language,
+            line_count,
+            token_count,
+            exports,
+            summary,
+        ))
+    }) {
+        for row in rows.flatten() {
+            let (path, hash, language, line_count, token_count, exports, summary) = row;
+            idx.files.insert(
+                path.clone(),
+                FileEntry {
+                    path,
+                    hash,
+                    language,
+                    line_count: line_count as usize,
+                    token_count: token_count as usize,
+                    exports,
+                    summary,
+                },
+            );
         }
     }
 
     // Load node rows as SymbolEntries
     if let Ok(mut stmt) = conn.prepare(
         "SELECT id, label, name, qualified_name, file_path, start_line, end_line, properties FROM nodes",
-    ) {
-        if let Ok(rows) = stmt.query_map([], |row| {
+    )
+        && let Ok(rows) = stmt.query_map([], |row| {
             let _id: i64 = row.get(0)?;
             let label: String = row.get(1)?;
             let name: String = row.get(2)?;
@@ -740,7 +744,7 @@ fn load_graph_index(root: &Path) -> Option<ProjectIndex> {
                 let (label, name, qn, file, start_line, end_line, props_json) = row;
                 let props: HashMap<String, String> =
                     serde_json::from_str(&props_json).unwrap_or_default();
-                let is_exported = props.get("is_exported").map_or(false, |v| v == "true");
+                let is_exported = props.get("is_exported").is_some_and(|v| v == "true");
                 let minhash = props
                     .get("minhash")
                     .map(|s| {
@@ -768,7 +772,6 @@ fn load_graph_index(root: &Path) -> Option<ProjectIndex> {
                 );
             }
         }
-    }
 
     // Load edge rows as IndexEdges
     if let Ok(mut stmt) = conn.prepare(
@@ -778,24 +781,22 @@ fn load_graph_index(root: &Path) -> Option<ProjectIndex> {
          FROM edges e
          JOIN nodes sn ON sn.id = e.source_id
          JOIN nodes tn ON tn.id = e.target_id",
-    ) {
-        if let Ok(rows) = stmt.query_map([], |row| {
-            let _id: i64 = row.get(0)?;
-            let _src: i64 = row.get(1)?;
-            let _tgt: i64 = row.get(2)?;
-            let kind: String = row.get(3)?;
-            let src_qn: String = row.get(4)?;
-            let tgt_qn: String = row.get(5)?;
-            Ok(IndexEdge {
-                from: src_qn,
-                to: tgt_qn,
-                kind,
-                weight: 1.0,
-            })
-        }) {
-            for row in rows.flatten() {
-                idx.edges.push(row);
-            }
+    ) && let Ok(rows) = stmt.query_map([], |row| {
+        let _id: i64 = row.get(0)?;
+        let _src: i64 = row.get(1)?;
+        let _tgt: i64 = row.get(2)?;
+        let kind: String = row.get(3)?;
+        let src_qn: String = row.get(4)?;
+        let tgt_qn: String = row.get(5)?;
+        Ok(IndexEdge {
+            from: src_qn,
+            to: tgt_qn,
+            kind,
+            weight: 1.0,
+        })
+    }) {
+        for row in rows.flatten() {
+            idx.edges.push(row);
         }
     }
 
@@ -838,9 +839,8 @@ fn load_bm25_index(root: &Path) -> Option<BM25Index> {
             Ok(crate::core::bm25_index::CodeChunk {
                 file_path,
                 symbol_name,
-                kind: serde_json::from_str(&kind_str).unwrap_or(
-                    crate::core::bm25_index::ChunkKind::Other,
-                ),
+                kind: serde_json::from_str(&kind_str)
+                    .unwrap_or(crate::core::bm25_index::ChunkKind::Other),
                 start_line: start_line as usize,
                 end_line: end_line as usize,
                 content,
@@ -1145,17 +1145,23 @@ mod tests {
             ids
         };
         if nodes.len() >= 2 {
-            gbuf.insert_edge(nodes[0], nodes[1], "calls", std::collections::HashMap::new());
+            gbuf.insert_edge(
+                nodes[0],
+                nodes[1],
+                "calls",
+                std::collections::HashMap::new(),
+            );
         }
 
         let engine = DumpEngine::new(root.path().to_path_buf());
-        engine
-            .dump_all(&gbuf, &sample_code_chunks())
-            .unwrap();
+        engine.dump_all(&gbuf, &sample_code_chunks()).unwrap();
 
         let db_path = engine.db_path();
         assert!(db_path.exists(), "code_index.db should exist");
-        assert!(db_path.metadata().unwrap().len() > 0, "db should not be empty");
+        assert!(
+            db_path.metadata().unwrap().len() > 0,
+            "db should not be empty"
+        );
     }
 
     #[test]
@@ -1170,7 +1176,12 @@ mod tests {
             ids
         };
         if nodes.len() >= 2 {
-            gbuf.insert_edge(nodes[0], nodes[1], "calls", std::collections::HashMap::new());
+            gbuf.insert_edge(
+                nodes[0],
+                nodes[1],
+                "calls",
+                std::collections::HashMap::new(),
+            );
         }
 
         let engine = DumpEngine::new(root.path().to_path_buf());
@@ -1308,9 +1319,7 @@ mod tests {
         let dir = index_namespace::vectors_dir(root.path());
         // Ensure no .tmp files linger (our new dump doesn't use .tmp, but
         // cleanup_tmp_files should be a no-op)
-        assert!(
-            !dir.join("code_index.db.tmp").exists()
-        );
+        assert!(!dir.join("code_index.db.tmp").exists());
         // Also no legacy .tmp files
         assert!(!dir.join("project_index.bin.zst.tmp").exists());
     }
@@ -1368,10 +1377,7 @@ mod tests {
         );
 
         // An empty BM25 index has no chunks → load returns None
-        assert!(
-            bm25.is_none(),
-            "empty BM25 (no chunks) should return None"
-        );
+        assert!(bm25.is_none(), "empty BM25 (no chunks) should return None");
     }
 
     #[test]

@@ -34,12 +34,12 @@ use crate::core::graph_index::ProjectIndex;
 use crate::core::index_pipeline::discovery::{DiscoveredFile, DiscoveryConfig, discover_files};
 use crate::core::index_pipeline::dump_engine::DumpEngine;
 use crate::core::index_pipeline::parallel_extract::ParallelExtractor;
-use crate::core::index_pipeline::parallel_resolve::parallel_resolve;
+use crate::core::index_pipeline::parallel_resolve::serial_resolve;
 use crate::core::index_pipeline::registry_build::build_registry;
 use crate::core::index_pipeline::similarity_pass;
 use crate::core::index_pipeline::structure_pass::build_structure;
+use crate::core::pipeline_lock::CancelToken;
 use crate::core::pipeline_lock::PipelineLock;
-use crate::core::thread_pool::CancelToken;
 
 // ---------------------------------------------------------------------------
 // PipelineReport
@@ -194,9 +194,8 @@ impl PipelineHandle {
             mode: self.mode,
             max_file_size: self.max_file_size,
         };
-        let files: Vec<DiscoveredFile> =
-            discover_files(&self.project_root, &discovery_config)
-                .context("file discovery failed")?;
+        let files: Vec<DiscoveredFile> = discover_files(&self.project_root, &discovery_config)
+            .context("file discovery failed")?;
         let files_scanned = files.len();
 
         // ── ③ Phase 1: Build structure (Project → Folder → File) ────────────
@@ -223,7 +222,7 @@ impl PipelineHandle {
         cancel_check(&cancel, "Phase 3B (registry)")?;
 
         // ── ⑥ Phase 4: Parallel resolution ──────────────────────────────────
-        parallel_resolve(&extracted_files, &registry, &mut gbuf)
+        serial_resolve(&extracted_files, &registry, &mut gbuf)
             .context("parallel resolution failed")?;
         cancel_check(&cancel, "Phase 4 (resolution)")?;
 
@@ -477,10 +476,7 @@ mod tests {
 
         // Pipeline should fail to acquire the lock.
         let result = handle.run();
-        assert!(
-            result.is_err(),
-            "pipeline should fail when lock is held"
-        );
+        assert!(result.is_err(), "pipeline should fail when lock is held");
     }
 
     // ---------------------------------------------------------------
@@ -498,10 +494,7 @@ mod tests {
             .build()
             .unwrap();
         let report = handle.run().unwrap();
-        assert!(
-            report.files_scanned >= 2,
-            "FAST should discover src/ files"
-        );
+        assert!(report.files_scanned >= 2, "FAST should discover src/ files");
     }
 
     // ---------------------------------------------------------------

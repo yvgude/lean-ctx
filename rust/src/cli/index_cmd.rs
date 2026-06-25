@@ -32,11 +32,7 @@ pub(crate) fn cmd_index(args: &[String]) {
                 eprintln!("purging old index artifacts for full rebuild ...");
                 // New pipeline: remove the unified SQLite database
                 let vectors_dir = crate::core::index_namespace::vectors_dir(root);
-                for name in &[
-                    "code_index.db",
-                    "code_index.db-wal",
-                    "code_index.db-shm",
-                ] {
+                for name in &["code_index.db", "code_index.db-wal", "code_index.db-shm"] {
                     let p = vectors_dir.join(name);
                     if p.exists() {
                         let _ = std::fs::remove_file(&p);

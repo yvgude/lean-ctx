@@ -25,6 +25,8 @@ use std::thread;
 
 use anyhow::{Error, Result};
 
+use crate::core::pipeline_lock::CancelToken;
+
 // ---------------------------------------------------------------------------
 // Constants (matching C's PP_BACKPRESSURE_{MAX_SPINS,NAP_NS})
 // ---------------------------------------------------------------------------
@@ -37,40 +39,6 @@ const BP_NAP_MS: u64 = 3;
 
 /// Stack size per worker thread (8 MB — matches C `CBM_WORKER_STACK_SIZE`).
 const WORKER_STACK_SIZE: usize = 8 * 1024 * 1024;
-
-// ---------------------------------------------------------------------------
-// CancelToken
-// ---------------------------------------------------------------------------
-
-/// A lightweight cancellation flag shared across worker threads.
-///
-/// TODO(T4): move to `pipeline_lock.rs` once that module is created — the
-/// canonical path will become `crate::core::pipeline_lock::CancelToken`.
-#[derive(Debug, Default, Clone)]
-pub struct CancelToken {
-    cancelled: Arc<AtomicBool>,
-}
-
-impl CancelToken {
-    /// Create a new, un-cancelled token.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            cancelled: Arc::new(AtomicBool::new(false)),
-        }
-    }
-
-    /// Returns `true` if cancellation has been requested.
-    #[must_use]
-    pub fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::Relaxed)
-    }
-
-    /// Request cancellation. May be called from any thread.
-    pub fn cancel(&self) {
-        self.cancelled.store(true, Ordering::Relaxed);
-    }
-}
 
 // ---------------------------------------------------------------------------
 // ThreadPool
@@ -271,7 +239,9 @@ impl ThreadPool {
             match h.join() {
                 Ok(()) => {}
                 Err(panic_payload) => {
-                    let mut slot = error.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                    let mut slot = error
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     if slot.is_none() {
                         let msg = downcast_panic_msg(&panic_payload, "worker thread panicked");
                         *slot = Some(Error::msg(msg));
@@ -282,7 +252,9 @@ impl ThreadPool {
         }
 
         // Drain the first error, if any.
-        let mut slot = error.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut slot = error
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(err) = slot.take() {
             return Err(err);
         }
@@ -291,7 +263,7 @@ impl ThreadPool {
     }
 
     /// Serial fallback: run all iterations on the calling thread.
-    #[allow(unused_variables)]
+    #[allow(unused_variables, clippy::unused_self)]
     fn run_serial<F>(
         &self,
         count: usize,
@@ -307,7 +279,7 @@ impl ThreadPool {
                 break;
             }
             if rss_budget_mb > 0 {
-                let _ = apply_backpressure(rss_budget_mb, cancel);
+                apply_backpressure(rss_budget_mb, cancel);
             }
             f(i)?;
         }
@@ -338,9 +310,10 @@ fn worker_loop<F>(
             return;
         }
         if let Some(ct) = cancel
-            && ct.is_cancelled() {
-                return;
-            }
+            && ct.is_cancelled()
+        {
+            return;
+        }
 
         let idx = next_idx.fetch_add(1, Ordering::Relaxed);
         if idx >= count {
@@ -348,14 +321,15 @@ fn worker_loop<F>(
         }
 
         if rss_budget_mb > 0 {
-            let _ = apply_backpressure(rss_budget_mb, cancel);
+            apply_backpressure(rss_budget_mb, cancel);
             if cancelled.load(Ordering::Relaxed) {
                 return;
             }
             if let Some(ct) = cancel
-                && ct.is_cancelled() {
-                    return;
-                }
+                && ct.is_cancelled()
+            {
+                return;
+            }
         }
 
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(idx))) {
@@ -400,9 +374,10 @@ fn worker_loop_inline<F>(
             return;
         }
         if let Some(ct) = cancel
-            && ct.is_cancelled() {
-                return;
-            }
+            && ct.is_cancelled()
+        {
+            return;
+        }
 
         let idx = next_idx.fetch_add(1, Ordering::Relaxed);
         if idx >= count {
@@ -410,14 +385,15 @@ fn worker_loop_inline<F>(
         }
 
         if rss_budget_mb > 0 {
-            let _ = apply_backpressure(rss_budget_mb, cancel);
+            apply_backpressure(rss_budget_mb, cancel);
             if cancelled.load(Ordering::Relaxed) {
                 return;
             }
             if let Some(ct) = cancel
-                && ct.is_cancelled() {
-                    return;
-                }
+                && ct.is_cancelled()
+            {
+                return;
+            }
         }
 
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(idx))) {
@@ -516,20 +492,20 @@ fn get_rss_bytes() -> Option<u64> {
 /// Apply back-pressure: if RSS exceeds `budget_mb`, sleep and retry up to
 /// [`BP_MAX_SPINS`] times. Returns `Ok(())` when RSS is under budget or
 /// after the max spin count has been exhausted (soft overshoot, like C).
-fn apply_backpressure(budget_mb: u64, cancel: Option<&CancelToken>) -> Result<()> {
+fn apply_backpressure(budget_mb: u64, cancel: Option<&CancelToken>) {
     for _spin in 0..BP_MAX_SPINS {
         let rss_bytes = get_rss_bytes().unwrap_or(0);
         let budget_bytes = budget_mb.saturating_mul(1024 * 1024);
         if rss_bytes <= budget_bytes {
-            return Ok(());
+            return;
         }
         if let Some(ct) = cancel
-            && ct.is_cancelled() {
-                return Ok(());
-            }
+            && ct.is_cancelled()
+        {
+            return;
+        }
         thread::sleep(std::time::Duration::from_millis(BP_NAP_MS));
     }
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -548,13 +524,17 @@ mod tests {
 
         let v_clone = Arc::clone(&visited);
         pool.parallel_for(100, move |i| {
-            let mut v = v_clone.lock().unwrap_or_else(|p| p.into_inner());
+            let mut v = v_clone
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             v[i] = true;
             Ok(())
         })
         .unwrap();
 
-        let v = visited.lock().unwrap_or_else(|p| p.into_inner());
+        let v = visited
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         for (i, &was_visited) in v.iter().enumerate() {
             assert!(was_visited, "index {i} was never visited");
         }
@@ -566,7 +546,7 @@ mod tests {
         let counter: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
         let c_clone = Arc::clone(&counter);
 
-        pool.parallel_for(50, move |i| {
+        pool.parallel_for(50, move |_i| {
             c_clone.fetch_add(1, Ordering::Relaxed);
             Ok(())
         })
@@ -666,13 +646,17 @@ mod tests {
         let disp = Arc::clone(&dispatch_order);
 
         pool.parallel_for_sorted(&sizes, move |orig_idx| {
-            let mut order = disp.lock().unwrap_or_else(|p| p.into_inner());
+            let mut order = disp
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             order.push(orig_idx);
             Ok(())
         })
         .unwrap();
 
-        let order = dispatch_order.lock().unwrap_or_else(|p| p.into_inner());
+        let order = dispatch_order
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(&*order, &vec![4, 5, 1, 2, 3, 0]);
     }
 
@@ -689,9 +673,7 @@ mod tests {
     fn test_panic_caught_as_error() {
         let pool = ThreadPool::new(2);
         let result = pool.parallel_for(10, move |i| {
-            if i == 3 {
-                panic!("intentional panic at {i}");
-            }
+            assert!(i != 3, "intentional panic at {i}");
             Ok(())
         });
 
@@ -708,7 +690,7 @@ mod tests {
 
         pool.parallel_for_with_backpressure(
             20,
-            move |i| {
+            move |_i| {
                 c.fetch_add(1, Ordering::Relaxed);
                 Ok(())
             },

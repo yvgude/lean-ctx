@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use super::edges::build_edges_cached;
 use super::*;
 use tempfile::tempdir;
 

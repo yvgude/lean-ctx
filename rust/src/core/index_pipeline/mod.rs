@@ -1,6 +1,5 @@
 pub mod discovery;
 pub mod dump_engine;
-pub mod file_metadata_store;
 pub mod parallel_extract;
 pub mod parallel_resolve;
 pub mod pipeline;

@@ -15,6 +15,7 @@ pub(crate) fn extract_sfc_signatures(content: &str) -> Option<Vec<Signature>> {
     Some(sigs)
 }
 
+#[allow(dead_code)]
 pub(crate) fn extract_script_block(content: &str) -> Option<String> {
     extract_script_block_with_offset(content).map(|(script, _)| script)
 }

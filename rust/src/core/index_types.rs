@@ -17,7 +17,7 @@ use std::collections::HashMap;
 // ---------------------------------------------------------------------------
 
 /// Opaque identifier for a graph node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NodeId(pub u32);
 
 /// Opaque identifier for a graph edge.

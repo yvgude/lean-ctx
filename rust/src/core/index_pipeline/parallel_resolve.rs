@@ -1,4 +1,10 @@
-//! Phase 4: Parallel resolution — create CALLS, USAGES, THROWS, CHANNEL edges.
+//! Phase 4: Serial resolution — create CALLS, USAGES, THROWS, CHANNEL edges.
+//!
+//! This is a serial pass (no ThreadPool) because all resolution functions
+//! take `&mut GraphBuffer` which prevents parallel access.  The C reference
+//! achieves parallel resolution through a different architecture (atomic
+//! shared IDs + per-worker edge buffers); the Rust GraphBuffer API
+//! currently requires exclusive access.
 //!
 //! Consumes cached [`ExtractedFile`] results and resolves each call, usage,
 //! throw, and channel into graph edges by looking up target symbols in the
@@ -36,7 +42,7 @@ use anyhow::Result;
 
 use crate::core::graph_buffer::GraphBuffer;
 use crate::core::index_pipeline::registry_build::Registry;
-use crate::core::index_types::*;
+use crate::core::index_types::{ExtractedFile, NodeId};
 
 /// Resolve calls, usages, throws, and channels from cached extracted files.
 ///
@@ -54,7 +60,7 @@ use crate::core::index_types::*;
 /// # Edge types produced
 ///
 /// See [module-level documentation](self) for the complete table.
-pub fn parallel_resolve(
+pub fn serial_resolve(
     extracted_files: &[ExtractedFile],
     registry: &Registry,
     gbuf: &mut GraphBuffer,
@@ -75,9 +81,7 @@ fn process_file(ef: &ExtractedFile, registry: &Registry, gbuf: &mut GraphBuffer)
     // ── CALLS edges ────────────────────────────────────────────────
     for call in &ef.calls {
         // Extract src_id (Copy) before any gbuf closure borrow.
-        let src_id = gbuf
-            .find_by_qn(&call.enclosing_func_qn)
-            .map(|n| n.id);
+        let src_id = gbuf.find_by_qn(&call.enclosing_func_qn).map(|n| n.id);
         if let Some(sid) = src_id {
             let targets: Vec<NodeId> = registry
                 .lookup(&call.callee_name)
@@ -96,9 +100,7 @@ fn process_file(ef: &ExtractedFile, registry: &Registry, gbuf: &mut GraphBuffer)
 
     // ── USAGE edges ────────────────────────────────────────────────
     for usage in &ef.usages {
-        let src_id = gbuf
-            .find_by_qn(&usage.enclosing_func_qn)
-            .map(|n| n.id);
+        let src_id = gbuf.find_by_qn(&usage.enclosing_func_qn).map(|n| n.id);
         if let Some(sid) = src_id {
             let targets: Vec<NodeId> = registry
                 .lookup(&usage.ref_name)
@@ -115,9 +117,7 @@ fn process_file(ef: &ExtractedFile, registry: &Registry, gbuf: &mut GraphBuffer)
 
     // ── THROWS edges ───────────────────────────────────────────────
     for throw in &ef.throws {
-        let src_id = gbuf
-            .find_by_qn(&throw.enclosing_func_qn)
-            .map(|n| n.id);
+        let src_id = gbuf.find_by_qn(&throw.enclosing_func_qn).map(|n| n.id);
         if let Some(sid) = src_id {
             let targets: Vec<NodeId> = registry
                 .lookup(&throw.exception_name)
@@ -134,9 +134,7 @@ fn process_file(ef: &ExtractedFile, registry: &Registry, gbuf: &mut GraphBuffer)
 
     // ── CHANNEL edges ──────────────────────────────────────────────
     for channel in &ef.channels {
-        let src_id = gbuf
-            .find_by_qn(&channel.enclosing_func_qn)
-            .map(|n| n.id);
+        let src_id = gbuf.find_by_qn(&channel.enclosing_func_qn).map(|n| n.id);
         if let Some(sid) = src_id {
             let channel_qn = format!("__channel__::{}", channel.channel_name);
             let ch_id = gbuf.upsert_node(
@@ -165,6 +163,7 @@ fn process_file(ef: &ExtractedFile, registry: &Registry, gbuf: &mut GraphBuffer)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::index_types::{Call, Channel, DefKind, Definition};
 
     // ── Test helpers ──────────────────────────────────────────────
 
@@ -208,7 +207,7 @@ mod tests {
     fn empty_files_no_edges() {
         let mut g = GraphBuffer::new("t");
         let r = Registry::new();
-        parallel_resolve(&[], &r, &mut g).unwrap();
+        serial_resolve(&[], &r, &mut g).unwrap();
         assert_eq!(g.edge_count(), 0);
     }
 
@@ -257,7 +256,7 @@ mod tests {
             is_test_file: false,
             has_parse_error: false,
         };
-        parallel_resolve(&[ef], &r, &mut g).unwrap();
+        serial_resolve(&[ef], &r, &mut g).unwrap();
         assert_eq!(g.edge_count(), 1);
     }
 
@@ -286,7 +285,7 @@ mod tests {
             is_test_file: false,
             has_parse_error: false,
         };
-        parallel_resolve(&[ef], &r, &mut g).unwrap();
+        serial_resolve(&[ef], &r, &mut g).unwrap();
         assert_eq!(g.edge_count(), 0);
     }
 
@@ -321,7 +320,7 @@ mod tests {
             is_test_file: false,
             has_parse_error: false,
         };
-        parallel_resolve(&[ef], &r, &mut g).unwrap();
+        serial_resolve(&[ef], &r, &mut g).unwrap();
         assert_eq!(g.edge_count(), 1);
         assert!(
             g.find_by_qn("__channel__::events").is_some(),
