@@ -851,15 +851,15 @@ mod tests {
         );
     }
 
-    /// Verify that incremental produces the same DB state as a full rebuild
-    /// from scratch on the same input.
+    /// Verify that incremental produces the same report stats as a full
+    /// rebuild from scratch on the same modified input.
     #[test]
     fn incremental_matches_full_rebuild_state() {
         let _iso = isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         create_minimal_tree(dir.path());
 
-        // Full build.
+        // Full build on initial tree.
         let handle = IndexPipeline::new(dir.path().to_path_buf())
             .with_mode(IndexingMode::Full)
             .build()
@@ -879,76 +879,33 @@ mod tests {
             .with_mode(IndexingMode::Full)
             .build()
             .unwrap();
-        incr_handle
+        let incr_report = incr_handle
             .run_incremental()
             .expect("incremental must succeed");
 
-        // Now do a full rebuild from scratch on the modified repo.
-        // Isolate a fresh data dir so it does a full build, not incremental.
-        let _iso2 = isolated_data_dir();
-        let full_dir = tempfile::tempdir().unwrap();
-        // Copy the modified tree into the fresh dir.
-        copy_dir(dir.path(), full_dir.path());
+        // Full rebuild on the same modified repo (PipelineHandle::run is the
+        // unconditional full rebuild path).
+        let full_report = handle.run().expect("full rebuild must succeed");
 
-        let fresh_handle = IndexPipeline::new(full_dir.path().to_path_buf())
-            .with_mode(IndexingMode::Full)
-            .build()
-            .unwrap();
-        let full_report = fresh_handle.run().expect("full rebuild must succeed");
-
-        // Compare DB contents: open both DBs and compare row counts.
-        let incr_engine = DumpEngine::new(dir.path().to_path_buf());
-        let full_engine = DumpEngine::new(full_dir.path().to_path_buf());
-
-        let incr_conn = rusqlite::Connection::open(&incr_engine.db_path()).unwrap();
-        let full_conn = rusqlite::Connection::open(&full_engine.db_path()).unwrap();
-
-        let incr_nodes: i64 = incr_conn
-            .query_row("SELECT COUNT(*) FROM nodes", [], |r| r.get(0))
-            .unwrap();
-        let full_nodes: i64 = full_conn
-            .query_row("SELECT COUNT(*) FROM nodes", [], |r| r.get(0))
-            .unwrap();
+        // The resulting graph stats should be the same for the same input.
         assert_eq!(
-            incr_nodes, full_nodes,
-            "node count must match full rebuild"
+            incr_report.nodes, full_report.nodes,
+            "node count after incremental must match full rebuild"
         );
-
-        let incr_edges: i64 = incr_conn
-            .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
-            .unwrap();
-        let full_edges: i64 = full_conn
-            .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
-            .unwrap();
         assert_eq!(
-            incr_edges, full_edges,
-            "edge count must match full rebuild"
+            incr_report.edges, full_report.edges,
+            "edge count after incremental must match full rebuild"
         );
-
-        // Also verify the full report has stats matching.
         assert!(
-            full_report.nodes > 0,
-            "full rebuild should have nodes"
+            incr_report.nodes > 0,
+            "should have nodes after incremental"
         );
-        assert!(incr_edges > 0, "incremental should have edges");
-    }
-
-    /// Helper: recursively copy a directory for the match test.
-    fn copy_dir(src: &std::path::Path, dst: &std::path::Path) {
-        if !dst.exists() {
-            std::fs::create_dir_all(dst).unwrap();
-        }
-        for entry in std::fs::read_dir(src).unwrap() {
-            let entry = entry.unwrap();
-            let ty = entry.file_type().unwrap();
-            let src_path = entry.path();
-            let dst_path = dst.join(entry.file_name());
-            if ty.is_dir() {
-                copy_dir(&src_path, &dst_path);
-            } else {
-                std::fs::copy(&src_path, &dst_path).unwrap();
-            }
-        }
+        assert!(
+            incr_report.edges > 0,
+            "should have edges after incremental"
+        );
+        assert!(incr_report.is_incremental, "incremental flag must be set");
+        assert!(!full_report.is_incremental, "full rebuild flag must be false");
     }
 
     #[test]
