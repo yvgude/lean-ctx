@@ -1,4 +1,4 @@
-//! Alembic (SQLAlchemy migrations) output compression.
+//! Alembic (`SQLAlchemy` migrations) output compression.
 //!
 //! `alembic upgrade`/`downgrade` log each step as
 //! `INFO  [alembic.runtime.migration] Running upgrade <from> -> <to>, <msg>`
@@ -8,6 +8,7 @@
 
 use crate::core::compressor::strip_ansi;
 
+#[must_use]
 pub fn compress(_cmd: &str, output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {

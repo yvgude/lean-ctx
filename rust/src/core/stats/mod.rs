@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;
 
-/// (current_state, baseline_from_disk, last_flush_time)
+/// (`current_state`, `baseline_from_disk`, `last_flush_time`)
 static STATS_BUFFER: Mutex<Option<(StatsStore, StatsStore, Instant)>> = Mutex::new(None);
 
 const FLUSH_INTERVAL_SECS: u64 = 30;
@@ -47,6 +47,7 @@ pub fn load() -> StatsStore {
 /// - **Respects an explicit pin** — when `LEAN_CTX_DATA_DIR` is set the user has
 ///   chosen exactly one dir, so nothing is auto-merged.
 /// - **Read-only** — never writes back; recording still targets the primary dir.
+#[must_use]
 pub fn load_for_display() -> StatsStore {
     let primary = load();
     // An explicit override means "use exactly this dir" — never auto-merge.
@@ -222,6 +223,7 @@ pub fn reset_all() {
     crate::core::heatmap::reset();
 }
 
+#[must_use]
 pub fn load_stats() -> GainSummary {
     let store = load();
     let input_saved = store
@@ -337,7 +339,7 @@ fn apply_cep_snapshot(
 
     let total_modes = 6u32;
     let mode_diversity =
-        ((modes.len() as f64 / total_modes as f64).min(1.0) * 100.0).round() as u32;
+        ((modes.len() as f64 / f64::from(total_modes)).min(1.0) * 100.0).round() as u32;
 
     let tokens_saved = tokens_original.saturating_sub(tokens_compressed);
 

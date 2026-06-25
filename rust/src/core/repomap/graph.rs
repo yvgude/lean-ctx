@@ -37,6 +37,7 @@ impl RepoGraph {
     ///
     /// Loads or builds the project index and call graph,
     /// then merges their edges into a unified file-level graph.
+    #[must_use]
     pub fn build(project_root: &str) -> Self {
         let Some((index, content_cache)) = Self::try_build_pipeline(project_root) else {
             // Pipeline unavailable (non-existent root, etc.) — build an
@@ -106,7 +107,7 @@ impl RepoGraph {
         }
     }
 
-    /// Try to build a ProjectIndex from the pipeline; returns None if the
+    /// Try to build a `ProjectIndex` from the pipeline; returns None if the
     /// pipeline cannot be built (e.g. root does not exist) so callers can
     /// fall back to an empty index instead of panicking.
     fn try_build_pipeline(

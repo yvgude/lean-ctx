@@ -94,6 +94,7 @@ impl SessionState {
     ///
     /// Also refuses to scope to a broad/unsafe cwd (e.g. the MCP daemon's HOME),
     /// which would otherwise resurrect the contaminated "HOME mega-session".
+    #[must_use]
     pub fn load_latest() -> Option<Self> {
         let cwd = std::env::current_dir().ok()?;
         if crate::core::pathutil::is_broad_or_unsafe_root(&cwd) {
@@ -106,6 +107,7 @@ impl SessionState {
     /// regardless of project. Intended only for explicit, cross-project UX
     /// (e.g. `lean-ctx session` status from an arbitrary directory) — never for
     /// injecting knowledge into a new project's context. Prefer `load_latest`.
+    #[must_use]
     pub fn load_global_latest_pointer() -> Option<Self> {
         let dir = sessions_dir()?;
         let latest_path = dir.join("latest.json");
@@ -115,6 +117,7 @@ impl SessionState {
     }
 
     /// Loads the most recent session matching a specific project root.
+    #[must_use]
     pub fn load_latest_for_project_root(project_root: &str) -> Option<Self> {
         // Broad roots ("/", HOME, agent sandboxes) never own a session. Bail out
         // BEFORE scanning: the daemon boots with cwd "/" and previously walked
@@ -163,6 +166,7 @@ impl SessionState {
     }
 
     /// Loads a specific session from disk by its unique ID.
+    #[must_use]
     pub fn load_by_id(id: &str) -> Option<Self> {
         let dir = sessions_dir()?;
         let path = dir.join(format!("{id}.json"));
@@ -172,6 +176,7 @@ impl SessionState {
     }
 
     /// Lists all saved sessions as summaries, sorted by most recently updated.
+    #[must_use]
     pub fn list_sessions() -> Vec<SessionSummary> {
         let Some(dir) = sessions_dir() else {
             return Vec::new();
@@ -215,6 +220,7 @@ impl SessionState {
     /// `apply` is true, each offending session file is moved to a
     /// `sessions/quarantine/` subdirectory (non-destructive) instead of being
     /// loaded into any project's context.
+    #[must_use]
     pub fn doctor_quarantine_unsafe_roots(apply: bool) -> (Vec<(String, String)>, usize) {
         let mut found: Vec<(String, String)> = Vec::new();
         let mut quarantined = 0usize;
@@ -258,6 +264,7 @@ impl SessionState {
     }
 
     /// Deletes sessions older than `max_age_days`, preserving the latest. Returns count removed.
+    #[must_use]
     pub fn cleanup_old_sessions(max_age_days: i64) -> u32 {
         let Some(dir) = sessions_dir() else { return 0 };
 

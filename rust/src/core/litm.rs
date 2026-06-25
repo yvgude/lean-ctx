@@ -29,6 +29,7 @@ impl LitmProfile {
     };
     pub const DEFAULT: Self = Self::GPT;
 
+    #[must_use]
     pub fn from_client_name(client: &str) -> Self {
         if let Ok(override_val) = std::env::var("LEAN_CTX_LITM_PROFILE") {
             return Self::from_name(&override_val);
@@ -43,6 +44,7 @@ impl LitmProfile {
         }
     }
 
+    #[must_use]
     pub fn from_name(name: &str) -> Self {
         match name.to_lowercase().as_str() {
             "claude" | "codebuddy" | "cursor" => Self::CLAUDE,
@@ -69,6 +71,7 @@ pub struct PositionedOutput {
 ///   P1 (begin): task, decisions, project topology, file refs
 ///   P2 (end): recent findings, test results, next steps
 ///   P3 (dropped): old completed tasks, historical reads beyond limit
+#[must_use]
 pub fn position_optimize(session: &SessionState) -> PositionedOutput {
     position_optimize_with_share(session, crate::core::litm_calibration::DEFAULT_BEGIN_SHARE)
 }
@@ -78,6 +81,7 @@ pub fn position_optimize(session: &SessionState) -> PositionedOutput {
 /// block and the task line is duplicated there (recency rescue for the most
 /// critical item). At the default share the layout is byte-identical to the
 /// uncalibrated version.
+#[must_use]
 pub fn position_optimize_with_share(session: &SessionState, begin_share: f64) -> PositionedOutput {
     let begin_weak = begin_share < 0.6;
     let mut begin_lines = Vec::new();

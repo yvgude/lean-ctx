@@ -6,18 +6,21 @@
 
 /// Return a hex-encoded BLAKE3 hash of the input bytes.
 #[inline]
+#[must_use]
 pub fn hash_hex(data: &[u8]) -> String {
     blake3::hash(data).to_hex().to_string()
 }
 
 /// Convenience: hash a string slice and return hex digest.
 #[inline]
+#[must_use]
 pub fn hash_str(s: &str) -> String {
     hash_hex(s.as_bytes())
 }
 
 /// Short hash (first 16 hex chars = 64 bits) for cache keys and fingerprints.
 #[inline]
+#[must_use]
 pub fn hash_short(s: &str) -> String {
     let full = blake3::hash(s.as_bytes()).to_hex();
     full[..16].to_string()

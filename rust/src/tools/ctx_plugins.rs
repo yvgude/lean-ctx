@@ -1,5 +1,6 @@
 use crate::core::plugins::{PluginManager, executor::HookPoint, registry::PluginRegistry};
 
+#[must_use]
 pub fn handle(action: &str, name: Option<&str>) -> String {
     match action {
         "list" => handle_list(),

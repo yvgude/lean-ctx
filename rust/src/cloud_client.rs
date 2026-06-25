@@ -12,6 +12,7 @@ fn credentials_path() -> PathBuf {
     config_dir().join("credentials.json")
 }
 
+#[must_use]
 pub fn api_url() -> String {
     std::env::var("LEAN_CTX_API_URL").unwrap_or_else(|_| "https://api.leanctx.com".to_string())
 }
@@ -132,10 +133,12 @@ pub fn save_credentials(api_key: &str, user_id: &str, email: &str) -> std::io::R
     write_credentials(&creds)
 }
 
+#[must_use]
 pub fn load_api_key() -> Option<String> {
     load_credentials().map(|c| c.api_key)
 }
 
+#[must_use]
 pub fn is_logged_in() -> bool {
     load_credentials().is_some()
 }
@@ -532,6 +535,7 @@ pub fn save_cloud_models(data: &serde_json::Value) -> std::io::Result<()> {
     std::fs::write(dir.join("cloud_models.json"), json)
 }
 
+#[must_use]
 pub fn load_cloud_models() -> Option<serde_json::Value> {
     let path = config_dir().join("cloud_models.json");
     let data = std::fs::read_to_string(path).ok()?;
@@ -560,6 +564,7 @@ pub fn fetch_leaderboard() -> Result<serde_json::Value, String> {
     serde_json::from_str(&body).map_err(|e| format!("Invalid leaderboard JSON: {e}"))
 }
 
+#[must_use]
 pub fn is_cloud_user() -> bool {
     let path = config_dir().join("plan.txt");
     std::fs::read_to_string(path).is_ok_and(|p| matches!(p.trim(), "cloud" | "pro"))
@@ -600,6 +605,7 @@ pub fn save_plan(plan: &str) -> std::io::Result<()> {
 /// The cached plan, if any. Prefers the structured `plan.json`; falls back to a
 /// legacy `plan.txt` (no timestamp → `verified_at = 0`, i.e. immediately past
 /// grace until the next successful refresh re-stamps it).
+#[must_use]
 pub fn cached_plan() -> Option<PlanCache> {
     if let Ok(data) = std::fs::read_to_string(plan_cache_path())
         && let Ok(cache) = serde_json::from_str::<PlanCache>(&data)
@@ -900,6 +906,7 @@ pub fn push_feedback(entries: &[serde_json::Value]) -> Result<String, String> {
 }
 
 /// The signed-in account's email, for status displays.
+#[must_use]
 pub fn account_email() -> Option<String> {
     load_credentials().map(|c| c.email)
 }

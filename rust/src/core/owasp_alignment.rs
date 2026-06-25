@@ -26,6 +26,7 @@ pub enum Coverage {
     Minimal,
 }
 
+#[must_use]
 pub fn alignment() -> Vec<OwaspMapping> {
     vec![
         OwaspMapping {
@@ -312,6 +313,7 @@ pub fn alignment() -> Vec<OwaspMapping> {
 }
 
 /// Returns a compact summary suitable for CLI output.
+#[must_use]
 pub fn summary() -> String {
     let mappings = alignment();
     let mut out = String::from("OWASP Top 10 for Agentic Applications — lean-ctx Alignment\n");

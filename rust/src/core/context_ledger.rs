@@ -143,6 +143,7 @@ pub enum PressureAction {
 }
 
 impl ContextLedger {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             window_size: DEFAULT_CONTEXT_WINDOW,
@@ -153,6 +154,7 @@ impl ContextLedger {
         }
     }
 
+    #[must_use]
     pub fn with_window_size(size: usize) -> Self {
         Self {
             window_size: size,
@@ -310,12 +312,14 @@ impl ContextLedger {
         }
     }
 
-    /// Find an entry by its ContextItemId.
+    /// Find an entry by its `ContextItemId`.
+    #[must_use]
     pub fn find_by_id(&self, id: &ContextItemId) -> Option<&LedgerEntry> {
         self.entries.iter().find(|e| e.id.as_ref() == Some(id))
     }
 
     /// Get all entries with a specific state.
+    #[must_use]
     pub fn items_by_state(&self, state: ContextState) -> Vec<&LedgerEntry> {
         self.entries
             .iter()
@@ -325,6 +329,7 @@ impl ContextLedger {
 
     /// Eviction candidates ordered by Phi (lowest first), falling back to
     /// timestamp for entries without Phi scores.
+    #[must_use]
     pub fn eviction_candidates_by_phi(&self, keep_count: usize) -> Vec<String> {
         if self.entries.len() <= keep_count {
             return Vec::new();
@@ -395,6 +400,7 @@ impl ContextLedger {
         }
     }
 
+    #[must_use]
     pub fn pressure(&self) -> ContextPressure {
         let utilization = self.total_tokens_sent as f64 / self.window_size as f64;
 
@@ -433,6 +439,7 @@ impl ContextLedger {
         }
     }
 
+    #[must_use]
     pub fn compression_ratio(&self) -> f64 {
         let total_original: usize = self.entries.iter().map(|e| e.original_tokens).sum();
         if total_original == 0 {
@@ -441,6 +448,7 @@ impl ContextLedger {
         self.total_tokens_sent as f64 / total_original as f64
     }
 
+    #[must_use]
     pub fn files_by_token_cost(&self) -> Vec<(String, usize)> {
         let mut costs: Vec<(String, usize)> = self
             .entries
@@ -451,6 +459,7 @@ impl ContextLedger {
         costs
     }
 
+    #[must_use]
     pub fn mode_distribution(&self) -> HashMap<String, usize> {
         let mut dist: HashMap<String, usize> = HashMap::new();
         for entry in &self.entries {
@@ -459,6 +468,7 @@ impl ContextLedger {
         dist
     }
 
+    #[must_use]
     pub fn eviction_candidates(&self, keep_count: usize) -> Vec<String> {
         if self.entries.len() <= keep_count {
             return Vec::new();
@@ -601,10 +611,12 @@ impl ContextLedger {
             .sum();
     }
 
+    #[must_use]
     pub fn load() -> Self {
         Self::load_for_agent("default")
     }
 
+    #[must_use]
     pub fn load_for_agent(agent_id: &str) -> Self {
         let mut ledger: Self = ledger_path(agent_id)
             .ok()
@@ -624,6 +636,7 @@ impl ContextLedger {
         ledger
     }
 
+    #[must_use]
     pub fn format_summary(&self) -> String {
         let pressure = self.pressure();
         format!(
@@ -637,6 +650,7 @@ impl ContextLedger {
         )
     }
 
+    #[must_use]
     pub fn adjusted_total_saved(&self) -> isize {
         match crate::core::bounce_tracker::global().lock() {
             Ok(bt) => bt.adjusted_savings(self.total_tokens_saved),

@@ -40,7 +40,7 @@ pub struct SymbolSpan {
 }
 
 /// Everything the call-graph builder reads, sourced from the [`GraphProvider`]
-/// facade (PropertyGraph). Replaces the former direct `ProjectIndex`
+/// facade (`PropertyGraph`). Replaces the former direct `ProjectIndex`
 /// dependency (#696): the file inventory, the symbol table (for enclosing-symbol
 /// attribution) and the import/reexport adjacency (for scope-aware callee
 /// resolution). Source content itself is still read fresh from disk per file.
@@ -54,10 +54,11 @@ pub struct CallGraphInputs {
 }
 
 impl CallGraphInputs {
-    /// Open the project graph (PropertyGraph, falling back to legacy) and
+    /// Open the project graph (`PropertyGraph`, falling back to legacy) and
     /// materialize call-graph inputs. Returns empty inputs (rooted at
     /// `project_root`) when no graph is available yet — matching the old
     /// behaviour of building from an empty index.
+    #[must_use]
     pub fn open(project_root: &str) -> Self {
         match crate::core::graph_provider::open_or_build(project_root) {
             Some(open) => Self::from_provider(project_root, &open.provider),
@@ -71,8 +72,9 @@ impl CallGraphInputs {
     /// Bridge for callers that already hold a freshly-scanned
     /// [`ProjectIndex`](super::graph_index::ProjectIndex)
     /// (repomap, dashboard coordinator) and want call-graph inputs consistent
-    /// with *that* scan rather than a possibly-lagging PropertyGraph. Removed in
+    /// with *that* scan rather than a possibly-lagging `PropertyGraph`. Removed in
     /// #696 Phase D once those callers move to the facade/extractor wholesale.
+    #[must_use]
     pub fn from_project_index(index: &super::graph_index::ProjectIndex) -> Self {
         let symbols = index
             .symbols
@@ -156,6 +158,7 @@ pub enum RiskLevel {
 }
 
 impl RiskLevel {
+    #[must_use]
     pub fn from_caller_count(count: usize) -> Self {
         match count {
             0..=1 => Self::Low,
@@ -165,6 +168,7 @@ impl RiskLevel {
         }
     }
 
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Self::Low => "LOW",
@@ -205,6 +209,7 @@ fn global_state() -> &'static Mutex<BuildState> {
 }
 
 impl CallGraph {
+    #[must_use]
     pub fn new(project_root: &str) -> Self {
         Self {
             project_root: normalize_project_root(project_root),
@@ -217,6 +222,7 @@ impl CallGraph {
     // Parallel build — processes files via rayon thread pool
     // -----------------------------------------------------------------------
 
+    #[must_use]
     pub fn build_parallel(
         inputs: &CallGraphInputs,
         progress: Option<(&AtomicUsize, &AtomicUsize)>,
@@ -280,6 +286,7 @@ impl CallGraph {
     // Incremental parallel build — only re-analyzes changed files
     // -----------------------------------------------------------------------
 
+    #[must_use]
     pub fn build_incremental_parallel(
         inputs: &CallGraphInputs,
         previous: &CallGraph,
@@ -502,14 +509,17 @@ impl CallGraph {
     // Legacy synchronous API (kept for non-dashboard callers)
     // -----------------------------------------------------------------------
 
+    #[must_use]
     pub fn build(inputs: &CallGraphInputs) -> Self {
         Self::build_parallel(inputs, None)
     }
 
+    #[must_use]
     pub fn build_incremental(inputs: &CallGraphInputs, previous: &CallGraph) -> Self {
         Self::build_incremental_parallel(inputs, previous, None)
     }
 
+    #[must_use]
     pub fn callers_of(&self, symbol: &str) -> Vec<&CallEdge> {
         let sym_lower = symbol.to_lowercase();
         self.edges
@@ -518,6 +528,7 @@ impl CallGraph {
             .collect()
     }
 
+    #[must_use]
     pub fn callees_of(&self, symbol: &str) -> Vec<&CallEdge> {
         let sym_lower = symbol.to_lowercase();
         self.edges
@@ -531,11 +542,13 @@ impl CallGraph {
     // -----------------------------------------------------------------------
 
     /// BFS callers up to `max_depth` hops. Returns (symbol, file, line, depth) per node.
+    #[must_use]
     pub fn bfs_callers(&self, symbol: &str, max_depth: usize) -> Vec<BfsNode> {
         self.bfs_traverse(symbol, max_depth, BfsDirection::Callers)
     }
 
     /// BFS callees up to `max_depth` hops. Returns (symbol, file, line, depth) per node.
+    #[must_use]
     pub fn bfs_callees(&self, symbol: &str, max_depth: usize) -> Vec<BfsNode> {
         self.bfs_traverse(symbol, max_depth, BfsDirection::Callees)
     }
@@ -603,6 +616,7 @@ impl CallGraph {
     /// Returns None if no path exists (searched up to depth 10).
     /// Find shortest call path from `from` to `to` using BFS.
     /// Returns None if no path exists (searched up to depth 10).
+    #[must_use]
     pub fn find_call_path(&self, from: &str, to: &str) -> Option<Vec<PathHop>> {
         use std::collections::{HashMap as BfsMap, VecDeque};
 
@@ -707,6 +721,7 @@ impl CallGraph {
     }
 
     /// Count unique transitive callers up to `max_depth`.
+    #[must_use]
     pub fn transitive_caller_count(&self, symbol: &str, max_depth: usize) -> usize {
         let nodes = self.bfs_callers(symbol, max_depth);
         let mut unique: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -730,6 +745,7 @@ impl CallGraph {
         Ok(())
     }
 
+    #[must_use]
     pub fn load(project_root: &str) -> Option<Self> {
         let dir = call_graph_dir(project_root)?;
 
@@ -760,6 +776,7 @@ impl CallGraph {
         None
     }
 
+    #[must_use]
     pub fn load_or_build(project_root: &str, inputs: &CallGraphInputs) -> Self {
         if let Some(previous) = Self::load(project_root) {
             Self::build_incremental(inputs, &previous)
@@ -862,6 +879,7 @@ fn simple_hash(content: &str) -> String {
 
 /// Build a `file -> imported files` adjacency from the project index's import
 /// and reexport edges, used to scope callee resolution to a caller's imports.
+#[must_use]
 pub fn build_import_adjacency(
     inputs: &CallGraphInputs,
 ) -> HashMap<String, std::collections::HashSet<String>> {
@@ -905,6 +923,7 @@ fn rank_callee_def_file(
 }
 
 /// Resolve a single callee name to its defining file in the scope of `caller_file`.
+#[must_use]
 pub fn resolve_callee_file(
     callee_name: &str,
     caller_file: &str,
@@ -926,6 +945,7 @@ pub fn resolve_callee_file(
 /// unambiguous across all call sites*. Names that resolve to different files
 /// from different scopes are omitted, so callers never attribute a call to the
 /// wrong file. Keyed by callee name to match the call graph's name-keyed nodes.
+#[must_use]
 pub fn resolve_callee_files(
     inputs: &CallGraphInputs,
     edges: &[CallEdge],

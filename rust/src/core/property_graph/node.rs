@@ -15,6 +15,7 @@ pub enum NodeKind {
 }
 
 impl NodeKind {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::File => "file",
@@ -28,6 +29,7 @@ impl NodeKind {
         }
     }
 
+    #[must_use]
     pub fn parse(s: &str) -> Self {
         match s {
             "symbol" => Self::Symbol,
@@ -54,6 +56,7 @@ pub struct Node {
 }
 
 impl Node {
+    #[must_use]
     pub fn file(path: &str) -> Self {
         Self {
             id: None,
@@ -66,6 +69,7 @@ impl Node {
         }
     }
 
+    #[must_use]
     pub fn symbol(name: &str, file_path: &str, kind: NodeKind) -> Self {
         Self {
             id: None,
@@ -78,17 +82,20 @@ impl Node {
         }
     }
 
+    #[must_use]
     pub fn with_lines(mut self, start: usize, end: usize) -> Self {
         self.line_start = Some(start);
         self.line_end = Some(end);
         self
     }
 
+    #[must_use]
     pub fn with_metadata(mut self, meta: &str) -> Self {
         self.metadata = Some(meta.to_string());
         self
     }
 
+    #[must_use]
     pub fn commit(hash: &str, message: &str) -> Self {
         Self {
             id: None,
@@ -101,6 +108,7 @@ impl Node {
         }
     }
 
+    #[must_use]
     pub fn test(path: &str, test_name: &str) -> Self {
         Self {
             id: None,
@@ -113,6 +121,7 @@ impl Node {
         }
     }
 
+    #[must_use]
     pub fn knowledge(id: &str, summary: &str) -> Self {
         Self {
             id: None,
@@ -125,6 +134,7 @@ impl Node {
         }
     }
 
+    #[must_use]
     pub fn issue(id: &str, title: &str) -> Self {
         Self {
             id: None,

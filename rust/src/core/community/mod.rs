@@ -3,7 +3,7 @@
 //! A hardened Leiden engine (`leiden`) clusters files into cohesive modules,
 //! with robustness passes for super-hubs and oversized/low-cohesion communities
 //! (`hardening`) and **stable ids across rebuilds** (`stable_ids`). The
-//! engine is storage-agnostic: it runs on the PropertyGraph (SQLite) and on any
+//! engine is storage-agnostic: it runs on the `PropertyGraph` (SQLite) and on any
 //! [`GraphProvider`], so `ctx_architecture` and the dashboard graph view share
 //! one implementation and report identical community ids.
 
@@ -51,6 +51,7 @@ impl CommunityResult {
     }
 
     /// `file_path → community_id` for every assigned node.
+    #[must_use]
     pub fn assignment(&self) -> HashMap<String, usize> {
         self.assignment_min_size(1)
     }
@@ -59,6 +60,7 @@ impl CommunityResult {
     /// `min_size` members. Singletons (isolated files) are dropped so the
     /// dashboard can fall back to a neutral/language colour instead of painting
     /// every orphan file a distinct hue.
+    #[must_use]
     pub fn assignment_min_size(&self, min_size: usize) -> HashMap<String, usize> {
         let mut map = HashMap::new();
         for community in &self.communities {
@@ -73,7 +75,7 @@ impl CommunityResult {
     }
 }
 
-/// Detect communities on the PropertyGraph (ids are deterministic but not
+/// Detect communities on the `PropertyGraph` (ids are deterministic but not
 /// remapped to a previous run). Prefer [`detect_communities_stable`] when a
 /// project root is available.
 pub fn detect_communities(conn: &Connection) -> CommunityResult {
@@ -81,14 +83,14 @@ pub fn detect_communities(conn: &Connection) -> CommunityResult {
     analyze(&graph, None).1
 }
 
-/// Detect communities on the PropertyGraph with ids kept stable across rebuilds
+/// Detect communities on the `PropertyGraph` with ids kept stable across rebuilds
 /// (remapped to, and persisted alongside, the project's previous assignment).
 pub fn detect_communities_stable(conn: &Connection, project_root: &str) -> CommunityResult {
     let graph = AdjGraph::from_property_graph(conn);
     detect_stable(&graph, project_root)
 }
 
-/// Detect communities on any [`GraphProvider`] (PropertyGraph or graph index)
+/// Detect communities on any [`GraphProvider`] (`PropertyGraph` or graph index)
 /// with stable ids. This is the entry point for the dashboard graph view.
 pub fn detect_communities_for_provider(gp: &GraphProvider, project_root: &str) -> CommunityResult {
     let graph = AdjGraph::from_provider(gp);

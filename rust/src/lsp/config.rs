@@ -37,6 +37,7 @@ pub const KNOWN_SERVERS: &[LspServerInfo] = &[
     },
 ];
 
+#[must_use]
 pub fn default_servers() -> HashMap<&'static str, LspServerConfig> {
     let mut m = HashMap::new();
     m.insert(
@@ -77,6 +78,7 @@ pub fn default_servers() -> HashMap<&'static str, LspServerConfig> {
     m
 }
 
+#[must_use]
 pub fn language_for_extension(ext: &str) -> Option<&'static str> {
     match ext {
         "rs" => Some("rust"),
@@ -94,6 +96,7 @@ pub fn language_for_extension(ext: &str) -> Option<&'static str> {
     }
 }
 
+#[must_use]
 pub fn find_binary_in_path(binary: &str) -> Option<PathBuf> {
     let path_var = std::env::var("PATH").ok()?;
     for dir in std::env::split_paths(&path_var) {
@@ -111,6 +114,7 @@ pub fn find_binary_in_path(binary: &str) -> Option<PathBuf> {
     None
 }
 
+#[must_use]
 pub fn install_hint_for_language(language: &str) -> &'static str {
     for info in KNOWN_SERVERS {
         if info.language == language {
@@ -120,6 +124,7 @@ pub fn install_hint_for_language(language: &str) -> &'static str {
     "No install instructions available for this language server."
 }
 
+#[must_use]
 pub fn binary_for_language(language: &str) -> Option<&'static str> {
     for info in KNOWN_SERVERS {
         if info.language == language {

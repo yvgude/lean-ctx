@@ -13,6 +13,7 @@
 /// assert_eq!(x, 2407408988495057637);
 /// ```
 #[inline]
+#[must_use]
 pub fn splitmix64(state: u64) -> u64 {
     let mut z = state.wrapping_add(0x9e3779b97f4a7c15u64);
     z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9u64);
@@ -25,6 +26,7 @@ pub fn splitmix64(state: u64) -> u64 {
 /// Uses the high 23 bits (24-bit mantissa precision) to produce a
 /// uniform float.
 #[inline]
+#[must_use]
 pub fn splitmix64_f32(state: u64) -> f32 {
     let value = splitmix64(state);
     (value >> 40) as f32 / (1u64 << 24) as f32
@@ -32,6 +34,7 @@ pub fn splitmix64_f32(state: u64) -> f32 {
 
 /// Deterministic `f32` in `[-0.5, 0.5]` for hyperplane generation.
 #[inline]
+#[must_use]
 pub fn splitmix64_f32_signed(state: u64) -> f32 {
     splitmix64_f32(state) - 0.5
 }

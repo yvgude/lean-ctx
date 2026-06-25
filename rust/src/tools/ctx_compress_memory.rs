@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::core::tokens::count_tokens;
 
+#[must_use]
 pub fn handle(path: &str) -> String {
     // Read-only-roots choke point (#475): this tool rewrites `path` in place (and
     // writes a sibling backup), so deny up front inside a read-only root.

@@ -43,6 +43,7 @@ impl BanditArm {
         self.beta = (self.beta * factor).max(1.0);
     }
 
+    #[must_use]
     pub fn mean(&self) -> f64 {
         self.alpha / (self.alpha + self.beta)
     }
@@ -110,6 +111,7 @@ impl ThresholdBandit {
 
     /// Deterministic argmax of the posterior mean. Tie-break by lowest index so
     /// the choice is stable and reproducible.
+    #[must_use]
     pub fn best_arm_idx_by_mean(&self) -> usize {
         self.arms
             .iter()
@@ -190,6 +192,7 @@ impl BanditStore {
         self.bandits.entry(key.to_string()).or_default()
     }
 
+    #[must_use]
     pub fn load(project_root: &str) -> Self {
         let path = bandit_path(project_root);
         if path.exists()
@@ -210,6 +213,7 @@ impl BanditStore {
         std::fs::write(path, json).map_err(|e| e.to_string())
     }
 
+    #[must_use]
     pub fn format_report(&self) -> String {
         if self.bandits.is_empty() {
             return "No bandit data yet.".to_string();

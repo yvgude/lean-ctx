@@ -573,11 +573,13 @@ stale_files: {}\n",
                     if let Err(e) = store.save() {
                         return format!("Episode record failed: {e}");
                     }
-                    crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
-                        category: "episodic".to_string(),
-                        key: id.clone(),
-                        action: "record".to_string(),
-                    });
+                    let _ = crate::core::events::emit(
+                        crate::core::events::EventKind::KnowledgeUpdate {
+                            category: "episodic".to_string(),
+                            key: id.clone(),
+                            action: "record".to_string(),
+                        },
+                    );
                     // Auto-learning (GL #478): every new episode re-runs workflow
                     // detection, so Procedures fill themselves over time.
                     let learned = crate::core::procedural_memory::auto_detect_from_episodes(
@@ -690,11 +692,13 @@ stale_files: {}\n",
                     if let Err(e) = procs.save() {
                         return format!("Procedure detect failed: {e}");
                     }
-                    crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
-                        category: "procedural".to_string(),
-                        key: hash.clone(),
-                        action: "detect".to_string(),
-                    });
+                    let _ = crate::core::events::emit(
+                        crate::core::events::EventKind::KnowledgeUpdate {
+                            category: "procedural".to_string(),
+                            key: hash.clone(),
+                            action: "detect".to_string(),
+                        },
+                    );
                     format!(
                         "Procedures updated. Total procedures: {} (episodes: {}).",
                         procs.procedures.len(),
@@ -800,7 +804,7 @@ fn auto_record_episode(
     let id = ep.id.clone();
     store.record_episode(ep, &policy.episodic);
     store.save()?;
-    crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
+    let _ = crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
         category: "episodic".to_string(),
         key: id.clone(),
         action: "auto_record".to_string(),
@@ -815,7 +819,7 @@ fn auto_record_episode(
     let before = procs.procedures.len();
     procs.detect_patterns(&episodes, &policy.procedural);
     if procs.procedures.len() > before && procs.save().is_ok() {
-        crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
+        let _ = crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
             category: "procedural".to_string(),
             key: format!("{} new", procs.procedures.len() - before),
             action: "auto_learn".to_string(),

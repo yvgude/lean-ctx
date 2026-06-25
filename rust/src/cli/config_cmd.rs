@@ -920,6 +920,7 @@ pub struct PruneResult {
     pub bytes_freed: u64,
 }
 
+#[must_use]
 pub fn prune_bm25_caches() -> PruneResult {
     let mut result = PruneResult {
         scanned: 0,
@@ -1001,6 +1002,7 @@ pub fn prune_bm25_caches() -> PruneResult {
     result
 }
 
+#[must_use]
 pub fn prune_graph_caches() -> PruneResult {
     let mut result = PruneResult {
         scanned: 0,

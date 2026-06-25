@@ -61,9 +61,9 @@ pub(super) fn shell_allowlist_outcome() -> Outcome {
     }
 }
 
-/// Reports the effective PathJail state (GH #392): which knob (if any)
+/// Reports the effective `PathJail` state (GH #392): which knob (if any)
 /// disabled it, and whether configured `allow_paths`/`extra_roots` entries
-/// actually resolve — the silent failure mode behind "allow_paths has no
+/// actually resolve — the silent failure mode behind "`allow_paths` has no
 /// effect" reports (unexpanded `$VAR`, typos, paths that don't exist).
 /// Cognition v2 activation: how many science-backed subsystems have actually
 /// fired on this install. Proves the stack is wired (not dead code) without
@@ -1246,8 +1246,8 @@ fn claude_instructions_check(
     }
 }
 
-/// CodeBuddy instructions check — mirrors `claude_instructions_check` since
-/// CodeBuddy uses the same CODEBUDDY.md block + skill pattern as Claude Code.
+/// `CodeBuddy` instructions check — mirrors `claude_instructions_check` since
+/// `CodeBuddy` uses the same CODEBUDDY.md block + skill pattern as Claude Code.
 fn codebuddy_instructions_check(
     home: &std::path::Path,
     scope: crate::core::config::RulesScope,

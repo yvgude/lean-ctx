@@ -26,6 +26,7 @@ pub enum KnowledgeArchetype {
 }
 
 impl KnowledgeArchetype {
+    #[must_use]
     pub fn salience_bonus(&self) -> u32 {
         match self {
             Self::Architecture => 15,
@@ -45,6 +46,7 @@ impl KnowledgeArchetype {
     /// central idea: evidence (the external world, structural facts) should be
     /// treated differently from inference (decisions, preferences, synthesized
     /// observations). Used by archetype-aware decay so evidence persists longer.
+    #[must_use]
     pub fn is_evidence(&self) -> bool {
         matches!(
             self,
@@ -55,6 +57,7 @@ impl KnowledgeArchetype {
     /// Ebbinghaus stability multiplier (≥ 1.0 slows decay). Structural evidence is
     /// more durable than inference; only applied when `archetype_aware_decay` is on
     /// (default off), so the baseline tuning is unchanged.
+    #[must_use]
     pub fn stability_multiplier(&self) -> f32 {
         match self {
             Self::Architecture => 1.5,
@@ -68,6 +71,7 @@ impl KnowledgeArchetype {
         }
     }
 
+    #[must_use]
     pub fn infer_from_category(category: &str) -> Self {
         match category.to_lowercase().as_str() {
             // `data_model`/`schema` are structural (provider-extracted); they join arch.

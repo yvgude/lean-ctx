@@ -34,7 +34,7 @@ pub struct KeySchema {
 }
 
 fn clean_f32(v: f32) -> serde_json::Value {
-    let clean: f64 = format!("{v}").parse().unwrap_or(v as f64);
+    let clean: f64 = format!("{v}").parse().unwrap_or(f64::from(v));
     serde_json::json!(clean)
 }
 
@@ -79,6 +79,7 @@ fn key_enum_with_env(values: &[&str], default: &str, desc: &str, env: &str) -> K
 }
 
 impl ConfigSchema {
+    #[must_use]
     pub fn generate() -> Self {
         let mut sections = BTreeMap::new();
         sections_core::build(&mut sections);
@@ -93,6 +94,7 @@ impl ConfigSchema {
 
     /// Looks up a key schema by its dot-separated TOML path.
     /// Returns `None` if the key is not part of the schema.
+    #[must_use]
     pub fn lookup(&self, key: &str) -> Option<&KeySchema> {
         if let Some(dot_pos) = key.find('.') {
             let section = &key[..dot_pos];
@@ -110,6 +112,7 @@ impl ConfigSchema {
     /// struct is the source of truth for *what is valid*, so a field added to
     /// `Config` is recognised by `config apply` / `config validate` immediately,
     /// without anyone remembering to mirror it into `sections_*.rs` (#456).
+    #[must_use]
     pub fn known_keys(&self) -> Vec<String> {
         let mut keys = Vec::new();
         for (section, schema) in &self.sections {

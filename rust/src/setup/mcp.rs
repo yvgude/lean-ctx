@@ -20,6 +20,7 @@ pub struct AgentSetupResult {
 
 /// Complete per-agent setup: MCP config + global rules + skill + hook.
 /// Single source of truth — called by both `init --agent` and `setup`.
+#[must_use]
 pub fn setup_single_agent(
     agent_name: &str,
     global: bool,

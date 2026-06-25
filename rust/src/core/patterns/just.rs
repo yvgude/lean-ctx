@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     if command.contains("--list") || command.contains("-l") {
         return Some(compress_list(output));

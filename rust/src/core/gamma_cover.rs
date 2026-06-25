@@ -105,6 +105,7 @@ fn covers(vecs: &[HashMap<usize, f64>], entropy: &[f64], i: usize, j: usize, gam
 
 /// Greedy set cover: repeatedly pick the chunk that newly covers the most still-uncovered chunks.
 /// Chunk `i` covers `j` when information not explained by similarity to `i` is at most `gamma` bits.
+#[must_use]
 pub fn compute_cover(chunks: &[(String, Vec<String>)], gamma: f64) -> Vec<usize> {
     let n = chunks.len();
     if n == 0 {

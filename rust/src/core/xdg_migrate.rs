@@ -375,6 +375,7 @@ fn detect() -> Option<(PathBuf, Targets)> {
 
 /// Count entries that a split would relocate, for the read-only `doctor` report.
 /// Returns `None` when no migration applies.
+#[must_use]
 pub fn pending() -> Option<(PathBuf, usize)> {
     let (src, targets) = detect()?;
     let n = entries_to_move(&src, &targets).len();
@@ -387,6 +388,7 @@ pub fn pending() -> Option<(PathBuf, usize)> {
 /// Split a legacy/mixed single-dir install into the four XDG dirs. Returns
 /// `None` when nothing applies (fresh install, explicit `LEAN_CTX_DATA_DIR`, or
 /// already split). Drives `lean-ctx doctor --fix`.
+#[must_use]
 pub fn migrate() -> Option<MigrationReport> {
     let (src, targets) = detect()?;
     let report = migrate_from(&src, &targets);
@@ -427,6 +429,7 @@ pub fn residual_legacy_present() -> bool {
     dirs::home_dir().is_some_and(|h| h.join(".lean-ctx").is_dir())
 }
 
+#[must_use]
 pub fn reclaim_legacy() -> Option<MigrationReport> {
     if std::env::var_os("LEAN_CTX_DATA_DIR").is_some() {
         return None;

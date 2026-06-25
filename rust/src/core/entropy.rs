@@ -20,6 +20,7 @@ pub struct EntropyResult {
 
 impl EntropyResult {
     /// Returns the percentage of tokens saved by compression.
+    #[must_use]
     pub fn savings_percent(&self) -> f64 {
         if self.original_tokens == 0 {
             return 0.0;
@@ -30,6 +31,7 @@ impl EntropyResult {
 }
 
 /// Computes Shannon entropy (bits) over character frequencies in the text.
+#[must_use]
 pub fn shannon_entropy(text: &str) -> f64 {
     if text.is_empty() {
         return 0.0;
@@ -47,7 +49,8 @@ pub fn shannon_entropy(text: &str) -> f64 {
     })
 }
 
-/// Shannon entropy over already-encoded BPE token IDs (o200k_base).
+/// Shannon entropy over already-encoded BPE token IDs (`o200k_base`).
+#[must_use]
 pub fn token_entropy_from_ids(tokens: &[u32]) -> f64 {
     if tokens.is_empty() {
         return 0.0;
@@ -69,14 +72,16 @@ pub fn token_entropy_from_ids(tokens: &[u32]) -> f64 {
     })
 }
 
-/// Shannon entropy over BPE token IDs (o200k_base).
+/// Shannon entropy over BPE token IDs (`o200k_base`).
 /// More LLM-relevant than character entropy since LLMs process BPE tokens.
+#[must_use]
 pub fn token_entropy(text: &str) -> f64 {
     let tokens = encode_tokens(text);
     token_entropy_from_ids(&tokens)
 }
 
 /// Normalized Shannon entropy over encoded token IDs: H(X) / log₂(n), n = unique token count.
+#[must_use]
 pub fn normalized_token_entropy_from_ids(tokens: &[u32]) -> f64 {
     if tokens.is_empty() {
         return 0.0;
@@ -104,12 +109,14 @@ pub fn normalized_token_entropy_from_ids(tokens: &[u32]) -> f64 {
 /// Normalized Shannon entropy: H(X) / log₂(n) where n = number of unique symbols.
 /// Returns a value in [0, 1] where 0 = perfectly predictable, 1 = maximum entropy.
 /// This makes thresholds comparable across different alphabet sizes.
+#[must_use]
 pub fn normalized_token_entropy(text: &str) -> f64 {
     let tokens = encode_tokens(text);
     normalized_token_entropy_from_ids(&tokens)
 }
 
 /// Computes word-set Jaccard similarity between two strings (0.0–1.0).
+#[must_use]
 pub fn jaccard_similarity(a: &str, b: &str) -> f64 {
     let set_a: HashSet<&str> = a.split_whitespace().collect();
     let set_b: HashSet<&str> = b.split_whitespace().collect();
@@ -124,6 +131,7 @@ pub fn jaccard_similarity(a: &str, b: &str) -> f64 {
 }
 
 /// N-gram Jaccard similarity — preserves word order (unlike word-set Jaccard).
+#[must_use]
 pub fn ngram_jaccard(a: &str, b: &str, n: usize) -> f64 {
     let set_a = ngram_set(a, n);
     let set_b = ngram_set(b, n);
@@ -154,6 +162,7 @@ fn ngram_set(text: &str, n: usize) -> HashSet<Vec<String>> {
 
 /// Minhash signature for approximate Jaccard via LSH.
 /// Uses k independent hash functions (polynomial hashing with different seeds).
+#[must_use]
 pub fn minhash_signature(text: &str, n: usize, k: usize) -> Vec<u64> {
     let ngrams = ngram_set(text, n);
     if ngrams.is_empty() {
@@ -172,6 +181,7 @@ pub fn minhash_signature(text: &str, n: usize, k: usize) -> Vec<u64> {
 }
 
 /// Approximate Jaccard from two minhash signatures.
+#[must_use]
 pub fn minhash_similarity(sig_a: &[u64], sig_b: &[u64]) -> f64 {
     if sig_a.len() != sig_b.len() || sig_a.is_empty() {
         return 0.0;
@@ -193,6 +203,7 @@ fn hash_with_seed<T: Hash>(value: &T, seed: u64) -> u64 {
 
 /// Kolmogorov complexity proxy: K(x) ≈ len(gzip(x)) / len(x).
 /// Lower values = more compressible = more redundant.
+#[must_use]
 pub fn kolmogorov_proxy(content: &str) -> f64 {
     if content.is_empty() {
         return 1.0;
@@ -213,6 +224,7 @@ pub enum CompressibilityClass {
 
 impl CompressibilityClass {
     /// Returns a human-readable label with the Kolmogorov threshold range.
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
             Self::High => "high (K<0.3)",
@@ -223,6 +235,7 @@ impl CompressibilityClass {
 }
 
 /// Classify how compressible content is based on gzip ratio.
+#[must_use]
 pub fn compressibility_class(content: &str) -> CompressibilityClass {
     let k = kolmogorov_proxy(content);
     if k < 0.3 {
@@ -235,6 +248,7 @@ pub fn compressibility_class(content: &str) -> CompressibilityClass {
 }
 
 /// Compresses content by removing low-entropy lines and deduplicating patterns.
+#[must_use]
 pub fn entropy_compress(content: &str) -> EntropyResult {
     entropy_compress_with_thresholds(content, BPE_ENTROPY_THRESHOLD, 0.7, &[])
 }
@@ -244,6 +258,7 @@ pub fn entropy_compress(content: &str) -> EntropyResult {
 /// whenever it happens to be loaded, so its output depends on runtime state.
 /// Benchmarks and the scorecard (#211) need run-to-run and machine-to-machine
 /// reproducibility, so they must go through this entry point.
+#[must_use]
 pub fn entropy_compress_deterministic(content: &str) -> EntropyResult {
     entropy_compress_inner(content, BPE_ENTROPY_THRESHOLD, 0.7, &[], false, &[])
 }
@@ -251,6 +266,7 @@ pub fn entropy_compress_deterministic(content: &str) -> EntropyResult {
 /// Entropy compression with file-type-adaptive thresholds and event emission.
 /// `force_keep` lines (explicit `protect` tokens, #709) survive verbatim; pass
 /// `&[]` to keep the pre-protect behaviour byte-identical (#498).
+#[must_use]
 pub fn entropy_compress_adaptive(
     content: &str,
     path: &str,
@@ -267,7 +283,7 @@ pub fn entropy_compress_adaptive(
     let after_lines = result.output.lines().count() as u32;
 
     if before_lines != after_lines {
-        super::events::emit(super::events::EventKind::Compression {
+        let _ = super::events::emit(super::events::EventKind::Compression {
             path: path.to_string(),
             before_lines,
             after_lines,
@@ -284,6 +300,7 @@ pub fn entropy_compress_adaptive(
 /// threshold (e.g. from the aggressiveness knob) while keeping the file-adaptive
 /// jaccard. Pure function of its inputs (#498). Higher `bpe_entropy` drops more
 /// low-information lines.
+#[must_use]
 pub fn entropy_compress_with_threshold(
     content: &str,
     path: &str,
@@ -299,6 +316,7 @@ pub fn entropy_compress_with_threshold(
 /// the Information Bottleneck proxy: we compress away only what is neither
 /// surprising (high H) *nor* task-relevant (mentions goal concepts).
 /// Falls back to pure entropy when `task_keywords` is empty.
+#[must_use]
 pub fn entropy_compress_task_conditioned(
     content: &str,
     path: &str,
@@ -316,7 +334,7 @@ pub fn entropy_compress_task_conditioned(
     );
     let after_lines = result.output.lines().count() as u32;
     if before_lines != after_lines {
-        super::events::emit(super::events::EventKind::Compression {
+        let _ = super::events::emit(super::events::EventKind::Compression {
             path: path.to_string(),
             before_lines,
             after_lines,
@@ -544,6 +562,7 @@ fn entropy_compress_with_thresholds(
 /// budget `original_tokens * target` is exhausted. Deterministic: ties break
 /// on line index. `target` is clamped to [0.05, 1.0]; the top-scored line is
 /// always kept so output is never empty for non-empty input.
+#[must_use]
 pub fn entropy_compress_to_density(content: &str, target: f64) -> EntropyResult {
     let target = target.clamp(0.05, 1.0);
     let original_tokens = count_tokens(content);
@@ -629,6 +648,7 @@ pub struct EntropyAnalysis {
 }
 
 /// Analyzes per-line BPE token entropy, counting low/high entropy lines.
+#[must_use]
 pub fn analyze_entropy(content: &str) -> EntropyAnalysis {
     let lines: Vec<&str> = content.lines().collect();
     let total = lines.len();
@@ -655,7 +675,7 @@ pub fn analyze_entropy(content: &str) -> EntropyAnalysis {
 
     EntropyAnalysis {
         avg_entropy: if counted > 0 {
-            sum / counted as f64
+            sum / f64::from(counted)
         } else {
             0.0
         },

@@ -29,6 +29,7 @@ pub enum ToolResultKind {
 ///
 /// Matching is case-insensitive and substring-based so vendor prefixes
 /// (`mcp__fs__read_file`, `functions.read`) and casing variants are covered.
+#[must_use]
 pub fn classify_tool_name(name: &str) -> ToolResultKind {
     let n = name.to_ascii_lowercase();
 
@@ -122,6 +123,7 @@ pub fn classify_tool_name(name: &str) -> ToolResultKind {
 /// Builds a `tool_use_id → tool_name` map from Anthropic `messages`.
 ///
 /// Scans every assistant content block of `type:"tool_use"`.
+#[must_use]
 pub fn anthropic_tool_names(messages: &[Value]) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for msg in messages {
@@ -143,8 +145,9 @@ pub fn anthropic_tool_names(messages: &[Value]) -> HashMap<String, String> {
     map
 }
 
-/// Builds a `tool_call_id → function_name` map from OpenAI Chat Completions
+/// Builds a `tool_call_id → function_name` map from `OpenAI` Chat Completions
 /// `messages` (assistant `tool_calls[]`).
+#[must_use]
 pub fn openai_tool_names(messages: &[Value]) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for msg in messages {
@@ -165,8 +168,9 @@ pub fn openai_tool_names(messages: &[Value]) -> HashMap<String, String> {
     map
 }
 
-/// Builds a `call_id → name` map from OpenAI Responses `input` items
+/// Builds a `call_id → name` map from `OpenAI` Responses `input` items
 /// (`type:"function_call"`).
+#[must_use]
 pub fn responses_tool_names(input: &[Value]) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for item in input {
@@ -189,6 +193,7 @@ pub fn responses_tool_names(input: &[Value]) -> HashMap<String, String> {
 /// File reads are always protected; unknown tools are protected only when the
 /// content heuristically looks like source code. Shell/search output is never
 /// protected here — it flows through the normal pattern compressors.
+#[must_use]
 pub fn should_protect(kind: ToolResultKind, content: &str) -> bool {
     match kind {
         ToolResultKind::FileRead => true,
@@ -202,6 +207,7 @@ pub fn should_protect(kind: ToolResultKind, content: &str) -> bool {
 /// Deliberately conservative — it only returns `true` when code signals clearly
 /// dominate and shell/log signals are essentially absent, so genuine logs and
 /// build output are still compressed. Used only when the tool name is unknown.
+#[must_use]
 pub fn looks_like_source_code(content: &str) -> bool {
     let mut code_signals = 0usize;
     let mut shell_signals = 0usize;

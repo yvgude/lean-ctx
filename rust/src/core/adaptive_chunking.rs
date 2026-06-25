@@ -82,7 +82,7 @@ fn brace_complexity(text: &str) -> f64 {
     for k in kw {
         kc += text.matches(k).count() as f64;
     }
-    maxd as f64 * 0.18 + kc * 0.06
+    f64::from(maxd) * 0.18 + kc * 0.06
 }
 
 fn build_chunk_body(lines: &[&str], start: usize, end: usize) -> String {
@@ -127,6 +127,7 @@ fn proportional_body(lines: &[&str], start: usize, end: usize, target_tokens: us
 }
 
 /// Split `content` into prioritized chunks sized to `budget_tokens` spread across `total_items` sibling slices.
+#[must_use]
 pub fn adaptive_chunk(content: &str, budget_tokens: usize, total_items: usize) -> Vec<ChunkResult> {
     let lines: Vec<&str> = content.lines().collect();
     let total_lines = lines.len().max(1);

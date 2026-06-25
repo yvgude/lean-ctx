@@ -277,6 +277,7 @@ pub struct CoverageSummary {
 }
 
 /// Summarize a check run.
+#[must_use]
 pub fn summarize(checks: &[CoverageCheck]) -> CoverageSummary {
     let mut covered: Vec<&str> = checks.iter().map(|c| c.control).collect();
     covered.dedup();

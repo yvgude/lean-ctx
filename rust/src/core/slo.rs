@@ -200,6 +200,7 @@ pub fn reload() {
     }
 }
 
+#[must_use]
 pub fn active_slos() -> Vec<SloDefinition> {
     config_store().lock().map(|s| s.clone()).unwrap_or_default()
 }
@@ -309,6 +310,7 @@ pub fn evaluate() -> SloSnapshot {
     }
 }
 
+#[must_use]
 pub fn evaluate_quiet() -> SloSnapshot {
     // Record that SLO evaluation happened (count-only observability).
     crate::core::verification_observability::record_slo_eval();
@@ -370,7 +372,7 @@ fn record_violation(status: &SloStatus) {
 }
 
 fn emit_slo_event(status: &SloStatus) {
-    events::emit(events::EventKind::SloViolation {
+    let _ = events::emit(events::EventKind::SloViolation {
         slo_name: status.name.clone(),
         metric: format!("{:?}", status.metric),
         threshold: status.threshold,
@@ -379,6 +381,7 @@ fn emit_slo_event(status: &SloStatus) {
     });
 }
 
+#[must_use]
 pub fn violation_history(limit: usize) -> Vec<ViolationEntry> {
     violation_store()
         .lock()
@@ -400,6 +403,7 @@ pub fn clear_violations() {
 // ---------------------------------------------------------------------------
 
 impl SloSnapshot {
+    #[must_use]
     pub fn format_compact(&self) -> String {
         let total = self.slos.len();
         let violated = self.violations.len();
@@ -415,10 +419,12 @@ impl SloSnapshot {
         out
     }
 
+    #[must_use]
     pub fn should_block(&self) -> bool {
         self.worst_action == Some(SloAction::Block)
     }
 
+    #[must_use]
     pub fn should_throttle(&self) -> bool {
         matches!(
             self.worst_action,

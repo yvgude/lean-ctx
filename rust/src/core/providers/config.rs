@@ -31,6 +31,7 @@ impl GitLabConfig {
         })
     }
 
+    #[must_use]
     pub fn api_url(&self, endpoint: &str) -> String {
         format!("https://{}/api/v4{}", self.host, endpoint)
     }

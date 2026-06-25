@@ -259,6 +259,7 @@ fn apply(action: &Action) -> String {
 }
 
 /// CLI entry: `lean-ctx rules dedup [--apply]`.
+#[must_use]
 pub fn run(apply_changes: bool) -> i32 {
     let Some(home) = dirs::home_dir() else {
         eprintln!("Error: could not determine home directory");

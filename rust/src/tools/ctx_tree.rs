@@ -7,6 +7,7 @@ use crate::core::tokens::count_tokens;
 
 /// Generates a compact directory tree listing with file counts.
 /// When `respect_gitignore` is true, entries matching .gitignore patterns are excluded.
+#[must_use]
 pub fn handle(
     path: &str,
     depth: usize,

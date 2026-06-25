@@ -20,6 +20,7 @@ impl Default for SessionState {
 
 impl SessionState {
     /// Creates a new session with a unique ID and current timestamp.
+    #[must_use]
     pub fn new() -> Self {
         let now = Utc::now();
         Self {
@@ -67,6 +68,7 @@ impl SessionState {
     }
 
     /// Returns `true` if enough changes have accumulated to warrant a disk save.
+    #[must_use]
     pub fn should_save(&self) -> bool {
         self.stats.unsaved_changes >= BATCH_SAVE_INTERVAL
     }
@@ -392,6 +394,7 @@ impl SessionState {
     }
 
     /// Returns `true` if an evidence record with the given key exists.
+    #[must_use]
     pub fn has_evidence_key(&self, key: &str) -> bool {
         self.evidence.iter().any(|e| e.key == key)
     }
@@ -407,9 +410,10 @@ impl SessionState {
     }
 
     /// Returns the effective working directory for shell commands.
-    /// Priority: explicit cwd arg > session shell_cwd > project_root > process cwd.
-    /// Explicit CWD and stored shell_cwd are jail-checked against the project root
+    /// Priority: explicit cwd arg > session `shell_cwd` > `project_root` > process cwd.
+    /// Explicit CWD and stored `shell_cwd` are jail-checked against the project root
     /// to prevent MCP clients from escaping the workspace.
+    #[must_use]
     pub fn effective_cwd(&self, explicit_cwd: Option<&str>) -> String {
         let root = self.project_root.as_deref().unwrap_or(".");
         if let Some(cwd) = explicit_cwd
@@ -438,7 +442,7 @@ impl SessionState {
         }
     }
 
-    /// Updates shell_cwd by detecting `cd` in the command.
+    /// Updates `shell_cwd` by detecting `cd` in the command.
     /// Handles: `cd /abs/path`, `cd rel/path` (relative to current cwd),
     /// `cd ..`, and chained commands like `cd foo && ...`.
     /// The new CWD is jail-checked against the project root.

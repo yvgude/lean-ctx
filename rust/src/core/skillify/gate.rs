@@ -40,6 +40,7 @@ fn is_generic(body: &str) -> bool {
 }
 
 /// Judge a candidate against the configured thresholds.
+#[must_use]
 pub fn judge(c: &SkillCandidate, min_confidence: f32, min_recurrence: u32) -> Verdict {
     if c.body.chars().count() < MIN_BODY_LEN {
         return Verdict::Skip("too short".to_string());

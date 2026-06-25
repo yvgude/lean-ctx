@@ -356,10 +356,12 @@ fn persist_detected_model(model: &str) {
     }
 }
 
+#[must_use]
 pub fn model_context_window(model: &str) -> usize {
     crate::core::model_registry::context_window_for_model(model)
 }
 
+#[must_use]
 pub fn load_detected_model() -> Option<(String, usize)> {
     let data_dir = crate::core::data_dir::lean_ctx_data_dir().ok()?;
     let path = data_dir.join("detected_model.json");

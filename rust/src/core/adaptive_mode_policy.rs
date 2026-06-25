@@ -29,6 +29,7 @@ pub struct ModePenalty {
 }
 
 impl AdaptiveModePolicyStore {
+    #[must_use]
     pub fn load() -> Self {
         let path = policy_path();
         let Ok(s) = std::fs::read_to_string(&path) else {
@@ -110,6 +111,7 @@ impl AdaptiveModePolicyStore {
         entry.last_ts = Some(ts.to_string());
     }
 
+    #[must_use]
     pub fn penalty(&self, intent: Option<&str>, mode: &str) -> f64 {
         let Some(key) = normalize_mode_key(mode) else {
             return 0.0;
@@ -126,6 +128,7 @@ impl AdaptiveModePolicyStore {
             .map_or(0.0, |p| p.ema_badness.clamp(0.0, 1.0))
     }
 
+    #[must_use]
     pub fn choose_auto_mode(&self, intent: Option<&str>, predicted: &str) -> String {
         let candidates = auto_candidates(predicted);
         let mut best_mode = predicted.to_string();

@@ -39,6 +39,7 @@ fn db_path() -> PathBuf {
 
 /// Current on-disk size of the archive DB in bytes (including WAL). Used by
 /// `doctor` to surface the footprint budget.
+#[must_use]
 pub fn db_size_bytes() -> u64 {
     let base = db_path();
     let mut total = 0u64;

@@ -25,6 +25,7 @@ const VENV_DIR_NAMES: &[&str] = &[".venv", "venv"];
 
 /// Returns `true` when `entry` is a vendor/dependency directory that should
 /// never be descended into during a scan.
+#[must_use]
 pub fn is_vendor_dir(entry: &ignore::DirEntry) -> bool {
     if entry.depth() == 0 || !entry.file_type().is_some_and(|ft| ft.is_dir()) {
         return false;
@@ -40,6 +41,7 @@ pub fn is_vendor_dir(entry: &ignore::DirEntry) -> bool {
 
 /// Predicate for `ignore::WalkBuilder::filter_entry`: prunes vendor
 /// directories and cloud placeholders.
+#[must_use]
 pub fn keep_entry(entry: &ignore::DirEntry) -> bool {
     !is_vendor_dir(entry) && crate::core::cloud_files::keep_entry(entry)
 }

@@ -1,6 +1,6 @@
-//! YouTube transcript adapter (no API key required).
+//! `YouTube` transcript adapter (no API key required).
 //!
-//! Transcripts are obtained via YouTube's **InnerTube** `player` endpoint — the
+//! Transcripts are obtained via `YouTube`'s **`InnerTube`** `player` endpoint — the
 //! same internal API the official apps use. We POST an `ANDROID` client context
 //! and read the `captionTracks` it returns; those caption URLs are
 //! server-fetchable, unlike the session-bound ones embedded in the watch page
@@ -15,9 +15,9 @@ use serde::Deserialize;
 
 use super::{fetch, html_to_text, url_guard};
 
-/// InnerTube `player` endpoint (same host the SSRF guard already permits).
+/// `InnerTube` `player` endpoint (same host the SSRF guard already permits).
 const INNERTUBE_PLAYER: &str = "https://www.youtube.com/youtubei/v1/player";
-/// Android client identity. InnerTube cross-checks the UA against `clientName`.
+/// Android client identity. `InnerTube` cross-checks the UA against `clientName`.
 const ANDROID_CLIENT_VERSION: &str = "20.10.38";
 const ANDROID_UA: &str = "com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip";
 
@@ -30,7 +30,8 @@ pub struct Transcript {
     pub full_text: String,
 }
 
-/// Extract a YouTube video id from common URL shapes, or `None`.
+/// Extract a `YouTube` video id from common URL shapes, or `None`.
+#[must_use]
 pub fn video_id(url: &str) -> Option<String> {
     let safe = url_guard::validate(url).ok()?;
     let host = safe.host.to_ascii_lowercase();

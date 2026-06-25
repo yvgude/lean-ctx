@@ -1,14 +1,17 @@
 use std::path::Path;
 
 /// JSON response bodies for dashboard mutation APIs (`/api/*` POST handlers).
+#[must_use]
 pub fn json_ok() -> String {
     r#"{"ok":true}"#.to_string()
 }
 
+#[must_use]
 pub fn json_err(msg: &str) -> String {
     serde_json::json!({ "error": msg }).to_string()
 }
 
+#[must_use]
 pub fn extract_query_param(qs: &str, key: &str) -> Option<String> {
     for pair in qs.split('&') {
         let Some((k, v)) = pair.split_once('=') else {
@@ -21,6 +24,7 @@ pub fn extract_query_param(qs: &str, key: &str) -> Option<String> {
     None
 }
 
+#[must_use]
 pub fn percent_decode_query_component(s: &str) -> String {
     let mut out: Vec<u8> = Vec::with_capacity(s.len());
     let b = s.as_bytes();
@@ -51,6 +55,7 @@ pub fn percent_decode_query_component(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+#[must_use]
 pub fn normalize_dashboard_demo_path(path: &str) -> String {
     let trimmed = path.trim();
     if trimmed.is_empty() {
@@ -71,6 +76,7 @@ pub fn normalize_dashboard_demo_path(path: &str) -> String {
         .replace('\\', std::path::MAIN_SEPARATOR_STR)
 }
 
+#[must_use]
 pub fn is_windows_absolute_path(path: &str) -> bool {
     let bytes = path.as_bytes();
     if bytes.len() >= 3

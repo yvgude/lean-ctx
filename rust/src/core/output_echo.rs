@@ -54,6 +54,7 @@ pub struct EchoStats {
 }
 
 impl EchoStats {
+    #[must_use]
     pub fn avg_ratio(&self, window: usize) -> f64 {
         let recent: Vec<&EchoReport> = self.reports.iter().rev().take(window).collect();
         if recent.is_empty() {
@@ -65,6 +66,7 @@ impl EchoStats {
     /// Per-day `(YYYY-MM-DD, avg_echo_ratio, samples)` over the last `days`
     /// days, ascending by day — the dashboard's learning trend (#507).
     /// Days are UTC, consistent with the ledger's day slices.
+    #[must_use]
     pub fn daily_trend(&self, days: u32) -> Vec<(String, f64, u64)> {
         use std::collections::BTreeMap;
         let cutoff = now_unix().saturating_sub(u64::from(days) * 86_400);
@@ -100,6 +102,7 @@ fn now_unix() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
+#[must_use]
 pub fn load_stats() -> EchoStats {
     std::fs::read_to_string(stats_path())
         .ok()
@@ -161,6 +164,7 @@ fn code_lines_of_response(response: &str) -> Vec<String> {
 
 /// Pure analysis: which share of the response's code lines appear verbatim
 /// in any source document (recently read file contents)?
+#[must_use]
 pub fn analyze(response: &str, sources: &[String]) -> EchoReport {
     let code_lines = code_lines_of_response(response);
     let response_lines = response.lines().count();
@@ -325,6 +329,7 @@ fn emit_feedback_event(response: &str, turn_input_tokens: u64) {
 /// CEP nudge for the MCP server to append to a tool result. Stable text in
 /// 10%-steps (prompt-cache friendly, #498), cooldown-limited. Consuming the
 /// nudge advances the cooldown marker.
+#[must_use]
 pub fn take_pending_nudge() -> Option<String> {
     let mut stats = load_stats();
     if stats.reports.len() < NUDGE_WINDOW {
@@ -346,6 +351,7 @@ pub fn take_pending_nudge() -> Option<String> {
 }
 
 /// Average echo ratio over the rolling window — CEP score input.
+#[must_use]
 pub fn current_avg_ratio() -> f64 {
     load_stats().avg_ratio(MAX_REPORTS)
 }

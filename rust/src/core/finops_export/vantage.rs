@@ -39,6 +39,7 @@ fn tags_json(row: &DailyCostRow) -> String {
 
 /// Vantage custom-provider CSV: Usage rows plus Credit rows (negative cost)
 /// for the verified savings.
+#[must_use]
 pub fn to_csv(rows: &[DailyCostRow]) -> String {
     let mut out = HEADER.join(",");
     out.push('\n');
@@ -82,7 +83,7 @@ pub fn upload(csv: &str) -> Result<String, String> {
     let url = format!("https://api.vantage.sh/v2/integrations/{integration}/costs.csv");
 
     // Minimal multipart/form-data body (one file part named `csv`).
-    let boundary = format!("leanctx{:x}", std::process::id() as u64 ^ 0x5f3759df);
+    let boundary = format!("leanctx{:x}", u64::from(std::process::id()) ^ 0x5f3759df);
     let mut body = Vec::new();
     body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
     body.extend_from_slice(

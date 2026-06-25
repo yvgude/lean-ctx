@@ -45,6 +45,7 @@ fn local() -> Option<&'static [AddonManifest]> {
 
 /// Every known registry addon, sorted by name. A user-override entry replaces
 /// the bundled entry with the same name.
+#[must_use]
 pub fn all() -> Vec<AddonManifest> {
     let mut by_name: BTreeMap<String, AddonManifest> = BTreeMap::new();
     for m in bundled() {
@@ -59,6 +60,7 @@ pub fn all() -> Vec<AddonManifest> {
 }
 
 /// Look up a single addon by its slug (case-insensitive).
+#[must_use]
 pub fn get(name: &str) -> Option<AddonManifest> {
     let needle = name.trim().to_ascii_lowercase();
     all()
@@ -68,6 +70,7 @@ pub fn get(name: &str) -> Option<AddonManifest> {
 
 /// Full-text-ish search over name/description/author/keywords/categories.
 /// An empty query returns the whole catalog.
+#[must_use]
 pub fn search(query: &str) -> Vec<AddonManifest> {
     let q = query.trim().to_ascii_lowercase();
     all()

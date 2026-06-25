@@ -82,6 +82,7 @@ fn store_path() -> Option<PathBuf> {
 }
 
 impl AutonomyDriversV1 {
+    #[must_use]
     pub fn new() -> Self {
         let now = chrono::Utc::now().to_rfc3339();
         Self {
@@ -93,6 +94,7 @@ impl AutonomyDriversV1 {
         }
     }
 
+    #[must_use]
     pub fn load() -> Self {
         let Some(path) = store_path() else {
             return Self::new();
@@ -122,6 +124,7 @@ impl AutonomyDriversV1 {
         self.prune_in_place();
     }
 
+    #[must_use]
     pub fn latest(&self) -> Option<&AutonomyDriverEventV1> {
         self.events.last()
     }
@@ -185,6 +188,7 @@ pub fn write_project_autonomy_drivers_v1(
     Ok(path)
 }
 
+#[must_use]
 pub fn format_compact_event(ev: &AutonomyDriverEventV1) -> String {
     let mut parts = Vec::new();
     for d in &ev.decisions {

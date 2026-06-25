@@ -20,6 +20,7 @@ pub struct LineScore {
 const MAX_TRIGRAM_SET_SIZE: usize = 10_000;
 
 /// Scores all lines in the input text for information density.
+#[must_use]
 pub fn score_lines(text: &str) -> Vec<LineScore> {
     let lines: Vec<&str> = text.lines().collect();
     let mut seen_trigrams: HashSet<String> = HashSet::new();

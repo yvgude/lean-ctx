@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::core::handoff_ledger::HandoffLedgerV1;
 
+#[must_use]
 pub fn format_created(path: &Path, ledger: &HandoffLedgerV1) -> String {
     let wf = ledger.workflow.as_ref().map_or_else(
         || "none".to_string(),
@@ -19,6 +20,7 @@ pub fn format_created(path: &Path, ledger: &HandoffLedgerV1) -> String {
     )
 }
 
+#[must_use]
 pub fn format_list(items: &[std::path::PathBuf]) -> String {
     if items.is_empty() {
         return "No handoff ledgers found.".to_string();
@@ -30,16 +32,19 @@ pub fn format_list(items: &[std::path::PathBuf]) -> String {
     lines.join("\n")
 }
 
+#[must_use]
 pub fn format_show(path: &Path, ledger: &HandoffLedgerV1) -> String {
     let mut out = serde_json::to_string_pretty(ledger).unwrap_or_else(|_| "{}".to_string());
     out.push('\n');
     format!("ctx_handoff show\n path: {}\n{}", path.display(), out)
 }
 
+#[must_use]
 pub fn format_clear(removed: u32) -> String {
     format!("ctx_handoff clear\n removed: {removed}")
 }
 
+#[must_use]
 pub fn format_exported(
     path: Option<&Path>,
     schema_version: u32,
@@ -55,6 +60,7 @@ pub fn format_exported(
     out
 }
 
+#[must_use]
 pub fn format_imported(
     path: &Path,
     schema_version: u32,

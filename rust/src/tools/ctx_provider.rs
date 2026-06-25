@@ -6,6 +6,7 @@ use crate::core::providers::registry::global_registry;
 use crate::core::providers::{ProviderResult, gitlab};
 use crate::server::tool_trait::ToolContext;
 
+#[must_use]
 pub fn handle(args: &serde_json::Map<String, serde_json::Value>, ctx: &ToolContext) -> String {
     let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -493,9 +494,9 @@ fn handle_registry_chunks(
 
 /// Consolidate provider chunks into ALL long-term stores:
 ///   1. Session cache (fast re-reads at ~13 tokens)
-///   2. BM25 index (searchable via ctx_semantic_search)
-///   3. Graph index (cross-source edges for ctx_read hints)
-///   4. Knowledge (extracted facts for ctx_knowledge)
+///   2. BM25 index (searchable via `ctx_semantic_search`)
+///   3. Graph index (cross-source edges for `ctx_read` hints)
+///   4. Knowledge (extracted facts for `ctx_knowledge`)
 ///
 /// Cache writes happen synchronously (fast). BM25/Graph/Knowledge
 /// writes happen in a background thread to avoid blocking the tool

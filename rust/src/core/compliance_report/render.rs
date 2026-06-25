@@ -30,6 +30,7 @@ fn status_label(s: RowStatus) -> &'static str {
 }
 
 /// Plain-text report — deterministic, ASCII-only (safe for the PDF path).
+#[must_use]
 pub fn to_text(r: &ComplianceReportV1) -> String {
     let mut o = String::new();
     let _ = writeln!(o, "lean-ctx Compliance Report (v{})", r.schema_version);
@@ -198,6 +199,7 @@ fn csv_row(cells: &[&str]) -> String {
 
 /// Flat control matrix as CSV — one row per OWASP risk and framework control,
 /// plus the enforcement and retention summary lines.
+#[must_use]
 pub fn to_csv(r: &ComplianceReportV1) -> String {
     let mut o = String::new();
     let _ = writeln!(

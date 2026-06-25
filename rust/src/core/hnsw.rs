@@ -4,7 +4,7 @@
 //! using Hierarchical Navigable Small World Graphs" (IEEE TPAMI 2018).
 //!
 //! This is a minimal implementation optimized for lean-ctx's embedding dimensions (384-d).
-//! For indices under BRUTE_FORCE_THRESHOLD chunks, falls back to exact linear scan
+//! For indices under `BRUTE_FORCE_THRESHOLD` chunks, falls back to exact linear scan
 //! with binary-heap top-k selection (O(n log k) instead of O(n log n)).
 //!
 //! All embeddings are stored in a single flat `Arc<[f32]>` allocation (row-major). This
@@ -36,6 +36,7 @@ pub struct FlatEmbeddings {
 impl FlatEmbeddings {
     /// Number of vectors in the matrix.
     #[inline]
+    #[must_use]
     pub fn n_vectors(&self) -> usize {
         if self.dim == 0 {
             return 0;
@@ -45,6 +46,7 @@ impl FlatEmbeddings {
 
     /// View the i-th vector as a `&[f32]`.
     #[inline]
+    #[must_use]
     pub fn get(&self, i: usize) -> &[f32] {
         let start = i * self.dim;
         &self.data[start..][..self.dim]
@@ -52,6 +54,7 @@ impl FlatEmbeddings {
 
     /// Extract the i-th vector into an owned `Vec<f32>`.
     #[inline]
+    #[must_use]
     pub fn get_vec(&self, i: usize) -> Vec<f32> {
         self.get(i).to_vec()
     }
@@ -148,6 +151,7 @@ impl AnnIndex {
     /// The corpus is shared via `FlatEmbeddings.data` (an `Arc::clone`, zero
     /// bytes copied), so the cached HNSW index shares the *same* flat f32
     /// allocation as the per-query aligned corpus.
+    #[must_use]
     pub fn build(embeddings: FlatEmbeddings) -> Self {
         let n = embeddings.n_vectors();
         if n == 0 {
@@ -343,6 +347,7 @@ impl AnnIndex {
 
     /// Search for the top-k nearest neighbors of a query vector.
     /// Returns (index, similarity) pairs sorted by descending similarity.
+    #[must_use]
     pub fn search(&self, query: &[f32], top_k: usize) -> Vec<(usize, f32)> {
         if self.embeddings.n_vectors() == 0 {
             return Vec::new();
@@ -366,6 +371,7 @@ impl AnnIndex {
 }
 
 /// O(n log k) brute-force top-k selection using a min-heap over a flat buffer.
+#[must_use]
 pub fn brute_force_topk(
     embeddings: &FlatEmbeddings,
     query: &[f32],

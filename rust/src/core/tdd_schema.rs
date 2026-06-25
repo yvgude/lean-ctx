@@ -1,12 +1,14 @@
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
+#[must_use]
 pub fn default_tdd_schema_path() -> PathBuf {
     let rust_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let repo_root = rust_dir.parent().unwrap_or(&rust_dir);
     repo_root.join("website/generated/tdd-schema.json")
 }
 
+#[must_use]
 pub fn tdd_schema_value() -> Value {
     json!({
         "schema_version": 1,

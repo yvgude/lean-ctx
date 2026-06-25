@@ -39,6 +39,7 @@ fn knowledge_category_is_skillable(cat: &str) -> bool {
 
 /// Mine candidates from the project's knowledge facts and agent diaries,
 /// merged by slug (recurrence summed, strongest body + confidence kept).
+#[must_use]
 pub fn mine_candidates(project_root: &str) -> Vec<SkillCandidate> {
     let mut by_slug: HashMap<String, SkillCandidate> = HashMap::new();
 
@@ -154,6 +155,7 @@ fn first_sentence(text: &str) -> String {
 }
 
 /// URL/file-safe slug: lowercase alphanumerics, single dashes, trimmed, capped.
+#[must_use]
 pub fn slugify(text: &str) -> String {
     let mut slug = String::new();
     let mut prev_dash = false;

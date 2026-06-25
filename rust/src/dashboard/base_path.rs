@@ -17,6 +17,7 @@
 ///
 /// `""`/`"/"` → `""`, `"dashboard"`/`"/dashboard/"`/`"//dashboard//"` →
 /// `"/dashboard"`.
+#[must_use]
 pub fn normalize(input: &str) -> String {
     let trimmed = input.trim().trim_matches('/');
     if trimmed.is_empty() {
@@ -30,6 +31,7 @@ pub fn normalize(input: &str) -> String {
 /// routing always sees a root-relative path. Requests that already arrive
 /// root-relative (proxy stripped the prefix, or direct local access) pass
 /// through unchanged.
+#[must_use]
 pub fn strip<'a>(path: &'a str, base: &str) -> &'a str {
     if base.is_empty() {
         return path;
@@ -47,6 +49,7 @@ pub fn strip<'a>(path: &'a str, base: &str) -> &'a str {
 /// the base path. Only the quote/paren-delimited forms that actually occur in the
 /// dashboard assets (`"/static/`, `'/api/`, `` `/api/ ``, `url(/static/`, …) are
 /// rewritten, so ordinary text is never touched. No-op when `base` is empty.
+#[must_use]
 pub fn rewrite_asset_urls(body: &str, base: &str) -> String {
     if base.is_empty() {
         return body.to_string();

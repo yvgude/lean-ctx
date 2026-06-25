@@ -45,8 +45,9 @@ pub struct Aggregation {
 /// Cap on `by_tool_blocked` rows embedded in a report (keeps it bounded).
 const MAX_TOOL_ROWS: usize = 12;
 
-/// Stable snake_case label for an event type (matches the on-disk encoding,
+/// Stable `snake_case` label for an event type (matches the on-disk encoding,
 /// without depending on serde formatting on the hot path).
+#[must_use]
 pub fn event_label(ev: &AuditEventType) -> &'static str {
     match ev {
         AuditEventType::ToolCall => "tool_call",

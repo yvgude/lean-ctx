@@ -131,6 +131,7 @@ pub struct ProgressEntryViz {
 // Data collection
 // ---------------------------------------------------------------------------
 
+#[must_use]
 pub fn collect_data(project_root: &str) -> VisualizerData {
     let graph = collect_graph(project_root);
     let knowledge = collect_knowledge(project_root);
@@ -308,6 +309,7 @@ fn map_stats(s: &SessionStats) -> SessionStatsEntry {
 // HTML rendering
 // ---------------------------------------------------------------------------
 
+#[must_use]
 pub fn render_html(data: &VisualizerData) -> String {
     let json = serde_json::to_string(data).unwrap_or_else(|_| "{}".to_string());
     let template = include_str!("../assets/visualizer.html");

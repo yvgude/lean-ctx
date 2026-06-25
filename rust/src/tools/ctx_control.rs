@@ -1,6 +1,6 @@
-//! ctx_control -- Universal context manipulation tool.
+//! `ctx_control` -- Universal context manipulation tool.
 //!
-//! Single entry point for include/exclude/pin/rewrite/set_view operations.
+//! Single entry point for `include/exclude/pin/rewrite/set_view` operations.
 //! Delegates to the Overlay and Ledger systems.
 
 use serde_json::Value;

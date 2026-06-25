@@ -101,6 +101,7 @@ impl DiagnosticsStore {
         self.dirty = true;
     }
 
+    #[must_use]
     pub fn has_error(&self, path: &str) -> bool {
         let norm = crate::core::pathutil::normalize_tool_path(path);
         self.diagnostics.iter().any(|d| {
@@ -108,6 +109,7 @@ impl DiagnosticsStore {
         })
     }
 
+    #[must_use]
     pub fn severity_for(&self, path: &str) -> Option<Severity> {
         let norm = crate::core::pathutil::normalize_tool_path(path);
         let mut found: Option<Severity> = None;
@@ -122,6 +124,7 @@ impl DiagnosticsStore {
         found
     }
 
+    #[must_use]
     pub fn for_path(&self, path: &str) -> Vec<&Diagnostic> {
         let norm = crate::core::pathutil::normalize_tool_path(path);
         self.diagnostics
@@ -184,15 +187,18 @@ pub fn record_from_shell(command: &str, output: &str, exit_code: i32) {
 }
 
 /// Does any tracked file currently carry a compile error?
+#[must_use]
 pub fn has_error(path: &str) -> bool {
     global().lock().is_ok_and(|s| s.has_error(path))
 }
 
+#[must_use]
 pub fn severity_for(path: &str) -> Option<Severity> {
     global().lock().ok().and_then(|s| s.severity_for(path))
 }
 
 /// Snapshot for ranking/triage consumers: `(path, severity)` pairs.
+#[must_use]
 pub fn snapshot() -> Vec<(String, Severity)> {
     global()
         .lock()
@@ -206,6 +212,7 @@ pub fn snapshot() -> Vec<(String, Severity)> {
 }
 
 /// Diagnostics for one path: `(line, severity, message)` triples.
+#[must_use]
 pub fn details_for(path: &str) -> Vec<(Option<u32>, Severity, String)> {
     global()
         .lock()
@@ -393,6 +400,7 @@ fn parse_eslint(output: &str) -> Vec<Diagnostic> {
 }
 
 /// Ranking boost per path: errors dominate, warnings hint (#499).
+#[must_use]
 pub fn relevance_boost(path: &str) -> f64 {
     match severity_for(path) {
         Some(Severity::Error) => 0.35,

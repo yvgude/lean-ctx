@@ -21,6 +21,7 @@ pub struct ContextEngine {
 }
 
 impl ContextEngine {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             server: LeanCtxServer::new(),
@@ -36,6 +37,7 @@ impl ContextEngine {
         }
     }
 
+    #[must_use]
     pub fn from_server(server: LeanCtxServer) -> Self {
         Self {
             server,

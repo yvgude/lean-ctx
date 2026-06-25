@@ -1,4 +1,4 @@
-//! PageRank computation on the Property Graph.
+//! `PageRank` computation on the Property Graph.
 //!
 //! Provides a reusable `compute` function that can be called by
 //! `ctx_architecture`, `ctx_overview`, and `ctx_fill` for importance-weighted
@@ -55,13 +55,15 @@ impl PageRankInput {
     }
 }
 
+#[must_use]
 pub fn compute(input: &PageRankInput, damping: f64, iterations: usize) -> HashMap<String, f64> {
     compute_personalized(input, damping, iterations, &[])
 }
 
-/// Personalized PageRank: if `seed_files` is non-empty, teleportation bias goes
+/// Personalized `PageRank`: if `seed_files` is non-empty, teleportation bias goes
 /// to those files instead of uniform distribution. Handles dangling nodes
 /// (nodes with no outgoing edges) by redistributing their rank.
+#[must_use]
 pub fn compute_personalized(
     input: &PageRankInput,
     damping: f64,

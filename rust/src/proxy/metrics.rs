@@ -65,6 +65,7 @@ pub fn persist() {
 
 /// Cross-process read of the persisted proxy totals, used by the `gain`
 /// CLI/dashboard to reconcile savings against the real number of provider turns.
+#[must_use]
 pub fn load_persisted() -> Option<ProxyMetrics> {
     let path = metrics_path()?;
     let data = std::fs::read_to_string(path).ok()?;

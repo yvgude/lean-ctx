@@ -35,6 +35,7 @@ use std::path::{Path, PathBuf};
 /// Uses `$LEAN_CTX_DATA_DIR/graphs/<project_hash>/` (consistent with
 /// `ProjectIndex::index_dir`).  Falls back to `<project>/.lean-ctx/`
 /// only when the global data directory cannot be resolved.
+#[must_use]
 pub fn graph_dir(project_root: &str) -> PathBuf {
     if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
         let normalized = crate::core::graph_index::normalize_project_root(project_root);
@@ -78,6 +79,7 @@ pub const GRAPH_ENGINE_VERSION: u32 = 2;
 /// unreadable meta) — and must therefore be rebuilt before its edges can be
 /// trusted. Callers pair this with a node-count check: an empty graph is rebuilt
 /// regardless; a non-empty-but-outdated graph is rebuilt by this gate.
+#[must_use]
 pub fn engine_outdated(project_root: &str) -> bool {
     load_meta(project_root).is_none_or(|m| m.engine_version < GRAPH_ENGINE_VERSION)
 }
@@ -222,7 +224,7 @@ impl CodeGraph {
     }
 
     /// Clear only the code graph (nodes, edges, file catalog), preserving
-    /// provider `cross_source_edges`. Used by the graph_index→PG mirror (#682.1)
+    /// provider `cross_source_edges`. Used by the `graph_index→PG` mirror (#682.1)
     /// so rebuilding the code graph never drops lateral provider hints, which
     /// live in their own table and are repopulated on a separate ingest cycle.
     pub fn clear_code_graph(&self) -> anyhow::Result<()> {

@@ -9,14 +9,14 @@ use tiktoken_rs::CoreBPE;
 /// in token counts. This enum lets callers select the appropriate tokenizer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TokenizerFamily {
-    /// GPT-4o, GPT-4-turbo (tiktoken o200k_base, exact)
+    /// GPT-4o, GPT-4-turbo (tiktoken `o200k_base`, exact)
     #[default]
     O200kBase,
-    /// Claude / Anthropic (approximated via tiktoken cl100k_base)
+    /// Claude / Anthropic (approximated via tiktoken `cl100k_base`)
     Cl100k,
-    /// Gemini / Google (o200k_base with 1.1× correction factor)
+    /// Gemini / Google (`o200k_base` with 1.1× correction factor)
     Gemini,
-    /// Llama 3+ (approximated via cl100k_base)
+    /// Llama 3+ (approximated via `cl100k_base`)
     Llama,
 }
 
@@ -36,6 +36,7 @@ impl std::fmt::Display for TokenizerFamily {
 /// Matches are case-insensitive substrings. Falls back to `O200kBase`.
 /// Accuracy: cl100k is within ~3% of Claude's actual tokenizer;
 /// Gemini correction factor 1.08 is empirically calibrated; o200k is exact for GPT-4o+.
+#[must_use]
 pub fn detect_tokenizer(client_name: &str) -> TokenizerFamily {
     let lower = client_name.to_ascii_lowercase();
     if lower.contains("claude")
@@ -141,10 +142,11 @@ fn ceil_char_boundary(s: &str, idx: usize) -> usize {
 
 // ── Public API ─────────────────────────────────────────────
 
-/// Counts BPE tokens using the default tokenizer (o200k_base).
+/// Counts BPE tokens using the default tokenizer (`o200k_base`).
 ///
 /// Backward-compatible — equivalent to
 /// `count_tokens_for(text, TokenizerFamily::O200kBase)`.
+#[must_use]
 pub fn count_tokens(text: &str) -> usize {
     count_tokens_for(text, COUNTING_FAMILY)
 }
@@ -156,11 +158,13 @@ pub fn count_tokens(text: &str) -> usize {
 pub const COUNTING_FAMILY: TokenizerFamily = TokenizerFamily::O200kBase;
 
 /// Label of the tokenizer used for counting (e.g. `"o200k_base"`).
+#[must_use]
 pub fn counting_family_label() -> String {
     COUNTING_FAMILY.to_string()
 }
 
 /// Counts BPE tokens using the specified tokenizer family.
+#[must_use]
 pub fn count_tokens_for(text: &str, family: TokenizerFamily) -> usize {
     if text.is_empty() {
         return 0;
@@ -189,7 +193,8 @@ pub fn count_tokens_for(text: &str, family: TokenizerFamily) -> usize {
     count
 }
 
-/// Encodes text into BPE token IDs (o200k_base).
+/// Encodes text into BPE token IDs (`o200k_base`).
+#[must_use]
 pub fn encode_tokens(text: &str) -> Vec<u32> {
     if text.is_empty() {
         return Vec::new();
@@ -203,6 +208,7 @@ pub fn encode_tokens(text: &str) -> Vec<u32> {
 /// Encodes text into BPE token IDs for the specified tokenizer family.
 ///
 /// Gemini correction is not applied here — this returns raw token IDs.
+#[must_use]
 pub fn encode_tokens_for(text: &str, family: TokenizerFamily) -> Vec<u32> {
     if text.is_empty() {
         return Vec::new();

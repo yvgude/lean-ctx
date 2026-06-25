@@ -1,4 +1,4 @@
-//! Core config sections (root, ide_paths, lsp, archive, search, embedding).
+//! Core config sections (root, `ide_paths`, lsp, archive, search, embedding).
 //! Split out of `schema/mod.rs`; `use super::*` re-imports the key-builder
 //! helpers and `SectionSchema`.
 

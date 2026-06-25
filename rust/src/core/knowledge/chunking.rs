@@ -110,6 +110,7 @@ fn derive_topic(facts: &[&KnowledgeFact]) -> String {
 /// Greedy agglomerative chunking. Input order is the salience order — the
 /// first member of each cluster is its most salient fact, and clusters are
 /// returned in the order of their founding (= salience) fact.
+#[must_use]
 pub fn cluster_facts<'a>(facts: &[&'a KnowledgeFact]) -> Vec<FactCluster<'a>> {
     let mut clusters: Vec<FactCluster<'a>> = Vec::new();
 
@@ -142,6 +143,7 @@ pub fn cluster_facts<'a>(facts: &[&'a KnowledgeFact]) -> Vec<FactCluster<'a>> {
 /// `[topic] key=val|key=val`. Facts whose category equals the topic drop the
 /// category prefix entirely (the header amortizes it) — that is where the
 /// token savings over the flat `cat/key=val|cat/key=val` list come from.
+#[must_use]
 pub fn render_chunked(clusters: &[FactCluster<'_>]) -> String {
     let mut out = String::from("FACTS:\n");
     for c in clusters {

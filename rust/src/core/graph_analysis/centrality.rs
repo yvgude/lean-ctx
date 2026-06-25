@@ -36,6 +36,7 @@ pub struct BridgeCentrality {
 /// Returns the top `limit` bridge nodes (betweenness > 0), highest first.
 /// Thin wrapper over [`compute_bridge_centrality`] for callers that don't need
 /// the sampling metadata.
+#[must_use]
 pub fn compute_bridge_nodes(edges: &[EdgeInfo], limit: usize) -> Vec<BridgeNode> {
     compute_bridge_centrality(edges, limit).nodes
 }

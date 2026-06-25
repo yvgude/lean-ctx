@@ -17,6 +17,7 @@ pub enum BundlePrivacyV1 {
 }
 
 impl BundlePrivacyV1 {
+    #[must_use]
     pub fn parse(s: Option<&str>) -> Self {
         match s.unwrap_or("redacted").trim().to_lowercase().as_str() {
             "full" => Self::Full,
@@ -70,6 +71,7 @@ pub struct SessionExcerptV1 {
     pub compression_level: String,
 }
 
+#[must_use]
 pub fn build_bundle_v1(session: &SessionState, privacy: BundlePrivacyV1) -> CcpSessionBundleV1 {
     let role_name = crate::core::roles::active_role_name();
     let role = crate::core::roles::active_role();

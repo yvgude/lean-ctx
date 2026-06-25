@@ -38,6 +38,7 @@ pub enum EntryKind {
 }
 
 impl EntryKind {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             EntryKind::Strategy => "Strategy",
@@ -108,7 +109,7 @@ impl Playbook {
         DeltaOutcome::Added(id)
     }
 
-    /// Vote on an entry by stable ID (agent feedback via ctx_session).
+    /// Vote on an entry by stable ID (agent feedback via `ctx_session`).
     pub fn vote(&mut self, id: u32, helpful: bool) -> bool {
         match self.entries.iter_mut().find(|e| e.id == id) {
             Some(e) => {
@@ -124,7 +125,7 @@ impl Playbook {
     }
 
     /// Local eviction only: net-harmful entries and entries unconfirmed for
-    /// STALE_TURNS die. No global re-summarization ever happens.
+    /// `STALE_TURNS` die. No global re-summarization ever happens.
     pub fn evict(&mut self, current_turn: u32) -> usize {
         let before = self.entries.len();
         self.entries.retain(|e| {
@@ -138,6 +139,7 @@ impl Playbook {
     /// Render ordered by stable ID (prefix-cache friendly: old entries keep
     /// their byte positions). When `top_k` is exceeded, the lowest-salience
     /// entries are elided — never rewritten.
+    #[must_use]
     pub fn render(&self, top_k: usize) -> String {
         if self.entries.is_empty() {
             return String::new();
@@ -177,6 +179,7 @@ impl Playbook {
 
     /// Total content volume (entries × chars) — used by the brevity-bias
     /// regression test: repeated checkpoints must never shrink this.
+    #[must_use]
     pub fn information_volume(&self) -> usize {
         self.entries.iter().map(|e| e.content.len()).sum()
     }

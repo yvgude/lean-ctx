@@ -126,6 +126,7 @@ pub struct CostBreakdown {
 
 impl CostModel {
     /// Calculates the full cost breakdown from the stats store.
+    #[must_use]
     pub fn calculate(&self, store: &StatsStore) -> CostBreakdown {
         let input_cost_without =
             store.total_input_tokens as f64 / 1_000_000.0 * self.input_price_per_m;

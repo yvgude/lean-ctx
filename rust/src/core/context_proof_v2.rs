@@ -1,6 +1,6 @@
-//! ContextProofV2 — Claim-based verification schema.
+//! `ContextProofV2` — Claim-based verification schema.
 //!
-//! Extends ContextProofV1 with structured claims that decompose LLM
+//! Extends `ContextProofV1` with structured claims that decompose LLM
 //! output verification into individually verifiable assertions. Each
 //! claim is routed to the appropriate verifier and tagged with its
 //! verification status and evidence.
@@ -8,7 +8,7 @@
 //! Design based on:
 //!   - Amazon Cedar VGD (arXiv:2407.01688)
 //!   - VERGE neurosymbolic verification (arXiv:2601.20055)
-//!   - VeriGuard formal safety (arXiv:2510.05156)
+//!   - `VeriGuard` formal safety (arXiv:2510.05156)
 
 use serde::{Deserialize, Serialize};
 
@@ -106,6 +106,7 @@ pub struct ProofSummary {
 }
 
 impl ContextProofV2 {
+    #[must_use]
     pub fn new(run_id: String, session_id: Option<String>) -> Self {
         Self {
             proof_version: "ContextProofV2".to_string(),
@@ -180,6 +181,7 @@ impl ContextProofV2 {
 }
 
 impl ProofSummary {
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             total_claims: 0,
@@ -192,6 +194,7 @@ impl ProofSummary {
     }
 }
 
+#[must_use]
 pub fn deterministic_claim(id: &str, text: &str, passed: bool) -> Claim {
     Claim {
         id: id.to_string(),
@@ -209,6 +212,7 @@ pub fn deterministic_claim(id: &str, text: &str, passed: bool) -> Claim {
     }
 }
 
+#[must_use]
 pub fn policy_claim(id: &str, text: &str, kind: ClaimKind, passed: bool) -> Claim {
     Claim {
         id: id.to_string(),
@@ -226,6 +230,7 @@ pub fn policy_claim(id: &str, text: &str, kind: ClaimKind, passed: bool) -> Clai
     }
 }
 
+#[must_use]
 pub fn lean_proved_claim(id: &str, text: &str, kind: ClaimKind, theorem: &str) -> Claim {
     Claim {
         id: id.to_string(),

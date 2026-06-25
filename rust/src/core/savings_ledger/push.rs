@@ -52,6 +52,7 @@ impl std::fmt::Display for PushError {
 impl std::error::Error for PushError {}
 
 /// Resolve the signing identity (same precedence as the ledger's attribution).
+#[must_use]
 pub fn agent_id() -> String {
     std::env::var("LEAN_CTX_AGENT_ID")
         .or_else(|_| std::env::var("LCTX_AGENT_ID"))
@@ -59,6 +60,7 @@ pub fn agent_id() -> String {
 }
 
 /// The ingest endpoint for a team server base URL.
+#[must_use]
 pub fn ingest_endpoint(url: &str) -> String {
     format!("{}/api/v1/savings/ingest", url.trim_end_matches('/'))
 }

@@ -17,6 +17,7 @@ const RESEARCH_PROSE_CAP: usize = 24_000;
 /// 3. Everything else (shell/build/search output) flows through the unified
 ///    `compress_if_beneficial` pipeline. A `$ ...` command hint is extracted so
 ///    the pattern engine gets the same routing as the CLI and MCP paths.
+#[must_use]
 pub fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
     let compressed = compress_inner(content, tool_name);
     attach_ccr(content, compressed)

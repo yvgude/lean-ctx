@@ -68,6 +68,7 @@ fn hash_match(s: &str) -> u64 {
 
 /// Check if current search results are a delta of a previous identical-pattern search.
 /// Returns `Some(delta_output)` if only deltas should be sent, `None` for full results.
+#[must_use]
 pub fn compute_delta(pattern: &str, matches: &[String]) -> Option<String> {
     let current_hashes: Vec<u64> = matches.iter().map(|m| hash_match(m)).collect();
 

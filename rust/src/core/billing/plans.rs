@@ -214,7 +214,7 @@ pub struct Entitlements {
     /// Private extension/persona registry access.
     pub private_registry: bool,
     /// Self-serve OIDC SSO for the org (GL #482/#533) — sign-in via the org's
-    /// own IdP, configured without a sales motion. Business and Enterprise.
+    /// own `IdP`, configured without a sales motion. Business and Enterprise.
     pub sso_oidc: bool,
     /// SAML SSO + SCIM provisioning (the negotiated Enterprise surface).
     pub sso_scim: bool,

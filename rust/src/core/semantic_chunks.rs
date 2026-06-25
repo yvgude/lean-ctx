@@ -33,6 +33,7 @@ pub enum ChunkKind {
 }
 
 /// Detect semantic boundaries in content and group lines into chunks.
+#[must_use]
 pub fn detect_chunks(content: &str) -> Vec<SemanticChunk> {
     let lines: Vec<&str> = content.lines().collect();
     if lines.is_empty() {
@@ -129,6 +130,7 @@ pub fn detect_chunks(content: &str) -> Vec<SemanticChunk> {
 }
 
 /// Score chunks by task relevance and reorder for optimal attention flow.
+#[must_use]
 pub fn order_for_attention(
     mut chunks: Vec<SemanticChunk>,
     task_keywords: &[String],
@@ -216,6 +218,7 @@ pub fn order_for_attention(
 }
 
 /// Render chunks back to text with attention bridges.
+#[must_use]
 pub fn render_with_bridges(chunks: &[SemanticChunk]) -> String {
     if chunks.is_empty() {
         return String::new();

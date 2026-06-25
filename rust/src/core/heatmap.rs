@@ -99,6 +99,7 @@ impl HeatMap {
         Ok(())
     }
 
+    #[must_use]
     pub fn top_files(&self, limit: usize) -> Vec<&HeatEntry> {
         let mut sorted: Vec<&HeatEntry> = self.entries.values().collect();
         sorted.sort_by_key(|x| std::cmp::Reverse(x.access_count));
@@ -109,6 +110,7 @@ impl HeatMap {
     /// Mean original (pre-compression) token size of a recorded file access.
     /// `None` when nothing has been recorded yet — callers must NOT substitute a
     /// guessed constant (this backs the ghost report's redundant-read estimate).
+    #[must_use]
     pub fn avg_original_tokens_per_access(&self) -> Option<u64> {
         let mut total_original: u64 = 0;
         let mut total_accesses: u64 = 0;
@@ -122,9 +124,10 @@ impl HeatMap {
     /// Compute stigmergic context credit: which agents' file-access traces
     /// benefited other agents? An agent A gets credit for a file F when A
     /// accessed F before (or alongside) agent B, because A's trace effectively
-    /// pointed B to useful context. The credit for each (agent_A, file) pair is
+    /// pointed B to useful context. The credit for each (`agent_A`, file) pair is
     /// proportional to how many *other* agents also accessed that file.
     /// Returns `Vec<(agent_id, total_credit)>` sorted descending.
+    #[must_use]
     pub fn context_credit(&self) -> Vec<(String, f64)> {
         let mut credit: HashMap<String, f64> = HashMap::new();
         for entry in self.entries.values() {
@@ -145,6 +148,7 @@ impl HeatMap {
         sorted
     }
 
+    #[must_use]
     pub fn directory_summary(&self) -> Vec<(String, u32, u64)> {
         let mut dirs: HashMap<String, (u32, u64)> = HashMap::new();
         for entry in self.entries.values() {
@@ -296,6 +300,7 @@ pub fn reset() {
     }
 }
 
+#[must_use]
 pub fn format_heatmap_status(heatmap: &HeatMap, limit: usize) -> String {
     let top = heatmap.top_files(limit);
     if top.is_empty() {
@@ -321,6 +326,7 @@ pub fn format_heatmap_status(heatmap: &HeatMap, limit: usize) -> String {
     lines.join("\n")
 }
 
+#[must_use]
 pub fn format_directory_summary(heatmap: &HeatMap) -> String {
     let dirs = heatmap.directory_summary();
     if dirs.is_empty() {

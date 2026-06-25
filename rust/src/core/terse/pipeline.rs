@@ -134,7 +134,7 @@ fn reorder_cdc_stable(output: &str) -> String {
     result
 }
 
-/// Returns true when `line` opens/closes a fenced code block (CommonMark:
+/// Returns true when `line` opens/closes a fenced code block (`CommonMark`:
 /// at most 3 leading spaces, then ≥ 3 backticks or tildes).
 fn is_fence_delimiter(line: &str) -> Option<char> {
     let trimmed = line.trim_start_matches(' ');

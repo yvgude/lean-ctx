@@ -83,6 +83,7 @@ pub struct FileGainRow {
 }
 
 impl GainEngine {
+    #[must_use]
     pub fn load() -> Self {
         Self {
             // Aggregate across split data dirs so the gain score, cost view and
@@ -96,6 +97,7 @@ impl GainEngine {
         }
     }
 
+    #[must_use]
     pub fn summary(&self, model: Option<&str>) -> GainSummary {
         let quote = self.pricing.quote(model);
         let tokens_saved = self
@@ -160,10 +162,12 @@ impl GainEngine {
         }
     }
 
+    #[must_use]
     pub fn gain_score(&self, model: Option<&str>) -> GainScore {
         GainScore::compute(&self.stats, &self.costs, &self.pricing, model)
     }
 
+    #[must_use]
     pub fn task_breakdown(&self) -> Vec<TaskGainRow> {
         use std::collections::HashMap;
 
@@ -200,6 +204,7 @@ impl GainEngine {
         out
     }
 
+    #[must_use]
     pub fn heatmap_gains(&self, limit: usize) -> Vec<FileGainRow> {
         let mut items: Vec<_> = self.heatmap.entries.values().collect();
         items.sort_by_key(|x| std::cmp::Reverse(x.total_tokens_saved));

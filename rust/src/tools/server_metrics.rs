@@ -117,6 +117,7 @@ impl LeanCtxServer {
     }
 
     /// Increments the call counter and returns true if a checkpoint is due.
+    #[must_use]
     pub fn increment_and_check(&self) -> bool {
         let count = self.call_count.fetch_add(1, Ordering::Relaxed) + 1;
         let interval = Self::checkpoint_interval_effective();

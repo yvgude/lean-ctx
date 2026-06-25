@@ -4,7 +4,7 @@
 //! external resources a scene depends on — crucially the scripts attached to
 //! its nodes. We surface those script/scene dependencies as [`ImportInfo`] so
 //! the graph index can materialise Scene→Script (and Scene→Scene) edges through
-//! the shared GDScript resolver (`res://` paths resolve identically to a
+//! the shared `GDScript` resolver (`res://` paths resolve identically to a
 //! `preload`). Binary assets (textures, audio, fonts) are intentionally skipped:
 //! they are not navigable source nodes. (#316)
 
@@ -15,6 +15,7 @@ const SCENE_SOURCE_EXTS: [&str; 2] = ["gd", "tscn"];
 
 /// Extracts the script/scene dependencies declared by a `.tscn` file's
 /// `[ext_resource]` headers, as resolver-ready [`ImportInfo`] entries.
+#[must_use]
 pub fn extract_scene_imports(content: &str) -> Vec<ImportInfo> {
     let mut imports = Vec::new();
     for (idx, line) in content.lines().enumerate() {

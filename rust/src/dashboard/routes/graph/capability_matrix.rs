@@ -13,8 +13,8 @@ use crate::core::language_capabilities::{
 
 /// Backend-agnostic edge kinds counted as "import-like" for the realized
 /// matrix. Matches both the PropertyGraph-canonical spellings (`imports`,
-/// `module`) and the legacy graph_index spellings (`import`, `reexport`) so the
-/// count is stable across backends (#696 phase C). The PropertyGraph folds
+/// `module`) and the legacy `graph_index` spellings (`import`, `reexport`) so the
+/// count is stable across backends (#696 phase C). The `PropertyGraph` folds
 /// namespace/package imports into `imports`, so its count reflects all
 /// import-like structural edges rather than only literal `import` statements.
 fn is_import_like(kind: &str) -> bool {

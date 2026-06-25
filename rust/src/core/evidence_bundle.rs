@@ -39,8 +39,8 @@ pub struct BundleResult {
     pub files: Vec<String>,
 }
 
-/// Canonical JSON: object keys sorted (serde_json's default `Map` is a
-/// BTreeMap), compact separators. Structs round-trip through `Value` so
+/// Canonical JSON: object keys sorted (`serde_json`'s default `Map` is a
+/// `BTreeMap`), compact separators. Structs round-trip through `Value` so
 /// field declaration order can never leak into the bytes.
 fn canonical_json(value: &Value) -> String {
     serde_json::to_string(value).expect("canonical json")

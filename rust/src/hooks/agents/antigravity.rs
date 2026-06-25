@@ -213,7 +213,7 @@ pub(crate) fn antigravity_cli_config_dir(home: &std::path::Path) -> std::path::P
 /// * The hook I/O contract is **Gemini-style**: stdin carries
 ///   `tool_name`/`tool_input`/`cwd`/`session_id`; stdout honours
 ///   `block`/`reason`/`continue`/`systemMessage` and exit codes. It does **not**
-///   honour Claude's `hookSpecificOutput.updatedInput`, so a PreToolUse hook
+///   honour Claude's `hookSpecificOutput.updatedInput`, so a `PreToolUse` hook
 ///   cannot rewrite a command/argument here. Token compression is therefore
 ///   delivered through the lean-ctx **MCP** `ctx_*` tools (installed separately
 ///   via `mcp_config.json`); the plugin carries only the `observe` hooks, which

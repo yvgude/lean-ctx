@@ -6,6 +6,7 @@ use crate::core::theme;
 use super::super::model::CostModel;
 
 /// Renders a 30-day token savings bar chart with sparkline.
+#[must_use]
 pub fn format_gain_graph() -> String {
     let theme = active_theme();
     let store = crate::core::stats::load();
@@ -91,6 +92,7 @@ pub fn format_gain_graph() -> String {
 
 /// Renders a daily breakdown table of token savings with totals.
 #[allow(clippy::many_single_char_names)]
+#[must_use]
 pub fn format_gain_daily() -> String {
     let theme = active_theme();
     let store = crate::core::stats::load();
@@ -216,6 +218,7 @@ pub fn format_gain_daily() -> String {
 }
 
 /// Returns the full stats store as pretty-printed JSON.
+#[must_use]
 pub fn format_gain_json() -> String {
     let store = crate::core::stats::load();
     serde_json::to_string_pretty(&store).unwrap_or_else(|_| "{}".to_string())

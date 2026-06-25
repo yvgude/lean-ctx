@@ -8,21 +8,25 @@ use crate::core::theme::{self, Theme};
 
 use super::super::model::{CostModel, StatsStore};
 
+#[must_use]
 pub fn format_gain() -> String {
     format_gain_themed(&active_theme())
 }
 
 /// Renders the token savings dashboard with a specific theme.
+#[must_use]
 pub fn format_gain_themed(t: &Theme) -> String {
     format_gain_themed_at(t, None)
 }
 
 /// Renders the concise "hero" gain output — 3 key metrics, gain score, trend, next actions.
+#[must_use]
 pub fn format_gain_hero() -> String {
     format_gain_hero_themed(&active_theme())
 }
 
 /// Hero gain with specific theme.
+#[must_use]
 pub fn format_gain_hero_themed(t: &Theme) -> String {
     // Aggregate across split data dirs so an MCP-server/CLI XDG split does not
     // hide savings behind a false `0` (#500).
@@ -94,9 +98,9 @@ pub fn format_gain_hero_themed(t: &Theme) -> String {
     out.push(box_line(""));
 
     let score_bar_w = 30;
-    let score_ratio = (score.total as f64 / 100.0).min(1.0);
+    let score_ratio = (f64::from(score.total) / 100.0).min(1.0);
     let bar = t.gradient_bar(score_ratio, score_bar_w);
-    let sc_color = t.pct_color(score.total as f64);
+    let sc_color = t.pct_color(f64::from(score.total));
     let lvl = score.level();
     out.push(box_line(&format!(
         "  {bar}  {sc_color}{bold}{}/100{rst}  Lv{} {dim}{}{rst}",
@@ -208,6 +212,7 @@ pub fn format_gain_hero_themed(t: &Theme) -> String {
 }
 
 /// Renders the token savings dashboard at a specific animation tick (with footer).
+#[must_use]
 pub fn format_gain_themed_at(t: &Theme, tick: Option<u64>) -> String {
     gain_dashboard(t, tick, true)
 }
@@ -215,11 +220,13 @@ pub fn format_gain_themed_at(t: &Theme, tick: Option<u64>) -> String {
 /// The dashboard body without the trailing footer (tips / Context OS / hints).
 /// Used to compose `gain --deep`, where the extra themed sections must appear
 /// before the footer instead of in the middle of the output.
+#[must_use]
 pub fn format_gain_body() -> String {
     gain_dashboard(&active_theme(), None, false)
 }
 
 /// The standalone gain dashboard footer (contextual tip, Context OS, hints).
+#[must_use]
 pub fn format_gain_footer() -> String {
     let store = crate::core::stats::load();
     let mut out = Vec::new();
@@ -385,9 +392,9 @@ fn gain_dashboard(t: &Theme, tick: Option<u64>, with_footer: bool) -> String {
         let engine = crate::core::gain::GainEngine::load();
         let score = engine.gain_score(None);
         let lvl = score.level();
-        let score_ratio = (score.total as f64 / 100.0).min(1.0);
+        let score_ratio = (f64::from(score.total) / 100.0).min(1.0);
         let bar = t.gradient_bar(score_ratio, 30);
-        let sc_color = t.pct_color(score.total as f64);
+        let sc_color = t.pct_color(f64::from(score.total));
 
         out.push(format!("  {}", t.box_top_labeled(w, "GAIN SCORE")));
         out.push(sec_line(&format!(

@@ -27,6 +27,7 @@ impl std::fmt::Display for TaskState {
 }
 
 impl TaskState {
+    #[must_use]
     pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "created" => Some(Self::Created),
@@ -39,10 +40,12 @@ impl TaskState {
         }
     }
 
+    #[must_use]
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Completed | Self::Failed | Self::Canceled)
     }
 
+    #[must_use]
     pub fn can_transition_to(&self, next: &TaskState) -> bool {
         match self {
             TaskState::Created => matches!(
@@ -112,6 +115,7 @@ pub struct Task {
 }
 
 impl Task {
+    #[must_use]
     pub fn new(from_agent: &str, to_agent: &str, description: &str) -> Self {
         let now = Utc::now();
         let id = format!("task-{}", generate_task_id());
@@ -184,6 +188,7 @@ pub struct TaskStore {
 }
 
 impl TaskStore {
+    #[must_use]
     pub fn load() -> Self {
         let Some(path) = task_store_path() else {
             return Self::default();
@@ -225,6 +230,7 @@ impl TaskStore {
         id
     }
 
+    #[must_use]
     pub fn get_task(&self, task_id: &str) -> Option<&Task> {
         self.tasks.iter().find(|t| t.id == task_id)
     }
@@ -233,6 +239,7 @@ impl TaskStore {
         self.tasks.iter_mut().find(|t| t.id == task_id)
     }
 
+    #[must_use]
     pub fn tasks_for_agent(&self, agent_id: &str) -> Vec<&Task> {
         self.tasks
             .iter()
@@ -240,6 +247,7 @@ impl TaskStore {
             .collect()
     }
 
+    #[must_use]
     pub fn pending_tasks_for(&self, agent_id: &str) -> Vec<&Task> {
         self.tasks
             .iter()

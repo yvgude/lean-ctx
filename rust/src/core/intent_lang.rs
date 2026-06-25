@@ -10,7 +10,7 @@ use super::intent_engine::TaskType;
 
 /// Verb stems matched via `word.starts_with(stem)` — morphology-tolerant
 /// ("beheb" matches behebe/beheben/behebt). Entries containing a space are
-/// matched as substrings of the whole lowercased query, like PHRASE_RULES.
+/// matched as substrings of the whole lowercased query, like `PHRASE_RULES`.
 ///
 /// Every stem is vetted against common English vocabulary so it cannot
 /// shadow an English rule (e.g. "genera" is excluded because it would match

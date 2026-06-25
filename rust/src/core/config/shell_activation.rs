@@ -21,6 +21,7 @@ pub enum ShellActivation {
 }
 
 impl ShellActivation {
+    #[must_use]
     pub fn from_env() -> Option<Self> {
         std::env::var("LEAN_CTX_SHELL_ACTIVATION")
             .ok()
@@ -32,6 +33,7 @@ impl ShellActivation {
             })
     }
 
+    #[must_use]
     pub fn effective(config: &Config) -> Self {
         if let Some(env_val) = Self::from_env() {
             return env_val;
@@ -41,6 +43,7 @@ impl ShellActivation {
 
     /// Returns the shell condition snippet that guards auto-activation.
     /// Used in generated shell hooks (posix, fish, powershell).
+    #[must_use]
     pub fn posix_guard(&self) -> &'static str {
         match self {
             Self::Always => {
@@ -53,6 +56,7 @@ impl ShellActivation {
         }
     }
 
+    #[must_use]
     pub fn fish_guard(&self) -> &'static str {
         match self {
             Self::Always => {
@@ -65,6 +69,7 @@ impl ShellActivation {
         }
     }
 
+    #[must_use]
     pub fn powershell_guard(&self) -> &'static str {
         match self {
             Self::Always => {

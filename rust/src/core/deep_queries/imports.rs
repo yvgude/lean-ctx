@@ -70,7 +70,7 @@ fn extract_imports_lua(root: Node, src: &str) -> Vec<ImportInfo> {
     imports
 }
 
-/// GDScript dependencies: `extends "res://base.gd"` plus `preload(...)` /
+/// `GDScript` dependencies: `extends "res://base.gd"` plus `preload(...)` /
 /// `load(...)` resource references (which can appear in `const`, `var`, or
 /// inline expressions, so the whole tree is scanned for them).
 #[cfg(feature = "tree-sitter")]

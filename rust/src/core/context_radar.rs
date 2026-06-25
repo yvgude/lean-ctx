@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// ContextRadar aggregates all context sources into a single budget model.
+/// `ContextRadar` aggregates all context sources into a single budget model.
 /// Data flows in from: hooks (JSONL), proxy introspector, rules scanner, session cache.
 pub struct ContextRadar {
     pub events: Vec<RadarEvent>,
@@ -59,6 +59,7 @@ pub struct BudgetBreakdown {
 }
 
 impl ContextRadar {
+    #[must_use]
     pub fn new(window_size: usize) -> Self {
         Self {
             events: Vec::new(),
@@ -67,6 +68,7 @@ impl ContextRadar {
         }
     }
 
+    #[must_use]
     pub fn load(data_dir: &Path, window_size: usize) -> Self {
         let mut radar = Self::new(window_size);
         radar.load_events(data_dir);
@@ -176,6 +178,7 @@ impl ContextRadar {
         matches!(ext, "md" | "mdc" | "markdown" | "txt")
     }
 
+    #[must_use]
     pub fn budget_breakdown(&self) -> BudgetBreakdown {
         let mut compaction_count = 0;
         let mut last_compaction_idx: Option<usize> = None;
@@ -298,6 +301,7 @@ impl ContextRadar {
         }
     }
 
+    #[must_use]
     pub fn format_display(&self) -> String {
         let b = self.budget_breakdown();
         let pct = |tokens: usize| -> f64 {
@@ -403,6 +407,7 @@ fn fmt_num(n: usize) -> String {
 }
 
 /// Default context window size based on client name.
+#[must_use]
 pub fn default_window_for_client(client: &str) -> usize {
     if let Some((_model, window)) = crate::hook_handlers::load_detected_model() {
         return window;

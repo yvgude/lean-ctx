@@ -49,6 +49,7 @@ pub fn validate_webhook_url(url: &str) -> Result<(), String> {
 
 /// Spawn the weekly poster. Call once from `serve_team` when
 /// `roiWebhookUrl` is configured and validated.
+#[must_use]
 pub fn spawn_weekly_roi_webhook(state: TeamAppState, url: String) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
@@ -258,6 +259,7 @@ fn post_webhook(url: &str, payload: &serde_json::Value) -> Result<(), String> {
 
 /// Expose the state path for ops/debugging (`lean-ctx team … status` later).
 #[allow(dead_code)]
+#[must_use]
 pub fn state_path(savings_dir: &Path) -> PathBuf {
     savings_dir.join(STATE_FILE)
 }

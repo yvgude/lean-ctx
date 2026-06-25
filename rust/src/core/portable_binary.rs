@@ -1,3 +1,4 @@
+#[must_use]
 pub fn resolve_portable_binary() -> String {
     let current = std::env::current_exe()
         .ok()

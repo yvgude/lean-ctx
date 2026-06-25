@@ -61,6 +61,7 @@ pub fn expand_user_path(raw: &str) -> PathBuf {
     PathBuf::from(s)
 }
 
+#[must_use]
 pub fn allow_paths_from_env_and_config() -> Vec<PathBuf> {
     let mut out = Vec::new();
     let cfg = crate::core::config::Config::load();
@@ -139,6 +140,7 @@ fn canonicalized_roots(config_entries: &[String], env_var: &str) -> Vec<PathBuf>
 /// **write** — e.g. a reference repo mounted next to the project. Empty by
 /// default, so [`is_read_only_path`]/[`enforce_writable`] are zero-cost no-ops
 /// for everyone who hasn't opted in (#475).
+#[must_use]
 pub fn read_only_roots_from_env_and_config() -> Vec<PathBuf> {
     let cfg = crate::core::config::Config::load();
     canonicalized_roots(&cfg.read_only_roots, "LEAN_CTX_READ_ONLY_ROOTS")
@@ -235,6 +237,7 @@ pub fn warn_if_relaxed() {
 /// path provably sits outside every root; an unresolvable candidate (no
 /// existing ancestor) is treated as *not* read-only here and is rejected later
 /// by the ordinary write/jail error, never silently written.
+#[must_use]
 pub fn is_read_only_path(candidate: &Path) -> bool {
     let roots = read_only_roots_from_env_and_config();
     if roots.is_empty() {
@@ -302,6 +305,7 @@ fn is_under_prefix(path: &Path, prefix: &Path) -> bool {
 /// Heuristic canonicalize — honours the #356 TCC guard. Used by the
 /// jail-disabled bypass and by external callers (session/startup/server roots)
 /// that must not pop a privacy prompt on their own initiative.
+#[must_use]
 pub fn canonicalize_or_self(path: &Path) -> PathBuf {
     super::pathutil::safe_canonicalize_bounded(path, 2000)
 }

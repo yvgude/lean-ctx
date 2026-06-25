@@ -56,6 +56,7 @@ fn chunk_order(source: &str, extension: &str) -> Option<Vec<ChunkKey>> {
 ///
 /// Identity is `(symbol_name, start_line)` within each version; body text inequality ⇒ `Modified`.
 /// Returns an empty list when tree-sitter is disabled or the language is unsupported.
+#[must_use]
 pub fn structural_symbol_diff(
     old_source: &str,
     new_source: &str,

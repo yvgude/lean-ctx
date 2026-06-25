@@ -133,6 +133,7 @@ pub fn detect_secrets(content: &str) -> Vec<SecretMatch> {
     matches
 }
 
+#[must_use]
 pub fn detect_secrets_with_custom(content: &str, custom_patterns: &[String]) -> Vec<SecretMatch> {
     let mut matches = detect_secrets(content);
 
@@ -194,6 +195,7 @@ pub fn scan_and_redact(
     (redacted, matches)
 }
 
+#[must_use]
 pub fn scan_and_redact_from_config(content: &str) -> (String, Vec<SecretMatch>) {
     let cfg = Config::load();
     scan_and_redact(content, &cfg.secret_detection)

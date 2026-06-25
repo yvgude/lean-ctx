@@ -6,7 +6,7 @@
 //! (dark by default, light via `prefers-color-scheme`). Kept as a `const` string so the
 //! page renderers stay free of brace-escaping inside `format!`.
 
-/// Marketing-site fonts (Inter / Space Grotesk / JetBrains Mono), loaded client-side so the
+/// Marketing-site fonts (Inter / Space Grotesk / `JetBrains` Mono), loaded client-side so the
 /// server needs no font assets. Goes in `<head>`.
 pub(super) const FONT_LINKS: &str = r#"<link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>

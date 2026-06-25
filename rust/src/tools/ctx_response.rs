@@ -1,10 +1,12 @@
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
+#[must_use]
 pub fn handle(response: &str, crp_mode: CrpMode) -> String {
     handle_with_context(response, crp_mode, None)
 }
 
+#[must_use]
 pub fn handle_with_context(
     response: &str,
     crp_mode: CrpMode,

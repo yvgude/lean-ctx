@@ -10,7 +10,7 @@
 //! parses the IDE permission config and lets the server gate apply an
 //! equivalent decision.
 //!
-//! v1 supports **OpenCode** (`opencode.json` / `opencode.jsonc`, global +
+//! v1 supports **`OpenCode`** (`opencode.json` / `opencode.jsonc`, global +
 //! project). The mapping is intentionally pure and side-effect-free; the server
 //! wiring (client detection, tool→key mapping, messaging, caching) lives in
 //! `server::permission_inheritance`.
@@ -61,7 +61,7 @@ pub struct PermDecision {
     pub rule: String,
 }
 
-/// OpenCode's documented permission keys. Used to distinguish a real tool key
+/// `OpenCode`'s documented permission keys. Used to distinguish a real tool key
 /// from a free-form bash command pattern placed at the top level.
 const OPENCODE_TOOL_KEYS: &[&str] = &[
     "read",
@@ -118,14 +118,14 @@ impl IdePermissionPolicy {
         Self { rules }
     }
 
-    /// Resolve the effective action for an OpenCode tool key (e.g. `bash`,
+    /// Resolve the effective action for an `OpenCode` tool key (e.g. `bash`,
     /// `read`) given the relevant tool input (command / path / pattern).
     ///
     /// Returns `None` when no rule matches — the caller treats that as the IDE
     /// default (`allow` for the tools we mirror), so inheritance never *adds*
     /// friction that the IDE itself would not impose.
     ///
-    /// Resolution is order-independent (serde_json maps are not insertion-ordered
+    /// Resolution is order-independent (`serde_json` maps are not insertion-ordered
     /// without `preserve_order`): the **most specific** rule wins (longest
     /// pattern by non-wildcard character count; a named tool beats the global
     /// `*`), ties broken by the **most restrictive** action.
@@ -225,7 +225,7 @@ fn specificity(pattern: &str) -> i64 {
 
 /// Minimal glob matcher supporting `*` (matches any run of characters, including
 /// empty); `**` is treated as `*`. No `?` or character classes — this mirrors
-/// the simple command/path globs OpenCode permission rules use (`git *`,
+/// the simple command/path globs `OpenCode` permission rules use (`git *`,
 /// `rm *`, `src/*`). Matching is case-sensitive.
 #[must_use]
 pub fn wildcard_match(pattern: &str, text: &str) -> bool {
@@ -260,7 +260,7 @@ pub fn wildcard_match(pattern: &str, text: &str) -> bool {
     p == pat.len()
 }
 
-/// Read and merge the OpenCode `permission` object: global config first, then
+/// Read and merge the `OpenCode` `permission` object: global config first, then
 /// the project config (project keys override global). Missing/invalid files are
 /// skipped silently — inheritance must never break a tool call by erroring.
 #[must_use]

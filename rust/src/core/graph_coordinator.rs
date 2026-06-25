@@ -4,7 +4,7 @@
 //! Supersedes the JSON-coupled `graph_index::coordinator`: instead of loading
 //! the on-disk `ProjectIndex` and scanning into it, this resolves a
 //! [`GraphProvider`](super::graph_provider::GraphProvider) through
-//! [`open_best_effort`](super::graph_provider::open_best_effort) (PropertyGraph
+//! [`open_best_effort`](super::graph_provider::open_best_effort) (`PropertyGraph`
 //! first, with the legacy JSON index only as a transition fallback) and kicks
 //! the shared single-flight background builder when nothing is ready yet.
 //!
@@ -38,7 +38,7 @@ impl GraphBuildProgress {
 /// Resolve a graph provider for `project_root` without blocking on a scan, or
 /// start the single-flight background build and report progress.
 ///
-/// Fast path: a populated PropertyGraph (or, during the #696 transition, the
+/// Fast path: a populated `PropertyGraph` (or, during the #696 transition, the
 /// legacy JSON index) is returned immediately. Otherwise the shared background
 /// indexer is (idempotently) started and `Err(progress)` is returned.
 pub fn get_or_start_build(project_root: &str) -> Result<OpenGraphProvider, GraphBuildProgress> {

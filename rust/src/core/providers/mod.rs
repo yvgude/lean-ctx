@@ -65,6 +65,7 @@ pub struct ProviderItem {
 }
 
 impl ProviderResult {
+    #[must_use]
     pub fn format_compact(&self) -> String {
         let mut out = format!(
             "{} {} ({}{}):\n",

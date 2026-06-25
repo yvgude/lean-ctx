@@ -25,6 +25,7 @@ pub(crate) fn apply_profile_free_env(cmd: &mut std::process::Command) {
     cmd.env("BASH_ENV", "").env("ENV", "");
 }
 
+#[must_use]
 pub fn decode_output(bytes: &[u8]) -> String {
     match String::from_utf8(bytes.to_vec()) {
         Ok(s) => s,
@@ -118,6 +119,7 @@ pub(super) fn set_console_utf8() {
 }
 
 /// Detects if the current process runs inside a Docker/container environment.
+#[must_use]
 pub fn is_container() -> bool {
     #[cfg(unix)]
     {
@@ -143,6 +145,7 @@ pub fn is_container() -> bool {
 }
 
 /// Returns true if stdin is NOT a terminal (pipe, /dev/null, etc.)
+#[must_use]
 pub fn is_non_interactive() -> bool {
     !io::stdin().is_terminal()
 }
@@ -186,6 +189,7 @@ fn windows_shell_flag_for_exe_basename(exe_basename: &str) -> &'static str {
     }
 }
 
+#[must_use]
 pub fn shell_and_flag() -> (String, String) {
     let shell = detect_shell();
     let flag = if cfg!(windows) {
@@ -202,6 +206,7 @@ pub fn shell_and_flag() -> (String, String) {
 }
 
 /// Returns a short, human-readable shell name (e.g. "bash", "zsh", "powershell", "cmd").
+#[must_use]
 pub fn shell_name() -> String {
     let shell = detect_shell();
     let basename = std::path::Path::new(&shell)
@@ -345,11 +350,13 @@ fn which_powershell() -> Result<String, ()> {
 /// On Unix, this always produces POSIX-compatible quoting.
 /// On Windows, the quoting adapts to the actual shell (PowerShell, cmd.exe,
 /// or Git Bash / MSYS).
+#[must_use]
 pub fn join_command(args: &[String]) -> String {
     let (_, flag) = shell_and_flag();
     join_command_for(args, &flag)
 }
 
+#[must_use]
 pub fn join_command_for(args: &[String], shell_flag: &str) -> String {
     match shell_flag {
         "-Command" => join_powershell(args),

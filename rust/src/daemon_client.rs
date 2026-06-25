@@ -141,6 +141,7 @@ pub async fn try_daemon_request(method: &str, path: &str, body: &str) -> Option<
 /// is running there is no cache to flush. Force-rebuild CLI commands call this so
 /// `ctx_read` map/signatures stop serving pre-rebuild output from the daemon's
 /// long-lived cache, which CLI index rebuilds otherwise can't reach (#420).
+#[must_use]
 pub fn notify_cache_clear() -> bool {
     if !daemon::is_daemon_running() {
         return false;
@@ -163,6 +164,7 @@ pub fn notify_cache_clear() -> bool {
 /// Returns `None` if the daemon is not running or the call fails.
 /// Attempts to auto-start the daemon if it's not already running.
 #[allow(clippy::needless_pass_by_value)]
+#[must_use]
 pub fn try_daemon_tool_call_blocking(
     name: &str,
     arguments: Option<serde_json::Value>,
@@ -266,6 +268,7 @@ fn unwrap_mcp_tool_text(body: &str) -> Option<String> {
 }
 
 /// Like `try_daemon_tool_call_blocking`, but unwraps MCP JSON responses to text for CLI output.
+#[must_use]
 pub fn try_daemon_tool_call_blocking_text(
     name: &str,
     arguments: Option<serde_json::Value>,

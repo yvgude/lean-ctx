@@ -142,7 +142,7 @@ fn describe(base: &str) -> Option<&'static str> {
 }
 
 /// Aggregated real measurements per command family from `core::stats`:
-/// base → (input_tokens, output_tokens, count).
+/// base → (`input_tokens`, `output_tokens`, count).
 fn measured_by_family(store: &StatsStore) -> HashMap<String, (u64, u64, u64)> {
     let mut by_base: HashMap<String, (u64, u64, u64)> = HashMap::new();
     for (key, s) in &store.commands {
@@ -154,6 +154,7 @@ fn measured_by_family(store: &StatsStore) -> HashMap<String, (u64, u64, u64)> {
     by_base
 }
 
+#[must_use]
 pub fn analyze_history(history: &[String], limit: usize) -> DiscoverResult {
     let store = crate::core::stats::load();
     analyze_history_with_stats(history, limit, &store)
@@ -213,7 +214,7 @@ fn analyze_history_with_stats(
                 Some(&(input, output, cnt)) if input > 0 && cnt > 0 => {
                     let rate = 1.0 - (output as f64 / input as f64);
                     let avg_input = input as f64 / cnt as f64;
-                    let est = (count as f64 * avg_input * rate).max(0.0) as usize;
+                    let est = (f64::from(count) * avg_input * rate).max(0.0) as usize;
                     has_measured_data = true;
                     potential_tokens += est;
                     (format!("{:.0}%", (rate * 100.0).max(0.0)), est, true)
@@ -243,6 +244,7 @@ fn analyze_history_with_stats(
     }
 }
 
+#[must_use]
 pub fn discover_from_history(history: &[String], limit: usize) -> String {
     let result = analyze_history(history, limit);
 
@@ -295,6 +297,7 @@ pub fn discover_from_history(history: &[String], limit: usize) -> String {
     format!("{output}\n\n[{tokens} tok]")
 }
 
+#[must_use]
 pub fn format_cli_output(result: &DiscoverResult) -> String {
     if result.missed_commands.is_empty() {
         return format!(
@@ -356,6 +359,7 @@ pub fn format_cli_output(result: &DiscoverResult) -> String {
 /// loop. Same 1200x630 social-card dimensions and visual language as the Wrapped card,
 /// but in an amber/red "leak" palette. Pure string building; all data-derived text is
 /// XML-escaped. Aggregate estimates only — never command contents or arguments.
+#[must_use]
 pub fn render_before_card(result: &DiscoverResult) -> String {
     let saved = crate::core::wrapped::format_tokens(result.potential_tokens as u64);
     let monthly_usd = result.potential_usd * 30.0;

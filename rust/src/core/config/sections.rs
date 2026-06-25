@@ -51,6 +51,7 @@ impl SetupConfig {
     /// Returns whether rules should be injected, considering legacy installs.
     /// If undecided (None), checks if lean-ctx rules markers already exist
     /// in any agent config — if so, keeps injecting for backward compat.
+    #[must_use]
     pub fn should_inject_rules(&self) -> bool {
         match self.auto_inject_rules {
             Some(v) => v,
@@ -59,6 +60,7 @@ impl SetupConfig {
     }
 
     /// Returns whether skills should be installed.
+    #[must_use]
     pub fn should_inject_skills(&self) -> bool {
         match self.auto_inject_skills {
             Some(v) => v,
@@ -70,6 +72,7 @@ impl SetupConfig {
     /// MCP server in editor configs. Honors `auto_update_mcp` (#281) so locked-
     /// down environments can keep MCP out of agent settings while still getting
     /// hooks, rules and skills.
+    #[must_use]
     pub fn should_update_mcp(&self) -> bool {
         self.auto_update_mcp
     }
@@ -78,7 +81,7 @@ impl SetupConfig {
     ///
     /// Delegates the per-agent path catalog to `rules_inject::any_rules_marker_present`
     /// (derived from the injector's own target list) so this never drifts behind
-    /// newly supported agents again (#442). Claude Code and CodeBuddy have no
+    /// newly supported agents again (#442). Claude Code and `CodeBuddy` have no
     /// rules *target* (they auto-load an inline block instead), so their legacy
     /// rule files are checked separately to keep honoring older installs.
     fn rules_already_present() -> bool {
@@ -137,6 +140,7 @@ impl Default for ArchiveConfig {
 }
 
 impl ArchiveConfig {
+    #[must_use]
     pub fn ephemeral_effective(&self) -> bool {
         if let Ok(v) = std::env::var("LEAN_CTX_EPHEMERAL") {
             return !matches!(v.trim(), "0" | "false" | "off");
@@ -144,6 +148,7 @@ impl ArchiveConfig {
         self.ephemeral && self.enabled
     }
 
+    #[must_use]
     pub fn ephemeral_min_tokens_effective(&self) -> usize {
         if let Ok(v) = std::env::var("LEAN_CTX_EPHEMERAL_MIN_TOKENS")
             && let Ok(n) = v.trim().parse::<usize>()
@@ -156,7 +161,7 @@ impl ArchiveConfig {
 
 /// Configuration for external context providers (GitHub, GitLab, Jira, etc.).
 /// Each provider can be enabled/disabled and configured with auth tokens.
-/// Override individual tokens via env vars (GITHUB_TOKEN, GITLAB_TOKEN, etc.).
+/// Override individual tokens via env vars (`GITHUB_TOKEN`, `GITLAB_TOKEN`, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProvidersConfig {
@@ -298,6 +303,7 @@ impl Default for UpdatesConfig {
 }
 
 impl UpdatesConfig {
+    #[must_use]
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
         if let Ok(v) = std::env::var("LEAN_CTX_AUTO_UPDATE") {
@@ -317,6 +323,7 @@ impl UpdatesConfig {
 
 impl AutonomyConfig {
     /// Creates an autonomy config from env vars, falling back to defaults.
+    #[must_use]
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
         if let Ok(v) = std::env::var("LEAN_CTX_AUTONOMY")
@@ -376,6 +383,7 @@ impl AutonomyConfig {
     }
 
     /// Loads autonomy config from disk, with env var overrides applied.
+    #[must_use]
     pub fn load() -> Self {
         let file_cfg = Config::load().autonomy;
         let mut cfg = file_cfg;
@@ -484,7 +492,7 @@ impl Default for GainConfig {
 
 /// Model declaration for **measured-vs-estimated** cost reporting.
 ///
-/// Proxy-routed clients (Claude Code, Codex, Pi, Gemini CLI, OpenCode) report
+/// Proxy-routed clients (Claude Code, Codex, Pi, Gemini CLI, `OpenCode`) report
 /// their real model and billed tokens, so lean-ctx prices them *measured* with
 /// no configuration. MCP-only IDEs (Cursor, Copilot, Windsurf, VS Code, Zed)
 /// send their LLM traffic straight to the provider, bypassing lean-ctx — their
@@ -509,6 +517,7 @@ impl CostConfig {
     /// Configured pricing model for a client id: the per-client entry first, then
     /// the global default. `None` when neither is set (the caller then falls back
     /// to the env override / heuristic). Blank entries are ignored.
+    #[must_use]
     pub fn model_for_client(&self, client: &str) -> Option<String> {
         self.models
             .get(client)
@@ -648,7 +657,7 @@ impl Default for LoopDetectionConfig {
 /// `model` selects which local ONNX embedding model lean-ctx downloads and uses for
 /// `ctx_semantic_search`. Accepts the same aliases as the `LEAN_CTX_EMBEDDING_MODEL` env
 /// var: `minilm` (all-MiniLM-L6-v2, 384d — the default), `nomic` (768d) — or any
-/// HuggingFace repo with an ONNX export via `hf:org/repo[@revision]` (GL #397), e.g.
+/// `HuggingFace` repo with an ONNX export via `hf:org/repo[@revision]` (GL #397), e.g.
 /// `hf:jinaai/jina-embeddings-v2-base-code` for code-specialized embeddings. When the
 /// env var is set it takes precedence; an
 /// unset/`None` value uses the default model. Switching models triggers a one-time

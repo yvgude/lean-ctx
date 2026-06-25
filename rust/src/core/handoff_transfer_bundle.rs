@@ -21,6 +21,7 @@ pub enum BundlePrivacyV1 {
 }
 
 impl BundlePrivacyV1 {
+    #[must_use]
     pub fn parse(s: Option<&str>) -> Self {
         match s.unwrap_or("redacted").trim().to_lowercase().as_str() {
             "full" => Self::Full,
@@ -28,6 +29,7 @@ impl BundlePrivacyV1 {
         }
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Redacted => "redacted",

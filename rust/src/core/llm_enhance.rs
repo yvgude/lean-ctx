@@ -3,7 +3,7 @@
 //! Deterministic by default — LLM calls are opt-in and always fall back to
 //! the deterministic pipeline on failure, timeout, or when disabled.
 //!
-//! Supported backends: Ollama (local), OpenRouter, Claude (Anthropic).
+//! Supported backends: Ollama (local), `OpenRouter`, Claude (Anthropic).
 
 use std::time::Duration;
 
@@ -72,6 +72,7 @@ impl LlmConfig {
 }
 
 /// Expand a search query using LLM. Falls back to the original query on failure.
+#[must_use]
 pub fn expand_query(query: &str) -> String {
     let cfg = crate::core::config::Config::load().llm;
     if !cfg.enabled {
@@ -99,6 +100,7 @@ pub fn expand_query(query: &str) -> String {
 
 /// Generate a human-readable explanation for a knowledge contradiction.
 /// Falls back to a simple diff-style description.
+#[must_use]
 pub fn explain_contradiction(fact_a: &str, fact_b: &str) -> String {
     let cfg = crate::core::config::Config::load().llm;
     if !cfg.enabled {
@@ -126,6 +128,7 @@ fn deterministic_contradiction(a: &str, b: &str) -> String {
 /// The model is constrained to the supplied notes (no invention). Because the
 /// result is stored once and recalled byte-stably, enabling this does not break
 /// hot-path read determinism (#498) — only the one-time stored value differs.
+#[must_use]
 pub fn enhance_observation(entity: &str, deterministic: &str) -> String {
     let cfg = crate::core::config::Config::load().llm;
     if !cfg.enabled {
@@ -152,7 +155,7 @@ pub fn enhance_observation(entity: &str, deterministic: &str) -> String {
     }
 }
 
-/// Low-level LLM call. Supports Ollama, OpenRouter, and Anthropic.
+/// Low-level LLM call. Supports Ollama, `OpenRouter`, and Anthropic.
 fn call_llm(cfg: &LlmConfig, prompt: &str) -> Result<String, String> {
     let truncated = if prompt.len() > MAX_PROMPT_CHARS {
         &prompt[..prompt.floor_char_boundary(MAX_PROMPT_CHARS)]

@@ -3,7 +3,7 @@
 //! Uses Reciprocal Rank Fusion (RRF) to merge BM25, dense embeddings, and optional
 //! property-graph proximity (session neighborhood) into one ranked list.
 //!
-//! Formula: score(d) = Σ 1/(k + rank_i(d))
+//! Formula: score(d) = Σ 1/(k + `rank_i(d)`)
 //! where k=60 (standard constant), and i ranges over retrieval methods.
 //!
 //! Reference: Cormack, Clarke & Buettcher (2009), "Reciprocal Rank Fusion
@@ -70,6 +70,7 @@ impl Default for HybridConfig {
 
 impl HybridConfig {
     /// Load from the global config, falling back to defaults.
+    #[must_use]
     pub fn from_config() -> Self {
         crate::core::config::Config::load().search
     }
@@ -79,6 +80,7 @@ impl HybridConfig {
 ///
 /// `graph_file_ranks`: optional repo-relative file path → rank (0-based) for neighbors of
 /// recently touched session files; each matching result gets an extra `1/(k+r)` term.
+#[must_use]
 pub fn reciprocal_rank_fusion(
     bm25_results: &[SearchResult],
     dense_results: &[DenseSearchResult],
@@ -294,6 +296,7 @@ pub struct HybridResult {
 }
 
 impl HybridResult {
+    #[must_use]
     pub fn from_bm25_public(result: SearchResult) -> Self {
         Self::from_bm25(result)
     }
@@ -314,6 +317,7 @@ impl HybridResult {
         }
     }
 
+    #[must_use]
     pub fn source_label(&self) -> &'static str {
         match (self.bm25_rank.is_some(), self.dense_rank.is_some()) {
             (true, true) => "hybrid",
@@ -325,6 +329,7 @@ impl HybridResult {
 }
 
 /// Format hybrid results for display.
+#[must_use]
 pub fn format_hybrid_results(results: &[HybridResult], compact: bool) -> String {
     if results.is_empty() {
         return "No results found.".to_string();

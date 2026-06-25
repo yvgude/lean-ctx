@@ -1,6 +1,6 @@
 //! Query router (#210): rank the aggregated catalog against a query.
 //!
-//! Reuses lean-ctx's existing [`BM25Index`] (ephemeral, in-memory, built per
+//! Reuses lean-ctx's existing [`crate::core::chunk_data::BM25Index`] (ephemeral, in-memory, built per
 //! query batch) so ranking behaviour matches `ctx_search`/`ctx_semantic_search`
 //! and stays deterministic for a fixed catalog.
 

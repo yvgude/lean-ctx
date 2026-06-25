@@ -20,7 +20,8 @@ pub struct CrossSourceHint {
 /// Find cross-source hints for a given file path by looking up
 /// edges in the graph index that connect to external URIs.
 /// Matches both absolute and project-relative paths since edges
-/// store relative paths while ctx_read passes absolute ones.
+/// store relative paths while `ctx_read` passes absolute ones.
+#[must_use]
 pub fn hints_for_file(
     file_path: &str,
     edges: &[IndexEdge],
@@ -63,7 +64,8 @@ pub fn hints_for_file(
     hints
 }
 
-/// Format hints as a compact string for appending to ctx_read output.
+/// Format hints as a compact string for appending to `ctx_read` output.
+#[must_use]
 pub fn format_hints(hints: &[CrossSourceHint]) -> String {
     if hints.is_empty() {
         return String::new();

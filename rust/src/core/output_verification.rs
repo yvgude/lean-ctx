@@ -26,21 +26,27 @@ pub struct VerificationConfig {
 }
 
 impl VerificationConfig {
+    #[must_use]
     pub fn enabled_effective(&self) -> bool {
         self.enabled.unwrap_or(true)
     }
+    #[must_use]
     pub fn strict_mode_effective(&self) -> bool {
         self.strict_mode.unwrap_or(false)
     }
+    #[must_use]
     pub fn check_paths_effective(&self) -> bool {
         self.check_paths.unwrap_or(true)
     }
+    #[must_use]
     pub fn check_identifiers_effective(&self) -> bool {
         self.check_identifiers.unwrap_or(true)
     }
+    #[must_use]
     pub fn check_line_numbers_effective(&self) -> bool {
         self.check_line_numbers.unwrap_or(false)
     }
+    #[must_use]
     pub fn check_structure_effective(&self) -> bool {
         self.check_structure.unwrap_or(true)
     }
@@ -124,6 +130,7 @@ pub struct VerificationResult {
 }
 
 impl VerificationResult {
+    #[must_use]
     pub fn ok() -> Self {
         Self {
             pass: true,
@@ -134,6 +141,7 @@ impl VerificationResult {
         }
     }
 
+    #[must_use]
     pub fn format_compact(&self) -> String {
         if self.warnings.is_empty() {
             return "PASS".to_string();
@@ -155,6 +163,7 @@ impl VerificationResult {
     }
 }
 
+#[must_use]
 pub fn verify_output(
     source: &str,
     compressed: &str,
@@ -442,6 +451,7 @@ fn record_result(result: &VerificationResult) {
     }
 }
 
+#[must_use]
 pub fn stats_snapshot() -> VerificationSnapshot {
     let s = global_stats();
     let total = s.total_count.load(Ordering::Relaxed);
@@ -488,6 +498,7 @@ pub struct VerificationSnapshot {
 }
 
 impl VerificationSnapshot {
+    #[must_use]
     pub fn format_compact(&self) -> String {
         format!(
             "Verification: {}/{} pass ({:.0}%), warn_runs={}, warn_items={}, loss(avg)={:.1}%",

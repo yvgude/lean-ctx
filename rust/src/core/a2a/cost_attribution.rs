@@ -65,6 +65,7 @@ pub struct SessionCostSnapshot {
     pub duration_secs: u64,
 }
 
+#[must_use]
 pub fn estimate_cost(model_key: Option<&str>, input: u64, output: u64, cached: u64) -> f64 {
     let pricing = crate::core::gain::model_pricing::ModelPricing::load();
     let quote = pricing.quote(model_key);
@@ -154,6 +155,7 @@ impl CostStore {
         Ok(())
     }
 
+    #[must_use]
     pub fn top_agents(&self, limit: usize) -> Vec<&AgentCost> {
         let mut agents: Vec<_> = self.agents.values().collect();
         agents.sort_by(|a, b| {
@@ -165,6 +167,7 @@ impl CostStore {
         agents
     }
 
+    #[must_use]
     pub fn top_tools(&self, limit: usize) -> Vec<&ToolCost> {
         let mut tools: Vec<_> = self.tools.values().collect();
         tools.sort_by(|a, b| {
@@ -176,10 +179,12 @@ impl CostStore {
         tools
     }
 
+    #[must_use]
     pub fn total_cost(&self) -> f64 {
         self.agents.values().map(|a| a.cost_usd).sum()
     }
 
+    #[must_use]
     pub fn total_tokens(&self) -> (u64, u64, u64) {
         let input: u64 = self.agents.values().map(|a| a.total_input_tokens).sum();
         let output: u64 = self.agents.values().map(|a| a.total_output_tokens).sum();
@@ -254,6 +259,7 @@ fn save_to_disk(store: &CostStore) -> std::io::Result<()> {
     Ok(())
 }
 
+#[must_use]
 pub fn format_cost_report(store: &CostStore, limit: usize) -> String {
     let mut lines = Vec::new();
     let (total_in, total_out, total_cached) = store.total_tokens();

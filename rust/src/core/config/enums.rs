@@ -17,7 +17,7 @@ static SESSION_DEGRADE_LEVEL: AtomicU8 = AtomicU8::new(0);
 /// feature is strictly opt-in.
 ///
 /// This type only carries the operator's *intent*; the wire translation into
-/// each provider's native parameter (OpenAI `reasoning(_).effort`, Anthropic
+/// each provider's native parameter (`OpenAI` `reasoning(_).effort`, Anthropic
 /// `output_config.effort`) lives in [`crate::proxy::effort`]. The value is a
 /// constant once configured, so it is identical on every request of every
 /// conversation — the provider prompt-cache prefix stays byte-stable (#448/#498)
@@ -84,6 +84,7 @@ pub enum TerseAgent {
 
 impl TerseAgent {
     /// Reads the terse-agent level from the `LEAN_CTX_TERSE_AGENT` env var.
+    #[must_use]
     pub fn from_env() -> Self {
         match std::env::var("LEAN_CTX_TERSE_AGENT")
             .unwrap_or_default()
@@ -112,6 +113,7 @@ pub enum OutputDensity {
 
 impl OutputDensity {
     /// Reads the output density from the `LEAN_CTX_OUTPUT_DENSITY` env var.
+    #[must_use]
     pub fn from_env() -> Self {
         match std::env::var("LEAN_CTX_OUTPUT_DENSITY")
             .unwrap_or_default()
@@ -138,6 +140,7 @@ pub enum ResponseVerbosity {
 }
 
 impl ResponseVerbosity {
+    #[must_use]
     pub fn effective() -> Self {
         if let Ok(v) = std::env::var("LEAN_CTX_RESPONSE_VERBOSITY") {
             match v.trim().to_lowercase().as_str() {
@@ -149,6 +152,7 @@ impl ResponseVerbosity {
         Config::load().response_verbosity
     }
 
+    #[must_use]
     pub fn is_headers_only(&self) -> bool {
         matches!(self, Self::HeadersOnly)
     }
@@ -173,7 +177,8 @@ pub enum CompressionLevel {
 
 impl CompressionLevel {
     /// Decomposes the unified level into legacy component settings.
-    /// Returns (TerseAgent, OutputDensity, crp_mode_str, terse_mode_bool).
+    /// Returns (`TerseAgent`, `OutputDensity`, `crp_mode_str`, `terse_mode_bool`).
+    #[must_use]
     pub fn to_components(&self) -> (TerseAgent, OutputDensity, &'static str, bool) {
         match self {
             Self::Off => (TerseAgent::Off, OutputDensity::Normal, "off", false),
@@ -184,7 +189,8 @@ impl CompressionLevel {
     }
 
     /// Infers a `CompressionLevel` from legacy config keys for backward compatibility.
-    /// Priority: terse_agent > output_density (picks the highest implied level).
+    /// Priority: `terse_agent` > `output_density` (picks the highest implied level).
+    #[must_use]
     pub fn from_legacy(terse_agent: &TerseAgent, output_density: &OutputDensity) -> Self {
         match (terse_agent, output_density) {
             (TerseAgent::Ultra, _) | (_, OutputDensity::Ultra) => Self::Max,
@@ -195,6 +201,7 @@ impl CompressionLevel {
     }
 
     /// Reads the compression level from the `LEAN_CTX_COMPRESSION` env var.
+    #[must_use]
     pub fn from_env() -> Option<Self> {
         std::env::var("LEAN_CTX_COMPRESSION").ok().and_then(|v| {
             match v.trim().to_lowercase().as_str() {
@@ -214,6 +221,7 @@ impl CompressionLevel {
     /// 3. Legacy `ultra_compact` flag (maps to `Max`)
     /// 4. Legacy env vars (`LEAN_CTX_TERSE_AGENT`, `LEAN_CTX_OUTPUT_DENSITY`)
     /// 5. Legacy config fields (`terse_agent`, `output_density`)
+    #[must_use]
     pub fn effective(config: &Config) -> Self {
         if let Some(degraded) = Self::session_degrade_level() {
             return degraded;
@@ -267,6 +275,7 @@ impl CompressionLevel {
         SESSION_DEGRADE_LEVEL.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
+    #[must_use]
     pub fn from_str_label(s: &str) -> Option<Self> {
         match s.trim().to_lowercase().as_str() {
             "off" => Some(Self::Off),
@@ -277,10 +286,12 @@ impl CompressionLevel {
         }
     }
 
+    #[must_use]
     pub fn is_active(&self) -> bool {
         !matches!(self, Self::Off)
     }
 
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
             Self::Off => "off",
@@ -290,6 +301,7 @@ impl CompressionLevel {
         }
     }
 
+    #[must_use]
     pub fn description(&self) -> &'static str {
         match self {
             Self::Off => "No compression — full verbose output",
@@ -340,6 +352,7 @@ impl IndexingMode {
     }
 
     /// Reads the index mode from the `LEAN_CTX_INDEX_MODE` env var.
+    #[must_use]
     pub fn from_env() -> Option<Self> {
         std::env::var("LEAN_CTX_INDEX_MODE")
             .ok()
@@ -347,6 +360,7 @@ impl IndexingMode {
     }
 
     /// Returns the effective index mode: env var > config > default.
+    #[must_use]
     pub fn effective(config: &Config) -> Self {
         if let Some(env_mode) = Self::from_env() {
             return env_mode;
@@ -370,7 +384,7 @@ pub enum RulesScope {
 ///   discoverability, but touches a file the user also authors.
 /// - `Dedicated`: never write into those shared files. Instead use each agent's
 ///   config-driven, fully-removable auto-load path (Claude/Codex `SessionStart`
-///   hook `additionalContext`, OpenCode `instructions[]`, Gemini
+///   hook `additionalContext`, `OpenCode` `instructions[]`, Gemini
 ///   `context.fileName`) plus a lean-ctx-owned rules file. See issue #343.
 /// - `Off`: never write any rules file. For hosts that already supply their own
 ///   tool-steering workflow (e.g. an embedded extension) or for phase-isolated /
@@ -390,7 +404,7 @@ pub enum RulesInjection {
 ///   (role policy, shell allowlist). lean-ctx's `ctx_shell` therefore runs
 ///   independently of the IDE's `bash`/`rm *` permission rules.
 /// - `On`: before dispatching, lean-ctx reads the active IDE's permission config
-///   (v1: OpenCode `opencode.json[c]`) and applies the equivalent decision to
+///   (v1: `OpenCode` `opencode.json[c]`) and applies the equivalent decision to
 ///   the matching lean-ctx tool — `deny` blocks, `ask` is held back (MCP cannot
 ///   prompt for these tools), `allow` proceeds. Read-only; lean-ctx never writes
 ///   the IDE's `permission` block.

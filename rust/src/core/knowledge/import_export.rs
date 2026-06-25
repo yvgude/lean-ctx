@@ -13,6 +13,7 @@ pub enum ImportMerge {
 }
 
 impl ImportMerge {
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "replace" => Some(Self::Replace),
@@ -212,6 +213,7 @@ impl ProjectKnowledge {
     }
 
     /// Export current facts as a simple JSON array (community-compatible schema).
+    #[must_use]
     pub fn export_simple(&self) -> Vec<SimpleFactEntry> {
         self.facts
             .iter()

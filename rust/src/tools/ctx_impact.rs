@@ -54,6 +54,7 @@ fn entry_name(path: &str) -> String {
         .to_string()
 }
 
+#[must_use]
 pub fn handle(
     action: &str,
     path: Option<&str>,
@@ -78,8 +79,8 @@ pub fn handle(
     }
 }
 
-/// Shadow-mode parity proof (#682.3): build an in-memory PropertyGraph from the
-/// current graph_index and quantify whether PG reproduces everything the
+/// Shadow-mode parity proof (#682.3): build an in-memory `PropertyGraph` from the
+/// current `graph_index` and quantify whether PG reproduces everything the
 /// facade exposes (symbols, edges, dependencies) before any backend flip.
 fn handle_parity(root: &str, fmt: OutputFormat) -> String {
     // Compare the *fresh extractor* output (a real index build, produced by

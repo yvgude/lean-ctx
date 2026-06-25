@@ -33,6 +33,7 @@ pub struct ResolvedArtifacts {
     pub warnings: Vec<String>,
 }
 
+#[must_use]
 pub fn load_resolved(project_root: &Path) -> ResolvedArtifacts {
     let mut out = ResolvedArtifacts::default();
     let root_canon = project_root

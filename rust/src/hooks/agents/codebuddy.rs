@@ -181,7 +181,7 @@ fn remove_block(content: &str, start: &str, end: &str) -> String {
 
 /// Remove the lean-ctx-owned `~/.codebuddy/rules/lean-ctx.md` (GL #555/#558).
 ///
-/// CodeBuddy auto-loads every `~/.codebuddy/rules/*.md` file unconditionally at
+/// `CodeBuddy` auto-loads every `~/.codebuddy/rules/*.md` file unconditionally at
 /// session start, so this file duplicated the CODEBUDDY.md block in every session.
 /// The CODEBUDDY.md block is self-contained and detail docs live in the on-demand
 /// skill; only files carrying our rules marker are touched.

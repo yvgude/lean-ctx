@@ -82,7 +82,7 @@ fn count_messages_tokens(msgs: &[Value]) -> usize {
     msgs.iter().map(count_message_tokens).sum()
 }
 
-/// Group `body` into atomic `[start, end)` blocks (assistant+tool_calls and its
+/// Group `body` into atomic `[start, end)` blocks (`assistant+tool_calls` and its
 /// trailing tool results stay together; stray tool results attach backwards).
 fn atomic_blocks(body: &[Value]) -> Vec<(usize, usize)> {
     let mut blocks: Vec<(usize, usize)> = Vec::new();
@@ -247,6 +247,7 @@ pub fn serialize_transcript(messages: &[Value], max_chars: usize) -> String {
 
 /// Compact a message array. `fresh_tail_tokens` and `protect_min_messages`
 /// bound the verbatim tail; the split always lands on an atomic-block boundary.
+#[must_use]
 pub fn compact_messages(
     messages: Vec<Value>,
     fresh_tail_tokens: usize,
@@ -385,6 +386,7 @@ pub fn tool_pairing_errors(messages: &[Value]) -> Vec<String> {
 
 /// Build the JSON payload returned by the MCP tool: the compacted array plus
 /// deterministic stats. Separated so the registered wrapper stays thin.
+#[must_use]
 pub fn render_result(result: &CompactResult) -> String {
     let saved = result
         .original_tokens

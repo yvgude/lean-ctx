@@ -37,6 +37,7 @@ const FIRING_THRESHOLD: f64 = 1e-4;
 ///
 /// Returns accumulated activation per reached node (including seeds). Nodes not
 /// reachable from any seed are absent (implicitly zero).
+#[must_use]
 pub fn spread(
     seeds: &HashMap<String, f64>,
     adjacency: &HashMap<String, Vec<(String, f64)>>,
@@ -86,6 +87,7 @@ pub fn spread(
 /// Convenience: spread from `seeds` and return the top-`k` *non-seed* nodes by
 /// activation, strongest first — the files most associatively related to the
 /// cues but not already named by them.
+#[must_use]
 pub fn related_ranked(
     seeds: &HashMap<String, f64>,
     adjacency: &HashMap<String, Vec<(String, f64)>>,

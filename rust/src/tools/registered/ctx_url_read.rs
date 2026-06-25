@@ -8,7 +8,7 @@ use crate::core::web::{self, ReadMode, ReadOptions};
 use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_int, get_str};
 use crate::tool_defs::tool_def;
 
-/// `ctx_url_read` — fetch a web page, PDF, or YouTube video and return
+/// `ctx_url_read` — fetch a web page, PDF, or `YouTube` video and return
 /// compressed, citation-backed context (HTML/PDF→text, transcript flattening,
 /// extractive research-compression modes).
 pub struct CtxUrlReadTool;

@@ -40,6 +40,7 @@ pub fn handle(cache: &mut SessionCache, path: &str, crp_mode: CrpMode) -> String
     crate::tools::ctx_read::handle(cache, path, "auto", crp_mode)
 }
 
+#[must_use]
 pub fn is_code_ext(ext: &str) -> bool {
     matches!(
         ext,

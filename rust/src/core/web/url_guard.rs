@@ -152,6 +152,7 @@ impl SafeUrl {
 }
 
 /// True for addresses an outbound fetch must never reach (SSRF guard).
+#[must_use]
 pub fn ip_is_blocked(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => v4_is_blocked(v4),

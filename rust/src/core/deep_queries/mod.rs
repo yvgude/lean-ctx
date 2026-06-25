@@ -4,7 +4,7 @@
 //! Supported languages are gated by `get_language` (and kept in sync with
 //! `core::language_capabilities`): the TypeScript/JavaScript family, Python,
 //! Rust, Go, Java, C/C++, Ruby, C#, Kotlin, Swift, PHP, Bash, Dart, Scala,
-//! Elixir, Zig, and GDScript.
+//! Elixir, Zig, and `GDScript`.
 
 mod calls;
 mod ext_methods;
@@ -18,6 +18,7 @@ pub use types::*;
 #[cfg(feature = "tree-sitter")]
 use tree_sitter::{Language, Node, Parser};
 
+#[must_use]
 pub fn analyze(content: &str, ext: &str) -> DeepAnalysis {
     #[cfg(feature = "tree-sitter")]
     {

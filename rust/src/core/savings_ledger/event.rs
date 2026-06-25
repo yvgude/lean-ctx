@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SavingsEvent {
     pub ts: String,
-    /// Originating tool (e.g. "ctx_read"). Coarse for now; per-mode granularity is a
+    /// Originating tool (e.g. "`ctx_read`"). Coarse for now; per-mode granularity is a
     /// later refinement (stats already tracks per-mode).
     pub tool: String,
     /// Resolved pricing model key the saving was valued against.
@@ -52,6 +52,7 @@ impl SavingsEvent {
     /// that `{:.6}` rounds the other way, which silently broke the chain for untampered data.
     /// Integers serialise/parse exactly, so the hash is reproducible. The `v2|` prefix pins
     /// the scheme so a downgrade is itself tamper-evident.
+    #[must_use]
     pub fn canonical_content(&self) -> String {
         format!(
             "v2|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
@@ -73,6 +74,7 @@ impl SavingsEvent {
     /// Legacy (v1) canonical: `{:.6}` of the raw `f64` money fields. Retained only so
     /// `verify` keeps validating pre-v2 ledgers that never hit a tie value; new appends and
     /// re-chained ledgers always use [`Self::canonical_content`].
+    #[must_use]
     pub fn canonical_content_legacy(&self) -> String {
         format!(
             "{}|{}|{}|{}|{}|{}|{}|{}|{:.6}|{:.6}|{}|{}",
@@ -94,6 +96,7 @@ impl SavingsEvent {
     /// True if `entry_hash` matches the v2 canonical hash, or the legacy v1 hash. Accepting
     /// both lets `verify` validate ledgers written before the v2 fix without forcing a
     /// migration (clean v1 ledgers stay valid; broken-by-bug ones are repaired by `rechain`).
+    #[must_use]
     pub fn hash_matches(&self, prev_hash: &str) -> bool {
         self.entry_hash == compute_hash(prev_hash, &self.canonical_content())
             || self.entry_hash == compute_hash(prev_hash, &self.canonical_content_legacy())
@@ -117,6 +120,7 @@ fn micro_usd(usd: f64) -> i64 {
 }
 
 /// `SHA-256(prev_hash || content)` as lowercase hex — the chain link primitive.
+#[must_use]
 pub fn compute_hash(prev_hash: &str, content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(prev_hash.as_bytes());

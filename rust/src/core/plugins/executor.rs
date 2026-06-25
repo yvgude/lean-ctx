@@ -24,6 +24,7 @@ pub enum HookPoint {
 }
 
 impl HookPoint {
+    #[must_use]
     pub fn hook_name(&self) -> &'static str {
         match self {
             Self::OnSessionStart => "on_session_start",
@@ -34,6 +35,7 @@ impl HookPoint {
         }
     }
 
+    #[must_use]
     pub fn all_hook_names() -> &'static [&'static str] {
         &[
             "on_session_start",
@@ -56,6 +58,7 @@ pub struct HookResult {
     pub duration_ms: u64,
 }
 
+#[must_use]
 pub fn execute_hook_sync(plugin: &Plugin, hook: &HookPoint) -> HookResult {
     let hook_name = hook.hook_name();
     let plugin_name = plugin.manifest.plugin.name.clone();
@@ -217,6 +220,7 @@ fn wait_with_timeout(
     }
 }
 
+#[must_use]
 pub fn execute_hooks_for_point(plugins: &[&Plugin], hook: &HookPoint) -> Vec<HookResult> {
     let hook_name = hook.hook_name();
     plugins

@@ -42,6 +42,7 @@ fn is_make_meta_line(line: &str) -> bool {
     t.starts_with("make[") || t.starts_with("gmake[") || t.starts_with("make:")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     let cl = command.trim();
     let cl = cl.to_ascii_lowercase();

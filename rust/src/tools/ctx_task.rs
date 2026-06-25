@@ -1,5 +1,6 @@
 use crate::core::a2a::task::{TaskPart, TaskState, TaskStore};
 
+#[must_use]
 pub fn handle(
     action: &str,
     current_agent_id: Option<&str>,

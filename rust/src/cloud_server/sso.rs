@@ -1,15 +1,15 @@
 //! Self-serve OIDC SSO login (GL #482) — the edge half.
 //!
-//! The control plane stores each org's IdP config (issuer, client id, sealed
+//! The control plane stores each org's `IdP` config (issuer, client id, sealed
 //! secret, verified email domain); this module runs the actual Authorization
-//! Code + PKCE flow against the IdP and turns a valid ID token into the same
+//! Code + PKCE flow against the `IdP` and turns a valid ID token into the same
 //! session credential a password login produces.
 //!
 //! Flow:
 //! 1. `POST /api/auth/sso/start {email}` — domain → org lookup. When SSO is
-//!    configured the response carries the IdP authorize URL; the state, nonce
+//!    configured the response carries the `IdP` authorize URL; the state, nonce
 //!    and PKCE verifier are stored server-side (hashed state, 10-min TTL).
-//! 2. IdP redirects to `GET /api/auth/sso/callback?code&state` — the state is
+//! 2. `IdP` redirects to `GET /api/auth/sso/callback?code&state` — the state is
 //!    consumed (single use), the code is exchanged (client secret fetched
 //!    per-login from the control plane, never cached), and the ID token is
 //!    verified: signature against the issuer's JWKS, `iss`, `aud`, `exp`,
@@ -201,7 +201,7 @@ pub(super) async fn lookup_sso_org(cfg: &Config, domain: &str) -> Result<Option<
 
 /// Whether a password login/registration for `email` must be refused because
 /// the org behind its domain enforces SSO. The org owner is exempt — a broken
-/// IdP must never lock the org out of its own dashboard (break-glass).
+/// `IdP` must never lock the org out of its own dashboard (break-glass).
 pub(super) async fn password_login_blocked(cfg: &Config, email: &str) -> bool {
     let Some(domain) = email.rsplit('@').next().filter(|d| d.contains('.')) else {
         return false;
@@ -245,7 +245,7 @@ pub(super) struct StartBody {
 }
 
 /// Begin an SSO login: answers `{sso:false}` when the email's domain has no
-/// verified IdP, else stores the flow state and returns the authorize URL.
+/// verified `IdP`, else stores the flow state and returns the authorize URL.
 pub(super) async fn sso_start(
     State(state): State<AppState>,
     Json(body): Json<StartBody>,
@@ -359,7 +359,7 @@ fn error_redirect(cfg: &Config, reason: &str) -> Redirect {
     ))
 }
 
-/// The IdP's redirect target. Every validation failure lands on the login
+/// The `IdP`'s redirect target. Every validation failure lands on the login
 /// page with a neutral `sso_error`; only success mints a handoff code.
 pub(super) async fn sso_callback(
     State(state): State<AppState>,

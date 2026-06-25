@@ -1041,10 +1041,10 @@ pub(super) fn write_qoder_settings(
 //     exists, nothing is written (no watchdog reload-tick churn).
 // ---------------------------------------------------------------------------
 
-/// First OpenClaw version that requires the nested `mcp.servers` schema.
+/// First `OpenClaw` version that requires the nested `mcp.servers` schema.
 const OPENCLAW_NESTED_SCHEMA_VERSION: (u64, u64, u64) = (2026, 6, 1);
 
-/// Parse an OpenClaw version string ("2026.6.1") into a comparable triple.
+/// Parse an `OpenClaw` version string ("2026.6.1") into a comparable triple.
 /// Tolerates missing components ("2026.6" -> (2026, 6, 0)) and pre-release
 /// suffixes ("2026.6.1-beta.2" -> (2026, 6, 1)).
 pub(super) fn parse_openclaw_version(raw: &str) -> Option<(u64, u64, u64)> {
@@ -1062,12 +1062,12 @@ pub(super) fn parse_openclaw_version(raw: &str) -> Option<(u64, u64, u64)> {
     Some((major, minor, patch))
 }
 
-/// Whether this OpenClaw config requires the nested `mcp.servers` schema.
+/// Whether this `OpenClaw` config requires the nested `mcp.servers` schema.
 ///
-/// Defaults to nested when the version is unknown: current OpenClaw releases
+/// Defaults to nested when the version is unknown: current `OpenClaw` releases
 /// are all >= 2026.6.1, the legacy key actively breaks them, and a fresh
 /// install has no `meta` block at all. An existing `mcp.servers` object is
-/// also treated as proof of the new schema (the user or OpenClaw itself
+/// also treated as proof of the new schema (the user or `OpenClaw` itself
 /// migrated already).
 pub(super) fn openclaw_uses_nested_schema(root: &serde_json::Map<String, Value>) -> bool {
     if root
@@ -1089,7 +1089,7 @@ pub(super) fn openclaw_uses_nested_schema(root: &serde_json::Map<String, Value>)
 }
 
 /// Remove our legacy top-level `mcpServers.lean-ctx` entry. Drops the whole
-/// `mcpServers` key when it becomes empty (OpenClaw >= 2026.6.1 rejects even
+/// `mcpServers` key when it becomes empty (`OpenClaw` >= 2026.6.1 rejects even
 /// an empty unknown key). Foreign entries under `mcpServers` are preserved.
 /// Returns true when the document was modified.
 pub(super) fn remove_legacy_openclaw_entry(root: &mut serde_json::Map<String, Value>) -> bool {

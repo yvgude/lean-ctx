@@ -5,7 +5,7 @@ use serde_json::{Map, Value};
 /// Outcome of a shell execution, carried alongside the rendered text so the
 /// MCP dispatch layer can surface failures in protocol metadata instead of
 /// only as an `[exit:N]` text footer (GitHub #389: clients had no programmatic
-/// way to detect ctx_shell failures and resorted to fragile regex matching).
+/// way to detect `ctx_shell` failures and resorted to fragile regex matching).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellOutcome {
     /// The command ran; carries its real exit code (0 = success).
@@ -17,6 +17,7 @@ pub enum ShellOutcome {
 
 impl ShellOutcome {
     /// Whether this outcome must be reported as a tool error (`isError: true`).
+    #[must_use]
     pub fn is_error(self) -> bool {
         match self {
             ShellOutcome::Exit(code) => code != 0,
@@ -28,6 +29,7 @@ impl ShellOutcome {
     /// can read `exitCode`/`blocked` instead of parsing output text. Success
     /// (exit 0) intentionally returns `None` — the happy path stays
     /// token-neutral for clients that render structured content.
+    #[must_use]
     pub fn structured(self) -> Option<serde_json::Value> {
         match self {
             ShellOutcome::Exit(0) => None,
@@ -37,13 +39,13 @@ impl ShellOutcome {
     }
 }
 
-/// Result returned by an McpTool handler.
+/// Result returned by an `McpTool` handler.
 pub struct ToolOutput {
     pub text: String,
     pub original_tokens: usize,
     pub saved_tokens: usize,
     pub mode: Option<String>,
-    /// Path associated with the tool call (for record_call_with_path).
+    /// Path associated with the tool call (for `record_call_with_path`).
     pub path: Option<String>,
     /// True when the tool mutated state that clients should know about
     /// (e.g. dynamic tool categories changed).
@@ -55,6 +57,7 @@ pub struct ToolOutput {
 }
 
 impl ToolOutput {
+    #[must_use]
     pub fn simple(text: String) -> Self {
         Self {
             text,
@@ -67,7 +70,8 @@ impl ToolOutput {
         }
     }
 
-    /// Compact one-line summary for headers_only response verbosity.
+    /// Compact one-line summary for `headers_only` response verbosity.
+    #[must_use]
     pub fn to_header_line(&self, tool_name: &str) -> String {
         let path_str = self.path.as_deref().unwrap_or("—");
         let mode_str = self.mode.as_deref().unwrap_or("—");
@@ -80,6 +84,7 @@ impl ToolOutput {
         format!("[{tool_name}: {path_str}, mode={mode_str}, {sent} tok sent, -{pct}%]")
     }
 
+    #[must_use]
     pub fn with_savings(text: String, original: usize, saved: usize) -> Self {
         Self {
             text,
@@ -96,7 +101,7 @@ impl ToolOutput {
 /// Trait for a self-contained MCP tool. Each tool provides its own schema
 /// definition and handler, eliminating the possibility of schema/handler drift.
 ///
-/// This trait is the plugin interface for LcpTools: any implementation can be
+/// This trait is the plugin interface for `LcpTools`: any implementation can be
 /// registered at runtime via `ToolRegistry::register()`. Future plugin system
 /// will load implementations from shared libraries or subprocess bridges.
 ///
@@ -104,7 +109,7 @@ impl ToolOutput {
 /// The async boundary (cache locks, session reads) is handled by the dispatch
 /// layer before calling `handle`.
 pub trait McpTool: Send + Sync {
-    /// Tool name as registered in the MCP protocol (e.g. "ctx_tree").
+    /// Tool name as registered in the MCP protocol (e.g. "`ctx_tree`").
     fn name(&self) -> &'static str;
 
     /// MCP tool definition including JSON schema. This replaces the
@@ -136,7 +141,7 @@ pub struct ToolContext {
     pub cache: Option<crate::tools::SharedCache>,
     /// Shared session handle for tools that need session access.
     pub session: Option<std::sync::Arc<tokio::sync::RwLock<crate::core::session::SessionState>>>,
-    /// Tool call records for session-aware tools (e.g. ctx_session status).
+    /// Tool call records for session-aware tools (e.g. `ctx_session` status).
     pub tool_calls:
         Option<std::sync::Arc<tokio::sync::RwLock<Vec<crate::core::protocol::ToolCallRecord>>>>,
     /// Current agent identity for multi-agent tools.
@@ -158,7 +163,7 @@ pub struct ToolContext {
     pub autonomy: Option<std::sync::Arc<crate::tools::autonomy::AutonomyState>>,
     /// Pre-computed context pressure snapshot for synchronous gate decisions.
     pub pressure_snapshot: Option<crate::core::context_ledger::ContextPressure>,
-    /// Errors from path resolution (PathJail rejection, secret path, etc.).
+    /// Errors from path resolution (`PathJail` rejection, secret path, etc.).
     /// Keyed by argument name (e.g. "path" -> "path escapes project root: ...").
     pub path_errors: std::collections::HashMap<String, String>,
     /// MCP progress notification sender for long-running operations.
@@ -231,7 +236,7 @@ impl ToolContext {
 // ── Arg extraction helpers (mirror server/helpers.rs for standalone use) ──
 
 /// Extract a resolved path from context with differentiated error messages.
-/// Returns descriptive errors for: missing param, PathJail rejection, wrong type.
+/// Returns descriptive errors for: missing param, `PathJail` rejection, wrong type.
 pub fn require_resolved_path(
     ctx: &ToolContext,
     args: &Map<String, Value>,
@@ -279,6 +284,7 @@ pub fn get_int(args: &Map<String, Value>, key: &str) -> Option<i64> {
 /// `negative_i64 as usize` wrap to `usize::MAX`, which previously let an agent
 /// trigger unbounded allocations (e.g. `top_k`, `limit`, `max_results`) → OOM.
 /// Callers should still apply a sensible upper cap on the result.
+#[must_use]
 pub fn get_usize(args: &Map<String, Value>, key: &str) -> Option<usize> {
     get_int(args, key).and_then(|n| usize::try_from(n).ok())
 }
@@ -291,6 +297,7 @@ pub fn get_f64(args: &Map<String, Value>, key: &str) -> Option<f64> {
     args.get(key).and_then(serde_json::Value::as_f64)
 }
 
+#[must_use]
 pub fn get_str_array(args: &Map<String, Value>, key: &str) -> Option<Vec<String>> {
     args.get(key).and_then(|v| v.as_array()).map(|arr| {
         arr.iter()

@@ -15,7 +15,7 @@
 pub enum OutputPolicy {
     /// Auth flows, dev servers, interactive, streaming, installs.
     /// Output is passed through with ZERO modification, even when
-    /// `LEAN_CTX_COMPRESS=1` (force_compress) is set.
+    /// `LEAN_CTX_COMPRESS=1` (`force_compress`) is set.
     Passthrough,
 
     /// API data, file content, structured queries, HTTP responses.
@@ -32,6 +32,7 @@ pub enum OutputPolicy {
 impl OutputPolicy {
     /// Returns true if the output MUST NOT be compressed under any
     /// circumstances (not even truncated, except for catastrophic size).
+    #[must_use]
     pub fn is_protected(&self) -> bool {
         matches!(self, Self::Passthrough | Self::Verbatim)
     }
@@ -40,9 +41,10 @@ impl OutputPolicy {
 /// Classify a command into an `OutputPolicy`.
 ///
 /// `user_excluded` comes from `Config::excluded_commands`. Precedence:
-///   1. `is_passthrough` (BUILTIN_PASSTHROUGH + dev-script runners + user excludes)
+///   1. `is_passthrough` (`BUILTIN_PASSTHROUGH` + dev-script runners + user excludes)
 ///   2. `compress::is_verbatim_output` (HTTP clients, file viewers, data formats …)
 ///   3. otherwise `Compressible`
+#[must_use]
 pub fn classify(command: &str, user_excluded: &[String]) -> OutputPolicy {
     if is_passthrough(command, user_excluded) {
         return OutputPolicy::Passthrough;

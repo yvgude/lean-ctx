@@ -44,6 +44,7 @@ pub fn exports_not_in_signatures<'a>(
 }
 
 impl Signature {
+    #[must_use]
     pub fn no_span() -> Self {
         Self {
             kind: "",
@@ -63,6 +64,7 @@ impl Signature {
     /// `trait`, `pub`) instead of abbreviations, so a vanilla agent without
     /// injected rules reads the output correctly. Keyword tokens cost the
     /// same as (or less than) the old `cl`/`⊛` forms.
+    #[must_use]
     pub fn to_compact(&self) -> String {
         let export = if self.is_exported { "pub " } else { "" };
         let async_prefix = if self.is_async { "async " } else { "" };
@@ -94,6 +96,7 @@ impl Signature {
         }
     }
 
+    #[must_use]
     pub fn to_tdd(&self) -> String {
         let vis = if self.is_exported { "+" } else { "-" };
         let a = if self.is_async { "~" } else { "" };
@@ -132,6 +135,7 @@ impl Signature {
     /// Compact ` @Lstart[-end]` suffix for navigation-focused modes.
     /// Returns an empty string when the span is unknown, so compression-first
     /// modes that render the base `to_compact`/`to_tdd` stay byte-identical.
+    #[must_use]
     pub fn line_suffix(&self) -> String {
         match (self.start_line, self.end_line) {
             (Some(start), Some(end)) if start > 0 && end > start => format!(" @L{start}-{end}"),
@@ -142,11 +146,13 @@ impl Signature {
 
     /// `to_compact` plus a line-span suffix. Reserved for navigation modes
     /// (`map`/`signatures`) where locating code outweighs the few extra tokens.
+    #[must_use]
     pub fn to_compact_located(&self) -> String {
         format!("{}{}", self.to_compact(), self.line_suffix())
     }
 
     /// `to_tdd` plus a line-span suffix. Reserved for navigation modes.
+    #[must_use]
     pub fn to_tdd_located(&self) -> String {
         format!("{}{}", self.to_tdd(), self.line_suffix())
     }
@@ -156,6 +162,7 @@ impl Signature {
 /// self-describing for vanilla agents without injected rules. Only the
 /// symbols actually present in `sigs` are explained, keeping the line well
 /// under the 15-token budget for typical files. Empty when nothing applies.
+#[must_use]
 pub fn tdd_legend<'a>(sigs: &[&'a Signature]) -> String {
     if sigs.is_empty() {
         return String::new();
@@ -243,7 +250,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static TREE_SITTER_HITS: AtomicU64 = AtomicU64::new(0);
 static REGEX_FALLBACK_HITS: AtomicU64 = AtomicU64::new(0);
 
-/// Returns (tree_sitter_hits, regex_fallback_hits) since process start.
+/// Returns (`tree_sitter_hits`, `regex_fallback_hits`) since process start.
 pub fn signature_backend_stats() -> (u64, u64) {
     (
         TREE_SITTER_HITS.load(Ordering::Relaxed),

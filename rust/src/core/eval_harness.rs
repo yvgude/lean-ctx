@@ -1,6 +1,6 @@
 //! Retrieval evaluation harness for lean-ctx hybrid search.
 //!
-//! Runs a standardized query→expected_file benchmark to measure Recall@k,
+//! Runs a standardized `query→expected_file` benchmark to measure Recall@k,
 //! MRR (Mean Reciprocal Rank), and latency. Outputs NDJSON scorecards.
 //!
 //! Usage: `lean-ctx benchmark --eval [path]`
@@ -74,6 +74,7 @@ impl std::fmt::Display for EvalScorecard {
 
 /// Run evaluation using the full hybrid search pipeline (BM25 + embeddings + SPLADE).
 /// Falls back to BM25-only if embeddings are not available.
+#[must_use]
 pub fn run_eval(
     project_root: &Path,
     queries: &[EvalQuery],
@@ -240,6 +241,7 @@ fn try_hybrid_search(
 
 /// Generate self-eval queries from an indexed codebase.
 /// Picks random symbols/files and constructs retrieval queries.
+#[must_use]
 pub fn generate_self_eval(index: &ChunkData, max_queries: usize) -> Vec<EvalQuery> {
     let mut queries = Vec::new();
 
@@ -301,6 +303,7 @@ pub enum AbVerdict {
 }
 
 impl AbVerdict {
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             AbVerdict::FlipSafe => "FLIP-SAFE",
@@ -385,6 +388,7 @@ fn run_arm(
 
 /// Run the dense-vs-lean retrieval A/B over `queries` and decide whether the
 /// default search path can be flipped to dense-off without losing quality.
+#[must_use]
 pub fn run_ab(
     project_root: &Path,
     queries: &[EvalQuery],
@@ -437,6 +441,7 @@ pub fn load_suite(path: &Path) -> std::io::Result<Vec<EvalQuery>> {
 }
 
 impl AbReport {
+    #[must_use]
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
     }

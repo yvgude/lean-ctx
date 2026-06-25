@@ -3,6 +3,7 @@ use std::path::Path;
 /// Parse a `file://` URI to a validated local path string.
 /// Rejects non-file URIs, null bytes, `..` traversal, and non-directory paths.
 /// Returns a canonicalized absolute path.
+#[must_use]
 pub fn uri_to_path(uri: &str) -> Option<String> {
     let raw = uri.strip_prefix("file://")?;
     if raw.contains("%00") {
@@ -91,6 +92,7 @@ pub(super) fn has_project_marker(dir: &Path) -> bool {
 /// Falls back to the first valid directory if none have markers — but never
 /// accepts a broad/unsafe root (HOME, filesystem root, agent sandbox dirs),
 /// which would otherwise contaminate sessions across projects.
+#[must_use]
 pub fn best_root_from_uris(uris: &[String]) -> Option<String> {
     best_root_from_paths(uris.iter().filter_map(|u| uri_to_path(u)).collect())
 }
@@ -124,6 +126,7 @@ fn best_root_from_paths(paths: Vec<String>) -> Option<String> {
 }
 
 /// Filter and validate URIs to existing directories only.
+#[must_use]
 pub fn valid_dir_paths_from_uris(uris: &[String]) -> Vec<String> {
     uris.iter()
         .filter_map(|u| uri_to_path(u))
@@ -132,7 +135,8 @@ pub fn valid_dir_paths_from_uris(uris: &[String]) -> Vec<String> {
 }
 
 /// Detect project root from IDE-specific environment variables.
-/// Priority: LEAN_CTX_PROJECT_ROOT > CLAUDE_PROJECT_DIR
+/// Priority: `LEAN_CTX_PROJECT_ROOT` > `CLAUDE_PROJECT_DIR`
+#[must_use]
 pub fn root_from_env() -> Option<String> {
     for var in ["LEAN_CTX_PROJECT_ROOT", "CLAUDE_PROJECT_DIR"] {
         if let Ok(val) = std::env::var(var) {
@@ -174,6 +178,7 @@ fn split_workspace_paths(raw: &str) -> Vec<String> {
 /// unsafe directory and relative tool paths resolve against the wrong tree
 /// (#699). This variable is the Cursor-sanctioned way to learn the active
 /// workspace folder(s). The same broad/unsafe-root guards as MCP roots apply.
+#[must_use]
 pub fn root_from_workspace_env() -> Option<String> {
     let raw = std::env::var("WORKSPACE_FOLDER_PATHS").ok()?;
     best_root_from_paths(split_workspace_paths(&raw))
@@ -183,6 +188,7 @@ pub fn root_from_workspace_env() -> Option<String> {
 ///
 /// Used to register the sibling folders of a multi-root workspace as extra
 /// trusted roots, so explicit paths into them are not rejected by the path jail.
+#[must_use]
 pub fn workspace_roots_from_env() -> Vec<String> {
     let Ok(raw) = std::env::var("WORKSPACE_FOLDER_PATHS") else {
         return Vec::new();

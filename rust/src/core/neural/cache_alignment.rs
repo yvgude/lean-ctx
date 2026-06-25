@@ -28,6 +28,7 @@ pub struct CacheAlignedOutput {
 }
 
 impl CacheAlignedOutput {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -56,6 +57,7 @@ impl CacheAlignedOutput {
 
     /// Render the output with cache-optimal ordering:
     /// stable blocks first (sorted by priority), then variable blocks.
+    #[must_use]
     pub fn render(&self) -> String {
         let mut stable: Vec<&CacheBlock> = self.blocks.iter().filter(|b| b.is_stable).collect();
         let mut variable: Vec<&CacheBlock> = self.blocks.iter().filter(|b| !b.is_stable).collect();
@@ -79,13 +81,15 @@ impl CacheAlignedOutput {
     }
 
     /// Render with explicit cache breakpoint markers for Claude.
-    /// Places up to CLAUDE_MAX_CACHE_BREAKPOINTS markers at optimal positions.
+    /// Places up to `CLAUDE_MAX_CACHE_BREAKPOINTS` markers at optimal positions.
+    #[must_use]
     pub fn render_with_breakpoints(&self) -> (String, Vec<usize>) {
         let rendered = self.render();
         let breakpoints = compute_breakpoints(&rendered);
         (rendered, breakpoints)
     }
 
+    #[must_use]
     pub fn stable_token_count(&self) -> usize {
         self.blocks
             .iter()
@@ -94,6 +98,7 @@ impl CacheAlignedOutput {
             .sum()
     }
 
+    #[must_use]
     pub fn variable_token_count(&self) -> usize {
         self.blocks
             .iter()
@@ -102,6 +107,7 @@ impl CacheAlignedOutput {
             .sum()
     }
 
+    #[must_use]
     pub fn cache_efficiency(&self) -> f64 {
         let total = self.stable_token_count() + self.variable_token_count();
         if total == 0 {
@@ -221,6 +227,7 @@ pub struct DeltaResult {
 }
 
 impl DeltaResult {
+    #[must_use]
     pub fn savings_ratio(&self) -> f64 {
         let total = self.cached_prefix_tokens + self.total_delta_tokens;
         if total == 0 {
@@ -232,6 +239,7 @@ impl DeltaResult {
 
 /// Order file contents for maximum cache reuse across tool calls.
 /// Stable elements (imports, type defs) first, then variable elements (function bodies).
+#[must_use]
 pub fn cache_order_code(content: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
 

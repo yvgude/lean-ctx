@@ -1,5 +1,6 @@
 use std::path::Path;
 
+#[must_use]
 pub fn compress(path: &str) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
     let filename = Path::new(path)
@@ -18,6 +19,7 @@ pub fn compress(path: &str) -> Option<String> {
     }
 }
 
+#[must_use]
 pub fn detect_and_compress(dir: &str) -> Option<String> {
     let candidates = [
         "package.json",

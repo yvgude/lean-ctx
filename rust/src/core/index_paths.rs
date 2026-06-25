@@ -27,16 +27,19 @@ pub(crate) fn normalize_absolute_path(path: &str) -> String {
     normalized
 }
 
+#[must_use]
 pub fn normalize_project_root(path: &str) -> String {
     normalize_absolute_path(path)
 }
 
+#[must_use]
 pub fn graph_match_key(path: &str) -> String {
     let stripped =
         crate::core::pathutil::strip_verbatim_str(path).unwrap_or_else(|| path.replace('\\', "/"));
     stripped.trim_start_matches('/').to_string()
 }
 
+#[must_use]
 pub fn graph_relative_key(path: &str, root: &str) -> String {
     let root_norm = normalize_project_root(root);
     let path_norm = normalize_absolute_path(path);

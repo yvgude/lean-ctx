@@ -62,6 +62,7 @@ const KNOWN_TOOLS: &[&str] = &[
 
 const REQUIRED_SECTIONS: &[&str] = &["Mode Selection", "File Editing"];
 
+#[must_use]
 pub fn lint(config: &RulesConfig, home: &std::path::Path) -> Vec<LintWarning> {
     let mut warnings = Vec::new();
 

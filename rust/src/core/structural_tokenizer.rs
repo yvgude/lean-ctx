@@ -234,6 +234,7 @@ fn push_op(out: &mut Vec<StructuralToken>, text: &str) {
 }
 
 /// Tokenize source into weighted structural tokens (motifs, keywords, literals, …).
+#[must_use]
 pub fn structural_tokenize(code: &str, lang: &str) -> Vec<StructuralToken> {
     let lang_lower = lang.to_lowercase();
     let lang_k = match lang_lower.as_str() {

@@ -7,6 +7,7 @@ use std::path::Path;
 
 use report::CompareReport;
 
+#[must_use]
 pub fn run_compare(root: &Path, output_path: Option<&str>) -> CompareReport {
     let metrics = metrics::measure_all(root);
     let system = system_info::collect();

@@ -24,12 +24,14 @@ use crate::core::graph_provider::EdgeInfo;
 pub const DEP_EDGE_KINDS: [&str; 2] = ["import", "reexport"];
 
 /// True when an edge kind is a genuine directed dependency.
+#[must_use]
 pub fn is_dependency_kind(kind: &str) -> bool {
     DEP_EDGE_KINDS.contains(&kind)
 }
 
 /// Directed dependency edges as `(from, to)` pairs, with self-loops removed.
 /// Borrows from `edges` to avoid allocating new strings.
+#[must_use]
 pub fn dependency_edges(edges: &[EdgeInfo]) -> Vec<(&str, &str)> {
     edges
         .iter()
@@ -46,6 +48,7 @@ pub fn dependency_edges(edges: &[EdgeInfo]) -> Vec<(&str, &str)> {
 /// are weaker and scale with their observed `weight` (e.g. how often two files
 /// changed together). The dashboard styles edges by this score so heuristic
 /// links read as faint/dashed while real dependencies stay solid (#273).
+#[must_use]
 pub fn edge_confidence(kind: &str, weight: f64) -> f64 {
     match kind {
         "import" => 1.0,

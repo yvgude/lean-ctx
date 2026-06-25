@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 
-/// A single node from the code_index.db nodes table.
+/// A single node from the `code_index.db` nodes table.
 pub struct GraphNode {
     pub id: i64,
     pub name: String,
@@ -12,7 +12,7 @@ pub struct GraphNode {
     pub end_line: usize,
 }
 
-/// A grep match (file:line content).
+/// A grep match (<file:line> content).
 pub struct GrepMatch {
     pub file: String,
     pub line: usize,
@@ -34,7 +34,7 @@ fn code_index_path(root: &Path) -> PathBuf {
     crate::core::index_namespace::vectors_dir(root).join("code_index.db")
 }
 
-/// Open the code_index.db for the given project root.
+/// Open the `code_index.db` for the given project root.
 /// Returns an error string if the db doesn't exist or can't be opened.
 pub fn open_code_index(root: &Path) -> Result<Connection, String> {
     let path = code_index_path(root);
@@ -44,7 +44,7 @@ pub fn open_code_index(root: &Path) -> Result<Connection, String> {
     Connection::open(&path).map_err(|e| format!("failed to open code_index.db: {e}"))
 }
 
-/// Query all nodes that belong to the given file, ordered by start_line.
+/// Query all nodes that belong to the given file, ordered by `start_line`.
 /// Returns an empty vec on error.
 pub fn query_nodes_for_file(conn: &Connection, file_path: &str) -> Vec<GraphNode> {
     let Ok(mut stmt) = conn.prepare(
@@ -72,9 +72,10 @@ pub fn query_nodes_for_file(conn: &Connection, file_path: &str) -> Vec<GraphNode
     rows.filter_map(std::result::Result::ok).collect()
 }
 
-/// Among nodes where start_line <= line <= end_line, return the one with the
-/// smallest span (end_line - start_line). Ties are broken by preferring the
-/// node with the smaller start_line.
+/// Among nodes where `start_line` <= line <= `end_line`, return the one with the
+/// smallest span (`end_line` - `start_line`). Ties are broken by preferring the
+/// node with the smaller `start_line`.
+#[must_use]
 pub fn find_tightest_node(nodes: &[GraphNode], line: usize) -> Option<&GraphNode> {
     nodes
         .iter()
@@ -92,8 +93,9 @@ pub fn find_tightest_node(nodes: &[GraphNode], line: usize) -> Option<&GraphNode
 /// unmatched raw matches.
 ///
 /// Returns `(enriched_hits, unmatched_raw)` where:
-/// - `enriched_hits` are deduplicated by node_id with accumulated match_lines
+/// - `enriched_hits` are deduplicated by `node_id` with accumulated `match_lines`
 /// - `unmatched_raw` contains matches that fell outside any node span
+#[must_use]
 pub fn classify_hits(
     matches: &[GrepMatch],
     nodes: &[GraphNode],

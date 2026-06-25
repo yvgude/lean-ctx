@@ -33,12 +33,13 @@ fn canonicalize_raw(path: &Path) -> std::io::Result<PathBuf> {
 }
 
 /// Like `safe_canonicalize` but returns the original path on failure.
+#[must_use]
 pub fn safe_canonicalize_or_self(path: &Path) -> PathBuf {
     safe_canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// SECURITY canonicalize: always resolves symlinks, even under ~/Documents in a
-/// launchd-standalone process. PathJail relies on this to detect symlink jail
+/// launchd-standalone process. `PathJail` relies on this to detect symlink jail
 /// escapes (#356 must never weaken the security boundary). A standalone process
 /// only reaches here for a path the client *explicitly* asked to access, where a
 /// one-time TCC prompt is legitimate — unlike the self-initiated heuristic
@@ -48,11 +49,12 @@ pub fn canonicalize_secure(path: &Path) -> std::io::Result<PathBuf> {
 }
 
 /// Like `canonicalize_secure` but returns the original path on failure.
+#[must_use]
 pub fn canonicalize_secure_or_self(path: &Path) -> PathBuf {
     canonicalize_secure(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// Canonicalize with a timeout guard. Protects against hangs on WSL2 DrvFS,
+/// Canonicalize with a timeout guard. Protects against hangs on WSL2 `DrvFS`,
 /// Windows reparse points, NFS, FUSE, sshfs, and other slow filesystems.
 /// Falls back to the original path if canonicalize doesn't complete within the timeout.
 /// Self-healing: after a timeout, subsequent calls to slow mounts skip the thread entirely.
@@ -63,7 +65,7 @@ pub fn safe_canonicalize_bounded(path: &Path, timeout_ms: u64) -> PathBuf {
 }
 
 /// SECURITY variant of [`safe_canonicalize_bounded`] — bypasses the #356 TCC
-/// guard so PathJail keeps resolving symlinks to detect jail escapes. See
+/// guard so `PathJail` keeps resolving symlinks to detect jail escapes. See
 /// [`canonicalize_secure`] for why a prompt here (explicit request) is legitimate.
 pub fn canonicalize_secure_bounded(path: &Path, timeout_ms: u64) -> PathBuf {
     canonicalize_bounded_with(path, timeout_ms, canonicalize_secure_or_self)
@@ -110,6 +112,7 @@ fn canonicalize_bounded_with(
 
 /// Remove the `\\?\` / `//?/` verbatim prefix from a `PathBuf`.
 /// Handles both regular verbatim (`\\?\C:\...`) and UNC verbatim (`\\?\UNC\...`).
+#[must_use]
 pub fn strip_verbatim(path: PathBuf) -> PathBuf {
     let s = path.to_string_lossy();
     if let Some(stripped) = strip_verbatim_str(&s) {
@@ -159,6 +162,7 @@ fn translate_msys_drive_prefix(p: &str) -> Option<String> {
 /// **no** filesystem access, so it is safe on persisted paths in
 /// TCC-standalone processes (launchd daemon, #356) and as a dedupe key where
 /// symlink resolution is not worth a `realpath` per entry.
+#[must_use]
 pub fn normalize_tool_path_lexical(path: &str) -> String {
     let mut p = match strip_verbatim_str(path) {
         Some(stripped) => stripped,
@@ -191,6 +195,7 @@ pub fn normalize_tool_path_lexical(path: &str) -> String {
 /// (`/c/Users/...` -> `C:/Users/...`), mixed separators, double slashes, and
 /// trailing slashes. Uses forward slashes for consistency. On non-Windows
 /// hosts `/c/...` is a literal directory and passes through unchanged (#397).
+#[must_use]
 pub fn normalize_tool_path(path: &str) -> String {
     let mut p = normalize_tool_path_lexical(path);
 
@@ -220,6 +225,7 @@ pub fn normalize_tool_path(path: &str) -> String {
 /// Rejects home directory, filesystem root, `.` (bare CWD), and agent sandbox
 /// directories (`.claude`, `.codex`). Used to prevent writing project-scoped
 /// data (overlays, policies) into the global `~/.lean-ctx/` data directory.
+#[must_use]
 pub fn is_broad_or_unsafe_root(dir: &Path) -> bool {
     if let Some(home) = dirs::home_dir()
         && dir == home
@@ -260,6 +266,7 @@ pub const PROJECT_MARKERS: &[&str] = &[
 /// not stat marker files under `~/Documents` & co. — the probe itself pops the
 /// macOS privacy prompt. For those processes this conservatively reports
 /// "no marker" without touching the filesystem.
+#[must_use]
 pub fn has_project_marker(dir: &Path) -> bool {
     if !may_probe_path(dir) {
         return false;
@@ -274,6 +281,7 @@ pub fn has_project_marker(dir: &Path) -> bool {
 /// Rust's `is_symlink()` reports `false` for NTFS junctions, which redirect
 /// exactly like directory symlinks and would otherwise bypass jail/TOCTOU
 /// checks on Windows (GL#442).
+#[must_use]
 pub fn is_symlink_or_reparse(meta: &std::fs::Metadata) -> bool {
     if meta.file_type().is_symlink() {
         return true;
@@ -296,6 +304,7 @@ pub fn is_symlink_or_reparse(meta: &std::fs::Metadata) -> bool {
 /// files in your Documents folder", #356). They are also never valid project
 /// roots or multi-repo workspace parents, so scan heuristics should treat them
 /// as off-limits *without* calling `read_dir` (which is what trips the prompt).
+#[must_use]
 pub fn is_tcc_sensitive_home_dir(dir: &Path) -> bool {
     let Some(home) = dirs::home_dir() else {
         return false;
@@ -319,6 +328,7 @@ pub fn is_tcc_sensitive_home_dir(dir: &Path) -> bool {
 /// Unlike [`is_tcc_sensitive_home_dir`] (which only matches the magic dirs
 /// themselves), this also matches nested paths like `~/Documents/proj/src`,
 /// because *any* `stat` below the magic dir trips the TCC prompt (#356).
+#[must_use]
 pub fn is_under_tcc_protected_dir(path: &Path) -> bool {
     if !cfg!(target_os = "macos") {
         return false;
@@ -336,7 +346,7 @@ pub fn is_under_tcc_protected_dir(path: &Path) -> bool {
 /// TCC-granted host like a terminal or an editor.
 ///
 /// Context (#356): TCC permissions attach to the *responsible process*. The
-/// lean-ctx daemon/proxy LaunchAgents and the scheduled auto-updater run
+/// lean-ctx daemon/proxy `LaunchAgents` and the scheduled auto-updater run
 /// directly under `launchd` (ppid 1), so any `stat`/`read_dir` they perform
 /// under `~/Documents` pops the privacy prompt **in lean-ctx's own name** —
 /// and because every release replaces the ad-hoc-signed binary (new cdhash),
@@ -344,6 +354,7 @@ pub fn is_under_tcc_protected_dir(path: &Path) -> bool {
 /// forever. Such processes must never probe TCC-protected paths on their own
 /// initiative. Child processes of a terminal or editor (MCP server, CLI)
 /// inherit their host's TCC grant and keep full functionality.
+#[must_use]
 pub fn process_is_tcc_standalone() -> bool {
     #[cfg(target_os = "macos")]
     {
@@ -381,8 +392,9 @@ pub fn process_is_tcc_standalone() -> bool {
 ///
 /// Heuristic call sites (project-marker probes, session/root matching) must
 /// consult this before touching paths from persisted state; security
-/// boundaries (PathJail) are exempt — they only ever canonicalize paths the
+/// boundaries (`PathJail`) are exempt — they only ever canonicalize paths the
 /// client explicitly asked to access, in which case a prompt is legitimate.
+#[must_use]
 pub fn may_probe_path(path: &Path) -> bool {
     !(process_is_tcc_standalone() && is_under_tcc_protected_dir(path))
 }
@@ -413,6 +425,7 @@ pub fn has_multi_repo_children(dir: &Path) -> bool {
 /// Returns `true` if `project_root` collides with the lean-ctx data directory.
 /// This prevents project-scoped files (overlays.json, policies.json) from being
 /// written into `~/.lean-ctx/` or `~/.config/lean-ctx/`.
+#[must_use]
 pub fn is_data_dir_collision(project_root: &Path) -> bool {
     if is_broad_or_unsafe_root(project_root) {
         return true;

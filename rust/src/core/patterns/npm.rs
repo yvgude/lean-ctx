@@ -23,6 +23,7 @@ fn outdated_re() -> &'static regex::Regex {
     static_regex!(r"^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     if command.contains("install") || command.contains("add") || command.contains("ci") {
         return Some(compress_install(output));

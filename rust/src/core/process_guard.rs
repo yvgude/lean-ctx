@@ -30,6 +30,7 @@ fn lock_dir() -> Option<PathBuf> {
 
 /// Try to acquire one of N concurrent process slots.
 /// Returns `None` if all slots are occupied (= too many lean-ctx already running).
+#[must_use]
 pub fn acquire() -> Option<ProcessGuard> {
     let dir = lock_dir()?;
 
@@ -57,6 +58,7 @@ pub fn acquire() -> Option<ProcessGuard> {
 }
 
 /// Checks how many slots are currently held (best-effort).
+#[must_use]
 pub fn active_count() -> usize {
     let Some(dir) = lock_dir() else { return 0 };
     let mut count = 0;

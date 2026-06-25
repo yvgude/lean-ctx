@@ -33,6 +33,7 @@ pub struct MergeReport {
 }
 
 /// Snapshot the current learning state into a bundle.
+#[must_use]
 pub fn export_bundle() -> LearningBundle {
     LearningBundle {
         schema_version: BUNDLE_SCHEMA_VERSION,

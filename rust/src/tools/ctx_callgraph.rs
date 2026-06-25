@@ -3,6 +3,7 @@ use crate::core::index_paths;
 
 const MAX_BFS_DEPTH: usize = 5;
 
+#[must_use]
 pub fn handle(
     action: &str,
     symbol: Option<&str>,

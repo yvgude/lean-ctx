@@ -75,6 +75,7 @@ pub struct KnowledgeEmbeddingIndex {
 }
 
 impl KnowledgeEmbeddingIndex {
+    #[must_use]
     pub fn new(project_hash: &str) -> Self {
         Self {
             project_hash: project_hash.to_string(),
@@ -121,6 +122,7 @@ impl KnowledgeEmbeddingIndex {
     }
 
     #[cfg(feature = "embeddings")]
+    #[must_use]
     pub fn semantic_search(
         &self,
         query_embedding: &[f32],
@@ -153,6 +155,7 @@ impl KnowledgeEmbeddingIndex {
         Some(dir.join("embeddings.json"))
     }
 
+    #[must_use]
     pub fn load(project_hash: &str) -> Option<Self> {
         let path = Self::index_path(project_hash)?;
         let data = std::fs::read_to_string(path).ok()?;
@@ -539,6 +542,7 @@ fn semantic_duplicates_from_query(
     out
 }
 
+#[must_use]
 pub fn format_scored_facts(results: &[ScoredFact<'_>]) -> String {
     if results.is_empty() {
         return "No matching facts found.".to_string();

@@ -48,6 +48,7 @@ fn source_command_for_shell(shell: &str) -> Option<&'static str> {
 /// `None` when it cannot be determined. Single source of truth so post-`setup`
 /// and post-`update` hints stay in sync and never advise sourcing a shell the
 /// user does not have (e.g. `~/.zshrc` on a bash-only system — see #321).
+#[must_use]
 pub fn shell_source_command() -> Option<&'static str> {
     source_command_for_shell(&std::env::var("SHELL").unwrap_or_default())
 }
@@ -68,12 +69,14 @@ fn rc_file_for_shell(shell: &str) -> &'static str {
 /// The rc file path for the user's current login shell (`$SHELL`), or a
 /// generic fallback when it cannot be determined. Used in help text and
 /// troubleshooting hints so they never hardcode a single shell's rc file.
+#[must_use]
 pub fn shell_rc_file() -> &'static str {
     rc_file_for_shell(&std::env::var("SHELL").unwrap_or_default())
 }
 
 /// Human-facing one-liner telling the user how to load the refreshed aliases,
 /// tailored to their login shell. Used after `lean-ctx update`.
+#[must_use]
 pub fn reload_aliases_hint() -> String {
     match shell_source_command() {
         Some(cmd) => format!("Run '{cmd}' (or restart terminal) for updated shell aliases."),
@@ -321,7 +324,7 @@ fn strip_other_style(
 }
 
 /// Public entrypoint: install with auto-detected style. Preserves the
-/// previous signature so existing callers (setup.rs, cli/shell_init.rs)
+/// previous signature so existing callers (setup.rs, `cli/shell_init.rs`)
 /// don't need to change.
 pub fn install_all(quiet: bool) {
     install_all_with_style(quiet, Style::Auto);

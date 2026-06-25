@@ -1,4 +1,4 @@
-//! Shell-security mode — the master switch for ctx_shell / `lean-ctx -c` command
+//! Shell-security mode — the master switch for `ctx_shell` / `lean-ctx -c` command
 //! gating (GL #788).
 //!
 //! Three levels, applied at the single chokepoint
@@ -40,6 +40,7 @@ pub enum ShellSecurity {
 impl ShellSecurity {
     /// Parse a config/env value leniently. Returns `None` for unknown text so
     /// the caller can fall back to the secure default instead of failing.
+    #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "enforce" | "block" | "strict" | "on" => Some(Self::Enforce),
@@ -50,6 +51,7 @@ impl ShellSecurity {
     }
 
     /// Canonical lower-case name (matches the config value).
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Enforce => "enforce",

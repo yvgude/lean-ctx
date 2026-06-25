@@ -518,7 +518,11 @@ fn cmd_opportunity() {
         .iter()
         .map(|c| c.estimated_tokens as u64)
         .sum();
-    let total_count: u64 = result.missed_commands.iter().map(|c| c.count as u64).sum();
+    let total_count: u64 = result
+        .missed_commands
+        .iter()
+        .map(|c| u64::from(c.count))
+        .sum();
 
     println!();
     println!("  {}", t.box_top(w));

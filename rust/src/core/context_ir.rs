@@ -92,6 +92,7 @@ pub struct RecordIrInput<'a> {
 }
 
 impl ContextIrV1 {
+    #[must_use]
     pub fn new() -> Self {
         let now = chrono::Utc::now().to_rfc3339();
         Self {
@@ -195,6 +196,7 @@ impl ContextIrV1 {
         }
     }
 
+    #[must_use]
     pub fn load() -> Self {
         crate::core::paths::cache_dir()
             .ok()

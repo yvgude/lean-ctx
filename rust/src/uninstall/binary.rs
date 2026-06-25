@@ -25,7 +25,7 @@ pub(super) fn stop_processes(dry_run: bool) {
     crate::daemon_autostart::stop();
     let _ = crate::daemon::stop_daemon();
 
-    crate::ipc::process::kill_all_by_name("lean-ctx");
+    let _ = crate::ipc::process::kill_all_by_name("lean-ctx");
     std::thread::sleep(std::time::Duration::from_millis(500));
 
     let remaining = crate::ipc::process::find_killable_pids("lean-ctx");

@@ -4,6 +4,7 @@ use super::ranking::{build_token_index, sort_fact_for_output};
 use super::types::{KnowledgeFact, ProjectKnowledge};
 
 impl ProjectKnowledge {
+    #[must_use]
     pub fn recall(&self, query: &str) -> Vec<&KnowledgeFact> {
         let q = query.to_lowercase();
         let terms: Vec<&str> = q.split_whitespace().collect();
@@ -37,6 +38,7 @@ impl ProjectKnowledge {
         results.into_iter().map(|(f, _)| f).collect()
     }
 
+    #[must_use]
     pub fn recall_by_category(&self, category: &str) -> Vec<&KnowledgeFact> {
         self.facts
             .iter()
@@ -44,6 +46,7 @@ impl ProjectKnowledge {
             .collect()
     }
 
+    #[must_use]
     pub fn recall_at_time(&self, query: &str, at: DateTime<Utc>) -> Vec<&KnowledgeFact> {
         let q = query.to_lowercase();
         let terms: Vec<&str> = q.split_whitespace().collect();
@@ -76,6 +79,7 @@ impl ProjectKnowledge {
         results.into_iter().map(|(f, _)| f).collect()
     }
 
+    #[must_use]
     pub fn timeline(&self, category: &str) -> Vec<&KnowledgeFact> {
         let mut facts: Vec<&KnowledgeFact> = self
             .facts
@@ -86,6 +90,7 @@ impl ProjectKnowledge {
         facts
     }
 
+    #[must_use]
     pub fn list_rooms(&self) -> Vec<(String, usize)> {
         let mut categories: std::collections::BTreeMap<String, usize> =
             std::collections::BTreeMap::new();

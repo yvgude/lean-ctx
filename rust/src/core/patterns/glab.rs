@@ -1,3 +1,4 @@
+#[must_use]
 pub fn try_glab_pattern(cmd: &str, output: &str) -> Option<String> {
     let parts: Vec<&str> = cmd.split_whitespace().collect();
     if parts.is_empty() || parts[0] != "glab" {

@@ -28,6 +28,7 @@ pub use content::{
 pub use skills::{install_all_skills, install_skill_for_agent};
 
 /// Forwarding functions — content is delegated to `core::rules_canonical`.
+#[must_use]
 pub fn canonical_rules_block() -> String {
     let cfg = crate::core::config::Config::load();
     let shadow = cfg.shadow_mode;
@@ -38,9 +39,11 @@ pub fn canonical_rules_block() -> String {
         level,
     )
 }
+#[must_use]
 pub fn rules_shared_content() -> String {
     canonical_rules_block()
 }
+#[must_use]
 pub fn rules_dedicated_markdown() -> String {
     let cfg = crate::core::config::Config::load();
     let shadow = cfg.shadow_mode;
@@ -91,6 +94,7 @@ enum RulesResult {
     AlreadyPresent,
 }
 
+#[must_use]
 pub fn inject_all_rules(home: &std::path::Path) -> InjectResult {
     let cfg = crate::core::config::Config::load();
     if cfg.rules_scope_effective() == crate::core::config::RulesScope::Project {
@@ -152,6 +156,7 @@ pub fn inject_all_rules(home: &std::path::Path) -> InjectResult {
 }
 
 /// Inject global rules for a single agent (by CLI key like "opencode", "cursor", etc.).
+#[must_use]
 pub fn inject_rules_for_agent(home: &std::path::Path, agent_key: &str) -> InjectResult {
     let cfg = crate::core::config::Config::load();
     if cfg.rules_scope_effective() == crate::core::config::RulesScope::Project {
@@ -250,6 +255,7 @@ fn match_agent_name(cli_key: &str, target_name: &str) -> bool {
 }
 
 /// Check if the rules file for a given MCP client is up-to-date.
+#[must_use]
 pub fn check_rules_freshness(client_name: &str) -> Option<String> {
     let home = dirs::home_dir()?;
     let injection = crate::core::config::Config::load().rules_injection_effective();
@@ -287,6 +293,7 @@ pub fn check_rules_freshness(client_name: &str) -> Option<String> {
     None
 }
 
+#[must_use]
 pub fn collect_rules_status(home: &std::path::Path) -> Vec<RulesTargetStatus> {
     let injection = crate::core::config::Config::load().rules_injection_effective();
     let targets = build_rules_targets(home, injection);

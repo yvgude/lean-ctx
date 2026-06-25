@@ -167,7 +167,7 @@ fn scenario_bm25_search_finds_provider_data() {
 
     let artifacts = consolidation::consolidate(&chunks);
     let mut index = BM25Index::default();
-    consolidation::apply_artifacts(&artifacts, Some(&mut index), None, None);
+    let _ = consolidation::apply_artifacts(&artifacts, Some(&mut index), None, None);
 
     assert_eq!(
         index.external_chunk_count(),

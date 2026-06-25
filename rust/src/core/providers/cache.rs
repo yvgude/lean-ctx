@@ -24,6 +24,7 @@ pub struct ProviderCacheStats {
 }
 
 impl ProviderCacheStats {
+    #[must_use]
     pub fn hit_rate(&self) -> f64 {
         let total = self.hits + self.misses;
         if total == 0 {
@@ -43,6 +44,7 @@ pub struct CacheMetrics {
 }
 
 impl CacheMetrics {
+    #[must_use]
     pub fn total_hit_rate(&self) -> f64 {
         let total = self.total_hits + self.total_misses;
         if total == 0 {

@@ -165,7 +165,7 @@ fn maybe_inject_usage_reporting(doc: &mut Value) {
 }
 
 /// Injects `stream_options.include_usage = true` into a streamed Chat
-/// Completions request so the final SSE chunk carries `usage` (OpenAI omits it
+/// Completions request so the final SSE chunk carries `usage` (`OpenAI` omits it
 /// otherwise). No-op for non-streamed requests or when the client already
 /// configured `stream_options.include_usage`.
 fn inject_usage_reporting(doc: &mut Value) {

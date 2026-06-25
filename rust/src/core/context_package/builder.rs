@@ -26,6 +26,7 @@ pub struct PackageBuilder {
 }
 
 impl PackageBuilder {
+    #[must_use]
     pub fn new(name: &str, version: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -43,52 +44,62 @@ impl PackageBuilder {
         }
     }
 
+    #[must_use]
     pub fn description(mut self, desc: &str) -> Self {
         self.description = desc.to_string();
         self
     }
 
+    #[must_use]
     pub fn author(mut self, author: &str) -> Self {
         self.author = Some(author.to_string());
         self
     }
 
+    #[must_use]
     pub fn tags(mut self, tags: Vec<String>) -> Self {
         self.tags = tags;
         self
     }
 
+    #[must_use]
     pub fn compatibility(mut self, spec: CompatibilitySpec) -> Self {
         self.compatibility = spec;
         self
     }
 
+    #[must_use]
     pub fn project_hash(mut self, hash: &str) -> Self {
         self.project_hash = Some(hash.to_string());
         self
     }
 
+    #[must_use]
     pub fn session_id(mut self, id: &str) -> Self {
         self.session_id = Some(id.to_string());
         self
     }
 
+    #[must_use]
     pub fn scope(mut self, scope: &str) -> Self {
         self.scope = Some(scope.to_string());
         self
     }
 
     /// Mark the package `private` for the hosted registry (GL #524).
+    #[must_use]
     pub fn private(mut self) -> Self {
         self.visibility = Some("private".to_string());
         self
     }
 
+    #[must_use]
     pub fn level(mut self, level: u32) -> Self {
         self.level = level.clamp(1, 3);
         self
     }
 
+    #[must_use]
     pub fn add_knowledge_from_project(mut self, project_root: &str) -> Self {
         let knowledge = crate::core::knowledge::ProjectKnowledge::load_or_create(project_root);
 
@@ -109,6 +120,7 @@ impl PackageBuilder {
         self
     }
 
+    #[must_use]
     pub fn add_graph_from_project(mut self, project_root: &str) -> Self {
         let Ok(graph) = crate::core::property_graph::CodeGraph::open(project_root) else {
             return self;
@@ -130,6 +142,7 @@ impl PackageBuilder {
         self
     }
 
+    #[must_use]
     pub fn add_session(mut self, session: &crate::core::session::SessionState) -> Self {
         let has_content = session.task.is_some()
             || !session.findings.is_empty()
@@ -173,6 +186,7 @@ impl PackageBuilder {
         self
     }
 
+    #[must_use]
     pub fn add_patterns_from_project(mut self, project_root: &str) -> Self {
         let knowledge = crate::core::knowledge::ProjectKnowledge::load_or_create(project_root);
 
@@ -321,6 +335,7 @@ impl PackageBuilder {
         }
     }
 
+    #[must_use]
     pub fn add_gotchas_from_project(mut self, project_root: &str) -> Self {
         let store = crate::core::gotcha_tracker::GotchaStore::load(project_root);
         if store.gotchas.is_empty() {

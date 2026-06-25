@@ -33,6 +33,7 @@ pub enum Position {
 }
 
 impl Position {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Position::Begin => "begin",
@@ -40,6 +41,7 @@ impl Position {
         }
     }
 
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "begin" => Some(Position::Begin),
@@ -68,7 +70,7 @@ impl PlacementStats {
             Position::Begin => (self.begin_hits, self.begin_misses),
             Position::End => (self.end_hits, self.end_misses),
         };
-        (hits as f64 + 1.0) / ((hits + misses) as f64 + 2.0)
+        (f64::from(hits) + 1.0) / (f64::from(hits + misses) + 2.0)
     }
 }
 
@@ -136,6 +138,7 @@ impl LitmCalibration {
     /// Calibrated begin-share for a profile. Returns the default until enough
     /// observations exist; afterwards shifts budget toward the position that
     /// empirically holds information for this client.
+    #[must_use]
     pub fn begin_share(&self, profile: &str) -> f64 {
         let Some(stats) = self.per_profile.get(profile) else {
             return DEFAULT_BEGIN_SHARE;
@@ -153,6 +156,7 @@ impl LitmCalibration {
 
     /// Aggregate raw counters across profiles (#549 efficacy snapshots):
     /// `(begin_hits, begin_misses, end_hits, end_misses)`.
+    #[must_use]
     pub fn totals(&self) -> (u32, u32, u32, u32) {
         self.per_profile.values().fold((0, 0, 0, 0), |acc, s| {
             (
@@ -164,6 +168,7 @@ impl LitmCalibration {
         })
     }
 
+    #[must_use]
     pub fn report_lines(&self) -> Vec<String> {
         let mut profiles: Vec<_> = self.per_profile.iter().collect();
         profiles.sort_by(|a, b| a.0.cmp(b.0));
@@ -208,6 +213,7 @@ pub fn record_outcome(profile: &str, pos: Position, hit: bool) {
 }
 
 /// Process-global: calibrated begin-share for a profile.
+#[must_use]
 pub fn begin_share(profile: &str) -> f64 {
     with_buffer(|c| c.begin_share(profile))
 }
@@ -222,18 +228,21 @@ pub fn flush() {
     }
 }
 
-/// Process-global: report lines for ctx_metrics.
+/// Process-global: report lines for `ctx_metrics`.
+#[must_use]
 pub fn report() -> Vec<String> {
     with_buffer(|c| c.report_lines())
 }
 
 /// Process-global aggregate counters (#549).
+#[must_use]
 pub fn totals() -> (u32, u32, u32, u32) {
     with_buffer(|c| c.totals())
 }
 
 /// Process-global: machine-readable snapshot for the dashboard (#548):
 /// `(profile, stats, calibrated begin_share)`, sorted by profile.
+#[must_use]
 pub fn snapshot() -> Vec<(String, PlacementStats, f64)> {
     with_buffer(|c| {
         let mut v: Vec<_> = c
@@ -247,6 +256,7 @@ pub fn snapshot() -> Vec<(String, PlacementStats, f64)> {
 }
 
 /// Process-global: clone of the full calibration state for export (#550).
+#[must_use]
 pub fn export_state() -> LitmCalibration {
     with_buffer(|c| c.clone())
 }
@@ -259,6 +269,7 @@ pub fn merge_state(other: &LitmCalibration) {
 
 /// Loose match between a recall query and a manifest key: lowercase
 /// containment either way, or token-Jaccard >= 0.5.
+#[must_use]
 pub fn key_matches(manifest_key: &str, query: &str) -> bool {
     let k = manifest_key.to_lowercase();
     let q = query.to_lowercase();

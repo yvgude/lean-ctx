@@ -41,6 +41,7 @@ pub const RETURN_FORMAT_V1: &str = "Report results as lines of 'category/key: va
 /// Build a deterministic briefing pack: task + the most relevant current
 /// facts, greedily filled (in stable relevance order) until `budget_tokens`
 /// is reached. The task itself is always included; the budget governs facts.
+#[must_use]
 pub fn build_briefing_pack(
     knowledge: &ProjectKnowledge,
     task: &str,
@@ -86,6 +87,7 @@ pub fn serialize_pack(pack: &SubAgentContractV1) -> Result<String, String> {
 /// Parse sub-agent return lines (`category/key: value`) into structured
 /// facts. Lines that don't match the contract format are reported back as
 /// rejects instead of being silently dropped.
+#[must_use]
 pub fn parse_return_lines(input: &str) -> (Vec<ContractFact>, Vec<String>) {
     let mut facts = Vec::new();
     let mut rejected = Vec::new();

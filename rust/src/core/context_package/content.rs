@@ -111,6 +111,7 @@ pub struct GotchaExport {
 }
 
 impl PackageContent {
+    #[must_use]
     pub fn active_layer_count(&self) -> usize {
         let mut n = 0;
         if self.knowledge.is_some() {
@@ -134,10 +135,12 @@ impl PackageContent {
         n
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.active_layer_count() == 0
     }
 
+    #[must_use]
     pub fn estimated_token_count(&self) -> usize {
         let json = serde_json::to_string(self).unwrap_or_default();
         json.len() / 4

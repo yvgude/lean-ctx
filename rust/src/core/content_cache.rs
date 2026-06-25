@@ -43,6 +43,7 @@ impl FileState {
     /// Build from an already-`stat`ed [`Metadata`] (no extra syscall) — callers
     /// in the hot path typically have this in hand from their size/regular-file
     /// checks. Returns `None` only when the platform cannot report mtime.
+    #[must_use]
     pub fn from_metadata(meta: &Metadata) -> Option<Self> {
         let mtime_ms = meta
             .modified()
@@ -56,6 +57,7 @@ impl FileState {
     }
 
     /// Convenience: `stat` the path then build the state. Costs one syscall.
+    #[must_use]
     pub fn from_path(path: &Path) -> Option<Self> {
         Self::from_metadata(&path.metadata().ok()?)
     }
@@ -155,6 +157,7 @@ fn lock() -> std::sync::MutexGuard<'static, Cache> {
 /// `(mtime, size)` matches the stored identity. A mismatch evicts the stale
 /// entry and reports a miss. `state` is passed in (not re-`stat`ed) because hot
 /// callers already hold the metadata.
+#[must_use]
 pub fn get(path: &Path, current: FileState) -> Option<Arc<str>> {
     if disabled() {
         return None;
@@ -215,6 +218,7 @@ pub fn insert(path: &Path, state: FileState, content: Arc<str>) {
 /// non-UTF-8/unreadable/unstatable file. Convenience for callers without their
 /// own size/special-file gating (the search-index build and `ctx_search` use
 /// the explicit [`get`]/[`insert`] pair so they keep their own skip rules).
+#[must_use]
 pub fn get_or_read(path: &Path) -> Option<Arc<str>> {
     let state = FileState::from_path(path)?;
     if let Some(hit) = get(path, state) {

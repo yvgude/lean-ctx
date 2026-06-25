@@ -797,11 +797,11 @@ fn is_server_mode(args: &[String]) -> bool {
 /// Restore the default SIGPIPE disposition for short-lived CLI invocations.
 ///
 /// Rust's runtime ignores SIGPIPE process-wide, so `lean-ctx doctor | head`
-/// made `println!` panic with BrokenPipe; the LineWriter flush in stdout's
+/// made `println!` panic with `BrokenPipe`; the `LineWriter` flush in stdout's
 /// Drop then panicked again *during unwinding*, which aborts — the SIGABRT
 /// (exit 134) of upstream #378 / GL#436. Real CLIs (cat, grep, rg) terminate
-/// silently with exit 141 instead; SIG_DFL gives us exactly that. Children
-/// spawned via std::process::Command are unaffected either way (std resets
+/// silently with exit 141 instead; `SIG_DFL` gives us exactly that. Children
+/// spawned via `std::process::Command` are unaffected either way (std resets
 /// their SIGPIPE disposition since Rust 1.65).
 #[cfg(unix)]
 fn restore_sigpipe_default() {

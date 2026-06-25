@@ -25,6 +25,7 @@ impl std::fmt::Display for HookMode {
 }
 
 impl HookMode {
+    #[must_use]
     pub fn from_str_loose(s: &str) -> Option<Self> {
         match s.to_lowercase().replace('-', "").as_str() {
             "mcp" => Some(Self::Mcp),
@@ -33,6 +34,7 @@ impl HookMode {
         }
     }
 
+    #[must_use]
     pub fn description(&self) -> &'static str {
         match self {
             Self::Mcp => "MCP server only (extension/plugin-based agents without reliable shell)",
@@ -77,6 +79,7 @@ pub const HYBRID_AGENTS: &[&str] = &[
     "verdent",
 ];
 
+#[must_use]
 pub fn recommend_hook_mode(agent_key: &str) -> HookMode {
     if HYBRID_AGENTS.contains(&agent_key) {
         HookMode::Hybrid
@@ -254,6 +257,7 @@ fn resolve_binary_path_for_bash() -> String {
     to_bash_compatible_path(&path)
 }
 
+#[must_use]
 pub fn to_bash_compatible_path(path: &str) -> String {
     let path = match crate::core::pathutil::strip_verbatim_str(path) {
         Some(stripped) => stripped,
@@ -269,16 +273,19 @@ pub fn to_bash_compatible_path(path: &str) -> String {
 
 /// Convert a Unix/MSYS-style path (`/c/Users/...`) back to native Windows
 /// format (`C:/Users/...`). No-op for paths that don't match the pattern.
+#[must_use]
 pub fn from_bash_to_native_path(path: &str) -> String {
     crate::core::pathutil::normalize_tool_path(path)
 }
 
 /// Normalize paths from any client format to a consistent OS-native form.
 /// Delegates to `core::pathutil` so `core` crates do not depend on `hooks`.
+#[must_use]
 pub fn normalize_tool_path(path: &str) -> String {
     crate::core::pathutil::normalize_tool_path(path)
 }
 
+#[must_use]
 pub fn generate_rewrite_script(binary: &str) -> String {
     let case_pattern = crate::rewrite_registry::bash_case_pattern();
     format!(
@@ -316,6 +323,7 @@ esac
     )
 }
 
+#[must_use]
 pub fn generate_compact_rewrite_script(binary: &str) -> String {
     let case_pattern = crate::rewrite_registry::bash_case_pattern();
     format!(
@@ -350,6 +358,7 @@ const REDIRECT_SCRIPT_GENERIC: &str = r"#!/usr/bin/env bash
 exit 0
 ";
 
+#[must_use]
 pub fn hybrid_rules_content() -> String {
     use crate::core::rules_canonical;
     format!(
@@ -579,6 +588,7 @@ Full rules: {PROJECT_LEAN_CTX_MD} (open on demand — do not auto-load).\n\
 /// Compact pointer only (#578): Cursor already auto-loads the canonical full
 /// ruleset from `~/.cursor/rules/lean-ctx.mdc`, so a project `.cursorrules`
 /// that repeats it bills the same guidance twice in every session.
+#[must_use]
 pub fn cursorrules_content() -> String {
     let start = crate::core::rules_canonical::START_MARK;
     let end = crate::core::rules_canonical::END_MARK;
@@ -595,6 +605,7 @@ Full rules: ~/.cursor/rules/lean-ctx.mdc (auto-loaded) \u{2014} do not duplicate
     )
 }
 
+#[must_use]
 pub fn kiro_steering_content() -> String {
     use crate::core::rules_canonical;
     format!(

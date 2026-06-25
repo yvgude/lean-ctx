@@ -31,19 +31,23 @@ pub struct GitSignals {
 }
 
 impl GitSignals {
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.recency.is_empty() && self.churn.is_empty()
     }
 
+    #[must_use]
     pub fn recency_for(&self, path: &str, root: &str) -> f64 {
         lookup(&self.recency, path, root)
     }
 
+    #[must_use]
     pub fn churn_for(&self, path: &str, root: &str) -> f64 {
         lookup(&self.churn, path, root)
     }
 
     /// Combined ranking boost: uncommitted work dominates, churn hints.
+    #[must_use]
     pub fn boost_for(&self, path: &str, root: &str) -> f64 {
         self.recency_for(path, root) * 0.25 + self.churn_for(path, root) * 0.10
     }
@@ -87,6 +91,7 @@ fn remember_non_git(root: &str) {
 
 /// Collect git signals for a project root. Cheap on repeat calls (TTL cache),
 /// empty for non-git roots (probed once per process).
+#[must_use]
 pub fn collect(project_root: &str) -> GitSignals {
     if known_non_git(project_root) {
         return GitSignals::default();

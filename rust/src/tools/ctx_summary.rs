@@ -4,6 +4,7 @@ use crate::core::session::SessionState;
 use crate::core::session_summary;
 
 /// Dispatch a summary action. `session` is required for `record`.
+#[must_use]
 pub fn handle(
     project_root: &str,
     session: Option<&SessionState>,

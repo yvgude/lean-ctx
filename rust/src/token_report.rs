@@ -69,6 +69,7 @@ pub struct CepSnapshot {
     pub complexity: String,
 }
 
+#[must_use]
 pub fn run_cli(args: &[String]) -> i32 {
     let json = args.iter().any(|a| a == "--json");
     let help = args.iter().any(|a| a == "--help" || a == "-h");

@@ -1,4 +1,4 @@
-//! Automatic model download from HuggingFace Hub.
+//! Automatic model download from `HuggingFace` Hub.
 //!
 //! Downloads the selected ONNX embedding model and its vocabulary/tokenizer
 //! files on first use. Files are cached per-model in subdirectories under

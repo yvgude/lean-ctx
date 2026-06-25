@@ -70,7 +70,7 @@ pub(super) fn sort_fact_for_output(a: &KnowledgeFact, b: &KnowledgeFact) -> std:
 /// reliability based on confidence, confirmations, and feedback), salience
 /// combines category priority, quality, recency, and retrieval frequency
 /// into a single sort key for _display_ ordering. Salience is volatile and
-/// changes on every access; quality_score is deterministic and stable.
+/// changes on every access; `quality_score` is deterministic and stable.
 fn salience_score(f: &KnowledgeFact) -> u32 {
     let cat = f.category.to_lowercase();
     let base: u32 = match cat.as_str() {
@@ -156,6 +156,7 @@ pub struct SimilarFact {
     pub similarity: f32,
 }
 
+#[must_use]
 pub fn find_cross_key_similar(
     new_category: &str,
     new_key: &str,

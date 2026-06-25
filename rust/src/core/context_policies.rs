@@ -4,7 +4,7 @@
 //! that automatically include/exclude/pin/transform context items.
 //!
 //! Integrates with:
-//!   - io_boundary.rs (secret path detection)
+//!   - `io_boundary.rs` (secret path detection)
 //!   - profiles.rs (compression/routing config)
 //!   - roles.rs (role-based access control)
 
@@ -57,11 +57,13 @@ pub struct PolicySet {
 }
 
 impl PolicySet {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Built-in default policies that align with existing LeanCTX behavior.
+    /// Built-in default policies that align with existing `LeanCTX` behavior.
+    #[must_use]
     pub fn defaults() -> Self {
         Self {
             policies: vec![
@@ -109,6 +111,7 @@ impl PolicySet {
     }
 
     /// Evaluate all policies against a path, returning applicable actions.
+    #[must_use]
     pub fn evaluate(
         &self,
         path: &str,
@@ -119,6 +122,7 @@ impl PolicySet {
     }
 
     /// Evaluate with full context including agent/role/content dimensions.
+    #[must_use]
     pub fn evaluate_full(
         &self,
         path: &str,
@@ -156,6 +160,7 @@ impl PolicySet {
     }
 
     /// Determine the effective state for an item after policy evaluation.
+    #[must_use]
     pub fn effective_state(
         &self,
         path: &str,
@@ -187,6 +192,7 @@ impl PolicySet {
     }
 
     /// Determine the recommended view for an item after policy evaluation.
+    #[must_use]
     pub fn recommended_view(
         &self,
         path: &str,

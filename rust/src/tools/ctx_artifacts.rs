@@ -13,6 +13,7 @@ struct ArtifactsStatus {
     warnings: Vec<String>,
 }
 
+#[must_use]
 pub fn handle(
     action: &str,
     project_root: &Path,

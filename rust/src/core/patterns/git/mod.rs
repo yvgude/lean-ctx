@@ -95,6 +95,7 @@ fn compact_lines(text: &str, max: usize) -> String {
     )
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     let sub = extract_git_subcommand(command)?;
     match sub {

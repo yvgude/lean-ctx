@@ -25,6 +25,7 @@ pub struct ResidualResult {
 ///
 /// Takes the output AFTER pattern compression and applies terse on top,
 /// tracking the attribution split between pattern and terse savings.
+#[must_use]
 pub fn compress_residual(
     original_text: &str,
     pattern_compressed: &str,

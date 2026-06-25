@@ -64,7 +64,7 @@ pub struct ControlMapping {
     /// Requirement, paraphrased in one sentence.
     pub requirement: String,
     pub mechanism: Mechanism,
-    /// How LeanCTX addresses it (mechanism detail).
+    /// How `LeanCTX` addresses it (mechanism detail).
     pub leanctx: String,
     /// The evidence artifact an assessor receives.
     pub evidence: String,
@@ -120,16 +120,19 @@ fn registry() -> &'static Vec<FrameworkMapping> {
 }
 
 /// All mappings, registry order.
+#[must_use]
 pub fn frameworks() -> &'static [FrameworkMapping] {
     registry()
 }
 
 /// Framework ids, registry order.
+#[must_use]
 pub fn names() -> Vec<&'static str> {
     registry().iter().map(|m| m.framework.as_str()).collect()
 }
 
 /// Look up one mapping.
+#[must_use]
 pub fn get(framework: &str) -> Option<&'static FrameworkMapping> {
     registry().iter().find(|m| m.framework == framework)
 }
@@ -191,6 +194,7 @@ pub struct FrameworkReport {
 
 /// Build the coverage report for a framework, verifying pack-rule controls
 /// against `policy` when one is supplied.
+#[must_use]
 pub fn report(mapping: &FrameworkMapping, policy: Option<&ResolvedPolicy>) -> FrameworkReport {
     let rows: Vec<ReportRow> = mapping
         .controls

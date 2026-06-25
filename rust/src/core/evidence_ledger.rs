@@ -70,6 +70,7 @@ fn ledger_path() -> Option<PathBuf> {
 }
 
 impl EvidenceLedgerV1 {
+    #[must_use]
     pub fn load() -> Self {
         let Some(path) = ledger_path() else {
             return Self::default();
@@ -90,6 +91,7 @@ impl EvidenceLedgerV1 {
         Ok(())
     }
 
+    #[must_use]
     pub fn has_key(&self, key: &str) -> bool {
         self.items.iter().any(|i| i.key == key)
     }

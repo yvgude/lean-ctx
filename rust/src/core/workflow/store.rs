@@ -110,6 +110,7 @@ pub fn clear_active_for_agent(agent_id: Option<&str>) -> Result<(), String> {
 }
 
 /// Remove workflow files older than `WORKFLOW_TTL_SECS`.
+#[must_use]
 pub fn cleanup_expired() -> (u32, u64) {
     let Some(dir) = workflows_dir() else {
         return (0, 0);

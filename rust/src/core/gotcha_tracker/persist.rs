@@ -2,6 +2,7 @@ use super::model::{Gotcha, GotchaStore, MAX_PENDING};
 use std::path::PathBuf;
 
 impl GotchaStore {
+    #[must_use]
     pub fn load(project_root: &str) -> Self {
         let hash = crate::core::project_hash::hash_project_root(project_root);
         let path = gotcha_path(&hash);
@@ -49,6 +50,7 @@ fn gotcha_path(project_hash: &str) -> PathBuf {
 // Universal gotchas (cross-project)
 // ---------------------------------------------------------------------------
 
+#[must_use]
 pub fn load_universal_gotchas() -> Vec<Gotcha> {
     let policy = crate::core::memory_boundary::BoundaryPolicy::default();
     if !policy.universal_gotchas_enabled {

@@ -308,6 +308,7 @@ fn load_saved_token() -> Option<String> {
 
 /// Adds `nonce="..."` to all inline `<script>` tags (those without a `src=` attribute).
 /// External scripts (`<script src="...">`) are left untouched.
+#[must_use]
 pub fn add_nonce_to_inline_scripts(html: &str, nonce: &str) -> String {
     let mut result = String::with_capacity(html.len() + 128);
     let mut remaining = html;

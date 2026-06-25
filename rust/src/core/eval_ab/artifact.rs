@@ -53,6 +53,7 @@ pub struct AbVerifyResult {
 
 impl AbVerifyResult {
     /// Both checks passed.
+    #[must_use]
     pub fn ok(&self) -> bool {
         self.signature_valid && self.digest_matches
     }
@@ -60,6 +61,7 @@ impl AbVerifyResult {
 
 impl SignedAbReportV1 {
     /// Builds an unsigned artifact from a finished report.
+    #[must_use]
     pub fn from_report(report: AbReport, agent_id: &str) -> Self {
         let determinism_digest = determinism_digest(&report);
         Self {
@@ -105,6 +107,7 @@ impl SignedAbReportV1 {
     }
 
     /// Verifies the embedded signature *and* recomputes the determinism digest — offline.
+    #[must_use]
     pub fn verify(&self) -> AbVerifyResult {
         let digest_matches = determinism_digest(&self.report) == self.determinism_digest;
         let fail = |msg: &str| AbVerifyResult {
@@ -168,6 +171,7 @@ struct EvidenceRow {
 }
 
 /// Computes the machine-independent run digest (records sorted by id for a canonical order).
+#[must_use]
 pub fn determinism_digest(report: &AbReport) -> String {
     let mut rows: Vec<EvidenceRow> = report
         .records

@@ -12,6 +12,7 @@ pub struct PreservationScore {
 }
 
 impl PreservationScore {
+    #[must_use]
     pub fn function_rate(&self) -> f64 {
         if self.functions_total == 0 {
             return 1.0;
@@ -19,6 +20,7 @@ impl PreservationScore {
         self.functions_preserved as f64 / self.functions_total as f64
     }
 
+    #[must_use]
     pub fn export_rate(&self) -> f64 {
         if self.exports_total == 0 {
             return 1.0;
@@ -26,6 +28,7 @@ impl PreservationScore {
         self.exports_preserved as f64 / self.exports_total as f64
     }
 
+    #[must_use]
     pub fn import_rate(&self) -> f64 {
         if self.imports_total == 0 {
             return 1.0;
@@ -33,6 +36,7 @@ impl PreservationScore {
         self.imports_preserved as f64 / self.imports_total as f64
     }
 
+    #[must_use]
     pub fn overall(&self) -> f64 {
         let total = self.functions_total + self.exports_total + self.imports_total;
         if total == 0 {
@@ -43,6 +47,7 @@ impl PreservationScore {
     }
 }
 
+#[must_use]
 pub fn measure(raw_content: &str, compressed_output: &str, ext: &str) -> PreservationScore {
     let sigs = signatures::extract_signatures(raw_content, ext);
     let dep_info = deps::extract_deps(raw_content, ext);

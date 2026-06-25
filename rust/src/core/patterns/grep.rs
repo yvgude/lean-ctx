@@ -6,6 +6,7 @@ fn normalize_shell_tokens(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+#[must_use]
 pub fn compress(output: &str) -> Option<String> {
     let lines: Vec<&str> = output.lines().collect();
     if lines.len() < 3 {

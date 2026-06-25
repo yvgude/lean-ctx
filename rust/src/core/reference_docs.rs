@@ -19,6 +19,7 @@ use crate::core::config::schema::ConfigSchema;
 const DO_NOT_EDIT: &str = "<!-- GENERATED FILE — do not edit by hand. Run: `cargo run --example gen_docs --features dev-tools` -->";
 
 /// Directory the generated reference docs live in (`docs/reference/generated`).
+#[must_use]
 pub fn generated_dir() -> PathBuf {
     let rust_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let repo_root = rust_dir.parent().unwrap_or(&rust_dir);
@@ -27,6 +28,7 @@ pub fn generated_dir() -> PathBuf {
 
 /// Every generated reference document as `(filename, markdown)` pairs.
 /// This is the canonical list shared by the writer and the drift tests.
+#[must_use]
 pub fn generated_docs() -> Vec<(&'static str, String)> {
     vec![
         ("mcp-tools.md", mcp_tools_markdown()),
@@ -38,6 +40,7 @@ pub fn generated_docs() -> Vec<(&'static str, String)> {
 /// line-ending differences. Windows checkouts may store the committed docs
 /// with CRLF while the generator emits LF; the drift gate compares *content*,
 /// not byte-exact line endings.
+#[must_use]
 pub fn content_matches(on_disk: &str, generated: &str) -> bool {
     normalize_newlines(on_disk) == normalize_newlines(generated)
 }
@@ -52,6 +55,7 @@ fn normalize_newlines(s: &str) -> String {
 
 /// Markdown reference for every registered MCP tool (granular profile),
 /// rendered from the same manifest the editors consume.
+#[must_use]
 pub fn mcp_tools_markdown() -> String {
     let manifest = crate::core::mcp_manifest::manifest_value();
     let mut tools: Vec<&Value> = manifest
@@ -140,6 +144,7 @@ fn render_tool_params(tool: &Value) -> String {
 
 /// Markdown reference for every recognized `config.toml` key, rendered from
 /// the `Config` schema (types, defaults, allowed values, env overrides).
+#[must_use]
 pub fn config_keys_markdown() -> String {
     let schema = ConfigSchema::generate();
 

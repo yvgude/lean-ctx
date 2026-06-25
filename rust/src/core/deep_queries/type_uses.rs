@@ -29,8 +29,8 @@ pub(super) fn extract_type_uses(root: Node, src: &str, ext: &str) -> Vec<TypeUse
 /// C#: collect type names from every grammar position that carries a type.
 ///
 /// Declaration positions — nodes with a `type` field (parameter,
-/// variable_declaration, property_declaration, cast_expression,
-/// typeof_expression, …), method `returns` fields, and `base_list` children
+/// `variable_declaration`, `property_declaration`, `cast_expression`,
+/// `typeof_expression`, …), method `returns` fields, and `base_list` children
 /// (inheritance / interfaces).
 ///
 /// Expression positions (GH #398 follow-up) — a type used only as the receiver
@@ -89,7 +89,7 @@ fn csharp_last_segment(text: &str) -> Option<&str> {
 }
 
 /// A type-valued receiver in expression position (`Engine.Create()`,
-/// `Engine.Default`, `Status.Active`). Only PascalCase names — the C#
+/// `Engine.Default`, `Status.Active`). Only `PascalCase` names — the C#
 /// convention for types/enums — are accepted, so instance receivers
 /// (`_engine`, `obj`, `this`) are dropped here; any remaining non-type name is
 /// filtered later by the def-index resolution. Receivers that are not simple

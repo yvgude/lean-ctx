@@ -14,6 +14,7 @@ fn error_count_re() -> &'static regex::Regex {
     static_regex!(r"Found (\d+) error")
 }
 
+#[must_use]
 pub fn compress(output: &str) -> Option<String> {
     let mut errors = Vec::new();
     let mut file_count = std::collections::HashSet::new();

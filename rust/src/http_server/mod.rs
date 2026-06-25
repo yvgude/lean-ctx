@@ -126,6 +126,7 @@ impl HttpServerConfig {
         Ok(())
     }
 
+    #[must_use]
     pub fn effective_auth_token(&self) -> Option<String> {
         if let Some(ref token) = self.auth_token
             && !token.is_empty()
@@ -202,10 +203,10 @@ impl RateLimiter {
     fn new(max_rps: u32, burst: u32) -> Self {
         let now = Instant::now();
         Self {
-            max_rps: (max_rps.max(1)) as f64,
-            burst: (burst.max(1)) as f64,
+            max_rps: f64::from(max_rps.max(1)),
+            burst: f64::from(burst.max(1)),
             state: tokio::sync::Mutex::new(RateState {
-                tokens: (burst.max(1)) as f64,
+                tokens: f64::from(burst.max(1)),
                 last: now,
             }),
         }
@@ -405,7 +406,7 @@ async fn v1_capabilities(State(state): State<AppState>) -> impl IntoResponse {
     )
 }
 
-/// `GET /v1/openapi.json` — OpenAPI 3.0 document for the public `/v1` surface,
+/// `GET /v1/openapi.json` — `OpenAPI` 3.0 document for the public `/v1` surface,
 /// generated from the in-code endpoint inventory (`core::openapi`).
 async fn v1_openapi(State(state): State<AppState>) -> impl IntoResponse {
     let _ = state;
@@ -1479,7 +1480,7 @@ mod tests {
 
         // Directly append an event to the bus — no fire-and-forget timing dependency.
         let rt = context_os::runtime();
-        rt.bus.append(
+        let _ = rt.bus.append(
             "ws1",
             "ch1",
             &ContextEventKindV1::ToolCallRecorded,

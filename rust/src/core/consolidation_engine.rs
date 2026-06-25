@@ -113,7 +113,7 @@ pub fn consolidate_latest(
         }
     })?;
 
-    crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
+    let _ = crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
         category: "memory".to_string(),
         key: "consolidation".to_string(),
         action: "run".to_string(),

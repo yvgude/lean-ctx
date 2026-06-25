@@ -2,7 +2,7 @@
 //!
 //! Parallel edges are merged (weights summed) and the adjacency is symmetric so
 //! modularity and connectivity computations are correct. The same structure is
-//! built from the PropertyGraph (SQLite) and from any [`GraphProvider`], which
+//! built from the `PropertyGraph` (SQLite) and from any [`GraphProvider`], which
 //! keeps community detection storage-agnostic.
 
 use std::collections::HashMap;
@@ -13,7 +13,7 @@ use crate::core::graph_provider::GraphProvider;
 
 /// Edge weight by semantic kind. Calls bind tighter than plain imports; purely
 /// structural `defines`/`exports` edges are weak ties. Accepts both the
-/// PropertyGraph kind spelling (`imports`, `calls`) and the graph-index spelling
+/// `PropertyGraph` kind spelling (`imports`, `calls`) and the graph-index spelling
 /// (`import`, `call`) so either backend yields identical weights.
 pub(super) fn edge_weight(kind: &str) -> f64 {
     match kind {

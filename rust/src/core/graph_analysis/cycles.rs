@@ -21,6 +21,7 @@ pub struct ImportCycle {
 
 /// Finds import cycles (SCCs of size >= 2), largest first, capped at `limit`.
 /// Output is deterministic.
+#[must_use]
 pub fn find_import_cycles(edges: &[EdgeInfo], limit: usize) -> Vec<ImportCycle> {
     let deps = dependency_edges(edges);
     if deps.is_empty() {

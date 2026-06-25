@@ -11,6 +11,7 @@ pub enum MessagePriority {
 }
 
 impl MessagePriority {
+    #[must_use]
     pub fn parse_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "low" => Self::Low,
@@ -41,6 +42,7 @@ pub enum PrivacyLevel {
 }
 
 impl PrivacyLevel {
+    #[must_use]
     pub fn parse_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "public" => Self::Public,
@@ -49,6 +51,7 @@ impl PrivacyLevel {
         }
     }
 
+    #[must_use]
     pub fn allows_access(&self, requester_is_sender: bool, requester_is_recipient: bool) -> bool {
         match self {
             Self::Public | Self::Team => true,
@@ -88,6 +91,7 @@ pub enum MessageCategory {
 }
 
 impl MessageCategory {
+    #[must_use]
     pub fn parse_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "task_delegation" | "delegation" => Self::TaskDelegation,
@@ -136,30 +140,36 @@ impl A2AMessage {
         }
     }
 
+    #[must_use]
     pub fn with_task(mut self, task_id: &str) -> Self {
         self.task_id = Some(task_id.to_string());
         self
     }
 
+    #[must_use]
     pub fn with_priority(mut self, priority: MessagePriority) -> Self {
         self.priority = priority;
         self
     }
 
+    #[must_use]
     pub fn with_privacy(mut self, privacy: PrivacyLevel) -> Self {
         self.privacy = privacy;
         self
     }
 
+    #[must_use]
     pub fn with_ttl_hours(mut self, hours: u64) -> Self {
         self.expires_at = Some(Utc::now() + chrono::Duration::hours(hours as i64));
         self
     }
 
+    #[must_use]
     pub fn is_expired(&self) -> bool {
         self.expires_at.is_some_and(|exp| Utc::now() > exp)
     }
 
+    #[must_use]
     pub fn is_visible_to(&self, agent_id: &str) -> bool {
         if self.is_expired() {
             return false;

@@ -20,6 +20,7 @@ pub enum TransportKind {
 }
 
 impl TransportKind {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             TransportKind::Stdio => "stdio",
@@ -156,6 +157,7 @@ impl Default for GatewayConfig {
 impl GatewayConfig {
     /// Effective enabled flag, honoring the `LEAN_CTX_GATEWAY` env override
     /// (`0|false|off` disables, anything else enables).
+    #[must_use]
     pub fn enabled_effective(&self) -> bool {
         if let Ok(v) = std::env::var("LEAN_CTX_GATEWAY") {
             return !matches!(v.trim(), "0" | "false" | "off");
@@ -169,6 +171,7 @@ impl GatewayConfig {
     }
 
     /// Clamp `top_n` into a sane range (1..=50).
+    #[must_use]
     pub fn effective_top_n(&self) -> usize {
         self.top_n.clamp(1, 50)
     }

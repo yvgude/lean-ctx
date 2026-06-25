@@ -54,7 +54,7 @@ fn redact_to_refs_only(payload: &mut Value) {
     *payload = Value::Object(redacted);
 }
 
-/// Redact a standalone payload Value (without full ContextEventV1).
+/// Redact a standalone payload Value (without full `ContextEventV1`).
 pub fn redact_payload_value(payload: &mut Value, scope: RedactionLevel) {
     match scope {
         RedactionLevel::Full => {}

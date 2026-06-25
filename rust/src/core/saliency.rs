@@ -9,7 +9,7 @@
 //!
 //!   **MIG (Marginal Information Gain, COMI 2025):**
 //!   Removes redundant chunks by measuring each chunk's marginal contribution
-//!   given the already-selected set: MIG(c_i) = Relevance(c_i) - Redundancy(c_i, selected).
+//!   given the already-selected set: `MIG(c_i)` = `Relevance(c_i)` - `Redundancy(c_i`, selected).
 //!
 //! Scientific basis: Saliency maps (Itti & Koch 2001) + lateral inhibition
 //! (V1 cortex) for competitive chunk selection.
@@ -48,10 +48,11 @@ impl Default for EcsWeights {
 /// Compute ECS saliency scores for a set of chunks.
 ///
 /// For each chunk, the score is:
-///   ECS = w_task * task_relevance + w_graph * graph_centrality + w_density * info_density
+///   ECS = `w_task` * `task_relevance` + `w_graph` * `graph_centrality` + `w_density` * `info_density`
 ///
 /// `task_keywords`: words from the active task description.
 /// `graph_edges_per_chunk`: number of graph edges touching each chunk's file.
+#[must_use]
 pub fn compute_ecs_scores(
     chunks: &[ContentChunk],
     task_keywords: &[String],
@@ -124,6 +125,7 @@ fn compute_info_density(chunk: &ContentChunk) -> f64 {
 ///
 /// `lambda`: trade-off between relevance and diversity (0.0 = pure relevance,
 /// 1.0 = pure diversity). Default: 0.6.
+#[must_use]
 pub fn mig_select(
     scores: &[SaliencyScore],
     chunks: &[ContentChunk],

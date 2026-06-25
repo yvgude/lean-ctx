@@ -9,6 +9,7 @@ pub struct KnowledgeNodeRef {
 }
 
 impl KnowledgeNodeRef {
+    #[must_use]
     pub fn new(category: &str, key: &str) -> Self {
         Self {
             category: category.trim().to_string(),
@@ -16,6 +17,7 @@ impl KnowledgeNodeRef {
         }
     }
 
+    #[must_use]
     pub fn id(&self) -> String {
         format!("{}/{}", self.category, self.key)
     }
@@ -32,6 +34,7 @@ pub enum KnowledgeEdgeKind {
 }
 
 impl KnowledgeEdgeKind {
+    #[must_use]
     pub fn parse(input: &str) -> Option<Self> {
         match input.trim().to_lowercase().as_str() {
             "depends_on" | "depends" => Some(Self::DependsOn),
@@ -43,6 +46,7 @@ impl KnowledgeEdgeKind {
         }
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             KnowledgeEdgeKind::DependsOn => "depends_on",
@@ -97,6 +101,7 @@ impl Default for KnowledgeRelationGraph {
 }
 
 impl KnowledgeRelationGraph {
+    #[must_use]
     pub fn new(project_hash: &str) -> Self {
         Self {
             project_hash: project_hash.to_string(),
@@ -112,6 +117,7 @@ impl KnowledgeRelationGraph {
         Ok(dir.join("relations.json"))
     }
 
+    #[must_use]
     pub fn load(project_hash: &str) -> Option<Self> {
         let path = Self::path(project_hash).ok()?;
         let content = std::fs::read_to_string(&path).ok()?;
@@ -122,6 +128,7 @@ impl KnowledgeRelationGraph {
         Some(g)
     }
 
+    #[must_use]
     pub fn load_or_create(project_hash: &str) -> Self {
         Self::load(project_hash).unwrap_or_else(|| Self::new(project_hash))
     }
@@ -273,6 +280,7 @@ impl KnowledgeRelationGraph {
     }
 }
 
+#[must_use]
 pub fn parse_node_ref(input: &str) -> Option<KnowledgeNodeRef> {
     let s = input.trim();
     if s.is_empty() {
@@ -297,6 +305,7 @@ pub fn parse_node_ref(input: &str) -> Option<KnowledgeNodeRef> {
     None
 }
 
+#[must_use]
 pub fn format_mermaid(edges: &[KnowledgeEdge]) -> String {
     if edges.is_empty() {
         return "graph TD\n  %% no relations".to_string();

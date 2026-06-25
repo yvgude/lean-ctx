@@ -23,7 +23,7 @@ use super::chunk_data::{ChunkKind, CodeChunk};
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentSource {
-    /// Local filesystem (default, backward-compatible with CodeChunk).
+    /// Local filesystem (default, backward-compatible with `CodeChunk`).
     #[default]
     File,
     /// External data provider (GitHub, Jira, Confluence, etc.).
@@ -64,6 +64,7 @@ pub struct ContentChunk {
 }
 
 impl ContentChunk {
+    #[must_use]
     pub fn from_provider(
         provider_id: &str,
         resource_type: &str,
@@ -94,10 +95,12 @@ impl ContentChunk {
         }
     }
 
+    #[must_use]
     pub fn is_external(&self) -> bool {
         !matches!(self.source, ContentSource::File)
     }
 
+    #[must_use]
     pub fn provider_id(&self) -> Option<&str> {
         match &self.source {
             ContentSource::Provider { provider_id, .. } => Some(provider_id),

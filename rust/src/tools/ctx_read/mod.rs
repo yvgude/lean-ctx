@@ -167,9 +167,9 @@ pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
     }
 }
 
-/// Opens a file, retrying once after a brief pause on NotFound.
+/// Opens a file, retrying once after a brief pause on `NotFound`.
 /// Works around overlay/FUSE stat-cache races in container runtimes (Docker, Codex).
-/// Uses O_NOFOLLOW on Unix for TOCTOU symlink protection.
+/// Uses `O_NOFOLLOW` on Unix for TOCTOU symlink protection.
 fn open_with_retry(path: &str) -> Result<std::fs::File, std::io::Error> {
     match open_nofollow(path) {
         Ok(f) => Ok(f),
@@ -895,6 +895,7 @@ fn handle_with_options_inner(
     }
 }
 
+#[must_use]
 pub fn is_instruction_file(path: &str) -> bool {
     let lower = path.to_lowercase();
     let filename = std::path::Path::new(&lower)

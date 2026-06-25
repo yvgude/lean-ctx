@@ -61,6 +61,7 @@ pub struct DriftReport {
 }
 
 impl DriftReport {
+    #[must_use]
     pub fn in_sync(&self) -> bool {
         self.only_local == 0 && self.only_snapshot == 0
     }

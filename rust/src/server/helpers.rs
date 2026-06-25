@@ -1,5 +1,6 @@
 use serde_json::Value;
 
+#[must_use]
 pub fn get_str_array(
     args: Option<&serde_json::Map<String, Value>>,
     key: &str,
@@ -37,14 +38,17 @@ pub fn get_str(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Opti
         .map(std::string::ToString::to_string)
 }
 
+#[must_use]
 pub fn get_int(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Option<i64> {
     args?.get(key)?.as_i64()
 }
 
+#[must_use]
 pub fn get_bool(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Option<bool> {
     args?.get(key)?.as_bool()
 }
 
+#[must_use]
 pub fn hash_fast(s: &str) -> String {
     const THRESHOLD: usize = 16 * 1024;
     if s.len() <= THRESHOLD {
@@ -75,12 +79,14 @@ pub fn canonicalize_json(v: &Value) -> Value {
     }
 }
 
+#[must_use]
 pub fn canonical_args_string(args: Option<&serde_json::Map<String, Value>>) -> String {
     let v = args.map_or(Value::Null, |m| Value::Object(m.clone()));
     let canon = canonicalize_json(&v);
     serde_json::to_string(&canon).unwrap_or_default()
 }
 
+#[must_use]
 pub fn extract_search_pattern_from_command(command: &str) -> Option<String> {
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.len() < 2 {

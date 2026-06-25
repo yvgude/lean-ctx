@@ -34,7 +34,7 @@
 //! which is `< 1` purely from compression + read-cache stubs. On a cache-priced
 //! model the carried prefix (the bulk) is additionally billed at the cheap
 //! `cache_read` rate, widening the margin. Hence: **strict win when cache-priced,
-//! at-least break-even otherwise** — the exact claim from the plan's DoD.
+//! at-least break-even otherwise** — the exact claim from the plan's `DoD`.
 
 use serde::Serialize;
 
@@ -145,11 +145,11 @@ fn build_session_plan(files: &[FileMeasurement]) -> Vec<Turn> {
 struct ArmTokens {
     /// Arm A: Σ over turns of the full raw prefix (no caching → re-billed each turn).
     arm_a_input: u64,
-    /// Arm B: Σ over turns of the prefix carried from the previous turn (cache_read).
+    /// Arm B: Σ over turns of the prefix carried from the previous turn (`cache_read`).
     arm_b_cache_read: u64,
-    /// Arm B: Σ of each turn's newly added lean tokens (cache_write).
+    /// Arm B: Σ of each turn's newly added lean tokens (`cache_write`).
     arm_b_cache_write: u64,
-    /// Σ of lean prefix sizes per turn (== cache_read + cache_write); reported for context.
+    /// Σ of lean prefix sizes per turn (== `cache_read` + `cache_write`); reported for context.
     total_lean_prefix: u64,
 }
 
@@ -280,11 +280,13 @@ pub fn run_dual_arm() -> std::io::Result<DualArmScorecard> {
 }
 
 impl DualArmScorecard {
+    #[must_use]
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
     }
 
     /// Human-readable table for `lean-ctx benchmark dual-arm`.
+    #[must_use]
     pub fn to_human(&self) -> String {
         let mut out = String::new();
         out.push_str("lean-ctx dual-arm self-verify (input-side, output held equal)\n");

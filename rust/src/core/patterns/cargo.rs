@@ -23,6 +23,7 @@ fn finished_re() -> &'static regex::Regex {
     static_regex!(r"Finished .+ in (\d+\.?\d*s)")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     if command.contains("build") || command.contains("check") {
         return Some(compress_build(output));

@@ -6,6 +6,7 @@
 //! duplicate). `save_tee` then runs the config-driven secret scanner on top
 //! for defense in depth.
 
+#[must_use]
 pub fn save_tee(command: &str, output: &str) -> Option<String> {
     let tee_dir = crate::core::paths::state_dir().ok()?.join("tee");
     std::fs::create_dir_all(&tee_dir).ok()?;

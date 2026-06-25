@@ -89,6 +89,7 @@ pub struct MarketplaceMeta {
 pub const GRAPH_FORMAT_V2: &str = "ctxpkg-graph-v2";
 
 impl ContextGraph {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             format: GRAPH_FORMAT_V2.into(),
@@ -105,10 +106,12 @@ impl ContextGraph {
         self.edges.push(edge);
     }
 
+    #[must_use]
     pub fn node_by_id(&self, id: &str) -> Option<&ContextNode> {
         self.nodes.iter().find(|n| n.id == id)
     }
 
+    #[must_use]
     pub fn node_types(&self) -> Vec<String> {
         let mut types: Vec<String> = self
             .nodes
@@ -121,6 +124,7 @@ impl ContextGraph {
         types
     }
 
+    #[must_use]
     pub fn activation_mean(&self) -> f64 {
         if self.nodes.is_empty() {
             return 0.0;
@@ -129,6 +133,7 @@ impl ContextGraph {
         sum / self.nodes.len() as f64
     }
 
+    #[must_use]
     pub fn summary(&self) -> GraphSummary {
         GraphSummary {
             node_count: self.nodes.len() as u32,
@@ -164,6 +169,7 @@ impl Default for ContextGraph {
 }
 
 impl ContextNode {
+    #[must_use]
     pub fn fact(id: &str, content: &str, category: &str) -> Self {
         Self {
             id: id.into(),
@@ -183,6 +189,7 @@ impl ContextNode {
         }
     }
 
+    #[must_use]
     pub fn gotcha(id: &str, trigger: &str, resolution: &str) -> Self {
         Self {
             id: id.into(),
@@ -202,6 +209,7 @@ impl ContextNode {
         }
     }
 
+    #[must_use]
     pub fn code_symbol(id: &str, kind: &str, name: &str, file_path: &str) -> Self {
         Self {
             id: id.into(),

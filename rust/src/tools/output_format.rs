@@ -18,6 +18,7 @@
 ///     "─── 5 enriched / 4.0x dedup ───",
 /// );
 /// ```
+#[must_use]
 pub fn format_header(action: &str, total: usize, extra: &str) -> String {
     let body = match action {
         "grep" => format!("{total} enriched / {extra}"),
@@ -50,6 +51,7 @@ pub fn format_header(action: &str, total: usize, extra: &str) -> String {
 ///     "  1  src/main.rs:12-45  auth  [fn]  3 hits",
 /// );
 /// ```
+#[must_use]
 pub fn format_row(
     rank: usize,
     file: &str,
@@ -82,6 +84,7 @@ pub fn format_row(
 ///     "  page 1/1 offset=0 limit=20",
 /// );
 /// ```
+#[must_use]
 pub fn format_footer(offset: usize, limit: usize, total: usize) -> String {
     let current_page = offset.checked_div(limit).unwrap_or(0) + 1;
     let total_pages = if limit == 0 || total == 0 {
@@ -108,6 +111,7 @@ pub fn format_footer(offset: usize, limit: usize, total: usize) -> String {
 ///     "│ line1\n│ line2 ←\n│ line3",
 /// );
 /// ```
+#[must_use]
 pub fn format_context(source: &str, match_lines: &[usize]) -> String {
     let lines: Vec<&str> = source.lines().collect();
     let mut out = String::new();

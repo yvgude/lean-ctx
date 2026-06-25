@@ -574,7 +574,7 @@ For action=grep: pattern required; include='*.rs'; path scopes;
 limit=N or max_results=N (default 20); paths=['dir1','dir2'] for multi-root;
 ignore_gitignore bypasses .gitignore (needs role).
 
-Parameters: `action`*, `artifacts`, `context`, `ignore_gitignore`, `include`, `languages`, `limit`, `max_results`, `method`, `mode`, `offset`, `path`, `path_glob`, `paths`, `pattern`, `query`, `related_to`, `top_k`, `workspace`
+Parameters: `action`*, `artifacts`, `context`, `ignore_gitignore`, `include`, `languages`, `limit`, `method`, `mode`, `offset`, `path`, `path_glob`, `paths`, `pattern`, `query`, `related_to`, `top_k`, `workspace`
 
 ## `ctx_session`
 

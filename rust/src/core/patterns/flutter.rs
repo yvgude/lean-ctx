@@ -31,6 +31,7 @@ fn is_flutter_build_noise(line: &str) -> bool {
         || tl.starts_with("warning: the flutter tool")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     let cl = command.trim().to_ascii_lowercase();
     if cl.starts_with("flutter ") {

@@ -47,8 +47,8 @@ fn resolve_config_for_language(language: &str) -> LspServerConfig {
 
 /// Selects a code-intelligence backend for `language` (§4.3).
 ///
-/// Config `cfg.lsp[language]` (HashMap<String,String>):
-///   - absent      → "auto" = B-first (JetBrains if reachable, else rust-analyzer)
+/// Config `cfg.lsp[language]` (`HashMap`<String,String>):
+///   - absent      → "auto" = B-first (`JetBrains` if reachable, else rust-analyzer)
 ///   - "auto"      → same as absent
 ///   - "jetbrains" → B only (error if the IDE is not reachable; no fallback)
 ///   - anything else → treated as an explicit rust-analyzer binary path = A only
@@ -95,7 +95,7 @@ fn select_backend(language: &str, project_root: &str) -> Result<Box<dyn LspBacke
 }
 
 /// Evicts a cached backend whose liveness check (`is_stale`) failed, so the next
-/// lookup re-selects (auto → Backing A fallback; b_only → Err). Backing A never stale.
+/// lookup re-selects (auto → Backing A fallback; `b_only` → Err). Backing A never stale.
 fn evict_if_stale(
     backends: &mut HashMap<String, Box<dyn LspBackend>>,
     language: &str,

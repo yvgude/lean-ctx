@@ -1,6 +1,6 @@
-//! FinOps cost/savings export (GL #402): CloudZero CBF, Vantage, FOCUS CSV.
+//! `FinOps` cost/savings export (GL #402): `CloudZero` CBF, Vantage, FOCUS CSV.
 //!
-//! Turns the tamper-evident savings ledger into daily cost rows a FinOps
+//! Turns the tamper-evident savings ledger into daily cost rows a `FinOps`
 //! platform can ingest for showback/chargeback. The ledger is the *only*
 //! source — every exported number is backed by a hash-chained event with the
 //! model price pinned at recording time (`unit_price_per_m_usd`), so a price
@@ -68,6 +68,7 @@ impl DateRange {
 
 /// Aggregate the ledger into daily rows. Events outside the range (or with
 /// a malformed timestamp) are skipped.
+#[must_use]
 pub fn aggregate(range: &DateRange) -> Vec<DailyCostRow> {
     let Some(path) = crate::core::savings_ledger::store::default_path() else {
         return Vec::new();

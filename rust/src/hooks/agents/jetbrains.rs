@@ -55,7 +55,7 @@ pub(crate) fn install_jetbrains_hook() {
     }
 }
 
-/// JetBrains AI Assistant does not auto-load `~/.jb-mcp.json`. The snippet must
+/// `JetBrains` AI Assistant does not auto-load `~/.jb-mcp.json`. The snippet must
 /// be pasted into the IDE once, so we always state the manual step explicitly
 /// to set the right expectation (no silent "configured" that never wires up).
 fn print_jetbrains_manual_step(display_path: &str) {

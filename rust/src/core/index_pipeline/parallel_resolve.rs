@@ -1,9 +1,9 @@
 //! Phase 4: Serial resolution — create CALLS, USAGES, THROWS, CHANNEL edges.
 //!
-//! This is a serial pass (no ThreadPool) because all resolution functions
+//! This is a serial pass (no `ThreadPool`) because all resolution functions
 //! take `&mut GraphBuffer` which prevents parallel access.  The C reference
 //! achieves parallel resolution through a different architecture (atomic
-//! shared IDs + per-worker edge buffers); the Rust GraphBuffer API
+//! shared IDs + per-worker edge buffers); the Rust `GraphBuffer` API
 //! currently requires exclusive access.
 //!
 //! Consumes cached [`ExtractedFile`] results and resolves each call, usage,
@@ -15,8 +15,8 @@
 //! - **Read-only registry**: `Registry` is passed by `&` — no mutation.
 //! - **Silent skip**: Unresolvable names (not in registry, not in graph buffer)
 //!   produce no edges. No panics.
-//! - **Deterministic**: Output depends only on (extracted_files, registry,
-//!   graph_buffer contents) — no timestamps, counters, or randomness.
+//! - **Deterministic**: Output depends only on (`extracted_files`, registry,
+//!   `graph_buffer` contents) — no timestamps, counters, or randomness.
 //!
 //! ## Edge types produced
 //!

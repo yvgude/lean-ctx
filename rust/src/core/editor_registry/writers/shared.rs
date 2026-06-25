@@ -14,6 +14,7 @@ pub(super) fn toml_quote(value: &str) -> String {
     }
 }
 
+#[must_use]
 pub fn auto_approve_tools() -> Vec<&'static str> {
     vec![
         "ctx_read",

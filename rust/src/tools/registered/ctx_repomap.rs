@@ -1,4 +1,4 @@
-//! MCP wrapper for `ctx_repomap` — Personalized PageRank repo map.
+//! MCP wrapper for `ctx_repomap` — Personalized `PageRank` repo map.
 
 use rmcp::ErrorData;
 use serde_json::{Map, Value, json};

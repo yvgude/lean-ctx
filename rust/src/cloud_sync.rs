@@ -108,11 +108,11 @@ pub fn cloud_background_tasks() {
             };
             let entry = serde_json::json!({
                 "recorded_at": format!("{today}T00:00:00Z"),
-                "total": summary.score.total as f64,
-                "compression": summary.score.compression as f64,
-                "cost_efficiency": summary.score.cost_efficiency as f64,
-                "quality": summary.score.quality as f64,
-                "consistency": summary.score.consistency as f64,
+                "total": f64::from(summary.score.total),
+                "compression": f64::from(summary.score.compression),
+                "cost_efficiency": f64::from(summary.score.cost_efficiency),
+                "quality": f64::from(summary.score.quality),
+                "consistency": f64::from(summary.score.consistency),
                 "trend": trend,
                 "avoided_usd": summary.avoided_usd,
                 "tool_spend_usd": summary.tool_spend_usd,
@@ -237,6 +237,7 @@ fn auto_sync_personal_cloud() -> AutoSyncOutcome {
     outcome
 }
 
+#[must_use]
 pub fn build_sync_entries(store: &crate::core::stats::StatsStore) -> Vec<serde_json::Value> {
     let mut entries = Vec::new();
     let cep = &store.cep;
@@ -248,7 +249,7 @@ pub fn build_sync_entries(store: &crate::core::stats::StatsStore) -> Vec<serde_j
         if let Some(date) = s.timestamp.get(..10) {
             let entry = cep_cache_by_day.entry(date.to_string()).or_default();
             let calls = s.tool_calls.max(1);
-            let hits = (calls as f64 * s.cache_hit_rate as f64 / 100.0).round() as u64;
+            let hits = (calls as f64 * f64::from(s.cache_hit_rate) / 100.0).round() as u64;
             entry.0 += calls;
             entry.1 += hits;
         }
@@ -312,6 +313,7 @@ pub fn build_sync_entries(store: &crate::core::stats::StatsStore) -> Vec<serde_j
 // Shared by the interactive `lean-ctx sync` flow and the background auto-sync
 // (GL #384): pure local reads, no network, no stdout.
 
+#[must_use]
 pub fn collect_knowledge_entries() -> Vec<serde_json::Value> {
     let Ok(data_dir) = crate::core::paths::data_dir() else {
         return Vec::new();
@@ -383,6 +385,7 @@ pub fn collect_knowledge_entries() -> Vec<serde_json::Value> {
     entries
 }
 
+#[must_use]
 pub fn collect_command_entries(store: &crate::core::stats::StatsStore) -> Vec<serde_json::Value> {
     store
         .commands
@@ -412,6 +415,7 @@ fn complexity_to_float(s: &str) -> f64 {
     }
 }
 
+#[must_use]
 pub fn collect_cep_entries(store: &crate::core::stats::StatsStore) -> Vec<serde_json::Value> {
     store
         .cep
@@ -420,10 +424,10 @@ pub fn collect_cep_entries(store: &crate::core::stats::StatsStore) -> Vec<serde_
         .map(|s| {
             serde_json::json!({
                 "recorded_at": s.timestamp,
-                "score": s.score as f64 / 100.0,
-                "cache_hit_rate": s.cache_hit_rate as f64 / 100.0,
-                "mode_diversity": s.mode_diversity as f64 / 100.0,
-                "compression_rate": s.compression_rate as f64 / 100.0,
+                "score": f64::from(s.score) / 100.0,
+                "cache_hit_rate": f64::from(s.cache_hit_rate) / 100.0,
+                "mode_diversity": f64::from(s.mode_diversity) / 100.0,
+                "compression_rate": f64::from(s.compression_rate) / 100.0,
                 "tool_calls": s.tool_calls,
                 "tokens_saved": s.tokens_saved,
                 "complexity": complexity_to_float(&s.complexity),
@@ -432,6 +436,7 @@ pub fn collect_cep_entries(store: &crate::core::stats::StatsStore) -> Vec<serde_
         .collect()
 }
 
+#[must_use]
 pub fn collect_gotcha_entries() -> Vec<serde_json::Value> {
     let mut all_gotchas = crate::core::gotcha_tracker::load_universal_gotchas();
 
@@ -473,6 +478,7 @@ pub fn collect_gotcha_entries() -> Vec<serde_json::Value> {
         .collect()
 }
 
+#[must_use]
 pub fn collect_feedback_entries() -> Vec<serde_json::Value> {
     let store = crate::core::feedback::FeedbackStore::load();
     store
@@ -490,6 +496,7 @@ pub fn collect_feedback_entries() -> Vec<serde_json::Value> {
         .collect()
 }
 
+#[must_use]
 pub fn collect_contribute_entries() -> Vec<serde_json::Value> {
     let mut entries = Vec::new();
 

@@ -25,12 +25,14 @@ fn config() -> crate::core::config::SummariesConfig {
 
 /// Build a lock-free candidate from the live session. Call while holding the
 /// session lock; persist the result off the hot path with [`maybe_record_periodic`].
+#[must_use]
 pub fn build_candidate(session: &SessionState) -> SummaryCandidate {
     generate::build_candidate(session)
 }
 
 /// Record `candidate` iff enabled and the turn cadence is due. Returns the title
 /// of the recorded summary, or `None` if skipped.
+#[must_use]
 pub fn maybe_record_periodic(project_root: &str, candidate: SummaryCandidate) -> Option<String> {
     let cfg = config();
     if !cfg.enabled || !candidate.has_content {
@@ -71,6 +73,7 @@ fn record_into(
 }
 
 /// All stored summaries for a project (oldest first).
+#[must_use]
 pub fn list(project_root: &str) -> Vec<SummaryRecord> {
     SummaryStore::load_or_create(project_root).summaries
 }

@@ -8,8 +8,8 @@
 //!
 //! - Anthropic: `message_start` carries model + input/cache tokens, the final
 //!   `message_delta` carries `output_tokens`. Non-streaming: one `usage` object.
-//! - OpenAI Responses: the `response.completed` event nests `response.usage`.
-//! - OpenAI Chat Completions: the final chunk carries `usage` (needs
+//! - `OpenAI` Responses: the `response.completed` event nests `response.usage`.
+//! - `OpenAI` Chat Completions: the final chunk carries `usage` (needs
 //!   `stream_options.include_usage`, which the proxy injects).
 //! - Gemini: every chunk carries `usageMetadata`; the last one has the totals.
 //!
@@ -32,6 +32,7 @@ pub enum Provider {
 
 impl Provider {
     /// Maps the proxy's `provider_label` (`"Anthropic"`, `"OpenAI"`, else Gemini).
+    #[must_use]
     pub fn from_label(label: &str) -> Self {
         match label {
             "Anthropic" => Self::Anthropic,
@@ -90,6 +91,7 @@ pub struct Scanner {
 }
 
 impl Scanner {
+    #[must_use]
     pub fn new(provider: Provider, url_model: Option<String>) -> Self {
         Self {
             provider,
@@ -124,6 +126,7 @@ impl Scanner {
 
     /// Consumes the scanner, flushing any trailing partial line (a final event
     /// may arrive without a newline) and returning the merged usage if any.
+    #[must_use]
     pub fn finalize(mut self) -> Option<RealUsage> {
         if !self.buf.is_empty() {
             let line = std::mem::take(&mut self.buf);
@@ -222,11 +225,11 @@ fn absorb_anthropic(u: &mut RealUsage, v: &Value) {
     }
 }
 
-/// OpenAI Chat Completions + Responses. `response.completed` nests the payload
+/// `OpenAI` Chat Completions + Responses. `response.completed` nests the payload
 /// under `response`; chat chunks and non-streaming bodies are top-level. Both
 /// `usage` dialects are accepted (Responses: `input_tokens`/`output_tokens`;
 /// Chat: `prompt_tokens`/`completion_tokens`). `cached_tokens` is the cache-read
-/// portion of the reported input; OpenAI bills no separate cache write.
+/// portion of the reported input; `OpenAI` bills no separate cache write.
 fn absorb_openai(u: &mut RealUsage, v: &Value) {
     let root = v.get("response").unwrap_or(v);
     if let Some(model) = root.get("model").and_then(Value::as_str)
@@ -320,6 +323,7 @@ fn absorb_gemini(u: &mut RealUsage, v: &Value, url_model: Option<&str>) {
 
 /// Extracts the model from a Gemini request path
 /// (`/v1beta/models/{model}:generateContent`). Returns `None` for other paths.
+#[must_use]
 pub fn gemini_model_from_path(path: &str) -> Option<String> {
     let after = path.rsplit_once("/models/").map(|(_, m)| m)?;
     let model = after.split(':').next().unwrap_or(after).trim();

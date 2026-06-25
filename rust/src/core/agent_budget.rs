@@ -48,6 +48,7 @@ fn ensure_entry<'a>(
         })
 }
 
+#[must_use]
 pub fn check_budget(agent_id: &str, tokens_to_consume: usize) -> BudgetCheckResult {
     with_budgets(|map| {
         let budget = ensure_entry(map, agent_id);
@@ -87,6 +88,7 @@ pub fn record_consumption(agent_id: &str, tokens: usize) {
     });
 }
 
+#[must_use]
 pub fn get_status(agent_id: &str) -> AgentBudget {
     with_budgets(|map| ensure_entry(map, agent_id).clone())
 }
@@ -129,6 +131,7 @@ pub fn init_from_config() {
     }
 }
 
+#[must_use]
 pub fn default_limit_from_config() -> usize {
     let cfg_limit = crate::core::config::Config::load().agent_token_budget;
     if cfg_limit == 0 {

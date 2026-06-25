@@ -3,7 +3,7 @@
 //! Unlike `gain` (which reports request-side *savings* and prices them with a
 //! resolved model), this reads the real per-model usage the proxy extracted from
 //! provider responses (`proxy_usage.json`) and prices it with the shared table.
-//! Only proxy-routed clients (Claude Code, Codex, Pi, Gemini CLI, OpenCode)
+//! Only proxy-routed clients (Claude Code, Codex, Pi, Gemini CLI, `OpenCode`)
 //! produce measured data; MCP-only IDEs bypass the proxy and stay estimated.
 
 use crate::core::wrapped::format_tokens;

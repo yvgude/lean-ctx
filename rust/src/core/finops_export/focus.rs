@@ -1,8 +1,8 @@
-//! FOCUS CSV serializer (FinOps Open Cost & Usage Specification).
+//! FOCUS CSV serializer (`FinOps` Open Cost & Usage Specification).
 //!
 //! Spec pinned: FOCUS v1.2 (published June 2024,
 //! <https://focus.finops.org/focus-specification/v1-2/>) — chosen over 1.3/1.4
-//! because 1.2 introduced the SaaS columns (token-denominated pricing) and is
+//! because 1.2 introduced the `SaaS` columns (token-denominated pricing) and is
 //! the version Vantage validates against for custom providers. All 21 v1.2
 //! Mandatory columns are emitted, **plus** the v1.0 required column set
 //! (`Provider`, `InvoiceIssuer`, `ResourceID`, `SubAccountId`, `Tags`, …,

@@ -38,6 +38,7 @@ pub struct RequestBreakdown {
     pub conversation_tokens: usize,
 }
 
+#[must_use]
 pub fn analyze_request(body: &Value, provider: Provider) -> RequestBreakdown {
     match provider {
         Provider::Anthropic => analyze_anthropic(body),
@@ -291,7 +292,7 @@ fn analyze_openai(body: &Value) -> RequestBreakdown {
     }
 }
 
-/// Analyze an OpenAI **Responses API** request (`/v1/responses`).
+/// Analyze an `OpenAI` **Responses API** request (`/v1/responses`).
 ///
 /// Shape differs from Chat Completions: the system prompt lives in
 /// `instructions`, and conversation turns live in `input` — either a bare string

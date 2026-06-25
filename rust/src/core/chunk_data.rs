@@ -76,7 +76,7 @@ pub struct ChunkData {
     pub content_truncated: bool,
 }
 
-/// Backward-compatible alias — struct was renamed to ChunkData.
+/// Backward-compatible alias — struct was renamed to `ChunkData`.
 /// New code should use `ChunkData` directly.
 pub type BM25Index = ChunkData;
 
@@ -87,7 +87,8 @@ impl Default for ChunkData {
 }
 
 impl ChunkData {
-    /// Create an empty ChunkData.
+    /// Create an empty `ChunkData`.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             chunks: Vec::new(),
@@ -104,7 +105,7 @@ impl ChunkData {
     ///
     /// Opens the SQLite database at `{vectors_dir}/code_index.db`, reads all
     /// rows from the `chunks` table (ordered by `id`), converts them to
-    /// [`index_types::CodeChunk`] (the format `from_chunks` expects), and
+    /// [`crate::core::index_types::CodeChunk`] (the format `from_chunks` expects), and
     /// runs the full tokenisation + inverted-index pipeline.
     ///
     /// Returns an empty `ChunkData` when the database is missing or empty.
@@ -120,7 +121,7 @@ impl ChunkData {
         };
 
         let Ok(mut stmt) = conn.prepare(
-            "SELECT file_path, content, content_hash, start_line, end_line, language
+            "SELECT file_path, content, content_hash, start_line, end_line, language, symbol_name, kind
               FROM chunks ORDER BY id",
         ) else {
             return ChunkData::new();
@@ -134,6 +135,8 @@ impl ChunkData {
                 start_line: row.get::<_, i64>(3)? as u32,
                 end_line: row.get::<_, i64>(4)? as u32,
                 language: row.get(5)?,
+                symbol_name: row.get(6)?,
+                kind: row.get(7)?,
             })
         }) else {
             return ChunkData::new();
@@ -151,11 +154,12 @@ impl ChunkData {
         ChunkData::from_chunks(&code_chunks)
     }
 
-    /// Build a ChunkData from pre-extracted pipeline chunks.
+    /// Build a `ChunkData` from pre-extracted pipeline chunks.
     ///
     /// Takes chunks already extracted by the tree-sitter pipeline,
     /// converts to the internal `CodeChunk` format, tokenizes in parallel
     /// via rayon, and builds the inverted index sequentially.
+    #[must_use]
     pub fn from_chunks(chunks: &[crate::core::index_types::CodeChunk]) -> Self {
         use rayon::prelude::*;
 
@@ -173,10 +177,15 @@ impl ChunkData {
         let prepared: Vec<(CodeChunk, Vec<String>)> = chunks
             .par_iter()
             .map(|chunk| {
+                let kind = if chunk.kind.is_empty() {
+                    ChunkKind::Other
+                } else {
+                    serde_json::from_str(&chunk.kind).unwrap_or(ChunkKind::Other)
+                };
                 let code_chunk = CodeChunk {
                     file_path: chunk.file_path.clone(),
-                    symbol_name: String::new(),
-                    kind: ChunkKind::Other,
+                    symbol_name: chunk.symbol_name.clone(),
+                    kind,
                     start_line: chunk.start_line as usize,
                     end_line: chunk.end_line as usize,
                     content: chunk.content.clone(),
@@ -299,6 +308,7 @@ impl ChunkData {
     }
 
     /// Number of chunks originating from external providers.
+    #[must_use]
     pub fn external_chunk_count(&self) -> usize {
         self.chunks
             .iter()
@@ -307,6 +317,7 @@ impl ChunkData {
     }
 
     /// Approximate heap memory used by this data in bytes.
+    #[must_use]
     pub fn memory_usage_bytes(&self) -> usize {
         let chunks_size: usize = self
             .chunks
@@ -381,6 +392,7 @@ const BM25_B: f64 = 0.75;
 /// For code index search, prefer FTS5's native `bm25()` via the `chunks_fts`
 /// virtual table — it's faster, deterministic, and avoids maintaining a separate
 /// in-memory inverted index copy.
+#[must_use]
 pub fn bm25_search(data: &ChunkData, query: &str, top_k: usize) -> Vec<SearchResult> {
     let query_tokens = tokenize(query);
     if query_tokens.is_empty() || data.doc_count == 0 {
@@ -447,6 +459,7 @@ pub fn bm25_search(data: &ChunkData, query: &str, top_k: usize) -> Vec<SearchRes
     results
 }
 
+#[must_use]
 pub fn is_code_file(path: &std::path::Path) -> bool {
     let ext = path
         .extension()
@@ -720,6 +733,7 @@ pub(crate) fn find_block_end(lines: &[&str], start: usize) -> usize {
     (start + 50).min(lines.len().saturating_sub(1))
 }
 
+#[must_use]
 pub fn format_search_results(results: &[SearchResult], compact: bool) -> String {
     if results.is_empty() {
         return "No results found.".to_string();

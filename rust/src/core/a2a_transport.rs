@@ -13,6 +13,7 @@ pub struct AgentIdentityV1 {
 }
 
 impl AgentIdentityV1 {
+    #[must_use]
     pub fn from_current(agent_id: &str, agent_type: &str) -> Self {
         Self {
             agent_id: agent_id.to_string(),
@@ -73,6 +74,7 @@ impl TransportEnvelopeV1 {
         self.signature = Some(sig);
     }
 
+    #[must_use]
     pub fn verify_signature(&self, secret: &[u8]) -> bool {
         let Some(ref sig) = self.signature else {
             return false;

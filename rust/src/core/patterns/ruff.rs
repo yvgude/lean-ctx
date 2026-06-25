@@ -14,6 +14,7 @@ fn ruff_fixed_re() -> &'static regex::Regex {
     static_regex!(r"Found (\d+) errors?.*?(\d+) fixable")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     if command.contains("format") || command.contains("fmt") {
         return Some(compress_format(output));

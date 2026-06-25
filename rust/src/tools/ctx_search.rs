@@ -147,11 +147,7 @@ impl TryFrom<&serde_json::Map<String, serde_json::Value>> for CtxSearch {
                     regex: get_str(args, "regex"),
                     path: get_str(args, "path"),
                     include: get_str(args, "include"),
-                    // Backward compat: limit replaces max_results
-                    limit: get_usize(args, "limit").or_else(|| {
-                        crate::server::tool_trait::get_int(args, "max_results")
-                            .and_then(|n| usize::try_from(n).ok())
-                    }),
+                    limit: get_usize(args, "limit"),
                     offset: get_usize(args, "offset"),
                     context: get_bool(args, "context"),
                     ignore_gitignore: get_bool(args, "ignore_gitignore"),
@@ -605,7 +601,7 @@ fn parse_related_to(spec: &str) -> (String, usize) {
 }
 
 /// Format BM25 [`SearchHit`] results into compact text using the
-/// output_format helpers.
+/// `output_format` helpers.
 fn format_search_results(hits: &[SearchHit], top_k: usize, method: &str) -> String {
     if hits.is_empty() {
         return format!("─── 0 results ({method}) ───");
@@ -629,11 +625,35 @@ fn format_search_results(hits: &[SearchHit], top_k: usize, method: &str) -> Stri
     out
 }
 
+/// Parse a JSON result string from `handle_impl` (dense/hybrid) into compact text.
+/// Non-JSON (error messages) are passed through as-is.
+fn json_to_compact_text(json_str: &str, method: &str, top_k: usize) -> String {
+    let trimmed = json_str.trim();
+    if !trimmed.starts_with('[') {
+        return json_str.to_string();
+    }
+    let Ok(values) = serde_json::from_str::<Vec<serde_json::Value>>(trimmed) else {
+        return json_str.to_string();
+    };
+    let hits: Vec<SearchHit> = values
+        .into_iter()
+        .map(|v| SearchHit {
+            file_path: v["file"].as_str().unwrap_or("?").to_string(),
+            content: v["snippet"].as_str().unwrap_or("").to_string(),
+            start_line: v["line"].as_u64().unwrap_or(0) as usize,
+            end_line: v["line"].as_u64().unwrap_or(0) as usize,
+            rank: v["score"].as_f64().unwrap_or(0.0),
+        })
+        .collect();
+    format_search_results(&hits, top_k, method)
+}
+
 /// Dispatch a `CtxSearch` action to the appropriate handler.
 ///
 /// * `Grep` → calls the existing regex-search `handle()`.
 /// * `Search` → method dispatch (bm25/dense/hybrid) + compact text output.
 /// * `Reindex` → return a placeholder error until implemented.
+#[must_use]
 pub fn handle_enum(action: CtxSearch, crp_mode: CrpMode, ctx_path: &str) -> SearchOutcome {
     match action {
         CtxSearch::Grep(params) => {
@@ -856,27 +876,35 @@ pub fn handle_enum(action: CtxSearch, crp_mode: CrpMode, ctx_path: &str) -> Sear
                         .collect();
                     format_search_results(&filtered, top_k, "bm25")
                 }
-                SearchMethod::Dense => ctx_semantic_search::handle_impl(
-                    query,
-                    &dir,
+                SearchMethod::Dense => json_to_compact_text(
+                    &ctx_semantic_search::handle_impl(
+                        query,
+                        &dir,
+                        top_k,
+                        crp_mode,
+                        languages,
+                        path_glob,
+                        Some("dense"),
+                        None,
+                        None,
+                    ),
+                    "dense",
                     top_k,
-                    crp_mode,
-                    languages,
-                    path_glob,
-                    Some("dense"),
-                    None,
-                    None,
                 ),
-                SearchMethod::Hybrid => ctx_semantic_search::handle_impl(
-                    query,
-                    &dir,
+                SearchMethod::Hybrid => json_to_compact_text(
+                    &ctx_semantic_search::handle_impl(
+                        query,
+                        &dir,
+                        top_k,
+                        crp_mode,
+                        languages,
+                        path_glob,
+                        Some("hybrid"),
+                        None,
+                        None,
+                    ),
+                    "hybrid",
                     top_k,
-                    crp_mode,
-                    languages,
-                    path_glob,
-                    Some("hybrid"),
-                    None,
-                    None,
                 ),
             };
 
@@ -1105,8 +1133,8 @@ fn monorepo_scope_hint(matches: &[String], search_dir: &str) -> Option<String> {
     }
 }
 
-/// Parse a single match line from handle() output: "path:line content"
-/// Returns (file_path, line_number, content)
+/// Parse a single match line from `handle()` output: "path:line content"
+/// Returns (`file_path`, `line_number`, content)
 fn parse_grep_match(line: &str) -> Option<(String, usize, String)> {
     let colon_pos = line.find(':')?;
     let file = line[..colon_pos].to_string();
@@ -1117,7 +1145,7 @@ fn parse_grep_match(line: &str) -> Option<(String, usize, String)> {
     Some((file, line_num, content))
 }
 
-/// Query the code_index.db edges table for per-node call counts.
+/// Query the `code_index.db` edges table for per-node call counts.
 fn compute_call_counts(conn: &rusqlite::Connection) -> std::collections::HashMap<i64, usize> {
     let mut map = std::collections::HashMap::new();
     if let Ok(mut stmt) = conn.prepare(

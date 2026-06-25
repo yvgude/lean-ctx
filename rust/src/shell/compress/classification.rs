@@ -67,6 +67,7 @@ pub(super) fn is_search_output(command: &str) -> bool {
 /// or limiting context) still applies, but the terse pipeline and generic
 /// compressors are skipped so diff hunks, blame annotations, etc. remain
 /// fully readable.
+#[must_use]
 pub fn has_structural_output(command: &str) -> bool {
     if is_verbatim_output(command) {
         return true;
@@ -80,6 +81,7 @@ pub fn has_structural_output(command: &str) -> bool {
 /// Returns true for commands where the output IS the purpose of the command.
 /// These must never have their content transformed — only size-limited if huge.
 /// Checks both the full command AND the last pipe segment for comprehensive coverage.
+#[must_use]
 pub fn is_verbatim_output(command: &str) -> bool {
     is_verbatim_single(command) || is_verbatim_pipe_tail(command)
 }

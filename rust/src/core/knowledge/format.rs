@@ -17,6 +17,7 @@ impl ProjectKnowledge {
         self.updated_at = chrono::Utc::now();
     }
 
+    #[must_use]
     pub fn format_summary(&self) -> String {
         let mut out = String::new();
         let current_facts: Vec<&KnowledgeFact> =
@@ -100,6 +101,7 @@ impl ProjectKnowledge {
         }
     }
 
+    #[must_use]
     pub fn format_aaak(&self) -> String {
         // #212 — pre-prompt sensitivity floor: never inject facts whose stored or
         // freshly-classified sensitivity meets/exceeds the configured floor. The
@@ -181,6 +183,7 @@ impl ProjectKnowledge {
         }
     }
 
+    #[must_use]
     pub fn format_wakeup(&self) -> String {
         let current_facts: Vec<&KnowledgeFact> = self
             .facts

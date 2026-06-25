@@ -61,6 +61,7 @@ impl std::fmt::Display for CognitionLoopReport {
     }
 }
 
+#[must_use]
 pub fn run_cognition_loop(project_root: &str, max_steps: u8) -> CognitionLoopReport {
     let start = std::time::Instant::now();
     let mut report = CognitionLoopReport::default();
@@ -249,7 +250,7 @@ fn step_lateral_synthesis(knowledge: &ProjectKnowledge, graph: &mut KnowledgeRel
 }
 
 /// Step 5: Resolve contradictions — same category+key, different values.
-/// Keeps the fact with higher quality_score, archives the other.
+/// Keeps the fact with higher `quality_score`, archives the other.
 fn step_contradiction_resolution(knowledge: &mut ProjectKnowledge) -> u32 {
     let now = Utc::now();
     let mut resolved = 0u32;
@@ -424,6 +425,7 @@ fn step_replay_consolidation(knowledge: &mut ProjectKnowledge) -> u32 {
 /// step, and reports the facts whose confidence the replay lifted. Distinct from
 /// the in-loop step (#3) so idle-time "rest" consolidation is observable on its
 /// own via `introspect`. Deterministic; mutates the store, never tool output.
+#[must_use]
 pub fn run_idle_replay(project_root: &str) -> u32 {
     let mut promoted = 0u32;
     let _ = ProjectKnowledge::mutate_locked(project_root, |knowledge| {

@@ -1,11 +1,11 @@
-//! Connects the RSS-based memory_guard to real cache eviction via HomeostasisController.
+//! Connects the RSS-based `memory_guard` to real cache eviction via `HomeostasisController`.
 //!
 //! The orchestrator bridges two systems:
-//! - `memory_guard`: monitors process RSS and reports PressureLevel (Normal..Critical)
+//! - `memory_guard`: monitors process RSS and reports `PressureLevel` (Normal..Critical)
 //! - `homeostasis`: decides which eviction action to take based on token utilization
 //!
 //! On each pressure callback, the orchestrator queries current cache utilization,
-//! feeds it to HomeostasisController, and executes the recommended action.
+//! feeds it to `HomeostasisController`, and executes the recommended action.
 
 use std::sync::{Arc, Mutex};
 
@@ -31,7 +31,7 @@ impl EvictionOrchestrator {
         }
     }
 
-    /// Called by the memory_guard thread when pressure is detected.
+    /// Called by the `memory_guard` thread when pressure is detected.
     /// Runs on the guardian thread — must not block on async locks for too long.
     pub fn on_pressure(&self, level: memory_guard::PressureLevel) {
         if level == memory_guard::PressureLevel::Normal {

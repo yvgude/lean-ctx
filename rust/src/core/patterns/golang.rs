@@ -20,6 +20,7 @@ fn go_build_error_re() -> &'static regex::Regex {
     static_regex!(r"^(.+?):(\d+):(\d+):\s+(.+)$")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     if command.contains("golangci-lint") || command.contains("golint") {
         return Some(compress_golint(output));

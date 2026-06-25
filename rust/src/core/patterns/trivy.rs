@@ -13,6 +13,7 @@ use crate::core::compressor::strip_ansi;
 /// with pathological vuln counts; the `Total:` line still reports the true sum.
 const MAX_ROWS: usize = 30;
 
+#[must_use]
 pub fn compress(_cmd: &str, output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {

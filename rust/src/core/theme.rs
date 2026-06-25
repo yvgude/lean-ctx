@@ -9,6 +9,7 @@ pub enum Color {
 }
 
 impl Color {
+    #[must_use]
     pub fn rgb(&self) -> (u8, u8, u8) {
         let Color::Hex(hex) = self;
         let hex = hex.trim_start_matches('#');
@@ -21,6 +22,7 @@ impl Color {
         (r, g, b)
     }
 
+    #[must_use]
     pub fn fg(&self) -> String {
         if no_color() {
             return String::new();
@@ -29,6 +31,7 @@ impl Color {
         format!("\x1b[38;2;{r};{g};{b}m")
     }
 
+    #[must_use]
     pub fn bg(&self) -> String {
         if no_color() {
             return String::new();
@@ -38,9 +41,10 @@ impl Color {
     }
 
     fn lerp_channel(a: u8, b: u8, t: f64) -> u8 {
-        (a as f64 + (b as f64 - a as f64) * t).round() as u8
+        (f64::from(a) + (f64::from(b) - f64::from(a)) * t).round() as u8
     }
 
+    #[must_use]
     pub fn lerp(&self, other: &Color, t: f64) -> Color {
         let (r1, g1, b1) = self.rgb();
         let (r2, g2, b2) = other.rgb();
@@ -96,6 +100,7 @@ impl Default for Theme {
     }
 }
 
+#[must_use]
 pub fn no_color() -> bool {
     std::env::var("NO_COLOR").is_ok() || !std::io::stdout().is_terminal()
 }
@@ -104,19 +109,23 @@ pub const RST: &str = "\x1b[0m";
 pub const BOLD: &str = "\x1b[1m";
 pub const DIM: &str = "\x1b[2m";
 
+#[must_use]
 pub fn rst() -> &'static str {
     if no_color() { "" } else { RST }
 }
 
+#[must_use]
 pub fn bold() -> &'static str {
     if no_color() { "" } else { BOLD }
 }
 
+#[must_use]
 pub fn dim() -> &'static str {
     if no_color() { "" } else { DIM }
 }
 
 impl Theme {
+    #[must_use]
     pub fn pct_color(&self, pct: f64) -> String {
         if no_color() {
             return String::new();
@@ -134,6 +143,7 @@ impl Theme {
         }
     }
 
+    #[must_use]
     pub fn gradient_bar(&self, ratio: f64, width: usize) -> String {
         let blocks = ['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
         let full = (ratio * width as f64).max(0.0);
@@ -191,6 +201,7 @@ impl Theme {
         buf
     }
 
+    #[must_use]
     pub fn gradient_sparkline(&self, values: &[u64]) -> String {
         let ticks = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
         let max = *values.iter().max().unwrap_or(&1) as f64;
@@ -224,6 +235,7 @@ impl Theme {
         buf
     }
 
+    #[must_use]
     pub fn badge(&self, _label: &str, value: &str, color: &Color) -> String {
         if no_color() {
             return format!(" {value:<12}");
@@ -231,6 +243,7 @@ impl Theme {
         format!("{bg}{BOLD} {value} {RST}", bg = color.bg())
     }
 
+    #[must_use]
     pub fn border_line(&self, width: usize) -> String {
         if no_color() {
             return "─".repeat(width);
@@ -239,6 +252,7 @@ impl Theme {
         format!("{}{line}{RST}", self.border.fg())
     }
 
+    #[must_use]
     pub fn box_top(&self, width: usize) -> String {
         if no_color() {
             let line: String = std::iter::repeat_n('─', width).collect();
@@ -248,6 +262,7 @@ impl Theme {
         format!("{}╭{line}╮{RST}", self.border.fg())
     }
 
+    #[must_use]
     pub fn box_bottom(&self, width: usize) -> String {
         if no_color() {
             let line: String = std::iter::repeat_n('─', width).collect();
@@ -257,6 +272,7 @@ impl Theme {
         format!("{}╰{line}╯{RST}", self.border.fg())
     }
 
+    #[must_use]
     pub fn box_mid(&self, width: usize) -> String {
         if no_color() {
             let line: String = std::iter::repeat_n('─', width).collect();
@@ -266,6 +282,7 @@ impl Theme {
         format!("{}├{line}┤{RST}", self.border.fg())
     }
 
+    #[must_use]
     pub fn box_side(&self) -> String {
         if no_color() {
             return "│".to_string();
@@ -273,6 +290,7 @@ impl Theme {
         format!("{}│{RST}", self.border.fg())
     }
 
+    #[must_use]
     pub fn header_icon(&self) -> String {
         if no_color() {
             return "◆".to_string();
@@ -280,6 +298,7 @@ impl Theme {
         format!("{}◆{RST}", self.accent.fg())
     }
 
+    #[must_use]
     pub fn brand_title(&self) -> String {
         if no_color() {
             return "lean-ctx".to_string();
@@ -289,6 +308,7 @@ impl Theme {
         format!("{p}{BOLD}lean{RST}{s}{BOLD}-ctx{RST}")
     }
 
+    #[must_use]
     pub fn section_title(&self, title: &str) -> String {
         if no_color() {
             return title.to_string();
@@ -296,11 +316,13 @@ impl Theme {
         format!("{}{BOLD}{title}{RST}", self.text.fg())
     }
 
+    #[must_use]
     pub fn to_toml(&self) -> String {
         toml::to_string_pretty(self).unwrap_or_default()
     }
 
     /// Export theme as CSS custom properties for the web dashboard.
+    #[must_use]
     pub fn to_css_vars(&self) -> String {
         let Color::Hex(ref primary) = self.primary;
         let Color::Hex(ref secondary) = self.secondary;
@@ -335,6 +357,7 @@ impl Theme {
     }
 
     /// Labeled section box top: `┌─ LABEL ──────────────────┐`
+    #[must_use]
     pub fn box_top_labeled(&self, width: usize, label: &str) -> String {
         let max_label = width.saturating_sub(4);
         let label_display = if visual_len(label) > max_label {
@@ -354,6 +377,7 @@ impl Theme {
     }
 
     /// Labeled section box bottom: `└──────────────────────────┘`
+    #[must_use]
     pub fn box_bottom_square(&self, width: usize) -> String {
         let line: String = std::iter::repeat_n('─', width).collect();
         if no_color() {
@@ -363,6 +387,7 @@ impl Theme {
     }
 
     /// Square box side: `│`
+    #[must_use]
     pub fn box_side_square(&self) -> String {
         if no_color() {
             return "│".to_string();
@@ -371,6 +396,7 @@ impl Theme {
     }
 
     /// KPI underline using bold unicode lines, colored with the metric's color.
+    #[must_use]
     pub fn kpi_underline(&self, width: usize, color: &Color) -> String {
         let line: String = std::iter::repeat_n('━', width).collect();
         if no_color() {
@@ -380,6 +406,7 @@ impl Theme {
     }
 
     /// Export theme as a JS module for the web dashboard.
+    #[must_use]
     pub fn to_js_tokens(&self) -> String {
         let Color::Hex(ref primary) = self.primary;
         let Color::Hex(ref secondary) = self.secondary;
@@ -419,6 +446,7 @@ impl Theme {
 
 /// Visual width of a string in terminal columns, ignoring ANSI escape sequences
 /// and accounting for wide characters (emoji, CJK = 2 columns).
+#[must_use]
 pub fn visual_len(s: &str) -> usize {
     use unicode_width::UnicodeWidthChar;
     let mut len = 0usize;
@@ -439,6 +467,7 @@ pub fn visual_len(s: &str) -> usize {
 
 /// Pad a string to `target` visual width with spaces on the right.
 /// If the string exceeds `target`, it is visually truncated.
+#[must_use]
 pub fn pad_right(s: &str, target: usize) -> String {
     use std::cmp::Ordering;
     let vlen = visual_len(s);
@@ -451,6 +480,7 @@ pub fn pad_right(s: &str, target: usize) -> String {
 
 /// Truncate a string to at most `max_cols` terminal columns,
 /// preserving ANSI escape sequences and respecting wide characters.
+#[must_use]
 pub fn truncate_visual(s: &str, max_cols: usize) -> String {
     use unicode_width::UnicodeWidthChar;
     let mut out = String::with_capacity(s.len());
@@ -488,6 +518,7 @@ fn c(hex: &str) -> Color {
     Color::Hex(hex.to_string())
 }
 
+#[must_use]
 pub fn preset_default() -> Theme {
     Theme {
         name: "default".into(),
@@ -508,6 +539,7 @@ pub fn preset_default() -> Theme {
     }
 }
 
+#[must_use]
 pub fn preset_neon() -> Theme {
     Theme {
         name: "neon".into(),
@@ -528,6 +560,7 @@ pub fn preset_neon() -> Theme {
     }
 }
 
+#[must_use]
 pub fn preset_ocean() -> Theme {
     Theme {
         name: "ocean".into(),
@@ -548,6 +581,7 @@ pub fn preset_ocean() -> Theme {
     }
 }
 
+#[must_use]
 pub fn preset_sunset() -> Theme {
     Theme {
         name: "sunset".into(),
@@ -568,6 +602,7 @@ pub fn preset_sunset() -> Theme {
     }
 }
 
+#[must_use]
 pub fn preset_monochrome() -> Theme {
     Theme {
         name: "monochrome".into(),
@@ -588,6 +623,7 @@ pub fn preset_monochrome() -> Theme {
     }
 }
 
+#[must_use]
 pub fn preset_cyberpunk() -> Theme {
     Theme {
         name: "cyberpunk".into(),
@@ -617,6 +653,7 @@ pub const PRESET_NAMES: &[&str] = &[
     "cyberpunk",
 ];
 
+#[must_use]
 pub fn from_preset(name: &str) -> Option<Theme> {
     match name {
         "default" => Some(preset_default()),
@@ -629,12 +666,14 @@ pub fn from_preset(name: &str) -> Option<Theme> {
     }
 }
 
+#[must_use]
 pub fn theme_file_path() -> Option<PathBuf> {
     crate::core::data_dir::lean_ctx_data_dir()
         .ok()
         .map(|d| d.join("theme.toml"))
 }
 
+#[must_use]
 pub fn load_theme(config_theme: &str) -> Theme {
     if let Some(path) = theme_file_path()
         && path.exists()
@@ -656,11 +695,12 @@ pub fn save_theme(theme: &Theme) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
 
+#[must_use]
 pub fn animate_countup(final_value: u64, width: usize) -> Vec<String> {
     let frames = 10;
     (0..=frames)
         .map(|f| {
-            let t = f as f64 / frames as f64;
+            let t = f64::from(f) / f64::from(frames);
             let eased = t * t * (3.0 - 2.0 * t);
             let v = (final_value as f64 * eased).round() as u64;
             format!("{:>width$}", format_big_animated(v), width = width)
@@ -668,12 +708,13 @@ pub fn animate_countup(final_value: u64, width: usize) -> Vec<String> {
         .collect()
 }
 
-/// Count-up for percentage values (0.0 -> final_pct, displayed as "68.3%").
+/// Count-up for percentage values (0.0 -> `final_pct`, displayed as "68.3%").
+#[must_use]
 pub fn animate_countup_pct(final_pct: f64, width: usize) -> Vec<String> {
     let frames = 10;
     (0..=frames)
         .map(|f| {
-            let t = f as f64 / frames as f64;
+            let t = f64::from(f) / f64::from(frames);
             let eased = t * t * (3.0 - 2.0 * t);
             let v = final_pct * eased;
             format!("{:>width$}", format!("{v:.1}%"), width = width)
@@ -681,12 +722,13 @@ pub fn animate_countup_pct(final_pct: f64, width: usize) -> Vec<String> {
         .collect()
 }
 
-/// Count-up for USD values (0.00 -> final_usd, displayed as "$1,289.35").
+/// Count-up for USD values (0.00 -> `final_usd`, displayed as "$1,289.35").
+#[must_use]
 pub fn animate_countup_usd(final_usd: f64, width: usize) -> Vec<String> {
     let frames = 10;
     (0..=frames)
         .map(|f| {
-            let t = f as f64 / frames as f64;
+            let t = f64::from(f) / f64::from(frames);
             let eased = t * t * (3.0 - 2.0 * t);
             let v = final_usd * eased;
             let formatted = format!("${v:.2}");

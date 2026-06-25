@@ -25,6 +25,7 @@ const LINES_PER_PAGE: usize = ((PAGE_H - 2 * MARGIN) / LEADING) as usize;
 const WRAP: usize = 100;
 
 /// Render `text` to a complete PDF document.
+#[must_use]
 pub fn to_pdf(text: &str) -> Vec<u8> {
     let lines = layout_lines(text);
     let pages: Vec<&[String]> = if lines.is_empty() {

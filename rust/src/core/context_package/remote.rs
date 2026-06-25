@@ -42,6 +42,7 @@ pub struct RemoteRef {
 }
 
 /// Parse a remote reference. Returns `None` for plain local names (no `/`).
+#[must_use]
 pub fn parse_remote_ref(input: &str) -> Option<RemoteRef> {
     let trimmed = input.strip_prefix('@').unwrap_or(input);
     let (ns, rest) = trimmed.split_once('/')?;

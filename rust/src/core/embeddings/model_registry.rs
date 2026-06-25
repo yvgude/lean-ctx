@@ -5,7 +5,7 @@
 //! `LEAN_CTX_EMBEDDING_MODEL` env var or the `[embedding].model` key in `config.toml`
 //! (env var wins) — see [`resolve_model`].
 //!
-//! Besides the built-ins, any compatible HuggingFace repo can be loaded with
+//! Besides the built-ins, any compatible `HuggingFace` repo can be loaded with
 //! `model = "hf:org/repo[@revision]"` (GL #397, upstream #328): the repo must
 //! ship an ONNX export (`onnx/model.onnx`) and a `tokenizer.json`. This custom
 //! path probes the ONNX graph for its real input/output signature, so it suits
@@ -24,15 +24,15 @@ pub enum EmbeddingModel {
     /// nomic-embed-text-v1.5 — top MTEB general-purpose (768d, ~547MB).
     /// Matryoshka representation learning, supports dimension truncation.
     NomicEmbedV1_5,
-    /// Any HuggingFace repo with an ONNX export + tokenizer.json
+    /// Any `HuggingFace` repo with an ONNX export + tokenizer.json
     /// (`hf:org/repo[@revision]`, GL #397).
     Custom(CustomModelSpec),
 }
 
-/// A user-supplied HuggingFace embedding model (`hf:org/repo[@revision]`).
+/// A user-supplied `HuggingFace` embedding model (`hf:org/repo[@revision]`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct CustomModelSpec {
-    /// HuggingFace repo id, e.g. `jinaai/jina-embeddings-v2-base-code`.
+    /// `HuggingFace` repo id, e.g. `jinaai/jina-embeddings-v2-base-code`.
     pub repo: String,
     /// Optional revision pin (tag/branch/commit). `None` resolves `main` —
     /// supply-chain-wise a pin is strongly recommended and the resolver warns
@@ -46,7 +46,7 @@ pub struct CustomModelSpec {
 
 impl CustomModelSpec {
     /// Parse `org/repo[@revision]` (the part after the `hf:` scheme).
-    /// Returns `None` when the repo id is not plausibly a HuggingFace repo.
+    /// Returns `None` when the repo id is not plausibly a `HuggingFace` repo.
     fn parse(s: &str) -> Option<Self> {
         let (repo, revision) = match s.split_once('@') {
             Some((r, rev)) => (
@@ -99,6 +99,7 @@ impl CustomModelSpec {
 impl EmbeddingModel {
     pub const DEFAULT: Self = Self::AllMiniLmL6V2;
 
+    #[must_use]
     pub fn config(&self) -> ModelConfig {
         match self {
             Self::AllMiniLmL6V2 => ModelConfig {
@@ -163,7 +164,7 @@ impl EmbeddingModel {
     /// Parse model name from string (env var / config file).
     ///
     /// Accepts the built-in aliases plus the `hf:org/repo[@revision]` scheme
-    /// for custom HuggingFace models (GL #397).
+    /// for custom `HuggingFace` models (GL #397).
     pub fn from_str_name(s: &str) -> Option<Self> {
         let trimmed = s.trim();
         if let Some(rest) = trimmed.strip_prefix("hf:") {
@@ -182,6 +183,7 @@ impl EmbeddingModel {
     pub const ALL: &'static [Self] = &[Self::AllMiniLmL6V2, Self::NomicEmbedV1_5];
 
     /// Unique subdirectory name for model storage isolation.
+    #[must_use]
     pub fn storage_dir_name(&self) -> String {
         match self {
             Self::AllMiniLmL6V2 => "all-minilm-l6-v2".to_string(),
@@ -200,19 +202,21 @@ impl fmt::Display for EmbeddingModel {
 /// Vocabulary/tokenizer source for a model.
 #[derive(Debug, Clone)]
 pub enum VocabSource {
-    /// Standard BERT vocab.txt (one token per line, WordPiece).
+    /// Standard BERT vocab.txt (one token per line, `WordPiece`).
     VocabTxt(String),
-    /// HuggingFace tokenizer.json (BPE/Unigram/WordPiece via JSON config).
+    /// `HuggingFace` tokenizer.json (BPE/Unigram/WordPiece via JSON config).
     TokenizerJson(String),
 }
 
 impl VocabSource {
+    #[must_use]
     pub fn filename(&self) -> &str {
         match self {
             Self::VocabTxt(f) | Self::TokenizerJson(f) => f,
         }
     }
 
+    #[must_use]
     pub fn is_wordpiece(&self) -> bool {
         matches!(self, Self::VocabTxt(_))
     }
@@ -236,8 +240,8 @@ pub struct ModelConfig {
     pub query_prefix: Option<String>,
     /// Optional prefix prepended to documents/code before embedding.
     pub document_prefix: Option<String>,
-    /// Whether the model expects token_type_ids input (BERT-style).
-    /// Some models (e.g. nomic-embed) only use input_ids + attention_mask.
+    /// Whether the model expects `token_type_ids` input (BERT-style).
+    /// Some models (e.g. nomic-embed) only use `input_ids` + `attention_mask`.
     pub needs_token_type_ids: bool,
 }
 
@@ -250,12 +254,14 @@ impl ModelConfig {
         )
     }
 
-    /// Full HuggingFace download URL for the ONNX model file.
+    /// Full `HuggingFace` download URL for the ONNX model file.
+    #[must_use]
     pub fn model_url(&self) -> String {
         format!("{}/{}", self.resolve_base(), self.onnx_path)
     }
 
-    /// Full HuggingFace download URL for the vocabulary/tokenizer file.
+    /// Full `HuggingFace` download URL for the vocabulary/tokenizer file.
+    #[must_use]
     pub fn vocab_url(&self) -> String {
         format!("{}/{}", self.resolve_base(), self.vocab_file.filename())
     }
@@ -266,6 +272,7 @@ impl ModelConfig {
 /// Priority: `LEAN_CTX_EMBEDDING_MODEL` env var > `[embedding].model` in `config.toml` >
 /// the default model. An unrecognized name is skipped (with a warning) so a typo in one
 /// source never silently swaps the model — which would otherwise force a full re-index.
+#[must_use]
 pub fn resolve_model() -> EmbeddingModel {
     let env_val = std::env::var("LEAN_CTX_EMBEDDING_MODEL").ok();
     let embedding_cfg = crate::core::config::Config::load().embedding;

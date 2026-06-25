@@ -18,6 +18,7 @@
 ///
 /// Formula: f(x) = α·(1-2x)² + γ·(2x-1)² + β·(1 - (1-2x)² - (2x-1)²)
 ///        simplified for piecewise: quadratic decay from edges toward center.
+#[must_use]
 pub fn positional_attention(position: f64, alpha: f64, beta: f64, gamma: f64) -> f64 {
     if position <= 0.0 {
         return alpha;
@@ -41,11 +42,12 @@ pub fn positional_attention(position: f64, alpha: f64, beta: f64, gamma: f64) ->
 /// Returns a multiplier [0.1, 2.0] based on syntactic patterns.
 ///
 /// Weights updated 2026-04-02 based on empirical attention analysis
-/// (Lab Experiment B: TinyLlama 1.1B on 106 Rust files):
+/// (Lab Experiment B: `TinyLlama` 1.1B on 106 Rust files):
 ///   import  → 0.0285 mean attn (was rated 0.6, now 1.6)
 ///   comment → 0.0123 mean attn (was rated 0.4, now 1.2)
 ///   definition → 0.0038 (was 1.8, adjusted to 1.5)
 ///   test/assert → 0.0004 (was 1.5, lowered to 0.8)
+#[must_use]
 pub fn structural_importance(line: &str) -> f64 {
     let trimmed = line.trim();
     if trimmed.is_empty() {
@@ -115,6 +117,7 @@ pub fn structural_importance(line: &str) -> f64 {
 
 /// Compute combined attention score for a line at a given position.
 /// Combines positional U-curve with structural importance.
+#[must_use]
 pub fn combined_attention(line: &str, position: f64, alpha: f64, beta: f64, gamma: f64) -> f64 {
     let pos_weight = positional_attention(position, alpha, beta, gamma);
     let struct_weight = structural_importance(line);
@@ -177,6 +180,7 @@ pub fn attention_optimize(lines: &[&str], _alpha: f64, _beta: f64, _gamma: f64) 
 /// Compute the theoretical attention efficiency for a given context layout.
 /// Returns a percentage [0, 100] indicating how much of the context
 /// is in attention-optimal positions.
+#[must_use]
 pub fn attention_efficiency(line_importances: &[f64], alpha: f64, beta: f64, gamma: f64) -> f64 {
     if line_importances.is_empty() {
         return 0.0;

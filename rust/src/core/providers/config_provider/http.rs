@@ -72,6 +72,7 @@ impl ResolvedAuth {
     }
 
     /// Whether auth credentials could be resolved (provider is usable).
+    #[must_use]
     pub fn is_available(auth: &AuthConfig) -> bool {
         match auth {
             AuthConfig::Bearer { token_env } => std::env::var(token_env).is_ok(),
@@ -91,6 +92,7 @@ fn read_env(var: &str) -> Result<String, String> {
 }
 
 /// Interpolate `{param}` placeholders in a string with actual values.
+#[must_use]
 pub fn interpolate(template: &str, params: &HashMap<String, String>) -> String {
     let mut result = template.to_string();
     for (key, value) in params {

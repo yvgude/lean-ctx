@@ -34,6 +34,7 @@ fn resume_block_hint(level: &CompressionLevel) -> Option<String> {
 
 impl SessionState {
     /// Formats the session state as a compact multi-line summary for agent context.
+    #[must_use]
     pub fn format_compact(&self) -> String {
         let duration = self.updated_at - self.started_at;
         let hours = duration.num_hours();
@@ -140,6 +141,7 @@ impl SessionState {
     }
 
     /// Builds a size-limited XML snapshot of session state for context compaction.
+    #[must_use]
     pub fn build_compaction_snapshot(&self) -> String {
         const MAX_SNAPSHOT_BYTES: usize = 2048;
 
@@ -440,6 +442,7 @@ impl SessionState {
     }
 
     /// Loads a previously saved compaction snapshot by session ID.
+    #[must_use]
     pub fn load_compaction_snapshot(session_id: &str) -> Option<String> {
         let dir = sessions_dir()?;
         let path = dir.join(format!("{session_id}_snapshot.txt"));

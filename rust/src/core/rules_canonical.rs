@@ -135,6 +135,7 @@ OUTPUT STYLE: expert-terse
 - BUDGET: ≤100 tokens per non-code response";
 
 /// Return the compression prompt text for a given level (empty string for Off).
+#[must_use]
 pub fn compression_text(level: CompressionLevel) -> &'static str {
     match level {
         CompressionLevel::Off => "",
@@ -190,6 +191,7 @@ pub enum Wrapper {
 /// * `wrapper` — selects the profile (FULL / COMPACT) and wrapping style.
 /// * `level` — selects the output-style compression prompt (Lite / Standard /
 ///   Max) which is appended to the body. `Off` omits it.
+#[must_use]
 pub fn render(shadow: bool, wrapper: Wrapper, level: CompressionLevel) -> String {
     let profile = match (wrapper, shadow) {
         (Wrapper::Dedicated, false) => FULL_NON_SHADOW,
@@ -252,6 +254,7 @@ impl<'a> RulesFile<'a> {
     /// * `START_MARK` not found → `has_content() = false`, version = 0.
     /// * `START_MARK` found but no version → `has_content() = true`, version = 0
     ///   (assume older than current → needs update).
+    #[must_use]
     pub fn parse(content: &'a str) -> Self {
         let start = content.find(START_MARK);
         let version = start
@@ -267,29 +270,34 @@ impl<'a> RulesFile<'a> {
     }
 
     /// Whether the file carries any lean-ctx rules content.
+    #[must_use]
     pub fn has_content(&self) -> bool {
         self.start.is_some()
     }
 
     /// The detected version (0 if no version marker — treat as older than
     /// `RULES_VERSION`).
+    #[must_use]
     pub fn version(&self) -> usize {
         self.version
     }
 
     /// Whether the file's version is at least `RULES_VERSION`.
+    #[must_use]
     pub fn is_current(&self) -> bool {
         self.version >= RULES_VERSION
     }
 
     /// Content before the first `START_MARK` (user content / frontmatter).
     /// Returns an empty string if no start marker was found.
+    #[must_use]
     pub fn prefix(&self) -> &'a str {
         self.start.map_or("", |s| self.content[..s].trim())
     }
 
     /// Content after the last `END_MARK` (user content after the lean-ctx
     /// block).  Returns an empty string if no end marker was found.
+    #[must_use]
     pub fn suffix(&self) -> &'a str {
         self.end
             .map_or("", |e| self.content[e + END_MARK.len()..].trim())
@@ -300,6 +308,7 @@ impl<'a> RulesFile<'a> {
     /// * If a lean-ctx section exists → replaces content between `START_MARK`
     ///   and `END_MARK`, preserving user content before/after.
     /// * If no section exists → appends fresh content at the end.
+    #[must_use]
     pub fn merged(&self, shadow: bool, wrapper: Wrapper, level: CompressionLevel) -> String {
         let fresh = render(shadow, wrapper, level);
         if self.start.is_some() {
@@ -335,6 +344,7 @@ impl<'a> RulesFile<'a> {
     }
 
     /// Create initial rules content (no existing section to merge with).
+    #[must_use]
     pub fn initial(shadow: bool, wrapper: Wrapper, level: CompressionLevel) -> String {
         render(shadow, wrapper, level)
     }
@@ -342,6 +352,7 @@ impl<'a> RulesFile<'a> {
     // ── Delete ─────────────────────────────────────────────────
 
     /// Strip the lean-ctx section, keeping only user content before/after.
+    #[must_use]
     pub fn without_section(&self) -> String {
         if let Some(start_pos) = self.start {
             let before = self.content[..start_pos].trim();

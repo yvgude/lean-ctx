@@ -96,6 +96,7 @@ pub struct ScratchpadEntry {
 }
 
 impl AgentRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             agents: Vec::new(),
@@ -149,6 +150,7 @@ impl AgentRegistry {
         self.updated_at = Utc::now();
     }
 
+    #[must_use]
     pub fn list_active(&self, project_root: Option<&str>) -> Vec<&AgentEntry> {
         self.agents
             .iter()
@@ -162,6 +164,7 @@ impl AgentRegistry {
             .collect()
     }
 
+    #[must_use]
     pub fn list_all(&self) -> &[AgentEntry] {
         &self.agents
     }
@@ -313,6 +316,7 @@ impl AgentRegistry {
         std::fs::write(&path, json).map_err(|e| e.to_string())
     }
 
+    #[must_use]
     pub fn load() -> Option<Self> {
         let dir = agents_dir().ok()?;
         let path = dir.join("registry.json");
@@ -320,6 +324,7 @@ impl AgentRegistry {
         serde_json::from_str(&content).ok()
     }
 
+    #[must_use]
     pub fn load_or_create() -> Self {
         Self::load().unwrap_or_default()
     }
@@ -332,6 +337,7 @@ impl Default for AgentRegistry {
 }
 
 impl AgentDiary {
+    #[must_use]
     pub fn new(agent_id: &str, agent_type: &str, project_root: &str) -> Self {
         let now = Utc::now();
         Self {
@@ -358,6 +364,7 @@ impl AgentDiary {
         self.updated_at = Utc::now();
     }
 
+    #[must_use]
     pub fn format_summary(&self) -> String {
         if self.entries.is_empty() {
             return format!("Diary [{}]: empty", self.agent_id);
@@ -387,6 +394,7 @@ impl AgentDiary {
         out
     }
 
+    #[must_use]
     pub fn format_compact(&self) -> String {
         if self.entries.is_empty() {
             return String::new();
@@ -418,6 +426,7 @@ impl AgentDiary {
         std::fs::write(&path, json).map_err(|e| e.to_string())
     }
 
+    #[must_use]
     pub fn load(agent_id: &str) -> Option<Self> {
         let dir = diary_dir().ok()?;
         let path = dir.join(format!("{}.json", sanitize_filename(agent_id)));
@@ -425,10 +434,12 @@ impl AgentDiary {
         serde_json::from_str(&content).ok()
     }
 
+    #[must_use]
     pub fn load_or_create(agent_id: &str, agent_type: &str, project_root: &str) -> Self {
         Self::load(agent_id).unwrap_or_else(|| Self::new(agent_id, agent_type, project_root))
     }
 
+    #[must_use]
     pub fn list_all() -> Vec<(String, usize, DateTime<Utc>)> {
         let Ok(dir) = diary_dir() else {
             return Vec::new();
@@ -454,6 +465,7 @@ impl AgentDiary {
     /// Load every diary whose `project_root` matches `project_root`, most
     /// recently updated first. Used by skillify to mine a project's decisions
     /// and insights across all its agents (#290).
+    #[must_use]
     pub fn load_all_for_project(project_root: &str) -> Vec<AgentDiary> {
         let Ok(dir) = diary_dir() else {
             return Vec::new();
@@ -534,6 +546,7 @@ fn generate_short_id() -> String {
     format!("{:08x}", hasher.finish() as u32)
 }
 
+#[must_use]
 pub fn is_process_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
@@ -685,6 +698,7 @@ pub enum AgentRole {
 }
 
 impl AgentRole {
+    #[must_use]
     pub fn from_str_loose(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "review" | "reviewer" | "code_review" => Self::Reviewer,
@@ -710,6 +724,7 @@ pub struct ContextDepthConfig {
 }
 
 impl ContextDepthConfig {
+    #[must_use]
     pub fn for_role(role: AgentRole) -> Self {
         match role {
             AgentRole::Coder => Self {
@@ -778,6 +793,7 @@ impl ContextDepthConfig {
         }
     }
 
+    #[must_use]
     pub fn mode_for_rank(&self, rank: usize) -> &'static str {
         if rank < self.max_files_full {
             "full"

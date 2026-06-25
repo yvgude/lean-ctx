@@ -1,4 +1,4 @@
-//! ctx_plan -- Context planning tool.
+//! `ctx_plan` -- Context planning tool.
 //!
 //! Given a task and budget, computes the optimal context plan using the
 //! Context Field potential function, intent router, and deficit analysis.
@@ -15,6 +15,7 @@ use crate::core::context_policies::PolicySet;
 
 const FALLBACK_BUDGET: usize = 12_000;
 
+#[must_use]
 pub fn handle(
     args: Option<&serde_json::Map<String, Value>>,
     ledger: &ContextLedger,
@@ -154,6 +155,7 @@ pub fn handle(
 }
 
 /// Convert the plan into compile candidates for use with the compiler.
+#[must_use]
 pub fn plan_to_candidates(ledger: &ContextLedger, policies: &PolicySet) -> Vec<CompileCandidate> {
     let field = ContextField::new();
     let mut candidates = Vec::new();

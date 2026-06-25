@@ -24,6 +24,7 @@ pub struct ProviderRegistry {
 }
 
 impl ProviderRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             providers: RwLock::new(HashMap::new()),
@@ -70,7 +71,7 @@ impl ProviderRegistry {
         provider.execute(action, params)
     }
 
-    /// Execute and convert results to ContentChunks for BM25/embedding ingest.
+    /// Execute and convert results to `ContentChunks` for BM25/embedding ingest.
     pub fn execute_as_chunks(
         &self,
         provider_id: &str,
@@ -158,6 +159,7 @@ fn action_to_chunk_kind(resource_type: &str) -> ChunkKind {
 }
 
 /// Convert a `ProviderResult` into a list of `ContentChunk`s.
+#[must_use]
 pub fn result_to_chunks(result: &ProviderResult) -> Vec<ContentChunk> {
     let kind = action_to_chunk_kind(&result.resource_type);
 
@@ -209,6 +211,7 @@ pub fn result_to_chunks(result: &ProviderResult) -> Vec<ContentChunk> {
 static GLOBAL_REGISTRY: std::sync::LazyLock<ProviderRegistry> =
     std::sync::LazyLock::new(ProviderRegistry::new);
 
+#[must_use]
 pub fn global_registry() -> &'static ProviderRegistry {
     &GLOBAL_REGISTRY
 }

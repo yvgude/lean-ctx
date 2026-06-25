@@ -1,5 +1,5 @@
 //! OS-specific auto-update scheduler management.
-//! Supports macOS LaunchAgent, Linux systemd/cron, Windows Task Scheduler.
+//! Supports macOS `LaunchAgent`, Linux systemd/cron, Windows Task Scheduler.
 
 use std::path::PathBuf;
 
@@ -69,6 +69,7 @@ pub fn remove_schedule() -> Result<(), String> {
     Ok(())
 }
 
+#[must_use]
 pub fn schedule_status() -> ScheduleInfo {
     #[cfg(target_os = "macos")]
     return macos_status();
@@ -493,6 +494,7 @@ fn read_last_check_time() -> Option<String> {
 }
 
 /// Check if the user has ever configured `auto_update` (the key exists in config.toml).
+#[must_use]
 pub fn has_user_decided() -> bool {
     // Read the canonical config location (GH #408) — the hardcoded `~/.lean-ctx`
     // path missed configs stored under `~/.config/lean-ctx`, the default for

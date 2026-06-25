@@ -54,6 +54,7 @@ const SEARCH_QUERIES: &[&str] = &[
     "test",
 ];
 
+#[must_use]
 pub fn measure_all(root: &Path) -> ComparativeMetrics {
     let root_str = root.to_string_lossy();
 
@@ -223,6 +224,7 @@ fn count_features() -> usize {
     read_modes + search + compression + session + analysis + ops
 }
 
+#[must_use]
 pub fn avg_search_latency_us(latencies: &[SearchLatency]) -> u64 {
     if latencies.is_empty() {
         return 0;
@@ -231,6 +233,7 @@ pub fn avg_search_latency_us(latencies: &[SearchLatency]) -> u64 {
     total / latencies.len() as u64
 }
 
+#[must_use]
 pub fn format_bytes(bytes: u64) -> String {
     if bytes >= 1_048_576 {
         format!("{:.1} MB", bytes as f64 / 1_048_576.0)
@@ -241,6 +244,7 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
+#[must_use]
 pub fn format_duration_us(us: u64) -> String {
     if us >= 1_000_000 {
         format!("{:.2}s", us as f64 / 1_000_000.0)

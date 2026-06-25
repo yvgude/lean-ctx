@@ -17,6 +17,7 @@ fn pr_created_re() -> &'static regex::Regex {
     static_regex!(r"https://github\.com/\S+/pull/(\d+)")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     if command.contains(" api ") || command.starts_with("gh api") {
         return None;

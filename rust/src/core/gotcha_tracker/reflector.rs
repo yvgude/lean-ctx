@@ -34,6 +34,7 @@ pub struct ReflectionInsight {
 /// Distill the gotcha trace into reusable insights. Pure and deterministic:
 /// an identical store always yields byte-identical, identically-ordered output
 /// (no timestamps, no map iteration order — `BTree*` keep it stable).
+#[must_use]
 pub fn reflect(store: &GotchaStore) -> Vec<ReflectionInsight> {
     let mut insights: Vec<ReflectionInsight> = Vec::new();
 
@@ -122,6 +123,7 @@ pub fn fold_into_playbook(
 /// real shell outcomes: proven error→fix strategies, recurring pitfalls, and the
 /// counts behind them. Honest counts only — no fabricated token-savings figures,
 /// since "repeat errors avoided" has no measured per-incident token cost.
+#[must_use]
 pub fn format_ledger(store: &GotchaStore) -> String {
     let insights = reflect(store);
     let s = &store.stats;

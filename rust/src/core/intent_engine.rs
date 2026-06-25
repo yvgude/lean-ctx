@@ -14,6 +14,7 @@ pub enum TaskType {
 }
 
 impl TaskType {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Generate => "generate",
@@ -30,6 +31,7 @@ impl TaskType {
 
     /// All task types in declaration order. The default (coding) intent
     /// taxonomy; personas can override it (12.16).
+    #[must_use]
     pub fn all() -> &'static [TaskType] {
         &[
             Self::Generate,
@@ -44,6 +46,7 @@ impl TaskType {
         ]
     }
 
+    #[must_use]
     pub fn thinking_budget(&self) -> ThinkingBudget {
         match self {
             Self::Generate | Self::FixBug | Self::Test | Self::Config | Self::Deploy => {
@@ -53,6 +56,7 @@ impl TaskType {
         }
     }
 
+    #[must_use]
     pub fn output_format(&self) -> OutputFormat {
         match self {
             Self::Generate | Self::Test | Self::Config => OutputFormat::CodeOnly,
@@ -73,6 +77,7 @@ pub enum ThinkingBudget {
 }
 
 impl ThinkingBudget {
+    #[must_use]
     pub fn instruction(&self) -> &'static str {
         match self {
             Self::Minimal => "THINKING: Skip analysis. The task is clear — generate code directly.",
@@ -88,6 +93,7 @@ impl ThinkingBudget {
         }
     }
 
+    #[must_use]
     pub fn suppresses_thinking(&self) -> bool {
         matches!(self, Self::Minimal)
     }
@@ -103,6 +109,7 @@ pub enum OutputFormat {
 }
 
 impl OutputFormat {
+    #[must_use]
     pub fn instruction(&self) -> &'static str {
         match self {
             Self::CodeOnly => {
@@ -243,6 +250,7 @@ const PHRASE_RULES: &[(&[&str], TaskType, f64)] = &[
     ),
 ];
 
+#[must_use]
 pub fn classify(query: &str) -> TaskClassification {
     let q = query.to_lowercase();
     let words: Vec<&str> = q.split_whitespace().collect();
@@ -285,8 +293,8 @@ pub fn classify(query: &str) -> TaskClassification {
     }
 }
 
-/// Shared scoring loop for PHRASE_RULES (exact word match) and
-/// STEM_RULES (prefix match). Multi-word entries match the whole query.
+/// Shared scoring loop for `PHRASE_RULES` (exact word match) and
+/// `STEM_RULES` (prefix match). Multi-word entries match the whole query.
 fn apply_rules(
     q: &str,
     words: &[&str],
@@ -418,6 +426,7 @@ fn extract_keywords(query: &str, lang: intent_lang::QueryLang) -> Vec<String> {
         .collect()
 }
 
+#[must_use]
 pub fn classify_complexity(
     query: &str,
     classification: &TaskClassification,
@@ -452,6 +461,7 @@ pub fn classify_complexity(
     }
 }
 
+#[must_use]
 pub fn detect_multi_intent(query: &str) -> Vec<TaskClassification> {
     let delimiters = [" and then ", " then ", " also ", " + ", ". "];
 
@@ -476,6 +486,7 @@ pub fn detect_multi_intent(query: &str) -> Vec<TaskClassification> {
     parts.iter().map(|part| classify(part)).collect()
 }
 
+#[must_use]
 pub fn format_briefing_header(classification: &TaskClassification) -> String {
     format!(
         "[TASK:{} CONF:{:.0}% TARGETS:{} KW:{}]",
@@ -511,6 +522,7 @@ pub struct StructuredIntent {
 }
 
 impl StructuredIntent {
+    #[must_use]
     pub fn from_query(query: &str) -> Self {
         let classification = classify(query);
         let complexity = classify_complexity(query, &classification);
@@ -554,6 +566,7 @@ impl StructuredIntent {
         }
     }
 
+    #[must_use]
     pub fn from_file_patterns(touched_files: &[String]) -> Self {
         if touched_files.is_empty() {
             return Self {
@@ -617,6 +630,7 @@ impl StructuredIntent {
         }
     }
 
+    #[must_use]
     pub fn from_query_with_session(query: &str, touched_files: &[String]) -> Self {
         let mut intent = Self::from_query(query);
 
@@ -648,6 +662,7 @@ impl StructuredIntent {
         intent
     }
 
+    #[must_use]
     pub fn format_header(&self) -> String {
         format!(
             "[TASK:{} SCOPE:{} CONF:{:.0}%{}{}]",
@@ -800,6 +815,7 @@ pub enum IntentDimension {
 }
 
 impl IntentDimension {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::What => "what",
@@ -817,6 +833,7 @@ pub enum ModelTier {
 }
 
 impl ModelTier {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Fast => "fast",
@@ -834,6 +851,7 @@ pub struct IntentRoute {
     pub reasoning: String,
 }
 
+#[must_use]
 pub fn route_intent(query: &str, classification: &TaskClassification) -> IntentRoute {
     let (base_dimension, base_tier) = match classification.task_type {
         TaskType::Explore | TaskType::Debug => (IntentDimension::What, ModelTier::Fast),

@@ -40,7 +40,6 @@ impl McpTool for CtxSearchTool {
                         "description": "Multi-root dirs"
                     },
                     "include": { "type": "string", "description": "Glob (grep)" },
-                    "max_results": { "type": "integer", "description": "Max (deprecated, use limit)" },
                     "limit": { "type": "integer", "description": "Max results" },
                     "offset": { "type": "integer", "description": "Result offset (pagination)" },
                     "context": { "type": "boolean", "description": "Show source context around matches" },

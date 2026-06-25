@@ -508,6 +508,7 @@ impl GotchaPolicy {
         Ok(())
     }
 
+    #[must_use]
     pub fn effective_decay_rate(&self, category: &str) -> f32 {
         self.category_decay_overrides
             .get(category)

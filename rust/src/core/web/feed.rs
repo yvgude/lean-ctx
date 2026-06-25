@@ -5,7 +5,7 @@
 //! together). This module instead understands feed structure and emits a clean,
 //! token-lean item list: a feed title heading followed by one linked entry per
 //! item with its date and a short, tag-stripped summary (GH feedback: "add RSS
-//! feed support to url_read").
+//! feed support to `url_read`").
 //!
 //! Supports RSS 2.0 (`<item>`), Atom (`<entry>`), and RSS 1.0 / RDF (`<item>`),
 //! including `<![CDATA[…]]>` payloads and namespaced date fields (`dc:date`).
@@ -27,6 +27,7 @@ pub struct FeedDoc {
 /// True when the response is an RSS/Atom/RDF feed, by MIME type or a sniff of
 /// the document root. Deliberately stricter than "is XML" so XHTML pages still
 /// go to the HTML renderer.
+#[must_use]
 pub fn looks_like_feed(content_type: &str, body: &str) -> bool {
     let ct = content_type.to_ascii_lowercase();
     if ct.contains("rss") || ct.contains("atom") {
@@ -47,6 +48,7 @@ pub fn looks_like_feed(content_type: &str, body: &str) -> bool {
 }
 
 /// Parse a feed document into a clean Markdown item list.
+#[must_use]
 pub fn parse(xml: &str, _source_url: &str) -> FeedDoc {
     let doc = Xml::new(xml);
     let title = feed_title(&doc);

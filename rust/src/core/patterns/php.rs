@@ -49,6 +49,7 @@ fn blade_directive_re() -> &'static regex::Regex {
     )
 }
 
+#[must_use]
 pub fn compress_php_map(content: &str, filename: &str) -> Option<String> {
     if filename.ends_with(".blade.php") {
         return Some(compress_blade(content));

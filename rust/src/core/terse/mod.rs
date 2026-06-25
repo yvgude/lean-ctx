@@ -70,6 +70,7 @@ pub struct TerseResult {
 }
 
 impl TerseResult {
+    #[must_use]
     pub fn passthrough(text: String, tokens: u32) -> Self {
         Self {
             output: text,

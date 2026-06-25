@@ -1,10 +1,10 @@
 //! Transcript/conversation compaction for agent session JSONL files.
 //!
-//! Compresses tool_result blocks in JSONL conversation transcripts (e.g.
+//! Compresses `tool_result` blocks in JSONL conversation transcripts (e.g.
 //! `~/.claude/projects/*.jsonl`, `~/.cursor/agent-transcripts/*.jsonl`)
 //! by replacing large tool outputs with compact summaries.
 //!
-//! Analogous to ContextZip's approach: 85.8% of transcript bytes are tool I/O.
+//! Analogous to `ContextZip`'s approach: 85.8% of transcript bytes are tool I/O.
 
 use std::path::Path;
 
@@ -20,6 +20,7 @@ pub struct CompactionStats {
 }
 
 impl CompactionStats {
+    #[must_use]
     pub fn savings_pct(&self) -> f64 {
         if self.original_bytes == 0 {
             return 0.0;

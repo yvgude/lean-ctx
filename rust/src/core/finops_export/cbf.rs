@@ -1,10 +1,10 @@
-//! CloudZero Common Bill Format (CBF) serializer + AnyCost Stream uploader.
+//! `CloudZero` Common Bill Format (CBF) serializer + `AnyCost` Stream uploader.
 //!
 //! Spec pinned: CBF as documented at
 //! <https://docs.cloudzero.com/docs/anycost-common-bill-format-cbf> —
 //! required columns `time/usage_start` + `cost/cost`; savings are emitted as
 //! `lineitem/type=Discount` rows with negative cost (CBF's documented
-//! mechanism, included in CloudZero "Real Cost").
+//! mechanism, included in `CloudZero` "Real Cost").
 //!
 //! Idempotency: the Stream API request carries `"operation": "replace_drop"`,
 //! which replaces all previously dropped data for the same month — re-running
@@ -57,7 +57,8 @@ fn records(rows: &[DailyCostRow]) -> Vec<Vec<String>> {
     out
 }
 
-/// CBF CSV (for AnyCost bucket drops or manual import).
+/// CBF CSV (for `AnyCost` bucket drops or manual import).
+#[must_use]
 pub fn to_csv(rows: &[DailyCostRow]) -> String {
     let mut out = HEADER.join(",");
     out.push('\n');
@@ -73,8 +74,9 @@ pub fn to_csv(rows: &[DailyCostRow]) -> String {
     out
 }
 
-/// AnyCost Stream request body for one month (`YYYY-MM`): all rows must
+/// `AnyCost` Stream request body for one month (`YYYY-MM`): all rows must
 /// belong to that month; `replace_drop` makes the upload idempotent.
+#[must_use]
 pub fn to_stream_body(rows: &[DailyCostRow], month: &str) -> serde_json::Value {
     let data: Vec<serde_json::Value> = records(rows)
         .into_iter()
@@ -93,10 +95,10 @@ pub fn to_stream_body(rows: &[DailyCostRow], month: &str) -> serde_json::Value {
     })
 }
 
-/// Upload one month to the AnyCost Stream API.
+/// Upload one month to the `AnyCost` Stream API.
 ///
 /// Credentials: `CLOUDZERO_API_KEY` (Authorization header) and
-/// `CLOUDZERO_CONNECTION_ID` (the AnyCost Stream connection).
+/// `CLOUDZERO_CONNECTION_ID` (the `AnyCost` Stream connection).
 pub fn upload(rows: &[DailyCostRow], month: &str) -> Result<String, String> {
     let api_key =
         std::env::var("CLOUDZERO_API_KEY").map_err(|_| "CLOUDZERO_API_KEY not set".to_string())?;

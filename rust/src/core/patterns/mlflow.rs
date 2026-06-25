@@ -1,4 +1,4 @@
-//! MLflow CLI output compression.
+//! `MLflow` CLI output compression.
 //!
 //! `mlflow run` drives conda/pip env builds that flood the output with
 //! `Collecting ...`, `Downloading ...` and progress bars before the actual
@@ -9,6 +9,7 @@
 use crate::core::compressor::strip_ansi;
 use std::collections::HashSet;
 
+#[must_use]
 pub fn compress(_cmd: &str, output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {

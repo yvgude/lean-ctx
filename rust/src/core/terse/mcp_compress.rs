@@ -17,6 +17,7 @@ pub enum DescriptionMode {
 }
 
 impl DescriptionMode {
+    #[must_use]
     pub fn from_compression_level(level: &CompressionLevel) -> Self {
         match level {
             CompressionLevel::Off | CompressionLevel::Lite => Self::Full,
@@ -27,6 +28,7 @@ impl DescriptionMode {
 }
 
 /// Compresses a single tool description according to the mode.
+#[must_use]
 pub fn compress_description(name: &str, description: &str, mode: DescriptionMode) -> String {
     match mode {
         DescriptionMode::Full => description.to_string(),
@@ -79,6 +81,7 @@ fn lazy_description(name: &str, desc: &str) -> String {
 }
 
 /// Estimates token savings from compressing all tool descriptions.
+#[must_use]
 pub fn estimate_savings(descriptions: &[(&str, &str)], mode: DescriptionMode) -> (u32, u32) {
     let mut total_before = 0u32;
     let mut total_after = 0u32;

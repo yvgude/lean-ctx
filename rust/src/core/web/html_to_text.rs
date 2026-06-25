@@ -23,6 +23,7 @@ pub struct HtmlDoc {
 }
 
 /// Convert an HTML document into Markdown plus extracted metadata.
+#[must_use]
 pub fn parse(html: &str) -> HtmlDoc {
     let title = extract_title(html);
     let content = select_main(html);
@@ -39,11 +40,13 @@ pub fn parse(html: &str) -> HtmlDoc {
 }
 
 /// Extract just the document `<title>` without rendering the body.
+#[must_use]
 pub fn title(html: &str) -> Option<String> {
     extract_title(html)
 }
 
 /// Strip Markdown decorations to obtain flowing plain text.
+#[must_use]
 pub fn markdown_to_text(markdown: &str) -> String {
     let mut out = String::with_capacity(markdown.len());
     let mut in_fence = false;
@@ -772,8 +775,9 @@ fn normalize(s: &str) -> String {
 
 /// Decode HTML/XML character entities (`&amp;`, `&#39;`, `&#x2019;`, …).
 ///
-/// Exposed for sibling modules (e.g. the YouTube srv3 transcript parser) so
+/// Exposed for sibling modules (e.g. the `YouTube` srv3 transcript parser) so
 /// entity handling lives in exactly one place.
+#[must_use]
 pub fn decode_entities(s: &str) -> String {
     if !s.contains('&') {
         return s.to_string();

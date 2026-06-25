@@ -89,7 +89,7 @@ pub fn value_has_cache_control(v: &Value) -> bool {
     }
 }
 
-/// Compress a JSON *string* field in place (e.g. OpenAI message `content`).
+/// Compress a JSON *string* field in place (e.g. `OpenAI` message `content`).
 /// Returns `true` if it was rewritten.
 pub fn compress_string_field(obj: &mut Value, field: &str, aggressiveness: f64) -> bool {
     let Some(text) = obj.get(field).and_then(Value::as_str) else {
@@ -141,7 +141,7 @@ pub fn compress_system_value(system: &mut Value, aggressiveness: f64) -> u32 {
     }
 }
 
-/// Compress an OpenAI chat message's `content`, which is either a plain string
+/// Compress an `OpenAI` chat message's `content`, which is either a plain string
 /// or an array of `{type:"text", text}` parts (multimodal). Returns the number
 /// of segments rewritten.
 pub fn compress_message_content(msg: &mut Value, aggressiveness: f64) -> u32 {

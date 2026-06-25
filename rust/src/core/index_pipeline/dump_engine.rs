@@ -10,12 +10,12 @@
 //!
 //! - **files** — `ProjectIndex` file entries (round-trip fidelity for the old
 //!   load path).
-//! - **nodes** — graph nodes with label, name, qualified_name, file_path,
+//! - **nodes** — graph nodes with label, name, `qualified_name`, `file_path`,
 //!   line range, and JSON properties.
 //! - **edges** — directed edges with source/target node FK, type, and JSON
 //!   properties.
-//! - **nodes_fts** — FTS5 virtual table over `nodes` (enables `search_graph`).
-//! - **file_hashes** — per-file content hashes for incremental rebuild support.
+//! - **`nodes_fts`** — FTS5 virtual table over `nodes` (enables `search_graph`).
+//! - **`file_hashes`** — per-file content hashes for incremental rebuild support.
 //! - **chunks** — BM25 code chunks (content, path, line range, metadata).
 //!
 //! ## Integrity
@@ -72,6 +72,7 @@ pub struct DumpEngine {
 impl DumpEngine {
     // ── Construction ────────────────────────────────────────────────────
 
+    #[must_use]
     pub fn new(project_root: PathBuf) -> Self {
         Self { project_root }
     }
@@ -367,7 +368,7 @@ impl DumpEngine {
                 let props_json =
                     serde_json::to_string(&node.properties).context("serialize node properties")?;
                 stmt.execute(params![
-                    node.id.0 as i64,
+                    i64::from(node.id.0),
                     node.label,
                     node.name,
                     node.qualified_name,
@@ -400,9 +401,9 @@ impl DumpEngine {
                 let props_json =
                     serde_json::to_string(&edge.properties).context("serialize edge properties")?;
                 stmt.execute(params![
-                    edge.id.0 as i64,
-                    edge.source_id.0 as i64,
-                    edge.target_id.0 as i64,
+                    i64::from(edge.id.0),
+                    i64::from(edge.source_id.0),
+                    i64::from(edge.target_id.0),
                     edge.edge_type,
                     props_json,
                 ])?;
@@ -468,8 +469,8 @@ impl DumpEngine {
 
         let mut stmt = conn
             .prepare(
-                "INSERT INTO chunks (file_path, content, content_hash, start_line, end_line, language)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO chunks (file_path, content, content_hash, start_line, end_line, language, symbol_name, kind)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             )
             .context("prepare chunks insert")?;
 
@@ -483,6 +484,8 @@ impl DumpEngine {
                     c.start_line,
                     c.end_line,
                     c.language,
+                    c.symbol_name,
+                    c.kind,
                 ])?;
             }
             tx.commit()?;
@@ -1018,6 +1021,8 @@ mod tests {
                 start_line: 1,
                 end_line: 3,
                 language: "rust".to_string(),
+                symbol_name: "foo".to_string(),
+                kind: "\"Function\"".to_string(),
             },
             CodeChunk {
                 file_path: "src/lib.rs".to_string(),
@@ -1026,6 +1031,8 @@ mod tests {
                 start_line: 15,
                 end_line: 17,
                 language: "rust".to_string(),
+                symbol_name: "bar".to_string(),
+                kind: "\"Function\"".to_string(),
             },
         ]
     }
@@ -1202,6 +1209,8 @@ mod tests {
                 start_line: c.start_line as u32,
                 end_line: c.end_line as u32,
                 language: String::new(),
+                symbol_name: c.symbol_name.clone(),
+                kind: serde_json::to_string(&c.kind).unwrap_or_default(),
             })
             .collect();
         engine.dump_all(&sample_gbuf(), &code_chunks).unwrap();

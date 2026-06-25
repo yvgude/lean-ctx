@@ -22,6 +22,7 @@ pub struct TranslationApplyResultV1 {
     pub skipped_json: bool,
 }
 
+#[must_use]
 pub fn translate_tool_output(text: &str, cfg: &TranslationConfig) -> TranslationApplyResultV1 {
     let model_key = active_model_key_from_env();
     let selection = select_ruleset(cfg, model_key.as_deref());
@@ -53,6 +54,7 @@ pub fn translate_tool_output(text: &str, cfg: &TranslationConfig) -> Translation
     }
 }
 
+#[must_use]
 pub fn translate_text(text: &str, ruleset: TranslationRulesetV1) -> String {
     match ruleset {
         TranslationRulesetV1::Legacy => text.to_string(),

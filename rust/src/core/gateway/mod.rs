@@ -5,7 +5,7 @@
 //! prompt (the "more tools → less adoption" tax), the gateway:
 //!
 //! 1. aggregates the downstream catalogs ([`catalog`]) behind a TTL cache,
-//! 2. ranks them per query with BM25 ([`router`]) into a top-N **ChoiceCard**
+//! 2. ranks them per query with BM25 ([`router`]) into a top-N **`ChoiceCard`**
 //!    shortlist, and
 //! 3. proxies the actual call to the owning server ([`client`]).
 //!
@@ -95,7 +95,8 @@ pub async fn servers_overview(cfg: &GatewayConfig) -> String {
     out
 }
 
-/// Render a [`FindOutcome`] as compact ChoiceCards for the model.
+/// Render a [`FindOutcome`] as compact `ChoiceCards` for the model.
+#[must_use]
 pub fn render_cards(outcome: &FindOutcome) -> String {
     let mut out = String::new();
     out.push_str(&format!(

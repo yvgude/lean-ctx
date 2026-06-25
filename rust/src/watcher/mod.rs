@@ -125,11 +125,13 @@ impl Watcher {
     }
 
     /// Check whether a stop has been requested.
+    #[must_use]
     pub fn is_stopped(&self) -> bool {
         self.stop_signal.load(Ordering::Relaxed)
     }
 
     /// Number of currently registered projects.
+    #[must_use]
     pub fn watch_count(&self) -> usize {
         self.projects.len()
     }
@@ -143,6 +145,7 @@ impl Watcher {
     ///
     /// Formula: `BASE_INTERVAL_MS + (file_count / 500) * INTERVAL_PER_500_FILES`,
     /// capped at `MAX_INTERVAL_MS`.
+    #[must_use]
     pub fn poll_interval_ms(file_count: usize) -> u64 {
         let interval = BASE_INTERVAL_MS + (file_count as u64 / 500) * INTERVAL_PER_500_FILES;
         interval.min(MAX_INTERVAL_MS)
@@ -152,6 +155,7 @@ impl Watcher {
 // ── Detection Functions ────────────────────────────────────────────────────────
 
 /// Check whether `root` is a git repository.
+#[must_use]
 pub fn is_git_repo(root: &Path) -> bool {
     std::process::Command::new("git")
         .args(["rev-parse", "--git-dir"])
@@ -176,6 +180,7 @@ pub fn git_head(root: &Path) -> Result<String> {
 
 /// Check whether the working tree has uncommitted changes (including untracked
 /// files under `--untracked-files=normal`).
+#[must_use]
 pub fn is_dirty(root: &Path) -> bool {
     std::process::Command::new("git")
         .args(["status", "--porcelain", "--untracked-files=normal"])
@@ -185,6 +190,7 @@ pub fn is_dirty(root: &Path) -> bool {
 }
 
 /// Count the number of files tracked by git.
+#[must_use]
 pub fn git_file_count(root: &Path) -> usize {
     std::process::Command::new("git")
         .args(["ls-files"])
@@ -248,18 +254,18 @@ pub fn poll_project(index_fn: &IndexFn, name: &str, state: &mut ProjectState) ->
 
     // Phase C — check for actual changes
     let Ok(has_changes) = check_changes(state) else {
-        state.next_poll_ns = now + state.interval_ms as u128 * 1_000_000;
+        state.next_poll_ns = now + u128::from(state.interval_ms) * 1_000_000;
         return false;
     };
 
     if !has_changes {
-        state.next_poll_ns = now + state.interval_ms as u128 * 1_000_000;
+        state.next_poll_ns = now + u128::from(state.interval_ms) * 1_000_000;
         return false;
     }
 
     // Phase D — pipeline guard: skip if a previous index is still running
     if state.indexing_in_progress {
-        state.next_poll_ns = now + state.interval_ms as u128 * 1_000_000;
+        state.next_poll_ns = now + u128::from(state.interval_ms) * 1_000_000;
         return false;
     }
 
@@ -274,10 +280,10 @@ pub fn poll_project(index_fn: &IndexFn, name: &str, state: &mut ProjectState) ->
         if let Ok(head) = git_head(&state.root_path) {
             state.last_head = Some(head);
         }
-        state.next_poll_ns = now + state.interval_ms as u128 * 1_000_000;
+        state.next_poll_ns = now + u128::from(state.interval_ms) * 1_000_000;
         true
     } else {
-        state.next_poll_ns = now + state.interval_ms as u128 * 1_000_000;
+        state.next_poll_ns = now + u128::from(state.interval_ms) * 1_000_000;
         false
     }
 }

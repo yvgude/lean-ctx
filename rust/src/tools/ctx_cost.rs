@@ -1,6 +1,7 @@
 use crate::core::a2a::cost_attribution::{CostStore, format_cost_report};
 use crate::core::gain::GainEngine;
 
+#[must_use]
 pub fn handle(action: &str, agent_id: Option<&str>, limit: Option<usize>) -> String {
     let engine = GainEngine::load();
     let lim = limit.unwrap_or(10);

@@ -50,6 +50,7 @@ struct Block {
     entries: Vec<(String, u32)>,
 }
 
+#[must_use]
 pub fn compress(output: &str) -> Option<String> {
     let lines: Vec<&str> = output.lines().collect();
     if lines.len() <= 10 {

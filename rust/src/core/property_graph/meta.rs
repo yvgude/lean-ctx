@@ -54,10 +54,12 @@ impl Default for PropertyGraphMetaV1 {
     }
 }
 
+#[must_use]
 pub fn meta_path(project_root: &str) -> PathBuf {
     super::graph_dir(project_root).join("graph.meta.json")
 }
 
+#[must_use]
 pub fn load_meta(project_root: &str) -> Option<PropertyGraphMetaV1> {
     let path = meta_path(project_root);
     let s = std::fs::read_to_string(path).ok()?;

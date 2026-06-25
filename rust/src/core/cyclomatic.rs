@@ -20,6 +20,7 @@ pub struct FunctionComplexity {
 /// AST-backed cyclomatic complexity for every function-like node under structural chunks.
 ///
 /// Returns `None` when tree-sitter is disabled or `extension` is unsupported.
+#[must_use]
 pub fn cyclomatic_per_function(source: &str, extension: &str) -> Option<Vec<FunctionComplexity>> {
     #[cfg(feature = "tree-sitter")]
     {

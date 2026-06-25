@@ -22,6 +22,7 @@ pub enum ContextEventKindV1 {
 }
 
 impl ContextEventKindV1 {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::ToolCallRecorded => "tool_call_recorded",
@@ -55,6 +56,7 @@ impl ContextEventKindV1 {
     /// - `Local`: Agent-local, never shared (tool reads, cache hits).
     /// - `Eventual`: Broadcast via bus, other agents see it "soon" (knowledge, artifacts).
     /// - `Strong`: Critical decisions that require acknowledgment before proceeding.
+    #[must_use]
     pub fn consistency_level(&self) -> ConsistencyLevel {
         match self {
             Self::ToolCallRecorded | Self::GraphBuilt => ConsistencyLevel::Local,
@@ -78,6 +80,7 @@ pub enum ConsistencyLevel {
 }
 
 impl ConsistencyLevel {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Local => "local",
@@ -106,10 +109,12 @@ pub struct ContextEventV1 {
 }
 
 impl ContextEventV1 {
+    #[must_use]
     pub fn consistency(&self) -> ConsistencyLevel {
         ContextEventKindV1::parse(&self.kind).consistency_level()
     }
 
+    #[must_use]
     pub fn is_visible_to_agent(&self, agent_id: &str) -> bool {
         match &self.target_agents {
             None => true,
@@ -130,6 +135,7 @@ pub struct TopicFilter {
 
 impl TopicFilter {
     /// Convenience constructor: filter by event kind strings.
+    #[must_use]
     pub fn kinds(kind_strs: &[&str]) -> Self {
         Self {
             kinds: Some(
@@ -142,6 +148,7 @@ impl TopicFilter {
         }
     }
 
+    #[must_use]
     pub fn matches(&self, event: &ContextEventV1) -> bool {
         if let Some(ref kinds) = self.kinds {
             let parsed = ContextEventKindV1::parse(&event.kind);
@@ -290,6 +297,7 @@ impl Default for ContextBus {
 }
 
 impl ContextBus {
+    #[must_use]
     pub fn new() -> Self {
         let path = default_db_path();
         Self::open_at(path)
@@ -378,6 +386,7 @@ impl ContextBus {
 
     /// Subscribe with a filter — only events matching the filter are delivered.
     /// Returns `(Receiver, TopicFilter)` for use in filtered receive loops.
+    #[must_use]
     pub fn subscribe_filtered(
         &self,
         workspace_id: &str,
@@ -388,6 +397,7 @@ impl ContextBus {
         Some(FilteredSubscription { rx, filter })
     }
 
+    #[must_use]
     pub fn append(
         &self,
         workspace_id: &str,
@@ -399,6 +409,7 @@ impl ContextBus {
         self.append_with_parent(workspace_id, channel_id, kind, actor, payload, None)
     }
 
+    #[must_use]
     pub fn append_with_parent(
         &self,
         workspace_id: &str,
@@ -423,6 +434,7 @@ impl ContextBus {
 
     /// Append an event directed at specific agents only.
     /// Only subscribers whose `TopicFilter.agent_id` matches a target will see it.
+    #[must_use]
     pub fn append_directed(
         &self,
         workspace_id: &str,
@@ -531,6 +543,7 @@ impl ContextBus {
         }
     }
 
+    #[must_use]
     pub fn read(
         &self,
         workspace_id: &str,
@@ -561,6 +574,7 @@ impl ContextBus {
     }
 
     /// Query recent events of a specific kind (for conflict detection).
+    #[must_use]
     pub fn recent_by_kind(
         &self,
         workspace_id: &str,
@@ -591,6 +605,7 @@ impl ContextBus {
     }
 
     /// Full-text search over event payloads via FTS5.
+    #[must_use]
     pub fn search(
         &self,
         workspace_id: &str,
@@ -638,7 +653,7 @@ impl ContextBus {
         result.unwrap_or_default()
     }
 
-    /// Trace the causal lineage of an event by following parent_id chains.
+    /// Trace the causal lineage of an event by following `parent_id` chains.
     /// Only returns events belonging to the given workspace (tenant isolation).
     pub fn lineage(
         &self,
@@ -674,6 +689,7 @@ impl ContextBus {
     }
 
     /// Returns the highest event id for a workspace/channel pair, or 0 if none.
+    #[must_use]
     pub fn latest_id(&self, workspace_id: &str, channel_id: &str) -> i64 {
         let conn = self.inner.take_read_conn();
         let result = conn

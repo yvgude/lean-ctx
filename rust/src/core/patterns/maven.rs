@@ -75,6 +75,7 @@ fn is_gradle_command(command: &str) -> bool {
     cl.starts_with("gradle ") || cl.starts_with("./gradlew ") || cl.starts_with("gradlew ")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     if !is_maven_or_gradle_command(command) {
         return None;

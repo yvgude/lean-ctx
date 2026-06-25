@@ -39,6 +39,7 @@ pub struct LineFeatures {
 }
 
 impl LineFeatures {
+    #[must_use]
     pub fn from_line(line: &str, position: f64, context: &LineContext) -> Self {
         let trimmed = line.trim();
         let leading = (line.len() - line.trim_start().len()) as f64;
@@ -75,11 +76,12 @@ impl LineFeatures {
                 0.0
             },
             nesting_depth: context.nesting_depth as f64,
-            prev_line_type: context.prev_line_type as f64,
-            next_line_type: context.next_line_type as f64,
+            prev_line_type: f64::from(context.prev_line_type),
+            next_line_type: f64::from(context.next_line_type),
         }
     }
 
+    #[must_use]
     pub fn to_array(&self) -> [f64; 13] {
         [
             self.line_length,
@@ -309,7 +311,7 @@ impl NeuralLineScorer {
                 0.5
             }
         };
-        out as f64
+        f64::from(out)
     }
 
     #[cfg(not(feature = "neural"))]

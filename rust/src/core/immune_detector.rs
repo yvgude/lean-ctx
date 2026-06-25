@@ -85,6 +85,7 @@ const OBFUSCATED_ENTROPY: f64 = 4.5;
 /// Baseline screen (#8): high-confidence non-self signatures only. Returns a
 /// quarantine reason when the content should NOT be admitted, else `None`.
 /// Deterministic and allocation-light.
+#[must_use]
 pub fn screen(content: &str) -> Option<String> {
     let lower = content.to_lowercase();
     if let Some(p) = INJECTION_PATTERNS.iter().find(|p| lower.contains(**p)) {
@@ -100,6 +101,7 @@ pub fn screen(content: &str) -> Option<String> {
 }
 
 /// Strict screen (#8): [`screen`] plus softer heuristics, for untrusted sources.
+#[must_use]
 pub fn screen_strict(content: &str) -> Option<String> {
     if let Some(reason) = screen(content) {
         return Some(reason);

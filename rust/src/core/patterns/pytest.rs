@@ -5,6 +5,7 @@
 /// - Fixture setup/teardown lines → stripped
 /// - Collection lines (`collecting...`, `collected N items`) → stripped
 /// - Short tracebacks for failures → kept but trimmed
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     // Only activate for pytest commands or output that looks like verbose pytest
     let is_pytest_cmd = command.contains("pytest") || command.contains("py.test");

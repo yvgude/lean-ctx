@@ -387,7 +387,7 @@ fn post_knowledge_relations_edit(body: &str) -> (&'static str, &'static str, Str
 }
 
 /// Extracts specific, linkable references from a fact (file paths, ticket ids,
-/// backticked code spans, CamelCase / snake_case identifiers, proper nouns).
+/// backticked code spans, CamelCase / `snake_case` identifiers, proper nouns).
 /// Generic words are filtered out downstream via a document-frequency window.
 /// Returned tokens are lowercased so `Stripe`/`stripe` unify when matching.
 fn extract_fact_references(key: &str, value: &str) -> Vec<String> {

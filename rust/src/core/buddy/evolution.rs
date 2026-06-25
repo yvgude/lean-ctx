@@ -11,6 +11,7 @@ pub enum EvolutionStage {
 }
 
 impl EvolutionStage {
+    #[must_use]
     pub fn from_level(level: u32) -> Self {
         match level {
             0..=4 => Self::Egg,
@@ -21,6 +22,7 @@ impl EvolutionStage {
         }
     }
 
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
             Self::Egg => "Egg",
@@ -31,6 +33,7 @@ impl EvolutionStage {
         }
     }
 
+    #[must_use]
     pub fn icon(&self) -> &'static str {
         match self {
             Self::Egg => "🥚",
@@ -41,6 +44,7 @@ impl EvolutionStage {
         }
     }
 
+    #[must_use]
     pub fn sprite_height(&self) -> usize {
         match self {
             Self::Egg => 3,
@@ -52,6 +56,7 @@ impl EvolutionStage {
     }
 
     /// The next stage, or `None` if already Mythic.
+    #[must_use]
     pub fn next(&self) -> Option<Self> {
         match self {
             Self::Egg => Some(Self::Baby),
@@ -63,6 +68,7 @@ impl EvolutionStage {
     }
 
     /// Level required to reach this stage.
+    #[must_use]
     pub fn min_level(&self) -> u32 {
         match self {
             Self::Egg => 0,
@@ -74,13 +80,14 @@ impl EvolutionStage {
     }
 
     /// Progress (0.0..1.0) toward the next evolution within the current stage.
+    #[must_use]
     pub fn progress(&self, level: u32) -> f64 {
         let Some(next) = self.next() else {
             return 1.0;
         };
         let range = next.min_level() - self.min_level();
         let within = level.saturating_sub(self.min_level());
-        (within as f64 / range as f64).min(1.0)
+        (f64::from(within) / f64::from(range)).min(1.0)
     }
 }
 

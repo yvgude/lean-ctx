@@ -152,6 +152,7 @@ impl IoPolicy {
 }
 
 impl Role {
+    #[must_use]
     pub fn is_tool_allowed(&self, tool_name: &str) -> bool {
         if !self.tools.denied.is_empty()
             && self.tools.denied.iter().any(|d| d == tool_name || d == "*")
@@ -164,10 +165,12 @@ impl Role {
         self.tools.allowed.iter().any(|a| a == tool_name)
     }
 
+    #[must_use]
     pub fn is_shell_allowed(&self) -> bool {
         self.role.shell_policy != "deny"
     }
 
+    #[must_use]
     pub fn allowed_tools_set(&self) -> HashSet<String> {
         if self.tools.allowed.is_empty() || self.tools.allowed.iter().any(|a| a == "*") {
             return HashSet::new(); // empty = all allowed
@@ -479,6 +482,7 @@ fn load_role_recursive(name: &str, visited: &mut HashSet<String>) -> Option<Role
 
 // ── Public API ──────────────────────────────────────────────────
 
+#[must_use]
 pub fn load_role(name: &str) -> Option<Role> {
     let mut visited = HashSet::new();
     load_role_recursive(name, &mut visited)
@@ -516,6 +520,7 @@ const RESERVED_ROLE_NAMES: &[&str] = &["coder", "reviewer", "debugger", "ops", "
 /// Returns true if the named role has elevated privileges that require
 /// explicit configuration (env/config) rather than runtime activation.
 /// Case-insensitive comparison to prevent "Admin" bypass.
+#[must_use]
 pub fn is_privileged_role(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     PRIVILEGED_ROLES.iter().any(|p| *p == lower)
@@ -579,6 +584,7 @@ pub fn set_active_role_with_source(name: &str, from_config: bool) -> Result<Role
     Ok(role)
 }
 
+#[must_use]
 pub fn list_roles() -> Vec<RoleInfo> {
     let active = active_role_name();
     let builtins = builtin_roles();

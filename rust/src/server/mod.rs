@@ -37,10 +37,12 @@ mod post_dispatch;
 mod post_process;
 mod server_handler;
 
+#[must_use]
 pub fn build_instructions_for_test(crp_mode: CrpMode) -> String {
     crate::instructions::build_instructions_for_test(crp_mode)
 }
 
+#[must_use]
 pub fn build_claude_code_instructions_for_test() -> String {
     crate::instructions::claude_code_instructions()
 }
@@ -119,7 +121,7 @@ use crate::core::pathutil::is_broad_or_unsafe_root;
 
 /// Detect a multi-root workspace: a directory that has no project markers
 /// itself, but contains child directories that do. In this case, use the
-/// parent as jail root and auto-allow all child projects via LEAN_CTX_ALLOW_PATH.
+/// parent as jail root and auto-allow all child projects via `LEAN_CTX_ALLOW_PATH`.
 fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
     // Never enumerate the home dir or macOS TCC-protected dirs (Documents/Desktop/
     // Downloads): read_dir there triggers a macOS privacy prompt (#356), and a real
@@ -161,6 +163,7 @@ fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
     None
 }
 
+#[must_use]
 pub fn tool_descriptions_for_test() -> Vec<(String, String)> {
     crate::server::registry::build_registry()
         .tool_defs()
@@ -174,6 +177,7 @@ pub fn tool_descriptions_for_test() -> Vec<(String, String)> {
         .collect()
 }
 
+#[must_use]
 pub fn tool_schemas_json_for_test() -> String {
     crate::server::registry::build_registry()
         .tool_defs()
@@ -206,6 +210,7 @@ pub const WORKFLOW_PASSTHROUGH_TOOLS: &[&str] = &[
 
 /// A workflow is stale if it hasn't been updated in 30 minutes.
 /// This prevents dead workflows from blocking tools across sessions.
+#[must_use]
 pub fn is_workflow_stale(run: &crate::core::workflow::types::WorkflowRun) -> bool {
     let elapsed = chrono::Utc::now()
         .signed_duration_since(run.updated_at)

@@ -17,6 +17,7 @@ pub const GENESIS: &str = "genesis";
 const TAIL_READ_BYTES: u64 = 8192;
 
 /// Default ledger location: `<data_dir>/savings/ledger.jsonl`. Local only.
+#[must_use]
 pub fn default_path() -> Option<PathBuf> {
     let dir = crate::core::data_dir::lean_ctx_data_dir().ok()?;
     let sub = dir.join("savings");
@@ -93,6 +94,7 @@ pub struct VerifyResult {
 }
 
 impl VerifyResult {
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             total: 0,
@@ -199,16 +201,17 @@ pub struct LedgerSummary {
     pub bounce_events: usize,
     /// Distinct tokenizers that produced the recorded counts (usually just `o200k_base`).
     pub tokenizers: Vec<String>,
-    /// (model_id, saved_tokens, saved_usd), descending by tokens.
+    /// (`model_id`, `saved_tokens`, `saved_usd`), descending by tokens.
     pub by_model: Vec<(String, u64, f64)>,
-    /// (YYYY-MM-DD, saved_tokens, saved_usd), ascending by day.
+    /// (YYYY-MM-DD, `saved_tokens`, `saved_usd`), ascending by day.
     pub by_day: Vec<(String, u64, f64)>,
-    /// (tool, saved_tokens), descending by tokens.
+    /// (tool, `saved_tokens`), descending by tokens.
     pub by_tool: Vec<(String, u64)>,
 }
 
 impl LedgerSummary {
     /// Net saved tokens = gross savings minus bounce.
+    #[must_use]
     pub fn net_saved_tokens(&self) -> u64 {
         self.saved_tokens.saturating_sub(self.bounce_tokens)
     }

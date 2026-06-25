@@ -108,7 +108,7 @@ fn ext_language(path: &str) -> String {
 /// Add visualization-only ("phantom") nodes for edge endpoints that aren't
 /// scanned files — e.g. Godot `.tscn`/`.tres` scenes referenced via `res://`
 /// before scene indexing exists (#316). Each phantom must connect to a real
-/// selected node, so GDScript import edges render instead of being dropped to
+/// selected node, so `GDScript` import edges render instead of being dropped to
 /// sibling-only links. Capped by the remaining node budget. #315
 fn add_phantom_endpoints(
     gp: &GraphProvider,

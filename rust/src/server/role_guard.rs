@@ -118,6 +118,7 @@ pub fn check_tool_access(tool_name: &str) -> RoleCheckResult {
     }
 }
 
+#[must_use]
 pub fn into_call_tool_result(check: &RoleCheckResult) -> Option<CallToolResult> {
     if check.blocked {
         Some(CallToolResult::success(vec![Content::text(

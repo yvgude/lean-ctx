@@ -110,6 +110,7 @@ pub fn remove(public_key: &str) -> Result<bool, String> {
 
 /// All trusted keys (env override first, then the pinned file). Env keys carry
 /// the synthetic org name `env` so `status` can show their provenance.
+#[must_use]
 pub fn trusted_keys() -> Vec<TrustedKey> {
     let mut keys: Vec<TrustedKey> = env_keys()
         .into_iter()

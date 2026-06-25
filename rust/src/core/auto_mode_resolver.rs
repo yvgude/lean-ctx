@@ -72,6 +72,7 @@ pub fn flush_sources() {
 
 /// Cumulative auto-mode decision sources from disk (all processes, all time),
 /// sorted by count descending. Used by the dashboard's Live Signals panel.
+#[must_use]
 pub fn persisted_source_counts() -> Vec<(String, u64)> {
     let Some(path) = sources_path() else {
         return Vec::new();
@@ -98,7 +99,8 @@ pub struct ResolvedMode {
 }
 
 /// Single entry point for auto-mode resolution.
-/// Merges Pipeline A (select_mode_with_task) and Pipeline B (resolve_auto_mode).
+/// Merges Pipeline A (`select_mode_with_task`) and Pipeline B (`resolve_auto_mode`).
+#[must_use]
 pub fn resolve(ctx: &AutoModeContext) -> ResolvedMode {
     // Quality loop (#494), signal 1: an edit on this file just failed after a
     // compressed read — the agent needs the real body now, one-shot.
@@ -283,7 +285,8 @@ fn resolve_adaptive(ctx: &AutoModeContext) -> Option<ResolvedMode> {
 }
 
 /// Unified pressure downgrade table.
-/// Used by both context_gate and intent_router pressure paths.
+/// Used by both `context_gate` and `intent_router` pressure paths.
+#[must_use]
 pub fn pressure_downgrade(requested_mode: &str, action: &PressureAction) -> Option<String> {
     match action {
         PressureAction::SuggestCompression => match requested_mode {

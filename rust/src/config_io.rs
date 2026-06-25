@@ -5,6 +5,7 @@ fn backup_path_for(path: &Path) -> Option<PathBuf> {
     Some(path.with_file_name(format!("{filename}.bak")))
 }
 
+#[must_use]
 pub fn snapshot_mtime(path: &Path) -> Option<std::time::SystemTime> {
     std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
@@ -30,6 +31,7 @@ pub fn write_toml_preserving(path: &Path, new_content: &str) -> Result<(), Strin
 
 /// Loads a TOML file into an editable document, preserving comments and
 /// formatting. Returns an empty document when the file is missing or invalid.
+#[must_use]
 pub fn load_toml_document(path: &Path) -> toml_edit::DocumentMut {
     std::fs::read_to_string(path)
         .ok()

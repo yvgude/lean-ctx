@@ -83,6 +83,7 @@ pub fn mine(project_root: &str) -> Result<MineReport, String> {
 }
 
 /// List the generated rules currently on disk for the configured scope.
+#[must_use]
 pub fn list_rules(project_root: &str) -> Vec<RuleSummary> {
     let cfg = config();
     let root = output_root(project_root, &cfg.scope);
@@ -140,6 +141,7 @@ pub fn promote(project_root: &str, slug: &str) -> Result<String, String> {
 }
 
 /// Current skillify configuration, for `status`.
+#[must_use]
 pub fn current_config() -> crate::core::config::SkillifyConfig {
     config()
 }

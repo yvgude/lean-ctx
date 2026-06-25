@@ -1,3 +1,4 @@
+#[must_use]
 pub fn compress(output: &str) -> Option<String> {
     if let Some(r) = try_pytest(output) {
         return Some(r);

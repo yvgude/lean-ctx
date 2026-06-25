@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 ///
 /// Arguments are kept generic so this works for `.zshenv` / `.zshenv.d`,
 /// `.zshrc` / `.zshrc.d`, `.bashrc` / `.bashrc.d`, etc.
+#[must_use]
 pub fn detect(home: &Path, rc_file_name: &str, dropin_dir_name: &str) -> Option<PathBuf> {
     let dir = home.join(dropin_dir_name);
     if !dir.is_dir() {
@@ -41,6 +42,7 @@ pub fn detect(home: &Path, rc_file_name: &str, dropin_dir_name: &str) -> Option<
 /// We deliberately don't try to parse the shell — any user who has put the
 /// directory name in their live config (a source loop, a glob `for` loop,
 /// even an `autoload` call) has made the intent clear enough.
+#[must_use]
 pub fn rc_references_dropin(rc_contents: &str, dropin_dir_name: &str) -> bool {
     rc_contents.lines().any(|line| {
         let trimmed = line.trim_start();

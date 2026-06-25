@@ -12,6 +12,7 @@ pub enum IntentSource {
 }
 
 impl IntentSource {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Inferred => "inferred",
@@ -33,6 +34,7 @@ pub enum IntentType {
 }
 
 impl IntentType {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Task => "task",
@@ -88,6 +90,7 @@ pub struct IntentRecord {
 }
 
 impl IntentRecord {
+    #[must_use]
     pub fn fingerprint(&self) -> (IntentSource, IntentType, String, String) {
         (
             self.source.clone(),

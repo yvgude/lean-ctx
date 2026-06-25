@@ -26,6 +26,7 @@ fn percent_bar_re() -> &'static regex::Regex {
     static_regex!(r"\d+%\|")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     let cl = command.trim().to_ascii_lowercase();
     if cl.starts_with("poetry ") {

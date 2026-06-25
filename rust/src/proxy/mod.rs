@@ -47,21 +47,25 @@ pub struct ProxyState {
 
 impl ProxyState {
     /// Consistent snapshot of all upstreams for the current request/response.
+    #[must_use]
     pub fn upstream_snapshot(&self) -> Arc<Upstreams> {
         self.upstreams.borrow().clone()
     }
 
     /// Current Anthropic upstream (live).
+    #[must_use]
     pub fn anthropic_upstream(&self) -> String {
         self.upstreams.borrow().anthropic.clone()
     }
 
-    /// Current OpenAI upstream (live).
+    /// Current `OpenAI` upstream (live).
+    #[must_use]
     pub fn openai_upstream(&self) -> String {
         self.upstreams.borrow().openai.clone()
     }
 
     /// Current Gemini upstream (live).
+    #[must_use]
     pub fn gemini_upstream(&self) -> String {
         self.upstreams.borrow().gemini.clone()
     }
@@ -550,7 +554,7 @@ fn provider_key_fallback_allowed(
 ///
 /// Some OpenAI-compatible clients treat the configured base URL as the API root
 /// and append the bare endpoint, so they send `POST /responses` or
-/// `/chat/completions` instead of `/v1/responses` — notably OpenCode via
+/// `/chat/completions` instead of `/v1/responses` — notably `OpenCode` via
 /// `@ai-sdk/openai`, whose Responses-API requests land on `/responses`. The proxy
 /// and every upstream only know the `/v1/...` paths, so an un-prefixed request
 /// would 401 (not a provider route) and then 404 (no handler). (#353)

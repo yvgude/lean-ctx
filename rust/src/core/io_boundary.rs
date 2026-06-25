@@ -41,7 +41,7 @@ pub fn read_file_nofollow(path: &str) -> Result<String, std::io::Error> {
 }
 
 /// Reads a file as lossy UTF-8, rejecting binary files.
-/// Uses O_NOFOLLOW on Unix to prevent TOCTOU symlink attacks.
+/// Uses `O_NOFOLLOW` on Unix to prevent TOCTOU symlink attacks.
 pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
     if crate::core::binary_detect::is_binary_file(path) {
         let msg = crate::core::binary_detect::binary_file_message(path);
@@ -116,6 +116,7 @@ impl BoundaryMode {
     }
 }
 
+#[must_use]
 pub fn boundary_mode_effective(role: &roles::Role) -> BoundaryMode {
     if let Ok(v) = std::env::var("LEAN_CTX_IO_BOUNDARY_MODE")
         && !v.trim().is_empty()
@@ -125,6 +126,7 @@ pub fn boundary_mode_effective(role: &roles::Role) -> BoundaryMode {
     BoundaryMode::parse(&role.io.boundary_mode)
 }
 
+#[must_use]
 pub fn is_secret_like(path: &Path) -> Option<&'static str> {
     let file = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
     let lower = file.to_lowercase();

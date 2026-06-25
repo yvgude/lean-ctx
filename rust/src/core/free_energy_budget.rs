@@ -34,6 +34,7 @@ pub struct ColumnBudgetAllocation {
 /// Uses efficiency-weighted allocation: columns with high saliency per token
 /// get more budget. Every active column gets at least `floor_fraction` of the
 /// total budget (default 5%).
+#[must_use]
 pub fn allocate_budget(
     total_budget: usize,
     requests: &[ColumnBudgetRequest],
@@ -83,6 +84,7 @@ pub fn allocate_budget(
 
 /// Compute the "free energy" — how much information gap remains after allocation.
 /// Lower is better. 0.0 means all requested tokens were fully satisfied.
+#[must_use]
 pub fn free_energy(
     requests: &[ColumnBudgetRequest],
     allocations: &[ColumnBudgetAllocation],

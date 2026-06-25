@@ -14,7 +14,7 @@ use super::graph::AdjGraph;
 const MAX_ITERATIONS: usize = 20;
 /// Hard cap on the inner local-moving sweeps within a single iteration. Each
 /// sweep is O(V + E); the cap guarantees the whole partition stays bounded
-/// (O(MAX_ITERATIONS · MAX_LOCAL_PASSES · (V + E))) even on very large graphs.
+/// (`O(MAX_ITERATIONS` · `MAX_LOCAL_PASSES` · (V + E))) even on very large graphs.
 const MAX_LOCAL_PASSES: usize = 50;
 const GAMMA: f64 = 1.0;
 

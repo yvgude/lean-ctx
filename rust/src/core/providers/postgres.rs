@@ -5,7 +5,7 @@
 //! adding a native PG driver dependency.
 //!
 //! Configuration via environment variables:
-//!   - `DATABASE_URL`: Full connection string (e.g., "postgres://user:pass@host/db")
+//!   - `DATABASE_URL`: Full connection string (e.g., "<postgres://user:pass@host/db>")
 //!   - Or individual: `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`
 
 use crate::core::providers::{ContextProvider, ProviderItem, ProviderParams, ProviderResult};
@@ -21,6 +21,7 @@ impl Default for PostgresProvider {
 }
 
 impl PostgresProvider {
+    #[must_use]
     pub fn new() -> Self {
         let available =
             std::env::var("DATABASE_URL").is_ok() || std::env::var("PGDATABASE").is_ok();

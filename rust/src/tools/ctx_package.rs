@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::core::context_package;
 use crate::core::session::SessionState;
 
+#[must_use]
 pub fn handle(
     project_root: &str,
     session: Option<&SessionState>,

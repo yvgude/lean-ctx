@@ -24,6 +24,7 @@ struct PluginState {
 }
 
 impl PluginRegistry {
+    #[must_use]
     pub fn new(plugin_dir: PathBuf) -> Self {
         let state_file = plugin_dir.join("plugin-state.json");
         Self {
@@ -33,6 +34,7 @@ impl PluginRegistry {
         }
     }
 
+    #[must_use]
     pub fn from_default_dir() -> Self {
         let dir = default_plugin_dir();
         Self::new(dir)
@@ -84,16 +86,19 @@ impl PluginRegistry {
         errors
     }
 
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<&Plugin> {
         self.plugins.get(name)
     }
 
+    #[must_use]
     pub fn list(&self) -> Vec<&Plugin> {
         let mut plugins: Vec<_> = self.plugins.values().collect();
         plugins.sort_by(|a, b| a.manifest.plugin.name.cmp(&b.manifest.plugin.name));
         plugins
     }
 
+    #[must_use]
     pub fn enabled_plugins(&self) -> Vec<&Plugin> {
         self.list().into_iter().filter(|p| p.enabled).collect()
     }
@@ -118,6 +123,7 @@ impl PluginRegistry {
         Ok(())
     }
 
+    #[must_use]
     pub fn plugin_dir(&self) -> &Path {
         &self.plugin_dir
     }
@@ -151,6 +157,7 @@ impl PluginRegistry {
 /// default so containers, CI, and tests can point at an isolated location. Note
 /// this is distinct from the per-hook `LEAN_CTX_PLUGIN_DIR` the executor sets
 /// for a *single* plugin's child process.
+#[must_use]
 pub fn default_plugin_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("LEAN_CTX_PLUGINS_DIR")
         && !dir.is_empty()

@@ -384,6 +384,7 @@ fn truncate(s: &str, max: usize) -> String {
 
 /// Extracts a one-line structural hint from file/tool output.
 /// Shared between auto-findings and session file-summary generation.
+#[must_use]
 pub fn extract_content_hint(output: &str) -> String {
     let lines: Vec<&str> = output.lines().skip(1).take(20).collect();
 

@@ -8,7 +8,7 @@ use std::fmt;
 /// When NO profile is pinned (no config key, no env var), the server
 /// advertises only the lazy core set (`CORE_TOOL_NAMES`) and the
 /// effective profile falls back to `Power` — which acts as a pure call-gate
-/// ("everything reachable via ctx_call"), not as an advertisement list.
+/// ("everything reachable via `ctx_call`"), not as an advertisement list.
 /// Pinning a profile makes the advertised set explicit and authoritative
 /// (#358), which costs schema tokens: `standard` advertises 19 full schemas,
 /// `power` the whole registry (#575).
@@ -21,6 +21,7 @@ pub enum ToolProfile {
 }
 
 impl ToolProfile {
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "minimal" | "min" => Some(Self::Minimal),
@@ -30,6 +31,7 @@ impl ToolProfile {
         }
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         match self {
             Self::Minimal => "minimal",
@@ -39,6 +41,7 @@ impl ToolProfile {
         }
     }
 
+    #[must_use]
     pub fn description(&self) -> &str {
         match self {
             Self::Minimal => "6 surgical tools — each irreplaceable (recommended)",
@@ -54,6 +57,7 @@ impl ToolProfile {
         }
     }
 
+    #[must_use]
     pub fn is_tool_enabled(&self, tool_name: &str) -> bool {
         match self {
             Self::Power => true,
@@ -63,6 +67,7 @@ impl ToolProfile {
         }
     }
 
+    #[must_use]
     pub fn tool_count(&self) -> usize {
         match self {
             Self::Minimal => MINIMAL_TOOLS.len(),
@@ -72,6 +77,7 @@ impl ToolProfile {
         }
     }
 
+    #[must_use]
     pub fn tool_names(&self) -> Vec<&str> {
         match self {
             Self::Minimal => MINIMAL_TOOLS.to_vec(),
@@ -129,6 +135,7 @@ impl fmt::Display for ToolProfile {
 /// that clears any pin so the default returns (lazy core advertised, everything
 /// callable via `ctx_call`). Centralised so the config loader, the CLI
 /// (`lean-ctx profile lean`) and the dashboard all agree on the same set (#431).
+#[must_use]
 pub fn is_unpinned_alias(name: &str) -> bool {
     matches!(
         name.trim().to_ascii_lowercase().as_str(),
@@ -177,6 +184,7 @@ pub struct ProfileInfo {
     pub description: &'static str,
 }
 
+#[must_use]
 pub fn list_profiles() -> Vec<ProfileInfo> {
     vec![
         ProfileInfo {

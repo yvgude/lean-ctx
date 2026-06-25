@@ -46,6 +46,7 @@ pub fn load_or_create() -> Result<(SigningKey, bool), String> {
 }
 
 /// Hex of the public verifying key — the publisher's stable identity.
+#[must_use]
 pub fn public_key_hex(key: &SigningKey) -> String {
     hex_encode(key.verifying_key().as_bytes())
 }

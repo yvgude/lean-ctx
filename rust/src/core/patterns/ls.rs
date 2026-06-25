@@ -1,3 +1,4 @@
+#[must_use]
 pub fn compress(output: &str) -> Option<String> {
     let lines: Vec<&str> = output.lines().collect();
     if lines.len() < 5 {

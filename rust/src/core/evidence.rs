@@ -42,6 +42,7 @@ impl Claim {
     }
 
     /// Compact one-line rendering: `(0.82) text` (+ ` — source` when present).
+    #[must_use]
     pub fn render(&self) -> String {
         let mut s = format!("({:.2}) {}", self.confidence, self.text);
         if let Some(src) = &self.source_url {

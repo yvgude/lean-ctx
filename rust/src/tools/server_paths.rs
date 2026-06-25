@@ -4,6 +4,7 @@ use super::startup::{
 };
 
 impl LeanCtxServer {
+    #[must_use]
     pub fn checkpoint_interval_effective() -> usize {
         if let Ok(v) = std::env::var("LEAN_CTX_CHECKPOINT_INTERVAL")
             && let Ok(parsed) = v.trim().parse::<usize>()
@@ -19,9 +20,9 @@ impl LeanCtxServer {
         crate::core::config::Config::load().checkpoint_interval as usize
     }
 
-    /// Resolves a (possibly relative) tool path against the session's project_root.
+    /// Resolves a (possibly relative) tool path against the session's `project_root`.
     /// Absolute paths and "." are returned as-is. Relative paths like "src/main.rs"
-    /// are joined with project_root so tools work regardless of the server's cwd.
+    /// are joined with `project_root` so tools work regardless of the server's cwd.
     pub async fn resolve_path(&self, path: &str) -> Result<String, String> {
         let normalized = crate::core::pathutil::normalize_tool_path(path);
         if normalized.is_empty() || normalized == "." {

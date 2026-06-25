@@ -76,12 +76,15 @@ pub struct ReadConfig {
 }
 
 impl ReadConfig {
+    #[must_use]
     pub fn default_mode_effective(&self) -> &str {
         self.default_mode.as_deref().unwrap_or("auto")
     }
+    #[must_use]
     pub fn max_tokens_per_file_effective(&self) -> usize {
         self.max_tokens_per_file.unwrap_or(50_000)
     }
+    #[must_use]
     pub fn prefer_cache_effective(&self) -> bool {
         self.prefer_cache.unwrap_or(false)
     }
@@ -98,15 +101,19 @@ pub struct CompressionConfig {
 }
 
 impl CompressionConfig {
+    #[must_use]
     pub fn crp_mode_effective(&self) -> &str {
         self.crp_mode.as_deref().unwrap_or("tdd")
     }
+    #[must_use]
     pub fn output_density_effective(&self) -> &str {
         self.output_density.as_deref().unwrap_or("normal")
     }
+    #[must_use]
     pub fn entropy_threshold_effective(&self) -> f64 {
         self.entropy_threshold.unwrap_or(0.3)
     }
+    #[must_use]
     pub fn terse_mode_effective(&self) -> bool {
         self.terse_mode.unwrap_or(false)
     }
@@ -123,9 +130,11 @@ pub struct TranslationConfig {
 }
 
 impl TranslationConfig {
+    #[must_use]
     pub fn enabled_effective(&self) -> bool {
         self.enabled.unwrap_or(false)
     }
+    #[must_use]
     pub fn ruleset_effective(&self) -> &str {
         self.ruleset.as_deref().unwrap_or("legacy")
     }
@@ -142,9 +151,11 @@ pub struct LayoutConfig {
 }
 
 impl LayoutConfig {
+    #[must_use]
     pub fn enabled_effective(&self) -> bool {
         self.enabled.unwrap_or(false)
     }
+    #[must_use]
     pub fn min_lines_effective(&self) -> usize {
         self.min_lines.unwrap_or(15)
     }
@@ -162,10 +173,12 @@ pub struct RoutingConfig {
 }
 
 impl RoutingConfig {
+    #[must_use]
     pub fn max_model_tier_effective(&self) -> &str {
         self.max_model_tier.as_deref().unwrap_or("premium")
     }
 
+    #[must_use]
     pub fn degrade_under_pressure_effective(&self) -> bool {
         self.degrade_under_pressure.unwrap_or(true)
     }
@@ -183,10 +196,12 @@ pub struct DegradationConfig {
 }
 
 impl DegradationConfig {
+    #[must_use]
     pub fn enforce_effective(&self) -> bool {
         self.enforce.unwrap_or(false)
     }
 
+    #[must_use]
     pub fn throttle_ms_effective(&self) -> u64 {
         self.throttle_ms.unwrap_or(250)
     }
@@ -209,30 +224,39 @@ pub struct OutputHints {
 }
 
 impl OutputHints {
+    #[must_use]
     pub fn compressed_hint(&self) -> bool {
         self.compressed_hint.unwrap_or(false)
     }
+    #[must_use]
     pub fn archive_hint(&self) -> bool {
         self.archive_hint.unwrap_or(false)
     }
+    #[must_use]
     pub fn verify_footer(&self) -> bool {
         self.verify_footer.unwrap_or(false)
     }
+    #[must_use]
     pub fn related_hint(&self) -> bool {
         self.related_hint.unwrap_or(false)
     }
+    #[must_use]
     pub fn semantic_hint(&self) -> bool {
         self.semantic_hint.unwrap_or(false)
     }
+    #[must_use]
     pub fn elicitation_hint(&self) -> bool {
         self.elicitation_hint.unwrap_or(false)
     }
+    #[must_use]
     pub fn checkpoint_in_output(&self) -> bool {
         self.checkpoint_in_output.unwrap_or(false)
     }
+    #[must_use]
     pub fn graph_context_block(&self) -> bool {
         self.graph_context_block.unwrap_or(false)
     }
+    #[must_use]
     pub fn efficiency_hint(&self) -> bool {
         self.efficiency_hint.unwrap_or(false)
     }
@@ -248,12 +272,15 @@ pub struct BudgetConfig {
 }
 
 impl BudgetConfig {
+    #[must_use]
     pub fn max_context_tokens_effective(&self) -> usize {
         self.max_context_tokens.unwrap_or(200_000)
     }
+    #[must_use]
     pub fn max_shell_invocations_effective(&self) -> usize {
         self.max_shell_invocations.unwrap_or(100)
     }
+    #[must_use]
     pub fn max_cost_usd_effective(&self) -> f64 {
         self.max_cost_usd.unwrap_or(5.0)
     }
@@ -270,15 +297,19 @@ pub struct PipelineConfig {
 }
 
 impl PipelineConfig {
+    #[must_use]
     pub fn intent_effective(&self) -> bool {
         self.intent.unwrap_or(true)
     }
+    #[must_use]
     pub fn relevance_effective(&self) -> bool {
         self.relevance.unwrap_or(true)
     }
+    #[must_use]
     pub fn compression_effective(&self) -> bool {
         self.compression.unwrap_or(true)
     }
+    #[must_use]
     pub fn translation_effective(&self) -> bool {
         self.translation.unwrap_or(true)
     }
@@ -305,39 +336,51 @@ pub struct ProfileAutonomy {
 }
 
 impl ProfileAutonomy {
+    #[must_use]
     pub fn enabled_effective(&self) -> bool {
         self.enabled.unwrap_or(true)
     }
+    #[must_use]
     pub fn auto_preload_effective(&self) -> bool {
         self.auto_preload.unwrap_or(true)
     }
+    #[must_use]
     pub fn auto_dedup_effective(&self) -> bool {
         self.auto_dedup.unwrap_or(true)
     }
+    #[must_use]
     pub fn auto_related_effective(&self) -> bool {
         self.auto_related.unwrap_or(true)
     }
+    #[must_use]
     pub fn silent_preload_effective(&self) -> bool {
         self.silent_preload.unwrap_or(true)
     }
+    #[must_use]
     pub fn auto_prefetch_effective(&self) -> bool {
         self.auto_prefetch.unwrap_or(false)
     }
+    #[must_use]
     pub fn auto_response_effective(&self) -> bool {
         self.auto_response.unwrap_or(false)
     }
+    #[must_use]
     pub fn dedup_threshold_effective(&self) -> usize {
         self.dedup_threshold.unwrap_or(8)
     }
+    #[must_use]
     pub fn prefetch_max_files_effective(&self) -> usize {
         self.prefetch_max_files.unwrap_or(3)
     }
+    #[must_use]
     pub fn prefetch_budget_tokens_effective(&self) -> usize {
         self.prefetch_budget_tokens.unwrap_or(4000)
     }
+    #[must_use]
     pub fn response_min_tokens_effective(&self) -> usize {
         self.response_min_tokens.unwrap_or(600)
     }
+    #[must_use]
     pub fn checkpoint_interval_effective(&self) -> u32 {
         self.checkpoint_interval.unwrap_or(15)
     }
@@ -631,6 +674,7 @@ fn builtin_passthrough() -> Profile {
 }
 
 /// Returns all built-in profile definitions.
+#[must_use]
 pub fn builtin_profiles() -> HashMap<String, Profile> {
     let mut map = HashMap::new();
     for p in [
@@ -675,6 +719,7 @@ fn profiles_dir_project() -> Option<PathBuf> {
 /// 3. Built-in defaults
 ///
 /// Applies inheritance chain (max depth 5 to prevent cycles).
+#[must_use]
 pub fn load_profile(name: &str) -> Option<Profile> {
     load_profile_recursive(name, 0)
 }
@@ -1001,7 +1046,7 @@ fn merge_profiles(parent: Profile, child: Profile) -> Profile {
 
 /// Reads the `profile` key directly from `config.toml` without going through
 /// `Config::load()`. This avoids a reentrancy deadlock: `Config::load()` →
-/// `find_project_root()` (OnceLock) → `SessionState::load_latest()` →
+/// `find_project_root()` (`OnceLock`) → `SessionState::load_latest()` →
 /// `normalize_loaded_session()` → `active_profile()` → here → `Config::load()`.
 fn profile_name_from_config_file() -> Option<String> {
     let path = crate::core::config::Config::path()?;
@@ -1086,6 +1131,7 @@ pub fn set_active_profile(name: &str) -> Result<Profile, String> {
 }
 
 /// Lists all available profile names (built-in + on-disk).
+#[must_use]
 pub fn list_profiles() -> Vec<ProfileInfo> {
     let mut profiles: HashMap<String, ProfileInfo> = HashMap::new();
 
@@ -1161,6 +1207,7 @@ impl std::fmt::Display for ProfileSource {
 }
 
 /// Formats a profile as TOML for display or file creation.
+#[must_use]
 pub fn format_as_toml(profile: &Profile) -> String {
     toml::to_string_pretty(profile).unwrap_or_else(|_| "[error serializing profile]".to_string())
 }

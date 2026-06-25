@@ -268,6 +268,7 @@ fn language_map() -> HashMap<&'static str, &'static CompressionThresholds> {
         .collect()
 }
 
+#[must_use]
 pub fn thresholds_for_path(path: &str) -> CompressionThresholds {
     let ext = Path::new(path)
         .extension()
@@ -282,6 +283,7 @@ pub fn thresholds_for_path(path: &str) -> CompressionThresholds {
     CompressionThresholds::default()
 }
 
+#[must_use]
 pub fn adaptive_thresholds(path: &str, content: &str) -> CompressionThresholds {
     let mut base = thresholds_for_path(path);
 

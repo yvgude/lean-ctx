@@ -15,7 +15,7 @@ pub struct ProxyConfig {
     /// Allow a non-loopback plaintext `http://` upstream (trusted local network
     /// only). Opt-in; see [`ProxyConfig::allows_insecure_http_upstream`]. (#440)
     pub allow_insecure_http_upstream: Option<bool>,
-    /// Inject `stream_options.include_usage = true` into streamed OpenAI Chat
+    /// Inject `stream_options.include_usage = true` into streamed `OpenAI` Chat
     /// Completions so the final chunk reports real token usage for the measured
     /// spend meter. Default on; set `false` for a client that mishandles the
     /// trailing usage chunk. Anthropic/Gemini/OpenAI-Responses report usage
@@ -84,7 +84,7 @@ pub struct ProxyConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct RoleAggressiveness {
-    /// Aggressiveness for system prompts (Anthropic `system` / OpenAI `system`
+    /// Aggressiveness for system prompts (Anthropic `system` / `OpenAI` `system`
     /// messages / Gemini `systemInstruction`). `None` = leave untouched.
     pub system: Option<f64>,
     /// Aggressiveness for user prose (free-text user turns, never tool results).
@@ -102,7 +102,7 @@ pub enum ProseRole {
 
 /// How the proxy prunes old tool results from conversation history.
 ///
-/// Provider prompt caches (Anthropic `cache_control`, OpenAI automatic prompt
+/// Provider prompt caches (Anthropic `cache_control`, `OpenAI` automatic prompt
 /// caching) bill cached prefix tokens at a fraction of the base rate but only
 /// match *exact* prefixes. Any mutation whose position depends on the current
 /// conversation length (a rolling window) rewrites a previously-stable message
@@ -142,8 +142,9 @@ impl ProxyConfig {
     }
 
     /// Whether the proxy injects `stream_options.include_usage` into streamed
-    /// OpenAI Chat Completions to meter real spend. `[proxy] meter_openai_usage`
+    /// `OpenAI` Chat Completions to meter real spend. `[proxy] meter_openai_usage`
     /// in config.toml, default `true`.
+    #[must_use]
     pub fn meters_openai_usage(&self) -> bool {
         self.meter_openai_usage.unwrap_or(true)
     }
@@ -153,6 +154,7 @@ impl ProxyConfig {
     /// must be explicitly enabled. `LEAN_CTX_PROXY_COLD_PREFIX_REPACK` (any
     /// value) wins, then `[proxy] cold_prefix_repack` in config.toml, else
     /// `false`.
+    #[must_use]
     pub fn repacks_cold_prefix(&self) -> bool {
         std::env::var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK").is_ok()
             || self.cold_prefix_repack.unwrap_or(false)
@@ -163,6 +165,7 @@ impl ProxyConfig {
     /// the model asks to expand, so it must be an explicit opt-in.
     /// `LEAN_CTX_PROXY_CCR_INBAND` (any value) wins, then `[proxy] ccr_inband` in
     /// config.toml, else `false`.
+    #[must_use]
     pub fn ccr_inband_enabled(&self) -> bool {
         std::env::var("LEAN_CTX_PROXY_CCR_INBAND").is_ok() || self.ccr_inband.unwrap_or(false)
     }
@@ -194,6 +197,7 @@ impl ProxyConfig {
     /// `1`/`true`/`on`/`yes` → on) wins, then `[proxy] live_compress` in
     /// config.toml, else `true`. An unparseable/blank env value is ignored so a
     /// typo can never silently flip the mode.
+    #[must_use]
     pub fn live_compresses(&self) -> bool {
         if let Ok(raw) = std::env::var("LEAN_CTX_PROXY_LIVE_COMPRESS") {
             match raw.trim().to_ascii_lowercase().as_str() {
@@ -255,6 +259,7 @@ impl ProxyConfig {
     /// `http://host.docker.internal:2455` in front of codex-lb (#440).
     /// `LEAN_CTX_ALLOW_INSECURE_HTTP_UPSTREAM` (any value) wins, then
     /// `[proxy] allow_insecure_http_upstream` in config.toml, default `false`.
+    #[must_use]
     pub fn allows_insecure_http_upstream(&self) -> bool {
         std::env::var("LEAN_CTX_ALLOW_INSECURE_HTTP_UPSTREAM").is_ok()
             || self.allow_insecure_http_upstream.unwrap_or(false)
@@ -328,6 +333,7 @@ impl ProxyConfig {
     }
 
     /// Resolve all three upstreams at once (startup snapshot, env-aware).
+    #[must_use]
     pub fn resolve_all(&self) -> Upstreams {
         Upstreams {
             anthropic: self.resolve_upstream(ProxyProvider::Anthropic),
@@ -339,6 +345,7 @@ impl ProxyConfig {
     /// Resolve all upstreams from config.toml only (ignoring `LEAN_CTX_*` env) —
     /// the values a freshly (re)started managed proxy would serve. Used by
     /// status/doctor to detect drift from a running proxy's live upstream (#449).
+    #[must_use]
     pub fn resolve_all_disk(&self) -> Upstreams {
         let pick = |provider: ProxyProvider| {
             self.resolve_upstream_inner(provider, false)
@@ -355,6 +362,7 @@ impl ProxyConfig {
     /// currently configured/env value fails validation, the last good value is
     /// kept instead of rerouting live traffic to the provider default — so a typo
     /// in config.toml can never silently redirect in-flight requests.
+    #[must_use]
     pub fn refresh_upstreams(&self, last: &Upstreams) -> Upstreams {
         let keep = |provider: ProxyProvider, prev: &str| {
             self.resolve_upstream_checked(provider).unwrap_or_else(|e| {
@@ -406,6 +414,7 @@ pub enum UpstreamDrift {
 /// The `LEAN_CTX_*_UPSTREAM` override visible to *this* process for a provider,
 /// normalized (`None` if unset/blank). Lets status/doctor explain why an env var
 /// a user exported in their shell never reaches an MCP/service-spawned proxy.
+#[must_use]
 pub fn env_upstream_override(provider: ProxyProvider) -> Option<String> {
     let var = match provider {
         ProxyProvider::Anthropic => "LEAN_CTX_ANTHROPIC_UPSTREAM",
@@ -418,6 +427,7 @@ pub fn env_upstream_override(provider: ProxyProvider) -> Option<String> {
 /// Diagnose upstream drift for one provider from the CLI-visible env override
 /// (`env`), the config.toml value (`disk`) and the proxy's live value (`live`).
 /// `None` means in sync.
+#[must_use]
 pub fn diagnose_drift(env: Option<&str>, disk: &str, live: &str) -> Option<UpstreamDrift> {
     if let Some(env) = env {
         // An env override is present in this process: the proxy honours it only
@@ -437,10 +447,12 @@ fn default_live_compress_exclude() -> Vec<String> {
     vec!["serena".to_string()]
 }
 
+#[must_use]
 pub fn normalize_url(value: &str) -> String {
     value.trim().trim_end_matches('/').to_string()
 }
 
+#[must_use]
 pub fn normalize_url_opt(value: &str) -> Option<String> {
     let trimmed = normalize_url(value);
     if trimmed.is_empty() {
@@ -501,6 +513,7 @@ pub(super) fn validate_upstream_url(
     }
 }
 
+#[must_use]
 pub fn is_local_proxy_url(value: &str) -> bool {
     let n = normalize_url(value);
     n.starts_with("http://127.0.0.1:")

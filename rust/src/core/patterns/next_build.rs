@@ -20,6 +20,7 @@ fn vite_chunk_re() -> &'static regex::Regex {
     static_regex!(r"dist/(\S+)\s+(\d+\.?\d*\s*[kKMm]?B)")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     if command.contains("vite") {
         return Some(compress_vite(output));

@@ -13,6 +13,7 @@
 
 use crate::core::compressor::strip_ansi;
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     let c = command.trim();
     let (tool, rest) = split_tool(c)?;

@@ -2,7 +2,7 @@
 //!
 //! Two backings implement this trait:
 //!   A) `LspClient` (stdio rust-analyzer) — CI/headless fallback, see client.rs
-//!   B) `JetBrainsHttpBackend` (in-IDE PSI over HTTP) — preferred, see jetbrains_backend.rs
+//!   B) `JetBrainsHttpBackend` (in-IDE PSI over HTTP) — preferred, see `jetbrains_backend.rs`
 //!
 //! The 5 mandatory methods exist in both backings (today's behavior must not break).
 //! The default-degrading methods return a clear "unsupported" error unless a backing
@@ -55,7 +55,7 @@ pub struct InspectionInfo {
     pub id: String,
     /// Human-readable display name.
     pub name: String,
-    /// Severity token: ERROR | WARNING | WEAK_WARNING | INFO.
+    /// Severity token: ERROR | WARNING | `WEAK_WARNING` | INFO.
     pub severity: String,
 }
 
@@ -104,7 +104,7 @@ pub struct EditResult {
     pub diff: String,
 }
 
-/// Query for `rename_preview`: the target symbol is already resolved (name_path →
+/// Query for `rename_preview`: the target symbol is already resolved (`name_path` →
 /// range) in `ctx_refactor`; the backend only ever sees an absolute + relative
 /// path and a range, exactly like `RangeEdit` (no `name_path` on the wire).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,9 +116,9 @@ pub struct RenameQuery {
     /// Declaration span of the target symbol (start is what the IDE resolves from).
     pub target_range: TextRange0Based,
     pub new_name: String,
-    /// Also rename matches inside comments/strings (RenameProcessor flag).
+    /// Also rename matches inside comments/strings (`RenameProcessor` flag).
     pub search_comments: bool,
-    /// Also rename non-code text occurrences (RenameProcessor flag).
+    /// Also rename non-code text occurrences (`RenameProcessor` flag).
     pub search_text_occurrences: bool,
 }
 
@@ -130,7 +130,7 @@ pub struct UsageSite {
     pub path: String,
     /// 0-based range of the renamed identifier at this site.
     pub range: TextRange0Based,
-    /// Optional one-line context snippet (display only; NOT part of plan_hash).
+    /// Optional one-line context snippet (display only; NOT part of `plan_hash`).
     pub context: Option<String>,
 }
 
@@ -177,9 +177,9 @@ pub struct RenameResult {
 /// jail-checked `abs_path` plus the wire-facing `rel_path` (rebuilt by the IDE).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MoveTarget {
-    /// Move a file/class into a directory or file (FileMoveProcessor side).
+    /// Move a file/class into a directory or file (`FileMoveProcessor` side).
     Path { abs_path: String, rel_path: String },
-    /// Move a member into a parent symbol (SymbolMoveProcessor side); `range`
+    /// Move a member into a parent symbol (`SymbolMoveProcessor` side); `range`
     /// is the parent declaration span used to resolve it in the IDE.
     Parent {
         abs_path: String,
@@ -199,7 +199,7 @@ pub struct MoveQuery {
 }
 
 /// Phase-2 `move` request: the query plus the `force` flag (Rust already gated
-/// plan_hash + conflicts before this is built).
+/// `plan_hash` + conflicts before this is built).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MoveApply {
     pub query: MoveQuery,
@@ -225,8 +225,8 @@ pub struct SafeDeleteApply {
 }
 
 /// Phase-1 `inline` request: resolved source span. `keep_definition` maps to the
-/// IntelliJ inline processors' "inline all and keep declaration" flag (spec §3,
-/// Befund 2). The trait never sees a `name_path` — exactly like move/safe_delete.
+/// `IntelliJ` inline processors' "inline all and keep declaration" flag (spec §3,
+/// Befund 2). The trait never sees a `name_path` — exactly like `move/safe_delete`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InlineQuery {
     pub abs_path: String,
@@ -251,7 +251,7 @@ pub enum ReformatScope {
     Symbol { range: TextRange0Based },
 }
 
-/// Single-Phase `reformat` request (spec §5.3): no usages, no plan_hash.
+/// Single-Phase `reformat` request (spec §5.3): no usages, no `plan_hash`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReformatQuery {
     pub abs_path: String,
@@ -388,7 +388,7 @@ pub trait LspBackend: Send {
     fn inline_apply(&mut self, _req: &InlineApply) -> Result<RenameResult, String> {
         Err("BACKEND_REQUIRED: inline requires a running JetBrains IDE".to_string())
     }
-    /// Single-Phase reformat (spec §5.3): no preview, no plan_hash.
+    /// Single-Phase reformat (spec §5.3): no preview, no `plan_hash`.
     /// DEFAULT = `Err(BACKEND_REQUIRED)`.
     fn reformat(&mut self, _req: &ReformatQuery) -> Result<ReformatResult, String> {
         Err("BACKEND_REQUIRED: reformat requires a running JetBrains IDE".to_string())

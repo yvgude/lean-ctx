@@ -10,6 +10,7 @@ use crate::core::tokens;
 ///
 /// Returns a formatted string showing the most important symbols,
 /// grouped by file, sorted by descending rank.
+#[must_use]
 pub fn fit_to_budget(symbols: &[RankedSymbol], max_tokens: usize) -> String {
     if symbols.is_empty() {
         return "No symbols found.".to_string();

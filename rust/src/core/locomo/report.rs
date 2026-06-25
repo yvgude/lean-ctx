@@ -1,4 +1,4 @@
-//! Aggregate per-question results into publishable LoCoMo metrics (#291).
+//! Aggregate per-question results into publishable `LoCoMo` metrics (#291).
 
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +8,7 @@ use super::runner::SampleResult;
 /// for the overall row).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CategoryMetrics {
-    /// LoCoMo category, or 0 for "overall".
+    /// `LoCoMo` category, or 0 for "overall".
     pub category: u8,
     pub label: String,
     pub questions: usize,
@@ -75,6 +75,7 @@ fn metrics_for(category: u8, qa: &[&super::runner::QaResult]) -> CategoryMetrics
 }
 
 /// Aggregate sample results into a report.
+#[must_use]
 pub fn aggregate(suite: &str, top_k: usize, results: &[SampleResult]) -> LocomoReport {
     let all: Vec<&super::runner::QaResult> = results.iter().flat_map(|r| r.qa.iter()).collect();
     let overall = metrics_for(0, &all);
@@ -118,11 +119,13 @@ pub fn aggregate(suite: &str, top_k: usize, results: &[SampleResult]) -> LocomoR
 }
 
 impl LocomoReport {
+    #[must_use]
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
     }
 
     /// Human/publishable Markdown summary.
+    #[must_use]
     pub fn to_markdown(&self) -> String {
         let mut out = String::new();
         out.push_str("# LoCoMo Memory Benchmark — lean-ctx\n\n");

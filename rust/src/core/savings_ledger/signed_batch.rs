@@ -109,6 +109,7 @@ pub struct BatchVerifyResult {
 
 impl SignedSavingsBatchV1 {
     /// Builds an unsigned batch over the whole local ledger (no IO beyond reading it).
+    #[must_use]
     pub fn build_all(agent_id: &str) -> Self {
         let events = super::all_events();
         let summary = super::summary();
@@ -178,6 +179,7 @@ impl SignedSavingsBatchV1 {
 
     /// Verifies the embedded signature against the embedded public key — offline, no ledger
     /// needed. A failure means the artifact was altered or was never validly signed.
+    #[must_use]
     pub fn verify(&self) -> BatchVerifyResult {
         let fail = |msg: &str| BatchVerifyResult {
             signature_valid: false,

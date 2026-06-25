@@ -25,7 +25,7 @@ impl RateBucket {
                 last_refill: Instant::now(),
             };
         }
-        let max = max_per_minute as f64;
+        let max = f64::from(max_per_minute);
         Self {
             disabled: false,
             tokens: max,
@@ -77,6 +77,7 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
+    #[must_use]
     pub fn new(global_per_min: u32, agent_per_min: u32, tool_per_min: u32) -> Self {
         Self {
             agent_buckets: HashMap::new(),
@@ -146,6 +147,7 @@ pub fn init_rate_limiter(global_per_min: u32, agent_per_min: u32, tool_per_min: 
     ));
 }
 
+#[must_use]
 pub fn check_rate_limit(agent_id: &str, tool_name: &str) -> RateLimitResult {
     let mut guard = global_rate_limiter();
     if guard.is_none() {

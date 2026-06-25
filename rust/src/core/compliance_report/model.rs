@@ -8,7 +8,7 @@
 //! Signing mirrors [`crate::core::savings_ledger::signed_batch`]: the two
 //! signature fields are cleared while computing the canonical bytes, so a
 //! verifier reproduces the exact signed payload from the artifact alone and
-//! checks it **offline, without the audit trail or LeanCTX**. The embedded
+//! checks it **offline, without the audit trail or `LeanCTX`**. The embedded
 //! `audit.head_hash` binds the report's counts to the precise append-only
 //! audit segment that produced them.
 
@@ -163,6 +163,7 @@ impl ComplianceReportV1 {
     /// Verifies the embedded signature against the embedded public key —
     /// offline, no audit trail needed. A failure means the artifact was altered
     /// or was never validly signed.
+    #[must_use]
     pub fn verify(&self) -> ReportVerifyResult {
         let fail = |msg: &str| ReportVerifyResult {
             signature_valid: false,

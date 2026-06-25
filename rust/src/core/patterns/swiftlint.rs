@@ -1,6 +1,6 @@
-//! SwiftLint output compression.
+//! `SwiftLint` output compression.
 //!
-//! SwiftLint emits a `Linting 'File' (i/n)` progress line per file and one
+//! `SwiftLint` emits a `Linting 'File' (i/n)` progress line per file and one
 //! `path:line:col: severity: Message (rule_id)` line per violation. We drop the
 //! progress, summarize violations by rule + severity and keep the final
 //! `Done linting!` total.
@@ -21,6 +21,7 @@ fn violation_re() -> &'static regex::Regex {
     static_regex!(r"^(.+?):\d+:\d+:\s+(error|warning):\s+.*\(([a-z_][a-z0-9_]*)\)\s*$")
 }
 
+#[must_use]
 pub fn compress(_cmd: &str, output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {

@@ -11,6 +11,7 @@ use anyhow::Result;
 /// Note: intended for commands with small output. The child's stdout/stderr are
 /// piped; a process that writes more than the pipe buffer (~64 KiB) without
 /// exiting could block. All current callers emit at most a few lines.
+#[must_use]
 pub fn run_with_timeout(
     mut cmd: std::process::Command,
     timeout: std::time::Duration,
@@ -48,7 +49,7 @@ pub fn run_with_timeout(
 ///
 /// On Unix a child simply outlives its parent, so this is a plain spawn. On
 /// Windows the child inherits the parent's console and — crucially — its Job
-/// object. AI clients (OpenCode, Codex, Claude Code) run MCP servers inside
+/// object. AI clients (`OpenCode`, Codex, Claude Code) run MCP servers inside
 /// kill-on-close Jobs; without detachment the auto-started proxy dies the
 /// moment the client recycles its MCP process, which users observe as
 /// "Cannot connect to API: The socket connection was closed unexpectedly"
@@ -85,6 +86,7 @@ pub fn spawn_detached(cmd: &mut std::process::Command) -> std::io::Result<std::p
 }
 
 /// Check whether a process with the given PID is still running.
+#[must_use]
 pub fn is_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
@@ -190,6 +192,7 @@ pub fn force_kill(pid: u32) -> Result<()> {
 
 /// Find all PIDs of processes whose executable name matches `name`.
 /// Excludes the current process.
+#[must_use]
 pub fn find_pids_by_name(name: &str) -> Vec<u32> {
     let my_pid = std::process::id();
     let mut pids = Vec::new();
@@ -264,6 +267,7 @@ fn collect_pids(stdout: &[u8], exclude_pid: u32, out: &mut Vec<u32>) {
 /// Returns PIDs that are NOT MCP stdio servers (safe to kill during `lean-ctx stop`).
 /// MCP servers are child processes of the IDE and must not be killed — the IDE
 /// will immediately respawn them, causing a kill loop that requires a reboot.
+#[must_use]
 pub fn find_killable_pids(name: &str) -> Vec<u32> {
     let all = find_pids_by_name(name);
     let mcp_pids = find_mcp_server_pids(name);
@@ -330,6 +334,7 @@ fn is_mcp_stdio_process(pid: u32) -> bool {
 
 /// Kill non-MCP processes matching `name` (SIGTERM then SIGKILL).
 /// Returns count of killed processes.
+#[must_use]
 pub fn kill_all_by_name(name: &str) -> usize {
     let pids = find_killable_pids(name);
     if pids.is_empty() {

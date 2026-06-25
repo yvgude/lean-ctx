@@ -5,6 +5,7 @@ use crate::core::skillify;
 
 /// Dispatch a skillify action and return human-readable text (shared by the MCP
 /// tool and the CLI).
+#[must_use]
 pub fn handle(project_root: &str, action: &str, slug: Option<&str>) -> String {
     match action.trim() {
         "" | "mine" => render_mine(project_root),

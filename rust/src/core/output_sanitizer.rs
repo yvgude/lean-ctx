@@ -131,6 +131,7 @@ pub fn sanitize(output: &str) -> String {
 /// Returns a list of detected patterns (empty = clean). This is a conservative,
 /// low-false-positive heuristic; it deliberately avoids flagging common phrases
 /// like "please ignore" in comments or documentation.
+#[must_use]
 pub fn detect_injection(content: &str) -> Vec<InjectionSignal> {
     let mut signals = Vec::new();
     let lower = content.to_lowercase();

@@ -41,6 +41,7 @@ impl DenseBackendKind {
         }
     }
 
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
             Self::Local => "local",
@@ -96,7 +97,7 @@ mod embed {
                 start_line: d.start_line,
                 end_line: d.end_line,
                 snippet: d.snippet,
-                rrf_score: d.similarity as f64,
+                rrf_score: f64::from(d.similarity),
                 bm25_score: None,
                 dense_score: Some(d.similarity),
                 bm25_rank: None,

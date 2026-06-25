@@ -11,6 +11,7 @@ fn pw_failed_re() -> &'static regex::Regex {
     static_regex!(r"^\s+\d+\)\s+(.+)$")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     if command.contains("cypress") {
         return Some(compress_cypress(output));

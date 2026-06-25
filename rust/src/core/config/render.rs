@@ -24,6 +24,7 @@ const HEADER: &str = "\
 ";
 
 /// Builds the annotated `config.toml` text for `cfg`, documented via `schema`.
+#[must_use]
 pub fn render_annotated_config(cfg: &Config, schema: &ConfigSchema) -> String {
     let mut out = String::from(HEADER);
 

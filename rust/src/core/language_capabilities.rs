@@ -38,6 +38,7 @@ pub struct LanguageCapabilities {
 }
 
 impl LanguageId {
+    #[must_use]
     pub fn id_str(&self) -> &'static str {
         match self {
             LanguageId::Rust => "rust",
@@ -68,6 +69,7 @@ impl LanguageId {
     }
 }
 
+#[must_use]
 pub fn capabilities(lang: LanguageId) -> LanguageCapabilities {
     match lang {
         // tree-sitter backed (deep_queries + resolver can be meaningful)
@@ -112,6 +114,7 @@ pub fn capabilities(lang: LanguageId) -> LanguageCapabilities {
     }
 }
 
+#[must_use]
 pub fn language_for_ext(ext: &str) -> Option<LanguageId> {
     let e = ext.trim().trim_start_matches('.').to_lowercase();
     match e.as_str() {
@@ -150,6 +153,7 @@ pub fn language_for_path(path: &str) -> Option<LanguageId> {
         .and_then(language_for_ext)
 }
 
+#[must_use]
 pub fn is_indexable_ext(ext: &str) -> bool {
     language_for_ext(ext).is_some()
 }
@@ -192,6 +196,7 @@ pub fn graph_supported_language_names() -> Vec<&'static str> {
 /// call graph). Keep in sync with `deep_queries::calls::parse_call` — a language
 /// missing there yields zero call edges, which the dashboard must communicate
 /// honestly instead of suggesting an index rebuild that cannot help.
+#[must_use]
 pub fn supports_call_graph(lang: LanguageId) -> bool {
     matches!(
         lang,
@@ -288,6 +293,7 @@ where
 /// - `import_from_files`: the source file of each import/reexport edge,
 /// - `call_caller_files`: the caller file of each call edge, or `None` when call
 ///   data isn't available (then `calls_found` stays `None`).
+#[must_use]
 pub fn language_capability_matrix_realized(
     file_paths: &[String],
     symbol_files: &[String],

@@ -2,7 +2,7 @@
 //!
 //! Motivated by upstream issue #378: 38 SIGABRT coredumps from a stripped
 //! release binary left users (and us) with zero actionable data, because the
-//! panic hook only printed to stderr — which is lost for daemon, LaunchAgent
+//! panic hook only printed to stderr — which is lost for daemon, `LaunchAgent`
 //! and MCP-child processes.
 //!
 //! Every panic now also appends a structured entry (timestamp, version, thread,
@@ -91,7 +91,7 @@ pub fn write_crash_entry(info: &std::panic::PanicHookInfo<'_>) -> Option<PathBuf
 /// panics on I/O errors — background workers whose stderr is gone (terminal
 /// closed, parent recycled the pipe → EPIPE) turned every ordinary panic into
 /// a SIGABRT coredump (GitHub #378: 38 cores, all `abort` in the panic path).
-/// Everything here is therefore best-effort writes + catch_unwind.
+/// Everything here is therefore best-effort writes + `catch_unwind`.
 pub fn install_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
         use std::io::Write;

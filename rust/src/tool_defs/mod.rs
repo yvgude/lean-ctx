@@ -6,6 +6,7 @@ use serde_json::{Map, Value};
 mod granular;
 pub use granular::{granular_tool_defs, unified_tool_defs};
 
+#[must_use]
 pub fn tool_def(name: &'static str, description: &'static str, schema_value: Value) -> Tool {
     let mut schema: Map<String, Value> = match schema_value {
         Value::Object(map) => map,
@@ -18,9 +19,9 @@ pub fn tool_def(name: &'static str, description: &'static str, schema_value: Val
 /// Make a tool input schema acceptable to *strict* JSON-Schema validators.
 ///
 /// OpenAI/Azure (Pydantic-based), Claude thinking models and OpenAI-compatible
-/// backends like SGLang reject tool schemas that are valid JSON Schema but
+/// backends like `SGLang` reject tool schemas that are valid JSON Schema but
 /// omit fields the spec treats as optional. Community-reported failures
-/// (OpenCode: "Invalid schema for function 'lean-ctx_ctx_expand': None is not
+/// (`OpenCode`: "Invalid schema for function 'lean-ctx_ctx_expand': None is not
 /// of type 'array'"):
 ///
 /// - `type: "object"` with `properties` but no `required` → clients forward
@@ -81,10 +82,12 @@ pub const CORE_TOOL_NAMES: &[&str] = &[
     "ctx_expand",
 ];
 
+#[must_use]
 pub fn core_tool_names() -> &'static [&'static str] {
     CORE_TOOL_NAMES
 }
 
+#[must_use]
 pub fn lazy_tool_defs() -> Vec<Tool> {
     let all = granular_tool_defs();
     all.into_iter()
@@ -92,6 +95,7 @@ pub fn lazy_tool_defs() -> Vec<Tool> {
         .collect()
 }
 
+#[must_use]
 pub fn discover_tools(query: &str) -> String {
     // Derived from the registry (single source of truth) so discovery results
     // never drift from the advertised tool schemas (#141).
@@ -137,6 +141,7 @@ use ctx_call (available in lazy mode) to invoke discovered tools:\n\
     out
 }
 
+#[must_use]
 pub fn is_full_mode() -> bool {
     std::env::var("LEAN_CTX_FULL_TOOLS").is_ok_and(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
         || std::env::var("LEAN_CTX_LAZY_TOOLS")

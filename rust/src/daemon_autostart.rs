@@ -8,6 +8,7 @@ const SYSTEMD_SERVICE: &str = "lean-ctx-daemon";
 
 /// Platform service unit name (`systemctl --user <name>` / `launchctl print gui/$UID/<name>`).
 /// `None` on platforms without autostart support.
+#[must_use]
 pub fn service_name() -> Option<&'static str> {
     #[cfg(target_os = "macos")]
     {
@@ -24,8 +25,9 @@ pub fn service_name() -> Option<&'static str> {
 }
 
 /// Path of the autostart service file lean-ctx writes on `daemon enable`
-/// (LaunchAgent plist on macOS, systemd user unit on Linux), regardless of
+/// (`LaunchAgent` plist on macOS, systemd user unit on Linux), regardless of
 /// whether it currently exists. `None` on unsupported platforms.
+#[must_use]
 pub fn service_file_path() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "macos")]
     {
@@ -109,6 +111,7 @@ pub fn uninstall(quiet: bool) {
     let _ = quiet;
 }
 
+#[must_use]
 pub fn is_installed() -> bool {
     #[cfg(target_os = "macos")]
     {

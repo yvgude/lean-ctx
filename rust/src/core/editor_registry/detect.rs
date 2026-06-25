@@ -7,6 +7,7 @@ use super::paths::{
 };
 use super::types::{ConfigType, EditorTarget};
 
+#[must_use]
 pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
     #[cfg(windows)]
     let opencode_cfg = if let Ok(appdata) = std::env::var("APPDATA") {
@@ -356,6 +357,7 @@ fn detect_sublime_mcp_path(home: &Path) -> PathBuf {
     home.join(".config/sublime-text/mcp.json")
 }
 
+#[must_use]
 pub fn detect_claude_path() -> PathBuf {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
     if let Ok(output) = std::process::Command::new(which_cmd).arg("claude").output()
@@ -381,6 +383,7 @@ pub fn detect_claude_path() -> PathBuf {
     PathBuf::from("/nonexistent")
 }
 
+#[must_use]
 pub fn detect_codebuddy_path() -> PathBuf {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
     if let Ok(output) = std::process::Command::new(which_cmd)
@@ -408,6 +411,7 @@ pub fn detect_codebuddy_path() -> PathBuf {
     PathBuf::from("/nonexistent")
 }
 
+#[must_use]
 pub fn detect_augment_path(home: &Path) -> PathBuf {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
     if let Ok(output) = std::process::Command::new(which_cmd).arg("auggie").output()
@@ -513,6 +517,7 @@ fn detect_extension_installed(home: &Path, extension_id: &str) -> bool {
     false
 }
 
+#[must_use]
 pub fn detect_codex_path(home: &Path) -> PathBuf {
     let codex_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
     if codex_dir.exists() {
@@ -527,6 +532,7 @@ pub fn detect_codex_path(home: &Path) -> PathBuf {
     PathBuf::from("/nonexistent")
 }
 
+#[must_use]
 pub fn detect_vscode_path() -> PathBuf {
     #[cfg(target_os = "macos")]
     {
@@ -570,6 +576,7 @@ pub fn detect_vscode_path() -> PathBuf {
     PathBuf::from("/nonexistent")
 }
 
+#[must_use]
 pub fn detect_jetbrains_path(home: &Path) -> PathBuf {
     #[cfg(target_os = "macos")]
     {
@@ -607,6 +614,7 @@ pub fn detect_jetbrains_path(home: &Path) -> PathBuf {
 }
 
 #[allow(unreachable_code)]
+#[must_use]
 pub fn detect_cline_path() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
@@ -641,6 +649,7 @@ pub fn detect_cline_path() -> PathBuf {
 }
 
 #[allow(unreachable_code)]
+#[must_use]
 pub fn detect_roo_path() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
@@ -675,7 +684,7 @@ pub fn detect_roo_path() -> PathBuf {
     PathBuf::from("/nonexistent")
 }
 
-/// Checks VS Code-family base directories (VSCodium, Code - OSS, Code) on Linux
+/// Checks VS Code-family base directories (`VSCodium`, Code - OSS, Code) on Linux
 /// and returns the first one where the given suffix directory exists.
 #[cfg(target_os = "linux")]
 fn detect_vscode_global_storage(home: &Path, suffix: &str) -> Option<PathBuf> {

@@ -1,4 +1,4 @@
-//! Telemetry and metrics collection following OpenTelemetry GenAI conventions.
+//! Telemetry and metrics collection following OpenTelemetry `GenAI` conventions.
 //!
 //! Provides lock-free, zero-allocation metrics collection for:
 //! - Token usage (input, output, saved, compression ratio)
@@ -7,7 +7,7 @@
 //! - Embedding inference performance
 //! - Cache hit/miss rates
 //!
-//! Naming follows the OpenTelemetry GenAI Semantic Conventions:
+//! Naming follows the OpenTelemetry `GenAI` Semantic Conventions:
 //! <https://opentelemetry.io/docs/specs/semconv/gen-ai/>
 
 use std::sync::OnceLock;
@@ -75,6 +75,7 @@ impl Default for Metrics {
 }
 
 impl Metrics {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -248,6 +249,7 @@ pub struct MetricsSnapshot {
 }
 
 impl MetricsSnapshot {
+    #[must_use]
     pub fn to_compact_string(&self) -> String {
         format!(
             "tok={}/{}/{} calls={}/{} search={} embed={} cache={:.0}% comp={:.0}% up={}s",
@@ -264,6 +266,7 @@ impl MetricsSnapshot {
         )
     }
 
+    #[must_use]
     pub fn to_json(&self) -> String {
         serde_json::json!({
             "gen_ai": {
@@ -303,6 +306,7 @@ pub struct ToolCallTimer {
 }
 
 impl ToolCallTimer {
+    #[must_use]
     pub fn new(tool_name: &'static str) -> Self {
         Self {
             start: Instant::now(),
@@ -501,6 +505,7 @@ fn escape_label(v: &str) -> String {
 /// Datadog push exporter. Values are bounded: project is the cwd basename
 /// (never the full path), model/profile/role come from bounded registries —
 /// cardinality stays at one series per running process.
+#[must_use]
 pub fn info_tags() -> Vec<(&'static str, String)> {
     let project = std::env::current_dir()
         .ok()

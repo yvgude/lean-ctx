@@ -2,8 +2,9 @@ use crate::tools::CrpMode;
 
 const MAX_COMMAND_BYTES: usize = 8192;
 
-/// Validates a shell command before execution. Returns Some(error_message) if
+/// Validates a shell command before execution. Returns `Some(error_message)` if
 /// the command should be rejected, None if it's safe to run.
+#[must_use]
 pub fn validate_command(command: &str) -> Option<String> {
     if command.len() > MAX_COMMAND_BYTES {
         return Some(format!(
@@ -183,6 +184,7 @@ fn has_file_write_redirect(command: &str) -> bool {
 
 /// On Windows cmd.exe, `;` is not a valid command separator.
 /// Convert `cmd1; cmd2` to `cmd1 && cmd2` when running under cmd.exe.
+#[must_use]
 pub fn normalize_command_for_shell(command: &str) -> String {
     if !cfg!(windows) {
         return command.to_string();
@@ -213,7 +215,8 @@ pub fn normalize_command_for_shell(command: &str) -> String {
 /// Compresses shell command output using the unified compression pipeline.
 /// Delegates to the same exit-code-aware logic used by the CLI, so a failed
 /// command (`exit_code != 0`) is preserved verbatim and successful output is
-/// compressed consistently (excluded_commands, structural routing, terse). #810.
+/// compressed consistently (`excluded_commands`, structural routing, terse). #810.
+#[must_use]
 pub fn handle(command: &str, output: &str, exit_code: i32, _crp_mode: CrpMode) -> String {
     crate::shell::compress::engine::compress_for_outcome(command, output, exit_code)
 }
@@ -262,6 +265,7 @@ fn generic_compress(output: &str) -> String {
 /// Detects OAuth device code flow output that must not be compressed.
 /// Uses a two-tier approach: strong signals match alone (very specific to
 /// device code flows), weak signals require a URL/domain in the same output.
+#[must_use]
 pub fn contains_auth_flow(output: &str) -> bool {
     let lower = output.to_lowercase();
 

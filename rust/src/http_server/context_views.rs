@@ -11,7 +11,7 @@ use super::team::TeamRequestContext;
 
 /// When running behind the team server, the workspace is bound to the
 /// authenticated token's header. The query parameter is ignored.
-/// In standalone mode (no TeamRequestContext), the query parameter is used.
+/// In standalone mode (no `TeamRequestContext`), the query parameter is used.
 fn resolve_workspace(query_ws: Option<String>, team_ctx: Option<&TeamRequestContext>) -> String {
     if let Some(ctx) = team_ctx {
         return ctx.workspace_id.clone();

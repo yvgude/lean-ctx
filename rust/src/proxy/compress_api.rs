@@ -10,7 +10,7 @@
 //! Request:  `{ "messages": [ … ], "model": "…"? }`
 //! Response: `{ "messages": [ … ], "stats": { … } }`
 //!
-//! Both OpenAI (`content: "string"`) and Anthropic (`content: [ {type:"text"…},
+//! Both `OpenAI` (`content: "string"`) and Anthropic (`content: [ {type:"text"…},
 //! {type:"tool_result"…} ]`) message shapes are accepted. Only text payloads are
 //! compressed; images, `tool_use` blocks, ids and every other field pass through
 //! untouched. lean-ctx's own `ctx_*` tool results are left verbatim (#479).
@@ -73,6 +73,7 @@ pub async fn handler(Json(req): Json<CompressRequest>) -> impl IntoResponse {
 
 /// Pure, deterministic core: rewrites every text payload in `messages` and
 /// reports aggregate token savings. Same input → same output bytes (#498).
+#[must_use]
 pub fn compress_messages(req: CompressRequest) -> CompressResponse {
     let mut messages = req.messages;
     let mut totals = Totals::default();

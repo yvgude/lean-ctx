@@ -5,7 +5,7 @@ use crate::core::property_graph::CodeGraph;
 use crate::core::protocol;
 use crate::core::tokens::count_tokens;
 
-/// Search for symbols using the FTS5 symbols_fts table.
+/// Search for symbols using the FTS5 `symbols_fts` table.
 /// Returns None when FTS5 is unavailable.
 fn try_fts_symbol_search(
     name: &str,
@@ -82,6 +82,7 @@ fn try_fts_symbol_search(
 /// Render the body of the single most relevant symbol named `name`.
 /// Used by `ctx_compose` to inline the top symbol's definition. Returns
 /// `(rendered_with_body, full_file_tokens)` or `None` when not found.
+#[must_use]
 pub fn best_symbol_snippet(name: &str, project_root: &str) -> Option<(String, usize)> {
     let sym = try_fts_symbol_search(name, None, None, project_root)?
         .into_iter()

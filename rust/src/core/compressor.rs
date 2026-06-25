@@ -10,6 +10,7 @@ macro_rules! static_regex {
 }
 
 /// Removes ANSI escape codes from a string, returning clean text.
+#[must_use]
 pub fn strip_ansi(s: &str) -> String {
     if !s.contains('\x1b') {
         return s.to_string();
@@ -33,6 +34,7 @@ pub fn strip_ansi(s: &str) -> String {
 }
 
 /// Returns the ratio of ANSI escape characters to total string length.
+#[must_use]
 pub fn ansi_density(s: &str) -> f64 {
     if s.is_empty() {
         return 0.0;
@@ -42,6 +44,7 @@ pub fn ansi_density(s: &str) -> f64 {
 }
 
 /// Strips comments, blank lines, and normalizes indentation for maximum token savings.
+#[must_use]
 pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
     // Structured data (JSON/JSONL) carries no comments and barely compresses via
     // the line-based path below (~0% measured). Strip insignificant whitespace
@@ -121,6 +124,7 @@ pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
 
 /// Lightweight post-processing cleanup: collapses consecutive closing braces,
 /// removes whitespace-only lines, and limits consecutive blank lines to 1.
+#[must_use]
 pub fn lightweight_cleanup(content: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
     let total = lines.len();
@@ -171,6 +175,7 @@ pub fn lightweight_cleanup(content: &str) -> String {
 /// Safeguard: prevents compression from inflating output or destroying small outputs.
 /// For small outputs (<2000 tokens), rejects extreme compression (>95% reduction)
 /// that likely lost important content. For large outputs, trusts the pattern.
+#[must_use]
 pub fn safeguard_ratio(original: &str, compressed: &str) -> String {
     let orig_tokens = super::tokens::count_tokens(original);
     let comp_tokens = super::tokens::count_tokens(compressed);
@@ -200,6 +205,7 @@ fn normalize_indentation(line: &str) -> String {
 }
 
 /// Produces a compact unified diff between old and new content with line numbers.
+#[must_use]
 pub fn diff_content(old_content: &str, new_content: &str) -> String {
     if old_content == new_content {
         return "(no changes)".to_string();
@@ -239,6 +245,7 @@ pub fn diff_content(old_content: &str, new_content: &str) -> String {
 }
 
 /// Deduplicates repeated lines, strips boilerplate, and normalizes timestamps/hashes.
+#[must_use]
 pub fn verbatim_compact(text: &str) -> String {
     let mut lines: Vec<String> = Vec::new();
     let mut blank_count = 0u32;
@@ -283,6 +290,7 @@ pub fn verbatim_compact(text: &str) -> String {
 }
 
 /// Compresses content using the active task intent to preserve task-relevant sections.
+#[must_use]
 pub fn task_aware_compress(
     content: &str,
     ext: Option<&str>,

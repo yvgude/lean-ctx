@@ -14,6 +14,7 @@ pub enum Species {
 }
 
 impl Species {
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
             Self::Egg => "Egg",
@@ -30,6 +31,7 @@ impl Species {
     /// The element/type skin for the one mascot. A user's dominant language maps
     /// to an element that tints the sprite and titles the creature — the body
     /// silhouette is always the same iconic Pixel Sprite.
+    #[must_use]
     pub fn element_name(&self) -> &'static str {
         match self {
             Self::Egg => "Null",
@@ -45,6 +47,7 @@ impl Species {
 
     /// Intrinsic element colour as a raw 256-colour ANSI foreground escape.
     /// Distinct from the UI theme: fire is always orange, poison always green.
+    #[must_use]
     pub fn element_color(&self) -> &'static str {
         match self {
             Self::Egg => "\x1b[38;5;245m",
@@ -59,6 +62,7 @@ impl Species {
     }
 
     /// A single width-1 rune used as the element badge in the nameplate.
+    #[must_use]
     pub fn element_glyph(&self) -> &'static str {
         match self {
             Self::Egg => "○",
@@ -70,6 +74,7 @@ impl Species {
         }
     }
 
+    #[must_use]
     pub fn from_commands(commands: &HashMap<String, super::super::stats::CommandStats>) -> Self {
         let mut scores: HashMap<&str, u64> = HashMap::new();
 
@@ -151,6 +156,7 @@ pub enum Rarity {
 }
 
 impl Rarity {
+    #[must_use]
     pub fn from_tokens_saved(saved: u64) -> Self {
         match saved {
             0..=9_999 => Self::Egg,
@@ -162,6 +168,7 @@ impl Rarity {
         }
     }
 
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
             Self::Egg => "Egg",
@@ -173,6 +180,7 @@ impl Rarity {
         }
     }
 
+    #[must_use]
     pub fn color_code(&self) -> &'static str {
         match self {
             Self::Egg | Self::Common => "\x1b[37m",
@@ -194,6 +202,7 @@ pub enum Mood {
 }
 
 impl Mood {
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
             Self::Ecstatic => "Ecstatic",
@@ -204,6 +213,7 @@ impl Mood {
         }
     }
 
+    #[must_use]
     pub fn icon(&self) -> &'static str {
         match self {
             Self::Ecstatic => "*_*",
@@ -268,6 +278,7 @@ impl BuddyState {
     /// buddy ascends this is its evolution stage; afterwards it is the unbounded
     /// cosmic ascension rank, so it is *never* a confusing low-stage word at a
     /// high level.
+    #[must_use]
     pub fn form_title(&self) -> String {
         if self.prestige > 0 {
             super::ascension::title(self.prestige)
@@ -276,6 +287,7 @@ impl BuddyState {
         }
     }
 
+    #[must_use]
     pub fn compute() -> Self {
         let store = super::super::stats::load();
         let tokens_saved = store
@@ -330,7 +342,7 @@ impl BuddyState {
         // creating a natural milestone-driven evolution.
         let gain_engine = crate::core::gain::GainEngine::load();
         let gain_score = gain_engine.gain_score(None);
-        let gain_level_boost = gain_score.level().level as u32;
+        let gain_level_boost = u32::from(gain_score.level().level);
         let effective_level = level.max(gain_level_boost * 10);
 
         let evolution = super::evolution::EvolutionStage::from_level(effective_level);

@@ -10,6 +10,7 @@ const TOKEN_BYTES: usize = 32;
 const TOKEN_FILE: &str = "session_token";
 
 /// Generate a cryptographically random hex token.
+#[must_use]
 pub fn generate_token() -> String {
     let mut buf = [0u8; TOKEN_BYTES];
     getrandom::fill(&mut buf).expect("getrandom failed");
@@ -19,8 +20,8 @@ pub fn generate_token() -> String {
 fn bytes_to_hex(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for &b in bytes {
-        s.push(char::from_digit((b >> 4) as u32, 16).unwrap_or('0'));
-        s.push(char::from_digit((b & 0xf) as u32, 16).unwrap_or('0'));
+        s.push(char::from_digit(u32::from(b >> 4), 16).unwrap_or('0'));
+        s.push(char::from_digit(u32::from(b & 0xf), 16).unwrap_or('0'));
     }
     s
 }
@@ -31,6 +32,7 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
 /// 1. Explicit env var (user override)
 /// 2. Existing token file (persistence across restarts)
 /// 3. Generate new + write to file
+#[must_use]
 pub fn resolve_proxy_token(env_var: &str) -> String {
     if let Ok(val) = std::env::var(env_var)
         && !val.trim().is_empty()

@@ -436,7 +436,7 @@ fn check_mcp_json(path: &std::path::Path, binary: &str, data_dir: &str) -> Named
     }
 }
 
-/// JetBrains AI Assistant has no auto-wiring: lean-ctx writes a ready-to-paste
+/// `JetBrains` AI Assistant has no auto-wiring: lean-ctx writes a ready-to-paste
 /// snippet to `~/.jb-mcp.json`, which the user imports once via the IDE. The
 /// `doctor` verdict therefore verifies the snippet exists and is current, while
 /// making the required manual step explicit instead of implying auto-wiring.
@@ -819,9 +819,9 @@ fn check_crush_config(path: &std::path::Path, binary: &str, data_dir: &str) -> N
     }
 }
 
-/// OpenClaw (GitHub #390): the entry must live under the nested `mcp.servers`
+/// `OpenClaw` (GitHub #390): the entry must live under the nested `mcp.servers`
 /// schema (2026.6.1+). A leftover top-level `mcpServers` block is flagged even
-/// when the nested entry is fine — OpenClaw's strict validator rejects the
+/// when the nested entry is fine — `OpenClaw`'s strict validator rejects the
 /// whole config over it on every hot-reload.
 fn check_openclaw_config(path: &std::path::Path, binary: &str, data_dir: &str) -> NamedCheck {
     let name = "OpenClaw MCP".to_string();

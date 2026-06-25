@@ -1,7 +1,7 @@
-//! ctx_compile -- Context compilation tool.
+//! `ctx_compile` -- Context compilation tool.
 //!
 //! Runs the context compiler to produce an optimal context package
-//! under budget constraints. Uses the plan from ctx_plan or builds
+//! under budget constraints. Uses the plan from `ctx_plan` or builds
 //! one on-the-fly from the current ledger state.
 
 use serde_json::Value;

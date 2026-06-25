@@ -10,6 +10,7 @@ pub struct ProgressSender {
 }
 
 impl ProgressSender {
+    #[must_use]
     pub fn new(peer: Peer<RoleServer>, token: ProgressToken) -> Self {
         Self { peer, token }
     }

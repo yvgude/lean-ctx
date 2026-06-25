@@ -147,6 +147,7 @@ impl ClaimExtractor {
         self.proof.add_claim(claim);
     }
 
+    #[must_use]
     pub fn finalize(self) -> ContextProofV2 {
         self.proof
     }

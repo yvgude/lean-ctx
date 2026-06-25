@@ -89,6 +89,7 @@ fn file_ref(key: &str, store: &CliCacheStore) -> String {
     format!("F{}", idx + 1)
 }
 
+#[must_use]
 pub fn check_and_read(path: &str) -> CacheResult {
     let Ok(content) = crate::core::io_boundary::read_file_lossy(path) else {
         return CacheResult::Miss {
@@ -144,6 +145,7 @@ pub fn invalidate(path: &str) {
     save_store(&store);
 }
 
+#[must_use]
 pub fn clear() -> usize {
     let mut store = load_store();
     let count = store.entries.len();
@@ -152,6 +154,7 @@ pub fn clear() -> usize {
     count
 }
 
+#[must_use]
 pub fn clear_project(project_root: &str) -> usize {
     let mut store = load_store();
     let prefix = normalize_key(project_root);
@@ -164,6 +167,7 @@ pub fn clear_project(project_root: &str) -> usize {
     removed
 }
 
+#[must_use]
 pub fn stats() -> (u64, u64, usize) {
     let store = load_store();
     (store.total_hits, store.total_reads, store.entries.len())
@@ -188,6 +192,7 @@ fn evict_stale(store: &mut CliCacheStore, now: u64) {
     }
 }
 
+#[must_use]
 pub fn format_hit(entry: &CliCacheEntry, file_ref: &str, short_path: &str) -> String {
     if crate::core::protocol::savings_footer_visible() {
         format!(

@@ -50,6 +50,7 @@ fn ascension_ansi(tier: u32) -> &'static str {
     }
 }
 
+#[must_use]
 pub fn format_buddy_block(state: &BuddyState, theme: &super::super::theme::Theme) -> String {
     format_buddy_block_at(state, theme, None)
 }
@@ -387,6 +388,7 @@ fn progression_bar(state: &BuddyState, theme: &super::super::theme::Theme, width
     )
 }
 
+#[must_use]
 pub fn format_buddy_full(state: &BuddyState, theme: &super::super::theme::Theme) -> String {
     let rst = super::super::theme::rst();
     let accent = theme.accent.fg();

@@ -1,5 +1,6 @@
 use crate::core::gain::GainEngine;
 
+#[must_use]
 pub fn handle(
     action: &str,
     period: Option<&str>,
@@ -233,6 +234,7 @@ fn format_usd(amount: f64) -> String {
 }
 
 /// Premium themed deep sections for the CLI `gain --deep` dashboard.
+#[must_use]
 pub fn format_deep_themed(model: Option<&str>, limit: usize) -> String {
     use crate::core::theme;
     let engine = GainEngine::load();

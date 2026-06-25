@@ -30,14 +30,17 @@ fn data_dir() -> PathBuf {
         .join("lean-ctx")
 }
 
+#[must_use]
 pub fn daemon_pid_path() -> PathBuf {
     data_dir().join("daemon.pid")
 }
 
+#[must_use]
 pub fn daemon_addr() -> ipc::DaemonAddr {
     ipc::DaemonAddr::default_for_current_os()
 }
 
+#[must_use]
 pub fn is_daemon_running() -> bool {
     let pid_path = daemon_pid_path();
     let Ok(contents) = fs::read_to_string(&pid_path) else {
@@ -54,6 +57,7 @@ pub fn is_daemon_running() -> bool {
     false
 }
 
+#[must_use]
 pub fn read_daemon_pid() -> Option<u32> {
     let contents = fs::read_to_string(daemon_pid_path()).ok()?;
     contents.trim().parse::<u32>().ok()
@@ -61,7 +65,7 @@ pub fn read_daemon_pid() -> Option<u32> {
 
 /// Exclusive, bounded-wait lock that serializes the daemon-start critical
 /// section (liveness check → spawn → PID write). Several MCP servers launching
-/// at once (Claude Code + OpenCode + Cursor) would otherwise all pass the
+/// at once (Claude Code + `OpenCode` + Cursor) would otherwise all pass the
 /// `is_daemon_running()` check in the TOCTOU window and each spawn a daemon —
 /// the process proliferation seen in #453. The advisory flock is tied to the
 /// open fd, so it is released automatically if a holder crashes; the bounded
@@ -225,7 +229,7 @@ pub fn stop_daemon() -> Result<()> {
     let orphans = ipc::process::find_pids_by_name("lean-ctx");
     if !orphans.is_empty() {
         eprintln!("  Cleaning up {} orphan process(es)…", orphans.len());
-        ipc::process::kill_all_by_name("lean-ctx");
+        let _ = ipc::process::kill_all_by_name("lean-ctx");
     }
 
     Ok(())
@@ -243,6 +247,7 @@ fn try_http_shutdown() -> bool {
     })
 }
 
+#[must_use]
 pub fn daemon_status() -> String {
     let addr = daemon_addr();
     if let Some(pid) = read_daemon_pid() {

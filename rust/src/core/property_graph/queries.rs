@@ -2,7 +2,7 @@
 //! dependency chains (BFS-based shortest path).
 //!
 //! All traversal queries support multi-edge traversal: imports, calls,
-//! exports, type_ref, tested_by, and more. Edge kinds are weighted
+//! exports, `type_ref`, `tested_by`, and more. Edge kinds are weighted
 //! for impact scoring.
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -46,6 +46,7 @@ const STRUCTURAL_EDGE_KINDS: &str =
     "'imports','calls','exports','type_ref','tested_by','module','cochange','sibling'";
 
 /// Weight multiplier per edge kind for impact scoring.
+#[must_use]
 pub fn edge_weight(kind: &str) -> f64 {
     match kind {
         "imports" => 1.0,
@@ -62,7 +63,7 @@ pub fn edge_weight(kind: &str) -> f64 {
     }
 }
 
-/// Files that depend on `file_path` via structural edges (imports, calls, type_ref, etc.).
+/// Files that depend on `file_path` via structural edges (imports, calls, `type_ref`, etc.).
 pub(super) fn dependents(conn: &Connection, file_path: &str) -> anyhow::Result<Vec<String>> {
     let sql = format!(
         "SELECT DISTINCT n_src.file_path

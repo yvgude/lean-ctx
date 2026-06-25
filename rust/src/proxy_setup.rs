@@ -130,12 +130,14 @@ pub fn cleanup_stale_proxy_env(home: &Path) -> usize {
     cleaned
 }
 
+#[must_use]
 pub fn is_local_lean_ctx_url(url: &str) -> bool {
     url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")
 }
 
-/// Returns true if Claude Code settings contain a local ANTHROPIC_BASE_URL
+/// Returns true if Claude Code settings contain a local `ANTHROPIC_BASE_URL`
 /// while the proxy is not enabled (stale configuration).
+#[must_use]
 pub fn has_stale_proxy_url(home: &Path) -> bool {
     let cfg = crate::core::config::Config::load();
     if cfg.proxy_enabled == Some(true) {
@@ -170,6 +172,7 @@ pub fn has_stale_proxy_url(home: &Path) -> bool {
 /// by any custom `ANTHROPIC_BASE_URL`, so redirecting subscription traffic through the
 /// proxy only breaks auth (login loop / 401). When this returns `false`, callers must
 /// NOT point Claude Code at the proxy.
+#[must_use]
 pub fn anthropic_api_key_available(home: &Path) -> bool {
     // 1) Process environment — covers shells and Claude Code launched from them.
     for var in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] {
@@ -460,7 +463,7 @@ fn uninstall_pi_env(home: &Path, quiet: bool) {
 /// Testable core of [`install_pi_env`]: operates on an explicit `~/.pi/agent`
 /// directory. Wires both providers using the same per-SDK conventions as the
 /// shell exports — Anthropic gets the bare origin (it appends `/v1` itself),
-/// OpenAI gets the `/v1`-suffixed URL (#366). A custom *remote* endpoint is
+/// `OpenAI` gets the `/v1`-suffixed URL (#366). A custom *remote* endpoint is
 /// preserved unless `force`, and only the providers we actually rewrite are
 /// touched, so the file round-trips cleanly on `disable`.
 fn install_pi_env_at(agent_dir: &Path, port: u16, quiet: bool, force: bool) {
@@ -735,6 +738,7 @@ fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, force: bool) {
 }
 
 /// Proxy reachability timeout. Priority: env var > config.toml > 200ms default.
+#[must_use]
 pub fn proxy_timeout() -> std::time::Duration {
     if let Ok(val) = std::env::var("LEAN_CTX_PROXY_TIMEOUT_MS")
         && let Ok(ms) = val.parse::<u64>()
@@ -823,6 +827,7 @@ fn install_codex_env_at(config_dir: &Path, port: u16, quiet: bool) {
     }
 }
 
+#[must_use]
 pub fn default_port() -> u16 {
     if let Ok(val) = std::env::var("LEAN_CTX_PROXY_PORT")
         && let Ok(port) = val.parse::<u16>()

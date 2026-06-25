@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 /// Strip `//` line comments, `/* */` block comments and trailing commas from
-/// JSONC, then parse with serde_json. String contents are preserved verbatim.
+/// JSONC, then parse with `serde_json`. String contents are preserved verbatim.
 ///
 /// This makes lean-ctx tolerant of the JSONC dialect that editors like VS Code
 /// use for `settings.json` / `mcp.json` (comments + trailing commas are valid

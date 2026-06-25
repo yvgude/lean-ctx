@@ -316,6 +316,7 @@ fn deferred_ranking_note(project_root: &str) -> String {
 }
 
 /// Compose a single rich response for `task`.
+#[must_use]
 pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usize) {
     let task = task.trim();
     if task.is_empty() {

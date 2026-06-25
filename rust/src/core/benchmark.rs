@@ -526,6 +526,7 @@ fn simulate_session(files: &[FileMeasurement]) -> SessionSimResult {
 
 // ── Public API ──────────────────────────────────────────────
 
+#[must_use]
 pub fn run_project_benchmark(path: &str) -> ProjectBenchmark {
     let root = if path.is_empty() { "." } else { path };
     let scanned = scan_project(root);
@@ -555,6 +556,7 @@ pub fn run_project_benchmark(path: &str) -> ProjectBenchmark {
 
 // ── Report: Terminal ────────────────────────────────────────
 
+#[must_use]
 pub fn format_terminal(b: &ProjectBenchmark) -> String {
     let mut out = Vec::new();
     let sep = "\u{2550}".repeat(66);
@@ -676,6 +678,7 @@ pub fn format_terminal(b: &ProjectBenchmark) -> String {
 
 // ── Report: Markdown ────────────────────────────────────────
 
+#[must_use]
 pub fn format_markdown(b: &ProjectBenchmark) -> String {
     let mut out = Vec::new();
 
@@ -779,6 +782,7 @@ pub fn format_markdown(b: &ProjectBenchmark) -> String {
 
 // ── Report: JSON ────────────────────────────────────────────
 
+#[must_use]
 pub fn format_json(b: &ProjectBenchmark) -> String {
     let modes: Vec<serde_json::Value> = b.mode_summaries.iter().map(|m| {
         serde_json::json!({

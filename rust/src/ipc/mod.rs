@@ -22,6 +22,7 @@ pub enum DaemonAddr {
 }
 
 impl DaemonAddr {
+    #[must_use]
     pub fn default_for_current_os() -> Self {
         #[cfg(unix)]
         {
@@ -33,6 +34,7 @@ impl DaemonAddr {
         }
     }
 
+    #[must_use]
     pub fn display(&self) -> String {
         match self {
             #[cfg(unix)]
@@ -43,6 +45,7 @@ impl DaemonAddr {
     }
 
     /// Check whether anything is currently listening on this address.
+    #[must_use]
     pub fn is_listening(&self) -> bool {
         match self {
             #[cfg(unix)]

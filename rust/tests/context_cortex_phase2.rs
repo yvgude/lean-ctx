@@ -257,7 +257,7 @@ fn consolidation_stores_in_session_cache() {
     let artifacts = consolidate(&chunks);
     let mut cache = SessionCache::new();
 
-    apply_artifacts(&artifacts, None, None, Some(&mut cache));
+    let _ = apply_artifacts(&artifacts, None, None, Some(&mut cache));
 
     assert!(cache.get("github://issues/42").is_some());
     assert!(cache.get("github://pull_requests/100").is_some());
@@ -269,7 +269,7 @@ fn cached_provider_result_has_correct_content() {
     let artifacts = consolidate(&chunks);
     let mut cache = SessionCache::new();
 
-    apply_artifacts(&artifacts, None, None, Some(&mut cache));
+    let _ = apply_artifacts(&artifacts, None, None, Some(&mut cache));
 
     let entry = cache.get("github://issues/42").unwrap();
     let content = entry.content().unwrap();
@@ -408,7 +408,7 @@ fn bm25_search_finds_consolidated_provider_data() {
         content_truncated: false,
     };
 
-    apply_artifacts(&artifacts, Some(&mut index), None, None);
+    let _ = apply_artifacts(&artifacts, Some(&mut index), None, None);
 
     let results = bm25_search(&index, "authentication token", 5);
     assert!(!results.is_empty());

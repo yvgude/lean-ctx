@@ -2,6 +2,7 @@ use crate::core::tokens::count_tokens;
 use std::path::Path;
 
 /// Dispatches code review actions (review, diff-review, checklist).
+#[must_use]
 pub fn handle(action: &str, path: Option<&str>, root: &str, depth: Option<usize>) -> String {
     match action {
         "review" => handle_review(path, root, depth.unwrap_or(3)),
@@ -152,6 +153,7 @@ fn extract_changed_files(diff_text: &str) -> Vec<String> {
 }
 
 /// Finds test files related to the given source file by naming conventions.
+#[must_use]
 pub fn find_related_tests(file_path: &str, root: &str) -> Vec<String> {
     let p = Path::new(file_path);
     let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {

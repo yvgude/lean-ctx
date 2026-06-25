@@ -18,6 +18,7 @@ pub enum TaskCategory {
 }
 
 impl TaskCategory {
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
             TaskCategory::Coding => "Coding",
@@ -40,6 +41,7 @@ impl TaskCategory {
 pub struct TaskClassifier;
 
 impl TaskClassifier {
+    #[must_use]
     pub fn classify_tool(tool_name: &str) -> TaskCategory {
         let t = normalize(tool_name);
         match t.as_str() {
@@ -60,6 +62,7 @@ impl TaskClassifier {
         }
     }
 
+    #[must_use]
     pub fn classify_command_key(cmd_key: &str) -> TaskCategory {
         let k = normalize(cmd_key);
         if k.is_empty() {

@@ -17,6 +17,7 @@ pub struct CategorizedLine<'a> {
     pub original_index: usize,
 }
 
+#[must_use]
 pub fn categorize_line(line: &str) -> LineCategory {
     let trimmed = line.trim();
     if trimmed.is_empty() {
@@ -46,6 +47,7 @@ pub fn categorize_line(line: &str) -> LineCategory {
     LineCategory::Logic
 }
 
+#[must_use]
 pub fn reorder_for_lcurve(content: &str, task_keywords: &[String]) -> String {
     let lines: Vec<&str> = content.lines().collect();
     if lines.len() <= 5 {

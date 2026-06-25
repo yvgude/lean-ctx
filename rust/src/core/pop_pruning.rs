@@ -16,6 +16,7 @@ pub struct ExcludedModule {
     pub reason: String,
 }
 
+#[must_use]
 pub fn decide_for_candidates(
     task: &str,
     project_root: &str,
@@ -73,6 +74,7 @@ pub fn decide_for_candidates(
     }
 }
 
+#[must_use]
 pub fn filter_candidates_by_pop<'a>(
     project_root: &str,
     candidates: &'a [&RelevanceScore],
@@ -96,6 +98,7 @@ pub fn filter_candidates_by_pop<'a>(
         .collect()
 }
 
+#[must_use]
 pub fn module_for_path(path: &str, project_root: &str) -> String {
     let rel = path
         .strip_prefix(project_root)

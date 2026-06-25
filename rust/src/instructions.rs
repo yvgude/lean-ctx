@@ -55,7 +55,7 @@ pub fn build_instructions_for_test(crp_mode: CrpMode) -> String {
 }
 
 /// Deterministic instruction builder for the Instruction Compiler.
-/// Uses shadow mode (COMPACT_SHADOW profile) to avoid duplicating
+/// Uses shadow mode (`COMPACT_SHADOW` profile) to avoid duplicating
 /// BULLETS/NEVER/CRITICAL that the CLAUDE.md / dedicated rule file carries.
 #[must_use]
 pub fn build_instructions_with_client_for_compiler(
@@ -129,7 +129,7 @@ fn rotate_wakeup_manifest(session: &crate::core::session::SessionState, profile_
     let _ = updated.save();
 }
 
-/// Display path for the Claude config directory (respected by CLAUDE_CONFIG_DIR).
+/// Display path for the Claude config directory (respected by `CLAUDE_CONFIG_DIR`).
 #[must_use]
 pub fn claude_config_dir_display() -> String {
     match std::env::var("CLAUDE_CONFIG_DIR") {

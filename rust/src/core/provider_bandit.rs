@@ -24,6 +24,7 @@ pub struct ProviderArm {
 }
 
 impl ProviderArm {
+    #[must_use]
     pub fn sample(&self) -> f64 {
         beta_sample(self.alpha, self.beta)
     }
@@ -38,6 +39,7 @@ impl ProviderArm {
         self.pulls += 1;
     }
 
+    #[must_use]
     pub fn mean(&self) -> f64 {
         self.alpha / (self.alpha + self.beta)
     }
@@ -56,6 +58,7 @@ impl Default for ProviderBandit {
 }
 
 impl ProviderBandit {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             arms: HashMap::new(),
@@ -63,7 +66,7 @@ impl ProviderBandit {
     }
 
     /// Select the best provider for a given task type using Thompson Sampling.
-    /// Returns the provider_id with the highest sampled value.
+    /// Returns the `provider_id` with the highest sampled value.
     pub fn select_provider(
         &mut self,
         task_type: &str,
@@ -125,6 +128,7 @@ impl ProviderBandit {
     /// Load the persisted bandit for a project, or a fresh one if none exists.
     /// Persistence is what turns the preloader from a per-call heuristic into a
     /// model that genuinely learns which providers pay off for which task types.
+    #[must_use]
     pub fn load(project_root: &str) -> Self {
         let path = provider_bandit_path(project_root);
         if let Ok(content) = std::fs::read_to_string(&path)
@@ -146,6 +150,7 @@ impl ProviderBandit {
     }
 
     /// Format a summary of all arms for debugging/logging.
+    #[must_use]
     pub fn format_report(&self) -> String {
         let mut out = String::from("Provider Bandit Arms:\n");
         let mut keys: Vec<_> = self.arms.keys().collect();

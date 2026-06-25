@@ -21,10 +21,11 @@ pub const EDGE_QUERIES: &str = "queries";
 pub const EDGE_DOCUMENTS: &str = "documents";
 pub const EDGE_RESOLVES: &str = "resolves";
 
-/// Extract cross-source edges from a set of ContentChunks.
+/// Extract cross-source edges from a set of `ContentChunks`.
 ///
 /// For each external chunk, creates edges from the chunk's URI to every
 /// file path in its `references` list.
+#[must_use]
 pub fn extract_cross_source_edges(chunks: &[ContentChunk]) -> Vec<IndexEdge> {
     let mut edges = Vec::new();
 
@@ -55,7 +56,7 @@ pub fn extract_cross_source_edges(chunks: &[ContentChunk]) -> Vec<IndexEdge> {
     edges
 }
 
-/// Determine the edge kind based on the chunk's ChunkKind.
+/// Determine the edge kind based on the chunk's `ChunkKind`.
 fn chunk_to_edge_kind(chunk: &ContentChunk) -> &'static str {
     use crate::core::chunk_data::ChunkKind;
     match chunk.kind {
@@ -77,7 +78,7 @@ fn edge_weight_for_kind(kind: &str) -> f32 {
     }
 }
 
-/// Merge cross-source edges into an existing ProjectIndex edge list.
+/// Merge cross-source edges into an existing `ProjectIndex` edge list.
 /// Deduplicates edges with the same (from, to, kind) triple, keeping
 /// the higher weight.
 pub fn merge_edges(existing: &mut Vec<IndexEdge>, new_edges: Vec<IndexEdge>) -> usize {

@@ -1,4 +1,4 @@
-//! Shadow-mode parity harness (#682.3): prove the PropertyGraph reproduces
+//! Shadow-mode parity harness (#682.3): prove the `PropertyGraph` reproduces
 //! everything `graph_index` exposes through the [`GraphProvider`] facade —
 //! symbols, edges and structural dependencies — *before* any backend flip
 //! (#682.4) relies on PG.
@@ -6,7 +6,7 @@
 //! The mirror ([`populate_from_project_index`]) sources PG from the very
 //! `ProjectIndex` that `graph_index` produces, so equivalence is expected by
 //! construction. This harness is the executable proof and the regression gate
-//! that it stays so: it asserts PG loses nothing graph_index exposed (exact
+//! that it stays so: it asserts PG loses nothing `graph_index` exposed (exact
 //! counts + inventory + symbol lookups, and a structural-edge / dependency
 //! superset — PG may legitimately expose *more*, never less).
 
@@ -20,7 +20,7 @@ use crate::core::property_graph::{CodeGraph, populate_from_project_index};
 /// balloon the report; counts remain exact regardless.
 const MAX_DIVERGENCES: usize = 20;
 
-/// Quantified comparison of PropertyGraph vs graph_index facade output.
+/// Quantified comparison of `PropertyGraph` vs `graph_index` facade output.
 #[derive(Debug, Default, Clone)]
 pub struct ParityReport {
     pub files: usize,
@@ -34,7 +34,7 @@ pub struct ParityReport {
     pub dependencies_lossless: usize,
     /// Files where `gi.dependents ⊆ pg.dependents` (no loss).
     pub dependents_lossless: usize,
-    /// Extra dependency edges PG exposes beyond graph_index (enrichment, e.g.
+    /// Extra dependency edges PG exposes beyond `graph_index` (enrichment, e.g.
     /// re-export / sibling / co-change edges the import-only GI facade omits).
     pub dependencies_extra: usize,
     pub symbols_checked: usize,
@@ -45,9 +45,10 @@ pub struct ParityReport {
 }
 
 impl ParityReport {
-    /// True when PG loses nothing graph_index exposed: exact counts, identical
+    /// True when PG loses nothing `graph_index` exposed: exact counts, identical
     /// file inventory, no dependency/dependent loss, every sampled symbol
     /// matched, and the structural-edge set is a superset.
+    #[must_use]
     pub fn is_lossless(&self) -> bool {
         self.symbol_count_pg == self.symbol_count_gi
             && self.edge_count_pg == self.edge_count_gi
@@ -65,9 +66,9 @@ impl ParityReport {
     }
 }
 
-/// Build an in-memory PropertyGraph from `index` and compare it, through the
+/// Build an in-memory `PropertyGraph` from `index` and compare it, through the
 /// shared [`GraphProvider`] facade, against the same index served as
-/// graph_index. Pure in-memory — no disk, no rescan.
+/// `graph_index`. Pure in-memory — no disk, no rescan.
 pub fn compare(index: &ProjectIndex) -> anyhow::Result<ParityReport> {
     let pg = CodeGraph::open_in_memory()?;
     populate_from_project_index(&pg, index)?;
@@ -151,6 +152,7 @@ pub fn compare(index: &ProjectIndex) -> anyhow::Result<ParityReport> {
 }
 
 /// Render a [`ParityReport`] as a compact, deterministic text block.
+#[must_use]
 pub fn format_report(r: &ParityReport) -> String {
     let verdict = if r.is_lossless() {
         "LOSSLESS — PropertyGraph reproduces graph_index (safe to flip)"

@@ -1,5 +1,6 @@
 use crate::core::gotcha_tracker::GotchaStore;
 
+#[must_use]
 pub fn reminders_for_task(project_root: &str, task: &str) -> Vec<String> {
     let task_terms = tokenize(task);
     if task_terms.is_empty() {

@@ -93,7 +93,7 @@ pub fn build_structure(project_root: &str, files: &[DiscoveredFile], gbuf: &mut 
 ///
 /// Because `upsert_node` and `insert_edge` are both idempotent, calling this
 /// for a directory that has already been processed is a no-op (aside from a
-/// handful of HashMap lookups).
+/// handful of `HashMap` lookups).
 ///
 /// # Panics
 ///

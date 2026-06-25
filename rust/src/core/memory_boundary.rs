@@ -56,6 +56,7 @@ pub struct CrossProjectAuditEvent {
     pub policy_reason: String,
 }
 
+#[must_use]
 pub fn check_boundary(
     source_hash: &str,
     target_hash: &str,
@@ -73,13 +74,14 @@ pub fn check_boundary(
     }
 }
 
+#[must_use]
 pub fn is_same_project_identity(hash_a: &str, hash_b: &str) -> bool {
     !hash_a.is_empty() && !hash_b.is_empty() && hash_a == hash_b
 }
 
 /// Cap for the operational cross-project audit mirror. Kept >= the largest limit served
 /// by the /v1/audit/events endpoint (capped at 1000) so no reader observes truncation.
-/// The hash-chained compliance trail is separate (core::audit_trail) and not rotated here.
+/// The hash-chained compliance trail is separate (`core::audit_trail`) and not rotated here.
 const MAX_AUDIT_LINES: usize = 2000;
 
 pub fn record_audit_event(event: &CrossProjectAuditEvent) {
@@ -121,6 +123,7 @@ pub fn record_audit_event(event: &CrossProjectAuditEvent) {
     }
 }
 
+#[must_use]
 pub fn load_audit_events(limit: usize) -> Vec<CrossProjectAuditEvent> {
     let path = match lean_ctx_data_dir() {
         Ok(d) => d.join("audit").join("cross-project.jsonl"),

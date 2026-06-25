@@ -16,6 +16,7 @@ use crate::core::providers::ProviderItem;
 /// - `"array[].field"` — map over array elements and collect
 ///
 /// Returns `None` if the path doesn't resolve.
+#[must_use]
 pub fn extract_value(json: &Value, path: &str) -> Option<Value> {
     if path.is_empty() {
         return Some(json.clone());
@@ -119,6 +120,7 @@ fn type_name(val: &Value) -> &'static str {
 }
 
 /// Map a single JSON object to a `ProviderItem` using the field mapping.
+#[must_use]
 pub fn map_item(json: &Value, mapping: &FieldMapping) -> Option<ProviderItem> {
     let id = extract_value(json, &mapping.id).and_then(|v| value_to_string(&v))?;
     let title = extract_value(json, &mapping.title)

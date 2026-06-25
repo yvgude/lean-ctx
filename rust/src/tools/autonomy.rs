@@ -46,6 +46,7 @@ impl Default for AutonomyState {
 
 impl AutonomyState {
     /// Creates a new autonomy state with config loaded from disk.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             session_initialized: AtomicBool::new(false),

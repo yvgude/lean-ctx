@@ -542,13 +542,13 @@ pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String, String)
 /// which `setup` deletes since the v3 layout — GL #555).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ClaudeInstructionsState {
-    /// rules_scope=project: global instructions are intentionally absent.
+    /// `rules_scope=project`: global instructions are intentionally absent.
     ProjectScope,
-    /// rules_injection=off: user opted out of instructions entirely (GH #361).
+    /// `rules_injection=off`: user opted out of instructions entirely (GH #361).
     InjectionOff,
-    /// rules_injection=dedicated: SessionStart hook injects, skill on disk.
+    /// `rules_injection=dedicated`: `SessionStart` hook injects, skill on disk.
     DedicatedWithSkill,
-    /// rules_injection=dedicated but the skill is missing.
+    /// `rules_injection=dedicated` but the skill is missing.
     DedicatedMissingSkill,
     /// CLAUDE.md block + on-demand skill (post-3.8 default layout).
     BlockAndSkill,
@@ -611,8 +611,8 @@ pub(super) fn claude_instructions_state(
     S::Missing
 }
 
-/// CodeBuddy instructions state — mirrors `claude_instructions_state` since
-/// CodeBuddy uses the same CODEBUDDY.md block + skill pattern as Claude Code.
+/// `CodeBuddy` instructions state — mirrors `claude_instructions_state` since
+/// `CodeBuddy` uses the same CODEBUDDY.md block + skill pattern as Claude Code.
 pub(super) fn codebuddy_instructions_state(
     home: &std::path::Path,
     scope: crate::core::config::RulesScope,

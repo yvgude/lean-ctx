@@ -429,7 +429,7 @@ fn recall_as_of(
 }
 
 /// Persist recall state to disk on a background thread so recall returns
-/// immediately. Retrieval signals (retrieval_count, last_retrieved) are
+/// immediately. Retrieval signals (`retrieval_count`, `last_retrieved`) are
 /// best-effort metadata; losing them on crash is acceptable.
 ///
 /// The save is reconciled against the latest on-disk state *under the shared

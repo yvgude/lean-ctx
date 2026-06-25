@@ -1,4 +1,4 @@
-//! Post-passes that add SIMILAR_TO and SEMANTICALLY_RELATED edges to the
+//! Post-passes that add `SIMILAR_TO` and `SEMANTICALLY_RELATED` edges to the
 //! graph index after the main build is complete.
 //!
 //! Both passes are algorithmic (Random Indexing), always compiled, and require
@@ -23,16 +23,16 @@ use crate::core::index_types::NodeId;
 /// Random Indexing dimension.
 pub const RI_DIM: usize = 256;
 
-/// Non-zero entries per sparse random vector (matches CBM_SEM_SPARSE_NNZE).
+/// Non-zero entries per sparse random vector (matches `CBM_SEM_SPARSE_NNZE`).
 pub const SPARSE_NNZE: usize = 8;
 
-/// Jaccard threshold for SIMILAR_TO edge.
+/// Jaccard threshold for `SIMILAR_TO` edge.
 pub const SIMILAR_THRESHOLD: f32 = 0.5;
 
-/// Cosine threshold for SEMANTICALLY_RELATED edge (matches CBM_SEM_EDGE_THRESHOLD).
+/// Cosine threshold for `SEMANTICALLY_RELATED` edge (matches `CBM_SEM_EDGE_THRESHOLD`).
 pub const SEMANTIC_THRESHOLD: f32 = 0.75;
 
-/// Maximum edges per source file node (matches CBM_SEM_MAX_EDGES).
+/// Maximum edges per source file node (matches `CBM_SEM_MAX_EDGES`).
 pub const MAX_EDGES_PER_NODE: usize = 10;
 
 /// Small epsilon to prevent division by zero in cosine similarity.
@@ -43,7 +43,7 @@ const TOKEN_BUCKET_COUNT: u64 = 256;
 
 // ── Public API ──
 
-/// Run post-passes to add SIMILAR_TO and SEMANTICALLY_RELATED edges.
+/// Run post-passes to add `SIMILAR_TO` and `SEMANTICALLY_RELATED` edges.
 ///
 /// - `Full` / `Moderate`: both passes run.
 /// - `Fast`: no-op.
@@ -106,7 +106,7 @@ fn jaccard(a: &HashSet<String>, b: &HashSet<String>) -> f32 {
     intersection as f32 / union as f32
 }
 
-/// Compute MinHash Jaccard similarity between two 64-element MinHash signatures.
+/// Compute `MinHash` Jaccard similarity between two 64-element `MinHash` signatures.
 ///
 /// Counts positions where `a[i] == b[i]` and divides by 64.
 /// This is an unbiased estimate of the true Jaccard similarity.
@@ -121,8 +121,8 @@ fn minhash_jaccard(a: &[u32], b: &[u32]) -> f32 {
 
 /// Build LSH bucket keys for each symbol.
 ///
-/// Symbols with MinHash use 16 bands of 4 values each (XOR-combined).
-/// Symbols without MinHash use one bucket per token: `hash(token) % TOKEN_BUCKET_COUNT`.
+/// Symbols with `MinHash` use 16 bands of 4 values each (XOR-combined).
+/// Symbols without `MinHash` use one bucket per token: `hash(token) % TOKEN_BUCKET_COUNT`.
 fn build_symbol_buckets(symbols: &HashMap<String, SymbolEntry>) -> HashMap<String, Vec<u64>> {
     let mut symbol_buckets: HashMap<String, Vec<u64>> = HashMap::new();
 
@@ -138,7 +138,7 @@ fn build_symbol_buckets(symbols: &HashMap<String, SymbolEntry>) -> HashMap<Strin
                     ^ entry.minhash[start + 2]
                     ^ entry.minhash[start + 3];
                 // Incorporate band index to keep bands separate
-                buckets.push((band as u64) << 32 | xor as u64);
+                buckets.push((band as u64) << 32 | u64::from(xor));
             }
         } else {
             // Token-based bucket: one bucket per token
@@ -159,7 +159,7 @@ fn build_symbol_buckets(symbols: &HashMap<String, SymbolEntry>) -> HashMap<Strin
     symbol_buckets
 }
 
-/// Build a map from file path to list of (symbol_key, SymbolEntry).
+/// Build a map from file path to list of (`symbol_key`, `SymbolEntry`).
 fn group_symbols_by_file(
     symbols: &HashMap<String, SymbolEntry>,
 ) -> HashMap<String, Vec<(String, &SymbolEntry)>> {
@@ -173,8 +173,8 @@ fn group_symbols_by_file(
     file_symbols
 }
 
-/// Compute SIMILAR_TO edges using MinHash Jaccard with LSH pre-filtering
-/// (falling back to token-name Jaccard when MinHash is unavailable).
+/// Compute `SIMILAR_TO` edges using `MinHash` Jaccard with LSH pre-filtering
+/// (falling back to token-name Jaccard when `MinHash` is unavailable).
 ///
 /// Groups symbols by file, uses LSH bucket pre-filtering to avoid O(n²)
 /// comparisons, then emits edges between file pairs with similarity > 0.5.
@@ -330,7 +330,7 @@ fn compute_similar_to(graph: &mut ProjectIndex) {
 // ── SEMANTICALLY_RELATED (Random Indexing + Cosine) ──
 
 /// A sparse random indexing vector with up to `SPARSE_NNZE` non-zero entries.
-/// Positions are in [0, RI_DIM) with values ±1/√(SPARSE_NNZE).
+/// Positions are in [0, `RI_DIM`) with values ±`1/√(SPARSE_NNZE)`.
 struct RiVector {
     positions: [usize; SPARSE_NNZE],
     values: [f32; SPARSE_NNZE],
@@ -343,8 +343,8 @@ impl RiVector {
     /// Hashes each TOKEN individually (not the full name), so symbols that share
     /// tokens (e.g. `get_user` and `get_user_by_id`) produce overlapping positions
     /// → non-zero cosine. Positions are deduplicated within the vector; if fewer
-    /// than SPARSE_NNZE unique positions come from tokens, the remainder are
-    /// padded using the full name as a seed. All values are ±1/√(SPARSE_NNZE),
+    /// than `SPARSE_NNZE` unique positions come from tokens, the remainder are
+    /// padded using the full name as a seed. All values are ±`1/√(SPARSE_NNZE)`,
     /// guaranteeing norm ≈ 1.0.
     fn for_symbol(name: &str) -> Self {
         let inv_sqrt_nnz = 1.0 / (SPARSE_NNZE as f32).sqrt();
@@ -470,16 +470,16 @@ fn is_ri_eligible(kind: &str) -> bool {
     )
 }
 
-/// Compute SEMANTICALLY_RELATED edges using Random Indexing.
+/// Compute `SEMANTICALLY_RELATED` edges using Random Indexing.
 ///
 /// Builds sparse RI vectors for each eligible symbol, then computes cosine
 /// similarity between pairs from different files. Uses hyperplane LSH
-/// pre-filtering (CandidateTable) to avoid O(n²) brute-force when the number
+/// pre-filtering (`CandidateTable`) to avoid O(n²) brute-force when the number
 /// of eligible symbols exceeds 100. For ≤100 symbols, falls back to the
 /// original O(n²) pairwise comparison.
 ///
-/// Edges are emitted for pairs with cosine > SEMANTIC_THRESHOLD, deduplicated
-/// by file pair (highest cosine wins), respecting MAX_EDGES_PER_NODE.
+/// Edges are emitted for pairs with cosine > `SEMANTIC_THRESHOLD`, deduplicated
+/// by file pair (highest cosine wins), respecting `MAX_EDGES_PER_NODE`.
 fn compute_semantically_related(graph: &mut ProjectIndex) {
     let file_symbols = group_symbols_by_file(&graph.symbols);
 
@@ -726,7 +726,7 @@ fn compute_semantically_related(graph: &mut ProjectIndex) {
 /// - `Full` / `Moderate`: similarity (via `similarity_pass`) + semantic passes.
 /// - `Fast`: no-op.
 ///
-/// This is the primary API for new code; existing ProjectIndex consumers
+/// This is the primary API for new code; existing `ProjectIndex` consumers
 /// should migrate when the pipeline transitions to `GraphBuffer`.
 pub fn run_post_passes(gbuf: &mut GraphBuffer, mode: IndexingMode) {
     match mode {
@@ -738,7 +738,7 @@ pub fn run_post_passes(gbuf: &mut GraphBuffer, mode: IndexingMode) {
     }
 }
 
-/// Compute SEMANTICALLY_RELATED edges using Random Indexing over `GbufNode`
+/// Compute `SEMANTICALLY_RELATED` edges using Random Indexing over `GbufNode`
 /// names and properties.
 ///
 /// Works like `compute_semantically_related` but reads from `GraphBuffer`

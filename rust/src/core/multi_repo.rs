@@ -46,6 +46,7 @@ pub struct RepoRootConfig {
 }
 
 impl RepoRootConfig {
+    #[must_use]
     pub fn effective_alias(&self) -> String {
         self.alias.clone().unwrap_or_else(|| {
             Path::new(&self.path)
@@ -67,6 +68,7 @@ pub struct MultiRepoConfig {
 }
 
 impl MultiRepoConfig {
+    #[must_use]
     pub fn load() -> Self {
         let config_path = config_file_path();
         if !config_path.exists() {
@@ -139,6 +141,7 @@ impl ActiveRepoRoot {
         ));
     }
 
+    #[must_use]
     pub fn alias(&self) -> String {
         self.config.effective_alias()
     }
@@ -177,6 +180,7 @@ pub struct MultiRepoManager {
 }
 
 impl MultiRepoManager {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             roots: Vec::new(),
@@ -184,6 +188,7 @@ impl MultiRepoManager {
         }
     }
 
+    #[must_use]
     pub fn with_rrf_k(mut self, k: f64) -> Self {
         self.rrf_k = k;
         self
@@ -244,6 +249,7 @@ impl MultiRepoManager {
         Ok(())
     }
 
+    #[must_use]
     pub fn list_roots(&self) -> Vec<RootInfo> {
         self.roots
             .iter()
@@ -255,15 +261,18 @@ impl MultiRepoManager {
             .collect()
     }
 
+    #[must_use]
     pub fn root_count(&self) -> usize {
         self.roots.len()
     }
 
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.roots.len() > 1
     }
 
     /// Resolve a repo alias or path to the corresponding root index.
+    #[must_use]
     pub fn resolve_root(&self, repo: &str) -> Option<usize> {
         self.roots.iter().position(|r| {
             r.alias() == repo || r.config.path == repo || r.path.to_string_lossy() == repo
@@ -356,6 +365,7 @@ pub struct RootInfo {
 }
 
 /// Returns the path to the multi-repo config file.
+#[must_use]
 pub fn config_file_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("~/.config"))
@@ -393,8 +403,9 @@ pub fn init_with_roots(
 }
 
 /// Resolve a `repo` alias/path to the actual filesystem root.
-/// Used by existing tools (ctx_read, ctx_search, etc.) when a `repo` param is provided.
+/// Used by existing tools (`ctx_read`, `ctx_search`, etc.) when a `repo` param is provided.
 /// Returns the absolute path to the repo root, or None if multi-repo is inactive or repo not found.
+#[must_use]
 pub fn resolve_repo_root(repo: &str) -> Option<String> {
     let manager = global_manager();
     let mgr = manager.lock().ok()?;
@@ -403,12 +414,14 @@ pub fn resolve_repo_root(repo: &str) -> Option<String> {
 }
 
 /// Check if multi-repo mode is active (more than 1 root configured).
+#[must_use]
 pub fn is_multi_repo_active() -> bool {
     let manager = global_manager();
     manager.lock().is_ok_and(|mgr| mgr.is_active())
 }
 
 /// Get all configured repo root paths (for tools that need to iterate).
+#[must_use]
 pub fn all_root_paths() -> Vec<String> {
     let manager = global_manager();
     let Ok(mgr) = manager.lock() else {
@@ -421,6 +434,7 @@ pub fn all_root_paths() -> Vec<String> {
 }
 
 /// Format search results for MCP output.
+#[must_use]
 pub fn format_fused_results(results: &[FusedSearchResult]) -> String {
     if results.is_empty() {
         return "No results found across repos.".to_string();

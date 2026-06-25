@@ -8,7 +8,7 @@
 //!   2. SCORE   Phi(i,t) for each candidate (Context Field)
 //!   3. SELECT  greedy knapsack with view selection
 //!   4. DEDUP   redundancy removal via Jaccard
-//!   5. ORDER   Lost-in-the-Middle reorder (LiTM profile)
+//!   5. ORDER   Lost-in-the-Middle reorder (`LiTM` profile)
 //!   6. RENDER  output in the requested mode
 //!   7. PROVE   record provenance in evidence ledger
 
@@ -28,6 +28,7 @@ pub enum CompileMode {
 }
 
 impl CompileMode {
+    #[must_use]
     pub fn parse(s: &str) -> Self {
         match s.trim().to_lowercase().as_str() {
             "compressed" => Self::Compressed,
@@ -36,6 +37,7 @@ impl CompileMode {
         }
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::HandleManifest => "handle_manifest",
@@ -387,6 +389,7 @@ fn best_affordable_view(costs: &ViewCosts, budget_left: usize) -> (ViewKind, usi
 }
 
 /// Format the compilation result for display.
+#[must_use]
 pub fn format_compile_result(result: &CompileResult) -> String {
     let mut out = String::new();
     out.push_str(&format!(

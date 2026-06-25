@@ -108,6 +108,7 @@ pub fn check_background() {
 
 /// Returns a formatted yellow update banner if a newer version is available.
 /// Reads only the local cache file — zero network calls, zero delay.
+#[must_use]
 pub fn get_update_banner() -> Option<String> {
     let cache = read_cache()?;
     if is_newer(&cache.latest, CURRENT_VERSION) {
@@ -122,6 +123,7 @@ pub fn get_update_banner() -> Option<String> {
 
 /// Returns version info as JSON for the dashboard /api/version endpoint.
 /// Includes the cache age so the UI can be honest about staleness (#563).
+#[must_use]
 pub fn version_info_json() -> String {
     let cache = read_cache();
     let (latest, update_available, age_secs) = match cache {

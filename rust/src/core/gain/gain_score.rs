@@ -22,6 +22,7 @@ pub struct GainScore {
 }
 
 impl GainScore {
+    #[must_use]
     pub fn compute(
         stats: &StatsStore,
         costs: &CostStore,
@@ -46,10 +47,10 @@ impl GainScore {
         let quality = quality_score(stats);
         let (consistency, trend) = consistency_and_trend(stats);
 
-        let total = ((compression as u64 * 35
-            + cost_efficiency as u64 * 25
-            + quality as u64 * 20
-            + consistency as u64 * 20)
+        let total = ((u64::from(compression) * 35
+            + u64::from(cost_efficiency) * 25
+            + u64::from(quality) * 20
+            + u64::from(consistency) * 20)
             / 100) as u32;
 
         Self {
@@ -173,6 +174,7 @@ pub struct GainLevel {
 }
 
 impl GainScore {
+    #[must_use]
     pub fn level(&self) -> GainLevel {
         match self.total {
             81..=100 => GainLevel {
@@ -204,6 +206,7 @@ impl GainScore {
     }
 
     /// Progress within the current level (0.0 to 1.0).
+    #[must_use]
     pub fn level_progress(&self) -> f64 {
         let lvl = self.level();
         let range_start = lvl.min_score;
@@ -214,11 +217,11 @@ impl GainScore {
             2 => 40,
             _ => 20,
         };
-        let range = (range_end - range_start) as f64;
+        let range = f64::from(range_end - range_start);
         if range == 0.0 {
             return 1.0;
         }
-        ((self.total - range_start) as f64 / range).clamp(0.0, 1.0)
+        (f64::from(self.total - range_start) / range).clamp(0.0, 1.0)
     }
 }
 

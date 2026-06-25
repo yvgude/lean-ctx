@@ -9,7 +9,7 @@
 //! anchor, and decays toward zero daily so stale lessons fade.
 //!
 //! Neuroscience analogue: dopaminergic active forgetting — eviction policy is
-//! learned from outcome signals, not hardcoded (SleepGate 2603.14517).
+//! learned from outcome signals, not hardcoded (`SleepGate` 2603.14517).
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -152,7 +152,7 @@ impl ThresholdLearner {
         entry.samples = entry.samples.saturating_add(1);
     }
 
-    /// Additive entropy-threshold delta for `ext`, or 0.0 before MIN_SAMPLES.
+    /// Additive entropy-threshold delta for `ext`, or 0.0 before `MIN_SAMPLES`.
     pub fn delta_for(&mut self, ext: &str, now: u64) -> f64 {
         let ext = normalize_ext(ext);
         let day = epoch_day(now);
@@ -183,7 +183,8 @@ impl ThresholdLearner {
         }
     }
 
-    /// One line per learned extension, for ctx_metrics.
+    /// One line per learned extension, for `ctx_metrics`.
+    #[must_use]
     pub fn report_lines(&self) -> Vec<String> {
         let mut exts: Vec<_> = self.per_ext.iter().collect();
         exts.sort_by(|a, b| a.0.cmp(b.0));
@@ -237,6 +238,7 @@ pub fn record_signal(path: &str, signal: QualitySignal) {
 }
 
 /// Process-global: learned additive delta for the extension (0.0 in warmup).
+#[must_use]
 pub fn learned_delta(ext: &str) -> f64 {
     with_buffer(|l| l.delta_for(ext, now_secs()))
 }
@@ -251,13 +253,15 @@ pub fn flush() {
     }
 }
 
-/// Process-global: report lines for ctx_metrics.
+/// Process-global: report lines for `ctx_metrics`.
+#[must_use]
 pub fn report() -> Vec<String> {
     with_buffer(|l| l.report_lines())
 }
 
 /// Process-global: machine-readable snapshot for the dashboard (#548),
 /// sorted by extension.
+#[must_use]
 pub fn snapshot() -> Vec<(String, LearnedDelta)> {
     with_buffer(|l| {
         let mut v: Vec<_> = l
@@ -271,6 +275,7 @@ pub fn snapshot() -> Vec<(String, LearnedDelta)> {
 }
 
 /// Process-global: clone of the full learner state for export (#550).
+#[must_use]
 pub fn export_state() -> ThresholdLearner {
     with_buffer(|l| l.clone())
 }

@@ -37,6 +37,7 @@ pub fn record(command: &str, duration_ms: u128, exit_code: i32) {
     let _ = std::fs::write(&path, content);
 }
 
+#[must_use]
 pub fn list() -> String {
     let Some(path) = slow_log_path() else {
         return "Cannot determine data directory.".to_string();
@@ -73,6 +74,7 @@ pub fn list() -> String {
     }
 }
 
+#[must_use]
 pub fn clear() -> String {
     let Some(path) = slow_log_path() else {
         return "Cannot determine data directory.".to_string();

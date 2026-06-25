@@ -1,4 +1,4 @@
-//! In-memory graph buffer — contiguous arrays with O(1) QN → NodeId lookup.
+//! In-memory graph buffer — contiguous arrays with O(1) QN → `NodeId` lookup.
 //!
 //! This is the in-memory graph store that replaces `RamGraphBuilder` during
 //! the new pipeline. It holds all nodes and edges in contiguous `Vec`s during
@@ -47,7 +47,7 @@ pub(crate) struct GraphBufferInner {
 // GraphBuffer (enum)
 // ---------------------------------------------------------------------------
 
-/// In-memory graph buffer — contiguous arrays with O(1) QN → NodeId lookup.
+/// In-memory graph buffer — contiguous arrays with O(1) QN → `NodeId` lookup.
 ///
 /// This is the in-memory graph store that replaces `RamGraphBuilder` during
 /// the new pipeline. It holds all nodes and edges in contiguous `Vec`s during
@@ -131,6 +131,7 @@ impl GraphBuffer {
     /// Create a new empty graph buffer.
     ///
     /// IDs start at 1 (sequential). The buffer owns all data.
+    #[must_use]
     pub fn new(project_root: &str) -> Self {
         GraphBuffer::Loaded(Box::new(GraphBufferInner {
             project_root: project_root.to_string(),
@@ -295,7 +296,7 @@ impl GraphBuffer {
     /// Upsert a node by qualified name.
     ///
     /// If a node with the same QN already exists, updates its fields in place
-    /// (label, name, file_path, start_line, end_line, properties) and returns
+    /// (label, name, `file_path`, `start_line`, `end_line`, properties) and returns
     /// the **existing** `NodeId` — the operation is idempotent.
     ///
     /// If no node with this QN exists, allocates a fresh `NodeId` and inserts
@@ -346,6 +347,7 @@ impl GraphBuffer {
     /// Find a node by its qualified name.
     ///
     /// Returns `None` when the QN has not been upserted or has been deleted.
+    #[must_use]
     pub fn find_by_qn(&self, qn: &str) -> Option<&GbufNode> {
         let inner = self.inner();
         inner
@@ -357,11 +359,13 @@ impl GraphBuffer {
     /// Find a node by its `NodeId`.
     ///
     /// Returns `None` when no node with this ID exists (e.g. it was deleted).
+    #[must_use]
     pub fn find_by_id(&self, id: NodeId) -> Option<&GbufNode> {
         self.inner().nodes.iter().find(|n| n.id == id)
     }
 
     /// Find all nodes with a given label. O(n) scan — no secondary index.
+    #[must_use]
     pub fn find_nodes_by_label(&self, label: &str) -> Vec<&GbufNode> {
         self.inner()
             .nodes
@@ -371,6 +375,7 @@ impl GraphBuffer {
     }
 
     /// Return the number of live (indexed) nodes.
+    #[must_use]
     pub fn node_count(&self) -> usize {
         match self {
             GraphBuffer::Empty => 0,
@@ -382,6 +387,7 @@ impl GraphBuffer {
     ///
     /// When a shared atomic source is configured, this loads the current value
     /// from the atomic. Otherwise returns the local counter.
+    #[must_use]
     pub fn next_node_id(&self) -> u32 {
         let inner = self.inner();
         inner
@@ -485,6 +491,7 @@ impl GraphBuffer {
     }
 
     /// Find all edges from `source_id` with a given `edge_type`. O(n) scan.
+    #[must_use]
     pub fn find_edges_by_source_type(&self, source_id: NodeId, edge_type: &str) -> Vec<&GbufEdge> {
         self.inner()
             .edges
@@ -494,6 +501,7 @@ impl GraphBuffer {
     }
 
     /// Return the total number of edges.
+    #[must_use]
     pub fn edge_count(&self) -> usize {
         match self {
             GraphBuffer::Empty => 0,
@@ -504,6 +512,7 @@ impl GraphBuffer {
     /// Check whether an edge `(source_id, target_id, edge_type)` exists.
     ///
     /// Returns `true` if a matching edge has been inserted.
+    #[must_use]
     pub fn edge_dedup_key(&self, source_id: NodeId, target_id: NodeId, edge_type: &str) -> bool {
         let key = (source_id, target_id, edge_type.to_string());
         self.inner().edge_dedup.contains_key(&key)
@@ -515,7 +524,7 @@ impl GraphBuffer {
     ///
     /// ## Node merge semantics
     /// - **QN collision**: source wins — updates dest node fields (label, name,
-    ///   file_path, line range, properties) in place. The collision is recorded
+    ///   `file_path`, line range, properties) in place. The collision is recorded
     ///   so edges referencing the source node ID can be remapped.
     /// - **No collision**: the source node is inserted into self. If its original
     ///   ID conflicts with an existing node in self, a new ID is assigned and
@@ -665,6 +674,7 @@ impl GraphBuffer {
     ///
     /// Panics when called on the `Empty` variant (no data to finalize).
     #[allow(clippy::cast_possible_truncation)]
+    #[must_use]
     pub fn finalize(&self) -> ProjectIndex {
         let inner = self.inner();
         use crate::core::graph_index::{FileEntry, SymbolEntry};

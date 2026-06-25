@@ -34,21 +34,25 @@ pub struct ExistingRule {
 }
 
 /// `<output_root>/.cursor/rules`.
+#[must_use]
 pub fn rules_dir(output_root: &Path) -> PathBuf {
     output_root.join(".cursor").join("rules")
 }
 
 /// Full namespaced slug for a candidate slug (`stop-before-build` → `skillify-stop-before-build`).
+#[must_use]
 pub fn full_slug(candidate_slug: &str) -> String {
     format!("{SLUG_PREFIX}{candidate_slug}")
 }
 
 /// File path for a *full* (already-namespaced) slug.
+#[must_use]
 pub fn rule_path(output_root: &Path, full_slug: &str) -> PathBuf {
     rules_dir(output_root).join(format!("{full_slug}.mdc"))
 }
 
 /// Render a complete `.mdc` document for a candidate at `version`.
+#[must_use]
 pub fn render(candidate: &SkillCandidate, version: u32, created: &str, updated: &str) -> String {
     let sources = candidate.sources.join(",");
     format!(
@@ -81,6 +85,7 @@ fn sanitize_description(s: &str) -> String {
 }
 
 /// Parse the provenance + body out of an existing generated rule.
+#[must_use]
 pub fn parse_existing(content: &str) -> Option<ExistingRule> {
     let version = extract_prov_field(content, "version=")?.parse().ok()?;
     let created = extract_prov_field(content, "created=").unwrap_or_default();
@@ -92,6 +97,7 @@ pub fn parse_existing(content: &str) -> Option<ExistingRule> {
 }
 
 /// Read the `description:` value from a generated rule's frontmatter.
+#[must_use]
 pub fn extract_description(content: &str) -> Option<String> {
     for line in content.lines() {
         let t = line.trim();

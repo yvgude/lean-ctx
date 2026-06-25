@@ -6,7 +6,7 @@
 //! (protocol: <https://developers.openai.com/api/docs/guides/websocket-mode>).
 //!
 //! The proxy speaks that protocol on the Codex-facing side and bridges each turn
-//! to the configured HTTP/SSE upstream (e.g. `codex-lb` or the OpenAI Responses
+//! to the configured HTTP/SSE upstream (e.g. `codex-lb` or the `OpenAI` Responses
 //! endpoint): it converts the `response.create` event into a streaming
 //! `POST /v1/responses`, applies lean-ctx's tool-output compression, and relays
 //! every upstream SSE `data:` event verbatim as a WebSocket text frame. This
@@ -33,7 +33,7 @@ use serde_json::{Value, json};
 use super::ProxyState;
 
 /// Request headers copied from the WS upgrade onto each upstream turn. Mirrors
-/// the subset of the HTTP path's allowlist that an OpenAI Responses call needs
+/// the subset of the HTTP path's allowlist that an `OpenAI` Responses call needs
 /// (`forward::ALLOWED_REQUEST_HEADERS`); the proxy forwards them verbatim and
 /// never injects upstream credentials of its own.
 const FORWARDED_UPGRADE_HEADERS: &[&str] = &[

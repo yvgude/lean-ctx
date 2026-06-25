@@ -37,7 +37,7 @@ fn format_cep_live(lv: &serde_json::Value, t: &Theme) -> String {
 
     out.push(format!(
         "  {bold}{txt}CEP Score{rst}         {bold}{pc}{score:>3}/100{rst}",
-        pc = t.pct_color(score as f64),
+        pc = t.pct_color(f64::from(score)),
     ));
     out.push(format!(
         "  {bold}{txt}Cache Hit Rate{rst}    {bold}{pc}{cache_util}%{rst}  {dim}({cache_hits} hits / {total_reads} reads){rst}",
@@ -90,6 +90,7 @@ fn load_mcp_live() -> Option<serde_json::Value> {
 
 /// Renders the full CEP (Cognitive Efficiency Protocol) report with themes.
 #[allow(clippy::many_single_char_names)] // ANSI formatting: t=theme, r=reset, b=bold, d=dim
+#[must_use]
 pub fn format_cep_report() -> String {
     let theme = active_theme();
     let store = crate::core::stats::load();
@@ -143,7 +144,7 @@ pub fn format_cep_report() -> String {
     let avg_score = if cep.scores.is_empty() {
         0.0
     } else {
-        cep.scores.iter().map(|s| s.score as f64).sum::<f64>() / cep.scores.len() as f64
+        cep.scores.iter().map(|s| f64::from(s.score)).sum::<f64>() / cep.scores.len() as f64
     };
     let latest_score = cep.scores.last().map_or(0, |s| s.score);
 
@@ -189,9 +190,9 @@ pub fn format_cep_report() -> String {
     out.push(format!("  {}", theme.box_bottom(cep_w)));
     out.push(String::new());
 
-    let score_ratio = (latest_score as f64 / 100.0).min(1.0);
+    let score_ratio = (f64::from(latest_score) / 100.0).min(1.0);
     let score_bar = theme.gradient_bar(score_ratio, 20);
-    let score_pc = theme.pct_color(latest_score as f64);
+    let score_pc = theme.pct_color(f64::from(latest_score));
 
     out.push(format!("  {}", theme.box_top_labeled(cep_w, "CEP SCORE")));
     out.push(cep_line(&format!(
@@ -311,7 +312,7 @@ pub fn format_cep_report() -> String {
     if cep.scores.len() >= 2 {
         out.push(format!("  {}", theme.box_top_labeled(cep_w, "SCORE TREND")));
 
-        let score_values: Vec<u64> = cep.scores.iter().map(|s| s.score as u64).collect();
+        let score_values: Vec<u64> = cep.scores.iter().map(|s| u64::from(s.score)).collect();
         // Cap to the most recent points so the sparkline fits inside the box.
         let spark_vals: Vec<u64> = score_values.iter().rev().take(54).rev().copied().collect();
         let spark = theme.gradient_sparkline(&spark_vals);
@@ -320,7 +321,7 @@ pub fn format_cep_report() -> String {
         let recent: Vec<_> = cep.scores.iter().rev().take(5).collect();
         for snap in recent.iter().rev() {
             let ts = snap.timestamp.get(..16).unwrap_or(&snap.timestamp);
-            let pc = theme.pct_color(snap.score as f64);
+            let pc = theme.pct_color(f64::from(snap.score));
             let cplx = theme::truncate_visual(&snap.complexity, 14);
             out.push(cep_line(&format!(
                 "  {m}{ts}{rst}  {pc}{bold}{:>3}{rst}/100  {dim}cache {:>3}%  {cplx}{rst}",

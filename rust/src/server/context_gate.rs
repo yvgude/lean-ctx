@@ -21,6 +21,7 @@ pub struct PostDispatchResult {
     pub prefetch_hint: Option<String>,
 }
 
+#[must_use]
 pub fn pre_dispatch_read(
     path: &str,
     requested_mode: &str,
@@ -31,6 +32,7 @@ pub fn pre_dispatch_read(
     pre_dispatch_read_for_agent(path, requested_mode, task, project_root, pressure, None)
 }
 
+#[must_use]
 pub fn pre_dispatch_read_for_agent(
     path: &str,
     requested_mode: &str,

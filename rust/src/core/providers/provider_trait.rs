@@ -2,7 +2,7 @@ use super::{ProviderItem, ProviderResult};
 
 /// Plugin-ready trait for external context providers.
 ///
-/// A ContextProvider connects LeanCTX to external data sources (issue trackers,
+/// A `ContextProvider` connects `LeanCTX` to external data sources (issue trackers,
 /// CI systems, documentation, etc.) and returns structured context that flows
 /// through the standard compression and IR pipeline.
 ///

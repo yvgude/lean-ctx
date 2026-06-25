@@ -56,6 +56,7 @@ impl JsonRpcResponse {
 
 /// Handle a JSON-RPC 2.0 A2A protocol request.
 /// Supported methods: tasks/send, tasks/get, tasks/cancel
+#[must_use]
 pub fn handle_a2a_jsonrpc(req: &JsonRpcRequest) -> JsonRpcResponse {
     if req.jsonrpc != "2.0" {
         return JsonRpcResponse::error(req.id.clone(), -32600, "invalid jsonrpc version");

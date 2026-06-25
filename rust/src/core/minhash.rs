@@ -1,8 +1,8 @@
-//! MinHash computation from tree-sitter AST for structural fingerprinting of
+//! `MinHash` computation from tree-sitter AST for structural fingerprinting of
 //! function/class/impl nodes.
 //!
 //! Walks the subtree with a `TreeCursor`, collects normalized leaf-node types,
-//! builds trigrams, and computes 64-permutation MinHash values.
+//! builds trigrams, and computes 64-permutation `MinHash` values.
 //!
 //! Matches the algorithm in CBM's `minhash.c`: same normalization scheme,
 //! same trigram construction, same 64-minhash aggregation.
@@ -10,13 +10,14 @@
 use std::hash::{Hash, Hasher};
 use tree_sitter::Node;
 
-/// Build a deterministic MinHash fingerprint for the subtree rooted at `node`.
+/// Build a deterministic `MinHash` fingerprint for the subtree rooted at `node`.
 ///
 /// Returns `None` when the subtree yields fewer than 30 normalized tokens
 /// (e.g. signature-only / bodyless definitions).
 ///
 /// The hash is a 64-element `[u32; 64]` — one minimum value per permutation
 /// seed — suitable for Jaccard approximation via postcard serialization.
+#[must_use]
 pub fn compute_minhash(node: &Node) -> Option<[u32; 64]> {
     let tokens = collect_normalized_tokens(node);
 
@@ -83,7 +84,7 @@ fn collect_normalized_tokens(node: &Node) -> Vec<String> {
 /// Map a tree-sitter `kind()` string to its 1-2 character normalised code.
 ///
 /// Order matters: more specific patterns (e.g. `type_identifier`) MUST be
-/// checked before broader ones (e.g. `identifier`) so that "type_identifier"
+/// checked before broader ones (e.g. `identifier`) so that "`type_identifier`"
 /// maps to "T" rather than being caught by the "identifier" → "I" rule.
 fn normalized_kind(kind: &str) -> String {
     // type_identifier → "T" (must precede the generic "identifier" check)

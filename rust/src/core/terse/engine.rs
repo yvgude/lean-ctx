@@ -29,6 +29,7 @@ pub struct EngineResult {
 const MIN_LINES_FOR_COMPRESSION: usize = 5;
 
 /// Runs Layer 1 deterministic compression on the input text.
+#[must_use]
 pub fn compress(text: &str, level: &CompressionLevel) -> EngineResult {
     let tokens_before = counter::count(text);
     let lines_total = text.lines().count();

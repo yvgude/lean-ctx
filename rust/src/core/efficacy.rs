@@ -126,7 +126,7 @@ fn current_snapshot() -> EfficacySnapshot {
     }
 }
 
-/// Capture (upsert) today's snapshot. Called from ctx_metrics and shutdown.
+/// Capture (upsert) today's snapshot. Called from `ctx_metrics` and shutdown.
 pub fn capture() {
     let mut store = EfficacyStore::load();
     store.upsert(current_snapshot());
@@ -171,7 +171,8 @@ fn fmt_pct(x: f64) -> String {
     format!("{:.1}%", x * 100.0)
 }
 
-/// Human-readable efficacy section for ctx_metrics.
+/// Human-readable efficacy section for `ctx_metrics`.
+#[must_use]
 pub fn report() -> Vec<String> {
     let mut out = Vec::new();
 
@@ -244,6 +245,7 @@ pub fn report() -> Vec<String> {
 }
 
 /// Machine-readable efficacy for the dashboard (#548).
+#[must_use]
 pub fn report_json() -> serde_json::Value {
     let (prev, recent) = bounce_week_over_week();
     let store = EfficacyStore::load();

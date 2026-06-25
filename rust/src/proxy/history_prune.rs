@@ -32,6 +32,7 @@ const ROLLING_KEEP_RECENT: usize = 6;
 /// byte-identical output, so the provider prompt-cache prefix stays valid
 /// between jumps. A rolling `len - keep_recent` boundary (legacy mode) moves
 /// every turn and invalidates the cache from the moved position on.
+#[must_use]
 pub fn prune_boundary(mode: HistoryMode, len: usize) -> usize {
     match mode {
         HistoryMode::Off => 0,
@@ -46,8 +47,9 @@ pub fn prune_boundary(mode: HistoryMode, len: usize) -> usize {
 /// must never be rewritten, or the prompt cache is invalidated from the first
 /// changed message — re-billing cheap reads (0.1x) as writes (1.25x) every time
 /// the prune boundary advances a stride (#448). Returns `0` when no
-/// `cache_control` marker is present (e.g. every OpenAI request), so pruning is
+/// `cache_control` marker is present (e.g. every `OpenAI` request), so pruning is
 /// unchanged there.
+#[must_use]
 pub fn cached_prefix_len(messages: &[Value]) -> usize {
     let mut cached = 0;
     for (i, msg) in messages.iter().enumerate() {
@@ -77,7 +79,7 @@ fn message_has_cache_control(msg: &Value) -> bool {
     })
 }
 
-/// Summarize tool_result blocks in `messages[..prune_end]` to reduce token
+/// Summarize `tool_result` blocks in `messages[..prune_end]` to reduce token
 /// count. Returns `true` if at least one message was actually rewritten.
 ///
 /// The rewrite is *content-deterministic*: a message's pruned form depends
@@ -193,6 +195,7 @@ fn summarize_anthropic_tool_result(block: &mut Value, kind: ToolResultKind) -> b
 /// `function_call_output` is absent, so we prune *in place* (file/source reads
 /// collapse to an honest re-read stub, everything else head/tail summarizes)
 /// without ever touching the conversation structure.
+#[must_use]
 pub fn prune_output_text(text: &str, kind: ToolResultKind) -> Option<String> {
     if text.len() <= 200 {
         return None;

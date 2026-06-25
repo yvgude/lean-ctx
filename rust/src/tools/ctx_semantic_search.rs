@@ -55,7 +55,7 @@ pub(crate) struct SearchHit {
     pub rank: f64,
 }
 
-/// Run an FTS5 bm25() query against `chunks_fts` in the given database.
+/// Run an FTS5 `bm25()` query against `chunks_fts` in the given database.
 pub(crate) fn fts5_search(
     db_path: &std::path::Path,
     query: &str,
@@ -116,7 +116,7 @@ pub(crate) fn fts5_search(
     Ok(results)
 }
 
-/// Load ChunkData from the SQLite DB for dense/hybrid/SPLADE paths.
+/// Load `ChunkData` from the SQLite DB for dense/hybrid/SPLADE paths.
 fn load_chunk_data(
     _root: &std::path::Path,
     db_path: &std::path::Path,
@@ -519,10 +519,7 @@ fn find_related_internal(
             } else {
                 &r.symbol_name
             };
-            format!(
-                "{}:{}  {}  score={:.4}\n",
-                r.file_path, r.start_line, symbol, r.rrf_score
-            )
+            format!("{}:{}  {}\n", r.file_path, r.start_line, symbol)
         })
         .collect()
 }

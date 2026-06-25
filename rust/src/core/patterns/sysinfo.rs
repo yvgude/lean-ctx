@@ -1,3 +1,4 @@
+#[must_use]
 pub fn compress_ps(output: &str) -> Option<String> {
     let lines: Vec<&str> = output.lines().collect();
     if lines.len() < 2 {
@@ -55,10 +56,12 @@ pub fn compress_ps(output: &str) -> Option<String> {
 
 /// df output is safety-critical (disk usage, root filesystem) and typically
 /// small (<30 lines). Verbatim passthrough prevents hiding critical info.
+#[must_use]
 pub fn compress_df(output: &str) -> Option<String> {
     Some(output.to_string())
 }
 
+#[must_use]
 pub fn compress_du(output: &str) -> Option<String> {
     let lines: Vec<&str> = output.lines().filter(|l| !l.trim().is_empty()).collect();
 
@@ -121,6 +124,7 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
+#[must_use]
 pub fn compress_ping(output: &str) -> Option<String> {
     let lines: Vec<&str> = output.lines().collect();
     if lines.len() < 3 {

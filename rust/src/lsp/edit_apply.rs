@@ -93,6 +93,7 @@ fn nearest_git_root(abs_path: &str) -> Option<String> {
 /// Build a file's structure overview from the tree-sitter symbol index
 /// (headless `symbols_overview` default, spec v2a §5.2). Best-effort: returns
 /// an empty vec when no graph is available.
+#[must_use]
 pub fn overview_from_index(abs_path: &str) -> Vec<crate::lsp::backend::SymbolOverviewItem> {
     use crate::core::graph_provider;
     let Some(project_root) = nearest_git_root(abs_path) else {
@@ -177,7 +178,7 @@ fn write_file_atomic(path: &str, content: &str) -> Result<(), String> {
 }
 
 /// Zero-dependency backend that carries only the Trait default-apply for the
-/// three edit methods (used by ctx_refactor when no IDE is reachable). The five
+/// three edit methods (used by `ctx_refactor` when no IDE is reachable). The five
 /// mandatory read methods are unsupported here (edits never call them).
 pub struct HeadlessBackend;
 

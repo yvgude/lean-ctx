@@ -30,6 +30,7 @@ pub enum GotchaCategory {
 }
 
 impl GotchaCategory {
+    #[must_use]
     pub fn from_str_loose(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "build" | "compile" => Self::Build,
@@ -43,6 +44,7 @@ impl GotchaCategory {
         }
     }
 
+    #[must_use]
     pub fn short_label(&self) -> &'static str {
         match self {
             Self::Build => "build",
@@ -71,6 +73,7 @@ pub enum GotchaSeverity {
 }
 
 impl GotchaSeverity {
+    #[must_use]
     pub fn multiplier(&self) -> f32 {
         match self {
             Self::Critical => 1.5,
@@ -79,6 +82,7 @@ impl GotchaSeverity {
         }
     }
 
+    #[must_use]
     pub fn prefix(&self) -> &'static str {
         match self {
             Self::Critical | Self::Warning => "!",
@@ -96,6 +100,7 @@ pub enum GotchaSource {
 }
 
 impl GotchaSource {
+    #[must_use]
     pub fn decay_rate(&self) -> f32 {
         match self {
             Self::Promoted { .. } => 0.01,
@@ -140,6 +145,7 @@ pub struct Gotcha {
 }
 
 impl Gotcha {
+    #[must_use]
     pub fn new(
         category: GotchaCategory,
         severity: GotchaSeverity,
@@ -195,6 +201,7 @@ impl Gotcha {
         self.confidence = self.confidence.max(other.confidence);
     }
 
+    #[must_use]
     pub fn is_promotable(&self) -> bool {
         self.confidence >= PROMOTION_CONFIDENCE
             && self.occurrences >= PROMOTION_OCCURRENCES
@@ -221,6 +228,7 @@ pub struct PendingError {
 }
 
 impl PendingError {
+    #[must_use]
     pub fn is_expired(&self) -> bool {
         (Utc::now() - self.timestamp).num_seconds() > PENDING_TIMEOUT_SECS
     }
@@ -291,6 +299,7 @@ pub struct GotchaStore {
 }
 
 impl GotchaStore {
+    #[must_use]
     pub fn new(project_hash: &str) -> Self {
         Self {
             project_hash: project_hash.to_string(),

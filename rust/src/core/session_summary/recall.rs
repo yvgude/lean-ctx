@@ -13,6 +13,7 @@ pub struct RecallHit {
 }
 
 /// Recall the `top_k` summaries most relevant to `query`.
+#[must_use]
 pub fn recall(project_root: &str, query: &str, top_k: usize) -> Vec<RecallHit> {
     let store = SummaryStore::load_or_create(project_root);
     if store.summaries.is_empty() || query.trim().is_empty() {

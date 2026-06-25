@@ -27,6 +27,7 @@ pub fn extract_text(bytes: &[u8]) -> Result<String, String> {
 }
 
 /// PDFs start with `%PDF-` (optionally after a small BOM/whitespace preamble).
+#[must_use]
 pub fn looks_like_pdf(bytes: &[u8]) -> bool {
     let head = &bytes[..bytes.len().min(1024)];
     head.windows(5).any(|w| w == b"%PDF-")

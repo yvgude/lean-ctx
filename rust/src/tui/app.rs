@@ -432,7 +432,7 @@ fn draw_gain_score_widget(f: &mut ratatui::Frame, area: Rect, state: &AppState, 
     ]);
     f.render_widget(Paragraph::new(score_line), chunks[0]);
 
-    let ratio = (gain_score as f64 / 100.0).min(1.0);
+    let ratio = (f64::from(gain_score) / 100.0).min(1.0);
     f.render_widget(
         Gauge::default()
             .ratio(ratio)
@@ -756,7 +756,7 @@ fn draw_heatmap(f: &mut ratatui::Frame, area: Rect, state: &AppState) {
         .take(visible)
         .map(|(path, heat)| {
             let short = path.rsplit('/').next().unwrap_or(path);
-            let bar_len = (heat.access_count as f64 / max_access as f64 * 12.0) as usize;
+            let bar_len = (f64::from(heat.access_count) / f64::from(max_access) * 12.0) as usize;
             let bar: String = "█".repeat(bar_len) + &"░".repeat(12 - bar_len);
             Row::new(vec![
                 ratatui::widgets::Cell::from(Span::styled(

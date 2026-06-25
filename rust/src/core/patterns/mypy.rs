@@ -15,6 +15,7 @@ fn summary_re() -> &'static regex::Regex {
     static_regex!(r"Found (\d+) errors? in (\d+) files?")
 }
 
+#[must_use]
 pub fn compress(_command: &str, output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {

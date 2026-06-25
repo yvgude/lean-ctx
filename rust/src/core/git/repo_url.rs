@@ -29,18 +29,21 @@ pub struct RepoRef {
 
 impl RepoRef {
     /// `owner/repo` (namespace + name), the human project path.
+    #[must_use]
     pub fn project_path(&self) -> String {
         format!("{}/{}", self.owner, self.repo)
     }
 
     /// A stable cache slug, filesystem-safe: `host/owner/repo` with the owner's
     /// internal slashes preserved as nested dirs.
+    #[must_use]
     pub fn cache_slug(&self) -> String {
         format!("{}/{}/{}", self.host, self.owner, self.repo)
     }
 }
 
 /// Parse a repository URL, or return `None` when it is not an https repo URL.
+#[must_use]
 pub fn parse(url: &str) -> Option<RepoRef> {
     let rest = url.trim().strip_prefix("https://")?;
     let (host, path) = rest.split_once('/')?;

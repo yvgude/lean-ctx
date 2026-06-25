@@ -111,7 +111,7 @@ fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str
             let g_input = global.total_input_tokens;
             let g_output = global.total_output_tokens;
             let g_saved = g_input.saturating_sub(g_output);
-            if g_cmds > session.stats.total_tool_calls as u64 {
+            if g_cmds > u64::from(session.stats.total_tool_calls) {
                 session.stats.total_tool_calls = g_cmds as u32;
             }
             if g_saved > session.stats.total_tokens_saved {

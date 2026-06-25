@@ -27,6 +27,7 @@ pub enum ElicitationSuggestion {
 }
 
 impl ElicitationSuggestion {
+    #[must_use]
     pub fn format_fallback_hint(&self) -> String {
         match self {
             Self::PressureEviction {

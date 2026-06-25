@@ -31,6 +31,7 @@ pub const TOP_LEVEL_KEYS: [&str; 11] = [
 ];
 
 /// Build the capabilities document for this running instance.
+#[must_use]
 pub fn capabilities_value() -> Value {
     let manifest = crate::core::mcp_manifest::manifest_value();
     let tool_names = tool_names(&manifest);

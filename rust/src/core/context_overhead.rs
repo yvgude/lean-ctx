@@ -89,6 +89,7 @@ impl ContextOverhead {
 
 /// Description + input-schema tokens for one tool definition — exactly the two
 /// fields a client re-sends in every request's tool list.
+#[must_use]
 pub fn tool_tokens(t: &rmcp::model::Tool) -> usize {
     let desc = t
         .description

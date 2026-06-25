@@ -11,6 +11,7 @@ fn log_timestamp_re() -> &'static regex::Regex {
     static_regex!(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     if command.contains("build") {
         return Some(compress_build(output));

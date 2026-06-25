@@ -103,6 +103,7 @@ pub struct ResumeReport {
 }
 
 impl ResumeReport {
+    #[must_use]
     pub fn format(&self) -> String {
         let short = self
             .source_session_id

@@ -20,6 +20,7 @@ fn biome_diag_re() -> &'static regex::Regex {
     static_regex!(r"^([\w/.-]+):(\d+):(\d+)\s+(\w+)\s+(.+)$")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     if command.contains("biome") {
         return Some(compress_biome(output));

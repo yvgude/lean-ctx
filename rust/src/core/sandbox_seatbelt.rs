@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
+#[must_use]
 pub fn seatbelt_profile(allowed_read_paths: &[&Path], interpreter_path: &str) -> String {
     let mut profile = String::from("(version 1)\n(deny default)\n");
     profile.push_str("(allow process-exec)\n");

@@ -1,7 +1,7 @@
 //! Core domain types for the index pipeline rewrite.
 //!
-//! These types are shared across all pipeline modules (GraphBuffer,
-//! ThreadPool, extraction, registry, resolution, dump). This module
+//! These types are shared across all pipeline modules (`GraphBuffer`,
+//! `ThreadPool`, extraction, registry, resolution, dump). This module
 //! has NO internal dependencies — it is the foundation layer.
 //!
 //! Compatibility notes:
@@ -46,7 +46,7 @@ pub enum DefKind {
 // Minhash
 // ---------------------------------------------------------------------------
 
-/// Structural fingerprint: 64 × u32 MinHash values.
+/// Structural fingerprint: 64 × u32 `MinHash` values.
 ///
 /// Compatible with `minhash::compute_minhash` which returns `Option<[u32; 64]>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +54,7 @@ pub struct Minhash(pub [u32; 64]);
 
 impl Minhash {
     /// Format as a 512-character lowercase hex string (64 × 8 hex digits).
+    #[must_use]
     pub fn to_hex(&self) -> String {
         let mut out = String::with_capacity(512);
         for &val in &self.0 {
@@ -65,6 +66,7 @@ impl Minhash {
     /// Parse a 512-character lowercase hex string back into a `Minhash`.
     ///
     /// Returns `None` when the input is not exactly 512 ASCII hex characters.
+    #[must_use]
     pub fn from_hex(s: &str) -> Option<Self> {
         if s.len() != 512 {
             return None;
@@ -91,34 +93,34 @@ impl Minhash {
 ///
 /// Field mapping to `CBMDefinition`:
 /// - name              → name
-/// - qualified_name    → qualified_name
-/// - kind              → kind (DefKind)
+/// - `qualified_name`    → `qualified_name`
+/// - kind              → kind (`DefKind`)
 /// - label             → label string ("Function", "Method", etc.)
-/// - file_path         → file_path
-/// - start_line        → start_line
-/// - end_line          → end_line
+/// - `file_path`         → `file_path`
+/// - `start_line`        → `start_line`
+/// - `end_line`          → `end_line`
 /// - signature         → signature (optional)
-/// - return_type       → return_type (optional)
+/// - `return_type`       → `return_type` (optional)
 /// - receiver          → receiver (optional, e.g. "(self)" in Go)
 /// - docstring         → docstring (optional)
-/// - parent_class      → parent_class (optional)
+/// - `parent_class`      → `parent_class` (optional)
 /// - decorators        → decorators list
-/// - base_classes      → base_classes list
-/// - param_names       → param_names list
-/// - param_types       → param_types list
-/// - is_async          → is_async
-/// - is_exported       → is_exported
-/// - is_abstract       → is_abstract
-/// - is_test           → is_test
-/// - is_entry_point    → is_entry_point
-/// - complexity        → cyclomatic_complexity
-/// - cognitive         → cognitive_complexity
-/// - loop_count        → loop_count
-/// - loop_depth        → loop_depth
-/// - is_recursive      → is_recursive
-/// - param_count       → param_count
+/// - `base_classes`      → `base_classes` list
+/// - `param_names`       → `param_names` list
+/// - `param_types`       → `param_types` list
+/// - `is_async`          → `is_async`
+/// - `is_exported`       → `is_exported`
+/// - `is_abstract`       → `is_abstract`
+/// - `is_test`           → `is_test`
+/// - `is_entry_point`    → `is_entry_point`
+/// - complexity        → `cyclomatic_complexity`
+/// - cognitive         → `cognitive_complexity`
+/// - `loop_count`        → `loop_count`
+/// - `loop_depth`        → `loop_depth`
+/// - `is_recursive`      → `is_recursive`
+/// - `param_count`       → `param_count`
 /// - minhash           → minhash (optional)
-/// - body_tokens       → body_tokens (optional, raw token sequence)
+/// - `body_tokens`       → `body_tokens` (optional, raw token sequence)
 #[derive(Debug, Clone)]
 pub struct Definition {
     pub name: String,
@@ -208,6 +210,13 @@ pub struct CodeChunk {
     pub start_line: u32,
     pub end_line: u32,
     pub language: String,
+    /// Symbol name extracted by tree-sitter (e.g. function/struct name).
+    /// Empty when unavailable.
+    pub symbol_name: String,
+    /// Kind as a JSON-serialized `ChunkKind` variant (e.g. `"Function"`),
+    /// or a raw tree-sitter node kind string as fallback.
+    /// Empty when unavailable.
+    pub kind: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -265,7 +274,7 @@ pub struct GbufEdge {
 // Classification  (incremental rebuild support)
 // ---------------------------------------------------------------------------
 
-/// Four disjoint sets of file paths produced by [`classify_files`].
+/// Four disjoint sets of file paths produced by [`crate::core::index_pipeline::classification::classify_files`].
 #[derive(Debug, Clone, Default)]
 pub struct Classification {
     pub new: Vec<String>,

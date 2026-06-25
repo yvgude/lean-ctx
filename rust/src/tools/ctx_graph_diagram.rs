@@ -6,6 +6,7 @@ use crate::core::graph_provider::{self, EdgeInfo};
 const DEFAULT_MAX_NODES: usize = 30;
 const DEFAULT_DEPTH: usize = 2;
 
+#[must_use]
 pub fn handle(
     file: Option<&str>,
     depth: Option<usize>,

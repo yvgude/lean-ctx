@@ -37,6 +37,7 @@ fn render_ib(lines: &[&str], scores: &[f64], threshold: f64) -> String {
 
 /// Compress `text` toward `target_ratio` (output tokens / input tokens) by dropping lines whose
 /// normalized BPE token entropy falls below a dynamically chosen threshold.
+#[must_use]
 pub fn compress_ib(text: &str, target_ratio: f64) -> String {
     compress_ib_with_query(text, target_ratio, None)
 }
@@ -98,6 +99,7 @@ fn query_relevance_scores(lines: &[&str], query: &str) -> Option<Vec<f64>> {
 /// Query-conditioned IB compression (#542). With a query, the keep-score is
 /// `0.5·entropy + 0.5·relevance`; without one (or when the query shares no
 /// terms with the document) this is exactly the entropy-only `compress_ib`.
+#[must_use]
 pub fn compress_ib_with_query(text: &str, target_ratio: f64, query: Option<&str>) -> String {
     if text.is_empty() {
         return String::new();

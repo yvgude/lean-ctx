@@ -75,12 +75,14 @@ impl Default for LoopDetector {
 
 impl LoopDetector {
     /// Creates a loop detector with default thresholds.
+    #[must_use]
     pub fn new() -> Self {
         Self::with_config(&LoopDetectionConfig::default())
     }
 
     /// Creates a loop detector with custom thresholds from config.
-    /// Set blocked_threshold to 0 to disable blocking entirely (LeanCTX philosophy).
+    /// Set `blocked_threshold` to 0 to disable blocking entirely (`LeanCTX` philosophy).
+    #[must_use]
     pub fn with_config(cfg: &LoopDetectionConfig) -> Self {
         Self {
             call_history: HashMap::new(),
@@ -285,18 +287,21 @@ impl LoopDetector {
         self.record_call(tool, args_fingerprint)
     }
 
-    /// Returns `true` if the tool name is a known search tool (ctx_search, etc.).
+    /// Returns `true` if the tool name is a known search tool (`ctx_search`, etc.).
+    #[must_use]
     pub fn is_search_tool(tool: &str) -> bool {
         SEARCH_TOOLS.contains(&tool)
     }
 
     /// Returns `true` if the shell command starts with a search tool (grep, rg, find, etc.).
+    #[must_use]
     pub fn is_search_shell_command(command: &str) -> bool {
         let cmd = command.trim_start();
         SEARCH_SHELL_PREFIXES.iter().any(|p| cmd.starts_with(p))
     }
 
     /// Computes a deterministic hash fingerprint of JSON tool arguments.
+    #[must_use]
     pub fn fingerprint(args: &serde_json::Value) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -308,6 +313,7 @@ impl LoopDetector {
     }
 
     /// Returns duplicate call entries sorted by count (descending), filtered to count > 1.
+    #[must_use]
     pub fn stats(&self) -> Vec<(String, u32)> {
         let mut entries: Vec<(String, u32)> = self
             .duplicate_counts
@@ -319,7 +325,7 @@ impl LoopDetector {
         entries
     }
 
-    /// Records a ctx_read call and detects correction signals:
+    /// Records a `ctx_read` call and detects correction signals:
     /// - `fresh=true` re-read of a previously cached file
     /// - Mode bounce: map/signatures followed by full within 30s
     pub fn record_read_for_correction(&mut self, path: &str, mode: &str, fresh: bool) {
@@ -355,7 +361,7 @@ impl LoopDetector {
             .insert(path.to_string(), (now, mode.to_string()));
     }
 
-    /// Records a ctx_shell command and detects re-runs of the same command within 60s.
+    /// Records a `ctx_shell` command and detects re-runs of the same command within 60s.
     pub fn record_shell_for_correction(&mut self, command: &str) {
         self.total_calls += 1;
         let now = Instant::now();
@@ -376,6 +382,7 @@ impl LoopDetector {
     }
 
     /// Returns the number of correction signals in the sliding window.
+    #[must_use]
     pub fn correction_count(&self) -> u32 {
         let now = Instant::now();
         self.correction_signals
@@ -385,6 +392,7 @@ impl LoopDetector {
     }
 
     /// Returns the correction rate: signals per minute within the window.
+    #[must_use]
     pub fn correction_rate(&self) -> f64 {
         let count = self.correction_count();
         if count == 0 {

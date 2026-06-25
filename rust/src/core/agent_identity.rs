@@ -62,6 +62,7 @@ pub fn sign_bytes_with(key: &SigningKey, data: &[u8]) -> Vec<u8> {
     key.sign(data).to_bytes().to_vec()
 }
 
+#[must_use]
 pub fn verify_signature(public_key_bytes: &[u8], data: &[u8], signature_bytes: &[u8]) -> bool {
     let pk_bytes: [u8; 32] = match public_key_bytes.try_into() {
         Ok(b) => b,
@@ -78,6 +79,7 @@ pub fn verify_signature(public_key_bytes: &[u8], data: &[u8], signature_bytes: &
     verifying_key.verify(data, &signature).is_ok()
 }
 
+#[must_use]
 pub fn hex_encode(bytes: &[u8]) -> String {
     use std::fmt::Write;
     bytes.iter().fold(String::new(), |mut s, b| {

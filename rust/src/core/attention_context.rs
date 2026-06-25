@@ -17,7 +17,7 @@ use std::collections::HashSet;
 #[derive(Debug, Clone)]
 pub struct ChunkDensity {
     pub chunk_idx: usize,
-    /// Lexical diversity: unique_tokens / total_tokens (0.0 - 1.0)
+    /// Lexical diversity: `unique_tokens` / `total_tokens` (0.0 - 1.0)
     pub lexical_diversity: f64,
     /// Structural importance: definitions, exports, public APIs score higher
     pub structural_weight: f64,
@@ -28,6 +28,7 @@ pub struct ChunkDensity {
 }
 
 /// Compute information density for a chunk.
+#[must_use]
 pub fn compute_density(content: &str, is_definition: bool) -> f64 {
     let tokens: Vec<&str> = content.split_whitespace().collect();
     if tokens.is_empty() {
@@ -47,6 +48,7 @@ pub fn compute_density(content: &str, is_definition: bool) -> f64 {
 }
 
 /// Compute pairwise redundancy between two chunks (0.0 = unique, 1.0 = identical).
+#[must_use]
 pub fn compute_redundancy(content_a: &str, content_b: &str) -> f64 {
     let tokens_a: HashSet<&str> = content_a.split_whitespace().collect();
     let tokens_b: HashSet<&str> = content_b.split_whitespace().collect();
@@ -70,6 +72,7 @@ pub fn compute_redundancy(content_a: &str, content_b: &str) -> f64 {
 /// Given a total token budget and a list of chunks with their content,
 /// allocates budget proportionally to information density while penalizing
 /// redundancy between chunks.
+#[must_use]
 pub fn attention_weighted_assembly(
     chunks: &[(usize, &str, bool)], // (chunk_idx, content, is_definition)
     total_budget: usize,
@@ -129,6 +132,7 @@ pub fn attention_weighted_assembly(
 }
 
 /// Truncate content to fit within a token budget (approximate by chars/4).
+#[must_use]
 pub fn truncate_to_budget(content: &str, token_budget: usize) -> &str {
     let char_budget = token_budget * 4; // rough approximation
     if content.len() <= char_budget {

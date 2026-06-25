@@ -12,6 +12,7 @@ pub struct Chunk {
     pub hash: u64,
 }
 
+#[must_use]
 pub fn chunk(content: &str) -> Vec<Chunk> {
     let bytes = content.as_bytes();
     if bytes.is_empty() {
@@ -38,10 +39,10 @@ pub fn chunk(content: &str) -> Vec<Chunk> {
     }
 
     for i in 0..bytes.len() {
-        rolling = rolling.wrapping_mul(BASE).wrapping_add(bytes[i] as u64) % PRIME;
+        rolling = rolling.wrapping_mul(BASE).wrapping_add(u64::from(bytes[i])) % PRIME;
 
         if i >= window {
-            let old = bytes[i - window] as u64;
+            let old = u64::from(bytes[i - window]);
             rolling = (rolling + PRIME - old.wrapping_mul(pow) % PRIME) % PRIME;
         }
 
@@ -64,6 +65,7 @@ pub fn chunk(content: &str) -> Vec<Chunk> {
     chunks
 }
 
+#[must_use]
 pub fn stable_order(old_chunks: &[Chunk], new_chunks: &[Chunk]) -> Vec<usize> {
     let old_hashes: std::collections::HashSet<u64> = old_chunks.iter().map(|c| c.hash).collect();
 
@@ -82,6 +84,7 @@ pub fn stable_order(old_chunks: &[Chunk], new_chunks: &[Chunk]) -> Vec<usize> {
     unchanged
 }
 
+#[must_use]
 pub fn reorder_content(content: &str, old_content: &str) -> String {
     let old_chunks = chunk(old_content);
     let new_chunks = chunk(content);
@@ -100,7 +103,7 @@ pub fn reorder_content(content: &str, old_content: &str) -> String {
 fn full_hash(data: &[u8]) -> u64 {
     let mut h = 0u64;
     for &b in data {
-        h = h.wrapping_mul(BASE).wrapping_add(b as u64) % PRIME;
+        h = h.wrapping_mul(BASE).wrapping_add(u64::from(b)) % PRIME;
     }
     h
 }

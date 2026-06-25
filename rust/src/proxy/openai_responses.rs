@@ -11,15 +11,15 @@ use super::compress::compress_tool_result;
 use super::forward;
 use super::tool_kind::{self, ToolResultKind, should_protect};
 
-/// Proxy handler for OpenAI's Responses API (`POST /v1/responses`).
+/// Proxy handler for `OpenAI`'s Responses API (`POST /v1/responses`).
 ///
 /// The Responses API superseded Chat Completions for clients such as opencode
-/// and the OpenAI Agents SDK. Its conversation turns live in `input` rather than
+/// and the `OpenAI` Agents SDK. Its conversation turns live in `input` rather than
 /// `messages`, so the Chat Completions handler never saw — and never compressed —
 /// them. This handler reuses the same upstream, auth and streaming path but
 /// understands the Responses-API request shape.
 ///
-/// Retrieve / cancel / delete / input_items sub-paths
+/// Retrieve / cancel / delete / `input_items` sub-paths
 /// (`/v1/responses/{id}/...`) are routed here as well and pass through untouched:
 /// they carry no `input` array, so `compress_request_body` is a no-op for them.
 ///
@@ -43,7 +43,7 @@ pub async fn handler(
 
 /// Handles the WebSocket Responses transport on `GET /v1/responses`.
 ///
-/// Codex (and the OpenAI SDK) default to `ws://…/responses` with one
+/// Codex (and the `OpenAI` SDK) default to `ws://…/responses` with one
 /// `response.create` event per turn. Bridging the upgrade here lets the proxy be
 /// a drop-in for Codex without forcing `supports_websockets = false` (#440); the
 /// actual WS↔HTTP/SSE bridging lives in `openai_responses_ws`.
@@ -106,7 +106,7 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
 ///
 /// The boundary is the same monotone staircase as every other rail
 /// ([`history_prune::prune_boundary`]), so the request prefix stays byte-stable
-/// for up to a full stride and OpenAI's automatic prompt cache keeps hitting.
+/// for up to a full stride and `OpenAI`'s automatic prompt cache keeps hitting.
 ///
 /// Shared with the WebSocket bridge (#440) so Codex/WS turns prune identically.
 pub(super) fn prune_responses_input(doc: &mut Value) -> bool {
@@ -210,7 +210,7 @@ pub(super) fn compress_responses_input(doc: &mut Value) -> bool {
     modified
 }
 
-/// Compress a `function_call_output.output`. OpenAI sends this as a JSON string,
+/// Compress a `function_call_output.output`. `OpenAI` sends this as a JSON string,
 /// but the API also accepts an array of content parts (`input_text` blocks) for
 /// tools returning richer data, so both shapes are handled.
 ///

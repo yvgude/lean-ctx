@@ -106,6 +106,7 @@ fn registry_lookup(model: &str, registry: &Registry) -> Option<usize> {
 
 /// Look up context window for a model name.
 /// Layers: User Config → Local Registry → Bundled Registry → 200k default.
+#[must_use]
 pub fn context_window_for_model(model: &str) -> usize {
     // Layer 1: User config override
     if let Some(w) = user_config_override(model) {

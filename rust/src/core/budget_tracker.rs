@@ -213,6 +213,7 @@ pub struct BudgetSnapshot {
 }
 
 impl BudgetSnapshot {
+    #[must_use]
     pub fn worst_level(&self) -> &BudgetLevel {
         for level in [&self.tokens.level, &self.shell.level, &self.cost.level] {
             if *level == BudgetLevel::Exhausted {
@@ -227,6 +228,7 @@ impl BudgetSnapshot {
         &BudgetLevel::Ok
     }
 
+    #[must_use]
     pub fn format_compact(&self) -> String {
         format!(
             "Budget[{}]: tokens {}/{} ({}%) | shell {}/{} ({}%) | cost ${:.2}/${:.2} ({}%) → {}",

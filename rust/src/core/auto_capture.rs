@@ -8,6 +8,7 @@ use crate::core::auto_findings::AutoFinding;
 use crate::core::knowledge::ProjectKnowledge;
 
 /// Check if auto-capture is enabled.
+#[must_use]
 pub fn is_enabled() -> bool {
     if let Ok(v) = std::env::var("LEAN_CTX_AUTO_CAPTURE") {
         return matches!(v.trim(), "1" | "true" | "on");
@@ -68,7 +69,8 @@ fn derive_key(finding: &AutoFinding) -> String {
     }
 }
 
-/// Extract knowledge-worthy patterns from tool output that auto_findings misses.
+/// Extract knowledge-worthy patterns from tool output that `auto_findings` misses.
+#[must_use]
 pub fn extract_extra(tool_name: &str, output: &str) -> Option<AutoFinding> {
     match tool_name {
         "ctx_edit" | "ctx_multi_edit" => extract_edit_finding(output),

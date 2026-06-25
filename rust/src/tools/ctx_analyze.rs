@@ -7,6 +7,7 @@ use crate::core::symbol_map::{self, SymbolMap};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
+#[must_use]
 pub fn handle(path: &str, crp_mode: CrpMode) -> String {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,

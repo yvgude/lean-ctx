@@ -23,10 +23,12 @@ fn expected_hash() -> u64 {
     compute_seed_hash("lean-ctx")
 }
 
+#[must_use]
 pub fn verify_integrity() -> bool {
     compute_seed_hash(INTEGRITY_SEED) == expected_hash()
 }
 
+#[must_use]
 pub fn is_official_origin() -> bool {
     ORIGIN_REPO.contains("yvgude/lean-ctx") && ORIGIN_NAME == "lean-ctx"
 }
@@ -39,6 +41,7 @@ pub struct IntegrityReport {
     pub version: &'static str,
 }
 
+#[must_use]
 pub fn check() -> IntegrityReport {
     IntegrityReport {
         seed_ok: verify_integrity(),
@@ -49,6 +52,7 @@ pub fn check() -> IntegrityReport {
     }
 }
 
+#[must_use]
 pub fn origin_line() -> String {
     let report = check();
     if report.seed_ok && report.origin_ok {

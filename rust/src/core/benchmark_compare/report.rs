@@ -9,6 +9,7 @@ pub struct CompareReport {
     pub competitors: Vec<CompetitorProfile>,
 }
 
+#[must_use]
 pub fn generate_markdown(report: &CompareReport) -> String {
     let mut out = Vec::new();
 
@@ -29,6 +30,7 @@ pub fn generate_markdown(report: &CompareReport) -> String {
     out.join("\n")
 }
 
+#[must_use]
 pub fn generate_terminal(report: &CompareReport) -> String {
     let mut out = Vec::new();
     let sep = "\u{2550}".repeat(72);
@@ -376,7 +378,7 @@ fn write_chart(out: &mut Vec<String>, report: &CompareReport) {
 
     let max_bar = 50;
     for (name, pct) in &entries {
-        let bar_len = (pct / 100.0 * max_bar as f64) as usize;
+        let bar_len = (pct / 100.0 * f64::from(max_bar)) as usize;
         let bar = "\u{2588}".repeat(bar_len);
         out.push(format!("{name:<28} {bar} {pct:.1}%"));
     }

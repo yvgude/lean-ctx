@@ -3,7 +3,7 @@
 //! Each data source (filesystem, GitHub, Jira, DB, shell) is modeled as a
 //! neocortical column with four processing layers:
 //!
-//!   L4 (Input)      — raw data ingestion, normalization → ContentChunks
+//!   L4 (Input)      — raw data ingestion, normalization → `ContentChunks`
 //!   L2/3 (Predict)  — compression mode selection, predictive coding
 //!   L5 (Output)     — verification, budget check, quality gate
 //!   L6 (Feedback)   — top-down modulation from active task context
@@ -81,7 +81,7 @@ pub trait ContextColumn: Send + Sync {
     /// Whether this column is currently operational.
     fn is_active(&self) -> bool;
 
-    /// **L4 (Input Layer):** Ingest raw data and produce ContentChunks.
+    /// **L4 (Input Layer):** Ingest raw data and produce `ContentChunks`.
     ///
     /// For filesystem: read file, parse AST, extract chunks.
     /// For GitHub: fetch API, parse JSON, normalize to chunks.

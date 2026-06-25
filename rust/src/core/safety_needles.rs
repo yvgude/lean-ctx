@@ -42,6 +42,7 @@ const SAFETY_NEEDLES: &[&str] = &[
     "ran all test", // jest "Ran all test suites"
 ];
 
+#[must_use]
 pub fn is_safety_relevant(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     SAFETY_NEEDLES

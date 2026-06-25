@@ -1,6 +1,7 @@
 use crate::core::graph_provider;
 use crate::core::route_extractor::{self, RouteEntry};
 
+#[must_use]
 pub fn handle(method: Option<&str>, path_prefix: Option<&str>, project_root: &str) -> String {
     let file_paths = graph_provider::open_or_build(project_root)
         .map(|o| o.provider.file_paths())

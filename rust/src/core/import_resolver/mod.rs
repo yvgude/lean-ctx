@@ -8,7 +8,7 @@
 //! - Go: go.mod module path, package = directory
 //! - Java: package-to-directory mapping
 //! - C/C++: local includes (best-effort)
-//! - Ruby: require_relative (best-effort)
+//! - Ruby: `require_relative` (best-effort)
 //! - PHP: include/require (best-effort)
 //! - Bash: source/. (best-effort)
 //! - Dart: relative + `package:<name>/` (best-effort)
@@ -47,6 +47,7 @@ impl ResolverContext {
     /// It is used to read declared C# namespaces without touching disk; pass an
     /// empty map when contents are not available (a bounded head-read from disk
     /// is the fallback).
+    #[must_use]
     pub fn new(
         project_root: &Path,
         file_paths: Vec<String>,
@@ -88,7 +89,7 @@ impl ResolverContext {
 /// 1. **Declared namespaces** (authoritative): the `namespace A.B.C` written in
 ///    each file, read from the in-memory content cache (or a bounded head-read
 ///    from disk). This is the only correct source when the namespace does *not*
-///    mirror the folder layout (the common .NET case with a RootNamespace).
+///    mirror the folder layout (the common .NET case with a `RootNamespace`).
 /// 2. **Folder suffixes** (fallback): every trailing directory suffix of each
 ///    file, for sources whose namespace we could not read.
 ///
@@ -175,6 +176,7 @@ fn read_file_head(path: &Path, max_bytes: usize) -> Option<String> {
     Some(String::from_utf8_lossy(&buf).into_owned())
 }
 
+#[must_use]
 pub fn resolve_imports(
     imports: &[ImportInfo],
     file_path: &str,

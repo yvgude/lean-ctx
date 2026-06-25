@@ -38,6 +38,7 @@ struct PrPackJson {
     tokens: u64,
 }
 
+#[must_use]
 pub fn handle(
     action: &str,
     project_root: &str,
@@ -146,6 +147,7 @@ pub fn handle_create(
     }
 }
 
+#[must_use]
 pub fn handle_list() -> String {
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
@@ -244,6 +246,7 @@ pub fn handle_info(name: &str, version: Option<&str>) -> String {
     }
 }
 
+#[must_use]
 pub fn handle_remove(name: &str, version: Option<&str>) -> String {
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
@@ -257,6 +260,7 @@ pub fn handle_remove(name: &str, version: Option<&str>) -> String {
     }
 }
 
+#[must_use]
 pub fn handle_install(name: &str, version: Option<&str>, project_root: &str) -> String {
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
@@ -367,6 +371,7 @@ pub fn handle_import(file_path: &str, apply: bool, project_root: &str) -> String
     }
 }
 
+#[must_use]
 pub fn handle_auto_load(name: Option<&str>, version: Option<&str>, enable: bool) -> String {
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
@@ -420,6 +425,7 @@ pub fn handle_auto_load(name: Option<&str>, version: Option<&str>, enable: bool)
     }
 }
 
+#[must_use]
 pub fn handle_summary(project_root: &str) -> String {
     let phash = crate::core::project_hash::hash_project_root(project_root);
 

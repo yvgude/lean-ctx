@@ -216,6 +216,7 @@ fn is_heavy_command(command: &str) -> bool {
 /// already correctly split by the user's shell, so re-serializing them
 /// into a string and re-parsing via `sh -c` would risk mangling complex
 /// quoted arguments (em-dashes, `#`, nested quotes, etc.).
+#[must_use]
 pub fn exec_argv(args: &[String]) -> i32 {
     if args.is_empty() {
         return 127;
@@ -280,7 +281,7 @@ fn exec_direct(args: &[String]) -> i32 {
 /// - hook-child mode (`LEAN_CTX_HOOK_CHILD`): lean-ctx is the agent's
 ///   command-interception channel and must not be weaker than the MCP path, or
 /// - stderr is not a TTY: a non-interactive caller is an agent or script, and
-///   agent-driven `lean-ctx -c` must enforce the same boundary as ctx_shell.
+///   agent-driven `lean-ctx -c` must enforce the same boundary as `ctx_shell`.
 ///
 /// Warn-only when a human runs `lean-ctx -c` at an interactive terminal (they
 /// can run the command without lean-ctx anyway, so blocking adds friction, not
@@ -364,6 +365,7 @@ fn allowlist_gate(command: &str) -> Option<i32> {
     None
 }
 
+#[must_use]
 pub fn exec(command: &str) -> i32 {
     if let Some(code) = allowlist_gate(command) {
         return code;
@@ -590,7 +592,7 @@ fn exec_buffered(command: &str, shell: &str, shell_flag: &str, cfg: &config::Con
     }
 
     let threshold = cfg.slow_command_threshold_ms;
-    if threshold > 0 && duration_ms >= threshold as u128 {
+    if threshold > 0 && duration_ms >= u128::from(threshold) {
         slow_log::record(command, duration_ms, exit_code);
     }
 

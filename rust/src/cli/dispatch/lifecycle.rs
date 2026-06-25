@@ -153,7 +153,7 @@ pub(super) fn cmd_dev_install() {
     crate::proxy_autostart::stop();
     crate::daemon_autostart::stop();
     let _ = crate::daemon::stop_daemon();
-    ipc::process::kill_all_by_name("lean-ctx");
+    let _ = ipc::process::kill_all_by_name("lean-ctx");
     std::thread::sleep(std::time::Duration::from_millis(500));
 
     let remaining = ipc::process::find_pids_by_name("lean-ctx");

@@ -37,6 +37,7 @@ pub struct KnowledgeBridge {
 }
 
 impl KnowledgeBridge {
+    #[must_use]
     pub fn new(project_hash: &str) -> Self {
         Self {
             project_hash: project_hash.to_string(),
@@ -52,12 +53,14 @@ impl KnowledgeBridge {
             .join("bridge.json"))
     }
 
+    #[must_use]
     pub fn load(project_hash: &str) -> Option<Self> {
         let path = Self::path(project_hash).ok()?;
         let content = std::fs::read_to_string(&path).ok()?;
         serde_json::from_str::<Self>(&content).ok()
     }
 
+    #[must_use]
     pub fn load_or_create(project_hash: &str) -> Self {
         Self::load(project_hash).unwrap_or_else(|| Self::new(project_hash))
     }
@@ -111,6 +114,7 @@ impl KnowledgeBridge {
     }
 
     /// Pull facts from the bridge that were published by other agents.
+    #[must_use]
     pub fn pull(&self, requesting_agent: &str) -> Vec<BridgeEntry> {
         self.shared_facts
             .iter()
@@ -121,6 +125,7 @@ impl KnowledgeBridge {
 
     /// Convert a [`BridgeEntry`] into a [`KnowledgeFact`] for import.
     /// Applies a 10% trust penalty to imported confidence.
+    #[must_use]
     pub fn entry_to_fact(entry: &BridgeEntry) -> KnowledgeFact {
         let now = Utc::now();
         KnowledgeFact {
@@ -158,6 +163,7 @@ impl KnowledgeBridge {
         before - self.shared_facts.len()
     }
 
+    #[must_use]
     pub fn entries_for_agent(&self, agent_id: &str) -> Vec<&BridgeEntry> {
         self.shared_facts
             .iter()
@@ -165,6 +171,7 @@ impl KnowledgeBridge {
             .collect()
     }
 
+    #[must_use]
     pub fn summary(&self) -> String {
         if self.shared_facts.is_empty() {
             return format!(

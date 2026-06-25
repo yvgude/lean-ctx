@@ -11,6 +11,7 @@ fn pnpm_added_re() -> &'static regex::Regex {
     static_regex!(r"(\d+) packages? (?:are )?(?:installed|added|updated)")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     if command.contains("install") || command.contains("add") || command.contains("i ") {
         return Some(compress_install(output));

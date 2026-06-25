@@ -36,6 +36,7 @@ fn store_path() -> Result<PathBuf, String> {
 
 impl InstalledStore {
     /// Load the store, or an empty one if it does not exist / is unreadable.
+    #[must_use]
     pub fn load() -> Self {
         let Ok(path) = store_path() else {
             return Self::default();
@@ -56,11 +57,13 @@ impl InstalledStore {
         std::fs::write(&path, json).map_err(|e| e.to_string())
     }
 
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<&InstalledAddon> {
         self.addons.get(name)
     }
 
     /// Installed addons, sorted by name (`BTreeMap` iteration order).
+    #[must_use]
     pub fn list(&self) -> Vec<&InstalledAddon> {
         self.addons.values().collect()
     }

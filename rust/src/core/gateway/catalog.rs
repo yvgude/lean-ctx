@@ -21,7 +21,7 @@ pub struct CatalogEntry {
     /// `server::tool` — the stable, collision-free handle used by `ctx_tools`.
     pub namespaced: String,
     pub description: String,
-    /// Compact `param, required*` summary for ChoiceCards.
+    /// Compact `param, required*` summary for `ChoiceCards`.
     pub params: String,
 }
 
@@ -34,11 +34,13 @@ pub struct Catalog {
 
 impl Catalog {
     /// Look up an entry by its `server::tool` handle.
+    #[must_use]
     pub fn find(&self, namespaced: &str) -> Option<&CatalogEntry> {
         self.entries.iter().find(|e| e.namespaced == namespaced)
     }
 
     /// Distinct server names present in the catalog, sorted.
+    #[must_use]
     pub fn server_names(&self) -> Vec<String> {
         let mut names: Vec<String> = self.entries.iter().map(|e| e.server.clone()).collect();
         names.sort();
@@ -48,6 +50,7 @@ impl Catalog {
 }
 
 /// Split a `server::tool` handle back into its parts.
+#[must_use]
 pub fn split_namespaced(handle: &str) -> Option<(&str, &str)> {
     handle
         .split_once("::")

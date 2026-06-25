@@ -120,9 +120,9 @@ fn build_upstream_url(parts: &Parts, base: &str, default_path: &str) -> String {
 /// Request headers forwarded verbatim to the upstream provider. Anything not
 /// listed here is stripped before the request leaves the loopback proxy.
 ///
-/// `openai-project` (and `openai-organization`) must be forwarded: OpenCode and
-/// the OpenAI SDK send the project scope via this header for project-scoped API
-/// keys when calling the Responses API (`/responses`). Dropping it makes OpenAI
+/// `openai-project` (and `openai-organization`) must be forwarded: `OpenCode` and
+/// the `OpenAI` SDK send the project scope via this header for project-scoped API
+/// keys when calling the Responses API (`/responses`). Dropping it makes `OpenAI`
 /// reject the request with `Missing scopes: api.responses.write` (#366).
 const ALLOWED_REQUEST_HEADERS: &[&str] = &[
     "authorization",

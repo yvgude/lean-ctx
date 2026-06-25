@@ -1,9 +1,9 @@
-//! Detection of cloud-backed placeholder files (OneDrive "Files On-Demand" on
+//! Detection of cloud-backed placeholder files (`OneDrive` "Files On-Demand" on
 //! Windows, iCloud Drive "dataless" files on macOS).
 //!
 //! Such files keep their *contents* in the cloud; merely opening or reading one
 //! forces the OS to download ("hydrate") it — slow, bandwidth-/quota-hungry, and
-//! on Windows it triggers OneDrive sync warnings (#363). lean-ctx must never
+//! on Windows it triggers `OneDrive` sync warnings (#363). lean-ctx must never
 //! hydrate files just to index them in the background, so every directory scan
 //! prunes placeholders via [`keep_entry`]. Detection is metadata-only (file
 //! attributes / stat flags) and therefore never triggers a download.
@@ -46,12 +46,14 @@ pub fn is_cloud_placeholder(path: &Path) -> bool {
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
+#[must_use]
 pub fn is_cloud_placeholder(_path: &Path) -> bool {
     false
 }
 
 /// Predicate for `ignore::WalkBuilder::filter_entry`: prune cloud placeholders so
 /// a scan never descends into — or reads — an un-hydrated file or directory.
+#[must_use]
 pub fn keep_entry(entry: &ignore::DirEntry) -> bool {
     !is_cloud_placeholder(entry.path())
 }

@@ -74,6 +74,7 @@ pub fn log_tool_call(tool_name: &str, summary: &str) {
 }
 
 /// Return the journal content for display.
+#[must_use]
 pub fn read_journal(tail_lines: usize) -> String {
     let path = journal_path();
     if !path.exists() {

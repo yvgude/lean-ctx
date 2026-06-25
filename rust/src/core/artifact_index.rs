@@ -7,11 +7,13 @@ use crate::core::chunk_data::{ChunkData, ChunkKind, CodeChunk, IndexedFileState}
 const MAX_ARTIFACT_BYTES: u64 = 2_000_000;
 const MAX_CHUNKS_PER_FILE: usize = 50;
 
+#[must_use]
 pub fn index_file_path(project_root: &Path) -> PathBuf {
     let dir = crate::core::index_namespace::vectors_dir(project_root);
     dir.join("bm25_artifacts_index.json")
 }
 
+#[must_use]
 pub fn load(project_root: &Path) -> Option<ChunkData> {
     let path = index_file_path(project_root);
     let data = std::fs::read_to_string(path).ok()?;
@@ -30,6 +32,7 @@ pub fn save(project_root: &Path, idx: &ChunkData) -> std::io::Result<()> {
     Ok(())
 }
 
+#[must_use]
 pub fn load_or_build(project_root: &Path) -> (ChunkData, Vec<String>) {
     let (files_now, mut warnings) = list_artifact_files(project_root);
     if files_now.is_empty() {
@@ -54,6 +57,7 @@ pub fn load_or_build(project_root: &Path) -> (ChunkData, Vec<String>) {
     (built, warnings)
 }
 
+#[must_use]
 pub fn rebuild_from_scratch(project_root: &Path) -> (ChunkData, Vec<String>) {
     let (files_now, mut warnings) = list_artifact_files(project_root);
     let idx = build_full(project_root, &files_now, &mut warnings);

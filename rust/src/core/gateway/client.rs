@@ -120,6 +120,7 @@ pub async fn proxy_call(
 /// Flatten a downstream [`CallToolResult`] into plain text. Text blocks are
 /// concatenated; non-text blocks (images/resources) are summarized so the proxy
 /// never returns binary blobs into the model context.
+#[must_use]
 pub fn result_to_text(result: &CallToolResult) -> String {
     let mut parts: Vec<String> = Vec::new();
     for c in &result.content {

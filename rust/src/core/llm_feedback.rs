@@ -78,6 +78,7 @@ impl LlmFeedbackStore {
         Ok(())
     }
 
+    #[must_use]
     pub fn status() -> LlmFeedbackStatus {
         let path = feedback_path();
         let bytes = std::fs::metadata(&path).map_or(0, |m| m.len());
@@ -118,6 +119,7 @@ impl LlmFeedbackStore {
         out.into_iter().collect()
     }
 
+    #[must_use]
     pub fn summarize(limit: usize) -> LlmFeedbackSummary {
         let events = Self::recent(limit);
         summarize_events(&events)

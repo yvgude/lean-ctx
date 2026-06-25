@@ -24,6 +24,7 @@ pub struct QualityScore {
 }
 
 impl QualityScore {
+    #[must_use]
     pub fn format_compact(&self) -> String {
         if self.passed {
             format!(
@@ -47,6 +48,7 @@ impl QualityScore {
     }
 }
 
+#[must_use]
 pub fn score(original: &str, compressed: &str, ext: &str) -> QualityScore {
     let pres = preservation::measure(original, compressed, ext);
     let ast_score = pres.overall();
@@ -90,6 +92,7 @@ pub fn information_density(original: &str, compressed: &str, ext: &str) -> f64 {
 }
 
 /// Guard: returns compressed if quality passes, original otherwise
+#[must_use]
 pub fn guard(original: &str, compressed: &str, ext: &str) -> (String, QualityScore) {
     let q = score(original, compressed, ext);
     if q.passed {

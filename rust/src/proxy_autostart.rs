@@ -71,14 +71,16 @@ pub fn uninstall(_quiet: bool) {
     uninstall_systemd(_quiet);
 }
 
-/// Whether this platform has a proxy-autostart backend (LaunchAgent on macOS,
+/// Whether this platform has a proxy-autostart backend (`LaunchAgent` on macOS,
 /// systemd user service on Linux). Windows and other targets have none, so a
 /// missing autostart there must not be treated as a failure by `doctor` (#416).
+#[must_use]
 pub fn is_supported() -> bool {
     cfg!(any(target_os = "macos", target_os = "linux"))
 }
 
 /// Returns true if the proxy autostart is installed (plist/systemd service file exists).
+#[must_use]
 pub fn is_installed() -> bool {
     #[cfg(target_os = "macos")]
     {
@@ -326,6 +328,7 @@ fn uninstall_systemd(quiet: bool) {
     }
 }
 
+#[must_use]
 pub fn find_binary() -> String {
     crate::core::portable_binary::resolve_portable_binary()
 }

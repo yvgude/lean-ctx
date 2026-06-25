@@ -54,7 +54,7 @@ enum TokenizerKind {
 ///
 /// Transformers take `[1, seq]` id/mask tensors and emit per-token hidden
 /// states `[1, seq, dim]` that we mean-pool. model2vec exports are
-/// EmbeddingBag graphs: flat `input_ids: [n_tokens]` plus `offsets: [batch]`,
+/// `EmbeddingBag` graphs: flat `input_ids: [n_tokens]` plus `offsets: [batch]`,
 /// already pooled to `[batch, dim]` — ~500x faster, no attention pass.
 #[cfg(feature = "embeddings")]
 enum GraphInputs {
@@ -79,7 +79,7 @@ fn is_embedding_bag_signature(input_names: &[String]) -> bool {
 
 impl EmbeddingEngine {
     /// Load embedding model and vocabulary from a directory.
-    /// Downloads model automatically from HuggingFace if not present.
+    /// Downloads model automatically from `HuggingFace` if not present.
     #[cfg(feature = "embeddings")]
     pub fn load(model_dir: &Path) -> anyhow::Result<Self> {
         let selected = model_registry::resolve_model();
@@ -285,7 +285,8 @@ impl EmbeddingEngine {
         &self.model_config.name
     }
 
-    /// Resolve the model directory (respects LEAN_CTX_MODELS_DIR env).
+    /// Resolve the model directory (respects `LEAN_CTX_MODELS_DIR` env).
+    #[must_use]
     pub fn model_directory() -> PathBuf {
         if let Ok(dir) = std::env::var("LEAN_CTX_MODELS_DIR") {
             return PathBuf::from(dir);
@@ -297,6 +298,7 @@ impl EmbeddingEngine {
     }
 
     /// Check if the model files are present and loadable.
+    #[must_use]
     pub fn is_available() -> bool {
         let base_dir = Self::model_directory();
         let selected = model_registry::resolve_model();
@@ -316,8 +318,9 @@ impl EmbeddingEngine {
                 attention_mask,
                 token_type_ids,
             } => {
-                let ids_vec: Vec<i64> = input.input_ids.iter().map(|&x| x as i64).collect();
-                let mask_vec: Vec<i64> = input.attention_mask.iter().map(|&x| x as i64).collect();
+                let ids_vec: Vec<i64> = input.input_ids.iter().map(|&x| i64::from(x)).collect();
+                let mask_vec: Vec<i64> =
+                    input.attention_mask.iter().map(|&x| i64::from(x)).collect();
                 let ids_array = ndarray::Array2::from_shape_vec((1, seq_len), ids_vec)?;
                 let mask_array = ndarray::Array2::from_shape_vec((1, seq_len), mask_vec)?;
                 let ids_tensor = ort::value::Tensor::from_array(ids_array)?;
@@ -325,7 +328,7 @@ impl EmbeddingEngine {
 
                 let hidden = if let Some(type_id) = token_type_ids {
                     let type_vec: Vec<i64> =
-                        input.token_type_ids.iter().map(|&x| x as i64).collect();
+                        input.token_type_ids.iter().map(|&x| i64::from(x)).collect();
                     let type_array = ndarray::Array2::from_shape_vec((1, seq_len), type_vec)?;
                     let type_tensor = ort::value::Tensor::from_array(type_array)?;
                     let mut _guard = self.session.lock().unwrap();
@@ -353,7 +356,7 @@ impl EmbeddingEngine {
                 if seq_len == 0 {
                     return Ok(vec![0.0; self.dimensions]);
                 }
-                let ids_vec: Vec<i64> = input.input_ids.iter().map(|&x| x as i64).collect();
+                let ids_vec: Vec<i64> = input.input_ids.iter().map(|&x| i64::from(x)).collect();
                 let ids_array = ndarray::Array1::from_shape_vec(seq_len, ids_vec)?;
                 let offsets_array = ndarray::Array1::from_shape_vec(1, vec![0i64])?;
                 let ids_tensor = ort::value::Tensor::from_array(ids_array)?;
@@ -378,7 +381,7 @@ impl EmbeddingEngine {
     /// batch, creates a `[batch, max_seq_len]` tensor, runs ONNX once, then
     /// mean-pools and L2-normalizes each sequence individually.
     ///
-    /// For the EmbeddingBag topology: concatenates tokens with per-row offsets,
+    /// For the `EmbeddingBag` topology: concatenates tokens with per-row offsets,
     /// runs ONNX once, and L2-normalizes each output row.
     #[cfg(feature = "embeddings")]
     fn run_inference_batch(&self, inputs: &[TokenizedInput]) -> anyhow::Result<Vec<Vec<f32>>> {
@@ -402,13 +405,13 @@ impl EmbeddingEngine {
 
                 for inp in inputs {
                     let seq_len = inp.input_ids.len();
-                    ids_data.extend(inp.input_ids.iter().map(|&x| x as i64));
+                    ids_data.extend(inp.input_ids.iter().map(|&x| i64::from(x)));
                     ids_data.resize(ids_data.len() + (max_len - seq_len), 0);
 
-                    mask_data.extend(inp.attention_mask.iter().map(|&x| x as i64));
+                    mask_data.extend(inp.attention_mask.iter().map(|&x| i64::from(x)));
                     mask_data.resize(mask_data.len() + (max_len - seq_len), 0);
 
-                    type_data.extend(inp.token_type_ids.iter().map(|&x| x as i64));
+                    type_data.extend(inp.token_type_ids.iter().map(|&x| i64::from(x)));
                     type_data.resize(type_data.len() + (max_len - seq_len), 0);
 
                     per_seq_masks.push(inp.attention_mask.as_slice());
@@ -458,7 +461,7 @@ impl EmbeddingEngine {
                 for inp in inputs {
                     adjusted_offsets.push(last_offset);
                     if !inp.input_ids.is_empty() {
-                        flat_ids.extend(inp.input_ids.iter().map(|&x| x as i64));
+                        flat_ids.extend(inp.input_ids.iter().map(|&x| i64::from(x)));
                         last_offset = flat_ids.len() as i64;
                     }
                 }
@@ -556,15 +559,16 @@ fn detect_dimensions(
             attention_mask,
             token_type_ids,
         } => {
-            let ids_vec: Vec<i64> = dummy.input_ids.iter().map(|&x| x as i64).collect();
-            let mask_vec: Vec<i64> = dummy.attention_mask.iter().map(|&x| x as i64).collect();
+            let ids_vec: Vec<i64> = dummy.input_ids.iter().map(|&x| i64::from(x)).collect();
+            let mask_vec: Vec<i64> = dummy.attention_mask.iter().map(|&x| i64::from(x)).collect();
             let ids_array = ndarray::Array2::from_shape_vec((1, seq_len), ids_vec).ok()?;
             let mask_array = ndarray::Array2::from_shape_vec((1, seq_len), mask_vec).ok()?;
             let ids_tensor = ort::value::Tensor::from_array(ids_array).ok()?;
             let mask_tensor = ort::value::Tensor::from_array(mask_array).ok()?;
 
             if let Some(type_id) = token_type_ids {
-                let type_vec: Vec<i64> = dummy.token_type_ids.iter().map(|&x| x as i64).collect();
+                let type_vec: Vec<i64> =
+                    dummy.token_type_ids.iter().map(|&x| i64::from(x)).collect();
                 let type_array = ndarray::Array2::from_shape_vec((1, seq_len), type_vec).ok()?;
                 let type_tensor = ort::value::Tensor::from_array(type_array).ok()?;
                 session
@@ -584,7 +588,7 @@ fn detect_dimensions(
             }
         }
         GraphInputs::EmbeddingBag { input_ids, offsets } => {
-            let ids_vec: Vec<i64> = dummy.input_ids.iter().map(|&x| x as i64).collect();
+            let ids_vec: Vec<i64> = dummy.input_ids.iter().map(|&x| i64::from(x)).collect();
             let ids_array = ndarray::Array1::from_shape_vec(seq_len, ids_vec).ok()?;
             let offsets_array = ndarray::Array1::from_shape_vec(1, vec![0i64]).ok()?;
             let ids_tensor = ort::value::Tensor::from_array(ids_array).ok()?;
@@ -621,12 +625,14 @@ fn detect_dimensions(
 ///
 /// Uses the chunked, autovectorizable dot product from [`crate::core::embedding_quant`]
 /// (turbovec-derived) so every semantic-search hot path gets SIMD throughput.
+#[must_use]
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     debug_assert_eq!(a.len(), b.len(), "vectors must have equal dimensions");
     crate::core::embedding_quant::dot_f32(a, b)
 }
 
 /// Compute cosine similarity without requiring pre-normalization.
+#[must_use]
 pub fn cosine_similarity_raw(a: &[f32], b: &[f32]) -> f32 {
     debug_assert_eq!(a.len(), b.len());
     use crate::core::embedding_quant::dot_f32;
@@ -680,6 +686,7 @@ pub fn try_shared_engine() -> Option<&'static EmbeddingEngine> {
 /// finish on the caller's thread before the process exits, so no worker is ever
 /// active during teardown.
 #[cfg(feature = "embeddings")]
+#[must_use]
 pub fn background_load_allowed() -> bool {
     // Unit tests compile with cfg(test): a cheap, unambiguous short-circuit.
     // Integration/bench/doctest binaries link the lib in its normal config

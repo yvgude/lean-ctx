@@ -19,11 +19,13 @@ impl Default for LeanCtxServer {
 
 impl LeanCtxServer {
     /// Creates a new server with default settings, auto-detecting the project root.
+    #[must_use]
     pub fn new() -> Self {
         Self::new_with_project_root(None)
     }
 
     /// Creates a new server rooted at the given project directory.
+    #[must_use]
     pub fn new_with_project_root(project_root: Option<&str>) -> Self {
         Self::new_with_startup(
             project_root,
@@ -35,6 +37,7 @@ impl LeanCtxServer {
     }
 
     /// Creates a new server in Context OS shared mode for a specific workspace/channel.
+    #[must_use]
     pub fn new_shared_with_context(
         project_root: &str,
         workspace_id: &str,

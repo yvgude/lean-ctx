@@ -7,6 +7,7 @@ fn env_usize(key: &str) -> Option<usize> {
         .and_then(|v| v.trim().parse::<usize>().ok())
 }
 
+#[must_use]
 pub fn max_read_bytes() -> usize {
     env_usize("LCTX_MAX_READ_BYTES")
         .or_else(|| env_usize("LEAN_CTX_MAX_READ_BYTES"))
@@ -14,6 +15,7 @@ pub fn max_read_bytes() -> usize {
         .max(1024)
 }
 
+#[must_use]
 pub fn max_shell_bytes() -> usize {
     env_usize("LCTX_MAX_SHELL_BYTES")
         .or_else(|| env_usize("LEAN_CTX_MAX_SHELL_BYTES"))

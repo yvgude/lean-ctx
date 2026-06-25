@@ -8,7 +8,7 @@
 //! - Meso (File): Aggregated per-file representations — "which files are relevant?"
 //! - Makro (Directory): Module-level aggregations — architecture queries
 //!
-//! The query-type classifier from search_reranking determines the entry scale:
+//! The query-type classifier from `search_reranking` determines the entry scale:
 //! - Symbol queries → Mikro directly
 //! - NL queries → Meso → Mikro refinement
 //! - Architecture queries → Makro → Meso → Mikro cascade
@@ -26,7 +26,7 @@ pub struct ScaleEntry {
 
 /// Multi-scale index holding representations at three granularities.
 pub struct MultiScaleIndex {
-    /// Mikro: individual chunks (delegated to BM25Index)
+    /// Mikro: individual chunks (delegated to `BM25Index`)
     pub micro_chunk_count: usize,
     /// Meso: per-file aggregated keywords and statistics
     pub meso_files: HashMap<String, ScaleEntry>,
@@ -35,6 +35,7 @@ pub struct MultiScaleIndex {
 }
 
 impl MultiScaleIndex {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             micro_chunk_count: 0,
@@ -44,6 +45,7 @@ impl MultiScaleIndex {
     }
 
     /// Build meso and macro scales from chunk-level data.
+    #[must_use]
     pub fn build_from_chunks(chunks: &[super::chunk_data::CodeChunk]) -> Self {
         let mut meso: HashMap<String, FileAccumulator> = HashMap::new();
 
@@ -133,6 +135,7 @@ impl MultiScaleIndex {
     }
 
     /// Search at the meso (file) scale. Returns file paths with relevance scores.
+    #[must_use]
     pub fn search_meso(&self, query_tokens: &[String], top_k: usize) -> Vec<(String, f64)> {
         let mut scores: Vec<(String, f64)> = self
             .meso_files
@@ -150,6 +153,7 @@ impl MultiScaleIndex {
     }
 
     /// Search at the macro (directory) scale. Returns directory paths with relevance.
+    #[must_use]
     pub fn search_macro(&self, query_tokens: &[String], top_k: usize) -> Vec<(String, f64)> {
         let mut scores: Vec<(String, f64)> = self
             .macro_dirs
@@ -167,6 +171,7 @@ impl MultiScaleIndex {
     }
 
     /// Determine which scale to start search from based on query type.
+    #[must_use]
     pub fn entry_scale(query_type: &super::search_reranking::QueryType) -> Scale {
         match query_type {
             super::search_reranking::QueryType::Symbol => Scale::Micro,

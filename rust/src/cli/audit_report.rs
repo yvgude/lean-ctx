@@ -50,6 +50,7 @@ Verify without LeanCTX: leanctx-verify <bundle.zip> [--pubkey <hex>]"
     }
 }
 
+#[must_use]
 pub fn generate_report() -> String {
     let entries = crate::core::audit_trail::load_recent(10000);
     let chain = crate::core::audit_trail::verify_chain();

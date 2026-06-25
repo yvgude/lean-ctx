@@ -7,6 +7,7 @@ macro_rules! static_regex {
     }};
 }
 
+#[must_use]
 pub fn redaction_enabled_for_active_role() -> bool {
     let role = crate::core::roles::active_role();
     if role.role.name == "admin" {
@@ -17,6 +18,7 @@ pub fn redaction_enabled_for_active_role() -> bool {
     }
 }
 
+#[must_use]
 pub fn redact_text_if_enabled(input: &str) -> String {
     if !redaction_enabled_for_active_role() {
         return input.to_string();
@@ -126,6 +128,7 @@ fn redaction_rules() -> Vec<Rule> {
     ]
 }
 
+#[must_use]
 pub fn redact_text(input: &str) -> String {
     let mut out = input.to_string();
     for rule in redaction_rules() {

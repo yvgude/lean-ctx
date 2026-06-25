@@ -23,6 +23,7 @@ pub enum Domain {
 
 impl Domain {
     /// Stable lowercase label used in digests and reports.
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Domain::Qa => "qa",
@@ -64,11 +65,13 @@ pub struct Task {
 
 impl Task {
     /// The retrieval query for the lean-ctx condition (falls back to the prompt).
+    #[must_use]
     pub fn query(&self) -> &str {
         self.retrieval_query.as_deref().unwrap_or(&self.prompt)
     }
 
     /// Absolute workspace directory, resolved against `suite_dir` for relative paths.
+    #[must_use]
     pub fn workspace_path(&self, suite_dir: &Path) -> PathBuf {
         let p = Path::new(&self.workspace);
         if p.is_absolute() {

@@ -50,6 +50,7 @@ fn signature_patterns() -> Vec<Regex> {
 
 /// Extract normalized error signatures from a single blob of text. Pure and
 /// deterministic; returns one entry per match (callers aggregate counts).
+#[must_use]
 pub fn extract_error_signatures(text: &str) -> Vec<String> {
     extract_with(text, &signature_patterns())
 }
@@ -93,6 +94,7 @@ fn collect_strings(value: &serde_json::Value, out: &mut String) {
 /// Mine all `.jsonl` files in `dir` for recurring error signatures. Each file is
 /// treated as one session; signatures are ranked by session reach, then total
 /// occurrences, then lexically — fully deterministic.
+#[must_use]
 pub fn mine_jsonl_dir(dir: &Path) -> Vec<MinedSignature> {
     let patterns = signature_patterns();
 
@@ -165,6 +167,7 @@ pub fn mine_jsonl_dir(dir: &Path) -> Vec<MinedSignature> {
 
 /// Render a mining report. `min_sessions` hides one-off signatures so only
 /// genuinely recurring pain points show.
+#[must_use]
 pub fn format_mining_report(mined: &[MinedSignature], min_sessions: usize) -> String {
     let recurring: Vec<&MinedSignature> = mined
         .iter()

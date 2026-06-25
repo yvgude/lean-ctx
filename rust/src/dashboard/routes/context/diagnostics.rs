@@ -331,7 +331,7 @@ fn compute_eviction_score(
     };
     let age_secs = (now - timestamp).max(0) as f64;
     let recency = 1.0 / (1.0 + (age_secs / 600.0));
-    let frequency = 1.0 / (1.0 + access_count as f64);
+    let frequency = 1.0 / (1.0 + f64::from(access_count));
     (token_ratio * 0.5 + (1.0 - recency) * 0.3 + frequency * 0.2).min(1.0)
 }
 

@@ -20,6 +20,7 @@ pub enum CompletenessSignal {
 }
 
 impl CompletenessSignal {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::SingleFile => "SCOPE:single-file",
@@ -30,6 +31,7 @@ impl CompletenessSignal {
     }
 }
 
+#[must_use]
 pub fn build_briefing(task: &str, file_context: &[(String, usize)]) -> TaskBriefing {
     let classification = classify(task);
 
@@ -111,6 +113,7 @@ fn build_context_hints(
     hints
 }
 
+#[must_use]
 pub fn format_briefing(briefing: &TaskBriefing) -> String {
     let mut parts = Vec::new();
 
@@ -131,6 +134,7 @@ pub fn format_briefing(briefing: &TaskBriefing) -> String {
     parts.join("\n")
 }
 
+#[must_use]
 pub fn inject_into_instructions(base_instructions: &str, task: &str) -> String {
     if task.trim().is_empty() {
         return base_instructions.to_string();

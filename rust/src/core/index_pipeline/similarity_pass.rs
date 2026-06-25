@@ -1,8 +1,8 @@
-//! Post-pass: SIMILAR_TO edges from MinHash fingerprints.
+//! Post-pass: `SIMILAR_TO` edges from `MinHash` fingerprints.
 //!
-//! Reads `"fp"` (hex-encoded MinHash) from Function/Method node properties,
+//! Reads `"fp"` (hex-encoded `MinHash`) from Function/Method node properties,
 //! builds a band-based LSH index, finds candidate pairs, computes exact
-//! Jaccard similarity, and emits SIMILAR_TO edges.
+//! Jaccard similarity, and emits `SIMILAR_TO` edges.
 //!
 //! Designed to work exclusively with `GraphBuffer` — no file I/O, no
 //! `ProjectIndex` dependency. The LSH bands match the existing Rust
@@ -21,15 +21,15 @@ use crate::core::index_types::{Minhash, NodeId};
 /// Number of LSH bands (16 bands of 4 minhash values each).
 const BANDS: usize = 16;
 
-/// MinHash values per band.
+/// `MinHash` values per band.
 const ROWS_PER_BAND: usize = 4;
 
-/// Maximum SIMILAR_TO edges emitted per node (matches C's `MAX_EDGES_PER_NODE`).
+/// Maximum `SIMILAR_TO` edges emitted per node (matches C's `MAX_EDGES_PER_NODE`).
 const MAX_EDGES_PER_NODE: usize = 10;
 
 // ── FP entry ──
 
-/// A node with a valid MinHash fingerprint extracted from properties.
+/// A node with a valid `MinHash` fingerprint extracted from properties.
 #[derive(Debug, Clone)]
 struct FpEntry {
     node_id: NodeId,
@@ -39,11 +39,11 @@ struct FpEntry {
 // ── Public API ──
 
 /// Run similarity pass: read `"fp"` from Function/Method nodes, build LSH,
-/// and emit SIMILAR_TO edges for pairs with Jaccard ≥ `threshold`.
+/// and emit `SIMILAR_TO` edges for pairs with Jaccard ≥ `threshold`.
 ///
 /// Deduplication is handled by `GraphBuffer::insert_edge` (which returns the
 /// existing `EdgeId` for duplicate `(source_id, target_id, edge_type)`).
-/// MAX_EDGES_PER_NODE is enforced per source node.
+/// `MAX_EDGES_PER_NODE` is enforced per source node.
 pub fn compute_similar_to(gbuf: &mut GraphBuffer, threshold: f32) {
     // Phase 1: collect all Function/Method nodes that have an "fp" property.
     let entries = collect_fp_entries(gbuf);
@@ -61,7 +61,7 @@ pub fn compute_similar_to(gbuf: &mut GraphBuffer, threshold: f32) {
                 ^ entry.minhash.0[start + 1]
                 ^ entry.minhash.0[start + 2]
                 ^ entry.minhash.0[start + 3];
-            let bucket = (band as u64) << 32 | xor as u64;
+            let bucket = (band as u64) << 32 | u64::from(xor);
             bucket_map.entry(bucket).or_default().push(idx);
         }
     }
@@ -101,7 +101,7 @@ pub fn compute_similar_to(gbuf: &mut GraphBuffer, threshold: f32) {
                 ^ src.minhash.0[start + 1]
                 ^ src.minhash.0[start + 2]
                 ^ src.minhash.0[start + 3];
-            let bucket = (band as u64) << 32 | xor as u64;
+            let bucket = (band as u64) << 32 | u64::from(xor);
 
             let Some(indices) = bucket_map.get(&bucket) else {
                 continue;
@@ -171,7 +171,7 @@ pub fn compute_similar_to(gbuf: &mut GraphBuffer, threshold: f32) {
 // ── Internal helpers ──
 
 /// Collect all nodes with label "Function" or "Method" that have an `"fp"`
-/// property containing a valid hex-encoded MinHash.
+/// property containing a valid hex-encoded `MinHash`.
 fn collect_fp_entries(gbuf: &GraphBuffer) -> Vec<FpEntry> {
     let mut entries = Vec::new();
     for label in &["Function", "Method"] {
@@ -192,7 +192,7 @@ fn collect_fp_entries(gbuf: &GraphBuffer) -> Vec<FpEntry> {
     entries
 }
 
-/// Compute MinHash Jaccard similarity between two 64-element arrays.
+/// Compute `MinHash` Jaccard similarity between two 64-element arrays.
 ///
 /// Counts positions where `a[i] == b[i]` and divides by 64.
 /// This is an unbiased estimate of the true Jaccard similarity.

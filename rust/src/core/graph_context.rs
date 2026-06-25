@@ -34,6 +34,7 @@ pub enum Relationship {
 }
 
 impl Relationship {
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
             Relationship::DirectDependency => "imports",
@@ -74,6 +75,7 @@ impl Default for GraphContextOptions {
     }
 }
 
+#[must_use]
 pub fn build_graph_context(
     file_path: &str,
     project_root: &str,
@@ -221,6 +223,7 @@ fn related_files_scored_for_path(
 }
 
 /// Comma-separated repo-relative paths for dependency-cluster hints (e.g. CCP XML).
+#[must_use]
 pub fn build_related_paths_csv(
     file_path: &str,
     project_root: &str,
@@ -238,6 +241,7 @@ pub fn build_related_paths_csv(
 
 /// Lightweight one-line hint of the top related files from the Property Graph.
 /// Returns `None` if no graph is available or no neighbors found.
+#[must_use]
 pub fn build_related_hint(file_path: &str, project_root: &str, limit: usize) -> Option<String> {
     let scored = related_files_scored_for_path(file_path, project_root, limit)?;
 
@@ -260,6 +264,7 @@ pub fn build_related_hint(file_path: &str, project_root: &str, limit: usize) -> 
 ///
 /// `recent_repo_paths` should be ordered **most recently touched first**. Neighbors from earlier
 /// seeds are ranked before those from later seeds; within a seed, graph `related_files_scored` order is kept.
+#[must_use]
 pub fn graph_neighbor_ranks_for_recent_files(
     project_root: &str,
     recent_repo_paths: &[String],
@@ -339,6 +344,7 @@ fn normalize_repo_rel_path(path: &str, project_root: &str) -> String {
     p.trim_start_matches('/').to_string()
 }
 
+#[must_use]
 pub fn format_graph_context(ctx: &GraphContext) -> String {
     if ctx.related_files.is_empty() {
         return String::new();

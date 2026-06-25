@@ -21,6 +21,7 @@ pub struct ModeDelta {
 
 impl ModeDelta {
     /// Format the delta for compact token-efficient output.
+    #[must_use]
     pub fn format_compact(&self) -> String {
         let mut out = String::new();
         out.push_str(&format!("[delta:{}] ", self.mode));
@@ -51,6 +52,7 @@ impl ModeDelta {
     }
 
     /// Calculate token savings compared to sending the full output.
+    #[must_use]
     pub fn token_savings_estimate(&self, full_output_tokens: usize) -> f64 {
         let delta_lines =
             self.added_lines.len() + self.removed_lines.len() + self.changed_lines.len() * 2;
@@ -64,6 +66,7 @@ impl ModeDelta {
 
 /// Compute a structural delta between two mode outputs.
 /// Uses line-level diff for structural modes (map, signatures).
+#[must_use]
 pub fn compute_delta(mode: &str, previous: &str, current: &str) -> Option<ModeDelta> {
     if previous == current {
         return Some(ModeDelta {
@@ -132,6 +135,7 @@ pub fn compute_delta(mode: &str, previous: &str, current: &str) -> Option<ModeDe
 
 /// Decide whether to send delta or full output based on savings threshold.
 /// Returns true if delta is more efficient.
+#[must_use]
 pub fn should_use_delta(delta: &ModeDelta, full_output_tokens: usize) -> bool {
     let savings = delta.token_savings_estimate(full_output_tokens);
     // Use delta if it saves at least 30% of tokens

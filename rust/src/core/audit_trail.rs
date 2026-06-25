@@ -262,6 +262,7 @@ pub fn verify_chain() -> ChainVerifyResult {
     }
 }
 
+#[must_use]
 pub fn hash_input(args: &serde_json::Map<String, serde_json::Value>) -> String {
     let serialized = serde_json::to_string(args).unwrap_or_default();
     let mut hasher = Sha256::new();

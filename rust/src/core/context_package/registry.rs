@@ -60,6 +60,7 @@ impl LocalRegistry {
         })
     }
 
+    #[must_use]
     pub fn root(&self) -> &Path {
         &self.root
     }

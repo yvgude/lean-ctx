@@ -237,7 +237,7 @@ fn cmd_session_legacy() {
     }
 
     let pct = if total > 0 {
-        (via_hook as f64 / total as f64 * 100.0).round() as u32
+        (f64::from(via_hook) / f64::from(total) * 100.0).round() as u32
     } else {
         0
     };

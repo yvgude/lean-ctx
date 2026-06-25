@@ -57,7 +57,7 @@ impl McpTool for CtxMultiReadTool {
 /// the (deprecated) `ctx_multi_read` tool and by `ctx_read` when it is called
 /// with a `paths` array (#509) — no duplicated batch logic across the two.
 ///
-/// Panic guard (mirrors ctx_read): a panic in tree-sitter / compression must
+/// Panic guard (mirrors `ctx_read)`: a panic in tree-sitter / compression must
 /// never unwind through the dispatch `block_in_place` and kill the MCP server.
 pub(crate) fn batch_read(
     args: &Map<String, Value>,

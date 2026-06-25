@@ -33,7 +33,7 @@ fn enabled_from(value: Option<&str>) -> bool {
     }
 }
 
-/// Resolved (model_key, input_price_per_m) for this process. The active model is stable
+/// Resolved (`model_key`, `input_price_per_m`) for this process. The active model is stable
 /// within a process, so we resolve the pricing table once.
 fn model_and_price() -> &'static (String, f64) {
     static CACHE: OnceLock<(String, f64)> = OnceLock::new();
@@ -75,7 +75,7 @@ fn agent_id() -> &'static str {
 /// The tokenizer family the **ledger** denominates savings in: the active
 /// model's own family, so recorded tokens (and the USD derived from them) match
 /// the units the provider actually bills (#685). Resolved once per process from
-/// the same model `model_and_price` resolves — for the default O200kBase model
+/// the same model `model_and_price` resolves — for the default `O200kBase` model
 /// (OpenAI/Cursor/unknown) this is `o200k_base`, so the common path is unchanged.
 pub(crate) fn ledger_family() -> crate::core::tokens::TokenizerFamily {
     static CACHE: OnceLock<crate::core::tokens::TokenizerFamily> = OnceLock::new();
@@ -83,7 +83,7 @@ pub(crate) fn ledger_family() -> crate::core::tokens::TokenizerFamily {
 }
 
 /// Count `text` in the ledger's tokenizer family (the active model's own) so
-/// recorded savings are model-correct (#685). For the default O200kBase model
+/// recorded savings are model-correct (#685). For the default `O200kBase` model
 /// this is byte-identical to [`crate::core::tokens::count_tokens`] — same BPE,
 /// same cache key — so the common path keeps its exact o200k numbers at zero
 /// extra cost; only a resolved Claude/Gemini/Llama model triggers re-tokenizing.
@@ -91,6 +91,7 @@ pub(crate) fn ledger_family() -> crate::core::tokens::TokenizerFamily {
 /// NOTE: this is for the **internal ledger only**. Tool-output framing/footers
 /// must stay on `count_tokens` (o200k) to keep outputs byte-stable for provider
 /// prompt caching (#498) — do not route those through here.
+#[must_use]
 pub fn count_for_ledger(text: &str) -> usize {
     crate::core::tokens::count_tokens_for(text, ledger_family())
 }
@@ -180,6 +181,7 @@ pub fn record_bounce_event(wasted_tokens: usize) {
 
 /// Total bounce-adjusted tokens recorded, optionally limited to the last `days` (by event
 /// timestamp). `None` = all time. Used to net the Wrapped headline per period.
+#[must_use]
 pub fn bounce_tokens(days: Option<u32>) -> u64 {
     let Some(path) = store::default_path() else {
         return 0;
@@ -188,6 +190,7 @@ pub fn bounce_tokens(days: Option<u32>) -> u64 {
 }
 
 /// Aggregated totals + model/day/tool slices over the whole ledger.
+#[must_use]
 pub fn summary() -> LedgerSummary {
     store::default_path()
         .map(|p| store::summarize(&p))
@@ -196,6 +199,7 @@ pub fn summary() -> LedgerSummary {
 
 /// Per-day `(day, bounce_events, read_events)` for the last `days` days —
 /// the dashboard's "is the system learning?" trend (#507).
+#[must_use]
 pub fn daily_bounce_trend(days: u32) -> Vec<(String, u64, u64)> {
     store::default_path()
         .map(|p| store::daily_bounce_trend(&p, days))
@@ -217,6 +221,7 @@ pub fn rechain() -> std::io::Result<usize> {
 }
 
 /// Every recorded event (for `ledger export`).
+#[must_use]
 pub fn all_events() -> Vec<SavingsEvent> {
     store::default_path()
         .map(|p| store::load(&p))

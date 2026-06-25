@@ -195,7 +195,7 @@ fn compress_request_body(parsed: Value, original_size: usize) -> (Vec<u8>, usize
     (out, original_size, compressed_size)
 }
 
-/// Compresses a tool_result `content` field unless it is a protected file/source
+/// Compresses a `tool_result` `content` field unless it is a protected file/source
 /// read, which must reach the model intact (it is what gets edited).
 fn compress_content_field(
     content: &mut Value,

@@ -53,6 +53,7 @@ pub fn snapshot_v1() -> VerificationObservabilityV1 {
     }
 }
 
+#[must_use]
 pub fn format_compact(v: &VerificationObservabilityV1) -> String {
     let proof_last = v
         .proof

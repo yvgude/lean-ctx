@@ -207,7 +207,7 @@ fn internal_error_str() -> (StatusCode, String) {
 /// unknown/oversized payloads return our own `invalid_payload` / `payload_too_large` instead of
 /// axum defaults. Two body shapes are accepted:
 ///   • a signed envelope `{payload_json, public_key, signature}` — the client proves a login-less
-///     identity and the card is UPSERTed by `(publisher_id, period)` (one stable card/URL); or
+///     identity and the card is `UPSERTed` by `(publisher_id, period)` (one stable card/URL); or
 ///   • a bare payload object — legacy anonymous insert (may create duplicates) for old clients.
 pub(super) async fn publish(
     State(state): State<AppState>,

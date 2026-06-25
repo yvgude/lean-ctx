@@ -14,6 +14,7 @@ static ABORT_REQUESTED: AtomicBool = AtomicBool::new(false);
 static CURRENT_PRESSURE: AtomicU8 = AtomicU8::new(0);
 
 /// Current process RSS in bytes, or `None` if unavailable.
+#[must_use]
 pub fn get_rss_bytes() -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
@@ -30,6 +31,7 @@ pub fn get_rss_bytes() -> Option<u64> {
 }
 
 /// RSS of an arbitrary process by PID, or `None` if unavailable/dead.
+#[must_use]
 pub fn get_rss_bytes_for_pid(pid: u32) -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
@@ -47,6 +49,7 @@ pub fn get_rss_bytes_for_pid(pid: u32) -> Option<u64> {
 }
 
 /// Total physical RAM in bytes, or `None` if unavailable.
+#[must_use]
 pub fn get_system_ram_bytes() -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
@@ -63,6 +66,7 @@ pub fn get_system_ram_bytes() -> Option<u64> {
 }
 
 /// Returns the RSS limit in bytes based on `max_ram_percent` config.
+#[must_use]
 pub fn rss_limit_bytes() -> Option<u64> {
     let sys_ram = get_system_ram_bytes()?;
     let cfg = super::config::Config::load();
@@ -111,6 +115,7 @@ impl PressureLevel {
 
 impl MemorySnapshot {
     /// Capture memory snapshot of the **current** process.
+    #[must_use]
     pub fn capture() -> Option<Self> {
         Self::capture_impl(get_rss_bytes()?)
     }
@@ -186,6 +191,7 @@ pub fn abort_requested() -> bool {
 
 /// Quick, non-allocating memory pressure check for hot loops (scanners, indexers).
 /// Reads the cached atomic flag set by the guardian thread — O(1), no syscalls.
+#[must_use]
 pub fn is_under_pressure() -> bool {
     current_pressure() >= PressureLevel::Soft
 }

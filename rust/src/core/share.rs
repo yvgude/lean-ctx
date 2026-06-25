@@ -12,6 +12,7 @@ use std::process::{Command, Stdio};
 /// Tries the platform-native tools in order; the first that accepts the text on
 /// stdin and exits 0 wins. Never panics — returns `false` when none are available
 /// so the caller can fall back to printing.
+#[must_use]
 pub fn copy_to_clipboard(text: &str) -> bool {
     clipboard_commands()
         .into_iter()
@@ -20,6 +21,7 @@ pub fn copy_to_clipboard(text: &str) -> bool {
 
 /// Opens `target` (a file path or URL) in the default handler. Returns `true` if
 /// the launcher process spawned successfully (not whether the GUI actually opened).
+#[must_use]
 pub fn open_in_browser(target: &str) -> bool {
     let (bin, mut args): (&str, Vec<&str>) = if cfg!(target_os = "macos") {
         ("open", vec![])

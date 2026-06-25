@@ -22,6 +22,7 @@ const INDEX_VERSION: u32 = 6;
 // `graph_index::…` call sites keep compiling during the migration.
 pub use crate::core::index_paths::{graph_match_key, graph_relative_key, normalize_project_root};
 
+#[must_use]
 pub fn is_safe_scan_root_public(path: &str) -> bool {
     is_safe_scan_root(path)
 }
@@ -265,6 +266,7 @@ fn default_edge_weight() -> f32 {
 }
 
 impl ProjectIndex {
+    #[must_use]
     pub fn new(project_root: &str) -> Self {
         Self {
             version: INDEX_VERSION,
@@ -276,6 +278,7 @@ impl ProjectIndex {
         }
     }
 
+    #[must_use]
     pub fn index_dir(project_root: &str) -> Option<std::path::PathBuf> {
         let normalized = normalize_project_root(project_root);
         let hash = crate::core::project_hash::hash_project_root(&normalized);
@@ -294,6 +297,7 @@ impl ProjectIndex {
     /// Reads from `graph.db` (property graph). Callers should read from
     /// `code_index.db` via `DumpEngine` instead.
     #[deprecated(note = "Use DumpEngine / code_index.db instead of loading from property graph")]
+    #[must_use]
     pub fn load(project_root: &str) -> Option<Self> {
         let graph = crate::core::property_graph::CodeGraph::open(project_root).ok()?;
         if graph.file_catalog_count().unwrap_or(0) == 0 {
@@ -317,7 +321,7 @@ impl ProjectIndex {
             .map_err(|e| e.to_string())
     }
 
-    /// Remove all cached graph indices that are older than max_age_hours.
+    /// Remove all cached graph indices that are older than `max_age_hours`.
     /// Called on startup/update to prevent stale data from persisting.
     pub fn purge_stale_indices() {
         let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
@@ -364,22 +368,27 @@ impl ProjectIndex {
         }
     }
 
+    #[must_use]
     pub fn file_count(&self) -> usize {
         self.files.len()
     }
 
+    #[must_use]
     pub fn symbol_count(&self) -> usize {
         self.symbols.len()
     }
 
+    #[must_use]
     pub fn edge_count(&self) -> usize {
         self.edges.len()
     }
 
+    #[must_use]
     pub fn get_symbol(&self, key: &str) -> Option<&SymbolEntry> {
         self.symbols.get(key)
     }
 
+    #[must_use]
     pub fn get_reverse_deps(&self, path: &str, depth: usize) -> Vec<String> {
         let mut result = Vec::new();
         let mut visited = std::collections::HashSet::new();
@@ -405,6 +414,7 @@ impl ProjectIndex {
 
     /// Forward import dependencies: files that `path` (transitively) imports.
     /// Mirror of `get_reverse_deps` with the edge direction flipped.
+    #[must_use]
     pub fn get_forward_deps(&self, path: &str, depth: usize) -> Vec<String> {
         let mut result = Vec::new();
         let mut visited = std::collections::HashSet::new();
@@ -428,6 +438,7 @@ impl ProjectIndex {
         result
     }
 
+    #[must_use]
     pub fn get_related(&self, path: &str, depth: usize) -> Vec<String> {
         let mut result = Vec::new();
         let mut visited = std::collections::HashSet::new();

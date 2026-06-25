@@ -1,4 +1,4 @@
-//! RubyGems (`gem`) output compression.
+//! `RubyGems` (`gem`) output compression.
 //!
 //! `gem install`/`update` interleaves the few lines that matter
 //! (`Successfully installed …`, gem count) with documentation/fetch noise
@@ -12,6 +12,7 @@
 
 use crate::core::compressor::strip_ansi;
 
+#[must_use]
 pub fn compress(cmd: &str, output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {

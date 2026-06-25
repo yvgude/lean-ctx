@@ -15,7 +15,7 @@ use rmcp::model::{CallToolResult, Content};
 
 use crate::core::policy::runtime::{self, ActivePolicy};
 
-/// Tools that can never be policy-denied (mirror role_guard's session/meta
+/// Tools that can never be policy-denied (mirror `role_guard`'s session/meta
 /// exemption), so a pack can't lock the operator out of fixing the policy.
 const EXEMPT_TOOLS: &[&str] = &["ctx", "ctx_session", "ctx_policy"];
 
@@ -27,6 +27,7 @@ pub struct PolicyCheckResult {
 
 /// Check whether `tool_name` is allowed by the active policy pack, recording an
 /// audit entry on denial (same APIs as [`super::role_guard`]).
+#[must_use]
 pub fn check_tool_access(tool_name: &str) -> PolicyCheckResult {
     let check = evaluate(runtime::active().as_deref(), tool_name);
     if check.blocked
@@ -89,6 +90,7 @@ fn evaluate(active: Option<&ActivePolicy>, tool_name: &str) -> PolicyCheckResult
     }
 }
 
+#[must_use]
 pub fn into_call_tool_result(check: &PolicyCheckResult) -> Option<CallToolResult> {
     check.blocked.then(|| {
         CallToolResult::success(vec![Content::text(

@@ -1,7 +1,7 @@
 //! Agentless Datadog export (GL #401, setup path B).
 //!
 //! Pushes the metrics-contract series straight to the Datadog Metrics API v2
-//! (`POST /api/v2/series`, `DD-API-KEY` header) — no local Agent, no OTel
+//! (`POST /api/v2/series`, `DD-API-KEY` header) — no local Agent, no `OTel`
 //! Collector. Strictly opt-in: **both** `LEAN_CTX_DATADOG_PUSH=1` and
 //! `DD_API_KEY` must be set; a stray `DD_API_KEY` from another tool never
 //! turns on egress by itself.
@@ -46,6 +46,7 @@ struct Baseline {
 static BASELINE: Mutex<Option<Baseline>> = Mutex::new(None);
 
 /// True when the operator explicitly enabled the push exporter.
+#[must_use]
 pub fn enabled() -> bool {
     std::env::var(ENABLE_ENV).is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         && std::env::var(API_KEY_ENV).is_ok_and(|v| !v.trim().is_empty())
@@ -68,6 +69,7 @@ fn intake_url() -> String {
 /// Spawn the background push loop if (and only if) the operator opted in.
 /// Called from long-running entry points (dashboard server). Returns whether
 /// the loop was started.
+#[must_use]
 pub fn spawn_if_enabled() -> bool {
     if !enabled() {
         return false;
@@ -129,7 +131,7 @@ fn now_ts() -> i64 {
 }
 
 /// Extra static tags, e.g. `env:prod,team:platform` — the Datadog-side
-/// equivalent of OTel resource attributes like `deployment.environment`.
+/// equivalent of `OTel` resource attributes like `deployment.environment`.
 const EXTRA_TAGS_ENV: &str = "LEAN_CTX_DD_TAGS";
 
 fn tags() -> Vec<String> {

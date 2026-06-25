@@ -1,4 +1,4 @@
-//! OpenAPI 3.0 document for the public `/v1` surface, generated from a single
+//! `OpenAPI` 3.0 document for the public `/v1` surface, generated from a single
 //! in-code endpoint inventory ([`endpoints`]). The HTTP route that serves it
 //! lives in `http_server`; the SSOT lives here so it stays compiled and
 //! drift-tested without the `http-server` feature.
@@ -20,8 +20,9 @@ pub struct EndpointDoc {
     pub summary: &'static str,
 }
 
-/// The public endpoint inventory — the single source of truth for the OpenAPI
+/// The public endpoint inventory — the single source of truth for the `OpenAPI`
 /// document and the contract-doc drift test.
+#[must_use]
 pub fn endpoints() -> Vec<EndpointDoc> {
     vec![
         EndpointDoc {
@@ -93,7 +94,8 @@ pub fn endpoints() -> Vec<EndpointDoc> {
     ]
 }
 
-/// Build the OpenAPI 3.0.3 document for this build.
+/// Build the `OpenAPI` 3.0.3 document for this build.
+#[must_use]
 pub fn openapi_value() -> Value {
     let mut paths: Map<String, Value> = Map::new();
 

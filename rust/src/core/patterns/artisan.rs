@@ -20,6 +20,7 @@ fn pest_result_re() -> &'static regex::Regex {
     static_regex!(r"(\d+)\s*passed.*?(\d+)\s*failed|(\d+)\s*passed")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {

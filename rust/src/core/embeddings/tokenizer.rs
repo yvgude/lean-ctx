@@ -1,12 +1,12 @@
-//! Minimal WordPiece tokenizer for BERT-style embedding models.
+//! Minimal `WordPiece` tokenizer for BERT-style embedding models.
 //!
 //! Implements the standard BERT tokenization pipeline:
 //! 1. Lowercase + accent stripping
 //! 2. Whitespace + punctuation splitting
-//! 3. WordPiece subword tokenization
+//! 3. `WordPiece` subword tokenization
 //! 4. Special token insertion (`[CLS]`, `[SEP]`)
 //!
-//! Optimized for code search: handles camelCase, snake_case, and common
+//! Optimized for code search: handles camelCase, `snake_case`, and common
 //! programming punctuation correctly.
 
 use std::collections::HashMap;
@@ -79,6 +79,7 @@ impl WordPieceTokenizer {
     }
 
     /// Encode text into token IDs with `[CLS]` prefix and `[SEP]` suffix.
+    #[must_use]
     pub fn encode(&self, text: &str, max_len: usize) -> TokenizedInput {
         let words = self.pre_tokenize(text);
         let mut ids = vec![self.cls_id];
@@ -106,10 +107,12 @@ impl WordPieceTokenizer {
         }
     }
 
+    #[must_use]
     pub fn pad_id(&self) -> i32 {
         self.pad_id
     }
 
+    #[must_use]
     pub fn vocab_size(&self) -> usize {
         self.vocab.len()
     }
@@ -144,7 +147,7 @@ impl WordPieceTokenizer {
         words.iter().map(|w| w.to_lowercase()).collect()
     }
 
-    /// Split programming identifiers (camelCase, snake_case) into subwords.
+    /// Split programming identifiers (camelCase, `snake_case`) into subwords.
     /// Called BEFORE lowercasing so case boundaries are still visible.
     fn split_identifier(&self, word: &str) -> Vec<String> {
         let lower = word.to_lowercase();
@@ -183,7 +186,7 @@ impl WordPieceTokenizer {
         }
     }
 
-    /// Apply WordPiece algorithm to a single word.
+    /// Apply `WordPiece` algorithm to a single word.
     fn wordpiece_encode(&self, word: &str) -> Vec<i32> {
         if word.chars().count() > self.max_word_chars {
             return vec![self.unk_id];
@@ -266,17 +269,17 @@ fn is_bert_punctuation(ch: char) -> bool {
     }
 }
 
-/// Wrapper for HuggingFace `tokenizer.json` files.
+/// Wrapper for `HuggingFace` `tokenizer.json` files.
 ///
 /// Parses the JSON to extract the vocabulary map, then delegates to
 /// the existing `WordPieceTokenizer` for actual tokenization.
-/// Supports both WordPiece and BPE vocab formats (both map tokens → IDs).
+/// Supports both `WordPiece` and BPE vocab formats (both map tokens → IDs).
 pub struct HfTokenizerWrapper {
     inner: WordPieceTokenizer,
 }
 
 impl HfTokenizerWrapper {
-    /// Load from a HuggingFace `tokenizer.json` file.
+    /// Load from a `HuggingFace` `tokenizer.json` file.
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path).map_err(|e| {
             anyhow::anyhow!("Failed to read tokenizer.json {}: {}", path.display(), e)
@@ -328,6 +331,7 @@ impl HfTokenizerWrapper {
         Ok(Self { inner })
     }
 
+    #[must_use]
     pub fn encode(&self, text: &str, max_len: usize) -> TokenizedInput {
         self.inner.encode(text, max_len)
     }

@@ -41,6 +41,7 @@ pub struct ProcedureStep {
 }
 
 impl Procedure {
+    #[must_use]
     pub fn success_rate(&self) -> f32 {
         if self.times_used == 0 {
             return 0.0;
@@ -48,6 +49,7 @@ impl Procedure {
         self.times_succeeded as f32 / self.times_used as f32
     }
 
+    #[must_use]
     pub fn matches_context(&self, task: &str) -> bool {
         let task_lower = task.to_lowercase();
         self.activation_keywords
@@ -57,6 +59,7 @@ impl Procedure {
 }
 
 impl ProceduralStore {
+    #[must_use]
     pub fn new(project_hash: &str) -> Self {
         Self {
             project_hash: project_hash.to_string(),
@@ -64,6 +67,7 @@ impl ProceduralStore {
         }
     }
 
+    #[must_use]
     pub fn suggest(&self, task: &str) -> Vec<&Procedure> {
         let mut matches: Vec<(&Procedure, f32)> = self
             .procedures
@@ -162,12 +166,14 @@ impl ProceduralStore {
         Some(dir.join(format!("{project_hash}.json")))
     }
 
+    #[must_use]
     pub fn load(project_hash: &str) -> Option<Self> {
         let path = Self::store_path(project_hash)?;
         let data = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&data).ok()
     }
 
+    #[must_use]
     pub fn load_or_create(project_hash: &str) -> Self {
         Self::load(project_hash).unwrap_or_else(|| Self::new(project_hash))
     }
@@ -190,6 +196,7 @@ impl ProceduralStore {
 /// the number of stored procedures, or `None` when there is nothing to learn
 /// from yet. Detection is cheap (n-grams over <= `max_episodes` sequences),
 /// so no throttling is needed.
+#[must_use]
 pub fn auto_detect_from_episodes(project_hash: &str, policy: &ProceduralPolicy) -> Option<usize> {
     let episodes = super::episodic_memory::EpisodicStore::load(project_hash)?;
     if episodes.episodes.is_empty() {
@@ -292,6 +299,7 @@ fn usage_recency(proc: &Procedure) -> f32 {
     (1.0 - days_old / 30.0).max(0.0)
 }
 
+#[must_use]
 pub fn format_suggestion(proc: &Procedure) -> String {
     let mut output = format!(
         "Suggested workflow: {} (confidence: {:.0}%, used {}x, success rate: {:.0}%)\n",

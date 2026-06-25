@@ -1,11 +1,11 @@
 //! Mirror a `graph_index` [`ProjectIndex`] into the SQLite property graph.
 //!
-//! The "one extractor → one store" path (#682.1): the mature graph_index
+//! The "one extractor → one store" path (#682.1): the mature `graph_index`
 //! extractor produces the [`ProjectIndex`] (files, symbols, edges); this mirrors
 //! it faithfully into the scalable SQLite store so the property graph carries
 //! identical data — including a populated `file_catalog`, which the provider
 //! facade's `pg_populated` gate requires. Feeding PG from the proven extractor
-//! guarantees PG ⊇ graph_index, so a later backend flip cannot lose data.
+//! guarantees PG ⊇ `graph_index`, so a later backend flip cannot lose data.
 //!
 //! This is a pure replace of the *code graph*: nodes, edges and the file
 //! catalog are cleared first, then rebuilt from the index, so re-running it is
@@ -20,11 +20,11 @@ use rusqlite::params;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-/// Map a graph_index edge-kind string onto a property-graph [`EdgeKind`].
+/// Map a `graph_index` edge-kind string onto a property-graph [`EdgeKind`].
 ///
 /// `import` → `Imports` and `reexport` → `Module` keep both inside
 /// `STRUCTURAL_EDGE_KINDS` (so dependency/impact queries see them) while
-/// preserving the distinction graph_index draws between the two. Other kinds
+/// preserving the distinction `graph_index` draws between the two. Other kinds
 /// (`calls`, `exports`, `module`, `cochange`, `sibling`, …) round-trip through
 /// [`EdgeKind::parse`].
 fn map_edge_kind(kind: &str) -> EdgeKind {
@@ -47,7 +47,7 @@ fn symbol_metadata(kind: &str, is_exported: bool) -> String {
 
 /// Inverse of `symbol_metadata`: recover the source `kind` and `exported`
 /// flag from a symbol node's metadata JSON. The property-graph `Node` only
-/// models a coarse `NodeKind`, so the precise graph_index kind (`function`,
+/// models a coarse `NodeKind`, so the precise `graph_index` kind (`function`,
 /// `struct`, …) and export flag live in this metadata blob — the provider
 /// facade must read them back to surface a lossless symbol (#696 C1). Returns
 /// `(None, None)` for absent/malformed metadata so callers can fall back.
@@ -86,8 +86,8 @@ fn json_str(s: &str) -> String {
 
 /// Split a symbol name on camelCase boundaries, then rejoin with spaces.
 /// "loadOrBuildBm25" → "load Or Build Bm25"
-/// "IndexPipeline" → "Index Pipeline"
-/// "__rust_begin_short_backtrace" → "__rust_begin_short_backtrace" (underscore-separated stays as-is)
+/// "`IndexPipeline`" → "Index Pipeline"
+/// "__`rust_begin_short_backtrace`" → "__`rust_begin_short_backtrace`" (underscore-separated stays as-is)
 fn split_camel_case(name: &str) -> String {
     let mut result = String::with_capacity(name.len() + 8);
     let chars = name.chars().peekable();

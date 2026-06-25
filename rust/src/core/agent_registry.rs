@@ -7,7 +7,7 @@
 //! SPIFFE-compatible identity string for workload-IAM integration.
 //!
 //! Storage: `<data_dir>/agents/registry.json`, advisory-file-locked like
-//! the audit trail (multiple concurrent agent processes are LeanCTX's
+//! the audit trail (multiple concurrent agent processes are `LeanCTX`'s
 //! normal operating mode). Every lifecycle transition writes a
 //! tamper-evident audit entry (OCP Part 4, additive event types).
 
@@ -113,12 +113,14 @@ fn with_registry<T>(
 }
 
 /// Read-only registry snapshot.
+#[must_use]
 pub fn list() -> Vec<AgentRecord> {
     registry_path()
         .map(|p| load_unlocked(&p).into_values().collect())
         .unwrap_or_default()
 }
 
+#[must_use]
 pub fn get(agent_id: &str) -> Option<AgentRecord> {
     registry_path()
         .ok()
@@ -179,6 +181,7 @@ fn binary_sha256() -> String {
 /// Best-effort attestation: hash the running binary and the role file.
 /// Detects drift; does NOT stop a determined attacker who controls the
 /// host (documented in docs/enterprise/agent-identity.md).
+#[must_use]
 pub fn attest(role: &str) -> Attestation {
     let binary_sha256 = binary_sha256();
     let config_sha256 = role_file_path(role)
@@ -368,6 +371,7 @@ pub fn suspend_agents_for_owner(owner: &str, reason: &str) -> Result<Vec<String>
 /// Identity check for enforce paths (team-server middleware): registered
 /// AND active. Unregistered agents are reported (monitor mode logs,
 /// enforce mode rejects — the caller decides).
+#[must_use]
 pub fn check(agent_id: &str) -> IdentityCheck {
     match get(agent_id) {
         None => IdentityCheck {
@@ -399,6 +403,7 @@ pub fn check(agent_id: &str) -> IdentityCheck {
 
 /// SPIFFE-compatible workload identity:
 /// `spiffe://<trust_domain>/agent/<role>/<agent_id>`.
+#[must_use]
 pub fn spiffe_id(record: &AgentRecord, trust_domain: &str) -> String {
     format!(
         "spiffe://{}/agent/{}/{}",

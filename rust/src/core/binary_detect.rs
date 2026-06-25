@@ -147,6 +147,7 @@ fn has_binary_content(path: &str) -> bool {
 
 /// Returns `true` if the file is likely a binary file.
 /// Checks extension first (zero I/O), falls back to content inspection.
+#[must_use]
 pub fn is_binary_file(path: &str) -> bool {
     if has_binary_extension(path) {
         return true;
@@ -179,6 +180,7 @@ fn file_type_label(path: &str) -> &'static str {
 }
 
 /// Returns a helpful error message for binary files, including file type and suggestions.
+#[must_use]
 pub fn binary_file_message(path: &str) -> String {
     let ext = Path::new(path)
         .extension()

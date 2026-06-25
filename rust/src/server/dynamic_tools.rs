@@ -13,6 +13,7 @@ pub enum ToolCategory {
 }
 
 impl ToolCategory {
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "core" => Some(Self::Core),
@@ -25,6 +26,7 @@ impl ToolCategory {
         }
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Core => "core",
@@ -39,6 +41,7 @@ impl ToolCategory {
 }
 
 #[allow(clippy::match_same_arms)]
+#[must_use]
 pub fn categorize_tool(name: &str) -> ToolCategory {
     match name {
         // Internal: meta/self-referential + automated mechanisms (never exposed)
@@ -162,6 +165,7 @@ pub fn deprecation_notice(name: &str) -> Option<String> {
     })
 }
 
+#[must_use]
 pub fn is_readonly_tool(name: &str) -> bool {
     matches!(
         name,
@@ -213,6 +217,7 @@ impl Default for DynamicToolState {
 }
 
 impl DynamicToolState {
+    #[must_use]
     pub fn new() -> Self {
         let mut active = HashSet::new();
         active.insert(ToolCategory::Core);
@@ -224,6 +229,7 @@ impl DynamicToolState {
     }
 
     /// Creates state with categories from config (env var > config.toml > default).
+    #[must_use]
     pub fn from_config(categories: &[String]) -> Self {
         let mut active = HashSet::new();
         active.insert(ToolCategory::Core);
@@ -238,6 +244,7 @@ impl DynamicToolState {
         }
     }
 
+    #[must_use]
     pub fn all_enabled() -> Self {
         let mut active = HashSet::new();
         active.insert(ToolCategory::Core);
@@ -256,6 +263,7 @@ impl DynamicToolState {
         self.supports_list_changed = val;
     }
 
+    #[must_use]
     pub fn supports_list_changed(&self) -> bool {
         self.supports_list_changed
     }
@@ -271,6 +279,7 @@ impl DynamicToolState {
         self.active_categories.remove(&cat)
     }
 
+    #[must_use]
     pub fn is_tool_active(&self, name: &str) -> bool {
         let cat = categorize_tool(name);
         if cat == ToolCategory::Internal {
@@ -292,6 +301,7 @@ impl DynamicToolState {
         cats
     }
 
+    #[must_use]
     pub fn all_categories() -> Vec<&'static str> {
         vec!["core", "arch", "debug", "memory", "metrics", "session"]
     }

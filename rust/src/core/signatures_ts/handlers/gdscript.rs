@@ -22,7 +22,7 @@ fn params_text(node: &Node, source: &[u8]) -> String {
     }
 }
 
-/// GDScript `func name(params) -> ret:`.
+/// `GDScript` `func name(params) -> ret:`.
 ///
 /// Top-level functions are exported; names starting with `_` are Godot
 /// private/virtual callbacks (`_ready`, `_draw`, …). Indented definitions are
@@ -45,7 +45,7 @@ pub(crate) fn gdscript_function(node: &Node, name: &str, source: &[u8]) -> Signa
     }
 }
 
-/// GDScript member storage declarations: `const X`, `var x`, `@export var x`,
+/// `GDScript` member storage declarations: `const X`, `var x`, `@export var x`,
 /// `@onready var y`. `@export` always belongs to the public/editor-facing API;
 /// otherwise the leading-underscore Godot privacy convention applies.
 pub(crate) fn gdscript_variable(node: &Node, name: &str) -> Signature {
@@ -67,7 +67,7 @@ pub(crate) fn gdscript_variable(node: &Node, name: &str) -> Signature {
     }
 }
 
-/// GDScript `signal name(params)` — an emittable member symbol.
+/// `GDScript` `signal name(params)` — an emittable member symbol.
 pub(crate) fn gdscript_signal(node: &Node, name: &str, source: &[u8]) -> Signature {
     Signature {
         kind: "signal",

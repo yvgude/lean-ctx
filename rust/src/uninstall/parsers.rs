@@ -149,7 +149,7 @@ fn remove_lean_ctx_from_json_textual(content: &str) -> Option<String> {
 }
 
 /// Remove a key whose value is an EMPTY object (`"key": {}`) from JSON text.
-/// Used for OpenClaw (GitHub #390): after the lean-ctx entry is removed, a
+/// Used for `OpenClaw` (GitHub #390): after the lean-ctx entry is removed, a
 /// leftover empty `mcpServers` object would still trip the strict 2026.6.1
 /// validator ("Unrecognized key"). Returns None when the key is absent or its
 /// object is non-empty.

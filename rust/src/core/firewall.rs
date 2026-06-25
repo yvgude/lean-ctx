@@ -18,6 +18,7 @@ const LONG_LINE_TAIL_CHARS: usize = 300;
 
 /// Tools whose large outputs are eligible for the firewall. Explicit file reads are
 /// intentionally excluded — they have their own read-mode (`lines:`, `signatures`, …).
+#[must_use]
 pub fn is_firewallable_tool(name: &str) -> bool {
     matches!(
         name,
@@ -31,16 +32,19 @@ pub fn is_firewallable_tool(name: &str) -> bool {
 /// of output size or config. This is the single source of truth for "an explicit
 /// read always returns content"; both the firewall and the reference-results path
 /// honour it so a `ctx_read` can never degrade to a preview the agent can't edit.
+#[must_use]
 pub fn is_protected_read(name: &str) -> bool {
     matches!(name, "ctx_read" | "ctx_multi_read" | "ctx_smart_read")
 }
 
 /// Effective minimum token count before firewalling (config + env override).
+#[must_use]
 pub fn min_tokens(config: &Config) -> usize {
     config.archive.ephemeral_min_tokens_effective()
 }
 
 /// Whether a result of `output_tokens` from `tool` should be firewalled.
+#[must_use]
 pub fn should_firewall(tool: &str, output_tokens: usize, config: &Config) -> bool {
     config.archive.ephemeral_effective()
         && is_firewallable_tool(tool)
@@ -51,6 +55,7 @@ pub fn should_firewall(tool: &str, output_tokens: usize, config: &Config) -> boo
 /// a head/tail excerpt for multi-line output, or a char-bounded excerpt for output with
 /// few but very long lines (e.g. a single giant JSON line), followed by drilldown
 /// instructions keyed on `archive_id`.
+#[must_use]
 pub fn summarize(full: &str, archive_id: &str, tool: &str, output_tokens: usize) -> String {
     let chars = full.len();
     let lines: Vec<&str> = full.lines().collect();

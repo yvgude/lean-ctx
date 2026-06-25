@@ -27,6 +27,7 @@ pub struct SurprisingConnection {
 
 /// Returns the top `limit` surprising connections, highest score first.
 /// Deterministic. `community` maps file path → community id (may be partial).
+#[must_use]
 pub fn find_surprising_connections(
     edges: &[EdgeInfo],
     community: &HashMap<String, usize>,

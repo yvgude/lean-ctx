@@ -20,6 +20,7 @@ pub(super) fn backup_before_modify(path: &Path, dry_run: bool) {
     }
 }
 
+#[must_use]
 pub fn bak_path_for(path: &Path) -> PathBuf {
     let filename = path.file_name().unwrap_or_default().to_string_lossy();
     path.with_file_name(format!("{filename}.lean-ctx.bak"))

@@ -1,5 +1,5 @@
 //! Multi-layer graph descriptors inspired by GNN message passing:
-//! PageRank (global importance), local clustering, HITS hubs/authorities,
+//! `PageRank` (global importance), local clustering, HITS hubs/authorities,
 //! and weakly-connected community ids.
 
 use std::collections::{HashMap, HashSet};
@@ -199,7 +199,7 @@ fn community_labels(
     labels
 }
 
-/// Computes per-file graph features using the same file-level projection as PageRank.
+/// Computes per-file graph features using the same file-level projection as `PageRank`.
 pub fn compute_graph_features(conn: &Connection) -> HashMap<String, GraphFeatures> {
     let input = PageRankInput::from_connection(conn);
     let files = &input.files;

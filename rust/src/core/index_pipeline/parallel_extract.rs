@@ -21,6 +21,7 @@
 //! from the same AST tree by running two queries (sig + chunk) on the same
 //! root node. When tree-sitter is unavailable or fails, regex fallback runs
 //! with `has_parse_error = true`.
+#![allow(clippy::match_same_arms)]
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -56,7 +57,7 @@ pub struct ParallelExtractOutput {
 
 /// Single-pass parallel extractor.
 ///
-/// Processes N files in parallel using a custom ThreadPool (not rayon).
+/// Processes N files in parallel using a custom `ThreadPool` (not rayon).
 /// Each file goes through exactly one tree-sitter parse from which all
 /// data products are derived.
 pub struct ParallelExtractor {
@@ -464,6 +465,9 @@ fn extract_chunks_from_ast(
         let block: String =
             lines[start_row0..=end_row0.min(lines.len().saturating_sub(1))].join("\n");
 
+        // Map tree-sitter node kind to ChunkKind variant name.
+        let kind_str = node_kind_to_chunk_kind(node.kind());
+
         chunks.push(CodeChunk {
             file_path: file_path.to_string(),
             content: block,
@@ -471,10 +475,44 @@ fn extract_chunks_from_ast(
             start_line,
             end_line,
             language: ext.to_string(),
+            symbol_name: name_text,
+            kind: kind_str,
         });
     }
 
     chunks
+}
+
+/// Map a tree-sitter node kind string to a JSON-serialized [`ChunkKind`]
+/// variant name so the downstream `from_chunks` and `load_chunk_data` can
+/// deserialise it back without guessing.
+fn node_kind_to_chunk_kind(node_kind: &str) -> String {
+    let variant = match node_kind {
+        // Rust
+        "function_item" => "Function",
+        "struct_item" => "Struct",
+        "enum_item" => "Struct",
+        "trait_item" => "Struct",
+        "impl_item" => "Impl",
+        // JS/TS
+        "function_declaration" => "Function",
+        "class_declaration" => "Class",
+        "abstract_class_declaration" => "Class",
+        "interface_declaration" => "Struct",
+        "type_alias_declaration" => "Module",
+        "method_definition" => "Method",
+        // Python
+        "function_definition" => "Function",
+        "class_definition" => "Class",
+        // Go
+        "method_declaration" => "Method",
+        "type_spec" => "Struct",
+        // Java
+        "constructor_declaration" => "Method",
+        _ => "Other",
+    };
+    // JSON-encode so serde_json::from_str::<ChunkKind> works downstream.
+    format!("\"{variant}\"")
 }
 
 /// Basic call extraction via tree-sitter queries.
@@ -662,6 +700,8 @@ fn extract_fallback(
                 .and_then(|e| e.to_str())
                 .unwrap_or("")
                 .to_string(),
+            symbol_name: c.symbol_name,
+            kind: serde_json::to_string(&c.kind).unwrap_or_default(),
         })
         .collect();
 

@@ -11,6 +11,7 @@ fn progress_re() -> &'static regex::Regex {
     static_regex!(r"^\s*\d+K\s+.*\d+%")
 }
 
+#[must_use]
 pub fn compress(output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {

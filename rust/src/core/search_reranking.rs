@@ -3,9 +3,9 @@
 //! Scientific foundations:
 //! - Cormack et al. (SIGIR 2009): RRF as unsupervised fusion baseline
 //! - Carbonell & Goldstein (SIGIR 1998): MMR diversity via file-saturation decay
-//! - CoRNStack (ICLR 2025): Definition-boost + noise filtering for code
+//! - `CoRNStack` (ICLR 2025): Definition-boost + noise filtering for code
 //! - SACL (EMNLP 2025): Query-type-adaptive weighting + path enrichment
-//! - SweRank (2025): Multi-stage retrieve-then-rerank for code localization
+//! - `SweRank` (2025): Multi-stage retrieve-then-rerank for code localization
 //!
 //! Pipeline order (applied after RRF fusion):
 //! 1. Definition Boost — chunks defining the queried symbol rank higher
@@ -42,8 +42,9 @@ pub enum QueryType {
 /// Classify a search query as Symbol, NL, or Architecture.
 ///
 /// Symbol queries: namespace-qualified (`Foo::bar`), leading underscore,
-/// CamelCase single identifier, SCREAMING_CASE.
+/// CamelCase single identifier, `SCREAMING_CASE`.
 /// Architecture queries: contain structural keywords (how, where, pattern, flow, architecture).
+#[must_use]
 pub fn classify_query(query: &str) -> QueryType {
     let trimmed = query.trim();
     if trimmed.is_empty() {
@@ -130,7 +131,8 @@ fn is_architecture_query(lower: &str) -> bool {
 }
 
 /// Resolve BM25 vs Dense weight based on query type.
-/// Returns (bm25_weight, dense_weight).
+/// Returns (`bm25_weight`, `dense_weight`).
+#[must_use]
 pub fn resolve_weights(query_type: QueryType) -> (f64, f64) {
     match query_type {
         QueryType::Symbol => (1.4, 0.6),

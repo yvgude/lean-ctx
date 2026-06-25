@@ -211,9 +211,9 @@ pub(crate) struct Resolved {
     pub end_line: usize,
 }
 
-/// Apply a resolved edit. IDE-first: a live JetBrains backend (port file +
-/// liveness, mirroring router::select_backend) handles it via WriteCommandAction;
-/// otherwise the headless local_range_write applies the identical bytes.
+/// Apply a resolved edit. IDE-first: a live `JetBrains` backend (port file +
+/// liveness, mirroring `router::select_backend`) handles it via `WriteCommandAction`;
+/// otherwise the headless `local_range_write` applies the identical bytes.
 pub(crate) fn apply_symbol_edit(
     action: &str,
     project_root: &str,
@@ -268,7 +268,7 @@ pub(crate) fn reindent_first_line(text: &str, indent: &str) -> String {
 /// True if symbol `name` denotes a container for type `ancestor`: the bare type
 /// itself (struct/enum/inherent `impl Type`) — exact match — or a trait impl,
 /// whose indexed name is `<Trait> for <Type>` (see the round-trip note in
-/// graph_provider.rs). Generic args on the impl target (`… for Type<T>`) are
+/// `graph_provider.rs`). Generic args on the impl target (`… for Type<T>`) are
 /// stripped so `Type/method` still resolves. Language-agnostic: non-Rust
 /// container names never contain `" for "`, so only the exact branch applies.
 fn container_matches_ancestor(name: &str, ancestor: &str) -> bool {
@@ -445,7 +445,7 @@ fn live_jetbrains_backend(
 }
 
 /// Phase 1 renderer: ask Backing B for usages+conflicts, build the stateless
-/// plan_hash, and present the blast radius (files, usage count, conflicts).
+/// `plan_hash`, and present the blast radius (files, usage count, conflicts).
 fn render_rename_preview(
     backend: &mut dyn crate::lsp::backend::LspBackend,
     project_root: &str,
@@ -489,7 +489,7 @@ fn render_rename_preview(
     out
 }
 
-/// Phase 2 renderer: re-fetch usages, enforce the plan_hash (TOCTOU) + conflict
+/// Phase 2 renderer: re-fetch usages, enforce the `plan_hash` (TOCTOU) + conflict
 /// gates in Rust, then run the IDE Multi-File transaction and evict changed files.
 fn render_rename_apply(
     backend: &mut dyn crate::lsp::backend::LspBackend,
@@ -559,7 +559,7 @@ fn render_rename_apply(
     out
 }
 
-/// Entry for the Two-Phase rename actions. Resolves the target (name_path / pos),
+/// Entry for the Two-Phase rename actions. Resolves the target (`name_path` / pos),
 /// double-jails, requires a live IDE, then dispatches to the preview/apply renderer.
 fn handle_rename_refactor(action: &str, args: &Value, project_root: &str) -> String {
     let Some(new_name) = args.get("new_name").and_then(Value::as_str) else {
@@ -643,8 +643,8 @@ fn handle_rename_refactor(action: &str, args: &Value, project_root: &str) -> Str
     }
 }
 
-/// Phase 1 renderer for safe_delete: ask Backing B for the REMAINING references
-/// (blocking usages/conflicts), build the stateless plan_hash, present them.
+/// Phase 1 renderer for `safe_delete`: ask Backing B for the REMAINING references
+/// (blocking usages/conflicts), build the stateless `plan_hash`, present them.
 fn render_safe_delete_preview(
     backend: &mut dyn crate::lsp::backend::LspBackend,
     project_root: &str,
@@ -683,7 +683,7 @@ fn render_safe_delete_preview(
     out
 }
 
-/// Phase 2 renderer for safe_delete: re-fetch usages, enforce plan_hash (TOCTOU)
+/// Phase 2 renderer for `safe_delete`: re-fetch usages, enforce `plan_hash` (TOCTOU)
 /// and a conflict gate (conflict = "reference still exists", spec §5.4) in Rust,
 /// then run the IDE delete transaction and evict changed files.
 fn render_safe_delete_apply(
@@ -742,9 +742,9 @@ fn render_safe_delete_apply(
     )
 }
 
-/// Entry for the Two-Phase safe_delete actions. Resolves the source (name_path /
+/// Entry for the Two-Phase `safe_delete` actions. Resolves the source (`name_path` /
 /// position), jail-checks it, requires a live IDE, then dispatches to the renderer.
-/// Two-stage jail only (source + changed_paths) — no new caller-supplied target.
+/// Two-stage jail only (source + `changed_paths`) — no new caller-supplied target.
 fn handle_safe_delete_refactor(action: &str, args: &Value, project_root: &str) -> String {
     if action == "safe_delete_apply" && args.get("plan_hash").and_then(Value::as_str).is_none() {
         return "ERROR: 'plan_hash' is required for safe_delete_apply (run safe_delete_preview first)."
@@ -819,8 +819,8 @@ fn handle_safe_delete_refactor(action: &str, args: &Value, project_root: &str) -
 
 /// Resolve the `move` target (spec §5.3 stage 2): EXACTLY ONE of `target_path` /
 /// `target_parent` must be set. `target_path` → jail-checked dir/file →
-/// MoveTarget::Path. `target_parent` → resolve_name_path → its file → MoveTarget::
-/// Parent. None/both → INVALID_TARGET. Jail violation → INVALID_TARGET. This runs
+/// `MoveTarget::Path`. `target_parent` → `resolve_name_path` → its file → `MoveTarget::`
+/// Parent. None/both → `INVALID_TARGET`. Jail violation → `INVALID_TARGET`. This runs
 /// BEFORE any backend call so an out-of-jail target can never reach the plugin.
 fn resolve_move_target(
     args: &Value,
@@ -868,7 +868,7 @@ fn resolve_move_target(
 }
 
 /// Phase 1 renderer for move: ask Backing B for usages+conflicts at the new
-/// location, build the stateless plan_hash, present the blast radius.
+/// location, build the stateless `plan_hash`, present the blast radius.
 fn render_move_preview(
     backend: &mut dyn crate::lsp::backend::LspBackend,
     project_root: &str,
@@ -910,7 +910,7 @@ fn render_move_preview(
     out
 }
 
-/// Phase 2 renderer for move: re-fetch usages, enforce plan_hash (TOCTOU) +
+/// Phase 2 renderer for move: re-fetch usages, enforce `plan_hash` (TOCTOU) +
 /// conflict gate in Rust, run the IDE Multi-File move, then jail-check + evict
 /// every changed path (spec §5.3 stage 3 — includes the NEW destination file).
 fn render_move_apply(
@@ -967,8 +967,8 @@ fn render_move_apply(
 }
 
 /// Entry for the Two-Phase move actions. Resolves the source (stage-1 jail), the
-/// target (stage-2 jail via resolve_move_target → INVALID_TARGET on miss/escape),
-/// requires a live IDE, then dispatches. Stage-3 jail is inside render_move_apply.
+/// target (stage-2 jail via `resolve_move_target` → `INVALID_TARGET` on miss/escape),
+/// requires a live IDE, then dispatches. Stage-3 jail is inside `render_move_apply`.
 fn handle_move_refactor(action: &str, args: &Value, project_root: &str) -> String {
     if action == "move_apply" && args.get("plan_hash").and_then(Value::as_str).is_none() {
         return "ERROR: 'plan_hash' is required for move_apply (run move_preview first)."
@@ -1041,7 +1041,7 @@ fn handle_move_refactor(action: &str, args: &Value, project_root: &str) -> Strin
 }
 
 /// Phase 1 renderer for inline: ask Backing B for substitution sites + conflicts,
-/// build the stateless plan_hash, present the blast radius.
+/// build the stateless `plan_hash`, present the blast radius.
 fn render_inline_preview(
     backend: &mut dyn crate::lsp::backend::LspBackend,
     project_root: &str,
@@ -1077,7 +1077,7 @@ fn render_inline_preview(
     out
 }
 
-/// Phase 2 renderer for inline: re-fetch sites, enforce plan_hash (TOCTOU) and a
+/// Phase 2 renderer for inline: re-fetch sites, enforce `plan_hash` (TOCTOU) and a
 /// FORCE-LESS conflict gate (spec §5.2, Entscheidung 4) in Rust, run the IDE
 /// inline transaction, then jail-check + evict every changed path.
 fn render_inline_apply(
@@ -1131,7 +1131,7 @@ fn render_inline_apply(
     )
 }
 
-/// Entry for the Two-Phase inline actions. Resolves the source (name_path /
+/// Entry for the Two-Phase inline actions. Resolves the source (`name_path` /
 /// position), jail-checks it, requires a live IDE, then dispatches. NO `force`.
 fn handle_inline_refactor(action: &str, args: &Value, project_root: &str) -> String {
     if action == "inline_apply" && args.get("plan_hash").and_then(Value::as_str).is_none() {
@@ -1197,9 +1197,9 @@ fn handle_inline_refactor(action: &str, args: &Value, project_root: &str) -> Str
     }
 }
 
-/// Resolve the reformat address (spec §5.3) to (abs_path, rel_path, scope).
-/// EXACTLY one address form: name_path → Symbol; path alone → File; path+line
-/// (+end_line) → Region. None / contradictory → INVALID_TARGET. Jail-checked here.
+/// Resolve the reformat address (spec §5.3) to (`abs_path`, `rel_path`, scope).
+/// EXACTLY one address form: `name_path` → Symbol; path alone → File; path+line
+/// (+`end_line`) → Region. None / contradictory → `INVALID_TARGET`. Jail-checked here.
 fn resolve_reformat_scope(
     args: &Value,
     project_root: &str,
@@ -1265,7 +1265,7 @@ fn resolve_reformat_scope(
 }
 
 /// Single-Phase reformat: resolve address → scope, jail, require live IDE, run the
-/// IDE reformat, then Single-File evict (spec §5.3). No plan_hash, no preview.
+/// IDE reformat, then Single-File evict (spec §5.3). No `plan_hash`, no preview.
 fn render_reformat(
     backend: &mut dyn crate::lsp::backend::LspBackend,
     project_root: &str,

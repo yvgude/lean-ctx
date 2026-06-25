@@ -11,7 +11,7 @@ pub struct EditParams {
     pub new_string: String,
     pub replace_all: bool,
     pub create: bool,
-    /// Optional preimage guards. If provided, ctx_edit fails if the current file preimage differs.
+    /// Optional preimage guards. If provided, `ctx_edit` fails if the current file preimage differs.
     pub expected_md5: Option<String>,
     pub expected_size: Option<u64>,
     pub expected_mtime_ms: Option<u64>,
@@ -476,6 +476,7 @@ pub fn apply_cache_effect(cache: &mut SessionCache, path: &str, effect: CacheEff
 ///
 /// `last_mode` is the cache's recorded read mode for the path (used only to
 /// decide whether to auto-escalate on a not-found match); pass `""` when unknown.
+#[must_use]
 pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
     let file_path = &params.path;
 
@@ -676,9 +677,9 @@ fn find_closest_line_hint(content: &str, old_str: &str) -> String {
     }
 }
 
-/// Auto-escalation: when old_string is not found and the file was previously read
+/// Auto-escalation: when `old_string` is not found and the file was previously read
 /// in a compressed mode, re-read in full and return the content so the agent
-/// can immediately retry with the correct old_string. Returns the text to append
+/// can immediately retry with the correct `old_string`. Returns the text to append
 /// plus the [`CacheEffect`] the caller should apply (store full content).
 fn auto_escalate_reread(last_mode: &str, path: &str) -> (String, CacheEffect) {
     if last_mode.is_empty() || last_mode == "full" {

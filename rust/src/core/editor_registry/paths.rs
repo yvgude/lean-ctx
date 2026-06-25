@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+#[must_use]
 pub fn zed_settings_path(home: &std::path::Path) -> PathBuf {
     if cfg!(target_os = "macos") {
         home.join("Library/Application Support/Zed/settings.json")
@@ -8,6 +9,7 @@ pub fn zed_settings_path(home: &std::path::Path) -> PathBuf {
     }
 }
 
+#[must_use]
 pub fn zed_config_dir(home: &std::path::Path) -> PathBuf {
     if cfg!(target_os = "macos") {
         home.join("Library/Application Support/Zed")
@@ -16,6 +18,7 @@ pub fn zed_config_dir(home: &std::path::Path) -> PathBuf {
     }
 }
 
+#[must_use]
 pub fn vscode_mcp_path() -> PathBuf {
     if let Some(home) = dirs::home_dir() {
         #[cfg(target_os = "macos")]
@@ -39,6 +42,7 @@ pub fn vscode_mcp_path() -> PathBuf {
     }
 }
 
+#[must_use]
 pub fn qoder_mcp_path(home: &Path) -> PathBuf {
     #[cfg(target_os = "windows")]
     {
@@ -61,11 +65,13 @@ pub fn qoder_mcp_paths(home: &Path) -> Vec<PathBuf> {
 }
 
 #[cfg(not(target_os = "macos"))]
+#[must_use]
 pub fn qoder_mcp_paths(home: &Path) -> Vec<PathBuf> {
     vec![qoder_mcp_path(home)]
 }
 
 #[allow(unreachable_code)]
+#[must_use]
 pub fn cline_mcp_path() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
@@ -93,6 +99,7 @@ pub fn cline_mcp_path() -> PathBuf {
 }
 
 #[allow(unreachable_code)]
+#[must_use]
 pub fn roo_mcp_path() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
@@ -120,11 +127,11 @@ pub fn roo_mcp_path() -> PathBuf {
 }
 
 /// Resolves the correct VS Code-family base directory on Linux.
-/// Checks VSCodium, Code - OSS, Code, Code - Insiders, then the dev-container
+/// Checks `VSCodium`, Code - OSS, Code, Code - Insiders, then the dev-container
 /// server dir (in that order) — returns the first existing path, falling back
 /// to the standard `Code` path for fresh installs. Most-specific first: a
-/// VSCodium user with a leftover `~/.config/Code` (one accidental Code launch
-/// is enough) must keep resolving to VSCodium. Dev containers use
+/// `VSCodium` user with a leftover `~/.config/Code` (one accidental Code launch
+/// is enough) must keep resolving to `VSCodium`. Dev containers use
 /// `.vscode-server/data` instead of `.config`, so we check both.
 #[cfg(target_os = "linux")]
 fn resolve_vscode_global_storage(home: &Path, suffix: &str) -> PathBuf {
@@ -144,6 +151,7 @@ fn resolve_vscode_global_storage(home: &Path, suffix: &str) -> PathBuf {
     home.join(".config/Code").join(suffix)
 }
 
+#[must_use]
 pub fn qoder_settings_path(home: &Path) -> PathBuf {
     #[cfg(target_os = "windows")]
     {
@@ -157,6 +165,7 @@ pub fn qoder_settings_path(home: &Path) -> PathBuf {
     home.join(".qoder/mcp.json")
 }
 
+#[must_use]
 pub fn qoder_all_mcp_paths(home: &Path) -> Vec<PathBuf> {
     let paths = vec![qoder_settings_path(home)];
     #[cfg(target_os = "macos")]
@@ -169,10 +178,12 @@ pub fn qoder_all_mcp_paths(home: &Path) -> Vec<PathBuf> {
     paths
 }
 
+#[must_use]
 pub fn qoderwork_mcp_path(home: &Path) -> PathBuf {
     home.join(".qoderwork/mcp.json")
 }
 
+#[must_use]
 pub fn claude_mcp_json_path(home: &Path) -> PathBuf {
     if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
         let dir = dir.trim();
@@ -183,6 +194,7 @@ pub fn claude_mcp_json_path(home: &Path) -> PathBuf {
     home.join(".claude.json")
 }
 
+#[must_use]
 pub fn claude_state_dir(home: &Path) -> PathBuf {
     if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
         let dir = dir.trim();
@@ -193,14 +205,17 @@ pub fn claude_state_dir(home: &Path) -> PathBuf {
     home.join(".claude")
 }
 
+#[must_use]
 pub fn claude_rules_dir(home: &Path) -> PathBuf {
     claude_state_dir(home).join("rules")
 }
 
+#[must_use]
 pub fn codebuddy_mcp_json_path(home: &Path) -> PathBuf {
     codebuddy_state_dir(home).join("mcp.json")
 }
 
+#[must_use]
 pub fn codebuddy_state_dir(home: &Path) -> PathBuf {
     if let Ok(dir) = std::env::var("CODEBUDDY_CONFIG_DIR") {
         let dir = dir.trim();
@@ -211,10 +226,12 @@ pub fn codebuddy_state_dir(home: &Path) -> PathBuf {
     home.join(".codebuddy")
 }
 
+#[must_use]
 pub fn codebuddy_rules_dir(home: &Path) -> PathBuf {
     codebuddy_state_dir(home).join("rules")
 }
 
+#[must_use]
 pub fn augment_cli_settings_path(home: &Path) -> PathBuf {
     home.join(".augment/settings.json")
 }
@@ -228,6 +245,7 @@ pub fn augment_cli_settings_path(home: &Path) -> PathBuf {
 /// On Windows the User dir lives under `%APPDATA%/Code` rather than the
 /// user's home, so we honour that when the env var is set; we fall back to
 /// the home-relative path for tests and unusual setups.
+#[must_use]
 pub fn augment_vscode_mcp_path(home: &Path) -> PathBuf {
     const TAIL: &str = "globalStorage/augment.vscode-augment/augment-global-state/mcpServers.json";
 

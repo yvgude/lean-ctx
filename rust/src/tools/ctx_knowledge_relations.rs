@@ -83,6 +83,7 @@ fn derived_supersedes_edges(
     out
 }
 
+#[must_use]
 pub fn handle_relate(
     project_root: &str,
     category: Option<&str>,
@@ -155,6 +156,7 @@ pub fn handle_relate(
     }
 }
 
+#[must_use]
 pub fn handle_unrelate(
     project_root: &str,
     category: Option<&str>,
@@ -203,6 +205,7 @@ pub fn handle_unrelate(
     }
 }
 
+#[must_use]
 pub fn handle_relations(
     project_root: &str,
     category: Option<&str>,
@@ -340,6 +343,7 @@ pub fn handle_relations(
     out.join("\n")
 }
 
+#[must_use]
 pub fn handle_relations_diagram(
     project_root: &str,
     category: Option<&str>,

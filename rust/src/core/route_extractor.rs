@@ -20,6 +20,7 @@ pub struct RouteEntry {
     pub line: usize,
 }
 
+#[must_use]
 pub fn extract_routes_from_file(file_path: &str, content: &str) -> Vec<RouteEntry> {
     let ext = Path::new(file_path)
         .extension()
@@ -41,6 +42,7 @@ pub fn extract_routes_from_file(file_path: &str, content: &str) -> Vec<RouteEntr
     routes
 }
 
+#[must_use]
 pub fn extract_routes_from_project(project_root: &str, file_paths: &[String]) -> Vec<RouteEntry> {
     let mut all_routes = Vec::new();
 
@@ -231,7 +233,7 @@ fn extract_actix(file: &str, content: &str, ext: &str) -> Vec<RouteEntry> {
 
 /// axum: `.route("/path", get(handler))`, incl. chained methods
 /// (`get(a).post(b)`) and qualified paths (`axum::routing::post(h)`).
-/// GL #454: this very codebase (http_server, lean-ctx-cloud) is axum and the
+/// GL #454: this very codebase (`http_server`, lean-ctx-cloud) is axum and the
 /// Routes view showed nothing.
 fn extract_axum(file: &str, content: &str, ext: &str) -> Vec<RouteEntry> {
     if ext != "rs" {

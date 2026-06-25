@@ -53,6 +53,7 @@ pub enum Permission {
 }
 
 impl Permission {
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "network" => Some(Self::Network),
@@ -62,6 +63,7 @@ impl Permission {
         }
     }
 
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Network => "network",
@@ -93,6 +95,7 @@ impl TrustSpec {
 
     /// Resolve the enforceable policy. Unknown strings are ignored here because
     /// `validate()` already rejects them at parse time.
+    #[must_use]
     pub fn policy(&self) -> SandboxPolicy {
         let perms: Vec<Permission> = self
             .permissions

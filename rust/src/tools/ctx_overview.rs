@@ -6,7 +6,7 @@ use crate::core::tokens::count_tokens;
 ///
 /// Provides a compact map of the entire project, organized by task relevance.
 /// Files are shown at different detail levels based on their relevance score:
-/// - Level 0 (full): directly task-relevant files → full content (use ctx_read)
+/// - Level 0 (full): directly task-relevant files → full content (use `ctx_read`)
 /// - Level 1 (signatures): graph neighbors → key signatures
 /// - Level 2 (reference): distant files → name + line count only
 ///

@@ -8,6 +8,7 @@ use crate::core::repomap;
 /// - `max_tokens`: token budget (default 2048)
 /// - `focus_files`: optional list of files to boost in ranking
 /// - `session_files`: files from the active session (injected by MCP wrapper)
+#[must_use]
 pub fn handle(
     project_root: &str,
     max_tokens: usize,

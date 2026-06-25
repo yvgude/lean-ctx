@@ -223,14 +223,17 @@ fn append_jsonl(event: &LeanCtxEvent) {
 
 // --- Public API ---
 
+#[must_use]
 pub fn emit(kind: EventKind) -> u64 {
     bus().emit(kind)
 }
 
+#[must_use]
 pub fn events_since(after_id: u64) -> Vec<LeanCtxEvent> {
     bus().events_since(after_id)
 }
 
+#[must_use]
 pub fn latest_events(n: usize) -> Vec<LeanCtxEvent> {
     bus().latest_events(n)
 }
@@ -290,7 +293,7 @@ pub fn emit_tool_call(
     duration_ms: u64,
     path: Option<String>,
 ) {
-    emit(EventKind::ToolCall {
+    let _ = emit(EventKind::ToolCall {
         tool: tool.to_string(),
         tokens_original,
         tokens_saved,
@@ -301,14 +304,14 @@ pub fn emit_tool_call(
 }
 
 pub fn emit_cache_hit(path: &str, saved_tokens: u64) {
-    emit(EventKind::CacheHit {
+    let _ = emit(EventKind::CacheHit {
         path: path.to_string(),
         saved_tokens,
     });
 }
 
 pub fn emit_agent_action(agent_id: &str, action: &str, tool: Option<&str>) {
-    emit(EventKind::AgentAction {
+    let _ = emit(EventKind::AgentAction {
         agent_id: agent_id.to_string(),
         action: action.to_string(),
         tool: tool.map(std::string::ToString::to_string),
@@ -316,7 +319,7 @@ pub fn emit_agent_action(agent_id: &str, action: &str, tool: Option<&str>) {
 }
 
 pub fn emit_budget_warning(role: &str, dimension: &str, used: &str, limit: &str, percent: u8) {
-    emit(EventKind::BudgetWarning {
+    let _ = emit(EventKind::BudgetWarning {
         role: role.to_string(),
         dimension: dimension.to_string(),
         used: used.to_string(),
@@ -326,7 +329,7 @@ pub fn emit_budget_warning(role: &str, dimension: &str, used: &str, limit: &str,
 }
 
 pub fn emit_budget_exhausted(role: &str, dimension: &str, used: &str, limit: &str) {
-    emit(EventKind::BudgetExhausted {
+    let _ = emit(EventKind::BudgetExhausted {
         role: role.to_string(),
         dimension: dimension.to_string(),
         used: used.to_string(),
@@ -335,7 +338,7 @@ pub fn emit_budget_exhausted(role: &str, dimension: &str, used: &str, limit: &st
 }
 
 pub fn emit_policy_violation(role: &str, tool: &str, reason: &str) {
-    emit(EventKind::PolicyViolation {
+    let _ = emit(EventKind::PolicyViolation {
         role: role.to_string(),
         tool: tool.to_string(),
         reason: reason.to_string(),
@@ -343,21 +346,21 @@ pub fn emit_policy_violation(role: &str, tool: &str, reason: &str) {
 }
 
 pub fn emit_role_changed(from: &str, to: &str) {
-    emit(EventKind::RoleChanged {
+    let _ = emit(EventKind::RoleChanged {
         from: from.to_string(),
         to: to.to_string(),
     });
 }
 
 pub fn emit_profile_changed(from: &str, to: &str) {
-    emit(EventKind::ProfileChanged {
+    let _ = emit(EventKind::ProfileChanged {
         from: from.to_string(),
         to: to.to_string(),
     });
 }
 
 pub fn emit_slo_violation(slo_name: &str, metric: &str, threshold: f64, actual: f64, action: &str) {
-    emit(EventKind::SloViolation {
+    let _ = emit(EventKind::SloViolation {
         slo_name: slo_name.to_string(),
         metric: metric.to_string(),
         threshold,
@@ -367,7 +370,7 @@ pub fn emit_slo_violation(slo_name: &str, metric: &str, threshold: f64, actual: 
 }
 
 pub fn emit_anomaly(metric: &str, expected: f64, actual: f64, deviation_factor: f64) {
-    emit(EventKind::Anomaly {
+    let _ = emit(EventKind::Anomaly {
         metric: metric.to_string(),
         expected,
         actual,
@@ -376,7 +379,7 @@ pub fn emit_anomaly(metric: &str, expected: f64, actual: f64, deviation_factor: 
 }
 
 pub fn emit_verification_warning(warning_kind: &str, detail: &str, severity: &str) {
-    emit(EventKind::VerificationWarning {
+    let _ = emit(EventKind::VerificationWarning {
         warning_kind: warning_kind.to_string(),
         detail: detail.to_string(),
         severity: severity.to_string(),
@@ -384,7 +387,7 @@ pub fn emit_verification_warning(warning_kind: &str, detail: &str, severity: &st
 }
 
 pub fn emit_threshold_adapted(language: &str, arm: &str, old_threshold: f64, new_threshold: f64) {
-    emit(EventKind::ThresholdAdapted {
+    let _ = emit(EventKind::ThresholdAdapted {
         language: language.to_string(),
         arm: arm.to_string(),
         old_threshold,

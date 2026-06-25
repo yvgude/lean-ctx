@@ -14,6 +14,7 @@ pub enum Segment {
     Operator(String),
 }
 
+#[must_use]
 pub fn split_compound(input: &str) -> Vec<Segment> {
     let input = input.trim();
     if input.is_empty() {

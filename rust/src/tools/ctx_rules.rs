@@ -1,5 +1,6 @@
 use crate::core::contextops::{self, ContextOps};
 
+#[must_use]
 pub fn handle(action: &str, agent: Option<&str>) -> String {
     let Some(home) = dirs::home_dir() else {
         return "Error: could not determine home directory".to_string();

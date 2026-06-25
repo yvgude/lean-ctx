@@ -3,7 +3,7 @@
 //! Operators pin a single reasoning-effort level (`proxy.effort`) that lean-ctx
 //! translates to each provider's native parameter. Unlike per-turn "effort
 //! routing" — which changes the effort between turns of one conversation and
-//! thereby invalidates the provider prompt cache (OpenAI lists "changes to
+//! thereby invalidates the provider prompt cache (`OpenAI` lists "changes to
 //! reasoning effort" as a cache-invalidation cause; Anthropic breaks message
 //! cache breakpoints on thinking-mode/config changes) — this value is a
 //! *constant*: identical on every request, so the cached prefix stays
@@ -16,7 +16,7 @@
 //!   untouched, so the request keeps the client's own cache key.
 //! - **Never enable reasoning the client didn't ask for:** the Anthropic applier
 //!   only dials an *existing* adaptive request, so it never adds thinking tokens
-//!   (or a 400) where the client wanted none. OpenAI reasoning models always
+//!   (or a 400) where the client wanted none. `OpenAI` reasoning models always
 //!   reason, so setting the level only ever caps/redirects existing reasoning.
 //!   The Gemini applier excludes 2.5 *flash-lite* (thinking off by default) for
 //!   the same reason, and never sends both `thinkingLevel` and `thinkingBudget`.
@@ -33,7 +33,7 @@ use serde_json::Value;
 
 use crate::core::config::Effort;
 
-/// OpenAI wire vocabulary for an [`Effort`] (`reasoning_effort` /
+/// `OpenAI` wire vocabulary for an [`Effort`] (`reasoning_effort` /
 /// `reasoning.effort`). The gpt-5 / o-series accept `minimal|low|medium|high`.
 fn openai_value(effort: Effort) -> &'static str {
     match effort {
@@ -54,7 +54,7 @@ fn anthropic_value(effort: Effort) -> &'static str {
     }
 }
 
-/// Whether an OpenAI model accepts a reasoning-effort parameter. Reasoning
+/// Whether an `OpenAI` model accepts a reasoning-effort parameter. Reasoning
 /// models (the o-series and the gpt-5/gpt-6 families, including any `codex`
 /// build) do; the non-reasoning `gpt-4*`/`gpt-3*` models and the
 /// `*-chat-latest` non-reasoning variants reject it with a 400, so they are
@@ -80,7 +80,7 @@ pub fn openai_supports_effort(model: &str) -> bool {
         || bare.contains("codex")
 }
 
-/// Set `reasoning_effort` on an OpenAI **Chat Completions** request. No-op when
+/// Set `reasoning_effort` on an `OpenAI` **Chat Completions** request. No-op when
 /// the client already set it or the model is non-reasoning. Returns whether the
 /// document changed.
 pub fn apply_openai_chat(doc: &mut Value, effort: Effort) -> bool {
@@ -102,7 +102,7 @@ pub fn apply_openai_chat(doc: &mut Value, effort: Effort) -> bool {
     true
 }
 
-/// Set `reasoning.effort` on an OpenAI **Responses** request (nested object).
+/// Set `reasoning.effort` on an `OpenAI` **Responses** request (nested object).
 /// No-op when the client already pinned `reasoning.effort` or the model is
 /// non-reasoning. Any other `reasoning.*` fields (e.g. `summary`) are preserved.
 pub fn apply_openai_responses(doc: &mut Value, effort: Effort) -> bool {
@@ -311,7 +311,7 @@ fn record(provider: Provider) {
 pub struct EffortStats {
     /// Active level: `off` (no-op) or `minimal|low|medium|high`.
     pub mode: String,
-    /// OpenAI (Chat + Responses) requests steered, cumulative.
+    /// `OpenAI` (Chat + Responses) requests steered, cumulative.
     pub openai_steered: u64,
     /// Anthropic requests steered, cumulative.
     pub anthropic_steered: u64,

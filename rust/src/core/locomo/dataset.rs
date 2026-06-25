@@ -1,14 +1,14 @@
-//! LoCoMo benchmark dataset schema + loader (#291).
+//! `LoCoMo` benchmark dataset schema + loader (#291).
 //!
 //! Accepts both NDJSON (one [`LocomoSample`] per line, `#` comments allowed) and a
-//! plain JSON array, so the bundled reference suite and the official LoCoMo dataset
+//! plain JSON array, so the bundled reference suite and the official `LoCoMo` dataset
 //! can be loaded by the same code.
 
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-/// One LoCoMo sample: a multi-session conversation plus its question/answer set.
+/// One `LoCoMo` sample: a multi-session conversation plus its question/answer set.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocomoSample {
     pub id: String,
@@ -31,7 +31,7 @@ pub struct Turn {
     pub text: String,
 }
 
-/// A question with its acceptable gold answers and LoCoMo category
+/// A question with its acceptable gold answers and `LoCoMo` category
 /// (1=single-hop, 2=multi-hop, 3=temporal, 4=open-domain, 5=adversarial).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QaItem {
@@ -48,6 +48,7 @@ fn default_category() -> u8 {
 impl LocomoSample {
     /// Flattened transcript (`Speaker: text` per turn) — the baseline an agent
     /// would otherwise dump into context wholesale.
+    #[must_use]
     pub fn transcript(&self) -> String {
         let mut lines = Vec::new();
         for session in &self.sessions {
@@ -59,6 +60,7 @@ impl LocomoSample {
     }
 
     /// Total number of conversation turns across all sessions.
+    #[must_use]
     pub fn turn_count(&self) -> usize {
         self.sessions.iter().map(|s| s.turns.len()).sum()
     }
@@ -99,6 +101,7 @@ pub const REFERENCE_SUITE: &str = include_str!("../../../data/locomo/reference-s
 
 /// Parse the bundled reference suite. Panics only if the committed fixture is
 /// malformed, which a unit test guards against.
+#[must_use]
 pub fn reference_samples() -> Vec<LocomoSample> {
     parse_suite(REFERENCE_SUITE).expect("bundled reference suite must be valid")
 }

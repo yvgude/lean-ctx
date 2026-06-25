@@ -51,12 +51,14 @@ fn normalize_tool_entry(tool_json: &Value) -> Value {
     })
 }
 
+#[must_use]
 pub fn default_manifest_path() -> PathBuf {
     let rust_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let repo_root = rust_dir.parent().unwrap_or(&rust_dir);
     repo_root.join("website/generated/mcp-tools.json")
 }
 
+#[must_use]
 pub fn manifest_value() -> Value {
     let registry = crate::server::registry::build_registry();
     let granular_tools: Vec<Tool> = registry.tool_defs();
@@ -93,6 +95,7 @@ pub fn manifest_value() -> Value {
     })
 }
 
+#[must_use]
 pub fn manifest_pretty_json() -> String {
     let mut s =
         serde_json::to_string_pretty(&manifest_value()).unwrap_or_else(|_| "{}".to_string());

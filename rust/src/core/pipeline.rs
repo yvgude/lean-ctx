@@ -38,6 +38,7 @@ pub enum LayerKind {
 
 impl LayerKind {
     /// Returns the canonical string label for this layer.
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Input => "input",
@@ -51,6 +52,7 @@ impl LayerKind {
     }
 
     /// Returns all layer kinds in pipeline execution order.
+    #[must_use]
     pub fn all() -> &'static [LayerKind] {
         &[
             Self::Input,
@@ -116,6 +118,7 @@ pub struct LayerMetrics {
 }
 
 impl LayerMetrics {
+    #[must_use]
     pub fn new(
         layer: LayerKind,
         input_tokens: usize,
@@ -144,6 +147,7 @@ pub trait Layer {
 }
 
 /// Returns whether a given layer is enabled according to a profile's pipeline config.
+#[must_use]
 pub fn is_layer_enabled(kind: LayerKind, cfg: &crate::core::profiles::PipelineConfig) -> bool {
     match kind {
         LayerKind::Input | LayerKind::Autonomy | LayerKind::Delivery => true,
@@ -161,17 +165,20 @@ pub struct Pipeline {
 
 impl Pipeline {
     /// Creates an empty pipeline with no layers.
+    #[must_use]
     pub fn new() -> Self {
         Self { layers: Vec::new() }
     }
 
     /// Appends a processing layer to the pipeline (builder pattern).
+    #[must_use]
     pub fn add_layer(mut self, layer: Box<dyn Layer>) -> Self {
         self.layers.push(layer);
         self
     }
 
     /// Appends a layer only if the profile's pipeline config allows it.
+    #[must_use]
     pub fn add_layer_if_enabled(
         self,
         layer: Box<dyn Layer>,
@@ -185,6 +192,7 @@ impl Pipeline {
     }
 
     /// Runs all layers in sequence, collecting per-layer metrics.
+    #[must_use]
     pub fn execute(&self, input: LayerInput) -> (LayerOutput, Vec<LayerMetrics>) {
         let mut current = input;
         let mut metrics = Vec::new();
@@ -219,6 +227,7 @@ impl Pipeline {
     }
 
     /// Formats pipeline metrics as a human-readable summary with per-layer and total stats.
+    #[must_use]
     pub fn format_metrics(metrics: &[LayerMetrics]) -> String {
         let mut out = String::from("Pipeline Metrics:\n");
         let mut total_saved = 0usize;
@@ -270,6 +279,7 @@ pub struct AggregatedMetrics {
 
 impl AggregatedMetrics {
     /// Returns the average compression ratio (output/input) across all runs.
+    #[must_use]
     pub fn avg_ratio(&self) -> f64 {
         if self.total_input_tokens == 0 {
             return 1.0;
@@ -278,6 +288,7 @@ impl AggregatedMetrics {
     }
 
     /// Returns the average duration per invocation in milliseconds.
+    #[must_use]
     pub fn avg_duration_ms(&self) -> f64 {
         if self.count == 0 {
             return 0.0;
@@ -288,6 +299,7 @@ impl AggregatedMetrics {
 
 impl PipelineStats {
     /// Creates empty pipeline stats with zero runs.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             runs: 0,
@@ -324,6 +336,7 @@ impl PipelineStats {
     }
 
     /// Returns the total tokens saved across all pipeline layers.
+    #[must_use]
     pub fn total_tokens_saved(&self) -> usize {
         self.per_layer
             .values()
@@ -342,6 +355,7 @@ impl PipelineStats {
     }
 
     /// Loads pipeline stats from disk, returning defaults if absent.
+    #[must_use]
     pub fn load() -> Self {
         crate::core::paths::state_dir()
             .ok()
@@ -352,6 +366,7 @@ impl PipelineStats {
     }
 
     /// Formats a human-readable summary of per-layer stats and total savings.
+    #[must_use]
     pub fn format_summary(&self) -> String {
         let mut out = format!("Pipeline Stats ({} runs):\n", self.runs);
         for kind in LayerKind::all() {

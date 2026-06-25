@@ -16,6 +16,7 @@ const MAX_OUTPUT_BYTES: usize = 32_768;
 /// agent from forcing a multi-megabyte temp-file write / interpreter argv → memory abuse.
 const MAX_CODE_BYTES: usize = 256 * 1024;
 
+#[must_use]
 pub fn execute(language: &str, code: &str, timeout_secs: Option<u64>) -> SandboxResult {
     if code.len() > MAX_CODE_BYTES {
         return SandboxResult {
@@ -124,6 +125,7 @@ pub fn execute(language: &str, code: &str, timeout_secs: Option<u64>) -> Sandbox
     }
 }
 
+#[must_use]
 pub fn batch_execute(items: &[(String, String)]) -> Vec<SandboxResult> {
     items
         .iter()
@@ -611,6 +613,7 @@ fn truncate_smart(output: &str, max_bytes: usize) -> String {
     )
 }
 
+#[must_use]
 pub fn supported_languages() -> &'static [&'static str] {
     &[
         "javascript",

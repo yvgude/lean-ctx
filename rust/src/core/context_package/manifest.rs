@@ -59,6 +59,7 @@ pub enum PackageLayer {
 }
 
 impl PackageLayer {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Knowledge => "knowledge",
@@ -69,6 +70,7 @@ impl PackageLayer {
         }
     }
 
+    #[must_use]
     pub fn filename(&self) -> &'static str {
         match self {
             Self::Knowledge => "knowledge.json",
@@ -125,6 +127,7 @@ pub struct PackageStats {
 }
 
 impl PackageManifest {
+    #[must_use]
     pub fn is_v2(&self) -> bool {
         self.schema_version >= crate::core::contracts::CONTEXT_PACKAGE_V2_SCHEMA_VERSION
     }
@@ -201,6 +204,7 @@ impl PackageManifest {
         }
     }
 
+    #[must_use]
     pub fn has_layer(&self, layer: PackageLayer) -> bool {
         self.layers.contains(&layer)
     }

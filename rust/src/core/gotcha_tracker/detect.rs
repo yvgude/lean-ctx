@@ -10,6 +10,7 @@ pub struct DetectedError {
     pub raw_message: String,
 }
 
+#[must_use]
 pub fn detect_error_pattern(output: &str, command: &str, exit_code: i32) -> Option<DetectedError> {
     let cmd_lower = command.to_lowercase();
     let out_lower = output.to_lowercase();
@@ -187,6 +188,7 @@ pub fn detect_error_pattern(output: &str, command: &str, exit_code: i32) -> Opti
 // Signature normalization
 // ---------------------------------------------------------------------------
 
+#[must_use]
 pub fn normalize_error_signature(raw: &str) -> String {
     let mut sig = raw.to_string();
 
@@ -212,6 +214,7 @@ pub fn normalize_error_signature(raw: &str) -> String {
 /// shell-layer hook uses it to skip all disk work for ordinary commands
 /// (`ls`, `cat`, `echo`, …) — a false positive only costs a cheap store load,
 /// never a wrong gotcha (`detect_error_pattern` still gates the real signal).
+#[must_use]
 pub fn is_correlatable_command(command: &str) -> bool {
     let c = command.trim_start().to_lowercase();
     const PREFIXES: &[&str] = &[

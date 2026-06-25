@@ -10,6 +10,7 @@
 
 /// Rewrite a known page URL to its clean-content equivalent, or `None` if no
 /// rule applies (the original URL is then used unchanged).
+#[must_use]
 pub fn rewrite_url(url: &str) -> Option<String> {
     github_blob_to_raw(url)
 }

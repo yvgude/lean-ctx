@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use super::auth::{AppState, auth_user};
 
 /// Tables exported verbatim (sensitive columns excluded per query). Token
-/// stores (api_keys, oauth_*, magic_links, …) are deliberately absent: hashes
+/// stores (`api_keys`, oauth_*, `magic_links`, …) are deliberately absent: hashes
 /// of credentials are neither portable nor the user's "data".
 const EXPORT_QUERIES: &[(&str, &str)] = &[
     (

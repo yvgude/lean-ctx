@@ -3,6 +3,7 @@ use crate::core::multi_repo::{
 };
 
 /// Handle `ctx_multi_repo` tool calls with action-based dispatch.
+#[must_use]
 pub fn handle(
     action: &str,
     path: Option<&str>,

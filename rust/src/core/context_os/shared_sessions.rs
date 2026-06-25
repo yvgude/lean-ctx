@@ -18,6 +18,7 @@ pub struct SharedSessionKey {
 }
 
 impl SharedSessionKey {
+    #[must_use]
     pub fn new(project_root: &str, workspace_id: &str, channel_id: &str) -> Self {
         Self {
             project_hash: project_hash::hash_project_root(project_root),
@@ -46,6 +47,7 @@ impl Default for SharedSessionStore {
 }
 
 impl SharedSessionStore {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -115,6 +117,7 @@ impl SharedSessionStore {
     }
 
     /// Returns the max sessions limit for diagnostics.
+    #[must_use]
     pub fn max_sessions() -> usize {
         MAX_CACHED_SESSIONS
     }

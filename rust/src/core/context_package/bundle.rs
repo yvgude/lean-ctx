@@ -54,10 +54,12 @@ pub struct KnowledgeFact {
 }
 
 impl ContextPackage {
+    #[must_use]
     pub fn is_compatible(&self) -> bool {
         self.format_version <= FORMAT_VERSION
     }
 
+    #[must_use]
     pub fn summary_line(&self) -> String {
         let desc = self
             .metadata

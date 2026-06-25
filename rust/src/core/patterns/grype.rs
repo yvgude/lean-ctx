@@ -7,6 +7,7 @@
 
 use crate::core::compressor::strip_ansi;
 
+#[must_use]
 pub fn compress(_cmd: &str, output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {

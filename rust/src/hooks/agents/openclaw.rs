@@ -3,8 +3,8 @@ use crate::core::editor_registry::{
     ConfigType, EditorTarget, WriteAction, WriteOptions, write_config_with_options,
 };
 
-/// Configure the OpenClaw MCP entry via the shared editor-registry writer —
-/// the single source of truth for the OpenClaw schema (GitHub #390). The
+/// Configure the `OpenClaw` MCP entry via the shared editor-registry writer —
+/// the single source of truth for the `OpenClaw` schema (GitHub #390). The
 /// writer handles version detection (`meta.lastTouchedVersion`), the nested
 /// `mcp.servers` schema for >= 2026.6.1, legacy `mcpServers` migration and
 /// idempotent re-runs.

@@ -202,11 +202,12 @@ impl ProjectKnowledge {
         None
     }
 
+    #[must_use]
     pub fn load_or_create(project_root: &str) -> Self {
         Self::load(project_root).unwrap_or_else(|| Self::new(project_root))
     }
 
-    /// Migrates legacy knowledge that was accidentally stored under an empty project_root ("")
+    /// Migrates legacy knowledge that was accidentally stored under an empty `project_root` ("")
     /// into the given `target_root`. Keeps a timestamped backup of the legacy file.
     pub fn migrate_legacy_empty_root(
         target_root: &str,

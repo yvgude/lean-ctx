@@ -36,6 +36,7 @@ pub struct AuthenticationInfo {
     pub schemes: Vec<String>,
 }
 
+#[must_use]
 pub fn generate_agent_card(tools: &[String], version: &str, port: Option<u16>) -> AgentCard {
     let url = port.map(|p| format!("http://127.0.0.1:{p}"));
 
@@ -149,6 +150,7 @@ fn build_skills() -> Vec<AgentSkill> {
 }
 
 /// Build an agent card from the current runtime state for HTTP endpoints.
+#[must_use]
 pub fn build_agent_card(project_root: &str) -> serde_json::Value {
     let version = env!("CARGO_PKG_VERSION");
     let card = generate_agent_card(&default_tool_list(), version, None);
@@ -219,6 +221,7 @@ pub fn save_agent_card(card: &AgentCard) -> std::io::Result<()> {
     Ok(())
 }
 
+#[must_use]
 pub fn load_agent_card() -> Option<AgentCard> {
     let path = crate::core::data_dir::lean_ctx_data_dir()
         .ok()?

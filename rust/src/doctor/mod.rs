@@ -669,6 +669,7 @@ pub fn run_cli(args: &[String]) -> i32 {
     }
 }
 
+#[must_use]
 pub fn compact_score() -> (u32, u32) {
     let mut passed = 0u32;
     let total = 6u32;

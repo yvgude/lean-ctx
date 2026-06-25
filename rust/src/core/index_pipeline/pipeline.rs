@@ -63,7 +63,7 @@ pub struct PipelineReport {
     /// Detailed outcome of the embedding build step.
     /// When the `embeddings` feature is not compiled in, this is always
     /// [`EmbeddingBuildOutcome::Skipped`]; when enabled it reflects the
-    /// actual build outcome (Ready, ModelNotAvailable, Failed, Skipped).
+    /// actual build outcome (Ready, `ModelNotAvailable`, Failed, Skipped).
     pub embedding_ready: EmbeddingBuildOutcome,
 }
 
@@ -189,7 +189,7 @@ impl PipelineHandle {
     /// 5. **Phase 3B (registry)** — serial registry build (DEFINES, IMPORTS).
     /// 6. **Phase 4 (resolution)** — parallel CALLS, USES, THROWS, EMITS edges.
     /// 7. **Phase 5 (BM25)** — build BM25 index from pre-extracted chunks.
-    /// 8. **Phase 6 (post-passes)** — SIMILAR_TO edges (FULL/MODERATE only).
+    /// 8. **Phase 6 (post-passes)** — `SIMILAR_TO` edges (FULL/MODERATE only).
     /// 9. **Phase 7 (dump)** — SQLite dump of graph + chunks.
     /// 10. **Embedding index** — build/update for FULL/MODERATE.
     /// 11. **Report** — elapsed time and stats.
@@ -313,7 +313,7 @@ impl PipelineHandle {
     /// 9. **Re-extract** only changed + new files through the standard pipeline
     ///    phases (structure, extraction, registry, resolution).
     /// 10. **Relink** preserved cross-file edges.
-    /// 11. **Post-passes** (SIMILAR_TO for FULL/MODERATE).
+    /// 11. **Post-passes** (`SIMILAR_TO` for FULL/MODERATE).
     /// 12. **Dump** to SQLite (atomic full-replace of `code_index.db`).
     /// 13. **Persist** updated file hashes.
     /// 14. **Embedding index** (FULL/MODERATE only).
@@ -512,6 +512,8 @@ impl PipelineHandle {
                     start_line: c.start_line as u32,
                     end_line: c.end_line as u32,
                     language: String::new(),
+                    symbol_name: c.symbol_name.clone(),
+                    kind: serde_json::to_string(&c.kind).unwrap_or_default(),
                 })
                 .collect();
             ChunkData::from_chunks(&converted)

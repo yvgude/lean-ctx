@@ -40,6 +40,7 @@ pub enum Condition {
 
 impl Condition {
     /// Stable label used in reports + the determinism digest.
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Condition::Baseline => "baseline",

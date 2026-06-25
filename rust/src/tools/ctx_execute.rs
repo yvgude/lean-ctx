@@ -5,6 +5,7 @@ use crate::server::tool_trait::ShellOutcome;
 /// Executes a code snippet in a sandboxed environment.
 /// Returns the formatted output plus the structured outcome so the MCP layer
 /// can set `isError`/`structuredContent` on failures (GitHub #389).
+#[must_use]
 pub fn handle(
     language: &str,
     code: &str,
@@ -23,6 +24,7 @@ pub fn handle(
 /// `project_root` is used for pathjail validation. If `None`, the current
 /// directory is used as the jail root. Precondition failures (path rejected,
 /// unreadable, too large) never execute anything and report `Blocked`.
+#[must_use]
 pub fn handle_file(
     path: &str,
     intent: Option<&str>,
@@ -80,6 +82,7 @@ pub fn handle_file(
 /// Executes multiple (language, code) pairs in parallel and returns aggregated
 /// results. The outcome carries the first non-zero exit code (0 when all
 /// tasks succeeded), so one failing task marks the whole batch as failed.
+#[must_use]
 pub fn handle_batch(items: &[(String, String)]) -> (String, ShellOutcome) {
     let results = sandbox::batch_execute(items);
     let mut output = Vec::new();

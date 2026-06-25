@@ -32,6 +32,7 @@ pub const AGENTS_MD_READERS: &[&str] = &["cursor", "codex"];
 /// A pointer-only file (a thinned `AGENTS.md` / `.cursorrules` that merely says
 /// "the full rules live in the canonical file") does not duplicate guidance and
 /// must not be counted as a second source for its client.
+#[must_use]
 pub fn carries_full_rules(content: &str) -> bool {
     content.contains(crate::core::rules_canonical::START_MARK)
         || content.contains(COMPRESSION_BLOCK_START)
@@ -39,6 +40,7 @@ pub fn carries_full_rules(content: &str) -> bool {
 
 /// True when `content` contains a lean-ctx block but only the lightweight
 /// pointer (no canonical rules, no compression payload).
+#[must_use]
 pub fn is_pointer_only(content: &str) -> bool {
     content.contains("<!-- lean-ctx") && !carries_full_rules(content)
 }
@@ -49,6 +51,7 @@ fn file_has_compression(path: &Path) -> bool {
 
 /// Cursor auto-loads `~/.cursor/rules/lean-ctx.mdc`; it is "covered" for the
 /// compression payload once that canonical file carries the block.
+#[must_use]
 pub fn cursor_compression_covered(home: &Path) -> bool {
     file_has_compression(&home.join(".cursor/rules/lean-ctx.mdc"))
 }
@@ -59,11 +62,13 @@ fn codex_dir(home: &Path) -> std::path::PathBuf {
 }
 
 /// Codex is present on this machine when its config dir exists.
+#[must_use]
 pub fn codex_present(home: &Path) -> bool {
     codex_dir(home).exists()
 }
 
 /// Codex auto-loads `~/.codex/AGENTS.md`; covered once it carries the block.
+#[must_use]
 pub fn codex_compression_covered(home: &Path) -> bool {
     file_has_compression(&codex_dir(home).join("AGENTS.md"))
 }
@@ -75,6 +80,7 @@ pub fn codex_compression_covered(home: &Path) -> bool {
 ///
 /// Conservative by construction (#684, "thin only if covered"): if any reader
 /// would lose the guidance, `AGENTS.md` stays the full carrier.
+#[must_use]
 pub fn agents_md_can_thin(home: &Path) -> bool {
     if !cursor_compression_covered(home) {
         return false;
@@ -89,6 +95,7 @@ pub fn agents_md_can_thin(home: &Path) -> bool {
 /// compression payload from a rule file? If so, repeating the output-style
 /// block in the per-session instructions is pure cross-channel duplication and
 /// can be dropped (the file copy governs).
+#[must_use]
 pub fn client_autoloads_compression(client_name: &str, home: &Path) -> bool {
     let lower = client_name.to_lowercase();
     if lower.is_empty() {

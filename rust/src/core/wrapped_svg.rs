@@ -13,6 +13,7 @@ const CARD_H: u32 = 630;
 
 impl WrappedReport {
     /// Renders a polished, dependency-free SVG share card.
+    #[must_use]
     pub fn to_svg(&self) -> String {
         let period_label = match self.period.as_str() {
             "week" => format!("Week of {}", chrono::Utc::now().format("%b %d, %Y")),

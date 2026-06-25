@@ -3,7 +3,7 @@
 //! The harness talks to a model through one small [`ModelRunner`] trait. Two real
 //! implementations ship:
 //!
-//! * [`OpenAiRunner`] — a synchronous OpenAI-compatible chat client (OpenAI, Azure OpenAI,
+//! * [`OpenAiRunner`] — a synchronous OpenAI-compatible chat client (`OpenAI`, Azure `OpenAI`,
 //!   vLLM, llama.cpp, Ollama's `/v1` …). Decoding is pinned (`temperature = 0`, fixed `seed`)
 //!   so a compliant provider is as deterministic as it can be.
 //! * [`RecordedRunner`] — strict replay of responses previously captured from a real provider.
@@ -65,6 +65,7 @@ pub struct ModelFingerprint {
 
 impl ModelFingerprint {
     /// Stable hex digest of the fingerprint (canonical JSON over sorted keys via serde).
+    #[must_use]
     pub fn digest(&self) -> String {
         let canonical = serde_json::to_vec(self).unwrap_or_default();
         sha256_hex(&canonical)
@@ -81,6 +82,7 @@ pub struct ModelRequest {
 
 impl ModelRequest {
     /// Content-addressed replay key: hex SHA-256 over `system` and `user`.
+    #[must_use]
     pub fn key(&self) -> String {
         let mut joined = Vec::with_capacity(self.system.len() + self.user.len() + 1);
         joined.extend_from_slice(self.system.as_bytes());
@@ -102,6 +104,7 @@ impl ModelResponse {
     }
 
     /// Hex SHA-256 of the answer text (goes into the determinism digest).
+    #[must_use]
     pub fn digest(&self) -> String {
         sha256_hex(self.text.as_bytes())
     }
@@ -267,6 +270,7 @@ pub struct Recording {
 const RECORDING_KIND: &str = "lean-ctx.eval-recording";
 
 impl Recording {
+    #[must_use]
     pub fn new(fingerprint: ModelFingerprint) -> Self {
         Self {
             kind: RECORDING_KIND.to_string(),
@@ -306,6 +310,7 @@ pub struct RecordedRunner {
 }
 
 impl RecordedRunner {
+    #[must_use]
     pub fn new(recording: Recording) -> Self {
         Self { recording }
     }

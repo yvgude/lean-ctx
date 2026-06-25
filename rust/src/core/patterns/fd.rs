@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+#[must_use]
 pub fn compress(output: &str) -> Option<String> {
     let lines: Vec<&str> = output.lines().filter(|l| !l.trim().is_empty()).collect();
     if lines.len() < 5 {

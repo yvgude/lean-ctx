@@ -1,5 +1,5 @@
 /// Single source of truth for all commands that lean-ctx rewrites/compresses.
-/// Used by: hook_handlers (PreToolUse), hooks.rs (bash scripts), cli.rs (shell aliases).
+/// Used by: `hook_handlers` (`PreToolUse`), hooks.rs (bash scripts), cli.rs (shell aliases).
 pub const REWRITE_COMMANDS: &[RewriteEntry] = &[
     // Version control
     re("git", Category::Vcs),
@@ -88,8 +88,9 @@ const fn re(command: &'static str, category: Category) -> RewriteEntry {
     RewriteEntry { command, category }
 }
 
-/// Commands eligible for PreToolUse hook rewriting (IDE hooks).
-/// Excludes `FileRead` (handled separately in hook_handlers).
+/// Commands eligible for `PreToolUse` hook rewriting (IDE hooks).
+/// Excludes `FileRead` (handled separately in `hook_handlers`).
+#[must_use]
 pub fn hook_prefixes() -> Vec<String> {
     REWRITE_COMMANDS
         .iter()
@@ -98,8 +99,9 @@ pub fn hook_prefixes() -> Vec<String> {
         .collect()
 }
 
-/// Commands eligible for PreToolUse hook (bare command match, no trailing space).
+/// Commands eligible for `PreToolUse` hook (bare command match, no trailing space).
 /// Used for commands like `eslint`, `prettier`, `tsc` that may run without args.
+#[must_use]
 pub fn hook_bare_commands() -> Vec<&'static str> {
     REWRITE_COMMANDS
         .iter()
@@ -110,6 +112,7 @@ pub fn hook_bare_commands() -> Vec<&'static str> {
 
 /// Check if a command is a file-read alternative (cat/head/tail) that should be
 /// rewritten to `lean-ctx read` rather than `lean-ctx -c`.
+#[must_use]
 pub fn is_file_read_command(cmd: &str) -> bool {
     REWRITE_COMMANDS
         .iter()
@@ -121,12 +124,14 @@ pub fn is_file_read_command(cmd: &str) -> bool {
 }
 
 /// All command names for shell alias generation.
+#[must_use]
 pub fn shell_alias_commands() -> Vec<&'static str> {
     REWRITE_COMMANDS.iter().map(|e| e.command).collect()
 }
 
 /// Generates a bash `case` pattern for rewrite scripts.
 /// e.g. `git\ *|gh\ *|cargo\ *|npm\ *|...`
+#[must_use]
 pub fn bash_case_pattern() -> String {
     REWRITE_COMMANDS
         .iter()
@@ -143,12 +148,14 @@ pub fn bash_case_pattern() -> String {
 }
 
 /// Space-separated list for shell alias arrays.
+#[must_use]
 pub fn shell_alias_list() -> String {
     shell_alias_commands().join(" ")
 }
 
 /// Check if a command string matches a rewritable prefix (for hook handlers).
-/// Excludes FileRead (handled separately in hook_handlers).
+/// Excludes `FileRead` (handled separately in `hook_handlers`).
+#[must_use]
 pub fn is_rewritable_command(cmd: &str) -> bool {
     for entry in REWRITE_COMMANDS {
         if matches!(entry.category, Category::FileRead) {

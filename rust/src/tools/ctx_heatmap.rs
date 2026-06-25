@@ -1,6 +1,7 @@
 use crate::core::gain::GainEngine;
 use crate::core::heatmap;
 
+#[must_use]
 pub fn handle(action: &str, _path: Option<&str>) -> String {
     let engine = GainEngine::load();
 

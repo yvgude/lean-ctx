@@ -196,7 +196,7 @@ pub(crate) fn unregister_opencode_instructions(home: &std::path::Path) {
     }
 }
 
-/// Strip the lean-ctx block from the global OpenCode AGENTS.md (dedicated mode).
+/// Strip the lean-ctx block from the global `OpenCode` AGENTS.md (dedicated mode).
 fn strip_opencode_agents_block(home: &std::path::Path) {
     let agents = home.join(".config/opencode/AGENTS.md");
     if let Ok(meta) = agents.metadata()

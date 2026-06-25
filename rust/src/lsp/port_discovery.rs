@@ -1,7 +1,7 @@
-//! Discovery of the in-IDE JetBrains backend via a per-project port file.
+//! Discovery of the in-IDE `JetBrains` backend via a per-project port file.
 //!
 //! The plugin writes `<data_dir>/jetbrains-<projecthash>.port` (JSON, 0600), where
-//! `<data_dir>` = core::data_dir::lean_ctx_data_dir() (LEAN_CTX_DATA_DIR → ~/.lean-ctx → XDG).
+//! `<data_dir>` = `core::data_dir::lean_ctx_data_dir()` (`LEAN_CTX_DATA_DIR` → ~/.lean-ctx → XDG).
 //! `projecthash = sha256(canonical(project_root))[..16]` — Rust and Kotlin MUST
 //! canonicalize identically (symlink / trailing-slash trap, spec §5.5).
 
@@ -22,6 +22,7 @@ pub struct PortFile {
 }
 
 /// `sha256(canonical(project_root))[..16]` as lowercase hex (first 8 bytes → 16 chars).
+#[must_use]
 pub fn project_hash(project_root: &str) -> String {
     use std::fmt::Write as _;
 
@@ -39,14 +40,16 @@ pub fn project_hash(project_root: &str) -> String {
 }
 
 /// `<data_dir>/jetbrains-<projecthash>.port` — `<data_dir>` resolved via
-/// `core::data_dir::lean_ctx_data_dir()` (LEAN_CTX_DATA_DIR → ~/.lean-ctx → XDG),
+/// `core::data_dir::lean_ctx_data_dir()` (`LEAN_CTX_DATA_DIR` → ~/.lean-ctx → XDG),
 /// NOT a hardcoded `~/.lean-ctx` (spec §5.5 / §15.5). The Kotlin side mirrors this resolution.
+#[must_use]
 pub fn port_file_path(project_root: &str) -> Option<std::path::PathBuf> {
     let dir = crate::core::data_dir::lean_ctx_data_dir().ok()?;
     Some(dir.join(format!("jetbrains-{}.port", project_hash(project_root))))
 }
 
 /// Reads + parses the port file, or `None` if absent/unreadable/malformed.
+#[must_use]
 pub fn read_port_file(project_root: &str) -> Option<PortFile> {
     let path = port_file_path(project_root)?;
     let text = std::fs::read_to_string(path).ok()?;
@@ -55,6 +58,7 @@ pub fn read_port_file(project_root: &str) -> Option<PortFile> {
 
 /// Liveness check for the IDE process. Linux: `/proc/<pid>`. Other OSes:
 /// optimistic `true` (the `/health` ping is the authoritative reachability gate).
+#[must_use]
 pub fn pid_alive(pid: u32) -> bool {
     #[cfg(target_os = "linux")]
     {
@@ -69,6 +73,7 @@ pub fn pid_alive(pid: u32) -> bool {
 
 /// `GET /health` with token header and a tight timeout (~300ms, spec §4.3).
 /// ureq 3.x: per-request timeout via `.config().timeout_global(..).build()`.
+#[must_use]
 pub fn health_ok(pf: &PortFile) -> bool {
     let url = format!("http://127.0.0.1:{}/health", pf.port);
     ureq::get(&url)

@@ -45,6 +45,7 @@ impl Default for WelfordState {
 }
 
 impl WelfordState {
+    #[must_use]
     pub fn with_window(size: usize) -> Self {
         Self {
             window_size: size,
@@ -65,6 +66,7 @@ impl WelfordState {
         }
     }
 
+    #[must_use]
     pub fn variance(&self) -> f64 {
         if self.count < 2 {
             return 0.0;
@@ -72,10 +74,12 @@ impl WelfordState {
         self.m2 / (self.count - 1) as f64
     }
 
+    #[must_use]
     pub fn std_dev(&self) -> f64 {
         self.variance().sqrt()
     }
 
+    #[must_use]
     pub fn windowed_mean(&self) -> f64 {
         if self.window_values.is_empty() {
             return self.mean;
@@ -84,6 +88,7 @@ impl WelfordState {
         sum / self.window_values.len() as f64
     }
 
+    #[must_use]
     pub fn windowed_std_dev(&self) -> f64 {
         if self.window_values.len() < 2 {
             return self.std_dev();
@@ -98,6 +103,7 @@ impl WelfordState {
         variance.sqrt()
     }
 
+    #[must_use]
     pub fn has_enough_data(&self) -> bool {
         self.count as usize >= MIN_SAMPLES
     }
@@ -171,6 +177,7 @@ impl AnomalyDetector {
         alert
     }
 
+    #[must_use]
     pub fn summary(&self) -> Vec<MetricSummary> {
         let mut out: Vec<MetricSummary> = self
             .metrics
@@ -196,6 +203,7 @@ impl AnomalyDetector {
         }
     }
 
+    #[must_use]
     pub fn load() -> Self {
         crate::core::paths::cache_dir()
             .ok()
@@ -238,6 +246,7 @@ pub fn record_metric(metric: &str, value: f64) -> Option<AnomalyAlert> {
     alert
 }
 
+#[must_use]
 pub fn summary() -> Vec<MetricSummary> {
     global_detector()
         .lock()

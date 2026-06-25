@@ -19,6 +19,7 @@ pub struct Citation {
 }
 
 impl Citation {
+    #[must_use]
     pub fn new(url: &str, title: Option<String>) -> Self {
         Self {
             url: url.to_string(),
@@ -29,6 +30,7 @@ impl Citation {
     }
 
     /// Render a compact, machine-and-human readable citation footer.
+    #[must_use]
     pub fn footer(&self) -> String {
         let headline = match &self.title {
             Some(t) if !t.is_empty() => format!("{t} — {}", self.url),

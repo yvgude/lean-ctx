@@ -49,6 +49,7 @@ const FILLER: &[&str] = &[
 /// [`crate::core::evidence::Claim`]s. Facts use an *absolute* mapping (more
 /// factual signals → higher confidence) rather than min-max, so the score is
 /// meaningful even when the top sentences tie.
+#[must_use]
 pub fn facts_scored(text: &str, query: Option<&str>, max_items: usize) -> Vec<(String, f32)> {
     select_top_scored(facts_ranked(text, query), max_items)
         .into_iter()
@@ -81,6 +82,7 @@ fn facts_ranked(text: &str, query: Option<&str>) -> Vec<(f64, usize, String)> {
 
 /// Extract the most central (or query-relevant) sentences as quotable evidence.
 /// Each sentence carries a source-relative confidence (`[0.0, 1.0]`).
+#[must_use]
 pub fn quotes_scored(text: &str, query: Option<&str>, max_items: usize) -> Vec<(String, f32)> {
     normalize_conf(select_top_scored(quotes_ranked(text, query), max_items))
 }
@@ -107,6 +109,7 @@ fn quotes_ranked(text: &str, query: Option<&str>) -> Vec<(f64, usize, String)> {
 }
 
 /// Condense a transcript: strip filler, drop near-duplicate runs, cap length.
+#[must_use]
 pub fn transcript_summary(text: &str, max_chars: usize) -> String {
     let mut kept: Vec<String> = Vec::new();
     let mut total = 0usize;
@@ -202,6 +205,7 @@ fn is_protected_line(line: &str) -> bool {
 // ── Sentence splitting ─────────────────────────────────────────────────────
 
 /// Split text into trimmed, non-empty sentences across line boundaries.
+#[must_use]
 pub fn split_sentences(text: &str) -> Vec<String> {
     let mut sentences = Vec::new();
     for line in text.lines() {

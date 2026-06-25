@@ -81,11 +81,13 @@ impl Scorecard {
         parts.join(";")
     }
 
+    #[must_use]
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
     }
 
     /// Human-readable scorecard table.
+    #[must_use]
     pub fn to_human(&self) -> String {
         let mut out = String::new();
         out.push_str("lean-ctx scorecard\n");

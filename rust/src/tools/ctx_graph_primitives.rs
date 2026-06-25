@@ -278,6 +278,7 @@ fn is_json(format: Option<&str>) -> bool {
 
 /// `ctx_graph action=neighbors` — immediate (and optionally multi-hop) graph
 /// neighbours of a file, split by direction and annotated with edge kind.
+#[must_use]
 pub fn neighbors(
     path: Option<&str>,
     root: &str,
@@ -398,6 +399,7 @@ pub fn neighbors(
 
 /// `ctx_graph action=path` — shortest connection between two files, with the
 /// edge kind/direction of each hop.
+#[must_use]
 pub fn shortest_path(
     from: Option<&str>,
     to: Option<&str>,
@@ -485,6 +487,7 @@ pub fn shortest_path(
 /// `ctx_graph action=explain` — why a file matters: degree, community, bridge
 /// score, god-node rank and its most important couplings. Reuses the same
 /// analyses the dashboard shows.
+#[must_use]
 pub fn explain(path: Option<&str>, root: &str, format: Option<&str>) -> String {
     let Some(input) = path else {
         return "path is required for 'explain' action".to_string();

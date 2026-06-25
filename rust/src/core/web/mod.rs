@@ -1,6 +1,6 @@
 //! Web & research context layer.
 //!
-//! Turns an arbitrary URL (web page or YouTube video) into compressed,
+//! Turns an arbitrary URL (web page or `YouTube` video) into compressed,
 //! citation-backed context for an agent. The flow is:
 //!
 //! 1. [`url_guard`] validates the URL and blocks SSRF targets.
@@ -54,6 +54,7 @@ pub enum ReadMode {
 }
 
 impl ReadMode {
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "auto" => Some(Self::Auto),
@@ -67,6 +68,7 @@ impl ReadMode {
         }
     }
 
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Self::Auto => "auto",
@@ -91,6 +93,7 @@ pub struct ReadOptions<'a> {
 }
 
 impl<'a> ReadOptions<'a> {
+    #[must_use]
     pub fn new(url: &'a str) -> Self {
         Self {
             url,

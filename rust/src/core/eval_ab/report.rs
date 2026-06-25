@@ -72,6 +72,7 @@ pub enum Verdict {
 }
 
 impl Verdict {
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Verdict::Improved => "IMPROVED",
@@ -81,6 +82,7 @@ impl Verdict {
     }
 
     /// Whether the CI quality gate should pass.
+    #[must_use]
     pub fn gate_passes(self) -> bool {
         !matches!(self, Verdict::Regressed)
     }
@@ -146,11 +148,13 @@ impl AbReport {
     }
 
     /// Pretty JSON for machine consumption / artifact embedding.
+    #[must_use]
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_default()
     }
 
     /// Compact human summary for the terminal.
+    #[must_use]
     pub fn render(&self) -> String {
         let s = &self.stats;
         let mut out = String::new();
@@ -286,7 +290,7 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
     sorted[rank.min(sorted.len() - 1)]
 }
 
-/// Tiny seedable PRNG (SplitMix64) — keeps the bootstrap CI reproducible without a dependency.
+/// Tiny seedable PRNG (`SplitMix64`) — keeps the bootstrap CI reproducible without a dependency.
 struct SplitMix64(u64);
 
 impl SplitMix64 {

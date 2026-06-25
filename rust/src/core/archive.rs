@@ -49,6 +49,7 @@ fn compute_id(content: &str) -> String {
     format!("{hash:016x}")
 }
 
+#[must_use]
 pub fn is_enabled() -> bool {
     if let Ok(v) = std::env::var("LEAN_CTX_ARCHIVE") {
         return !matches!(v.as_str(), "0" | "false" | "off");
@@ -84,6 +85,7 @@ fn max_disk_bytes() -> u64 {
         .saturating_mul(1024 * 1024)
 }
 
+#[must_use]
 pub fn should_archive(content: &str) -> bool {
     is_enabled() && content.len() >= threshold_chars()
 }
@@ -161,6 +163,7 @@ pub fn store(tool: &str, command: &str, content: &str, session_id: Option<&str>)
     Some(id)
 }
 
+#[must_use]
 pub fn retrieve(id: &str) -> Option<String> {
     let path = content_path(id);
     std::fs::read_to_string(path).ok()
@@ -185,7 +188,7 @@ pub(crate) fn format_range(content: &str, start: usize, end: usize) -> String {
 
 /// Search content for lines matching `pattern` (case-insensitive) and return
 /// gutter-prefixed matches. `label` appears in the result message (e.g. "archive
-/// a1966..." or "reference ref_18bb..."). Shared by archive and ref store paths.
+/// a1966..." or "reference `ref_18bb`..."). Shared by archive and ref store paths.
 pub(crate) fn format_search(content: &str, pattern: &str, label: &str) -> String {
     let pattern_lower = pattern.to_lowercase();
     let matches: Vec<String> = content
@@ -235,22 +238,26 @@ pub(crate) fn format_json_keys(content: &str, path: Option<&str>, label: &str) -
     Some(format!("{walked} => {}", describe_json(cur)))
 }
 
+#[must_use]
 pub fn retrieve_with_range(id: &str, start: usize, end: usize) -> Option<String> {
     let content = retrieve(id)?;
     Some(format_range(&content, start, end))
 }
 
+#[must_use]
 pub fn retrieve_with_search(id: &str, pattern: &str) -> Option<String> {
     let content = retrieve(id)?;
     Some(format_search(&content, pattern, &format!("archive {id}")))
 }
 
 /// Retrieve the first `n` lines of an archived entry, with a line-number gutter.
+#[must_use]
 pub fn retrieve_head(id: &str, n: usize) -> Option<String> {
     retrieve_with_range(id, 1, n)
 }
 
 /// Retrieve the last `n` lines of an archived entry, with a line-number gutter.
+#[must_use]
 pub fn retrieve_tail(id: &str, n: usize) -> Option<String> {
     let content = retrieve(id)?;
     let total = content.lines().count();
@@ -259,6 +266,7 @@ pub fn retrieve_tail(id: &str, n: usize) -> Option<String> {
 }
 
 /// Describe the JSON structure of an archived entry.
+#[must_use]
 pub fn retrieve_json_keys(id: &str, path: Option<&str>) -> Option<String> {
     let content = retrieve(id)?;
     format_json_keys(&content, path, &format!("archive {id}"))
@@ -325,6 +333,7 @@ pub(crate) fn describe_json(v: &serde_json::Value) -> String {
     }
 }
 
+#[must_use]
 pub fn list_entries(session_id: Option<&str>) -> Vec<ArchiveEntry> {
     let base = archive_base_dir();
     if !base.exists() {
@@ -376,6 +385,7 @@ pub fn remove_files(id: &str) {
 /// Wired into MCP-start + periodic maintenance ([`super::storage_maintenance`])
 /// and `lean-ctx cache prune`; without an enforcer the archive grew unbounded on
 /// disk and starved the host of RAM via the page cache (#417).
+#[must_use]
 pub fn cleanup() -> u32 {
     let cutoff = Utc::now() - chrono::Duration::hours(max_age_hours() as i64);
     cleanup_with(cutoff, max_disk_bytes())
@@ -447,6 +457,7 @@ fn cleanup_with(cutoff: DateTime<Utc>, budget_bytes: u64) -> u32 {
     removed
 }
 
+#[must_use]
 pub fn disk_usage_bytes() -> u64 {
     let base = archive_base_dir();
     if !base.exists() {
@@ -465,6 +476,7 @@ pub fn disk_usage_bytes() -> u64 {
     total
 }
 
+#[must_use]
 pub fn format_hint(id: &str, size_chars: usize, size_tokens: usize) -> String {
     format!("[Archived: {size_chars} chars ({size_tokens} tok). Retrieve: ctx_expand(id=\"{id}\")]")
 }

@@ -7,6 +7,7 @@
 ///
 /// Takes the raw hidden state output `[1 × seq_len × dim]` flattened to a Vec,
 /// and produces a single embedding by averaging across attended positions.
+#[must_use]
 pub fn mean_pool(
     hidden_states: &[f32],
     attention_mask: &[i32],
@@ -41,6 +42,7 @@ pub fn mean_pool(
 ///
 /// The model output is `[batch, max_seq_len, dim]` flattened row-major. Each
 /// sequence is mean-pooled using its own attention mask to exclude padding.
+#[must_use]
 pub fn mean_pool_batch(
     hidden_states: &[f32],
     masks: &[&[i32]],
@@ -72,6 +74,7 @@ pub fn normalize_l2(vec: &mut [f32]) {
 }
 
 /// Compute the L2 norm of a vector.
+#[must_use]
 pub fn l2_norm(vec: &[f32]) -> f32 {
     vec.iter().map(|x| x * x).sum::<f32>().sqrt()
 }

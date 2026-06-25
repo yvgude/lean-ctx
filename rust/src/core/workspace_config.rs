@@ -15,6 +15,7 @@ struct WorkspaceConfigFile {
     linked_projects: Vec<String>,
 }
 
+#[must_use]
 pub fn load_linked_projects(project_root: &Path) -> LinkedProjects {
     let mut out = LinkedProjects::default();
 

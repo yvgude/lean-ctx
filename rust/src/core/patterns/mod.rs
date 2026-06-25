@@ -83,6 +83,7 @@ pub mod zig;
 
 use crate::core::tokens::count_tokens;
 
+#[must_use]
 pub fn compress_output(command: &str, output: &str) -> Option<String> {
     // Policy gate: protected commands (Passthrough + Verbatim) must
     // never be pattern-compressed. The caller (compress_if_beneficial
@@ -194,6 +195,7 @@ fn shorter_only(compressed: String, original: &str) -> Option<String> {
     }
 }
 
+#[must_use]
 pub fn try_specific_pattern(cmd: &str, output: &str) -> Option<String> {
     let cl = cmd.to_ascii_lowercase();
     let c = cl.as_str();

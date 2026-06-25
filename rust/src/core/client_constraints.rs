@@ -144,11 +144,13 @@ pub const ALL_CLIENTS: &[ClientConstraints] = &[
     },
 ];
 
+#[must_use]
 pub fn by_client_id(id: &str) -> Option<&'static ClientConstraints> {
     let id = id.trim();
     ALL_CLIENTS.iter().find(|c| c.id == id)
 }
 
+#[must_use]
 pub fn by_editor_name(name: &str) -> Option<&'static ClientConstraints> {
     match name {
         "Cursor" => by_client_id("cursor"),

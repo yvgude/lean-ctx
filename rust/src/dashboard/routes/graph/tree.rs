@@ -1,5 +1,5 @@
 //! `/api/tree` — a collapsible directory → file → symbol hierarchy built from the
-//! real graph provider (PropertyGraph). Powers the Explorer tab. No mock data:
+//! real graph provider (`PropertyGraph`). Powers the Explorer tab. No mock data:
 //! the tree mirrors indexed files and their extracted symbols.
 
 use crate::dashboard::routes::helpers::detect_project_root_for_dashboard;

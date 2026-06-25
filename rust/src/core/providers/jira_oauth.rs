@@ -121,11 +121,13 @@ pub struct StoredCredential {
 
 impl StoredCredential {
     /// True if the access token is expired or within the skew window.
+    #[must_use]
     pub fn needs_refresh(&self, now: u64) -> bool {
         now.saturating_add(EXPIRY_SKEW_SECS) >= self.expires_at
     }
 
     /// The per-cloud Jira API base URL for this credential.
+    #[must_use]
     pub fn api_base(&self) -> String {
         format!("{API_BASE}/{}", self.cloud_id)
     }
@@ -188,6 +190,7 @@ fn write_private(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {
 }
 
 /// Returns the stored credential for `data_source`, if any.
+#[must_use]
 pub fn get_credential(data_source: &str) -> Option<StoredCredential> {
     load_store().get(data_source).cloned()
 }
@@ -208,6 +211,7 @@ pub fn remove_credential(data_source: &str) -> Result<bool, String> {
 }
 
 /// Lists the data-source ids that currently have a stored credential.
+#[must_use]
 pub fn list_connections() -> Vec<String> {
     let mut keys: Vec<String> = load_store().into_keys().collect();
     keys.sort();
@@ -243,6 +247,7 @@ pub struct CloudResource {
 // ---------------------------------------------------------------------------
 
 /// Builds the Atlassian consent URL for the authorization-code flow.
+#[must_use]
 pub fn authorize_url(app: &OAuthApp, redirect_uri: &str, state: &str) -> String {
     format!(
         "{AUTHORIZE_URL}?audience=api.atlassian.com&client_id={cid}&scope={scope}&redirect_uri={redirect}&state={state}&response_type=code&prompt=consent",

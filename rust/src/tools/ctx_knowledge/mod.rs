@@ -47,6 +47,7 @@ pub(crate) fn engine_status_line() -> String {
 
 /// Dispatches knowledge base actions (remember, recall, pattern, timeline, etc.).
 #[allow(clippy::too_many_arguments)]
+#[must_use]
 pub fn handle(
     project_root: &str,
     action: &str,
@@ -223,7 +224,7 @@ fn handle_feedback(
         Err(e) => return format!("Feedback recorded but save failed: {e}"),
     };
 
-    crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
+    let _ = crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
         category: cat.to_string(),
         key: k.to_string(),
         action: if is_up {

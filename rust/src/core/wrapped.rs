@@ -26,6 +26,7 @@ pub struct WrappedReport {
 }
 
 impl WrappedReport {
+    #[must_use]
     pub fn generate(period: &str) -> Self {
         let store = stats::load();
         let sessions = SessionState::list_sessions();
@@ -95,7 +96,7 @@ impl WrappedReport {
             0.0
         };
 
-        let files_touched: u64 = sessions.iter().map(|s| s.tool_calls as u64).sum();
+        let files_touched: u64 = sessions.iter().map(|s| u64::from(s.tool_calls)).sum();
 
         let day_saved = |d: &stats::DayStats| d.input_tokens.saturating_sub(d.output_tokens);
         let take_recent = |n: usize| -> Vec<u64> {
@@ -137,6 +138,7 @@ impl WrappedReport {
     /// One-line, conservative explanation of how the headline numbers were derived.
     /// Reused by the ASCII footer, the compact summary, and the SVG share card so the
     /// figure is always explainable and never over-claimed.
+    #[must_use]
     pub fn methodology_line(&self) -> String {
         let price = if self.pricing_estimated {
             format!(
@@ -161,6 +163,7 @@ impl WrappedReport {
     /// stdout is a TTY (see `theme::no_color`), so piping to a file or social post
     /// yields clean copy-pasteable ASCII.
     #[allow(clippy::many_single_char_names)] // ANSI formatting helpers: t/r/b/d
+    #[must_use]
     pub fn format_ascii(&self) -> String {
         use crate::core::theme;
 
@@ -285,6 +288,7 @@ impl WrappedReport {
         out.join("\n")
     }
 
+    #[must_use]
     pub fn format_compact(&self) -> String {
         let saved_str = format_tokens(self.tokens_saved);
         let cost_str = format!("${:.2}", self.cost_avoided_usd);

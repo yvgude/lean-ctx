@@ -9,6 +9,7 @@ use crate::core::compressor::strip_ansi;
 
 const GRAPH: &str = "@○◉●×◇~│├╮╭╯╰┐└┌┘ \t";
 
+#[must_use]
 pub fn compress(cmd: &str, output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {

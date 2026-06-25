@@ -1,4 +1,4 @@
-//! Unified Graph Enricher — indexes Git history, tests, and knowledge into the PropertyGraph.
+//! Unified Graph Enricher — indexes Git history, tests, and knowledge into the `PropertyGraph`.
 //!
 //! Three enrichment passes:
 //! 1. **Git commits**: `git log` → Commit nodes + `changed_in` edges
@@ -315,6 +315,7 @@ impl EnrichmentStats {
         self.edges_created += other.edges_created;
     }
 
+    #[must_use]
     pub fn format_summary(&self) -> String {
         format!(
             "Graph enriched: {} commits, {} tests, {} knowledge entries, {} edges",

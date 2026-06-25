@@ -76,6 +76,7 @@ fn looks_like_build_warning_line(line: &str) -> bool {
     (tl.contains(": warning ") || tl.starts_with("warning ")) && !tl.contains("warning(s)")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     let cl = command.trim().to_ascii_lowercase();
     if !cl.starts_with("dotnet ") {

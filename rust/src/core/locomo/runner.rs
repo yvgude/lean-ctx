@@ -1,4 +1,4 @@
-//! Run a LoCoMo sample through lean-ctx memory: ingest every turn as a knowledge
+//! Run a `LoCoMo` sample through lean-ctx memory: ingest every turn as a knowledge
 //! fact, then for each question recall the top-k memories and score the recalled
 //! context against the gold answers (#291).
 //!
@@ -39,6 +39,7 @@ pub struct SampleResult {
 ///
 /// `project_root` must be unique per sample so the knowledge hashes don't collide.
 /// The caller is responsible for pointing `LEAN_CTX_DATA_DIR` at a throwaway dir.
+#[must_use]
 pub fn run_sample(sample: &LocomoSample, project_root: &Path, top_k: usize) -> SampleResult {
     let root = project_root.to_string_lossy().to_string();
     let policy = MemoryPolicy::default();
@@ -104,6 +105,7 @@ pub fn run_sample(sample: &LocomoSample, project_root: &Path, top_k: usize) -> S
 }
 
 /// Run every sample under per-sample subdirectories of `workspace`.
+#[must_use]
 pub fn run_suite(samples: &[LocomoSample], workspace: &Path, top_k: usize) -> Vec<SampleResult> {
     samples
         .iter()

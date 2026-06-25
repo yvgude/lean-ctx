@@ -109,6 +109,7 @@ impl CoAccessGraph {
     }
 
     /// Files most strongly associated with `file`, strongest first.
+    #[must_use]
     pub fn related(&self, file: &str, top_k: usize) -> Vec<(String, f64)> {
         let Some(neighbours) = self.edges.get(file) else {
             return Vec::new();
@@ -124,6 +125,7 @@ impl CoAccessGraph {
     /// `max_edges`. The graph is symmetric by construction, but asymmetric
     /// pruning can leave the two directions with slightly different weights, so
     /// the stronger direction wins. Deterministic order (weight desc, then path).
+    #[must_use]
     pub fn canonical_edges(&self, min_weight: f64, max_edges: usize) -> Vec<(String, String, f64)> {
         let mut best: HashMap<(String, String), f64> = HashMap::new();
         for (from, neighbours) in &self.edges {
@@ -206,6 +208,7 @@ fn store_path(project_root: &str) -> Option<PathBuf> {
 }
 
 /// Load the co-access graph for `project_root` (empty if none / unreadable).
+#[must_use]
 pub fn load(project_root: &str) -> CoAccessGraph {
     let Some(path) = store_path(project_root) else {
         return CoAccessGraph::default();
@@ -240,6 +243,7 @@ pub fn record_access(project_root: &str, files: &[String]) {
 }
 
 /// Files historically co-accessed with `file`, strongest association first.
+#[must_use]
 pub fn related(project_root: &str, file: &str, top_k: usize) -> Vec<(String, f64)> {
     load(project_root).related(file, top_k)
 }
@@ -251,6 +255,7 @@ pub fn related(project_root: &str, file: &str, top_k: usize) -> Vec<(String, f64
 // form the code graph uses, so learned edges line up with static edges (#289).
 
 /// Whether traversal (co-access) edges are enabled (`[graph] traversal_edges`).
+#[must_use]
 pub fn traversal_enabled() -> bool {
     crate::core::config::Config::load().graph.traversal_edges
 }
@@ -310,6 +315,7 @@ pub fn record_set_access(project_root: &str, files: &[String]) {
 
 /// Canonical undirected co-access edges for `project_root` (strongest first),
 /// for dashboard overlay and graph folding. Empty when traversal edges are off.
+#[must_use]
 pub fn export_edges(
     project_root: &str,
     min_weight: f64,

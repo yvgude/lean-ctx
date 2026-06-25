@@ -14,6 +14,7 @@ fn resource_action_re() -> &'static regex::Regex {
     static_regex!(r"(\S+/\S+)\s+(configured|created|unchanged|deleted)")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     if command.contains("logs") || command.contains("log ") {
         return Some(compress_logs(output));

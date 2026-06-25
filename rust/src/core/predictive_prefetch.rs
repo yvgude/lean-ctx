@@ -34,6 +34,7 @@ impl Default for PrefetchModel {
 }
 
 impl PrefetchModel {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             transitions: HashMap::with_capacity(128),
@@ -70,7 +71,8 @@ impl PrefetchModel {
     }
 
     /// Predict which files will be accessed next, based on current state.
-    /// Returns (path_hash, confidence) pairs sorted by confidence descending.
+    /// Returns (`path_hash`, confidence) pairs sorted by confidence descending.
+    #[must_use]
     pub fn predict(&self, current_hash: u64, active_hashes: &[u64]) -> Vec<(u64, f64)> {
         let mut candidates: HashMap<u64, f64> = HashMap::new();
 
@@ -143,6 +145,7 @@ impl PrefetchModel {
     }
 
     /// Current prediction accuracy (0.0 - 1.0).
+    #[must_use]
     pub fn accuracy(&self) -> f64 {
         if self.predictions_made == 0 {
             return 0.0;
@@ -151,12 +154,14 @@ impl PrefetchModel {
     }
 
     /// Free Energy = surprise metric. High value means predictions are poor.
+    #[must_use]
     pub fn free_energy(&self) -> f64 {
         1.0 - self.accuracy()
     }
 
     /// Should we actively prefetch? Only when model has learned enough and
     /// prediction accuracy is reasonable.
+    #[must_use]
     pub fn should_prefetch(&self) -> bool {
         self.predictions_made >= 10 && self.accuracy() > 0.2
     }

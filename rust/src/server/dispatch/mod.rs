@@ -9,9 +9,9 @@ use crate::server::tool_trait::{McpTool, ShellOutcome, ToolContext, ToolOutput};
 use crate::tools::LeanCtxServer;
 
 impl LeanCtxServer {
-    /// Returns (output_text, saved_tokens, shell_outcome). saved_tokens > 0
+    /// Returns (`output_text`, `saved_tokens`, `shell_outcome`). `saved_tokens` > 0
     /// indicates the tool already applied internal compression (shell engine,
-    /// cache deltas, etc.). shell_outcome is `Some` for shell-executing tools
+    /// cache deltas, etc.). `shell_outcome` is `Some` for shell-executing tools
     /// so the caller can populate MCP error metadata (#389).
     pub(super) async fn dispatch_tool(
         &self,
@@ -142,7 +142,7 @@ impl LeanCtxServer {
     }
 
     /// Dispatches a single tool via the trait-based registry.
-    /// Returns (output_text, saved_tokens, shell_outcome).
+    /// Returns (`output_text`, `saved_tokens`, `shell_outcome`).
     async fn dispatch_inner(
         &self,
         name: &str,

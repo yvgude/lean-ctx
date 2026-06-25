@@ -164,7 +164,7 @@ fn parse_call_csharp(node: Node, src: &str) -> Option<CallSite> {
 }
 
 /// Reduce a C# name node to its simple identifier:
-/// `Foo` -> `Foo`, `Foo<T>` (generic_name) -> `Foo`, `A.B.Foo` (qualified_name) -> `Foo`.
+/// `Foo` -> `Foo`, `Foo<T>` (`generic_name`) -> `Foo`, `A.B.Foo` (`qualified_name`) -> `Foo`.
 /// Returns `None` for nameless constructs (e.g. `new int[]`) so they do not
 /// pollute the call graph with junk callees.
 #[cfg(feature = "tree-sitter")]

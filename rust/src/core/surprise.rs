@@ -1,9 +1,9 @@
 //! Predictive Surprise Scoring — conditional entropy relative to LLM knowledge.
 //!
 //! Instead of measuring Shannon entropy in isolation (H(X)), we measure
-//! how surprising each line is to the LLM: H(X | LLM_knowledge).
+//! how surprising each line is to the LLM: H(X | `LLM_knowledge`).
 //!
-//! Approximation: use BPE token frequency ranks from o200k_base as a proxy
+//! Approximation: use BPE token frequency ranks from `o200k_base` as a proxy
 //! for P(token | LLM). Common tokens (high frequency rank) carry low surprise;
 //! rare tokens (low rank / unknown to the vocab) carry high surprise.
 //!
@@ -17,7 +17,7 @@ use super::tokens::encode_tokens;
 static VOCAB_LOG_PROBS: OnceLock<Vec<f64>> = OnceLock::new();
 
 /// Build a log-probability table indexed by token ID.
-/// Uses a Zipfian approximation: P(rank r) ~ 1/(r * H_n) where H_n is the
+/// Uses a Zipfian approximation: P(rank r) ~ 1/(r * `H_n`) where `H_n` is the
 /// harmonic number. This closely matches empirical BPE token distributions.
 fn get_vocab_log_probs() -> &'static Vec<f64> {
     VOCAB_LOG_PROBS.get_or_init(|| {
@@ -40,6 +40,7 @@ fn get_vocab_log_probs() -> &'static Vec<f64> {
 /// the LLM = more important to keep.
 ///
 /// Range: typically 5.0 (very common) to 17.0+ (very rare).
+#[must_use]
 pub fn line_surprise(text: &str) -> f64 {
     let tokens = encode_tokens(text);
     if tokens.is_empty() {
@@ -64,7 +65,7 @@ pub fn line_surprise(text: &str) -> f64 {
 }
 
 /// Classify how surprising a line is relative to the LLM's expected knowledge.
-/// Uses empirically calibrated thresholds for o200k_base.
+/// Uses empirically calibrated thresholds for `o200k_base`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SurpriseLevel {
     /// Common patterns — safe to compress aggressively
@@ -75,6 +76,7 @@ pub enum SurpriseLevel {
     High,
 }
 
+#[must_use]
 pub fn classify_surprise(text: &str) -> SurpriseLevel {
     let s = line_surprise(text);
     if s < 8.0 {
@@ -89,6 +91,7 @@ pub fn classify_surprise(text: &str) -> SurpriseLevel {
 /// Enhanced entropy filter that combines Shannon entropy with predictive surprise.
 /// Lines pass if EITHER their entropy is above threshold OR their surprise is high.
 /// This prevents dropping lines that look "low entropy" but contain rare, unique tokens.
+#[must_use]
 pub fn should_keep_line(trimmed: &str, entropy_threshold: f64) -> bool {
     if trimmed.is_empty() || trimmed.len() < 3 {
         return true;
@@ -144,6 +147,7 @@ pub struct ScoringCtx {
 }
 
 impl ScoringCtx {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }

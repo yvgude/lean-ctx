@@ -52,7 +52,7 @@ pub struct QuboItem {
     pub sketch: String,
 }
 
-/// Deterministic, reproducible PRNG (SplitMix64) — keeps the spike free of
+/// Deterministic, reproducible PRNG (`SplitMix64`) — keeps the spike free of
 /// `getrandom` so results are byte-stable across runs/machines.
 struct SplitMix64(u64);
 impl SplitMix64 {
@@ -115,6 +115,7 @@ fn energy(items: &[QuboItem], sim: &[Vec<f64>], x: &[bool], budget: usize) -> f6
 /// Solve the selection QUBO with deterministic simulated annealing. Returns the
 /// indices of selected items. Seeded by a stable hash of the problem so the
 /// result is reproducible. Registers activity for `introspect cognition`.
+#[must_use]
 pub fn select(items: &[QuboItem], budget: usize) -> Vec<usize> {
     crate::core::introspect::tick("qubo_select");
     let n = items.len();
@@ -201,6 +202,7 @@ pub struct BenchReport {
 
 impl BenchReport {
     /// Total φ captured, relative gain of QUBO over greedy (can be negative).
+    #[must_use]
     pub fn phi_gain_pct(&self) -> f64 {
         if self.greedy_phi <= 0.0 {
             return 0.0;
@@ -208,6 +210,7 @@ impl BenchReport {
         (self.qubo_phi - self.greedy_phi) / self.greedy_phi * 100.0
     }
 
+    #[must_use]
     pub fn format(&self) -> String {
         format!(
             "QUBO spike (experimental, greedy stays default)\n\
@@ -233,6 +236,7 @@ fn captured(items: &[QuboItem], idx: &[usize]) -> (f64, usize) {
 }
 
 /// Run the QUBO-vs-greedy benchmark on a problem. Pure and deterministic.
+#[must_use]
 pub fn benchmark(items: &[QuboItem], budget: usize) -> BenchReport {
     let greedy: Vec<usize> = greedy_mask(items, budget)
         .iter()
@@ -254,6 +258,7 @@ pub fn benchmark(items: &[QuboItem], budget: usize) -> BenchReport {
 
 /// A deterministic synthetic problem for the CLI harness: clusters of redundant
 /// items plus unique high-φ items, so QUBO's redundancy awareness can show.
+#[must_use]
 pub fn synthetic_problem() -> (Vec<QuboItem>, usize) {
     let mut items = Vec::new();
     // Three near-duplicate clusters (same sketch) of medium φ.

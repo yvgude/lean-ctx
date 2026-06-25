@@ -1,6 +1,6 @@
-//! Personalized PageRank ranking for repo map symbols.
+//! Personalized `PageRank` ranking for repo map symbols.
 //!
-//! Runs PageRank on the file-level graph with personalization biased
+//! Runs `PageRank` on the file-level graph with personalization biased
 //! toward session-relevant and user-specified focus files.
 
 use crate::core::pagerank::{self, PageRankInput};
@@ -13,12 +13,13 @@ pub struct RankedSymbol {
     pub score: f64,
 }
 
-/// Rank all symbols in the repo graph using Personalized PageRank.
+/// Rank all symbols in the repo graph using Personalized `PageRank`.
 ///
 /// - `session_files`: files from the active session (get highest boost)
 /// - `focus_files`: user-specified files to emphasize
 ///
 /// Returns symbols sorted by descending score.
+#[must_use]
 pub fn rank_symbols(
     graph: &RepoGraph,
     session_files: &[String],

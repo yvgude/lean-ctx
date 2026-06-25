@@ -179,7 +179,7 @@ pub(super) fn remove_lean_ctx_amp_server(
     })
 }
 
-/// OpenClaw uninstall (GitHub #390): remove lean-ctx from BOTH schemas — the
+/// `OpenClaw` uninstall (GitHub #390): remove lean-ctx from BOTH schemas — the
 /// nested `mcp.servers` (>= 2026.6.1) and the legacy top-level `mcpServers`.
 /// Containers emptied by the removal are dropped entirely so the strict
 /// 2026.6.1 validator never sees a leftover unknown key.

@@ -114,6 +114,7 @@ fn exp_weights(n: usize) -> Vec<f64> {
 }
 
 /// `segments[0]` is oldest, `segments[last]` newest. Budget follows exponential weights toward recent slices.
+#[must_use]
 pub fn compress_progressive(segments: &[String], budget_tokens: usize) -> Vec<String> {
     let n = segments.len();
     if n == 0 {

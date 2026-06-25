@@ -47,6 +47,7 @@ pub enum Outcome {
 }
 
 impl Outcome {
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
             Outcome::Success { .. } => "success",
@@ -58,6 +59,7 @@ impl Outcome {
 }
 
 impl EpisodicStore {
+    #[must_use]
     pub fn new(project_hash: &str) -> Self {
         Self {
             project_hash: project_hash.to_string(),
@@ -80,6 +82,7 @@ impl EpisodicStore {
         }
     }
 
+    #[must_use]
     pub fn search(&self, query: &str) -> Vec<&Episode> {
         let q = query.to_lowercase();
         let terms: Vec<&str> = q.split_whitespace().collect();
@@ -108,10 +111,12 @@ impl EpisodicStore {
         scored.into_iter().map(|(ep, _)| ep).collect()
     }
 
+    #[must_use]
     pub fn recent(&self, n: usize) -> Vec<&Episode> {
         self.episodes.iter().rev().take(n).collect()
     }
 
+    #[must_use]
     pub fn by_outcome(&self, outcome_label: &str) -> Vec<&Episode> {
         self.episodes
             .iter()
@@ -119,6 +124,7 @@ impl EpisodicStore {
             .collect()
     }
 
+    #[must_use]
     pub fn by_file(&self, file_path: &str) -> Vec<&Episode> {
         self.episodes
             .iter()
@@ -126,6 +132,7 @@ impl EpisodicStore {
             .collect()
     }
 
+    #[must_use]
     pub fn stats(&self) -> EpisodicStats {
         let total = self.episodes.len();
         let successes = self
@@ -161,6 +168,7 @@ impl EpisodicStore {
         Some(dir.join(format!("{project_hash}.json")))
     }
 
+    #[must_use]
     pub fn load(project_hash: &str) -> Option<Self> {
         let path = Self::store_path(project_hash)?;
         let data = std::fs::read_to_string(path).ok()?;
@@ -237,6 +245,7 @@ impl EpisodicStore {
         true
     }
 
+    #[must_use]
     pub fn load_or_create(project_hash: &str) -> Self {
         Self::load(project_hash).unwrap_or_else(|| Self::new(project_hash))
     }
@@ -261,6 +270,7 @@ pub struct EpisodicStats {
     pub total_tokens: u64,
 }
 
+#[must_use]
 pub fn create_episode_from_session(
     session: &super::session::SessionState,
     tool_calls: &[(String, u64)],
@@ -407,6 +417,7 @@ fn count_tools(actions: &[Action]) -> Vec<(String, usize)> {
     sorted
 }
 
+#[must_use]
 pub fn format_episode_compact(episode: &Episode) -> String {
     format!(
         "[{}] {} — {} ({} actions, {} files)",

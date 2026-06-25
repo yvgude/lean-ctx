@@ -1,4 +1,4 @@
-//! Backing B: in-IDE JetBrains PSI backend over HTTP/JSON (127.0.0.1).
+//! Backing B: in-IDE `JetBrains` PSI backend over HTTP/JSON (127.0.0.1).
 //! Synchronous (`ureq`) — matches the synchronous `McpTool::handle` path and does
 //! not block the Tokio runtime. Phase 1 implements references/definition/
 //! implementations; rename + the degrading ops follow in later phases.
@@ -26,7 +26,7 @@ pub struct JetBrainsHttpBackend {
     /// IDE listen port — re-compared against the port file to detect restarts.
     port: u16,
     /// Truncation meta of the most recent capped call (references/implementations/
-    /// type_hierarchy/symbols_overview), surfaced by ctx_refactor.
+    /// `type_hierarchy/symbols_overview`), surfaced by `ctx_refactor`.
     last_meta: Option<crate::lsp::backend::Truncation>,
 }
 
@@ -47,6 +47,7 @@ impl JetBrainsHttpBackend {
     }
 
     #[allow(clippy::needless_pass_by_value)] // public ctor; callers own String
+    #[must_use]
     pub fn new(port: u16, token: String, project_root: String, pid: u32) -> Self {
         Self {
             base_url: format!("http://127.0.0.1:{port}"),
@@ -353,7 +354,7 @@ impl JetBrainsHttpBackend {
     }
 
     /// Request body for `/movePreview` + `/moveApply`. `target` mirrors the
-    /// MoveTarget variant (kind=path → `{path}`, kind=parent → `{path,range}`).
+    /// `MoveTarget` variant (kind=path → `{path}`, kind=parent → `{path,range}`).
     fn move_body(
         rel_path: &str,
         src_range: crate::lsp::backend::TextRange0Based,
@@ -408,7 +409,7 @@ impl JetBrainsHttpBackend {
     }
 
     /// Parse a `{applied, changed_paths}` apply response (shared by rename/move/
-    /// safe_delete apply). Error envelopes are handled by the caller.
+    /// `safe_delete` apply). Error envelopes are handled by the caller.
     fn parse_apply_result(resp: &Value) -> crate::lsp::backend::RenameResult {
         let changed_paths = resp
             .get("changed_paths")

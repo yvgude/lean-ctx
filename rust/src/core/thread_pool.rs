@@ -357,7 +357,7 @@ fn worker_loop<F>(
     }
 }
 
-/// Main-thread participation (borrows the AtomicUsize directly).
+/// Main-thread participation (borrows the `AtomicUsize` directly).
 fn worker_loop_inline<F>(
     count: usize,
     next_idx: &AtomicUsize,
@@ -444,6 +444,7 @@ fn downcast_panic_msg(payload: &Box<dyn std::any::Any + Send + 'static>, fallbac
 /// - **macOS**: uses `mach_task_basic_info.resident_size`.
 /// - **Other**: returns `None` (back-pressure is skipped).
 #[allow(clippy::cast_sign_loss)]
+#[must_use]
 pub fn current_rss_mb() -> Option<u64> {
     let rss_bytes = get_rss_bytes()?;
     Some(rss_bytes / (1024 * 1024))

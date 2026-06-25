@@ -20,6 +20,7 @@ impl fmt::Display for CompetitorProfile {
     }
 }
 
+#[must_use]
 pub fn all_competitors() -> Vec<CompetitorProfile> {
     vec![
         CompetitorProfile {
@@ -88,6 +89,7 @@ pub fn all_competitors() -> Vec<CompetitorProfile> {
     ]
 }
 
+#[must_use]
 pub fn competitor_count() -> usize {
     all_competitors().len()
 }

@@ -56,10 +56,12 @@ impl Default for ContextOsRuntime {
 }
 
 impl ContextOsRuntime {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn data_dir() -> Option<PathBuf> {
         crate::core::data_dir::lean_ctx_data_dir().ok()
     }
@@ -121,7 +123,8 @@ pub fn emit_directed_event(
     }
 }
 
-/// Classify a tool name into a secondary event kind (beyond ToolCallRecorded).
+/// Classify a tool name into a secondary event kind (beyond `ToolCallRecorded`).
+#[must_use]
 pub fn secondary_event_kind(tool: &str, action: Option<&str>) -> Option<ContextEventKindV1> {
     match tool {
         "ctx_session" => {

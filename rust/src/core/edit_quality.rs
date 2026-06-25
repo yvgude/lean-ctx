@@ -181,6 +181,7 @@ impl EditQualityStore {
         }
     }
 
+    #[must_use]
     pub fn is_risky(&self, ext: &str, mode: &str) -> bool {
         self.pairs
             .get(&pair_key(ext, mode))
@@ -267,6 +268,7 @@ pub fn record_edit_outcome(path: &str, last_mode: &str, success: bool) {
 }
 
 /// Process-global: one-shot check-and-consume of the per-path escalation.
+#[must_use]
 pub fn take_pending_escalation(path: &str) -> bool {
     let norm = crate::core::pathutil::normalize_tool_path(path);
     let Ok(mut store) = global().lock() else {
@@ -280,12 +282,14 @@ pub fn take_pending_escalation(path: &str) -> bool {
 }
 
 /// Process-global: is `mode` currently risky for files with this extension?
+#[must_use]
 pub fn is_risky_mode(path: &str, mode: &str) -> bool {
     let ext = ext_of(path);
     global().lock().is_ok_and(|s| s.is_risky(&ext, mode))
 }
 
 /// Snapshot for `ctx_metrics`: (risky pairs, per-pair stats, escalations served).
+#[must_use]
 pub fn metrics_snapshot() -> serde_json::Value {
     let Ok(store) = global().lock() else {
         return serde_json::json!({});

@@ -218,6 +218,7 @@ pub fn snapshot() -> Vec<(&'static Subsystem, Activity)> {
 }
 
 /// Render a human-readable cognition activity report.
+#[must_use]
 pub fn format_report() -> String {
     let snap = snapshot();
     let active = snap.iter().filter(|(_, a)| a.count > 0).count();
@@ -244,6 +245,7 @@ pub fn format_report() -> String {
 }
 
 /// Machine-readable variant for `--json`.
+#[must_use]
 pub fn snapshot_json() -> String {
     let map: HashMap<&str, Activity> = snapshot().into_iter().map(|(s, a)| (s.key, a)).collect();
     serde_json::to_string_pretty(&map).unwrap_or_else(|_| "{}".to_string())

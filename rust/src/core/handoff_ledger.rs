@@ -184,6 +184,7 @@ pub fn create_ledger(input: CreateLedgerInput) -> Result<(HandoffLedgerV1, PathB
     Ok((ledger, path))
 }
 
+#[must_use]
 pub fn list_ledgers() -> Vec<PathBuf> {
     let dir = handoffs_dir().ok();
     let Some(dir) = dir else {
@@ -207,6 +208,7 @@ pub fn load_ledger(path: &Path) -> Result<HandoffLedgerV1, String> {
     serde_json::from_str(&s).map_err(|e| format!("parse {}: {e}", path.display()))
 }
 
+#[must_use]
 pub fn compute_content_md5_for_ledger(ledger: &HandoffLedgerV1) -> String {
     ledger_content_md5(ledger)
 }
@@ -321,6 +323,7 @@ pub struct LoadedFileInfo {
 }
 
 impl HandoffPackage {
+    #[must_use]
     pub fn build(
         ledger: HandoffLedgerV1,
         intent: Option<&super::intent_engine::StructuredIntent>,
@@ -363,6 +366,7 @@ impl HandoffPackage {
         }
     }
 
+    #[must_use]
     pub fn format_compact(&self) -> String {
         let mut out = String::new();
 

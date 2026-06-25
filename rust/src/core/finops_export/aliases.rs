@@ -1,8 +1,8 @@
-//! Customer-side `repo_hash -> readable project name` mapping for FinOps
+//! Customer-side `repo_hash -> readable project name` mapping for `FinOps`
 //! showback (GL #668).
 //!
 //! The savings ledger only ever stores a **truncated repo hash** for a project
-//! (never a path or any content), so the FinOps export is privacy-preserving by
+//! (never a path or any content), so the `FinOps` export is privacy-preserving by
 //! construction. Enterprise chargeback, however, needs human-readable team /
 //! project names. This module resolves those names **at export time only**: the
 //! ledger, the signed batch and the hash chain are never touched, so the privacy
@@ -49,6 +49,7 @@ pub struct ProjectAliases {
 
 impl ProjectAliases {
     /// The canonical installed location (`<config_dir>/finops-aliases.toml`).
+    #[must_use]
     pub fn default_path() -> Option<PathBuf> {
         crate::core::paths::config_dir()
             .ok()

@@ -5,8 +5,8 @@
 //! the context pipeline.
 //!
 //! Configuration via lean-ctx config:
-//!   [providers.mcp_bridges]
-//!   my-kb = { url = "http://localhost:8080", description = "Internal KB" }
+//!   [`providers.mcp_bridges`]
+//!   my-kb = { url = "<http://localhost:8080>", description = "Internal KB" }
 
 use crate::core::providers::{ContextProvider, ProviderItem, ProviderParams, ProviderResult};
 
@@ -30,6 +30,7 @@ impl McpBridgeProvider {
     /// Leaks `id` and `display_name` strings — acceptable because providers
     /// are registered once at startup and live for the process lifetime
     /// (same pattern as `ConfigProvider`).
+    #[must_use]
     pub fn new(server_name: &str, server_url: &str) -> Self {
         let id: &'static str = crate::core::providers::intern(format!("mcp:{server_name}"));
         let display_name: &'static str =
@@ -46,6 +47,7 @@ impl McpBridgeProvider {
     }
 
     /// Create a stdio-based MCP Bridge provider.
+    #[must_use]
     pub fn new_stdio(server_name: &str, command: &str, args: &[String]) -> Self {
         let id: &'static str = crate::core::providers::intern(format!("mcp:{server_name}"));
         let display_name: &'static str =

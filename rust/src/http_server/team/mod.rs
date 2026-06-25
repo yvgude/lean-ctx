@@ -1414,7 +1414,7 @@ pub async fn serve_team(cfg: TeamServerConfig) -> Result<()> {
     if let Some(url) = &cfg.roi_webhook_url {
         super::roi_webhook::validate_webhook_url(url)
             .map_err(|e| anyhow!("invalid roiWebhookUrl in team config: {e}"))?;
-        super::roi_webhook::spawn_weekly_roi_webhook(state.clone(), url.clone());
+        let _ = super::roi_webhook::spawn_weekly_roi_webhook(state.clone(), url.clone());
         tracing::info!("team ROI webhook enabled (weekly)");
     }
 

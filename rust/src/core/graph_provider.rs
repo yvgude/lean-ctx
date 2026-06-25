@@ -16,8 +16,8 @@ pub struct SymbolInfo {
     pub is_exported: bool,
 }
 
-/// Normalize a property-graph edge-kind string back to the graph_index spelling
-/// when materializing a [`ProjectIndex`]. The mirror maps graph_index `import` →
+/// Normalize a property-graph edge-kind string back to the `graph_index` spelling
+/// when materializing a [`ProjectIndex`]. The mirror maps `graph_index` `import` →
 /// `EdgeKind::Imports`, which serializes as the plural `imports`; the legacy
 /// dependency consumers (`graph_index` BFS, the facade's index-backed
 /// `dependencies`/`dependents`, `ctx_graph`) filter on the singular `import`, so
@@ -270,7 +270,7 @@ impl GraphProvider {
                     from: e.from.clone(),
                     to: e.to.clone(),
                     kind: e.kind.clone(),
-                    weight: e.weight as f64,
+                    weight: f64::from(e.weight),
                 })
                 .collect(),
         }
@@ -342,12 +342,12 @@ impl GraphProvider {
     }
 
     /// Reconstruct a full [`ProjectIndex`] from this provider — the inverse of
-    /// the graph_index→PG mirror
+    /// the `graph_index→PG` mirror
     /// ([`populate_from_project_index`](super::property_graph::populate_from_project_index)).
     /// Lets the
     /// remaining legacy `ProjectIndex` consumers be sourced from the
-    /// PropertyGraph (parity-proven lossless, #682.3) so the redundant JSON
-    /// store can be retired (#696 phase C). For the GraphIndex backend it clones
+    /// `PropertyGraph` (parity-proven lossless, #682.3) so the redundant JSON
+    /// store can be retired (#696 phase C). For the `GraphIndex` backend it clones
     /// the index it already holds.
     pub fn materialize_project_index(&self, project_root: &str) -> ProjectIndex {
         if let GraphProvider::GraphIndex(i) = self {
@@ -408,12 +408,13 @@ impl GraphProvider {
         idx
     }
 
+    #[must_use]
     pub fn index_dir(project_root: &str) -> Option<std::path::PathBuf> {
         graph_index::ProjectIndex::index_dir(project_root)
     }
 
     /// Scored related files using multi-edge weights.
-    /// Falls back to unscored deps/dependents for GraphIndex backend.
+    /// Falls back to unscored deps/dependents for `GraphIndex` backend.
     pub fn related_files_scored(&self, file_path: &str, limit: usize) -> Vec<(String, f64)> {
         match self {
             GraphProvider::PropertyGraph(g) => {
@@ -438,8 +439,8 @@ impl GraphProvider {
 
 /// Open whichever graph is already populated on disk, **without** triggering any
 /// build, plus a flag telling the caller the property graph still wants a
-/// (re)build. Prefers a fully-populated PropertyGraph and falls back to the
-/// in-memory graph_index extractor while the PG is not yet populated (first run
+/// (re)build. Prefers a fully-populated `PropertyGraph` and falls back to the
+/// in-memory `graph_index` extractor while the PG is not yet populated (first run
 /// or just after a rebuild), flagging `needs_build` so the caller can warm the
 /// PG for the next call (#696 phase D: the `legacy` backend escape hatch was
 /// retired once PG-only persistence proved lossless in #682.3).
@@ -507,6 +508,7 @@ fn open_existing(project_root: &str) -> (Option<OpenGraphProvider>, bool) {
 /// `None` on this call when nothing is ready yet. Best-effort callers
 /// (dashboards, context gate, stats, `ctx_graph`) use this; callers that need a
 /// graph *right now* use [`open_or_build`], which builds synchronously instead.
+#[must_use]
 pub fn open_best_effort(project_root: &str) -> Option<OpenGraphProvider> {
     let (existing, needs_build) = open_existing(project_root);
     if needs_build {
@@ -555,12 +557,12 @@ fn trigger_lazy_graph_build(project_root: &str) {
     // Background build no longer needed — indexes are SQLite-backed.
 }
 
-/// Build the property graph from the proven graph_index extractor (#682.1).
+/// Build the property graph from the proven `graph_index` extractor (#682.1).
 ///
 /// Loads the current [`ProjectIndex`] (or scans if absent) and mirrors it into
 /// the SQLite store — files + `file_catalog`, symbols, and structural edges —
 /// then stamps `graph.meta.json`. Sourcing PG from the mature extractor
-/// guarantees PG ⊇ graph_index (so a later backend flip cannot lose data) and
+/// guarantees PG ⊇ `graph_index` (so a later backend flip cannot lose data) and
 /// populates the `file_catalog` that the `pg_populated` gate requires.
 ///
 /// Synchronous and self-contained in `core` (no `tools` dependency), so callers
@@ -581,6 +583,7 @@ pub fn build_property_graph(project_root: &str) -> anyhow::Result<()> {
     super::property_graph::mirror_index(project_root, &index)
 }
 
+#[must_use]
 pub fn open_or_build(project_root: &str) -> Option<OpenGraphProvider> {
     // Open via `open_existing` (not `open_best_effort`): we build synchronously
     // below, so we must NOT spawn the background indexer. Its worker holds the

@@ -1,6 +1,6 @@
 //! Provider caching awareness — helps LLM providers cache repeated context.
 //!
-//! Many LLM providers (Anthropic, OpenAI, Google) implement prefix caching:
+//! Many LLM providers (Anthropic, `OpenAI`, Google) implement prefix caching:
 //! if the beginning of a prompt matches a previous request, the provider
 //! can skip re-processing those tokens. This module helps lean-ctx structure
 //! output to maximize prefix cache hits.
@@ -45,6 +45,7 @@ pub struct ProviderCacheState {
 }
 
 impl ProviderCacheState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sent_hashes: HashMap::new(),
@@ -54,6 +55,7 @@ impl ProviderCacheState {
     }
 
     /// Check if a section has changed since last sent.
+    #[must_use]
     pub fn needs_update(&self, section: &CacheableSection) -> bool {
         match self.sent_hashes.get(&section.id) {
             Some(prev_hash) => prev_hash != &section.hash,
@@ -85,6 +87,7 @@ impl ProviderCacheState {
         result
     }
 
+    #[must_use]
     pub fn cache_hit_rate(&self) -> f64 {
         let total = self.cache_hits + self.cache_misses;
         if total == 0 {
@@ -107,6 +110,7 @@ impl Default for ProviderCacheState {
 }
 
 impl CacheableSection {
+    #[must_use]
     pub fn new(id: &str, content: String, priority: SectionPriority, stable: bool) -> Self {
         let hash = content_hash(&content);
         Self {
@@ -122,6 +126,7 @@ impl CacheableSection {
 /// Order sections for optimal prefix caching.
 /// Stable sections first (system, project structure, types),
 /// dynamic sections last (recent changes, current task).
+#[must_use]
 pub fn order_for_caching(mut sections: Vec<CacheableSection>) -> Vec<CacheableSection> {
     sections.sort_by(|a, b| {
         a.stable
@@ -133,6 +138,7 @@ pub fn order_for_caching(mut sections: Vec<CacheableSection>) -> Vec<CacheableSe
 }
 
 /// Render sections with cache boundary markers.
+#[must_use]
 pub fn render_with_cache_hints(sections: &[CacheableSection]) -> String {
     let mut output = String::new();
     let mut last_stable = true;

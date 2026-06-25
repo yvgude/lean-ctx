@@ -19,6 +19,7 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             tools: HashMap::new(),
@@ -30,6 +31,7 @@ impl ToolRegistry {
         self.tools.insert(name, Arc::from(tool));
     }
 
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<&dyn McpTool> {
         self.tools.get(name).map(|t| &**t)
     }
@@ -39,16 +41,19 @@ impl ToolRegistry {
     /// Unlike [`get`](Self::get), the returned `Arc` can be moved into
     /// `spawn_blocking`, so the dispatch layer can execute the (synchronous)
     /// handler off the async core workers under a watchdog (#271).
+    #[must_use]
     pub fn get_arc(&self, name: &str) -> Option<Arc<dyn McpTool>> {
         self.tools.get(name).cloned()
     }
 
+    #[must_use]
     pub fn contains(&self, name: &str) -> bool {
         self.tools.contains_key(name)
     }
 
     /// Returns MCP Tool definitions for all registered tools.
     /// Used by `list_tools` to expose schemas to clients.
+    #[must_use]
     pub fn tool_defs(&self) -> Vec<Tool> {
         let mut defs: Vec<Tool> = self.tools.values().map(|t| t.tool_def()).collect();
         defs.sort_by(|a, b| a.name.as_ref().cmp(b.name.as_ref()));
@@ -74,6 +79,7 @@ impl ToolRegistry {
 
     /// Returns tool definitions filtered by a tool profile.
     /// Only includes tools whose name is enabled by the given profile.
+    #[must_use]
     pub fn profile_tool_defs(
         &self,
         profile: &crate::core::tool_profiles::ToolProfile,
@@ -88,14 +94,17 @@ impl ToolRegistry {
         defs
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.tools.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.tools.is_empty()
     }
 
+    #[must_use]
     pub fn names(&self) -> Vec<&'static str> {
         let mut names: Vec<_> = self.tools.keys().copied().collect();
         names.sort_unstable();
@@ -112,12 +121,14 @@ impl Default for ToolRegistry {
 /// Number of registered MCP tools — the single source of truth for the
 /// "N MCP tools" count shown in `--help`, the README, and the feature catalog.
 /// Deriving it here means the count can never drift from the actual registry.
+#[must_use]
 pub fn tool_count() -> usize {
     build_registry().len()
 }
 
 /// Register all trait-based tools. Called once during server startup.
 /// New tools are added here as their `McpTool` implementation lands.
+#[must_use]
 pub fn build_registry() -> ToolRegistry {
     let mut registry = ToolRegistry::new();
 

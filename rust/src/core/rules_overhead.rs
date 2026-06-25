@@ -34,6 +34,7 @@ pub struct RulesFileCost {
 /// starts at a line containing `<!-- lean-ctx` or the canonical rules marker
 /// and ends at `<!-- /lean-ctx... -->` (inclusive). Files without markers
 /// contribute 0 lean-ctx tokens (they still cost their full size).
+#[must_use]
 pub fn lean_ctx_block_tokens(content: &str) -> usize {
     let mut tokens = 0;
     let mut in_block = false;
@@ -148,6 +149,7 @@ pub fn collect_rules_files(home: &Path, project: &Path) -> Vec<RulesFileCost> {
 /// Pointer-only files (a thinned `AGENTS.md` / `.cursorrules` that merely
 /// cross-references the canonical source) are not counted: they exist precisely
 /// to avoid duplication and cost only a handful of tokens (#684).
+#[must_use]
 pub fn duplicate_clients(files: &[RulesFileCost]) -> Vec<(String, usize)> {
     let mut counts: std::collections::BTreeMap<&'static str, usize> =
         std::collections::BTreeMap::new();

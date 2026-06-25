@@ -1,4 +1,4 @@
-//! Advanced config sections (proxy, memory subsystems, custom_aliases, setup, llm).
+//! Advanced config sections (proxy, memory subsystems, `custom_aliases`, setup, llm).
 //! Split out of `schema/mod.rs`; `use super::*` re-imports helpers + `SectionSchema`.
 
 #[allow(clippy::wildcard_imports)]

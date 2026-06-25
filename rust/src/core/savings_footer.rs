@@ -22,11 +22,13 @@ pub struct SavingsInfo<'a> {
 pub struct ModeGuard;
 
 impl ModeGuard {
+    #[must_use]
     pub fn new(mode: &str) -> Self {
         CURRENT_MODE.with(|m| *m.borrow_mut() = Some(mode.to_string()));
         Self
     }
 
+    #[must_use]
     pub fn with_detail(mode: &str, detail: &str) -> Self {
         CURRENT_MODE.with(|m| *m.borrow_mut() = Some(mode.to_string()));
         CURRENT_DETAIL.with(|d| *d.borrow_mut() = Some(detail.to_string()));
@@ -107,6 +109,7 @@ fn is_ultra_suppressed() -> bool {
     matches!(level, super::config::CompressionLevel::Max)
 }
 
+#[must_use]
 pub fn format_footer(info: &SavingsInfo<'_>) -> String {
     if !super::protocol::savings_footer_visible() {
         return String::new();
@@ -154,6 +157,7 @@ fn format_footer_inner(info: &SavingsInfo<'_>) -> String {
     format!("\u{2500}\u{2500}\u{2500} {body} \u{2500}\u{2500}\u{2500}")
 }
 
+#[must_use]
 pub fn format_footer_basic(original: usize, compressed: usize) -> String {
     let mode = current_mode();
     let detail = current_detail();
@@ -165,6 +169,7 @@ pub fn format_footer_basic(original: usize, compressed: usize) -> String {
     })
 }
 
+#[must_use]
 pub fn append_footer(output: &str, info: &SavingsInfo<'_>) -> String {
     let footer = format_footer(info);
     if footer.is_empty() {
@@ -174,6 +179,7 @@ pub fn append_footer(output: &str, info: &SavingsInfo<'_>) -> String {
     }
 }
 
+#[must_use]
 pub fn append_footer_basic(output: &str, original: usize, compressed: usize) -> String {
     let footer = format_footer_basic(original, compressed);
     if footer.is_empty() {

@@ -35,6 +35,7 @@ pub struct DriftReport {
     pub diff: Option<String>,
 }
 
+#[must_use]
 pub fn detect_drift(home: &Path, _config: &RulesConfig) -> Vec<DriftReport> {
     let statuses = crate::rules_inject::collect_rules_status(home);
     let source_shared = crate::rules_inject::rules_shared_content();

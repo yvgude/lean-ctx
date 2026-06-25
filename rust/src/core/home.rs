@@ -3,6 +3,7 @@ use std::path::PathBuf;
 /// Resolve the user's home directory in a way that is:
 /// - Override-friendly for CI/tests (HOME/USERPROFILE)
 /// - Still correct in normal interactive installs (fallback to `dirs::home_dir()`)
+#[must_use]
 pub fn resolve_home_dir() -> Option<PathBuf> {
     if let Ok(home) = std::env::var("HOME") {
         let trimmed = home.trim();
@@ -33,6 +34,7 @@ pub fn resolve_home_dir() -> Option<PathBuf> {
 /// Resolve the Codex config directory.
 /// Respects `CODEX_HOME` env var (official Codex CLI feature).
 /// Falls back to `~/.codex` when unset or empty.
+#[must_use]
 pub fn resolve_codex_dir() -> Option<PathBuf> {
     if let Ok(val) = std::env::var("CODEX_HOME") {
         let trimmed = val.trim();

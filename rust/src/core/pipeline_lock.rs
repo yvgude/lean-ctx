@@ -1,6 +1,6 @@
 //! Pipeline lock for preventing concurrent runs, and cancellation token.
 //!
-//! ## PipelineLock
+//! ## `PipelineLock`
 //!
 //! File-based lock using `flock`-backed advisory locking (via `fs2`). Creates
 //! `<data_dir>/index.lock` with the PID of the owning process. If the owning
@@ -8,7 +8,7 @@
 //! per-fd), so [`PipelineLock::try_acquire`] can detect the stale PID and
 //! override it.
 //!
-//! ## CancelToken
+//! ## `CancelToken`
 //!
 //! [`CancelToken`] is a clone‑able, thread‑safe signalling flag backed by
 //! `Arc<AtomicBool>`.  `cancel()` is idempotent — workers check
@@ -198,6 +198,7 @@ pub struct CancelToken {
 
 impl CancelToken {
     /// Create a new, uncancelled token.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             cancelled: Arc::new(AtomicBool::new(false)),
@@ -210,11 +211,13 @@ impl CancelToken {
     }
 
     /// Returns `true` if [`cancel`](Self::cancel) has been called.
+    #[must_use]
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
     }
 
     /// Convenience: `true` when **not** cancelled.
+    #[must_use]
     pub fn is_uncancelled(&self) -> bool {
         !self.cancelled.load(Ordering::SeqCst)
     }

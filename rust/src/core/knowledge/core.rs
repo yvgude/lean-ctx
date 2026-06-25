@@ -28,6 +28,7 @@ impl ProjectKnowledge {
         crate::core::memory_lifecycle::run_lifecycle(&mut self.facts, &cfg)
     }
 
+    #[must_use]
     pub fn new(project_root: &str) -> Self {
         Self {
             project_root: project_root.to_string(),
@@ -40,6 +41,7 @@ impl ProjectKnowledge {
         }
     }
 
+    #[must_use]
     pub fn check_contradiction(
         &self,
         category: &str,
@@ -201,7 +203,7 @@ impl ProjectKnowledge {
         } else {
             "remember"
         };
-        crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
+        let _ = crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
             category: category.to_string(),
             key: key.to_string(),
             action: action.to_string(),

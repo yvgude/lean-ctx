@@ -43,7 +43,7 @@ pub fn print_logo_animated_themed(t: &crate::core::theme::Theme) {
             }
         }
 
-        let wave_offset = frame as f64 / frames as f64;
+        let wave_offset = f64::from(frame) / f64::from(frames);
 
         for (i, line) in LOGO.iter().enumerate() {
             let chars: Vec<char> = line.chars().collect();
@@ -229,7 +229,7 @@ pub fn spinner_done(msg: &str) {
 
 /// Animated dashboard intro: logo wave, then KPI count-up, then section-by-section reveal.
 /// `header_box` is the pre-rendered KPI box (with placeholder values for frame 0).
-/// `kpi_values` are (final_value, width) for the 4 KPI counters.
+/// `kpi_values` are (`final_value`, width) for the 4 KPI counters.
 /// `sections` are the remaining dashboard sections to reveal sequentially.
 pub fn animate_dashboard_intro(
     t: &crate::core::theme::Theme,

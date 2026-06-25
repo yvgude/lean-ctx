@@ -73,6 +73,7 @@ pub struct RouteInputs {
     pub pressure_remaining_tokens: usize,
 }
 
+#[must_use]
 pub fn route_v1(query: &str) -> IntentRouteV1 {
     let budgets = crate::core::budget_tracker::BudgetTracker::global().check();
     let ledger = crate::core::context_ledger::ContextLedger::load();
@@ -245,6 +246,7 @@ fn cap_to(tier: ModelTier, cap: ModelTier) -> ModelTier {
     }
 }
 
+#[must_use]
 pub fn read_mode_for_tier(tier: ModelTier, task_type: TaskType) -> String {
     // Editing tasks need the real, complete file — never an abbreviated,
     // signature-only, or identifier-obfuscated view — otherwise the agent is

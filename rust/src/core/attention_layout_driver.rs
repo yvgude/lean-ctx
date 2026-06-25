@@ -8,6 +8,7 @@ pub struct LayoutApplyResultV1 {
     pub reason_code: String,
 }
 
+#[must_use]
 pub fn maybe_reorder_for_attention(
     content: &str,
     task_keywords: &[String],

@@ -216,7 +216,7 @@ fn check_pipe_to_bare_interpreter(command: &str, strict: bool) -> Result<(), Str
     Ok(())
 }
 
-/// For empty allowlists: still enforce UNCONDITIONAL_BLOCKED commands.
+/// For empty allowlists: still enforce `UNCONDITIONAL_BLOCKED` commands.
 fn check_unconditional_blocked_only(command: &str) -> Result<(), String> {
     let segments = extract_all_commands(command);
     for seg in &segments {
@@ -238,6 +238,7 @@ fn check_unconditional_blocked_only(command: &str) -> Result<(), String> {
 /// Tokenize a shell command segment respecting single/double quotes and backslash escapes.
 /// Returns tokens with outer quotes stripped, matching how the shell would parse them.
 /// E.g. `git -C "Program Files" status` → `["git", "-C", "Program Files", "status"]`
+#[must_use]
 pub fn shell_tokenize(input: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
@@ -1151,6 +1152,7 @@ fn allowlist_block_message(base: &str) -> String {
 }
 
 /// Public accessor for extracting all command segments.
+#[must_use]
 pub fn extract_all_commands_pub(command: &str) -> Vec<String> {
     extract_all_commands(command)
 }
@@ -1165,6 +1167,7 @@ pub fn effective_allowlist_pub() -> Vec<String> {
 }
 
 // Legacy compat: single-segment extraction (used by other callers)
+#[must_use]
 pub fn extract_base_command(command: &str) -> String {
     let first_seg = split_on_operators(command)
         .into_iter()

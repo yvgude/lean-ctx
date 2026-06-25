@@ -17,8 +17,9 @@ use serde_json::{Value, json};
 ///
 /// Only the seven governance-relevant kinds standardized in the OCP
 /// event-type registry are exported; product telemetry returns `None`.
-/// (Internal `EventKind` tags are PascalCase; the wire format is
-/// snake_case — that mapping is exactly why this adapter exists.)
+/// (Internal `EventKind` tags are `PascalCase`; the wire format is
+/// `snake_case` — that mapping is exactly why this adapter exists.)
+#[must_use]
 pub fn export_event(event: &LeanCtxEvent) -> Option<Value> {
     let kind = export_event_kind(&event.kind)?;
     Some(json!({
@@ -108,6 +109,7 @@ fn export_event_kind(kind: &EventKind) -> Option<Value> {
 }
 
 /// OCP Part 2 grant set for a role: which capabilities the subject holds.
+#[must_use]
 pub fn capability_grant_set(role_name: &str) -> Value {
     let mut caps: Vec<&'static str> = role_capabilities(role_name)
         .into_iter()

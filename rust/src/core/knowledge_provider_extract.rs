@@ -22,7 +22,8 @@ pub struct ExtractedFact {
     pub confidence: f32,
 }
 
-/// Extract knowledge facts from a set of ContentChunks.
+/// Extract knowledge facts from a set of `ContentChunks`.
+#[must_use]
 pub fn extract_facts(chunks: &[ContentChunk]) -> Vec<ExtractedFact> {
     let mut facts = Vec::new();
 

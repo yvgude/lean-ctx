@@ -3,7 +3,8 @@ use crate::core::signatures::{Signature, extract_signatures};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
-/// Thin redirect: delegates to ctx_read mode=signatures with optional kind filter.
+/// Thin redirect: delegates to `ctx_read` mode=signatures with optional kind filter.
+#[must_use]
 pub fn handle(path: &str, kind_filter: Option<&str>) -> (String, usize) {
     let p = std::path::Path::new(path);
     if p.symlink_metadata()
@@ -55,7 +56,7 @@ pub fn handle(path: &str, kind_filter: Option<&str>) -> (String, usize) {
     (format!("{outline}\n{savings}"), full_tokens)
 }
 
-/// Also available via ctx_read mode=signatures. This adapts to the SessionCache path.
+/// Also available via `ctx_read` mode=signatures. This adapts to the `SessionCache` path.
 pub fn handle_via_read(
     cache: &mut SessionCache,
     path: &str,
@@ -69,6 +70,7 @@ pub fn handle_via_read(
     result
 }
 
+#[must_use]
 pub fn filter_by_kind<'a>(sigs: &'a [Signature], kind: Option<&str>) -> Vec<&'a Signature> {
     match kind {
         None | Some("all") => sigs.iter().collect(),

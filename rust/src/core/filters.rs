@@ -69,6 +69,7 @@ impl FilterEngine {
     }
 
     /// Applies the first matching filter rule to the command output.
+    #[must_use]
     pub fn apply(&self, command: &str, output: &str) -> Option<String> {
         let cmd_lower = command.to_ascii_lowercase();
 
@@ -105,6 +106,7 @@ impl FilterEngine {
     }
 
     /// Returns a human-readable summary of each loaded filter rule.
+    #[must_use]
     pub fn list_rules(&self) -> Vec<String> {
         self.rules
             .iter()
@@ -217,6 +219,7 @@ pub fn create_example_filter() -> Result<String, String> {
 }
 
 /// Applies aggressive compression (strips comments, blank lines, normalizes indent).
+#[must_use]
 pub fn aggressive_filter(content: &str) -> String {
     crate::core::compressor::aggressive_compress(content, None)
 }

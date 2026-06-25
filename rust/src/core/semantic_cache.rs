@@ -148,12 +148,13 @@ impl SemanticCacheIndex {
         results
     }
 
+    #[must_use]
     pub fn suggest_warmup(&self, top_n: usize) -> Vec<String> {
         let mut ranked: Vec<(&SemanticCacheEntry, f64)> = self
             .entries
             .iter()
             .map(|e| {
-                let score = e.access_count as f64 * 0.6 + e.token_count as f64 * 0.0001;
+                let score = f64::from(e.access_count) * 0.6 + e.token_count as f64 * 0.0001;
                 (e, score)
             })
             .collect();
@@ -195,6 +196,7 @@ impl SemanticCacheIndex {
         std::fs::write(&path, json).map_err(|e| e.to_string())
     }
 
+    #[must_use]
     pub fn load(project_root: &str) -> Option<Self> {
         let path = index_path(project_root);
         let content = std::fs::read_to_string(&path)
@@ -216,6 +218,7 @@ impl SemanticCacheIndex {
         Some(index)
     }
 
+    #[must_use]
     pub fn load_or_create(project_root: &str) -> Self {
         Self::load(project_root).unwrap_or_default()
     }

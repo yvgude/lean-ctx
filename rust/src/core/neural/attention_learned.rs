@@ -12,7 +12,7 @@ pub struct LearnedAttention {
     breakpoints: Vec<(f64, f64)>,
 }
 
-/// Empirically measured attention curve from TinyLlama 1.1B on 106 Rust files.
+/// Empirically measured attention curve from `TinyLlama` 1.1B on 106 Rust files.
 /// Lab Experiment B (2026-04-02): NOT a U-curve (Liu et al.) but an L-curve —
 /// massive attention at position 0.00, rapid decay, no recovery at end.
 /// Normalized to [0, 1] from raw values where pos 0.0 had 20x the attention of mid-file.
@@ -62,6 +62,7 @@ impl LearnedAttention {
         Self::with_defaults()
     }
 
+    #[must_use]
     pub fn with_defaults() -> Self {
         Self {
             breakpoints: DEFAULT_BREAKPOINTS.to_vec(),
@@ -79,6 +80,7 @@ impl LearnedAttention {
 
     /// Compute attention weight for a normalized position [0.0, 1.0].
     /// Uses piecewise-linear interpolation between breakpoints.
+    #[must_use]
     pub fn weight(&self, position: f64) -> f64 {
         let pos = position.clamp(0.0, 1.0);
 
@@ -112,6 +114,7 @@ impl LearnedAttention {
         self.breakpoints = new_breakpoints;
     }
 
+    #[must_use]
     pub fn breakpoint_count(&self) -> usize {
         self.breakpoints.len()
     }

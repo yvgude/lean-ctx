@@ -279,7 +279,7 @@ pub fn handle(
 }
 
 /// Boltzmann distribution for token budget allocation across files.
-/// p(file_i) = exp(score_i / T) / Z, then budget_i = total * p(file_i)
+/// `p(file_i)` = `exp(score_i` / T) / Z, then `budget_i` = total * `p(file_i)`
 fn boltzmann_allocate(
     candidates: &[&crate::core::task_relevance::RelevanceScore],
     total_budget: usize,

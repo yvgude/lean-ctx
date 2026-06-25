@@ -55,10 +55,12 @@ pub struct EvidenceItem {
 }
 
 impl WorkflowSpec {
+    #[must_use]
     pub fn state(&self, name: &str) -> Option<&StateSpec> {
         self.states.iter().find(|s| s.name == name)
     }
 
+    #[must_use]
     pub fn builtin_plan_code_test() -> Self {
         Self {
             name: "plan_code_test".to_string(),
@@ -157,6 +159,7 @@ impl WorkflowSpec {
 }
 
 impl WorkflowRun {
+    #[must_use]
     pub fn new(spec: WorkflowSpec) -> Self {
         let now = Utc::now();
         let current = spec.initial.clone();

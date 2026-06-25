@@ -284,6 +284,7 @@ impl GotchaStore {
 
     // -- Universal Gotchas --------------------------------------------------
 
+    #[must_use]
     pub fn extract_universal(&self) -> Vec<Gotcha> {
         self.gotchas
             .iter()
@@ -298,6 +299,7 @@ impl GotchaStore {
 
     // -- Relevance scoring --------------------------------------------------
 
+    #[must_use]
     pub fn top_relevant(&self, files_touched: &[String], limit: usize) -> Vec<&Gotcha> {
         let mut scored: Vec<(&Gotcha, f32)> = self
             .gotchas
@@ -310,6 +312,7 @@ impl GotchaStore {
         scored.into_iter().take(limit).map(|(g, _)| g).collect()
     }
 
+    #[must_use]
     pub fn format_injection_block(&self, files_touched: &[String]) -> String {
         let relevant = self.top_relevant(files_touched, 7);
         if relevant.is_empty() {
@@ -365,6 +368,7 @@ impl GotchaStore {
 
     // -- CLI ----------------------------------------------------------------
 
+    #[must_use]
     pub fn format_list(&self) -> String {
         if self.gotchas.is_empty() {
             return "No gotchas recorded for this project.".to_string();
@@ -421,6 +425,7 @@ impl GotchaStore {
 // Relevance scoring
 // ---------------------------------------------------------------------------
 
+#[must_use]
 pub fn relevance_score(gotcha: &Gotcha, files_touched: &[String]) -> f32 {
     let mut score: f32 = 0.0;
 

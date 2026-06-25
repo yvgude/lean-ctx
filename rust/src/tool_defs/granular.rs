@@ -11,6 +11,7 @@ use super::tool_def;
 /// trait-based `McpTool::tool_def()` schemas. `build_registry()` is a pure,
 /// cheap-to-build function (registers unit structs only), so calling it here is
 /// inexpensive and keeps schemas in lock-step (#141).
+#[must_use]
 pub fn granular_tool_defs() -> Vec<Tool> {
     crate::server::registry::build_registry().tool_defs()
 }
@@ -20,6 +21,7 @@ pub fn granular_tool_defs() -> Vec<Tool> {
 /// via an `action` argument. This is an intentionally distinct surface (the
 /// `ctx` meta-tool does not exist as a standalone registry entry), so it is
 /// maintained here rather than derived from the registry.
+#[must_use]
 pub fn unified_tool_defs() -> Vec<Tool> {
     vec![
         tool_def(

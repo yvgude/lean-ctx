@@ -27,11 +27,12 @@ pub struct ConsolidationResult {
     pub cache_entries_stored: usize,
 }
 
-/// Consolidate a batch of ContentChunks into all long-term stores.
+/// Consolidate a batch of `ContentChunks` into all long-term stores.
 ///
 /// This is the main entry point. It does NOT perform I/O itself — it returns
 /// the artifacts that the caller should persist. This keeps the consolidation
 /// logic pure and testable.
+#[must_use]
 pub fn consolidate(chunks: &[ContentChunk]) -> ConsolidationArtifacts {
     // #8 Immune screening: external provider data is "non-self" and is screened
     // for prompt-injection / poisoning before it can become a fact, edge, or
@@ -99,6 +100,7 @@ pub struct ConsolidationArtifacts {
 }
 
 impl ConsolidationArtifacts {
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.bm25_chunks.is_empty()
             && self.edges.is_empty()
@@ -106,6 +108,7 @@ impl ConsolidationArtifacts {
             && self.cache_entries.is_empty()
     }
 
+    #[must_use]
     pub fn summary(&self) -> ConsolidationResult {
         ConsolidationResult {
             chunks_indexed: self.bm25_chunks.iter().filter(|c| c.is_external()).count(),
@@ -129,6 +132,7 @@ pub struct CacheableProviderResult {
 /// This function performs the actual side effects: writing to BM25, graph,
 /// knowledge, and session cache. Designed to be called from a background
 /// thread or after a provider query returns.
+#[must_use]
 pub fn apply_artifacts(
     artifacts: &ConsolidationArtifacts,
     bm25: Option<&mut crate::core::chunk_data::ChunkData>,
@@ -138,6 +142,7 @@ pub fn apply_artifacts(
     apply_artifacts_with_pg(artifacts, bm25, graph_edges, session_cache, None)
 }
 
+#[must_use]
 pub fn apply_artifacts_with_pg(
     artifacts: &ConsolidationArtifacts,
     bm25: Option<&mut crate::core::chunk_data::ChunkData>,

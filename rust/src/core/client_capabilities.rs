@@ -26,6 +26,7 @@ impl Default for ClientMcpCapabilities {
 }
 
 impl ClientMcpCapabilities {
+    #[must_use]
     pub fn detect(client_name: &str) -> Self {
         let hint = std::env::var("LEAN_CTX_CLIENT_HINT").ok();
         Self::detect_with_hint(client_name, hint.as_deref())
@@ -109,6 +110,7 @@ impl ClientMcpCapabilities {
         }
     }
 
+    #[must_use]
     pub fn tier(&self) -> u8 {
         let score = [
             self.resources,
@@ -129,6 +131,7 @@ impl ClientMcpCapabilities {
         }
     }
 
+    #[must_use]
     pub fn format_summary(&self) -> String {
         let features: Vec<&str> = [
             ("resources", self.resources),
@@ -200,6 +203,7 @@ pub fn set_detected(caps: &ClientMcpCapabilities) {
     persist_to_disk(caps);
 }
 
+#[must_use]
 pub fn current() -> ClientMcpCapabilities {
     global().lock().map(|g| g.clone()).unwrap_or_default()
 }

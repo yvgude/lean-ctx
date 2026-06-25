@@ -284,7 +284,7 @@ fn publish_report(
 
 /// Records the card as the single local entry for its period: stale cards for the same period
 /// with a different id are retired server-side (cleaning up any pre-upsert duplicates), and the
-/// edit_token is preserved across signed re-publishes (the server returns it only on insert).
+/// `edit_token` is preserved across signed re-publishes (the server returns it only on insert).
 fn record_published(
     card: &cloud_client::PublishedCard,
     period: &str,

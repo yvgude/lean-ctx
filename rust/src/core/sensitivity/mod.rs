@@ -42,6 +42,7 @@ pub enum SensitivityLevel {
 }
 
 impl SensitivityLevel {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             SensitivityLevel::Public => "public",
@@ -53,6 +54,7 @@ impl SensitivityLevel {
 
     /// Tolerant parse from a config/env string. Returns `None` on unknown input
     /// so callers can fall back to the default without panicking.
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "public" | "none" | "" => Some(SensitivityLevel::Public),
@@ -76,6 +78,7 @@ pub enum FloorAction {
 }
 
 impl FloorAction {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             FloorAction::Redact => "redact",
@@ -113,6 +116,7 @@ impl Default for SensitivityConfig {
 impl SensitivityConfig {
     /// Effective enabled flag, honoring the `LEAN_CTX_SENSITIVITY` env override
     /// (`0|false|off` disables, anything else enables).
+    #[must_use]
     pub fn enabled_effective(&self) -> bool {
         if let Ok(v) = std::env::var("LEAN_CTX_SENSITIVITY") {
             return !matches!(v.trim(), "0" | "false" | "off");
@@ -140,6 +144,7 @@ pub enum Enforced {
 
 impl Enforced {
     /// The text to actually emit, regardless of variant.
+    #[must_use]
     pub fn into_text(self) -> String {
         match self {
             Enforced::Pass(t) => t,
@@ -149,6 +154,7 @@ impl Enforced {
     }
 
     /// True if the floor changed the content.
+    #[must_use]
     pub fn was_enforced(&self) -> bool {
         !matches!(self, Enforced::Pass(_))
     }
@@ -158,6 +164,7 @@ impl Enforced {
 ///
 /// `path` is an optional source hint used for path-based classification.
 /// Returns [`Enforced::Pass`] verbatim when disabled or below the floor.
+#[must_use]
 pub fn enforce_text(text: String, path: Option<&Path>, cfg: &SensitivityConfig) -> Enforced {
     if !cfg.enabled_effective() {
         return Enforced::Pass(text);
@@ -188,6 +195,7 @@ pub fn enforce_text(text: String, path: Option<&Path>, cfg: &SensitivityConfig) 
 /// Decide whether `fact_level` is blocked by the floor. Used for structured
 /// items (knowledge facts) where the level is known/stored rather than derived
 /// from free text. No-op (never blocked) when disabled.
+#[must_use]
 pub fn floor_blocks(fact_level: SensitivityLevel, cfg: &SensitivityConfig) -> bool {
     cfg.enabled_effective() && fact_level >= cfg.policy_floor
 }

@@ -79,6 +79,7 @@ impl LshConfig {
     ///
     /// For each plane: `dot = sum(vec[d] * plane[plane_idx * dim + d])`.
     /// The sign bit is `(dot >= 0) as u64`, shifted to position `plane_idx`.
+    #[must_use]
     pub fn sign(&self, vec: &[f32]) -> Signature {
         debug_assert_eq!(vec.len(), self.dim, "vector dimension mismatch");
         let mut bits: u64 = 0;
@@ -98,9 +99,10 @@ impl LshConfig {
 
     /// Compute LSH signature for a sparse vector (position, value pairs).
     ///
-    /// Only iterates over non-zero entries, making this O(nnz × n_planes)
-    /// instead of O(dim × n_planes). For RiVector with 8 non-zeros and
+    /// Only iterates over non-zero entries, making this O(nnz × `n_planes`)
+    /// instead of O(dim × `n_planes`). For `RiVector` with 8 non-zeros and
     /// 64 planes, this is 96× fewer multiply-adds vs. `sign({dense})`.
+    #[must_use]
     pub fn sign_sparse(&self, positions: &[usize], values: &[f32], nnz: usize) -> Signature {
         let mut bits: u64 = 0;
         let total_planes = self.bands * self.rows;
@@ -122,6 +124,7 @@ impl LshConfig {
     /// Bits for band `b` are the `rows` bits starting at position `b * rows`.
     /// Returns a `u64` with those bits packed: for each row `r` in the band,
     /// if bit `(b * rows + r)` is set, adds `(1 << r)` to the result.
+    #[must_use]
     pub fn band_index(&self, sig: &Signature, band: usize) -> u64 {
         let shift = band * self.rows;
         let mask = (1u64 << self.rows) - 1;
@@ -161,6 +164,7 @@ pub struct CandidateTable {
 
 impl CandidateTable {
     /// Create a new table with the given number of bands.
+    #[must_use]
     pub fn new(bands: usize) -> Self {
         let mut bands_vec = Vec::with_capacity(bands);
         for _ in 0..bands {
@@ -175,6 +179,7 @@ impl CandidateTable {
     }
 
     /// Collect candidate indices from all bands, deduplicated, up to `max`.
+    #[must_use]
     pub fn candidates(&self, lsh: &LshConfig, sig: &Signature, max: usize) -> Vec<usize> {
         let mut seen = HashSet::new();
         let mut result = Vec::new();

@@ -44,6 +44,7 @@ impl GitHubConfig {
         })
     }
 
+    #[must_use]
     pub fn repo_slug(&self) -> Option<String> {
         match (&self.owner, &self.repo) {
             (Some(o), Some(r)) => Some(format!("{o}/{r}")),
@@ -323,6 +324,7 @@ pub struct GitHubProvider {
 }
 
 impl GitHubProvider {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             config: GitHubConfig::from_env(),

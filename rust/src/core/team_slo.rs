@@ -167,6 +167,7 @@ pub struct TeamSloSnapshot {
 impl TeamSloSnapshot {
     /// Prometheus text exposition (format 0.0.4) under the `leanctx_team_*`
     /// namespace, scrapeable by any Prometheus-compatible agent.
+    #[must_use]
     pub fn to_prometheus(&self) -> String {
         let mut out = String::with_capacity(640);
         let mut gauge = |name: &str, help: &str, value: f64| {

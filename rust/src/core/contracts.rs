@@ -27,12 +27,14 @@ pub const PACKAGE_EXTENSION: &str = "ctxpkg";
 pub const LEGACY_PACKAGE_EXTENSION: &str = "lctxpkg";
 pub const MAX_PACKAGE_FILE_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
 
+#[must_use]
 pub fn is_package_file(path: &std::path::Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .is_some_and(|ext| ext == PACKAGE_EXTENSION || ext == LEGACY_PACKAGE_EXTENSION)
 }
 
+#[must_use]
 pub fn default_package_filename(name: &str, version: &str) -> String {
     format!("{name}-{version}.{PACKAGE_EXTENSION}")
 }
@@ -60,6 +62,7 @@ pub enum ContractStatus {
 }
 
 impl ContractStatus {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             ContractStatus::Frozen => "frozen",
@@ -84,6 +87,7 @@ pub struct ContractDoc {
 /// source of truth for the stability matrix. `tests/contracts_frozen.rs`
 /// asserts that every file in the directory is listed here (no contract can
 /// stay unclassified) and that frozen docs never change.
+#[must_use]
 pub fn contract_docs() -> Vec<ContractDoc> {
     use ContractStatus::{Experimental, Frozen, Stable};
     let doc = |id, doc_file, version, status| ContractDoc {
@@ -241,6 +245,7 @@ pub fn contract_docs() -> Vec<ContractDoc> {
 
 /// Contract-id → stability status, exported through `/v1/capabilities` so
 /// clients can verify compatibility before relying on a surface (GL #394).
+#[must_use]
 pub fn status_kv() -> BTreeMap<&'static str, &'static str> {
     contract_docs()
         .into_iter()
@@ -248,6 +253,7 @@ pub fn status_kv() -> BTreeMap<&'static str, &'static str> {
         .collect()
 }
 
+#[must_use]
 pub fn versions_kv() -> BTreeMap<&'static str, u32> {
     BTreeMap::from([
         (

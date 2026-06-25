@@ -46,10 +46,10 @@ pub struct SessionState {
     #[serde(default)]
     pub wakeup_manifest: Vec<ManifestEntry>,
     /// ACE delta playbook (#541): incremental, stable-ID checkpoint entries —
-    /// grown by ctx_compress, never rewritten (anti context-collapse).
+    /// grown by `ctx_compress`, never rewritten (anti context-collapse).
     #[serde(default)]
     pub playbook: super::playbook::Playbook,
-    /// Last ctx_semantic_search query (#542): fallback query source for
+    /// Last `ctx_semantic_search` query (#542): fallback query source for
     /// query-conditioned IB compression when no explicit task is set.
     #[serde(default)]
     pub last_semantic_query: Option<String>,

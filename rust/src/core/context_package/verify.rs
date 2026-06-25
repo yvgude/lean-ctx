@@ -145,6 +145,7 @@ pub enum CheckOutcome {
 }
 
 impl CheckOutcome {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Pass => "pass",
@@ -168,6 +169,7 @@ pub struct VerifyReport {
 }
 
 impl VerifyReport {
+    #[must_use]
     pub fn valid(&self) -> bool {
         self.errors.is_empty()
     }
@@ -192,6 +194,7 @@ fn sha256_hex(data: &[u8]) -> String {
 }
 
 /// Verify a `.ctxpkg` document without installing anything.
+#[must_use]
 pub fn verify_package_text(doc: &str) -> VerifyReport {
     let value: serde_json::Value = match serde_json::from_str(doc) {
         Ok(v) => v,

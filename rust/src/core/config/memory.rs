@@ -16,6 +16,7 @@ pub enum MemoryCleanup {
 }
 
 impl MemoryCleanup {
+    #[must_use]
     pub fn from_env() -> Option<Self> {
         std::env::var("LEAN_CTX_MEMORY_CLEANUP").ok().and_then(|v| {
             match v.trim().to_lowercase().as_str() {
@@ -26,6 +27,7 @@ impl MemoryCleanup {
         })
     }
 
+    #[must_use]
     pub fn effective(config: &Config) -> Self {
         if let Some(env_val) = Self::from_env() {
             return env_val;
@@ -34,6 +36,7 @@ impl MemoryCleanup {
     }
 
     /// Idle TTL in seconds before cache is auto-cleared.
+    #[must_use]
     pub fn idle_ttl_secs(&self) -> u64 {
         match self {
             Self::Aggressive => 300,
@@ -42,6 +45,7 @@ impl MemoryCleanup {
     }
 
     /// BM25 index eviction age multiplier (shared mode retains longer).
+    #[must_use]
     pub fn index_retention_multiplier(&self) -> f64 {
         match self {
             Self::Aggressive => 1.0,
@@ -64,6 +68,7 @@ pub enum MemoryProfile {
 }
 
 impl MemoryProfile {
+    #[must_use]
     pub fn from_env() -> Option<Self> {
         std::env::var("LEAN_CTX_MEMORY_PROFILE").ok().and_then(|v| {
             match v.trim().to_lowercase().as_str() {
@@ -75,6 +80,7 @@ impl MemoryProfile {
         })
     }
 
+    #[must_use]
     pub fn effective(config: &Config) -> Self {
         if let Some(env_val) = Self::from_env() {
             return env_val;
@@ -82,6 +88,7 @@ impl MemoryProfile {
         config.memory_profile.clone()
     }
 
+    #[must_use]
     pub fn bm25_max_cache_mb(&self) -> u64 {
         match self {
             Self::Low => 64,
@@ -90,10 +97,12 @@ impl MemoryProfile {
         }
     }
 
+    #[must_use]
     pub fn semantic_cache_enabled(&self) -> bool {
         !matches!(self, Self::Low)
     }
 
+    #[must_use]
     pub fn embeddings_enabled(&self) -> bool {
         !matches!(self, Self::Low)
     }
@@ -116,6 +125,7 @@ pub enum SavingsFooter {
 }
 
 impl SavingsFooter {
+    #[must_use]
     pub fn from_env() -> Option<Self> {
         std::env::var("LEAN_CTX_SAVINGS_FOOTER").ok().and_then(|v| {
             match v.trim().to_lowercase().as_str() {
@@ -127,6 +137,7 @@ impl SavingsFooter {
         })
     }
 
+    #[must_use]
     pub fn effective() -> Self {
         if let Some(env_val) = Self::from_env() {
             return env_val;
@@ -142,6 +153,7 @@ pub struct MemoryGuardConfig {
 }
 
 impl MemoryGuardConfig {
+    #[must_use]
     pub fn effective(config: &Config) -> Self {
         let pct = std::env::var("LEAN_CTX_MAX_RAM_PERCENT")
             .ok()

@@ -1,5 +1,5 @@
-//! `lean-ctx finops` — export ledger costs/savings for FinOps platforms
-//! (GL #402): CloudZero CBF, Vantage custom provider, FOCUS 1.2 CSV.
+//! `lean-ctx finops` — export ledger costs/savings for `FinOps` platforms
+//! (GL #402): `CloudZero` CBF, Vantage custom provider, FOCUS 1.2 CSV.
 
 use std::path::PathBuf;
 

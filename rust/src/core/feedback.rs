@@ -206,7 +206,7 @@ impl FeedbackStore {
             } else {
                 0.0
             };
-            let turn_efficiency = 1.0 / (outcome.total_turns.max(1) as f64);
+            let turn_efficiency = 1.0 / f64::from(outcome.total_turns.max(1));
             let efficiency = compression_ratio * 0.6 + turn_efficiency * 0.4;
 
             if efficiency > best_efficiency {
@@ -237,7 +237,7 @@ impl FeedbackStore {
 
         if (old_entropy - entry.entropy).abs() > 0.01 || (old_jaccard - entry.jaccard).abs() > 0.01
         {
-            crate::core::events::emit(crate::core::events::EventKind::ThresholdShift {
+            let _ = crate::core::events::emit(crate::core::events::EventKind::ThresholdShift {
                 language: language.to_string(),
                 old_entropy,
                 new_entropy: entry.entropy,
@@ -247,14 +247,17 @@ impl FeedbackStore {
         }
     }
 
+    #[must_use]
     pub fn get_learned_entropy(&self, language: &str) -> Option<f64> {
         self.learned_thresholds.get(language).map(|t| t.entropy)
     }
 
+    #[must_use]
     pub fn get_learned_jaccard(&self, language: &str) -> Option<f64> {
         self.learned_thresholds.get(language).map(|t| t.jaccard)
     }
 
+    #[must_use]
     pub fn format_report(&self) -> String {
         let mut lines = vec![String::from("Feedback Loop Report")];
         lines.push(format!("Total outcomes tracked: {}", self.outcomes.len()));

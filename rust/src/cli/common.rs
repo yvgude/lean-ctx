@@ -23,6 +23,7 @@ pub(crate) fn filter_daemon_output(text: &str) -> String {
         .join("\n")
 }
 
+#[must_use]
 pub fn load_shell_history_pub() -> Vec<String> {
     load_shell_history()
 }

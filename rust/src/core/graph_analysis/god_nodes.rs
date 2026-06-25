@@ -22,6 +22,7 @@ pub struct GodNode {
 /// Ranks files by total dependency degree (fan-in + fan-out) and returns the top
 /// `limit`. Deterministic: ties broken by path so the output is stable across
 /// rebuilds.
+#[must_use]
 pub fn compute_god_nodes(edges: &[EdgeInfo], limit: usize) -> Vec<GodNode> {
     let deps = dependency_edges(edges);
     let mut incoming: HashMap<&str, usize> = HashMap::new();

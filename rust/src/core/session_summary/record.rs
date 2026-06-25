@@ -24,6 +24,7 @@ pub struct SummaryRecord {
 
 impl SummaryRecord {
     /// Text used for both lexical and semantic recall.
+    #[must_use]
     pub fn searchable_text(&self) -> String {
         let mut t = String::with_capacity(self.title.len() + self.body.len() + 16);
         t.push_str(&self.title);
@@ -51,6 +52,7 @@ pub struct SummaryCandidate {
 
 impl SummaryCandidate {
     /// Finalize into a persisted record with a sequence number.
+    #[must_use]
     pub fn into_record(self, seq: u32) -> SummaryRecord {
         let short = self
             .session_id

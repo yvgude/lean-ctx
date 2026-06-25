@@ -7,6 +7,7 @@ pub(super) struct StartupContext {
 }
 
 /// Creates a new `LeanCtxServer` with default configuration.
+#[must_use]
 pub fn create_server() -> LeanCtxServer {
     LeanCtxServer::new()
 }

@@ -47,7 +47,7 @@ const DEFAULT_OPTIMIZATIONS: &[(&str, &str)] = &[
     ("std::fmt::Debug", "Debug"),
 ];
 
-/// BPE-aligned formatting rules — empirically measured to save tokens on o200k_base.
+/// BPE-aligned formatting rules — empirically measured to save tokens on `o200k_base`.
 /// Only SAFE rules that never break semantics or compilability.
 /// Dangerous rules removed after BPE Guard audit (2026-04-03):
 ///   REMOVED: `.to_string()->.into()` (not always equivalent, trait-dependent)
@@ -90,6 +90,7 @@ impl TokenOptimizer {
         Self::with_defaults()
     }
 
+    #[must_use]
     pub fn with_defaults() -> Self {
         let mut rules: Vec<(String, String)> = DEFAULT_OPTIMIZATIONS
             .iter()
@@ -114,6 +115,7 @@ impl TokenOptimizer {
         })
     }
 
+    #[must_use]
     pub fn optimize_line(&self, line: &str) -> String {
         let mut result = line.to_string();
         for (from, to) in &self.replacements {
@@ -123,6 +125,7 @@ impl TokenOptimizer {
         result
     }
 
+    #[must_use]
     pub fn optimize_block(&self, content: &str) -> String {
         let optimized: Vec<String> = content
             .lines()
@@ -132,17 +135,20 @@ impl TokenOptimizer {
         collapsed.join("\n")
     }
 
+    #[must_use]
     pub fn replacement_count(&self) -> usize {
         self.replacements.len()
     }
 
     /// BPE cost oracle: measure the actual token cost of a string representation.
     /// Used to pick the cheapest encoding when multiple are semantically equivalent.
+    #[must_use]
     pub fn token_cost(text: &str) -> usize {
         crate::core::tokens::count_tokens(text)
     }
 
     /// Choose the cheaper representation between two semantically equivalent strings.
+    #[must_use]
     pub fn cheaper_repr<'a>(a: &'a str, b: &'a str) -> &'a str {
         if Self::token_cost(a) <= Self::token_cost(b) {
             a

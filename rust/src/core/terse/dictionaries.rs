@@ -412,6 +412,7 @@ pub const NPM: &[Abbreviation] = &[
 
 /// Applies whole-word abbreviations from the given dictionaries to the text.
 /// Uses a single scan: first checks which patterns exist, then applies only matches.
+#[must_use]
 pub fn apply_dictionaries(text: &str, level: DictLevel) -> String {
     let dicts: Vec<&[Abbreviation]> = match level {
         DictLevel::General => vec![GENERAL],

@@ -38,6 +38,7 @@ impl DeficitReason {
     }
 }
 
+#[must_use]
 pub fn detect_deficit(
     ledger: &ContextLedger,
     intent: &StructuredIntent,

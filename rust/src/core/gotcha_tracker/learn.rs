@@ -53,6 +53,7 @@ const AGENTS_MARKER_START: &str = "<!-- lean-ctx-learn-start -->";
 const AGENTS_MARKER_END: &str = "<!-- lean-ctx-learn-end -->";
 
 /// Generate the markdown section to inject into AGENTS.md.
+#[must_use]
 pub fn format_agents_section(learnings: &[Learning]) -> String {
     if learnings.is_empty() {
         return String::new();

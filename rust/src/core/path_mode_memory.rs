@@ -103,6 +103,7 @@ impl PathModeMemory {
 
     /// A path is force-full when it bounced at least twice and bounces make up
     /// the majority of its observed reads — compressing it keeps backfiring.
+    #[must_use]
     pub fn should_force_full(&self, norm_path: &str) -> bool {
         self.paths.get(norm_path).is_some_and(|s| {
             s.bounce_count >= 2 && u64::from(s.bounce_count) * 2 >= u64::from(s.read_count)
@@ -157,6 +158,7 @@ pub fn record_read_if_tracked(norm_path: &str) {
 }
 
 /// Process-global: should `mode=auto` resolve to `full` for this path?
+#[must_use]
 pub fn should_force_full(path: &str) -> bool {
     let norm = crate::core::pathutil::normalize_tool_path(path);
     global().lock().is_ok_and(|s| s.should_force_full(&norm))
@@ -173,6 +175,7 @@ pub fn flush() {
 /// Dashboard summary: `(tracked_paths, forced_full_paths)`. Reads straight
 /// from disk so a separate process (the dashboard) sees the same state the
 /// MCP/CLI processes persisted (#505).
+#[must_use]
 pub fn disk_summary() -> (usize, usize) {
     let store = PathModeMemory::load_from_disk();
     let forced = store

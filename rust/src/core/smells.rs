@@ -93,6 +93,7 @@ pub fn scan_rule(conn: &Connection, rule: &str, cfg: &SmellConfig) -> Vec<SmellF
     }
 }
 
+#[must_use]
 pub fn summarize(findings: &[SmellFinding]) -> Vec<SmellSummary> {
     RULES
         .iter()

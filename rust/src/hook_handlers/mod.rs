@@ -383,6 +383,7 @@ fn rewrite_dir_list_command(cmd: &str, binary: &str) -> Option<String> {
 }
 
 /// Tokenize a shell command respecting single/double quotes and backslash escapes.
+#[must_use]
 pub fn shell_tokenize(input: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
@@ -414,6 +415,7 @@ pub fn shell_tokenize(input: &str) -> Vec<String> {
 }
 
 /// Quote a path/arg for shell if it contains spaces or special chars.
+#[must_use]
 pub fn shell_quote(s: &str) -> String {
     if s.contains(|c: char| c.is_whitespace() || c == '\'' || c == '"' || c == '\\') {
         format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
@@ -498,7 +500,7 @@ pub fn handle_redirect() {
 }
 
 /// Redirect Read through lean-ctx for compression + caching.
-/// Safe because `mark_hook_environment()` sets LEAN_CTX_HOOK_CHILD=1 which
+/// Safe because `mark_hook_environment()` sets `LEAN_CTX_HOOK_CHILD=1` which
 /// prevents daemon auto-start. The subprocess uses the fast local-only path.
 fn redirect_read(tool_input: Option<&serde_json::Value>) {
     let path = tool_input
@@ -803,7 +805,7 @@ pub fn handle_codex_pretooluse() {
     }
 }
 
-/// Emit SessionStart guidance through Codex's documented hidden-context channel.
+/// Emit `SessionStart` guidance through Codex's documented hidden-context channel.
 ///
 /// Codex's hook contract (<https://developers.openai.com/codex/hooks>) accepts JSON
 /// on stdout with `hookSpecificOutput.additionalContext`, which is injected as
@@ -844,7 +846,7 @@ pub fn handle_codex_session_start() {
     );
 }
 
-/// Copilot-specific PreToolUse handler.
+/// Copilot-specific `PreToolUse` handler.
 /// VS Code Copilot Chat uses the same hook format as Claude Code.
 /// Tool names differ: "runInTerminal" / "editFile" instead of "Bash" / "Read".
 pub fn handle_copilot() {

@@ -5,15 +5,18 @@
 
 use crate::core::tokens::{self, TokenizerFamily};
 
+#[must_use]
 pub fn count(text: &str) -> u32 {
     tokens::count_tokens(text) as u32
 }
 
+#[must_use]
 pub fn count_with_family(text: &str, family: TokenizerFamily) -> u32 {
     tokens::count_tokens_for(text, family) as u32
 }
 
 /// Calculates savings percentage from before/after token counts.
+#[must_use]
 pub fn savings_pct(before: u32, after: u32) -> f32 {
     if before == 0 || after >= before {
         return 0.0;

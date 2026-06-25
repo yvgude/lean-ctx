@@ -28,6 +28,7 @@ pub struct LockedPackage {
     pub registry: String,
 }
 
+#[must_use]
 pub fn lockfile_path(project_root: &Path) -> PathBuf {
     project_root.join(LOCKFILE_REL_PATH)
 }

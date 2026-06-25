@@ -18,6 +18,7 @@ pub enum Capability {
 }
 
 impl Capability {
+    #[must_use]
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::FsRead => "fs:read",
@@ -40,6 +41,7 @@ pub struct CapabilityCheckResult {
     pub missing: Vec<Capability>,
 }
 
+#[must_use]
 pub fn required_capabilities(tool_name: &str) -> &'static [Capability] {
     match tool_name {
         "ctx_edit" => &[Capability::FsRead, Capability::FsWrite],
@@ -53,6 +55,7 @@ pub fn required_capabilities(tool_name: &str) -> &'static [Capability] {
     }
 }
 
+#[must_use]
 pub fn role_capabilities(role_name: &str) -> HashSet<Capability> {
     match role_name {
         "admin" => HashSet::from([
@@ -123,6 +126,7 @@ fn capabilities_from_role(role_name: &str) -> HashSet<Capability> {
     caps
 }
 
+#[must_use]
 pub fn check_capabilities(role_name: &str, tool_name: &str) -> CapabilityCheckResult {
     let required = required_capabilities(tool_name);
     if required.is_empty() {

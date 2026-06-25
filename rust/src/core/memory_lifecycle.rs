@@ -46,6 +46,7 @@ pub enum ForgettingModel {
 }
 
 impl ForgettingModel {
+    #[must_use]
     pub fn parse(s: &str) -> Self {
         match s.trim().to_lowercase().as_str() {
             "linear" => Self::Linear,
@@ -53,6 +54,7 @@ impl ForgettingModel {
         }
     }
 
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Ebbinghaus => "ebbinghaus",
@@ -382,6 +384,7 @@ pub fn restore_archive(archive_path: &str) -> Result<Vec<KnowledgeFact>, String>
     Ok(archive.facts)
 }
 
+#[must_use]
 pub fn list_archives() -> Vec<PathBuf> {
     let dir = match crate::core::data_dir::lean_ctx_data_dir() {
         Ok(d) => d.join("memory").join("archive"),

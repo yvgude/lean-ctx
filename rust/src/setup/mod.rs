@@ -11,10 +11,12 @@ pub use mcp::*;
 mod helpers;
 pub use helpers::*;
 
+#[must_use]
 pub fn claude_config_json_path(home: &std::path::Path) -> PathBuf {
     crate::core::editor_registry::claude_mcp_json_path(home)
 }
 
+#[must_use]
 pub fn claude_config_dir(home: &std::path::Path) -> PathBuf {
     crate::core::editor_registry::claude_state_dir(home)
 }
@@ -50,7 +52,7 @@ impl Drop for EnvVarGuard {
 }
 
 /// Determine the setup level from a first-run interactive menu.
-/// Returns (inject_rules, inject_skills).
+/// Returns (`inject_rules`, `inject_skills`).
 fn first_run_setup_level() -> (bool, bool) {
     use std::io::Write;
 

@@ -8,6 +8,7 @@ pub enum TaskComplexity {
 }
 
 impl TaskComplexity {
+    #[must_use]
     pub fn instruction_suffix(&self) -> &'static str {
         match self {
             TaskComplexity::Mechanical => {
@@ -25,6 +26,7 @@ impl TaskComplexity {
         }
     }
 
+    #[must_use]
     pub fn encoded_suffix(&self) -> String {
         use crate::core::protocol::encode_instructions;
         match self {

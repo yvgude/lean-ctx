@@ -3,6 +3,7 @@ use serde_json::Value;
 /// Core read-only tools exposed to IDE plan modes.
 /// Kept as a curated subset (not all readonly tools) to avoid
 /// overwhelming plan agents with architecture/debug tools.
+#[must_use]
 pub fn plan_mode_tools() -> &'static [&'static str] {
     &[
         "ctx_read",
@@ -233,6 +234,7 @@ pub struct PlanModeStatus {
     pub claude_configured: Option<bool>,
 }
 
+#[must_use]
 pub fn check_plan_mode_status() -> PlanModeStatus {
     PlanModeStatus {
         vscode_configured: check_vscode_plan_mode(),

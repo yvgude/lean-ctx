@@ -8,6 +8,7 @@ pub const CRASH_LOOP_MAX_BACKOFF_SECS: u64 = 30;
 
 pub const MCP_PROCESS_NAME: &str = "mcp-server";
 
+#[must_use]
 pub fn crash_loop_log_path(process_name: &str) -> Option<PathBuf> {
     crate::core::data_dir::lean_ctx_data_dir()
         .ok()
@@ -76,10 +77,11 @@ fn sanitize_lock_name(name: &str) -> String {
         .collect()
 }
 
-/// Best-effort cross-process lock (create_new + stale eviction).
+/// Best-effort cross-process lock (`create_new` + stale eviction).
 ///
 /// Returns `None` if the data dir can't be resolved or if the lock can't be acquired
 /// within `timeout`.
+#[must_use]
 pub fn try_acquire_lock(
     name: &str,
     timeout: Duration,

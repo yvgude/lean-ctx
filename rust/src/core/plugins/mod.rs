@@ -49,6 +49,7 @@ impl PluginManager {
             .map(|mut reg| f(&mut reg))
     }
 
+    #[must_use]
     pub fn fire_hook(hook: &HookPoint) -> Vec<HookResult> {
         Self::with_registry(|reg| {
             let plugins: Vec<_> = reg.enabled_plugins();
@@ -75,6 +76,7 @@ impl PluginManager {
     /// True if any enabled plugin declares `hook_name`. A cheap guard so the hot
     /// path never spawns a hook thread when nothing would run — the default
     /// (no plugins installed → registry uninitialized → `false`).
+    #[must_use]
     pub fn has_listener(hook_name: &str) -> bool {
         Self::with_registry(|reg| any_enabled_listener(reg, hook_name)).unwrap_or(false)
     }
@@ -90,6 +92,7 @@ impl PluginManager {
 
     /// Flattened `[[tools]]` from all enabled plugins (EPIC 12.11). Empty unless
     /// plugins are installed + enabled, so it is zero-cost by default.
+    #[must_use]
     pub fn tool_specs() -> Vec<tools::PluginToolSpec> {
         Self::with_registry(|reg| {
             reg.enabled_plugins()

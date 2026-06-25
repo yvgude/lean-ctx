@@ -15,6 +15,7 @@ pub enum IoEnvironment {
     Degraded,
 }
 
+#[must_use]
 pub fn environment() -> IoEnvironment {
     if recent_freeze_count() >= DEGRADED_THRESHOLD {
         return IoEnvironment::Degraded;
@@ -50,6 +51,7 @@ pub fn recent_freeze_count() -> u32 {
 
 /// Returns an adaptive timeout: longer in slow/degraded environments to avoid
 /// a death spiral where shorter timeouts cause more timeouts.
+#[must_use]
 pub fn adaptive_timeout(base: Duration) -> Duration {
     match environment() {
         IoEnvironment::Fast => base,
@@ -75,7 +77,7 @@ pub fn is_wsl() -> bool {
     }
 }
 
-/// Detects if a path is likely on a slow filesystem (DrvFS, NFS, FUSE, sshfs).
+/// Detects if a path is likely on a slow filesystem (`DrvFS`, NFS, FUSE, sshfs).
 pub fn is_slow_mount(path: &str) -> bool {
     if is_wsl() && path.starts_with("/mnt/") {
         return true;

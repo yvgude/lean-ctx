@@ -10,6 +10,7 @@ pub struct LandlockRuleset {
 }
 
 impl LandlockRuleset {
+    #[must_use]
     pub fn new(allowed_read_paths: &[&Path], interpreter_path: &str) -> Self {
         let mut read_paths = vec![
             "/usr".to_string(),
@@ -36,10 +37,12 @@ impl LandlockRuleset {
         }
     }
 
+    #[must_use]
     pub fn contains_read_path(&self, path: &str) -> bool {
         self.read_paths.iter().any(|p| p == path)
     }
 
+    #[must_use]
     pub fn contains_rw_path(&self, path: &str) -> bool {
         self.read_write_paths.iter().any(|p| p == path)
     }

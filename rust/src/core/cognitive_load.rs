@@ -161,6 +161,7 @@ fn recommend(intr: f64, extr: f64, germ: f64) -> String {
 }
 
 /// Score cognitive-load dimensions and suggest a compression mode family.
+#[must_use]
 pub fn score_cognitive_load(content: &str) -> CognitiveLoadScore {
     let i = norm(intrinsic_raw(content));
     let e = norm(extraneous_raw(content));

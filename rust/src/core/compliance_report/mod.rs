@@ -13,7 +13,7 @@
 //!
 //! The result is **Ed25519-signed** ([`model::ComplianceReportV1`]) and
 //! exportable as JSON (the signed artifact), CSV or PDF ([`render`], [`pdf`]).
-//! Verification is offline — no audit trail, no LeanCTX install required.
+//! Verification is offline — no audit trail, no `LeanCTX` install required.
 
 pub mod aggregate;
 pub mod model;

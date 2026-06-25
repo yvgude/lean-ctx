@@ -1,4 +1,4 @@
-//! HTTP route handlers for the LeanCTX dashboard API.
+//! HTTP route handlers for the `LeanCTX` dashboard API.
 
 mod agents;
 mod context;
@@ -48,6 +48,7 @@ fn match_component_path(path: &str) -> Option<String> {
     Some(content.to_string())
 }
 
+#[must_use]
 pub fn route_response(
     path: &str,
     query_str: &str,

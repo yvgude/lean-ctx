@@ -119,7 +119,7 @@ pub fn compute_relevance(
                 }
             }
             if keyword_hits > 0 {
-                let boost = (keyword_hits as f64 * 0.15).min(0.6);
+                let boost = (f64::from(keyword_hits) * 0.15).min(0.6);
                 let entry = scores.entry(file_path.clone()).or_insert(0.0);
                 *entry = (*entry + boost).min(1.0);
             }
@@ -353,6 +353,7 @@ fn resolve_module_to_file(module_path: &str, file_paths: &[&str]) -> Option<Stri
 }
 
 /// Extract likely task-relevant file paths and keywords from a task description.
+#[must_use]
 pub fn parse_task_hints(task_description: &str) -> (Vec<String>, Vec<String>) {
     let mut files = Vec::new();
     let mut keywords = Vec::new();
@@ -464,9 +465,10 @@ impl StructuralWeights {
 ///
 /// Key changes from v2:
 ///   - Mutual Information scoring: MI(line, task) = H(line) - H(line|task)
-///   - Adaptive budget allocation based on task type via TaskClassifier
+///   - Adaptive budget allocation based on task type via `TaskClassifier`
 ///   - Token-level IDF computed over full document for better term weighting
 ///   - Maintains L-curve attention, MMR dedup, error-handling priority from v2
+#[must_use]
 pub fn information_bottleneck_filter(
     content: &str,
     task_keywords: &[String],
@@ -479,6 +481,7 @@ pub fn information_bottleneck_filter(
 /// Task-type-aware IB filter. Uses `TaskType` to adjust structural weights.
 /// `force_keep` lines (explicit `protect` tokens, #709) are kept verbatim on top
 /// of the budget; `&[]` reproduces the pre-protect output byte-for-byte (#498).
+#[must_use]
 pub fn information_bottleneck_filter_typed(
     content: &str,
     task_keywords: &[String],
@@ -720,6 +723,7 @@ fn is_error_handling(line: &str) -> bool {
 /// Compute an adaptive IB budget ratio based on content characteristics.
 /// Highly repetitive content → more aggressive filtering (lower ratio).
 /// High-entropy diverse content → more conservative (higher ratio).
+#[must_use]
 pub fn adaptive_ib_budget(content: &str, base_ratio: f64) -> f64 {
     let lines: Vec<&str> = content.lines().collect();
     if lines.len() < 10 {

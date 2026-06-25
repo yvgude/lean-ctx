@@ -9,6 +9,7 @@ pub struct SyncReport {
     pub errors: Vec<String>,
 }
 
+#[must_use]
 pub fn sync_all(home: &Path) -> SyncReport {
     let inject_result = crate::rules_inject::inject_all_rules(home);
 
@@ -23,6 +24,7 @@ pub fn sync_all(home: &Path) -> SyncReport {
     }
 }
 
+#[must_use]
 pub fn sync_agent(home: &Path, agent: &str) -> SyncReport {
     let inject_result = crate::rules_inject::inject_rules_for_agent(home, agent);
 

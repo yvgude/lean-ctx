@@ -1,3 +1,4 @@
+#[must_use]
 pub fn compress(cmd_lower: &str, output: &str) -> Option<String> {
     if cmd_lower.contains("rubocop") {
         return compress_rubocop(output);

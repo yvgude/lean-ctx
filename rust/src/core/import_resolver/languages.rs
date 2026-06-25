@@ -746,7 +746,7 @@ pub(super) fn resolve_dart(
 // GDScript (Godot)
 // ---------------------------------------------------------------------------
 
-/// Resolves GDScript `extends "res://…"` and `preload`/`load` resource paths.
+/// Resolves `GDScript` `extends "res://…"` and `preload`/`load` resource paths.
 /// `res://` is anchored at the project root; `user://` is a runtime data path
 /// (never a source file); other paths are resolved relative to the importer.
 pub(super) fn resolve_gd(
@@ -1010,7 +1010,7 @@ fn probe_csharp_namespace(segs: &[&str], ctx: &ResolverContext) -> Option<String
         .find_map(|key| ctx.csharp_namespace_file(&key).map(str::to_string))
 }
 
-/// Roots of the .NET BCL and common NuGet packages. A `using` whose first
+/// Roots of the .NET BCL and common `NuGet` packages. A `using` whose first
 /// segment matches one of these is an external dependency (no local edge).
 fn is_csharp_external_namespace(ns: &str) -> bool {
     const EXTERNAL_ROOTS: &[&str] = &[

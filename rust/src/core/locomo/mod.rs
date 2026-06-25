@@ -1,4 +1,4 @@
-//! LoCoMo memory benchmark (#291).
+//! `LoCoMo` memory benchmark (#291).
 //!
 //! Long-conversation memory, measured the way lean-ctx works: store every turn as
 //! a memory, then for each question recall the top-k memories and score the
@@ -24,6 +24,7 @@ use report::LocomoReport;
 /// `workspace` should be a fresh temp dir (per-sample subdirs are created under
 /// it); the caller must also point `LEAN_CTX_DATA_DIR` at a throwaway dir so the
 /// benchmark never touches real project knowledge.
+#[must_use]
 pub fn run(
     suite_name: &str,
     samples: &[LocomoSample],

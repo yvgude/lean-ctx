@@ -24,6 +24,7 @@ fn parse_format(format: Option<&str>) -> Result<OutputFormat, String> {
     }
 }
 
+#[must_use]
 pub fn handle(action: &str, path: Option<&str>, root: &str, format: Option<&str>) -> String {
     let fmt = match parse_format(format) {
         Ok(f) => f,
@@ -1078,7 +1079,7 @@ fn compute_clusters(data: &GraphData) -> Vec<Cluster> {
 
         let total = internal + external;
         let cohesion = if total > 0 {
-            internal as f64 / total as f64
+            f64::from(internal) / f64::from(total)
         } else {
             1.0
         };

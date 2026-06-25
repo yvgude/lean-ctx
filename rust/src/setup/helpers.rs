@@ -4,6 +4,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+#[must_use]
 pub fn install_skill_files(home: &std::path::Path) -> Vec<(String, bool)> {
     crate::rules_inject::install_all_skills(home)
 }

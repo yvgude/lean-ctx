@@ -48,6 +48,7 @@ impl ScentKind {
         }
     }
 
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             ScentKind::Claimed => "CLAIMED",
@@ -72,6 +73,7 @@ pub struct Scent {
 }
 
 impl Scent {
+    #[must_use]
     pub fn effective_intensity(&self, now: u64) -> f64 {
         let dt = now.saturating_sub(self.deposited_at) as f64;
         self.intensity * (-(std::f64::consts::LN_2) * dt / self.kind.half_life_secs()).exp()
@@ -177,7 +179,8 @@ impl ScentField {
         }
     }
 
-    /// Active foreign claim on `target`, if any: returns (agent_id, age_secs).
+    /// Active foreign claim on `target`, if any: returns (`agent_id`, `age_secs`).
+    #[must_use]
     pub fn foreign_claim(&self, target: &str, self_agent: &str, now: u64) -> Option<(String, u64)> {
         self.scents
             .iter()
@@ -196,7 +199,8 @@ impl ScentField {
     }
 
     /// Arithmetic sync view: targets grouped, intensities superposed across
-    /// agents, sorted by total intensity, capped at SYNC_TOP_K lines.
+    /// agents, sorted by total intensity, capped at `SYNC_TOP_K` lines.
+    #[must_use]
     pub fn render_sync(&self, now: u64) -> String {
         use std::collections::HashMap;
         // (kind, target) -> (total intensity, agents)
@@ -284,6 +288,7 @@ pub fn claim(agent_id: &str, target: &str) -> Result<(), String> {
 }
 
 /// Lifetime rejected-claim counter (#549): duplicate work prevented.
+#[must_use]
 pub fn claims_rejected_total() -> u64 {
     field_path().map_or(0, |p| ScentField::load_unlocked(&p).claims_rejected)
 }
@@ -291,6 +296,7 @@ pub fn claims_rejected_total() -> u64 {
 /// Read-only view of currently effective scents for the dashboard (#548):
 /// `(scent, effective_intensity_now)`, strongest first. Lock-free read —
 /// a slightly stale view is fine for display.
+#[must_use]
 pub fn active_scents() -> Vec<(Scent, f64)> {
     let Ok(path) = field_path() else {
         return Vec::new();
@@ -319,8 +325,9 @@ pub fn release(agent_id: &str, target: &str) {
     });
 }
 
-/// One-line hint for ctx_read when someone else actively claimed this path.
+/// One-line hint for `ctx_read` when someone else actively claimed this path.
 /// Costs ~10 tokens and prevents duplicate work.
+#[must_use]
 pub fn read_hint(path: &str, self_agent: &str) -> Option<String> {
     let field_file = field_path().ok()?;
     // Read-only fast path: no lock needed for a hint; stale reads are fine.
@@ -331,7 +338,8 @@ pub fn read_hint(path: &str, self_agent: &str) -> Option<String> {
     Some(format!("[scent: claimed by {holder} {}m ago]", age / 60))
 }
 
-/// Arithmetic sync block for ctx_agent sync.
+/// Arithmetic sync block for `ctx_agent` sync.
+#[must_use]
 pub fn sync_block() -> String {
     let Ok(path) = field_path() else {
         return String::new();

@@ -91,6 +91,7 @@ pub struct DeepAnalysis {
 }
 
 impl DeepAnalysis {
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             imports: Vec::new(),

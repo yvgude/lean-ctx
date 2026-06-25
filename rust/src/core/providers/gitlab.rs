@@ -172,6 +172,7 @@ pub struct GitLabProvider {
 }
 
 impl GitLabProvider {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             config: GitLabConfig::from_env(),

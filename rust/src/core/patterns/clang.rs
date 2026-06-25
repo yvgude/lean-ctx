@@ -17,6 +17,7 @@ fn include_stack_re() -> &'static regex::Regex {
     static_regex!(r"^In file included from .+:\d+:")
 }
 
+#[must_use]
 pub fn compress(command: &str, output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {

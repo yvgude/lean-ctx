@@ -22,6 +22,7 @@ pub struct Codebook {
 }
 
 impl Codebook {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -91,6 +92,7 @@ impl Codebook {
 
     /// Apply codebook to content: replace known patterns with short references.
     /// Returns (compressed content, references used).
+    #[must_use]
     pub fn compress(&self, content: &str) -> (String, Vec<String>) {
         if self.entries.is_empty() {
             return (content.to_string(), vec![]);
@@ -115,6 +117,7 @@ impl Codebook {
     }
 
     /// Format the codebook legend for lines that were referenced.
+    #[must_use]
     pub fn format_legend(&self, refs_used: &[String]) -> String {
         if refs_used.is_empty() {
             return String::new();
@@ -137,10 +140,12 @@ impl Codebook {
         lines.join("\n")
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -149,11 +154,13 @@ impl Codebook {
 /// Cosine similarity between two documents using TF-IDF vectors.
 /// IDF is computed over the two-document corpus to down-weight common terms
 /// like `fn`, `let`, `return` and up-weight domain-specific identifiers.
+#[must_use]
 pub fn tfidf_cosine_similarity(doc_a: &str, doc_b: &str) -> f64 {
     tfidf_cosine_similarity_with_corpus(&[doc_a, doc_b], doc_a, doc_b)
 }
 
 /// TF-IDF cosine similarity with IDF computed over a larger corpus.
+#[must_use]
 pub fn tfidf_cosine_similarity_with_corpus(corpus: &[&str], doc_a: &str, doc_b: &str) -> f64 {
     let idf = compute_idf(corpus);
     let tfidf_a = tfidf_vector(doc_a, &idf);
@@ -187,6 +194,7 @@ pub fn tfidf_cosine_similarity_with_corpus(corpus: &[&str], doc_a: &str, doc_b: 
 
 /// Identify semantically duplicate blocks across files.
 /// IDF is computed over the full file corpus for accurate weighting.
+#[must_use]
 pub fn find_semantic_duplicates(
     files: &[(String, String)],
     threshold: f64,

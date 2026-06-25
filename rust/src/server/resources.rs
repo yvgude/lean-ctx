@@ -6,6 +6,7 @@ const URI_PRESSURE: &str = "lean-ctx://context/pressure";
 const URI_PLAN: &str = "lean-ctx://context/plan";
 const URI_BOUNCE: &str = "lean-ctx://context/bounce";
 
+#[must_use]
 pub fn list_resources() -> Vec<Resource> {
     vec![
         make_resource(
@@ -36,6 +37,7 @@ pub fn list_resources() -> Vec<Resource> {
     ]
 }
 
+#[must_use]
 pub fn read_resource(
     uri: &str,
     ledger: &crate::core::context_ledger::ContextLedger,

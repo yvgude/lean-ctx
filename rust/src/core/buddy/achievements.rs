@@ -25,6 +25,7 @@ pub struct Achievement {
 }
 
 impl Achievement {
+    #[must_use]
     pub fn badge(&self) -> String {
         format!("{} {}", self.icon, self.name)
     }
@@ -105,10 +106,12 @@ const ALL: &[Achievement] = &[
     },
 ];
 
+#[must_use]
 pub fn catalog() -> &'static [Achievement] {
     ALL
 }
 
+#[must_use]
 pub fn check_unlocked(
     tokens_saved: u64,
     streak_days: u32,

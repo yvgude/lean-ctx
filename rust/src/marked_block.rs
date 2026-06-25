@@ -47,6 +47,7 @@ pub fn remove_from_file(path: &Path, start: &str, end: &str, quiet: bool, label:
     }
 }
 
+#[must_use]
 pub fn remove_content(content: &str, start: &str, end: &str) -> String {
     let s = content.find(start);
     let e = content.find(end);
@@ -68,6 +69,7 @@ pub fn remove_content(content: &str, start: &str, end: &str) -> String {
 
 /// Replace the region between `start` and `end` markers with `replacement`
 /// (trim-aware newlines). If markers are missing or invalid, returns `content` unchanged.
+#[must_use]
 pub fn replace_marked_block(content: &str, start: &str, end: &str, replacement: &str) -> String {
     let s = content.find(start);
     let e = content.find(end);

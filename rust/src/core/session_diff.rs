@@ -60,6 +60,7 @@ pub struct ModesDiff {
     pub modes_b: HashMap<String, usize>,
 }
 
+#[must_use]
 pub fn diff_sessions(a: &SessionState, b: &SessionState) -> SessionDiff {
     SessionDiff {
         session_a: a.id.clone(),
@@ -182,6 +183,7 @@ fn diff_modes(a: &SessionState, b: &SessionState) -> ModesDiff {
 }
 
 impl SessionDiff {
+    #[must_use]
     pub fn format_summary(&self) -> String {
         let mut lines = Vec::new();
         lines.push(format!(
@@ -243,6 +245,7 @@ impl SessionDiff {
         lines.join("\n")
     }
 
+    #[must_use]
     pub fn format_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".into())
     }

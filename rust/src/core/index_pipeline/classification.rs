@@ -1,6 +1,6 @@
 //! File classification for incremental re-indexing.
 //!
-//! Compares a [`discovery::DiscoveredFile`] list against stored
+//! Compares a [`crate::core::index_pipeline::discovery::DiscoveredFile`] list against stored
 //! [`FileHash`]es to produce a disjoint [`Classification`] — new, changed,
 //! unchanged, and deleted files.
 //!
@@ -36,6 +36,7 @@ use crate::core::index_types::{Classification, FileHash};
 ///
 /// Returns a [`Classification`] with four disjoint sets. See module docs for
 /// the classification rules.
+#[must_use]
 pub fn classify_files(discovered: &[DiscoveredFile], stored: &[FileHash]) -> Classification {
     let mut classification = Classification::default();
 
@@ -88,9 +89,9 @@ pub fn classify_files(discovered: &[DiscoveredFile], stored: &[FileHash]) -> Cla
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Convert a [`SystemTime`] to nanoseconds since UNIX_EPOCH.
+/// Convert a [`SystemTime`] to nanoseconds since `UNIX_EPOCH`.
 ///
-/// Returns 0 when the time is before UNIX_EPOCH or conversion fails.
+/// Returns 0 when the time is before `UNIX_EPOCH` or conversion fails.
 fn system_time_to_nanos(t: SystemTime) -> i64 {
     t.duration_since(SystemTime::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos() as i64)

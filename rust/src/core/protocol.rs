@@ -11,6 +11,7 @@ pub enum CrpMode {
 }
 
 impl CrpMode {
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_lowercase().as_str() {
             "off" => Some(Self::Off),
@@ -36,6 +37,7 @@ pub struct ToolCallRecord {
 /// For monorepos with nested `.git` dirs (e.g. `mono/backend/.git` + `mono/frontend/.git`),
 /// returns the outermost ancestor containing `.git`, a workspace marker, or a known
 /// monorepo config file — so the whole monorepo is treated as one project.
+#[must_use]
 pub fn detect_project_root(file_path: &str) -> Option<String> {
     let start = Path::new(file_path);
     let mut dir = if start.is_dir() {
@@ -79,7 +81,7 @@ fn is_project_root_marker(dir: &Path) -> bool {
 }
 
 /// Returns the project root for `file_path`, falling back to cwd if none found.
-/// Checks LEAN_CTX_PROJECT_ROOT env var and config.toml `project_root` first.
+/// Checks `LEAN_CTX_PROJECT_ROOT` env var and config.toml `project_root` first.
 /// Logs a warning when the fallback is a broad directory (home, root).
 pub fn detect_project_root_or_cwd(file_path: &str) -> String {
     if let Ok(env_root) = std::env::var("LEAN_CTX_PROJECT_ROOT")
@@ -171,10 +173,12 @@ fn resolve_ide_path(cfg: &crate::core::config::Config, file_path: &str) -> Optio
 /// backslashes they are never misinterpreted as escape sequences by the JSON,
 /// markdown, or terminal layers of MCP clients — which corrupted Windows paths
 /// in tool output (e.g. `C:\Users\…` rendered as `CUsers…`). See issue #324.
+#[must_use]
 pub fn display_path(path: &str) -> String {
     path.replace('\\', "/")
 }
 
+#[must_use]
 pub fn shorten_path(path: &str) -> String {
     let normalized = display_path(path);
     let p = Path::new(&normalized);
@@ -190,6 +194,7 @@ pub fn shorten_path(path: &str) -> String {
 /// Relativization is done on slash-normalized strings so it works regardless of
 /// the separator style the client sent (Windows backslashes, mixed separators).
 /// A component boundary is required so that root `a/b` never matches `a/bc`.
+#[must_use]
 pub fn shorten_path_relative(path: &str, root: &str) -> String {
     let norm_path = display_path(path);
     let norm_root = display_path(root);
@@ -240,6 +245,7 @@ pub fn savings_footer_visible() -> bool {
 /// Whether non-essential meta lines (cache refs, budget warnings, repetition hints) should be shown.
 ///
 /// Default is false to keep tool outputs clean for agents; opt-in via env var.
+#[must_use]
 pub fn meta_visible() -> bool {
     if matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1") {
         return false;
@@ -253,6 +259,7 @@ pub fn meta_visible() -> bool {
 /// Output: `─── 4,200 → 840 tok (↓80%) ───`
 ///
 /// Returns an empty string when savings footers are suppressed.
+#[must_use]
 pub fn format_savings(original: usize, compressed: usize) -> String {
     super::savings_footer::format_footer_basic(original, compressed)
 }
@@ -260,6 +267,7 @@ pub fn format_savings(original: usize, compressed: usize) -> String {
 /// Formats a savings footer with mode and optional detail context.
 ///
 /// Output: `─── 4,200 → 840 tok (↓80%) | mode: map ───`
+#[must_use]
 pub fn format_savings_with_info(
     original: usize,
     compressed: usize,
@@ -275,11 +283,13 @@ pub fn format_savings_with_info(
 }
 
 /// Appends a savings footer to `output` with a newline separator, but only if the footer is non-empty.
+#[must_use]
 pub fn append_savings(output: &str, original: usize, compressed: usize) -> String {
     super::savings_footer::append_footer_basic(output, original, compressed)
 }
 
 /// Appends a savings footer with mode/detail context.
+#[must_use]
 pub fn append_savings_with_info(
     output: &str,
     original: usize,
@@ -307,6 +317,7 @@ pub fn append_savings_with_info(
 /// message bodies must stay footer-free and byte-stable for prompt caching
 /// (#498). This strips that trailing line regardless of the ambient
 /// `savings_footer` setting; content without a footer is returned untouched.
+#[must_use]
 pub fn strip_trailing_savings_footer(output: &str) -> &str {
     let body = output.trim_end_matches('\n');
     let (head, last_line) = match body.rfind('\n') {
@@ -383,6 +394,7 @@ const TEMPLATES: &[InstructionTemplate] = &[
 /// Only emits content when the instructions being built are in Tdd CRP mode
 /// (otherwise returns empty — the codes are only emitted in tdd outputs, so
 /// defining them would waste ~60 tokens per MCP instructions payload, #579).
+#[must_use]
 pub fn instruction_decoder_block(tdd_active: bool) -> String {
     if !tdd_active {
         return String::new();
@@ -396,6 +408,7 @@ pub fn instruction_decoder_block(tdd_active: bool) -> String {
 
 /// Encode an instruction suffix using short codes with budget hints.
 /// Response budget is dynamic based on task complexity to shape LLM output length.
+#[must_use]
 pub fn encode_instructions(complexity: &str) -> String {
     match complexity {
         "mechanical" => "MODE: ACT1 DELTA 1LINE | BUDGET: <=50 tokens, 1 line answer".to_string(),
@@ -412,6 +425,7 @@ pub fn encode_instructions(complexity: &str) -> String {
 }
 
 /// Encode instructions with SNR metric for context quality awareness.
+#[must_use]
 pub fn encode_instructions_with_snr(complexity: &str, compression_pct: f64) -> String {
     let snr = if compression_pct > 0.0 {
         1.0 - (compression_pct / 100.0)

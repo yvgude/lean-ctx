@@ -34,6 +34,7 @@ pub struct FetchedDoc {
 
 impl FetchedDoc {
     /// Lossy UTF-8 view of the body, for textual content (HTML, JSON, …).
+    #[must_use]
     pub fn body_text(&self) -> String {
         String::from_utf8_lossy(&self.bytes).into_owned()
     }
@@ -91,7 +92,7 @@ pub fn fetch(url: &str, max_bytes: usize, timeout_secs: u64) -> Result<FetchedDo
 
 /// POST `body` to `url` (SSRF-guarded, bounded, redirects not followed).
 ///
-/// Needed for JSON-RPC style endpoints — e.g. YouTube's InnerTube `player`
+/// Needed for JSON-RPC style endpoints — e.g. `YouTube`'s `InnerTube` `player`
 /// API, whose caption URLs are server-fetchable (unlike the watch-page ones).
 /// `user_agent` is explicit because some APIs validate it against the declared
 /// client.

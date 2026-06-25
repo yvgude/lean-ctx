@@ -15,7 +15,7 @@ pub enum EdgeKind {
     MentionedIn,
     Affects,
     Breaks,
-    /// Implicit module/package/re-export relationship (from graph_index)
+    /// Implicit module/package/re-export relationship (from `graph_index`)
     Module,
     /// Git co-change correlation (files frequently changed together)
     Cochange,
@@ -24,6 +24,7 @@ pub enum EdgeKind {
 }
 
 impl EdgeKind {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Imports => "imports",
@@ -43,6 +44,7 @@ impl EdgeKind {
         }
     }
 
+    #[must_use]
     pub fn parse(s: &str) -> Self {
         match s {
             "calls" => Self::Calls,
@@ -73,6 +75,7 @@ pub struct Edge {
 }
 
 impl Edge {
+    #[must_use]
     pub fn new(source_id: i64, target_id: i64, kind: EdgeKind) -> Self {
         Self {
             id: None,
@@ -83,6 +86,7 @@ impl Edge {
         }
     }
 
+    #[must_use]
     pub fn with_metadata(mut self, meta: &str) -> Self {
         self.metadata = Some(meta.to_string());
         self

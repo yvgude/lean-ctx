@@ -18,6 +18,7 @@ pub struct ModeOutcome {
 
 impl ModeOutcome {
     /// Computes an efficiency score: density / compression ratio.
+    #[must_use]
     pub fn efficiency(&self) -> f64 {
         if self.tokens_out == 0 {
             return 0.0;
@@ -35,6 +36,7 @@ pub struct FileSignature {
 
 impl FileSignature {
     /// Creates a file signature from its path and token count.
+    #[must_use]
     pub fn from_path(path: &str, token_count: usize) -> Self {
         let ext = std::path::Path::new(path)
             .extension()
@@ -81,6 +83,7 @@ impl ModePredictor {
         loaded
     }
 
+    #[must_use]
     pub fn with_project_root(mut self, root: &str) -> Self {
         self.project_root = Some(root.to_string());
         self
@@ -101,6 +104,7 @@ impl ModePredictor {
 
     /// Returns the best mode based on historical efficiency.
     /// Chain: local history -> cloud adaptive models -> built-in defaults.
+    #[must_use]
     pub fn predict_best_mode(&self, sig: &FileSignature) -> Option<String> {
         let default_mode = Self::predict_from_defaults(sig);
 
@@ -195,7 +199,7 @@ impl ModePredictor {
             .map(|(mode, _)| mode.to_string())
     }
 
-    /// Loads cloud adaptive models (synced from LeanCTX Cloud).
+    /// Loads cloud adaptive models (synced from `LeanCTX` Cloud).
     /// Models are cached locally and auto-updated for cloud users.
     #[allow(clippy::unused_self)]
     fn predict_from_cloud(&self, sig: &FileSignature) -> Option<String> {

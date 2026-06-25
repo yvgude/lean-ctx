@@ -476,6 +476,7 @@ fn truncate_with_safety_scan(lines: &[&str], original_tokens: usize) -> Option<S
 }
 
 /// Public wrapper for integration tests to exercise the compression pipeline.
+#[must_use]
 pub fn compress_if_beneficial_pub(command: &str, output: &str) -> String {
     compress_if_beneficial(command, output)
 }

@@ -61,10 +61,12 @@ fn validate_state_tools(state: &StateSpec) -> Result<(), String> {
     Ok(())
 }
 
+#[must_use]
 pub fn allowed_transitions<'a>(spec: &'a WorkflowSpec, from: &str) -> Vec<&'a TransitionSpec> {
     spec.transitions.iter().filter(|t| t.from == from).collect()
 }
 
+#[must_use]
 pub fn find_transition<'a>(
     spec: &'a WorkflowSpec,
     from: &str,

@@ -9,7 +9,7 @@ const BOUNCE_RATE_THRESHOLD: f64 = 0.30;
 /// the compression arm (GL #622).
 const EDIT_FORCE_WINDOW: u64 = 10;
 /// Outer-map retention: a path whose newest activity is older than this many seq ticks
-/// can no longer satisfy BOUNCE_WINDOW (5) or the edit-force window (10), so it is inert
+/// can no longer satisfy `BOUNCE_WINDOW` (5) or the edit-force window (10), so it is inert
 /// and safe to evict. Kept well above both windows to never change detection outcomes.
 const TRACKED_PATH_TTL_SEQ: u64 = 64;
 
@@ -55,6 +55,7 @@ fn extension_of(path: &str) -> String {
 }
 
 impl BounceTracker {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -195,6 +196,7 @@ impl BounceTracker {
             .retain(|_, &mut edit_seq| seq.saturating_sub(edit_seq) <= TRACKED_PATH_TTL_SEQ);
     }
 
+    #[must_use]
     pub fn should_force_full(&self, path: &str) -> bool {
         let norm = crate::core::pathutil::normalize_tool_path(path);
 
@@ -218,6 +220,7 @@ impl BounceTracker {
         false
     }
 
+    #[must_use]
     pub fn bounce_rate_for_extension(&self, path: &str) -> Option<f64> {
         let ext = extension_of(path);
         self.per_extension.get(&ext).and_then(|s| {
@@ -229,18 +232,22 @@ impl BounceTracker {
         })
     }
 
+    #[must_use]
     pub fn total_bounces(&self) -> u64 {
         self.total_bounces
     }
 
+    #[must_use]
     pub fn total_wasted_tokens(&self) -> usize {
         self.total_wasted_tokens
     }
 
+    #[must_use]
     pub fn adjusted_savings(&self, raw_savings: usize) -> isize {
         raw_savings as isize - self.total_wasted_tokens as isize
     }
 
+    #[must_use]
     pub fn per_extension_json(&self) -> Vec<serde_json::Value> {
         let mut exts: Vec<_> = self
             .per_extension
@@ -267,6 +274,7 @@ impl BounceTracker {
             .collect()
     }
 
+    #[must_use]
     pub fn format_summary(&self) -> String {
         if self.total_bounces == 0 {
             return "Bounces: 0".to_string();

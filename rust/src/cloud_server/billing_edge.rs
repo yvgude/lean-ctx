@@ -737,7 +737,7 @@ pub(super) async fn get_account_org_sso(
     finish(status, json)
 }
 
-/// `PUT /api/account/org/sso` — create/update the org's IdP configuration.
+/// `PUT /api/account/org/sso` — create/update the org's `IdP` configuration.
 pub(super) async fn put_account_org_sso(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -798,7 +798,7 @@ pub(super) async fn put_account_org_sso_required(
     finish(status, json)
 }
 
-/// `DELETE /api/account/org/sso` — remove the IdP configuration.
+/// `DELETE /api/account/org/sso` — remove the `IdP` configuration.
 pub(super) async fn delete_account_org_sso(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -830,7 +830,7 @@ pub(super) struct AuditQuery {
 }
 
 /// Build the sanitized upstream query string. `before`/`limit` are numeric and
-/// safe; `event` is allowlisted to our snake_case event ids so nothing
+/// safe; `event` is allowlisted to our `snake_case` event ids so nothing
 /// untrusted is ever spliced into the upstream URL.
 fn build_audit_query(q: &AuditQuery) -> String {
     let mut parts: Vec<String> = Vec::new();

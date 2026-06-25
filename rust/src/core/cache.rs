@@ -98,6 +98,7 @@ fn zstd_decompress(data: &[u8]) -> Option<String> {
 
 impl CacheEntry {
     /// Creates a new entry with zstd-compressed content.
+    #[must_use]
     pub fn new(
         content: &str,
         hash: String,
@@ -189,7 +190,7 @@ impl CacheEntry {
             .unwrap_or_default()
             .as_secs_f64();
         let recency = 1.0 / (1.0 + elapsed.sqrt());
-        let frequency = (self.read_count() as f64 + 1.0).ln();
+        let frequency = (f64::from(self.read_count()) + 1.0).ln();
         let size_value = (self.original_tokens as f64 + 1.0).ln();
         recency * 0.4 + frequency * 0.3 + size_value * 0.3
     }
@@ -397,6 +398,7 @@ impl Default for SessionCache {
 
 impl SessionCache {
     /// Creates an empty session cache with default stats.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             entries: HashMap::new(),
@@ -877,10 +879,12 @@ impl SessionCache {
     }
 }
 
+#[must_use]
 pub fn file_mtime(path: &str) -> Option<SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
+#[must_use]
 pub fn is_cache_entry_stale(path: &str, cached_mtime: Option<SystemTime>) -> bool {
     let current = file_mtime(path);
     match (cached_mtime, current) {
@@ -916,6 +920,7 @@ fn cache_verify_enabled() -> bool {
 /// Note: entries whose stored content differs from disk by design (e.g. secret
 /// redaction) hash differently and therefore never serve stubs — conservative
 /// and correct.
+#[must_use]
 pub fn is_cache_entry_stale_verified(
     path: &str,
     cached_mtime: Option<SystemTime>,

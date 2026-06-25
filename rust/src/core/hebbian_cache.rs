@@ -19,7 +19,7 @@ const PRUNE_THRESHOLD: f32 = 0.01;
 
 /// Tracks co-access patterns between files (Hebbian learning).
 pub struct CoAccessMatrix {
-    /// Sparse co-access weights: (path_hash_a, path_hash_b) → weight
+    /// Sparse co-access weights: (`path_hash_a`, `path_hash_b`) → weight
     weights: HashMap<(u64, u64), f32>,
     /// When each pair was last strengthened
     timestamps: HashMap<(u64, u64), Instant>,
@@ -35,6 +35,7 @@ impl Default for CoAccessMatrix {
 }
 
 impl CoAccessMatrix {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             weights: HashMap::with_capacity(256),
@@ -84,6 +85,7 @@ impl CoAccessMatrix {
 
     /// Get the association strength of a file with all currently active files.
     /// Applies exponential decay based on elapsed time.
+    #[must_use]
     pub fn association_strength(&self, path_hash: u64, active_hashes: &[u64]) -> f32 {
         let now = Instant::now();
         let mut total = 0.0f32;
@@ -162,6 +164,7 @@ fn normalized_key(a: u64, b: u64) -> (u64, u64) {
 }
 
 /// Compute a fast hash for a file path.
+#[must_use]
 pub fn path_hash(path: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -184,21 +187,22 @@ pub struct EntryEnergy {
 impl EntryEnergy {
     /// Calculate the energy value E for this entry.
     /// Combines multiple signals into a single scalar.
+    #[must_use]
     pub fn compute(&self) -> f64 {
         // Recency contributes with log-decay (recent = high energy)
         let recency_score = 1.0 / (1.0 + self.recency_secs / 60.0);
 
         // Read frequency (diminishing returns via sqrt)
-        let freq_score = (self.read_count as f64).sqrt();
+        let freq_score = f64::from(self.read_count).sqrt();
 
         // Association boost (normalized)
-        let assoc_score = (self.association_strength as f64).min(5.0);
+        let assoc_score = f64::from(self.association_strength).min(5.0);
 
         // Size penalty (large entries cost more to keep)
         let size_penalty = 1.0 / (1.0 + (self.token_size as f64 / 5000.0));
 
         // Graph centrality bonus
-        let centrality_score = self.graph_centrality as f64;
+        let centrality_score = f64::from(self.graph_centrality);
 
         // Weighted combination
         recency_score * 3.0

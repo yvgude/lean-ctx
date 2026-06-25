@@ -134,12 +134,14 @@ pub fn snapshot() -> Vec<ModelSpend> {
 }
 
 /// Total measured spend across all models (live in-memory totals).
+#[must_use]
 pub fn total_cost_usd() -> f64 {
     snapshot().iter().map(|m| m.cost_usd).sum()
 }
 
 /// Prices a model usage map into sorted [`ModelSpend`] rows. Pure: shared by the
 /// in-memory snapshot and the cross-process [`persisted_snapshot`].
+#[must_use]
 pub fn price_models(map: &HashMap<String, ModelUsage>) -> Vec<ModelSpend> {
     let pricing = ModelPricing::load();
     let mut rows: Vec<ModelSpend> = map
@@ -209,6 +211,7 @@ fn persist() {
 }
 
 /// Cross-process read of the persisted measured spend (dashboard / CLI / ledger).
+#[must_use]
 pub fn load_persisted() -> Option<PersistedUsage> {
     let path = usage_path()?;
     let data = std::fs::read_to_string(path).ok()?;
@@ -216,6 +219,7 @@ pub fn load_persisted() -> Option<PersistedUsage> {
 }
 
 /// Cross-process priced spend rows, read from disk.
+#[must_use]
 pub fn persisted_snapshot() -> Vec<ModelSpend> {
     load_persisted()
         .map(|p| price_models(&p.models))
@@ -225,6 +229,7 @@ pub fn persisted_snapshot() -> Vec<ModelSpend> {
 /// The model carrying the most measured tokens (excludes the "unknown" bucket).
 /// Used to value savings against the real dominant model when no explicit model
 /// is configured.
+#[must_use]
 pub fn persisted_dominant_model() -> Option<String> {
     let persisted = load_persisted()?;
     persisted

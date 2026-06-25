@@ -48,16 +48,19 @@ fn registry() -> &'static Vec<PolicyPack> {
 }
 
 /// All built-in packs, base packs first.
+#[must_use]
 pub fn all() -> &'static [PolicyPack] {
     registry()
 }
 
 /// The built-in pack names, in registry order.
+#[must_use]
 pub fn names() -> Vec<&'static str> {
     registry().iter().map(|p| p.name.as_str()).collect()
 }
 
 /// Look up one built-in pack by name.
+#[must_use]
 pub fn get(name: &str) -> Option<PolicyPack> {
     registry().iter().find(|p| p.name == name).cloned()
 }

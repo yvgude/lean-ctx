@@ -9,6 +9,7 @@ pub fn record(event: &LlmFeedbackEvent) -> Result<String, String> {
     Ok("feedback recorded".to_string())
 }
 
+#[must_use]
 pub fn status() -> String {
     let s = LlmFeedbackStore::status();
     format!(
@@ -20,6 +21,7 @@ pub fn status() -> String {
     )
 }
 
+#[must_use]
 pub fn report(limit: usize) -> String {
     let s = LlmFeedbackStore::summarize(limit);
     if s.total_events == 0 {
@@ -54,6 +56,7 @@ pub fn report(limit: usize) -> String {
     lines.join("\n")
 }
 
+#[must_use]
 pub fn json(limit: usize) -> String {
     let status = LlmFeedbackStore::status();
     let summary = LlmFeedbackStore::summarize(limit);
@@ -66,6 +69,7 @@ pub fn json(limit: usize) -> String {
     .to_string()
 }
 
+#[must_use]
 pub fn reset() -> String {
     match (LlmFeedbackStore::reset(), AdaptiveModePolicyStore::reset()) {
         (Ok(()), Ok(())) => "LLM feedback has been reset.".to_string(),

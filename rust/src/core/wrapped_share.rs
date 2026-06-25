@@ -15,6 +15,7 @@ use crate::core::wrapped::{WrappedReport, format_tokens};
 impl WrappedReport {
     /// Renders the self-contained share page. `base_url` (optional) is the location the
     /// user will host the page at; when present, absolute OG/Twitter image meta is emitted.
+    #[must_use]
     pub fn to_share_html(&self, base_url: Option<&str>) -> String {
         let title = "lean-ctx Wrapped";
         let period_label = match self.period.as_str() {
@@ -54,6 +55,7 @@ impl WrappedReport {
 
     /// A ready-to-post one-liner for `gain --copy`. The opt-in permalink `url`
     /// (once published) is appended when present. Honest about the estimate marker.
+    #[must_use]
     pub fn share_text(&self, url: Option<&str>) -> String {
         let period_label = match self.period.as_str() {
             "week" => " this week",

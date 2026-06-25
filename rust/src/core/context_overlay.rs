@@ -16,6 +16,7 @@ use super::context_field::{ContextItemId, ContextState, ViewKind};
 pub struct OverlayId(pub String);
 
 impl OverlayId {
+    #[must_use]
     pub fn generate(target: &ContextItemId) -> Self {
         Self(format!(
             "ov_{}_{}",
@@ -24,6 +25,7 @@ impl OverlayId {
         ))
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -100,6 +102,7 @@ pub struct ContextOverlay {
 }
 
 impl ContextOverlay {
+    #[must_use]
     pub fn new(
         target: ContextItemId,
         operation: OverlayOp,
@@ -143,6 +146,7 @@ pub struct OverlayStore {
 }
 
 impl OverlayStore {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -161,6 +165,7 @@ impl OverlayStore {
         self.overlays.retain(|o| o.id != *id);
     }
 
+    #[must_use]
     pub fn for_item(&self, target: &ContextItemId) -> Vec<&ContextOverlay> {
         self.overlays
             .iter()
@@ -168,12 +173,14 @@ impl OverlayStore {
             .collect()
     }
 
+    #[must_use]
     pub fn active_for_scope(&self, scope: &OverlayScope) -> Vec<&ContextOverlay> {
         self.overlays.iter().filter(|o| o.scope == *scope).collect()
     }
 
     /// Applies all overlays for `target` to `current_state`, returning the
     /// effective state. Later overlays take precedence.
+    #[must_use]
     pub fn apply_to_state(
         &self,
         target: &ContextItemId,
@@ -208,6 +215,7 @@ impl OverlayStore {
     }
 
     /// Returns all overlays for `target`, ordered by creation time.
+    #[must_use]
     pub fn history(&self, target: &ContextItemId) -> Vec<&ContextOverlay> {
         let mut items: Vec<&ContextOverlay> = self.for_item(target);
         items.sort_by_key(|o| o.created_at);
@@ -218,6 +226,7 @@ impl OverlayStore {
         self.overlays.retain(|o| o.target != *target);
     }
 
+    #[must_use]
     pub fn all(&self) -> &[ContextOverlay] {
         &self.overlays
     }

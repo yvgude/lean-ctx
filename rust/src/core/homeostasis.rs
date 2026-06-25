@@ -22,6 +22,7 @@ pub enum PressureLevel {
 }
 
 impl PressureLevel {
+    #[must_use]
     pub fn from_utilization(util: f64) -> Self {
         if util >= 0.95 {
             Self::Emergency
@@ -44,7 +45,7 @@ pub enum HomeostasisAction {
     None,
     /// Trim compressed outputs in cache (max 2 per entry instead of 3).
     TrimOutputs,
-    /// Evict probationary cache entries (read_count <= 1).
+    /// Evict probationary cache entries (`read_count` <= 1).
     EvictProbationary { target_tokens: usize },
     /// Unload heavy indices from memory.
     UnloadIndices,
@@ -67,6 +68,7 @@ pub struct HomeostasisController {
 }
 
 impl HomeostasisController {
+    #[must_use]
     pub fn new(budget_tokens: usize) -> Self {
         Self {
             last_level: PressureLevel::Nominal,

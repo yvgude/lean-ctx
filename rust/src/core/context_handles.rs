@@ -57,6 +57,7 @@ fn kind_prefix(kind: &ContextKind) -> &'static str {
 // ---------------------------------------------------------------------------
 
 impl HandleRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             handles: Vec::new(),
@@ -117,27 +118,32 @@ impl HandleRegistry {
     /// Look up a handle by its ref-label (e.g. "F1", "S3").
     ///
     /// Accepts labels with or without the leading `@`.
+    #[must_use]
     pub fn resolve(&self, ref_label: &str) -> Option<&ContextHandle> {
         let label = ref_label.strip_prefix('@').unwrap_or(ref_label);
         self.handles.iter().find(|h| h.ref_label == label)
     }
 
     /// Look up a handle by its underlying item ID.
+    #[must_use]
     pub fn resolve_by_item(&self, item_id: &ContextItemId) -> Option<&ContextHandle> {
         self.handles.iter().find(|h| h.item_id == *item_id)
     }
 
     /// All registered handles, in registration order.
+    #[must_use]
     pub fn all(&self) -> &[ContextHandle] {
         &self.handles
     }
 
     /// Sum of `handle_tokens` across all registered handles.
+    #[must_use]
     pub fn total_handle_tokens(&self) -> usize {
         self.handles.iter().map(|h| h.handle_tokens).sum()
     }
 
     /// Render the compact handle manifest for inclusion in a system prompt.
+    #[must_use]
     pub fn format_manifest(&self, budget_total: usize, budget_used: usize) -> String {
         if self.handles.is_empty() {
             return String::new();

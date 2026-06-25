@@ -21,6 +21,7 @@ const SHORT_ID_PREFIX: char = 'α';
 /// 2. `LEAN_CTX_SYMBOL_MAP=0` env var → force off
 /// 3. `symbol_map_auto = true` in config + project >50 source files → auto-on
 /// 4. Default: off (the abbreviated form hinders editing; opt-in only)
+#[must_use]
 pub fn substitution_enabled() -> bool {
     if let Ok(v) = std::env::var("LEAN_CTX_SYMBOL_MAP") {
         return v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("on");
@@ -74,6 +75,7 @@ impl Default for SymbolMap {
 }
 
 impl SymbolMap {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             forward: HashMap::new(),
@@ -97,6 +99,7 @@ impl SymbolMap {
         Some(short_id)
     }
 
+    #[must_use]
     pub fn apply(&self, text: &str) -> String {
         if self.forward.is_empty() {
             return text.to_string();
@@ -112,6 +115,7 @@ impl SymbolMap {
         result
     }
 
+    #[must_use]
     pub fn format_table(&self) -> String {
         if self.forward.is_empty() {
             return String::new();
@@ -131,21 +135,24 @@ impl SymbolMap {
         table
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.forward.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.forward.is_empty()
     }
 }
 
-/// MAP entry cost in tokens: "  αN=identifier\n" ≈ short_id_tokens + ident_tokens + 2 (= and newline)
+/// MAP entry cost in tokens: "  αN=identifier\n" ≈ `short_id_tokens` + `ident_tokens` + 2 (= and newline)
 const MAP_ENTRY_OVERHEAD: usize = 2;
 
 /// ROI-based decision: register only when total savings exceed the MAP entry cost.
-/// savings = occurrences * (tokens(ident) - tokens(short_id))
-/// cost    = tokens(ident) + tokens(short_id) + MAP_ENTRY_OVERHEAD
+/// savings = occurrences * (tokens(ident) - `tokens(short_id)`)
+/// cost    = tokens(ident) + `tokens(short_id)` + `MAP_ENTRY_OVERHEAD`
+#[must_use]
 pub fn should_register(identifier: &str, occurrences: usize, next_id: usize) -> bool {
     if identifier.len() < MIN_IDENT_LENGTH {
         return false;

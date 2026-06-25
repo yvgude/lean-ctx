@@ -9,6 +9,7 @@ fn required_arg(name: &str, desc: &str) -> PromptArgument {
         .with_required(true)
 }
 
+#[must_use]
 pub fn list_prompts() -> Vec<Prompt> {
     vec![
         Prompt::new(
@@ -42,6 +43,7 @@ pub fn list_prompts() -> Vec<Prompt> {
     ]
 }
 
+#[must_use]
 pub fn get_prompt(
     params: &GetPromptRequestParams,
     ledger: &crate::core::context_ledger::ContextLedger,

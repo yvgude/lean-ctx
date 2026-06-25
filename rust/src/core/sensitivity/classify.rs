@@ -15,6 +15,7 @@ use crate::core::{io_boundary, secret_detection};
 /// Classify a source path. Secret-like paths (keys, `.env`, `.ssh/…`) → `Secret`.
 /// Everything else stays `Public` — path alone is not enough to infer lower
 /// confidential levels without guessing.
+#[must_use]
 pub fn classify_path(path: &Path) -> SensitivityLevel {
     if io_boundary::is_secret_like(path).is_some() {
         SensitivityLevel::Secret
@@ -24,6 +25,7 @@ pub fn classify_path(path: &Path) -> SensitivityLevel {
 }
 
 /// Classify free text by content.
+#[must_use]
 pub fn classify_content(content: &str) -> SensitivityLevel {
     if !secret_detection::detect_secrets(content).is_empty() {
         return SensitivityLevel::Secret;
@@ -73,7 +75,7 @@ fn luhn_valid(digits: &[u8]) -> bool {
         if d > 9 {
             return false;
         }
-        let mut v = d as u32;
+        let mut v = u32::from(d);
         if double {
             v *= 2;
             if v > 9 {
@@ -137,7 +139,7 @@ fn iban_valid(candidate: &str) -> bool {
         if let Some(d) = c.to_digit(10) {
             rem = (rem * 10 + d) % 97;
         } else if c.is_ascii_alphabetic() {
-            let val = (c.to_ascii_uppercase() as u8 - b'A' + 10) as u32;
+            let val = u32::from(c.to_ascii_uppercase() as u8 - b'A' + 10);
             rem = (rem * 100 + val) % 97;
         } else {
             return false;

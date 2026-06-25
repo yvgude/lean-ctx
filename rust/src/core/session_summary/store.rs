@@ -36,6 +36,7 @@ impl SummaryStore {
         Some(dir.join(format!("{project_hash}.json")))
     }
 
+    #[must_use]
     pub fn load_or_create(project_root: &str) -> Self {
         let hash = crate::core::project_hash::hash_project_root(project_root);
         let Some(path) = Self::store_path(&hash) else {
@@ -58,6 +59,7 @@ impl SummaryStore {
     }
 
     /// Next sequence number (1-based), monotonic across the store's lifetime.
+    #[must_use]
     pub fn next_seq(&self) -> u32 {
         self.summaries
             .iter()
@@ -79,6 +81,7 @@ impl SummaryStore {
     }
 
     /// Lexical token-overlap search → `(index, score)`, best first.
+    #[must_use]
     pub fn search_lexical(&self, query: &str, top_k: usize) -> Vec<(usize, f64)> {
         let terms = tokenize(query);
         if terms.is_empty() {
