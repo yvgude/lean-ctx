@@ -172,6 +172,7 @@ pub(super) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
     "content-type",
     "accept",
     "user-agent",
+    "originator",
     "anthropic-version",
     "anthropic-beta",
     "anthropic-dangerous-direct-browser-access",
@@ -180,16 +181,31 @@ pub(super) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
     "openai-beta",
     "chatgpt-account-id",
     "x-openai-fedramp",
+    "x-openai-internal-codex-residency",
+    "x-openai-internal-codex-responses-lite",
+    "x-openai-product-sku",
     "oai-product-sku",
+    "x-oai-attestation",
     "x-client-request-id",
+    "x-codex-beta-features",
+    "x-codex-installation-id",
+    "x-codex-parent-thread-id",
     "x-openai-subagent",
     "x-codex-turn-state",
+    "x-codex-turn-metadata",
+    "x-codex-window-id",
+    "x-openai-memgen-request",
+    "x-responsesapi-include-timing-metrics",
     "mcp-session-id",
     "last-event-id",
     "cache-control",
     "x-goog-api-key",
     "x-goog-api-client",
 ];
+
+pub(super) fn is_allowed_request_header(name: &str) -> bool {
+    ALLOWED_REQUEST_HEADERS.contains(&name)
+}
 
 async fn send_upstream(
     state: &ProxyState,
@@ -202,7 +218,7 @@ async fn send_upstream(
 
     for (key, value) in &parts.headers {
         let k = key.as_str().to_lowercase();
-        if ALLOWED_REQUEST_HEADERS.contains(&k.as_str()) {
+        if is_allowed_request_header(&k) {
             req = req.header(key.clone(), value.clone());
         }
     }
@@ -218,9 +234,16 @@ pub(super) const FORWARDED_HEADERS: &[&str] = &[
     "content-encoding",
     "mcp-session-id",
     "x-request-id",
+    "x-oai-request-id",
+    "cf-ray",
+    "x-openai-authorization-error",
+    "x-error-json",
     "openai-organization",
+    "openai-model",
     "openai-processing-ms",
     "openai-version",
+    "x-models-etag",
+    "x-reasoning-included",
     "anthropic-ratelimit-requests-limit",
     "anthropic-ratelimit-requests-remaining",
     "anthropic-ratelimit-tokens-limit",
@@ -232,6 +255,12 @@ pub(super) const FORWARDED_HEADERS: &[&str] = &[
     "x-ratelimit-remaining-tokens",
     "cache-control",
 ];
+
+pub(super) fn is_forwarded_response_header(name: &str) -> bool {
+    FORWARDED_HEADERS.contains(&name)
+        || name.starts_with("x-codex-")
+        || name.starts_with("x-ratelimit-")
+}
 
 async fn build_response(
     response: reqwest::Response,
@@ -260,7 +289,7 @@ async fn build_response(
         let mut resp = Response::builder().status(status);
         for (k, v) in &resp_headers {
             let ks = k.as_str().to_lowercase();
-            if FORWARDED_HEADERS.contains(&ks.as_str()) {
+            if is_forwarded_response_header(&ks) {
                 resp = resp.header(k, v);
             }
         }
@@ -284,7 +313,7 @@ async fn build_response(
     let mut resp = Response::builder().status(status);
     for (k, v) in &resp_headers {
         let ks = k.as_str().to_lowercase();
-        if FORWARDED_HEADERS.contains(&ks.as_str()) {
+        if is_forwarded_response_header(&ks) {
             resp = resp.header(k, v);
         }
     }
@@ -359,13 +388,18 @@ mod tests {
             "authorization",
             "chatgpt-account-id",
             "x-openai-fedramp",
+            "x-openai-internal-codex-residency",
+            "x-openai-product-sku",
             "oai-product-sku",
             "x-client-request-id",
+            "x-codex-installation-id",
+            "x-codex-turn-metadata",
             "x-openai-subagent",
             "x-codex-turn-state",
+            "originator",
         ] {
             assert!(
-                ALLOWED_REQUEST_HEADERS.contains(&required),
+                is_allowed_request_header(required),
                 "request header `{required}` must be forwarded upstream"
             );
         }
@@ -380,8 +414,28 @@ mod tests {
             );
         }
         assert!(
-            FORWARDED_HEADERS.contains(&"mcp-session-id"),
+            is_forwarded_response_header("mcp-session-id"),
             "MCP session id response header must be forwarded downstream"
         );
+    }
+
+    #[test]
+    fn forwards_codex_state_response_headers() {
+        for required in [
+            "x-codex-turn-state",
+            "x-codex-primary-used-percent",
+            "openai-model",
+            "x-models-etag",
+            "x-reasoning-included",
+            "x-oai-request-id",
+            "cf-ray",
+            "x-openai-authorization-error",
+            "x-error-json",
+        ] {
+            assert!(
+                is_forwarded_response_header(required),
+                "response header `{required}` must be forwarded downstream"
+            );
+        }
     }
 }

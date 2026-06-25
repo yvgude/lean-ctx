@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::State,
-    http::{Request, StatusCode},
+    http::{HeaderName, Request, StatusCode},
     response::Response,
 };
 
@@ -62,8 +62,7 @@ pub async fn backend_api_handler(
 
     let mut upstream_req = state.client.request(parts.method.clone(), &url);
     for (key, value) in &parts.headers {
-        let k = key.as_str().to_lowercase();
-        if forward::ALLOWED_REQUEST_HEADERS.contains(&k.as_str()) {
+        if is_backend_passthrough_request_header(key) {
             upstream_req = upstream_req.header(key.clone(), value.clone());
         }
     }
@@ -86,8 +85,7 @@ pub async fn backend_api_handler(
 
     let mut out = Response::builder().status(status);
     for (key, value) in &headers {
-        let k = key.as_str().to_lowercase();
-        if forward::FORWARDED_HEADERS.contains(&k.as_str()) {
+        if is_backend_passthrough_response_header(key) {
             out = out.header(key, value);
         }
     }
@@ -105,6 +103,40 @@ pub async fn backend_api_handler(
 
     out.body(Body::from(bytes))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+fn is_backend_passthrough_request_header(name: &HeaderName) -> bool {
+    let lower = name.as_str().to_ascii_lowercase();
+    !matches!(
+        lower.as_str(),
+        "host"
+            | "connection"
+            | "content-length"
+            | "transfer-encoding"
+            | "upgrade"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailer"
+            | "accept-encoding"
+    )
+}
+
+fn is_backend_passthrough_response_header(name: &HeaderName) -> bool {
+    let lower = name.as_str().to_ascii_lowercase();
+    !matches!(
+        lower.as_str(),
+        "connection"
+            | "content-length"
+            | "transfer-encoding"
+            | "upgrade"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailer"
+    )
 }
 
 #[cfg(test)]
@@ -158,6 +190,7 @@ mod tests {
                       content-type: text/event-stream\r\n\
                       mcp-session-id: server-session\r\n\
                       cache-control: no-cache\r\n\
+                      x-custom-backend-state: passthrough\r\n\
                       \r\n\
                       event: message\n\
                       data: {\"jsonrpc\":\"2.0\"}\n\n",
@@ -179,6 +212,9 @@ mod tests {
             .header("Authorization", "Bearer codex-token")
             .header("Mcp-Session-Id", "client-session")
             .header("Last-Event-ID", "event-7")
+            .header("X-OpenAI-Product-Sku", "codex")
+            .header("X-OpenAI-Internal-Codex-Residency", "us")
+            .header("Originator", "codex_cli_rs")
             .header("Accept", "application/json, text/event-stream")
             .body(Body::empty())
             .unwrap();
@@ -196,11 +232,18 @@ mod tests {
             response.headers().get("mcp-session-id").unwrap(),
             "server-session"
         );
+        assert_eq!(
+            response.headers().get("x-custom-backend-state").unwrap(),
+            "passthrough"
+        );
 
         let request = seen_request.await.unwrap().to_ascii_lowercase();
         assert!(request.contains("post /backend-api/ps/mcp?transport=streamable http/1.1"));
         assert!(request.contains("authorization: bearer codex-token"));
         assert!(request.contains("mcp-session-id: client-session"));
         assert!(request.contains("last-event-id: event-7"));
+        assert!(request.contains("x-openai-product-sku: codex"));
+        assert!(request.contains("x-openai-internal-codex-residency: us"));
+        assert!(request.contains("originator: codex_cli_rs"));
     }
 }
