@@ -1,16 +1,10 @@
-pub mod bm25_incremental;
-pub mod content_pipeline;
 pub mod discovery;
 pub mod dump_engine;
-pub mod edge_snapshot;
-pub mod extraction;
 pub mod file_metadata_store;
 pub mod parallel_extract;
 pub mod parallel_resolve;
-pub mod registry_build;
-pub mod graph_builder;
-pub mod incremental;
 pub mod pipeline;
+pub mod registry_build;
 pub mod semantic_edges;
 pub mod semantic_lsh;
 pub mod similarity_pass;
