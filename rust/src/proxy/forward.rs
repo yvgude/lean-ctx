@@ -44,11 +44,16 @@ pub async fn forward_request(
     state.stats.record_request();
 
     let original_size = body_bytes.len();
+    let preserve_content_encoding = has_non_identity_content_encoding(&parts);
 
     // Parse once; the parsed value is shared between introspection, cost
     // attribution, and compression — eliminating the redundant re-parse that
     // each compress_body function previously performed internally.
-    let parsed = serde_json::from_slice::<serde_json::Value>(&body_bytes).ok();
+    let parsed = if preserve_content_encoding {
+        None
+    } else {
+        serde_json::from_slice::<serde_json::Value>(&body_bytes).ok()
+    };
     if let Some(ref parsed) = parsed {
         let provider = match provider_label {
             "Anthropic" => super::introspect::Provider::Anthropic,
@@ -99,6 +104,7 @@ pub async fn forward_request(
         &upstream_url,
         compressed_body,
         provider_label,
+        preserve_content_encoding,
     )
     .await?;
 
@@ -207,18 +213,35 @@ pub(super) fn is_allowed_request_header(name: &str) -> bool {
     ALLOWED_REQUEST_HEADERS.contains(&name)
 }
 
+fn should_forward_request_header(name: &str, preserve_content_encoding: bool) -> bool {
+    is_allowed_request_header(name)
+        || (preserve_content_encoding && name.eq_ignore_ascii_case("content-encoding"))
+}
+
+fn has_non_identity_content_encoding(parts: &Parts) -> bool {
+    parts
+        .headers
+        .get(axum::http::header::CONTENT_ENCODING)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            let value = value.trim();
+            !value.is_empty() && !value.eq_ignore_ascii_case("identity")
+        })
+}
+
 async fn send_upstream(
     state: &ProxyState,
     parts: &Parts,
     url: &str,
     body: Vec<u8>,
     provider_label: &str,
+    preserve_content_encoding: bool,
 ) -> Result<reqwest::Response, StatusCode> {
     let mut req = state.client.request(parts.method.clone(), url);
 
     for (key, value) in &parts.headers {
         let k = key.as_str().to_lowercase();
-        if is_allowed_request_header(&k) {
+        if should_forward_request_header(&k, preserve_content_encoding) {
             req = req.header(key.clone(), value.clone());
         }
     }
@@ -327,6 +350,34 @@ mod tests {
 
     fn parts_for(uri: &str) -> Parts {
         Request::builder().uri(uri).body(()).unwrap().into_parts().0
+    }
+
+    #[test]
+    fn encoded_request_bodies_skip_json_rewrite_and_preserve_encoding() {
+        let parts = Request::builder()
+            .uri("/backend-api/codex/responses")
+            .header(axum::http::header::CONTENT_ENCODING, "zstd")
+            .body(())
+            .unwrap()
+            .into_parts()
+            .0;
+
+        assert!(has_non_identity_content_encoding(&parts));
+        assert!(should_forward_request_header("content-encoding", true));
+        assert!(!should_forward_request_header("content-encoding", false));
+    }
+
+    #[test]
+    fn identity_content_encoding_can_be_rewritten_as_json() {
+        let parts = Request::builder()
+            .uri("/v1/responses")
+            .header(axum::http::header::CONTENT_ENCODING, "identity")
+            .body(())
+            .unwrap()
+            .into_parts()
+            .0;
+
+        assert!(!has_non_identity_content_encoding(&parts));
     }
 
     #[test]

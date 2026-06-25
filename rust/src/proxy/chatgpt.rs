@@ -5,7 +5,7 @@ use axum::{
     response::Response,
 };
 
-use super::{ProxyState, forward, openai_responses, openai_responses_ws};
+use super::{ProxyState, forward, openai_responses};
 
 /// Codex subscription model turns hit ChatGPT's Responses-compatible rail:
 /// `/backend-api/codex/responses`. Forward through the same compressor/metering
@@ -27,20 +27,24 @@ pub async fn codex_responses_handler(
     .await
 }
 
-/// Codex can use the Responses WebSocket transport in ChatGPT auth mode too.
+/// ChatGPT's Codex rail rejects WS-only continuation fields such as
+/// `previous_response_id`; ask Codex to retry through the HTTP/SSE path.
 pub async fn codex_responses_ws_handler(
-    State(state): State<ProxyState>,
-    headers: axum::http::HeaderMap,
-    ws: axum::extract::ws::WebSocketUpgrade,
+    State(_state): State<ProxyState>,
+    _headers: axum::http::HeaderMap,
+    _ws: axum::extract::ws::WebSocketUpgrade,
 ) -> Response {
-    let upstream = state.chatgpt_upstream();
-    openai_responses_ws::upgrade_to(
-        state,
-        ws,
-        &headers,
-        upstream,
-        "/backend-api/codex/responses",
-    )
+    chatgpt_responses_ws_fallback_response()
+}
+
+fn chatgpt_responses_ws_fallback_response() -> Response {
+    Response::builder()
+        .status(StatusCode::UPGRADE_REQUIRED)
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"error":{"type":"unsupported_transport","message":"ChatGPT codex responses use HTTP/SSE; retry without WebSocket."}}"#,
+        ))
+        .expect("static response is valid")
 }
 
 /// ChatGPT backend calls outside the model rail are not model JSON and must not be
@@ -163,6 +167,19 @@ mod tests {
             introspect: Arc::new(crate::proxy::introspect::IntrospectState::default()),
             upstreams: rx,
         }
+    }
+
+    #[test]
+    fn codex_responses_ws_requests_trigger_http_fallback() {
+        let response = chatgpt_responses_ws_fallback_response();
+        assert_eq!(response.status(), StatusCode::UPGRADE_REQUIRED);
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .unwrap(),
+            "application/json"
+        );
     }
 
     async fn spawn_streaming_upstream() -> (String, tokio::sync::oneshot::Receiver<String>) {
