@@ -4,7 +4,7 @@
 //! query batch) so ranking behaviour matches `ctx_search`/`ctx_semantic_search`
 //! and stays deterministic for a fixed catalog.
 
-use crate::core::chunk_data::{bm25_search, ChunkData};
+use crate::core::chunk_data::{ChunkData, bm25_search};
 use crate::core::content_chunk::{ContentChunk, ContentSource};
 
 use super::catalog::{Catalog, CatalogEntry};

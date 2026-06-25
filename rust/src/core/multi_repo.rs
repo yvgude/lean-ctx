@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::chunk_data::{bm25_search, ChunkData, SearchResult};
+use crate::core::chunk_data::{ChunkData, SearchResult, bm25_search};
 
 /// Default RRF parameter (controls how quickly rank decay affects fusion scores).
 const DEFAULT_RRF_K: f64 = 60.0;
@@ -134,7 +134,9 @@ impl ActiveRepoRoot {
         if self.index.is_some() {
             return;
         }
-        self.index = Some(crate::core::chunk_data::BM25Index::build_from_directory(&self.path));
+        self.index = Some(crate::core::chunk_data::BM25Index::build_from_directory(
+            &self.path,
+        ));
     }
 
     pub fn alias(&self) -> String {

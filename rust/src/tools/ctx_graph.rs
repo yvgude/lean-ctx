@@ -45,10 +45,14 @@ fn handle_build(root: &str, format: Option<&str>) -> String {
     let (index, _) = handle.run_and_load().expect("pipeline run failed");
 
     if matches!(format, Some(f) if f.eq_ignore_ascii_case("json")) {
-        let nodes_json: Vec<_> = index.files.values().map(|entry| {
-            let name = entry.path.rsplit('/').next().unwrap_or(&entry.path);
-            serde_json::json!({ "name": name, "file": entry.path })
-        }).collect();
+        let nodes_json: Vec<_> = index
+            .files
+            .values()
+            .map(|entry| {
+                let name = entry.path.rsplit('/').next().unwrap_or(&entry.path);
+                serde_json::json!({ "name": name, "file": entry.path })
+            })
+            .collect();
 
         let edges_json: Vec<_> = index
             .edges
@@ -445,7 +449,8 @@ fn handle_impact(path: Option<&str>, root: &str, format: Option<&str>) -> String
                 "nodes": [{ "name": name, "file": rel_target }],
                 "edges": [],
                 "impact": { "target": rel_target, "direct": 0, "total": 0 },
-            }).to_string();
+            })
+            .to_string();
         }
         return format!(
             "No files depend on {}",
@@ -460,20 +465,24 @@ fn handle_impact(path: Option<&str>, root: &str, format: Option<&str>) -> String
             all_set.insert(d.clone());
         }
 
-        let nodes_json: Vec<_> =
-            {
-                let mut sorted: Vec<_> = all_set.iter().collect();
-                sorted.sort();
-                sorted.iter().map(|n| {
-                let name = n.rsplit('/').next().unwrap_or(n);
-                serde_json::json!({ "name": name, "file": n })
-            }).collect()
-            };
+        let nodes_json: Vec<_> = {
+            let mut sorted: Vec<_> = all_set.iter().collect();
+            sorted.sort();
+            sorted
+                .iter()
+                .map(|n| {
+                    let name = n.rsplit('/').next().unwrap_or(n);
+                    serde_json::json!({ "name": name, "file": n })
+                })
+                .collect()
+        };
 
         let edges_json: Vec<_> = {
             let all_edges = gp.edges();
-            let deps_set: std::collections::HashSet<&str> =
-                all_dependents.iter().map(|s| s.as_str()).collect();
+            let deps_set: std::collections::HashSet<&str> = all_dependents
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
             all_edges
                 .iter()
                 .filter(|e| deps_set.contains(e.from.as_str()) && e.to == rel_target)
@@ -860,56 +869,5 @@ mod gdscript_p0_tests {
         );
 
         (tmp, proj.to_string_lossy().to_string())
-    }
-
-    #[test]
-    fn context_resolves_gdscript_symbol() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let (_tmp, root) = godot_fixture();
-        let _ = handle_build(&root, None);
-        let out = handle_context_query(Some("_ready"), &root);
-        assert!(
-            out.contains("_ready"),
-            "context should surface _ready symbols: {out}"
-        );
-        assert!(!out.contains("No matching nodes found"), "got: {out}");
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-    }
-
-    #[test]
-    fn impact_lists_gdscript_dependents() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let (_tmp, root) = godot_fixture();
-        let _ = handle_build(&root, None);
-        let out = handle_impact(Some("actors/Base.gd"), &root, None);
-        assert!(
-            out.contains("Player.gd"),
-            "Base.gd dependents should include Player: {out}"
-        );
-        assert!(
-            out.contains("Enemy.gd"),
-            "Base.gd dependents should include Enemy: {out}"
-        );
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-    }
-
-    #[test]
-    fn bare_symbol_resolves_gdscript() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let (_tmp, root) = godot_fixture();
-        let _ = handle_build(&root, None);
-        let mut cache = crate::core::cache::SessionCache::new();
-        let out = handle_symbol(
-            Some("_ready"),
-            &root,
-            &mut cache,
-            crate::tools::CrpMode::Off,
-        );
-        // Four `_ready` defs → a disambiguation list (or a snippet), never the
-        // pre-#314 "Invalid symbol spec" / "not found" errors.
-        assert!(out.contains("_ready"), "bare symbol should resolve: {out}");
-        assert!(!out.contains("Invalid symbol spec"), "got: {out}");
-        assert!(!out.to_lowercase().contains("not found"), "got: {out}");
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }
 }

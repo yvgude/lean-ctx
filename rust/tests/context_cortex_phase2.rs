@@ -6,7 +6,7 @@
 //!   3. Session cache integration for provider results
 //!   4. End-to-end: Provider → Consolidate → All stores populated
 
-use lean_ctx::core::bm25_index::{BM25Index, ChunkKind};
+use lean_ctx::core::bm25_index::{BM25Index, ChunkKind, bm25_search};
 use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::consolidation::{apply_artifacts, consolidate};
 use lean_ctx::core::content_chunk::ContentChunk;
@@ -410,7 +410,7 @@ fn bm25_search_finds_consolidated_provider_data() {
 
     apply_artifacts(&artifacts, Some(&mut index), None, None);
 
-    let results = index.search("authentication token", 5);
+    let results = bm25_search(&index, "authentication token", 5);
     assert!(!results.is_empty());
     assert!(results[0].file_path.contains("github://issues/42"));
 }

@@ -115,7 +115,10 @@ mod tests {
 
         // All old artifacts present before migration.
         for name in OLD_ARTIFACTS {
-            assert!(vec_dir.join(name).exists(), "{name} should exist before migration");
+            assert!(
+                vec_dir.join(name).exists(),
+                "{name} should exist before migration"
+            );
         }
 
         let migrated = migrate_if_needed(project.path()).unwrap();
@@ -123,7 +126,10 @@ mod tests {
 
         // Old artifacts removed.
         for name in OLD_ARTIFACTS {
-            assert!(!vec_dir.join(name).exists(), "{name} should be deleted after migration");
+            assert!(
+                !vec_dir.join(name).exists(),
+                "{name} should be deleted after migration"
+            );
         }
 
         // SQLite database created.
@@ -172,7 +178,10 @@ mod tests {
 
         // Project has no vectors dir yet (pipeline never ran).
         let result = migrate_if_needed(project.path()).unwrap();
-        assert!(!result, "should return false when vectors_dir does not exist");
+        assert!(
+            !result,
+            "should return false when vectors_dir does not exist"
+        );
     }
 
     #[test]
@@ -193,7 +202,10 @@ mod tests {
         }
 
         let migrated = migrate_if_needed(project.path()).unwrap();
-        assert!(migrated, "should return true because old artifacts were cleaned");
+        assert!(
+            migrated,
+            "should return true because old artifacts were cleaned"
+        );
 
         // Old artifacts removed.
         for name in OLD_ARTIFACTS {

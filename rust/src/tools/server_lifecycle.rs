@@ -122,9 +122,7 @@ impl LeanCtxServer {
         // Start the RAM guardian with real eviction via EvictionOrchestrator.
         // Bridges memory_guard (RSS monitoring) → HomeostasisController (graduated actions).
         let orchestrator = std::sync::Arc::new(
-            crate::core::eviction_orchestrator::EvictionOrchestrator::new(
-                cache.clone(),
-            ),
+            crate::core::eviction_orchestrator::EvictionOrchestrator::new(cache.clone()),
         );
         crate::core::memory_guard::start_guard(std::sync::Arc::new(move |level| {
             orchestrator.on_pressure(level);

@@ -182,7 +182,11 @@ pub fn hybrid_retrieve(query: &str, bm25_index: &ChunkData, top_k: usize) -> Vec
 
     let expanded = build_expanded_weights(&query_tokens);
 
-    let stage1 = crate::core::chunk_data::bm25_search(bm25_index, query, 100.min(bm25_index.doc_count.max(1)));
+    let stage1 = crate::core::chunk_data::bm25_search(
+        bm25_index,
+        query,
+        100.min(bm25_index.doc_count.max(1)),
+    );
 
     let bm25_by_chunk: HashMap<usize, f64> =
         stage1.iter().map(|r| (r.chunk_idx, r.score)).collect();

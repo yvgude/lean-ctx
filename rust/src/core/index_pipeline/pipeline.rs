@@ -403,8 +403,10 @@ impl PipelineHandle {
         cancel_check(&cancel, "purge")?;
 
         // ── ⑨ Filter discovered files to only changed + new ─────────────────
-        let changed_new_set: HashSet<&str> =
-            changed_new.iter().map(|s| s.as_str()).collect();
+        let changed_new_set: HashSet<&str> = changed_new
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
         let files_to_process: Vec<DiscoveredFile> = files
             .iter()
             .filter(|f| changed_new_set.contains(f.rel_path.as_str()))
@@ -498,7 +500,9 @@ impl PipelineHandle {
         self.run()?;
         let (graph, chunks) = DumpEngine::load_with_integrity_check(&self.project_root)
             .context("loading dumped indices after pipeline run")?;
-        let index = if !chunks.is_empty() {
+        let index = if chunks.is_empty() {
+            ChunkData::new()
+        } else {
             let converted: Vec<crate::core::index_types::CodeChunk> = chunks
                 .iter()
                 .map(|c| crate::core::index_types::CodeChunk {
@@ -511,8 +515,6 @@ impl PipelineHandle {
                 })
                 .collect();
             ChunkData::from_chunks(&converted)
-        } else {
-            ChunkData::new()
         };
         Ok((
             graph.unwrap_or_else(|| ProjectIndex::new(&self.project_root.to_string_lossy())),
@@ -895,16 +897,13 @@ mod tests {
             incr_report.edges, full_report.edges,
             "edge count after incremental must match full rebuild"
         );
-        assert!(
-            incr_report.nodes > 0,
-            "should have nodes after incremental"
-        );
-        assert!(
-            incr_report.edges > 0,
-            "should have edges after incremental"
-        );
+        assert!(incr_report.nodes > 0, "should have nodes after incremental");
+        assert!(incr_report.edges > 0, "should have edges after incremental");
         assert!(incr_report.is_incremental, "incremental flag must be set");
-        assert!(!full_report.is_incremental, "full rebuild flag must be false");
+        assert!(
+            !full_report.is_incremental,
+            "full rebuild flag must be false"
+        );
     }
 
     #[test]
@@ -948,7 +947,10 @@ mod tests {
 
         // Incremental should fail because the file cannot be read.
         let result = handle.run_incremental();
-        assert!(result.is_err(), "incremental must fail when file is unreadable: {:?}", result);
+        assert!(
+            result.is_err(),
+            "incremental must fail when file is unreadable: {result:?}"
+        );
 
         // Verify DB state is unchanged from before the incremental run.
         let conn = rusqlite::Connection::open(&db_path).unwrap();

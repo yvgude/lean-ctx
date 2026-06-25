@@ -214,10 +214,11 @@ pub fn hybrid_search(
 #[cfg(not(feature = "embeddings"))]
 pub fn hybrid_search(query: &str, index: &ChunkData, top_k: usize) -> Vec<HybridResult> {
     let candidate_count = (top_k * 5).min(50);
-    let mut results: Vec<HybridResult> = super::chunk_data::bm25_search(index, query, candidate_count)
-        .into_iter()
-        .map(HybridResult::from_bm25)
-        .collect();
+    let mut results: Vec<HybridResult> =
+        super::chunk_data::bm25_search(index, query, candidate_count)
+            .into_iter()
+            .map(HybridResult::from_bm25)
+            .collect();
     super::search_reranking::rerank_pipeline(&mut results, query, top_k);
     results
 }

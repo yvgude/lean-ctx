@@ -336,16 +336,16 @@ pub fn neighbors(
         );
 
         let val = if depth > 1 {
-        let rings_json: Vec<_> = rings
-            .iter()
-            .map(|(d, ns)| serde_json::json!({ "depth": d, "count": ns.len(), "nodes": ns }))
-            .collect();
-        let total: usize = rings.iter().map(|(_, n)| n.len()).sum();
-        serde_json::json!({
-            "nodes": nodes_json,
-            "edges": edges_json,
-            "rings": { "depths": rings_json, "total": total },
-        })
+            let rings_json: Vec<_> = rings
+                .iter()
+                .map(|(d, ns)| serde_json::json!({ "depth": d, "count": ns.len(), "nodes": ns }))
+                .collect();
+            let total: usize = rings.iter().map(|(_, n)| n.len()).sum();
+            serde_json::json!({
+                "nodes": nodes_json,
+                "edges": edges_json,
+                "rings": { "depths": rings_json, "total": total },
+            })
         } else {
             serde_json::json!({
                 "nodes": nodes_json,
@@ -539,10 +539,10 @@ pub fn explain(path: Option<&str>, root: &str, format: Option<&str>) -> String {
         let top_dep_in: Vec<&String> = inc_all.iter().take(8).map(|n| &n.node).collect();
         let top_dep_out: Vec<&String> = out_all.iter().take(8).map(|n| &n.node).collect();
         for n in &top_dep_in {
-            ctx_nodes.insert(n.to_string());
+            ctx_nodes.insert((*n).clone());
         }
         for n in &top_dep_out {
-            ctx_nodes.insert(n.to_string());
+            ctx_nodes.insert((*n).clone());
         }
 
         let ctx_nodes_json: Vec<_> = {

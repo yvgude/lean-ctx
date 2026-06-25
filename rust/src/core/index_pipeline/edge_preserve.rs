@@ -85,27 +85,24 @@ pub fn snapshot_cross_file_edges(
         return Vec::new();
     }
 
-    let changed: HashSet<&str> = changed_files.iter().map(|s| s.as_str()).collect();
+    let changed: HashSet<&str> = changed_files
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     let mut preserved = Vec::new();
 
     gbuf.foreach_edge(&mut |edge| {
-        // Skip edge types that are rebuilt globally by post-passes.
         if SKIPPED_EDGE_TYPES.contains(&edge.edge_type.as_str()) {
             return;
         }
 
-        // Look up source and target nodes.
-        let source_node = match gbuf.find_by_id(edge.source_id) {
-            Some(n) => n,
-            None => return,
+        let Some(source_node) = gbuf.find_by_id(edge.source_id) else {
+            return;
         };
-        let target_node = match gbuf.find_by_id(edge.target_id) {
-            Some(n) => n,
-            None => return,
+        let Some(target_node) = gbuf.find_by_id(edge.target_id) else {
+            return;
         };
 
-        // Only preserve inbound cross-file edges: target in changed file,
-        // source NOT in changed file.
         let target_is_changed = changed.contains(target_node.file_path.as_str());
         let source_is_changed = changed.contains(source_node.file_path.as_str());
 
@@ -458,11 +455,7 @@ mod tests {
         // Relink — should not cause duplication.
         relink_edges(&mut gbuf, &preserved);
 
-        assert_eq!(
-            gbuf.edge_count(),
-            1,
-            "relink should not create duplicates"
-        );
+        assert_eq!(gbuf.edge_count(), 1, "relink should not create duplicates");
     }
 
     #[test]

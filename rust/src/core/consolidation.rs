@@ -182,8 +182,8 @@ fn write_edges_to_property_graph(pg: &crate::core::property_graph::CodeGraph, ed
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::chunk_data::{ChunkData, ChunkKind};
     use crate::core::cache::SessionCache;
+    use crate::core::chunk_data::{ChunkData, ChunkKind};
     use crate::core::content_chunk::ContentChunk;
 
     fn sample_chunks() -> Vec<ContentChunk> {

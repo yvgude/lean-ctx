@@ -4,7 +4,7 @@
 //! correctly through ALL stores: BM25 index, Graph index, Knowledge facts,
 //! and Session cache — matching the production `apply_artifacts_to_stores` path.
 
-use lean_ctx::core::bm25_index::{BM25Index, ChunkKind};
+use lean_ctx::core::bm25_index::{BM25Index, ChunkKind, bm25_search};
 use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::consolidation;
 use lean_ctx::core::content_chunk::ContentChunk;
@@ -175,7 +175,7 @@ fn scenario_bm25_search_finds_provider_data() {
         "Should have 2 external chunks"
     );
 
-    let results = index.search("authentication token", 10);
+    let results = bm25_search(&index, "authentication token", 10);
     assert!(
         !results.is_empty(),
         "BM25 should find 'authentication token'"
@@ -186,7 +186,7 @@ fn scenario_bm25_search_finds_provider_data() {
         results[0].file_path
     );
 
-    let results2 = index.search("login session", 10);
+    let results2 = bm25_search(&index, "login session", 10);
     assert!(!results2.is_empty(), "BM25 should find 'login session'");
 }
 
@@ -540,7 +540,7 @@ fn scenario_multi_source_consolidation() {
     assert!(result.cache_entries_stored >= 5, "Should cache all entries");
 
     // BM25 should find cross-source matches
-    let auth_results = index.search("authentication login OAuth", 10);
+    let auth_results = bm25_search(&index, "authentication login OAuth", 10);
     assert!(
         auth_results.len() >= 2,
         "Should find multiple auth-related results across sources: got {}",

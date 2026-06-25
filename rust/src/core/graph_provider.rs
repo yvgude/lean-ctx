@@ -443,6 +443,7 @@ impl GraphProvider {
 /// or just after a rebuild), flagging `needs_build` so the caller can warm the
 /// PG for the next call (#696 phase D: the `legacy` backend escape hatch was
 /// retired once PG-only persistence proved lossless in #682.3).
+#[allow(deprecated)]
 fn open_existing(project_root: &str) -> (Option<OpenGraphProvider>, bool) {
     let t0 = std::time::Instant::now();
 
@@ -550,9 +551,7 @@ fn trigger_lazy_graph_build(project_root: &str) {
     // markers, and a launchd-standalone process never stats under ~/Documents.
     let is_project = crate::core::pathutil::has_project_marker(root)
         || crate::core::pathutil::has_multi_repo_children(root);
-    if !is_project {
-        return;
-    }
+    if !is_project {}
     // Background build no longer needed — indexes are SQLite-backed.
 }
 
@@ -566,6 +565,7 @@ fn trigger_lazy_graph_build(project_root: &str) {
 ///
 /// Synchronous and self-contained in `core` (no `tools` dependency), so callers
 /// can build reliably without the fire-and-forget caveat of the lazy trigger.
+#[allow(deprecated)]
 pub fn build_property_graph(project_root: &str) -> anyhow::Result<()> {
     let index = crate::core::graph_index::ProjectIndex::load(project_root)
         .filter(|i| !i.files.is_empty())

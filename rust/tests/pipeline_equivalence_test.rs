@@ -108,12 +108,11 @@ fn new_pipeline_matches_old_pipeline_counts() {
     // Load the dumped BM25 index to access per-file chunk data (≈ signature
     // count per file). Verify every fixture file is represented and that the
     // per-file sum matches the aggregate.
-    let (_graph, bm25, _store) = DumpEngine::load_with_integrity_check(&root)
+    let (_graph, bm25) = DumpEngine::load_with_integrity_check(&root)
         .expect("should load dumped index after pipeline run");
-    let bm25 = bm25.expect("BM25 index should have been created");
 
     let mut per_file_chunks: HashMap<&str, usize> = HashMap::new();
-    for chunk in &bm25.chunks {
+    for chunk in &bm25 {
         *per_file_chunks.entry(&chunk.file_path).or_insert(0) += 1;
     }
 
