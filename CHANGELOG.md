@@ -82,6 +82,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   (gitlab #868–#871)
 
 ### Fixed
+- **Pi `AGENTS.md` advertised renamed tools that no longer exist (#548).** The Pi
+  installer writes a curated static `templates/PI_AGENTS.md`, and its tool-mapping
+  table still listed `ctx_grep`/`ctx_find`/`ctx_ls` — tools renamed long ago to
+  `ctx_search`/`ctx_glob`/`ctx_tree`. Pi agents that followed the table issued
+  unknown-tool calls. The template (and the matching `pi.rs` setup hint) now use the
+  canonical names, and a new parity test (`tests/rules_template_tool_names.rs`) ties
+  **every** shipped agent template to the live MCP registry: any `ctx_*` reference
+  that is not a registered tool fails the build, so a future rename can never drift
+  silently again. (First slice of the #548 agent-rules unification — marker/dedup
+  consolidation, content-aware freshness, and `rules.toml`↔`sync` semantics follow.)
 - **Shadow-mode hook reads dropped ~75% of the MCP read side effects (#550).** When
   shadow/harden mode intercepts a native `view`/`grep` call it spawns `lean-ctx read`
   as a single-shot subprocess. That CLI path recorded only a fraction of what the MCP

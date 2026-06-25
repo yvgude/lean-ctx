@@ -12,9 +12,9 @@ the native `read`/`bash`/`grep`/`find`/`ls` are **not** routed through lean-ctx 
 |--------|---------------|-----|
 | `ctx_read` | `read`, `cat`/`head`/`tail` | Cached + compressed; unchanged re-reads cost ~13 tokens |
 | `ctx_shell` | `bash` | Shell output compressed via 95+ patterns |
-| `ctx_grep` | `grep` | Compact, ranked matches |
-| `ctx_find` | `find` | Compressed, .gitignore-aware |
-| `ctx_ls` | `ls` | Compact directory maps |
+| `ctx_search` | `grep` | Compact, ranked matches |
+| `ctx_glob` | `find` | Compressed, .gitignore-aware file matching |
+| `ctx_tree` | `ls` | Compact directory maps |
 
 - Use `ctx_shell` for commands with side effects (build/test/git/etc.); set `raw=true` when exact
   output matters.
