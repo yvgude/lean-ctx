@@ -286,7 +286,7 @@ pub(crate) fn install_claude_hook_scripts(home: &std::path::Path) {
 }
 
 /// The `Read|…` tool matcher shared by every Claude redirect hook (global + project).
-const REDIRECT_MATCHER: &str = "Read|read|ReadFile|read_file|View|view|Grep|grep|Search|search|ListFiles|list_files|ListDirectory|list_directory";
+const REDIRECT_MATCHER: &str = "Read|read|ReadFile|read_file|View|view|Grep|grep|Search|search|ListFiles|list_files|ListDirectory|list_directory|Glob|glob";
 
 /// The trailing action token of a lean-ctx hook command, e.g. `"hook rewrite"`.
 ///
@@ -732,6 +732,14 @@ mod tests {
             commands_for(&pre, "hook redirect"),
             ["lean-ctx hook redirect"]
         );
+    }
+
+    #[test]
+    fn redirect_matcher_covers_glob() {
+        // #556: shadow mode must intercept the Glob tool, so it has to be part
+        // of the redirect matcher Claude installs.
+        assert!(REDIRECT_MATCHER.contains("Glob"));
+        assert!(REDIRECT_MATCHER.contains("glob"));
     }
 
     #[test]

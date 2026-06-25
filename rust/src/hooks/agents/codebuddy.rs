@@ -268,7 +268,7 @@ pub(crate) fn install_codebuddy_hook_scripts(home: &std::path::Path) {
     let _ = wrapper;
 }
 
-const REDIRECT_MATCHER: &str = "Read|read|ReadFile|read_file|View|view|Grep|grep|Search|search|ListFiles|list_files|ListDirectory|list_directory";
+const REDIRECT_MATCHER: &str = "Read|read|ReadFile|read_file|View|view|Grep|grep|Search|search|ListFiles|list_files|ListDirectory|list_directory|Glob|glob";
 
 fn lean_ctx_action_token(command: &str) -> &str {
     match command.rfind(" hook ") {

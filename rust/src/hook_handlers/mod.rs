@@ -128,6 +128,27 @@ fn build_dual_rewrite_output(tool_input: Option<&serde_json::Value>, rewritten: 
     .to_string()
 }
 
+/// True when a host tool name denotes a shell/terminal command tool.
+///
+/// Copilot CLI exposes `powershell` as a first-class shell tool on Windows
+/// (paired with `bash` per the CLI tool reference); without it Windows shell
+/// calls bypass rewrite (#556). Shared by `handle_rewrite` and `handle_copilot`.
+fn is_shell_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "Bash"
+            | "bash"
+            | "Shell"
+            | "shell"
+            | "runInTerminal"
+            | "run_in_terminal"
+            | "terminal"
+            | "PowerShell"
+            | "powershell"
+            | "pwsh"
+    )
+}
+
 pub fn handle_rewrite() {
     let allow = build_dual_allow_output();
     if is_disabled() {
@@ -154,11 +175,7 @@ pub fn handle_rewrite() {
         return;
     };
 
-    let is_shell_tool = matches!(
-        tool_name.as_str(),
-        "Bash" | "bash" | "Shell" | "shell" | "runInTerminal" | "run_in_terminal" | "terminal"
-    );
-    if !is_shell_tool {
+    if !is_shell_tool(&tool_name) {
         print!("{allow}");
         return;
     }
@@ -493,6 +510,7 @@ pub fn handle_redirect() {
     match tool_name.as_str() {
         "Read" | "read" | "read_file" => redirect_read(tool_args.as_ref()),
         "Grep" | "grep" | "search" | "ripgrep" => redirect_grep(tool_args.as_ref()),
+        "Glob" | "glob" => redirect_glob(tool_args.as_ref()),
         _ => print!("{allow}"),
     }
 }
@@ -647,6 +665,68 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) {
         "lean-ctx grep produced no output",
     );
     print!("{}", build_dual_allow_output());
+}
+
+/// Redirect Glob through lean-ctx in shadow/harden mode (#556).
+///
+/// Glob differs from Read/Grep: its result is a list of paths matched against
+/// the filesystem, not file content, so `build_redirect_output` (which swaps a
+/// field to a temp file the host then *reads*) cannot carry it. We therefore
+/// only act when shadow or harden mode is active — warm lean-ctx's own glob
+/// path (parity with `ctx_glob`) and record the intercept in shadow.log — then
+/// allow the native call through unchanged. Outside those modes there is nothing
+/// to gain, so we pass through immediately without spawning a subprocess.
+fn redirect_glob(tool_input: Option<&serde_json::Value>) {
+    let allow = build_dual_allow_output();
+    let shadow = is_shadow_mode_active();
+    if !shadow && !is_harden_active() {
+        print!("{allow}");
+        return;
+    }
+
+    let pattern = tool_input
+        .and_then(|ti| ti.get("pattern"))
+        .and_then(|p| p.as_str())
+        .unwrap_or("");
+    if pattern.is_empty() {
+        debug_log::log_hook_decision(
+            "redirect",
+            "Glob",
+            Route::Native,
+            "<none>",
+            "no pattern in tool input",
+        );
+        print!("{allow}");
+        return;
+    }
+    let search_path = tool_input
+        .and_then(|ti| ti.get("path"))
+        .and_then(|p| p.as_str())
+        .unwrap_or(".");
+
+    tracing::info!(
+        "[hook redirect] {} active, warming ctx_glob for {pattern}",
+        if shadow { "shadow mode" } else { "harden mode" }
+    );
+
+    // Warm lean-ctx's glob path (populates caches, parity with the ctx_glob the
+    // shadow header nudges toward); the native result is kept untouched.
+    let binary = resolve_binary();
+    let _ = run_with_timeout(
+        &binary,
+        &["glob", pattern, search_path],
+        REDIRECT_SUBPROCESS_TIMEOUT,
+    );
+
+    debug_log::log_hook_decision(
+        "redirect",
+        "Glob",
+        Route::Native,
+        &format!("{pattern} in {search_path}"),
+        "shadow/harden warm — native passthrough",
+    );
+    log_shadow_intercept("Glob", &format!("{pattern} in {search_path}"));
+    print!("{allow}");
 }
 
 const REDIRECT_SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(10);
@@ -876,11 +956,7 @@ pub fn handle_copilot() {
         return;
     };
 
-    let is_shell_tool = matches!(
-        tool_name.as_str(),
-        "Bash" | "bash" | "Shell" | "shell" | "runInTerminal" | "run_in_terminal" | "terminal"
-    );
-    if !is_shell_tool {
+    if !is_shell_tool(&tool_name) {
         return;
     }
 

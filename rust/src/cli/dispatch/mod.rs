@@ -386,6 +386,11 @@ pub fn run() {
                 core::stats::flush();
                 return;
             }
+            "glob" => {
+                super::cmd_glob(&rest);
+                core::stats::flush();
+                return;
+            }
             "find" => {
                 super::cmd_find(&rest);
                 core::stats::flush();
