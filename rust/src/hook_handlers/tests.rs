@@ -181,6 +181,121 @@ fn file_read_still_rewrites_project_relative_paths() {
     );
 }
 
+// --- #561: PowerShell-native cmdlet rewrites ---
+
+#[test]
+fn ps_get_content_basic_and_alias() {
+    assert_eq!(
+        rewrite_file_read_command("Get-Content src/main.rs", "lean-ctx"),
+        Some("lean-ctx read src/main.rs".to_string())
+    );
+    assert_eq!(
+        rewrite_file_read_command("gc src/main.rs", "lean-ctx"),
+        Some("lean-ctx read src/main.rs".to_string())
+    );
+    assert_eq!(
+        rewrite_file_read_command("Get-Content -Path src/lib.rs", "lean-ctx"),
+        Some("lean-ctx read src/lib.rs".to_string())
+    );
+}
+
+#[test]
+fn ps_get_content_head_and_tail() {
+    // -TotalCount / -Head / -First == head; -Tail / -Last == tail. Case-insensitive.
+    assert_eq!(
+        rewrite_file_read_command("Get-Content -TotalCount 20 src/main.rs", "lean-ctx"),
+        Some("lean-ctx read src/main.rs -m lines:1-20".to_string())
+    );
+    assert_eq!(
+        rewrite_file_read_command("Get-Content src/main.rs -head 5", "lean-ctx"),
+        Some("lean-ctx read src/main.rs -m lines:1-5".to_string())
+    );
+    assert_eq!(
+        rewrite_file_read_command("gc -Tail 10 src/main.rs", "lean-ctx"),
+        Some("lean-ctx read src/main.rs -m lines:-10".to_string())
+    );
+}
+
+#[test]
+fn ps_get_content_passthrough() {
+    // Unknown flag, both head+tail, outside-project path, and pipelines pass through.
+    assert_eq!(
+        rewrite_file_read_command("Get-Content -Raw src/main.rs", "lean-ctx"),
+        None
+    );
+    assert_eq!(
+        rewrite_file_read_command("Get-Content -TotalCount 5 -Tail 5 src/main.rs", "lean-ctx"),
+        None
+    );
+    assert_eq!(
+        rewrite_file_read_command("Get-Content ~/secret.txt", "lean-ctx"),
+        None
+    );
+    assert_eq!(
+        rewrite_file_read_command("Get-Content a.txt | Select-String x", "lean-ctx"),
+        None
+    );
+}
+
+#[test]
+fn ps_select_string_forms() {
+    assert_eq!(
+        rewrite_search_command("Select-String TODO src/main.rs", "lean-ctx"),
+        Some("lean-ctx grep TODO src/main.rs".to_string())
+    );
+    assert_eq!(
+        rewrite_search_command("sls TODO", "lean-ctx"),
+        Some("lean-ctx grep TODO".to_string())
+    );
+    assert_eq!(
+        rewrite_search_command("Select-String -Pattern TODO -Path src/lib.rs", "lean-ctx"),
+        Some("lean-ctx grep TODO src/lib.rs".to_string())
+    );
+    // Unknown flag passes through.
+    assert_eq!(
+        rewrite_search_command("Select-String -CaseSensitive TODO", "lean-ctx"),
+        None
+    );
+}
+
+#[test]
+fn ps_get_childitem_forms() {
+    assert_eq!(
+        rewrite_dir_list_command("Get-ChildItem", "lean-ctx"),
+        Some("lean-ctx ls".to_string())
+    );
+    assert_eq!(
+        rewrite_dir_list_command("gci src", "lean-ctx"),
+        Some("lean-ctx ls src".to_string())
+    );
+    assert_eq!(
+        rewrite_dir_list_command("Get-ChildItem -Path src", "lean-ctx"),
+        Some("lean-ctx ls src".to_string())
+    );
+    // -Recurse and other flags pass through.
+    assert_eq!(
+        rewrite_dir_list_command("Get-ChildItem -Recurse", "lean-ctx"),
+        None
+    );
+}
+
+#[test]
+fn ps_cmdlets_route_through_rewrite_candidate() {
+    // End-to-end: the dispatcher picks the right rewrite for PowerShell cmdlets.
+    assert_eq!(
+        rewrite_candidate("Get-Content src/main.rs", "lean-ctx"),
+        Some("lean-ctx read src/main.rs".to_string())
+    );
+    assert_eq!(
+        rewrite_candidate("Select-String TODO src/main.rs", "lean-ctx"),
+        Some("lean-ctx grep TODO src/main.rs".to_string())
+    );
+    assert_eq!(
+        rewrite_candidate("gci src", "lean-ctx"),
+        Some("lean-ctx ls src".to_string())
+    );
+}
+
 #[test]
 fn is_outside_project_path_tests() {
     assert!(is_outside_project_path("~/foo"));

@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **PowerShell-native cmdlets route through lean-ctx (#561).** Follow-up to #556:
+  shadow/harden mode already recognised the Windows `powershell` shell tool, covering
+  the Unix-style PS *aliases* (`cat`/`ls`/`rg`). The command-rewrite layer now also
+  maps the PowerShell-**native** cmdlets and their short aliases — `Get-Content`/`gc`
+  → `lean-ctx read` (honoring `-Path`, `-TotalCount`/`-Head`/`-First` and
+  `-Tail`/`-Last`), `Select-String`/`sls` → `lean-ctx grep` (`-Pattern`, `-Path`),
+  and `Get-ChildItem`/`gci` → `lean-ctx ls` (`-Path`). Parameter names are matched
+  case-insensitively; anything with an unrecognised flag, a pipeline, multiple
+  operands, or an out-of-project path passes through untouched (same conservative
+  contract as the Unix rewrites), so determinism and redaction guarantees are
+  inherited. The PowerShell cmdlets are detected only in the rewrite path and are
+  deliberately kept out of the POSIX shell-alias surface.
 - **Addon security hardening — trust, policy, signing, sandbox, audit (#863).**
   Because an addon is executable trust (a stdio addon runs code on your machine;
   an http addon receives your context; its output enters the model), the

@@ -274,7 +274,10 @@ fn rewrite_candidate(cmd: &str, binary: &str) -> Option<String> {
 /// Rewrites cat/head/tail to lean-ctx read with appropriate arguments.
 /// Only rewrites simple single-file reads within the project scope.
 fn rewrite_file_read_command(cmd: &str, binary: &str) -> Option<String> {
-    if !rewrite_registry::is_file_read_command(cmd) {
+    // Unix file-read commands come from the central registry; PowerShell-native
+    // cmdlets (Get-Content/gc) are detected here so they are not added to the POSIX
+    // shell-alias/registry surface (#561).
+    if !rewrite_registry::is_file_read_command(cmd) && !is_powershell_file_read(cmd) {
         return None;
     }
 
@@ -325,7 +328,52 @@ fn rewrite_file_read_command(cmd: &str, binary: &str) -> Option<String> {
             let lines = n.unwrap_or(10);
             Some(format!("{binary} read {qp} -m lines:-{lines}"))
         }
+        "Get-Content" | "gc" => rewrite_get_content(&parts, binary),
         _ => None,
+    }
+}
+
+/// True if the command is a PowerShell-native file-read cmdlet (`Get-Content`/`gc`).
+fn is_powershell_file_read(cmd: &str) -> bool {
+    matches!(cmd.split_whitespace().next(), Some("Get-Content" | "gc"))
+}
+
+/// Maps `Get-Content`/`gc` to `lean-ctx read`, honoring `-Path`/`-LiteralPath`, the
+/// positional path, `-TotalCount`/`-Head`/`-First` (first N lines) and `-Tail`/`-Last`
+/// (last N lines). PowerShell parameter names are case-insensitive. Any other flag, a
+/// missing path, multiple files, or both head+tail makes it pass through (conservative,
+/// mirroring the Unix cat/head/tail handling).
+fn rewrite_get_content(parts: &[String], binary: &str) -> Option<String> {
+    let mut path: Option<String> = None;
+    let mut head_n: Option<u64> = None;
+    let mut tail_n: Option<u64> = None;
+    let mut i = 1;
+    while i < parts.len() {
+        if let Some(flag) = parts[i].strip_prefix('-') {
+            let value = parts.get(i + 1);
+            match flag.to_ascii_lowercase().as_str() {
+                "path" | "literalpath" => path = Some(value?.clone()),
+                "totalcount" | "head" | "first" => head_n = Some(value?.parse().ok()?),
+                "tail" | "last" => tail_n = Some(value?.parse().ok()?),
+                _ => return None,
+            }
+            i += 2;
+        } else if path.is_none() {
+            path = Some(parts[i].clone());
+            i += 1;
+        } else {
+            return None;
+        }
+    }
+    let path = path?;
+    if is_outside_project_path(&path) || (head_n.is_some() && tail_n.is_some()) {
+        return None;
+    }
+    let qp = shell_quote(&path);
+    match (head_n, tail_n) {
+        (Some(n), None) => Some(format!("{binary} read {qp} -m lines:1-{n}")),
+        (None, Some(n)) => Some(format!("{binary} read {qp} -m lines:-{n}")),
+        _ => Some(format!("{binary} read {qp}")),
     }
 }
 
@@ -372,36 +420,103 @@ fn is_outside_project_path(path: &str) -> bool {
     false
 }
 
-/// Rewrites `rg <pattern> [path]` to `lean-ctx grep <pattern> [path]` for simple forms.
+/// Rewrites `rg <pattern> [path]` (and PowerShell `Select-String`/`sls`, #561) to
+/// `lean-ctx grep <pattern> [path]` for simple forms.
 fn rewrite_search_command(cmd: &str, binary: &str) -> Option<String> {
     let parts = shell_tokenize(cmd);
-    if parts.first().map(String::as_str) != Some("rg") {
-        return None;
+    match parts.first().map(String::as_str) {
+        Some("rg") => {
+            if parts.len() < 2 || parts.len() > 3 || parts[1].starts_with('-') {
+                return None;
+            }
+            let pattern = &parts[1];
+            match parts.get(2) {
+                Some(p) if p.starts_with('-') => None,
+                Some(p) => Some(format!("{binary} grep {pattern} {}", shell_quote(p))),
+                None => Some(format!("{binary} grep {pattern}")),
+            }
+        }
+        Some("Select-String" | "sls") => rewrite_select_string(&parts, binary),
+        _ => None,
     }
-    if parts.len() < 2 || parts.len() > 3 {
-        return None;
+}
+
+/// Maps `Select-String`/`sls` to `lean-ctx grep`, honoring `-Pattern` and
+/// `-Path`/`-LiteralPath` plus the positional `<pattern> [path]` form. Patterns are
+/// quoted (PowerShell patterns often contain spaces). Any other flag, a missing
+/// pattern, or extra operands makes it pass through.
+fn rewrite_select_string(parts: &[String], binary: &str) -> Option<String> {
+    let mut pattern: Option<String> = None;
+    let mut path: Option<String> = None;
+    let mut i = 1;
+    while i < parts.len() {
+        if let Some(flag) = parts[i].strip_prefix('-') {
+            let value = parts.get(i + 1);
+            match flag.to_ascii_lowercase().as_str() {
+                "pattern" => pattern = Some(value?.clone()),
+                "path" | "literalpath" => path = Some(value?.clone()),
+                _ => return None,
+            }
+            i += 2;
+        } else if pattern.is_none() {
+            pattern = Some(parts[i].clone());
+            i += 1;
+        } else if path.is_none() {
+            path = Some(parts[i].clone());
+            i += 1;
+        } else {
+            return None;
+        }
     }
-    if parts[1].starts_with('-') {
-        return None;
-    }
-    let pattern = &parts[1];
-    match parts.get(2) {
-        Some(p) if p.starts_with('-') => None,
-        Some(p) => Some(format!("{binary} grep {pattern} {}", shell_quote(p))),
+    let pattern = shell_quote(&pattern?);
+    match path {
+        Some(p) if is_outside_project_path(&p) => None,
+        Some(p) => Some(format!("{binary} grep {pattern} {}", shell_quote(&p))),
         None => Some(format!("{binary} grep {pattern}")),
     }
 }
 
-/// Rewrites simple `ls [path]` to `lean-ctx ls [path]`.
+/// Rewrites simple `ls [path]` (and PowerShell `Get-ChildItem`/`gci`, #561) to
+/// `lean-ctx ls [path]`.
 fn rewrite_dir_list_command(cmd: &str, binary: &str) -> Option<String> {
     let parts = shell_tokenize(cmd);
-    if parts.first().map(String::as_str) != Some("ls") {
-        return None;
-    }
-    match parts.len() {
-        1 => Some(format!("{binary} ls")),
-        2 if !parts[1].starts_with('-') => Some(format!("{binary} ls {}", shell_quote(&parts[1]))),
+    match parts.first().map(String::as_str) {
+        Some("ls") => match parts.len() {
+            1 => Some(format!("{binary} ls")),
+            2 if !parts[1].starts_with('-') => {
+                Some(format!("{binary} ls {}", shell_quote(&parts[1])))
+            }
+            _ => None,
+        },
+        Some("Get-ChildItem" | "gci") => rewrite_get_childitem(&parts, binary),
         _ => None,
+    }
+}
+
+/// Maps `Get-ChildItem`/`gci` to `lean-ctx ls`, honoring `-Path`/`-LiteralPath` and the
+/// positional path. Other flags (e.g. `-Recurse`, `-Filter`) or extra operands pass
+/// through.
+fn rewrite_get_childitem(parts: &[String], binary: &str) -> Option<String> {
+    let mut path: Option<String> = None;
+    let mut i = 1;
+    while i < parts.len() {
+        if let Some(flag) = parts[i].strip_prefix('-') {
+            let value = parts.get(i + 1);
+            match flag.to_ascii_lowercase().as_str() {
+                "path" | "literalpath" => path = Some(value?.clone()),
+                _ => return None,
+            }
+            i += 2;
+        } else if path.is_none() {
+            path = Some(parts[i].clone());
+            i += 1;
+        } else {
+            return None;
+        }
+    }
+    match path {
+        Some(p) => Some(format!("{binary} ls {}", shell_quote(&p))),
+        None => Some(format!("{binary} ls")),
     }
 }
 
