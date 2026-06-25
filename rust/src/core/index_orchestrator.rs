@@ -159,5 +159,4 @@ mod tests {
         let s = status_json("/tmp");
         let _: serde_json::Value = serde_json::from_str(&s).unwrap();
     }
-
 }

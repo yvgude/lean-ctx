@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use anyhow::{Context, Result};
 
-use crate::core::db::{WalConnection, SCHEMA_VERSION};
+use crate::core::db::{SCHEMA_VERSION, WalConnection};
 use crate::core::graph_index::ProjectIndex;
 use crate::core::index_types::{EdgeId, GbufEdge, GbufNode, NodeId};
 
@@ -265,8 +265,10 @@ impl GraphBuffer {
             .collect();
 
         // Reconstruct indexes.
-        let qn_index: HashMap<String, NodeId> =
-            nodes.iter().map(|n| (n.qualified_name.clone(), n.id)).collect();
+        let qn_index: HashMap<String, NodeId> = nodes
+            .iter()
+            .map(|n| (n.qualified_name.clone(), n.id))
+            .collect();
 
         let edge_dedup: HashMap<(NodeId, NodeId, String), EdgeId> = edges
             .iter()
@@ -361,7 +363,11 @@ impl GraphBuffer {
 
     /// Find all nodes with a given label. O(n) scan — no secondary index.
     pub fn find_nodes_by_label(&self, label: &str) -> Vec<&GbufNode> {
-        self.inner().nodes.iter().filter(|n| n.label == label).collect()
+        self.inner()
+            .nodes
+            .iter()
+            .filter(|n| n.label == label)
+            .collect()
     }
 
     /// Return the number of live (indexed) nodes.
@@ -1061,10 +1067,9 @@ mod tests {
         };
         if let GraphBuffer::Loaded(inner) = &mut gb2 {
             inner.edges.push(fake_edge);
-            inner.edge_dedup.insert(
-                (NodeId(999), NodeId(1000), "calls".to_string()),
-                EdgeId(1),
-            );
+            inner
+                .edge_dedup
+                .insert((NodeId(999), NodeId(1000), "calls".to_string()), EdgeId(1));
         } else {
             panic!("expected Loaded");
         }

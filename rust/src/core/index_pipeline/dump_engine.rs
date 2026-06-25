@@ -270,8 +270,6 @@ impl DumpEngine {
         Ok(())
     }
 
-
-
     // ── Load / Integrity ───────────────────────────────────────────────
 
     /// Load all three index components with integrity checks.
@@ -286,8 +284,10 @@ impl DumpEngine {
     ///
     pub fn load_with_integrity_check(
         root: &Path,
-    ) -> Result<(Option<ProjectIndex>, Vec<crate::core::bm25_index::CodeChunk>)>
-    {
+    ) -> Result<(
+        Option<ProjectIndex>,
+        Vec<crate::core::bm25_index::CodeChunk>,
+    )> {
         let dir = index_namespace::vectors_dir(root);
 
         // 1. Clean up leftover .tmp files from crashes
@@ -662,7 +662,8 @@ impl DumpEngine {
     /// can fill it separately).
     pub fn insert_file_hashes(&self, files: &[DiscoveredFile]) -> Result<()> {
         let db_path = self.db_path();
-        let wal_conn = WalConnection::open(&db_path).context("open code_index.db for file_hashes")?;
+        let wal_conn =
+            WalConnection::open(&db_path).context("open code_index.db for file_hashes")?;
         let conn = wal_conn.connection();
         let project = self.project_name();
 
@@ -679,8 +680,7 @@ impl DumpEngine {
                 let mtime_ns = f
                     .mtime
                     .duration_since(SystemTime::UNIX_EPOCH)
-                    .map(|d| d.as_nanos() as i64)
-                    .unwrap_or(0);
+                    .map_or(0, |d| d.as_nanos() as i64);
                 stmt.execute(params![
                     project,
                     f.rel_path,
@@ -709,9 +709,7 @@ impl DumpEngine {
         Self::create_schema(&conn)?;
 
         let mut stmt = conn
-            .prepare(
-                "SELECT project, rel_path, mtime_ns, size FROM file_hashes WHERE project = ?1",
-            )
+            .prepare("SELECT project, rel_path, mtime_ns, size FROM file_hashes WHERE project = ?1")
             .context("prepare file_hashes select")?;
 
         let rows = stmt
@@ -885,9 +883,9 @@ fn load_chunks(root: &Path) -> Vec<crate::core::bm25_index::CodeChunk> {
         return Vec::new();
     };
 
-    let Ok(chunk_count) =
-        conn.query_row("SELECT COUNT(*) FROM chunks", [], |row| row.get::<_, i64>(0))
-    else {
+    let Ok(chunk_count) = conn.query_row("SELECT COUNT(*) FROM chunks", [], |row| {
+        row.get::<_, i64>(0)
+    }) else {
         return Vec::new();
     };
     if chunk_count == 0 {
@@ -925,10 +923,8 @@ fn load_chunks(root: &Path) -> Vec<crate::core::bm25_index::CodeChunk> {
     };
 
     let mut chunks: Vec<crate::core::bm25_index::CodeChunk> = Vec::new();
-    for row in rows {
-        if let Ok(chunk) = row {
-            chunks.push(chunk);
-        }
+    for chunk in rows.flatten() {
+        chunks.push(chunk);
     }
     chunks
 }
@@ -947,8 +943,6 @@ fn cleanup_tmp_files(dir: &Path) {
         }
     }
 }
-
-
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 
@@ -1193,7 +1187,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
 
         let engine = DumpEngine::new(root.path().to_path_buf());
-        let graph = sample_graph(root.path().to_str().unwrap());
+        let _graph = sample_graph(root.path().to_str().unwrap());
         let chunks = sample_chunks();
 
         // dump_all (which uses the new gbuf-based path) should produce a DB
@@ -1298,7 +1292,6 @@ mod tests {
 
         // No chunks written → load returns empty
         assert!(chunks.is_empty(), "no chunks should return empty");
-
     }
 
     #[test]
@@ -1323,7 +1316,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn dump_all_file_hashes_roundtrip() {
         let _iso = isolated_data_dir();
         let root = tempfile::tempdir().unwrap();
@@ -1341,10 +1333,7 @@ mod tests {
         };
         let files =
             crate::core::index_pipeline::discovery::discover_files(&test_dir, &config).unwrap();
-        assert!(
-            files.len() >= 2,
-            "should discover at least a.rs and b.rs"
-        );
+        assert!(files.len() >= 2, "should discover at least a.rs and b.rs");
 
         // Dump (fresh schema, file_hashes table is created but empty).
         let gbuf = sample_gbuf();
@@ -1368,8 +1357,7 @@ mod tests {
             let mtime_ns = f
                 .mtime
                 .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_nanos() as i64)
-                .unwrap_or(0);
+                .map_or(0, |d| d.as_nanos() as i64);
             let loaded_fh = loaded.iter().find(|h| h.rel_path == f.rel_path).unwrap();
             assert_eq!(loaded_fh.rel_path, f.rel_path);
             assert_eq!(loaded_fh.mtime_ns, mtime_ns);
@@ -1462,9 +1450,6 @@ mod tests {
         std::fs::write(&db_path, b"this is not a valid SQLite database").unwrap();
 
         let result = GraphBuffer::load_from_db(&db_path, "test");
-        assert!(
-            result.is_err(),
-            "loading a corrupt DB should return Err"
-        );
+        assert!(result.is_err(), "loading a corrupt DB should return Err");
     }
 }

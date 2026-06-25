@@ -18,7 +18,7 @@
 //!     Verifies: PR-to-issue linking, file hints, bandit learning
 
 use lean_ctx::core::active_inference::predict_preloads;
-use lean_ctx::core::bm25_index::{BM25Index, ChunkKind, CodeChunk};
+use lean_ctx::core::bm25_index::{BM25Index, ChunkKind, CodeChunk, bm25_search};
 use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::consolidation::{apply_artifacts, consolidate};
 use lean_ctx::core::content_chunk::ContentChunk;
@@ -220,7 +220,7 @@ fn scenario_bug_investigation_full_pipeline() {
     );
 
     // === 2. BM25 SEARCH ===
-    let search_results = bm25.search("JWT token expiry authentication", 10);
+    let search_results = bm25_search(&bm25, "JWT token expiry authentication", 10);
     assert!(!search_results.is_empty(), "Search should find results");
     // The JWT issue or auth code should rank high
     let top_paths: Vec<&str> = search_results

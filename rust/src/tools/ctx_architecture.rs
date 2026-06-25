@@ -251,9 +251,11 @@ fn handle_overview(root: &str, fmt: OutputFormat) -> String {
 "
             );
 
-            result.push_str(&format!("
+            result.push_str(&format!(
+                "
 Clusters: {clusters_total}
-"));
+"
+            ));
             for cluster in clusters.iter().take(clusters_limit) {
                 result.push_str(&format!(
                     "  {:<30} {:>4} members  cohesion {:.0}%\n",
@@ -269,9 +271,11 @@ Clusters: {clusters_total}
                 ));
             }
 
-            result.push_str(&format!("
+            result.push_str(&format!(
+                "
 Packages: {packages_total}
-"));
+"
+            ));
             for pkg in packages.iter().take(packages_limit) {
                 result.push_str(&format!(
                     "  {:<30} {:>4} files  fan_in={:<3} fan_out={:<3}\n",
@@ -279,12 +283,17 @@ Packages: {packages_total}
                 ));
             }
             if packages_truncated {
-                result.push_str(&format!("  ... +{} more\n", packages_total - packages_limit));
+                result.push_str(&format!(
+                    "  ... +{} more\n",
+                    packages_total - packages_limit
+                ));
             }
 
-            result.push_str(&format!("
+            result.push_str(&format!(
+                "
 Entrypoints: {entrypoints_total}
-"));
+"
+            ));
             for ep in entrypoints.iter().take(entrypoints_limit) {
                 let dep_count = data.forward.get(ep).map_or(0, std::vec::Vec::len);
                 result.push_str(&format!("  {ep} (imports {dep_count} files)\n"));
@@ -296,13 +305,18 @@ Entrypoints: {entrypoints_total}
                 ));
             }
 
-            result.push_str(&format!("
-Hotspots (top {}):\n", hotspots_limit));
+            result.push_str(&format!(
+                "
+Hotspots (top {hotspots_limit}):\n"
+            ));
             for (file, score, _rank) in hotspots.iter().take(hotspots_limit) {
                 result.push_str(&format!("  {score:.3}  {file}\n"));
             }
             if hotspots.len() > hotspots_limit {
-                result.push_str(&format!("  ... +{} more\n", hotspots.len() - hotspots_limit));
+                result.push_str(&format!(
+                    "  ... +{} more\n",
+                    hotspots.len() - hotspots_limit
+                ));
             }
 
             let tokens = count_tokens(&result);
@@ -1124,10 +1138,10 @@ fn compute_packages(data: &GraphData) -> Vec<Package> {
             // Fan-out: which packages does this package import from?
             if let Some(deps) = data.forward.get(file) {
                 for dep in deps {
-                    if let Some(&dep_pkg) = file_to_pkg.get(dep.as_str()) {
-                        if dep_pkg != pkg_name.as_str() {
-                            fan_out_pkgs.insert(dep_pkg);
-                        }
+                    if let Some(&dep_pkg) = file_to_pkg.get(dep.as_str())
+                        && dep_pkg != pkg_name.as_str()
+                    {
+                        fan_out_pkgs.insert(dep_pkg);
                     }
                 }
             }
@@ -1135,10 +1149,10 @@ fn compute_packages(data: &GraphData) -> Vec<Package> {
             // Fan-in: which packages import from this package?
             if let Some(dependents) = data.reverse.get(file) {
                 for dep in dependents {
-                    if let Some(&dep_pkg) = file_to_pkg.get(dep.as_str()) {
-                        if dep_pkg != pkg_name.as_str() {
-                            fan_in_pkgs.insert(dep_pkg);
-                        }
+                    if let Some(&dep_pkg) = file_to_pkg.get(dep.as_str())
+                        && dep_pkg != pkg_name.as_str()
+                    {
+                        fan_in_pkgs.insert(dep_pkg);
                     }
                 }
             }
@@ -1286,8 +1300,6 @@ fn dfs_cycles(
     on_stack.remove(node);
     visited.insert(node.to_string());
 }
-
-
 
 #[cfg(test)]
 mod tests {

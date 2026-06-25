@@ -56,7 +56,11 @@ pub(crate) struct SearchHit {
 }
 
 /// Run an FTS5 bm25() query against `chunks_fts` in the given database.
-fn fts5_search(db_path: &std::path::Path, query: &str, limit: usize) -> anyhow::Result<Vec<SearchHit>> {
+fn fts5_search(
+    db_path: &std::path::Path,
+    query: &str,
+    limit: usize,
+) -> anyhow::Result<Vec<SearchHit>> {
     use rusqlite::params;
 
     let conn = rusqlite::Connection::open(db_path)?;
@@ -68,7 +72,11 @@ fn fts5_search(db_path: &std::path::Path, query: &str, limit: usize) -> anyhow::
     } else if tokens.len() == 1 {
         format!("\"{}\"", tokens[0])
     } else {
-        tokens.iter().map(|t| format!("\"{}\"", t)).collect::<Vec<_>>().join(" OR ")
+        tokens
+            .iter()
+            .map(|t| format!("\"{t}\""))
+            .collect::<Vec<_>>()
+            .join(" OR ")
     };
 
     let mut stmt = conn.prepare(
@@ -93,37 +101,42 @@ fn fts5_search(db_path: &std::path::Path, query: &str, limit: usize) -> anyhow::
         })
     })?;
 
-    let mut results: Vec<SearchHit> = rows.filter_map(|r| r.ok()).collect();
+    let mut results: Vec<SearchHit> = rows.filter_map(std::result::Result::ok).collect();
     // FTS5 bm25() returns 0 for best match, increasing for worse — negate so
     // higher = better (consistent with old BM25Index::search convention).
     for r in &mut results {
         r.rank = -r.rank;
     }
-    results.sort_by(|a, b| b.rank.partial_cmp(&a.rank).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.rank
+            .partial_cmp(&a.rank)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(limit);
     Ok(results)
 }
 
 /// Load ChunkData from the SQLite DB for dense/hybrid/SPLADE paths.
-fn load_chunk_data(_root: &std::path::Path, db_path: &std::path::Path) -> std::sync::Arc<ChunkData> {
+fn load_chunk_data(
+    _root: &std::path::Path,
+    db_path: &std::path::Path,
+) -> std::sync::Arc<ChunkData> {
     if !db_path.exists() {
         return std::sync::Arc::new(ChunkData::new());
     }
 
-    let conn = match rusqlite::Connection::open(db_path) {
-        Ok(c) => c,
-        Err(_) => return std::sync::Arc::new(ChunkData::new()),
+    let Ok(conn) = rusqlite::Connection::open(db_path) else {
+        return std::sync::Arc::new(ChunkData::new());
     };
 
-    let mut stmt = match conn.prepare(
+    let Ok(mut stmt) = conn.prepare(
         "SELECT file_path, symbol_name, kind, start_line, end_line, content, token_count
-         FROM chunks ORDER BY id",
-    ) {
-        Ok(s) => s,
-        Err(_) => return std::sync::Arc::new(ChunkData::new()),
+          FROM chunks ORDER BY id",
+    ) else {
+        return std::sync::Arc::new(ChunkData::new());
     };
 
-    let rows = match stmt.query_map([], |row| {
+    let Ok(rows) = stmt.query_map([], |row| {
         let file_path: String = row.get(0)?;
         let symbol_name: String = row.get(1)?;
         let kind_str: String = row.get(2)?;
@@ -142,13 +155,12 @@ fn load_chunk_data(_root: &std::path::Path, db_path: &std::path::Path) -> std::s
             tokens: Vec::new(),
             token_count: token_count as usize,
         })
-    }) {
-        Ok(r) => r,
-        Err(_) => return std::sync::Arc::new(ChunkData::new()),
+    }) else {
+        return std::sync::Arc::new(ChunkData::new());
     };
 
     let code_chunks: Vec<crate::core::chunk_data::CodeChunk> =
-        rows.filter_map(|r| r.ok()).collect();
+        rows.filter_map(std::result::Result::ok).collect();
 
     if code_chunks.is_empty() {
         return std::sync::Arc::new(ChunkData::new());
@@ -197,7 +209,9 @@ pub fn handle(
     workspace: Option<bool>,
     artifacts: Option<bool>,
 ) -> String {
-    handle_impl(query, path, top_k, crp_mode, languages, path_glob, mode, workspace, artifacts)
+    handle_impl(
+        query, path, top_k, crp_mode, languages, path_glob, mode, workspace, artifacts,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -254,8 +268,12 @@ fn handle_impl(
     match mode.as_str() {
         "bm25" => {
             let results = if db_path.exists() {
-                fts5_search(&db_path, query, filtered_candidate_k(top_k, filter.is_active()))
-                    .unwrap_or_default()
+                fts5_search(
+                    &db_path,
+                    query,
+                    filtered_candidate_k(top_k, filter.is_active()),
+                )
+                .unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -367,7 +385,11 @@ fn bm25_hits(
     top_k: usize,
     filter: &SearchFilter,
 ) -> Vec<HybridResult> {
-    let mut results = bm25_search(index, query, filtered_candidate_k(top_k, filter.is_active()));
+    let mut results = bm25_search(
+        index,
+        query,
+        filtered_candidate_k(top_k, filter.is_active()),
+    );
     if filter.is_active() {
         results.retain(|x| filter.matches(&x.file_path));
     }
@@ -559,7 +581,11 @@ fn artifacts_search(
             continue;
         }
 
-        let mut results = crate::core::chunk_data::bm25_search(&idx, query, filtered_candidate_k(top_k, filter.is_active()));
+        let mut results = crate::core::chunk_data::bm25_search(
+            &idx,
+            query,
+            filtered_candidate_k(top_k, filter.is_active()),
+        );
         if filter.is_active() {
             results.retain(|x| filter.matches(&x.file_path));
         }
@@ -627,7 +653,11 @@ fn workspace_search(
 
         let mut results: Vec<HybridResult> = match mode {
             "bm25" => {
-                let mut bm25 = crate::core::chunk_data::bm25_search(&index, query, filtered_candidate_k(top_k, filter.is_active()));
+                let mut bm25 = crate::core::chunk_data::bm25_search(
+                    &index,
+                    query,
+                    filtered_candidate_k(top_k, filter.is_active()),
+                );
                 if filter.is_active() {
                     bm25.retain(|x| filter.matches(&x.file_path));
                 }
@@ -640,13 +670,14 @@ fn workspace_search(
                 #[cfg(feature = "embeddings")]
                 {
                     match dense_results_for_root(query, r, &index, top_k, filter) {
-                        Ok((v, _cov)) => {
-                            v
-                        }
+                        Ok((v, _cov)) => v,
                         Err(e) => {
                             warnings.push(format!("[{label}] dense search failed: {e}"));
                             let mut bm25 = crate::core::chunk_data::bm25_search(
-                                &index, query, filtered_candidate_k(top_k, filter.is_active()));
+                                &index,
+                                query,
+                                filtered_candidate_k(top_k, filter.is_active()),
+                            );
                             if filter.is_active() {
                                 bm25.retain(|x| filter.matches(&x.file_path));
                             }
@@ -661,7 +692,10 @@ fn workspace_search(
                 {
                     let _ = (&label, &warnings);
                     let mut bm25 = crate::core::chunk_data::bm25_search(
-                        &index, query, filtered_candidate_k(top_k, filter.is_active()));
+                        &index,
+                        query,
+                        filtered_candidate_k(top_k, filter.is_active()),
+                    );
                     if filter.is_active() {
                         bm25.retain(|x| filter.matches(&x.file_path));
                     }
@@ -675,13 +709,14 @@ fn workspace_search(
                 #[cfg(feature = "embeddings")]
                 {
                     match hybrid_results_for_root(query, r, &index, top_k, filter) {
-                        Ok((v, _cov)) => {
-                            v
-                        }
+                        Ok((v, _cov)) => v,
                         Err(e) => {
                             warnings.push(format!("[{label}] hybrid search failed: {e}"));
                             let mut bm25 = crate::core::chunk_data::bm25_search(
-                                &index, query, filtered_candidate_k(top_k, filter.is_active()));
+                                &index,
+                                query,
+                                filtered_candidate_k(top_k, filter.is_active()),
+                            );
                             if filter.is_active() {
                                 bm25.retain(|x| filter.matches(&x.file_path));
                             }
@@ -696,7 +731,10 @@ fn workspace_search(
                 {
                     let _ = (&label, &warnings);
                     let mut bm25 = crate::core::chunk_data::bm25_search(
-                        &index, query, filtered_candidate_k(top_k, filter.is_active()));
+                        &index,
+                        query,
+                        filtered_candidate_k(top_k, filter.is_active()),
+                    );
                     if filter.is_active() {
                         bm25.retain(|x| filter.matches(&x.file_path));
                     }
@@ -1152,7 +1190,12 @@ fn hybrid_search_mode(
     }
     #[cfg(not(feature = "embeddings"))]
     {
-        let mut results: Vec<crate::core::chunk_data::SearchResult> = crate::core::chunk_data::bm25_search(index, query, filtered_candidate_k(top_k, filter.is_active()));
+        let mut results: Vec<crate::core::chunk_data::SearchResult> =
+            crate::core::chunk_data::bm25_search(
+                index,
+                query,
+                filtered_candidate_k(top_k, filter.is_active()),
+            );
         if filter.is_active() {
             results.retain(|x| filter.matches(&x.file_path));
         }
@@ -1692,19 +1735,9 @@ mod dense_toggle_tests {
         };
         let filter = SearchFilter::new(None, None).unwrap();
 
-        let out = bm25_graph_search(
-            "jwt token validation",
-            root,
-            &index,
-            5,
-            &filter,
-            &cfg,
-        );
+        let out = bm25_graph_search("jwt token validation", root, &index, 5, &filter, &cfg);
 
-        assert!(
-            out.starts_with('['),
-            "expected JSON array, got: {out}"
-        );
+        assert!(out.starts_with('['), "expected JSON array, got: {out}");
         assert!(
             out.contains("validate_token"),
             "expected lexical match, got: {out}"

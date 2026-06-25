@@ -115,20 +115,18 @@ impl ChunkData {
             return ChunkData::new();
         }
 
-        let conn = match crate::core::db::WalConnection::open(&db_path) {
-            Ok(c) => c,
-            Err(_) => return ChunkData::new(),
+        let Ok(conn) = crate::core::db::WalConnection::open(&db_path) else {
+            return ChunkData::new();
         };
 
-        let mut stmt = match conn.prepare(
+        let Ok(mut stmt) = conn.prepare(
             "SELECT file_path, content, content_hash, start_line, end_line, language
-             FROM chunks ORDER BY id",
-        ) {
-            Ok(s) => s,
-            Err(_) => return ChunkData::new(),
+              FROM chunks ORDER BY id",
+        ) else {
+            return ChunkData::new();
         };
 
-        let rows = match stmt.query_map([], |row| {
+        let Ok(rows) = stmt.query_map([], |row| {
             Ok(crate::core::index_types::CodeChunk {
                 file_path: row.get(0)?,
                 content: row.get(1)?,
@@ -137,17 +135,13 @@ impl ChunkData {
                 end_line: row.get::<_, i64>(4)? as u32,
                 language: row.get(5)?,
             })
-        }) {
-            Ok(r) => r,
-            Err(_) => return ChunkData::new(),
+        }) else {
+            return ChunkData::new();
         };
 
         let mut code_chunks: Vec<crate::core::index_types::CodeChunk> = Vec::new();
-        for row in rows {
-            match row {
-                Ok(chunk) => code_chunks.push(chunk),
-                Err(_) => continue,
-            }
+        for row in rows.flatten() {
+            code_chunks.push(row);
         }
 
         if code_chunks.is_empty() {
@@ -819,8 +813,8 @@ pub(crate) fn enrich_for_bm25(chunk: &CodeChunk) -> String {
 // Build coordinator (dashboard)
 // ---------------------------------------------------------------------------
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::core::index_pipeline::pipeline::IndexPipeline;
 
@@ -845,16 +839,13 @@ fn building_flag() -> &'static AtomicBool {
 pub fn get_or_start_build(root: &std::path::Path) -> Result<(), SearchIndexBuildProgress> {
     // Check if the DB exists and has chunks
     let db_path = crate::core::index_namespace::vectors_dir(root).join("code_index.db");
-    if db_path.exists() {
-        if let Ok(conn) = rusqlite::Connection::open(&db_path) {
-            if let Ok(count) = conn.query_row("SELECT COUNT(*) FROM chunks", [], |r| r.get::<_, i64>(0))
-            {
-                if count > 0 {
-                    // DB has chunks — ready to serve FTS5 queries
-                    return Ok(());
-                }
-            }
-        }
+    if db_path.exists()
+        && let Ok(conn) = rusqlite::Connection::open(&db_path)
+        && let Ok(count) = conn.query_row("SELECT COUNT(*) FROM chunks", [], |r| r.get::<_, i64>(0))
+        && count > 0
+    {
+        // DB has chunks — ready to serve FTS5 queries
+        return Ok(());
     }
 
     // `swap(true)` wins exactly once; concurrent callers see `true` and just
@@ -891,7 +882,6 @@ pub fn get_or_start_build(root: &std::path::Path) -> Result<(), SearchIndexBuild
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
 
     #[test]
     fn tokenize_splits_code() {
@@ -948,7 +938,8 @@ mod tests {
 
     #[test]
     fn detect_rust_function() {
-        let (name, kind) = detect_symbol("pub fn process_request(req: Request) -> Response {").unwrap();
+        let (name, kind) =
+            detect_symbol("pub fn process_request(req: Request) -> Response {").unwrap();
         assert_eq!(name, "process_request");
         assert_eq!(kind, ChunkKind::Function);
     }

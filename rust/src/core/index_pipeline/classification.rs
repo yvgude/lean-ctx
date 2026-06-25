@@ -111,8 +111,7 @@ mod tests {
             rel_path: rel_path.to_string(),
             ext: "rs".to_string(),
             size,
-            mtime: std::time::UNIX_EPOCH
-                + std::time::Duration::from_nanos(mtime_ns as u64),
+            mtime: std::time::UNIX_EPOCH + std::time::Duration::from_nanos(mtime_ns as u64),
         }
     }
 
@@ -129,14 +128,14 @@ mod tests {
     #[test]
     fn classify_files_new_unchanged_changed_deleted() {
         let discovered = vec![
-            make_discovered("src/new.rs", 100, 50),       // new — not in stored
-            make_discovered("src/unchanged.rs", 200, 80),  // unchanged
-            make_discovered("src/changed.rs", 999, 80),    // changed (mtime differs)
+            make_discovered("src/new.rs", 100, 50), // new — not in stored
+            make_discovered("src/unchanged.rs", 200, 80), // unchanged
+            make_discovered("src/changed.rs", 999, 80), // changed (mtime differs)
         ];
         let stored = vec![
             make_stored("src/unchanged.rs", 200, 80),
             make_stored("src/changed.rs", 100, 80),
-            make_stored("src/deleted.rs", 300, 60),        // deleted — not discovered
+            make_stored("src/deleted.rs", 300, 60), // deleted — not discovered
         ];
 
         let c = classify_files(&discovered, &stored);
@@ -148,7 +147,10 @@ mod tests {
 
         // Invariant: changed ∩ unchanged = ∅
         for p in &c.changed {
-            assert!(!c.unchanged.contains(p), "{p} is in both changed and unchanged");
+            assert!(
+                !c.unchanged.contains(p),
+                "{p} is in both changed and unchanged"
+            );
         }
     }
 
@@ -173,10 +175,7 @@ mod tests {
             make_discovered("a.rs", 10, 100),
             make_discovered("b.rs", 20, 200),
         ];
-        let stored = vec![
-            make_stored("a.rs", 10, 100),
-            make_stored("b.rs", 20, 200),
-        ];
+        let stored = vec![make_stored("a.rs", 10, 100), make_stored("b.rs", 20, 200)];
 
         let c = classify_files(&discovered, &stored);
         assert!(c.new.is_empty());
@@ -188,10 +187,7 @@ mod tests {
     #[test]
     fn classify_files_all_deleted() {
         let discovered: Vec<DiscoveredFile> = vec![];
-        let stored = vec![
-            make_stored("a.rs", 10, 100),
-            make_stored("b.rs", 20, 200),
-        ];
+        let stored = vec![make_stored("a.rs", 10, 100), make_stored("b.rs", 20, 200)];
 
         let c = classify_files(&discovered, &stored);
         assert!(c.new.is_empty());

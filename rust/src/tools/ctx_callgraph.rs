@@ -136,17 +136,12 @@ fn format_bfs_callees(
 }
 
 /// Format BFS nodes — one compact line per hop entry.
-fn fmt_bfs_grouped(
-    nodes: &[BfsNode],
-    symbol: &str,
-    depth: usize,
-    edge_type: &str,
-) -> String {
+fn fmt_bfs_grouped(nodes: &[BfsNode], symbol: &str, depth: usize, edge_type: &str) -> String {
     if nodes.is_empty() {
-        return format!("No {}s found for '{symbol}' (depth≤{depth})", edge_type);
+        return format!("No {edge_type}s found for '{symbol}' (depth≤{depth})");
     }
 
-    let label = format!("{}s", edge_type);
+    let label = format!("{edge_type}s");
     let mut out = format!("{} {label} of '{symbol}' (depth≤{depth}):\n", nodes.len());
     for node in nodes {
         out.push_str(&format!(

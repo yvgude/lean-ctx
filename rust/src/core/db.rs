@@ -46,8 +46,7 @@ impl WalConnection {
 
     /// Open an in-memory database (WAL pragma is a harmless no-op).
     pub fn open_in_memory() -> Result<Self> {
-        let conn =
-            Connection::open_in_memory().context("open in-memory SQLite db")?;
+        let conn = Connection::open_in_memory().context("open in-memory SQLite db")?;
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA busy_timeout = 5000;

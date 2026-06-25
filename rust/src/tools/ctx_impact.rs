@@ -3,7 +3,9 @@
 //! Uses the SQLite-backed Property Graph to answer: "What breaks when file X changes?"
 //! Performs BFS traversal of reverse import edges to find all transitively affected files.
 
-use crate::core::property_graph::{AffectedEntry, CodeGraph, DependencyChain, Edge, EdgeKind, ImpactResult, Node};
+use crate::core::property_graph::{
+    AffectedEntry, CodeGraph, DependencyChain, Edge, EdgeKind, ImpactResult, Node,
+};
 use crate::core::tokens::count_tokens;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -236,7 +238,7 @@ fn analyze_symbol(
             max_depth_reached = max_depth_reached.max(r.max_depth_reached);
             for entry in &r.affected_files {
                 let prev = affected_map.get(&entry.file_path).copied();
-                if prev.map_or(true, |p| entry.hop < p) {
+                if prev.is_none_or(|p| entry.hop < p) {
                     affected_map.insert(entry.file_path.clone(), entry.hop);
                 }
             }
@@ -288,8 +290,12 @@ fn analyze_symbol(
                     .insert("defined_in".into(), json!(def_files));
             }
             if truncated {
-                v.as_object_mut().unwrap().insert("truncated".into(), json!(true));
-                v.as_object_mut().unwrap().insert("total_affected".into(), json!(total));
+                v.as_object_mut()
+                    .unwrap()
+                    .insert("truncated".into(), json!(true));
+                v.as_object_mut()
+                    .unwrap()
+                    .insert("total_affected".into(), json!(total));
             }
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
         }
@@ -1658,8 +1664,14 @@ mod tests {
         let impact = ImpactResult {
             root_file: "a.rs".to_string(),
             affected_files: vec![
-                AffectedEntry { file_path: "b.rs".to_string(), hop: 1 },
-                AffectedEntry { file_path: "c.rs".to_string(), hop: 2 },
+                AffectedEntry {
+                    file_path: "b.rs".to_string(),
+                    hop: 1,
+                },
+                AffectedEntry {
+                    file_path: "c.rs".to_string(),
+                    hop: 2,
+                },
             ],
             max_depth_reached: 2,
             edges_traversed: 3,
@@ -1924,21 +1936,22 @@ mod tests {
             .impact_analysis("Models/Engine.cs", 5)
             .expect("impact analysis");
 
-        let aff_paths: Vec<&str> = impact.affected_files.iter().map(|e| e.file_path.as_str()).collect();
+        let aff_paths: Vec<&str> = impact
+            .affected_files
+            .iter()
+            .map(|e| e.file_path.as_str())
+            .collect();
         assert!(
             aff_paths.contains(&"Services/Motor.cs"),
-            "DI consumer (field + ctor param, no using, no new) must be affected; got: {:?}",
-            aff_paths
+            "DI consumer (field + ctor param, no using, no new) must be affected; got: {aff_paths:?}"
         );
         assert!(
             aff_paths.contains(&"Services/TurboEngine.cs"),
-            "subclass (base_list, no using) must be affected; got: {:?}",
-            aff_paths
+            "subclass (base_list, no using) must be affected; got: {aff_paths:?}"
         );
         assert!(
             !aff_paths.contains(&"Services/Logger.cs"),
-            "unrelated file must NOT be affected; got: {:?}",
-            aff_paths
+            "unrelated file must NOT be affected; got: {aff_paths:?}"
         );
 
         // Same root cause, second symptom: a class consumed only as a type

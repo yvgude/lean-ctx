@@ -10,7 +10,7 @@
 //!   7. File reference extraction from freeform text
 //!   8. `ChunkKind` extensions for external sources
 
-use lean_ctx::core::bm25_index::{BM25Index, ChunkKind, CodeChunk};
+use lean_ctx::core::bm25_index::{BM25Index, ChunkKind, CodeChunk, bm25_search};
 use lean_ctx::core::content_chunk::{ContentChunk, ContentSource, extract_file_references};
 use lean_ctx::core::context_column::{
     ColumnContext, ColumnOutput, ContextColumn, FilesystemColumn, ProviderColumn,
@@ -204,7 +204,7 @@ fn bm25_search_finds_ingested_provider_chunks() {
         ),
     ]);
 
-    let results = index.search("authentication token expires", 5);
+    let results = bm25_search(&index, "authentication token expires", 5);
     assert!(!results.is_empty());
     assert_eq!(results[0].file_path, "github://issues/42");
 }
@@ -812,7 +812,7 @@ fn end_to_end_provider_to_bm25_search() {
     let ingested = index.ingest_content_chunks(chunks);
     assert_eq!(ingested, 5);
 
-    let results = index.search("Mock issues", 10);
+    let results = bm25_search(&index, "Mock issues", 10);
     assert!(!results.is_empty());
 
     for result in &results {

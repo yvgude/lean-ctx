@@ -9,7 +9,7 @@ use std::time::Instant;
 
 mod bm25_performance {
     use super::*;
-    use lean_ctx::core::bm25_index::BM25Index;
+    use lean_ctx::core::bm25_index::{BM25Index, bm25_search};
 
     #[test]
     fn stress_bm25_large_corpus() {
@@ -26,7 +26,7 @@ mod bm25_performance {
         let index = BM25Index::build_from_directory(dir.path());
 
         let start = Instant::now();
-        let results = index.search("process_request validate", 20);
+        let results = bm25_search(&index, "process_request validate", 20);
         let elapsed = start.elapsed();
 
         assert!(!results.is_empty());
@@ -51,7 +51,7 @@ mod bm25_performance {
 
         let start = Instant::now();
         for _ in 0..100 {
-            let _ = index.search("authenticate authorize", 10);
+            let _ = bm25_search(&index, "authenticate authorize", 10);
         }
         let elapsed = start.elapsed();
 

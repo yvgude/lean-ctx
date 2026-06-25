@@ -7,7 +7,7 @@
 //! These tests catch "functional silos" — code that exists but isn't
 //! actually connected to the runtime.
 
-use lean_ctx::core::bm25_index::{BM25Index, ChunkKind};
+use lean_ctx::core::bm25_index::{BM25Index, ChunkKind, bm25_search};
 use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::consolidation;
 use lean_ctx::core::content_chunk::ContentChunk;
@@ -85,7 +85,7 @@ fn proof_apply_artifacts_writes_bm25() {
         "WIRING BROKEN: apply_artifacts did not write to BM25 (before={before}, after={after})"
     );
 
-    let results = index.search("auth crashes login", 5);
+    let results = bm25_search(&index, "auth crashes login", 5);
     assert!(
         !results.is_empty(),
         "WIRING BROKEN: BM25 search finds nothing after apply_artifacts"
@@ -399,14 +399,14 @@ fn proof_end_to_end_provider_data_searchable() {
     );
 
     // Search should find the websocket issue
-    let ws_results = index.search("websocket memory leak", 5);
+    let ws_results = bm25_search(&index, "websocket memory leak", 5);
     assert!(
         !ws_results.is_empty(),
         "WIRING BROKEN: BM25 can't find 'websocket memory leak' after full pipeline"
     );
 
     // Search should find the Jira ticket
-    let db_results = index.search("database connection pool", 5);
+    let db_results = bm25_search(&index, "database connection pool", 5);
     assert!(
         !db_results.is_empty(),
         "WIRING BROKEN: BM25 can't find 'database connection pool' after full pipeline"

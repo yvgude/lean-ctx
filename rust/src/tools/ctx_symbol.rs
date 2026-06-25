@@ -183,10 +183,7 @@ fn render_single(sym: &SymbolInfo, project_root: &str) -> (String, usize) {
 
     let savings = protocol::format_savings(full_tokens, snippet_tokens);
 
-    (
-        format!("{header}\n\n{snippet}\n{savings}"),
-        full_tokens,
-    )
+    (format!("{header}\n\n{snippet}\n{savings}"), full_tokens)
 }
 
 fn render_multiple(symbols: &[SymbolInfo], project_root: &str) -> (String, usize) {

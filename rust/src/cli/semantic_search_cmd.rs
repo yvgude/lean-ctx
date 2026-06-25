@@ -131,7 +131,9 @@ pub(crate) fn cmd_semantic_search(args: &[String]) {
                 // Compact one-line-per-result format
                 println!(
                     "semantic_search({},{}) \u{2192} {} results",
-                    parsed.mode, parsed.top_k, hits.len()
+                    parsed.mode,
+                    parsed.top_k,
+                    hits.len()
                 );
                 for h in &hits {
                     let symbol = if h.symbol_name.is_empty() {
@@ -139,7 +141,10 @@ pub(crate) fn cmd_semantic_search(args: &[String]) {
                     } else {
                         h.symbol_name.as_str()
                     };
-                    println!("{}:{}  {symbol}  {:.4}", h.file_path, h.start_line, h.rrf_score);
+                    println!(
+                        "{}:{}  {symbol}  {:.4}",
+                        h.file_path, h.start_line, h.rrf_score
+                    );
                 }
             }
         }

@@ -218,9 +218,8 @@ mod tests {
             token_budget: 100_000,
         };
 
-        let result = orch.execute_action(
-            &HomeostasisAction::EvictProbationary { target_tokens: 0 },
-        );
+        let result =
+            orch.execute_action(&HomeostasisAction::EvictProbationary { target_tokens: 0 });
         assert!(result);
         let c = cache.blocking_read();
         assert!(c.get("/once.rs").is_none());

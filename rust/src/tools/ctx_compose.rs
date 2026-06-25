@@ -297,12 +297,8 @@ fn deferred_ranking_note(project_root: &str) -> String {
         && rusqlite::Connection::open(&db_path)
             .ok()
             .and_then(|conn| {
-                conn.query_row(
-                    "SELECT COUNT(*) FROM chunks",
-                    [],
-                    |r| r.get::<_, i64>(0),
-                )
-                .ok()
+                conn.query_row("SELECT COUNT(*) FROM chunks", [], |r| r.get::<_, i64>(0))
+                    .ok()
             })
             .unwrap_or(0)
             > 0;

@@ -1288,8 +1288,6 @@ fn codebuddy_instructions_check(
     }
 }
 
-
-
 /// Runtime status of the semantic (BM25) index for the active project: whether
 /// it is idle/building/ready/failed, how long the last build took, and — crucially
 /// — *why* it might be stuck (e.g. "indexed but NOT persisted: too large").
@@ -1313,9 +1311,7 @@ pub(super) fn semantic_index_outcome() -> Option<Outcome> {
     let outcome = if disk.bm25_index.exists {
         Outcome {
             ok: true,
-            line: format!(
-                "{BOLD}Semantic index{RST}  {GREEN}ready{RST} {DIM}({persisted}){RST}"
-            ),
+            line: format!("{BOLD}Semantic index{RST}  {GREEN}ready{RST} {DIM}({persisted}){RST}"),
         }
     } else {
         Outcome {
