@@ -138,7 +138,6 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::ctx_callgraph::CtxCallgraphTool));
     registry.register(Box::new(registered::ctx_refactor::CtxRefactorTool));
     registry.register(Box::new(registered::ctx_repomap::CtxRepomapTool));
-    registry.register(Box::new(registered::ctx_symbol::CtxSymbolTool));
     registry.register(Box::new(
         registered::ctx_discover_tools::CtxDiscoverToolsTool,
     ));
@@ -188,9 +187,6 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::ctx_overview::CtxOverviewTool));
     registry.register(Box::new(registered::ctx_preload::CtxPreloadTool));
     registry.register(Box::new(registered::ctx_prefetch::CtxPrefetchTool));
-    registry.register(Box::new(
-        registered::ctx_semantic_search::CtxSemanticSearchTool,
-    ));
     registry.register(Box::new(registered::ctx_feedback::CtxFeedbackTool));
     registry.register(Box::new(registered::ctx_control::CtxControlTool));
     registry.register(Box::new(registered::ctx_plan::CtxPlanTool));

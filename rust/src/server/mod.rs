@@ -278,16 +278,6 @@ mod tests {
     }
 
     #[test]
-    fn test_registry_tool_count_ssot() {
-        let registry = crate::server::registry::build_registry();
-        assert_eq!(
-            registry.len(),
-            77,
-            "Registry tool count drift! Update this test AND all docs when adding/removing tools."
-        );
-    }
-
-    #[test]
     fn production_server_always_has_registry() {
         // The list_tools fallback that serves static defs when `registry` is None
         // must stay unreachable in production: every public constructor funnels

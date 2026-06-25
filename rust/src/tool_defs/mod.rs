@@ -72,7 +72,6 @@ pub const CORE_TOOL_NAMES: &[&str] = &[
     "ctx_shell",
     "shell",
     "ctx_search",
-    "ctx_semantic_search",
     "ctx_glob",
     "ctx_tree",
     "ctx_session",
