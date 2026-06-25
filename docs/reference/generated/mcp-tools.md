@@ -4,7 +4,7 @@
 
 Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.
 
-lean-ctx registers **77 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
+lean-ctx registers **75 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
 
 ## `ctx_agent`
 
@@ -276,7 +276,7 @@ action=diagram kind=deps|calls renders a Mermaid diagram.
 For understanding code, use ctx_compose FIRST. Use ctx_graph for targeted structural queries.
 ANTIPATTERN: symbol returns only the DEFINITION — not usages. For REFERENCES use grep or ctx_compose.
 
-Parameters: `action`*, `depth`, `format`, `kind`, `path`, `project_root`, `since`, `to`
+Parameters: `action`*, `depth`, `kind`, `path`, `project_root`, `since`, `to`
 
 ## `ctx_handoff`
 
@@ -566,22 +566,15 @@ Parameters: `action`*, `agent`
 
 ## `ctx_search`
 
-Regex pattern search — use when you know the exact pattern. For understanding code or
-finding answers, use ctx_compose FIRST (one call replaces search+read+symbol chains).
-pattern required; include='*.rs'; path scopes; max_results=N (default 20).
-paths=['dir1','dir2'] for multi-root. ignore_gitignore bypasses .gitignore (needs role).
+Search code with regex (action=grep) or semantic search (action=search).
+action=grep (default when pattern is present): regex file search.
+action=search: semantic/vector search (uses ctx_semantic_search internally).
+action=reindex: rebuild search index.
+For action=grep: pattern required; include='*.rs'; path scopes;
+limit=N or max_results=N (default 20); paths=['dir1','dir2'] for multi-root;
+ignore_gitignore bypasses .gitignore (needs role).
 
-Parameters: `ignore_gitignore`, `include`, `max_results`, `path`, `paths`, `pattern`*
-
-## `ctx_semantic_search`
-
-Search code by MEANING (BM25) — use when you know the concept but not the exact
-symbol name. query='user auth' finds relevant code even with no keyword match.
-Different from ctx_search (regex): use ctx_search for exact patterns, this for
-fuzzy/conceptual. For understanding code end-to-end, use ctx_compose FIRST.
-find_related(file_path, line) for context neighbors.
-
-Parameters: `action`, `file_path`, `languages`, `line`, `mode`, `path`, `path_glob`, `query`*, `top_k`
+Parameters: `action`*, `artifacts`, `context`, `ignore_gitignore`, `include`, `languages`, `limit`, `max_results`, `method`, `mode`, `offset`, `path`, `path_glob`, `paths`, `pattern`, `query`, `related_to`, `top_k`, `workspace`
 
 ## `ctx_session`
 
@@ -642,16 +635,6 @@ Actions: recall|record|list. Auto-captured on checkpoints.
 ANTIPATTERN: structured facts → ctx_knowledge.
 
 Parameters: `action`, `query`, `top_k`
-
-## `ctx_symbol`
-
-Get ONE symbol's body by name — exact, AST-precise (tree-sitter index).
-WORKFLOW: after ctx_compose gave overview, for one symbol's body.
-name='fnName' returns code block; file='path.rs' narrows;
-kind='fn'|'struct'|'class'|'trait'|'enum' disambiguates.
-ANTIPATTERN: NOT for finding all usages (grep) or exploring areas (ctx_compose).
-
-Parameters: `file`, `kind`, `name`*
 
 ## `ctx_task`
 

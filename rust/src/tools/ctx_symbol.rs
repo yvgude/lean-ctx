@@ -136,22 +136,6 @@ fn render_single(sym: &SymbolInfo, project_root: &str) -> (String, usize) {
     (format!("{header}\n\n{snippet}\n{savings}"), full_tokens)
 }
 
-fn render_multiple(symbols: &[SymbolInfo], project_root: &str) -> (String, usize) {
-    let mut out = String::new();
-    let mut total_original = 0usize;
-
-    for (i, sym) in symbols.iter().enumerate() {
-        if i > 0 {
-            out.push_str("\n---\n\n");
-        }
-        let (rendered, orig) = render_single(sym, project_root);
-        out.push_str(&rendered);
-        total_original = total_original.max(orig);
-    }
-
-    (out, total_original)
-}
-
 fn resolve_file_path(relative: &str, project_root: &str) -> String {
     let p = Path::new(relative);
     if p.is_absolute() && p.exists() {
