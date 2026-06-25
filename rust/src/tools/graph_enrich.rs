@@ -47,14 +47,11 @@ pub fn open_code_index(root: &Path) -> Result<Connection, String> {
 /// Query all nodes that belong to the given file, ordered by start_line.
 /// Returns an empty vec on error.
 pub fn query_nodes_for_file(conn: &Connection, file_path: &str) -> Vec<GraphNode> {
-    let mut stmt = match conn.prepare(
-        "SELECT id, name, label, start_line, end_line FROM nodes WHERE file_path = ? ORDER BY start_line ASC",
-    ) {
-        Ok(stmt) => stmt,
-        Err(_) => return Vec::new(),
-    };
+    let Ok(mut stmt) = conn.prepare(
+         "SELECT id, name, label, start_line, end_line FROM nodes WHERE file_path = ? ORDER BY start_line ASC",
+    ) else { return Vec::new() };
 
-    let rows = match stmt.query_map([file_path], |row| {
+    let Ok(rows) = stmt.query_map([file_path], |row| {
         let id: i64 = row.get(0)?;
         let name: String = row.get(1)?;
         let label: String = row.get(2)?;
@@ -68,25 +65,26 @@ pub fn query_nodes_for_file(conn: &Connection, file_path: &str) -> Vec<GraphNode
             start_line: start_line as usize,
             end_line: end_line as usize,
         })
-    }) {
-        Ok(rows) => rows,
-        Err(_) => return Vec::new(),
+    }) else {
+        return Vec::new();
     };
 
-    rows.filter_map(|r| r.ok()).collect()
+    rows.filter_map(std::result::Result::ok).collect()
 }
 
 /// Among nodes where start_line <= line <= end_line, return the one with the
 /// smallest span (end_line - start_line). Ties are broken by preferring the
 /// node with the smaller start_line.
-pub fn find_tightest_node<'a>(nodes: &'a [GraphNode], line: usize) -> Option<&'a GraphNode> {
+pub fn find_tightest_node(nodes: &[GraphNode], line: usize) -> Option<&GraphNode> {
     nodes
         .iter()
         .filter(|n| n.start_line <= line && line <= n.end_line)
         .min_by(|a, b| {
             let span_a = a.end_line - a.start_line;
             let span_b = b.end_line - b.start_line;
-            span_a.cmp(&span_b).then_with(|| a.start_line.cmp(&b.start_line))
+            span_a
+                .cmp(&span_b)
+                .then_with(|| a.start_line.cmp(&b.start_line))
         })
 }
 
@@ -96,8 +94,12 @@ pub fn find_tightest_node<'a>(nodes: &'a [GraphNode], line: usize) -> Option<&'a
 /// Returns `(enriched_hits, unmatched_raw)` where:
 /// - `enriched_hits` are deduplicated by node_id with accumulated match_lines
 /// - `unmatched_raw` contains matches that fell outside any node span
-pub fn classify_hits(matches: &[GrepMatch], nodes: &[GraphNode]) -> (Vec<EnrichedHit>, Vec<GrepMatch>) {
-    let mut hit_map: std::collections::BTreeMap<i64, EnrichedHit> = std::collections::BTreeMap::new();
+pub fn classify_hits(
+    matches: &[GrepMatch],
+    nodes: &[GraphNode],
+) -> (Vec<EnrichedHit>, Vec<GrepMatch>) {
+    let mut hit_map: std::collections::BTreeMap<i64, EnrichedHit> =
+        std::collections::BTreeMap::new();
     let mut unmatched: Vec<GrepMatch> = Vec::new();
 
     for gm in matches {
@@ -141,7 +143,7 @@ mod tests {
     fn make_node(id: i64, start: usize, end: usize) -> GraphNode {
         GraphNode {
             id,
-            name: format!("sym_{}", id),
+            name: format!("sym_{id}"),
             label: "function".into(),
             file_path: "test.rs".into(),
             start_line: start,
@@ -152,9 +154,9 @@ mod tests {
     #[test]
     fn find_tightest_node_selects_smallest_span() {
         let nodes = vec![
-            make_node(1, 1, 20),   // outer
-            make_node(2, 5, 15),   // inner
-            make_node(3, 8, 12),   // tightest
+            make_node(1, 1, 20), // outer
+            make_node(2, 5, 15), // inner
+            make_node(3, 8, 12), // tightest
         ];
         let found = find_tightest_node(&nodes, 10);
         assert_eq!(found.map(|n| n.id), Some(3));
@@ -162,10 +164,7 @@ mod tests {
 
     #[test]
     fn find_tightest_node_breaks_ties_by_start_line() {
-        let nodes = vec![
-            make_node(1, 5, 15),
-            make_node(2, 3, 13),
-        ];
+        let nodes = vec![make_node(1, 5, 15), make_node(2, 3, 13)];
         // Both have span 10; node 2 has smaller start_line (3 < 5).
         let found = find_tightest_node(&nodes, 10);
         assert_eq!(found.map(|n| n.id), Some(2));
@@ -181,8 +180,16 @@ mod tests {
     fn classify_hits_deduplicates_by_node_id() {
         let nodes = vec![make_node(1, 1, 20)];
         let matches = vec![
-            GrepMatch { file: "test.rs".into(), line: 5, content: "a".into() },
-            GrepMatch { file: "test.rs".into(), line: 10, content: "b".into() },
+            GrepMatch {
+                file: "test.rs".into(),
+                line: 5,
+                content: "a".into(),
+            },
+            GrepMatch {
+                file: "test.rs".into(),
+                line: 10,
+                content: "b".into(),
+            },
         ];
         let (hits, raw) = classify_hits(&matches, &nodes);
         assert_eq!(hits.len(), 1);
@@ -194,8 +201,16 @@ mod tests {
     fn classify_hits_unmatched_matches_returned_as_raw() {
         let nodes = vec![make_node(1, 1, 10)];
         let matches = vec![
-            GrepMatch { file: "test.rs".into(), line: 5, content: "a".into() },
-            GrepMatch { file: "test.rs".into(), line: 20, content: "b".into() },
+            GrepMatch {
+                file: "test.rs".into(),
+                line: 5,
+                content: "a".into(),
+            },
+            GrepMatch {
+                file: "test.rs".into(),
+                line: 20,
+                content: "b".into(),
+            },
         ];
         let (hits, raw) = classify_hits(&matches, &nodes);
         assert_eq!(hits.len(), 1);

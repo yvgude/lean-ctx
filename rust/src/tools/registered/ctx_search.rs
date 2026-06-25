@@ -80,16 +80,14 @@ impl McpTool for CtxSearchTool {
                     .or_else(|| get_str(args, "ext").map(|e| ext_to_include(&e)));
                 // Backward compat: limit replaces max_results
                 let max = get_usize(args, "limit")
-                    .or_else(|| {
-                        get_int(args, "max_results")
-                            .and_then(|n| usize::try_from(n).ok())
-                    })
+                    .or_else(|| get_int(args, "max_results").and_then(|n| usize::try_from(n).ok()))
                     .unwrap_or(20)
                     .min(500);
                 let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
 
                 if no_gitignore
-                    && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_search")
+                    && let Err(e) =
+                        crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_search")
                 {
                     return Ok(ToolOutput::simple(e));
                 }
@@ -159,7 +157,11 @@ impl McpTool for CtxSearchTool {
                 let final_out =
                     crate::core::protocol::append_savings(&combined, total_observed, total_sent);
                 let saved = total_observed.saturating_sub(total_sent);
-                crate::core::savings_ledger::record_tool_event("ctx_search", total_observed, total_sent);
+                crate::core::savings_ledger::record_tool_event(
+                    "ctx_search",
+                    total_observed,
+                    total_sent,
+                );
 
                 Ok(ToolOutput {
                     text: final_out,
@@ -174,11 +176,8 @@ impl McpTool for CtxSearchTool {
             "search" | "reindex" => {
                 let search = crate::tools::ctx_search::CtxSearch::try_from(args)
                     .map_err(|e| ErrorData::invalid_params(e, None))?;
-                let outcome = crate::tools::ctx_search::handle_enum(
-                    search,
-                    ctx.crp_mode,
-                    &ctx.project_root,
-                );
+                let outcome =
+                    crate::tools::ctx_search::handle_enum(search, ctx.crp_mode, &ctx.project_root);
                 let out: ToolOutput = outcome.into();
                 crate::core::savings_ledger::record_tool_event(
                     "ctx_search",

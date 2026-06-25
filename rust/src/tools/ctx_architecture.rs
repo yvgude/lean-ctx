@@ -6,7 +6,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::core::property_graph::CodeGraph;
-use crate::core::tokens::count_tokens;
 use serde_json::{Value, json};
 
 /// Dispatches architecture analysis actions (overview, clusters, layers, cycles, entrypoints, module).
@@ -319,8 +318,7 @@ Hotspots (top {hotspots_limit}):\n"
                 ));
             }
 
-            let tokens = count_tokens(&result);
-            format!("{result}[ctx_architecture: {tokens} tok]")
+            result
         }
     }
 }
@@ -396,8 +394,7 @@ fn handle_clusters(root: &str, fmt: OutputFormat) -> String {
                 result.push_str(&format!("\n... +{} more clusters\n", total - limit));
             }
 
-            let tokens = count_tokens(&result);
-            format!("{result}[ctx_architecture clusters: {tokens} tok]")
+            result
         }
     }
 }
@@ -465,8 +462,7 @@ fn handle_communities(root: &str, fmt: OutputFormat) -> String {
                     result.communities.len() - 20
                 ));
             }
-            let tokens = count_tokens(&out);
-            format!("{out}\n[ctx_architecture communities: {tokens} tok]")
+            out
         }
     }
 }
@@ -536,8 +532,7 @@ fn handle_layers(root: &str, fmt: OutputFormat) -> String {
                 result.push_str(&format!("\n... +{} more layers\n", total - limit));
             }
 
-            let tokens = count_tokens(&result);
-            format!("{result}[ctx_architecture layers: {tokens} tok]")
+            result
         }
     }
 }
@@ -595,8 +590,7 @@ fn handle_cycles(root: &str, fmt: OutputFormat) -> String {
                 result.push_str(&format!("\n... +{} more cycles\n", total - limit));
             }
 
-            let tokens = count_tokens(&result);
-            format!("{result}[ctx_architecture cycles: {tokens} tok]")
+            result
         }
     }
 }
@@ -645,8 +639,7 @@ fn handle_entrypoints(root: &str, fmt: OutputFormat) -> String {
                 result.push_str(&format!("  ... +{} more\n", total - limit));
             }
 
-            let tokens = count_tokens(&result);
-            format!("{result}[ctx_architecture entrypoints: {tokens} tok]")
+            result
         }
     }
 }
@@ -743,8 +736,7 @@ fn handle_hotspots(root: &str, fmt: OutputFormat) -> String {
             if hotspots.len() > limit {
                 result.push_str(&format!("\n  ... +{} more\n", hotspots.len() - limit));
             }
-            let tokens = count_tokens(&result);
-            format!("{result}\n[ctx_architecture hotspots: {tokens} tok]")
+            result
         }
     }
 }
@@ -854,8 +846,7 @@ fn handle_health(root: &str, fmt: OutputFormat) -> String {
                 }
             }
 
-            let tokens = count_tokens(&result);
-            format!("{result}\n[ctx_architecture health: {tokens} tok]")
+            result
         }
     }
 }
@@ -1034,8 +1025,7 @@ fn handle_module(path: Option<&str>, root: &str, fmt: OutputFormat) -> String {
                 }
             }
 
-            let tokens = count_tokens(&result);
-            format!("{result}[ctx_architecture module: {tokens} tok]")
+            result
         }
     }
 }

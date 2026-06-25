@@ -4,10 +4,6 @@
 use crate::{core, tools};
 
 pub(in crate::cli::dispatch) fn cmd_graph(rest: &[String]) {
-    // `--json` is positional-agnostic: strip it out and remember the choice so
-    // positional parsing below stays simple.
-    let want_json = rest.iter().any(|a| a == "--json");
-    let fmt = if want_json { Some("json") } else { None };
     let filtered: Vec<String> = rest
         .iter()
         .filter(|a| a.as_str() != "--json")
@@ -132,7 +128,6 @@ pub(in crate::cli::dispatch) fn cmd_graph(rest: &[String]) {
                     None,
                     None,
                     None,
-                    fmt,
                     None,
                 )
             );
@@ -143,7 +138,7 @@ pub(in crate::cli::dispatch) fn cmd_graph(rest: &[String]) {
             let root = resolve_graph_root(rest.get(1));
             println!(
                 "{}",
-                tools::ctx_impact::handle("parity", None, &root, None, fmt)
+                tools::ctx_impact::handle("parity", None, &root, None, None)
             );
         }
         "path" => {
@@ -161,7 +156,6 @@ pub(in crate::cli::dispatch) fn cmd_graph(rest: &[String]) {
                     None,
                     None,
                     to,
-                    fmt,
                     None,
                 )
             );
@@ -180,7 +174,6 @@ pub(in crate::cli::dispatch) fn cmd_graph(rest: &[String]) {
                     None,
                     None,
                     None,
-                    fmt,
                     since,
                 )
             );

@@ -38,7 +38,6 @@ impl McpTool for CtxGraphTool {
                     "to": { "type": "string", "description": "Target file (action=path)" },
                     "depth": { "type": "integer", "description": "Traversal depth" },
                     "kind": { "type": "string", "description": "diagram: deps|calls" },
-                    "format": { "type": "string", "description": "text|json" },
                     "since": { "type": "string", "description": "Git ref for action=diff (default HEAD~1)" },
                     "project_root": { "type": "string", "description": "Project root" }
                 },
@@ -80,7 +79,6 @@ impl McpTool for CtxGraphTool {
         };
         let depth = get_usize(args, "depth").map(|d| d.min(64));
         let kind = get_str(args, "kind");
-        let format = get_str(args, "format");
         // `since` is a git ref, not a filesystem path — read it raw (no PathJail).
         let since = get_str(args, "since");
         let to = if let Some(p) = ctx.resolved_path("to") {
@@ -112,7 +110,6 @@ impl McpTool for CtxGraphTool {
             depth,
             kind.as_deref(),
             to.as_deref(),
-            format.as_deref(),
             since.as_deref(),
         );
 
