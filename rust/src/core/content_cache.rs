@@ -1,7 +1,7 @@
 //! Resident, bounded file-content cache shared across the search-index build and
 //! `ctx_search` (issue #148).
 //!
-//! Before this module the trigram [`bm25_index`](crate::core::bm25_index)
+//! Before this module the trigram [`bm25_index`](crate::core::chunk_data)
 //! build read *every* file in the corpus to extract trigrams and then threw the
 //! content away, after which `ctx_search` read the narrowed candidate files
 //! **again** to run the regex line-by-line — the corpus was read from disk

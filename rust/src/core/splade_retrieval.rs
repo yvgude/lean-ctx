@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::core::bm25_index::{ChunkData, tokenize_for_index};
+use crate::core::chunk_data::{ChunkData, tokenize_for_index};
 
 /// Result row after hybrid retrieval + re-ranking.
 #[derive(Debug, Clone, PartialEq)]
@@ -182,7 +182,7 @@ pub fn hybrid_retrieve(query: &str, bm25_index: &ChunkData, top_k: usize) -> Vec
 
     let expanded = build_expanded_weights(&query_tokens);
 
-    let stage1 = crate::core::bm25_index::bm25_search(bm25_index, query, 100.min(bm25_index.doc_count.max(1)));
+    let stage1 = crate::core::chunk_data::bm25_search(bm25_index, query, 100.min(bm25_index.doc_count.max(1)));
 
     let bm25_by_chunk: HashMap<usize, f64> =
         stage1.iter().map(|r| (r.chunk_idx, r.score)).collect();
@@ -246,7 +246,7 @@ pub fn hybrid_retrieve(query: &str, bm25_index: &ChunkData, top_k: usize) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::bm25_index::{ChunkKind, CodeChunk};
+    use crate::core::chunk_data::{ChunkKind, CodeChunk};
 
     fn sample_index() -> ChunkData {
         ChunkData::from_chunks_for_test(vec![

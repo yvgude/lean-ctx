@@ -17,7 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::bm25_index::{ChunkKind, CodeChunk};
+use super::chunk_data::{ChunkKind, CodeChunk};
 
 /// Where a content chunk originated.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -74,7 +74,7 @@ impl ContentChunk {
         references: Vec<String>,
         metadata: Option<serde_json::Value>,
     ) -> Self {
-        let tokens = super::bm25_index::tokenize_for_index(&content);
+        let tokens = super::chunk_data::tokenize_for_index(&content);
         let token_count = tokens.len();
         Self {
             file_path: format!("{provider_id}://{resource_type}/{item_id}"),

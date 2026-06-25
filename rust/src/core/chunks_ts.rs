@@ -9,7 +9,7 @@
 #[cfg(feature = "tree-sitter")]
 use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator};
 
-use super::bm25_index::{ChunkKind, CodeChunk};
+use super::chunk_data::{ChunkKind, CodeChunk};
 
 #[cfg(feature = "tree-sitter")]
 const CHUNK_QUERY_RUST: &str = r"
@@ -195,7 +195,7 @@ pub fn extract_chunks_ts(file_path: &str, content: &str, file_ext: &str) -> Opti
             let block: String = lines[start_row0..=end_row0.min(lines.len().saturating_sub(1))]
                 .to_vec()
                 .join("\n");
-            let token_count = super::bm25_index::tokenize_for_index(&block).len();
+            let token_count = super::chunk_data::tokenize_for_index(&block).len();
 
             chunks.push(CodeChunk {
                 file_path: file_path.to_string(),

@@ -2,7 +2,7 @@
 use std::path::Path;
 
 #[cfg(feature = "qdrant")]
-use crate::core::bm25_index::ChunkKind;
+use crate::core::chunk_data::ChunkKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DenseBackendKind {
@@ -57,7 +57,7 @@ impl DenseBackendKind {
 mod embed {
     use std::path::Path;
 
-    use crate::core::bm25_index::ChunkData;
+    use crate::core::chunk_data::ChunkData;
     use crate::core::hnsw::FlatEmbeddings;
     use crate::core::hybrid_search::{DenseSearchResult, HybridConfig, HybridResult};
 
@@ -142,7 +142,7 @@ mod embed {
                 let bm25_k = config.bm25_candidates.max(top_k);
                 let dense_k = config.dense_candidates.max(top_k);
 
-                let mut bm25 = crate::core::bm25_index::bm25_search(index, query, bm25_k);
+                let mut bm25 = crate::core::chunk_data::bm25_search(index, query, bm25_k);
                 if let Some(pred) = filter {
                     bm25.retain(|r| pred(&r.file_path));
                 }

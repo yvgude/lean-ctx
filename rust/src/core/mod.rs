@@ -178,7 +178,9 @@ pub mod knowledge_domain {
 // Domain: Search & Retrieval
 // ---------------------------------------------------------------------------
 // pub mod bm25_cache; // removed — unified into SQLite code_index.db
-pub mod bm25_index;
+pub mod chunk_data;
+// Backward-compat alias — remove after Task 15 migrates remaining references.
+pub use chunk_data as bm25_index;
 pub mod content_cache;
 pub mod content_chunk;
 pub mod context_packing;
@@ -199,7 +201,7 @@ pub mod spreading_activation;
 
 /// Convenience re-export: all search-related modules.
 pub mod search {
-    pub use super::bm25_index;
+    pub use super::chunk_data;
     pub use super::content_chunk;
     pub use super::dense_backend;
     pub use super::embedding_index;

@@ -588,7 +588,7 @@ pub fn apply_artifacts_to_stores(
 
     // BM25: load existing index, ingest provider chunks, save
     if !artifacts.bm25_chunks.is_empty() {
-        let mut index = crate::core::bm25_index::BM25Index::build_from_directory(root_path);
+        let mut index = crate::core::chunk_data::BM25Index::build_from_directory(root_path);
         let ingested = index.ingest_content_chunks(artifacts.bm25_chunks.clone());
         if ingested > 0 {
             tracing::info!("[ctx_provider] indexed {ingested} provider chunks into BM25");

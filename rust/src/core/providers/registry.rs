@@ -15,7 +15,7 @@ use std::sync::{Arc, RwLock};
 
 use super::ProviderResult;
 use super::provider_trait::{ContextProvider, ProviderParams};
-use crate::core::bm25_index::ChunkKind;
+use crate::core::chunk_data::ChunkKind;
 use crate::core::content_chunk::ContentChunk;
 
 /// Central registry for all context providers.

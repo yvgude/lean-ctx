@@ -119,7 +119,7 @@ pub fn classify_path(path: &Path) -> IngestKind {
     if EXTRACTABLE_DOC_EXTS.contains(&ext.as_str()) {
         return IngestKind::Document;
     }
-    if crate::core::bm25_index::is_code_file(path) {
+    if crate::core::chunk_data::is_code_file(path) {
         return IngestKind::Code;
     }
     if DOCUMENT_EXTS.contains(&ext.as_str()) {

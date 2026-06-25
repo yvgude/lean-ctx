@@ -57,7 +57,7 @@ pub fn extract_cross_source_edges(chunks: &[ContentChunk]) -> Vec<IndexEdge> {
 
 /// Determine the edge kind based on the chunk's ChunkKind.
 fn chunk_to_edge_kind(chunk: &ContentChunk) -> &'static str {
-    use crate::core::bm25_index::ChunkKind;
+    use crate::core::chunk_data::ChunkKind;
     match chunk.kind {
         ChunkKind::PullRequest => EDGE_RESOLVES,
         ChunkKind::WikiPage => EDGE_DOCUMENTS,
@@ -102,7 +102,7 @@ pub fn merge_edges(existing: &mut Vec<IndexEdge>, new_edges: Vec<IndexEdge>) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::bm25_index::ChunkKind;
+    use crate::core::chunk_data::ChunkKind;
     use crate::core::content_chunk::ContentChunk;
 
     fn issue_chunk(id: &str, refs: Vec<&str>) -> ContentChunk {
@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn no_edges_for_file_source_chunks() {
-        let code_chunk = ContentChunk::from(crate::core::bm25_index::CodeChunk {
+        let code_chunk = ContentChunk::from(crate::core::chunk_data::CodeChunk {
             file_path: "src/main.rs".into(),
             symbol_name: "main".into(),
             kind: ChunkKind::Function,

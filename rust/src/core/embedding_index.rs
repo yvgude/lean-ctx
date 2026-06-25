@@ -13,7 +13,7 @@ use std::sync::Arc;
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 
-use super::bm25_index::CodeChunk;
+use super::chunk_data::CodeChunk;
 use super::embedding_quant::{self, QuantizedVector};
 use super::hnsw::FlatEmbeddings;
 
@@ -100,7 +100,7 @@ impl EmbeddingBuildOutcome {
 ///
 /// Feature-gated: when `embeddings` is not compiled in, this is a no-op that
 /// returns `Skipped`.
-pub fn build_or_update(root: &Path, bm25: &super::bm25_index::ChunkData) -> EmbeddingBuildOutcome {
+pub fn build_or_update(root: &Path, bm25: &super::chunk_data::ChunkData) -> EmbeddingBuildOutcome {
     #[cfg(feature = "embeddings")]
     {
         // Respect the config gates so the orchestrator does not force-embed when
@@ -503,8 +503,8 @@ fn compute_file_hashes(chunks: &[CodeChunk]) -> HashMap<String, String> {
     out
 }
 
-fn kind_tag(kind: &super::bm25_index::ChunkKind) -> u8 {
-    use super::bm25_index::ChunkKind;
+fn kind_tag(kind: &super::chunk_data::ChunkKind) -> u8 {
+    use super::chunk_data::ChunkKind;
     match kind {
         ChunkKind::Function => 1,
         ChunkKind::Struct => 2,
@@ -526,7 +526,7 @@ fn kind_tag(kind: &super::bm25_index::ChunkKind) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::bm25_index::{ChunkKind, CodeChunk};
+    use crate::core::chunk_data::{ChunkKind, CodeChunk};
 
     fn make_chunk(file: &str, name: &str, content: &str, start: usize, end: usize) -> CodeChunk {
         CodeChunk {

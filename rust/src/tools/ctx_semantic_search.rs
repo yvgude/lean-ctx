@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::fmt::Write;
 use std::path::Path;
 
-use crate::core::bm25_index::{ChunkData, format_search_results, bm25_search};
+use crate::core::chunk_data::{ChunkData, format_search_results, bm25_search};
 #[cfg(feature = "embeddings")]
 use crate::core::embedding_index::EmbeddingIndex;
 #[cfg(feature = "embeddings")]
@@ -99,11 +99,11 @@ fn load_chunk_data(_root: &std::path::Path, db_path: &std::path::Path) -> std::s
         let end_line: i64 = row.get(4)?;
         let content: String = row.get(5)?;
         let token_count: i64 = row.get(6)?;
-        Ok(crate::core::bm25_index::CodeChunk {
+        Ok(crate::core::chunk_data::CodeChunk {
             file_path,
             symbol_name,
             kind: serde_json::from_str(&kind_str)
-                .unwrap_or(crate::core::bm25_index::ChunkKind::Other),
+                .unwrap_or(crate::core::chunk_data::ChunkKind::Other),
             start_line: start_line as usize,
             end_line: end_line as usize,
             content,
@@ -115,7 +115,7 @@ fn load_chunk_data(_root: &std::path::Path, db_path: &std::path::Path) -> std::s
         Err(_) => return std::sync::Arc::new(ChunkData::new()),
     };
 
-    let code_chunks: Vec<crate::core::bm25_index::CodeChunk> =
+    let code_chunks: Vec<crate::core::chunk_data::CodeChunk> =
         rows.filter_map(|r| r.ok()).collect();
 
     if code_chunks.is_empty() {
@@ -126,8 +126,8 @@ fn load_chunk_data(_root: &std::path::Path, db_path: &std::path::Path) -> std::s
     let mut data = ChunkData::new();
     for chunk in code_chunks {
         let idx = data.chunks.len();
-        let enriched = crate::core::bm25_index::enrich_for_bm25(&chunk);
-        let tokens = crate::core::bm25_index::tokenize(&enriched);
+        let enriched = crate::core::chunk_data::enrich_for_bm25(&chunk);
+        let tokens = crate::core::chunk_data::tokenize(&enriched);
         for token in &tokens {
             let lower = token.to_lowercase();
             let postings = data.inverted.entry(lower.clone()).or_default();
@@ -136,7 +136,7 @@ fn load_chunk_data(_root: &std::path::Path, db_path: &std::path::Path) -> std::s
             }
             postings.push((idx, 1.0));
         }
-        data.chunks.push(crate::core::bm25_index::CodeChunk {
+        data.chunks.push(crate::core::chunk_data::CodeChunk {
             token_count: tokens.len(),
             tokens: Vec::new(),
             ..chunk
@@ -234,15 +234,15 @@ pub fn handle(
                     results.len(),
                 )
             };
-            let search_results: Vec<crate::core::bm25_index::SearchResult> = results
+            let search_results: Vec<crate::core::chunk_data::SearchResult> = results
                 .into_iter()
                 .enumerate()
-                .map(|(i, r)| crate::core::bm25_index::SearchResult {
+                .map(|(i, r)| crate::core::chunk_data::SearchResult {
                     chunk_idx: i,
                     score: r.rank,
                     file_path: r.file_path,
                     symbol_name: String::new(),
-                    kind: crate::core::bm25_index::ChunkKind::Other,
+                    kind: crate::core::chunk_data::ChunkKind::Other,
                     start_line: r.start_line,
                     end_line: r.end_line,
                     snippet: r.content,
@@ -296,7 +296,7 @@ pub fn search_hits(
     let filter =
         SearchFilter::new(languages, path_glob).map_err(|e| format!("invalid filter: {e}"))?;
 
-    let index = crate::core::bm25_index::BM25Index::build_from_directory(root);
+    let index = crate::core::chunk_data::BM25Index::build_from_directory(root);
     if index.doc_count == 0 {
         return Ok(Vec::new());
     }
@@ -358,7 +358,7 @@ pub fn handle_reindex(path: &str) -> String {
         root
     };
 
-    let idx = crate::core::bm25_index::BM25Index::build_from_directory(root);
+    let idx = crate::core::chunk_data::BM25Index::build_from_directory(root);
     let files = idx.files.len();
     let chunks = idx.doc_count;
 
@@ -421,7 +421,7 @@ pub fn handle_find_related(
         return format!("ERR: path does not exist: {project_root}");
     }
 
-    let index = crate::core::bm25_index::BM25Index::build_from_directory(root);
+    let index = crate::core::chunk_data::BM25Index::build_from_directory(root);
     if index.doc_count == 0 {
         return "ERR: empty index. Try action=reindex first.".to_string();
     }
@@ -517,7 +517,7 @@ fn artifacts_search(
     roots.sort();
     roots.dedup();
 
-    let mut per_project: Vec<(String, Vec<crate::core::bm25_index::SearchResult>)> = Vec::new();
+    let mut per_project: Vec<(String, Vec<crate::core::chunk_data::SearchResult>)> = Vec::new();
     let mut total_chunks = 0usize;
 
     for r in &roots {
@@ -529,7 +529,7 @@ fn artifacts_search(
             continue;
         }
 
-        let mut results = crate::core::bm25_index::bm25_search(&idx, query, filtered_candidate_k(top_k, filter.is_active()));
+        let mut results = crate::core::chunk_data::bm25_search(&idx, query, filtered_candidate_k(top_k, filter.is_active()));
         if filter.is_active() {
             results.retain(|x| filter.matches(&x.file_path));
         }
@@ -546,7 +546,7 @@ fn artifacts_search(
         per_project.push((label, results));
     }
 
-    let mut fused: Vec<crate::core::bm25_index::SearchResult> = if per_project.len() <= 1 {
+    let mut fused: Vec<crate::core::chunk_data::SearchResult> = if per_project.len() <= 1 {
         per_project
             .into_iter()
             .next()
@@ -629,14 +629,14 @@ fn workspace_search(
 
     for r in &roots {
         let label = label_for_root(r);
-        let index = crate::core::bm25_index::BM25Index::build_from_directory(r);
+        let index = crate::core::chunk_data::BM25Index::build_from_directory(r);
         if index.doc_count == 0 {
             continue;
         }
 
         let mut results: Vec<HybridResult> = match mode {
             "bm25" => {
-                let mut bm25 = crate::core::bm25_index::bm25_search(&index, query, filtered_candidate_k(top_k, filter.is_active()));
+                let mut bm25 = crate::core::chunk_data::bm25_search(&index, query, filtered_candidate_k(top_k, filter.is_active()));
                 if filter.is_active() {
                     bm25.retain(|x| filter.matches(&x.file_path));
                 }
@@ -656,7 +656,7 @@ fn workspace_search(
                         }
                         Err(e) => {
                             warnings.push(format!("[{label}] dense search failed: {e}"));
-                            let mut bm25 = crate::core::bm25_index::bm25_search(
+                            let mut bm25 = crate::core::chunk_data::bm25_search(
                                 &index, query, filtered_candidate_k(top_k, filter.is_active()));
                             if filter.is_active() {
                                 bm25.retain(|x| filter.matches(&x.file_path));
@@ -671,7 +671,7 @@ fn workspace_search(
                 #[cfg(not(feature = "embeddings"))]
                 {
                     let _ = (&label, &warnings);
-                    let mut bm25 = crate::core::bm25_index::bm25_search(
+                    let mut bm25 = crate::core::chunk_data::bm25_search(
                         &index, query, filtered_candidate_k(top_k, filter.is_active()));
                     if filter.is_active() {
                         bm25.retain(|x| filter.matches(&x.file_path));
@@ -693,7 +693,7 @@ fn workspace_search(
                         }
                         Err(e) => {
                             warnings.push(format!("[{label}] hybrid search failed: {e}"));
-                            let mut bm25 = crate::core::bm25_index::bm25_search(
+                            let mut bm25 = crate::core::chunk_data::bm25_search(
                                 &index, query, filtered_candidate_k(top_k, filter.is_active()));
                             if filter.is_active() {
                                 bm25.retain(|x| filter.matches(&x.file_path));
@@ -708,7 +708,7 @@ fn workspace_search(
                 #[cfg(not(feature = "embeddings"))]
                 {
                     let _ = (&label, &warnings);
-                    let mut bm25 = crate::core::bm25_index::bm25_search(
+                    let mut bm25 = crate::core::chunk_data::bm25_search(
                         &index, query, filtered_candidate_k(top_k, filter.is_active()));
                     if filter.is_active() {
                         bm25.retain(|x| filter.matches(&x.file_path));
@@ -821,12 +821,12 @@ fn rrf_merge_hybrid(lists: Vec<(String, Vec<HybridResult>)>, top_k: usize) -> Ve
 }
 
 fn rrf_merge_bm25(
-    lists: Vec<(String, Vec<crate::core::bm25_index::SearchResult>)>,
+    lists: Vec<(String, Vec<crate::core::chunk_data::SearchResult>)>,
     top_k: usize,
-) -> Vec<crate::core::bm25_index::SearchResult> {
+) -> Vec<crate::core::chunk_data::SearchResult> {
     use std::collections::HashMap;
 
-    let mut acc: HashMap<String, (crate::core::bm25_index::SearchResult, f64)> = HashMap::new();
+    let mut acc: HashMap<String, (crate::core::chunk_data::SearchResult, f64)> = HashMap::new();
     for (label, results) in lists {
         for (rank, r) in results.into_iter().enumerate() {
             let key = format!(
@@ -840,7 +840,7 @@ fn rrf_merge_bm25(
         }
     }
 
-    let mut out: Vec<crate::core::bm25_index::SearchResult> = acc
+    let mut out: Vec<crate::core::chunk_data::SearchResult> = acc
         .into_values()
         .map(|(mut r, s)| {
             r.score = s;
@@ -1240,7 +1240,7 @@ fn hybrid_search_mode(
     }
     #[cfg(not(feature = "embeddings"))]
     {
-        let mut results: Vec<crate::core::bm25_index::SearchResult> = crate::core::bm25_index::bm25_search(index, query, filtered_candidate_k(top_k, filter.is_active()));
+        let mut results: Vec<crate::core::chunk_data::SearchResult> = crate::core::chunk_data::bm25_search(index, query, filtered_candidate_k(top_k, filter.is_active()));
         if filter.is_active() {
             results.retain(|x| filter.matches(&x.file_path));
         }
@@ -1710,7 +1710,7 @@ mod determinism_tests {
         let a = HybridResult {
             file_path: "a.rs".to_string(),
             symbol_name: "foo".to_string(),
-            kind: crate::core::bm25_index::ChunkKind::Function,
+            kind: crate::core::chunk_data::ChunkKind::Function,
             start_line: 1,
             end_line: 1,
             snippet: "a".to_string(),
@@ -1723,7 +1723,7 @@ mod determinism_tests {
         let b = HybridResult {
             file_path: "b.rs".to_string(),
             symbol_name: "foo".to_string(),
-            kind: crate::core::bm25_index::ChunkKind::Function,
+            kind: crate::core::chunk_data::ChunkKind::Function,
             start_line: 1,
             end_line: 1,
             snippet: "b".to_string(),
@@ -1772,7 +1772,7 @@ mod dense_config_tests {
 #[cfg(all(test, feature = "embeddings"))]
 mod dense_toggle_tests {
     use super::*;
-    use crate::core::bm25_index::{ChunkData, ChunkKind, CodeChunk, tokenize};
+    use crate::core::chunk_data::{ChunkData, ChunkKind, CodeChunk, tokenize};
 
     fn small_index() -> ChunkData {
         ChunkData::from_chunks_for_test(vec![

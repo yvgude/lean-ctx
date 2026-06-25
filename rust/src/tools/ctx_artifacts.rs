@@ -158,7 +158,7 @@ fn search(
     };
     let k = top_k.unwrap_or(10).clamp(1, 50);
     let (idx, mut warnings) = crate::core::artifact_index::load_or_build(project_root);
-    let results = crate::core::bm25_index::bm25_search(&idx, q, k);
+    let results = crate::core::chunk_data::bm25_search(&idx, q, k);
     if idx.doc_count == 0 {
         warnings.push("artifact index is empty (no indexed chunks)".to_string());
     }
