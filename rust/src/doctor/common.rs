@@ -747,4 +747,63 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn claude_instructions_state_detects_pointer_block() {
+        // GH #549: the check must recognise the pointer block the installer
+        // actually writes (delimited by `<!-- lean-ctx -->`), not the retired
+        // full-rules marker — otherwise it falsely reports the block missing.
+        let _lock = crate::core::data_dir::test_env_lock();
+        use crate::core::config::{RulesInjection, RulesScope};
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let dir = crate::core::editor_registry::claude_state_dir(home);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("CLAUDE.md"),
+            format!(
+                "# notes\n\n{}\n## lean-ctx\n{}\n",
+                crate::hooks::agents::CLAUDE_MD_BLOCK_START,
+                crate::core::rules_canonical::AGENTS_BLOCK_END
+            ),
+        )
+        .unwrap();
+
+        let state =
+            super::claude_instructions_state(home, RulesScope::Global, RulesInjection::Shared);
+        assert_ne!(
+            state,
+            super::ClaudeInstructionsState::Missing,
+            "doctor must detect the CLAUDE.md pointer block (#549)"
+        );
+        assert!(state.ok(), "a detected block must be a healthy state");
+    }
+
+    #[test]
+    fn codebuddy_instructions_state_detects_pointer_block() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        use crate::core::config::{RulesInjection, RulesScope};
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let dir = crate::core::editor_registry::codebuddy_state_dir(home);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("CODEBUDDY.md"),
+            format!(
+                "# notes\n\n{}\n## lean-ctx\n{}\n",
+                crate::hooks::agents::CODEBUDDY_MD_BLOCK_START,
+                crate::core::rules_canonical::AGENTS_BLOCK_END
+            ),
+        )
+        .unwrap();
+
+        let state =
+            super::codebuddy_instructions_state(home, RulesScope::Global, RulesInjection::Shared);
+        assert_ne!(
+            state,
+            super::ClaudeInstructionsState::Missing,
+            "doctor must detect the CODEBUDDY.md pointer block (#549)"
+        );
+        assert!(state.ok());
+    }
 }
