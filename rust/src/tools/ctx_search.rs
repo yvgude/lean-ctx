@@ -10,7 +10,8 @@ use regex::RegexBuilder;
 use crate::core::protocol;
 use crate::core::symbol_map::{self, SymbolMap};
 use crate::core::tokens::count_tokens;
-use crate::tools::output_format::{format_context, format_footer};
+use crate::tools::graph_enrich::{self, GrepMatch, EnrichedHit};
+use crate::tools::output_format::{format_context, format_footer, format_header, format_row};
 use crate::tools::CrpMode;
 
 pub(crate) const MAX_FILE_SIZE: u64 = 512_000;
@@ -615,24 +616,27 @@ pub fn handle_enum(action: CtxSearch, crp_mode: CrpMode, ctx_path: &str) -> Sear
 
             let offset = params.offset.unwrap_or(0);
             let limit = params.limit.unwrap_or(20);
+            let show_context = params.context.unwrap_or(false);
 
-            // Parse match lines from handle() output
+            // Parse match lines from handle() output into GrepMatch structs
             let text = &outcome.text;
 
             // Split at ":\n" to separate header from match body
-            let (header, body) = match text.find(":\n") {
+            let (_header, body) = match text.find(":\n") {
                 Some(idx) => (text[..=idx].to_string(), &text[idx + 2..]),
                 None => return outcome,
             };
 
-            // Collect match lines (skip empty, footer lines starting with '(',
-            // and the scope-hint "Results span ..." line)
-            let all_matches: Vec<&str> = body
+            let all_matches: Vec<GrepMatch> = body
                 .lines()
                 .filter(|l| {
                     !l.is_empty()
                         && !l.starts_with('(')
                         && !l.starts_with("Results span")
+                })
+                .filter_map(|l| {
+                    let (file, line, content) = parse_grep_match(l)?;
+                    Some(GrepMatch { file, line, content })
                 })
                 .collect();
 
@@ -641,46 +645,130 @@ pub fn handle_enum(action: CtxSearch, crp_mode: CrpMode, ctx_path: &str) -> Sear
                 return outcome;
             }
 
-            let start = offset.min(total);
-            let end = (offset + limit).min(total);
-            let page = &all_matches[start..end];
+            let raw_count = all_matches.len();
 
-            let mut result = header;
-            result.push('\n');
+            // Try graph enrichment
+            if let Ok(conn) = graph_enrich::open_code_index(std::path::Path::new(&dir)) {
+                // Group match indices by file
+                let mut by_file: std::collections::BTreeMap<String, Vec<usize>> =
+                    std::collections::BTreeMap::new();
+                for (idx, m) in all_matches.iter().enumerate() {
+                    by_file.entry(m.file.clone()).or_default().push(idx);
+                }
 
-            if params.context.unwrap_or(false) && !page.is_empty() {
-                let ctx_radius: usize = 2;
-                for (i, &m) in page.iter().enumerate() {
-                    if i > 0 {
-                        result.push('\n');
-                    }
-                    result.push_str(m);
+                // Enrich per file — build owned slices for classify_hits
+                let mut enriched: Vec<EnrichedHit> = Vec::new();
+                let mut unmatched: Vec<GrepMatch> = Vec::new();
+                for (file_path, indices) in &by_file {
+                    let owned: Vec<GrepMatch> = indices
+                        .iter()
+                        .map(|&i| GrepMatch {
+                            file: all_matches[i].file.clone(),
+                            line: all_matches[i].line,
+                            content: all_matches[i].content.clone(),
+                        })
+                        .collect();
+                    let nodes = graph_enrich::query_nodes_for_file(&conn, file_path);
+                    let (e, u) = graph_enrich::classify_hits(&owned, &nodes);
+                    enriched.extend(e);
+                    unmatched.extend(u);
+                }
+
+                // Compute in_degree and sort by call_count descending
+                let in_degrees = compute_call_counts(&conn);
+                enriched.sort_by(|a, b| {
+                    let ca = in_degrees.get(&a.node_id).copied().unwrap_or(0);
+                    let cb = in_degrees.get(&b.node_id).copied().unwrap_or(0);
+                    cb.cmp(&ca)
+                });
+
+                let enriched_count = enriched.len();
+
+                // Zero enriched hits — show raw matches with enriched-style header
+                if enriched_count == 0 {
+                    let extra = format!("{} raw (0 dedup)", raw_count);
+                    let mut result = format_header("grep", 0, &extra);
+                    result.push('\n');
                     result.push('\n');
 
-                    if let Some((path, line)) = parse_match_location(m) {
-                        let full_path = std::path::Path::new(&dir).join(path);
-                        let ctx_start = line.saturating_sub(ctx_radius);
-                        let ctx_end = line + ctx_radius;
+                    let start = offset.min(raw_count);
+                    let end = (offset + limit).min(raw_count);
+                    for m in &all_matches[start..end] {
+                        result.push_str(&format!("  {}:{} {}\n", m.file, m.line, m.content));
+                    }
+
+                    result.push_str(&format_footer(offset, limit, raw_count));
+                    result.push('\n');
+                    return SearchOutcome::from_observed(result, outcome.observed_tokens);
+                }
+
+                // Header: enriched count / raw count (dedup)
+                let matched_in_enriched: usize =
+                    enriched.iter().map(|h| h.match_lines.len()).sum();
+                let dedup = matched_in_enriched.saturating_sub(enriched_count);
+                let extra = format!("{} raw ({} dedup)", raw_count, dedup);
+                let mut result = format_header("grep", enriched_count, &extra);
+                result.push('\n');
+                result.push('\n');
+
+                // Paginate enriched hits
+                let start = offset.min(enriched_count);
+                let end = (offset + limit).min(enriched_count);
+                let page = &enriched[start..end];
+
+                for (i, hit) in page.iter().enumerate() {
+                    let rank = start + i + 1;
+                    let extra = format!("{} hit(s)", hit.match_lines.len());
+                    result.push_str(&format_row(
+                        rank,
+                        &hit.file,
+                        hit.start_line,
+                        hit.end_line,
+                        &hit.name,
+                        &hit.label,
+                        &extra,
+                    ));
+
+                    if show_context {
+                        let full_path = std::path::Path::new(&dir).join(&hit.file);
                         if let Some(body_content) = read_file_body(
                             &full_path.to_string_lossy(),
-                            ctx_start,
-                            ctx_end,
+                            hit.start_line,
+                            hit.end_line,
                         ) {
-                            let match_idx = line - ctx_start + 1; // 1-based within context
-                            result.push_str(&format_context(&body_content, &[match_idx]));
+                            let relative_matches: Vec<usize> = hit
+                                .match_lines
+                                .iter()
+                                .map(|m| m - hit.start_line + 1)
+                                .collect();
                             result.push('\n');
+                            result.push_str(&format_context(
+                                &body_content,
+                                &relative_matches,
+                            ));
                         }
                     }
+
+                    result.push('\n');
                 }
-            } else {
-                result.push_str(&page.join("\n"));
+
+                // Unmatched section (only if there are unmatched AND enriched hits)
+                if !unmatched.is_empty() && enriched_count > 0 {
+                    result.push_str("  (unmatched:)\n");
+                    for m in &unmatched {
+                        result.push_str(&format!("  {}:{} {}\n", m.file, m.line, m.content));
+                    }
+                }
+
+                // Footer
+                result.push_str(&format_footer(offset, limit, enriched_count));
                 result.push('\n');
+
+                SearchOutcome::from_observed(result, outcome.observed_tokens)
+            } else {
+                // Graph unavailable — fall back to plain grep output as-is
+                outcome
             }
-
-            result.push_str(&format_footer(offset, limit, total));
-            result.push('\n');
-
-            SearchOutcome::from_observed(result, outcome.observed_tokens)
         }
         CtxSearch::Search(_) => {
             SearchOutcome::error(
@@ -901,17 +989,35 @@ fn monorepo_scope_hint(matches: &[String], search_dir: &str) -> Option<String> {
     }
 }
 
-/// Parse a match line into (file_path, line_number).
-///
-/// Match lines from `handle()` have the format `<path>:<linenum> <content>`.
-/// On Linux the path never contains `:`, so the first `:` is the separator.
-fn parse_match_location(line: &str) -> Option<(&str, usize)> {
-    let colon = line.find(':')?;
-    let path = &line[..colon];
-    let rest = &line[colon + 1..];
-    let line_end = rest.find(' ').unwrap_or(rest.len());
-    let line_num = rest[..line_end].parse::<usize>().ok()?;
-    Some((path, line_num))
+/// Parse a single match line from handle() output: "path:line content"
+/// Returns (file_path, line_number, content)
+fn parse_grep_match(line: &str) -> Option<(String, usize, String)> {
+    let colon_pos = line.find(':')?;
+    let file = line[..colon_pos].to_string();
+    let rest = &line[colon_pos + 1..];
+    let space_pos = rest.find(' ')?;
+    let line_num: usize = rest[..space_pos].parse().ok()?;
+    let content = rest[space_pos + 1..].to_string();
+    Some((file, line_num, content))
+}
+
+/// Query the code_index.db edges table for per-node call counts.
+fn compute_call_counts(conn: &rusqlite::Connection) -> std::collections::HashMap<i64, usize> {
+    let mut map = std::collections::HashMap::new();
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT target_id, COUNT(*) as cnt FROM edges WHERE type = 'calls' GROUP BY target_id",
+    ) {
+        if let Ok(rows) = stmt.query_map([], |row| {
+            let id: i64 = row.get(0)?;
+            let cnt: i64 = row.get(1)?;
+            Ok((id, cnt as usize))
+        }) {
+            for row in rows.flatten() {
+                map.insert(row.0, row.1);
+            }
+        }
+    }
+    map
 }
 
 /// Read a source file and return lines `start_line..=end_line` (1-based).
