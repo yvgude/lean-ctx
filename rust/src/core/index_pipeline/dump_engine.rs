@@ -179,9 +179,12 @@ impl DumpEngine {
         Self::create_schema(&conn)?;
 
         // 3. Clear existing data (idempotent dump) — runs in auto-commit.
-        conn.execute("DELETE FROM files", [])?;
-        conn.execute("DELETE FROM nodes", [])?;
+        // Disable FK enforcement so we can delete in any order (rusqlite 0.40+
+        // may enable it by default on some platforms).
+        conn.execute("PRAGMA foreign_keys = OFF", [])?;
         conn.execute("DELETE FROM edges", [])?;
+        conn.execute("DELETE FROM nodes", [])?;
+        conn.execute("DELETE FROM files", [])?;
         conn.execute("DELETE FROM file_hashes", [])?;
         conn.execute("DELETE FROM chunks", [])?;
 
@@ -228,9 +231,10 @@ impl DumpEngine {
         // ══ DDL phase (auto-commit) ════════════════════════════════════
         conn.execute("DROP TABLE IF EXISTS nodes_fts", [])?;
         Self::create_schema(&conn)?;
-        conn.execute("DELETE FROM files", [])?;
-        conn.execute("DELETE FROM nodes", [])?;
+        conn.execute("PRAGMA foreign_keys = OFF", [])?;
         conn.execute("DELETE FROM edges", [])?;
+        conn.execute("DELETE FROM nodes", [])?;
+        conn.execute("DELETE FROM files", [])?;
         conn.execute("DELETE FROM file_hashes", [])?;
 
         // ══ DML phase (batched transactions) ═══════════════════════════
