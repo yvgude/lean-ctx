@@ -56,6 +56,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   (gitlab #868–#871)
 
 ### Fixed
+- **Codex proxy never compressed — ChatGPT login bypasses it; the API-key config
+  was a no-op (#554).** `lean-ctx proxy enable` reported success for Codex yet
+  `Requests/Compressed/Tokens saved` stayed at `0`, for two reasons. (1) A Codex
+  **ChatGPT login** (the default) authenticates via OAuth directly against
+  `chatgpt.com/backend-api`, so a custom `openai_base_url` is ignored and the
+  proxy never sees the traffic — the Claude Pro/Max situation, but with no
+  warning. lean-ctx now detects a ChatGPT login (`~/.codex/auth.json`
+  `auth_mode = "chatgpt"`, overridable by an explicit `OPENAI_API_KEY`) and
+  prints an honest skip notice pointing at the MCP tools instead of writing dead
+  config. (2) In **API-key** mode lean-ctx wrote `[env] OPENAI_BASE_URL` into
+  `~/.codex/config.toml`, which Codex does not read; it now writes the documented
+  top-level `openai_base_url` key (openai/codex#12031), migrates the dead legacy
+  entry, and preserves any custom remote endpoint. Uninstall/cleanup/preview
+  handle both forms.
 - **`lean-ctx index build-semantic` cold-starts the embedding model again
   (#545).** On a machine without the model cached, the build dead-ended with
   *"embedding model not downloaded — auto-download … failed"* even though no

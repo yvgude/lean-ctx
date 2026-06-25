@@ -57,9 +57,13 @@ pub fn preview_proxy_cleanup(home: &Path) {
     let codex_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
     let codex_path = codex_dir.join("config.toml");
     if let Ok(content) = std::fs::read_to_string(codex_path)
-        && content.contains("OPENAI_BASE_URL")
+        && content.lines().any(|l| {
+            let t = l.trim_start();
+            (t.starts_with("openai_base_url") || t.starts_with("OPENAI_BASE_URL"))
+                && (t.contains("127.0.0.1") || t.contains("localhost"))
+        })
     {
-        println!("  Would remove OPENAI_BASE_URL from Codex CLI config");
+        println!("  Would remove Codex proxy URL from config.toml");
     }
 }
 
@@ -106,24 +110,15 @@ pub fn cleanup_stale_proxy_env(home: &Path) -> usize {
     let codex_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
     let codex_path = codex_dir.join("config.toml");
     if let Ok(content) = std::fs::read_to_string(&codex_path)
-        && content.contains("OPENAI_BASE_URL")
-        && (content.contains("127.0.0.1") || content.contains("localhost"))
+        && content.lines().any(|l| {
+            let t = l.trim_start();
+            (t.starts_with("openai_base_url") || t.starts_with("OPENAI_BASE_URL"))
+                && (t.contains("127.0.0.1") || t.contains("localhost"))
+        })
     {
-        let filtered: String = content
-            .lines()
-            .filter(|line| !line.trim().starts_with("OPENAI_BASE_URL"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let filtered = filtered
-            .replace("\n[env]\n\n", "\n")
-            .replace("[env]\n\n", "");
-        let filtered = if filtered.trim() == "[env]" {
-            String::new()
-        } else {
-            filtered
-        };
+        let filtered = strip_codex_proxy_entries(&content);
         let _ = std::fs::write(&codex_path, &filtered);
-        println!("  ✓ Removed stale OPENAI_BASE_URL from Codex CLI config");
+        println!("  ✓ Removed stale Codex proxy URL from config.toml");
         cleaned += 1;
     }
 
@@ -413,31 +408,19 @@ fn uninstall_codex_env(home: &Path, quiet: bool) {
         _ => return,
     };
 
-    if !existing.contains("OPENAI_BASE_URL") {
+    let has_local = existing.lines().any(|l| {
+        let t = l.trim_start();
+        (t.starts_with("openai_base_url") || t.starts_with("OPENAI_BASE_URL"))
+            && (t.contains("127.0.0.1") || t.contains("localhost"))
+    });
+    if !has_local {
         return;
     }
 
-    let cleaned: String = existing
-        .lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            !trimmed.starts_with("OPENAI_BASE_URL")
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let cleaned = cleaned
-        .replace("\n[env]\n\n", "\n")
-        .replace("[env]\n\n", "");
-    let cleaned = if cleaned.trim() == "[env]" {
-        String::new()
-    } else {
-        cleaned
-    };
-
+    let cleaned = strip_codex_proxy_entries(&existing);
     let _ = std::fs::write(&config_path, &cleaned);
     if !quiet {
-        println!("  ✓ Removed OPENAI_BASE_URL from Codex CLI config");
+        println!("  ✓ Removed openai_base_url from Codex CLI config");
     }
 }
 
@@ -754,6 +737,17 @@ fn is_proxy_reachable(port: u16) -> bool {
 }
 
 fn install_codex_env(home: &Path, port: u16, quiet: bool) {
+    // CHATGPT-LOGIN GUARD: the proxy never injects credentials, so it can only help
+    // Codex in API-key mode. A Codex ChatGPT login authenticates via OAuth directly
+    // against chatgpt.com/backend-api (governed by `chatgpt_base_url`, not
+    // `openai_base_url`), so pointing the OpenAI base URL at the proxy captures
+    // nothing and savings stay at 0 (#554). Explain it instead of writing dead config.
+    if codex_uses_chatgpt_login(home) {
+        if !quiet {
+            warn_codex_chatgpt_skip();
+        }
+        return;
+    }
     let config_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
     install_codex_env_at(&config_dir, port, quiet);
 }
@@ -761,9 +755,11 @@ fn install_codex_env(home: &Path, port: u16, quiet: bool) {
 /// Testable core of `install_codex_env`: operates on an explicit Codex config
 /// directory instead of resolving it from `CODEX_HOME` / the real home.
 fn install_codex_env_at(config_dir: &Path, port: u16, quiet: bool) {
-    // Codex CLI follows the OpenAI convention: base URL includes `/v1` (#366).
-    let base = format!("http://127.0.0.1:{port}");
-    let value = format!("{base}/v1");
+    // Codex reads the built-in OpenAI provider's base URL from the top-level
+    // `openai_base_url` key (openai/codex#12031), with the `/v1` suffix per the
+    // OpenAI convention (#366). Older lean-ctx wrote `[env] OPENAI_BASE_URL`, which
+    // Codex silently ignores — the no-op behind #554.
+    let value = format!("http://127.0.0.1:{port}/v1");
 
     if !is_proxy_reachable(port) {
         if !quiet {
@@ -772,55 +768,128 @@ fn install_codex_env_at(config_dir: &Path, port: u16, quiet: bool) {
         return;
     }
 
+    if !config_dir.exists() {
+        return;
+    }
+
     let config_path = config_dir.join("config.toml");
-
     let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
+    let updated = render_codex_config(&existing, &value);
 
-    if existing.contains("OPENAI_BASE_URL") && existing.contains(&value) {
+    if updated == existing {
         if !quiet {
             println!("  Codex CLI proxy env already configured");
         }
         return;
     }
 
-    if !config_dir.exists() {
-        return;
-    }
-
-    let mut content = existing;
-
-    if content.contains("OPENAI_BASE_URL") {
-        // Migrate stale local entries written without `/v1` by older versions.
-        content = content
-            .lines()
-            .map(|line| {
-                let trimmed = line.trim();
-                if trimmed.starts_with("OPENAI_BASE_URL")
-                    && (trimmed.contains("127.0.0.1") || trimmed.contains("localhost"))
-                {
-                    format!("OPENAI_BASE_URL = \"{value}\"")
-                } else {
-                    line.to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        if !content.ends_with('\n') {
-            content.push('\n');
-        }
-    } else if content.contains("[env]") {
-        content = content.replace("[env]", &format!("[env]\nOPENAI_BASE_URL = \"{value}\""));
-    } else {
-        if !content.is_empty() && !content.ends_with('\n') {
-            content.push('\n');
-        }
-        content.push_str(&format!("\n[env]\nOPENAI_BASE_URL = \"{value}\"\n"));
-    }
-
-    let _ = std::fs::write(&config_path, &content);
+    let _ = std::fs::write(&config_path, &updated);
     if !quiet {
-        println!("  Configured OPENAI_BASE_URL in Codex CLI config");
+        println!("  Configured openai_base_url in Codex CLI config");
     }
+}
+
+/// Point Codex's built-in OpenAI provider at `value` via the documented top-level
+/// `openai_base_url` key. Removes lean-ctx's legacy local `[env] OPENAI_BASE_URL`
+/// (dead config Codex never read, #554) and migrates a stale local `openai_base_url`
+/// to the canonical `/v1` value. A custom *remote* endpoint the user configured is
+/// preserved and never overwritten (#366). The key is emitted as a top-level key
+/// (before the first `[table]`) so Codex actually reads it.
+fn render_codex_config(existing: &str, value: &str) -> String {
+    let cleaned = strip_codex_proxy_entries(existing);
+
+    let has_remote_key = cleaned.lines().any(|l| {
+        let t = l.trim_start();
+        t.starts_with("openai_base_url") && !(t.contains("127.0.0.1") || t.contains("localhost"))
+    });
+    if has_remote_key {
+        // Respect a user-defined gateway; only dead local entries were cleaned.
+        return cleaned;
+    }
+
+    // `strip_codex_proxy_entries` already dropped any local key, so prepend a fresh
+    // top-level one ahead of every existing line.
+    format!("openai_base_url = \"{value}\"\n{cleaned}")
+}
+
+/// Remove lean-ctx's own Codex proxy entries from a `config.toml` body: the local
+/// `127.0.0.1`/`localhost` base URL written either as a top-level `openai_base_url`
+/// key or — by older versions — as a dead `[env] OPENAI_BASE_URL` line (#554). A now
+/// empty `[env]` table header is dropped too. Custom remote endpoints are preserved.
+fn strip_codex_proxy_entries(body: &str) -> String {
+    let is_local_entry = |t: &str| {
+        (t.starts_with("openai_base_url") || t.starts_with("OPENAI_BASE_URL"))
+            && (t.contains("127.0.0.1") || t.contains("localhost"))
+    };
+    let kept: Vec<&str> = body
+        .lines()
+        .filter(|l| !is_local_entry(l.trim_start()))
+        .collect();
+
+    // Drop an `[env]` header left without any keys after the removal.
+    let mut out: Vec<&str> = Vec::with_capacity(kept.len());
+    let mut i = 0;
+    while i < kept.len() {
+        if kept[i].trim() == "[env]" {
+            let mut j = i + 1;
+            while j < kept.len() && kept[j].trim().is_empty() {
+                j += 1;
+            }
+            if j >= kept.len() || kept[j].trim_start().starts_with('[') {
+                i = j;
+                continue;
+            }
+        }
+        out.push(kept[i]);
+        i += 1;
+    }
+
+    let mut s = out.join("\n");
+    while s.contains("\n\n\n") {
+        s = s.replace("\n\n\n", "\n\n");
+    }
+    let s = s.trim_end_matches('\n');
+    if s.is_empty() {
+        String::new()
+    } else {
+        format!("{s}\n")
+    }
+}
+
+/// True when Codex will authenticate via a **ChatGPT login** (OAuth) rather than an
+/// API key. Such a session talks to `chatgpt.com/backend-api` directly and cannot be
+/// routed through the proxy (#554). An explicit `OPENAI_API_KEY` in the environment
+/// opts into API-key mode and overrides the stored login.
+fn codex_uses_chatgpt_login(home: &Path) -> bool {
+    if std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.trim().is_empty()) {
+        return false;
+    }
+    let codex_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
+    auth_is_chatgpt(&codex_dir)
+}
+
+/// True when `<codex_dir>/auth.json` records a ChatGPT login (`auth_mode = "chatgpt"`).
+/// False when the file is missing, unreadable, or in API-key mode.
+fn auth_is_chatgpt(codex_dir: &Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(codex_dir.join("auth.json")) else {
+        return false;
+    };
+    let Ok(doc) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return false;
+    };
+    doc.get("auth_mode").and_then(|v| v.as_str()) == Some("chatgpt")
+}
+
+/// Explains why Codex was left talking to OpenAI directly instead of the proxy: a
+/// ChatGPT login (OAuth) cannot authenticate through a custom base URL.
+fn warn_codex_chatgpt_skip() {
+    eprintln!("  \u{26a0} Codex CLI: ChatGPT login detected (no OPENAI_API_KEY).");
+    eprintln!("    A ChatGPT login authenticates against chatgpt.com/backend-api directly,");
+    eprintln!("    so a custom openai_base_url is ignored and the proxy never sees this");
+    eprintln!("    traffic — compression and savings stay at 0.");
+    eprintln!("    Savings on a ChatGPT login: use the lean-ctx MCP tools (ctx_read /");
+    eprintln!("    ctx_search / ctx_shell). Pay-as-you-go? Set OPENAI_API_KEY, then run:");
+    eprintln!("      lean-ctx proxy enable");
 }
 
 pub fn default_port() -> u16 {
@@ -1134,15 +1203,20 @@ $env:GEMINI_API_BASE_URL = "{base}"
 
         let cfg = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
         assert!(
-            cfg.contains(&format!("OPENAI_BASE_URL = \"http://127.0.0.1:{port}/v1\"")),
-            "Codex config must carry the /v1 suffix, got:\n{cfg}"
+            cfg.contains(&format!("openai_base_url = \"http://127.0.0.1:{port}/v1\"")),
+            "Codex config must set top-level openai_base_url with the /v1 suffix, got:\n{cfg}"
+        );
+        assert!(
+            !cfg.contains("[env]") && !cfg.contains("OPENAI_BASE_URL"),
+            "must not write the dead [env] OPENAI_BASE_URL form (#554), got:\n{cfg}"
         );
     }
 
-    /// Codex CLI config: a stale local entry without `/v1` (written by older
-    /// versions) is migrated in place instead of being treated as configured.
+    /// Codex CLI config: a legacy `[env] OPENAI_BASE_URL` line (which Codex never
+    /// read, #554) is removed and replaced by a top-level `openai_base_url`, even
+    /// when stale (missing `/v1`). The dead `[env]` table is collapsed.
     #[test]
-    fn codex_env_migrates_stale_entry_without_v1() {
+    fn codex_env_migrates_legacy_env_entry() {
         let dir = tempfile::tempdir().unwrap();
         let codex_dir = dir.path().join(".codex");
         std::fs::create_dir_all(&codex_dir).unwrap();
@@ -1160,16 +1234,24 @@ $env:GEMINI_API_BASE_URL = "{base}"
 
         let cfg = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
         assert!(
-            cfg.contains(&format!("OPENAI_BASE_URL = \"http://127.0.0.1:{port}/v1\"")),
-            "stale entry must be migrated to the /v1 form, got:\n{cfg}"
+            cfg.contains(&format!("openai_base_url = \"http://127.0.0.1:{port}/v1\"")),
+            "legacy entry must become a top-level openai_base_url (/v1), got:\n{cfg}"
         );
         assert!(
             cfg.contains("model = \"gpt-5.2\""),
             "unrelated config must be preserved"
         );
+        assert!(
+            !cfg.contains("OPENAI_BASE_URL"),
+            "dead legacy [env] OPENAI_BASE_URL must be removed, got:\n{cfg}"
+        );
+        assert!(
+            !cfg.contains("[env]"),
+            "empty [env] table must be collapsed, got:\n{cfg}"
+        );
     }
 
-    /// Codex CLI config: a custom non-local endpoint is never rewritten.
+    /// Codex CLI config: a custom non-local `openai_base_url` is never rewritten.
     #[test]
     fn codex_env_preserves_custom_remote_endpoint() {
         let dir = tempfile::tempdir().unwrap();
@@ -1177,7 +1259,7 @@ $env:GEMINI_API_BASE_URL = "{base}"
         std::fs::create_dir_all(&codex_dir).unwrap();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        let original = "[env]\nOPENAI_BASE_URL = \"https://my-gateway.example.com/v1\"\n";
+        let original = "openai_base_url = \"https://my-gateway.example.com/v1\"\n";
         std::fs::write(codex_dir.join("config.toml"), original).unwrap();
 
         install_codex_env_at(&codex_dir, port, true);
@@ -1191,6 +1273,56 @@ $env:GEMINI_API_BASE_URL = "{base}"
             !cfg.contains("127.0.0.1"),
             "proxy URL must not be injected over a custom endpoint"
         );
+    }
+
+    /// `render_codex_config` is idempotent: applying it to an already-configured
+    /// body yields the identical body (so `install` reports "already configured").
+    #[test]
+    fn render_codex_config_is_idempotent() {
+        let value = "http://127.0.0.1:4444/v1";
+        let once = render_codex_config("model = \"gpt-5.5\"\n", value);
+        let twice = render_codex_config(&once, value);
+        assert_eq!(once, twice, "render must be idempotent");
+        assert!(once.starts_with("openai_base_url = \"http://127.0.0.1:4444/v1\"\n"));
+        assert!(once.contains("model = \"gpt-5.5\""));
+    }
+
+    /// `render_codex_config` inserts the key as a *top-level* key (before the first
+    /// `[table]`), otherwise Codex would read it as a sub-key and ignore it.
+    #[test]
+    fn render_codex_config_inserts_before_first_table() {
+        let body = "model = \"gpt-5.5\"\n\n[features]\nhooks = true\n";
+        let out = render_codex_config(body, "http://127.0.0.1:4444/v1");
+        let key_idx = out.find("openai_base_url").expect("key present");
+        let table_idx = out.find("[features]").expect("table present");
+        assert!(
+            key_idx < table_idx,
+            "openai_base_url must precede the first table, got:\n{out}"
+        );
+    }
+
+    /// `auth_is_chatgpt` reflects Codex's `auth.json` auth mode.
+    #[test]
+    fn auth_is_chatgpt_detects_login_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let codex_dir = dir.path().join(".codex");
+        std::fs::create_dir_all(&codex_dir).unwrap();
+
+        assert!(!auth_is_chatgpt(&codex_dir), "no auth.json => not chatgpt");
+
+        std::fs::write(
+            codex_dir.join("auth.json"),
+            r#"{"auth_mode":"apikey","OPENAI_API_KEY":"sk-test"}"#,
+        )
+        .unwrap();
+        assert!(!auth_is_chatgpt(&codex_dir), "apikey mode => not chatgpt");
+
+        std::fs::write(
+            codex_dir.join("auth.json"),
+            r#"{"auth_mode":"chatgpt","tokens":{"access_token":"x"}}"#,
+        )
+        .unwrap();
+        assert!(auth_is_chatgpt(&codex_dir), "chatgpt mode => true");
     }
 
     /// Shell export: API-key mode includes the ANTHROPIC export (symmetry check).
