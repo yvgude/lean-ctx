@@ -2,6 +2,28 @@
 
 Thanks for your interest in lean-ctx — contributions are welcome.
 
+## Spec-driven workflow (non-trivial changes)
+
+lean-ctx develops non-trivial features **spec-anchored** (review-gated SDD):
+
+```text
+spec → plan → tasks → implement (impact-first) → verify → evidence
+```
+
+1. **Spec** — `specs/NNN-<slug>/spec.md` (copy `specs/_template/`); `NNN` = tracking
+   issue iid, acceptance criteria in EARS. One feature = one dir.
+2. **Plan** — draft in your agent's plan mode (e.g. Cursor Plan Mode `Shift+Tab`),
+   then distill the approved approach into `specs/NNN-<slug>/plan.md`.
+   Review before coding.
+3. **Tasks** — `specs/NNN-<slug>/tasks.md`: atomic, individually testable.
+4. **Implement** — impact-first: run `ctx_impact` (or `lean-ctx graph impact <file>`)
+   before editing `rust/src/**` and verify the affected tests.
+5. **Verify** — `scripts/preflight.sh fast` + the affected tests.
+6. **Evidence** — cite the spec in commits (`refs specs/NNN-<slug>`), link issue #NNN.
+
+Skip the full loop for trivial fixes; use it for features, contracts, and anything
+touching the tool/CLI surface. See `specs/README.md`.
+
 ## Quick start (core Rust binary)
 
 ### Prerequisites

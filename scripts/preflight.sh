@@ -221,6 +221,12 @@ fi
 if [[ "$LEVEL" = "full" ]]; then
   step "Unit tests (cargo test --lib)" \
     env RUSTFLAGS=-Dwarnings cargo test --lib --all-features
+
+  # Entrypoint + rules-drift smoke gates (#902/#903). Integration tests, so they
+  # build the bin — kept out of `fast` (which deliberately avoids test builds);
+  # CI runs them unconditionally via `cargo test --all-features`.
+  step "Entrypoint + rules drift (#902/#903)" \
+    env RUSTFLAGS=-Dwarnings cargo test --all-features --test entrypoints_wired --test rules_drift
 fi
 
 # ── No-test policy (#849) ─────────────────────────────────────────────
