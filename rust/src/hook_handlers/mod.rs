@@ -484,6 +484,30 @@ fn build_rewrite_compound(cmd: &str, binary: &str) -> Option<String> {
     })
 }
 
+/// The lean-ctx redirect a host tool name maps to, if any.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RedirectKind {
+    Read,
+    Grep,
+    Glob,
+    None,
+}
+
+/// Classify a host tool name into the lean-ctx redirect it should take.
+///
+/// Covers the documented read/search/glob tool names across hosts. Copilot CLI
+/// fires the redirect hook for *every* tool call and dispatches purely on the tool
+/// name, so its aliases must be listed here: `view` (its read tool) and `rg` (its
+/// search alias) were previously unmatched and passed through uncompressed (#562).
+fn classify_redirect(tool_name: &str) -> RedirectKind {
+    match tool_name {
+        "Read" | "read" | "read_file" | "view" => RedirectKind::Read,
+        "Grep" | "grep" | "search" | "ripgrep" | "rg" => RedirectKind::Grep,
+        "Glob" | "glob" => RedirectKind::Glob,
+        _ => RedirectKind::None,
+    }
+}
+
 pub fn handle_redirect() {
     let allow = build_dual_allow_output();
     if is_disabled() {
@@ -507,11 +531,11 @@ pub fn handle_redirect() {
     let tool_name = payload::resolve_tool_name(&v).unwrap_or_default();
     let tool_args = payload::resolve_tool_args(&v);
 
-    match tool_name.as_str() {
-        "Read" | "read" | "read_file" => redirect_read(tool_args.as_ref()),
-        "Grep" | "grep" | "search" | "ripgrep" => redirect_grep(tool_args.as_ref()),
-        "Glob" | "glob" => redirect_glob(tool_args.as_ref()),
-        _ => print!("{allow}"),
+    match classify_redirect(&tool_name) {
+        RedirectKind::Read => redirect_read(tool_args.as_ref()),
+        RedirectKind::Grep => redirect_grep(tool_args.as_ref()),
+        RedirectKind::Glob => redirect_glob(tool_args.as_ref()),
+        RedirectKind::None => print!("{allow}"),
     }
 }
 

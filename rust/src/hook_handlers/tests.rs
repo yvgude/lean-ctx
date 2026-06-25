@@ -619,3 +619,42 @@ fn is_shell_tool_rejects_non_shell_tools() {
         assert!(!is_shell_tool(name), "{name} must not be a shell tool");
     }
 }
+
+#[test]
+fn classify_redirect_covers_copilot_view_and_rg() {
+    // #562: Copilot CLI's documented `view` (read) and `rg` (search) tool names must
+    // be redirected, not passed through uncompressed in shadow/harden mode.
+    assert_eq!(classify_redirect("view"), RedirectKind::Read);
+    assert_eq!(classify_redirect("rg"), RedirectKind::Grep);
+}
+
+#[test]
+fn classify_redirect_covers_existing_tool_names() {
+    for n in ["Read", "read", "read_file"] {
+        assert_eq!(classify_redirect(n), RedirectKind::Read, "{n}");
+    }
+    for n in ["Grep", "grep", "search", "ripgrep"] {
+        assert_eq!(classify_redirect(n), RedirectKind::Grep, "{n}");
+    }
+    for n in ["Glob", "glob"] {
+        assert_eq!(classify_redirect(n), RedirectKind::Glob, "{n}");
+    }
+}
+
+#[test]
+fn classify_redirect_passes_through_shell_and_unknown() {
+    // Shell tools are rewritten by handle_rewrite, not redirected; edits/writes and
+    // unknown names must not be intercepted here.
+    for n in [
+        "Bash",
+        "bash",
+        "powershell",
+        "pwsh",
+        "edit",
+        "Write",
+        "Unknown",
+        "",
+    ] {
+        assert_eq!(classify_redirect(n), RedirectKind::None, "{n}");
+    }
+}

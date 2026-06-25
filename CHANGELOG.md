@@ -67,6 +67,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   preferring `pwsh` then Windows PowerShell, UTF-8 output) and falls back to the
   documented default only when no PowerShell host can be launched. Non-Windows hosts
   keep the static `~/.config/powershell` path and never spawn a process (#356).
+- **Copilot CLI `view` (read) and `rg` (search) tool calls passed through uncompressed (#562).**
+  `handle_redirect` dispatched on the tool name but only matched `Read`/`read`/
+  `read_file` and `Grep`/`grep`/`search`/`ripgrep`, so two documented GitHub Copilot
+  CLI tool names — `view` (its read tool) and `rg` (its search alias) — slipped
+  through without compression in shadow/harden mode. The dispatch is now a tested
+  `classify_redirect` helper that includes `view` (→ read) and `rg` (→ grep); the
+  Claude/Cursor/CodeBuddy matchers are unchanged because those hosts never emit
+  those names and Copilot CLI fires the hook for every tool call.
 - **Copilot/VS Code Claude models ignored lean-ctx — no `.github/copilot-instructions.md` (#555).**
   `lean-ctx init --agent copilot` installed the MCP server plus a deliberately
   weak `AGENTS.md` pointer but never wrote `.github/copilot-instructions.md`, the
