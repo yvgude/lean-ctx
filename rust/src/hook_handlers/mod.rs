@@ -7,6 +7,7 @@ use std::time::Duration;
 
 const HOOK_STDIN_TIMEOUT: Duration = Duration::from_secs(3);
 mod observe;
+mod payload;
 pub use observe::*;
 #[cfg(test)]
 mod tests;
@@ -108,16 +109,20 @@ fn build_dual_rewrite_output(tool_input: Option<&serde_json::Value>, rewritten: 
     };
 
     serde_json::json!({
-        // Cursor hook output format
+        // Cursor hook output format.
         "permission": "allow",
-        "updated_input": updated_input,
-        // Claude Code / CodeBuddy hook output format (extra fields are ignored by other hosts)
+        "updated_input": updated_input.clone(),
+        // GitHub Copilot CLI preToolUse format: top-level `permissionDecision`
+        // + `modifiedArgs` (a full substitute-args object). Copilot ignores
+        // `hookSpecificOutput`, so without these fields it runs the command
+        // unmodified even after the camelCase payload parses correctly (#551).
+        "permissionDecision": "allow",
+        "modifiedArgs": updated_input.clone(),
+        // Claude Code / CodeBuddy hook output format (other hosts ignore it).
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
-            "updatedInput": {
-                "command": rewritten
-            }
+            "updatedInput": updated_input
         }
     })
     .to_string()
@@ -141,14 +146,16 @@ pub fn handle_rewrite() {
         return;
     };
 
-    let tool = v.get("tool_name").and_then(|t| t.as_str());
-    let Some(tool_name) = tool else {
+    // Resolve across host shapes: Claude/Cursor send snake_case `tool_name` +
+    // `tool_input`; Copilot CLI sends camelCase `toolName` + `toolArgs` (a
+    // JSON-encoded string). Before #551 only the snake_case path was read.
+    let Some(tool_name) = payload::resolve_tool_name(&v) else {
         print!("{allow}");
         return;
     };
 
     let is_shell_tool = matches!(
-        tool_name,
+        tool_name.as_str(),
         "Bash" | "bash" | "Shell" | "shell" | "runInTerminal" | "run_in_terminal" | "terminal"
     );
     if !is_shell_tool {
@@ -156,32 +163,31 @@ pub fn handle_rewrite() {
         return;
     }
 
-    let tool_input = v.get("tool_input");
-    let Some(cmd) = tool_input
-        .and_then(|ti| ti.get("command"))
-        .and_then(|c| c.as_str())
-        .or_else(|| v.get("command").and_then(|c| c.as_str()))
-    else {
+    let tool_args = payload::resolve_tool_args(&v);
+    let Some(cmd) = payload::resolve_command(&v, tool_args.as_ref()) else {
         print!("{allow}");
         return;
     };
 
-    if let Some(rewritten) = rewrite_candidate(cmd, &binary) {
+    if let Some(rewritten) = rewrite_candidate(&cmd, &binary) {
         debug_log::log_hook_decision(
             "rewrite",
-            tool_name,
+            &tool_name,
             Route::LeanCtx,
-            cmd,
+            &cmd,
             "rewritable command",
         );
-        print!("{}", build_dual_rewrite_output(tool_input, &rewritten));
+        print!(
+            "{}",
+            build_dual_rewrite_output(tool_args.as_ref(), &rewritten)
+        );
     } else {
         debug_log::log_hook_decision(
             "rewrite",
-            tool_name,
+            &tool_name,
             Route::Native,
-            cmd,
-            rewrite_skip_reason(cmd),
+            &cmd,
+            rewrite_skip_reason(&cmd),
         );
         print!("{allow}");
     }
@@ -461,13 +467,6 @@ fn build_rewrite_compound(cmd: &str, binary: &str) -> Option<String> {
     })
 }
 
-fn emit_rewrite(rewritten: &str) {
-    let json_escaped = rewritten.replace('\\', "\\\\").replace('"', "\\\"");
-    print!(
-        "{{\"hookSpecificOutput\":{{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":{{\"command\":\"{json_escaped}\"}}}}}}"
-    );
-}
-
 pub fn handle_redirect() {
     let allow = build_dual_allow_output();
     if is_disabled() {
@@ -487,12 +486,13 @@ pub fn handle_redirect() {
         return;
     };
 
-    let tool_name = v.get("tool_name").and_then(|t| t.as_str()).unwrap_or("");
-    let tool_input = v.get("tool_input");
+    // Normalise host payload shapes (snake_case vs Copilot CLI camelCase, #551).
+    let tool_name = payload::resolve_tool_name(&v).unwrap_or_default();
+    let tool_args = payload::resolve_tool_args(&v);
 
-    match tool_name {
-        "Read" | "read" | "read_file" => redirect_read(tool_input),
-        "Grep" | "grep" | "search" | "ripgrep" => redirect_grep(tool_input),
+    match tool_name.as_str() {
+        "Read" | "read" | "read_file" => redirect_read(tool_args.as_ref()),
+        "Grep" | "grep" | "search" | "ripgrep" => redirect_grep(tool_args.as_ref()),
         _ => print!("{allow}"),
     }
 }
@@ -724,12 +724,19 @@ fn build_redirect_output(
     };
 
     serde_json::json!({
+        // Cursor hook output format.
         "permission": "allow",
-        "updated_input": updated_input,
+        "updated_input": updated_input.clone(),
+        // GitHub Copilot CLI preToolUse format: top-level `permissionDecision`
+        // + `modifiedArgs` (full substitute args) so the read/grep redirect to
+        // the lean-ctx temp file actually takes effect on Copilot (#551).
+        "permissionDecision": "allow",
+        "modifiedArgs": updated_input.clone(),
+        // Claude Code / CodeBuddy hook output format (other hosts ignore it).
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
-            "updatedInput": { field: temp_path }
+            "updatedInput": updated_input
         }
     })
     .to_string()
@@ -844,9 +851,14 @@ pub fn handle_codex_session_start() {
     );
 }
 
-/// Copilot-specific PreToolUse handler.
-/// VS Code Copilot Chat uses the same hook format as Claude Code.
-/// Tool names differ: "runInTerminal" / "editFile" instead of "Bash" / "Read".
+/// Dedicated Copilot PreToolUse handler (dispatched via `hook copilot`).
+///
+/// NOTE: the live Copilot CLI integration installed by `init --agent copilot`
+/// registers `hook rewrite` + `hook redirect` (see `hooks::agents::copilot`),
+/// so this entry point is currently unused by setup. It is kept correct for any
+/// host wired to `hook copilot` directly. It parses the same normalised payload
+/// as the other handlers so Copilot CLI's camelCase `toolName`/`toolArgs`
+/// (JSON-encoded string) are read correctly (#551).
 pub fn handle_copilot() {
     if is_disabled() {
         return;
@@ -856,25 +868,32 @@ pub fn handle_copilot() {
         return;
     };
 
-    let tool = extract_json_field(&input, "tool_name");
-    let Some(tool_name) = tool.as_deref() else {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) else {
+        return;
+    };
+
+    let Some(tool_name) = payload::resolve_tool_name(&v) else {
         return;
     };
 
     let is_shell_tool = matches!(
-        tool_name,
-        "Bash" | "bash" | "runInTerminal" | "run_in_terminal" | "terminal" | "shell"
+        tool_name.as_str(),
+        "Bash" | "bash" | "Shell" | "shell" | "runInTerminal" | "run_in_terminal" | "terminal"
     );
     if !is_shell_tool {
         return;
     }
 
-    let Some(cmd) = extract_json_field(&input, "command") else {
+    let tool_args = payload::resolve_tool_args(&v);
+    let Some(cmd) = payload::resolve_command(&v, tool_args.as_ref()) else {
         return;
     };
 
     if let Some(rewritten) = rewrite_candidate(&cmd, &binary) {
-        emit_rewrite(&rewritten);
+        print!(
+            "{}",
+            build_dual_rewrite_output(tool_args.as_ref(), &rewritten)
+        );
     }
 }
 

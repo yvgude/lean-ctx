@@ -299,6 +299,49 @@ fn codex_rewrite_output_uses_native_updated_input_contract() {
 }
 
 #[test]
+fn dual_rewrite_output_carries_claude_cursor_and_copilot_fields() {
+    // #551: one JSON object must satisfy Claude (hookSpecificOutput.updatedInput),
+    // Cursor (updated_input) AND Copilot CLI (top-level permissionDecision +
+    // modifiedArgs). Copilot reads modifiedArgs; without it the rewrite no-ops.
+    let tool_input = serde_json::json!({ "command": "cat foo.txt", "cwd": "/repo" });
+    let out = build_dual_rewrite_output(Some(&tool_input), "lean-ctx read foo.txt");
+    let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
+
+    // Copilot CLI contract (top-level).
+    assert_eq!(p["permissionDecision"], "allow");
+    assert_eq!(p["modifiedArgs"]["command"], "lean-ctx read foo.txt");
+    assert_eq!(
+        p["modifiedArgs"]["cwd"], "/repo",
+        "modifiedArgs must preserve the other original args"
+    );
+    // Claude / CodeBuddy contract.
+    assert_eq!(p["hookSpecificOutput"]["permissionDecision"], "allow");
+    assert_eq!(
+        p["hookSpecificOutput"]["updatedInput"]["command"],
+        "lean-ctx read foo.txt"
+    );
+    // Cursor contract.
+    assert_eq!(p["updated_input"]["command"], "lean-ctx read foo.txt");
+}
+
+#[test]
+fn redirect_output_carries_copilot_modified_args() {
+    // #551: the read/grep redirect must also surface modifiedArgs so Copilot CLI
+    // swaps in the lean-ctx temp-file path instead of reading the original.
+    let tool_input = serde_json::json!({ "path": "src/main.rs" });
+    let out = build_redirect_output(Some(&tool_input), "path", "/tmp/x.lctx");
+    let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
+
+    assert_eq!(p["permissionDecision"], "allow");
+    assert_eq!(p["modifiedArgs"]["path"], "/tmp/x.lctx");
+    assert_eq!(
+        p["hookSpecificOutput"]["updatedInput"]["path"],
+        "/tmp/x.lctx"
+    );
+    assert_eq!(p["updated_input"]["path"], "/tmp/x.lctx");
+}
+
+#[test]
 fn compound_rewrite_and_chain() {
     let result = build_rewrite_compound("cd src && git status && echo done", "lean-ctx");
     let w = expect_wrapped("git status", "lean-ctx");

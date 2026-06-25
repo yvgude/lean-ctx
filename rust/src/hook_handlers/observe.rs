@@ -110,6 +110,46 @@ fn parse_observe_event(input: &str) -> Option<ObserveEvent> {
 }
 
 fn detect_event_type(v: &serde_json::Value, ts: u64) -> Option<ObserveEvent> {
+    // GitHub Copilot CLI postToolUse: camelCase `toolName` + `toolArgs`
+    // (JSON-encoded string) + `toolResult`. None of the snake_case branches
+    // below match this shape, so without a dedicated arm Copilot telemetry
+    // (heatmap, token savings, radar) is silently dropped (#551).
+    if let Some(result) = v.get("toolResult") {
+        let tool = super::payload::resolve_tool_name(v).unwrap_or_else(|| "unknown".to_string());
+        let args = super::payload::resolve_tool_args(v);
+        let command = args
+            .as_ref()
+            .and_then(|a| a.get("command"))
+            .and_then(|c| c.as_str());
+        let result_text = result
+            .get("textResultForLlm")
+            .and_then(|t| t.as_str())
+            .map_or_else(|| result.to_string(), String::from);
+        let tokens = result_text.len() / 4;
+        let is_lctx = tool.starts_with("ctx_") || tool.starts_with("mcp__lean-ctx__");
+        let event_type = if is_lctx {
+            "mcp_call"
+        } else if command.is_some() {
+            "shell"
+        } else {
+            "native_tool"
+        };
+        let content = match command {
+            Some(cmd) => format!("$ {cmd}\n{result_text}"),
+            None => result_text,
+        };
+        return Some(ObserveEvent {
+            ts,
+            event_type,
+            tokens,
+            tool_name: Some(tool),
+            detail: command.map(|c| truncate_str(c, 80)),
+            content: Some(cap_content(&content)),
+            model: None,
+            conversation_id: None,
+        });
+    }
+
     if let Some(result) = v
         .get("result_json")
         .or_else(|| v.get("result"))
@@ -533,6 +573,37 @@ mod tests {
         });
         let event = detect_event_type(&v, 1000).unwrap();
         assert_eq!(event.event_type, "native_tool");
+    }
+
+    #[test]
+    fn detect_event_type_copilot_bash_posttooluse_is_shell() {
+        // #551: Copilot CLI postToolUse — camelCase `toolName` + JSON-string
+        // `toolArgs` + `toolResult`. Was dropped before the fix; now recorded.
+        let v = serde_json::json!({
+            "toolName": "bash",
+            "toolArgs": "{\"command\":\"npm test\"}",
+            "toolResult": {
+                "resultType": "success",
+                "textResultForLlm": "All tests passed (15/15)"
+            }
+        });
+        let event = detect_event_type(&v, 1000).unwrap();
+        assert_eq!(event.event_type, "shell");
+        assert_eq!(event.tool_name.as_deref(), Some("bash"));
+        assert_eq!(event.detail.as_deref(), Some("npm test"));
+        assert!(event.content.unwrap().contains("All tests passed"));
+    }
+
+    #[test]
+    fn detect_event_type_copilot_ctx_tool_is_mcp_call() {
+        let v = serde_json::json!({
+            "toolName": "ctx_read",
+            "toolArgs": "{\"path\":\"src/main.rs\"}",
+            "toolResult": { "textResultForLlm": "file contents" }
+        });
+        let event = detect_event_type(&v, 1000).unwrap();
+        assert_eq!(event.event_type, "mcp_call");
+        assert_eq!(event.tool_name.as_deref(), Some("ctx_read"));
     }
 
     #[test]
