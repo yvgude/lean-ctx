@@ -30,10 +30,24 @@ pub(crate) fn cmd_index(args: &[String]) {
 
             if mode == IndexingMode::Full {
                 eprintln!("purging old index artifacts for full rebuild ...");
+                // New pipeline: remove the unified SQLite database
+                let vectors_dir = crate::core::index_namespace::vectors_dir(root);
+                for name in &[
+                    "code_index.db",
+                    "code_index.db-wal",
+                    "code_index.db-shm",
+                ] {
+                    let p = vectors_dir.join(name);
+                    if p.exists() {
+                        let _ = std::fs::remove_file(&p);
+                    }
+                }
+                // Legacy BM25 files
                 let bm25_path = crate::core::bm25_index::BM25Index::index_file_path(root);
                 let _ = std::fs::remove_file(&bm25_path);
+                // Graph index dir (graph.db, graph.meta.json, legacy artifacts)
                 crate::core::graph_index::purge_index(&project_root);
-                let vectors_dir = crate::core::index_namespace::vectors_dir(root);
+                // Embeddings (semantic search)
                 let embedding_bin = vectors_dir.join("embeddings.bin");
                 if embedding_bin.exists() {
                     let _ = std::fs::remove_file(&embedding_bin);

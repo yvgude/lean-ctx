@@ -6,8 +6,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 
 use crate::core::bm25_index::BM25Index;
+use crate::core::config::{Config, IndexingMode};
 use crate::core::embedding_index::EmbeddingBuildOutcome;
-use crate::core::graph_index::{self, ProjectIndex};
+use crate::core::graph_index::ProjectIndex;
+use crate::core::index_namespace;
 use crate::core::index_pipeline::dump_engine::DumpEngine;
 use crate::core::index_pipeline::pipeline::{IndexPipeline, PipelineReport};
 
@@ -281,6 +283,7 @@ pub fn ensure_all_background(project_root: &str) {
 
         let pipeline_result = std::panic::catch_unwind(|| -> Result<_, String> {
             let handle = IndexPipeline::new(std::path::PathBuf::from(&root))
+                .with_mode(IndexingMode::effective(&Config::load()))
                 .build()
                 .map_err(|e| format!("pipeline build failed: {e}"))?;
             let report = handle
@@ -630,20 +633,22 @@ pub struct DiskStatusAll {
 }
 
 fn disk_status_for_graph(project_root: &str) -> DiskStatus {
-    // #696 C4: the property graph is the sole store. The logical graph-index
-    // view (file count) is sized/timed by `graph.meta.json`, which the mirror
-    // stamps on every build; `disk_status_for_code_graph` reports the raw
-    // SQLite store (nodes, graph.db) as a distinct facet.
-    let Some(dir) = graph_index::ProjectIndex::index_dir(project_root) else {
-        return DiskStatus::default();
-    };
-    let meta_file = dir.join("graph.meta.json");
-    if !meta_file.exists() {
+    // New pipeline: check for the unified SQLite database (code_index.db).
+    // The graph index (files table) lives inside this DB alongside BM25 chunks.
+    let root = Path::new(project_root);
+    let db_path = index_namespace::vectors_dir(root).join("code_index.db");
+    if !db_path.exists() {
         return DiskStatus::default();
     }
-    let meta = std::fs::metadata(&meta_file).ok();
-    let file_count =
-        graph_index::ProjectIndex::load(project_root).map(|idx| idx.files.len() as u64);
+    let meta = std::fs::metadata(&db_path).ok();
+    // Lightweight: count files from the SQLite DB without loading the full index.
+    let file_count = rusqlite::Connection::open(&db_path)
+        .ok()
+        .and_then(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get::<_, i64>(0))
+                .ok()
+        })
+        .map(|c| c as u64);
     DiskStatus {
         exists: true,
         size_bytes: meta.as_ref().map(std::fs::Metadata::len),
@@ -653,16 +658,25 @@ fn disk_status_for_graph(project_root: &str) -> DiskStatus {
 }
 
 fn disk_status_for_bm25(project_root: &str) -> DiskStatus {
+    // New pipeline: BM25 chunks live in the unified SQLite database (code_index.db).
     let root = Path::new(project_root);
-    let path = BM25Index::index_file_path(root);
-    if !path.exists() {
+    let db_path = index_namespace::vectors_dir(root).join("code_index.db");
+    if !db_path.exists() {
         return DiskStatus::default();
     }
-    let meta = std::fs::metadata(&path).ok();
+    let meta = std::fs::metadata(&db_path).ok();
+    // Lightweight: count chunks from the SQLite DB.
+    let chunk_count = rusqlite::Connection::open(&db_path)
+        .ok()
+        .and_then(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM chunks", [], |r| r.get::<_, i64>(0))
+                .ok()
+        })
+        .map(|c| c as u64);
     DiskStatus {
         exists: true,
         size_bytes: meta.as_ref().map(std::fs::Metadata::len),
-        file_count: None,
+        file_count: chunk_count,
         modified_at: meta.and_then(|m| m.modified().ok()).map(format_time),
     }
 }
