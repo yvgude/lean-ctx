@@ -10,6 +10,7 @@ use regex::RegexBuilder;
 use crate::core::protocol;
 use crate::core::symbol_map::{self, SymbolMap};
 use crate::core::tokens::count_tokens;
+use crate::tools::ctx_semantic_search::{self, SearchFilter, SearchHit};
 use crate::tools::graph_enrich::{self, GrepMatch, EnrichedHit};
 use crate::tools::output_format::{format_context, format_footer, format_header, format_row};
 use crate::tools::CrpMode;
@@ -591,10 +592,48 @@ impl From<SearchOutcome> for crate::server::tool_trait::ToolOutput {
     }
 }
 
+/// Parse a `related_to` spec of the form `"file.rs:12"` into a file path and
+/// line number. Defaults line to 1 when the line component is missing.
+fn parse_related_to(spec: &str) -> (String, usize) {
+    if let Some(colon_pos) = spec.rfind(':') {
+        let file_path = spec[..colon_pos].to_string();
+        let line = spec[colon_pos + 1..].parse::<usize>().unwrap_or(1);
+        (file_path, line)
+    } else {
+        (spec.to_string(), 1)
+    }
+}
+
+/// Format BM25 [`SearchHit`] results into compact text using the
+/// output_format helpers.
+fn format_search_results(hits: &[SearchHit], top_k: usize, method: &str) -> String {
+    if hits.is_empty() {
+        return format!("─── 0 results ({method}) ───");
+    }
+    let mut out = format_header("search", hits.len(), method);
+    out.push('\n');
+    for (i, hit) in hits.iter().enumerate() {
+        out.push('\n');
+        out.push_str(&format_row(
+            i + 1,
+            &hit.file_path,
+            hit.start_line,
+            hit.end_line,
+            "?",
+            "?",
+            "",
+        ));
+    }
+    out.push('\n');
+    out.push_str(&format_footer(0, top_k, hits.len()));
+    out
+}
+
 /// Dispatch a `CtxSearch` action to the appropriate handler.
 ///
 /// * `Grep` → calls the existing regex-search `handle()`.
-/// * `Search` / `Reindex` → return a placeholder error until implemented.
+/// * `Search` → method dispatch (bm25/dense/hybrid) + compact text output.
+/// * `Reindex` → return a placeholder error until implemented.
 pub fn handle_enum(action: CtxSearch, crp_mode: CrpMode, ctx_path: &str) -> SearchOutcome {
     match action {
         CtxSearch::Grep(params) => {
@@ -770,15 +809,81 @@ pub fn handle_enum(action: CtxSearch, crp_mode: CrpMode, ctx_path: &str) -> Sear
                 outcome
             }
         }
-        CtxSearch::Search(_) => {
-            SearchOutcome::error(
-                "ERROR: action=search is not yet implemented — use the dedicated ctx_semantic_search tool".to_string(),
-            )
+        CtxSearch::Search(params) => {
+            let dir = params.path.unwrap_or_else(|| ctx_path.to_string());
+            let query = params.query.as_deref();
+            let related_to = params.related_to.as_deref();
+            let method = params.method.unwrap_or(SearchMethod::Bm25);
+            let top_k = params.top_k.unwrap_or(10).min(1000);
+            let languages = params.languages.as_deref();
+            let path_glob = params.path_glob.as_deref();
+
+            // Need query or related_to
+            if query.is_none() && related_to.is_none() {
+                return SearchOutcome::error(
+                    "ERROR: action=search requires 'query' or 'related_to' parameter".to_string(),
+                );
+            }
+
+            // If related_to, use handle_find_related
+            if let Some(rel) = related_to {
+                let (file_path, line) = parse_related_to(rel);
+                let result = ctx_semantic_search::handle_find_related(
+                    &file_path, line, &dir, top_k, crp_mode,
+                );
+                return SearchOutcome::from_observed(result, 0);
+            }
+
+            let query = query.unwrap(); // safe: checked above
+
+            // Build SearchFilter
+            let filter = match SearchFilter::new(languages, path_glob) {
+                Ok(f) => f,
+                Err(e) => return SearchOutcome::error(format!("ERROR: invalid filter: {e}")),
+            };
+
+            let result = match method {
+                SearchMethod::Bm25 => {
+                    let db_path = crate::core::index_namespace::vectors_dir(Path::new(&dir))
+                        .join("code_index.db");
+                    let results = ctx_semantic_search::fts5_search(&db_path, query, top_k * 3)
+                        .unwrap_or_default();
+                    let filtered: Vec<SearchHit> = results
+                        .into_iter()
+                        .filter(|r| filter.matches(&r.file_path))
+                        .take(top_k)
+                        .collect();
+                    format_search_results(&filtered, top_k, "bm25")
+                }
+                SearchMethod::Dense => {
+                    ctx_semantic_search::handle_impl(
+                        query, &dir, top_k, crp_mode, languages, path_glob,
+                        Some("dense"), None, None,
+                    )
+                }
+                SearchMethod::Hybrid => {
+                    ctx_semantic_search::handle_impl(
+                        query, &dir, top_k, crp_mode, languages, path_glob,
+                        Some("hybrid"), None, None,
+                    )
+                }
+            };
+
+            SearchOutcome::from_observed(result, 0)
         }
-        CtxSearch::Reindex(_) => {
-            SearchOutcome::error(
-                "ERROR: action=reindex is not yet implemented — use the dedicated ctx_index tool".to_string(),
-            )
+        CtxSearch::Reindex(params) => {
+            let dir = params.path.unwrap_or_else(|| ctx_path.to_string());
+            let _mode = params.mode.as_deref().unwrap_or("incremental");
+            let artifacts = params.artifacts.unwrap_or(false);
+            let workspace = params.workspace.unwrap_or(false);
+
+            let result = if artifacts {
+                crate::tools::ctx_semantic_search::handle_reindex_artifacts(&dir, workspace)
+            } else {
+                crate::tools::ctx_semantic_search::handle_reindex(&dir)
+            };
+
+            SearchOutcome::from_observed(result, 0)
         }
     }
 }

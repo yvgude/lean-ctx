@@ -56,7 +56,7 @@ pub(crate) struct SearchHit {
 }
 
 /// Run an FTS5 bm25() query against `chunks_fts` in the given database.
-fn fts5_search(
+pub(crate) fn fts5_search(
     db_path: &std::path::Path,
     query: &str,
     limit: usize,
@@ -1400,13 +1400,13 @@ fn ensure_embeddings(
     Ok((aligned, coverage, all_files))
 }
 
-struct SearchFilter {
+pub(crate) struct SearchFilter {
     allowed_exts: Option<HashSet<String>>,
     path_glob: Option<glob::Pattern>,
 }
 
 impl SearchFilter {
-    fn new(languages: Option<&[String]>, path_glob: Option<&str>) -> Result<Self, String> {
+    pub(crate) fn new(languages: Option<&[String]>, path_glob: Option<&str>) -> Result<Self, String> {
         let allowed_exts = languages.map(normalize_languages);
         let path_glob = match path_glob {
             None => None,
@@ -1419,11 +1419,11 @@ impl SearchFilter {
         })
     }
 
-    fn is_active(&self) -> bool {
+    pub(crate) fn is_active(&self) -> bool {
         self.allowed_exts.is_some() || self.path_glob.is_some()
     }
 
-    fn matches(&self, rel_path: &str) -> bool {
+    pub(crate) fn matches(&self, rel_path: &str) -> bool {
         let rel_path = rel_path.replace('\\', "/");
         if let Some(p) = &self.path_glob
             && !p.matches(&rel_path)
