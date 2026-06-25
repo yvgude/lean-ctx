@@ -2,7 +2,9 @@ use rmcp::ErrorData;
 use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
-use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_bool, get_int, get_str};
+use crate::server::tool_trait::{
+    McpTool, ToolContext, ToolOutput, get_bool, get_int, get_str, get_usize,
+};
 use crate::tool_defs::tool_def;
 
 pub struct CtxSearchTool;
@@ -15,25 +17,43 @@ impl McpTool for CtxSearchTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_search",
-            "Regex pattern search — use when you know the exact pattern. For understanding code or\n\
-             finding answers, use ctx_compose FIRST (one call replaces search+read+symbol chains).\n\
-             pattern required; include='*.rs'; path scopes; max_results=N (default 20).\n\
-             paths=['dir1','dir2'] for multi-root. ignore_gitignore bypasses .gitignore (needs role).",
+            "Search code with regex (action=grep) or semantic search (action=search).\n\
+             action=grep (default when pattern is present): regex file search.\n\
+             action=search: semantic/vector search (uses ctx_semantic_search internally).\n\
+             action=reindex: rebuild search index.\n\
+             For action=grep: pattern required; include='*.rs'; path scopes;\n\
+             limit=N or max_results=N (default 20); paths=['dir1','dir2'] for multi-root;\n\
+             ignore_gitignore bypasses .gitignore (needs role).",
             json!({
                 "type": "object",
                 "properties": {
-                    "pattern": { "type": "string", "description": "Regex pattern" },
-                    "path": { "type": "string", "description": "Search dir" },
+                    "action": {
+                        "type": "string",
+                        "enum": ["grep", "search", "reindex"],
+                        "description": "grep|search|reindex"
+                    },
+                    "pattern": { "type": "string", "description": "Regex (grep)" },
+                    "path": { "type": "string", "description": "Dir" },
                     "paths": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "Multi-root (alternative to path)"
+                        "description": "Multi-root dirs"
                     },
-                    "include": { "type": "string", "description": "Glob filter: *.ts, src/**/*.rs" },
-                    "max_results": { "type": "integer", "description": "Max results (default: 20)" },
-                    "ignore_gitignore": { "type": "boolean", "description": "Scan gitignored (needs role)" }
+                    "include": { "type": "string", "description": "Glob (grep)" },
+                    "max_results": { "type": "integer", "description": "Max (deprecated, use limit)" },
+                    "limit": { "type": "integer", "description": "Max results" },
+                    "ignore_gitignore": { "type": "boolean", "description": "Scan gitignored (grep)" },
+                    "query": { "type": "string", "description": "Query (search)" },
+                    "method": { "type": "string", "enum": ["bm25", "dense", "hybrid"], "description": "bm25|dense|hybrid" },
+                    "top_k": { "type": "integer", "description": "Results (search)" },
+                    "languages": { "type": "array", "items": { "type": "string" }, "description": "Lang filter" },
+                    "path_glob": { "type": "string", "description": "Path glob (search)" },
+                    "related_to": { "type": "string", "description": "Related symbol (search)" },
+                    "mode": { "type": "string", "description": "full|incremental (reindex)" },
+                    "artifacts": { "type": "boolean", "description": "Artifacts only (reindex)" },
+                    "workspace": { "type": "boolean", "description": "Workspace (reindex)" }
                 },
-                "required": ["pattern"]
+                "required": ["action"]
             }),
         )
     }
@@ -43,106 +63,133 @@ impl McpTool for CtxSearchTool {
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
-        let pattern = get_str(args, "pattern")
-            .ok_or_else(|| ErrorData::invalid_params("pattern is required", None))?;
-        let resolved = crate::server::multi_path::resolve_tool_paths(args, ctx)
-            .map_err(|e| ErrorData::invalid_params(format!("ERROR: {e}"), None))?;
-        // `include` is the canonical glob filter; `ext` is the deprecated alias
-        // (bare extension → `*.{ext}`). `include` wins when both are supplied.
-        let include =
-            get_str(args, "include").or_else(|| get_str(args, "ext").map(|e| ext_to_include(&e)));
-        let max = (get_int(args, "max_results").unwrap_or(20) as usize).min(500);
-        let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
+        // Parse action; default to "grep" when pattern is present (backward compat)
+        let action = get_str(args, "action").unwrap_or_default();
 
-        if no_gitignore
-            && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_search")
-        {
-            return Ok(ToolOutput::simple(e));
-        }
+        match action.as_str() {
+            "" | "grep" => {
+                let pattern = get_str(args, "pattern")
+                    .ok_or_else(|| ErrorData::invalid_params("pattern is required", None))?;
+                let resolved = crate::server::multi_path::resolve_tool_paths(args, ctx)
+                    .map_err(|e| ErrorData::invalid_params(format!("ERROR: {e}"), None))?;
+                // `include` is the canonical glob filter; `ext` is the deprecated alias
+                // (bare extension → `*.{ext}`). `include` wins when both are supplied.
+                let include = get_str(args, "include")
+                    .or_else(|| get_str(args, "ext").map(|e| ext_to_include(&e)));
+                // Backward compat: limit replaces max_results
+                let max = get_usize(args, "limit")
+                    .or_else(|| {
+                        get_int(args, "max_results")
+                            .and_then(|n| usize::try_from(n).ok())
+                    })
+                    .unwrap_or(20)
+                    .min(500);
+                let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
 
-        let crp = ctx.crp_mode;
-        let respect = !no_gitignore;
-        let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;
+                if no_gitignore
+                    && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_search")
+                {
+                    return Ok(ToolOutput::simple(e));
+                }
 
-        if !resolved.is_multi {
-            return search_single(
-                &pattern,
-                &resolved.roots[0],
-                include.as_deref(),
-                max,
-                crp,
-                respect,
-                allow_secret_paths,
-            );
-        }
+                let crp = ctx.crp_mode;
+                let respect = !no_gitignore;
+                let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;
 
-        let _mode_guard = crate::core::savings_footer::ModeGuard::new("search");
-        let per_root_max = (max / resolved.roots.len()).max(5);
-        let mut combined = String::new();
-        let mut total_observed: usize = 0;
-        let mut total_sent: usize = 0;
-
-        for root in &resolved.roots {
-            let search_result = tokio::task::block_in_place(|| {
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    crate::tools::ctx_search::handle(
+                if !resolved.is_multi {
+                    return search_single(
                         &pattern,
-                        root,
+                        &resolved.roots[0],
                         include.as_deref(),
-                        per_root_max,
+                        max,
                         crp,
                         respect,
                         allow_secret_paths,
-                    )
-                }))
-                .ok()
-            });
+                    );
+                }
 
-            let Some(outcome) = search_result else {
-                combined.push_str(&format!("── {root} ──\nERROR: search panicked\n\n"));
-                continue;
-            };
-            let result = outcome.text;
+                let _mode_guard = crate::core::savings_footer::ModeGuard::new("search");
+                let per_root_max = (max / resolved.roots.len()).max(5);
+                let mut combined = String::new();
+                let mut total_observed: usize = 0;
+                let mut total_sent: usize = 0;
 
-            if result.trim().is_empty() {
-                continue;
+                for root in &resolved.roots {
+                    let search_result = tokio::task::block_in_place(|| {
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            crate::tools::ctx_search::handle(
+                                &pattern,
+                                root,
+                                include.as_deref(),
+                                per_root_max,
+                                crp,
+                                respect,
+                                allow_secret_paths,
+                            )
+                        }))
+                        .ok()
+                    });
+
+                    let Some(outcome) = search_result else {
+                        combined.push_str(&format!("── {root} ──\nERROR: search panicked\n\n"));
+                        continue;
+                    };
+                    let result = outcome.text;
+
+                    if result.trim().is_empty() {
+                        continue;
+                    }
+
+                    combined.push_str(&format!("── {root} ──\n{result}\n\n"));
+
+                    if result.starts_with("ERROR:") {
+                        continue;
+                    }
+
+                    total_observed += outcome.observed_tokens;
+                    total_sent += crate::core::tokens::count_tokens(&result);
+                }
+
+                if combined.is_empty() {
+                    combined = "No matches found across any root.".to_string();
+                }
+
+                let final_out =
+                    crate::core::protocol::append_savings(&combined, total_observed, total_sent);
+                let saved = total_observed.saturating_sub(total_sent);
+                crate::core::savings_ledger::record_tool_event("ctx_search", total_observed, total_sent);
+
+                Ok(ToolOutput {
+                    text: final_out,
+                    original_tokens: total_observed,
+                    saved_tokens: saved,
+                    mode: None,
+                    path: None,
+                    changed: false,
+                    shell_outcome: None,
+                })
             }
-
-            combined.push_str(&format!("── {root} ──\n{result}\n\n"));
-
-            if result.starts_with("ERROR:") {
-                continue;
+            "search" | "reindex" => {
+                let search = crate::tools::ctx_search::CtxSearch::try_from(args)
+                    .map_err(|e| ErrorData::invalid_params(e, None))?;
+                let outcome = crate::tools::ctx_search::handle_enum(
+                    search,
+                    ctx.crp_mode,
+                    &ctx.project_root,
+                );
+                let out: ToolOutput = outcome.into();
+                crate::core::savings_ledger::record_tool_event(
+                    "ctx_search",
+                    out.original_tokens,
+                    out.original_tokens.saturating_sub(out.saved_tokens),
+                );
+                Ok(out)
             }
-
-            total_observed += outcome.observed_tokens;
-            total_sent += crate::core::tokens::count_tokens(&result);
+            other => Err(ErrorData::invalid_params(
+                format!("Unknown action '{other}'. Must be one of: grep, search, reindex"),
+                None,
+            )),
         }
-
-        if combined.is_empty() {
-            combined = "No matches found across any root.".to_string();
-        }
-
-        // Dashboard, footer and verified ledger all use *observed* tokens —
-        // the modeled 2.5x native-grep baseline never inflates user-facing
-        // numbers (GL #573). It only feeds the explicitly-estimated stats
-        // series via `tool_lifecycle::record_search`.
-        let final_out =
-            crate::core::protocol::append_savings(&combined, total_observed, total_sent);
-        let saved = total_observed.saturating_sub(total_sent);
-        // #685: `actual_tokens` is the *sent* output, not the saving — passing
-        // `saved` here recorded `actual=observed−sent` and `saved=sent` (both
-        // wrong). Align with cli_grep/cli_shell, which pass the output count.
-        crate::core::savings_ledger::record_tool_event("ctx_search", total_observed, total_sent);
-
-        Ok(ToolOutput {
-            text: final_out,
-            original_tokens: total_observed,
-            saved_tokens: saved,
-            mode: None,
-            path: None,
-            changed: false,
-            shell_outcome: None,
-        })
     }
 }
 

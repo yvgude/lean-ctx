@@ -55,6 +55,130 @@ impl SearchOutcome {
     }
 }
 
+// ── CtxSearch enum + action dispatch types ──
+
+/// Method for semantic / vector search.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchMethod {
+    Bm25,
+    Dense,
+    Hybrid,
+}
+
+impl std::str::FromStr for SearchMethod {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_lowercase().as_str() {
+            "bm25" => Ok(Self::Bm25),
+            "dense" => Ok(Self::Dense),
+            "hybrid" => Ok(Self::Hybrid),
+            _ => Err(format!(
+                "Unknown search method '{s}'. Must be one of: bm25, dense, hybrid"
+            )),
+        }
+    }
+}
+
+/// Parameters for the `grep` action (regex file search).
+#[derive(Debug, Clone)]
+pub struct GrepParams {
+    pub pattern: String,
+    pub regex: Option<String>,
+    pub path: Option<String>,
+    pub include: Option<String>,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+    pub context: Option<bool>,
+    pub ignore_gitignore: Option<bool>,
+}
+
+/// Parameters for the `search` action (semantic / vector search).
+#[derive(Debug, Clone)]
+pub struct SearchParams {
+    pub query: Option<String>,
+    pub method: Option<SearchMethod>,
+    pub path: Option<String>,
+    pub top_k: Option<usize>,
+    pub languages: Option<Vec<String>>,
+    pub path_glob: Option<String>,
+    pub related_to: Option<String>,
+}
+
+/// Parameters for the `reindex` action (index rebuild).
+#[derive(Debug, Clone)]
+pub struct ReindexParams {
+    pub path: Option<String>,
+    pub mode: Option<String>,
+    pub artifacts: Option<bool>,
+    pub workspace: Option<bool>,
+}
+
+/// Discriminated union for `ctx_search` actions.
+///
+/// Parsed from the MCP arguments via `TryFrom<&Map<String, Value>>`:
+/// the `action` string selects the variant (`grep`, `search`, `reindex`),
+/// and remaining fields populate the corresponding params struct.
+#[derive(Debug, Clone)]
+pub enum CtxSearch {
+    Grep(GrepParams),
+    Search(SearchParams),
+    Reindex(ReindexParams),
+}
+
+impl TryFrom<&serde_json::Map<String, serde_json::Value>> for CtxSearch {
+    type Error = String;
+
+    fn try_from(args: &serde_json::Map<String, serde_json::Value>) -> Result<Self, Self::Error> {
+        use crate::server::tool_trait::{get_bool, get_str, get_str_array, get_usize};
+
+        let action = get_str(args, "action")
+            .ok_or_else(|| "Missing required 'action' field. Must be one of: grep, search, reindex".to_string())?;
+
+        match action.as_str() {
+            "grep" => {
+                let pattern = get_str(args, "pattern").ok_or_else(|| {
+                    "pattern is required for action=grep".to_string()
+                })?;
+                Ok(CtxSearch::Grep(GrepParams {
+                    pattern,
+                    regex: get_str(args, "regex"),
+                    path: get_str(args, "path"),
+                    include: get_str(args, "include"),
+                    // Backward compat: limit replaces max_results
+                    limit: get_usize(args, "limit")
+                        .or_else(|| crate::server::tool_trait::get_int(args, "max_results")
+                            .and_then(|n| usize::try_from(n).ok())),
+                    offset: get_usize(args, "offset"),
+                    context: get_bool(args, "context"),
+                    ignore_gitignore: get_bool(args, "ignore_gitignore"),
+                }))
+            }
+            "search" => {
+                let method = get_str(args, "method")
+                    .and_then(|m| m.parse::<SearchMethod>().ok());
+                Ok(CtxSearch::Search(SearchParams {
+                    query: get_str(args, "query"),
+                    method,
+                    path: get_str(args, "path"),
+                    top_k: get_usize(args, "top_k"),
+                    languages: get_str_array(args, "languages"),
+                    path_glob: get_str(args, "path_glob"),
+                    related_to: get_str(args, "related_to"),
+                }))
+            }
+            "reindex" => Ok(CtxSearch::Reindex(ReindexParams {
+                path: get_str(args, "path"),
+                mode: get_str(args, "mode"),
+                artifacts: get_bool(args, "artifacts"),
+                workspace: get_bool(args, "workspace"),
+            })),
+            other => Err(format!(
+                "Unknown action '{other}'. Must be one of: grep, search, reindex"
+            )),
+        }
+    }
+}
+
 /// Wall-clock budget for a single `ctx_search` call. The regular-file guard in
 /// the read loop removes the known infinite block — `read_to_string` on a
 /// FIFO/socket/device (#336) — while this deadline is the backstop for any
@@ -445,6 +569,51 @@ pub fn handle(
     }
 
     SearchOutcome::from_observed(result, raw_tokens_accum)
+}
+
+// ── Action dispatch ──
+
+impl From<SearchOutcome> for crate::server::tool_trait::ToolOutput {
+    fn from(o: SearchOutcome) -> Self {
+        let sent = crate::core::tokens::count_tokens(&o.text);
+        let saved = o.observed_tokens.saturating_sub(sent);
+        Self {
+            text: o.text,
+            original_tokens: o.observed_tokens,
+            saved_tokens: saved,
+            mode: None,
+            path: None,
+            changed: false,
+            shell_outcome: None,
+        }
+    }
+}
+
+/// Dispatch a `CtxSearch` action to the appropriate handler.
+///
+/// * `Grep` → calls the existing regex-search `handle()`.
+/// * `Search` / `Reindex` → return a placeholder error until implemented.
+pub fn handle_enum(action: CtxSearch, crp_mode: CrpMode, ctx_path: &str) -> SearchOutcome {
+    match action {
+        CtxSearch::Grep(params) => {
+            let dir = params.path.unwrap_or_else(|| ctx_path.to_string());
+            let include = params.include.as_deref();
+            let max_results = params.limit.unwrap_or(20).min(500);
+            let respect_gitignore = !params.ignore_gitignore.unwrap_or(false);
+            let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;
+            handle(&params.pattern, &dir, include, max_results, crp_mode, respect_gitignore, allow_secret_paths)
+        }
+        CtxSearch::Search(_) => {
+            SearchOutcome::error(
+                "ERROR: action=search is not yet implemented — use the dedicated ctx_semantic_search tool".to_string(),
+            )
+        }
+        CtxSearch::Reindex(_) => {
+            SearchOutcome::error(
+                "ERROR: action=reindex is not yet implemented — use the dedicated ctx_index tool".to_string(),
+            )
+        }
+    }
 }
 
 pub(crate) fn is_binary_ext(path: &Path) -> bool {
