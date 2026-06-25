@@ -8,6 +8,7 @@
 //! NOTE: When the daemon IS running, CLI routes through `daemon_client` which
 //! calls the MCP server — these functions are NOT called in that path.
 
+use crate::core::context_ir::{ContextIrSourceKindV1, ContextIrV1, RecordIrInput};
 use crate::core::context_ledger::ContextLedger;
 use crate::core::heatmap;
 use crate::core::intent_engine::StructuredIntent;
@@ -40,13 +41,36 @@ pub(crate) fn usable_root(root: Option<&str>) -> Option<&str> {
     root.filter(|r| !r.trim().is_empty() && *r != ".")
 }
 
+/// First 200 chars of `text` on a UTF-8 boundary — the exact excerpt bound the
+/// MCP dispatcher applies before handing content to the IR store
+/// (`server/call_tool.rs`), kept identical so CLI- and MCP-recorded IR items are
+/// byte-compatible. `ContextIrV1::record` redacts and further caps it.
+fn ir_excerpt(text: &str) -> &str {
+    const MAX: usize = 200;
+    if text.len() <= MAX {
+        return text;
+    }
+    let mut end = MAX;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
 /// Record a file-read operation with full Context OS side effects.
+///
+/// `duration` and `output_excerpt` feed the Context IR lineage (#566); the MCP
+/// dispatcher records both for every tool call but the shadow-mode `lean-ctx
+/// read` subprocess used to drop them, so IR/`ctx_proof` exports were blind to
+/// compressed shadow reads.
 pub fn record_file_read(
     path: &str,
     mode: &str,
     original_tokens: usize,
     output_tokens: usize,
     is_cache_hit: bool,
+    duration: std::time::Duration,
+    output_excerpt: &str,
 ) {
     let saved = original_tokens.saturating_sub(output_tokens);
     let tool_key = format!("cli_{mode}");
@@ -124,6 +148,27 @@ pub fn record_file_read(
         is_cache_hit,
         &learning_root,
     );
+
+    // Context IR lineage (#566): the MCP dispatcher records provenance for every
+    // tool call (`server/call_tool.rs`), but the shadow-mode hook's single-shot
+    // `lean-ctx read` bypassed it. Disk-backed load→record→save persists the
+    // entry before the process exits. `mode` rides the IR `pattern` slot to match
+    // the MCP read path (which stores its `mode` arg there).
+    let mut ir = ContextIrV1::load();
+    ir.record(RecordIrInput {
+        kind: ContextIrSourceKindV1::Read,
+        tool: "ctx_read",
+        client_name: None,
+        agent_id: None,
+        path: Some(path),
+        command: None,
+        pattern: Some(mode),
+        input_tokens: original_tokens,
+        output_tokens,
+        duration,
+        content_excerpt: ir_excerpt(output_excerpt),
+    });
+    ir.save();
 }
 
 /// Replicate the MCP read path's learning side effects (`registered/ctx_read.rs`
@@ -204,8 +249,17 @@ fn record_read_learning(
 ///
 /// `modeled_baseline` (native-tool estimate, GL #479 D1) feeds the estimated
 /// stats series; `observed_tokens` (raw measured match lines, no factor) feeds
-/// the verified ledger (GL #479 D2).
-pub fn record_search(modeled_baseline: usize, observed_tokens: usize, output_tokens: usize) {
+/// the verified ledger (GL #479 D2). `pattern`/`path`/`duration`/`output_excerpt`
+/// feed the Context IR lineage (#566).
+pub fn record_search(
+    modeled_baseline: usize,
+    observed_tokens: usize,
+    output_tokens: usize,
+    pattern: &str,
+    path: &str,
+    duration: std::time::Duration,
+    output_excerpt: &str,
+) {
     stats::record("cli_grep", modeled_baseline, output_tokens);
     crate::core::savings_ledger::record_tool_event("cli_grep", observed_tokens, output_tokens);
 
@@ -222,6 +276,25 @@ pub fn record_search(modeled_baseline: usize, observed_tokens: usize, output_tok
     // left dashboard signals blind to shadow-mode (`grep` → `lean-ctx grep`) hooks.
     crate::core::anomaly::record_metric("tokens_per_call", output_tokens as f64);
     crate::core::anomaly::save_debounced();
+
+    // Context IR lineage for shadow-mode `grep` → `lean-ctx grep` (#566). The
+    // raw matched-line estimate (`observed_tokens`) is the IR input so the stored
+    // compression ratio reads matches-in / sent-out.
+    let mut ir = ContextIrV1::load();
+    ir.record(RecordIrInput {
+        kind: ContextIrSourceKindV1::Search,
+        tool: "ctx_search",
+        client_name: None,
+        agent_id: None,
+        path: Some(path),
+        command: None,
+        pattern: Some(pattern),
+        input_tokens: observed_tokens,
+        output_tokens,
+        duration,
+        content_excerpt: ir_excerpt(output_excerpt),
+    });
+    ir.save();
 }
 
 /// Record a tree/ls operation with full Context OS side effects.
@@ -306,13 +379,29 @@ mod tests {
     #[test]
     fn record_file_read_does_not_panic_without_session() {
         let _dir = crate::core::data_dir::isolated_data_dir();
-        record_file_read("/tmp/nonexistent.rs", "full", 100, 50, false);
+        record_file_read(
+            "/tmp/nonexistent.rs",
+            "full",
+            100,
+            50,
+            false,
+            std::time::Duration::from_millis(1),
+            "excerpt",
+        );
     }
 
     #[test]
     fn record_search_does_not_panic_without_session() {
         let _dir = crate::core::data_dir::isolated_data_dir();
-        record_search(500, 200, 150);
+        record_search(
+            500,
+            200,
+            150,
+            "pattern",
+            "/tmp",
+            std::time::Duration::from_millis(1),
+            "matches",
+        );
     }
 
     #[test]
@@ -347,7 +436,15 @@ mod tests {
         std::fs::write(&file, "fn main() {\n    println!(\"hi\");\n}\n").unwrap();
         let path = file.to_string_lossy();
 
-        record_file_read(&path, "full", 1000, 200, false);
+        record_file_read(
+            &path,
+            "full",
+            1000,
+            200,
+            false,
+            std::time::Duration::from_millis(2),
+            "sample.rs [3L]\nfn main() {}",
+        );
         flush_all();
 
         let data = crate::core::data_dir::lean_ctx_data_dir().expect("data dir");
@@ -364,5 +461,73 @@ mod tests {
             state.join("heatmap.json").exists(),
             "heatmap must persist after a CLI read + flush"
         );
+    }
+
+    #[test]
+    fn cli_read_records_context_ir_lineage() {
+        // #566: the MCP dispatcher records Context IR for every tool call, but the
+        // shadow-mode `lean-ctx read` subprocess used to skip it, so IR/ctx_proof
+        // exports were blind to compressed shadow reads. A single-shot CLI read
+        // must now persist exactly one IR item (disk-backed load→record→save).
+        let dir = crate::core::data_dir::isolated_data_dir();
+        let file = dir.path().join("ir_sample.rs");
+        std::fs::write(&file, "fn main() {}\n").unwrap();
+        let path = file.to_string_lossy();
+
+        record_file_read(
+            &path,
+            "full",
+            1000,
+            200,
+            false,
+            std::time::Duration::from_millis(3),
+            "ir_sample.rs [1L]\nfn main() {}",
+        );
+
+        let ir = ContextIrV1::load();
+        assert_eq!(ir.items.len(), 1, "exactly one IR item per CLI read");
+        let item = &ir.items[0];
+        assert_eq!(item.source.tool, "ctx_read");
+        assert!(matches!(item.source.kind, ContextIrSourceKindV1::Read));
+        assert!(
+            item.source
+                .path
+                .as_deref()
+                .unwrap_or("")
+                .ends_with("ir_sample.rs"),
+            "IR records the read path, got {:?}",
+            item.source.path
+        );
+        assert_eq!(item.source.pattern.as_deref(), Some("full"));
+        assert_eq!(item.input_tokens, 1000);
+        assert_eq!(item.output_tokens, 200);
+        assert!(item.duration_us > 0, "a real duration must be recorded");
+        assert!(!item.content_excerpt.is_empty(), "excerpt must be captured");
+    }
+
+    #[test]
+    fn cli_search_records_context_ir_lineage() {
+        // #566: the shadow-mode `grep` → `lean-ctx grep` path records IR too.
+        let _dir = crate::core::data_dir::isolated_data_dir();
+
+        record_search(
+            800,
+            500,
+            120,
+            "fn handle",
+            "src/",
+            std::time::Duration::from_millis(4),
+            "src/lib.rs:12: fn handle() {}",
+        );
+
+        let ir = ContextIrV1::load();
+        assert_eq!(ir.items.len(), 1, "exactly one IR item per CLI search");
+        let item = &ir.items[0];
+        assert_eq!(item.source.tool, "ctx_search");
+        assert!(matches!(item.source.kind, ContextIrSourceKindV1::Search));
+        // Input is the raw matched-line estimate, not the modeled baseline.
+        assert_eq!(item.input_tokens, 500);
+        assert_eq!(item.output_tokens, 120);
+        assert!(item.duration_us > 0, "a real duration must be recorded");
     }
 }

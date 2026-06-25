@@ -97,13 +97,22 @@ pub(crate) fn format_tokens_cli(tokens: u64) -> String {
     }
 }
 
-pub(crate) fn cli_track_read(path: &str, mode: &str, original_tokens: usize, output_tokens: usize) {
+pub(crate) fn cli_track_read(
+    path: &str,
+    mode: &str,
+    original_tokens: usize,
+    output_tokens: usize,
+    output: &str,
+    duration: std::time::Duration,
+) {
     crate::core::tool_lifecycle::record_file_read(
         path,
         mode,
         original_tokens,
         output_tokens,
         false,
+        duration,
+        output,
     );
 }
 
@@ -112,16 +121,38 @@ pub(crate) fn cli_track_read_cached(
     mode: &str,
     original_tokens: usize,
     output_tokens: usize,
+    output: &str,
+    duration: std::time::Duration,
 ) {
-    crate::core::tool_lifecycle::record_file_read(path, mode, original_tokens, output_tokens, true);
+    crate::core::tool_lifecycle::record_file_read(
+        path,
+        mode,
+        original_tokens,
+        output_tokens,
+        true,
+        duration,
+        output,
+    );
 }
 
 pub(crate) fn cli_track_search(
     modeled_baseline: usize,
     observed_tokens: usize,
     output_tokens: usize,
+    pattern: &str,
+    path: &str,
+    output: &str,
+    duration: std::time::Duration,
 ) {
-    crate::core::tool_lifecycle::record_search(modeled_baseline, observed_tokens, output_tokens);
+    crate::core::tool_lifecycle::record_search(
+        modeled_baseline,
+        observed_tokens,
+        output_tokens,
+        pattern,
+        path,
+        duration,
+        output,
+    );
 }
 
 pub(crate) fn cli_track_tree(original_tokens: usize, output_tokens: usize) {

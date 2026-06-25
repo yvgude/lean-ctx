@@ -6,6 +6,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Shadow-mode CLI reads/searches now record Context IR lineage (#566).**
+  Follow-up to #550. The MCP dispatcher records a Context IR provenance entry for
+  every tool call (`server/call_tool.rs`), but the shadow-mode hook's single-shot
+  `lean-ctx read`/`grep` subprocess dropped it — so `ctx_proof` and IR exports
+  were blind to compressed shadow reads. `record_file_read`/`record_search` now
+  thread the rendered-output excerpt + measured tool duration into a disk-backed
+  `ContextIrV1` load→record→save, mirroring the MCP path (same 200-char
+  char-boundary excerpt bound; `mode`/`pattern` ride the IR `pattern` slot; the
+  read's `original_tokens` and the search's raw matched-line estimate are the IR
+  input so the stored compression ratio is accurate — no fabricated values). The
+  remaining two deferred items from #550 — the in-memory loop/correction
+  detectors and the bounce/adaptive-threshold signals — stay deferred: both need
+  cross-call state a single-shot process cannot hold, so they are gated on the
+  "connect-only daemon routing for hooks" design decision (tracked in #566).
 - **PowerShell-native cmdlets route through lean-ctx (#561).** Follow-up to #556:
   shadow/harden mode already recognised the Windows `powershell` shell tool, covering
   the Unix-style PS *aliases* (`cat`/`ls`/`rg`). The command-rewrite layer now also
