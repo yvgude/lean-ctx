@@ -4,8 +4,7 @@
 //! the MCP answers and the visual graph always agree.
 //!
 //! All three accept `format="json"` for machine consumption; otherwise they emit
-//! compact, token-light text with a `[ctx_graph <action>: N tok]` footer like the
-//! other actions.
+//! compact, token-light text.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -13,7 +12,6 @@ use crate::core::graph_analysis::edge_confidence;
 use crate::core::graph_index;
 use crate::core::graph_provider::{self, EdgeInfo};
 use crate::core::protocol::shorten_path;
-use crate::core::tokens::count_tokens;
 
 /// One adjacency entry: a neighbour reached via an edge of `kind`/`weight`.
 struct NeighborRef {
@@ -395,8 +393,7 @@ pub fn neighbors(
             out.push_str(&format!("  {} hop(s): {} nodes\n", d, nodes.len()));
         }
     }
-    let tokens = count_tokens(&out);
-    format!("{out}[ctx_graph neighbors: {tokens} tok]")
+    out
 }
 
 /// `ctx_graph action=path` — shortest connection between two files, with the
@@ -482,8 +479,7 @@ pub fn shortest_path(
             shorten_path(&w[1])
         ));
     }
-    let tokens = count_tokens(&out);
-    format!("{out}[ctx_graph path: {tokens} tok]")
+    out
 }
 
 /// `ctx_graph action=explain` — why a file matters: degree, community, bridge
@@ -672,8 +668,7 @@ pub fn explain(path: Option<&str>, root: &str, format: Option<&str>) -> String {
             ));
         }
     }
-    let tokens = count_tokens(&out);
-    format!("{out}[ctx_graph explain: {tokens} tok]")
+    out
 }
 
 /// Build a  node value from a repo-relative path.

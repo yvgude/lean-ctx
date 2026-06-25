@@ -3,7 +3,6 @@ use std::path::Path;
 
 use crate::core::graph_index;
 use crate::core::graph_provider::{self, GraphProvider};
-use crate::core::tokens::count_tokens;
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle(
@@ -15,83 +14,77 @@ pub fn handle(
     depth: Option<usize>,
     kind: Option<&str>,
     to: Option<&str>,
-    format: Option<&str>,
     since: Option<&str>,
 ) -> String {
     match action {
-        "build" => handle_build(root, format),
+        "build" => handle_build(root),
         "related" => handle_related(path, root),
         "symbol" => handle_symbol(path, root, cache, crp_mode),
-        "impact" => handle_impact(path, root, format),
+        "impact" => handle_impact(path, root),
         "status" => handle_status(root),
         "enrich" => handle_enrich(root),
         "context" => handle_context_query(path, root),
         "diagram" => crate::tools::ctx_graph_diagram::handle(path, depth, kind, root),
-        "neighbors" => crate::tools::ctx_graph_primitives::neighbors(path, root, depth, format),
-        "path" => crate::tools::ctx_graph_primitives::shortest_path(path, to, root, format),
-        "explain" => crate::tools::ctx_graph_primitives::explain(path, root, format),
-        "diff" => crate::tools::ctx_graph_diff::diff(since, root, format),
+        "neighbors" => crate::tools::ctx_graph_primitives::neighbors(path, root, depth, None),
+        "path" => crate::tools::ctx_graph_primitives::shortest_path(path, to, root, None),
+        "explain" => crate::tools::ctx_graph_primitives::explain(path, root, None),
+        "diff" => crate::tools::ctx_graph_diff::diff(since, root, None),
         _ => "Unknown action. Use: build, related, symbol, impact, status, enrich, context, \
 diagram, neighbors, path, explain, diff"
             .to_string(),
     }
 }
 
-fn handle_build(root: &str, format: Option<&str>) -> String {
+fn handle_build(root: &str) -> String {
     let handle =
         crate::core::index_pipeline::pipeline::IndexPipeline::new(std::path::PathBuf::from(root))
             .build()
             .expect("pipeline build failed");
     let (index, _) = handle.run_and_load().expect("pipeline run failed");
 
-    if matches!(format, Some(f) if f.eq_ignore_ascii_case("json")) {
-        let nodes_json: Vec<_> = index
-            .files
-            .values()
-            .map(|entry| {
-                let name = entry.path.rsplit('/').next().unwrap_or(&entry.path);
-                serde_json::json!({ "name": name, "file": entry.path })
-            })
-            .collect();
+    // Per-language counts: (files, symbols, edges)
+    let mut by_lang: HashMap<&str, (usize, usize, usize)> = HashMap::new();
 
-        let edges_json: Vec<_> = index
-            .edges
-            .iter()
-            .map(|e| serde_json::json!({ "source": e.from, "target": e.to, "type": e.kind }))
-            .collect();
-
-        let val = serde_json::json!({
-            "nodes": nodes_json,
-            "edges": edges_json,
-            "summary": {
-                "files": index.file_count(),
-                "symbols": index.symbol_count(),
-                "edges": index.edge_count(),
-            },
-        });
-        return serde_json::to_string_pretty(&val).unwrap_or_else(|_| "{}".to_string());
+    for entry in index.files.values() {
+        by_lang
+            .entry(&entry.language)
+            .and_modify(|e| e.0 += 1)
+            .or_insert((1, 0, 0));
     }
 
-    let mut by_lang: HashMap<&str, (usize, usize)> = HashMap::new();
-    for entry in index.files.values() {
-        let e = by_lang.entry(&entry.language).or_insert((0, 0));
-        e.0 += 1;
-        e.1 += entry.token_count;
+    for symbol in index.symbols.values() {
+        if let Some(entry) = index.files.get(&symbol.file) {
+            by_lang
+                .entry(&entry.language)
+                .and_modify(|e| e.1 += 1)
+                .or_insert((0, 1, 0));
+        }
+    }
+
+    for edge in &index.edges {
+        if let Some(entry) = index.files.get(&edge.from) {
+            by_lang
+                .entry(&entry.language)
+                .and_modify(|e| e.2 += 1)
+                .or_insert((0, 0, 1));
+        }
     }
 
     let mut result = Vec::new();
     result.push(format!(
-        "Project Graph: {} files, {} symbols, {} edges",
+        "─── Graph built: {} files, {} symbols, {} edges ───",
         index.file_count(),
         index.symbol_count(),
         index.edge_count()
     ));
 
     let mut langs: Vec<_> = by_lang.iter().collect();
-    langs.sort_by_key(|(_, v)| std::cmp::Reverse(v.1));
-    result.push("\nLanguages:".to_string());
-    for (lang, (count, tokens)) in &langs {
-        result.push(format!("  {lang}: {count} files, {tokens} tok"));
+    langs.sort_by_key(|(_, v)| std::cmp::Reverse(v.0));
+    result.push("\n  Language breakdown:".to_string());
+    for (lang, (files, syms, edges)) in &langs {
+        result.push(format!(
+            "    {lang}: {files:>4} files  {syms:>4} symbols  {edges:>4} edges"
+        ));
     }
 
     let mut import_counts: HashMap<&str, usize> = HashMap::new();
@@ -104,22 +97,13 @@ fn handle_build(root: &str, format: Option<&str>) -> String {
     hotspots.sort_by_key(|x| std::cmp::Reverse(*x.1));
 
     if !hotspots.is_empty() {
-        result.push(format!("\nMost imported ({}):", hotspots.len().min(10)));
+        result.push(format!("\n  Most imported ({}):", hotspots.len().min(10)));
         for (module, count) in hotspots.iter().take(10) {
-            result.push(format!("  {module}: imported by {count} files"));
+            result.push(format!("    {module}: imported by {count} files"));
         }
     }
 
-    if let Some(dir) = GraphProvider::index_dir(root) {
-        result.push(format!(
-            "\nIndex saved: {}",
-            crate::core::protocol::shorten_path(&dir.to_string_lossy())
-        ));
-    }
-
-    let output = result.join("\n");
-    let tokens = count_tokens(&output);
-    format!("{output}\n[ctx_graph build: {tokens} tok]")
+    result.join("\n")
 }
 
 fn handle_related(path: Option<&str>, root: &str) -> String {
@@ -150,8 +134,7 @@ fn handle_related(path: Option<&str>, root: &str) -> String {
         result.push_str(&format!("  {}\n", crate::core::protocol::shorten_path(r)));
     }
 
-    let tokens = count_tokens(&result);
-    format!("{result}[ctx_graph related: {tokens} tok]")
+    result
 }
 
 fn handle_symbol(
@@ -299,16 +282,7 @@ fn render_symbol_snippet(
         result.push_str(&format!("{:>4}|{}\n", start + i + 1, line));
     }
 
-    let tokens = count_tokens(&result);
-    let full_tokens = count_tokens(&content);
-    let saved = full_tokens.saturating_sub(tokens);
-    let pct = if full_tokens > 0 {
-        (saved as f64 / full_tokens as f64 * 100.0).round() as usize
-    } else {
-        0
-    };
-
-    format!("{result}[ctx_graph symbol: {tokens} tok (full file: {full_tokens} tok, -{pct}%)]")
+    result
 }
 
 fn file_path_to_module_prefixes(
@@ -405,7 +379,7 @@ fn edge_matches_file(edge_to: &str, module_prefixes: &[String]) -> bool {
     })
 }
 
-fn handle_impact(path: Option<&str>, root: &str, format: Option<&str>) -> String {
+fn handle_impact(path: Option<&str>, root: &str) -> String {
     let Some(target) = path else {
         return "path is required for 'impact' action".to_string();
     };
@@ -443,65 +417,10 @@ fn handle_impact(path: Option<&str>, root: &str, format: Option<&str>) -> String
     }
 
     if all_dependents.is_empty() {
-        if matches!(format, Some(f) if f.eq_ignore_ascii_case("json")) {
-            let name = rel_target.rsplit('/').next().unwrap_or(&rel_target);
-            return serde_json::json!({
-                "nodes": [{ "name": name, "file": rel_target }],
-                "edges": [],
-                "impact": { "target": rel_target, "direct": 0, "total": 0 },
-            })
-            .to_string();
-        }
         return format!(
             "No files depend on {}",
             crate::core::protocol::shorten_path(target)
         );
-    }
-
-    if matches!(format, Some(f) if f.eq_ignore_ascii_case("json")) {
-        let mut all_set: std::collections::HashSet<String> = std::collections::HashSet::new();
-        all_set.insert(rel_target.clone());
-        for d in &all_dependents {
-            all_set.insert(d.clone());
-        }
-
-        let nodes_json: Vec<_> = {
-            let mut sorted: Vec<_> = all_set.iter().collect();
-            sorted.sort();
-            sorted
-                .iter()
-                .map(|n| {
-                    let name = n.rsplit('/').next().unwrap_or(n);
-                    serde_json::json!({ "name": name, "file": n })
-                })
-                .collect()
-        };
-
-        let edges_json: Vec<_> = {
-            let all_edges = gp.edges();
-            let deps_set: std::collections::HashSet<&str> = all_dependents
-                .iter()
-                .map(std::string::String::as_str)
-                .collect();
-            all_edges
-                .iter()
-                .filter(|e| deps_set.contains(e.from.as_str()) && e.to == rel_target)
-                .map(|e| serde_json::json!({ "source": e.from, "target": e.to, "type": e.kind }))
-                .collect()
-        };
-
-        let indirect: Vec<&String> = all_dependents
-            .iter()
-            .filter(|d| !direct.contains(*d))
-            .collect();
-        let val = serde_json::json!({
-            "nodes": nodes_json,
-            "edges": edges_json,
-            "impact": { "target": rel_target, "direct": direct.len(), "total": all_dependents.len() },
-            "direct": direct,
-            "indirect": indirect,
-        });
-        return serde_json::to_string_pretty(&val).unwrap_or_else(|_| "{}".to_string());
     }
 
     let mut result = format!(
@@ -528,8 +447,7 @@ fn handle_impact(path: Option<&str>, root: &str, format: Option<&str>) -> String
         }
     }
 
-    let tokens = count_tokens(&result);
-    format!("{result}[ctx_graph impact: {tokens} tok]")
+    result
 }
 
 fn handle_status(root: &str) -> String {
@@ -824,7 +742,6 @@ mod tests {
 /// the public graph actions (context / impact / bare symbol).
 #[cfg(test)]
 mod gdscript_p0_tests {
-    
 
     fn write(root: &std::path::Path, rel: &str, content: &str) {
         let p = root.join(rel);

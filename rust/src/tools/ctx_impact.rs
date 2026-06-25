@@ -6,7 +6,6 @@
 use crate::core::property_graph::{
     AffectedEntry, CodeGraph, DependencyChain, Edge, EdgeKind, ImpactResult, Node,
 };
-use crate::core::tokens::count_tokens;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -116,11 +115,7 @@ fn handle_parity(root: &str, fmt: OutputFormat) -> String {
             });
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
         }
-        OutputFormat::Text => {
-            let body = crate::core::graph_parity::format_report(&report);
-            let tokens = count_tokens(&body);
-            format!("{body}\n[ctx_impact parity: {tokens} tok]")
-        }
+        OutputFormat::Text => crate::core::graph_parity::format_report(&report),
     }
 }
 
@@ -302,11 +297,9 @@ fn analyze_symbol(
         OutputFormat::Text => {
             let defined = def_files.join(", ");
             if total == 0 {
-                let result = format!(
+                return format!(
                     "No files depend on {symbol} (defined in {defined}); it is a leaf in the dependency graph."
                 );
-                let tokens = count_tokens(&result);
-                return format!("{result}\n[ctx_impact: {tokens} tok]");
             }
             let mut result = format!(
                 "Impact of changing {symbol} (defined in {defined}): {total} affected files\n"
@@ -317,8 +310,7 @@ fn analyze_symbol(
             if truncated {
                 result.push_str(&format!("  ... +{} more\n", total - limit));
             }
-            let tokens = count_tokens(&result);
-            format!("{result}[ctx_impact: {tokens} tok]")
+            result
         }
     }
 }
@@ -347,14 +339,12 @@ fn analyze_unresolved(
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
         }
         OutputFormat::Text => {
-            let result = format!(
+            format!(
                 "'{target}' is not a known file or symbol in the graph \
                  ({files} files, {symbols} symbols indexed).\n  \
                  - As a file: pass a path relative to the project root (looked up '{rel_target}').\n  \
                  - As a class/type: check the spelling, or run ctx_impact action='build' to (re)index."
-            );
-            let tokens = count_tokens(&result);
-            format!("{result}\n[ctx_impact: {tokens} tok]")
+            )
         }
     }
 }
@@ -397,10 +387,7 @@ fn format_impact(impact: &ImpactResult, target: &str, _root: &str, fmt: OutputFo
         }
         OutputFormat::Text => {
             if total == 0 {
-                let result =
-                    format!("No files depend on {target} (leaf node in the dependency graph).");
-                let tokens = count_tokens(&result);
-                return format!("{result}\n[ctx_impact: {tokens} tok]");
+                return format!("No files depend on {target} (leaf node in the dependency graph).");
             }
 
             let mut result = format!("risk level: {risk}\n");
@@ -411,8 +398,7 @@ fn format_impact(impact: &ImpactResult, target: &str, _root: &str, fmt: OutputFo
                 result.push_str(&format!("  ... +{} more\n", total - limit));
             }
 
-            let tokens = count_tokens(&result);
-            format!("{result}[ctx_impact: {tokens} tok]")
+            result
         }
     }
 }
@@ -586,8 +572,7 @@ fn compute_diff_impact(
                 }
             }
 
-            let tokens = count_tokens(&result);
-            format!("{result}\n[ctx_impact diff: {tokens} tok]")
+            result
         }
     }
 }
@@ -628,8 +613,7 @@ fn handle_chain(path: Option<&str>, root: &str, fmt: OutputFormat) -> String {
             }
             OutputFormat::Text => {
                 let result = format!("No dependency path from {rel_from} to {rel_to}");
-                let tokens = count_tokens(&result);
-                format!("{result}\n[ctx_impact chain: {tokens} tok]")
+                result
             }
         },
         Err(e) => format!("Chain analysis failed: {e}"),
@@ -657,8 +641,7 @@ fn format_chain(chain: &DependencyChain, _root: &str, fmt: OutputFormat) -> Stri
                 result.push_str(step);
                 result.push('\n');
             }
-            let tokens = count_tokens(&result);
-            format!("{result}[ctx_impact chain: {tokens} tok]")
+            result
         }
     }
 }
@@ -1391,7 +1374,6 @@ fn handle_build(root: &str, fmt: OutputFormat) -> String {
         },
     );
 
-    let tokens = count_tokens(&result);
     match fmt {
         OutputFormat::Json => {
             let mut v = serde_json::json!({
@@ -1407,7 +1389,7 @@ fn handle_build(root: &str, fmt: OutputFormat) -> String {
             }
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
         }
-        OutputFormat::Text => format!("{result}\n[ctx_impact build: {tokens} tok]"),
+        OutputFormat::Text => result,
     }
 }
 
@@ -1536,7 +1518,6 @@ fn handle_update(root: &str, fmt: OutputFormat) -> String {
         "Incremental update: {changed_count} files changed, {total_nodes} nodes updated, {total_edges} edges added ({elapsed_ms}ms)"
     );
 
-    let tokens = count_tokens(&summary);
     match fmt {
         OutputFormat::Json => {
             let v = json!({
@@ -1549,7 +1530,7 @@ fn handle_update(root: &str, fmt: OutputFormat) -> String {
             });
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
         }
-        OutputFormat::Text => format!("{summary}\n[ctx_impact update: {tokens} tok]"),
+        OutputFormat::Text => summary,
     }
 }
 

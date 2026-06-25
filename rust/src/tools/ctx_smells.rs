@@ -5,7 +5,6 @@
 
 use crate::core::property_graph::CodeGraph;
 use crate::core::smells::{self, Severity, SmellConfig, SmellFinding};
-use crate::core::tokens::count_tokens;
 use serde_json::{Value, json};
 
 pub fn handle(
@@ -124,8 +123,7 @@ fn handle_summary(root: &str, fmt: OutputFormat) -> String {
                     s.rule, s.findings, s.description
                 ));
             }
-            let tokens = count_tokens(&result);
-            format!("{result}\n[ctx_smells summary: {tokens} tok]")
+            result
         }
     }
 }
@@ -232,8 +230,7 @@ fn format_findings(findings: &[SmellFinding], rule: Option<&str>, fmt: OutputFor
             if findings.len() > 50 {
                 result.push_str(&format!("\n  ... +{} more\n", findings.len() - 50));
             }
-            let tokens = count_tokens(&result);
-            format!("{result}\n[ctx_smells: {tokens} tok]")
+            result
         }
     }
 }

@@ -1406,7 +1406,10 @@ pub(crate) struct SearchFilter {
 }
 
 impl SearchFilter {
-    pub(crate) fn new(languages: Option<&[String]>, path_glob: Option<&str>) -> Result<Self, String> {
+    pub(crate) fn new(
+        languages: Option<&[String]>,
+        path_glob: Option<&str>,
+    ) -> Result<Self, String> {
         let allowed_exts = languages.map(normalize_languages);
         let path_glob = match path_glob {
             None => None,

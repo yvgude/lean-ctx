@@ -606,8 +606,6 @@ fn format_markdown(
         out.push('\n');
     }
 
-    let tokens = count_tokens(&out);
-    out.push_str(&format!("[ctx_pack pr: {tokens} tok]\n"));
     out
 }
 

@@ -12,7 +12,6 @@ use crate::core::graph_analysis::dependency_edges;
 use crate::core::graph_index;
 use crate::core::graph_provider::{self, EdgeInfo};
 use crate::core::protocol::shorten_path;
-use crate::core::tokens::count_tokens;
 
 /// Reverse dependency index: `file → files that (transitively) depend on it`.
 struct BlastIndex {
@@ -248,8 +247,7 @@ fn render_text(base: &str, entries: &[DiffEntry]) -> String {
         }
     }
 
-    let tokens = count_tokens(&out);
-    format!("{out}[ctx_graph diff: {tokens} tok]")
+    out
 }
 
 fn flags(e: &DiffEntry) -> String {

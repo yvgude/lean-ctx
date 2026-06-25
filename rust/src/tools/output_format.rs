@@ -1,7 +1,3 @@
-///! Compact aligned text output formatters for ctx_search and ctx_graph tools.
-///!
-///! All functions produce plain text — no JSON, no serde, no external dependencies.
-
 /// Format the header line for a tool output section.
 ///
 /// The header uses Unicode box-drawing `───` borders and selects a template
@@ -87,7 +83,7 @@ pub fn format_row(
 /// );
 /// ```
 pub fn format_footer(offset: usize, limit: usize, total: usize) -> String {
-    let current_page = if limit == 0 { 1 } else { (offset / limit) + 1 };
+    let current_page = offset.checked_div(limit).unwrap_or(0) + 1;
     let total_pages = if limit == 0 || total == 0 {
         1
     } else {

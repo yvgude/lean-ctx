@@ -10,10 +10,10 @@ use regex::RegexBuilder;
 use crate::core::protocol;
 use crate::core::symbol_map::{self, SymbolMap};
 use crate::core::tokens::count_tokens;
-use crate::tools::ctx_semantic_search::{self, SearchFilter, SearchHit};
-use crate::tools::graph_enrich::{self, GrepMatch, EnrichedHit};
-use crate::tools::output_format::{format_context, format_footer, format_header, format_row};
 use crate::tools::CrpMode;
+use crate::tools::ctx_semantic_search::{self, SearchFilter, SearchHit};
+use crate::tools::graph_enrich::{self, EnrichedHit, GrepMatch};
+use crate::tools::output_format::{format_context, format_footer, format_header, format_row};
 
 pub(crate) const MAX_FILE_SIZE: u64 = 512_000;
 pub(crate) const MAX_WALK_DEPTH: usize = 20;
@@ -134,31 +134,31 @@ impl TryFrom<&serde_json::Map<String, serde_json::Value>> for CtxSearch {
     fn try_from(args: &serde_json::Map<String, serde_json::Value>) -> Result<Self, Self::Error> {
         use crate::server::tool_trait::{get_bool, get_str, get_str_array, get_usize};
 
-        let action = get_str(args, "action")
-            .ok_or_else(|| "Missing required 'action' field. Must be one of: grep, search, reindex".to_string())?;
+        let action = get_str(args, "action").ok_or_else(|| {
+            "Missing required 'action' field. Must be one of: grep, search, reindex".to_string()
+        })?;
 
         match action.as_str() {
             "grep" => {
-                let pattern = get_str(args, "pattern").ok_or_else(|| {
-                    "pattern is required for action=grep".to_string()
-                })?;
+                let pattern = get_str(args, "pattern")
+                    .ok_or_else(|| "pattern is required for action=grep".to_string())?;
                 Ok(CtxSearch::Grep(GrepParams {
                     pattern,
                     regex: get_str(args, "regex"),
                     path: get_str(args, "path"),
                     include: get_str(args, "include"),
                     // Backward compat: limit replaces max_results
-                    limit: get_usize(args, "limit")
-                        .or_else(|| crate::server::tool_trait::get_int(args, "max_results")
-                            .and_then(|n| usize::try_from(n).ok())),
+                    limit: get_usize(args, "limit").or_else(|| {
+                        crate::server::tool_trait::get_int(args, "max_results")
+                            .and_then(|n| usize::try_from(n).ok())
+                    }),
                     offset: get_usize(args, "offset"),
                     context: get_bool(args, "context"),
                     ignore_gitignore: get_bool(args, "ignore_gitignore"),
                 }))
             }
             "search" => {
-                let method = get_str(args, "method")
-                    .and_then(|m| m.parse::<SearchMethod>().ok());
+                let method = get_str(args, "method").and_then(|m| m.parse::<SearchMethod>().ok());
                 Ok(CtxSearch::Search(SearchParams {
                     query: get_str(args, "query"),
                     method,
@@ -644,8 +644,13 @@ pub fn handle_enum(action: CtxSearch, crp_mode: CrpMode, ctx_path: &str) -> Sear
             let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;
 
             let outcome = handle(
-                &params.pattern, &dir, include, max_results, crp_mode,
-                respect_gitignore, allow_secret_paths,
+                &params.pattern,
+                &dir,
+                include,
+                max_results,
+                crp_mode,
+                respect_gitignore,
+                allow_secret_paths,
             );
 
             // Return ERROR or empty results as-is
@@ -668,14 +673,14 @@ pub fn handle_enum(action: CtxSearch, crp_mode: CrpMode, ctx_path: &str) -> Sear
 
             let all_matches: Vec<GrepMatch> = body
                 .lines()
-                .filter(|l| {
-                    !l.is_empty()
-                        && !l.starts_with('(')
-                        && !l.starts_with("Results span")
-                })
+                .filter(|l| !l.is_empty() && !l.starts_with('(') && !l.starts_with("Results span"))
                 .filter_map(|l| {
                     let (file, line, content) = parse_grep_match(l)?;
-                    Some(GrepMatch { file, line, content })
+                    Some(GrepMatch {
+                        file,
+                        line,
+                        content,
+                    })
                 })
                 .collect();
 
@@ -725,7 +730,7 @@ pub fn handle_enum(action: CtxSearch, crp_mode: CrpMode, ctx_path: &str) -> Sear
 
                 // Zero enriched hits — show raw matches with enriched-style header
                 if enriched_count == 0 {
-                    let extra = format!("{} raw (0 dedup)", raw_count);
+                    let extra = format!("{raw_count} raw (0 dedup)");
                     let mut result = format_header("grep", 0, &extra);
                     result.push('\n');
                     result.push('\n');
@@ -742,10 +747,9 @@ pub fn handle_enum(action: CtxSearch, crp_mode: CrpMode, ctx_path: &str) -> Sear
                 }
 
                 // Header: enriched count / raw count (dedup)
-                let matched_in_enriched: usize =
-                    enriched.iter().map(|h| h.match_lines.len()).sum();
+                let matched_in_enriched: usize = enriched.iter().map(|h| h.match_lines.len()).sum();
                 let dedup = matched_in_enriched.saturating_sub(enriched_count);
-                let extra = format!("{} raw ({} dedup)", raw_count, dedup);
+                let extra = format!("{raw_count} raw ({dedup} dedup)");
                 let mut result = format_header("grep", enriched_count, &extra);
                 result.push('\n');
                 result.push('\n');
@@ -781,10 +785,7 @@ pub fn handle_enum(action: CtxSearch, crp_mode: CrpMode, ctx_path: &str) -> Sear
                                 .map(|m| m - hit.start_line + 1)
                                 .collect();
                             result.push('\n');
-                            result.push_str(&format_context(
-                                &body_content,
-                                &relative_matches,
-                            ));
+                            result.push_str(&format_context(&body_content, &relative_matches));
                         }
                     }
 
@@ -855,18 +856,28 @@ pub fn handle_enum(action: CtxSearch, crp_mode: CrpMode, ctx_path: &str) -> Sear
                         .collect();
                     format_search_results(&filtered, top_k, "bm25")
                 }
-                SearchMethod::Dense => {
-                    ctx_semantic_search::handle_impl(
-                        query, &dir, top_k, crp_mode, languages, path_glob,
-                        Some("dense"), None, None,
-                    )
-                }
-                SearchMethod::Hybrid => {
-                    ctx_semantic_search::handle_impl(
-                        query, &dir, top_k, crp_mode, languages, path_glob,
-                        Some("hybrid"), None, None,
-                    )
-                }
+                SearchMethod::Dense => ctx_semantic_search::handle_impl(
+                    query,
+                    &dir,
+                    top_k,
+                    crp_mode,
+                    languages,
+                    path_glob,
+                    Some("dense"),
+                    None,
+                    None,
+                ),
+                SearchMethod::Hybrid => ctx_semantic_search::handle_impl(
+                    query,
+                    &dir,
+                    top_k,
+                    crp_mode,
+                    languages,
+                    path_glob,
+                    Some("hybrid"),
+                    None,
+                    None,
+                ),
             };
 
             SearchOutcome::from_observed(result, 0)
@@ -1111,15 +1122,13 @@ fn compute_call_counts(conn: &rusqlite::Connection) -> std::collections::HashMap
     let mut map = std::collections::HashMap::new();
     if let Ok(mut stmt) = conn.prepare(
         "SELECT target_id, COUNT(*) as cnt FROM edges WHERE type = 'calls' GROUP BY target_id",
-    ) {
-        if let Ok(rows) = stmt.query_map([], |row| {
-            let id: i64 = row.get(0)?;
-            let cnt: i64 = row.get(1)?;
-            Ok((id, cnt as usize))
-        }) {
-            for row in rows.flatten() {
-                map.insert(row.0, row.1);
-            }
+    ) && let Ok(rows) = stmt.query_map([], |row| {
+        let id: i64 = row.get(0)?;
+        let cnt: i64 = row.get(1)?;
+        Ok((id, cnt as usize))
+    }) {
+        for row in rows.flatten() {
+            map.insert(row.0, row.1);
         }
     }
     map
@@ -1140,8 +1149,7 @@ fn read_file_body(path: &str, start_line: usize, end_line: usize) -> Option<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-use crate::tools::output_format::{format_context, format_footer};
-use crate::tools::CrpMode;
+    use crate::tools::CrpMode;
 
     /// Determinism contract (#498): identical search over identical files
     /// must produce byte-identical output — a prerequisite for provider
