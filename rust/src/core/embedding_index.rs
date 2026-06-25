@@ -1,12 +1,13 @@
 //! Persistent, incremental embedding index.
 //!
-//! Stores pre-computed chunk embeddings alongside file content hashes in
-//! the `embeddings` table of `code_index.db`. On re-index, only files whose
-//! hash has changed get re-embedded, avoiding expensive model inference for
-//! unchanged code.
+//! Stores pre-computed chunk embeddings alongside file content hashes.
+//! On re-index, only files whose hash has changed get re-embedded,
+//! avoiding expensive model inference for unchanged code.
+//!
+//! Storage format: `~/.lean-ctx/vectors/<project_hash>/embeddings.bin` (postcard)
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use md5::{Digest, Md5};
@@ -15,46 +16,6 @@ use serde::{Deserialize, Serialize};
 use super::chunk_data::CodeChunk;
 use super::embedding_quant::{self, QuantizedVector};
 use super::hnsw::FlatEmbeddings;
-
-// ── Vector BLOB serialisation ────────────────────────────────────────
-/// Binary format stored in the `vector` BLOB column of the `embeddings`
-/// table.  Contains the quantised code vector plus entry metadata.
-#[derive(Serialize, Deserialize)]
-struct StoredVector {
-    code: Vec<i8>,
-    scale: f32,
-    symbol_name: String,
-    start_line: u32,
-    end_line: u32,
-    content_hash: String,
-}
-
-fn vector_to_blob(entry: &EmbeddingEntry) -> Vec<u8> {
-    let sv = StoredVector {
-        code: entry.quant.code.clone(),
-        scale: entry.quant.scale,
-        symbol_name: entry.symbol_name.clone(),
-        start_line: entry.start_line as u32,
-        end_line: entry.end_line as u32,
-        content_hash: entry.content_hash.clone(),
-    };
-    postcard::to_allocvec(&sv).expect("vector serialisation must succeed")
-}
-
-fn blob_to_entry(file_path: String, blob: &[u8]) -> EmbeddingEntry {
-    let sv: StoredVector = postcard::from_bytes(blob).expect("vector deserialisation must succeed");
-    EmbeddingEntry {
-        file_path,
-        symbol_name: sv.symbol_name,
-        start_line: sv.start_line as usize,
-        end_line: sv.end_line as usize,
-        quant: QuantizedVector {
-            code: sv.code,
-            scale: sv.scale,
-        },
-        content_hash: sv.content_hash,
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingIndex {
@@ -132,7 +93,7 @@ impl EmbeddingBuildOutcome {
 /// Called by the index orchestrator during `build-full` / `build` after the BM25
 /// index is ready.  This is a *background-friendly* operation: it runs the ONNX
 /// model incrementally (only chunks whose content hash changed) and persists
-/// embeddings to `code_index.db` so subsequent `ctx_semantic_search` calls find a warm cache.
+/// `embeddings.bin` (postcard) so subsequent `ctx_semantic_search` calls find a warm cache.
 ///
 /// Returns [`EmbeddingBuildOutcome`] — the orchestrator uses this to set the
 /// semantic component state without aborting the overall index build.
@@ -325,7 +286,7 @@ impl EmbeddingIndex {
         );
     }
 
-    /// Load a previously saved index from SQLite, or create a new empty one.
+    /// Load a previously saved index, or create a new empty one.
     pub fn load_or_new(root: &Path, dimensions: usize) -> Self {
         Self::load(root).unwrap_or_else(|| Self::new(dimensions))
     }
@@ -459,176 +420,45 @@ impl EmbeddingIndex {
     }
 
     pub fn save(&self, root: &Path) -> std::io::Result<()> {
-        use crate::core::db::WalConnection;
-        use crate::core::index_pipeline::dump_engine::DumpEngine;
-        use rusqlite::params;
-
-        let db_path = DumpEngine::db_path_for(root);
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        let conn = WalConnection::open(&db_path).map_err(std::io::Error::other)?;
-
-        // Ensure required tables exist (may be called without a prior dump_all).
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS embeddings (
-                id          INTEGER PRIMARY KEY,
-                file_path   TEXT    NOT NULL,
-                chunk_index INTEGER NOT NULL,
-                node_id     INTEGER DEFAULT 0,
-                vector      BLOB    NOT NULL,
-                model       TEXT    DEFAULT '',
-                UNIQUE(file_path, chunk_index)
-            );
-            CREATE TABLE IF NOT EXISTS meta (
-                key   TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );",
-        )
-        .map_err(std::io::Error::other)?;
-
-        // ── Clear stale data ───────────────────────────────────────────
-        conn.execute("DELETE FROM embeddings", [])
-            .map_err(std::io::Error::other)?;
-
-        // ── Insert rows ────────────────────────────────────────────────
-        let model = self.model_id.as_deref().unwrap_or("");
-        let mut stmt = conn
-            .prepare(
-                "INSERT INTO embeddings (file_path, chunk_index, vector, model)
-                 VALUES (?1, ?2, ?3, ?4)",
-            )
-            .map_err(std::io::Error::other)?;
-
-        for (i, entry) in self.entries.iter().enumerate() {
-            let blob = vector_to_blob(entry);
-            stmt.execute(params![entry.file_path, i as i64, blob, model])
-                .map_err(std::io::Error::other)?;
-        }
-
-        // ── Persist index-level metadata ───────────────────────────────
-        let mut meta = conn
-            .prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)")
-            .map_err(std::io::Error::other)?;
-
-        meta.execute(params!["embedding_version", &self.version.to_string()])
-            .map_err(std::io::Error::other)?;
-        meta.execute(params!["embedding_dimensions", &self.dimensions.to_string()])
-            .map_err(std::io::Error::other)?;
-        meta.execute(params![
-            "embedding_model_id",
-            self.model_id.as_deref().unwrap_or("")
-        ])
-        .map_err(std::io::Error::other)?;
-
-        let hashes_json =
-            serde_json::to_string(&self.file_hashes).map_err(std::io::Error::other)?;
-        meta.execute(params!["embedding_file_hashes", &hashes_json])
-            .map_err(std::io::Error::other)?;
-
+        let dir = index_dir(root);
+        std::fs::create_dir_all(&dir)?;
+        // Binary (postcard) — compact, fast, deterministic.
+        let data = postcard::to_allocvec(self).map_err(std::io::Error::other)?;
+        std::fs::write(dir.join("embeddings.bin"), data)?;
         Ok(())
     }
 
     pub fn load(root: &Path) -> Option<Self> {
-        use crate::core::db::WalConnection;
-        use crate::core::index_pipeline::dump_engine::DumpEngine;
-
-        let db_path = DumpEngine::db_path_for(root);
-        if !db_path.exists() {
-            return None;
+        let bin_path = index_dir(root).join("embeddings.bin");
+        let data = std::fs::read(&bin_path).ok()?;
+        match postcard::from_bytes::<Self>(&data) {
+            // Only accept an index whose on-disk schema matches the current one.
+            Ok(idx) if idx.version == CURRENT_VERSION => Some(idx),
+            // A structurally-valid but stale schema (older/newer bin layout) must
+            // not be trusted — postcard can silently mis-decode a changed struct.
+            // Drop it and rebuild rather than serving garbage vectors.
+            Ok(idx) => {
+                tracing::warn!(
+                    "[embeddings] index format v{} != current v{CURRENT_VERSION} — \
+                     removing and rebuilding from scratch",
+                    idx.version
+                );
+                let _ = std::fs::remove_file(&bin_path);
+                None
+            }
+            Err(_) => {
+                tracing::warn!(
+                    "[embeddings] corrupt embeddings.bin — removing and will rebuild from scratch"
+                );
+                let _ = std::fs::remove_file(&bin_path);
+                None
+            }
         }
-        let conn = WalConnection::open(&db_path).ok()?;
-
-        // Ensure tables exist (the DB may have been created by an older build).
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS embeddings (
-                id          INTEGER PRIMARY KEY,
-                file_path   TEXT    NOT NULL,
-                chunk_index INTEGER NOT NULL,
-                node_id     INTEGER DEFAULT 0,
-                vector      BLOB    NOT NULL,
-                model       TEXT    DEFAULT '',
-                UNIQUE(file_path, chunk_index)
-            );
-            CREATE TABLE IF NOT EXISTS meta (
-                key   TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );",
-        )
-        .ok()?;
-
-        // ── Load version (stale → rebuild) ─────────────────────────────
-        let version: u32 = conn
-            .query_row(
-                "SELECT value FROM meta WHERE key = 'embedding_version'",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .ok()
-            .and_then(|s| s.parse().ok())?;
-
-        if version != CURRENT_VERSION {
-            tracing::warn!(
-                "[embeddings] index format v{version} != current v{CURRENT_VERSION} — rebuilding"
-            );
-            return None;
-        }
-
-        // ── Dimensions ─────────────────────────────────────────────────
-        let dimensions: usize = conn
-            .query_row(
-                "SELECT value FROM meta WHERE key = 'embedding_dimensions'",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .ok()
-            .and_then(|s| s.parse().ok())?;
-
-        // ── Model id ───────────────────────────────────────────────────
-        let model_id: Option<String> = conn
-            .query_row(
-                "SELECT value FROM meta WHERE key = 'embedding_model_id'",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .ok()
-            .filter(|s: &String| !s.is_empty());
-
-        // ── File hashes (for incremental detection) ────────────────────
-        let file_hashes: HashMap<String, String> = conn
-            .query_row(
-                "SELECT value FROM meta WHERE key = 'embedding_file_hashes'",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .ok()
-            .and_then(|json| serde_json::from_str(&json).ok())
-            .unwrap_or_default();
-
-        // ── Embedding rows ─────────────────────────────────────────────
-        let mut stmt = conn
-            .prepare("SELECT file_path, vector FROM embeddings ORDER BY id")
-            .ok()?;
-
-        let entries: Vec<EmbeddingEntry> = stmt
-            .query_map([], |row| {
-                let fp: String = row.get(0)?;
-                let blob: Vec<u8> = row.get(1)?;
-                Ok(blob_to_entry(fp, &blob))
-            })
-            .ok()?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        Some(Self {
-            version,
-            dimensions,
-            model_id,
-            entries,
-            file_hashes,
-        })
     }
+}
+
+fn index_dir(root: &Path) -> PathBuf {
+    crate::core::index_namespace::vectors_dir(root)
 }
 
 fn hash_content(content: &str) -> String {

@@ -19,10 +19,10 @@ pub fn handle(
     since: Option<&str>,
 ) -> String {
     match action {
-        "build" => handle_build(root),
+        "build" => handle_build(root, format),
         "related" => handle_related(path, root),
         "symbol" => handle_symbol(path, root, cache, crp_mode),
-        "impact" => handle_impact(path, root),
+        "impact" => handle_impact(path, root, format),
         "status" => handle_status(root),
         "enrich" => handle_enrich(root),
         "context" => handle_context_query(path, root),
@@ -37,12 +37,36 @@ diagram, neighbors, path, explain, diff"
     }
 }
 
-fn handle_build(root: &str) -> String {
+fn handle_build(root: &str, format: Option<&str>) -> String {
     let handle =
         crate::core::index_pipeline::pipeline::IndexPipeline::new(std::path::PathBuf::from(root))
             .build()
             .expect("pipeline build failed");
     let (index, _) = handle.run_and_load().expect("pipeline run failed");
+
+    if matches!(format, Some(f) if f.eq_ignore_ascii_case("json")) {
+        let nodes_json: Vec<_> = index.files.values().map(|entry| {
+            let name = entry.path.rsplit('/').next().unwrap_or(&entry.path);
+            serde_json::json!({ "name": name, "file": entry.path })
+        }).collect();
+
+        let edges_json: Vec<_> = index
+            .edges
+            .iter()
+            .map(|e| serde_json::json!({ "source": e.from, "target": e.to, "type": e.kind }))
+            .collect();
+
+        let val = serde_json::json!({
+            "nodes": nodes_json,
+            "edges": edges_json,
+            "summary": {
+                "files": index.file_count(),
+                "symbols": index.symbol_count(),
+                "edges": index.edge_count(),
+            },
+        });
+        return serde_json::to_string_pretty(&val).unwrap_or_else(|_| "{}".to_string());
+    }
 
     let mut by_lang: HashMap<&str, (usize, usize)> = HashMap::new();
     for entry in index.files.values() {
@@ -377,7 +401,7 @@ fn edge_matches_file(edge_to: &str, module_prefixes: &[String]) -> bool {
     })
 }
 
-fn handle_impact(path: Option<&str>, root: &str) -> String {
+fn handle_impact(path: Option<&str>, root: &str, format: Option<&str>) -> String {
     let Some(target) = path else {
         return "path is required for 'impact' action".to_string();
     };
@@ -415,10 +439,60 @@ fn handle_impact(path: Option<&str>, root: &str) -> String {
     }
 
     if all_dependents.is_empty() {
+        if matches!(format, Some(f) if f.eq_ignore_ascii_case("json")) {
+            let name = rel_target.rsplit('/').next().unwrap_or(&rel_target);
+            return serde_json::json!({
+                "nodes": [{ "name": name, "file": rel_target }],
+                "edges": [],
+                "impact": { "target": rel_target, "direct": 0, "total": 0 },
+            }).to_string();
+        }
         return format!(
             "No files depend on {}",
             crate::core::protocol::shorten_path(target)
         );
+    }
+
+    if matches!(format, Some(f) if f.eq_ignore_ascii_case("json")) {
+        let mut all_set: std::collections::HashSet<String> = std::collections::HashSet::new();
+        all_set.insert(rel_target.clone());
+        for d in &all_dependents {
+            all_set.insert(d.clone());
+        }
+
+        let nodes_json: Vec<_> =
+            {
+                let mut sorted: Vec<_> = all_set.iter().collect();
+                sorted.sort();
+                sorted.iter().map(|n| {
+                let name = n.rsplit('/').next().unwrap_or(n);
+                serde_json::json!({ "name": name, "file": n })
+            }).collect()
+            };
+
+        let edges_json: Vec<_> = {
+            let all_edges = gp.edges();
+            let deps_set: std::collections::HashSet<&str> =
+                all_dependents.iter().map(|s| s.as_str()).collect();
+            all_edges
+                .iter()
+                .filter(|e| deps_set.contains(e.from.as_str()) && e.to == rel_target)
+                .map(|e| serde_json::json!({ "source": e.from, "target": e.to, "type": e.kind }))
+                .collect()
+        };
+
+        let indirect: Vec<&String> = all_dependents
+            .iter()
+            .filter(|d| !direct.contains(*d))
+            .collect();
+        let val = serde_json::json!({
+            "nodes": nodes_json,
+            "edges": edges_json,
+            "impact": { "target": rel_target, "direct": direct.len(), "total": all_dependents.len() },
+            "direct": direct,
+            "indirect": indirect,
+        });
+        return serde_json::to_string_pretty(&val).unwrap_or_else(|_| "{}".to_string());
     }
 
     let mut result = format!(
@@ -792,7 +866,7 @@ mod gdscript_p0_tests {
     fn context_resolves_gdscript_symbol() {
         let _lock = crate::core::data_dir::test_env_lock();
         let (_tmp, root) = godot_fixture();
-        let _ = handle_build(&root);
+        let _ = handle_build(&root, None);
         let out = handle_context_query(Some("_ready"), &root);
         assert!(
             out.contains("_ready"),
@@ -806,8 +880,8 @@ mod gdscript_p0_tests {
     fn impact_lists_gdscript_dependents() {
         let _lock = crate::core::data_dir::test_env_lock();
         let (_tmp, root) = godot_fixture();
-        let _ = handle_build(&root);
-        let out = handle_impact(Some("actors/Base.gd"), &root);
+        let _ = handle_build(&root, None);
+        let out = handle_impact(Some("actors/Base.gd"), &root, None);
         assert!(
             out.contains("Player.gd"),
             "Base.gd dependents should include Player: {out}"
@@ -823,7 +897,7 @@ mod gdscript_p0_tests {
     fn bare_symbol_resolves_gdscript() {
         let _lock = crate::core::data_dir::test_env_lock();
         let (_tmp, root) = godot_fixture();
-        let _ = handle_build(&root);
+        let _ = handle_build(&root, None);
         let mut cache = crate::core::cache::SessionCache::new();
         let out = handle_symbol(
             Some("_ready"),

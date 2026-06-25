@@ -149,16 +149,6 @@ impl DumpEngine {
                 token_count  INTEGER DEFAULT 0
             );
 
-            CREATE TABLE IF NOT EXISTS embeddings (
-                id          INTEGER PRIMARY KEY,
-                file_path   TEXT    NOT NULL,
-                chunk_index INTEGER NOT NULL,
-                node_id     INTEGER DEFAULT 0,
-                vector      BLOB    NOT NULL,
-                model       TEXT    DEFAULT '',
-                UNIQUE(file_path, chunk_index)
-            );
-
             CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
             CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
             CREATE INDEX IF NOT EXISTS idx_nodes_file    ON nodes(file_path);
@@ -208,7 +198,6 @@ impl DumpEngine {
         conn.execute("DELETE FROM files", [])?;
         conn.execute("DELETE FROM file_hashes", [])?;
         conn.execute("DELETE FROM chunks", [])?;
-        conn.execute("DELETE FROM embeddings", [])?;
 
         // ══ DML phase (batched transactions) ═══════════════════════════
 

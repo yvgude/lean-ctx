@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use crate::core::graph_provider::SymbolInfo;
-use crate::core::index_orchestrator;
 use crate::core::property_graph::CodeGraph;
 use crate::core::protocol;
 use crate::core::tokens::count_tokens;
@@ -95,8 +94,8 @@ pub fn handle(
                 let mut out = format!("{n} matches for '{name}'. Narrow with file= or kind=:\n");
                 for m in matches.iter().take(20) {
                     out.push_str(&format!(
-                        "  {}::{} ({}:L{}-{})\n",
-                        m.file, m.name, m.kind, m.start_line, m.end_line
+                        "  {}:{}  {}  {}\n",
+                        m.file, m.start_line, m.kind, m.name
                     ));
                 }
                 if matches.len() > 20 {
@@ -116,8 +115,8 @@ pub fn handle(
                 let mut out = format!("{n} matches for '{name}'. Narrow with file= or kind=:\n");
                 for m in matches.iter().take(20) {
                     out.push_str(&format!(
-                        "  {}::{} ({}:L{}-{})\n",
-                        m.file, m.name, m.kind, m.start_line, m.end_line
+                        "  {}:{}  {}  {}\n",
+                        m.file, m.start_line, m.kind, m.name
                     ));
                 }
                 if matches.len() > 20 {
@@ -178,16 +177,14 @@ fn render_single(sym: &SymbolInfo, project_root: &str) -> (String, usize) {
 
     let vis = if sym.is_exported { "+" } else { "-" };
     let header = format!(
-        "{}::{} ({} {}, L{}-{})",
-        sym.file, sym.name, vis, sym.kind, sym.start_line, sym.end_line
+        "{}:{}  {}  {}{}",
+        sym.file, sym.start_line, sym.kind, vis, sym.name,
     );
-
-    let ctx = format!("File: {}", sym.file);
 
     let savings = protocol::format_savings(full_tokens, snippet_tokens);
 
     (
-        format!("{header}\n{ctx}\n\n{snippet}\n{savings}"),
+        format!("{header}\n\n{snippet}\n{savings}"),
         full_tokens,
     )
 }

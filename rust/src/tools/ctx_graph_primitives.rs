@@ -309,36 +309,49 @@ pub fn neighbors(
     };
 
     if is_json(format) {
-        let out_json: Vec<_> = outgoing
+        let mut nodes_set: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        nodes_set.insert(&node);
+        for n in &outgoing {
+            nodes_set.insert(&n.node);
+        }
+        for n in &incoming {
+            nodes_set.insert(&n.node);
+        }
+        for (_, ns) in &rings {
+            for n in ns {
+                nodes_set.insert(n);
+            }
+        }
+
+        let nodes_json: Vec<_> = nodes_set.iter().map(|n| graph_node_json(n)).collect();
+
+        let mut edges_json: Vec<serde_json::Value> = outgoing
             .iter()
-            .map(|n| {
-                serde_json::json!({
-                    "node": n.node,
-                    "kind": n.kind,
-                    "confidence": round3(edge_confidence(&n.kind, n.weight)),
-                })
-            })
+            .map(|n| graph_edge_json(&node, &n.node, &n.kind))
             .collect();
-        let in_json: Vec<_> = incoming
-            .iter()
-            .map(|n| {
-                serde_json::json!({
-                    "node": n.node,
-                    "kind": n.kind,
-                    "confidence": round3(edge_confidence(&n.kind, n.weight)),
-                })
-            })
-            .collect();
+        edges_json.extend(
+            incoming
+                .iter()
+                .map(|n| graph_edge_json(&n.node, &node, &n.kind)),
+        );
+
+        let val = if depth > 1 {
         let rings_json: Vec<_> = rings
             .iter()
-            .map(|(d, nodes)| serde_json::json!({ "distance": d, "count": nodes.len(), "nodes": nodes }))
+            .map(|(d, ns)| serde_json::json!({ "depth": d, "count": ns.len(), "nodes": ns }))
             .collect();
-        let val = serde_json::json!({
-            "node": node,
-            "outgoing": out_json,
-            "incoming": in_json,
-            "rings": rings_json,
-        });
+        let total: usize = rings.iter().map(|(_, n)| n.len()).sum();
+        serde_json::json!({
+            "nodes": nodes_json,
+            "edges": edges_json,
+            "rings": { "depths": rings_json, "total": total },
+        })
+        } else {
+            serde_json::json!({
+                "nodes": nodes_json,
+                "edges": edges_json,
+            })
+        };
         return serde_json::to_string_pretty(&val).unwrap_or_else(|_| "{}".to_string());
     }
 
@@ -415,7 +428,7 @@ pub fn shortest_path(
     let Some(chain) = adj.bfs_path(&na, &nb) else {
         if is_json(format) {
             return serde_json::json!({
-                "from": na, "to": nb, "connected": false, "path": [],
+                "from": na, "to": nb, "found": false, "path": [],
             })
             .to_string();
         }
@@ -428,26 +441,22 @@ pub fn shortest_path(
 
     let hops = chain.len().saturating_sub(1);
     if is_json(format) {
-        let steps: Vec<_> = chain
+        let nodes_json: Vec<_> = chain.iter().map(|n| graph_node_json(n)).collect();
+        let edges_json: Vec<_> = chain
             .windows(2)
             .map(|w| {
-                let (dir, kind, conf) = adj.edge_between(&w[0], &w[1]).unwrap_or((
+                let (_, kind, _) = adj.edge_between(&w[0], &w[1]).unwrap_or((
                     Direction::Forward,
                     "related".to_string(),
                     0.5,
                 ));
-                serde_json::json!({
-                    "from": w[0],
-                    "to": w[1],
-                    "direction": if dir == Direction::Forward { "forward" } else { "backward" },
-                    "kind": kind,
-                    "confidence": round3(conf),
-                })
+                graph_edge_json(&w[0], &w[1], &kind)
             })
             .collect();
         let val = serde_json::json!({
-            "from": na, "to": nb, "connected": true, "hops": hops,
-            "path": chain, "steps": steps,
+            "nodes": nodes_json,
+            "edges": edges_json,
+            "from": na, "to": nb, "found": true, "hops": hops,
         });
         return serde_json::to_string_pretty(&val).unwrap_or_else(|_| "{}".to_string());
     }
@@ -524,21 +533,52 @@ pub fn explain(path: Option<&str>, root: &str, format: Option<&str>) -> String {
     let inc_all = adj.incoming(&node);
 
     if is_json(format) {
+        // Build contextual graph nodes & edges around the explained node.
+        let mut ctx_nodes: std::collections::HashSet<String> = std::collections::HashSet::new();
+        ctx_nodes.insert(node.clone());
+        let top_dep_in: Vec<&String> = inc_all.iter().take(8).map(|n| &n.node).collect();
+        let top_dep_out: Vec<&String> = out_all.iter().take(8).map(|n| &n.node).collect();
+        for n in &top_dep_in {
+            ctx_nodes.insert(n.to_string());
+        }
+        for n in &top_dep_out {
+            ctx_nodes.insert(n.to_string());
+        }
+
+        let ctx_nodes_json: Vec<_> = {
+            let mut v: Vec<_> = ctx_nodes.iter().collect();
+            v.sort();
+            v.iter().map(|n| graph_node_json(n)).collect()
+        };
+        let mut ctx_edges_json: Vec<serde_json::Value> = out_all
+            .iter()
+            .filter(|n| ctx_nodes.contains(&n.node))
+            .map(|n| graph_edge_json(&node, &n.node, &n.kind))
+            .collect();
+        ctx_edges_json.extend(
+            inc_all
+                .iter()
+                .filter(|n| ctx_nodes.contains(&n.node))
+                .map(|n| graph_edge_json(&n.node, &node, &n.kind)),
+        );
+
         let val = serde_json::json!({
+            "nodes": ctx_nodes_json,
+            "edges": ctx_edges_json,
             "node": node,
-            "dependency_degree": { "in": dep_in, "out": dep_out, "total": dep_degree },
-            "god_node_rank": god_rank,
-            "is_god_node": god_rank.is_some_and(|r| r <= 12),
+            "degree": { "in": dep_in, "out": dep_out, "total": dep_degree },
+            "god_rank": god_rank,
+            "is_god": god_rank.is_some_and(|r| r <= 12),
             "bridge": bridge_entry.map(|(i, b)| serde_json::json!({
                 "rank": i + 1, "betweenness": round3(b.betweenness),
             })),
             "community": community_info.map(|c| serde_json::json!({
-                "id": c.id, "files": c.files.len(),
+                "id": c.id, "file_count": c.files.len(),
                 "cohesion": round3(c.cohesion),
                 "internal_edges": c.internal_edges, "external_edges": c.external_edges,
             })),
-            "neighbors_all_kinds": { "out": out_all.len(), "in": inc_all.len() },
-            "surprising_connections": surprising_here.iter().map(|s| serde_json::json!({
+            "neighbors": { "out": out_all.len(), "in": inc_all.len() },
+            "surprising": surprising_here.iter().map(|s| serde_json::json!({
                 "from": s.from, "to": s.to, "score": round3(s.score),
                 "cross_community": s.cross_community,
             })).collect::<Vec<_>>(),
@@ -634,6 +674,17 @@ pub fn explain(path: Option<&str>, root: &str, format: Option<&str>) -> String {
     }
     let tokens = count_tokens(&out);
     format!("{out}[ctx_graph explain: {tokens} tok]")
+}
+
+/// Build a  node value from a repo-relative path.
+fn graph_node_json(path: &str) -> serde_json::Value {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    serde_json::json!({ "name": name, "file": path })
+}
+
+/// Build a  edge value.
+fn graph_edge_json(source: &str, target: &str, kind: &str) -> serde_json::Value {
+    serde_json::json!({ "source": source, "target": target, "kind": kind })
 }
 
 fn round3(v: f64) -> f64 {

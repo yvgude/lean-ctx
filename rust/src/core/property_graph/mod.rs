@@ -373,12 +373,14 @@ mod tests {
         g.upsert_edge(&Edge::new(d, c, EdgeKind::Imports)).unwrap();
 
         let impact = g.impact_analysis("a.rs", 2).unwrap();
-        assert!(impact.affected_files.contains(&"b.rs".to_string()));
-        assert!(impact.affected_files.contains(&"c.rs".to_string()));
-        assert!(!impact.affected_files.contains(&"d.rs".to_string()));
+        let aff: Vec<&str> = impact.affected_files.iter().map(|e| e.file_path.as_str()).collect();
+        assert!(aff.contains(&"b.rs"));
+        assert!(aff.contains(&"c.rs"));
+        assert!(!aff.contains(&"d.rs"));
 
         let deep = g.impact_analysis("a.rs", 10).unwrap();
-        assert!(deep.affected_files.contains(&"d.rs".to_string()));
+        let deep_aff: Vec<&str> = deep.affected_files.iter().map(|e| e.file_path.as_str()).collect();
+        assert!(deep_aff.contains(&"d.rs"));
     }
 
     #[test]
@@ -470,8 +472,9 @@ mod tests {
         g.upsert_edge(&Edge::new(c, b, EdgeKind::Calls)).unwrap();
 
         let impact = g.impact_analysis("a.rs", 10).unwrap();
-        assert!(impact.affected_files.contains(&"b.rs".to_string()));
-        assert!(impact.affected_files.contains(&"c.rs".to_string()));
+        let aff: Vec<&str> = impact.affected_files.iter().map(|e| e.file_path.as_str()).collect();
+        assert!(aff.contains(&"b.rs"));
+        assert!(aff.contains(&"c.rs"));
     }
 
     #[test]

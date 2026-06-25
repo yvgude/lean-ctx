@@ -1,8 +1,7 @@
 use std::collections::HashSet;
-use std::fmt::Write;
 use std::path::Path;
 
-use crate::core::chunk_data::{ChunkData, format_search_results, bm25_search};
+use crate::core::chunk_data::{ChunkData, bm25_search};
 #[cfg(feature = "embeddings")]
 use crate::core::embedding_index::EmbeddingIndex;
 #[cfg(feature = "embeddings")]
@@ -11,8 +10,41 @@ use crate::core::embeddings::EmbeddingEngine;
 use crate::core::hnsw::FlatEmbeddings;
 #[cfg(any(feature = "embeddings", test))]
 use crate::core::hybrid_search::HybridConfig;
-use crate::core::hybrid_search::{HybridResult, format_hybrid_results};
+use crate::core::hybrid_search::HybridResult;
 use crate::tools::CrpMode;
+
+/// Compact JSON output for search results.
+fn search_results_to_json(results: &[crate::core::chunk_data::SearchResult]) -> String {
+    let out: Vec<serde_json::Value> = results
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "file": r.file_path,
+                "line": r.start_line,
+                "symbol": r.symbol_name,
+                "score": r.score,
+                "snippet": r.snippet,
+            })
+        })
+        .collect();
+    serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string())
+}
+
+fn hybrid_results_to_json(results: &[HybridResult]) -> String {
+    let out: Vec<serde_json::Value> = results
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "file": r.file_path,
+                "line": r.start_line,
+                "symbol": r.symbol_name,
+                "score": r.rrf_score,
+                "snippet": r.snippet,
+            })
+        })
+        .collect();
+    serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string())
+}
 
 /// FTS5 search result hit.
 pub(crate) struct SearchHit {
@@ -152,12 +184,28 @@ fn load_chunk_data(_root: &std::path::Path, db_path: &std::path::Path) -> std::s
 }
 
 /// Performs semantic code search using BM25, dense embeddings, or hybrid ranking.
+/// Returns compact JSON array.
 #[allow(clippy::too_many_arguments)]
 pub fn handle(
     query: &str,
     path: &str,
     top_k: usize,
     crp_mode: CrpMode,
+    languages: Option<&[String]>,
+    path_glob: Option<&str>,
+    mode: Option<&str>,
+    workspace: Option<bool>,
+    artifacts: Option<bool>,
+) -> String {
+    handle_impl(query, path, top_k, crp_mode, languages, path_glob, mode, workspace, artifacts)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_impl(
+    query: &str,
+    path: &str,
+    top_k: usize,
+    _crp_mode: CrpMode,
     languages: Option<&[String]>,
     path_glob: Option<&str>,
     mode: Option<&str>,
@@ -190,16 +238,15 @@ pub fn handle(
         Err(e) => return format!("ERR: invalid filter: {e}"),
     };
 
-    let compact = crp_mode.is_tdd();
     let mode = mode.unwrap_or("bm25").to_lowercase();
     let workspace = workspace.unwrap_or(false);
     let artifacts = artifacts.unwrap_or(false);
 
     if artifacts {
-        return artifacts_search(query, root, top_k, compact, &filter, workspace);
+        return artifacts_search(query, root, top_k, &filter, workspace);
     }
     if workspace {
-        return workspace_search(query, root, top_k, compact, &filter, &mode);
+        return workspace_search(query, root, top_k, &filter, &mode);
     }
 
     let db_path = crate::core::index_namespace::vectors_dir(root).join("code_index.db");
@@ -222,18 +269,6 @@ pub fn handle(
                 results.into_iter().take(top_k).collect::<Vec<_>>()
             };
 
-            let header = if compact {
-                format!(
-                    "semantic_search(bm25,{top_k}) → {} results\n",
-                    results.len(),
-                )
-            } else {
-                format!(
-                    "Semantic search (BM25): \"{}\" ({} results from FTS5 index)\n",
-                    truncate_query(query, 60),
-                    results.len(),
-                )
-            };
             let search_results: Vec<crate::core::chunk_data::SearchResult> = results
                 .into_iter()
                 .enumerate()
@@ -248,23 +283,21 @@ pub fn handle(
                     snippet: r.content,
                 })
                 .collect();
-            format!("{header}{}", format_search_results(&search_results, compact))
+            search_results_to_json(&search_results)
         }
         "dense" => {
             let chunk_data = load_chunk_data(root, &db_path);
             if chunk_data.doc_count == 0 {
-                return "No code files found to index.".to_string();
+                return "ERR: No code files found to index.".to_string();
             }
-            let out = dense_search_mode(query, root, &chunk_data, top_k, compact, &filter);
-            out
+            dense_search_mode(query, root, &chunk_data, top_k, &filter)
         }
         _ => {
             let chunk_data = load_chunk_data(root, &db_path);
             if chunk_data.doc_count == 0 {
-                return "No code files found to index.".to_string();
+                return "ERR: No code files found to index.".to_string();
             }
-            let out = hybrid_search_mode(query, root, &chunk_data, top_k, compact, &filter);
-            out
+            hybrid_search_mode(query, root, &chunk_data, top_k, &filter)
         }
     }
 }
@@ -466,26 +499,29 @@ pub fn handle_find_related(
 
 fn find_related_internal(
     query: &str,
-    root: &Path,
+    _root: &Path,
     index: &ChunkData,
     top_k: usize,
-    compact: bool,
+    _compact: bool,
 ) -> Vec<String> {
     let Ok(filter) = SearchFilter::new(None, None) else {
         return vec!["ERR: filter init failed\n".to_string()];
     };
-    let output = hybrid_search_mode(query, root, index, top_k, compact, &filter, false);
-    output.lines().map(|l| format!("{l}\n")).collect()
-}
-
-fn truncate_query(q: &str, max: usize) -> &str {
-    if q.len() <= max {
-        return q;
-    }
-    match q.char_indices().nth(max) {
-        Some((byte_idx, _)) => &q[..byte_idx],
-        None => q,
-    }
+    let results = bm25_hits(index, query, top_k, &filter);
+    results
+        .iter()
+        .map(|r| {
+            let symbol = if r.symbol_name.is_empty() {
+                "?"
+            } else {
+                &r.symbol_name
+            };
+            format!(
+                "{}:{}  {}  score={:.4}\n",
+                r.file_path, r.start_line, symbol, r.rrf_score
+            )
+        })
+        .collect()
 }
 
 fn filtered_candidate_k(top_k: usize, filtered: bool) -> usize {
@@ -502,29 +538,23 @@ fn artifacts_search(
     query: &str,
     root: &Path,
     top_k: usize,
-    compact: bool,
     filter: &SearchFilter,
     workspace: bool,
 ) -> String {
     let mut roots: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
-    let mut warnings: Vec<String> = Vec::new();
 
     if workspace {
         let linked = crate::core::workspace_config::load_linked_projects(root);
-        warnings.extend(linked.warnings);
         roots.extend(linked.roots);
     }
     roots.sort();
     roots.dedup();
 
     let mut per_project: Vec<(String, Vec<crate::core::chunk_data::SearchResult>)> = Vec::new();
-    let mut total_chunks = 0usize;
 
     for r in &roots {
         let label = label_for_root(r);
-        let (idx, w) = crate::core::artifact_index::load_or_build(r);
-        warnings.extend(w);
-        total_chunks += idx.doc_count;
+        let (idx, _w) = crate::core::artifact_index::load_or_build(r);
         if idx.doc_count == 0 {
             continue;
         }
@@ -557,64 +587,25 @@ fn artifacts_search(
     };
 
     if fused.is_empty() {
-        return "No artifact files found to index.".to_string();
+        return "ERR: No artifact files found to index.".to_string();
     }
 
     fused.truncate(top_k);
-
-    let header = if compact {
-        if workspace {
-            format!(
-                "semantic_search(artifacts,workspace,{top_k}) → {} results, projects={}, {} chunks indexed\n",
-                fused.len(),
-                roots.len(),
-                total_chunks
-            )
-        } else {
-            format!(
-                "semantic_search(artifacts,{top_k}) → {} results, {} chunks indexed\n",
-                fused.len(),
-                total_chunks
-            )
-        }
-    } else if workspace {
-        format!(
-            "Semantic search (Artifacts/Workspace): \"{}\" ({} results from {} projects)\n",
-            truncate_query(query, 60),
-            fused.len(),
-            roots.len()
-        )
-    } else {
-        format!(
-            "Semantic search (Artifacts): \"{}\" ({} results)\n",
-            truncate_query(query, 60),
-            fused.len()
-        )
-    };
-
-    let mut out = format!("{header}{}", format_search_results(&fused, compact));
-    if !warnings.is_empty() && !compact {
-        let _ = writeln!(out, "\nWarnings ({}):", warnings.len());
-        for w in warnings.iter().take(20) {
-            let _ = writeln!(out, "- {w}");
-        }
-    }
-    out
+    search_results_to_json(&fused)
 }
 
 fn workspace_search(
     query: &str,
     root: &Path,
     top_k: usize,
-    compact: bool,
     filter: &SearchFilter,
     mode: &str,
 ) -> String {
     let linked = crate::core::workspace_config::load_linked_projects(root);
-    #[cfg(not(feature = "embeddings"))]
-    let warnings = linked.warnings;
     #[cfg(feature = "embeddings")]
     let mut warnings = linked.warnings;
+    #[cfg(not(feature = "embeddings"))]
+    let warnings = linked.warnings;
 
     let mut roots: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
     roots.extend(linked.roots);
@@ -623,9 +614,9 @@ fn workspace_search(
 
     let mut per_project: Vec<(String, Vec<HybridResult>)> = Vec::new();
     #[allow(unused_mut)]
-    let mut avg_cov: Option<f64> = None;
+    let mut _avg_cov: Option<f64> = None;
     #[allow(unused_mut)]
-    let mut cov_count = 0usize;
+    let mut _cov_count = 0usize;
 
     for r in &roots {
         let label = label_for_root(r);
@@ -649,9 +640,7 @@ fn workspace_search(
                 #[cfg(feature = "embeddings")]
                 {
                     match dense_results_for_root(query, r, &index, top_k, filter) {
-                        Ok((v, cov)) => {
-                            avg_cov = Some(avg_cov.unwrap_or(0.0) + cov);
-                            cov_count += 1;
+                        Ok((v, _cov)) => {
                             v
                         }
                         Err(e) => {
@@ -686,9 +675,7 @@ fn workspace_search(
                 #[cfg(feature = "embeddings")]
                 {
                     match hybrid_results_for_root(query, r, &index, top_k, filter) {
-                        Ok((v, cov)) => {
-                            avg_cov = Some(avg_cov.unwrap_or(0.0) + cov);
-                            cov_count += 1;
+                        Ok((v, _cov)) => {
                             v
                         }
                         Err(e) => {
@@ -738,49 +725,11 @@ fn workspace_search(
     };
 
     if fused.is_empty() {
-        return "No code files found to index.".to_string();
+        return "ERR: No code files found to index.".to_string();
     }
 
     fused.truncate(top_k);
-    let cov = avg_cov.and_then(|s| {
-        if cov_count == 0 {
-            None
-        } else {
-            Some(s / cov_count as f64)
-        }
-    });
-
-    let header = if compact {
-        match (mode, cov) {
-            (_, Some(c)) => format!(
-                "semantic_search(workspace,{mode},{top_k}) → {} results, projects={}, embed_cov={:.0}%\n",
-                fused.len(),
-                roots.len(),
-                c * 100.0
-            ),
-            _ => format!(
-                "semantic_search(workspace,{mode},{top_k}) → {} results, projects={}\n",
-                fused.len(),
-                roots.len()
-            ),
-        }
-    } else {
-        format!(
-            "Workspace semantic search ({mode}): \"{}\" ({} results from {} projects)\n",
-            truncate_query(query, 60),
-            fused.len(),
-            roots.len()
-        )
-    };
-
-    let mut out = format!("{header}{}", format_hybrid_results(&fused, compact));
-    if !warnings.is_empty() && !compact {
-        out.push_str(&format!("\nWarnings ({}):\n", warnings.len()));
-        for w in warnings.iter().take(20) {
-            out.push_str(&format!("- {w}\n"));
-        }
-    }
-    out
+    hybrid_results_to_json(&fused)
 }
 
 fn rrf_merge_hybrid(lists: Vec<(String, Vec<HybridResult>)>, top_k: usize) -> Vec<HybridResult> {
@@ -1044,13 +993,10 @@ fn bm25_graph_search(
     root: &Path,
     index: &ChunkData,
     top_k: usize,
-    compact: bool,
     filter: &SearchFilter,
     cfg: &HybridConfig,
-    json_output: bool,
 ) -> String {
     let graph_ranks = graph_rrf_ranks_for_search_root(root);
-    let graph_enhances = graph_ranks.as_ref().is_some_and(|m| !m.is_empty());
 
     let mut results = crate::core::hybrid_search::hybrid_search(
         query,
@@ -1073,27 +1019,7 @@ fn bm25_graph_search(
         }
     }
     results.truncate(top_k);
-
-    if json_output {
-        return json_string_from_hybrid_results(&results);
-    }
-
-    let graph_tag = if graph_enhances { "+graph" } else { "" };
-    let header = if compact {
-        format!(
-            "semantic_search(bm25{graph_tag},{top_k}) → {} results, {} chunks indexed\n",
-            results.len(),
-            index.doc_count
-        )
-    } else {
-        format!(
-            "Semantic search (BM25{graph_tag}): \"{}\" ({} results from {} indexed chunks)\n",
-            truncate_query(query, 60),
-            results.len(),
-            index.doc_count,
-        )
-    };
-    format!("{header}{}", format_hybrid_results(&results, compact))
+    hybrid_results_to_json(&results)
 }
 
 /// #512: max chunks the hybrid/dense path will embed *inline* (under the
@@ -1151,9 +1077,7 @@ fn hybrid_search_mode(
     root: &Path,
     index: &ChunkData,
     top_k: usize,
-    compact: bool,
     filter: &SearchFilter,
-    json_output: bool,
 ) -> String {
     #[cfg(feature = "embeddings")]
     {
@@ -1164,12 +1088,12 @@ fn hybrid_search_mode(
         // exact fallback the pipeline uses when embeddings are absent, so results
         // stay coherent while the vector footprint and embed latency disappear.
         if !cfg.dense_enabled {
-            return bm25_graph_search(query, root, index, top_k, compact, filter, &cfg, json_output);
+            return bm25_graph_search(query, root, index, top_k, filter, &cfg);
         }
 
         let (engine, mut embed_idx) = match load_engine_and_index(root) {
             Ok(v) => v,
-            Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
+            Err(e) => return format!("ERR: {e}"),
         };
 
         // #512: cold-start guard. Never embed a large corpus inline under the
@@ -1179,22 +1103,19 @@ fn hybrid_search_mode(
         // dense index once, out of band. Incremental embeds (few changed chunks
         // on a warm index) stay inline and fast.
         if let Some(pending) = cold_start_embed_guard(&embed_idx, index) {
-            let base = bm25_graph_search(query, root, index, top_k, compact, filter, &cfg, json_output);
-            if json_output {
-                return base;
-            }
-            return format!("{base}\n{}", dense_build_hint(pending, compact));
+            let base = bm25_graph_search(query, root, index, top_k, filter, &cfg);
+            return format!("{base}\n{}", dense_build_hint(pending, true));
         }
 
-        let (aligned, coverage, changed_files) =
+        let (aligned, _coverage, changed_files) =
             match ensure_embeddings(root, index, engine, &mut embed_idx) {
                 Ok(v) => v,
-                Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
+                Err(e) => return format!("ERR: {e}"),
             };
 
         let backend = match crate::core::dense_backend::DenseBackendKind::try_from_env() {
             Ok(v) => v,
-            Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
+            Err(e) => return format!("ERR: {e}"),
         };
         let filter_fn = |p: &str| filter.matches(p);
         let filter_pred: Option<&dyn Fn(&str) -> bool> = filter
@@ -1216,7 +1137,7 @@ fn hybrid_search_mode(
             graph_ranks_ref,
         ) {
             Ok(v) => v,
-            Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
+            Err(e) => return format!("ERR: {e}"),
         };
 
         if cfg.splade_weight > 0.0 {
@@ -1227,29 +1148,7 @@ fn hybrid_search_mode(
         }
 
         results.truncate(top_k);
-
-        if json_output {
-            return json_string_from_hybrid_results(&results);
-        }
-
-        let header = if compact {
-            format!(
-                "semantic_search(hybrid,{top_k}) → {} results, {} chunks, embed_cov={:.0}%\n",
-                results.len(),
-                index.doc_count,
-                coverage * 100.0
-            )
-        } else {
-            format!(
-                "Semantic search (Hybrid): \"{}\" ({} results from {} indexed chunks, embeddings coverage {:.0}%)\n",
-                truncate_query(query, 60),
-                results.len(),
-                index.doc_count,
-                coverage * 100.0
-            )
-        };
-
-        format!("{header}{}", format_hybrid_results(&results, compact))
+        hybrid_results_to_json(&results)
     }
     #[cfg(not(feature = "embeddings"))]
     {
@@ -1274,27 +1173,7 @@ fn hybrid_search_mode(
         }
 
         results.truncate(top_k);
-
-        if json_output {
-            return json_string_from_search_results(&results);
-        }
-
-        let graph_tag = if graph_ranks.is_some() { "+graph" } else { "" };
-        let header = if compact {
-            format!(
-                "semantic_search(bm25{graph_tag},{top_k}) → {} results, {} chunks indexed\n",
-                results.len(),
-                index.doc_count
-            )
-        } else {
-            format!(
-                "Semantic search (BM25{graph_tag}): \"{}\" ({} results from {} indexed chunks)\n",
-                truncate_query(query, 60),
-                results.len(),
-                index.doc_count,
-            )
-        };
-        format!("{header}{}", format_search_results(&results, compact))
+        search_results_to_json(&results)
     }
 }
 
@@ -1304,13 +1183,11 @@ fn dense_search_mode(
     root: &Path,
     index: &ChunkData,
     top_k: usize,
-    compact: bool,
     filter: &SearchFilter,
-    json_output: bool,
 ) -> String {
     let (engine, mut embed_idx) = match load_engine_and_index(root) {
         Ok(v) => v,
-        Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
+        Err(e) => return format!("ERR: {e}"),
     };
 
     // #512: explicit dense has no BM25 fallback to degrade into, so fail fast
@@ -1318,21 +1195,18 @@ fn dense_search_mode(
     // under the watchdog (the cold-start runaway). A warm/incremental index
     // passes through untouched.
     if let Some(pending) = cold_start_embed_guard(&embed_idx, index) {
-        if json_output {
-            return err_json_or_text(json_output, &dense_build_hint(pending, false));
-        }
-        return dense_build_hint(pending, compact);
+        return dense_build_hint(pending, true);
     }
 
-    let (aligned, coverage, changed_files) =
+    let (aligned, _coverage, changed_files) =
         match ensure_embeddings(root, index, engine, &mut embed_idx) {
             Ok(v) => v,
-            Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
+            Err(e) => return format!("ERR: {e}"),
         };
 
     let backend = match crate::core::dense_backend::DenseBackendKind::try_from_env() {
         Ok(v) => v,
-        Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
+        Err(e) => return format!("ERR: {e}"),
     };
 
     let filter_fn = |p: &str| filter.matches(p);
@@ -1353,32 +1227,10 @@ fn dense_search_mode(
         filter_pred,
     ) {
         Ok(v) => v,
-        Err(e) => return err_json_or_text(json_output, &format!("ERR: {e}")),
+        Err(e) => return format!("ERR: {e}"),
     };
     results.truncate(top_k);
-
-    if json_output {
-        return json_string_from_hybrid_results(&results);
-    }
-
-    let header = if compact {
-        format!(
-            "semantic_search(dense,{top_k}) → {} results, {} chunks, embed_cov={:.0}%\n",
-            results.len(),
-            index.doc_count,
-            coverage * 100.0
-        )
-    } else {
-        format!(
-            "Semantic search (Dense): \"{}\" ({} results from {} indexed chunks, embeddings coverage {:.0}%)\n",
-            truncate_query(query, 60),
-            results.len(),
-            index.doc_count,
-            coverage * 100.0
-        )
-    };
-
-    format!("{header}{}", format_hybrid_results(&results, compact))
+    hybrid_results_to_json(&results)
 }
 
 #[cfg(not(feature = "embeddings"))]
@@ -1387,11 +1239,9 @@ fn dense_search_mode(
     _root: &Path,
     _index: &ChunkData,
     _top_k: usize,
-    _compact: bool,
     _filter: &SearchFilter,
-    json_output: bool,
 ) -> String {
-    err_json_or_text(json_output, "ERR: embeddings feature not enabled")
+    "ERR: embeddings feature not enabled".to_string()
 }
 
 #[cfg(feature = "embeddings")]
@@ -1847,14 +1697,13 @@ mod dense_toggle_tests {
             root,
             &index,
             5,
-            false,
             &filter,
             &cfg,
         );
 
         assert!(
-            out.contains("Semantic search (BM25"),
-            "expected BM25 header, got: {out}"
+            out.starts_with('['),
+            "expected JSON array, got: {out}"
         );
         assert!(
             out.contains("validate_token"),

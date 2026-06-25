@@ -126,7 +126,7 @@ impl GraphProvider {
         match self {
             GraphProvider::PropertyGraph(g) => g
                 .impact_analysis(file_path, depth)
-                .map(|r| r.affected_files)
+                .map(|r| r.affected_files.into_iter().map(|e| e.file_path).collect())
                 .unwrap_or_default(),
             GraphProvider::GraphIndex(i) => i.get_related(file_path, depth),
         }

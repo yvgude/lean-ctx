@@ -1,4 +1,4 @@
-use crate::core::call_graph::{CallGraph, CallGraphInputs, RiskLevel};
+use crate::core::call_graph::{BfsNode, CallGraph, CallGraphInputs, RiskLevel};
 use crate::core::index_paths;
 
 const MAX_BFS_DEPTH: usize = 5;
@@ -48,18 +48,10 @@ fn handle_direction(
     let filter = file.map(|f| graph_file_filter(f, project_root));
     let clamped_depth = depth.clamp(1, MAX_BFS_DEPTH);
 
-    if clamped_depth == 1 {
-        match direction {
-            "callers" => format_callers(symbol, &graph, filter.as_deref()),
-            "callees" => format_callees(symbol, &graph, filter.as_deref()),
-            _ => unreachable!(),
-        }
-    } else {
-        match direction {
-            "callers" => format_bfs_callers(symbol, &graph, clamped_depth, filter.as_deref()),
-            "callees" => format_bfs_callees(symbol, &graph, clamped_depth, filter.as_deref()),
-            _ => unreachable!(),
-        }
+    match direction {
+        "callers" => format_bfs_callers(symbol, &graph, clamped_depth, filter.as_deref()),
+        "callees" => format_bfs_callees(symbol, &graph, clamped_depth, filter.as_deref()),
+        _ => unreachable!(),
     }
 }
 
@@ -114,59 +106,7 @@ fn handle_risk(symbol: &str, project_root: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Single-hop formatters (existing behavior)
-// ---------------------------------------------------------------------------
-
-fn format_callers(symbol: &str, graph: &CallGraph, filter: Option<&str>) -> String {
-    let mut callers = graph.callers_of(symbol);
-    if let Some(f) = filter {
-        callers.retain(|e| index_paths::graph_match_key(&e.caller_file).contains(f));
-    }
-
-    if callers.is_empty() {
-        return format!(
-            "No callers found for '{}' ({} edges in graph)",
-            symbol,
-            graph.edges.len()
-        );
-    }
-
-    let mut out = format!("{} caller(s) of '{symbol}':\n", callers.len());
-    for edge in &callers {
-        out.push_str(&format!(
-            "  {} → {}  (L{})\n",
-            edge.caller_file, edge.caller_symbol, edge.caller_line
-        ));
-    }
-    out
-}
-
-fn format_callees(symbol: &str, graph: &CallGraph, filter: Option<&str>) -> String {
-    let mut callees = graph.callees_of(symbol);
-    if let Some(f) = filter {
-        callees.retain(|e| index_paths::graph_match_key(&e.caller_file).contains(f));
-    }
-
-    if callees.is_empty() {
-        return format!(
-            "No callees found for '{}' ({} edges in graph)",
-            symbol,
-            graph.edges.len()
-        );
-    }
-
-    let mut out = format!("{} callee(s) of '{symbol}':\n", callees.len());
-    for edge in &callees {
-        out.push_str(&format!(
-            "  → {}  ({}:L{})\n",
-            edge.callee_name, edge.caller_file, edge.caller_line
-        ));
-    }
-    out
-}
-
-// ---------------------------------------------------------------------------
-// Multi-hop BFS formatters
+// BFS hop-grouped formatters
 // ---------------------------------------------------------------------------
 
 fn format_bfs_callers(
@@ -179,30 +119,7 @@ fn format_bfs_callers(
     if let Some(f) = filter {
         nodes.retain(|n| index_paths::graph_match_key(&n.file).contains(f));
     }
-
-    if nodes.is_empty() {
-        return format!(
-            "No callers found for '{}' (depth≤{}, {} edges in graph)",
-            symbol,
-            depth,
-            graph.edges.len()
-        );
-    }
-
-    let mut out = format!(
-        "{} caller(s) of '{}' (depth≤{}):\n",
-        nodes.len(),
-        symbol,
-        depth
-    );
-    for node in &nodes {
-        let indent = "  ".repeat(node.depth);
-        out.push_str(&format!(
-            "{indent}{} ← {}  ({}:L{})\n",
-            node.from_symbol, node.symbol, node.file, node.line
-        ));
-    }
-    out
+    fmt_bfs_grouped(&nodes, symbol, depth, "caller")
 }
 
 fn format_bfs_callees(
@@ -215,27 +132,26 @@ fn format_bfs_callees(
     if let Some(f) = filter {
         nodes.retain(|n| index_paths::graph_match_key(&n.file).contains(f));
     }
+    fmt_bfs_grouped(&nodes, symbol, depth, "callee")
+}
 
+/// Format BFS nodes — one compact line per hop entry.
+fn fmt_bfs_grouped(
+    nodes: &[BfsNode],
+    symbol: &str,
+    depth: usize,
+    edge_type: &str,
+) -> String {
     if nodes.is_empty() {
-        return format!(
-            "No callees found for '{}' (depth≤{}, {} edges in graph)",
-            symbol,
-            depth,
-            graph.edges.len()
-        );
+        return format!("No {}s found for '{symbol}' (depth≤{depth})", edge_type);
     }
 
-    let mut out = format!(
-        "{} callee(s) of '{}' (depth≤{}):\n",
-        nodes.len(),
-        symbol,
-        depth
-    );
-    for node in &nodes {
-        let indent = "  ".repeat(node.depth);
+    let label = format!("{}s", edge_type);
+    let mut out = format!("{} {label} of '{symbol}' (depth≤{depth}):\n", nodes.len());
+    for node in nodes {
         out.push_str(&format!(
-            "{indent}{} → {}  ({}:L{})\n",
-            node.from_symbol, node.symbol, node.file, node.line
+            "  hop {}: {}:{}  {}  {}\n",
+            node.depth, node.file, node.line, node.symbol, edge_type,
         ));
     }
     out

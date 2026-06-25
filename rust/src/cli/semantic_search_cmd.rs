@@ -10,7 +10,7 @@
 //! model. `--mode hybrid` / `--mode dense` add embedding-based ranking for the
 //! best relevance, at the cost of a slower first run while embeddings build.
 
-use crate::core::hybrid_search::{HybridResult, format_hybrid_results};
+use crate::core::hybrid_search::HybridResult;
 use crate::tools::ctx_semantic_search;
 
 /// Parsed `semantic-search` invocation. Kept separate from execution so the
@@ -128,13 +128,19 @@ pub(crate) fn cmd_semantic_search(args: &[String]) {
             if parsed.json {
                 println!("{}", to_json(&hits));
             } else {
+                // Compact one-line-per-result format
                 println!(
-                    "Semantic search ({}): \"{}\" ({} results)",
-                    parsed.mode,
-                    query,
-                    hits.len()
+                    "semantic_search({},{}) \u{2192} {} results",
+                    parsed.mode, parsed.top_k, hits.len()
                 );
-                println!("{}", format_hybrid_results(&hits, false));
+                for h in &hits {
+                    let symbol = if h.symbol_name.is_empty() {
+                        "?"
+                    } else {
+                        h.symbol_name.as_str()
+                    };
+                    println!("{}:{}  {symbol}  {:.4}", h.file_path, h.start_line, h.rrf_score);
+                }
             }
         }
         Err(e) => {

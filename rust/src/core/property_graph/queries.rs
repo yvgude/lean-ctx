@@ -6,16 +6,31 @@
 //! for impact scoring.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt;
 
 use rusqlite::{Connection, params};
+use serde::Serialize;
 
 #[derive(Debug, Clone)]
 pub struct GraphQuery;
 
+/// A single affected file with its hop distance from the root.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct AffectedEntry {
+    pub file_path: String,
+    pub hop: usize,
+}
+
+impl fmt::Display for AffectedEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} (hop {})", self.file_path, self.hop)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ImpactResult {
     pub root_file: String,
-    pub affected_files: Vec<String>,
+    pub affected_files: Vec<AffectedEntry>,
     pub max_depth_reached: usize,
     pub edges_traversed: usize,
 }
@@ -108,12 +123,12 @@ pub(super) fn impact_analysis(
     let reverse_graph = build_weighted_reverse_graph(conn)?;
     const PROPAGATION_THRESHOLD: f64 = 0.1;
 
-    let mut visited: HashSet<String> = HashSet::new();
+    let mut visited: HashMap<String, usize> = HashMap::new();
     let mut queue: VecDeque<(String, usize, f64)> = VecDeque::new();
     let mut max_depth_reached = 0;
     let mut edges_traversed = 0;
 
-    visited.insert(file_path.to_string());
+    visited.insert(file_path.to_string(), 0);
     queue.push_back((file_path.to_string(), 0, 1.0));
 
     while let Some((current, depth, weight)) = queue.pop_front() {
@@ -128,8 +143,9 @@ pub(super) fn impact_analysis(
                 if propagated < PROPAGATION_THRESHOLD {
                     continue;
                 }
-                if visited.insert(dep.clone()) {
+                if !visited.contains_key(dep) {
                     let new_depth = depth + 1;
+                    visited.insert(dep.clone(), new_depth);
                     if new_depth > max_depth_reached {
                         max_depth_reached = new_depth;
                     }
@@ -141,9 +157,15 @@ pub(super) fn impact_analysis(
 
     visited.remove(file_path);
 
+    let mut affected: Vec<AffectedEntry> = visited
+        .into_iter()
+        .map(|(file_path, hop)| AffectedEntry { file_path, hop })
+        .collect();
+    affected.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+
     Ok(ImpactResult {
         root_file: file_path.to_string(),
-        affected_files: visited.into_iter().collect(),
+        affected_files: affected,
         max_depth_reached,
         edges_traversed,
     })

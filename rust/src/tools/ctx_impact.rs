@@ -3,7 +3,7 @@
 //! Uses the SQLite-backed Property Graph to answer: "What breaks when file X changes?"
 //! Performs BFS traversal of reverse import edges to find all transitively affected files.
 
-use crate::core::property_graph::{CodeGraph, DependencyChain, Edge, EdgeKind, ImpactResult, Node};
+use crate::core::property_graph::{AffectedEntry, CodeGraph, DependencyChain, Edge, EdgeKind, ImpactResult, Node};
 use crate::core::tokens::count_tokens;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -31,6 +31,26 @@ fn parse_format(format: Option<&str>) -> Result<OutputFormat, String> {
         "json" => Ok(OutputFormat::Json),
         _ => Err("Error: format must be text|json".to_string()),
     }
+}
+
+/// Risk level based on number of affected files.
+fn risk_level(count: usize) -> &'static str {
+    match count {
+        0 => "none",
+        1..=3 => "low",
+        4..=10 => "medium",
+        11..=50 => "high",
+        _ => "critical",
+    }
+}
+
+/// Human-readable name for an affected entry (file stem).
+fn entry_name(path: &str) -> String {
+    Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(path)
+        .to_string()
 }
 
 pub fn handle(
@@ -81,8 +101,6 @@ fn handle_parity(root: &str, fmt: OutputFormat) -> String {
     match fmt {
         OutputFormat::Json => {
             let v = json!({
-                "tool": "ctx_impact",
-                "action": "parity",
                 "lossless": report.is_lossless(),
                 "files": report.files,
                 "symbols": { "gi": report.symbol_count_gi, "pg": report.symbol_count_pg,
@@ -204,51 +222,75 @@ fn analyze_symbol(
     graph: &CodeGraph,
     symbol: &str,
     def_files: &[String],
-    root: &str,
+    _root: &str,
     max_depth: usize,
     fmt: OutputFormat,
 ) -> String {
-    let mut affected: BTreeSet<String> = BTreeSet::new();
+    // Collect unique affected entries. Use BTreeMap to dedupe by path,
+    // keeping the minimum hop for files reachable from multiple definers.
+    use std::collections::BTreeMap;
+    let mut affected_map: BTreeMap<String, usize> = BTreeMap::new();
     let mut max_depth_reached = 0usize;
-    let mut edges_traversed = 0usize;
     for f in def_files {
         if let Ok(r) = graph.impact_analysis(f, max_depth) {
             max_depth_reached = max_depth_reached.max(r.max_depth_reached);
-            edges_traversed += r.edges_traversed;
-            affected.extend(r.affected_files);
+            for entry in &r.affected_files {
+                let prev = affected_map.get(&entry.file_path).copied();
+                if prev.map_or(true, |p| entry.hop < p) {
+                    affected_map.insert(entry.file_path.clone(), entry.hop);
+                }
+            }
         }
     }
     // The definers are the thing being changed, not impacted by it.
     for f in def_files {
-        affected.remove(f);
+        affected_map.remove(f);
     }
 
-    let mut sorted: Vec<String> = affected.into_iter().collect();
-    let total = sorted.len();
+    let total = affected_map.len();
     let limit = crate::core::budgets::IMPACT_AFFECTED_FILES_LIMIT.max(1);
     let truncated = total > limit;
-    if truncated {
-        sorted.truncate(limit);
-    }
+
+    let affected_entries: Vec<AffectedEntry> = affected_map
+        .into_iter()
+        .map(|(file_path, hop)| AffectedEntry { file_path, hop })
+        .collect();
+
+    let slice: &[AffectedEntry] = if truncated {
+        &affected_entries[..limit]
+    } else {
+        &affected_entries[..]
+    };
+
+    let risk = risk_level(total);
+
+    let affected_json: Vec<Value> = slice
+        .iter()
+        .map(|e| {
+            json!({
+                "name": entry_name(&e.file_path),
+                "file": e.file_path,
+                "hop": e.hop
+            })
+        })
+        .collect();
 
     match fmt {
         OutputFormat::Json => {
-            let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_impact",
-                "action": "analyze",
-                "project": project_meta(root),
-                "graph": graph_summary(root),
-                "graph_meta": crate::core::property_graph::load_meta(root),
-                "target": symbol,
+            let mut v = json!({
+                "risk": risk,
+                "affected": affected_json,
                 "resolved_from": "symbol",
-                "defined_in": def_files,
-                "max_depth_reached": max_depth_reached,
-                "edges_traversed": edges_traversed,
-                "affected_files_total": total,
-                "affected_files": sorted,
-                "truncated": truncated
             });
+            if !def_files.is_empty() {
+                v.as_object_mut()
+                    .unwrap()
+                    .insert("defined_in".into(), json!(def_files));
+            }
+            if truncated {
+                v.as_object_mut().unwrap().insert("truncated".into(), json!(true));
+                v.as_object_mut().unwrap().insert("total_affected".into(), json!(total));
+            }
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
         }
         OutputFormat::Text => {
@@ -261,11 +303,10 @@ fn analyze_symbol(
                 return format!("{result}\n[ctx_impact: {tokens} tok]");
             }
             let mut result = format!(
-                "Impact of changing {symbol} (defined in {defined}): {total} affected files \
-                 (depth: {max_depth_reached}, edges traversed: {edges_traversed})\n"
+                "Impact of changing {symbol} (defined in {defined}): {total} affected files\n"
             );
-            for file in &sorted {
-                result.push_str(&format!("  {file}\n"));
+            for e in slice {
+                result.push_str(&format!("  {} (hop {})\n", e.file_path, e.hop));
             }
             if truncated {
                 result.push_str(&format!("  ... +{} more\n", total - limit));
@@ -283,7 +324,7 @@ fn analyze_unresolved(
     graph: &CodeGraph,
     target: &str,
     rel_target: &str,
-    root: &str,
+    _root: &str,
     fmt: OutputFormat,
 ) -> String {
     let files = graph.file_node_count().unwrap_or(0);
@@ -291,10 +332,6 @@ fn analyze_unresolved(
     match fmt {
         OutputFormat::Json => {
             let v = json!({
-                "tool": "ctx_impact",
-                "action": "analyze",
-                "project": project_meta(root),
-                "graph": graph_summary(root),
                 "target": target,
                 "resolved": false,
                 "indexed_files": files,
@@ -316,33 +353,40 @@ fn analyze_unresolved(
     }
 }
 
-fn format_impact(impact: &ImpactResult, target: &str, root: &str, fmt: OutputFormat) -> String {
-    let mut sorted = impact.affected_files.clone();
-    sorted.sort();
-
-    let total = sorted.len();
+fn format_impact(impact: &ImpactResult, target: &str, _root: &str, fmt: OutputFormat) -> String {
+    let total = impact.affected_files.len();
     let limit = crate::core::budgets::IMPACT_AFFECTED_FILES_LIMIT.max(1);
     let truncated = total > limit;
-    if truncated {
-        sorted.truncate(limit);
-    }
+    let affected_slice = if truncated {
+        &impact.affected_files[..limit]
+    } else {
+        &impact.affected_files[..]
+    };
+
+    let risk = risk_level(total);
+
+    let affected_json: Vec<Value> = affected_slice
+        .iter()
+        .map(|e| {
+            json!({
+                "name": entry_name(&e.file_path),
+                "file": e.file_path,
+                "hop": e.hop
+            })
+        })
+        .collect();
 
     match fmt {
         OutputFormat::Json => {
-            let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_impact",
-                "action": "analyze",
-                "project": project_meta(root),
-                "graph": graph_summary(root),
-                "graph_meta": crate::core::property_graph::load_meta(root),
-                "target": target,
-                "max_depth_reached": impact.max_depth_reached,
-                "edges_traversed": impact.edges_traversed,
-                "affected_files_total": total,
-                "affected_files": sorted,
-                "truncated": truncated
+            let mut v = json!({
+                "risk": risk,
+                "affected": affected_json,
             });
+            let obj = v.as_object_mut().unwrap();
+            if truncated {
+                obj.insert("truncated".into(), json!(true));
+                obj.insert("total_affected".into(), json!(total));
+            }
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
         }
         OutputFormat::Text => {
@@ -353,13 +397,9 @@ fn format_impact(impact: &ImpactResult, target: &str, root: &str, fmt: OutputFor
                 return format!("{result}\n[ctx_impact: {tokens} tok]");
             }
 
-            let mut result = format!(
-                "Impact of changing {target}: {total} affected files (depth: {}, edges traversed: {})\n",
-                impact.max_depth_reached, impact.edges_traversed
-            );
-
-            for file in &sorted {
-                result.push_str(&format!("  {file}\n"));
+            let mut result = format!("risk level: {risk}\n");
+            for e in affected_slice {
+                result.push_str(&format!("  {} (hop {})\n", e.file_path, e.hop));
             }
             if truncated {
                 result.push_str(&format!("  ... +{} more\n", total - limit));
@@ -377,8 +417,6 @@ fn handle_diff(root: &str, max_depth: usize, fmt: OutputFormat) -> String {
         return match fmt {
             OutputFormat::Json => {
                 let v = json!({
-                    "tool": "ctx_impact",
-                    "action": "diff",
                     "changed_files": [],
                     "blast_radius": [],
                     "total_affected": 0
@@ -465,19 +503,19 @@ fn compute_diff_impact(
     fmt: OutputFormat,
 ) -> String {
     let mut all_affected: BTreeSet<String> = BTreeSet::new();
-    let mut per_file: Vec<(String, Vec<String>)> = Vec::new();
+    let mut per_file: Vec<(String, Vec<AffectedEntry>)> = Vec::new();
 
     for file in changed {
         let rel = graph_target_key(file, root);
         if let Ok(impact) = graph.impact_analysis(&rel, max_depth) {
-            let mut affected: Vec<String> = impact
+            let mut affected: Vec<AffectedEntry> = impact
                 .affected_files
                 .into_iter()
-                .filter(|f| !changed.contains(f))
+                .filter(|e| !changed.contains(&e.file_path))
                 .collect();
-            affected.sort();
-            for a in &affected {
-                all_affected.insert(a.clone());
+            affected.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+            for e in &affected {
+                all_affected.insert(e.file_path.clone());
             }
             if !affected.is_empty() {
                 per_file.push((rel, affected));
@@ -485,24 +523,36 @@ fn compute_diff_impact(
         }
     }
 
+    let total_affected = all_affected.len();
+    let risk = risk_level(total_affected);
+
     match fmt {
         OutputFormat::Json => {
             let items: Vec<Value> = per_file
                 .iter()
                 .map(|(file, affected)| {
+                    let aff: Vec<Value> = affected
+                        .iter()
+                        .map(|e| {
+                            json!({
+                                "name": entry_name(&e.file_path),
+                                "file": e.file_path,
+                                "hop": e.hop
+                            })
+                        })
+                        .collect();
                     json!({
                         "changed_file": file,
-                        "affected": affected,
+                        "affected": aff,
                         "count": affected.len()
                     })
                 })
                 .collect();
             let v = json!({
-                "tool": "ctx_impact",
-                "action": "diff",
+                "risk": risk,
                 "changed_files": changed,
                 "blast_radius": items,
-                "total_affected": all_affected.len()
+                "total_affected": total_affected
             });
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
         }
@@ -510,7 +560,7 @@ fn compute_diff_impact(
             let mut result = format!(
                 "Diff Impact Analysis ({} changed files, {} blast radius)\n\n",
                 changed.len(),
-                all_affected.len()
+                total_affected
             );
             result.push_str("Changed files:\n");
             for f in changed.iter().take(30) {
@@ -521,8 +571,8 @@ fn compute_diff_impact(
                 result.push_str("\nBlast radius:\n");
                 for (file, affected) in per_file.iter().take(15) {
                     result.push_str(&format!("  {file} -> {} affected\n", affected.len()));
-                    for a in affected.iter().take(10) {
-                        result.push_str(&format!("    {a}\n"));
+                    for e in affected.iter().take(10) {
+                        result.push_str(&format!("    {} (hop {})\n", e.file_path, e.hop));
                     }
                     if affected.len() > 10 {
                         result.push_str(&format!("    ... +{} more\n", affected.len() - 10));
@@ -564,12 +614,6 @@ fn handle_chain(path: Option<&str>, root: &str, fmt: OutputFormat) -> String {
         Ok(None) => match fmt {
             OutputFormat::Json => {
                 let v = json!({
-                    "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                    "tool": "ctx_impact",
-                    "action": "chain",
-                    "project": project_meta(root),
-                    "graph": graph_summary(root),
-                    "graph_meta": crate::core::property_graph::load_meta(root),
                     "from": rel_from,
                     "to": rel_to,
                     "found": false
@@ -586,16 +630,10 @@ fn handle_chain(path: Option<&str>, root: &str, fmt: OutputFormat) -> String {
     }
 }
 
-fn format_chain(chain: &DependencyChain, root: &str, fmt: OutputFormat) -> String {
+fn format_chain(chain: &DependencyChain, _root: &str, fmt: OutputFormat) -> String {
     match fmt {
         OutputFormat::Json => {
             let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_impact",
-                "action": "chain",
-                "project": project_meta(root),
-                "graph": graph_summary(root),
-                "graph_meta": crate::core::property_graph::load_meta(root),
                 "found": true,
                 "depth": chain.depth,
                 "path": chain.path
@@ -1351,12 +1389,6 @@ fn handle_build(root: &str, fmt: OutputFormat) -> String {
     match fmt {
         OutputFormat::Json => {
             let mut v = serde_json::json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_impact",
-                "action": "build",
-                "project": project_meta(root),
-                "graph": graph_summary(root),
-                "graph_meta": crate::core::property_graph::load_meta(root),
                 "indexed_files": file_contents.len(),
                 "nodes": total_nodes,
                 "edges": total_edges,
@@ -1502,12 +1534,6 @@ fn handle_update(root: &str, fmt: OutputFormat) -> String {
     match fmt {
         OutputFormat::Json => {
             let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_impact",
-                "action": "update",
-                "project": project_meta(root),
-                "graph": graph_summary(root),
-                "graph_meta": crate::core::property_graph::load_meta(root),
                 "git_range_from": last_git_head,
                 "files_changed_reported": changed_count,
                 "nodes_added": total_nodes,
@@ -1534,11 +1560,6 @@ fn handle_status(root: &str, fmt: OutputFormat) -> String {
         return match fmt {
             OutputFormat::Json => {
                 let v = json!({
-                    "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                    "tool": "ctx_impact",
-                    "action": "status",
-                    "project": project_meta(root),
-                    "graph": graph_summary(root),
                     "freshness": "empty",
                     "hint": "Run ctx_impact action='build' to index."
                 });
@@ -1570,11 +1591,6 @@ fn handle_status(root: &str, fmt: OutputFormat) -> String {
     match fmt {
         OutputFormat::Json => {
             let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_impact",
-                "action": "status",
-                "project": project_meta(root),
-                "graph": graph_summary(root),
                 "freshness": freshness,
                 "meta": meta
             });
@@ -1589,52 +1605,6 @@ fn handle_status(root: &str, fmt: OutputFormat) -> String {
             }
             out
         }
-    }
-}
-
-fn project_meta(root: &str) -> Value {
-    let root_hash = crate::core::project_hash::hash_project_root(root);
-    let identity_hash = crate::core::project_hash::project_identity(root)
-        .as_deref()
-        .map(crate::core::hasher::hash_str);
-
-    let root_path = Path::new(root);
-    json!({
-        "project_root_hash": root_hash,
-        "project_identity_hash": identity_hash,
-        "git": {
-            "head": git_out(root_path, &["rev-parse", "--short", "HEAD"]),
-            "branch": git_out(root_path, &["rev-parse", "--abbrev-ref", "HEAD"]),
-            "dirty": git_dirty(root_path)
-        }
-    })
-}
-
-fn graph_summary(project_root: &str) -> Value {
-    let graph_dir = crate::core::property_graph::graph_dir(project_root);
-    let db_path = graph_dir.join("graph.db");
-    let db_path_display = db_path.display().to_string();
-    if !db_path.exists() {
-        return json!({
-            "exists": false,
-            "db_path": db_path_display,
-            "nodes": null,
-            "edges": null
-        });
-    }
-    match crate::core::property_graph::CodeGraph::open(project_root) {
-        Ok(g) => json!({
-            "exists": true,
-            "db_path": g.db_path().display().to_string(),
-            "nodes": g.node_count().ok(),
-            "edges": g.edge_count().ok()
-        }),
-        Err(_) => json!({
-            "exists": true,
-            "db_path": db_path_display,
-            "nodes": null,
-            "edges": null
-        }),
     }
 }
 
@@ -1687,14 +1657,19 @@ mod tests {
     fn format_impact_with_files() {
         let impact = ImpactResult {
             root_file: "a.rs".to_string(),
-            affected_files: vec!["b.rs".to_string(), "c.rs".to_string()],
+            affected_files: vec![
+                AffectedEntry { file_path: "b.rs".to_string(), hop: 1 },
+                AffectedEntry { file_path: "c.rs".to_string(), hop: 2 },
+            ],
             max_depth_reached: 2,
             edges_traversed: 3,
         };
         let result = format_impact(&impact, "a.rs", "/tmp", OutputFormat::Text);
-        assert!(result.contains("2 affected files"));
+        assert!(result.contains("risk level"));
         assert!(result.contains("b.rs"));
         assert!(result.contains("c.rs"));
+        assert!(result.contains("(hop 1)"));
+        assert!(result.contains("(hop 2)"));
     }
 
     #[test]
@@ -1949,26 +1924,21 @@ mod tests {
             .impact_analysis("Models/Engine.cs", 5)
             .expect("impact analysis");
 
+        let aff_paths: Vec<&str> = impact.affected_files.iter().map(|e| e.file_path.as_str()).collect();
         assert!(
-            impact
-                .affected_files
-                .contains(&"Services/Motor.cs".to_string()),
+            aff_paths.contains(&"Services/Motor.cs"),
             "DI consumer (field + ctor param, no using, no new) must be affected; got: {:?}",
-            impact.affected_files
+            aff_paths
         );
         assert!(
-            impact
-                .affected_files
-                .contains(&"Services/TurboEngine.cs".to_string()),
+            aff_paths.contains(&"Services/TurboEngine.cs"),
             "subclass (base_list, no using) must be affected; got: {:?}",
-            impact.affected_files
+            aff_paths
         );
         assert!(
-            !impact
-                .affected_files
-                .contains(&"Services/Logger.cs".to_string()),
+            !aff_paths.contains(&"Services/Logger.cs"),
             "unrelated file must NOT be affected; got: {:?}",
-            impact.affected_files
+            aff_paths
         );
 
         // Same root cause, second symptom: a class consumed only as a type
@@ -2135,6 +2105,9 @@ mod tests {
                 .impact_analysis(file, 5)
                 .expect("impact analysis")
                 .affected_files
+                .into_iter()
+                .map(|e| e.file_path)
+                .collect()
         };
 
         let engine_aff = affected("Models/Engine.cs");
@@ -2207,10 +2180,13 @@ mod tests {
 
         let graph =
             crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
-        let affected = graph
+        let affected: Vec<String> = graph
             .impact_analysis("Extensions/StringExtensions.cs", 5)
             .expect("impact analysis")
-            .affected_files;
+            .affected_files
+            .into_iter()
+            .map(|e| e.file_path)
+            .collect();
         assert!(
             affected.contains(&"Services/Report.cs".to_string()),
             "extension-method consumer must be in the host's blast radius; got: {affected:?}"
@@ -2267,6 +2243,9 @@ mod tests {
                 .impact_analysis(file, 5)
                 .expect("impact analysis")
                 .affected_files
+                .into_iter()
+                .map(|e| e.file_path)
+                .collect()
         };
 
         assert!(
@@ -2332,6 +2311,9 @@ mod tests {
                 .impact_analysis(file, 5)
                 .expect("impact analysis")
                 .affected_files
+                .into_iter()
+                .map(|e| e.file_path)
+                .collect()
         };
 
         assert!(

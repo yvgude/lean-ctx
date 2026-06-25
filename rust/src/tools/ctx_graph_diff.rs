@@ -171,7 +171,7 @@ pub fn diff(since: Option<&str>, root: &str, format: Option<&str>) -> String {
     });
 
     if matches!(format, Some(f) if f.eq_ignore_ascii_case("json")) {
-        return render_json(base, &entries);
+        return render_json(base, &entries, &edges);
     }
     render_text(base, &entries)
 }
@@ -267,8 +267,31 @@ fn flags(e: &DiffEntry) -> String {
     }
 }
 
-fn render_json(base: &str, entries: &[DiffEntry]) -> String {
+fn render_json(base: &str, entries: &[DiffEntry], all_edges: &[EdgeInfo]) -> String {
     let (added, modified, deleted, renamed, in_graph) = counts(entries);
+
+    // Nodes: all changed files that are in the graph.
+    let nodes_json: Vec<_> = entries
+        .iter()
+        .filter(|e| e.in_graph)
+        .map(|e| {
+            let name = e.path.rsplit('/').next().unwrap_or(&e.path);
+            serde_json::json!({ "name": name, "file": e.path })
+        })
+        .collect();
+
+    // Edges: dependency edges between changed files (subgraph projection).
+    let changed_set: HashSet<&str> = entries
+        .iter()
+        .filter(|e| e.in_graph)
+        .map(|e| e.path.as_str())
+        .collect();
+    let edges_json: Vec<_> = all_edges
+        .iter()
+        .filter(|e| changed_set.contains(e.from.as_str()) && changed_set.contains(e.to.as_str()))
+        .map(|e| serde_json::json!({ "source": e.from, "target": e.to, "type": e.kind }))
+        .collect();
+
     let items: Vec<_> = entries
         .iter()
         .map(|e| {
@@ -284,6 +307,8 @@ fn render_json(base: &str, entries: &[DiffEntry]) -> String {
         })
         .collect();
     let val = serde_json::json!({
+        "nodes": nodes_json,
+        "edges": edges_json,
         "base": base,
         "summary": {
             "total": entries.len(),

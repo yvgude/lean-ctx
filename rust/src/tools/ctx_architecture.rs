@@ -4,7 +4,6 @@
 //! and structural patterns from the Property Graph.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::Path;
 
 use crate::core::property_graph::CodeGraph;
 use crate::core::tokens::count_tokens;
@@ -190,7 +189,6 @@ fn handle_overview(root: &str, fmt: OutputFormat) -> String {
 
     match fmt {
         OutputFormat::Json => {
-            let root_path = Path::new(root);
             let clusters_json: Vec<Value> = clusters
                 .iter()
                 .take(clusters_limit)
@@ -232,29 +230,17 @@ fn handle_overview(root: &str, fmt: OutputFormat) -> String {
                     json!({
                         "file": file,
                         "score": (score * 1000.0).round() / 1000.0,
-                        "pagerank": (rank * 10000.0).round() / 10000.0
+                        "rank": (rank * 10000.0).round() / 10000.0
                     })
                 })
                 .collect();
 
             let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_architecture",
-                "action": "overview",
-                "project": project_meta(root),
-                "graph": graph_summary(root_path),
-                "files_total": files_total,
-                "import_edges": import_edges,
-                "clusters_total": clusters_total,
+                "files": files_total,
+                "edges": import_edges,
                 "clusters": clusters_json,
-                "clusters_truncated": clusters_truncated,
-                "packages_total": packages_total,
                 "packages": packages_json,
-                "packages_truncated": packages_truncated,
-                "entrypoints_total": entrypoints_total,
                 "entrypoints": entrypoints_json,
-                "entrypoints_truncated": entrypoints_truncated,
-                "hotspots_total": hotspots.len(),
                 "hotspots": hotspots_json
             });
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
@@ -345,7 +331,6 @@ fn handle_clusters(root: &str, fmt: OutputFormat) -> String {
 
     match fmt {
         OutputFormat::Json => {
-            let root_path = Path::new(root);
             let items: Vec<Value> = clusters
                 .iter()
                 .take(limit)
@@ -358,21 +343,15 @@ fn handle_clusters(root: &str, fmt: OutputFormat) -> String {
                     }
                     json!({
                         "name": c.name,
-                        "members": members,
-                        "members_count": members_total,
+                        "files": members,
+                        "file_count": members_total,
                         "cohesion": (c.cohesion * 1000.0).round() / 1000.0,
-                        "members_truncated": members_truncated
+                        "files_truncated": members_truncated
                     })
                 })
                 .collect();
             let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_architecture",
-                "action": "clusters",
-                "project": project_meta(root),
-                "graph": graph_summary(root_path),
-                "graph_meta": crate::core::property_graph::load_meta(root),
-                "clusters_total": total,
+                "total": total,
                 "clusters": items,
                 "truncated": truncated
             });
@@ -420,7 +399,6 @@ fn handle_communities(root: &str, fmt: OutputFormat) -> String {
 
     match fmt {
         OutputFormat::Json => {
-            let root_path = Path::new(root);
             let comms: Vec<Value> = result
                 .communities
                 .iter()
@@ -437,11 +415,6 @@ fn handle_communities(root: &str, fmt: OutputFormat) -> String {
                 })
                 .collect();
             let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_architecture",
-                "action": "communities",
-                "project": project_meta(root),
-                "graph": graph_summary(root_path),
                 "modularity": (result.modularity * 1000.0).round() / 1000.0,
                 "node_count": result.node_count,
                 "edge_count": result.edge_count,
@@ -504,7 +477,6 @@ fn handle_layers(root: &str, fmt: OutputFormat) -> String {
 
     match fmt {
         OutputFormat::Json => {
-            let root_path = Path::new(root);
             let items: Vec<Value> = layers
                 .iter()
                 .take(limit)
@@ -524,13 +496,7 @@ fn handle_layers(root: &str, fmt: OutputFormat) -> String {
                 })
                 .collect();
             let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_architecture",
-                "action": "layers",
-                "project": project_meta(root),
-                "graph": graph_summary(root_path),
-                "graph_meta": crate::core::property_graph::load_meta(root),
-                "layers_total": total,
+                "total": total,
                 "layers": items,
                 "truncated": truncated
             });
@@ -578,15 +544,8 @@ fn handle_cycles(root: &str, fmt: OutputFormat) -> String {
     if cycles.is_empty() {
         return match fmt {
             OutputFormat::Json => {
-                let root_path = Path::new(root);
                 let v = json!({
-                    "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                    "tool": "ctx_architecture",
-                    "action": "cycles",
-                    "project": project_meta(root),
-                    "graph": graph_summary(root_path),
-                    "graph_meta": crate::core::property_graph::load_meta(root),
-                    "cycles_total": 0,
+                    "total": 0,
                     "cycles": []
                 });
                 serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
@@ -601,20 +560,13 @@ fn handle_cycles(root: &str, fmt: OutputFormat) -> String {
 
     match fmt {
         OutputFormat::Json => {
-            let root_path = Path::new(root);
             let items: Vec<Value> = cycles
                 .iter()
                 .take(limit)
-                .map(|c| json!({ "path": c, "len": c.len().saturating_sub(1) }))
+                .map(|c| json!({ "path": c, "hops": c.len().saturating_sub(1) }))
                 .collect();
             let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_architecture",
-                "action": "cycles",
-                "project": project_meta(root),
-                "graph": graph_summary(root_path),
-                "graph_meta": crate::core::property_graph::load_meta(root),
-                "cycles_total": total,
+                "total": total,
                 "cycles": items,
                 "truncated": truncated
             });
@@ -654,7 +606,6 @@ fn handle_entrypoints(root: &str, fmt: OutputFormat) -> String {
 
     match fmt {
         OutputFormat::Json => {
-            let root_path = Path::new(root);
             let items: Vec<Value> = entrypoints
                 .iter()
                 .take(limit)
@@ -664,13 +615,7 @@ fn handle_entrypoints(root: &str, fmt: OutputFormat) -> String {
                 })
                 .collect();
             let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_architecture",
-                "action": "entrypoints",
-                "project": project_meta(root),
-                "graph": graph_summary(root_path),
-                "graph_meta": crate::core::property_graph::load_meta(root),
-                "entrypoints_total": total,
+                "total": total,
                 "entrypoints": items,
                 "truncated": truncated
             });
@@ -749,8 +694,6 @@ fn handle_hotspots(root: &str, fmt: OutputFormat) -> String {
                 })
                 .collect();
             let v = json!({
-                "tool": "ctx_architecture",
-                "action": "hotspots",
                 "total_files": data.all_files.len(),
                 "hotspots": items
             });
@@ -855,8 +798,6 @@ fn handle_health(root: &str, fmt: OutputFormat) -> String {
                 .map(|s| json!({"rule": s.rule, "findings": s.findings}))
                 .collect();
             let v = json!({
-                "tool": "ctx_architecture",
-                "action": "health",
                 "health_score": (health_score * 10.0).round() / 10.0,
                 "grade": grade,
                 "files": files,
@@ -1011,7 +952,6 @@ fn handle_module(path: Option<&str>, root: &str, fmt: OutputFormat) -> String {
 
     match fmt {
         OutputFormat::Json => {
-            let root_path = Path::new(root);
             let files: Vec<String> = module_files.iter().take(file_limit).cloned().collect();
 
             let ext_limit = 50usize;
@@ -1027,12 +967,6 @@ fn handle_module(path: Option<&str>, root: &str, fmt: OutputFormat) -> String {
                 .collect();
 
             let v = json!({
-                "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
-                "tool": "ctx_architecture",
-                "action": "module",
-                "project": project_meta(root),
-                "graph": graph_summary(root_path),
-                "graph_meta": crate::core::property_graph::load_meta(root),
                 "module_prefix": prefix,
                 "file_count": files_total,
                 "internal_edges": internal_edges,
@@ -1353,142 +1287,11 @@ fn dfs_cycles(
     visited.insert(node.to_string());
 }
 
-fn common_prefix(files: &[String]) -> String {
-    if files.is_empty() {
-        return String::new();
-    }
-    if files.len() == 1 {
-        return files[0]
-            .rsplitn(2, '/')
-            .last()
-            .unwrap_or(&files[0])
-            .to_string();
-    }
 
-    let parts: Vec<Vec<&str>> = files.iter().map(|f| f.split('/').collect()).collect();
-    let min_len = parts.iter().map(std::vec::Vec::len).min().unwrap_or(0);
-
-    let mut common = Vec::new();
-    for i in 0..min_len {
-        let segment = parts[0][i];
-        if parts.iter().all(|p| p[i] == segment) {
-            common.push(segment);
-        } else {
-            break;
-        }
-    }
-
-    if common.is_empty() {
-        "(root)".to_string()
-    } else {
-        common.join("/")
-    }
-}
-
-fn project_meta(root: &str) -> Value {
-    let root_hash = crate::core::project_hash::hash_project_root(root);
-    let identity_hash = crate::core::project_hash::project_identity(root)
-        .as_deref()
-        .map(crate::core::hasher::hash_str);
-
-    let root_path = Path::new(root);
-    json!({
-        "project_root_hash": root_hash,
-        "project_identity_hash": identity_hash,
-        "git": {
-            "head": git_out(root_path, &["rev-parse", "--short", "HEAD"]),
-            "branch": git_out(root_path, &["rev-parse", "--abbrev-ref", "HEAD"]),
-            "dirty": git_dirty(root_path)
-        }
-    })
-}
-
-fn graph_summary(project_root: &Path) -> Value {
-    let root_str = project_root.to_string_lossy();
-    let graph_dir = crate::core::property_graph::graph_dir(&root_str);
-    let db_path = graph_dir.join("graph.db");
-    let db_path_display = db_path.display().to_string();
-    if !db_path.exists() {
-        return json!({
-            "exists": false,
-            "db_path": db_path_display,
-            "nodes": null,
-            "edges": null
-        });
-    }
-    match CodeGraph::open(&root_str) {
-        Ok(g) => json!({
-            "exists": true,
-            "db_path": g.db_path().display().to_string(),
-            "nodes": g.node_count().ok(),
-            "edges": g.edge_count().ok()
-        }),
-        Err(_) => json!({
-            "exists": true,
-            "db_path": db_path_display,
-            "nodes": null,
-            "edges": null
-        }),
-    }
-}
-
-fn git_dirty(project_root: &Path) -> bool {
-    let out = std::process::Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(project_root)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output();
-    match out {
-        Ok(o) if o.status.success() => !o.stdout.is_empty(),
-        _ => false,
-    }
-}
-
-fn git_out(project_root: &Path, args: &[&str]) -> Option<String> {
-    let out = std::process::Command::new("git")
-        .args(args)
-        .current_dir(project_root)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8(out.stdout).ok()?;
-    let s = s.trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn common_prefix_single() {
-        let files = vec!["src/core/cache.rs".to_string()];
-        assert_eq!(common_prefix(&files), "src/core");
-    }
-
-    #[test]
-    fn common_prefix_multiple() {
-        let files = vec![
-            "src/core/cache.rs".to_string(),
-            "src/core/config.rs".to_string(),
-            "src/core/session.rs".to_string(),
-        ];
-        assert_eq!(common_prefix(&files), "src/core");
-    }
-
-    #[test]
-    fn common_prefix_different_dirs() {
-        let files = vec![
-            "src/tools/ctx_read.rs".to_string(),
-            "src/core/cache.rs".to_string(),
-        ];
-        assert_eq!(common_prefix(&files), "src");
-    }
 
     #[test]
     fn entrypoints_no_dependents() {
