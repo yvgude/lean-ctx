@@ -42,7 +42,7 @@ use crate::core::graph_buffer::GraphBuffer;
 use crate::core::graph_index::{FileEntry, IndexEdge, ProjectIndex, SymbolEntry};
 use crate::core::index_namespace;
 use crate::core::index_pipeline::discovery::DiscoveredFile;
-// FileMetadataStore now defined in this module (was file_metadata_store.rs).
+// File metadata now lives in code_index.db's file_hashes table (no separate store).
 use crate::core::index_types::{CodeChunk, FileHash, GbufEdge, GbufNode};
 
 // ---------------------------------------------------------------------------
@@ -284,12 +284,9 @@ impl DumpEngine {
     /// 2. Load graph: read files + nodes + edges → reconstruct `ProjectIndex`.
     /// 3. Load chunks: read chunks table as raw data.
     ///
-    /// The third element (`FileMetadataStore`) is retained for backward
-    /// compatibility but returns an in-memory store; file metadata now lives
-    /// in `code_index.db`'s `file_hashes` table.
     pub fn load_with_integrity_check(
         root: &Path,
-    ) -> Result<(Option<ProjectIndex>, Option<Vec<crate::core::bm25_index::CodeChunk>>, FileMetadataStore)>
+    ) -> Result<(Option<ProjectIndex>, Vec<crate::core::bm25_index::CodeChunk>)>
     {
         let dir = index_namespace::vectors_dir(root);
 
@@ -302,11 +299,7 @@ impl DumpEngine {
         // 3. Load chunks from SQLite (raw data, no BM25 index built)
         let chunks = load_chunks(root);
 
-        // 4. Return empty in-memory FileMetadataStore (legacy compat — metadata
-        //    now lives in code_index.db's file_hashes table).
-        let fm_store = FileMetadataStore::new(rusqlite::Connection::open_in_memory()?);
-
-        Ok((graph, chunks, fm_store))
+        Ok((graph, chunks))
     }
 
     // ── Purge ──────────────────────────────────────────────────────────
@@ -883,56 +876,61 @@ fn load_graph_index(root: &Path) -> Option<ProjectIndex> {
 /// Load chunks from the SQLite `chunks` table as raw data.
 ///
 /// Returns `None` when the DB file does not exist or has no chunks.
-fn load_chunks(root: &Path) -> Option<Vec<crate::core::bm25_index::CodeChunk>> {
+fn load_chunks(root: &Path) -> Vec<crate::core::bm25_index::CodeChunk> {
     let db_path = DumpEngine::db_path_for(root);
     if !db_path.exists() {
-        return None;
+        return Vec::new();
     }
-    let conn = WalConnection::open(&db_path).ok()?;
+    let Ok(conn) = WalConnection::open(&db_path) else {
+        return Vec::new();
+    };
 
-    let chunk_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM chunks", [], |row| row.get(0))
-        .ok()?;
+    let Ok(chunk_count) =
+        conn.query_row("SELECT COUNT(*) FROM chunks", [], |row| row.get::<_, i64>(0))
+    else {
+        return Vec::new();
+    };
     if chunk_count == 0 {
-        return None;
+        return Vec::new();
     }
 
-    let mut stmt = conn
-        .prepare(
-            "SELECT file_path, symbol_name, kind, start_line, end_line, content, token_count
-             FROM chunks ORDER BY id",
-        )
-        .ok()?;
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT file_path, symbol_name, kind, start_line, end_line, content, token_count
+         FROM chunks ORDER BY id",
+    ) else {
+        return Vec::new();
+    };
 
-    let rows = stmt
-        .query_map([], |row| {
-            let file_path: String = row.get(0)?;
-            let symbol_name: String = row.get(1)?;
-            let kind_str: String = row.get(2)?;
-            let start_line: i64 = row.get(3)?;
-            let end_line: i64 = row.get(4)?;
-            let content: String = row.get(5)?;
-            let token_count: i64 = row.get(6)?;
-            Ok(crate::core::bm25_index::CodeChunk {
-                file_path,
-                symbol_name,
-                kind: serde_json::from_str(&kind_str)
-                    .unwrap_or(crate::core::bm25_index::ChunkKind::Other),
-                start_line: start_line as usize,
-                end_line: end_line as usize,
-                content,
-                tokens: Vec::new(),
-                token_count: token_count as usize,
-            })
+    let Ok(rows) = stmt.query_map([], |row| {
+        let file_path: String = row.get(0)?;
+        let symbol_name: String = row.get(1)?;
+        let kind_str: String = row.get(2)?;
+        let start_line: i64 = row.get(3)?;
+        let end_line: i64 = row.get(4)?;
+        let content: String = row.get(5)?;
+        let token_count: i64 = row.get(6)?;
+        Ok(crate::core::bm25_index::CodeChunk {
+            file_path,
+            symbol_name,
+            kind: serde_json::from_str(&kind_str)
+                .unwrap_or(crate::core::bm25_index::ChunkKind::Other),
+            start_line: start_line as usize,
+            end_line: end_line as usize,
+            content,
+            tokens: Vec::new(),
+            token_count: token_count as usize,
         })
-        .ok()?;
+    }) else {
+        return Vec::new();
+    };
 
     let mut chunks: Vec<crate::core::bm25_index::CodeChunk> = Vec::new();
     for row in rows {
-        let chunk = row.ok()?;
-        chunks.push(chunk);
+        if let Ok(chunk) = row {
+            chunks.push(chunk);
+        }
     }
-    Some(chunks)
+    chunks
 }
 
 /// Remove any leftover `.tmp` files from a prior crash or interrupted write.
@@ -950,145 +948,7 @@ fn cleanup_tmp_files(dir: &Path) {
     }
 }
 
-// ── FileMetadataStore (was file_metadata_store.rs) ─────────────────────────
 
-/// Bitmask values for `mode_mask`.
-pub mod mode {
-    pub const FULL: u32 = 0x01;
-    pub const MODERATE: u32 = 0x02;
-    pub const FAST: u32 = 0x04;
-}
-
-/// Per-file metadata row.
-#[derive(Debug, Clone, PartialEq)]
-pub struct FileMetadata {
-    pub rel_path: String,
-    pub mtime_ns: i64,
-    pub size_bytes: i64,
-    pub content_hash: String,
-    pub mode_mask: u32,
-}
-
-/// CRUD store for `file_metadata` backed by a SQLite connection.
-pub struct FileMetadataStore {
-    db: Connection,
-}
-
-impl FileMetadataStore {
-    pub fn open(path: &std::path::Path) -> anyhow::Result<Self> {
-        let db = Connection::open(path)?;
-        Ok(Self { db })
-    }
-
-    pub fn new(db: Connection) -> Self {
-        Self { db }
-    }
-
-    pub fn upsert(&self, meta: &FileMetadata) -> anyhow::Result<()> {
-        let mut stmt = self.db.prepare_cached(
-            "INSERT OR REPLACE INTO file_metadata (path, mtime_ns, size_bytes, content_hash, mode_mask)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-        )?;
-        stmt.execute(params![
-            meta.rel_path,
-            meta.mtime_ns,
-            meta.size_bytes,
-            meta.content_hash,
-            meta.mode_mask,
-        ])?;
-        Ok(())
-    }
-
-    pub fn upsert_batch(&self, metas: &[FileMetadata]) -> anyhow::Result<()> {
-        let tx = self.db.unchecked_transaction()?;
-        {
-            let mut stmt = tx.prepare_cached(
-                "INSERT OR REPLACE INTO file_metadata (path, mtime_ns, size_bytes, content_hash, mode_mask)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-            )?;
-            for meta in metas {
-                stmt.execute(params![
-                    meta.rel_path,
-                    meta.mtime_ns,
-                    meta.size_bytes,
-                    meta.content_hash,
-                    meta.mode_mask,
-                ])?;
-            }
-        }
-        tx.commit()?;
-        Ok(())
-    }
-
-    pub fn load_all(&self) -> anyhow::Result<HashMap<String, FileMetadata>> {
-        let mut stmt = self.db.prepare_cached(
-            "SELECT path, mtime_ns, size_bytes, content_hash, mode_mask FROM file_metadata",
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(FileMetadata {
-                rel_path: row.get(0)?,
-                mtime_ns: row.get(1)?,
-                size_bytes: row.get(2)?,
-                content_hash: row.get(3)?,
-                mode_mask: row.get::<_, i64>(4)? as u32,
-            })
-        })?;
-
-        let mut map = HashMap::new();
-        for row in rows {
-            let meta = row?;
-            map.insert(meta.rel_path.clone(), meta);
-        }
-        Ok(map)
-    }
-
-    pub fn load_for_mode(&self, mode_mask: u32) -> anyhow::Result<HashMap<String, FileMetadata>> {
-        let mut stmt = self.db.prepare_cached(
-            "SELECT path, mtime_ns, size_bytes, content_hash, mode_mask FROM file_metadata
-             WHERE (mode_mask & ?1) != 0",
-        )?;
-        let rows = stmt.query_map(params![mode_mask as i64], |row| {
-            Ok(FileMetadata {
-                rel_path: row.get(0)?,
-                mtime_ns: row.get(1)?,
-                size_bytes: row.get(2)?,
-                content_hash: row.get(3)?,
-                mode_mask: row.get::<_, i64>(4)? as u32,
-            })
-        })?;
-
-        let mut map = HashMap::new();
-        for row in rows {
-            let meta = row?;
-            map.insert(meta.rel_path.clone(), meta);
-        }
-        Ok(map)
-    }
-
-    pub fn delete(&self, path: &str) -> anyhow::Result<()> {
-        let mut stmt = self
-            .db
-            .prepare_cached("DELETE FROM file_metadata WHERE path = ?1")?;
-        stmt.execute(params![path])?;
-        Ok(())
-    }
-
-    pub fn delete_batch(&self, paths: &[String]) -> anyhow::Result<()> {
-        let tx = self.db.unchecked_transaction()?;
-        {
-            let mut stmt = tx.prepare_cached("DELETE FROM file_metadata WHERE path = ?1")?;
-            for p in paths {
-                stmt.execute(params![p])?;
-            }
-        }
-        tx.commit()?;
-        Ok(())
-    }
-
-    pub fn connection(&self) -> &Connection {
-        &self.db
-    }
-}
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 
@@ -1352,7 +1212,7 @@ mod tests {
             .collect();
         engine.dump_all(&sample_gbuf(), &code_chunks).unwrap();
 
-        let (loaded_graph, loaded_chunks, _store) =
+        let (loaded_graph, loaded_chunks) =
             DumpEngine::load_with_integrity_check(root.path()).unwrap();
 
         // dump_all writes nodes/edges to the nodes/edges tables but does not
@@ -1364,7 +1224,7 @@ mod tests {
             "dump_all must persist Function nodes as symbols"
         );
 
-        let lb = loaded_chunks.expect("chunks should load");
+        assert!(!loaded_chunks.is_empty(), "chunks should load");
         assert_eq!(lb.len(), chunks.len());
         assert_eq!(lb[0].file_path, "src/main.rs");
     }
@@ -1428,7 +1288,7 @@ mod tests {
 
         engine.dump_graph_index(&empty_graph).unwrap();
 
-        let (graph, chunks, _store) = DumpEngine::load_with_integrity_check(root.path()).unwrap();
+        let (graph, chunks) = DumpEngine::load_with_integrity_check(root.path()).unwrap();
 
         // An empty ProjectIndex has no symbols, so no nodes → load returns None
         assert!(
@@ -1436,8 +1296,9 @@ mod tests {
             "empty graph (no symbols) should return None"
         );
 
-        // No chunks written → load returns None
-        assert!(chunks.is_none(), "no chunks should return None");
+        // No chunks written → load returns empty
+        assert!(chunks.is_empty(), "no chunks should return empty");
+
     }
 
     #[test]
@@ -1445,10 +1306,10 @@ mod tests {
         let _iso = isolated_data_dir();
         let root = tempfile::tempdir().unwrap();
 
-        let (graph, chunks, _store) = DumpEngine::load_with_integrity_check(root.path()).unwrap();
+        let (graph, chunks) = DumpEngine::load_with_integrity_check(root.path()).unwrap();
 
         assert!(graph.is_none(), "no DB should return None for graph");
-        assert!(chunks.is_none(), "no DB should return None for chunks");
+        assert!(chunks.is_empty(), "no DB should return empty for chunks");
     }
 
     #[test]

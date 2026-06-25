@@ -1288,111 +1288,7 @@ fn codebuddy_instructions_check(
     }
 }
 
-pub(super) fn bm25_cache_health_outcome() -> Outcome {
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}BM25 cache{RST}  {DIM}skipped (no data dir){RST}"),
-        };
-    };
 
-    let vectors_dir = data_dir.join("vectors");
-    let Ok(entries) = std::fs::read_dir(&vectors_dir) else {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}BM25 cache{RST}  {GREEN}no vector dirs{RST}"),
-        };
-    };
-
-    // Hardcoded ceiling: 256 MB (legacy `persist_ceiling_bytes` removed with
-    // the old BM25 persistence; the SQLite-backed architecture has no ceiling).
-    let max_bytes: u64 = 256 * 1024 * 1024;
-    let effective_mb = max_bytes / (1024 * 1024);
-    let warn_bytes = max_bytes * 80 / 100; // 80% of effective limit
-    let mut total_dirs = 0u32;
-    let mut total_bytes = 0u64;
-    let mut oversized: Vec<(String, u64)> = Vec::new();
-    let mut warnings: Vec<(String, u64)> = Vec::new();
-    let mut quarantined_count = 0u32;
-
-    for entry in entries.flatten() {
-        let dir = entry.path();
-        if !dir.is_dir() {
-            continue;
-        }
-        total_dirs += 1;
-
-        if dir.join("bm25_index.json.quarantined").exists()
-            || dir.join("bm25_index.bin.quarantined").exists()
-            || dir.join("bm25_index.bin.zst.quarantined").exists()
-        {
-            quarantined_count += 1;
-        }
-
-        let index_path = if dir.join("bm25_index.bin.zst").exists() {
-            dir.join("bm25_index.bin.zst")
-        } else if dir.join("bm25_index.bin").exists() {
-            dir.join("bm25_index.bin")
-        } else {
-            dir.join("bm25_index.json")
-        };
-        if let Ok(meta) = std::fs::metadata(&index_path) {
-            let size = meta.len();
-            total_bytes += size;
-            let display = index_path.display().to_string();
-            if size > max_bytes {
-                oversized.push((display, size));
-            } else if size > warn_bytes {
-                warnings.push((display, size));
-            }
-        }
-    }
-
-    if !oversized.is_empty() {
-        let details: Vec<String> = oversized
-            .iter()
-            .map(|(p, s)| format!("{p} ({:.1} GB)", *s as f64 / 1_073_741_824.0))
-            .collect();
-        return Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}BM25 cache{RST}  {RED}{} index(es) exceed limit ({:.0} MB){RST}: {}  {DIM}(run: lean-ctx cache prune){RST}",
-                oversized.len(),
-                max_bytes / (1024 * 1024),
-                details.join(", ")
-            ),
-        };
-    }
-
-    if !warnings.is_empty() {
-        let details: Vec<String> = warnings
-            .iter()
-            .map(|(p, s)| format!("{p} ({:.0} MB)", *s as f64 / 1_048_576.0))
-            .collect();
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}BM25 cache{RST}  {YELLOW}{} index(es) >80% of {effective_mb} MB limit{RST}: {}  {DIM}(consider extra_ignore_patterns){RST}",
-                warnings.len(),
-                details.join(", ")
-            ),
-        };
-    }
-
-    let quarantine_note = if quarantined_count > 0 {
-        format!("  {YELLOW}{quarantined_count} quarantined (run: lean-ctx cache prune){RST}")
-    } else {
-        String::new()
-    };
-
-    Outcome {
-        ok: true,
-        line: format!(
-            "{BOLD}BM25 cache{RST}  {GREEN}{total_dirs} index(es), {:.1} MB total{RST}{quarantine_note}",
-            total_bytes as f64 / 1_048_576.0
-        ),
-    }
-}
 
 /// Runtime status of the semantic (BM25) index for the active project: whether
 /// it is idle/building/ready/failed, how long the last build took, and — crucially
@@ -1404,7 +1300,6 @@ pub(super) fn semantic_index_outcome() -> Option<Outcome> {
     let session = crate::core::session::SessionState::load_latest()?;
     let project_root = session.project_root?;
 
-    let summary = crate::core::index_orchestrator::bm25_summary(&project_root);
     let disk = crate::core::index_orchestrator::disk_status(&project_root);
     let persisted = if disk.bm25_index.exists {
         match disk.bm25_index.size_bytes {
@@ -1415,59 +1310,20 @@ pub(super) fn semantic_index_outcome() -> Option<Outcome> {
         "not persisted".to_string()
     };
 
-    let timing = match summary.elapsed_ms {
-        Some(ms) if summary.state == "building" => format!(", {:.1}s elapsed", ms as f64 / 1000.0),
-        Some(ms) => format!(", built in {:.1}s", ms as f64 / 1000.0),
-        None => String::new(),
-    };
-
-    let outcome = match summary.state {
-        "failed" => Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}Semantic index{RST}  {RED}FAILED{RST}: {}  {DIM}(run: lean-ctx reindex){RST}",
-                summary
-                    .last_error
-                    .or(summary.note)
-                    .unwrap_or_else(|| "unknown error".to_string())
-            ),
-        },
-        "building" => Outcome {
+    let outcome = if disk.bm25_index.exists {
+        Outcome {
             ok: true,
-            line: format!("{BOLD}Semantic index{RST}  {YELLOW}building{timing}{RST}"),
-        },
-        _ if summary
-            .note
-            .as_deref()
-            .is_some_and(|n| n.contains("NOT persisted")) =>
-        {
-            Outcome {
-                ok: false,
-                line: format!(
-                    "{BOLD}Semantic index{RST}  {YELLOW}rebuilds every cold start{RST}: {}",
-                    summary.note.unwrap_or_default()
-                ),
-            }
+            line: format!(
+                "{BOLD}Semantic index{RST}  {GREEN}ready{RST} {DIM}({persisted}){RST}"
+            ),
         }
-        "ready" => Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Semantic index{RST}  {GREEN}ready{RST} {DIM}({persisted}{timing}){RST}"
-            ),
-        },
-        // idle: never asked to build this session — report disk state only.
-        _ if disk.bm25_index.exists => Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Semantic index{RST}  {GREEN}ready{RST} {DIM}({persisted}, on disk){RST}"
-            ),
-        },
-        _ => Outcome {
+    } else {
+        Outcome {
             ok: true,
             line: format!(
                 "{BOLD}Semantic index{RST}  {DIM}not built yet (builds on first semantic search/compose){RST}"
             ),
-        },
+        }
     };
     Some(outcome)
 }

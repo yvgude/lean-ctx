@@ -290,37 +290,32 @@ fn ranked_files_budgeted(task: &str, project_root: &str, crp_mode: CrpMode) -> S
 /// happening and what to do about it.
 fn deferred_ranking_note(project_root: &str) -> String {
     let exact = "the exact matches below are authoritative for this call";
-    let s = crate::core::index_orchestrator::bm25_summary(project_root);
-    match s.state {
-        "failed" => {
-            let why = s
-                .last_error
-                .or(s.note)
-                .unwrap_or_else(|| "unknown error".to_string());
-            format!(
-                "(semantic ranking unavailable — index build FAILED: {why}. {exact}. \
-                 Inspect with `ctx_index status` / `lean-ctx doctor`, then `lean-ctx reindex`)"
-            )
-        }
-        "building" => {
-            let secs = s.elapsed_ms.map_or(0, |ms| ms / 1000);
-            format!(
-                "(deferred — semantic index is building ({secs}s elapsed); {exact}, \
-                 and ranking becomes available once the build finishes)"
-            )
-        }
-        // ready/idle: this call's cold build just overran the budget. If the
-        // index could not be persisted (too large), surface that — otherwise it
-        // silently rebuilds on every cold start and never gets faster.
-        _ => match s.note {
-            Some(note) if note.contains("NOT persisted") => {
-                format!("(semantic ranking deferred — {note} {exact}.)")
-            }
-            _ => format!(
-                "(deferred — semantic index is warming; {exact}, \
-                 and ranking will be fast on the next call once the index is cached)"
-            ),
-        },
+    // Check if the code_index.db exists with chunks — if so the index is ready.
+    let db_path = crate::core::index_namespace::vectors_dir(std::path::Path::new(project_root))
+        .join("code_index.db");
+    let has_chunks = db_path.exists()
+        && rusqlite::Connection::open(&db_path)
+            .ok()
+            .and_then(|conn| {
+                conn.query_row(
+                    "SELECT COUNT(*) FROM chunks",
+                    [],
+                    |r| r.get::<_, i64>(0),
+                )
+                .ok()
+            })
+            .unwrap_or(0)
+            > 0;
+    if has_chunks {
+        format!(
+            "(deferred — semantic index is warming; {exact}, \
+             and ranking will be fast on the next call once the index is cached)"
+        )
+    } else {
+        format!(
+            "(deferred — semantic index is warming; {exact}, \
+             and ranking becomes available once the index is built)"
+        )
     }
 }
 
