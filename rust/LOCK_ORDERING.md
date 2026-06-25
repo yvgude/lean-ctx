@@ -66,6 +66,7 @@ All `std::sync::Mutex` unless noted otherwise.
 | L53 | `REGISTRY` (introspect) | `core/introspect.rs:112` | `LazyLock<Mutex<Registry>>` | Cognition v2 activity registry — per-subsystem tick counters + last-run; flushed debounced to a project-scoped JSON so `introspect cognition` / `doctor` can report wired/active across processes (#cognition-v2) |
 | L54 | `ACTIVE_WEIGHTS` | `core/context_field.rs:266` | `RwLock<Option<FieldWeights>>` | In-process learned Φ field-weights cache set by `set_active_weights` (bandit-chosen arm), read by `active_weights()` / `compute_phi`; deterministic by default, sampling only under `LEAN_CTX_STOCHASTIC` (#cognition-v2) |
 | L55 | `WRITE_LOCK` | `core/addons/meter.rs:48` | `Mutex<()>` | Serialises read-modify-write of the addons usage ledger (`<data_dir>/addons/usage.json`) so concurrent gateway proxy calls don't clobber each other's increments (P5 metering); independent leaf lock, never nested |
+| L56 | `MEMO` | `proxy/prose_ranker.rs:30` | `Mutex<Option<HashMap<u64, String>>>` | Cache-safe wire-prose squeeze memo (#895): the first squeeze of a `(content, budget)` is frozen for the process lifetime so a later warm recompute returns identical bytes (provider prompt-cache stability, #448/#498); capacity-bounded (8192), independent leaf lock, never nested |
 
 ### Test / Environment Locks (serialise env-var mutations)
 
@@ -175,9 +176,9 @@ Override via `LEAN_CTX_WORKER_THREADS` (positive integer) for environments with 
 concurrent subagents. Example: `LEAN_CTX_WORKER_THREADS=8`. The blocking thread pool
 is always `worker_threads * 4`, clamped to `[8, 32]`.
 
-### Independent Static Locks (L3–L55)
+### Independent Static Locks (L3–L56)
 
-All other static locks (L3–L55) — **except the L22 → L4 pair documented above** — are
+All other static locks (L3–L56) — **except the L22 → L4 pair documented above** — are
 **independent singletons**: they protect isolated subsystem state and are never nested inside
 each other. Each should be acquired in isolation:
 
