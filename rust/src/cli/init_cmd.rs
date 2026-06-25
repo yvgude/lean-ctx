@@ -106,7 +106,7 @@ pub fn cmd_init(args: &[String]) {
             dirs::home_dir().map_or_else(
                 || "PowerShell profile".to_string(),
                 |h| {
-                    crate::shell::platform::powershell_profile_path(&h)
+                    crate::shell::platform::resolve_powershell_profile_path(&h)
                         .to_string_lossy()
                         .into_owned()
                 },

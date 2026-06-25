@@ -157,14 +157,20 @@ pub(crate) fn is_powershell(shell_path: &str) -> bool {
     name.contains("powershell") || name.contains("pwsh")
 }
 
-/// Path to the current-user PowerShell profile (`$PROFILE.CurrentUserCurrentHost`).
+/// Documented default location of the current-user PowerShell profile
+/// (`$PROFILE.CurrentUserCurrentHost`).
 ///
-/// Windows PowerShell stores it under `Documents\PowerShell\…`, but **PowerShell
+/// Windows PowerShell 7+ stores it under `Documents\PowerShell\…`, but **PowerShell
 /// (pwsh) on macOS/Linux reads `~/.config/powershell/…` instead** — and stat-ing
 /// anything inside `~/Documents` on macOS pops a TCC privacy prompt ("lean-ctx
 /// would like to access files in your Documents folder", #356). Resolving the
 /// profile per-OS keeps pwsh support everywhere while never touching `~/Documents`
 /// on non-Windows hosts.
+///
+/// This is the *default* path only. On Windows the real `Documents` folder is
+/// frequently redirected (OneDrive folder backup), so callers should prefer
+/// [`resolve_powershell_profile_path`], which asks PowerShell for the live location
+/// and uses this as the fallback.
 pub(crate) fn powershell_profile_path(home: &std::path::Path) -> std::path::PathBuf {
     const PROFILE_FILE: &str = "Microsoft.PowerShell_profile.ps1";
     if cfg!(windows) {
@@ -172,6 +178,59 @@ pub(crate) fn powershell_profile_path(home: &std::path::Path) -> std::path::Path
     } else {
         home.join(".config").join("powershell").join(PROFILE_FILE)
     }
+}
+
+/// Resolve the **active** current-user PowerShell profile path.
+///
+/// On Windows the profile lives under the *Documents* known folder, which OneDrive
+/// folder backup (enabled by default on most installs) routinely redirects to e.g.
+/// `…\OneDrive\Documents\PowerShell\…`. A hardcoded `~\Documents` therefore misses
+/// the real `$PROFILE`, so `proxy enable` / shell-hook install silently write to a
+/// file PowerShell never reads and the proxy receives no traffic (#558). We ask
+/// PowerShell itself for `$PROFILE.CurrentUserCurrentHost` — authoritative under any
+/// folder redirection — preferring `pwsh` (7+) then Windows PowerShell, and fall back
+/// to [`powershell_profile_path`] only when no PowerShell host can be launched (in
+/// which case the profile is moot anyway).
+///
+/// Non-Windows hosts keep the static `~/.config/powershell` path (never `~/Documents`,
+/// #356) and never spawn a process.
+pub(crate) fn resolve_powershell_profile_path(home: &std::path::Path) -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(active) = query_active_powershell_profile() {
+            return active;
+        }
+    }
+    powershell_profile_path(home)
+}
+
+/// Ask PowerShell for `$PROFILE.CurrentUserCurrentHost`, the authoritative profile
+/// path under any `Documents` redirection. Returns `None` when no PowerShell host can
+/// be launched or the output is not a usable absolute path.
+#[cfg(windows)]
+fn query_active_powershell_profile() -> Option<std::path::PathBuf> {
+    // `pwsh` (7+) and `powershell.exe` (5.1) use different profile roots; prefer the
+    // modern host (matching the `Documents\PowerShell` default above), then fall back.
+    // Force UTF-8 output so redirected paths with non-ASCII characters survive the pipe.
+    for exe in ["pwsh", "powershell"] {
+        let output = match std::process::Command::new(exe)
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "[Console]::OutputEncoding=[Text.Encoding]::UTF8; $PROFILE.CurrentUserCurrentHost",
+            ])
+            .output()
+        {
+            Ok(out) if out.status.success() => out,
+            _ => continue,
+        };
+        let path = std::path::PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+        if path.is_absolute() && path.file_name().is_some() {
+            return Some(path);
+        }
+    }
+    None
 }
 
 /// Windows only: argument that passes one command string to the shell binary.
@@ -560,7 +619,7 @@ mod is_powershell_tests {
 
 #[cfg(test)]
 mod powershell_profile_tests {
-    use super::powershell_profile_path;
+    use super::{powershell_profile_path, resolve_powershell_profile_path};
     use std::path::Path;
 
     #[test]
@@ -590,6 +649,29 @@ mod powershell_profile_tests {
     fn windows_uses_documents_powershell() {
         let p = powershell_profile_path(Path::new("C:\\Users\\jane"));
         assert!(p.ends_with("Documents\\PowerShell\\Microsoft.PowerShell_profile.ps1"));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn resolver_matches_static_default_on_non_windows() {
+        // Non-Windows never spawns a process: the resolver returns the static config
+        // path verbatim (and must never touch ~/Documents, #356).
+        let home = Path::new("/Users/jane");
+        assert_eq!(
+            resolve_powershell_profile_path(home),
+            powershell_profile_path(home)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn resolver_returns_absolute_profile_on_windows() {
+        // On Windows the resolver asks PowerShell for the live $PROFILE (OneDrive-safe,
+        // #558); whether it queries successfully or falls back, the result is an
+        // absolute path to the profile file.
+        let p = resolve_powershell_profile_path(Path::new("C:\\Users\\jane"));
+        assert!(p.is_absolute(), "resolved profile must be absolute: {p:?}");
+        assert!(p.ends_with("Microsoft.PowerShell_profile.ps1"));
     }
 }
 

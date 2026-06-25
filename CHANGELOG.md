@@ -56,6 +56,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   (gitlab #868–#871)
 
 ### Fixed
+- **Windows PowerShell profile path hardcoded to `~\Documents` — broke under OneDrive
+  redirection (#558).** `proxy enable` and the shell-hook install resolved the
+  PowerShell profile by hardcoding `home\Documents\PowerShell\…`. Windows OneDrive
+  folder backup (on by default on most installs) redirects *Documents* to e.g.
+  `…\OneDrive\Documents\…`, so lean-ctx wrote to a file PowerShell never reads — the
+  active `$PROFILE` was never updated and the proxy received no traffic in new
+  terminals. A new `resolve_powershell_profile_path` asks PowerShell itself for
+  `$PROFILE.CurrentUserCurrentHost` (authoritative under any folder redirection,
+  preferring `pwsh` then Windows PowerShell, UTF-8 output) and falls back to the
+  documented default only when no PowerShell host can be launched. Non-Windows hosts
+  keep the static `~/.config/powershell` path and never spawn a process (#356).
 - **Copilot/VS Code Claude models ignored lean-ctx — no `.github/copilot-instructions.md` (#555).**
   `lean-ctx init --agent copilot` installed the MCP server plus a deliberately
   weak `AGENTS.md` pointer but never wrote `.github/copilot-instructions.md`, the

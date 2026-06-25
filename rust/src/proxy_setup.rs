@@ -233,7 +233,8 @@ pub fn uninstall_proxy_env(home: &Path, quiet: bool) {
         );
     }
 
-    let ps_profile = dirs::home_dir().map(|h| crate::shell::platform::powershell_profile_path(&h));
+    let ps_profile =
+        dirs::home_dir().map(|h| crate::shell::platform::resolve_powershell_profile_path(&h));
     if let Some(ref ps) = ps_profile
         && ps.exists()
     {
@@ -328,7 +329,8 @@ set -gx GEMINI_API_BASE_URL "{base}"
         );
     }
 
-    let ps_profile = dirs::home_dir().map(|h| crate::shell::platform::powershell_profile_path(&h));
+    let ps_profile =
+        dirs::home_dir().map(|h| crate::shell::platform::resolve_powershell_profile_path(&h));
     if let Some(ref ps) = ps_profile
         && ps.exists()
     {

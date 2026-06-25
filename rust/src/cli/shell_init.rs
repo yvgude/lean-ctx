@@ -267,9 +267,10 @@ if ($_leanCtxShouldActivate) {{
 
 pub fn init_powershell(binary: &str) {
     // OS-aware profile path: ~/.config/powershell on macOS/Linux (never ~/Documents,
-    // which triggers a macOS TCC prompt, #356), Documents\PowerShell on Windows.
+    // which triggers a macOS TCC prompt, #356). On Windows resolve the live $PROFILE
+    // so OneDrive-redirected Documents folders are honored (#558).
     let profile_path = if let Some(home) = dirs::home_dir() {
-        let path = crate::shell::platform::powershell_profile_path(&home);
+        let path = crate::shell::platform::resolve_powershell_profile_path(&home);
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
