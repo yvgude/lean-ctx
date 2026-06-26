@@ -1871,6 +1871,16 @@ pub(super) fn lsp_server_outcomes() -> Vec<Outcome> {
         .collect()
 }
 
+/// True when `cwd_str` points inside an IDE/agent config directory rather than a
+/// real project (LM Studio, Claude, CodeBuddy, Codex). Matches both POSIX (`/`)
+/// and Windows (`\`) separators so the warning fires on every platform.
+fn cwd_looks_like_agent_dir(cwd_str: &str) -> bool {
+    const AGENT_DIRS: [&str; 4] = [".lmstudio", ".claude", ".codebuddy", ".codex"];
+    AGENT_DIRS
+        .iter()
+        .any(|dir| cwd_str.contains(&format!("/{dir}")) || cwd_str.contains(&format!("\\{dir}")))
+}
+
 /// Warn if lean-ctx is running as an MCP server from a directory that lacks
 /// a project marker and looks like an IDE/agent tool directory (e.g. .lmstudio,
 /// .claude). This usually means the MCP client launched the process from the
@@ -1893,10 +1903,7 @@ pub(super) fn mcp_server_cwd_outcome() -> Outcome {
 
     let has_marker = crate::core::pathutil::has_project_marker(&cwd);
     let cwd_str = cwd.to_string_lossy();
-    let suspicious = cwd_str.contains("/.lmstudio")
-        || cwd_str.contains("/.claude")
-        || cwd_str.contains("/.codebuddy")
-        || cwd_str.contains("/.codex");
+    let suspicious = cwd_looks_like_agent_dir(&cwd_str);
 
     if has_marker {
         Outcome {
@@ -1910,7 +1917,8 @@ pub(super) fn mcp_server_cwd_outcome() -> Outcome {
         Outcome {
             ok: false,
             line: format!(
-                "{BOLD}MCP server CWD{RST}  {RED}suspicious directory without project marker{RST}  {DIM}lean-ctx was launched from {cwd}, which is an IDE/agent config dir without a project root — \"path escapes project root\" errors will occur. Set `cwd` in your MCP client config to a real project directory, or add `allow_auto_reroot = true` + `extra_roots` in config.toml{RST}"
+                "{BOLD}MCP server CWD{RST}  {RED}suspicious directory without project marker{RST}  {DIM}lean-ctx was launched from {}, which is an IDE/agent config dir without a project root — \"path escapes project root\" errors will occur. Set `cwd` in your MCP client config to a real project directory, or add `allow_auto_reroot = true` + `extra_roots` in config.toml{RST}",
+                cwd.display()
             ),
         }
     } else {
@@ -1938,6 +1946,33 @@ mod tests {
 
     fn check(home: &Path, scope: RulesScope, injection: RulesInjection) -> Outcome {
         claude_instructions_check(home, scope, injection)
+    }
+
+    #[test]
+    fn cwd_looks_like_agent_dir_matches_both_separators() {
+        for sep in ['/', '\\'] {
+            for dir in [".lmstudio", ".claude", ".codebuddy", ".codex"] {
+                let cwd = format!("C:{sep}Users{sep}me{sep}{dir}{sep}mcp");
+                assert!(
+                    cwd_looks_like_agent_dir(&cwd),
+                    "expected {cwd} to be flagged as an agent dir"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn cwd_looks_like_agent_dir_ignores_real_projects() {
+        for cwd in [
+            "/home/me/work/myproj",
+            "/Users/me/code/lean-ctx",
+            "C:\\src\\app",
+        ] {
+            assert!(
+                !cwd_looks_like_agent_dir(cwd),
+                "{cwd} is a real project and must not be flagged"
+            );
+        }
     }
 
     // GH #396: the exact post-`setup` state — CLAUDE.md block + skill, rules
