@@ -350,14 +350,10 @@ impl LeanCtxServer {
             // signal; degrade on the stronger of the two and clear only when neither
             // fires. The level is server state, never part of any output body (#498).
             use crate::core::config::CompressionLevel;
-            let pressure = correction_count.max(retrieve_count);
-            if pressure >= 5 {
-                CompressionLevel::set_session_degrade(&CompressionLevel::Off);
-            } else if pressure >= 3 {
-                CompressionLevel::set_session_degrade(&CompressionLevel::Lite);
-            } else if pressure == 0 {
-                CompressionLevel::clear_session_degrade();
-            }
+            CompressionLevel::apply_degrade_action(CompressionLevel::degrade_action(
+                correction_count,
+                retrieve_count,
+            ));
             detector.prune_corrections();
         }
 

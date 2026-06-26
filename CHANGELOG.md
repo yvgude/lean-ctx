@@ -148,6 +148,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   `ctx_expand` handle so a dropped datum is never irrecoverable.
 
 ### Fixed
+- **CI on `main` was red on all three `Test` jobs — a stale source-grep test
+  (gitlab #957).** `scenario_server_degrade_thresholds` asserted the dispatch
+  source literally `contains("correction_count >= 5")` etc.; the #941
+  retrieve-coupled refactor renamed that to `pressure = correction_count
+  .max(retrieve_count)`, so the literals vanished and the assertion failed on
+  every platform (the rest of CI stayed green). Replaced the brittle grep with a
+  behavioral test backed by a new pure, total `CompressionLevel::degrade_action`
+  (`Set`/`Clear`/`Leave`) extracted from the dispatch — runtime behavior is
+  unchanged (5+ → Off, 3+ → Lite, 0 → clear, 1–2 → hold), but the threshold table
+  is now unit-tested and immune to internal renames.
 - **Subagents force-freshed *every* read, so re-reads were never cached inside a
   Task (gitlab #956, closes the #952 series).** `is_subagent_context()` set
   `effective_fresh = fresh || subagent`, a blanket cold full read for the whole

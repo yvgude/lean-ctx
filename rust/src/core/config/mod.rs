@@ -25,7 +25,7 @@ mod tests;
 pub(crate) use defaults_allowlist::{cloud_infra_commands, default_shell_allowlist};
 pub use enums::{
     CompressionLevel, Effort, OutputDensity, PermissionInheritance, ResponseVerbosity,
-    RulesInjection, RulesScope, TeeMode, TerseAgent,
+    RulesInjection, RulesScope, SessionDegrade, TeeMode, TerseAgent,
 };
 pub use memory::{MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter};
 pub use provenance::{ConfigProvenance, EnvOverride};

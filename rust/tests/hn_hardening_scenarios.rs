@@ -509,19 +509,33 @@ mod auto_degrade {
 
     #[test]
     fn scenario_server_degrade_thresholds() {
-        let src = crate::server_dispatch_src();
-        assert!(
-            src.contains("correction_count >= 5"),
+        use lean_ctx::core::config::CompressionLevel;
+        use lean_ctx::core::config::SessionDegrade::{Clear, Leave, Set};
+        // Behavioral invariant for the dispatch's auto-degrade. Asserted via the
+        // pure `degrade_action` decision rather than grepping the dispatch source
+        // for a literal, so an internal rename (e.g. #941's `correction_count` →
+        // retrieve-coupled `pressure`) can't silently rot this guard again (#957).
+        assert_eq!(
+            CompressionLevel::degrade_action(5, 0),
+            Set(CompressionLevel::Off),
             "must degrade to Off at 5+ corrections"
         );
-        assert!(
-            src.contains("correction_count >= 3"),
+        assert_eq!(
+            CompressionLevel::degrade_action(3, 0),
+            Set(CompressionLevel::Lite),
             "must degrade to Lite at 3+ corrections"
         );
-        assert!(
-            src.contains("correction_count == 0"),
-            "must clear degrade when count drops to 0"
+        assert_eq!(
+            CompressionLevel::degrade_action(0, 0),
+            Clear,
+            "must clear degrade when pressure drops to 0"
         );
+        // Either signal alone drives the degrade, and the 1–2 band holds steady.
+        assert_eq!(
+            CompressionLevel::degrade_action(0, 5),
+            Set(CompressionLevel::Off)
+        );
+        assert_eq!(CompressionLevel::degrade_action(2, 0), Leave);
     }
 }
 

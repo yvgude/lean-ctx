@@ -171,6 +171,19 @@ pub enum CompressionLevel {
     Max,
 }
 
+/// Outcome of [`CompressionLevel::degrade_action`]: what to do with the session
+/// degrade given the current re-fetch pressure. Split from the dispatch so the
+/// threshold logic is a pure, testable function.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SessionDegrade {
+    /// Set the session degrade to this level.
+    Set(CompressionLevel),
+    /// Clear any session degrade (pressure fully relaxed).
+    Clear,
+    /// Leave the current degrade unchanged (intermediate pressure band).
+    Leave,
+}
+
 impl CompressionLevel {
     /// Decomposes the unified level into legacy component settings.
     /// Returns (TerseAgent, OutputDensity, crp_mode_str, terse_mode_bool).
@@ -267,6 +280,37 @@ impl CompressionLevel {
         SESSION_DEGRADE_LEVEL.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// Maps re-fetch *pressure* to a session-degrade decision. Pressure is the
+    /// stronger of the correction-loop count (re-reads/re-runs) and the CCR
+    /// retrieve count (`ctx_expand`/`ctx_retrieve`) — two views of the same "too
+    /// aggressive" signal (#941): 5+ degrades to `Off`, 3+ to `Lite`, 0 clears,
+    /// and the 1–2 band leaves the current degrade untouched.
+    ///
+    /// Pure and total so the thresholds are unit-testable without the dispatch
+    /// path — the regression guard for the brittle source-grep test this replaced
+    /// (#957).
+    pub fn degrade_action(correction_count: u32, retrieve_count: u32) -> SessionDegrade {
+        let pressure = correction_count.max(retrieve_count);
+        if pressure >= 5 {
+            SessionDegrade::Set(Self::Off)
+        } else if pressure >= 3 {
+            SessionDegrade::Set(Self::Lite)
+        } else if pressure == 0 {
+            SessionDegrade::Clear
+        } else {
+            SessionDegrade::Leave
+        }
+    }
+
+    /// Applies a [`SessionDegrade`] decision to the process-global session state.
+    pub fn apply_degrade_action(action: SessionDegrade) {
+        match action {
+            SessionDegrade::Set(level) => Self::set_session_degrade(&level),
+            SessionDegrade::Clear => Self::clear_session_degrade(),
+            SessionDegrade::Leave => {}
+        }
+    }
+
     pub fn from_str_label(s: &str) -> Option<Self> {
         match s.trim().to_lowercase().as_str() {
             "off" => Some(Self::Off),
@@ -345,4 +389,28 @@ pub enum RulesInjection {
 pub enum PermissionInheritance {
     Off,
     On,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CompressionLevel, SessionDegrade};
+
+    #[test]
+    fn degrade_action_thresholds_are_pressure_based() {
+        use CompressionLevel::{Lite, Off};
+        use SessionDegrade::{Clear, Leave, Set};
+        // 5+ pressure → Off, driven by EITHER the correction-loop or the CCR
+        // retrieve count (the stronger of the two), per #941.
+        assert_eq!(CompressionLevel::degrade_action(5, 0), Set(Off));
+        assert_eq!(CompressionLevel::degrade_action(0, 5), Set(Off));
+        assert_eq!(CompressionLevel::degrade_action(9, 1), Set(Off));
+        // 3–4 pressure → Lite.
+        assert_eq!(CompressionLevel::degrade_action(3, 0), Set(Lite));
+        assert_eq!(CompressionLevel::degrade_action(0, 4), Set(Lite));
+        assert_eq!(CompressionLevel::degrade_action(4, 4), Set(Lite));
+        // 0 pressure → clear; the 1–2 band holds the current degrade.
+        assert_eq!(CompressionLevel::degrade_action(0, 0), Clear);
+        assert_eq!(CompressionLevel::degrade_action(2, 1), Leave);
+        assert_eq!(CompressionLevel::degrade_action(1, 2), Leave);
+    }
 }
