@@ -448,6 +448,45 @@ fn collect_rust_mod_edges_cached(
     }
 }
 
+fn collect_go_package_edges(file: &str, file_paths: &[String], edges: &mut Vec<IndexEdge>) {
+    let p = Path::new(file);
+    if p.extension().and_then(|e| e.to_str()) != Some("go") {
+        return;
+    }
+    if file.ends_with("_test.go") {
+        return;
+    }
+
+    let Some(dir) = p.parent().map(|d| d.to_string_lossy().to_string()) else {
+        return;
+    };
+
+    for other in file_paths {
+        if other == file {
+            continue;
+        }
+        let op = Path::new(other.as_str());
+        if op.extension().and_then(|e| e.to_str()) != Some("go") {
+            continue;
+        }
+        if other.ends_with("_test.go") {
+            continue;
+        }
+        let other_dir = op
+            .parent()
+            .map(|d| d.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if other_dir == dir {
+            edges.push(IndexEdge {
+                from: file.to_string(),
+                to: other.clone(),
+                kind: "package".to_string(),
+                weight: 0.8,
+            });
+        }
+    }
+}
+
 fn collect_python_init_edges(file: &str, file_paths: &[String], edges: &mut Vec<IndexEdge>) {
     let p = Path::new(file);
     if p.file_name().and_then(|n| n.to_str()) != Some("__init__.py") {

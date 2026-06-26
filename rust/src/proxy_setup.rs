@@ -809,6 +809,157 @@ fn install_codex_env_at_mode(config_dir: &Path, port: u16, quiet: bool, mode: Co
     }
 }
 
+/// Check whether Codex authenticates via ChatGPT OAuth (vs. an API key) by
+/// inspecting `<codex_dir>/auth.json`. Returns `false` when the file is missing
+/// or contains an unrecognised auth mode.
+fn auth_is_chatgpt(codex_dir: &Path) -> bool {
+    let auth_path = codex_dir.join("auth.json");
+    let Ok(content) = std::fs::read_to_string(&auth_path) else {
+        return false;
+    };
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return false;
+    };
+    let Some(mode) = val.get("auth_mode").and_then(|v| v.as_str()) else {
+        return false;
+    };
+    matches!(
+        mode,
+        "chatgpt" | "chatgptAuthTokens" | "personalAccessToken" | "agentIdentity"
+    )
+}
+
+/// Convenience wrapper: resolves the Codex config dir and delegates to
+/// `auth_is_chatgpt`.
+fn codex_uses_chatgpt_login(home: &Path) -> bool {
+    let codex_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
+    auth_is_chatgpt(&codex_dir)
+}
+
+/// Render key=value entries into a `config.toml` body. Each entry is inserted as a
+/// top-level key (before the first `[table]`) unless already present, making the
+/// function idempotent.
+fn render_codex_config(existing: &str, entries: &[(&str, String)]) -> String {
+    let mut out = existing.to_string();
+
+    for (key, value) in entries {
+        let needle = format!("{key} = \"{value}\"");
+        if out.contains(&needle) {
+            continue;
+        }
+
+        // Insert before the first `[table]` header, or append.
+        let line = format!("{key} = \"{value}\"\n");
+        if let Some(pos) = out.find("\n[") {
+            out.insert_str(pos + 1, &line);
+        } else {
+            // If the content is empty or has no tables, append with a blank line
+            // separator when the existing content doesn't end with a newline.
+            if out.is_empty() || out.ends_with('\n') {
+                out.push_str(&line);
+            } else {
+                out.push('\n');
+                out.push_str(&line);
+            }
+        }
+    }
+
+    out
+}
+
+/// Render the ChatGPT provider definition block (`[model_providers.leanctx-chatgpt]`).
+fn render_codex_chatgpt_provider_block(base: &str) -> String {
+    let codex_url = format!("{base}/backend-api/codex");
+    format!(
+        "[model_providers.{CODEX_CHATGPT_PROVIDER_ID}]\n\
+         base_url = \"{codex_url}\"\n\
+         requires_openai_auth = true\n\
+         supports_websockets = false\n"
+    )
+}
+
+/// Like `render_codex_config` but appends an extra TOML block after the standard
+/// entries (used for the ChatGPT `[model_providers.*]` section).
+fn render_codex_config_with_extra_block(
+    existing: &str,
+    entries: &[(&str, String)],
+    provider_block: Option<&str>,
+) -> String {
+    let base = render_codex_config(existing, entries);
+
+    let Some(block) = provider_block else {
+        return base;
+    };
+
+    // If the provider block is already present, don't duplicate it.
+    let marker = format!("[model_providers.{CODEX_CHATGPT_PROVIDER_ID}]");
+    if base.contains(&marker) {
+        return base;
+    }
+
+    // Ensure a blank line before the extra block.
+    let separator = if base.ends_with('\n') { "" } else { "\n" };
+    format!("{base}{separator}\n{block}")
+}
+
+/// Returns `true` when the Codex config TOML contains a local proxy entry
+/// (i.e. `model_provider = "leanctx-chatgpt"`).
+fn codex_config_has_local_proxy_entry(content: &str) -> bool {
+    let needle = format!("model_provider = \"{CODEX_CHATGPT_PROVIDER_ID}\"");
+    content.contains(&needle)
+}
+
+/// Strip Codex proxy entries from a `config.toml` body: removes top-level
+/// `openai_base_url`, `chatgpt_base_url`, `model_provider` that reference the
+/// local proxy, and the generated `[model_providers.leanctx-chatgpt]` block.
+/// Preserves nested profile configuration under `[profiles.*]`.
+fn strip_codex_proxy_entries(content: &str) -> String {
+    let provider_marker = format!("[model_providers.{CODEX_CHATGPT_PROVIDER_ID}]");
+    let mut lines: Vec<&str> = content.lines().collect();
+
+    // Remove the generated provider block: from `[model_providers.leanctx-chatgpt]`
+    // to the next `[table]` or end.
+    let mut i = 0;
+    while i < lines.len() {
+        if lines[i].trim() == provider_marker {
+            // Skip this and subsequent lines until the next table header.
+            lines.remove(i);
+            while i < lines.len() && !lines[i].starts_with('[') {
+                lines.remove(i);
+            }
+            continue;
+        }
+        i += 1;
+    }
+
+    // Remove top-level proxy entries (only those not inside a `[table]`).
+    let proxy_keys = ["openai_base_url", "chatgpt_base_url", "model_provider"];
+    let mut result = Vec::new();
+    let mut in_table = false;
+
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_table = true;
+            result.push(line);
+            continue;
+        }
+        if !in_table {
+            // Check if this is a proxy key we should strip.
+            let should_skip = proxy_keys.iter().any(|k| {
+                trimmed.starts_with(&format!("{k} =")) || trimmed.starts_with(&format!("{k}="))
+            }) && (trimmed.contains("127.0.0.1")
+                || trimmed.contains(CODEX_CHATGPT_PROVIDER_ID));
+            if should_skip {
+                continue;
+            }
+        }
+        result.push(line);
+    }
+
+    result.join("\n")
+}
+
 #[must_use]
 pub fn default_port() -> u16 {
     if let Ok(val) = std::env::var("LEAN_CTX_PROXY_PORT")

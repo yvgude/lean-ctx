@@ -659,7 +659,7 @@ async fn v1_a2a_handoff(
     }
 
     let rt = crate::core::context_os::runtime();
-    rt.bus.append(
+    let _ = rt.bus.append(
         &state.project_root,
         "a2a",
         &crate::core::context_os::ContextEventKindV1::SessionMutated,

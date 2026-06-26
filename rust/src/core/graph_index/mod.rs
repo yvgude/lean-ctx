@@ -4,11 +4,9 @@
 // `graph_coordinator` (PropertyGraph-first); the remaining direct consumers are
 // the build pipeline (index_orchestrator) and the extractor itself.
 // See OPT-14/15 (#696) plan for the full migration path.
-
 use std::collections::HashMap;
 use std::path::Path;
 
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::core::import_resolver;

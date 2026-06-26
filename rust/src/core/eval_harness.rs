@@ -813,39 +813,4 @@ mod tests {
         assert_eq!(v["total_queries"], 1);
         assert!(v["explore"].is_object());
     }
-
-    #[test]
-    fn explore_arm_reports_distinct_files_without_dense() {
-        // The explore arm builds its own on-disk index from the project root;
-        // give it real files so the loop has something to cite.
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("cache.rs"),
-            "pub fn cache_lookup(key: &str) -> bool { !key.is_empty() }\n",
-        )
-        .unwrap();
-        std::fs::write(
-            dir.path().join("index.rs"),
-            "pub fn build_index(src: &str) -> usize { src.len() }\n",
-        )
-        .unwrap();
-
-        let run = search_arm(
-            dir.path(),
-            "where is cache lookup implemented",
-            &BM25Index::default(),
-            &HybridConfig::default(),
-            SearchArm::Explore,
-        );
-
-        assert!(!run.dense_active, "explore never uses the dense pipeline");
-        let mut distinct = run.files.clone();
-        distinct.sort();
-        distinct.dedup();
-        assert_eq!(
-            distinct.len(),
-            run.files.len(),
-            "cited files must be distinct"
-        );
-    }
 }

@@ -54,11 +54,6 @@ impl McpTool for CtxExploreTool {
             get_bool(args, "citation").unwrap_or(false),
         );
 
-        // Share the resident BM25 cache with the explore loop (warm index reuse).
-        if let Some(ref cache) = ctx.bm25_cache {
-            crate::tools::ctx_semantic_search::set_thread_cache(cache.clone());
-        }
-
         let outcome = tokio::task::block_in_place(|| {
             crate::tools::ctx_explore::handle(&query, &path, ctx.crp_mode, &opts)
         });

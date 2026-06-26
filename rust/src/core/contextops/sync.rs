@@ -132,7 +132,15 @@ mod tests {
             report.errors
         );
 
-        let drifted: Vec<String> = detect_drift(&home.path)
+        use crate::core::contextops::config::{CoreRules, RulesSection};
+        let config = crate::core::contextops::RulesConfig {
+            rules: RulesSection {
+                version: String::new(),
+                core: CoreRules::default(),
+                agent: std::collections::HashMap::new(),
+            },
+        };
+        let drifted: Vec<String> = detect_drift(&home.path, &config)
             .into_iter()
             .filter(|r| r.status == DriftStatus::Drifted)
             .map(|r| r.target)

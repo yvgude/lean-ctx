@@ -30,7 +30,16 @@ impl ContextOps {
     /// the binary), **not** against `.lean-ctx/rules.toml`, so `rules diff` needs
     /// no prior `rules init` and can never fail on a missing config (#548).
     pub fn detect_drift(&self) -> Vec<DriftReport> {
-        drift::detect_drift(&self.home)
+        // `_config` is currently unused but preserved for future signal injection.
+        use crate::core::contextops::config::{CoreRules, RulesSection};
+        let config = RulesConfig {
+            rules: RulesSection {
+                version: String::new(),
+                core: CoreRules::default(),
+                agent: std::collections::HashMap::new(),
+            },
+        };
+        drift::detect_drift(&self.home, &config)
     }
 
     #[must_use]

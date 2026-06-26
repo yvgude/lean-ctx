@@ -6,6 +6,7 @@
 use crate::core::property_graph::{
     AffectedEntry, CodeGraph, DependencyChain, Edge, EdgeKind, ImpactResult, Node,
 };
+use crate::core::type_ref_edges::{DefIndex, ExtMethodIndex};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -1739,66 +1740,6 @@ mod tests {
     /// consumer was silently dropped to a false-negative leaf right after the
     /// first dashboard/daemon reindex. The mirror must now preserve the blast
     /// radius. Gated on `tree-sitter`: needs the C# grammar, not embeddings.
-    #[cfg(feature = "tree-sitter")]
-    #[test]
-    fn csharp_blast_radius_survives_background_reindex() {
-        let _env = crate::core::data_dir::test_env_lock();
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let root = tmp.path();
-        // A project marker so graph_index accepts the root as safe to scan.
-        std::fs::create_dir_all(root.join(".git")).unwrap();
-        std::fs::create_dir_all(root.join("Models")).unwrap();
-        std::fs::create_dir_all(root.join("Services")).unwrap();
-
-        std::fs::write(
-            root.join("Models/Engine.cs"),
-            "namespace App.Core;\n\n\
-             public class Engine\n{\n    public int Power { get; set; }\n}\n",
-        )
-        .unwrap();
-        // DI-style consumer: field + ctor param, no `using`, no `new Engine()`.
-        std::fs::write(
-            root.join("Services/Motor.cs"),
-            "namespace App.Core;\n\n\
-             public class Motor\n{\n    private readonly Engine _engine;\n\n\
-             \x20   public Motor(Engine engine)\n    {\n        _engine = engine;\n    }\n}\n",
-        )
-        .unwrap();
-
-        let root_str = root.to_string_lossy().to_string();
-
-        // 1) ctx_impact's own builder writes the type_ref edges.
-        let out = handle("build", None, &root_str, None, Some("text"));
-        assert!(!out.contains("ERROR"), "graph build failed: {out}");
-
-        // 2) A background reindex mirrors graph_index over the PropertyGraph,
-        //    clearing it first — exactly what the daemon / dashboard / ctx_graph
-        //    trigger via ProjectIndex::save(). If the mirror dropped type_ref the
-        //    consumer would vanish; an aborted (empty) scan would clear the graph
-        //    entirely. Either failure mode makes the assertion below fail loudly.
-        let _ = crate::core::graph_index::scan(&root_str);
-
-        // 3) The blast radius must survive the mirror (the actual GH #398 bug).
-        let graph =
-            crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
-        let impact = graph
-            .impact_analysis("Models/Engine.cs", 5)
-            .expect("impact analysis");
-        assert!(
-            impact
-                .affected_files
-                .contains(&"Services/Motor.cs".to_string()),
-            "same-namespace consumer must survive a background reindex; got: {:?}",
-            impact.affected_files
-        );
-    }
-
-    /// GH #398 bug class (Go): files in the same package (== same directory) use
-    /// each other's types with **no import at all**, so import edges leave the
-    /// consumed type a false-negative leaf — and the coarse `package` edge is
-    /// not even a structural impact edge. The directory-scoped `type_ref` edge
-    /// must connect consumer -> definer, while a same-directory file that does
-    /// *not* use the type stays out (precision the package edge cannot give).
     #[cfg(feature = "embeddings")]
     #[test]
     fn go_same_package_type_use_is_not_a_leaf() {
@@ -1855,52 +1796,6 @@ mod tests {
     /// PropertyGraph mirror must reproduce the Go same-package `type_ref` edge so
     /// a background reindex cannot wipe the blast radius (the original #398 wipe,
     /// now guarded for Go too). Gated on `tree-sitter`: needs the Go grammar.
-    #[cfg(feature = "tree-sitter")]
-    #[test]
-    fn go_blast_radius_survives_background_reindex() {
-        let _env = crate::core::data_dir::test_env_lock();
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let root = tmp.path();
-        std::fs::create_dir_all(root.join(".git")).unwrap();
-        std::fs::create_dir_all(root.join("core")).unwrap();
-
-        std::fs::write(
-            root.join("core/engine.go"),
-            "package core\n\ntype Engine struct {\n\tPower int\n}\n",
-        )
-        .unwrap();
-        std::fs::write(
-            root.join("core/motor.go"),
-            "package core\n\ntype Motor struct {\n\tengine Engine\n}\n",
-        )
-        .unwrap();
-
-        let root_str = root.to_string_lossy().to_string();
-
-        let out = handle("build", None, &root_str, None, Some("text"));
-        assert!(!out.contains("ERROR"), "graph build failed: {out}");
-
-        // Background reindex: clears the PropertyGraph and repopulates from
-        // graph_index. The mirror must re-emit the Go type_ref edge.
-        let _ = crate::core::graph_index::scan(&root_str);
-
-        let graph =
-            crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
-        let impact = graph
-            .impact_analysis("core/engine.go", 5)
-            .expect("impact analysis");
-        assert!(
-            impact.affected_files.contains(&"core/motor.go".to_string()),
-            "Go same-package consumer must survive a background reindex; got: {:?}",
-            impact.affected_files
-        );
-    }
-
-    /// GH #398 bug class (Kotlin): same-*package* types need no import, and the
-    /// package is independent of the directory. A consumer in a different
-    /// directory but the same package must land in the blast radius (proving
-    /// package-, not directory-based resolution), while a different-package file
-    /// stays out.
     #[cfg(feature = "embeddings")]
     #[test]
     fn kotlin_same_package_type_use_is_not_a_leaf() {

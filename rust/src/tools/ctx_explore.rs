@@ -27,7 +27,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 
-use crate::core::bm25_index::{BM25Index, ChunkKind, SearchResult};
+use crate::core::bm25_index::{ChunkData, ChunkKind, SearchResult, bm25_search};
 use crate::core::context_packing::{CoverageItem, greedy_max_coverage};
 use crate::core::graph_provider;
 use crate::core::task_relevance::parse_task_hints;
@@ -421,11 +421,11 @@ pub fn handle(
 
     // Lexical anchor: one broad BM25 search over the resident index.
     let root = Path::new(project_root);
-    let index = BM25Index::load_or_build(root);
+    let index = ChunkData::build_from_directory(root);
     let hits: Vec<SearchResult> = if index.doc_count == 0 {
         Vec::new()
     } else {
-        index.search(query, MAX_HITS)
+        bm25_search(&index, query, MAX_HITS)
     };
 
     // Best (highest-ranked) hit per file, in score order.

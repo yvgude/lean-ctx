@@ -1,3 +1,5 @@
+use crate::core::json_crush;
+
 #[must_use]
 pub fn compress(output: &str) -> Option<String> {
     let trimmed = output.trim();

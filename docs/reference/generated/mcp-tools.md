@@ -4,7 +4,7 @@
 
 Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.
 
-lean-ctx registers **75 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
+lean-ctx registers **76 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
 
 ## `ctx_agent`
 
@@ -17,7 +17,7 @@ return (distill→knowledge), diary|recall_diary|diaries (agent journal),
 share_knowledge|receive_knowledge (cross-agent), list, info.
 ANTIPATTERN: NOT for single-agent workflows. Use ctx_compose for code understanding.
 
-Parameters: `action`\*, `agent_type`, `category`, `message`, `role`, `status`, `to_agent`
+Parameters: `action`*, `agent_type`, `category`, `message`, `role`, `status`, `to_agent`
 
 ## `ctx_analyze`
 
@@ -25,7 +25,7 @@ Entropy analysis — recommends optimal compression mode for a file path.
 WORKFLOW: Use BEFORE ctx_read to pick the best mode (full/signatures/auto).
 Saves tokens by selecting the mode that minimizes size while retaining information.
 
-Parameters: `path`\*
+Parameters: `path`*
 
 ## `ctx_architecture`
 
@@ -45,7 +45,7 @@ WORKFLOW: index artifacts first (index/reindex), then search with query for sema
 Actions: list|status|index|reindex|search|remove.
 ANTIPATTERN: NOT for general code search — use ctx_semantic_search for codebase queries.
 
-Parameters: `action`\*, `format`, `name`, `project_root`, `query`, `top_k`
+Parameters: `action`*, `format`, `name`, `project_root`, `query`, `top_k`
 
 ## `ctx_benchmark`
 
@@ -54,7 +54,7 @@ WORKFLOW: use BEFORE ctx_read to pick the optimal compression strategy.
 Provide a file path, or use action=project for project-wide results.
 ANTIPATTERN: NOT for production profiling — measures compression, not runtime performance.
 
-Parameters: `action`, `format`, `path`\*
+Parameters: `action`, `format`, `path`*
 
 ## `ctx_cache`
 
@@ -64,7 +64,7 @@ invalidate path=... refreshes a single entry.
 Use to diagnose stale content or recover budget after large reads.
 ANTIPATTERN: does NOT affect disk files — only cached read content.
 
-Parameters: `action`\*, `path`
+Parameters: `action`*, `path`
 
 ## `ctx_call`
 
@@ -72,7 +72,7 @@ Invoke any non-core lean-ctx tool by name — for tools not exposed as standalon
 Categories: arch, debug, memory, batch, agent, util. Find exact names with
 ctx_discover_tools (query=keyword; empty query lists all). Cannot invoke itself.
 
-Parameters: `arguments`, `name`\*
+Parameters: `arguments`, `name`*
 
 ## `ctx_callgraph`
 
@@ -112,7 +112,7 @@ ANTIPATTERN: Do NOT chain search→read→symbol — one compose replaces the wh
 ANTIPATTERN: Do NOT Read files whose source compose already returned — it IS the source.
 WORKFLOW: Fire parallel ctx_read or ctx_compose for different areas.
 
-Parameters: `path`, `task`\*
+Parameters: `path`, `task`*
 
 ## `ctx_compress`
 
@@ -126,7 +126,7 @@ Parameters: `include_signatures`
 Compress memory/config file (CLAUDE.md, .cursorrules) preserving code, URLs, and paths. Creates .original.md backup.
 WORKFLOW: check token overhead with ctx_context, then compress to reduce persistent instruction cost.
 
-Parameters: `path`\*
+Parameters: `path`*
 
 ## `ctx_context`
 
@@ -143,7 +143,7 @@ Overlay-based, reversible, scoped to call/session/project.
 WORKFLOW: after ctx_compose, exclude low-relevance files.
 ANTIPATTERN: not for initial context building — use ctx_compose/ctx_read first.
 
-Parameters: `action`\*, `reason`, `scope`, `target`, `value`
+Parameters: `action`*, `reason`, `scope`, `target`, `value`
 
 ## `ctx_cost`
 
@@ -168,7 +168,7 @@ Use INSTEAD of re-reading the whole file after modifications — saves 90%+ toke
 on unchanged content. Path must have a prior ctx_read in this session's cache.
 For the full git diff against HEAD, use ctx_read(path, mode=diff) instead.
 
-Parameters: `path`\*
+Parameters: `path`*
 
 ## `ctx_discover`
 
@@ -195,7 +195,7 @@ backup creates .bak. MD5/size/mtime pre-guards prevent race conditions.
 ANTIPATTERN: Do NOT loop on failures — verify file content and adjust old_string, or use native Edit with prior Read.
 For LSP-aware refactoring (rename, move, inline), use ctx_refactor.
 
-Parameters: `create`, `new_string`_, `old_string`, `path`_, `replace_all`
+Parameters: `create`, `new_string`*, `old_string`, `path`*, `replace_all`
 
 ## `ctx_execute`
 
@@ -228,7 +228,7 @@ USE WHEN: locating WHERE behavior lives across many files, cheaply.
 vs ctx_compose: compose inlines bodies in one shot; explore returns citations
 over N turns (far fewer tokens). citation=true emits only the block.
 
-Parameters: `citation`, `max_turns`, `path`, `query`\*
+Parameters: `citation`, `max_turns`, `path`, `query`*
 
 ## `ctx_feedback`
 
@@ -248,7 +248,7 @@ WORKFLOW: pass paths[] + budget=N; task="..." enables intent-driven pruning.
 ANTIPATTERN: does NOT decide which files to include — use ctx_plan for project-wide selection.
 Saves tokens vs per-file reads (for many files with a budget).
 
-Parameters: `budget`_, `paths`_, `task`
+Parameters: `budget`*, `paths`*, `task`
 
 ## `ctx_gain`
 
@@ -265,7 +265,7 @@ modes: overview (tree + README) | tree (file list) | read (file content) | grep 
 Accepts repo URLs and GitHub/GitLab blob/tree links (ref+path auto-detected).
 https-only, SSRF-guarded. Prefer over ctx_url_read for whole-repo access.
 
-Parameters: `max_tokens`, `mode`, `path`, `query`, `ref`, `timeout_secs`, `url`\*
+Parameters: `max_tokens`, `mode`, `path`, `query`, `ref`, `timeout_secs`, `url`*
 
 ## `ctx_glob`
 
@@ -273,7 +273,7 @@ Find files by glob pattern — locate by name or extension.
 Respects .gitignore. Supports multi-root via paths array. max_results=N sets limit.
 For file content search, use ctx_search (pattern) or ctx_semantic_search (meaning).
 
-Parameters: `ignore_gitignore`, `max_results`, `path`, `paths`, `pattern`\*
+Parameters: `ignore_gitignore`, `max_results`, `path`, `paths`, `pattern`*
 
 ## `ctx_graph`
 
@@ -287,7 +287,7 @@ action=diagram kind=deps|calls renders a Mermaid diagram.
 For understanding code, use ctx_compose FIRST. Use ctx_graph for targeted structural queries.
 ANTIPATTERN: symbol returns only the DEFINITION — not usages. For REFERENCES use grep or ctx_compose.
 
-Parameters: `action`\*, `depth`, `kind`, `path`, `project_root`, `since`, `to`
+Parameters: `action`*, `depth`, `kind`, `path`, `project_root`, `since`, `to`
 
 ## `ctx_handoff`
 
@@ -320,7 +320,7 @@ Use: status to check state, build to (re)build indexes.
 For a full rebuild: lean-ctx index build --mode full.
 Actions: status (state), build (incremental rebuild).
 
-Parameters: `action`\*, `project_root`
+Parameters: `action`*, `project_root`
 
 ## `ctx_intent`
 
@@ -328,7 +328,7 @@ Submit task goals as JSON or short text — server infers from tool calls.
 ANTI-PATTERN: not needed for simple tasks.
 query=task|JSON; format=json for JSON output; project_root=scope.
 
-Parameters: `format`, `project_root`, `query`\*
+Parameters: `format`, `project_root`, `query`*
 
 ## `ctx_knowledge`
 
@@ -339,7 +339,7 @@ action=recall query='X' retrieves it. action=status shows all categories.
 action=gotcha trigger='X' resolution='Y' for known pitfalls.
 mode=semantic|exact for recall. category groups related facts.
 
-Parameters: `action`\*, `as_of`, `category`, `confidence`, `examples`, `key`, `mode`, `pattern_type`, `query`, `resolution`, `severity`, `trigger`, `value`
+Parameters: `action`*, `as_of`, `category`, `confidence`, `examples`, `key`, `mode`, `pattern_type`, `query`, `resolution`, `severity`, `trigger`, `value`
 
 ## `ctx_ledger`
 
@@ -348,7 +348,7 @@ WORKFLOW: status → evict → reset (reset only if budget needs full flush).
 ANTI-PATTERN: don't evict files you actively need — check status first.
 Actions: status, reset, evict.
 
-Parameters: `action`\*, `targets`
+Parameters: `action`*, `targets`
 
 ## `ctx_load_tools`
 
@@ -358,7 +358,7 @@ ANTI-PATTERN: don't unload categories you're actively using.
 Actions: load|unload|list. Categories: arch, debug, memory, metrics, session.
 Core is always loaded.
 
-Parameters: `action`\*, `category`
+Parameters: `action`*, `category`
 
 ## `ctx_metrics`
 
@@ -374,7 +374,7 @@ Parameters: _none_
 DEPRECATED → use ctx_read with paths=['a.rs','b.rs']. Folded into ctx_read
 (#509); hidden from tools/list, still callable for one release.
 
-Parameters: `fresh`, `mode`, `paths`\*
+Parameters: `fresh`, `mode`, `paths`*
 
 ## `ctx_multi_repo`
 
@@ -384,7 +384,7 @@ ANTI-PATTERN: not for single-repo projects — use ctx_search.
 Actions: add_root|remove_root|list_roots|search|status|save_config.
 Cross-repo search uses RRF to merge results.
 
-Parameters: `action`\*, `alias`, `max_results`, `path`, `query`, `roots`
+Parameters: `action`*, `alias`, `max_results`, `path`, `query`, `roots`
 
 ## `ctx_outline`
 
@@ -393,7 +393,7 @@ ANTIPATTERN: NOT for file content (use ctx_read) or deep understanding (use ctx_
 Returns fn/struct/class/trait signatures + line numbers via tree-sitter.
 kind=fn|struct|class|all filters. Saves tokens: only the API surface.
 
-Parameters: `kind`, `path`\*
+Parameters: `kind`, `path`*
 
 ## `ctx_overview`
 
@@ -413,7 +413,7 @@ with knowledge, graph, session patterns, and gotchas.
 Actions: pr, create, list, info, remove, install, export, import, auto_load, summary.
 Saves tokens: pre-built context state (avoids re-building).
 
-Parameters: `action`\*, `apply`, `author`, `base`, `depth`, `description`, `diff`, `enable`, `file`, `format`, `layers`, `level`, `name`, `project_root`, `scope`, `tags`, `version`
+Parameters: `action`*, `apply`, `author`, `base`, `depth`, `description`, `diff`, `enable`, `file`, `format`, `layers`, `level`, `name`, `project_root`, `scope`, `tags`, `version`
 
 ## `ctx_package`
 
@@ -433,7 +433,7 @@ Selects files for context via Phi scoring + budget + policy.
 task=short English; budget=token limit (default 12000);
 profile=ultra_lean|balanced|forensic. Saves tokens by prioritizing relevant files.
 
-Parameters: `budget`, `profile`, `task`\*
+Parameters: `budget`, `profile`, `task`*
 
 ## `ctx_plugins`
 
@@ -443,7 +443,7 @@ Plugin management — list, enable, disable, info, hooks.
 name required for enable/disable/info. Extends tool functionality.
 Saves tokens: loads only needed plugins.
 
-Parameters: `action`\*, `name`
+Parameters: `action`*, `name`
 
 ## `ctx_prefetch`
 
@@ -463,7 +463,7 @@ WORKFLOW: call at session start or when switching tasks, before ctx_read.
 ANTIPATTERN: not for reading individual files — use ctx_read instead.
 ~50-100 tokens vs ~5000 for individual reads (~50x savings).
 
-Parameters: `path`, `task`\*
+Parameters: `path`, `task`*
 
 ## `ctx_proof`
 
@@ -473,7 +473,7 @@ ANTIPATTERN: not for budget analysis — use ctx_radar/ctx_metrics instead.
 action=export (only valid); format=json|summary|both; write=true|false;
 max_evidence=max tool receipts (default 50). Writes to .lean-ctx/proofs/.
 
-Parameters: `action`\*, `filename`, `format`, `max_evidence`, `max_ledger_files`, `project_root`, `write`
+Parameters: `action`*, `filename`, `format`, `max_evidence`, `max_ledger_files`, `project_root`, `write`
 
 ## `ctx_provider`
 
@@ -483,7 +483,7 @@ ANTIPATTERN: not for file content — use ctx_compose/ctx_read instead.
 provider=id (github|gitlab|jira|mcp:<name>); resource=issues|pull_requests.
 Data flows through consolidation pipeline; results searchable via ctx_semantic_search.
 
-Parameters: `action`\*, `iid`, `labels`, `limit`, `mode`, `provider`, `resource`, `state`, `status`
+Parameters: `action`*, `iid`, `labels`, `limit`, `mode`, `provider`, `resource`, `state`, `status`
 
 ## `ctx_radar`
 
@@ -512,10 +512,10 @@ Rename, move, safe_delete, inline, read-only analyses via LSP/IDE.
 WORKFLOW: use action=references first to find usages before refactoring.
 ANTIPATTERN: not for symbol discovery — use ctx_symbol/ctx_compose.
 Single-phase edits (replace_symbol_body, reformat) work headless via name_path.
-Two-phase ops (\_preview+\_apply) need JetBrains IDE (else BACKEND_REQUIRED).
+Two-phase ops (_preview+_apply) need JetBrains IDE (else BACKEND_REQUIRED).
 Conflicts blocked unless force=true. See `action` parameter for full list.
 
-Parameters: `action`\*, `column`, `direction`, `end_line`, `expected_hash`, `force`, `keep_definition`, `line`, `mode`, `name_path`, `new_body`, `new_name`, `optimize_imports`, `path`, `plan_hash`, `propagate`, `scope`, `search_comments`, `search_text_occurrences`, `target_parent`, `target_path`, `text`
+Parameters: `action`*, `column`, `direction`, `end_line`, `expected_hash`, `force`, `keep_definition`, `line`, `mode`, `name_path`, `new_body`, `new_name`, `optimize_imports`, `path`, `plan_hash`, `propagate`, `scope`, `search_comments`, `search_text_occurrences`, `target_parent`, `target_path`, `text`
 
 ## `ctx_repomap`
 
@@ -534,7 +534,7 @@ Removes repetitive patterns while preserving key information.
 WORKFLOW: use after receiving a response, before storing/forwarding.
 ANTIPATTERN: no-op when CRP mode is off — use ctx_read compression instead.
 
-Parameters: `text`\*
+Parameters: `text`*
 
 ## `ctx_retrieve`
 
@@ -544,7 +544,7 @@ WORKFLOW: call ctx_read FIRST to populate cache, then ctx_retrieve for verbatim.
 query='text' to find matching lines within cached content.
 ANTIPATTERN: not for reading files directly — use ctx_read.
 
-Parameters: `path`\*, `query`
+Parameters: `path`*, `query`
 
 ## `ctx_review`
 
@@ -554,7 +554,7 @@ checklist (structured review questions). depth=N (default 3).
 WORKFLOW: run tests first, then use review for structured analysis.
 ANTIPATTERN: not a substitute for actual test execution.
 
-Parameters: `action`\*, `depth`, `path`
+Parameters: `action`*, `depth`, `path`
 
 ## `ctx_routes`
 
@@ -573,7 +573,7 @@ Actions: sync (distribute rules to agents), diff (show drift),
 lint (check consistency), status (sync state), init (create central config).
 WORKFLOW: run status first to check state, then sync if out of date.
 
-Parameters: `action`\*, `agent`
+Parameters: `action`*, `agent`
 
 ## `ctx_search`
 
@@ -581,11 +581,11 @@ Search code with regex (action=grep) or semantic search (action=search).
 action=grep (default when pattern is present): regex file search.
 action=search: semantic/vector search (uses ctx_semantic_search internally).
 action=reindex: rebuild search index.
-For action=grep: pattern required; include='\*.rs'; path scopes;
+For action=grep: pattern required; include='*.rs'; path scopes;
 limit=N or max_results=N (default 20); paths=['dir1','dir2'] for multi-root;
 ignore_gitignore bypasses .gitignore (needs role).
 
-Parameters: `action`\*, `artifacts`, `context`, `ignore_gitignore`, `include`, `languages`, `limit`, `method`, `mode`, `offset`, `path`, `path_glob`, `paths`, `pattern`, `query`, `related_to`, `top_k`, `workspace`
+Parameters: `action`*, `artifacts`, `context`, `ignore_gitignore`, `include`, `languages`, `limit`, `method`, `mode`, `offset`, `path`, `path_glob`, `paths`, `pattern`, `query`, `related_to`, `top_k`, `workspace`
 
 ## `ctx_session`
 
@@ -594,7 +594,7 @@ action=status (snapshot); task|finding|decision (progress).
 ANTIPATTERN: permanent project knowledge → ctx_knowledge.
 Also supports: profile|role|budget|slo|diff|verify|episodes|procedures.
 
-Parameters: `action`\*, `session_id`, `value`
+Parameters: `action`*, `session_id`, `value`
 
 ## `ctx_share`
 
@@ -602,7 +602,7 @@ WORKFLOW: push from agent A → pull from agent B shares cached file contexts.
 Actions: push|pull|list|clear. Omit to_agent for broadcast.
 ANTIPATTERN: NOT file transfer — shares lean-ctx cache entries only.
 
-Parameters: `action`\*, `message`, `paths`, `to_agent`
+Parameters: `action`*, `message`, `paths`, `to_agent`
 
 ## `ctx_shell`
 
@@ -611,12 +611,12 @@ raw=true for verbatim output.
 [exit:N] on errors (lossless).
 ANTIPATTERN: multi-line scripts → ctx_execute.
 
-Parameters: `command`\*, `cwd`, `env`, `raw`
+Parameters: `command`*, `cwd`, `env`, `raw`
 
 ## `ctx_skillify`
 
 WORKFLOW: mine to extract patterns → list to review → promote to activate.
-Codifies patterns into .cursor/rules/skillify-\*.mdc.
+Codifies patterns into .cursor/rules/skillify-*.mdc.
 Actions: mine|list|status|promote. Idempotent.
 ANTIPATTERN: one-off rules → write .mdc by hand.
 
@@ -627,7 +627,7 @@ Parameters: `action`, `slug`
 DEPRECATED → use ctx_read (it auto-selects the mode; omit `mode`). Folded
 into ctx_read (#509); hidden from tools/list, still callable for one release.
 
-Parameters: `path`\*
+Parameters: `path`*
 
 ## `ctx_smells`
 
@@ -655,7 +655,7 @@ Actions: create|update|list|get|cancel|message|info.
 States: working|input-required|completed|failed|canceled.
 ANTIPATTERN: not for code execution — use ctx_shell or ctx_execute.
 
-Parameters: `action`\*, `description`, `message`, `state`, `task_id`, `to_agent`
+Parameters: `action`*, `description`, `message`, `state`, `task_id`, `to_agent`
 
 ## `ctx_tools`
 
@@ -674,7 +674,7 @@ keep system + fresh tail verbatim, replace older turns with a recoverable
 summary, offload raw turns into session memory (indexed for recall).
 Returns JSON {messages, stats}. tool_call/tool_result pairs never split.
 
-Parameters: `focus_topic`, `fresh_tail_tokens`, `messages`\*, `protect_min_messages`
+Parameters: `focus_topic`, `fresh_tail_tokens`, `messages`*, `protect_min_messages`
 
 ## `ctx_tree`
 
@@ -692,7 +692,7 @@ mode=facts|quotes for research (claims+confidence). query='topic' focuses extrac
 GitHub blob/raw URLs auto-resolve to raw file. SSRF-guarded (no private IPs).
 max_tokens=6000; timeout_secs=20 (max 60).
 
-Parameters: `max_items`, `max_tokens`, `mode`, `query`, `timeout_secs`, `url`\*
+Parameters: `max_items`, `max_tokens`, `mode`, `query`, `timeout_secs`, `url`*
 
 ## `ctx_verify`
 
@@ -721,4 +721,5 @@ Output is compressed for token savings. For verbatim output pass raw=true.
 Use when your MCP client prefers shell/bash over ctx_shell — transparently
 delegates to ctx_shell internals.
 
-Parameters: `command`\*, `cwd`
+Parameters: `command`*, `cwd`
+
