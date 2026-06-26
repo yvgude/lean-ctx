@@ -690,10 +690,11 @@ fn append_gain_footer(out: &mut Vec<String>, t: &Theme, store: &StatsStore) {
             }
         }
 
-        #[cfg(unix)]
+        // is_daemon_running() is cross-platform (reads daemon.pid + ipc::process::is_alive,
+        // which has a Windows OpenProcess impl). The old #[cfg(not(unix))] = false branch
+        // hardcoded "offline" on Windows even when `serve --status` reported the daemon
+        // running — gating away a working check. See #576.
         let daemon_running = crate::daemon::is_daemon_running();
-        #[cfg(not(unix))]
-        let daemon_running = false;
 
         if daemon_running {
             ctx_items.push(format!("   Daemon: {c}running{rst}", c = t.success.fg()));
