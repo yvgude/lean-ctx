@@ -1,11 +1,11 @@
 //! Type-usage extraction (GH #398).
 //!
-//! C# and Java resolve types in the same namespace/package **without any
-//! import statement**, so import edges alone miss those file dependencies.
-//! This module extracts the *names of types a file consumes* — fields,
-//! parameters, properties, return types, base classes/interfaces, generic
-//! arguments, casts, `typeof` — so the property graph can link consumer
-//! files to definer files via `TypeRef` edges.
+//! C#, Java, Go and Kotlin resolve types in the same namespace/package
+//! **without any import statement**, so import edges alone miss those file
+//! dependencies. This module extracts the *names of types a file consumes* —
+//! fields, parameters, properties, return types, base classes/interfaces,
+//! generic arguments, casts, `typeof` — so the property graph can link
+//! consumer files to definer files via `TypeRef` edges.
 
 #[cfg(feature = "tree-sitter")]
 use tree_sitter::Node;
@@ -22,6 +22,8 @@ pub(super) fn extract_type_uses(root: Node, src: &str, ext: &str) -> Vec<TypeUse
     match ext {
         "cs" => extract_csharp(root, src),
         "java" => extract_java(root, src),
+        "go" => extract_go(root, src),
+        "kt" | "kts" => extract_kotlin(root, src),
         _ => Vec::new(),
     }
 }
@@ -79,10 +81,11 @@ fn extract_csharp(root: Node, src: &str) -> Vec<TypeUse> {
     uses
 }
 
-/// Last dotted segment of a C# name, generic suffix stripped:
+/// Last dotted segment of a qualified type name, generic suffix stripped:
 /// `App.Core.Engine` -> `Engine`, `List<int>` -> `List`, `Engine` -> `Engine`.
+/// Shared by C# (receiver/attribute) and Kotlin (`user_type`) resolution.
 #[cfg(feature = "tree-sitter")]
-fn csharp_last_segment(text: &str) -> Option<&str> {
+fn last_type_segment(text: &str) -> Option<&str> {
     let last = text.rsplit(['.', ':']).find(|seg| !seg.trim().is_empty())?;
     let bare = last.split('<').next().unwrap_or(last).trim();
     (!bare.is_empty()).then_some(bare)
@@ -109,7 +112,7 @@ fn collect_csharp_receiver_type(
         | "generic_name" => node_text(expr, src),
         _ => return,
     };
-    if let Some(name) = csharp_last_segment(text)
+    if let Some(name) = last_type_segment(text)
         && name.chars().next().is_some_and(|c| c.is_ascii_uppercase())
     {
         push_use(name, expr, uses, seen);
@@ -126,7 +129,7 @@ fn collect_csharp_attribute_type(
     uses: &mut Vec<TypeUse>,
     seen: &mut std::collections::HashSet<String>,
 ) {
-    let Some(bare) = csharp_last_segment(node_text(name, src)) else {
+    let Some(bare) = last_type_segment(node_text(name, src)) else {
         return;
     };
     push_use(bare, name, uses, seen);
@@ -201,6 +204,58 @@ fn extract_java(root: Node, src: &str) -> Vec<TypeUse> {
     crate::core::ast_walk::for_each_descendant(root, |node| {
         if node.kind() == "type_identifier" {
             push_use(node_text(node, src), node, &mut uses, &mut seen);
+        }
+    });
+
+    uses
+}
+
+/// Go: named types appear as `type_identifier` (struct fields, parameters,
+/// results, composite literals, `var`/`const` types, embeddings, generics).
+/// A cross-package reference is a `qualified_type` (`pkg.Type`) whose inner
+/// `type_identifier` must be skipped — that file dependency is already carried
+/// by the package import, and the bare name would otherwise be misattributed.
+/// The owning `type_spec`'s name is harmlessly included; it resolves to this
+/// same file and is dropped as a self-reference.
+#[cfg(feature = "tree-sitter")]
+fn extract_go(root: Node, src: &str) -> Vec<TypeUse> {
+    let mut uses: Vec<TypeUse> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    crate::core::ast_walk::for_each_descendant(root, |node| {
+        if node.kind() == "type_identifier"
+            && node.parent().is_none_or(|p| p.kind() != "qualified_type")
+        {
+            push_use(node_text(node, src), node, &mut uses, &mut seen);
+        }
+    });
+
+    uses
+}
+
+/// Kotlin (`tree-sitter-kotlin-ng`): every used type is a `user_type`. A
+/// qualified name `com.app.Engine` exposes each segment as its own `identifier`
+/// child, so the **last** one names the type; generic arguments live in a
+/// nested `type_arguments`/`user_type` the descendant walk visits on its own.
+/// The declaring class/object name is an `identifier` (not a `user_type`) and
+/// is therefore never collected as a use.
+#[cfg(feature = "tree-sitter")]
+fn extract_kotlin(root: Node, src: &str) -> Vec<TypeUse> {
+    let mut uses: Vec<TypeUse> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    crate::core::ast_walk::for_each_descendant(root, |node| {
+        if node.kind() == "user_type" {
+            let mut cursor = node.walk();
+            let last_ident = node
+                .children(&mut cursor)
+                .filter(|c| c.kind() == "identifier")
+                .last();
+            if let Some(name) = last_ident
+                && let Some(bare) = last_type_segment(node_text(name, src))
+            {
+                push_use(bare, name, &mut uses, &mut seen);
+            }
         }
     });
 

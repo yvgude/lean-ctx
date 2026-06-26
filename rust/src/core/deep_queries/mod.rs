@@ -762,6 +762,90 @@ public class Motor extends VehiclePart {
         }
     }
 
+    /// GH #398 bug class (Go): same-package types are referenced without any
+    /// import. `type_identifier` nodes cover struct fields, params, results and
+    /// slices; a cross-package `pkg.Type` (`qualified_type`) must be skipped —
+    /// that dependency rides the package import, not a same-package type edge.
+    #[test]
+    fn go_type_uses_same_package_skip_qualified() {
+        let src = r"
+package core
+
+type Motor struct {
+    engine Engine
+    parts  []Sensor
+}
+
+func (m *Motor) Build(c Clutch) Gearbox {
+    var g Gearbox
+    var w other.Widget
+    _ = w
+    return g
+}
+";
+        let analysis = analyze(src, "go");
+        let names: Vec<&str> = analysis.type_uses.iter().map(|u| u.name.as_str()).collect();
+        for expected in ["Engine", "Sensor", "Clutch", "Gearbox"] {
+            assert!(names.contains(&expected), "missing {expected}: {names:?}");
+        }
+        // A cross-package `other.Widget` is the import resolver's job, so its
+        // bare name must not leak in as a same-package type use.
+        assert!(
+            !names.contains(&"Widget"),
+            "qualified pkg.Type must be skipped: {names:?}"
+        );
+    }
+
+    /// GH #398 bug class (Kotlin): same-package types need no import. `user_type`
+    /// nodes (with a possibly-qualified `identifier`) cover properties, params,
+    /// returns, supertypes and generic arguments; only the last dotted segment
+    /// names the type. The declaring class name is an `identifier`, never a
+    /// `user_type`, so it is not collected as a self-use.
+    #[test]
+    fn kotlin_type_uses_same_package() {
+        let src = r"
+package app.core
+
+class Motor(private val engine: Engine) : VehiclePart(), Startable {
+    val sensors: List<Sensor> = emptyList()
+    fun build(clutch: Clutch): Gearbox = throw RuntimeException()
+    fun reset(d: com.app.ui.Dashboard) {}
+}
+";
+        let analysis = analyze(src, "kt");
+        let names: Vec<&str> = analysis.type_uses.iter().map(|u| u.name.as_str()).collect();
+        for expected in [
+            "Engine",
+            "VehiclePart",
+            "Startable",
+            "List",
+            "Sensor",
+            "Clutch",
+            "Gearbox",
+            "Dashboard",
+        ] {
+            assert!(names.contains(&expected), "missing {expected}: {names:?}");
+        }
+        // Only the last dotted segment is the type; package qualifiers drop out.
+        assert!(
+            !names.contains(&"com"),
+            "package qualifier must be dropped: {names:?}"
+        );
+    }
+
+    /// Kotlin types carry their file's package as `namespace` (parity with C#),
+    /// so directory-independent same-package resolution can confirm a match.
+    #[test]
+    fn kotlin_type_def_namespace_from_package_header() {
+        let analysis = analyze("package app.core\nclass Engine", "kt");
+        let ns = analysis
+            .types
+            .iter()
+            .find(|t| t.name == "Engine")
+            .and_then(|t| t.namespace.clone());
+        assert_eq!(ns.as_deref(), Some("app.core"));
+    }
+
     /// Languages with mandatory explicit imports skip type-use extraction —
     /// their dependencies are fully covered by the import resolver.
     #[test]

@@ -16,7 +16,7 @@ use std::process::Stdio;
 /// extractors (`deep_queries::{type_defs, calls}`) so each language contributes
 /// real symbol/import/call structure rather than bare file nodes.
 const GRAPH_SOURCE_EXTS: &[&str] = &[
-    "rs", "ts", "tsx", "js", "jsx", "py", "go", "java", "gd", "cs",
+    "rs", "ts", "tsx", "js", "jsx", "py", "go", "java", "gd", "cs", "kt", "kts",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -723,11 +723,17 @@ fn insert_type_ref_edges(
     rel_path: &str,
     type_uses: &[crate::core::deep_queries::TypeUse],
     def_index: &DefIndex,
-    visible_ns: &std::collections::HashSet<String>,
+    scope: &crate::core::type_ref_edges::ResolveScope,
 ) -> usize {
     let mut added = 0usize;
     for (target_file, type_name, line_start, line_end) in
-        crate::core::type_ref_edges::type_ref_targets(def_index, type_uses, rel_path, visible_ns)
+        crate::core::type_ref_edges::type_ref_targets(
+            def_index,
+            type_uses,
+            rel_path,
+            &scope.visible_ns,
+            scope.allow_global_fallback,
+        )
     {
         let Ok(target_id) = graph.upsert_node(&Node::file(&target_file)) else {
             continue;
@@ -969,21 +975,18 @@ fn index_graph_file_embeddings(
         }
     }
 
-    // Type-usage edges close the same-namespace gap (C#/Java, GH #398):
-    // a file consuming a project type without importing it still depends on
-    // the defining file. Resolution is namespace-aware for C#.
-    let visible_ns = if ext == "cs" {
-        crate::core::type_ref_edges::csharp_visible_namespaces(analysis)
-    } else {
-        std::collections::HashSet::new()
-    };
+    // Type-usage edges close the same-namespace gap (C#/Java/Go/Kotlin,
+    // GH #398): a file consuming a project type without importing it still
+    // depends on the defining file. Scope is per-language (namespace-aware for
+    // C#/Kotlin, directory-strict for Go).
+    let scope = crate::core::type_ref_edges::resolve_scope(rel_path, ext, analysis);
     total_edges += insert_type_ref_edges(
         graph,
         file_node_id,
         rel_path,
         &analysis.type_uses,
         def_index,
-        &visible_ns,
+        &scope,
     );
     // Extension-method calls (`value.Foo()`) depend on the defining file too.
     total_edges += insert_ext_method_edges(
@@ -1056,20 +1059,16 @@ fn index_graph_file_minimal(
         }
     }
 
-    // Same-namespace type consumption (C#/Java, GH #398) — see the
+    // Same-namespace type consumption (C#/Java/Go/Kotlin, GH #398) — see the
     // embeddings-path counterpart in `index_graph_file_embeddings`.
-    let visible_ns = if ext == "cs" {
-        crate::core::type_ref_edges::csharp_visible_namespaces(analysis)
-    } else {
-        std::collections::HashSet::new()
-    };
+    let scope = crate::core::type_ref_edges::resolve_scope(rel_path, ext, analysis);
     total_edges += insert_type_ref_edges(
         graph,
         file_node_id,
         rel_path,
         &analysis.type_uses,
         def_index,
-        &visible_ns,
+        &scope,
     );
     total_edges += insert_ext_method_edges(
         graph,
@@ -1822,6 +1821,168 @@ mod tests {
                 .affected_files
                 .contains(&"Services/Motor.cs".to_string()),
             "same-namespace consumer must survive a background reindex; got: {:?}",
+            impact.affected_files
+        );
+    }
+
+    /// GH #398 bug class (Go): files in the same package (== same directory) use
+    /// each other's types with **no import at all**, so import edges leave the
+    /// consumed type a false-negative leaf — and the coarse `package` edge is
+    /// not even a structural impact edge. The directory-scoped `type_ref` edge
+    /// must connect consumer -> definer, while a same-directory file that does
+    /// *not* use the type stays out (precision the package edge cannot give).
+    #[cfg(feature = "embeddings")]
+    #[test]
+    fn go_same_package_type_use_is_not_a_leaf() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("core")).unwrap();
+
+        // The small type under change.
+        std::fs::write(
+            root.join("core/engine.go"),
+            "package core\n\ntype Engine struct {\n\tPower int\n}\n",
+        )
+        .unwrap();
+        // Same-package consumer: field + parameter, never imported.
+        std::fs::write(
+            root.join("core/motor.go"),
+            "package core\n\ntype Motor struct {\n\tengine Engine\n}\n\n\
+             func NewMotor(e Engine) *Motor {\n\treturn &Motor{engine: e}\n}\n",
+        )
+        .unwrap();
+        // Same directory, but does NOT use Engine -> must stay out (precision).
+        std::fs::write(
+            root.join("core/logger.go"),
+            "package core\n\ntype Logger struct{}\n\nfunc (l *Logger) Log(m string) {}\n",
+        )
+        .unwrap();
+
+        let root_str = root.to_string_lossy().to_string();
+        let out = handle("build", None, &root_str, None, Some("text"));
+        assert!(!out.contains("ERROR"), "graph build failed: {out}");
+
+        let graph =
+            crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
+        let impact = graph
+            .impact_analysis("core/engine.go", 5)
+            .expect("impact analysis");
+
+        assert!(
+            impact.affected_files.contains(&"core/motor.go".to_string()),
+            "same-package consumer (no import) must be affected; got: {:?}",
+            impact.affected_files
+        );
+        assert!(
+            !impact
+                .affected_files
+                .contains(&"core/logger.go".to_string()),
+            "same-directory non-consumer must NOT be affected; got: {:?}",
+            impact.affected_files
+        );
+    }
+
+    /// GH #398 bug class (Go), mirror path: the durable `graph_index` ->
+    /// PropertyGraph mirror must reproduce the Go same-package `type_ref` edge so
+    /// a background reindex cannot wipe the blast radius (the original #398 wipe,
+    /// now guarded for Go too). Gated on `tree-sitter`: needs the Go grammar.
+    #[cfg(feature = "tree-sitter")]
+    #[test]
+    fn go_blast_radius_survives_background_reindex() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::create_dir_all(root.join("core")).unwrap();
+
+        std::fs::write(
+            root.join("core/engine.go"),
+            "package core\n\ntype Engine struct {\n\tPower int\n}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("core/motor.go"),
+            "package core\n\ntype Motor struct {\n\tengine Engine\n}\n",
+        )
+        .unwrap();
+
+        let root_str = root.to_string_lossy().to_string();
+
+        let out = handle("build", None, &root_str, None, Some("text"));
+        assert!(!out.contains("ERROR"), "graph build failed: {out}");
+
+        // Background reindex: clears the PropertyGraph and repopulates from
+        // graph_index. The mirror must re-emit the Go type_ref edge.
+        let _ = crate::core::graph_index::scan(&root_str);
+
+        let graph =
+            crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
+        let impact = graph
+            .impact_analysis("core/engine.go", 5)
+            .expect("impact analysis");
+        assert!(
+            impact.affected_files.contains(&"core/motor.go".to_string()),
+            "Go same-package consumer must survive a background reindex; got: {:?}",
+            impact.affected_files
+        );
+    }
+
+    /// GH #398 bug class (Kotlin): same-*package* types need no import, and the
+    /// package is independent of the directory. A consumer in a different
+    /// directory but the same package must land in the blast radius (proving
+    /// package-, not directory-based resolution), while a different-package file
+    /// stays out.
+    #[cfg(feature = "embeddings")]
+    #[test]
+    fn kotlin_same_package_type_use_is_not_a_leaf() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("domain")).unwrap();
+        std::fs::create_dir_all(root.join("service")).unwrap();
+        std::fs::create_dir_all(root.join("other")).unwrap();
+
+        std::fs::write(
+            root.join("domain/Engine.kt"),
+            "package app.core\n\nclass Engine {\n    var power: Int = 0\n}\n",
+        )
+        .unwrap();
+        // Different directory, same package, no import — the hard case.
+        std::fs::write(
+            root.join("service/Motor.kt"),
+            "package app.core\n\nclass Motor(private val engine: Engine)\n",
+        )
+        .unwrap();
+        // Different package -> must NOT be affected (non-vacuous).
+        std::fs::write(
+            root.join("other/Logger.kt"),
+            "package app.other\n\nclass Logger\n",
+        )
+        .unwrap();
+
+        let root_str = root.to_string_lossy().to_string();
+        let out = handle("build", None, &root_str, None, Some("text"));
+        assert!(!out.contains("ERROR"), "graph build failed: {out}");
+
+        let graph =
+            crate::core::property_graph::CodeGraph::open(&root_str).expect("open property graph");
+        let impact = graph
+            .impact_analysis("domain/Engine.kt", 5)
+            .expect("impact analysis");
+
+        assert!(
+            impact
+                .affected_files
+                .contains(&"service/Motor.kt".to_string()),
+            "same-package consumer in another directory must be affected; got: {:?}",
+            impact.affected_files
+        );
+        assert!(
+            !impact
+                .affected_files
+                .contains(&"other/Logger.kt".to_string()),
+            "different-package file must NOT be affected; got: {:?}",
             impact.affected_files
         );
     }

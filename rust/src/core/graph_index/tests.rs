@@ -647,6 +647,54 @@ public Motor(Engine engine) { _engine = engine; }\n}\n";
     );
 }
 
+/// GH #398 bug class (Go): the durable mirror must carry a *directory-scoped*
+/// same-package `type_ref` edge — Go files in one package (== one directory)
+/// use each other's types with no import. The decisive correctness property:
+/// a homonymous type in another directory (another package) must NOT be linked,
+/// which is exactly what a namespace-free global fallback would get wrong for a
+/// common type name.
+#[cfg(feature = "tree-sitter")]
+#[test]
+fn go_same_package_type_ref_edge_is_directory_scoped() {
+    const ENGINE: &str = "package core\n\ntype Engine struct {\n\tPower int\n}\n";
+    const MOTOR: &str = "package core\n\ntype Motor struct {\n\tengine Engine\n}\n";
+    // Different directory => different package: the same simple name must stay
+    // unlinked (strict Go scope, no cross-package leak).
+    const OTHER_ENGINE: &str = "package other\n\ntype Engine struct{}\n";
+
+    let files = [
+        ("core/engine.go", ENGINE),
+        ("core/motor.go", MOTOR),
+        ("other/engine.go", OTHER_ENGINE),
+    ];
+    let mut index = ProjectIndex::new("/proj-go-398");
+    let mut cache: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for (path, content) in files {
+        index
+            .files
+            .insert(path.to_string(), fe(path, content, "go"));
+        cache.insert(path.to_string(), content.to_string());
+    }
+    build_edges_cached(&mut index, &cache);
+
+    assert!(
+        index
+            .edges
+            .iter()
+            .any(|e| e.kind == "type_ref" && e.from == "core/motor.go" && e.to == "core/engine.go"),
+        "expected a Go same-package type_ref edge, got {:?}",
+        index.edges
+    );
+    assert!(
+        !index
+            .edges
+            .iter()
+            .any(|e| e.kind == "type_ref" && e.to == "other/engine.go"),
+        "cross-package homonym must NOT be linked (Go strict scope), got {:?}",
+        index.edges
+    );
+}
+
 #[test]
 fn csharp_using_resolves_declared_namespace_not_matching_folder() {
     // The real-world fix: namespaces that do NOT mirror the folder layout.

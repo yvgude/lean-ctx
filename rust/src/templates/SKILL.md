@@ -59,7 +59,7 @@ Use native Edit/StrReplace. If unavailable, use `ctx_edit` immediately.
 ## More Tools (via ctx_call or ctx_load_tools)
 
 Architecture: ctx_symbol, ctx_callgraph, ctx_impact, ctx_architecture, ctx_routes, ctx_smells
-  ↳ "What breaks if I change this file/class/type?" → ctx_impact (file-level blast radius; resolves C#/Java same-namespace type usage). "Who calls this function?" → ctx_callgraph (symbol-level).
+  ↳ "What breaks if I change this file/class/type?" → ctx_impact (file-level blast radius; resolves same-package/namespace type usage with no import for C#, Java, Go and Kotlin). "Who calls this function?" → ctx_callgraph (symbol-level).
 Multi-agent: ctx_agent, ctx_share, ctx_task, ctx_handoff, ctx_workflow
 Verify: ctx_benchmark, ctx_verify, ctx_proof, ctx_review
 Batch: ctx_fill, ctx_execute, ctx_expand, ctx_pack

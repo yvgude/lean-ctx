@@ -143,6 +143,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   exact gap every prior #398 fix missed. (The grep hook also now redirects only
   `output_mode=content`, passing `files_with_matches`/`count` through untouched,
   since the path-swap returned wrong results for those.) (gitlab #915–#918)
+- **`ctx_impact` missed Go and Kotlin same-package blast radius (#398 bug class).**
+  The C#/Java fix above closed one instance of a general gap: any language with
+  implicit same-package visibility references project types with no import, so
+  import edges alone leave the consumed type a false-negative leaf. For **Go** the
+  miss was total — same-package is same-directory and fully import-free, so changing
+  a struct used by a sibling file reported "no impact". `core::type_ref_edges` now
+  resolves Go usages *directory-scoped and strict* (a common name like
+  `Config`/`Server` declared in many packages still resolves to the one true
+  same-package definer, with no cross-package leak) and **Kotlin** usages by
+  declared package, both durable through the `graph_index` mirror and emitted by the
+  `ctx_impact` builder. The old coarse Go `package` heuristic — one arbitrary
+  same-directory edge per file, silently parsed as a top-weight `imports` edge in
+  the mirror — is **removed**: it both missed the real consumer and pulled
+  non-consumers (e.g. an unrelated `logger.go`) into the blast radius. Precise
+  `type_ref` edges replace it, and a genuinely unused file now falls to the standard
+  low-weight sibling rescue like every other language. Per-language scope is
+  centralized in one `resolve_scope` (previously the namespace logic was duplicated
+  across three call sites). `GRAPH_ENGINE_VERSION` is bumped (3→4) so stale graphs
+  self-heal. (gitlab #920–#924)
 - **`ctx_read` left an empty ` []` metadata field on incompressible files (#509).**
   The `entropy` (and `density`) read modes append a ` [techniques…]` tag listing
   which compression techniques fired. On a file where none did (high-entropy, no

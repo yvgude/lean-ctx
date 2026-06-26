@@ -34,9 +34,10 @@ fn build_edges_with_cache(index: &mut ProjectIndex, content_cache: &HashMap<Stri
 
     const MAX_FILE_SIZE_FOR_EDGES: u64 = 2 * 1024 * 1024;
 
-    // Full analyses of C#/Java files, kept to derive cross-file type_ref edges
-    // after the import pass (GH #398). Those languages resolve same-namespace
-    // types without an import, so the import list alone is not enough.
+    // Full analyses of C#/Java/Go/Kotlin files, kept to derive cross-file
+    // type_ref edges after the import pass (GH #398). Those languages resolve
+    // same-namespace/package types without an import, so the import list alone
+    // is not enough.
     let mut type_inputs: Vec<(String, String, crate::core::deep_queries::DeepAnalysis)> =
         Vec::new();
 
@@ -97,9 +98,10 @@ fn build_edges_with_cache(index: &mut ProjectIndex, content_cache: &HashMap<Stri
             };
 
             let analysis = crate::core::deep_queries::analyze(&analysis_content, resolve_ext);
-            // C#/Java need the full analysis for type_ref edges (GH #398);
-            // every other language uses only the resolved import list.
-            if matches!(resolve_ext, "cs" | "java") {
+            // C#/Java/Go/Kotlin need the full analysis for type_ref edges
+            // (GH #398); every other language uses only the resolved import
+            // list. Go/Kotlin still get their import edges from `imports` too.
+            if matches!(resolve_ext, "cs" | "java" | "go" | "kt" | "kts") {
                 let imports = analysis.imports.clone();
                 type_inputs.push((rel_path.clone(), resolve_ext.to_string(), analysis));
                 (resolve_ext, imports)
@@ -192,7 +194,11 @@ fn build_implicit_edges_with_cache(
                     content_cache,
                 );
             }
-            "go" => collect_go_package_edges(file, &file_paths, &mut new_edges),
+            // Go same-package dependencies are now precise `type_ref` edges
+            // (GH #398 bug class); the old coarse one-edge-per-file `package`
+            // heuristic mislabelled them as top-weight `imports` in the mirror
+            // and polluted the impact blast radius, so it is gone — unused
+            // orphans fall to the standard low-weight sibling rescue instead.
             "py" => collect_python_init_edges(file, &file_paths, &mut new_edges),
             "ts" | "js" | "tsx" | "jsx" => {
                 collect_barrel_edges_cached(file, &file_set, index, &mut new_edges, content_cache);
@@ -264,46 +270,6 @@ fn collect_rust_mod_edges_cached(
                 });
                 break;
             }
-        }
-    }
-}
-
-fn collect_go_package_edges(file: &str, file_paths: &[String], edges: &mut Vec<IndexEdge>) {
-    let p = Path::new(file);
-    if p.extension().and_then(|e| e.to_str()) != Some("go") {
-        return;
-    }
-    if file.ends_with("_test.go") {
-        return;
-    }
-
-    let Some(dir) = p.parent().map(|d| d.to_string_lossy().to_string()) else {
-        return;
-    };
-
-    for other in file_paths {
-        if other == file {
-            continue;
-        }
-        let op = Path::new(other.as_str());
-        if op.extension().and_then(|e| e.to_str()) != Some("go") {
-            continue;
-        }
-        if other.ends_with("_test.go") {
-            continue;
-        }
-        let other_dir = op
-            .parent()
-            .map(|d| d.to_string_lossy().to_string())
-            .unwrap_or_default();
-        if other_dir == dir {
-            edges.push(IndexEdge {
-                from: file.to_string(),
-                to: other.clone(),
-                kind: "package".to_string(),
-                weight: 0.5,
-            });
-            break;
         }
     }
 }

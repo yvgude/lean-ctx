@@ -53,12 +53,14 @@ fn match_type_def(node: Node, src: &str, ext: &str, parent_exported: bool) -> Op
 
     let is_exported = parent_exported || is_exported_node(node, src, ext);
     let generics = extract_generics(node, src);
-    // Namespace is only cheaply + reliably derivable for C# today; other
+    // Namespace is derived from the AST for C# and Kotlin (both carry an
+    // explicit package/namespace declaration). Go's package is the file's
+    // directory and is injected path-side in `type_ref_edges`; all other
     // languages stay `None` and fall back to the global resolution path.
-    let namespace = if ext == "cs" {
-        csharp_namespace_for(node, src)
-    } else {
-        None
+    let namespace = match ext {
+        "cs" => csharp_namespace_for(node, src),
+        "kt" | "kts" => kotlin_namespace_for(node, src),
+        _ => None,
     };
 
     Some(TypeDef {
@@ -110,6 +112,30 @@ fn csharp_namespace_for(node: Node, src: &str) -> Option<String> {
             && let Some(name) = child.child_by_field_name("name")
         {
             return Some(node_text(name, src).trim().to_string());
+        }
+    }
+    None
+}
+
+/// The Kotlin package a type declaration lives in.
+///
+/// A file declares its package once via a `package_header` (`package a.b.c`),
+/// a direct child of the source-file root. The package applies to every type
+/// in the file, so a single root scan suffices. Returns `None` for the default
+/// (unnamed) package.
+#[cfg(feature = "tree-sitter")]
+fn kotlin_namespace_for(node: Node, src: &str) -> Option<String> {
+    let mut root = node;
+    while let Some(p) = root.parent() {
+        root = p;
+    }
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() == "package_header" {
+            let name = find_child_by_kind(child, "qualified_identifier")
+                .or_else(|| find_child_by_kind(child, "identifier"))?;
+            let text = node_text(name, src).trim();
+            return (!text.is_empty()).then(|| text.to_string());
         }
     }
     None

@@ -74,7 +74,9 @@ fn migrate_if_needed(project_root: &str, new_dir: &Path) {
 /// - `3`: `type_ref` edges moved into the durable `graph_index` mirror so a
 ///   background reindex can no longer wipe the C# blast radius (GH #398); every
 ///   graph stamped by an engine that predates the mirror fix must rebuild.
-pub const GRAPH_ENGINE_VERSION: u32 = 3;
+/// - `4`: same-package `type_ref` edges extended to Go (directory-scoped) and
+///   Kotlin (GH #398 bug class); graphs built before they existed must rebuild.
+pub const GRAPH_ENGINE_VERSION: u32 = 4;
 
 /// `true` when the persisted graph was built by an engine older than
 /// [`GRAPH_ENGINE_VERSION`] — or predates the version stamp entirely (missing or
