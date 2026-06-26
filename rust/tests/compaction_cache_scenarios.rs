@@ -3,7 +3,6 @@
 //! compaction sync, and edge cases.
 
 use lean_ctx::core::cache::SessionCache;
-use lean_ctx::core::protocol::CrpMode;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 1. SessionCache — reset_delivery_flags and is_full_delivered
@@ -313,131 +312,6 @@ mod cache_policy {
         );
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 4. Integration: ctx_read stub behavior with delivery flags
-// ═══════════════════════════════════════════════════════════════════════════════
-
-mod ctx_read_stub_behavior {
-    use super::*;
-    use lean_ctx::tools::ctx_read::handle_with_task_resolved;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
-
-    fn read_full(cache: &mut SessionCache, path: &str) -> String {
-        let output = handle_with_task_resolved(cache, path, "full", CrpMode::Off, None);
-        output.content
-    }
-
-    #[test]
-    fn first_read_delivers_content() {
-        let mut f = NamedTempFile::new().unwrap();
-        writeln!(f, "fn hello() {{ println!(\"world\"); }}").unwrap();
-        let path = f.path().to_str().unwrap();
-
-        let mut cache = SessionCache::default();
-        let content = read_full(&mut cache, path);
-        assert!(
-            content.contains("hello") || content.contains("fn"),
-            "first read should deliver file content, got: {content}"
-        );
-        assert!(!content.contains("[unchanged"));
-    }
-
-    #[test]
-    fn second_read_returns_stub() {
-        let mut f = NamedTempFile::new().unwrap();
-        writeln!(f, "fn hello() {{ println!(\"world\"); }}").unwrap();
-        let path = f.path().to_str().unwrap();
-
-        let mut cache = SessionCache::default();
-        let _ = read_full(&mut cache, path); // first → delivers content
-        let content = read_full(&mut cache, path); // second → stub
-        assert!(
-            content.contains("unchanged") || content.contains("cached"),
-            "second read should be a stub, got: {content}"
-        );
-    }
-
-    #[test]
-    fn after_reset_flags_delivers_content_again() {
-        let mut f = NamedTempFile::new().unwrap();
-        writeln!(f, "fn hello() {{ println!(\"world\"); }}").unwrap();
-        let path = f.path().to_str().unwrap();
-
-        let mut cache = SessionCache::default();
-        let _ = read_full(&mut cache, path); // first read
-        let _ = read_full(&mut cache, path); // stub
-
-        // Simulate compaction: reset flags
-        cache.reset_delivery_flags();
-
-        let content = read_full(&mut cache, path); // should deliver again
-        assert!(
-            content.contains("hello") || content.contains("fn"),
-            "after reset, should deliver content again, got: {content}"
-        );
-    }
-
-    #[test]
-    fn after_re_delivery_third_read_is_stub_again() {
-        let mut f = NamedTempFile::new().unwrap();
-        writeln!(f, "fn hello() {{ println!(\"world\"); }}").unwrap();
-        let path = f.path().to_str().unwrap();
-
-        let mut cache = SessionCache::default();
-        let _ = read_full(&mut cache, path); // first → content
-        let _ = read_full(&mut cache, path); // second → stub
-
-        cache.reset_delivery_flags();
-        let _ = read_full(&mut cache, path); // third → content (post-compaction)
-        let content = read_full(&mut cache, path); // fourth → stub again
-        assert!(
-            content.contains("unchanged") || content.contains("cached"),
-            "after re-delivery, next read should be stub again, got: {content}"
-        );
-    }
-
-    #[test]
-    fn content_change_always_delivers_new_content() {
-        let f = NamedTempFile::new().unwrap();
-        let path = f.path().to_str().unwrap();
-
-        std::fs::write(path, "version 1\n").unwrap();
-        let mut cache = SessionCache::default();
-        let _ = read_full(&mut cache, path); // first → content
-
-        // Modify file
-        std::fs::write(path, "version 2\n").unwrap();
-        let content = read_full(&mut cache, path);
-        assert!(
-            content.contains("version 2"),
-            "after content change, should deliver new content, got: {content}"
-        );
-    }
-
-    #[test]
-    fn fresh_read_always_delivers_content() {
-        let mut f = NamedTempFile::new().unwrap();
-        writeln!(f, "fn hello() {{}}").unwrap();
-        let path = f.path().to_str().unwrap();
-
-        let mut cache = SessionCache::default();
-        let _ = handle_with_task_resolved(&mut cache, path, "full", CrpMode::Off, None);
-        let _ = handle_with_task_resolved(&mut cache, path, "full", CrpMode::Off, None); // stub
-
-        // fresh=true → invalidate → re-read
-        cache.invalidate(path);
-        let output = handle_with_task_resolved(&mut cache, path, "full", CrpMode::Off, None);
-        assert!(
-            !output.content.contains("unchanged"),
-            "fresh read should deliver content, got: {}",
-            output.content
-        );
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // 5. Edge cases and robustness
 // ═══════════════════════════════════════════════════════════════════════════════
 

@@ -9,7 +9,6 @@ pub fn handle(
     action: &str,
     path: Option<&str>,
     root: &str,
-    cache: &mut crate::core::cache::SessionCache,
     crp_mode: crate::tools::CrpMode,
     depth: Option<usize>,
     kind: Option<&str>,
@@ -19,7 +18,7 @@ pub fn handle(
     match action {
         "build" => handle_build(root),
         "related" => handle_related(path, root),
-        "symbol" => handle_symbol(path, root, cache, crp_mode),
+        "symbol" => handle_symbol(path, root, crp_mode),
         "impact" => handle_impact(path, root),
         "status" => handle_status(root),
         "enrich" => handle_enrich(root),
@@ -137,12 +136,7 @@ fn handle_related(path: Option<&str>, root: &str) -> String {
     result
 }
 
-fn handle_symbol(
-    path: Option<&str>,
-    root: &str,
-    cache: &mut crate::core::cache::SessionCache,
-    crp_mode: crate::tools::CrpMode,
-) -> String {
+fn handle_symbol(path: Option<&str>, root: &str, crp_mode: crate::tools::CrpMode) -> String {
     let Some(spec) = path else {
         return "path is required for 'symbol' action (format: <file>::<symbol>, or a bare <symbol> name)".to_string();
     };
@@ -151,11 +145,11 @@ fn handle_symbol(
         return "No graph index found. Run ctx_graph with action='build' first.".to_string();
     };
 
-    // Bare symbol name (no `::`): resolve against the symbol table so GDScript
+    // Bare symbol name (no `::`) — resolve against the symbol table so GDScript
     // (and every other language) symbols are reachable without a file qualifier
     // (#314).
     let Some((file_part, symbol_name)) = spec.split_once("::") else {
-        return resolve_bare_symbol(&open.provider, spec, root, cache, crp_mode);
+        return resolve_bare_symbol(&open.provider, spec, root, crp_mode);
     };
 
     let rel_file = graph_index::graph_relative_key(file_part, root);
@@ -190,7 +184,7 @@ fn handle_symbol(
             .to_string()
     };
 
-    render_symbol_snippet(&symbol, &abs_path, &rel_file, cache, crp_mode)
+    render_symbol_snippet(&symbol, &abs_path, &rel_file, crp_mode)
 }
 
 /// Resolve a bare symbol name (no `<file>::` qualifier) against the symbol table.
@@ -200,7 +194,6 @@ fn resolve_bare_symbol(
     provider: &GraphProvider,
     name: &str,
     root: &str,
-    cache: &mut crate::core::cache::SessionCache,
     crp_mode: crate::tools::CrpMode,
 ) -> String {
     let matches = provider.find_symbols(name, None, None);
@@ -221,7 +214,7 @@ fn resolve_bare_symbol(
             .join(only.file.trim_start_matches(['/', '\\']))
             .to_string_lossy()
             .to_string();
-        return render_symbol_snippet(only, &abs_path, &only.file, cache, crp_mode);
+        return render_symbol_snippet(only, &abs_path, &only.file, crp_mode);
     }
 
     // Several identically-named symbols, or only substring hits → list them.
@@ -253,7 +246,6 @@ fn render_symbol_snippet(
     symbol: &graph_provider::SymbolInfo,
     abs_path: &str,
     rel_display: &str,
-    cache: &mut crate::core::cache::SessionCache,
     crp_mode: crate::tools::CrpMode,
 ) -> String {
     let content = match std::fs::read_to_string(abs_path) {
@@ -266,7 +258,15 @@ fn render_symbol_snippet(
     let end = symbol.end_line.min(lines.len());
 
     if start >= lines.len() {
-        return crate::tools::ctx_read::handle(cache, abs_path, "full", crp_mode);
+        return match crate::tools::ctx_read::read(
+            abs_path,
+            &crate::tools::ctx_read::ReadMode::Full(None),
+            crp_mode,
+            None,
+        ) {
+            Ok(r) => r.content,
+            Err(e) => format!("ERROR: {e}"),
+        };
     }
 
     let mut result = format!(
@@ -734,5 +734,103 @@ mod tests {
         let prefixes = vec!["actors/Base.gd".to_string()];
         assert!(edge_matches_file("actors/Base.gd", &prefixes));
         assert!(!edge_matches_file("actors/Enemy.gd", &prefixes));
+    }
+}
+
+/// End-to-end GDScript graph coverage on a real Godot fixture (#314): four `.gd`
+/// scripts with `_ready` definitions and `res://` import edges, exercised through
+/// the public graph actions (context / impact / bare symbol).
+#[cfg(test)]
+mod gdscript_p0_tests {
+    use super::*;
+
+    fn write(root: &std::path::Path, rel: &str, content: &str) {
+        let p = root.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, content).unwrap();
+    }
+
+    /// Minimal Godot project: `Player`/`Enemy` extend `Base`, `main` preloads
+    /// `Player`; every script defines `_ready`. Returns (tempdir guard, root).
+    fn godot_fixture() -> (tempfile::TempDir, String) {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let data = tmp.path().join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
+
+        let proj = tmp.path().join("game");
+        std::fs::create_dir_all(&proj).unwrap();
+        write(
+            &proj,
+            "project.godot",
+            "[application]\nconfig/name=\"Fixture\"\n",
+        );
+        write(
+            &proj,
+            "actors/Base.gd",
+            "extends Node\n\nfunc _ready():\n\tpass\n",
+        );
+        write(
+            &proj,
+            "actors/Player.gd",
+            "extends \"res://actors/Base.gd\"\n\nfunc _ready():\n\tprint(\"player\")\n",
+        );
+        write(
+            &proj,
+            "actors/Enemy.gd",
+            "extends \"res://actors/Base.gd\"\n\nfunc _ready():\n\tprint(\"enemy\")\n",
+        );
+        write(
+            &proj,
+            "main.gd",
+            "const Player = preload(\"res://actors/Player.gd\")\n\nfunc _ready():\n\tprint(\"main\")\n",
+        );
+
+        (tmp, proj.to_string_lossy().to_string())
+    }
+
+    #[test]
+    fn context_resolves_gdscript_symbol() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let (_tmp, root) = godot_fixture();
+        let _ = handle_build(&root);
+        let out = handle_context_query(Some("_ready"), &root);
+        assert!(
+            out.contains("_ready"),
+            "context should surface _ready symbols: {out}"
+        );
+        assert!(!out.contains("No matching nodes found"), "got: {out}");
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+
+    #[test]
+    fn impact_lists_gdscript_dependents() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let (_tmp, root) = godot_fixture();
+        let _ = handle_build(&root);
+        let out = handle_impact(Some("actors/Base.gd"), &root);
+        assert!(
+            out.contains("Player.gd"),
+            "Base.gd dependents should include Player: {out}"
+        );
+        assert!(
+            out.contains("Enemy.gd"),
+            "Base.gd dependents should include Enemy: {out}"
+        );
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+
+    #[test]
+    fn bare_symbol_resolves_gdscript() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let (_tmp, root) = godot_fixture();
+        let _ = handle_build(&root);
+        let out = handle_symbol(Some("_ready"), &root, crate::tools::CrpMode::Off);
+        // Four `_ready` defs → a disambiguation list (or a snippet), never the
+        // pre-#314 "Invalid symbol spec" / "not found" errors.
+        assert!(out.contains("_ready"), "bare symbol should resolve: {out}");
+        assert!(!out.contains("Invalid symbol spec"), "got: {out}");
+        assert!(!out.to_lowercase().contains("not found"), "got: {out}");
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }
 }

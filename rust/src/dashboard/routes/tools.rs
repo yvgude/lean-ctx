@@ -251,17 +251,23 @@ fn compression_demo_modes_json(
     let aggressive_out = crate::core::filters::aggressive_filter(content);
     let entropy_out = crate::core::entropy::entropy_compress_adaptive(content, path, &[]).output;
 
-    let mut cache = crate::core::cache::SessionCache::new();
-    let reference_out =
-        crate::tools::ctx_read::handle(&mut cache, path, "reference", crate::tools::CrpMode::Off);
+    let reference_out = crate::tools::ctx_read::read(
+        path,
+        &crate::tools::ctx_read::ReadMode::Full(None),
+        crate::tools::CrpMode::Off,
+        None,
+    )
+    .map(|r| r.content)
+    .unwrap_or_default();
     let task_out = task.filter(|t| !t.trim().is_empty()).map(|t| {
-        crate::tools::ctx_read::handle_with_task(
-            &mut cache,
+        crate::tools::ctx_read::read(
             path,
-            "task",
+            &crate::tools::ctx_read::ReadMode::Full(None),
             crate::tools::CrpMode::Off,
             Some(t),
         )
+        .map(|r| r.content)
+        .unwrap_or_default()
     });
 
     serde_json::json!({

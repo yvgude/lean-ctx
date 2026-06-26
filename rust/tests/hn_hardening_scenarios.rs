@@ -2,8 +2,8 @@
 //! Each module tests a fix with multiple realistic agent interaction scenarios.
 #![allow(clippy::needless_raw_string_hashes)]
 
-use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::protocol::CrpMode;
+use lean_ctx::tools::ctx_read;
 use std::io::Write;
 
 /// Reads the full `LeanCtxServer` dispatch source across its split submodules
@@ -228,8 +228,9 @@ mod cache_hit_messages {
         .unwrap();
         let path = file.to_string_lossy().to_string();
 
-        let mut cache = SessionCache::new();
-        let result = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let result = ctx_read::read(&path, &ctx_read::ReadMode::Full(None), CrpMode::Off, None)
+            .unwrap()
+            .content;
 
         // First read should return full content
         assert!(
@@ -249,19 +250,29 @@ mod cache_hit_messages {
         .unwrap();
         let path = file.to_string_lossy().to_string();
 
-        let mut cache = SessionCache::new();
-        // First read
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
-        // Second read (cache hit)
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
-        // Third read (should have proof line since read_count >= 2)
-        let result = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
-
+        // Pure read() always returns fresh content from disk
+        let r1 = ctx_read::read(&path, &ctx_read::ReadMode::Full(None), CrpMode::Off, None)
+            .unwrap()
+            .content;
         assert!(
-            result.contains("unchanged since your last read")
-                || result.contains("unchanged")
-                || result.contains("cached"),
-            "cache hit must indicate file unchanged: got: {result}"
+            r1.contains("fn main()"),
+            "first read must show full content"
+        );
+
+        let r2 = ctx_read::read(&path, &ctx_read::ReadMode::Full(None), CrpMode::Off, None)
+            .unwrap()
+            .content;
+        assert!(
+            r2.contains("fn main()"),
+            "second read must also show full content"
+        );
+
+        let r3 = ctx_read::read(&path, &ctx_read::ReadMode::Full(None), CrpMode::Off, None)
+            .unwrap()
+            .content;
+        assert!(
+            r3.contains("fn main()"),
+            "third read must also show full content"
         );
     }
 
@@ -272,8 +283,10 @@ mod cache_hit_messages {
         std::fs::write(&file, "// version 1\n").unwrap();
         let path = file.to_string_lossy().to_string();
 
-        let mut cache = SessionCache::new();
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        // Read before modification
+        let _before = ctx_read::read(&path, &ctx_read::ReadMode::Full(None), CrpMode::Off, None)
+            .unwrap()
+            .content;
 
         // Modify file
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -287,7 +300,10 @@ mod cache_hit_messages {
                 .unwrap();
         }
 
-        let result = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        // Read after modification — read() always reads from disk
+        let result = ctx_read::read(&path, &ctx_read::ReadMode::Full(None), CrpMode::Off, None)
+            .unwrap()
+            .content;
         assert!(
             result.contains("version 2") || result.contains("new_function"),
             "modified file must return new content"
@@ -593,8 +609,9 @@ mod overview_descriptions {
         let path = file.to_string_lossy().to_string();
 
         // Use ctx_read to verify file is readable, then check overview behavior
-        let mut cache = SessionCache::new();
-        let content = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = ctx_read::read(&path, &ctx_read::ReadMode::Full(None), CrpMode::Off, None)
+            .unwrap()
+            .content;
         assert!(content.contains("Session-level"));
     }
 
@@ -609,8 +626,9 @@ mod overview_descriptions {
         .unwrap();
         let path = file.to_string_lossy().to_string();
 
-        let mut cache = SessionCache::new();
-        let content = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = ctx_read::read(&path, &ctx_read::ReadMode::Full(None), CrpMode::Off, None)
+            .unwrap()
+            .content;
         assert!(content.contains("Utility functions"));
     }
 
@@ -625,8 +643,9 @@ mod overview_descriptions {
         .unwrap();
         let path = file.to_string_lossy().to_string();
 
-        let mut cache = SessionCache::new();
-        let content = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = ctx_read::read(&path, &ctx_read::ReadMode::Full(None), CrpMode::Off, None)
+            .unwrap()
+            .content;
         assert!(content.contains("REST API"));
     }
 
@@ -703,20 +722,28 @@ mod integration {
         std::fs::write(&file, "pub fn stable_function() -> bool { true }\n").unwrap();
         let path = file.to_string_lossy().to_string();
 
-        let mut cache = SessionCache::new();
-
         // Read 1: full content
-        let r1 = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let r1 = ctx_read::read(&path, &ctx_read::ReadMode::Full(None), CrpMode::Off, None)
+            .unwrap()
+            .content;
         assert!(r1.contains("stable_function"));
 
-        // Read 2: still returns content (marks as delivered)
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
-
-        // Read 3: now cache hit with proof
-        let r3 = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        // Read 2: still returns full content (pure read)
+        let r2 = ctx_read::read(&path, &ctx_read::ReadMode::Full(None), CrpMode::Off, None)
+            .unwrap()
+            .content;
         assert!(
-            r3.contains("unchanged") || r3.contains("cached"),
-            "third read should be a cache hit: {r3}"
+            r2.contains("stable_function"),
+            "second read must also return full content"
+        );
+
+        // Read 3: still returns fresh content
+        let r3 = ctx_read::read(&path, &ctx_read::ReadMode::Full(None), CrpMode::Off, None)
+            .unwrap()
+            .content;
+        assert!(
+            r3.contains("stable_function"),
+            "third read must also return full content"
         );
     }
 

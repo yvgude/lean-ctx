@@ -50,7 +50,6 @@ mod theme_cmd;
 mod tools_health_cmd;
 mod trust_cmd;
 mod upgrade_hint;
-mod verify_cache_cmd;
 mod verify_cmd;
 mod visualize_cmd;
 pub(crate) mod wrapped_publish;

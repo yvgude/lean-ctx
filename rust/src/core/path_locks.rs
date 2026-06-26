@@ -17,17 +17,19 @@
 //! cache write-lock.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 /// Upper bound on retained lock entries before we garbage-collect unused ones.
 const MAX_ENTRIES: usize = 500;
 
 /// Returns the shared advisory lock for `path`, creating it on first use.
 ///
-/// The same path always yields the same `Arc<Mutex<()>>`, so callers across
-/// threads serialize on it. Different paths yield independent mutexes.
-pub fn per_file_lock(path: &str) -> Arc<Mutex<()>> {
-    static FILE_LOCKS: std::sync::OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
+/// The same path always yields the same `Arc<RwLock<()>>`, so callers across
+/// threads can coordinate. Multiple readers proceed in parallel; writers get
+/// exclusive access (use `.write()` in edit paths, `.read()` in read paths).
+/// Different paths yield independent locks.
+pub fn per_file_lock(path: &str) -> Arc<RwLock<()>> {
+    static FILE_LOCKS: std::sync::OnceLock<Mutex<HashMap<String, Arc<RwLock<()>>>>> =
         std::sync::OnceLock::new();
     let map = FILE_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut map = map.lock().unwrap_or_else(|poisoned| {
@@ -42,7 +44,7 @@ pub fn per_file_lock(path: &str) -> Arc<Mutex<()>> {
     }
 
     map.entry(path.to_string())
-        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .or_insert_with(|| Arc::new(RwLock::new(())))
         .clone()
 }
 
@@ -80,7 +82,7 @@ mod tests {
             handles.push(std::thread::spawn(move || {
                 barrier.wait();
                 let lock = per_file_lock(path);
-                let _guard = lock.lock().unwrap();
+                let _guard = lock.write().unwrap();
                 let active = counter.fetch_add(1, Ordering::SeqCst) + 1;
                 max_concurrent.fetch_max(active, Ordering::SeqCst);
                 std::thread::sleep(std::time::Duration::from_millis(5));
@@ -111,7 +113,7 @@ mod tests {
                 let path = format!("/tmp/path_locks_parallel_{i}.txt");
                 barrier.wait();
                 let lock = per_file_lock(&path);
-                let _guard = lock.lock().unwrap();
+                let _guard = lock.write().unwrap();
                 let active = counter.fetch_add(1, Ordering::SeqCst) + 1;
                 max_concurrent.fetch_max(active, Ordering::SeqCst);
                 std::thread::sleep(std::time::Duration::from_millis(5));

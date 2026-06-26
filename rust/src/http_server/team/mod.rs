@@ -549,12 +549,12 @@ fn required_scopes(tool_name: &str, args: Option<&Value>) -> Option<BTreeSet<Tea
     let mut s = BTreeSet::new();
     match tool_name {
         // Search scope (read/discovery/analysis)
-        "ctx_read" | "ctx_multi_read" | "ctx_smart_read" | "ctx_search" | "ctx_tree"
-        | "ctx_outline" | "ctx_expand" | "ctx_delta" | "ctx_dedup" | "ctx_prefetch"
-        | "ctx_preload" | "ctx_review" | "ctx_response" | "ctx_task" | "ctx_overview"
-        | "ctx_architecture" | "ctx_benchmark" | "ctx_cost" | "ctx_intent" | "ctx_heatmap"
-        | "ctx_gain" | "ctx_analyze" | "ctx_discover_tools" | "ctx_discover" | "ctx_symbol"
-        | "ctx_index" | "ctx_metrics" | "ctx_cache" | "ctx_agent" => {
+        "ctx_read" | "ctx_multi_read" | "ctx_search" | "ctx_tree" | "ctx_outline"
+        | "ctx_expand" | "ctx_dedup" | "ctx_prefetch" | "ctx_preload" | "ctx_review"
+        | "ctx_response" | "ctx_task" | "ctx_overview" | "ctx_architecture" | "ctx_benchmark"
+        | "ctx_cost" | "ctx_intent" | "ctx_heatmap" | "ctx_gain" | "ctx_analyze"
+        | "ctx_discover_tools" | "ctx_discover" | "ctx_symbol" | "ctx_index" | "ctx_metrics"
+        | "ctx_cache" | "ctx_agent" => {
             s.insert(TeamScope::Search);
             Some(s)
         }
@@ -1414,7 +1414,7 @@ pub async fn serve_team(cfg: TeamServerConfig) -> Result<()> {
     if let Some(url) = &cfg.roi_webhook_url {
         super::roi_webhook::validate_webhook_url(url)
             .map_err(|e| anyhow!("invalid roiWebhookUrl in team config: {e}"))?;
-        let _ = super::roi_webhook::spawn_weekly_roi_webhook(state.clone(), url.clone());
+        let _ = super::roi_webhook::spawn_weekly_roi_webhook(state.clone(), url.clone()).await;
         tracing::info!("team ROI webhook enabled (weekly)");
     }
 

@@ -113,24 +113,22 @@ fn resolve_curated_refs(
         resolved.push(abs);
     }
 
-    let cache_handle = ctx
-        .cache
-        .as_ref()
-        .ok_or_else(|| ErrorData::internal_error("cache not available", None))?;
-    let Some(mut cache) = crate::server::bounded_lock::write(cache_handle, "ctx_handoff") else {
-        return Err(ErrorData::internal_error(
-            "cache busy (ctx_handoff) — retry in a moment",
-            None,
-        ));
-    };
     for abs in &resolved {
-        let mode = if crate::tools::ctx_read::is_instruction_file(abs) {
+        let mode_str = if crate::tools::ctx_read::is_instruction_file(abs) {
             "full"
         } else {
             "signatures"
         };
-        let text =
-            crate::tools::ctx_read::handle_with_task(&mut cache, abs, mode, ctx.crp_mode, None);
+        let read_mode = match mode_str {
+            "signatures" => crate::tools::ctx_read::ReadMode::Signatures,
+            "map" => crate::tools::ctx_read::ReadMode::Map,
+            "diff" => crate::tools::ctx_read::ReadMode::Diff,
+            _ => crate::tools::ctx_read::ReadMode::Full(None),
+        };
+        let text = match crate::tools::ctx_read::read(abs, &read_mode, ctx.crp_mode, None) {
+            Ok(output) => output.content,
+            Err(e) => format!("ERROR reading {abs}: {e}"),
+        };
         curated_refs.push((abs.clone(), text));
     }
 

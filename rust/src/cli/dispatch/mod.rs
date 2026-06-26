@@ -167,13 +167,6 @@ pub fn run() {
                 crate::cli::eval_cmd::cmd_eval(&rest);
                 return;
             }
-            "verify-cache" | "cache-selftest" => {
-                let code = crate::cli::verify_cache_cmd::cmd_verify_cache(&rest);
-                if code != 0 {
-                    std::process::exit(code);
-                }
-                return;
-            }
             "visualize" => {
                 super::cmd_visualize(&rest);
                 return;

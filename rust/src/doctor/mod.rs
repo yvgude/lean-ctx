@@ -585,9 +585,8 @@ pub fn run() {
     };
     println!("  {tool_profile_line}");
 
-    // Session cache health (#361): answer "is the cache actually engaging?"
-    // without external instrumentation. CEP sessions + the cross-call hit ratio
-    // come from the persistent stats store; `verify-cache` proves it live.
+    // Session cache health (#361): CEP sessions + the cross-call hit ratio
+    // come from the persistent stats store.
     let cep = &crate::core::stats::load().cep;
     let hit_ratio = if cep.total_cache_reads > 0 {
         (cep.total_cache_hits as f64 / cep.total_cache_reads as f64) * 100.0
@@ -595,7 +594,7 @@ pub fn run() {
         0.0
     };
     println!(
-        "  {BOLD}Session cache{RST}  {WHITE}{} sessions{RST}  {DIM}{}/{} reads cached ({hit_ratio:.0}% hit) · prove: lean-ctx verify-cache{RST}",
+        "  {BOLD}Session cache{RST}  {WHITE}{} sessions{RST}  {DIM}{}/{} reads cached ({hit_ratio:.0}% hit){RST}",
         cep.sessions, cep.total_cache_hits, cep.total_cache_reads
     );
 

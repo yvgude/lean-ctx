@@ -34,7 +34,7 @@ pub fn is_firewallable_tool(name: &str) -> bool {
 /// honour it so a `ctx_read` can never degrade to a preview the agent can't edit.
 #[must_use]
 pub fn is_protected_read(name: &str) -> bool {
-    matches!(name, "ctx_read" | "ctx_multi_read" | "ctx_smart_read")
+    matches!(name, "ctx_read" | "ctx_multi_read")
 }
 
 /// Effective minimum token count before firewalling (config + env override).
@@ -124,7 +124,7 @@ mod tests {
     fn protected_reads_are_file_readers_and_never_firewallable() {
         // Explicit reads must always return content (no firewall digest, no
         // reference stub) so the agent can edit against the lines.
-        for read in ["ctx_read", "ctx_multi_read", "ctx_smart_read"] {
+        for read in ["ctx_read", "ctx_multi_read"] {
             assert!(is_protected_read(read), "{read} must be a protected read");
             assert!(
                 !is_firewallable_tool(read),

@@ -173,10 +173,6 @@ fn scenario_read_tools_in_passthrough_list() {
         WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_multi_read"),
         "ctx_multi_read must always pass through workflow gate"
     );
-    assert!(
-        WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_smart_read"),
-        "ctx_smart_read must always pass through workflow gate"
-    );
 }
 
 #[test]
@@ -257,9 +253,6 @@ fn scenario_is_workflow_stale_hours() {
 
 #[test]
 fn scenario_cache_hit_message_format() {
-    use lean_ctx::core::cache::SessionCache;
-
-    let mut cache = SessionCache::new();
     let dir = std::env::temp_dir().join("lean_ctx_bazsi_cache_test");
     let _ = std::fs::create_dir_all(&dir);
     let file_path = dir.join("test_file.py");
@@ -270,34 +263,56 @@ fn scenario_cache_hit_message_format() {
     }
     let path_str = file_path.to_str().unwrap();
 
-    // First read: should return full content
-    let result1 = lean_ctx::tools::ctx_read::handle(&mut cache, path_str, "full", CrpMode::Off);
+    // ctx_read::read() is pure with no caching: every call returns fresh content.
+    // Verify determinism: identical calls produce identical output.
+    let result1 = lean_ctx::tools::ctx_read::read(
+        path_str,
+        &lean_ctx::tools::ctx_read::ReadMode::Full(None),
+        CrpMode::Off,
+        None,
+    )
+    .unwrap()
+    .content;
+
+    // First read: should contain file content, no stub markers
     assert!(
-        !result1.contains("[unchanged"),
-        "First read should NOT say unchanged: got {result1}"
+        !result1.contains("unchanged"),
+        "First read should not say 'unchanged': got {result1}"
     );
     assert!(
         result1.contains("hello") || result1.contains("def"),
         "First read should contain file content"
     );
-
-    // Second read (cache hit): should use new message format
-    let result2 = lean_ctx::tools::ctx_read::handle(&mut cache, path_str, "full", CrpMode::Off);
     assert!(
-        result2.contains("[unchanged") || result2.contains("use cached context"),
-        "Cache hit should use new message format: got {result2}"
+        !result1.contains("Already in your context window"),
+        "Old misleading message must not appear: got {result1}"
     );
-    // Must NOT say "Already in your context window"
+    assert!(
+        !result1.contains("fresh=true"),
+        "fresh=true hint only on cache stubs; pure read returns content directly: got {result1}"
+    );
+
+    // Second read (same inputs → identical output): pure determinism
+    let result2 = lean_ctx::tools::ctx_read::read(
+        path_str,
+        &lean_ctx::tools::ctx_read::ReadMode::Full(None),
+        CrpMode::Off,
+        None,
+    )
+    .unwrap()
+    .content;
+
+    assert_eq!(
+        result1, result2,
+        "Pure read() must produce identical output for identical inputs"
+    );
+    assert!(
+        result2.contains("test_file.py 2L"),
+        "Second read should contain header: {result2}"
+    );
     assert!(
         !result2.contains("Already in your context window"),
-        "Old misleading message must not appear: got {result2}"
-    );
-    // Should show unchanged indicator or hint at fresh=true
-    assert!(
-        result2.contains("fresh=true")
-            || result2.contains("cached context")
-            || result2.contains("[unchanged"),
-        "Should hint about fresh=true, cached context, or unchanged: got {result2}"
+        "Old misleading message must not appear on re-read: got {result2}"
     );
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -306,12 +321,9 @@ fn scenario_cache_hit_message_format() {
 #[test]
 #[serial]
 fn scenario_cache_hit_meta_visible_format() {
-    use lean_ctx::core::cache::SessionCache;
-
     // Enable meta_visible mode via env var
     unsafe { std::env::set_var("LEAN_CTX_META", "1") };
 
-    let mut cache = SessionCache::new();
     let dir = std::env::temp_dir().join("lean_ctx_bazsi_meta_test");
     let _ = std::fs::create_dir_all(&dir);
     let file_path = dir.join("meta_test.rs");
@@ -321,24 +333,53 @@ fn scenario_cache_hit_meta_visible_format() {
     }
     let path_str = file_path.to_str().unwrap();
 
-    // First read
-    let _ = lean_ctx::tools::ctx_read::handle(&mut cache, path_str, "full", CrpMode::Off);
+    // ctx_read::read() is pure with no caching: every call returns fresh content.
+    // meta_visible affects build_header only when file_ref is non-empty; pure
+    // read() passes file_ref="" so both calls produce identical output.
+    let result1 = lean_ctx::tools::ctx_read::read(
+        path_str,
+        &lean_ctx::tools::ctx_read::ReadMode::Full(None),
+        CrpMode::Off,
+        None,
+    )
+    .unwrap()
+    .content;
 
-    // Second read (meta_visible mode)
-    let result = lean_ctx::tools::ctx_read::handle(&mut cache, path_str, "full", CrpMode::Off);
-
-    // Meta-visible format should mention "unchanged on disk"
+    // First read: meta_visible header, no stub markers
     assert!(
-        result.contains("unchanged") || result.contains("File unchanged on disk"),
-        "Meta-visible cache hit should say 'unchanged on disk': got {result}"
+        result1.contains("meta_test.rs 1L"),
+        "First read should show meta_visible header: got {result1}"
     );
     assert!(
-        !result.contains("Already in your context window"),
-        "Old message must not appear in meta-visible mode: got {result}"
+        !result1.contains("unchanged"),
+        "First read should not say 'unchanged': got {result1}"
     );
     assert!(
-        result.contains("fresh=true"),
-        "Meta-visible cache hit should hint fresh=true: got {result}"
+        !result1.contains("Already in your context window"),
+        "Old message must not appear: got {result1}"
+    );
+
+    // Second read: pure read() returns identical content (no cache hit)
+    let result2 = lean_ctx::tools::ctx_read::read(
+        path_str,
+        &lean_ctx::tools::ctx_read::ReadMode::Full(None),
+        CrpMode::Off,
+        None,
+    )
+    .unwrap()
+    .content;
+
+    assert_eq!(
+        result1, result2,
+        "Pure read() must produce identical output for identical inputs"
+    );
+    assert!(
+        result2.contains("meta_test.rs 1L"),
+        "Second read should show meta_visible header: got {result2}"
+    );
+    assert!(
+        !result2.contains("Already in your context window"),
+        "Old message must not appear on re-read: got {result2}"
     );
 
     unsafe { std::env::remove_var("LEAN_CTX_META") };

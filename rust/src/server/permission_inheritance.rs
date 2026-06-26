@@ -72,7 +72,7 @@ fn map_tool(
     let get = |k: &str| crate::server::helpers::get_str(args, k);
     match tool {
         "ctx_shell" | "ctx_execute" => Some(("bash", get("command"))),
-        "ctx_read" | "ctx_multi_read" | "ctx_smart_read" => Some(("read", get("path"))),
+        "ctx_read" | "ctx_multi_read" => Some(("read", get("path"))),
         "ctx_edit" => Some(("edit", get("path"))),
         "ctx_search" => Some(("grep", get("pattern").or_else(|| get("query")))),
         _ => None,

@@ -92,20 +92,10 @@ impl McpTool for CtxGraphTool {
             None
         };
 
-        let cache = ctx
-            .cache
-            .as_ref()
-            .ok_or_else(|| ErrorData::internal_error("cache not available", None))?;
-        let Some(mut guard) = crate::server::bounded_lock::write(cache, "ctx_graph") else {
-            return Ok(ToolOutput::simple(
-                "[graph cache temporarily unavailable — retry in a moment]".to_string(),
-            ));
-        };
         let result = crate::tools::ctx_graph::handle(
             &action,
             path.as_deref(),
             &root,
-            &mut guard,
             ctx.crp_mode,
             depth,
             kind.as_deref(),

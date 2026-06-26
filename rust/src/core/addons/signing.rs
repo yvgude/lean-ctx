@@ -108,7 +108,7 @@ pub fn gate_override(
     if !is_trusted(&sig.signer_public_key) {
         return OverrideVerdict::Reject(format!(
             "override registry signed by an untrusted key ({}…) — pin it with `policy org trust`",
-            &sig.signer_public_key.chars().take(12).collect::<String>()
+            sig.signer_public_key.chars().take(12).collect::<String>()
         ));
     }
     OverrideVerdict::Accept

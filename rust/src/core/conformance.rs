@@ -250,24 +250,25 @@ const MUST_KEEP_SYMBOLS: &[&str] = &["add_item", "total_count", "Inventory"];
 const MUST_DROP_BODIES: &[&str] = &["body_secret_alpha", "body_secret_beta"];
 
 fn render_mode(mode: &str) -> String {
-    crate::tools::ctx_read::render::process_mode(
+    use crate::tools::ctx_read::{ReadMode, render_content};
+    let read_mode = match mode {
+        "map" => ReadMode::Map,
+        _ => ReadMode::Signatures,
+    };
+    render_content(
         ACCURACY_FIXTURE,
-        mode,
-        "",
-        "fixture.rs",
-        "rs",
-        crate::core::tokens::count_tokens(ACCURACY_FIXTURE),
-        crate::tools::CrpMode::Off,
         "conformance/fixture.rs",
+        &read_mode,
+        crate::tools::CrpMode::Off,
         None,
     )
-    .0
+    .content
 }
 
 fn accuracy_checks() -> Vec<Check> {
     let mut checks = Vec::new();
 
-    for mode in ["map", "signatures", "aggressive", "entropy"] {
+    for mode in ["map", "signatures"] {
         checks.push(Check::from_bool(
             "accuracy",
             format!("read_mode_deterministic:{mode}"),
@@ -301,33 +302,13 @@ fn accuracy_checks() -> Vec<Check> {
     }
 
     let fixture_tokens = crate::core::tokens::count_tokens(ACCURACY_FIXTURE);
-    for mode in ["map", "signatures", "aggressive"] {
+    for mode in ["map", "signatures"] {
         let sent = crate::core::tokens::count_tokens(&render_mode(mode));
         checks.push(Check::from_bool(
             "accuracy",
             format!("read_mode_compresses:{mode}"),
             sent < fixture_tokens,
             &format!("no compression: {sent} >= {fixture_tokens} tokens"),
-        ));
-    }
-
-    // Target-density mode (GL#444): the body (excluding header/savings lines)
-    // must stay within the token budget, and the render must be deterministic.
-    {
-        let target = 0.4_f64;
-        let result = crate::core::entropy::entropy_compress_to_density(ACCURACY_FIXTURE, target);
-        let actual = result.compressed_tokens as f64 / fixture_tokens.max(1) as f64;
-        checks.push(Check::from_bool(
-            "accuracy",
-            "density_respects_budget:0.4",
-            actual <= target + 0.10,
-            &format!("density {actual:.2} exceeds target {target:.2} (+0.10 tolerance)"),
-        ));
-        checks.push(Check::from_bool(
-            "accuracy",
-            "density_deterministic:0.4",
-            render_mode("density:0.4") == render_mode("density:0.4"),
-            "two density renders of the same fixture differ",
         ));
     }
 

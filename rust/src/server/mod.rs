@@ -201,7 +201,6 @@ pub const WORKFLOW_PASSTHROUGH_TOOLS: &[&str] = &[
     "ctx_workflow",
     "ctx_read",
     "ctx_multi_read",
-    "ctx_smart_read",
     "ctx_search",
     "ctx_tree",
     "ctx_session",

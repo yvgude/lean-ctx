@@ -1779,14 +1779,15 @@ mod tests {
             .expect("impact analysis");
 
         assert!(
-            impact.affected_files.contains(&"core/motor.go".to_string()),
+            impact.affected_files.iter().any(|e| e.file_path == "core/motor.go"),
             "same-package consumer (no import) must be affected; got: {:?}",
             impact.affected_files
         );
         assert!(
             !impact
                 .affected_files
-                .contains(&"core/logger.go".to_string()),
+                .iter()
+                .any(|e| e.file_path == "core/logger.go"),
             "same-directory non-consumer must NOT be affected; got: {:?}",
             impact.affected_files
         );
@@ -1837,14 +1838,16 @@ mod tests {
         assert!(
             impact
                 .affected_files
-                .contains(&"service/Motor.kt".to_string()),
+                .iter()
+                .any(|e| e.file_path == "service/Motor.kt"),
             "same-package consumer in another directory must be affected; got: {:?}",
             impact.affected_files
         );
         assert!(
             !impact
                 .affected_files
-                .contains(&"other/Logger.kt".to_string()),
+                .iter()
+                .any(|e| e.file_path == "other/Logger.kt"),
             "different-package file must NOT be affected; got: {:?}",
             impact.affected_files
         );

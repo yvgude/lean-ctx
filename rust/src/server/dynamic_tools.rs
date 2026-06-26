@@ -71,9 +71,7 @@ pub fn categorize_tool(name: &str) -> ToolCategory {
         }
 
         // Merged tools (redirects in registry, treated as Core for backward compat)
-        "ctx_multi_read" | "ctx_smart_read" | "ctx_delta" | "ctx_outline" | "ctx_context" => {
-            ToolCategory::Core
-        }
+        "ctx_multi_read" | "ctx_outline" | "ctx_context" => ToolCategory::Core,
 
         // Arch: on-demand architecture analysis
         "ctx_architecture" | "ctx_impact" | "ctx_callgraph" | "ctx_refactor" | "ctx_symbol"
@@ -182,8 +180,6 @@ pub fn is_readonly_tool(name: &str) -> bool {
             | "ctx_retrieve"
             | "ctx_provider"
             | "ctx_multi_read"
-            | "ctx_smart_read"
-            | "ctx_delta"
             | "ctx_outline"
             | "ctx_context"
             | "ctx_call"

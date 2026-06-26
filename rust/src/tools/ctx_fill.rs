@@ -1,9 +1,9 @@
 use std::path::Path;
 
-use crate::core::cache::SessionCache;
 use crate::core::signatures;
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
+use crate::tools::ctx_read::ReadMode;
 
 struct FileCandidate {
     path: String,
@@ -13,13 +13,7 @@ struct FileCandidate {
     tokens_sig: usize,
 }
 
-pub fn handle(
-    cache: &mut SessionCache,
-    paths: &[String],
-    budget: usize,
-    crp_mode: CrpMode,
-    task: Option<&str>,
-) -> String {
+pub fn handle(paths: &[String], budget: usize, crp_mode: CrpMode, task: Option<&str>) -> String {
     if paths.is_empty() {
         return "No files specified.".to_string();
     }
@@ -146,7 +140,16 @@ pub fn handle(
     output_parts.push(String::new());
 
     for (path, mode) in &selections {
-        let result = crate::tools::ctx_read::handle(cache, path, mode, crp_mode);
+        let read_mode = match mode.as_str() {
+            "map" => ReadMode::Map,
+            "signatures" => ReadMode::Signatures,
+            "diff" => ReadMode::Diff,
+            _ => ReadMode::Full(None),
+        };
+        let result = match crate::tools::ctx_read::read(path, &read_mode, crp_mode, None) {
+            Ok(r) => r.content,
+            Err(e) => format!("ERROR: {e}"),
+        };
         output_parts.push(result);
         output_parts.push("---".to_string());
     }

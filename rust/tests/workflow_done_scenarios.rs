@@ -343,7 +343,6 @@ fn scenario_passthrough_tools_never_blocked() {
 
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_read"));
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_multi_read"));
-    assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_smart_read"));
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_search"));
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_tree"));
     assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&"ctx_session"));

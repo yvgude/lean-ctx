@@ -103,9 +103,7 @@ pub(super) fn budget_warning_message() -> Option<String> {
 /// Map a tool name to the Context-IR source kind recorded for lineage.
 pub(super) fn context_ir_source_kind(name: &str) -> ContextIrSourceKindV1 {
     match name {
-        n if n.contains("read") || n.contains("multi_read") || n.contains("smart_read") => {
-            ContextIrSourceKindV1::Read
-        }
+        n if n.contains("read") || n.contains("multi_read") => ContextIrSourceKindV1::Read,
         "ctx_shell" => ContextIrSourceKindV1::Shell,
         "ctx_search" | "ctx_semantic_search" => ContextIrSourceKindV1::Search,
         "ctx_provider" => ContextIrSourceKindV1::Provider,
@@ -209,10 +207,6 @@ mod tests {
             ContextIrSourceKindV1::Read
         ));
         assert!(matches!(
-            context_ir_source_kind("ctx_smart_read"),
-            ContextIrSourceKindV1::Read
-        ));
-        assert!(matches!(
             context_ir_source_kind("ctx_shell"),
             ContextIrSourceKindV1::Shell
         ));
@@ -259,10 +253,6 @@ mod tests {
         assert!(
             skip_terse("ctx_multi_read", None, false),
             "multi_read must skip terse"
-        );
-        assert!(
-            skip_terse("ctx_smart_read", None, false),
-            "smart_read must skip terse"
         );
         assert!(
             !skip_terse("ctx_grep", None, false),

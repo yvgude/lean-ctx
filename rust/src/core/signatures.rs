@@ -64,6 +64,9 @@ impl Signature {
     /// `trait`, `pub`) instead of abbreviations, so a vanilla agent without
     /// injected rules reads the output correctly. Keyword tokens cost the
     /// same as (or less than) the old `cl`/`⊛` forms.
+    ///
+    /// Output uses standard source-code keyword order: `pub fn`, `pub struct`,
+    /// `pub enum`, `async fn`, etc.
     #[must_use]
     pub fn to_compact(&self) -> String {
         let export = if self.is_exported { "pub " } else { "" };
@@ -78,7 +81,7 @@ impl Signature {
                 };
                 let indent = " ".repeat(self.indent);
                 format!(
-                    "{indent}fn {async_prefix}{export}{}({}){}",
+                    "{indent}{export}fn {async_prefix}{}({}){}",
                     self.name, self.params, ret
                 )
             }
@@ -88,11 +91,11 @@ impl Signature {
                 } else {
                     format!(":{}", self.return_type)
                 };
-                format!("{} {export}{}{ty}", self.kind, self.name)
+                format!("{export}{} {}{ty}", self.kind, self.name)
             }
             // `kind` is already the source-language keyword (class, struct,
             // interface, trait, type, enum) — use it verbatim.
-            _ => format!("{} {export}{}", self.kind, self.name),
+            _ => format!("{export}{} {}", self.kind, self.name),
         }
     }
 
@@ -749,7 +752,7 @@ mod tests {
         let mut sig = sample_fn();
         sig.start_line = Some(3);
         sig.end_line = Some(9);
-        assert_eq!(sig.to_compact(), "fn pub run(id:usize) → bool");
+        assert_eq!(sig.to_compact(), "pub fn run(id:usize) → bool");
         assert_eq!(sig.to_tdd(), "λ+run(id:n)→b");
     }
 
@@ -757,14 +760,14 @@ mod tests {
     fn located_renderers_append_line_suffix() {
         let mut sig = sample_fn();
         // Unknown span → identical to the base renderer.
-        assert_eq!(sig.to_compact_located(), "fn pub run(id:usize) → bool");
+        assert_eq!(sig.to_compact_located(), "pub fn run(id:usize) → bool");
         assert_eq!(sig.to_tdd_located(), "λ+run(id:n)→b");
 
         sig.start_line = Some(3);
         sig.end_line = Some(5);
         assert_eq!(
             sig.to_compact_located(),
-            "fn pub run(id:usize) → bool @L3-5"
+            "pub fn run(id:usize) → bool @L3-5"
         );
         assert_eq!(sig.to_tdd_located(), "λ+run(id:n)→b @L3-5");
     }
@@ -774,9 +777,9 @@ mod tests {
         // GL #580: plain mode must read like source keywords, no decoder ring.
         let mut sig = sample_fn();
         sig.kind = "struct";
-        assert_eq!(sig.to_compact(), "struct pub run");
+        assert_eq!(sig.to_compact(), "pub struct run");
         sig.kind = "trait";
-        assert_eq!(sig.to_compact(), "trait pub run");
+        assert_eq!(sig.to_compact(), "pub trait run");
         sig.kind = "enum";
         sig.is_exported = false;
         assert_eq!(sig.to_compact(), "enum run");

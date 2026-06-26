@@ -1,27 +1,20 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use rmcp::ErrorData;
 use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
-use crate::server::tool_trait::{
-    McpTool, ToolContext, ToolOutput, get_bool, get_f64, get_int, get_str, get_str_array,
-    require_resolved_path,
-};
+use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_str, require_resolved_path};
 use crate::tool_defs::tool_def;
+use crate::tools::ctx_read::{LineRange, ReadMode, ReadOutput};
 
 /// Per-file lock that serializes concurrent reads of the same path.
 ///
-/// When multiple subagents read sequentially through a shared set of files,
-/// they tend to hit the same path at the same time. Without per-file locking
-/// they all contend on the global cache write lock while doing redundant I/O.
-/// This lock ensures only one thread reads a given file from disk; the others
-/// wait cheaply on the per-file mutex, then hit the warm cache.
-///
-/// Backed by the shared `core::path_locks` registry so reads and edits of the
-/// same path coordinate through a single mutex (see issue #320).
-fn per_file_lock(path: &str) -> Arc<Mutex<()>> {
+/// Multiple readers proceed in parallel (`RwLock` read-lock). Edits acquire a
+/// write-lock for exclusive access. Backed by the shared `core::path_locks`
+/// registry so reads and edits of the same path coordinate (see issue #320).
+fn per_file_lock(path: &str) -> Arc<RwLock<()>> {
     crate::core::path_locks::per_file_lock(path)
 }
 
@@ -35,30 +28,30 @@ impl McpTool for CtxReadTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_read",
-            "Read source files. mode REQUIRED — choose by intent.\n\
+            "Read source files. mode defaults to \"signatures\".\n\
              WORKFLOW: after ctx_compose identified relevant files.\n\
              ANTIPATTERN: not for understanding code — use ctx_compose FIRST (saves tokens).\n\
-             full=verbatim (edit-ready), raw=exact bytes (no framing), signatures=API,\n\
-             map=structure, auto=smart (learns from task context), diff=git delta,\n\
-             lines:N-M=window. fresh=true bypasses cache; raw=true=verbatim+fresh.",
+             full=verbatim(edit-ready), signatures=API(default), map=structure, diff=git-delta.\n\
+             Use range.offset/range.limit for partial reads in full mode only.",
             json!({
                 "type": "object",
                 "properties": {
                     "path": { "type": "string", "description": "Absolute path" },
-                    "paths": { "type": "array", "items": { "type": "string" }, "description": "Batch-read many files (replaces ctx_multi_read)" },
                     "mode": {
                         "type": "string",
-                        "description": "REQUIRED. full=verbatim(edit-ready) raw=exact-bytes signatures=API map=structure auto=smart diff=git-delta lines:N-M=window reference=quotes task=focus"
+                        "description": "full=verbatim(edit-ready) signatures=API(default) map=structure diff=git-delta",
+                        "default": "signatures"
                     },
-                    "raw": { "type": "boolean", "description": "Verbatim, no compression (= mode=\"raw\" + fresh)" },
-                    "start_line": { "type": "integer", "description": "1-based first line (offset alias)" },
-                    "offset": { "type": "integer", "description": "start_line alias" },
-                    "limit": { "type": "integer", "description": "Max lines" },
-                    "fresh": { "type": "boolean", "description": "Bypass cache, disk re-read" },
-                    "aggressiveness": { "type": "number", "description": "0.0(lossless)–1.0(max). Without explicit mode→density; also tunes entropy/task. Omit for defaults" },
-                    "protect": { "type": "array", "items": { "type": "string" }, "description": "Symbols/strings force-kept verbatim in entropy/task modes" }
+                    "range": {
+                        "type": "object",
+                        "description": "Line range (only for full mode).",
+                        "properties": {
+                            "offset": { "type": "integer", "description": "1-based first line" },
+                            "limit": { "type": "integer", "description": "Max lines" }
+                        }
+                    }
                 },
-                "required": []
+                "required": ["path"]
             }),
         )
     }
@@ -68,16 +61,6 @@ impl McpTool for CtxReadTool {
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
-        // #509: ctx_read absorbs multi-file batch reads (supersedes ctx_multi_read).
-        // A non-empty `paths` array routes to the one shared batch implementation.
-        if args
-            .get("paths")
-            .and_then(|v| v.as_array())
-            .is_some_and(|a| !a.is_empty())
-        {
-            return super::ctx_multi_read::batch_read(args, ctx);
-        }
-
         let path = require_resolved_path(ctx, args, "path")?;
 
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -106,17 +89,14 @@ impl CtxReadTool {
             .session
             .as_ref()
             .ok_or_else(|| ErrorData::internal_error("session not available", None))?;
-        let cache_lock = ctx
-            .cache
-            .as_ref()
-            .ok_or_else(|| ErrorData::internal_error("cache not available", None))?;
 
+        // ── 1. Read current task from session ──
         let current_task = {
             let rt = tokio::runtime::Handle::current();
             let mut attempt = 0u32;
             loop {
                 if let Ok(session) = rt.block_on(tokio::time::timeout(
-                    std::time::Duration::from_secs(5),
+                    Duration::from_secs(5),
                     session_lock.read(),
                 )) {
                     break session.task.as_ref().map(|t| t.description.clone());
@@ -134,83 +114,15 @@ impl CtxReadTool {
                 tracing::debug!(
                     "session read-lock attempt {attempt}/3 timed out for {path}, retrying"
                 );
-                std::thread::sleep(std::time::Duration::from_millis(100 * u64::from(attempt)));
+                std::thread::sleep(Duration::from_millis(100 * u64::from(attempt)));
             }
         };
         let task_ref = current_task.as_deref();
 
-        let profile = crate::core::profiles::active_profile();
-        // #513: `raw=true` is the intuitive "give me the exact bytes" escape an
-        // agent reaches for. Alias it to mode="raw" (verbatim, unframed) and
-        // force a fresh disk read below so a re-read never collapses to an
-        // `[unchanged]`/auto-delta stub. An explicit raw flag wins over `mode`.
-        let arg_raw = get_bool(args, "raw").unwrap_or(false);
-        let explicit_mode_arg = resolve_raw_alias(arg_raw, get_str(args, "mode"));
-        let explicit_mode = explicit_mode_arg.is_some();
-        // #673 — when the caller omits `mode`, a context policy pack's
-        // `default_read_mode` (if set) takes precedence over the profile/auto
-        // selection. An explicit `mode` arg always wins; line windows below may
-        // still narrow it (it is a default, not a pin).
-        let policy_default_mode = if explicit_mode {
-            None
-        } else {
-            crate::core::policy::runtime::active()
-                .and_then(|p| p.resolved.default_read_mode.clone())
-        };
-        let mut mode = if let Some(m) = explicit_mode_arg {
-            m
-        } else if let Some(pd) = policy_default_mode {
-            pd
-        } else if profile.read.default_mode_effective() == "auto" {
-            if let Ok(cache) = cache_lock.try_read() {
-                crate::tools::ctx_smart_read::select_mode_with_task(&cache, path, task_ref)
-            } else {
-                tracing::debug!(
-                    "cache lock contested during auto-mode selection for {path}; \
-                     falling back to full"
-                );
-                "full".to_string()
-            }
-        } else {
-            profile.read.default_mode_effective().to_string()
-        };
-        let mut fresh = get_bool(args, "fresh").unwrap_or(false);
-        // #513: a raw/verbatim request always reads from disk — the whole point
-        // is exact current bytes, never a cached stub or delta.
-        if arg_raw {
-            fresh = true;
-        }
-        let cache_policy = crate::server::compaction_sync::effective_cache_policy();
-        if cache_policy == "off" {
-            fresh = true;
-        }
-        let aggressiveness =
-            crate::core::aggressiveness::effective(get_f64(args, "aggressiveness"));
-        let protect = get_str_array(args, "protect").unwrap_or_default();
-        // One-knob UX: when the caller sets aggressiveness without pinning a mode,
-        // route through the proven density path at the mapped target. An explicit
-        // mode (incl. entropy/task) instead has the knob tune it via ReadTuning.
-        if !explicit_mode && let Some(a) = aggressiveness {
-            // SSOT mode construction via the typed `ReadMode` (#528): the typed
-            // `Density` Display emits the same `density:0.NN` the pipeline parses.
-            mode = crate::tools::ctx_read::ReadMode::Density(
-                crate::core::aggressiveness::AggressivenessProfile::from_level(a).density_target,
-            )
-            .to_string();
-        }
-        // `start_line` (and its `offset`/`limit` aliases) can pin a line window.
-        // The resolution lives in `apply_line_window`/`resolve_line_window` so
-        // the runtime path and the unit tests share one implementation and can
-        // never drift (GitHub #432 aliases, #259 explicit-mode, #253 line-1).
-        apply_line_window(
-            &mut mode,
-            &mut fresh,
-            explicit_mode,
-            get_int(args, "start_line"),
-            get_int(args, "offset"),
-            get_int(args, "limit"),
-        );
+        // ── 2. Parse mode string from args ──
+        let mode_str = get_str(args, "mode").unwrap_or_else(|| "signatures".to_string());
 
+        // ── 3. Context gate (pre-dispatch, no cache dependency) ──
         let pressure_action = ctx.pressure_snapshot.as_ref().map(|p| &p.recommendation);
         let resolved_agent_id = ctx.agent_id.as_ref().and_then(|a| match a.try_read() {
             Ok(guard) => guard.clone(),
@@ -218,7 +130,7 @@ impl CtxReadTool {
         });
         let gate_result = crate::server::context_gate::pre_dispatch_read_for_agent(
             path,
-            &mode,
+            &mode_str,
             task_ref,
             Some(&ctx.project_root),
             pressure_action,
@@ -231,70 +143,34 @@ impl CtxReadTool {
             return Err(ErrorData::invalid_params(msg, None));
         }
         let budget_warning = gate_result.budget_warning.clone();
-        // #513: an explicit raw/verbatim request is never silently downgraded by
-        // the budget gate — the caller asked for exact bytes.
-        if mode != "raw"
-            && let Some(overridden) = gate_result.overridden_mode
-        {
-            mode = overridden;
+
+        let mut effective = gate_result.overridden_mode.unwrap_or(mode_str);
+
+        // Instruction files always return full content
+        if crate::tools::ctx_read::is_instruction_file(path) {
+            effective = "full".to_string();
         }
 
-        let (mut mode, degrade_warning) = if crate::tools::ctx_read::is_instruction_file(path) {
+        // ── 4. Auto-degrade based on context pressure ──
+        let (final_mode, degrade_warning) = if crate::tools::ctx_read::is_instruction_file(path) {
             ("full".to_string(), None)
-        } else if mode == "raw" {
-            // #513: raw bypasses context-pressure degradation (which would
-            // otherwise downgrade to signatures under Block), exactly like
-            // instruction files — verbatim means verbatim.
-            ("raw".to_string(), None)
         } else {
-            auto_degrade_read_mode(&mode)
+            auto_degrade_read_mode(&effective)
         };
 
-        // Delta-aware explicit re-reads (opt-in: config `delta_explicit`, env
-        // LCTX_DELTA_EXPLICIT). Re-requesting full/lines:N-M content for a file
-        // this session already read re-emits content the model already holds;
-        // when the file changed on disk, a diff carries the same information in
-        // a fraction of the tokens, and an unchanged lines: request of a
-        // fully-delivered file collapses to the full-mode stub. The decision is
-        // a pure function of (cache, path, mode) — see
-        // `ctx_read::resolve_explicit_delta_mode`. First reads are unaffected;
-        // fresh=true always bypasses. Runs BEFORE the lines:→fresh guard below
-        // so a changed-file lines: re-read can still be diverted to a diff.
-        let mut delta_explicit_note: Option<String> = None;
-        if !fresh
-            && explicit_mode
-            && (mode == "full" || mode.starts_with("lines:"))
-            && crate::core::config::Config::load().delta_explicit_effective()
-            && let Ok(cache) = cache_lock.try_read()
-        {
-            let decision = crate::tools::ctx_read::resolve_explicit_delta_mode(
-                &cache,
-                path,
-                &mode,
-                explicit_mode,
-                fresh,
-                true,
-            );
-            mode = decision.mode;
-            delta_explicit_note = decision.note;
-        }
-
-        if mode.starts_with("lines:") {
-            fresh = true;
-        }
-
+        // ── 5. Pre-read validation (binary, size) ──
         if crate::core::binary_detect::is_binary_file(path) {
             let msg = crate::core::binary_detect::binary_file_message(path);
             return Err(ErrorData::invalid_params(msg, None));
         }
         {
-            let cap = crate::core::limits::max_read_bytes() as u64;
+            let cap = crate::core::limits::max_read_bytes();
             if let Ok(meta) = std::fs::metadata(path)
-                && meta.len() > cap
+                && meta.len() > cap as u64
             {
                 let msg = format!(
                     "File too large ({} bytes, limit {} bytes via LCTX_MAX_READ_BYTES). \
-                         Use mode=\"lines:1-100\" for partial reads or increase the limit.",
+                     Use offset=1, limit=100 for partial reads or increase the limit.",
                     meta.len(),
                     cap
                 );
@@ -302,241 +178,69 @@ impl CtxReadTool {
             }
         }
 
-        // Compaction-aware: if host compacted since last check, reset delivery flags
-        // so post-compaction reads deliver full content instead of stubs.
-        if !fresh
-            && let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir()
-            && let Ok(mut cache) = cache_lock.try_write()
-        {
-            crate::server::compaction_sync::sync_if_compacted(&mut cache, &data_dir);
-        }
+        // ── 6. Parse into ReadMode (validate once at the boundary) ──
+        let (offset, limit) = extract_range(args);
+        let read_mode = parse_read_mode(&final_mode, offset, limit);
 
-        // Fast path: if both per-file lock and cache write-lock are immediately
-        // available, execute inline without spawning a thread. This avoids thread +
-        // channel overhead for the ~90% of calls that are cache hits.
-        let read_timeout = std::time::Duration::from_secs(30);
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let (output, resolved_mode, original, is_cache_hit, file_ref, cache_stats) = {
-            let crp_mode = ctx.crp_mode;
-            let task_ref = current_task.as_deref();
+        // ── 7. Read file via pure ctx_read::read() with per_file_lock ──
+        let crp_mode = ctx.crp_mode;
+        let read_timeout = Duration::from_secs(30);
+        let path_owned = path.to_string();
+        let task_for_thread = current_task.clone();
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
 
-            let fast_result = 'fast: {
-                let file_lock = per_file_lock(path);
-                let Some(_file_guard) = file_lock.try_lock().ok() else {
-                    break 'fast None;
-                };
+        std::thread::spawn(move || {
+            let lock = per_file_lock(&path_owned);
+            let _guard = lock.read().unwrap();
+            let task_ref = task_for_thread.as_deref();
+            let result = crate::tools::ctx_read::read(&path_owned, &read_mode, crp_mode, task_ref);
+            let _ = tx.send(result);
+        });
 
-                // Phase 1 (shared lock): the dominant case is re-reading an
-                // unchanged file in full mode. Serve that stub under a *read*
-                // lock so parallel reads of distinct files run concurrently
-                // instead of serializing on the global write lock.
-                if !fresh
-                    && mode == "full"
-                    && let Ok(cache) = cache_lock.try_read()
-                    && let Some(read_output) =
-                        crate::tools::ctx_read::try_stub_hit_readonly(&cache, path)
-                {
-                    let content = read_output.content;
-                    let rmode = read_output.resolved_mode;
-                    let orig = cache.get(path).map_or(0, |e| e.original_tokens);
-                    let hit = content.contains(" cached ")
-                        || content.contains("[unchanged")
-                        || content.contains("[delta:");
-                    let fref = cache.file_ref_map().get(path).cloned();
-                    let stats = cache.get_stats();
-                    let stats_snapshot = (stats.total_reads(), stats.cache_hits());
-                    break 'fast Some((content, rmode, orig, hit, fref, stats_snapshot));
-                }
-
-                // Phase 2 (write lock): cache miss, changed file, or non-stub
-                // modes (map/signatures/diff/lines) that mutate cache state.
-                let Some(mut cache) = cache_lock.try_write().ok() else {
-                    break 'fast None;
-                };
-                let read_output = if fresh {
-                    crate::tools::ctx_read::handle_fresh_with_task_resolved_tuned(
-                        &mut cache,
-                        path,
-                        &mode,
-                        crp_mode,
-                        task_ref,
-                        aggressiveness,
-                        &protect,
-                    )
-                } else {
-                    crate::tools::ctx_read::handle_with_task_resolved_tuned(
-                        &mut cache,
-                        path,
-                        &mode,
-                        crp_mode,
-                        task_ref,
-                        aggressiveness,
-                        &protect,
-                    )
-                };
-                let content = read_output.content;
-                let rmode = read_output.resolved_mode;
-                let orig = cache.get(path).map_or(0, |e| e.original_tokens);
-                let hit = content.contains(" cached ")
-                    || content.contains("[unchanged")
-                    || content.contains("[delta:");
-                let fref = cache.file_ref_map().get(path).cloned();
-                let stats = cache.get_stats();
-                let stats_snapshot = (stats.total_reads(), stats.cache_hits());
-                Some((content, rmode, orig, hit, fref, stats_snapshot))
-            };
-
-            if let Some(result) = fast_result {
-                result
-            } else {
-                let cache_lock = cache_lock.clone();
-                let mode = mode.clone();
-                let task_owned = current_task.clone();
-                let protect_owned = protect.clone();
-                let path_owned = path.to_string();
-                let cancel_flag = cancelled.clone();
-                let (tx, rx) = std::sync::mpsc::sync_channel(1);
-                std::thread::spawn(move || {
-                    let file_lock = per_file_lock(&path_owned);
-
-                    // Bounded per-file lock: if a zombie thread still holds it, don't
-                    // wait forever. 25s keeps us inside the 30s recv_timeout.
-                    let _file_guard = {
-                        let deadline =
-                            std::time::Instant::now() + std::time::Duration::from_secs(25);
-                        loop {
-                            if cancel_flag.load(Ordering::Relaxed) {
-                                return;
-                            }
-                            if let Ok(guard) = file_lock.try_lock() {
-                                break guard;
-                            }
-                            if std::time::Instant::now() >= deadline {
-                                tracing::error!(
-                                    "ctx_read: per-file lock timeout after 25s for {path_owned}"
-                                );
-                                let _ = tx.send((
-                                    format!("per-file lock contention for {path_owned} — retry in a moment"),
-                                    "error".to_string(), 0, false, None, (0, 0),
-                                ));
-                                return;
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(50));
-                        }
-                    };
-
-                    if cancel_flag.load(Ordering::Relaxed) {
-                        return;
-                    }
-
-                    // Bounded cache write-lock: avoids indefinite block when a zombie
-                    // thread from a previous timed-out call still holds the lock.
-                    let mut cache = {
-                        let deadline =
-                            std::time::Instant::now() + std::time::Duration::from_secs(25);
-                        loop {
-                            if cancel_flag.load(Ordering::Relaxed) {
-                                return;
-                            }
-                            if let Ok(guard) = cache_lock.try_write() {
-                                break guard;
-                            }
-                            if std::time::Instant::now() >= deadline {
-                                tracing::error!(
-                                    "ctx_read: cache write-lock timeout after 25s for {path_owned}"
-                                );
-                                let _ = tx.send((
-                                    format!(
-                                        "cache lock contention for {path_owned} — retry in a moment"
-                                    ),
-                                    "error".to_string(),
-                                    0,
-                                    false,
-                                    None,
-                                    (0, 0),
-                                ));
-                                return;
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(50));
-                        }
-                    };
-
-                    let task_ref = task_owned.as_deref();
-                    let read_output = if fresh {
-                        crate::tools::ctx_read::handle_fresh_with_task_resolved_tuned(
-                            &mut cache,
-                            &path_owned,
-                            &mode,
-                            crp_mode,
-                            task_ref,
-                            aggressiveness,
-                            &protect_owned,
-                        )
-                    } else {
-                        crate::tools::ctx_read::handle_with_task_resolved_tuned(
-                            &mut cache,
-                            &path_owned,
-                            &mode,
-                            crp_mode,
-                            task_ref,
-                            aggressiveness,
-                            &protect_owned,
-                        )
-                    };
-                    let content = read_output.content;
-                    let rmode = read_output.resolved_mode;
-                    let orig = cache.get(&path_owned).map_or(0, |e| e.original_tokens);
-                    let hit = content.contains(" cached ");
-                    let fref = cache.file_ref_map().get(path_owned.as_str()).cloned();
-                    let stats = cache.get_stats();
-                    let stats_snapshot = (stats.total_reads(), stats.cache_hits());
-                    let _ = tx.send((content, rmode, orig, hit, fref, stats_snapshot));
-                });
-                if let Ok(result) = rx.recv_timeout(read_timeout) {
-                    result
-                } else {
-                    cancelled.store(true, Ordering::Relaxed);
-                    tracing::error!("ctx_read timed out after {read_timeout:?} for {path}");
-                    let msg = format!(
+        let read_output: ReadOutput = match rx.recv_timeout(read_timeout) {
+            Ok(Ok(output)) => output,
+            Ok(Err(e)) => return Err(ErrorData::invalid_params(e.to_string(), None)),
+            Err(_) => {
+                tracing::error!("ctx_read timed out after {read_timeout:?} for {path}");
+                return Err(ErrorData::internal_error(
+                    format!(
                         "ERROR: ctx_read timed out after {}s reading {path}. \
                      The file may be very large or a blocking I/O issue occurred. \
-                     Try mode=\"lines:1-100\" for a partial read.",
+                     Try offset=1, limit=100 for a partial read.",
                         read_timeout.as_secs()
-                    );
-                    return Err(ErrorData::internal_error(msg, None));
-                }
-            } // end else (slow path)
+                    ),
+                    None,
+                ));
+            }
         };
 
-        if resolved_mode == "error" {
-            return Err(ErrorData::invalid_params(output, None));
-        }
+        let ReadOutput {
+            content,
+            mode: resolved_mode,
+            original_tokens: original,
+            output_tokens,
+        } = read_output;
 
-        let output_tokens = crate::core::tokens::count_tokens(&output);
+        let resolved_mode_label = resolved_mode.label().to_string();
         let saved = original.saturating_sub(output_tokens);
 
-        // Session updates (bounded lock — 10s timeout, read already succeeded)
+        // ── 8. Session updates (bounded write-lock) ──
         let mut ensured_root: Option<String> = None;
         let mut traversal_working_set: Vec<String> = Vec::new();
         let project_root_snapshot;
         {
             let rt = tokio::runtime::Handle::current();
             let session_guard = rt.block_on(tokio::time::timeout(
-                std::time::Duration::from_secs(10),
+                Duration::from_secs(10),
                 session_lock.write(),
             ));
             if let Ok(mut session) = session_guard {
-                session.touch_file(path, file_ref.as_deref(), &resolved_mode, original);
-                // Capture the recent working set (under the lock) so the
-                // background thread can record a traversal/co-access edge (#289).
+                session.touch_file(path, None, &resolved_mode_label, original);
                 traversal_working_set =
                     crate::core::tool_lifecycle::recent_working_set(&session, path);
-                let file_summary = extract_file_summary(&output, path);
+                let file_summary = extract_file_summary(&content, path);
                 if !file_summary.is_empty() {
                     session.set_file_summary(path, &file_summary);
-                }
-                if is_cache_hit {
-                    session.record_cache_hit();
                 }
                 if session.active_structured_intent.is_none() && session.files_touched.len() >= 2 {
                     let touched: Vec<String> = session
@@ -574,58 +278,24 @@ impl CtxReadTool {
             }
         }
 
-        // Index warming removed — indexes are SQLite-backed.
-        let _ = ensured_root;
+        if let Some(root) = ensured_root.as_deref() {
+            let _ = crate::core::chunk_data::get_or_start_build(std::path::Path::new(root));
+        }
 
-        // Telemetry + learning are pure side-effects that never influence this
-        // response, yet they did synchronous disk I/O on every read (heatmap
-        // append, ModePredictor load+save, FeedbackStore load). Push them off
-        // the hot path so reads — especially cache-hit stubs — return without
-        // waiting on disk (#149).
+        // ── 9. Telemetry + learning (background, no cache stats) ──
         {
             let path_bg = path.to_string();
-            let resolved_mode_bg = resolved_mode.clone();
+            let resolved_mode_bg = resolved_mode_label.clone();
             let project_root_bg = project_root_snapshot.clone();
-            let (turns, hits) = cache_stats;
-            // #685: model-correct verified-ledger inputs, computed off the hot path.
-            // The default O200kBase model reuses the o200k `original`/`saved` below
-            // (byte-identical, no clone). Only a resolved Claude/Gemini/Llama model
-            // carries the cache handle + output so the bg thread can re-tokenize the
-            // raw source and the sent output in the family the provider actually bills.
-            let ledger_cache = (crate::core::savings_ledger::ledger_family()
-                != crate::core::tokens::TokenizerFamily::O200kBase)
-                .then(|| cache_lock.clone());
-            let ledger_output = ledger_cache.as_ref().map(|_| output.clone());
             std::thread::spawn(move || {
-                // A panic in telemetry must not poison locks or leave a zombie thread;
-                // it never affects the already-returned read response.
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
                     crate::core::heatmap::record_file_access(&path_bg, original, saved);
 
-                    // #685: verified savings ledger, decoupled from the heatmap so it
-                    // can denominate in the active model's tokenizer family. O200kBase
-                    // reuses the o200k counts; other families re-tokenize raw (cache)
-                    // + output. A cache miss falls back to o200k (conservative).
                     {
                         use crate::core::savings_ledger as ledger;
-                        let (lbase, lsaved) = match (&ledger_cache, &ledger_output) {
-                            (Some(cl), Some(out)) => match cl.try_read().ok().and_then(|c| {
-                                c.get(&path_bg)
-                                    .and_then(crate::core::cache::CacheEntry::content)
-                            }) {
-                                Some(raw) => {
-                                    let lo = ledger::count_for_ledger(&raw);
-                                    (lo, lo.saturating_sub(ledger::count_for_ledger(out)))
-                                }
-                                None => (original, saved),
-                            },
-                            _ => (original, saved),
-                        };
-                        ledger::record_read_event(lbase, lsaved);
+                        ledger::record_read_event(original, saved);
                     }
 
-                    // Traversal/co-access edge: this read fired together with the
-                    // recent working set captured under the session lock (#289).
                     if let Some(root) =
                         crate::core::tool_lifecycle::usable_root(Some(project_root_bg.as_str()))
                     {
@@ -666,18 +336,11 @@ impl CtxReadTool {
                         language: ext,
                         entropy_threshold: thresholds.bpe_entropy,
                         jaccard_threshold: thresholds.jaccard,
-                        total_turns: turns as u32,
+                        total_turns: 0u32,
                         tokens_saved: saved as u64,
                         tokens_original: original as u64,
-                        cache_hits: hits as u32,
-                        total_reads: turns as u32,
-                        // Real behavioral signal instead of a hardcoded success
-                        // (#593): a compressed read only counts as task-completing
-                        // when this extension is not in a high-bounce state —
-                        // compression that keeps forcing full re-reads is not
-                        // "completing" anything. Unknown (too few reads) stays
-                        // optimistic so the cold start is unchanged. 0.30 mirrors
-                        // bounce_tracker::BOUNCE_RATE_THRESHOLD.
+                        cache_hits: 0u32,
+                        total_reads: 0u32,
                         task_completed: crate::core::bounce_tracker::global()
                             .lock()
                             .ok()
@@ -696,10 +359,7 @@ impl CtxReadTool {
             crate::core::agent_budget::record_consumption(aid, output_tokens);
         }
 
-        // Cross-source hints: if the property graph has cross-source edges
-        // pointing to this file, append compact hints so the agent knows about
-        // related issues/PRs/schemas without a separate tool call (#682). Only
-        // touch the DB when it already exists — never create graph.db on a read.
+        // ── 10. Cross-source hints ──
         let hints_suffix = {
             let graph_db =
                 crate::core::property_graph::graph_dir(&ctx.project_root).join("graph.db");
@@ -722,6 +382,7 @@ impl CtxReadTool {
             }
         };
 
+        // ── 11. Build output with warnings ──
         let mut warnings = Vec::new();
         if let Some(ref w) = budget_warning {
             warnings.push(w.as_str());
@@ -729,22 +390,19 @@ impl CtxReadTool {
         if let Some(ref w) = degrade_warning {
             warnings.push(w.as_str());
         }
-        if let Some(ref w) = delta_explicit_note {
-            warnings.push(w.as_str());
-        }
         let final_output = if !warnings.is_empty() {
-            format!("{output}{hints_suffix}\n\n{}", warnings.join("\n"))
+            format!("{content}{hints_suffix}\n\n{}", warnings.join("\n"))
         } else if hints_suffix.is_empty() {
-            output
+            content
         } else {
-            format!("{output}{hints_suffix}")
+            format!("{content}{hints_suffix}")
         };
 
         Ok(ToolOutput {
             text: final_output,
             original_tokens: original,
             saved_tokens: saved,
-            mode: Some(resolved_mode),
+            mode: Some(resolved_mode_label),
             path: Some(path.to_string()),
             changed: false,
             shell_outcome: None,
@@ -752,71 +410,50 @@ impl CtxReadTool {
     }
 }
 
-/// Resolve the `start_line`/`offset`/`limit` arguments into `(start, limit)`.
+// ── Mode parsing helpers ──
+
+/// Extract line range from `range` object in args.
+fn extract_range(args: &Map<String, Value>) -> (Option<i64>, Option<i64>) {
+    let range_val = args.get("range").and_then(|v| v.as_object());
+    let offset = range_val.and_then(|r| r.get("offset").and_then(serde_json::Value::as_i64));
+    let limit = range_val.and_then(|r| r.get("limit").and_then(serde_json::Value::as_i64));
+    (offset, limit)
+}
+
+/// Parse a mode string + optional offset/limit into a [`ReadMode`].
 ///
-/// `offset` is an alias for `start_line` (1-based first line); `start_line`
-/// wins if a caller passes both. `limit` (when > 0) bounds the number of lines;
-/// a bare `limit` reads from line 1. Returns `None` when no windowing argument
-/// is present, so the caller leaves the mode untouched (GitHub #432).
-fn resolve_line_window(
-    start_line: Option<i64>,
-    offset: Option<i64>,
-    limit: Option<i64>,
-) -> Option<(i64, Option<i64>)> {
-    let start = start_line.or(offset).map(|v| v.max(1));
-    let limit = limit.filter(|&l| l > 0);
-    match (start, limit) {
-        (Some(s), l) => Some((s, l)),
-        (None, Some(_)) => Some((1, limit)),
-        (None, None) => None,
+/// Validated once at the MCP boundary; the returned [`ReadMode`] is guaranteed
+/// valid and needs no re-checking downstream.
+fn parse_read_mode(mode: &str, offset: Option<i64>, limit: Option<i64>) -> ReadMode {
+    match mode {
+        "full" => ReadMode::Full(parse_range(offset, limit)),
+        "signatures" => ReadMode::Signatures,
+        "map" => ReadMode::Map,
+        "diff" => ReadMode::Diff,
+        other => {
+            tracing::debug!("unknown read mode '{other}', defaulting to signatures");
+            ReadMode::Signatures
+        }
     }
 }
 
-/// Build the `lines:N-M` mode string for a resolved window. An unbounded window
-/// (no `limit`) reads to EOF via the historical `999999` sentinel.
-fn lines_mode(start: i64, limit: Option<i64>) -> String {
-    match limit {
-        Some(l) => format!("lines:{start}-{}", start + l - 1),
-        None => format!("lines:{start}-999999"),
+/// Convert optional offset/limit to an optional 1-based [`LineRange`].
+fn parse_range(offset: Option<i64>, limit: Option<i64>) -> Option<LineRange> {
+    match offset {
+        Some(off) if off > 0 => {
+            let start = off as usize;
+            let end = limit.map_or(usize::MAX, |l| {
+                start.saturating_add(l as usize).saturating_sub(1)
+            });
+            Some(LineRange::new(start, end))
+        }
+        _ => limit
+            .filter(|&l| l > 0)
+            .map(|l| LineRange::new(1, l as usize)),
     }
 }
 
-/// Apply a resolved line window to `mode`/`fresh`. An explicit non-lines mode
-/// (map/signatures/…) is never clobbered (#259), and `start_line=1` with no
-/// limit is a no-op so it cannot disturb an auto/explicit read (#253).
-fn apply_line_window(
-    mode: &mut String,
-    fresh: &mut bool,
-    explicit_mode: bool,
-    start_line: Option<i64>,
-    offset: Option<i64>,
-    limit: Option<i64>,
-) {
-    let Some((start, limit)) = resolve_line_window(start_line, offset, limit) else {
-        return;
-    };
-    if start <= 1 && limit.is_none() {
-        return;
-    }
-    *fresh = true;
-    if !explicit_mode || mode.starts_with("lines") {
-        *mode = lines_mode(start, limit);
-    }
-}
-
-/// #513: resolve the `raw=true` convenience flag into the effective explicit
-/// `mode` argument. Agents reach for `raw:true` to get exact bytes; it aliases
-/// to `mode="raw"` (verbatim, unframed) and wins over any caller-supplied
-/// `mode`. When `raw` is unset, the caller's `mode` (if any) passes through
-/// unchanged. The caller separately forces `fresh=true` for raw so a re-read
-/// never collapses to an `[unchanged]`/auto-delta stub.
-fn resolve_raw_alias(arg_raw: bool, mode_arg: Option<String>) -> Option<String> {
-    if arg_raw {
-        Some("raw".to_string())
-    } else {
-        mode_arg
-    }
-}
+// ── Existing helpers (unchanged) ──
 
 fn apply_verdict(
     mode: &str,
@@ -856,7 +493,7 @@ fn auto_degrade_read_mode(mode: &str) -> (String, Option<String>) {
     let warning = if degraded {
         Some(format!(
             "⚠ Context pressure: mode={mode} was downgraded to mode={new_mode} \
-             (verdict: {:?}). Use start_line=1 to bypass, or run ctx_compress to free budget.",
+             (verdict: {:?}). Use fresh=true to bypass, or run ctx_compress to free budget.",
             policy.decision.verdict
         ))
     } else {
@@ -885,29 +522,7 @@ fn extract_file_summary(output: &str, path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    #[test]
-    fn raw_alias_forces_raw_mode_over_explicit_mode() {
-        // #513: raw=true is the verbatim escape hatch and must win over any
-        // mode arg an agent also happened to pass.
-        assert_eq!(
-            resolve_raw_alias(true, Some("signatures".to_string())),
-            Some("raw".to_string())
-        );
-        assert_eq!(resolve_raw_alias(true, None), Some("raw".to_string()));
-    }
-
-    #[test]
-    fn raw_alias_absent_passes_mode_through() {
-        // Without raw=true the caller's mode is untouched (including None, which
-        // lets the auto/policy/profile resolution downstream pick the mode).
-        assert_eq!(
-            resolve_raw_alias(false, Some("full".to_string())),
-            Some("full".to_string())
-        );
-        assert_eq!(resolve_raw_alias(false, None), None);
-    }
+    use std::sync::atomic::Ordering;
 
     #[test]
     fn per_file_lock_same_path_returns_same_mutex() {
@@ -925,8 +540,8 @@ mod tests {
 
     #[test]
     fn per_file_lock_serializes_concurrent_access() {
-        let counter = Arc::new(AtomicUsize::new(0));
-        let max_concurrent = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let max_concurrent = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let path = "/tmp/test_concurrent_serialization.txt";
         let mut handles = Vec::new();
 
@@ -936,7 +551,7 @@ mod tests {
             let path = path.to_string();
             handles.push(std::thread::spawn(move || {
                 let lock = per_file_lock(&path);
-                let _guard = lock.lock().unwrap();
+                let _guard = lock.write().unwrap();
                 let active = counter.fetch_add(1, Ordering::SeqCst) + 1;
                 max_concurrent.fetch_max(active, Ordering::SeqCst);
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -953,8 +568,8 @@ mod tests {
 
     #[test]
     fn per_file_lock_allows_parallel_different_paths() {
-        let counter = Arc::new(AtomicUsize::new(0));
-        let max_concurrent = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let max_concurrent = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let mut handles = Vec::new();
 
         for i in 0..4 {
@@ -963,7 +578,7 @@ mod tests {
             let path = format!("/tmp/test_parallel_{i}.txt");
             handles.push(std::thread::spawn(move || {
                 let lock = per_file_lock(&path);
-                let _guard = lock.lock().unwrap();
+                let _guard = lock.write().unwrap();
                 let active = counter.fetch_add(1, Ordering::SeqCst) + 1;
                 max_concurrent.fetch_max(active, Ordering::SeqCst);
                 std::thread::sleep(std::time::Duration::from_millis(50));
@@ -976,221 +591,6 @@ mod tests {
         }
 
         assert!(max_concurrent.load(Ordering::SeqCst) > 1);
-    }
-
-    /// Regression test for Issue #229: a zombie thread holding the cache write-lock
-    /// must not block subsequent reads indefinitely. The try_write() loop inside
-    /// the spawned thread should respect its 25s deadline and the cancellation flag.
-    #[test]
-    fn zombie_thread_does_not_block_subsequent_cache_access() {
-        let cache: Arc<tokio::sync::RwLock<u32>> = Arc::new(tokio::sync::RwLock::new(0));
-
-        // Simulate a zombie: hold the write-lock on a background thread for 2s.
-        let zombie_lock = cache.clone();
-        let _zombie = std::thread::spawn(move || {
-            let _guard = zombie_lock.blocking_write();
-            std::thread::sleep(std::time::Duration::from_secs(2));
-        });
-        std::thread::sleep(std::time::Duration::from_millis(50));
-
-        // A try_read() must fail immediately (zombie holds write-lock).
-        assert!(cache.try_read().is_err());
-
-        // A try_write() loop with cancellation must exit promptly.
-        let cancel = Arc::new(AtomicBool::new(false));
-        let cancel2 = cancel.clone();
-        let lock2 = cache.clone();
-        let waiter = std::thread::spawn(move || {
-            let start = std::time::Instant::now();
-            loop {
-                if cancel2.load(Ordering::Relaxed) {
-                    return (false, start.elapsed());
-                }
-                if let Ok(_guard) = lock2.try_write() {
-                    return (true, start.elapsed());
-                }
-                std::thread::sleep(std::time::Duration::from_millis(50));
-            }
-        });
-
-        // Set cancellation after 200ms — the loop should exit quickly.
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        cancel.store(true, Ordering::Relaxed);
-
-        let (acquired, elapsed) = waiter.join().unwrap();
-        assert!(
-            !acquired,
-            "should not have acquired lock while zombie holds it"
-        );
-        assert!(
-            elapsed < std::time::Duration::from_secs(1),
-            "cancellation should have stopped the loop promptly"
-        );
-    }
-
-    // -- Regression: GitHub Issue #253 + #259 --
-    // Delegates to the real runtime helper so this test can never drift from
-    // production behaviour.
-    fn apply_start_line(
-        mode: &mut String,
-        fresh: &mut bool,
-        explicit_mode: bool,
-        start_line: Option<i64>,
-    ) {
-        super::apply_line_window(mode, fresh, explicit_mode, start_line, None, None);
-    }
-
-    #[test]
-    fn start_line_1_does_not_override_mode() {
-        let mut mode = "auto".to_string();
-        let mut fresh = false;
-        apply_start_line(&mut mode, &mut fresh, false, Some(1));
-        assert_eq!(mode, "auto", "start_line=1 should not change mode");
-        assert!(!fresh, "start_line=1 should not force fresh=true");
-    }
-
-    #[test]
-    fn start_line_gt1_overrides_implicit_mode() {
-        let mut mode = "auto".to_string();
-        let mut fresh = false;
-        apply_start_line(&mut mode, &mut fresh, false, Some(50));
-        assert_eq!(mode, "lines:50-999999");
-        assert!(fresh);
-    }
-
-    #[test]
-    fn start_line_gt1_does_not_override_explicit_map() {
-        // GitHub #259: mode=map + start_line=50 → mode stays map
-        let mut mode = "map".to_string();
-        let mut fresh = false;
-        apply_start_line(&mut mode, &mut fresh, true, Some(50));
-        assert_eq!(
-            mode, "map",
-            "explicit mode=map must not be clobbered by start_line"
-        );
-        assert!(fresh, "start_line>1 should still force fresh");
-    }
-
-    #[test]
-    fn start_line_gt1_does_not_override_explicit_signatures() {
-        let mut mode = "signatures".to_string();
-        let mut fresh = false;
-        apply_start_line(&mut mode, &mut fresh, true, Some(100));
-        assert_eq!(mode, "signatures");
-        assert!(fresh);
-    }
-
-    #[test]
-    fn start_line_gt1_honors_explicit_lines_mode() {
-        let mut mode = "lines:1-50".to_string();
-        let mut fresh = false;
-        apply_start_line(&mut mode, &mut fresh, true, Some(30));
-        assert_eq!(
-            mode, "lines:30-999999",
-            "explicit lines mode should accept start_line override"
-        );
-        assert!(fresh);
-    }
-
-    #[test]
-    fn start_line_none_does_nothing() {
-        let mut mode = "map".to_string();
-        let mut fresh = false;
-        apply_start_line(&mut mode, &mut fresh, true, None);
-        assert_eq!(mode, "map");
-        assert!(!fresh);
-    }
-
-    #[test]
-    fn start_line_1_with_explicit_mode_preserves_it() {
-        // OpenCode sends start_line=1 + mode=map — both should be preserved
-        let mut mode = "map".to_string();
-        let mut fresh = false;
-        apply_start_line(&mut mode, &mut fresh, true, Some(1));
-        assert_eq!(mode, "map");
-        assert!(!fresh);
-    }
-
-    // -- Regression: GitHub Issue #432 — `offset`/`limit` aliases --
-
-    #[test]
-    fn offset_is_alias_for_start_line() {
-        let mut mode = "auto".to_string();
-        let mut fresh = false;
-        super::apply_line_window(&mut mode, &mut fresh, false, None, Some(40), None);
-        assert_eq!(mode, "lines:40-999999");
-        assert!(fresh);
-    }
-
-    #[test]
-    fn offset_and_limit_make_bounded_window() {
-        let mut mode = "auto".to_string();
-        let mut fresh = false;
-        super::apply_line_window(&mut mode, &mut fresh, false, None, Some(40), Some(20));
-        assert_eq!(mode, "lines:40-59", "20 inclusive lines starting at 40");
-        assert!(fresh);
-    }
-
-    #[test]
-    fn limit_alone_reads_from_first_line() {
-        let mut mode = "auto".to_string();
-        let mut fresh = false;
-        super::apply_line_window(&mut mode, &mut fresh, false, None, None, Some(25));
-        assert_eq!(mode, "lines:1-25");
-        assert!(fresh);
-    }
-
-    #[test]
-    fn start_line_wins_over_offset_when_both_present() {
-        assert_eq!(
-            super::resolve_line_window(Some(10), Some(99), None),
-            Some((10, None))
-        );
-    }
-
-    #[test]
-    fn resolve_clamps_start_and_drops_nonpositive_limit() {
-        // Negative/zero start clamps to 1; non-positive limit is ignored.
-        assert_eq!(
-            super::resolve_line_window(Some(-5), None, Some(0)),
-            Some((1, None))
-        );
-        // A bare non-positive limit yields no window at all.
-        assert_eq!(super::resolve_line_window(None, None, Some(-3)), None);
-        assert_eq!(super::resolve_line_window(None, None, None), None);
-    }
-
-    #[test]
-    fn lines_mode_bounds_are_inclusive() {
-        assert_eq!(super::lines_mode(40, Some(20)), "lines:40-59");
-        assert_eq!(super::lines_mode(5, None), "lines:5-999999");
-    }
-
-    #[test]
-    fn explicit_map_not_clobbered_by_offset_limit() {
-        // #259 must also hold for the new aliases.
-        let mut mode = "map".to_string();
-        let mut fresh = false;
-        super::apply_line_window(&mut mode, &mut fresh, true, None, Some(40), Some(20));
-        assert_eq!(mode, "map", "explicit mode wins over offset/limit");
-        assert!(fresh);
-    }
-
-    /// Schema/handler consistency (GitHub #432): the handler reads
-    /// start_line/offset/limit, so the advertised schema must document them —
-    /// otherwise agents (and the generated docs/manifest) can't discover the
-    /// aliases and the divergence that caused this bug returns.
-    #[test]
-    fn schema_advertises_line_window_aliases() {
-        let tool = CtxReadTool.tool_def();
-        let props = tool
-            .input_schema
-            .get("properties")
-            .and_then(|p| p.as_object())
-            .expect("ctx_read schema has a properties object");
-        for key in ["path", "mode", "start_line", "offset", "limit", "fresh"] {
-            assert!(props.contains_key(key), "ctx_read schema missing '{key}'");
-        }
     }
 
     // -- Regression: GitHub Issue #262 --
@@ -1275,8 +675,6 @@ mod tests {
     }
 
     // --- auto_degrade_read_mode: no_degrade integration ---
-    // With default config (no LCTX_NO_DEGRADE), the profile's degradation.enforce
-    // is also off by default, so auto_degrade_read_mode returns mode unchanged.
 
     #[test]
     fn auto_degrade_preserves_full_when_default_config() {
@@ -1319,36 +717,6 @@ mod tests {
     fn auto_degrade_preserves_lines_mode_always() {
         let (mode, warning) = super::auto_degrade_read_mode("lines:10-50");
         assert_eq!(mode, "lines:10-50");
-        assert!(warning.is_none());
-    }
-
-    #[test]
-    fn auto_degrade_preserves_aggressive_when_default_config() {
-        if std::env::var("LCTX_NO_DEGRADE").is_ok() {
-            return;
-        }
-        let (mode, warning) = super::auto_degrade_read_mode("aggressive");
-        assert_eq!(mode, "aggressive");
-        assert!(warning.is_none());
-    }
-
-    #[test]
-    fn auto_degrade_preserves_entropy_when_default_config() {
-        if std::env::var("LCTX_NO_DEGRADE").is_ok() {
-            return;
-        }
-        let (mode, warning) = super::auto_degrade_read_mode("entropy");
-        assert_eq!(mode, "entropy");
-        assert!(warning.is_none());
-    }
-
-    #[test]
-    fn auto_degrade_preserves_auto_when_default_config() {
-        if std::env::var("LCTX_NO_DEGRADE").is_ok() {
-            return;
-        }
-        let (mode, warning) = super::auto_degrade_read_mode("auto");
-        assert_eq!(mode, "auto");
         assert!(warning.is_none());
     }
 
