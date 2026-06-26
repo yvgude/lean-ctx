@@ -676,9 +676,29 @@ fn handle_with_options_inner(
         .map(|existing| (existing.original_tokens, existing.content()));
 
     if let Some((original_tokens, content_opt)) = cache_snapshot {
-        if mode == "full" {
+        // Resolve the read mode first — and *cache-aware* for `auto`. Handing the
+        // live cache to the resolver is what lets an `auto` re-read of an
+        // unchanged, already-fully-delivered file short-circuit to
+        // ("full", "cache_hit") and collapse to the cheap ~13-token `[unchanged]`
+        // stub, exactly like an explicit `full` re-read. The previous call passed
+        // no cache, so that branch was dead code and every `auto` re-read
+        // re-delivered the whole file ("re-reads aren't cached"). Resolving
+        // up-front also lets us hit the compressed-output cache BEFORE
+        // decompressing the full body (avoids ~2-5ms zstd on hits). The
+        // aggressiveness knob (#714) still routes `auto` through the density path.
+        let resolved_mode = if mode == "auto" {
+            tuning
+                .auto_density_mode()
+                .unwrap_or_else(|| resolve_auto_mode(Some(cache), path, original_tokens, task))
+        } else {
+            mode.to_string()
+        };
+
+        if resolved_mode == "full" {
             // Read-locked stub fast path (single source of truth, shared with
-            // the registered handler's concurrent read-lock attempt).
+            // the registered handler's concurrent read-lock attempt). Reached by
+            // an explicit `mode=full` and by `auto` that resolved to a full
+            // cache-hit, so both collapse identically to the `[unchanged]` stub.
             if let Some(out) = try_stub_hit_readonly(cache, path) {
                 return out;
             }
@@ -691,18 +711,6 @@ fn handle_with_options_inner(
                 output_tokens: sent,
             };
         }
-
-        // Resolve mode first so we can check compressed output cache BEFORE
-        // decompressing the full content (avoids ~2-5ms zstd overhead on hits).
-        // The aggressiveness knob (#714) routes `auto` through the density path
-        // so one number drives whole-file intensity; else the learned resolver.
-        let resolved_mode = if mode == "auto" {
-            tuning
-                .auto_density_mode()
-                .unwrap_or_else(|| resolve_auto_mode(path, original_tokens, task))
-        } else {
-            mode.to_string()
-        };
 
         if is_cacheable_mode(&resolved_mode) {
             let cache_key = compressed_cache_key(
@@ -837,7 +845,7 @@ fn handle_with_options_inner(
     let resolved_mode = if mode == "auto" {
         tuning
             .auto_density_mode()
-            .unwrap_or_else(|| resolve_auto_mode(path, store_result.original_tokens, task))
+            .unwrap_or_else(|| resolve_auto_mode(None, path, store_result.original_tokens, task))
     } else {
         mode.to_string()
     };
@@ -945,12 +953,24 @@ fn cap_to_raw(
 }
 
 /// Delegates to the unified `auto_mode_resolver::resolve()`.
-fn resolve_auto_mode(file_path: &str, original_tokens: usize, task: Option<&str>) -> String {
+/// Resolve `auto` to a concrete mode.
+///
+/// Pass `Some(cache)` on the warm read path: the resolver then short-circuits an
+/// unchanged, already-fully-delivered file to `("full", "cache_hit")` so the
+/// caller can collapse the re-read to the cheap `[unchanged]` stub instead of
+/// re-delivering the whole body. Pass `None` only where no session cache exists
+/// (the CLI cold path), which forces a stateless cold resolution.
+fn resolve_auto_mode(
+    cache: Option<&SessionCache>,
+    file_path: &str,
+    original_tokens: usize,
+    task: Option<&str>,
+) -> String {
     let ctx = crate::core::auto_mode_resolver::AutoModeContext {
         path: file_path,
         token_count: original_tokens,
         task,
-        cache: None,
+        cache,
     };
     crate::core::auto_mode_resolver::resolve(&ctx).mode
 }

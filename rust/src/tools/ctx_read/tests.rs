@@ -622,16 +622,17 @@ fn instruction_file_detection() {
 #[test]
 fn resolve_auto_mode_returns_full_for_instruction_files() {
     let mode = resolve_auto_mode(
+        None,
         "/home/user/.pi/agent/skills/committing-changes/SKILL.md",
         5000,
         Some("read"),
     );
     assert_eq!(mode, "full", "SKILL.md must always be read in full");
 
-    let mode = resolve_auto_mode("/workspace/AGENTS.md", 3000, Some("read"));
+    let mode = resolve_auto_mode(None, "/workspace/AGENTS.md", 3000, Some("read"));
     assert_eq!(mode, "full", "AGENTS.md must always be read in full");
 
-    let mode = resolve_auto_mode("/workspace/.cursorrules", 2000, None);
+    let mode = resolve_auto_mode(None, "/workspace/.cursorrules", 2000, None);
     assert_eq!(mode, "full", ".cursorrules must always be read in full");
 }
 
@@ -955,6 +956,47 @@ fn primed_full_cache(p: &str) -> SessionCache {
         "fixture must deliver full content"
     );
     cache
+}
+
+/// Regression: an `auto` re-read of an unchanged, already-fully-delivered file
+/// must collapse to the cheap `[unchanged]` stub — not re-deliver the whole body.
+/// The auto path used to resolve modes with `cache: None`, so the resolver's
+/// `("full","cache_hit")` short-circuit was dead and every `auto` re-read re-sent
+/// the file ("re-reads aren't cached"). The cache-aware resolver restores it.
+#[test]
+fn auto_reread_of_fully_delivered_file_serves_unchanged_stub() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("warm.rs");
+    let p = path.to_string_lossy().to_string();
+    // Body big enough that a full re-delivery dwarfs the ~13-token stub.
+    let body = (0..48)
+        .map(|i| format!("fn function_number_{i}() {{ let value_{i} = {i} * 2; }}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(&path, format!("{body}\n")).unwrap();
+
+    // Cost of a full delivery, measured on a cold cache.
+    let mut cold = SessionCache::new();
+    let full = handle_with_task_resolved(&mut cold, &p, "full", CrpMode::Off, None);
+    assert!(
+        !full.content.contains("[unchanged"),
+        "cold full read must deliver the body, not a stub"
+    );
+
+    // Warm cache: full body already delivered, file unchanged on disk.
+    let mut cache = primed_full_cache(&p);
+    let reread = handle_with_task_resolved(&mut cache, &p, "auto", CrpMode::Off, None);
+    assert!(
+        reread.content.contains("[unchanged"),
+        "auto re-read of an unchanged fully-delivered file must serve the stub, got: {}",
+        reread.content
+    );
+    assert!(
+        reread.output_tokens.saturating_mul(4) < full.output_tokens,
+        "stub ({} tok) must be far cheaper than a full re-delivery ({} tok)",
+        reread.output_tokens,
+        full.output_tokens
+    );
 }
 
 #[test]

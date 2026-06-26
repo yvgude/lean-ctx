@@ -170,7 +170,7 @@ pub(crate) fn process_mode_tuned(
             // auto-resolver picks the mode.
             let chosen = tuning
                 .auto_density_mode()
-                .unwrap_or_else(|| resolve_auto_mode(file_path, original_tokens, task));
+                .unwrap_or_else(|| resolve_auto_mode(None, file_path, original_tokens, task));
             process_mode_tuned(
                 content,
                 &chosen,

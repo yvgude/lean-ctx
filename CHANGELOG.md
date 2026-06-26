@@ -116,6 +116,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   `ctx_expand` handle so a dropped datum is never irrecoverable.
 
 ### Fixed
+- **`auto`-mode re-reads bypassed the `[unchanged]` cache stub and re-delivered
+  the whole file (gitlab #946).** The cheap ~13-token re-read stub
+  (`Fref=path [unchanged NL]`) only fired for an *explicit* `mode=full` re-read;
+  in the default `auto` mode a re-read of an unchanged, already fully-delivered
+  file re-sent the entire body — the "re-reads aren't cached / reliability is
+  worse than before" regression. Cause: `ctx_read` resolved `auto` with
+  `cache: None`, so the resolver's unit-tested `unchanged + full_delivered →
+  ("full","cache_hit")` short-circuit was dead code on the real read path (a
+  silent divergence from `ctx_smart_read`, which threaded the cache correctly;
+  introduced by the #683 deterministic cascade). `resolve_auto_mode` is now
+  cache-aware, the warm path routes an `auto`→`full` cache-hit through the same
+  `try_stub_hit_readonly` stub as an explicit full re-read, and the registered
+  read-lock fast path accepts `auto` too (self-guarded by the stub). Compressed-
+  first files still serve their cached compressed output on re-read — no wrong
+  escalation to full. Regression test
+  `auto_reread_of_fully_delivered_file_serves_unchanged_stub`.
 - **`ctx_impact` missed Go and Kotlin same-package blast radius (#398 bug class).**
   The C#/Java fix in 3.8.13 closed one instance of a general gap: any language with
   implicit same-package visibility references project types with no import, so

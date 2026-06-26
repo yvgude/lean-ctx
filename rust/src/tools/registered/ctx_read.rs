@@ -327,11 +327,17 @@ impl CtxReadTool {
                 };
 
                 // Phase 1 (shared lock): the dominant case is re-reading an
-                // unchanged file in full mode. Serve that stub under a *read*
-                // lock so parallel reads of distinct files run concurrently
-                // instead of serializing on the global write lock.
+                // unchanged file. Serve the `[unchanged]` stub under a *read* lock
+                // so parallel reads of distinct files run concurrently instead of
+                // serializing on the global write lock. `auto` is included because
+                // a warm `auto` re-read of a fully-delivered file resolves to a
+                // full cache-hit; `try_stub_hit_readonly` self-guards (returns None
+                // unless full content was delivered and the file is unchanged), so a
+                // first or compressed-only `auto` read still falls through to
+                // Phase 2. When aggressiveness is set `mode` was already rewritten
+                // to `density:` upstream, so it never reaches this `auto` branch.
                 if !fresh
-                    && mode == "full"
+                    && (mode == "full" || mode == "auto")
                     && let Ok(cache) = cache_lock.try_read()
                     && let Some(read_output) =
                         crate::tools::ctx_read::try_stub_hit_readonly(&cache, path)
