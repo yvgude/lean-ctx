@@ -112,6 +112,17 @@ jobs:
             "$CARGO" test --all-features -- --test-threads=1
           fi
 
+      # #581: lock in the parallel BM25 (incremental) rebuild win against silent
+      # regression. Timing is only meaningful on a quiet, single-threaded runner,
+      # so the gate is env-opt-in (no-op in the matrix above) and runs once here.
+      - name: BM25 build-time regression gate (#581)
+        if: runner.os == 'Linux'
+        working-directory: rust
+        shell: bash
+        env:
+          LEAN_CTX_PERF_GATE: "1"
+        run: cargo test --all-features --lib -- --test-threads=1 parallel_incremental_rebuild_perf_gate --nocapture
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest

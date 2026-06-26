@@ -713,6 +713,161 @@ fn build_from_directory_dispatches_parallel_and_matches_sequential() {
     assert_same_index(&seq, &public);
 }
 
+// ---- #581: parallel incremental rebuild determinism ----
+
+/// Mutate a freshly-built corpus to exercise every incremental branch — a
+/// changed file (re-extract), a new file, a removed file, and many unchanged
+/// files (reuse) — then assert the parallel and sequential incremental rebuilds
+/// produce a byte-identical index over the same `prev` + disk state.
+#[test]
+fn parallel_incremental_matches_sequential() {
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    write_parallel_corpus(root, 40);
+
+    // Build the baseline index (the corpus is large enough to take the parallel
+    // full-build path), then mutate disk so the rebuild hits all branches.
+    let prev = BM25Index::build_from_directory(root);
+    assert!(prev.files.contains_key("src/mod_001.rs"));
+
+    // Changed: different body (and size) forces a re-extract.
+    std::fs::write(
+        root.join("src/mod_000.rs"),
+        "pub fn changed_entry() -> usize {\n    let recomputed = 42 + 7;\n    recomputed\n}\n",
+    )
+    .expect("rewrite mod_000");
+    // New file the baseline never saw.
+    std::fs::write(
+        root.join("src/mod_new.rs"),
+        "pub fn brand_new(token: Token) -> Token {\n    token\n}\n",
+    )
+    .expect("write mod_new");
+    // Removed file must drop out of the rebuilt index.
+    std::fs::remove_file(root.join("src/mod_001.rs")).expect("remove mod_001");
+
+    let old_by_file = BM25Index::group_prev_chunks_by_file(&prev);
+    let files = list_code_files(root);
+    assert!(
+        files.len() >= super::build::PARALLEL_MIN_FILES,
+        "corpus must trigger the parallel rebuild path"
+    );
+
+    let seq = BM25Index::rebuild_incremental_sequential(root, &prev, &old_by_file, &files);
+    let par = BM25Index::rebuild_incremental_parallel(root, &prev, &old_by_file, &files);
+
+    // The whole contract: identical chunk order, postings, doc_freqs, file set.
+    assert_same_index(&seq, &par);
+
+    // And the mutation actually exercised every branch (guards against a vacuous
+    // pass where nothing changed).
+    assert!(par.files.contains_key("src/mod_000.rs"));
+    assert!(par.files.contains_key("src/mod_new.rs"));
+    assert!(
+        !par.files.contains_key("src/mod_001.rs"),
+        "removed file must not survive the rebuild"
+    );
+    assert!(
+        par.chunks
+            .iter()
+            .any(|c| c.file_path == "src/mod_000.rs" && c.content.contains("recomputed")),
+        "changed file must be re-extracted with new content"
+    );
+}
+
+/// The public `rebuild_incremental` dispatcher must take the parallel path for a
+/// large corpus yet match an explicit sequential rebuild over the same inputs —
+/// guards the dispatch wiring the way the full-build test guards `build()`.
+#[test]
+fn rebuild_incremental_dispatches_parallel_and_matches_sequential() {
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    write_parallel_corpus(root, 40);
+
+    let prev = BM25Index::build_from_directory(root);
+    std::fs::write(
+        root.join("src/mod_005.rs"),
+        "pub fn touched() -> bool {\n    true\n}\n",
+    )
+    .expect("rewrite mod_005");
+
+    let old_by_file = BM25Index::group_prev_chunks_by_file(&prev);
+    let files = list_code_files(root);
+    assert!(files.len() >= super::build::PARALLEL_MIN_FILES);
+
+    let public = BM25Index::rebuild_incremental(root, &prev);
+    let seq = BM25Index::rebuild_incremental_sequential(root, &prev, &old_by_file, &files);
+    assert_same_index(&seq, &public);
+}
+
+/// CI build-time regression gate for the parallel incremental rebuild
+/// (#581, locking in #933). Off by default — wall-clock timing is meaningless
+/// under the concurrent local / nextest runner — so it no-ops unless the CI job
+/// sets `LEAN_CTX_PERF_GATE=1` and runs it on a quiet, single-threaded runner.
+/// Asserts the parallel rebuild is not slower than the sequential one
+/// (best-of-3, generous noise slack) and stays under a catastrophic-blowup
+/// ceiling, without depending on a specific core count.
+#[test]
+fn parallel_incremental_rebuild_perf_gate() {
+    if std::env::var("LEAN_CTX_PERF_GATE").as_deref() != Ok("1") {
+        return; // CI-only gate; no-op elsewhere to avoid timing flakes
+    }
+
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    write_parallel_corpus(root, 240);
+
+    let prev = BM25Index::build_from_directory(root);
+    // Touch a handful so the rebuild does real re-extraction on top of the reuse
+    // path; the bulk stays unchanged — the realistic edit-loop shape.
+    for i in [0usize, 60, 120, 180] {
+        std::fs::write(
+            root.join(format!("src/mod_{i:03}.rs")),
+            format!("pub fn touched_{i}() -> usize {{ {i} }}\n"),
+        )
+        .expect("touch file");
+    }
+
+    let old_by_file = BM25Index::group_prev_chunks_by_file(&prev);
+    let files = list_code_files(root);
+
+    let best = |f: &dyn Fn() -> std::time::Duration| (0..3).map(|_| f()).min().unwrap();
+    let seq = best(&|| {
+        let t = std::time::Instant::now();
+        let idx = BM25Index::rebuild_incremental_sequential(root, &prev, &old_by_file, &files);
+        std::hint::black_box(&idx);
+        t.elapsed()
+    });
+    let par = best(&|| {
+        let t = std::time::Instant::now();
+        let idx = BM25Index::rebuild_incremental_parallel(root, &prev, &old_by_file, &files);
+        std::hint::black_box(&idx);
+        t.elapsed()
+    });
+
+    eprintln!(
+        "[perf-gate] incremental rebuild: seq={seq:?} par={par:?} ratio={:.2}",
+        par.as_secs_f64() / seq.as_secs_f64().max(f64::MIN_POSITIVE)
+    );
+
+    // CI-safe gate (plan: "großzügiges CI-sicheres Budget"). The parallel path
+    // must not be *dramatically* slower than sequential: a 2x ceiling flags a path
+    // that serialized and piled on overhead (e.g. a deadlock-y merge), while
+    // tolerating scheduler noise and low-core CI runners where a small fixture's
+    // parallel speedup shrinks. Byte-for-byte equivalence is asserted separately
+    // (parallel_incremental_matches_sequential), so this guard only has to catch a
+    // catastrophic perf regression — not police a tight ratio that would flake.
+    assert!(
+        par.as_secs_f64() <= seq.as_secs_f64() * 2.0,
+        "parallel incremental rebuild regressed: par={par:?} > seq*2 ({:?})",
+        seq.mul_f64(2.0)
+    );
+    // Absolute blowup ceiling, generous for a slow debug CI runner.
+    assert!(
+        par < std::time::Duration::from_secs(30),
+        "parallel incremental rebuild absurdly slow: {par:?}"
+    );
+}
+
 #[test]
 fn parallel_build_search_parity() {
     // End-to-end: the parallel index must rank a query identically to the

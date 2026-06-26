@@ -298,7 +298,11 @@ impl BM25Index {
         Self::build_sequential(root, content_hint, &files)
     }
 
-    pub fn rebuild_incremental(root: &Path, prev: &BM25Index) -> Self {
+    /// Group a previous index's chunks by file, each file's list sorted by
+    /// (start_line, end_line, symbol_name) — the deterministic reuse order shared
+    /// by both incremental rebuild paths (and the equivalence test, so it feeds
+    /// them identical inputs).
+    fn group_prev_chunks_by_file(prev: &BM25Index) -> HashMap<String, Vec<CodeChunk>> {
         let mut old_by_file: HashMap<String, Vec<CodeChunk>> = HashMap::new();
         for c in &prev.chunks {
             old_by_file
@@ -314,9 +318,40 @@ impl BM25Index {
                     .then_with(|| a.symbol_name.cmp(&b.symbol_name))
             });
         }
+        old_by_file
+    }
 
-        let mut index = Self::new();
+    pub fn rebuild_incremental(root: &Path, prev: &BM25Index) -> Self {
+        let old_by_file = Self::group_prev_chunks_by_file(prev);
         let files = list_code_files(root);
+
+        // #581: mirror `build()`'s dispatch. The edit loop is the hottest path in
+        // daily use, and its serial cost is dominated by re-tokenizing the *many
+        // unchanged* files' reused chunks — not the few changed ones. So the
+        // parallel path fans the entire tokenization (changed files via
+        // `prepare_file`, unchanged via re-`prepare_chunk`) across the rayon pool
+        // and merges sequentially in file order. The sequential path keeps the
+        // per-file memory-pressure early-break and serves small corpora / pressure.
+        // Both produce an identical index (see determinism tests).
+        if files.len() >= build::PARALLEL_MIN_FILES
+            && !crate::core::memory_guard::is_under_pressure()
+            && !crate::core::memory_guard::abort_requested()
+        {
+            return Self::rebuild_incremental_parallel(root, prev, &old_by_file, &files);
+        }
+        Self::rebuild_incremental_sequential(root, prev, &old_by_file, &files)
+    }
+
+    /// Sequential incremental rebuild with per-file memory-pressure guards. Reuses
+    /// unchanged files' chunks and re-extracts changed ones. Used for small
+    /// corpora and as the safe fallback under memory pressure.
+    pub(crate) fn rebuild_incremental_sequential(
+        root: &Path,
+        prev: &BM25Index,
+        old_by_file: &HashMap<String, Vec<CodeChunk>>,
+        files: &[String],
+    ) -> Self {
+        let mut index = Self::new();
         const MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024;
 
         for (i, rel) in files.iter().enumerate() {

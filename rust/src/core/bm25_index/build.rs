@@ -122,6 +122,42 @@ fn prepare_file(
     })
 }
 
+/// Per-file work for the incremental rebuild, mirroring the sequential branch:
+/// reuse the previous chunks when the file is unchanged and they carry content,
+/// otherwise re-`prepare_file`. Crucially, reused chunks are re-prepared (enrich
+/// → tokenize → lowercase) here too, so the *whole* tokenization — not just the
+/// changed files — runs on the rayon pool, off the serial merge. The reuse guard
+/// (`state` match + non-empty first chunk) and the changed-file fallthrough match
+/// `rebuild_incremental_sequential` exactly, keeping the two paths in lock-step.
+fn prepare_incremental_file(
+    root: &Path,
+    prev: &BM25Index,
+    old_by_file: &HashMap<String, Vec<CodeChunk>>,
+    content_hint: &HashMap<String, String>,
+    rel: &str,
+) -> Option<PreparedFile> {
+    let abs = root.join(rel);
+    let state = IndexedFileState::from_path(&abs)?;
+
+    let unchanged = prev.files.get(rel).is_some_and(|old| *old == state);
+    if unchanged
+        && let Some(chunks) = old_by_file.get(rel)
+        && chunks.first().is_some_and(|c| !c.content.is_empty())
+    {
+        return Some(PreparedFile {
+            rel: rel.to_string(),
+            state,
+            chunks: chunks.iter().cloned().map(prepare_chunk).collect(),
+        });
+    }
+
+    // Changed / new / previously-empty: full prepare. The size guard and content
+    // resolution live in `prepare_file`; for a changed file the resident content
+    // cache fails its (mtime, size) validation and falls through to a fresh disk
+    // read, so the bytes match the sequential path's direct read.
+    prepare_file(root, rel, content_hint)
+}
+
 impl BM25Index {
     /// Deterministic parallel full build. Fans per-file parse + tokenize across a
     /// rayon pool (order-preserving `par_iter().collect()`), then merges
@@ -138,6 +174,43 @@ impl BM25Index {
         let prepared: Vec<Option<PreparedFile>> = files
             .par_iter()
             .map(|rel| prepare_file(root, rel, content_hint))
+            .collect();
+
+        let mut index = Self::new();
+        for pf in prepared.into_iter().flatten() {
+            for pc in pf.chunks {
+                index.add_prepared(pc);
+            }
+            index.files.insert(pf.rel, pf.state);
+        }
+        index.finalize();
+        index
+    }
+
+    /// Deterministic parallel incremental rebuild (#581). Fans **all** per-file
+    /// tokenization across the rayon pool — changed files through the full
+    /// `prepare_file`, unchanged files by re-`prepare_chunk`-ing their reused
+    /// chunks — then merges sequentially in file order via `add_prepared`. The
+    /// result is identical to [`Self::rebuild_incremental_sequential`] for the same
+    /// inputs (same file order, same chunk order, same postings / `doc_freqs`),
+    /// upholding the determinism contract (#498). See `tests.rs`
+    /// (`parallel_incremental_matches_sequential`).
+    pub(crate) fn rebuild_incremental_parallel(
+        root: &Path,
+        prev: &BM25Index,
+        old_by_file: &HashMap<String, Vec<CodeChunk>>,
+        files: &[String],
+    ) -> Self {
+        // No per-build content hint for a rebuild; `prepare_file` falls back to the
+        // resident content cache (validated) then disk.
+        let empty_hint: HashMap<String, String> = HashMap::new();
+
+        // Order-preserving `par_iter().collect()` keeps the input file order, so
+        // the merge below sees files in the same order the sequential rebuild
+        // iterates — the foundation of identical output.
+        let prepared: Vec<Option<PreparedFile>> = files
+            .par_iter()
+            .map(|rel| prepare_incremental_file(root, prev, old_by_file, &empty_hint, rel))
             .collect();
 
         let mut index = Self::new();
