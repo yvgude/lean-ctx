@@ -728,7 +728,11 @@ fn parallel_incremental_matches_sequential() {
     // Build the baseline index (the corpus is large enough to take the parallel
     // full-build path), then mutate disk so the rebuild hits all branches.
     let prev = BM25Index::build_from_directory(root);
-    assert!(prev.files.contains_key("src/mod_001.rs"));
+    // `files` keys and `chunk.file_path` keep the OS-native separator (output is
+    // normalized to '/' only at render time, #324); build expected keys the same
+    // way so these lookups also hit on Windows (`src\mod_001.rs`).
+    let key = |rel: &str| rel.replace('/', std::path::MAIN_SEPARATOR_STR);
+    assert!(prev.files.contains_key(&key("src/mod_001.rs")));
 
     // Changed: different body (and size) forces a re-extract.
     std::fs::write(
@@ -760,16 +764,16 @@ fn parallel_incremental_matches_sequential() {
 
     // And the mutation actually exercised every branch (guards against a vacuous
     // pass where nothing changed).
-    assert!(par.files.contains_key("src/mod_000.rs"));
-    assert!(par.files.contains_key("src/mod_new.rs"));
+    assert!(par.files.contains_key(&key("src/mod_000.rs")));
+    assert!(par.files.contains_key(&key("src/mod_new.rs")));
     assert!(
-        !par.files.contains_key("src/mod_001.rs"),
+        !par.files.contains_key(&key("src/mod_001.rs")),
         "removed file must not survive the rebuild"
     );
     assert!(
         par.chunks
             .iter()
-            .any(|c| c.file_path == "src/mod_000.rs" && c.content.contains("recomputed")),
+            .any(|c| c.file_path == key("src/mod_000.rs") && c.content.contains("recomputed")),
         "changed file must be re-extracted with new content"
     );
 }
