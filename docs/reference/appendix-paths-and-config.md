@@ -99,6 +99,7 @@ var always wins.
 | `LEAN_CTX_TOOL_PROFILE` | `minimal\|standard\|power` | config / power |
 | `LEAN_CTX_PROFILE` | Active context profile | config / `coder` |
 | `LEAN_CTX_COMPRESSION` | `off\|lite\|standard\|max` | config / `lite` |
+| `LEAN_CTX_RESEARCH_PROSE_CAP` | Proxy research prose squeeze cap in bytes | `20000` |
 | `LEAN_CTX_MEMORY_PROFILE` | `low\|balanced\|performance` | `performance` |
 | `LEAN_CTX_PROXY_PORT` | Proxy port | `4444` |
 | `LEAN_CTX_NO_UPDATE_CHECK=1` | Disable update check | unset |
