@@ -125,6 +125,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
     agreement. Covered by new tests: `detect_drift_without_rules_toml_does_not_
     require_init` and `sync_then_diff_reports_no_drift`. (Third slice of the #548
     agent-rules unification.)
+- **Compression block had two disagreeing marker models, so cross-channel dedup
+  never fired (#548).** `rules_canonical::render` embedded the output-style
+  compression prompt *inline* inside the `<!-- lean-ctx-rules -->` block with no
+  delimiters, but the coverage/dedup readers (`rules_channel`, `rules dedup`)
+  detect the payload by a separate `<!-- lean-ctx-compression -->` … `<!--
+  /lean-ctx-compression -->` block. Since the writer never emitted those markers,
+  `cursor_compression_covered`/`client_autoloads_compression` were always false on
+  freshly written rule files — so the MCP per-session instructions kept repeating
+  the compression block even for Cursor/Codex that already load it from their rule
+  file (double billing), and `rules dedup` could not thin a render-produced shared
+  `AGENTS.md`. The two models are now one: the `COMPRESSION_BLOCK_*` markers live in
+  `rules_canonical` (single marker source, re-exported from `rules_channel`), and
+  `render` wraps the compression prompt in them for the persistent carriers
+  (`Dedicated`/`Shared` — every injected rule file). The ephemeral `Bare` MCP
+  channel stays unmarked by design (its inclusion is *governed* by carrier coverage,
+  so a per-session marker would be noise). Content-aware freshness (second slice)
+  re-propagates the new block on the next `sync` without a version bump. Covered by
+  new tests asserting carriers wrap / `Bare` does not / `Off` emits nothing, and an
+  end-to-end check that a `render`-produced Cursor block is now recognised as
+  compression coverage. (Fourth slice of the #548 agent-rules unification — closes
+  the "one canonical carrier/marker model" acceptance criterion.)
 - **Shadow-mode hook reads dropped ~75% of the MCP read side effects (#550).** When
   shadow/harden mode intercepts a native `view`/`grep` call it spawns `lean-ctx read`
   as a single-shot subprocess. That CLI path recorded only a fraction of what the MCP

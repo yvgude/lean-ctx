@@ -35,6 +35,23 @@ pub const AGENTS_BLOCK_END: &str = "<!-- /lean-ctx -->";
 /// Closing marker that ends a lean-ctx rule section.
 pub const END_MARK: &str = "<!-- /lean-ctx-rules -->";
 
+/// Markers of the heavy compression / output-style block — the per-turn payload
+/// that drives cross-channel duplication (#684/#548).
+///
+/// `render()` wraps the compression prompt in these markers for **persistent
+/// carriers** (the `Dedicated` and `Shared` wrappers, i.e. every injected rule
+/// file). This is the single carrier/marker model: coverage and dedup
+/// (`core::rules_channel`, `cli::rules_dedup`) detect and thin the payload by
+/// these markers, so the writer and the readers can never disagree again. The
+/// ephemeral `Bare` MCP-instructions channel deliberately omits the markers —
+/// its inclusion is *governed* by carrier coverage (`client_autoloads_compression`),
+/// so a per-session marker would be pure noise.
+pub const COMPRESSION_BLOCK_START: &str = "<!-- lean-ctx-compression -->";
+
+/// Closing marker of the compression / output-style block (see
+/// [`COMPRESSION_BLOCK_START`]).
+pub const COMPRESSION_BLOCK_END: &str = "<!-- /lean-ctx-compression -->";
+
 /// Current rules version (monotonically increasing integer).  Embedded as
 /// `<!-- version: {RULES_VERSION} -->` right after `START_MARK` so the
 /// injection layer can parse it and decide whether a file is up-to-date.
@@ -200,11 +217,22 @@ pub fn render(shadow: bool, wrapper: Wrapper, level: CompressionLevel) -> String
 
     let mut body = profile.join("\n\n");
 
-    // Append compression prompt for active levels
+    // Append the compression / output-style prompt for active levels. Persistent
+    // carriers (Dedicated, Shared) wrap it in the canonical COMPRESSION_BLOCK
+    // markers so coverage/dedup (rules_channel, rules_dedup) can detect and thin
+    // it; the ephemeral Bare MCP channel keeps it unmarked (#684/#548).
     let compression = compression_text(level);
     if !compression.is_empty() {
         body.push('\n');
-        body.push_str(compression);
+        if matches!(wrapper, Wrapper::Bare) {
+            body.push_str(compression);
+        } else {
+            body.push_str(COMPRESSION_BLOCK_START);
+            body.push('\n');
+            body.push_str(compression);
+            body.push('\n');
+            body.push_str(COMPRESSION_BLOCK_END);
+        }
     }
 
     if matches!(wrapper, Wrapper::Bare) {
@@ -565,6 +593,56 @@ mod tests {
         assert!(compression_text(CompressionLevel::Lite).contains("Bullet"));
         assert!(compression_text(CompressionLevel::Standard).contains("fn, cfg"));
         assert!(compression_text(CompressionLevel::Max).contains("Telegraph"));
+    }
+
+    // --- Compression marker model (#548 B2) ---
+
+    #[test]
+    fn carrier_wrappers_wrap_compression_in_markers() {
+        // Persistent carriers must delimit the compression payload so coverage
+        // and dedup can detect/thin it (#684/#548).
+        for wrapper in [Wrapper::Dedicated, Wrapper::Shared] {
+            let out = render(false, wrapper, CompressionLevel::Standard);
+            assert!(
+                out.contains(COMPRESSION_BLOCK_START) && out.contains(COMPRESSION_BLOCK_END),
+                "{wrapper:?} must wrap compression in COMPRESSION_BLOCK markers"
+            );
+            // The marked region must actually contain the prompt body.
+            let start = out.find(COMPRESSION_BLOCK_START).unwrap();
+            let end = out.find(COMPRESSION_BLOCK_END).unwrap();
+            assert!(start < end, "{wrapper:?}: start marker precedes end marker");
+            assert!(out[start..end].contains("OUTPUT STYLE: dense"));
+        }
+    }
+
+    #[test]
+    fn bare_wrapper_emits_compression_without_markers() {
+        // The ephemeral MCP channel keeps the payload unmarked — its inclusion is
+        // governed by carrier coverage, so per-session markers would be noise.
+        let out = render(false, Wrapper::Bare, CompressionLevel::Standard);
+        assert!(out.contains("OUTPUT STYLE: dense"));
+        assert!(!out.contains(COMPRESSION_BLOCK_START));
+        assert!(!out.contains(COMPRESSION_BLOCK_END));
+    }
+
+    #[test]
+    fn compression_off_emits_no_markers_in_any_wrapper() {
+        for wrapper in [Wrapper::Dedicated, Wrapper::Shared, Wrapper::Bare] {
+            let out = render(false, wrapper, CompressionLevel::Off);
+            assert!(
+                !out.contains(COMPRESSION_BLOCK_START) && !out.contains(COMPRESSION_BLOCK_END),
+                "{wrapper:?}: Off must emit no compression markers"
+            );
+        }
+    }
+
+    #[test]
+    fn rendered_carrier_block_is_seen_as_carrying_compression() {
+        // The detection helper that coverage/dedup rely on must agree with the
+        // writer's output (the bug this slice fixes: it previously never did).
+        let dedicated = render(false, Wrapper::Dedicated, CompressionLevel::Lite);
+        assert!(crate::core::rules_channel::carries_full_rules(&dedicated));
+        assert!(dedicated.contains(COMPRESSION_BLOCK_START));
     }
 
     // --- Wrapper round-trip ---

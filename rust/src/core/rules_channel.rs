@@ -16,9 +16,10 @@
 use std::path::Path;
 
 /// Markers of the heavy compression / output-style block — the per-turn payload
-/// that actually drives cross-channel duplication.
-pub const COMPRESSION_BLOCK_START: &str = "<!-- lean-ctx-compression -->";
-pub const COMPRESSION_BLOCK_END: &str = "<!-- /lean-ctx-compression -->";
+/// that actually drives cross-channel duplication. Defined in `rules_canonical`
+/// (the single marker source of truth) and re-exported here so the coverage/dedup
+/// readers and the `render()` writer can never disagree (#548).
+pub use crate::core::rules_canonical::{COMPRESSION_BLOCK_END, COMPRESSION_BLOCK_START};
 
 /// The agents that auto-load the shared project `AGENTS.md`. Kept in sync with
 /// `core::rules_overhead::collect_rules_files`, which attributes `AGENTS.md` to
@@ -211,5 +212,35 @@ mod tests {
         // Empty / unknown clients never auto-load a file copy.
         assert!(!client_autoloads_compression("", home));
         assert!(!client_autoloads_compression("some-other-agent", home));
+    }
+
+    #[test]
+    fn render_output_is_detected_as_compression_coverage() {
+        // The slice's core guarantee (#548 B2): the bytes the writer (`render`)
+        // emits into a carrier file are recognised by the coverage detection the
+        // MCP cross-channel dedup depends on. Before the unified marker model,
+        // render embedded the prompt inline (no markers) so this was always
+        // false → Cursor was billed for the compression block twice (rule file +
+        // every MCP session).
+        use crate::core::config::CompressionLevel;
+        use crate::core::rules_canonical::{Wrapper, render};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        assert!(!cursor_compression_covered(home));
+
+        // Exactly what `rules_content`/inject writes to the Cursor mdc (frontmatter
+        // is irrelevant to substring detection).
+        let block = render(false, Wrapper::Dedicated, CompressionLevel::Standard);
+        std::fs::create_dir_all(home.join(".cursor/rules")).unwrap();
+        std::fs::write(home.join(".cursor/rules/lean-ctx.mdc"), &block).unwrap();
+
+        assert!(cursor_compression_covered(home));
+        assert!(client_autoloads_compression("cursor", home));
+
+        // An Off render carries no payload, so it must NOT count as coverage.
+        let off = render(false, Wrapper::Dedicated, CompressionLevel::Off);
+        std::fs::write(home.join(".cursor/rules/lean-ctx.mdc"), &off).unwrap();
+        assert!(!cursor_compression_covered(home));
     }
 }
