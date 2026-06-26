@@ -138,6 +138,16 @@ pub fn deprecated_alias(name: &str) -> Option<DeprecatedAlias> {
             replacement: "ctx_read",
             hint: "ctx_read now batch-reads via paths=[\"a.rs\",\"b.rs\"]",
         }),
+        // #509 search consolidation: one ctx_search entry, `action` picks the
+        // engine. Aliases stay callable for one release so nothing breaks.
+        "ctx_semantic_search" => Some(DeprecatedAlias {
+            replacement: "ctx_search",
+            hint: "ctx_search with action=\"semantic\" (query=…); reindex/find_related are actions too",
+        }),
+        "ctx_symbol" => Some(DeprecatedAlias {
+            replacement: "ctx_search",
+            hint: "ctx_search with action=\"symbol\" (name=…, optional file/kind)",
+        }),
         _ => None,
     }
 }
@@ -350,6 +360,17 @@ mod tests {
         assert!(deprecated_alias("ctx_search").is_none());
         assert!(is_deprecated_alias("ctx_multi_read"));
         assert!(!is_deprecated_alias("ctx_read"));
+
+        // #509 search consolidation: the folded search tools point at ctx_search.
+        assert_eq!(
+            deprecated_alias("ctx_semantic_search").unwrap().replacement,
+            "ctx_search"
+        );
+        assert_eq!(
+            deprecated_alias("ctx_symbol").unwrap().replacement,
+            "ctx_search"
+        );
+        assert!(is_deprecated_alias("ctx_symbol"));
     }
 
     #[test]

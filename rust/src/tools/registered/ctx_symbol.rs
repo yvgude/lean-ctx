@@ -15,11 +15,9 @@ impl McpTool for CtxSymbolTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_symbol",
-            "Get ONE symbol's body by name — exact, AST-precise (tree-sitter index).\n\
-             WORKFLOW: after ctx_compose gave overview, for one symbol's body.\n\
-             name='fnName' returns code block; file='path.rs' narrows;\n\
-             kind='fn'|'struct'|'class'|'trait'|'enum' disambiguates.\n\
-             ANTIPATTERN: NOT for finding all usages (grep) or exploring areas (ctx_compose).",
+            "[Deprecated → ctx_search action=\"symbol\"] Get one symbol's body by name (AST-precise);\n\
+             optional file/kind narrow. Hidden from tools/list but still callable for one release —\n\
+             prefer ctx_search.",
             json!({
                 "type": "object",
                 "properties": {

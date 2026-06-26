@@ -213,7 +213,12 @@ mod tests {
         // for one release. Removal is Phase 2.
         let _guard = crate::core::data_dir::isolated_data_dir();
         let defs = crate::server::registry::build_registry().tool_defs();
-        for name in ["ctx_smart_read", "ctx_multi_read"] {
+        for name in [
+            "ctx_smart_read",
+            "ctx_multi_read",
+            "ctx_semantic_search",
+            "ctx_symbol",
+        ] {
             assert!(
                 defs.iter().any(|t| t.name.as_ref() == name),
                 "{name} must stay registered (callable) even though hidden"
@@ -243,9 +248,25 @@ mod tests {
         // surface them.
         let p = ToolProfile::Standard;
         assert!(is_tool_visible("ctx_execute", &p, &[], false, true));
-        assert!(is_tool_visible("ctx_semantic_search", &p, &[], false, true));
+        assert!(is_tool_visible("ctx_explore", &p, &[], false, true));
         assert!(is_tool_visible("ctx_callgraph", &p, &[], false, true));
         assert!(is_tool_visible("ctx_graph", &p, &[], false, true));
+    }
+
+    #[test]
+    fn folded_search_aliases_never_visible() {
+        // #509: ctx_semantic_search + ctx_symbol are consolidated into ctx_search
+        // (action=…). Hidden from tools/list in every mode, but stay callable.
+        let p = ToolProfile::Power;
+        assert!(!is_tool_visible(
+            "ctx_semantic_search",
+            &p,
+            &[],
+            false,
+            true
+        ));
+        assert!(!is_tool_visible("ctx_symbol", &p, &[], false, true));
+        assert!(is_tool_visible("ctx_search", &p, &[], false, true));
     }
 
     #[test]
@@ -353,6 +374,12 @@ mod tests {
     /// into one (`ctx_smart_read` + `ctx_multi_read` are now deprecated aliases
     /// hidden from the surface). The net effect REDUCES the advertised surface; the
     /// only local cost is +~18 tok on `ctx_read`'s schema for the new `paths` arg.
+    ///
+    /// #509 search consolidation (cont.): `ctx_search` now subsumes semantic
+    /// search + symbol lookup via an `action` enum, so `ctx_semantic_search` left
+    /// the core set (it + `ctx_symbol` are deprecated aliases). `ctx_search` grew
+    /// (~196 → ~318 tok) but the core total DROPPED (~2298 → ~2150, one fewer
+    /// tool), so the budgets are left unchanged with comfortable headroom.
     #[test]
     fn core_tool_surface_stays_within_budget() {
         const PER_TOOL_BUDGET: usize = 360;

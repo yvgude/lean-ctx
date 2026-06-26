@@ -71,8 +71,9 @@ pub const CORE_TOOL_NAMES: &[&str] = &[
     "ctx_read",
     "ctx_shell",
     "shell",
+    // #509: ctx_search now subsumes semantic search + symbol lookup via `action`;
+    // ctx_semantic_search/ctx_symbol are deprecated aliases hidden from the surface.
     "ctx_search",
-    "ctx_semantic_search",
     "ctx_glob",
     "ctx_tree",
     "ctx_session",

@@ -577,20 +577,19 @@ Parameters: `action`*, `agent`
 
 ## `ctx_search`
 
-Regex pattern search — use when you know the exact pattern. For understanding code or
-finding answers, use ctx_compose FIRST (one call replaces search+read+symbol chains).
-pattern required; include='*.rs'; path scopes; max_results=N (default 20).
-paths=['dir1','dir2'] for multi-root. ignore_gitignore bypasses .gitignore (needs role).
+Search code; `action` picks the engine. regex (default): exact pattern, `pattern`
+required, include='*.rs', paths=[..] multi-root. semantic: by meaning (BM25+embeddings),
+`query`, mode=bm25|dense|hybrid. symbol: one symbol's body by `name` (AST-precise),
+file/kind narrow. reindex / find_related(file_path,line). For end-to-end understanding,
+use ctx_compose FIRST.
 
-Parameters: `ignore_gitignore`, `include`, `max_results`, `path`, `paths`, `pattern`*
+Parameters: `action`, `file`, `file_path`, `include`, `kind`, `line`, `max_results`, `mode`, `name`, `path`, `paths`, `pattern`, `query`, `top_k`
 
 ## `ctx_semantic_search`
 
-Search code by MEANING (BM25+embeddings) — use when you know the concept but not the exact
-symbol name. query='user auth' finds relevant code even with no keyword match.
-Different from ctx_search (regex): use ctx_search for exact patterns, this for
-fuzzy/conceptual. For understanding code end-to-end, use ctx_compose FIRST.
-find_related(file_path, line) for context neighbors. mode=bm25|dense|hybrid.
+[Deprecated → ctx_search action="semantic"] Search code by meaning (BM25+embeddings);
+reindex / find_related are ctx_search actions too. Hidden from tools/list but still
+callable for one release — prefer ctx_search.
 
 Parameters: `action`, `file_path`, `languages`, `line`, `mode`, `path`, `path_glob`, `query`*, `top_k`
 
@@ -656,11 +655,9 @@ Parameters: `action`, `query`, `top_k`
 
 ## `ctx_symbol`
 
-Get ONE symbol's body by name — exact, AST-precise (tree-sitter index).
-WORKFLOW: after ctx_compose gave overview, for one symbol's body.
-name='fnName' returns code block; file='path.rs' narrows;
-kind='fn'|'struct'|'class'|'trait'|'enum' disambiguates.
-ANTIPATTERN: NOT for finding all usages (grep) or exploring areas (ctx_compose).
+[Deprecated → ctx_search action="symbol"] Get one symbol's body by name (AST-precise);
+optional file/kind narrow. Hidden from tools/list but still callable for one release —
+prefer ctx_search.
 
 Parameters: `file`, `kind`, `name`*
 

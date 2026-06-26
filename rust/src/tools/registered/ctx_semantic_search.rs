@@ -17,11 +17,9 @@ impl McpTool for CtxSemanticSearchTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_semantic_search",
-            "Search code by MEANING (BM25+embeddings) — use when you know the concept but not the exact\n\
-             symbol name. query='user auth' finds relevant code even with no keyword match.\n\
-             Different from ctx_search (regex): use ctx_search for exact patterns, this for\n\
-             fuzzy/conceptual. For understanding code end-to-end, use ctx_compose FIRST.\n\
-             find_related(file_path, line) for context neighbors. mode=bm25|dense|hybrid.",
+            "[Deprecated → ctx_search action=\"semantic\"] Search code by meaning (BM25+embeddings);\n\
+             reindex / find_related are ctx_search actions too. Hidden from tools/list but still\n\
+             callable for one release — prefer ctx_search.",
             json!({
                 "type": "object",
                 "properties": {

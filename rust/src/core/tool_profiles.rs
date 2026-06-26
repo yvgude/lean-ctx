@@ -41,8 +41,8 @@ impl ToolProfile {
 
     pub fn description(&self) -> &str {
         match self {
-            Self::Minimal => "6 surgical tools — each irreplaceable (recommended)",
-            Self::Standard => "17 balanced tools (adds callgraph, execute, semantics, delta, more)",
+            Self::Minimal => "5 surgical tools — each irreplaceable (recommended)",
+            Self::Standard => "15 balanced tools (adds compose, explore, callgraph, execute, more)",
             Self::Power => "All tools exposed",
             Self::Custom(v) => {
                 if v.is_empty() {
@@ -138,30 +138,33 @@ pub fn is_unpinned_alias(name: &str) -> bool {
 
 /// Surgical core — each tool is irreplaceable. Agent learns <10 tools,
 /// reliably picks the right one for every intent.
+///
+/// #509: symbol lookup folded into `ctx_search` (action="symbol"), so the
+/// former `ctx_symbol` entry is gone — one search entry, not two.
 const MINIMAL_TOOLS: &[&str] = &[
     "ctx_read",
     "ctx_shell",
     "ctx_search",
     "ctx_glob",
     "ctx_tree",
-    "ctx_symbol",
 ];
 
 /// Balanced set. Adds power-user tools the agent picks regularly but
 /// are not essential for every session.
+///
+/// #509: `ctx_semantic_search` and `ctx_symbol` are folded into `ctx_search`
+/// (action="semantic"/"symbol") and dropped from the advertised set.
 const STANDARD_TOOLS: &[&str] = &[
     "ctx_read",
     "ctx_shell",
     "ctx_search",
     "ctx_glob",
     "ctx_tree",
-    "ctx_symbol",
     "ctx_compose",
     "ctx_explore",
     "ctx_knowledge",
     "ctx_callgraph",
     "ctx_graph",
-    "ctx_semantic_search",
     "ctx_delta",
     "ctx_execute",
     "ctx_expand",
@@ -182,13 +185,13 @@ pub fn list_profiles() -> Vec<ProfileInfo> {
     vec![
         ProfileInfo {
             name: "minimal",
-            tool_count: "6",
+            tool_count: "5",
             description: "Surgical core — each tool irreplaceable (recommended)",
         },
         ProfileInfo {
             name: "standard",
-            tool_count: "17",
-            description: "Balanced set — adds callgraph, execute, semantics, explore, delta, more",
+            tool_count: "15",
+            description: "Balanced set — adds compose, explore, callgraph, execute, delta, more",
         },
         ProfileInfo {
             name: "power",
@@ -306,7 +309,9 @@ mod tests {
         assert!(profile.is_tool_enabled("ctx_search"));
         assert!(profile.is_tool_enabled("ctx_glob"));
         assert!(profile.is_tool_enabled("ctx_tree"));
-        assert!(profile.is_tool_enabled("ctx_symbol"));
+        // #509: symbol/semantic lookups are now ctx_search actions, not their
+        // own minimal tools.
+        assert!(!profile.is_tool_enabled("ctx_symbol"));
         assert!(!profile.is_tool_enabled("ctx_semantic_search"));
         assert!(!profile.is_tool_enabled("ctx_callgraph"));
         assert!(!profile.is_tool_enabled("ctx_benchmark"));
@@ -318,17 +323,17 @@ mod tests {
         assert!(profile.is_tool_enabled("ctx_read"));
         assert!(profile.is_tool_enabled("ctx_compose"));
         assert!(profile.is_tool_enabled("ctx_explore"));
-        assert!(profile.is_tool_enabled("ctx_symbol"));
         assert!(profile.is_tool_enabled("ctx_glob"));
-        assert!(profile.is_tool_enabled("ctx_semantic_search"));
         assert!(profile.is_tool_enabled("ctx_callgraph"));
         assert!(profile.is_tool_enabled("ctx_graph"));
         assert!(profile.is_tool_enabled("ctx_delta"));
         assert!(profile.is_tool_enabled("ctx_expand"));
         assert!(profile.is_tool_enabled("ctx_execute"));
         assert!(profile.is_tool_enabled("ctx_overview"));
-        // #509: ctx_multi_read is a deprecated alias folded into ctx_read (paths=…)
-        // and was removed from the Standard set.
+        // #509: ctx_symbol + ctx_semantic_search folded into ctx_search (action=…),
+        // ctx_multi_read into ctx_read (paths=…) — all dropped from Standard.
+        assert!(!profile.is_tool_enabled("ctx_symbol"));
+        assert!(!profile.is_tool_enabled("ctx_semantic_search"));
         assert!(!profile.is_tool_enabled("ctx_multi_read"));
         assert!(profile.is_tool_enabled("ctx_url_read"));
         assert!(!profile.is_tool_enabled("ctx_benchmark"));
