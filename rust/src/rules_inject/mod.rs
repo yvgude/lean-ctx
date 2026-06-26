@@ -52,6 +52,35 @@ pub fn rules_dedicated_markdown() -> String {
     )
 }
 
+/// The canonical rules block lean-ctx would write for each target, keyed by the
+/// target's display name.
+///
+/// Drift detection compares against this instead of guessing shared-vs-dedicated
+/// from a target's on-disk contents: a freshly synced `SharedMarkdown` file (e.g.
+/// Copilot CLI, Codex CLI) carries no user text, which a content heuristic
+/// mistook for the dedicated layout and then flagged as drifted on every sync.
+/// Keying by the real `RulesFormat` keeps `sync` and `diff` in agreement (#548).
+pub fn expected_blocks_by_target(
+    home: &std::path::Path,
+) -> std::collections::HashMap<String, String> {
+    let injection = crate::core::config::Config::load().rules_injection_effective();
+    let shared = canonical_rules_block();
+    let dedicated = rules_dedicated_markdown();
+    build_rules_targets(home, injection)
+        .into_iter()
+        .map(|target| {
+            let expected = match target.format {
+                RulesFormat::SharedMarkdown => shared.clone(),
+                // CursorMdc embeds the dedicated render verbatim between the
+                // markers (frontmatter lives outside them), so the extracted
+                // section matches the dedicated block.
+                RulesFormat::DedicatedMarkdown | RulesFormat::CursorMdc => dedicated.clone(),
+            };
+            (target.name.to_string(), expected)
+        })
+        .collect()
+}
+
 use detect::is_tool_detected;
 use targets::build_rules_targets;
 use write::inject_rules;

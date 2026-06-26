@@ -6,6 +6,15 @@ const CONFIG_FILENAME: &str = "rules.toml";
 const CONFIG_DIR: &str = ".lean-ctx";
 const LEGACY_CONFIG_DIR: &str = ".leanctx";
 
+/// User-facing rules inventory persisted at `.lean-ctx/rules.toml`.
+///
+/// **Scope (read this before wiring it into anything):** `rules.toml` is the input
+/// for `rules lint` (cross-agent consistency checks) and a user-editable export
+/// produced by `rules init`. It is deliberately **not** consumed by `rules sync`
+/// or `rules diff` — those regenerate from the canonical `rules_canonical` source
+/// of truth and preserve user text around the markers. `core.content` here is a
+/// snapshot captured at `init` time for inspection/linting, never an override that
+/// `sync` would distribute (#548).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RulesConfig {
     pub rules: RulesSection,

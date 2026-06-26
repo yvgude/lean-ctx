@@ -104,6 +104,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   match. Re-running `sync`/inject after a compression-level change now regenerates
   the block as expected; an unchanged config stays idempotent. (Second slice of the
   #548 agent-rules unification, after the Pi-template parity guard.)
+- **`rules diff`/`sync` ↔ `.lean-ctx/rules.toml` semantics, and a `rules diff`
+  false-positive (#548).** Two coupled fixes for the rules-governance commands:
+  - **`sync`/`diff` do not consume `rules.toml` — now documented and decoupled.**
+    `rules sync`/`diff` regenerate from the canonical `rules_canonical` source of
+    truth (preserving user text around the markers) and never read `rules.toml`,
+    which is the input for `rules lint` plus a user-editable inventory from `rules
+    init`. This is now stated in the `rules` help, the `init` next-steps, and the
+    `RulesConfig`/`sync` docs. `detect_drift` no longer loads `RulesConfig` at all,
+    so `rules diff` works **without** first running `rules init` (it previously
+    failed with "No rules config found") — the dead `_config` parameter is gone and
+    the command is infallible.
+  - **`rules diff` reported phantom drift after every sync.** Drift picked the
+    shared-vs-dedicated expected block from a content heuristic ("up_to_date and no
+    'existing user rules'"), which misread freshly synced *shared* files with no
+    user text (Copilot CLI, Codex CLI, Gemini/OpenCode in shared mode) as the
+    dedicated layout and flagged them as `DRIFTED` on every run. Drift now compares
+    each target against the canonical block for its **real** `RulesFormat` via the
+    new `rules_inject::expected_blocks_by_target`, keeping `sync` and `diff` in
+    agreement. Covered by new tests: `detect_drift_without_rules_toml_does_not_
+    require_init` and `sync_then_diff_reports_no_drift`. (Third slice of the #548
+    agent-rules unification.)
 - **Shadow-mode hook reads dropped ~75% of the MCP read side effects (#550).** When
   shadow/harden mode intercepts a native `view`/`grep` call it spawns `lean-ctx read`
   as a single-shot subprocess. That CLI path recorded only a fraction of what the MCP

@@ -9,6 +9,14 @@ pub struct SyncReport {
     pub errors: Vec<String>,
 }
 
+/// (Re)write the canonical lean-ctx rules block into every detected agent config.
+///
+/// The source of truth is `rules_canonical` (via `rules_inject::inject_all_rules`),
+/// **not** `.lean-ctx/rules.toml`. Sync regenerates the canonical block and
+/// preserves the user's own text around the `<!-- lean-ctx-rules -->` markers;
+/// `rules.toml` is consumed only by `lint` and produced by `init` (see
+/// [`super::config::RulesConfig`]). Stating this explicitly resolves the
+/// "sync doesn't honor rules.toml" ambiguity — by design it does not (#548).
 pub fn sync_all(home: &Path) -> SyncReport {
     let inject_result = crate::rules_inject::inject_all_rules(home);
 
@@ -23,6 +31,10 @@ pub fn sync_all(home: &Path) -> SyncReport {
     }
 }
 
+/// (Re)write the canonical rules block into a single agent's config.
+///
+/// Same canonical-source contract as [`sync_all`]: regenerates from
+/// `rules_canonical` and never reads `.lean-ctx/rules.toml` (#548).
 pub fn sync_agent(home: &Path, agent: &str) -> SyncReport {
     let inject_result = crate::rules_inject::inject_rules_for_agent(home, agent);
 
@@ -107,6 +119,37 @@ mod tests {
             second.errors.is_empty(),
             "second sync reported errors: {:?}",
             second.errors
+        );
+    }
+
+    // #548 criterion 5 (setup/init/sync consistency): `sync` and `diff` share one
+    // canonical source of truth, so immediately after a `sync_all` the on-disk
+    // blocks must read back as in-sync — `detect_drift` may never report `Drifted`
+    // for a target we just wrote. This pins sync↔diff agreement and would catch a
+    // future divergence between the inject and drift comparison paths.
+    #[test]
+    #[serial_test::serial(claude_config_dir)]
+    fn sync_then_diff_reports_no_drift() {
+        use crate::core::contextops::drift::{DriftStatus, detect_drift};
+
+        let home = TempHome::new("syncdiff");
+        let _claude = scope_claude_into(&home.path);
+
+        let report = sync_all(&home.path);
+        assert!(
+            report.errors.is_empty(),
+            "sync reported errors: {:?}",
+            report.errors
+        );
+
+        let drifted: Vec<String> = detect_drift(&home.path)
+            .into_iter()
+            .filter(|r| r.status == DriftStatus::Drifted)
+            .map(|r| r.target)
+            .collect();
+        assert!(
+            drifted.is_empty(),
+            "sync left targets drifted vs the canonical source: {drifted:?}"
         );
     }
 

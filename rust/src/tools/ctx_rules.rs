@@ -17,27 +17,22 @@ pub fn handle(action: &str, agent: Option<&str>) -> String {
             };
             contextops::format_sync(&report)
         }
-        "diff" => match ops.detect_drift() {
-            Ok(reports) => {
-                let mut output = contextops::format_drift(&reports);
-                let drifted = reports
-                    .iter()
-                    .filter(|r| r.status == contextops::DriftStatus::Drifted)
-                    .count();
-                if drifted > 0 {
-                    output.push_str(&format!(
-                        "\n\n{drifted} target(s) drifted. Run ctx_rules(action=\"sync\") to fix."
-                    ));
-                }
-                output
+        "diff" => {
+            // Drift is measured against the canonical rule source, so this needs
+            // no `.lean-ctx/rules.toml` and cannot error on a missing config (#548).
+            let reports = ops.detect_drift();
+            let mut output = contextops::format_drift(&reports);
+            let drifted = reports
+                .iter()
+                .filter(|r| r.status == contextops::DriftStatus::Drifted)
+                .count();
+            if drifted > 0 {
+                output.push_str(&format!(
+                    "\n\n{drifted} target(s) drifted. Run ctx_rules(action=\"sync\") to fix."
+                ));
             }
-            Err(e) => {
-                let statuses = ops.status();
-                let mut output = format!("Note: {e}\n\nFallback status check:\n");
-                output.push_str(&contextops::format_status(&statuses));
-                output
-            }
-        },
+            output
+        }
         "lint" => match ops.lint() {
             Ok(warnings) => contextops::format_lint(&warnings),
             Err(e) => {
@@ -62,7 +57,7 @@ pub fn handle(action: &str, agent: Option<&str>) -> String {
                 return "Config already exists at .lean-ctx/rules.toml. Delete it first to reinitialize.".to_string();
             }
             match ops.init() {
-                Ok(_) => "Created .lean-ctx/rules.toml from existing rules.\nRun ctx_rules(action=\"lint\") to check, then ctx_rules(action=\"sync\") to distribute.".to_string(),
+                Ok(_) => "Created .lean-ctx/rules.toml from existing rules. It feeds ctx_rules(action=\"lint\") for cross-agent consistency and is a user-editable inventory; it is NOT the source for sync/diff, which (re)generate from lean-ctx's built-in canonical rules. Next: ctx_rules(action=\"lint\") to check, then ctx_rules(action=\"sync\") to (re)write the canonical block.".to_string(),
                 Err(e) => format!("Error: {e}"),
             }
         }

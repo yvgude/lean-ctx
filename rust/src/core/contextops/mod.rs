@@ -23,9 +23,13 @@ impl ContextOps {
         }
     }
 
-    pub fn detect_drift(&self) -> Result<Vec<DriftReport>, String> {
-        let config = RulesConfig::load(&self.project_root)?;
-        Ok(drift::detect_drift(&self.home, &config))
+    /// Drift between each agent's on-disk rules block and the canonical source.
+    ///
+    /// Infallible: drift is computed against `rules_canonical` (always present in
+    /// the binary), **not** against `.lean-ctx/rules.toml`, so `rules diff` needs
+    /// no prior `rules init` and can never fail on a missing config (#548).
+    pub fn detect_drift(&self) -> Vec<DriftReport> {
+        drift::detect_drift(&self.home)
     }
 
     pub fn sync_all(&self) -> SyncReport {
@@ -156,6 +160,33 @@ mod tests {
             Path::new("/tmp/nonexistent_contextops"),
         );
         assert!(!ops.has_config());
+    }
+
+    // #548 criterion 2: `rules diff` must not require `.lean-ctx/rules.toml`.
+    // `detect_drift` is now infallible and compares against the canonical rule
+    // source, so a project with no rules.toml produces a (possibly empty) drift
+    // report instead of the old "No rules config found" hard error. Serialized
+    // against other tests that read/write the global `CLAUDE_CONFIG_DIR`.
+    #[test]
+    #[serial_test::serial(claude_config_dir)]
+    fn detect_drift_without_rules_toml_does_not_require_init() {
+        let home = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let claude_dir = home.path().join(".claude").to_string_lossy().into_owned();
+        let _g = crate::setup::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &claude_dir);
+
+        let ops = ContextOps::new(home.path(), project.path());
+        assert!(
+            !ops.has_config(),
+            "sandbox project must have no rules.toml for this regression test"
+        );
+
+        // The pre-#548 code path would have errored here on the missing config.
+        // Now it returns well-formed reports straight from the canonical source.
+        let reports = ops.detect_drift();
+        for r in &reports {
+            assert!(!r.target.is_empty(), "drift report missing a target name");
+        }
     }
 
     #[test]

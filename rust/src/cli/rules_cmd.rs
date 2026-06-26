@@ -49,31 +49,17 @@ fn cmd_sync(ops: &ContextOps, args: &[String]) {
 }
 
 fn cmd_diff(ops: &ContextOps) {
-    match ops.detect_drift() {
-        Ok(reports) => {
-            println!("{}", contextops::format_drift(&reports));
+    // Drift is measured against the canonical rule source, so this never needs
+    // `.lean-ctx/rules.toml` (and never errors on a missing config) — see #548.
+    let reports = ops.detect_drift();
+    println!("{}", contextops::format_drift(&reports));
 
-            let drifted = reports
-                .iter()
-                .filter(|r| r.status == contextops::DriftStatus::Drifted)
-                .count();
-            if drifted > 0 {
-                println!("\n{drifted} target(s) drifted. Run `lean-ctx rules sync` to fix.");
-            }
-        }
-        Err(e) => {
-            eprintln!("Error: {e}");
-            println!("\nFalling back to status-based drift check...");
-            let statuses = ops.status();
-            let outdated: Vec<_> = statuses.iter().filter(|s| s.state == "outdated").collect();
-            if outdated.is_empty() {
-                println!("All detected targets appear up to date.");
-            } else {
-                for s in &outdated {
-                    println!("  [OUTDATED] {} ({})", s.name, s.path);
-                }
-            }
-        }
+    let drifted = reports
+        .iter()
+        .filter(|r| r.status == contextops::DriftStatus::Drifted)
+        .count();
+    if drifted > 0 {
+        println!("\n{drifted} target(s) drifted. Run `lean-ctx rules sync` to fix.");
     }
 }
 
@@ -121,10 +107,15 @@ fn cmd_init(ops: &ContextOps) {
         Ok(_config) => {
             println!("Created .lean-ctx/rules.toml from existing rules.");
             println!();
+            println!("Note: rules.toml is consumed by `lean-ctx rules lint` (cross-agent");
+            println!("consistency) and is a user-editable inventory. It is NOT the source");
+            println!("for `rules sync`/`diff` — those (re)generate from lean-ctx's built-in");
+            println!("canonical rules and preserve your own text around the markers.");
+            println!();
             println!("Next steps:");
             println!("  1. Review .lean-ctx/rules.toml");
             println!("  2. Run `lean-ctx rules lint` to check consistency");
-            println!("  3. Run `lean-ctx rules sync` to distribute");
+            println!("  3. Run `lean-ctx rules sync` to (re)write the canonical rules block");
         }
         Err(e) => {
             eprintln!("Error: {e}");
@@ -141,12 +132,18 @@ fn print_help() {
              lean-ctx rules <action> [args]\n\
          \n\
          ACTIONS:\n    \
-             sync [agent]      Sync central rules to all (or one) agent config(s)\n    \
-             diff              Show drift between central and distributed rules\n    \
-             lint              Check rules for consistency and completeness\n    \
+             sync [agent]      (Re)write the canonical lean-ctx rules block into all (or one) agent config(s)\n    \
+             diff              Show drift between the canonical rules and each agent's on-disk block\n    \
+             lint              Check .lean-ctx/rules.toml for consistency and completeness\n    \
              status            Show sync status for all targets\n    \
              init              Create .lean-ctx/rules.toml from existing rules\n    \
              dedup [--apply]   Remove duplicated lean-ctx rules (#578); dry-run by default\n    \
-             help              Show this help"
+             help              Show this help\n\
+         \n\
+         NOTES:\n    \
+             `sync` and `diff` use lean-ctx's built-in canonical rules as the source\n    \
+             of truth and preserve your own text around the `<!-- lean-ctx-rules -->`\n    \
+             markers. They do NOT read `.lean-ctx/rules.toml` — that file is the input\n    \
+             for `lint` and a user-editable inventory created by `init`."
     );
 }

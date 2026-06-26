@@ -2,8 +2,6 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::config::RulesConfig;
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DriftStatus {
     InSync,
@@ -35,10 +33,20 @@ pub struct DriftReport {
     pub diff: Option<String>,
 }
 
-pub fn detect_drift(home: &Path, _config: &RulesConfig) -> Vec<DriftReport> {
+/// Compare each detected agent's on-disk `<!-- lean-ctx-rules -->` block against
+/// the **canonical** rule source (`rules_canonical` via
+/// `rules_inject::rules_shared_content` / `rules_dedicated_markdown`).
+///
+/// Drift is measured purely against the canonical single-source-of-truth — it
+/// deliberately does **not** read `.lean-ctx/rules.toml`. `rules.toml` is a
+/// `rules lint` input and a user-facing export from `rules init`; it never
+/// overrides the canonical rule body (see [`super::config::RulesConfig`]). This
+/// is also why `rules diff` works without running `rules init` first (#548).
+pub fn detect_drift(home: &Path) -> Vec<DriftReport> {
     let statuses = crate::rules_inject::collect_rules_status(home);
-    let source_shared = crate::rules_inject::rules_shared_content();
-    let source_dedicated = crate::rules_inject::rules_dedicated_markdown();
+    // The canonical block lean-ctx would write for each target, keyed by name and
+    // chosen by the target's real `RulesFormat` — see the heuristic note below.
+    let expected_by_target = crate::rules_inject::expected_blocks_by_target(home);
 
     let marker = crate::core::rules_canonical::START_MARK;
     let end_marker = crate::core::rules_canonical::END_MARK;
@@ -84,14 +92,15 @@ pub fn detect_drift(home: &Path, _config: &RulesConfig) -> Vec<DriftReport> {
             }
 
             let section = extract_section(&content, marker, end_marker);
-            let is_dedicated =
-                status.state == "up_to_date" && !content.contains("existing user rules");
 
-            let expected_section = if is_dedicated {
-                extract_section(&source_dedicated, marker, end_marker)
-            } else {
-                extract_section(&source_shared, marker, end_marker)
-            };
+            // Compare against the canonical block for THIS target's format. The
+            // previous content heuristic ("up_to_date and no 'existing user
+            // rules'") misclassified freshly synced shared files (Copilot/Codex
+            // CLI) as dedicated and reported phantom drift after every sync (#548).
+            let expected_section = expected_by_target
+                .get(&status.name)
+                .map(|expected| extract_section(expected, marker, end_marker))
+                .unwrap_or_default();
 
             let section_trimmed = section.trim();
             let expected_trimmed = expected_section.trim();
