@@ -655,10 +655,25 @@ fn release_api_url(version: Option<&str>) -> String {
     }
 }
 
+/// ureq agent that trusts the OS store (incl. corporate proxy CAs) via the
+/// platform verifier. ureq's default `RootCerts::WebPki` ignores the system
+/// store, so updates fail with `UnknownIssuer` behind TLS-intercepting proxies.
+fn https_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .tls_config(
+            ureq::tls::TlsConfig::builder()
+                .root_certs(ureq::tls::RootCerts::PlatformVerifier)
+                .build(),
+        )
+        .build()
+        .into()
+}
+
 /// Fetches release metadata from GitHub. `version = None` returns the latest
 /// release; `Some(v)` returns the specific tagged release for version pinning.
 fn fetch_release(version: Option<&str>) -> Result<serde_json::Value, String> {
-    let response = ureq::get(&release_api_url(version))
+    let response = https_agent()
+        .get(&release_api_url(version))
         .header("User-Agent", &format!("lean-ctx/{CURRENT_VERSION}"))
         .header("Accept", "application/vnd.github.v3+json")
         .call()
@@ -701,7 +716,8 @@ fn find_asset_url(release: &serde_json::Value, asset_name: &str) -> Option<Strin
 }
 
 fn download_bytes(url: &str) -> Result<Vec<u8>, String> {
-    let response = ureq::get(url)
+    let response = https_agent()
+        .get(url)
         .header("User-Agent", &format!("lean-ctx/{CURRENT_VERSION}"))
         .call()
         .map_err(|e| e.to_string())?;

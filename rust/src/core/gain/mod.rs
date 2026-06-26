@@ -115,7 +115,8 @@ impl GainEngine {
             None
         };
         let score = GainScore::compute(&self.stats, &self.costs, &self.pricing, model);
-        #[cfg(unix)]
+        // is_daemon_running() is cross-platform; the old #[cfg(not(unix))] = None
+        // branch suppressed daemon state on Windows. See #576.
         let daemon_hint = if crate::daemon::is_daemon_running() {
             None
         } else {
@@ -124,8 +125,6 @@ impl GainEngine {
                     .to_string(),
             )
         };
-        #[cfg(not(unix))]
-        let daemon_hint: Option<String> = None;
         let injected_overhead_tokens_per_turn =
             crate::core::context_overhead::ContextOverhead::cached().total_tokens() as u64;
         // Reconcile to the real bill: the proxy is the only component that sees

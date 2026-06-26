@@ -356,16 +356,27 @@ fn handle_with_options(
     .content
 }
 
-/// Detects if the current execution context is a subagent (forked agent).
-/// Subagents inherit stale parent caches, so force-fresh prevents VERIFY FAIL.
+/// `LEAN_CTX_FORCE_FRESH=1` — an explicit operator override that always forces a
+/// cold full read, independent of conversation scoping.
+fn force_fresh_env() -> bool {
+    static FORCE_FRESH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FORCE_FRESH.get_or_init(|| {
+        std::env::var("LEAN_CTX_FORCE_FRESH").is_ok_and(|v| v == "1" || v == "true")
+    })
+}
+
+/// Detects a subagent (forked agent) execution context via `CURSOR_TASK_ID`.
+///
+/// A subagent must never be served a stub for content only the parent received.
+/// That used to be enforced by force-freshing *every* subagent read; with
+/// conversation scoping (#954/#955) the subagent instead runs under its own scope
+/// (`conversation::current_conversation_id` → `task:{id}`), so the stub gate
+/// withholds cross-agent stubs precisely while restoring the subagent's *own*
+/// cheap re-reads. The blanket force-fresh is therefore kept only as the fallback
+/// when scoping is disabled (#956).
 fn is_subagent_context() -> bool {
     static IS_SUBAGENT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *IS_SUBAGENT.get_or_init(|| {
-        if std::env::var("LEAN_CTX_FORCE_FRESH").is_ok_and(|v| v == "1" || v == "true") {
-            return true;
-        }
-        std::env::var("CURSOR_TASK_ID").is_ok_and(|v| !v.is_empty())
-    })
+    *IS_SUBAGENT.get_or_init(|| std::env::var("CURSOR_TASK_ID").is_ok_and(|v| !v.is_empty()))
 }
 
 fn handle_with_options_resolved(
@@ -377,7 +388,14 @@ fn handle_with_options_resolved(
     task: Option<&str>,
     tuning: ReadTuning<'_>,
 ) -> ReadOutput {
-    let effective_fresh = fresh || is_subagent_context();
+    // Subagent reads no longer force-fresh wholesale: conversation scoping gives
+    // each subagent its own `task:{id}` scope, so the stub gate already withholds
+    // any cross-agent stub while keeping the subagent's own re-reads cheap (#956).
+    // The blanket force-fresh remains only when scoping is off, and an explicit
+    // `LEAN_CTX_FORCE_FRESH` always wins.
+    let effective_fresh = fresh
+        || force_fresh_env()
+        || (is_subagent_context() && !crate::core::conversation::scope_enabled());
 
     // Plugin seam: notify listeners before the read resolves. Guarded so the hot
     // path never allocates or spawns a thread unless a plugin opts into pre_read.

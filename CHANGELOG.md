@@ -148,6 +148,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   `ctx_expand` handle so a dropped datum is never irrecoverable.
 
 ### Fixed
+- **Subagents force-freshed *every* read, so re-reads were never cached inside a
+  Task (gitlab #956, closes the #952 series).** `is_subagent_context()` set
+  `effective_fresh = fresh || subagent`, a blanket cold full read for the whole
+  subagent run — safe (a subagent must not be served a stub for content only the
+  *parent* received) but it threw away exactly the cheap `[unchanged]` re-read
+  that #946/#954/#955 reclaimed. Now that the stub is conversation-scoped, the
+  safety is enforced *precisely* instead of by bypass: a subagent runs under its
+  own `task:{CURSOR_TASK_ID}` scope (`conversation::current_conversation_id`), so
+  the stub gate withholds any stub the parent or a sibling delivered (distinct,
+  non-`None` scope → never matches), while the subagent's *own* re-reads of an
+  unchanged file collapse to the stub. The blanket force-fresh now applies only
+  when scoping is off (`LEAN_CTX_CONVERSATION_SCOPE=0`); an explicit
+  `LEAN_CTX_FORCE_FRESH=1` still always forces fresh. Stubs stay double-gated
+  (mtime+md5 vs disk **and** conversation match), so a subagent is only ever
+  stubbed for a file it read itself, unchanged — never stale, never cross-agent.
 - **`auto`-mode re-reads bypassed the `[unchanged]` cache stub and re-delivered
   the whole file (gitlab #946).** The cheap ~13-token re-read stub
   (`Fref=path [unchanged NL]`) only fired for an *explicit* `mode=full` re-read;

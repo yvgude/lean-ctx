@@ -12,6 +12,10 @@
 //! every call. The last-known-good value is retained across a transient refresh
 //! miss, so a momentary read failure never spuriously invalidates valid stubs.
 //!
+//! A Cursor subagent (`CURSOR_TASK_ID` set) is given its own `task:{id}` scope,
+//! so it is never served — nor records — a stub under another agent's identity;
+//! this lets the stub gate replace the old blanket subagent force-fresh (#956).
+//!
 //! Disabled with `LEAN_CTX_CONVERSATION_SCOPE=0` (falls back to the legacy
 //! process-scoped behavior).
 
@@ -32,7 +36,7 @@ fn store() -> &'static RwLock<Option<Cached>> {
     STORE.get_or_init(|| RwLock::new(None))
 }
 
-fn scope_enabled() -> bool {
+pub(crate) fn scope_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
         !matches!(
@@ -45,12 +49,41 @@ fn scope_enabled() -> bool {
     })
 }
 
+/// Pure core of [`subagent_scope`] — split out so the derivation is unit-testable
+/// without touching the process environment.
+fn subagent_scope_from(task_id: Option<&str>) -> Option<String> {
+    task_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(|id| format!("task:{id}"))
+}
+
+/// A subagent's dedicated conversation scope, derived from `CURSOR_TASK_ID`.
+///
+/// A Cursor subagent (Task) runs with `CURSOR_TASK_ID` set for its whole life.
+/// Giving it a distinct, non-`None` scope means it can never match the parent's
+/// (or a sibling's) `delivered_conversation`, so it is never served a stub for
+/// content only another agent received — while its *own* re-reads still collapse
+/// to the cheap stub. This replaces the old blanket force-fresh for subagents
+/// (#952/#956).
+fn subagent_scope() -> Option<String> {
+    static SCOPE: OnceLock<Option<String>> = OnceLock::new();
+    SCOPE
+        .get_or_init(|| subagent_scope_from(std::env::var("CURSOR_TASK_ID").ok().as_deref()))
+        .clone()
+}
+
 /// The current conversation id, or `None` when no conversation context is
 /// available (hooks not installed, TTL expired with no prior value, or scoping
 /// disabled). `None` preserves the legacy process-scoped cache behavior.
 pub fn current_conversation_id() -> Option<String> {
     if !scope_enabled() {
         return None;
+    }
+    // A subagent is its own scope (see `subagent_scope`) and that wins over the
+    // transcript id, so a subagent never inherits the parent's delivery identity.
+    if let Some(scope) = subagent_scope() {
+        return Some(scope);
     }
     if let Ok(guard) = store().read()
         && let Some(cached) = guard.as_ref()
@@ -148,5 +181,31 @@ mod tests {
         assert!(!conversation_allows_cold_stub(None, Some("c")));
         assert!(!conversation_allows_cold_stub(Some("c"), None));
         assert!(!conversation_allows_cold_stub(None, None));
+    }
+
+    #[test]
+    fn subagent_scope_derives_a_distinct_non_none_id_from_task() {
+        assert_eq!(
+            subagent_scope_from(Some("abc123")),
+            Some("task:abc123".to_string())
+        );
+        // Whitespace-padded ids are trimmed; empty/blank/absent → no scope.
+        assert_eq!(
+            subagent_scope_from(Some("  abc  ")),
+            Some("task:abc".to_string())
+        );
+        assert_eq!(subagent_scope_from(Some("")), None);
+        assert_eq!(subagent_scope_from(Some("   ")), None);
+        assert_eq!(subagent_scope_from(None), None);
+    }
+
+    #[test]
+    fn subagent_scope_never_matches_a_plain_conversation() {
+        // The `task:` prefix guarantees a subagent can't collide with a parent's
+        // transcript conversation id, so the stub gate always withholds the
+        // parent's delivery from the subagent.
+        let sub = subagent_scope_from(Some("xyz")).unwrap();
+        assert!(!conversation_allows_stub(Some(&sub), Some("xyz")));
+        assert!(conversation_allows_stub(Some(&sub), Some(&sub)));
     }
 }
