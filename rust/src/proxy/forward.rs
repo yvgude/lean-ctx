@@ -45,11 +45,10 @@ pub async fn forward_request(
         .await
         .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
 
-    state.stats.record_request();
-
     let prepared = prepare_request_body(&parts, &body_bytes, compress_body)?;
     let original_size = prepared.original_size;
     let compressed_size = prepared.compressed_size;
+    let compression_candidate = prepared.compression_candidate;
     let preserve_content_encoding = prepared.preserve_content_encoding;
     let parsed = prepared.parsed;
     if let Some(ref parsed) = parsed {
@@ -68,10 +67,8 @@ pub async fn forward_request(
         .as_ref()
         .and_then(|p| cohort_arm(p, provider_label, default_path));
 
-    if compressed_size < original_size {
-        state
-            .stats
-            .record_compression(original_size, compressed_size);
+    if compression_candidate {
+        state.stats.record_request(original_size, compressed_size);
     }
 
     let tokens_saved = original_size.saturating_sub(compressed_size) as u64 / 4;
@@ -151,6 +148,7 @@ struct PreparedRequestBody {
     parsed: Option<serde_json::Value>,
     original_size: usize,
     compressed_size: usize,
+    compression_candidate: bool,
     preserve_content_encoding: bool,
 }
 
@@ -178,6 +176,7 @@ fn prepare_request_body(
                 parsed: None,
                 original_size: body_bytes.len(),
                 compressed_size: body_bytes.len(),
+                compression_candidate: false,
                 preserve_content_encoding: true,
             });
         }
@@ -189,6 +188,7 @@ fn prepare_request_body(
             parsed: None,
             original_size: body_bytes.len(),
             compressed_size: body_bytes.len(),
+            compression_candidate: false,
             preserve_content_encoding: encoding != RequestBodyEncoding::Identity,
         });
     };
@@ -207,6 +207,7 @@ fn prepare_request_body(
         parsed: Some(parsed),
         original_size,
         compressed_size,
+        compression_candidate: true,
         preserve_content_encoding: encoding != RequestBodyEncoding::Identity,
     })
 }
@@ -492,6 +493,7 @@ mod tests {
         let prepared = prepare_request_body(&parts, &encoded, add_test_marker).unwrap();
         assert_eq!(request_body_encoding(&parts), RequestBodyEncoding::Zstd);
         assert_eq!(prepared.original_size, json.len());
+        assert!(prepared.compression_candidate);
         assert!(prepared.preserve_content_encoding);
         assert!(should_forward_request_header("content-encoding", true));
         assert!(!should_forward_request_header("content-encoding", false));
@@ -518,6 +520,7 @@ mod tests {
         let prepared = prepare_request_body(&parts, &encoded, add_test_marker).unwrap();
         assert_eq!(request_body_encoding(&parts), RequestBodyEncoding::Gzip);
         assert_eq!(prepared.original_size, json.len());
+        assert!(prepared.compression_candidate);
         assert!(prepared.preserve_content_encoding);
 
         let decoded = decode_gzip_bounded(&prepared.body, max_body_bytes()).unwrap();
@@ -561,7 +564,30 @@ mod tests {
         );
         assert_eq!(prepared.body, body);
         assert!(prepared.parsed.is_none());
+        assert!(!prepared.compression_candidate);
         assert!(prepared.preserve_content_encoding);
+    }
+
+    #[test]
+    fn invalid_json_request_bodies_are_not_compression_candidates() {
+        let parts = Request::builder()
+            .uri("/v1/responses")
+            .body(())
+            .unwrap()
+            .into_parts()
+            .0;
+        let body = b"not-json";
+
+        let prepared = prepare_request_body(&parts, body, |_, _| {
+            panic!("invalid JSON must not enter the compression pipeline")
+        })
+        .unwrap();
+
+        assert_eq!(request_body_encoding(&parts), RequestBodyEncoding::Identity);
+        assert_eq!(prepared.body, body);
+        assert!(prepared.parsed.is_none());
+        assert!(!prepared.compression_candidate);
+        assert!(!prepared.preserve_content_encoding);
     }
 
     #[test]

@@ -99,17 +99,17 @@ impl Default for ProxyStats {
 }
 
 impl ProxyStats {
-    pub fn record_request(&self) {
+    pub fn record_request(&self, original: usize, compressed: usize) {
         self.requests_total.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn record_compression(&self, original: usize, compressed: usize) {
-        self.requests_compressed.fetch_add(1, Ordering::Relaxed);
         self.bytes_original
             .fetch_add(original as u64, Ordering::Relaxed);
+        let effective_compressed = compressed.min(original);
         self.bytes_compressed
-            .fetch_add(compressed as u64, Ordering::Relaxed);
-        let saved_tokens = (original.saturating_sub(compressed) / 4) as u64;
+            .fetch_add(effective_compressed as u64, Ordering::Relaxed);
+        if compressed < original {
+            self.requests_compressed.fetch_add(1, Ordering::Relaxed);
+        }
+        let saved_tokens = (original.saturating_sub(effective_compressed) / 4) as u64;
         self.tokens_saved.fetch_add(saved_tokens, Ordering::Relaxed);
     }
 
@@ -120,6 +120,37 @@ impl ProxyStats {
         }
         let compressed = self.bytes_compressed.load(Ordering::Relaxed);
         (1.0 - compressed as f64 / original as f64) * 100.0
+    }
+}
+
+#[cfg(test)]
+mod stats_tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn compression_ratio_includes_uncompressed_requests() {
+        let stats = ProxyStats::default();
+
+        stats.record_request(1_000, 500);
+        stats.record_request(1_000, 1_000);
+
+        assert_eq!(stats.requests_total.load(Ordering::Relaxed), 2);
+        assert_eq!(stats.requests_compressed.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.tokens_saved.load(Ordering::Relaxed), 125);
+        assert_eq!(stats.compression_ratio(), 25.0);
+    }
+
+    #[test]
+    fn expanded_requests_count_as_zero_savings() {
+        let stats = ProxyStats::default();
+
+        stats.record_request(1_000, 1_500);
+
+        assert_eq!(stats.requests_total.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.requests_compressed.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.tokens_saved.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.compression_ratio(), 0.0);
     }
 }
 

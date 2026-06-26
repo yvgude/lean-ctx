@@ -150,16 +150,18 @@ async fn run_turn(
         .await;
     };
 
-    state.stats.record_request();
     let original_size = text.len();
     // Same two-stage path as the HTTP handler: cache-aware prune of the frozen
     // OLD region, then compress the recent outputs.
     let mut modified = super::openai_responses::prune_responses_input(&mut doc);
     modified |= super::openai_responses::compress_responses_input(&mut doc);
     let payload = serde_json::to_vec(&doc).unwrap_or_default();
-    if modified && payload.len() < original_size {
-        state.stats.record_compression(original_size, payload.len());
-    }
+    let compressed_size = if modified {
+        payload.len()
+    } else {
+        original_size
+    };
+    state.stats.record_request(original_size, compressed_size);
 
     let url = format!("{upstream}{path}");
     let mut req = state
