@@ -234,12 +234,19 @@ pub fn check_permission(token: &AuthToken, required: &str) -> bool {
         if resp and "result" in resp:
             tools = [t["name"] for t in resp["result"].get("tools", [])]
         
-        critical_tools = ["ctx_read", "ctx_search", "ctx_semantic_search", 
+        critical_tools = ["ctx_read", "ctx_search",
                          "ctx_metrics", "ctx_tree", "ctx_shell", "ctx_overview"]
         for tool in critical_tools:
             check(f"Has tool: {tool}", tools,
                   lambda t, name=tool: name in t)
-        
+
+        # #509: ctx_semantic_search + ctx_symbol are folded into ctx_search. They
+        # stay callable as deprecated aliases (exercised in Tests 4+ via tools/call)
+        # but must be hidden from tools/list for one release.
+        for hidden in ("ctx_semantic_search", "ctx_symbol"):
+            check(f"Folded alias hidden from list: {hidden}", tools,
+                  lambda t, name=hidden: name not in t)
+
         print(f"  Total tools: {len(tools)}")
         
         # === Test 3: ctx_read ===
