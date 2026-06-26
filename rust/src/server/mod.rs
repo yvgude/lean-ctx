@@ -51,13 +51,7 @@ fn is_home_or_agent_dir(dir: &std::path::Path) -> bool {
     {
         return true;
     }
-    let dir_str = dir.to_string_lossy();
-    dir_str.ends_with("/.claude")
-        || dir_str.ends_with("/.codebuddy")
-        || dir_str.ends_with("/.codex")
-        || dir_str.contains("/.claude/")
-        || dir_str.contains("/.codebuddy/")
-        || dir_str.contains("/.codex/")
+    crate::core::pathutil::is_agent_config_dir(dir)
 }
 
 fn git_toplevel_from(dir: &std::path::Path) -> Option<String> {

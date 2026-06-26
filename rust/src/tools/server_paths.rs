@@ -75,13 +75,23 @@ impl LeanCtxServer {
                             |v| v == "1" || v == "true",
                         );
                         let candidate_under_jail = resolved.starts_with(jail_root_path);
-                        let allow_reroot = if !cfg_allow || candidate_under_jail {
+                        // #580: when the server was launched from an agent/IDE
+                        // config dir (e.g. ~/.copilot), that jail is never a real
+                        // project boundary. `maybe_derive_project_root_from_absolute`
+                        // already guarantees the new root carries a real project
+                        // marker, so correcting to it is a root *fix*, not a jail
+                        // weakening — allow it without the `allow_auto_reroot`
+                        // opt-in. Non-agent weak roots keep the conservative gate.
+                        let allow_reroot = if candidate_under_jail {
+                            false
+                        } else if is_suspicious_root(jail_root_path) {
+                            true
+                        } else if !cfg_allow {
                             false
                         } else if let Some(ref trusted_root) = self.startup_project_root {
                             std::path::Path::new(trusted_root) == new_root.as_path()
                         } else {
                             !has_project_marker(jail_root_path)
-                                || is_suspicious_root(jail_root_path)
                         };
 
                         if allow_reroot {

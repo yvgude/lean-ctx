@@ -1890,10 +1890,7 @@ pub(super) fn lsp_server_outcomes() -> Vec<Outcome> {
 /// real project (LM Studio, Claude, CodeBuddy, Codex). Matches both POSIX (`/`)
 /// and Windows (`\`) separators so the warning fires on every platform.
 fn cwd_looks_like_agent_dir(cwd_str: &str) -> bool {
-    const AGENT_DIRS: [&str; 4] = [".lmstudio", ".claude", ".codebuddy", ".codex"];
-    AGENT_DIRS
-        .iter()
-        .any(|dir| cwd_str.contains(&format!("/{dir}")) || cwd_str.contains(&format!("\\{dir}")))
+    crate::core::pathutil::is_agent_config_dir(std::path::Path::new(cwd_str))
 }
 
 /// Warn if lean-ctx is running as an MCP server from a directory that lacks
@@ -1932,7 +1929,7 @@ pub(super) fn mcp_server_cwd_outcome() -> Outcome {
         Outcome {
             ok: false,
             line: format!(
-                "{BOLD}MCP server CWD{RST}  {RED}suspicious directory without project marker{RST}  {DIM}lean-ctx was launched from {}, which is an IDE/agent config dir without a project root — \"path escapes project root\" errors will occur. Set `cwd` in your MCP client config to a real project directory, or add `allow_auto_reroot = true` + `extra_roots` in config.toml{RST}",
+                "{BOLD}MCP server CWD{RST}  {YELLOW}launched from an IDE/agent config dir{RST}  {DIM}lean-ctx was launched from {}, which is not a project root. It auto-corrects to your real project on the first absolute path (#580); for relative paths to resolve immediately, set `cwd` in your MCP client config to your project directory.{RST}",
                 cwd.display()
             ),
         }

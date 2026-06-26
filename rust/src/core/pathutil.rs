@@ -216,10 +216,38 @@ pub fn normalize_tool_path(path: &str) -> String {
     p
 }
 
+/// Agent/IDE CLI config or sandbox directories some clients launch their MCP
+/// server from, but which are never a user's project root. Adopting one as the
+/// project root jails every real repository path out — the root cause of #580
+/// (GitHub Copilot CLI launches from `~/.copilot`; Cursor, Windsurf, Gemini CLI
+/// and LM Studio behave similarly). This is the canonical set: every "is this an
+/// agent dir?" check across the codebase delegates here so the list never drifts.
+pub const AGENT_CONFIG_DIRS: &[&str] = &[
+    ".claude",
+    ".codex",
+    ".codebuddy",
+    ".copilot",
+    ".cursor",
+    ".windsurf",
+    ".gemini",
+    ".lmstudio",
+];
+
+/// Returns `true` if `dir` is — or lies inside — a known agent/IDE config dir
+/// ([`AGENT_CONFIG_DIRS`]). Separator-agnostic so Windows backslash paths
+/// (`C:\Users\me\.copilot`) match too; #580 is a Windows Copilot report.
+pub fn is_agent_config_dir(dir: &Path) -> bool {
+    let s = dir.to_string_lossy().replace('\\', "/");
+    AGENT_CONFIG_DIRS
+        .iter()
+        .any(|name| s.ends_with(&format!("/{name}")) || s.contains(&format!("/{name}/")))
+}
+
 /// Returns `true` if the directory is too broad to be a valid project root.
-/// Rejects home directory, filesystem root, `.` (bare CWD), and agent sandbox
-/// directories (`.claude`, `.codex`). Used to prevent writing project-scoped
-/// data (overlays, policies) into the global `~/.lean-ctx/` data directory.
+/// Rejects the home directory, filesystem root, `.` (bare CWD), and agent/IDE
+/// config directories ([`AGENT_CONFIG_DIRS`]). Used to prevent adopting a bogus
+/// project root and writing project-scoped data into the global `~/.lean-ctx/`
+/// data directory.
 pub fn is_broad_or_unsafe_root(dir: &Path) -> bool {
     if let Some(home) = dirs::home_dir()
         && dir == home
@@ -230,12 +258,7 @@ pub fn is_broad_or_unsafe_root(dir: &Path) -> bool {
     if s == "/" || s == "\\" || s == "." {
         return true;
     }
-    s.ends_with("/.claude")
-        || s.ends_with("/.codex")
-        || s.ends_with("/.codebuddy")
-        || s.contains("/.claude/")
-        || s.contains("/.codex/")
-        || s.contains("/.codebuddy/")
+    is_agent_config_dir(dir)
 }
 
 /// Well-known project markers used to identify project roots.
@@ -800,6 +823,40 @@ mod tests {
     fn broad_root_rejects_agent_dirs() {
         assert!(is_broad_or_unsafe_root(Path::new("/home/user/.claude")));
         assert!(is_broad_or_unsafe_root(Path::new("/home/user/.codex")));
+    }
+
+    #[test]
+    fn broad_root_rejects_copilot_and_friends() {
+        // #580: the previously-missing agent/IDE dirs must now be rejected so
+        // they are never adopted as the project root (the Copilot CLI case).
+        assert!(is_broad_or_unsafe_root(Path::new("/home/user/.copilot")));
+        assert!(is_broad_or_unsafe_root(Path::new("/home/user/.cursor")));
+        assert!(is_broad_or_unsafe_root(Path::new("/home/user/.windsurf")));
+        assert!(is_broad_or_unsafe_root(Path::new("/home/user/.gemini")));
+        assert!(is_broad_or_unsafe_root(Path::new("/home/user/.lmstudio")));
+    }
+
+    #[test]
+    fn agent_config_dir_matches_every_known_client() {
+        for name in AGENT_CONFIG_DIRS {
+            let leaf = format!("/home/user/{name}");
+            assert!(is_agent_config_dir(Path::new(&leaf)), "{leaf}");
+            let nested = format!("/home/user/{name}/mcp");
+            assert!(is_agent_config_dir(Path::new(&nested)), "{nested}");
+        }
+    }
+
+    #[test]
+    fn agent_config_dir_matches_windows_backslash() {
+        // #580 is a Windows Copilot report — backslash paths must match too.
+        assert!(is_agent_config_dir(Path::new(r"C:\Users\me\.copilot")));
+        assert!(is_agent_config_dir(Path::new(r"C:\Users\me\.copilot\mcp")));
+    }
+
+    #[test]
+    fn agent_config_dir_ignores_real_projects() {
+        assert!(!is_agent_config_dir(Path::new("/home/user/code/lean-ctx")));
+        assert!(!is_agent_config_dir(Path::new(r"C:\src\app")));
     }
 
     #[test]

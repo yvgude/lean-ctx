@@ -172,6 +172,92 @@ mod resolve_path_tests {
         );
     }
 
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn resolve_path_auto_reroots_from_agent_config_dir_without_opt_in() {
+        // #580: the MCP server is launched from an agent/IDE config dir
+        // (~/.copilot-style) and wrongly adopts it as the root. With no
+        // `allow_auto_reroot` opt-in and no trusted startup root, the first
+        // absolute path into a real project must still correct the root — an
+        // agent config dir is never a real jail boundary.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
+        let tmp = tempfile::tempdir().unwrap();
+        let agent = tmp.path().join(".copilot");
+        let real = tmp.path().join("repo");
+        std::fs::create_dir_all(&agent).unwrap();
+        let real_root = create_git_root(&real);
+        std::fs::write(real.join("a.txt"), "ok").unwrap();
+
+        let server = LeanCtxServer::new_with_startup(
+            None,
+            None,
+            SessionMode::Personal,
+            "default",
+            "default",
+        );
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(agent.to_string_lossy().to_string());
+            session.shell_cwd = Some(agent.to_string_lossy().to_string());
+        }
+
+        let out = server
+            .resolve_path(&real.join("a.txt").to_string_lossy())
+            .await
+            .unwrap();
+        assert!(
+            out.ends_with("/a.txt"),
+            "agent-dir jail must auto-correct: {out}"
+        );
+
+        let session = server.session.read().await;
+        assert_eq!(session.project_root.as_deref(), Some(real_root.as_str()));
+    }
+
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn resolve_path_agent_dir_still_blocks_markerless_escape() {
+        // The agent-dir bypass only reroots to a *real* project (one carrying a
+        // marker). A markerless absolute path outside the jail stays blocked —
+        // PathJail enforcement is unchanged, only the root *choice* is corrected.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
+        let tmp = tempfile::tempdir().unwrap();
+        let agent = tmp.path().join(".copilot");
+        let loose = tmp.path().join("loose");
+        std::fs::create_dir_all(&agent).unwrap();
+        std::fs::create_dir_all(&loose).unwrap();
+        std::fs::write(loose.join("data.txt"), "no").unwrap();
+
+        let server = LeanCtxServer::new_with_startup(
+            None,
+            None,
+            SessionMode::Personal,
+            "default",
+            "default",
+        );
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(agent.to_string_lossy().to_string());
+            session.shell_cwd = Some(agent.to_string_lossy().to_string());
+        }
+
+        let err = server
+            .resolve_path(&loose.join("data.txt").to_string_lossy())
+            .await
+            .unwrap_err();
+        assert!(err.contains("path escapes project root"), "got: {err}");
+
+        let session = server.session.read().await;
+        assert_eq!(
+            session.project_root.as_deref(),
+            Some(agent.to_string_lossy().as_ref())
+        );
+    }
+
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn startup_prefers_workspace_scoped_session_over_global_latest() {

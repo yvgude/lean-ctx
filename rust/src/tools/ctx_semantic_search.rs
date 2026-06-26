@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fmt::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::core::bm25_index::{BM25Index, format_search_results};
 use crate::core::embedding_index::EmbeddingIndex;
@@ -23,16 +23,11 @@ pub fn handle(
     workspace: Option<bool>,
     artifacts: Option<bool>,
 ) -> String {
-    let root = Path::new(path);
-    if !root.exists() {
-        return format!("ERR: path does not exist: {path}");
-    }
-
-    let root = if root.is_file() {
-        root.parent().unwrap_or(root)
-    } else {
-        root
+    let (root_buf, subdir) = match resolve_search_root(path) {
+        Ok(v) => v,
+        Err(e) => return format!("ERR: {e}"),
     };
+    let root = root_buf.as_path();
 
     // Query-conditioned IB (#542): remember the latest search query as a
     // fallback relevance signal for subsequent compressed reads.
@@ -45,7 +40,7 @@ pub fn handle(
     }
 
     let filter = match SearchFilter::new(languages, path_glob) {
-        Ok(f) => f,
+        Ok(f) => f.with_subdir(subdir),
         Err(e) => return format!("ERR: invalid filter: {e}"),
     };
 
@@ -155,18 +150,12 @@ pub fn search_hits(
     languages: Option<&[String]>,
     path_glob: Option<&str>,
 ) -> Result<Vec<HybridResult>, String> {
-    let root = Path::new(path);
-    if !root.exists() {
-        return Err(format!("path does not exist: {path}"));
-    }
-    let root = if root.is_file() {
-        root.parent().unwrap_or(root)
-    } else {
-        root
-    };
+    let (root_buf, subdir) = resolve_search_root(path)?;
+    let root = root_buf.as_path();
 
-    let filter =
-        SearchFilter::new(languages, path_glob).map_err(|e| format!("invalid filter: {e}"))?;
+    let filter = SearchFilter::new(languages, path_glob)
+        .map_err(|e| format!("invalid filter: {e}"))?
+        .with_subdir(subdir);
 
     let index = BM25Index::load_or_build(root);
     if index.doc_count == 0 {
@@ -220,35 +209,33 @@ fn bm25_hits(
 /// Rebuilds the BM25 search index for the given directory from scratch.
 #[must_use]
 pub fn handle_reindex(path: &str) -> String {
-    let root = Path::new(path);
-    if !root.exists() {
-        return format!("ERR: path does not exist: {path}");
-    }
-    let root = if root.is_file() {
-        root.parent().unwrap_or(root)
-    } else {
-        root
+    // Promote to the project root so the rebuilt index lands in the same
+    // namespace the search path resolves to (#948) — reindexing a subdirectory
+    // would otherwise build an index the search can never find.
+    let (root_buf, _subdir) = match resolve_search_root(path) {
+        Ok(v) => v,
+        Err(e) => return format!("ERR: {e}"),
     };
+    let root = root_buf.as_path();
 
     let idx = BM25Index::build_from_directory(root);
     let files = idx.files.len();
     let chunks = idx.doc_count;
     let _ = idx.save(root);
 
-    format!("Reindexed {path}: {files} files, {chunks} chunks")
+    format!(
+        "Reindexed {}: {files} files, {chunks} chunks",
+        root.display()
+    )
 }
 
 #[must_use]
 pub fn handle_reindex_artifacts(path: &str, workspace: bool) -> String {
-    let root = Path::new(path);
-    if !root.exists() {
-        return format!("ERR: path does not exist: {path}");
-    }
-    let root = if root.is_file() {
-        root.parent().unwrap_or(root)
-    } else {
-        root
+    let (root_buf, _subdir) = match resolve_search_root(path) {
+        Ok(v) => v,
+        Err(e) => return format!("ERR: {e}"),
     };
+    let root = root_buf.as_path();
 
     let mut roots: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
     let mut warnings: Vec<String> = Vec::new();
@@ -289,10 +276,11 @@ pub fn handle_find_related(
     top_k: usize,
     crp_mode: CrpMode,
 ) -> String {
-    let root = Path::new(project_root);
-    if !root.exists() {
-        return format!("ERR: path does not exist: {project_root}");
-    }
+    let (root_buf, _subdir) = match resolve_search_root(project_root) {
+        Ok(v) => v,
+        Err(e) => return format!("ERR: {e}"),
+    };
+    let root = root_buf.as_path();
 
     let index = BM25Index::load_or_build(root);
     if index.doc_count == 0 {
@@ -1455,9 +1443,55 @@ fn ensure_embeddings(
     Ok((aligned, coverage, all_files))
 }
 
+/// Resolve the index root for a search/index path.
+///
+/// The BM25 namespace is keyed on the detected *project* root (git remote /
+/// build marker), not on the literal search path: `project_identity` inspects
+/// only the exact directory it is handed and never walks up. A search launched
+/// from — or pointed at — a subdirectory therefore hashes to a different,
+/// usually empty namespace and returns zero hits, even though the real index
+/// sits one directory up (#948). Promoting the search path the same way the
+/// build does makes both agree. A genuinely requested subdirectory is kept as a
+/// result-scope filter (second tuple field) rather than becoming its own
+/// namespace.
+fn resolve_search_root(path: &str) -> Result<(PathBuf, Option<String>), String> {
+    let raw = Path::new(path);
+    if !raw.exists() {
+        return Err(format!("path does not exist: {path}"));
+    }
+    let raw_dir = if raw.is_file() {
+        raw.parent().unwrap_or(raw)
+    } else {
+        raw
+    };
+    let root = PathBuf::from(crate::core::protocol::detect_project_root_or_cwd(
+        &raw_dir.to_string_lossy(),
+    ));
+    let subdir = search_subdir_filter(&root, raw_dir);
+    Ok((root, subdir))
+}
+
+/// Project-relative prefix (forward slashes, no leading/trailing slash) for
+/// `requested` under `root`, or `None` when `requested` is the root itself or
+/// not contained in it. Lets a subdirectory search stay scoped after the path
+/// was promoted to the project root for the index namespace.
+fn search_subdir_filter(root: &Path, requested: &Path) -> Option<String> {
+    let root_c = crate::core::pathutil::safe_canonicalize_or_self(root);
+    let req_c = crate::core::pathutil::safe_canonicalize_or_self(requested);
+    let rel = req_c.strip_prefix(&root_c).ok()?;
+    let rel = rel.to_string_lossy().replace('\\', "/");
+    let rel = rel.trim_matches('/').to_string();
+    if rel.is_empty() { None } else { Some(rel) }
+}
+
 struct SearchFilter {
     allowed_exts: Option<HashSet<String>>,
     path_glob: Option<glob::Pattern>,
+    /// Relative directory prefix (forward slashes, no trailing slash) the caller
+    /// scoped the search to. Set when a subdirectory was requested but promoted
+    /// to the project root for the index namespace (#948), so results stay
+    /// restricted to that subtree without a separate (empty) index.
+    subdir: Option<String>,
 }
 
 impl SearchFilter {
@@ -1471,15 +1505,29 @@ impl SearchFilter {
         Ok(Self {
             allowed_exts,
             path_glob,
+            subdir: None,
         })
     }
 
+    /// Scope results to a project-relative subdirectory, in addition to any
+    /// language/glob filters. `None` (or empty) clears the scope.
+    fn with_subdir(mut self, subdir: Option<String>) -> Self {
+        self.subdir = subdir.filter(|s| !s.is_empty());
+        self
+    }
+
     fn is_active(&self) -> bool {
-        self.allowed_exts.is_some() || self.path_glob.is_some()
+        self.allowed_exts.is_some() || self.path_glob.is_some() || self.subdir.is_some()
     }
 
     fn matches(&self, rel_path: &str) -> bool {
         let rel_path = rel_path.replace('\\', "/");
+        if let Some(prefix) = &self.subdir
+            && rel_path != *prefix
+            && !rel_path.starts_with(&format!("{prefix}/"))
+        {
+            return false;
+        }
         if let Some(p) = &self.path_glob
             && !p.matches(&rel_path)
         {
@@ -1612,6 +1660,89 @@ mod filter_tests {
         let f = SearchFilter::new(None, Some("rust/src/**")).unwrap();
         assert!(f.matches("rust/src/core/mod.rs"));
         assert!(!f.matches("website/src/pages/index.astro"));
+    }
+}
+
+#[cfg(test)]
+mod root_resolution_tests {
+    use super::*;
+
+    #[test]
+    fn subdir_filter_scopes_results_to_subtree() {
+        let f = SearchFilter::new(None, None)
+            .unwrap()
+            .with_subdir(Some("crate_a/src".to_string()));
+        assert!(f.is_active());
+        assert!(f.matches("crate_a/src/auth.rs"));
+        assert!(f.matches("crate_a/src/nested/db.rs"));
+        assert!(!f.matches("crate_b/src/auth.rs"));
+        // Boundary: the prefix must be a whole path segment, not a substring.
+        assert!(!f.matches("crate_a/src_extra/x.rs"));
+        // Backslash input is normalized before matching.
+        assert!(f.matches(r"crate_a\src\win.rs"));
+    }
+
+    #[test]
+    fn subdir_filter_combines_with_extension_filter() {
+        let f = SearchFilter::new(Some(&["rust".to_string()]), None)
+            .unwrap()
+            .with_subdir(Some("src".to_string()));
+        assert!(f.matches("src/main.rs"));
+        assert!(!f.matches("src/readme.md"), "wrong extension");
+        assert!(!f.matches("docs/main.rs"), "outside subdir");
+    }
+
+    #[test]
+    fn empty_subdir_is_no_scope() {
+        let f = SearchFilter::new(None, None)
+            .unwrap()
+            .with_subdir(Some(String::new()));
+        assert!(!f.is_active());
+        assert!(f.matches("anything/here.rs"));
+    }
+
+    #[test]
+    fn search_subdir_filter_derives_relative_prefix() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let sub = root.join("a").join("b");
+        std::fs::create_dir_all(&sub).unwrap();
+        assert_eq!(search_subdir_filter(root, &sub).as_deref(), Some("a/b"));
+        assert_eq!(search_subdir_filter(root, root), None);
+        // A path that is not under root yields no scope.
+        assert_eq!(search_subdir_filter(&sub, root), None);
+    }
+
+    #[test]
+    fn resolve_search_root_promotes_subdir_to_project_root() {
+        // #948: the index namespace is keyed on the project root; a subdir search
+        // must resolve to that same root (and keep the subdir as a scope) instead
+        // of hashing to a different, empty namespace.
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let root = crate::core::pathutil::safe_canonicalize_or_self(tmp.path());
+        let sub = root.join("crate_a").join("src");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        // Pin the project root so resolution is deterministic regardless of host
+        // config; remove the env before asserting so a failure cannot leak it.
+        crate::test_env::set_var("LEAN_CTX_PROJECT_ROOT", root.to_string_lossy().as_ref());
+        let from_sub = resolve_search_root(&sub.to_string_lossy());
+        let from_root = resolve_search_root(&root.to_string_lossy());
+        crate::test_env::remove_var("LEAN_CTX_PROJECT_ROOT");
+
+        let (resolved, subdir) = from_sub.unwrap();
+        assert_eq!(resolved, root, "subdir must promote to the project root");
+        assert_eq!(subdir.as_deref(), Some("crate_a/src"));
+
+        let (resolved_root, subdir_root) = from_root.unwrap();
+        assert_eq!(resolved_root, root);
+        assert_eq!(subdir_root, None, "the root itself carries no subdir scope");
+    }
+
+    #[test]
+    fn resolve_search_root_errors_on_missing_path() {
+        assert!(resolve_search_root("/definitely/not/here/xyzzy-7f3a91").is_err());
     }
 }
 
