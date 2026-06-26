@@ -25,7 +25,29 @@ pub fn build_instructions(crp_mode: CrpMode) -> String {
 
 #[must_use]
 pub fn build_instructions_with_client(crp_mode: CrpMode, client_name: &str) -> String {
-    build_full_instructions(crp_mode, client_name)
+    let cfg = crate::core::config::Config::load();
+    let minimal = cfg.minimal_overhead_effective_for_client(client_name);
+    let shadow = cfg.shadow_mode;
+    // Cross-channel dedup: if the client auto-loads compression from its own rule
+    // file, skip it here to avoid duplicate billing.
+    let level = if client_loads_compression_from_file(client_name) {
+        CompressionLevel::Off
+    } else {
+        CompressionLevel::effective(&cfg)
+    };
+    build_full_instructions(crp_mode, client_name, minimal, level, shadow)
+}
+
+/// Deterministic STATIC Claude Code instructions for the char-budget test: the
+/// cold first-contact handshake surface (skeleton + shell hint + decoder +
+/// CLAUDE.md pointer + guidance). It pins `minimal=true` (the dynamic
+/// session/knowledge/gotcha payload is governed by `INSTRUCTION_CAP_TOKENS`, not
+/// the char budget) plus `level=Off`, `shadow=false` (the default template), so
+/// the result is independent of the developer's local lean-ctx config and the
+/// assertion stays deterministic (#498) for every contributor, not just clean CI.
+#[must_use]
+pub fn claude_code_static_instructions_for_test() -> String {
+    build_full_instructions(CrpMode::Off, "", true, CompressionLevel::Off, false)
 }
 
 /// Deterministic variant for tests (no session/knowledge state).
@@ -154,19 +176,13 @@ pub fn claude_config_dir_display() -> String {
 
 // ── MCP per-session instructions builder ──────────────────────
 
-fn build_full_instructions(crp_mode: CrpMode, client_name: &str) -> String {
-    let cfg = crate::core::config::Config::load();
-    let minimal = cfg.minimal_overhead_effective_for_client(client_name);
-    let shadow = cfg.shadow_mode;
-
-    // Cross-channel dedup: if the client auto-loads compression from its own
-    // rule file, skip it here to avoid duplicate billing.
-    let level = if client_loads_compression_from_file(client_name) {
-        CompressionLevel::Off
-    } else {
-        CompressionLevel::effective(&cfg)
-    };
-
+fn build_full_instructions(
+    crp_mode: CrpMode,
+    client_name: &str,
+    minimal: bool,
+    level: CompressionLevel,
+    shadow: bool,
+) -> String {
     let profile = crate::core::litm::LitmProfile::from_client_name(client_name);
     let loaded_session = if minimal {
         None
