@@ -2,8 +2,10 @@
 //!
 //! Keeps the registered wrapper thin: this module owns config gating, action
 //! routing, and driving the async [`gateway`] from the synchronous tool
-//! handler. The dispatch layer already wraps handlers in `block_in_place`, so
-//! blocking on the current runtime here is safe (same pattern as `ctx_read`).
+//! handler. The MCP dispatch layer wraps handlers in `block_in_place`, so an ambient
+//! runtime handle is available there. The CLI `call` path has no ambient
+//! runtime, so `run` falls back to building its own current_thread runtime
+//! (see `Rt`) instead of panicking on `Handle::current()`.
 
 use serde_json::{Map, Value};
 
@@ -18,6 +20,23 @@ const DISABLED_HINT: &str = "gateway is disabled. Enable it in ~/.lean-ctx/confi
      transport = \"stdio\"\n\
      command = \"mcp-server-filesystem\"\n\
      args = [\"/path/to/dir\"]";
+
+/// Runtime adapter so the `rt.block_on(...)` call sites stay identical whether
+/// we run inside the MCP server's runtime (ambient `Handle`) or from the CLI
+/// `call` path, which has no ambient runtime and needs its own.
+enum Rt {
+    Handle(tokio::runtime::Handle),
+    Owned(tokio::runtime::Runtime),
+}
+
+impl Rt {
+    fn block_on<F: std::future::Future>(&self, fut: F) -> F::Output {
+        match self {
+            Rt::Handle(h) => h.block_on(fut),
+            Rt::Owned(r) => r.block_on(fut),
+        }
+    }
+}
 
 /// Execute a `ctx_tools` action, returning response text or an error message.
 pub fn run(args: &Map<String, Value>) -> Result<String, String> {
@@ -34,7 +53,16 @@ pub fn run(args: &Map<String, Value>) -> Result<String, String> {
     }
 
     let action = args.get("action").and_then(Value::as_str).unwrap_or("find");
-    let rt = tokio::runtime::Handle::current();
+    let rt = match tokio::runtime::Handle::try_current() {
+        Ok(h) => Rt::Handle(h), // MCP path: dispatch already did block_in_place
+        Err(_) => Rt::Owned(
+            // CLI path: no ambient runtime → make a one-shot current_thread one
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| format!("failed to start runtime for gateway: {e}"))?,
+        ),
+    };
 
     match action {
         "find" => {
@@ -97,5 +125,16 @@ mod tests {
         if let Err(e) = out {
             assert!(e.contains("gateway is disabled") || e.contains("no downstream"));
         }
+    }
+
+    /// CLI-Pfad-Regression (#ctx_tools): `run` wird OHNE ambienten Tokio-Runtime
+    /// aufgerufen (wie `lean-ctx call ctx_tools …`). Früher paniced
+    /// `Handle::current()` hier ("no reactor running"); jetzt baut `run` selbst
+    /// einen current_thread-Runtime. Erwartung: Ok | Err, aber NIEMALS Panik.
+    #[test]
+    fn run_without_ambient_runtime_does_not_panic() {
+        crate::test_env::remove_var("LEAN_CTX_GATEWAY");
+        let args = json!({ "action": "list" });
+        let _ = run(args.as_object().unwrap()); // Ok|Err, niemals Panic
     }
 }
