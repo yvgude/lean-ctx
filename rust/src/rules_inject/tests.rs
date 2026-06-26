@@ -268,6 +268,50 @@ fn inject_rules_for_unknown_agent_is_empty() {
 }
 
 #[test]
+fn inject_rewrites_on_compression_change_without_version_bump() {
+    // #548: a version-only freshness check skips the rewrite when the
+    // compression level changes but RULES_VERSION stays the same. Drive the real
+    // inject path through LEAN_CTX_COMPRESSION to prove the block is regenerated.
+    let _guard = crate::core::data_dir::test_env_lock();
+
+    let dir = std::env::temp_dir().join("lc_test_inject_compression_drift");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let target = RulesTarget {
+        name: "test",
+        path: dir.join("lean-ctx.md"),
+        format: RulesFormat::DedicatedMarkdown,
+    };
+
+    crate::test_env::set_var("LEAN_CTX_COMPRESSION", "off");
+    assert!(matches!(
+        super::write::inject_rules(&target).unwrap(),
+        RulesResult::Updated
+    ));
+    let off = std::fs::read_to_string(&target.path).unwrap();
+
+    // Same level → idempotent (block already matches a fresh render).
+    assert!(matches!(
+        super::write::inject_rules(&target).unwrap(),
+        RulesResult::AlreadyPresent
+    ));
+
+    // Switch to max → must rewrite even though RULES_VERSION is unchanged.
+    crate::test_env::set_var("LEAN_CTX_COMPRESSION", "max");
+    assert!(matches!(
+        super::write::inject_rules(&target).unwrap(),
+        RulesResult::Updated
+    ));
+    let max = std::fs::read_to_string(&target.path).unwrap();
+
+    crate::test_env::remove_var("LEAN_CTX_COMPRESSION");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert_ne!(off, max, "compression-level change must alter the body");
+    assert!(max.contains(&format!("<!-- version: {RULES_VERSION} -->")));
+}
+
+#[test]
 fn any_rules_marker_present_detects_opencode() {
     let home = std::env::temp_dir().join("lc_test_marker_opencode");
     let _ = std::fs::remove_dir_all(&home);

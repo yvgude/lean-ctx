@@ -24,7 +24,15 @@ pub(super) fn inject_rules(target: &RulesTarget) -> Result<RulesResult, String> 
         let content = std::fs::read_to_string(&target.path).map_err(|e| e.to_string())?;
         let file = RulesFile::parse(&content);
 
-        if file.has_content() && file.is_current() {
+        // Skip the rewrite only when the on-disk block is BOTH version-current
+        // AND already byte-identical to a fresh render. A version-only check
+        // would leave a `compression_level` / `shadow_mode` / canonical-text
+        // change unpropagated whenever RULES_VERSION happens to be unchanged
+        // (#548).
+        if file.has_content()
+            && file.is_current()
+            && file.block_matches_render(shadow, wrapper, level)
+        {
             return Ok(RulesResult::AlreadyPresent);
         }
 

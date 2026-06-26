@@ -92,6 +92,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   that is not a registered tool fails the build, so a future rename can never drift
   silently again. (First slice of the #548 agent-rules unification — marker/dedup
   consolidation, content-aware freshness, and `rules.toml`↔`sync` semantics follow.)
+- **Rule injection skipped content/compression changes when the version was unchanged (#548).**
+  The injector's freshness check was version-only: it compared the on-disk
+  `<!-- version: N -->` against `RULES_VERSION` and skipped the rewrite when they
+  matched. So a change that alters the rendered body *without* bumping the version —
+  toggling `shadow_mode`, switching `compression_level`, or editing a canonical
+  section between releases — left every agent's rules block stale until the next
+  version bump. `RulesFile::block_matches_render` now compares the on-disk block
+  byte-for-byte (whitespace-insensitive) against a fresh render for the active
+  parameters, and the skip path requires *both* `is_current()` **and** that content
+  match. Re-running `sync`/inject after a compression-level change now regenerates
+  the block as expected; an unchanged config stays idempotent. (Second slice of the
+  #548 agent-rules unification, after the Pi-template parity guard.)
 - **Shadow-mode hook reads dropped ~75% of the MCP read side effects (#550).** When
   shadow/harden mode intercepts a native `view`/`grep` call it spawns `lean-ctx read`
   as a single-shot subprocess. That CLI path recorded only a fraction of what the MCP

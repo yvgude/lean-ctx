@@ -295,6 +295,36 @@ impl<'a> RulesFile<'a> {
             .map_or("", |e| self.content[e + END_MARK.len()..].trim())
     }
 
+    /// The lean-ctx block on disk, from `START_MARK` through `END_MARK`
+    /// (inclusive), if both markers are present.
+    fn block(&self) -> Option<&'a str> {
+        match (self.start, self.end) {
+            (Some(s), Some(e)) if e >= s => Some(&self.content[s..e + END_MARK.len()]),
+            _ => None,
+        }
+    }
+
+    /// Whether the on-disk block is already byte-identical (ignoring surrounding
+    /// whitespace) to a fresh [`render`] for these parameters.
+    ///
+    /// [`is_current`](Self::is_current) only compares the embedded
+    /// `<!-- version: N -->` against [`RULES_VERSION`], so a change that keeps
+    /// the version but alters the rendered body — toggling `shadow_mode`,
+    /// switching `compression_level`, or editing a canonical section without a
+    /// version bump — would otherwise be skipped by the injector. Callers pair
+    /// this with `is_current()` to detect that content/compression drift (#548).
+    pub fn block_matches_render(
+        &self,
+        shadow: bool,
+        wrapper: Wrapper,
+        level: CompressionLevel,
+    ) -> bool {
+        match self.block() {
+            Some(block) => block.trim() == render(shadow, wrapper, level).trim(),
+            None => false,
+        }
+    }
+
     /// Merge freshly-rendered rules into this file.
     ///
     /// * If a lean-ctx section exists → replaces content between `START_MARK`
@@ -578,6 +608,47 @@ mod tests {
         let f = RulesFile::parse("just user stuff");
         assert!(!f.has_content());
         assert_eq!(f.version(), 0);
+    }
+
+    #[test]
+    fn block_matches_render_true_for_fresh_render() {
+        let fresh = render(false, Wrapper::Dedicated, CompressionLevel::Off);
+        let content = format!("user before\n{fresh}\nuser after");
+        let f = RulesFile::parse(&content);
+        assert!(f.is_current(), "fresh render carries the current version");
+        assert!(
+            f.block_matches_render(false, Wrapper::Dedicated, CompressionLevel::Off),
+            "an unchanged block must compare equal to a fresh render"
+        );
+    }
+
+    #[test]
+    fn block_matches_render_false_on_compression_change() {
+        // Body rendered at Off, then asked whether it matches a Max render:
+        // the version is identical but the compression payload differs (#548).
+        let content = render(false, Wrapper::Dedicated, CompressionLevel::Off);
+        let f = RulesFile::parse(&content);
+        assert!(f.is_current());
+        assert!(
+            !f.block_matches_render(false, Wrapper::Dedicated, CompressionLevel::Max),
+            "a compression-level change must be detected as drift"
+        );
+    }
+
+    #[test]
+    fn block_matches_render_false_on_shadow_change() {
+        let content = render(false, Wrapper::Dedicated, CompressionLevel::Lite);
+        let f = RulesFile::parse(&content);
+        assert!(
+            !f.block_matches_render(true, Wrapper::Dedicated, CompressionLevel::Lite),
+            "a shadow-mode toggle must be detected as drift"
+        );
+    }
+
+    #[test]
+    fn block_matches_render_false_without_block() {
+        let f = RulesFile::parse("plain user content, no markers");
+        assert!(!f.block_matches_render(false, Wrapper::Dedicated, CompressionLevel::Off));
     }
 
     #[test]
