@@ -97,6 +97,16 @@ fn format_summary(engine: &GainEngine, model: Option<&str>) -> String {
             op = format_tokens(overhead_pt),
         ));
     }
+    // Budget breach (#964): the fixed per-turn prefix outgrew the configured
+    // [context] budget_tokens. Machine-readable token so log/CI scrapers can key
+    // on it; `doctor overhead --gate` is the hard CI gate.
+    if s.over_budget {
+        report.push_str(&format!(
+            "OVER_BUDGET: {op}/turn > budget {b} — trim tools/rules or raise [context] budget_tokens.\n",
+            op = format_tokens(overhead_pt),
+            b = format_tokens(s.injected_overhead_budget_tokens),
+        ));
+    }
 
     if let Some(reason) = bridge.zero_savings_reason(s.tokens_saved) {
         report.push('\n');

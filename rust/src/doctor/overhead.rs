@@ -32,8 +32,15 @@ pub(super) struct OverheadReport {
     pub lean_default_tool_tokens: usize,
     pub tool_profile: String,
     pub instruction_tokens: usize,
+    /// Tokens of the wakeup briefing (knowledge + session memory) re-injected on
+    /// session start — its own source, not folded into `instruction_tokens` (#964).
+    pub wakeup_tokens: usize,
     pub rules_files: Vec<RulesFileCost>,
     pub duplicate_clients: Vec<(String, usize)>,
+    /// Configured budget (`[context] budget_tokens`); 0 disables the check (#964).
+    pub budget_tokens: usize,
+    /// Whether `total_tokens` exceeds a non-zero `budget_tokens` (#964).
+    pub over_budget: bool,
 }
 
 impl OverheadReport {
@@ -42,7 +49,10 @@ impl OverheadReport {
     }
 
     fn total_tokens(&self) -> usize {
-        self.tool_schema_tokens + self.instruction_tokens + self.rules_tokens_total()
+        self.tool_schema_tokens
+            + self.instruction_tokens
+            + self.wakeup_tokens
+            + self.rules_tokens_total()
     }
 }
 
@@ -64,22 +74,39 @@ pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> Over
         "lean (default)".to_string()
     };
 
-    OverheadReport {
+    // The wakeup briefing rides session start as its own source (#964). It reads
+    // live knowledge + session state, so it reflects what this install actually
+    // re-injects rather than a static estimate.
+    let wakeup =
+        crate::tools::ctx_overview::build_wakeup_briefing(&project.to_string_lossy(), None);
+
+    let budget_tokens = cfg.context_budget_tokens_effective();
+
+    let mut report = OverheadReport {
         tool_count: advertised.len(),
         tool_schema_tokens: advertised.iter().map(tool_tokens).sum(),
         lean_default_tool_count: lean_default.len(),
         lean_default_tool_tokens: lean_default.iter().map(tool_tokens).sum(),
         tool_profile,
         instruction_tokens: count_tokens(&instructions),
+        wakeup_tokens: count_tokens(&wakeup),
         rules_files,
         duplicate_clients: duplicates,
-    }
+        budget_tokens,
+        over_budget: false,
+    };
+    report.over_budget = budget_tokens > 0 && report.total_tokens() > budget_tokens;
+    report
 }
 
-pub(super) fn run_overhead(json: bool) -> i32 {
+pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
     let project = std::env::current_dir().unwrap_or_else(|_| home.clone());
     let report = measure(&home, &project);
+
+    // `--gate` turns a budget breach into a non-zero exit for CI (#964); without
+    // it the report is purely informational regardless of the breach.
+    let exit_code = i32::from(gate && report.over_budget);
 
     if json {
         match serde_json::to_string_pretty(&report) {
@@ -89,7 +116,7 @@ pub(super) fn run_overhead(json: bool) -> i32 {
                 return 2;
             }
         }
-        return 0;
+        return exit_code;
     }
 
     println!("{BOLD}Fixed context overhead per session{RST}");
@@ -116,7 +143,13 @@ pub(super) fn run_overhead(json: bool) -> i32 {
         report.instruction_tokens
     );
 
-    // 3. Rules files
+    // 3. Wakeup briefing (knowledge + session memory re-injected on session start)
+    println!(
+        "  {BOLD}Wakeup briefing{RST}       {:>6} tok  {DIM}(knowledge + session memory){RST}",
+        report.wakeup_tokens
+    );
+
+    // 4. Rules files
     println!(
         "  {BOLD}Rules files{RST}           {:>6} tok  {DIM}({} auto-loaded files){RST}",
         report.rules_tokens_total(),
@@ -153,13 +186,27 @@ pub(super) fn run_overhead(json: bool) -> i32 {
 
     println!();
     let total = report.total_tokens();
-    let color = if total > 8000 { YELLOW } else { GREEN };
+    let color = if report.over_budget { YELLOW } else { GREEN };
     println!("  {BOLD}Total fixed cost{RST}      {color}{total:>6} tok / session{RST}");
+    if report.budget_tokens > 0 {
+        if report.over_budget {
+            // Machine-readable so CI/log scrapers can key on a stable token (#964).
+            println!(
+                "  {YELLOW}⚠ OVER_BUDGET: {total} tok > budget {} tok — trim tools/rules or raise [context] budget_tokens.{RST}",
+                report.budget_tokens
+            );
+        } else {
+            println!(
+                "  {DIM}Within budget ({} / {} tok).{RST}",
+                total, report.budget_tokens
+            );
+        }
+    }
     println!(
         "  {DIM}With provider prompt caching, repeated turns re-bill this at ~10% — but only if the prefix stays byte-stable.{RST}"
     );
 
-    0
+    exit_code
 }
 
 fn shorten(path: &str, max: usize) -> String {
@@ -175,4 +222,49 @@ fn shorten(path: &str, max: usize) -> String {
         .rev()
         .collect();
     format!("…{tail}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn report(schema: usize, instr: usize, wakeup: usize, budget: usize) -> OverheadReport {
+        OverheadReport {
+            tool_count: 1,
+            tool_schema_tokens: schema,
+            lean_default_tool_count: 1,
+            lean_default_tool_tokens: schema,
+            tool_profile: "lean (default)".into(),
+            instruction_tokens: instr,
+            wakeup_tokens: wakeup,
+            rules_files: Vec::new(),
+            duplicate_clients: Vec::new(),
+            budget_tokens: budget,
+            over_budget: false,
+        }
+    }
+
+    #[test]
+    fn total_includes_wakeup_source() {
+        // #964: the wakeup briefing is its own fourth source in the total.
+        let r = report(100, 200, 50, 0);
+        assert_eq!(r.total_tokens(), 350);
+    }
+
+    #[test]
+    fn over_budget_threshold_is_strict() {
+        // Mirrors the check in `measure`: breach only above a non-zero budget.
+        let mut r = report(100, 200, 50, 300);
+        r.over_budget = r.budget_tokens > 0 && r.total_tokens() > r.budget_tokens;
+        assert!(r.over_budget, "350 > 300 must breach");
+
+        let mut under = report(100, 200, 50, 8000);
+        under.over_budget = under.budget_tokens > 0 && under.total_tokens() > under.budget_tokens;
+        assert!(!under.over_budget, "350 < 8000 is within budget");
+
+        let mut disabled = report(100, 200, 50, 0);
+        disabled.over_budget =
+            disabled.budget_tokens > 0 && disabled.total_tokens() > disabled.budget_tokens;
+        assert!(!disabled.over_budget, "budget 0 disables the check");
+    }
 }

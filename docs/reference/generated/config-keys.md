@@ -147,6 +147,12 @@ Cloud feature settings
 - `auto_sync` (bool, default `false`) — Push the Personal Cloud (knowledge, commands, CEP, gotchas, buddy, feedback) silently once per day at session end (Pro; toggle: `lean-ctx cloud autosync on|off`)
 - `contribute_enabled` (bool, default `false`) — Enable contributing anonymized stats to lean-ctx cloud
 
+## `[context]`
+
+Fixed-context budget accounting (#964)
+
+- `budget_tokens` (usize, default `8000` — env `LEAN_CTX_CONTEXT_BUDGET_TOKENS`) — Fixed per-session context budget (tool schemas + MCP instructions + auto-loaded rules + wakeup briefing). `doctor overhead` warns past this; `doctor overhead --gate` exits non-zero for CI. 0 disables the warning
+
 ## `[cost]`
 
 Model declaration for measured-vs-estimated cost reporting

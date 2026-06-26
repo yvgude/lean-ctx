@@ -316,6 +316,24 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         },
     );
 
+    let mut context = BTreeMap::new();
+    context.insert(
+        "budget_tokens".into(),
+        key_with_env(
+            "usize",
+            serde_json::json!(cfg.context.budget_tokens),
+            "Fixed per-session context budget (tool schemas + MCP instructions + auto-loaded rules + wakeup briefing). `doctor overhead` warns past this; `doctor overhead --gate` exits non-zero for CI. 0 disables the warning",
+            "LEAN_CTX_CONTEXT_BUDGET_TOKENS",
+        ),
+    );
+    sections.insert(
+        "context".into(),
+        SectionSchema {
+            description: "Fixed-context budget accounting (#964)".into(),
+            keys: context,
+        },
+    );
+
     let mut boundary = BTreeMap::new();
     boundary.insert(
         "cross_project_search".into(),

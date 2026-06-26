@@ -364,6 +364,9 @@ pub struct Config {
     pub update_check_disabled: bool,
     #[serde(default)]
     pub updates: UpdatesConfig,
+    /// Fixed-context budget accounting for `doctor overhead` / `gain` (#964).
+    #[serde(default)]
+    pub context: ContextConfig,
     /// Maximum BM25 cache file size in MB. Indexes exceeding this are quarantined on load
     /// and refused on save. Override via LEAN_CTX_BM25_MAX_CACHE_MB env var.
     #[serde(default = "serde_defaults::default_bm25_max_cache_mb")]
@@ -622,6 +625,7 @@ impl Default for Config {
             shell_activation: ShellActivation::default(),
             update_check_disabled: false,
             updates: UpdatesConfig::default(),
+            context: ContextConfig::default(),
             graph_index_max_files: serde_defaults::default_graph_index_max_files(),
             bm25_max_cache_mb: serde_defaults::default_bm25_max_cache_mb(),
             memory_profile: MemoryProfile::default(),
@@ -1103,6 +1107,16 @@ impl Config {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(self.max_staleness_days)
+    }
+
+    /// Effective fixed-context budget (tokens) from env or config (#964). `0`
+    /// (env or config) disables the warning; otherwise the per-session footprint
+    /// is checked against this in `doctor overhead` and `gain`.
+    pub fn context_budget_tokens_effective(&self) -> usize {
+        std::env::var("LEAN_CTX_CONTEXT_BUDGET_TOKENS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(self.context.budget_tokens)
     }
 
     /// Archive max_disk_mb derived from simplified max_disk_mb if the detail

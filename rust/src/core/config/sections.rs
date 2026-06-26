@@ -297,6 +297,25 @@ impl Default for UpdatesConfig {
     }
 }
 
+/// Fixed-context budget accounting (#964). The per-session footprint lean-ctx
+/// adds — tool schemas + MCP instructions + auto-loaded rules files + the wakeup
+/// briefing — is warned about once it crosses `budget_tokens`. The
+/// `LEAN_CTX_CONTEXT_BUDGET_TOKENS` env var overrides it; `lean-ctx doctor
+/// overhead --gate` turns a breach into a non-zero exit for CI.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ContextConfig {
+    pub budget_tokens: usize,
+}
+
+impl Default for ContextConfig {
+    fn default() -> Self {
+        Self {
+            budget_tokens: 8000,
+        }
+    }
+}
+
 impl UpdatesConfig {
     pub fn from_env() -> Self {
         let mut cfg = Self::default();

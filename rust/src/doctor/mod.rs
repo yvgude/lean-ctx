@@ -5,6 +5,7 @@ mod common;
 mod deprecations;
 mod fix;
 mod integrations;
+mod lint_context;
 mod migrate;
 mod overhead;
 mod report;
@@ -630,18 +631,25 @@ pub fn run_cli(args: &[String]) -> i32 {
     let (sub, rest) = match args.first().map(String::as_str) {
         Some("integrations") => ("integrations", &args[1..]),
         Some("overhead") => ("overhead", &args[1..]),
+        Some("lint-context") => ("lint-context", &args[1..]),
         _ => ("", args),
     };
 
     let fix = rest.iter().any(|a| a == "--fix");
     let json = rest.iter().any(|a| a == "--json");
+    let gate = rest.iter().any(|a| a == "--gate");
     let migrate_check = rest.iter().any(|a| a == "--migrate-check");
     let help = rest.iter().any(|a| a == "--help" || a == "-h");
 
     if help {
         println!("Usage:");
         println!("  lean-ctx doctor");
-        println!("  lean-ctx doctor overhead [--json]   Fixed context cost per session");
+        println!(
+            "  lean-ctx doctor overhead [--json] [--gate]   Fixed context cost per session (--gate: non-zero exit when over [context] budget_tokens)"
+        );
+        println!(
+            "  lean-ctx doctor lint-context [--json]   Lint injected context for low-signal/dup lines"
+        );
         println!("  lean-ctx doctor integrations [--json]");
         println!("  lean-ctx doctor --fix [--json]");
         println!("  lean-ctx doctor --migrate-check [--json]");
@@ -649,7 +657,11 @@ pub fn run_cli(args: &[String]) -> i32 {
     }
 
     if sub == "overhead" {
-        return overhead::run_overhead(json);
+        return overhead::run_overhead(json, gate);
+    }
+
+    if sub == "lint-context" {
+        return lint_context::run_lint_context(json);
     }
 
     if migrate_check {

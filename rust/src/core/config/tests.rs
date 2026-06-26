@@ -1709,3 +1709,43 @@ mod config_path_visibility_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod context_budget_tests {
+    use super::super::*;
+
+    #[test]
+    fn default_budget_is_eight_thousand() {
+        assert_eq!(ContextConfig::default().budget_tokens, 8000);
+        assert_eq!(Config::default().context.budget_tokens, 8000);
+    }
+
+    #[test]
+    fn effective_uses_config_field_when_no_env() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        if std::env::var("LEAN_CTX_CONTEXT_BUDGET_TOKENS").is_ok() {
+            return;
+        }
+        let cfg = Config {
+            context: ContextConfig {
+                budget_tokens: 5000,
+            },
+            ..Default::default()
+        };
+        assert_eq!(cfg.context_budget_tokens_effective(), 5000);
+    }
+
+    #[test]
+    fn env_overrides_config_budget() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::set_var("LEAN_CTX_CONTEXT_BUDGET_TOKENS", "1234");
+        let cfg = Config {
+            context: ContextConfig {
+                budget_tokens: 5000,
+            },
+            ..Default::default()
+        };
+        assert_eq!(cfg.context_budget_tokens_effective(), 1234);
+        crate::test_env::remove_var("LEAN_CTX_CONTEXT_BUDGET_TOKENS");
+    }
+}

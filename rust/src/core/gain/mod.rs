@@ -53,6 +53,13 @@ pub struct GainSummary {
     /// net-negative until savings outgrow the per-turn injection.
     #[serde(default)]
     pub net_tokens_saved: i64,
+    /// Configured fixed-context budget (`[context] budget_tokens`); 0 disables
+    /// the check (#964). Surfaced so `gain` can flag a bloated injected prefix.
+    #[serde(default)]
+    pub injected_overhead_budget_tokens: u64,
+    /// Whether `injected_overhead_tokens_per_turn` exceeds a non-zero budget (#964).
+    #[serde(default)]
+    pub over_budget: bool,
     pub avoided_usd: f64,
     /// Estimated grid energy avoided (Wh) by keeping `tokens_saved` out of context.
     pub energy_wh: f64,
@@ -138,6 +145,13 @@ impl GainEngine {
                 injected_overhead_tokens_per_turn,
                 turns,
             );
+        // Budget awareness (#964): flag when the fixed per-turn prefix outgrows
+        // the configured `[context] budget_tokens` (shared knob with `doctor
+        // overhead`). 0 disables the check.
+        let injected_overhead_budget_tokens =
+            crate::core::config::Config::load().context_budget_tokens_effective() as u64;
+        let over_budget = injected_overhead_budget_tokens > 0
+            && injected_overhead_tokens_per_turn > injected_overhead_budget_tokens;
         GainSummary {
             model: quote,
             total_commands: self.stats.total_commands,
@@ -149,6 +163,8 @@ impl GainEngine {
             turns,
             injected_overhead_total_tokens,
             net_tokens_saved,
+            injected_overhead_budget_tokens,
+            over_budget,
             avoided_usd,
             energy_wh: crate::core::energy::wh_for_tokens(tokens_saved),
             co2_grams: crate::core::energy::co2_grams_for_tokens(tokens_saved),
