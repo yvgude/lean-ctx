@@ -82,6 +82,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   (gitlab #868–#871)
 
 ### Fixed
+- **`ctx_read` left an empty ` []` metadata field on incompressible files (#509).**
+  The `entropy` (and `density`) read modes append a ` [techniques…]` tag listing
+  which compression techniques fired. On a file where none did (high-entropy, no
+  duplicate blocks) the technique list is empty, so the header rendered a bare
+  ` H̄=4.2 []` — the same empty-trailing-field waste fixed for
+  `ctx_semantic_search`'s `(rrf: X, )` in #511. A `techniques_tag` helper now omits
+  the bracket segment entirely when the list is empty (and keeps the leading space
+  + `[a, b]` form otherwise), so the header is clean on both paths. (#509-A output
+  audit; output stays a deterministic function of content/mode per #498.)
 - **Pi `AGENTS.md` advertised renamed tools that no longer exist (#548).** The Pi
   installer writes a curated static `templates/PI_AGENTS.md`, and its tool-mapping
   table still listed `ctx_grep`/`ctx_find`/`ctx_ls` — tools renamed long ago to

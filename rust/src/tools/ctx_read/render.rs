@@ -45,6 +45,18 @@ impl<'a> ReadTuning<'a> {
     }
 }
 
+/// Render a trailing ` [a, b]` techniques tag, or `""` when no compression
+/// technique fired. Avoids the empty ` []` metadata field a bare `join` would
+/// leave on an incompressible file (#509 output-waste audit, same class as the
+/// `ctx_semantic_search` `(rrf: X, )` fix in #511).
+fn techniques_tag(techniques: &[String]) -> String {
+    if techniques.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", techniques.join(", "))
+    }
+}
+
 pub(crate) fn format_full_output(
     file_ref: &str,
     short: &str,
@@ -439,8 +451,11 @@ pub(crate) fn process_mode_tuned(
             };
             let avg_h = entropy::analyze_entropy(content).avg_entropy;
             let header = build_header(file_ref, short, ext, content, line_count, false);
-            let techs = result.techniques.join(", ");
-            let output = format!("{header} H̄={avg_h:.1} [{techs}]\n{}", result.output);
+            let output = format!(
+                "{header} H̄={avg_h:.1}{}\n{}",
+                techniques_tag(&result.techniques),
+                result.output
+            );
             let sent = count_tokens(&output);
             let savings = protocol::format_savings(original_tokens, sent);
             let compression_ratio = if original_tokens > 0 {
@@ -556,16 +571,15 @@ pub(crate) fn process_mode_tuned(
             } else {
                 0.0
             };
-            let techs = result.techniques.join(", ");
+            let techs = techniques_tag(&result.techniques);
+            let target_clamped = target.clamp(0.05, 1.0);
             let header = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
                 format!(
-                    "{file_ref}={short} {line_count}L density target={:.2} actual={actual:.2} [{techs}]",
-                    target.clamp(0.05, 1.0)
+                    "{file_ref}={short} {line_count}L density target={target_clamped:.2} actual={actual:.2}{techs}"
                 )
             } else {
                 format!(
-                    "{short} {line_count}L density target={:.2} actual={actual:.2} [{techs}]",
-                    target.clamp(0.05, 1.0)
+                    "{short} {line_count}L density target={target_clamped:.2} actual={actual:.2}{techs}"
                 )
             };
             let output = format!("{header}\n{}", result.output);
@@ -686,5 +700,33 @@ pub(crate) fn extract_line_range(content: &str, range_str: &str) -> String {
         "No lines matched the range.".to_string()
     } else {
         selected.join("\n")
+    }
+}
+
+#[cfg(test)]
+mod render_tests {
+    use super::techniques_tag;
+
+    #[test]
+    fn techniques_tag_omits_empty_brackets() {
+        // An incompressible file leaves no techniques — the header must not
+        // carry an empty ` []` field (#509 output-waste audit).
+        assert_eq!(techniques_tag(&[]), "");
+    }
+
+    #[test]
+    fn techniques_tag_wraps_nonempty_with_leading_space() {
+        assert_eq!(
+            techniques_tag(&["⊘ 3 low-entropy lines".to_string(), "⊘ 2 dups".to_string()]),
+            " [⊘ 3 low-entropy lines, ⊘ 2 dups]"
+        );
+    }
+
+    #[test]
+    fn techniques_tag_single() {
+        assert_eq!(
+            techniques_tag(&["density target=0.40".to_string()]),
+            " [density target=0.40]"
+        );
     }
 }
