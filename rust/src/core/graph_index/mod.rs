@@ -183,6 +183,16 @@ fn is_safe_scan_root(path: &str) -> bool {
             return true;
         }
 
+        // A subdirectory of a real project (e.g., `repo/rust/src/core`) has no
+        // markers itself, but should still be scannable — the marker lives at the
+        // project root, not inside every module tree. Check ancestry before
+        // falling through to the breadth heuristic (GL#438 follow-up).
+        // Use an empty path as a sentinel: the walk stops when it reaches `""`
+        // (parent of `/`), so every real ancestor is checked.
+        if has_marker_in_ancestry(p, Path::new("")) {
+            return true;
+        }
+
         let child_count = std::fs::read_dir(p).map_or(0, |rd| {
             rd.filter_map(Result::ok)
                 .filter(|e| e.path().is_dir())
