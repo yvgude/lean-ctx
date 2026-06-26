@@ -187,7 +187,9 @@ tree-sitter-c-sharp = { version = "0.23", optional = true }
 tree-sitter-kotlin-ng = { version = "1.1", optional = true }
 tree-sitter-swift = { version = "0.7", optional = true }
 tree-sitter-php = { version = "0.24", optional = true }
-ureq = "3.3"
+# platform-verifier: validate TLS against the OS trust store (corp proxy CAs),
+# not just compiled-in webpki-roots. Opt-in per-agent via RootCerts::PlatformVerifier.
+ureq = { version = "3.3", features = ["platform-verifier"] }
 # PDF → text extraction for ctx_url_read (research context layer).
 # 0.12 pulls lopdf >=0.42 (RUSTSEC-2026-0187: stack overflow on deeply nested PDFs).
 pdf-extract = "0.12"
