@@ -587,16 +587,43 @@ fn parse_head_tail_args<'a>(args: &[&'a str]) -> (Option<usize>, Option<&'a str>
 }
 
 fn build_rewrite_compound(cmd: &str, binary: &str) -> Option<String> {
-    compound_lexer::rewrite_compound(cmd, |segment| {
-        if segment.starts_with("lean-ctx ") || segment.starts_with(&format!("{binary} ")) {
-            return None;
-        }
-        if is_rewritable(segment) {
-            Some(wrap_single_command(segment, binary))
-        } else {
-            None
-        }
-    })
+    // Wrap the ENTIRE compound/pipeline in a single `lean-ctx -c "..."` rather than
+    // rewriting each segment separately. lean-ctx's exec() runs the whole command in
+    // a profile-free POSIX shell (BASH_ENV="") and compresses the buffered output, so
+    // pipes / && / || / ; all work. The previous per-segment split left the pipe/chain
+    // operators in the OUTER (hooked) shell, where aliased builtins resolve to an
+    // undefined `_lc` -> `_lc: command not found` on Windows git-bash / non-interactive
+    // shells, and also compressed the *left* side of a pipe (downstream commands then
+    // read the digest instead of the raw output).
+    let segments = compound_lexer::split_compound(cmd);
+    let has_operator = segments
+        .iter()
+        .any(|s| matches!(s, compound_lexer::Segment::Operator(_)));
+    if !has_operator {
+        // Single command: handled by the wrap_single_command fallback in the caller.
+        return None;
+    }
+    let is_leanctx = |c: &str| {
+        let c = c.trim();
+        c.starts_with("lean-ctx ") || c.starts_with(&format!("{binary} "))
+    };
+    // If any segment is already a lean-ctx command, leave the whole thing alone to
+    // avoid nesting `lean-ctx -c "... lean-ctx -c ..."`.
+    if segments.iter().any(|s| match s {
+        compound_lexer::Segment::Command(c) => is_leanctx(c),
+        compound_lexer::Segment::Operator(_) => false,
+    }) {
+        return None;
+    }
+    let any_rewritable = segments.iter().any(|s| match s {
+        compound_lexer::Segment::Command(c) => is_rewritable(c.trim()),
+        compound_lexer::Segment::Operator(_) => false,
+    });
+    if any_rewritable {
+        Some(wrap_single_command(cmd, binary))
+    } else {
+        None
+    }
 }
 
 /// The lean-ctx redirect a host tool name maps to, if any.

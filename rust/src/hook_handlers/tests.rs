@@ -459,15 +459,19 @@ fn redirect_output_carries_copilot_modified_args() {
 #[test]
 fn compound_rewrite_and_chain() {
     let result = build_rewrite_compound("cd src && git status && echo done", "lean-ctx");
-    let w = expect_wrapped("git status", "lean-ctx");
-    assert_eq!(result, Some(format!("cd src && {w} && echo done")));
+    assert_eq!(
+        result,
+        Some(expect_wrapped("cd src && git status && echo done", "lean-ctx"))
+    );
 }
 
 #[test]
 fn compound_rewrite_pipe() {
     let result = build_rewrite_compound("git log --oneline | head -5", "lean-ctx");
-    let w = expect_wrapped("git log --oneline", "lean-ctx");
-    assert_eq!(result, Some(format!("{w} | head -5")));
+    assert_eq!(
+        result,
+        Some(expect_wrapped("git log --oneline | head -5", "lean-ctx"))
+    );
 }
 
 #[test]
@@ -479,32 +483,36 @@ fn compound_rewrite_no_match() {
 #[test]
 fn compound_rewrite_multiple_rewritable() {
     let result = build_rewrite_compound("git add . && cargo test && npm run lint", "lean-ctx");
-    let w1 = expect_wrapped("git add .", "lean-ctx");
-    let w2 = expect_wrapped("cargo test", "lean-ctx");
-    let w3 = expect_wrapped("npm run lint", "lean-ctx");
-    assert_eq!(result, Some(format!("{w1} && {w2} && {w3}")));
+    assert_eq!(
+        result,
+        Some(expect_wrapped("git add . && cargo test && npm run lint", "lean-ctx"))
+    );
 }
 
 #[test]
 fn compound_rewrite_semicolons() {
     let result = build_rewrite_compound("git add .; git commit -m 'fix'", "lean-ctx");
-    let w1 = expect_wrapped("git add .", "lean-ctx");
-    let w2 = expect_wrapped("git commit -m 'fix'", "lean-ctx");
-    assert_eq!(result, Some(format!("{w1} ; {w2}")));
+    assert_eq!(
+        result,
+        Some(expect_wrapped("git add .; git commit -m 'fix'", "lean-ctx"))
+    );
 }
 
 #[test]
 fn compound_rewrite_or_chain() {
     let result = build_rewrite_compound("git pull || echo failed", "lean-ctx");
-    let w = expect_wrapped("git pull", "lean-ctx");
-    assert_eq!(result, Some(format!("{w} || echo failed")));
+    assert_eq!(
+        result,
+        Some(expect_wrapped("git pull || echo failed", "lean-ctx"))
+    );
 }
 
 #[test]
 fn compound_skips_already_rewritten() {
+    // A compound containing an existing lean-ctx command is left untouched to
+    // avoid nesting `lean-ctx -c "... lean-ctx -c ..."`.
     let result = build_rewrite_compound("lean-ctx -c git status && git diff", "lean-ctx");
-    let w = expect_wrapped("git diff", "lean-ctx");
-    assert_eq!(result, Some(format!("lean-ctx -c git status && {w}")));
+    assert_eq!(result, None);
 }
 
 #[test]
