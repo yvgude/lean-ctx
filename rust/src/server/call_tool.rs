@@ -285,11 +285,28 @@ impl LeanCtxServer {
         // end of this function). This also covers JSON error envelopes from the
         // early rate-limit path, which would otherwise be corrupted by the
         // first-call auto-context briefing.
-        let machine_readable = self
-            .registry
-            .as_ref()
-            .and_then(|r| r.get_arc(name))
-            .is_some_and(|tool| tool.produces_machine_readable(args));
+        //
+        // `ctx_call` is a meta-dispatcher: the contract belongs to its *inner*
+        // tool + inner arguments, not to ctx_call itself. Unwrap one level so
+        // JSON reached via the lazy `ctx_call` path (the default advertised
+        // surface, where ctx_outline is not a top-level tool) is just as
+        // byte-exact as a direct call.
+        let (mr_name, mr_args): (
+            Option<String>,
+            Option<&serde_json::Map<String, serde_json::Value>>,
+        ) = if name == "ctx_call" {
+            (
+                helpers::get_str(args, "name"),
+                args.and_then(|m| m.get("arguments"))
+                    .and_then(serde_json::Value::as_object),
+            )
+        } else {
+            (Some(name.to_string()), args)
+        };
+        let machine_readable = mr_name
+            .as_deref()
+            .and_then(|n| self.registry.as_ref().and_then(|r| r.get_arc(n)))
+            .is_some_and(|tool| tool.produces_machine_readable(mr_args));
 
         let pre_terse_len = result_text.len();
         let output_tokens = {
