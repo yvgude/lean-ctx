@@ -303,6 +303,8 @@ Your agent reads less and searches smarter — automatically.
 ```bash
 lean-ctx overview                    # task-aware project recap
 lean-ctx knowledge recall "auth"     # facts that survive resets
+lean-ctx knowledge consolidate       # import session + compact lifecycle
+lean-ctx knowledge consolidate --all # compact every project store
 ```
 Session memory + a project knowledge graph persist across chats.
 → **[Journey 3 — Memory & Knowledge](docs/reference/03-memory-and-knowledge.md)**

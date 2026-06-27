@@ -3,18 +3,36 @@ use super::types::{ConsolidatedInsight, KnowledgeFact, ProjectKnowledge};
 use crate::core::memory_policy::MemoryPolicy;
 
 impl ProjectKnowledge {
-    pub fn consolidate(&mut self, summary: &str, session_ids: Vec<String>, policy: &MemoryPolicy) {
+    /// Record one consolidated insight, then losslessly reclaim history to its
+    /// capacity headroom. Returns the number of older insights archived (0 when
+    /// under cap). Was a hard `drain` that dropped old history permanently (#995).
+    pub fn consolidate(
+        &mut self,
+        summary: &str,
+        session_ids: Vec<String>,
+        policy: &MemoryPolicy,
+    ) -> usize {
         self.history.push(ConsolidatedInsight {
             summary: summary.to_string(),
             from_sessions: session_ids,
             timestamp: chrono::Utc::now(),
         });
 
-        if self.history.len() > policy.knowledge.max_history {
-            self.history
-                .drain(0..self.history.len() - policy.knowledge.max_history);
-        }
+        let archived = crate::core::memory_capacity::reclaim_store(
+            crate::core::memory_archive::MemoryStore::History,
+            Some(&self.project_hash),
+            &mut self.history,
+            policy.knowledge.max_history,
+            policy.lifecycle.reclaim_headroom_pct,
+            policy.lifecycle.reclaim_enabled,
+            |a, b| {
+                b.timestamp
+                    .cmp(&a.timestamp)
+                    .then_with(|| b.summary.cmp(&a.summary))
+            },
+        );
         self.updated_at = chrono::Utc::now();
+        archived.len()
     }
 
     pub fn format_summary(&self) -> String {

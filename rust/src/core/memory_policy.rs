@@ -343,6 +343,15 @@ pub struct LifecyclePolicy {
     /// rehydrate on recall), so a store self-curates instead of only churning at
     /// its cap. Set `None`/`off` to disable.
     pub prune_unretrieved_after_days: Option<i64>,
+    /// Proactive headroom on a capacity reclaim (#995): when a store reaches its
+    /// cap, settle it at `1 - reclaim_headroom_pct` (e.g. `0.25` → 75%) instead
+    /// of churning right at the cap. Lossless — the reclaimed tail is archived
+    /// and restorable.
+    pub reclaim_headroom_pct: f32,
+    /// Master switch for the proactive reclaim (#995). `false` is the documented
+    /// escape hatch: trim only the overflow, no headroom. Eviction stays lossless
+    /// either way.
+    pub reclaim_enabled: bool,
 }
 
 impl Default for LifecyclePolicy {
@@ -356,6 +365,8 @@ impl Default for LifecyclePolicy {
             base_stability_days: crate::core::memory_lifecycle::DEFAULT_BASE_STABILITY_DAYS,
             archetype_aware_decay: false,
             prune_unretrieved_after_days: Some(90),
+            reclaim_headroom_pct: crate::core::memory_lifecycle::DEFAULT_RECLAIM_HEADROOM_PCT,
+            reclaim_enabled: true,
         }
     }
 }
@@ -399,6 +410,14 @@ impl LifecyclePolicy {
                 s => s.parse::<i64>().ok().filter(|&n| n > 0),
             };
         }
+        if let Ok(v) = std::env::var("LEAN_CTX_LIFECYCLE_RECLAIM_HEADROOM_PCT")
+            && let Ok(n) = v.parse()
+        {
+            self.reclaim_headroom_pct = n;
+        }
+        if let Ok(v) = std::env::var("LEAN_CTX_LIFECYCLE_RECLAIM_ENABLED") {
+            self.reclaim_enabled = !(v == "0" || v.eq_ignore_ascii_case("false"));
+        }
     }
 
     fn validate(&self) -> Result<(), String> {
@@ -418,6 +437,9 @@ impl LifecyclePolicy {
         }
         if self.base_stability_days <= 0.0 {
             return Err("memory.lifecycle.base_stability_days must be > 0".to_string());
+        }
+        if !(0.0..=0.95).contains(&self.reclaim_headroom_pct) {
+            return Err("memory.lifecycle.reclaim_headroom_pct must be in [0.0, 0.95]".to_string());
         }
         Ok(())
     }

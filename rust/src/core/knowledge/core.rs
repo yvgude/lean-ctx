@@ -13,19 +13,7 @@ impl ProjectKnowledge {
         &mut self,
         policy: &MemoryPolicy,
     ) -> crate::core::memory_lifecycle::LifecycleReport {
-        let cfg = crate::core::memory_lifecycle::LifecycleConfig {
-            max_facts: policy.knowledge.max_facts,
-            decay_rate_per_day: policy.lifecycle.decay_rate,
-            low_confidence_threshold: policy.lifecycle.low_confidence_threshold,
-            stale_days: policy.lifecycle.stale_days,
-            consolidation_similarity: policy.lifecycle.similarity_threshold,
-            forgetting_model: crate::core::memory_lifecycle::ForgettingModel::parse(
-                &policy.lifecycle.forgetting_model,
-            ),
-            base_stability_days: policy.lifecycle.base_stability_days,
-            archetype_aware_decay: policy.lifecycle.archetype_aware_decay,
-            prune_unretrieved_after_days: policy.lifecycle.prune_unretrieved_after_days,
-        };
+        let cfg = crate::core::memory_lifecycle::LifecycleConfig::from_policy(policy);
         crate::core::memory_lifecycle::run_lifecycle(&mut self.facts, &cfg)
     }
 
@@ -362,9 +350,23 @@ impl ProjectKnowledge {
             created_at: Utc::now(),
         });
 
-        if self.patterns.len() > policy.knowledge.max_patterns {
-            self.patterns.truncate(policy.knowledge.max_patterns);
-        }
+        // Lossless capacity reclaim (#995): keep the newest patterns and archive
+        // the rest. The previous `truncate` kept the *oldest* patterns (it dropped
+        // the just-pushed one once at the cap) and lost them permanently.
+        crate::core::memory_capacity::reclaim_store(
+            crate::core::memory_archive::MemoryStore::Patterns,
+            Some(&self.project_hash),
+            &mut self.patterns,
+            policy.knowledge.max_patterns,
+            policy.lifecycle.reclaim_headroom_pct,
+            policy.lifecycle.reclaim_enabled,
+            |a, b| {
+                b.created_at
+                    .cmp(&a.created_at)
+                    .then_with(|| a.pattern_type.cmp(&b.pattern_type))
+                    .then_with(|| a.description.cmp(&b.description))
+            },
+        );
         self.updated_at = Utc::now();
     }
 

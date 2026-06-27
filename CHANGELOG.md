@@ -6,6 +6,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Lossless memory & one consolidation engine (#995).** Project memory is now
+  fully recoverable and managed by a single capacity manager. Builds on and
+  supersedes the original capacity-reclaim proposal by @ousatov-ua (PR #588).
+  - **Nothing is hard-dropped.** Every store — facts, history, procedures and
+    patterns — evicts through one archive-backed path
+    (`core/memory_capacity::reclaim_store`): the lowest-value tail is written to
+    `memory/archive/<store>/` *before* removal, so it stays restorable. This
+    replaces the previous per-store hard drops (history drain, procedure/pattern
+    truncate) that lost data on overflow.
+  - **One capacity formula with hysteresis.** A reclaim triggers only when a
+    store reaches its cap and then settles it at a working-room target (75% by
+    default), instead of churning on every write near the cap. On by default;
+    set `[memory.lifecycle] reclaim_enabled = false` to trim only the overflow.
+    The target fraction is `[memory.lifecycle] reclaim_headroom_pct`
+    (env `LEAN_CTX_LIFECYCLE_RECLAIM_*`).
+  - **One consolidation engine.** The CLI/MCP `consolidate`, the scheduled
+    post-dispatch pass, startup auto-consolidate and the cognition loop now share
+    a single canonical engine and session-import core (`ConsolidateOptions`), so
+    promotion budgets, fact keys and confidences are identical everywhere. Fixes a
+    long-standing cwd bug (#2362) where background consolidation imported the
+    wrong project's session.
+  - **Recover on demand.** `lean-ctx knowledge restore [--store …] [--query …]
+    [--limit N]` and `ctx_knowledge action=restore` bring archived items back into
+    the live stores (idempotent; a live fact's key is never shadowed by an older
+    archived value). The recall-miss rehydrate now reaches every retained archive
+    (previously 16 kept but only 4 reachable).
+  - **Preview before you commit.** `lean-ctx knowledge consolidate --dry-run`
+    (and `ctx_knowledge action=consolidate dry_run=true`) reports exactly what a
+    run would import and archive, writing nothing. The consolidation report now
+    breaks down archived counts per store and points at the restore command.
 - **Learn-loop enrichment (#980).** The gotcha learn-loop now reaches further with
   three additions. (1) **Multi-target write-back**: `lean-ctx learn --apply` writes
   the distilled learnings to `AGENTS.md` (created if absent) *and* `CLAUDE.local.md`

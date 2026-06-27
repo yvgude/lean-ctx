@@ -810,7 +810,7 @@ flowchart LR
 | `cli/pack_cmd.rs` | `lean-ctx pack` — PR context bundle |
 | `cli/index_cmd.rs` | `lean-ctx index` — graph/BM25 index management |
 | `cli/profile_cmd.rs` | `lean-ctx profile` — profile management |
-| `cli/knowledge_cmd.rs` | `lean-ctx knowledge remember/recall/search/export/import/remove/status/health` |
+| `cli/knowledge_cmd.rs` | `lean-ctx knowledge remember/recall/search/export/import/remove/consolidate [--all]/status/health/lifecycle` |
 | `cli/overview_cmd.rs` | `lean-ctx overview [task]` |
 | `cli/compress_cmd.rs` | `lean-ctx compress` |
 | `cli/session_cmd.rs` | Extended: `lean-ctx session task/finding/save/load/decision/reset/status` |

@@ -1,5 +1,5 @@
 use chrono::Utc;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -84,6 +84,35 @@ fn write_json_atomic(dir: &Path, path: &Path, json: &str) -> Result<(), String> 
 }
 
 impl ProjectKnowledge {
+    pub fn list_project_roots() -> Result<Vec<String>, String> {
+        let base = crate::core::data_dir::lean_ctx_data_dir()?.join("knowledge");
+        if !base.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut roots = Vec::new();
+        let mut seen = HashSet::new();
+        let entries = std::fs::read_dir(&base).map_err(|e| e.to_string())?;
+        for entry in entries.flatten() {
+            let path = entry.path().join("knowledge.json");
+            if !path.is_file() {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(knowledge) = serde_json::from_str::<Self>(&content) else {
+                continue;
+            };
+            if seen.insert(knowledge.project_root.clone()) {
+                roots.push(knowledge.project_root);
+            }
+        }
+
+        roots.sort();
+        Ok(roots)
+    }
+
     pub fn save(&self) -> Result<(), String> {
         let dir = knowledge_dir(&self.project_hash)?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;

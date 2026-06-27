@@ -73,100 +73,14 @@ pub(super) fn maybe_derive_project_root_from_absolute(
     None
 }
 
+/// Incremental background consolidation: import only session items newer than the
+/// per-session watermark, advancing it after a successful save. Delegates to the
+/// canonical engine ([`crate::tools::ctx_knowledge::consolidate_project_knowledge_with`]),
+/// which loads the session for the *requested* project root (cwd bug #2362), runs
+/// under the shared knowledge lock (#326) and reclaims history losslessly (#995).
 pub(crate) fn auto_consolidate_knowledge(project_root: &str) {
-    use crate::core::knowledge::ProjectKnowledge;
-    use crate::core::session::SessionState;
-    use chrono::Utc;
-
-    let Some(mut session) = SessionState::load_latest() else {
-        return;
-    };
-
-    let watermark = session.last_consolidate_ts;
-
-    let new_findings: Vec<_> = session
-        .findings
-        .iter()
-        .filter(|f| match watermark {
-            Some(ts) => f.timestamp > ts,
-            None => true,
-        })
-        .collect();
-
-    let new_decisions: Vec<_> = session
-        .decisions
-        .iter()
-        .filter(|d| match watermark {
-            Some(ts) => d.timestamp > ts,
-            None => true,
-        })
-        .collect();
-
-    if new_findings.is_empty() && new_decisions.is_empty() {
-        return;
-    }
-
-    let Ok(policy) = crate::core::config::Config::load().memory_policy_effective() else {
-        return;
-    };
-    // Load-modify-save under the shared in-process + cross-process lock so this
-    // background consolidation merges onto the latest committed facts instead of
-    // clobbering a concurrent foreground `remember`/`relate` write (issue #326).
-    let _ = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
-        for finding in &new_findings {
-            let key = if let Some(ref file) = finding.file {
-                if let Some(line) = finding.line {
-                    format!("{file}:{line}")
-                } else {
-                    file.clone()
-                }
-            } else {
-                let slug: String = finding
-                    .summary
-                    .chars()
-                    .take(60)
-                    .collect::<String>()
-                    .replace(' ', "-")
-                    .to_lowercase();
-                format!("finding-{slug}")
-            };
-            knowledge.remember("finding", &key, &finding.summary, &session.id, 0.7, &policy);
-        }
-
-        for decision in &new_decisions {
-            let key = decision
-                .summary
-                .chars()
-                .take(50)
-                .collect::<String>()
-                .replace(' ', "-")
-                .to_lowercase();
-            knowledge.remember(
-                "decision",
-                &key,
-                &decision.summary,
-                &session.id,
-                0.85,
-                &policy,
-            );
-        }
-
-        let task_desc = session
-            .task
-            .as_ref()
-            .map(|t| t.description.clone())
-            .unwrap_or_default();
-
-        let summary = format!(
-            "Auto-consolidate session {}: {} — {} findings, {} decisions",
-            session.id,
-            task_desc,
-            new_findings.len(),
-            new_decisions.len()
-        );
-        knowledge.consolidate(&summary, vec![session.id.clone()], &policy);
-    });
-
-    session.last_consolidate_ts = Some(Utc::now());
-    let _ = session.save();
+    let _ = crate::tools::ctx_knowledge::consolidate_project_knowledge_with(
+        project_root,
+        &crate::core::consolidation_engine::ConsolidateOptions::incremental_auto(),
+    );
 }

@@ -10,8 +10,9 @@
 //! Detection is env-based: the integrated terminal exports identifying
 //! variables, so a hand-off only ever targets the editor that launched the
 //! current shell. When no such editor is found (or the extension isn't
-//! installed) the caller falls back to serving + the browser, so the command is
-//! never a silent no-op.
+//! installed) the caller serves and prints how to open the dashboard inside the
+//! editor — never the external browser under `--open=vscode` (#424/#587) — so
+//! the command is never a silent no-op.
 
 /// Extension identifier (`publisher.name`) — the URI authority the editor routes
 /// the deep link to. Must stay in sync with `vscode-extension/package.json`.
@@ -25,11 +26,13 @@ pub(crate) enum EditorOpen {
     /// editor label for the confirmation message.
     Handed(&'static str),
     /// An editor was detected but the lean-ctx extension isn't installed (or the
-    /// link could not be fired). The caller should serve + open the browser and
-    /// nudge the user to install the extension. Carries the editor label.
+    /// link could not be fired). The caller should serve, print how to open the
+    /// dashboard inside the editor (never the external browser), and nudge the
+    /// user to install the extension. Carries the editor label.
     NeedsExtension(&'static str),
-    /// Not running inside a VS Code-family editor — the caller should serve
-    /// normally (browser).
+    /// Not running inside a VS Code-family editor. `open_in_editor` is only
+    /// reached under vscode intent, so the caller serves and prints the URL +
+    /// guidance — never the external browser (#587).
     NoEditor,
 }
 

@@ -3,7 +3,7 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use crate::core::knowledge::AdmissionResult;
+use crate::core::knowledge::{AdmissionResult, sort_fact_for_output};
 use crate::core::plugins::{PluginManager, executor::HookPoint};
 
 pub(crate) fn handle_remember(
@@ -527,14 +527,14 @@ pub(crate) fn rehydrate_from_archives(
     session_id: &str,
     policy: &MemoryPolicy,
 ) -> bool {
-    let mut archives = crate::core::memory_lifecycle::list_archives();
+    // Scan every *retained* archive (#995): the reach now aligns with retention,
+    // so a recall miss can recover from any archive still on disk instead of only
+    // the newest few that the prior fixed cap left reachable.
+    let archives = crate::core::memory_lifecycle::reachable_archives(
+        &crate::core::memory_archive::ArchiveConfig::from_env(),
+    );
     if archives.is_empty() {
         return false;
-    }
-    archives.sort();
-    let max_archives = crate::core::budgets::KNOWLEDGE_REHYDRATE_MAX_ARCHIVES;
-    if archives.len() > max_archives {
-        archives = archives[archives.len() - max_archives..].to_vec();
     }
 
     let terms: Vec<String> = query

@@ -1595,6 +1595,13 @@ impl Config {
             self.memory.lifecycle.similarity_threshold =
                 local.memory.lifecycle.similarity_threshold;
         }
+        if local.memory.lifecycle.reclaim_headroom_pct != mem_def.lifecycle.reclaim_headroom_pct {
+            self.memory.lifecycle.reclaim_headroom_pct =
+                local.memory.lifecycle.reclaim_headroom_pct;
+        }
+        if local.memory.lifecycle.reclaim_enabled != mem_def.lifecycle.reclaim_enabled {
+            self.memory.lifecycle.reclaim_enabled = local.memory.lifecycle.reclaim_enabled;
+        }
 
         if local.memory.embeddings.max_facts != mem_def.embeddings.max_facts {
             self.memory.embeddings.max_facts = local.memory.embeddings.max_facts;

@@ -293,6 +293,8 @@ Knowledge lifecycle policy (decay, staleness, dedup)
 - `decay_rate` (f32, default `0.01`) — Rate at which knowledge confidence decays over time
 - `forgetting_model` (string, default `ebbinghaus`) — Forgetting curve: ebbinghaus (default, exponential + spacing) or linear
 - `low_confidence_threshold` (f32, default `0.3`) — Threshold below which facts are considered low-confidence
+- `reclaim_enabled` (bool, default `true` — env `LEAN_CTX_LIFECYCLE_RECLAIM_ENABLED`) — Master switch for the proactive capacity reclaim (#995). false trims only the overflow (escape hatch, no headroom); eviction stays lossless either way
+- `reclaim_headroom_pct` (f32, default `0.25` — env `LEAN_CTX_LIFECYCLE_RECLAIM_HEADROOM_PCT`) — Proactive headroom on a capacity reclaim: settle a full store at 1 - this fraction (0.25 = 75%) instead of churning at the cap. Lossless — the reclaimed tail is archived and restorable
 - `similarity_threshold` (f32, default `0.85`) — Similarity threshold for deduplication
 - `stale_days` (i64, default `30`) — Days after which unused facts are considered stale
 

@@ -314,62 +314,6 @@ pub(crate) fn short_hash(hash: &str) -> &str {
     if hash.len() > 8 { &hash[..8] } else { hash }
 }
 
-pub(crate) fn sort_fact_for_output(
-    a: &crate::core::knowledge::KnowledgeFact,
-    b: &crate::core::knowledge::KnowledgeFact,
-) -> std::cmp::Ordering {
-    // Pure salience ordering. The observation tier (#802) is applied at the selection
-    // layer (recall_*), not here; this comparator is the as-of recall tiebreak and the
-    // display only preserves the order the recall functions already produced.
-    salience_score(b)
-        .cmp(&salience_score(a))
-        .then_with(|| {
-            b.quality_score()
-                .partial_cmp(&a.quality_score())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .then_with(|| {
-            b.confidence
-                .partial_cmp(&a.confidence)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .then_with(|| b.confirmation_count.cmp(&a.confirmation_count))
-        .then_with(|| b.retrieval_count.cmp(&a.retrieval_count))
-        .then_with(|| b.last_retrieved.cmp(&a.last_retrieved))
-        .then_with(|| b.last_confirmed.cmp(&a.last_confirmed))
-        .then_with(|| a.category.cmp(&b.category))
-        .then_with(|| a.key.cmp(&b.key))
-        .then_with(|| a.value.cmp(&b.value))
-}
-
-pub(crate) fn salience_score(f: &crate::core::knowledge::KnowledgeFact) -> u32 {
-    let cat = f.category.to_lowercase();
-    let base: u32 = match cat.as_str() {
-        "decision" => 70,
-        "gotcha" => 75,
-        "architecture" | "arch" => 60,
-        "security" => 65,
-        "testing" | "tests" | "deployment" | "deploy" => 55,
-        "conventions" | "convention" => 45,
-        "finding" => 40,
-        _ => 30,
-    };
-
-    let quality_bonus = (f.quality_score() * 60.0) as u32;
-    let recency_bonus = f.last_retrieved.map_or(0u32, |t| {
-        let days = chrono::Utc::now().signed_duration_since(t).num_days();
-        if days <= 7 {
-            10u32
-        } else if days <= 30 {
-            5u32
-        } else {
-            0u32
-        }
-    });
-
-    base + quality_bonus + recency_bonus
-}
-
 #[cfg(test)]
 mod tests {
     use crate::core::knowledge::{COGNITION_SYNTHESIS_SOURCE, ProjectKnowledge};

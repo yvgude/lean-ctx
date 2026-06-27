@@ -40,6 +40,27 @@ pub struct ProcedureStep {
     pub optional: bool,
 }
 
+/// Retention value of a procedure (higher = keep): confidence-weighted, with a
+/// success-rate and usage component. The single ranking used by both the
+/// per-write reclaim ([`ProceduralStore::add_procedure`]) and the consolidation
+/// capacity pass, so procedure eviction is consistent everywhere (#995).
+pub(crate) fn retention_score(p: &Procedure) -> f32 {
+    let use_score = (p.times_used.min(20) as f32) / 20.0;
+    p.confidence * 0.5 + p.success_rate() * 0.3 + use_score * 0.2
+}
+
+/// Order procedures best-kept first (descending retention), deterministically.
+/// Pass to [`crate::core::memory_capacity::reclaim_store`], which archives the
+/// lowest-ranked tail.
+pub(crate) fn retention_cmp(a: &Procedure, b: &Procedure) -> std::cmp::Ordering {
+    retention_score(b)
+        .total_cmp(&retention_score(a))
+        .then_with(|| b.last_used.cmp(&a.last_used))
+        .then_with(|| b.created_at.cmp(&a.created_at))
+        .then_with(|| a.name.cmp(&b.name))
+        .then_with(|| a.id.cmp(&b.id))
+}
+
 impl Procedure {
     pub fn success_rate(&self) -> f32 {
         if self.times_used == 0 {
@@ -104,14 +125,21 @@ impl ProceduralStore {
             self.procedures.push(procedure);
         }
 
-        if self.procedures.len() > policy.max_procedures {
-            self.procedures.sort_by(|a, b| {
-                b.confidence
-                    .partial_cmp(&a.confidence)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            self.procedures.truncate(policy.max_procedures);
-        }
+        // Lossless capacity reclaim (#995): keep the highest-value procedures and
+        // archive the rest instead of truncating them away. `add_procedure` only
+        // sees `ProceduralPolicy`, so it uses the standard headroom default and is
+        // always lossless (procedure eviction was already unconditional — it just
+        // used to lose the dropped procedures). Same `retention_cmp` as the
+        // consolidation capacity pass, so ranking is identical everywhere.
+        crate::core::memory_capacity::reclaim_store(
+            crate::core::memory_archive::MemoryStore::Procedures,
+            Some(&self.project_hash),
+            &mut self.procedures,
+            policy.max_procedures,
+            crate::core::memory_lifecycle::DEFAULT_RECLAIM_HEADROOM_PCT,
+            true,
+            retention_cmp,
+        );
     }
 
     pub fn detect_patterns(&mut self, episodes: &[Episode], policy: &ProceduralPolicy) {

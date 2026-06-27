@@ -10,6 +10,7 @@ mod ranking;
 mod types;
 
 pub use import_export::{ImportMerge, ImportResult, SimpleFactEntry, parse_import_data};
+pub(crate) use ranking::sort_fact_for_output;
 pub use ranking::{SimilarFact, find_cross_key_similar};
 pub use types::*;
 

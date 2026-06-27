@@ -98,6 +98,8 @@ lean-ctx knowledge recall "how do payments work"
 lean-ctx knowledge search "stripe"
 lean-ctx knowledge status          # counts, capacity
 lean-ctx knowledge health          # integrity check
+lean-ctx knowledge consolidate     # import session + run lifecycle
+lean-ctx knowledge consolidate --all
 lean-ctx knowledge export --output kb.json
 lean-ctx knowledge import kb.json --merge
 ```
@@ -111,10 +113,25 @@ recall uses the knowledge embeddings (`knowledge/<hash>/embeddings.json`).
 
 **Under the hood:** stored under `knowledge/<project-hash>/knowledge.json`.
 The MCP tool adds richer actions: `relate`/`relations` (link facts),
-`consolidate` (merge duplicates), `timeline`, `rooms`, and `wakeup` (the
-session-start recall bundle). Capacity is bounded by
-`[memory.knowledge] max_facts` (default 200) — at capacity, `doctor` warns and
-`consolidate` reclaims space.
+`consolidate`, `timeline`, `rooms`, and `wakeup` (the session-start recall
+bundle). `ctx_knowledge action=consolidate` and
+`lean-ctx knowledge consolidate` call the same implementation: if a latest
+session exists, findings/decisions/history are imported first; if not, session
+import is skipped. Both paths then run the memory lifecycle over all project
+knowledge and report `run_memory_lifecycle` stats: decayed, consolidated,
+archived, compacted, and remaining facts. Every store — facts, history,
+procedures and patterns — is capacity-bounded (`[memory.knowledge] max_facts` /
+`max_history` / `max_patterns` and `[memory.procedural] max_procedures`) and
+reclaimed **losslessly**: when a store reaches its cap, the lowest-value tail is
+archived under `memory/archive/<store>/` (restorable) and the store settles at a
+working-room target — 75% by default (`[memory.lifecycle] reclaim_headroom_pct`).
+A reclaim uses hysteresis: it triggers only when a store hits its cap, never on
+every write. The reclaim is **on by default**; set
+`[memory.lifecycle] reclaim_enabled = false` to trim only the overflow instead.
+Eviction is archived either way, so nothing is ever hard-dropped. Near capacity,
+`doctor` warns and `consolidate` reclaims space.
+The CLI `--all` flag scans stored project knowledge roots and invokes that same
+per-project consolidation function for each one.
 
 ### Gotchas — auto-learned mistakes
 

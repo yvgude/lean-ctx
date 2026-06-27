@@ -438,6 +438,24 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "Scale Ebbinghaus stability by fact archetype so structural evidence decays slower than inference (default false)",
         ),
     );
+    mem_lifecycle.insert(
+        "reclaim_headroom_pct".into(),
+        key_with_env(
+            "f32",
+            clean_f32(mem.lifecycle.reclaim_headroom_pct),
+            "Proactive headroom on a capacity reclaim: settle a full store at 1 - this fraction (0.25 = 75%) instead of churning at the cap. Lossless — the reclaimed tail is archived and restorable",
+            "LEAN_CTX_LIFECYCLE_RECLAIM_HEADROOM_PCT",
+        ),
+    );
+    mem_lifecycle.insert(
+        "reclaim_enabled".into(),
+        key_with_env(
+            "bool",
+            serde_json::json!(mem.lifecycle.reclaim_enabled),
+            "Master switch for the proactive capacity reclaim (#995). false trims only the overflow (escape hatch, no headroom); eviction stays lossless either way",
+            "LEAN_CTX_LIFECYCLE_RECLAIM_ENABLED",
+        ),
+    );
     sections.insert(
         "memory.lifecycle".into(),
         SectionSchema {

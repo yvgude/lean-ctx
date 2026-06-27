@@ -14,6 +14,8 @@ pub(crate) fn cmd_knowledge(args: &[String]) {
         Some("export") => cmd_export(args, &project_root),
         Some("remove") => cmd_remove(args, &project_root),
         Some("import") => cmd_import(args, &project_root),
+        Some("consolidate") => cmd_consolidate(args, &project_root),
+        Some("restore") => cmd_restore(args, &project_root),
         Some("status") => {
             #[cfg(unix)]
             {
@@ -541,6 +543,58 @@ fn recall_json(project_root: &str, category: Option<&str>, query: Option<&str>) 
     println!("{json}");
 }
 
+fn cmd_consolidate(args: &[String], project_root: &str) {
+    let dry_run = args.iter().any(|a| a == "--dry-run");
+    let opts = {
+        let base = crate::core::consolidation_engine::ConsolidateOptions::manual();
+        if dry_run { base.into_dry_run() } else { base }
+    };
+
+    let result = if args.iter().any(|a| a == "--all") {
+        ctx_knowledge::consolidate_all_project_knowledge_with(&opts)
+            .map(|reports| ctx_knowledge::format_all_consolidation_reports(&reports))
+    } else {
+        ctx_knowledge::consolidate_project_knowledge_with(project_root, &opts)
+            .map(|report| ctx_knowledge::format_consolidation_report(&report))
+    };
+
+    match result {
+        Ok(out) => println!("{out}"),
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_restore(args: &[String], project_root: &str) {
+    let store = value_arg(args, "--store").or_else(|| value_arg(args, "-s"));
+    let query = value_arg(args, "--query").or_else(|| value_arg(args, "-q"));
+    let limit = value_arg(args, "--limit")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(ctx_knowledge::DEFAULT_RESTORE_LIMIT);
+
+    let store = match store.as_deref() {
+        Some(s) => {
+            let Some(ms) = crate::core::memory_archive::MemoryStore::parse(s) else {
+                eprintln!("Unknown store: {s}. Use: facts, history, procedures, patterns");
+                std::process::exit(1);
+            };
+            Some(ms)
+        }
+        None => None,
+    };
+
+    let opts = ctx_knowledge::RestoreOptions::new(store, query, limit);
+    match ctx_knowledge::run_restore(project_root, &opts) {
+        Ok(report) => println!("{}", ctx_knowledge::format_restore_report(&report)),
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 /// Filters to current facts (optional category + substring query), newest
 /// first, capped, and serializes with the `{category, content, timestamp}`
 /// contract the editor extensions consume (plus key + confidence).
@@ -660,6 +714,8 @@ Usage:
   lean-ctx knowledge export [--format json|jsonl|simple] [--output <path>]
   lean-ctx knowledge import <path> [--merge replace|append|skip-existing] [--dry-run]
   lean-ctx knowledge remove --category <cat> --key <key>
+  lean-ctx knowledge consolidate [--all] [--dry-run]
+  lean-ctx knowledge restore [--store facts|history|procedures|patterns] [--query <text>] [--limit N]
   lean-ctx knowledge status
   lean-ctx knowledge health
   lean-ctx knowledge lifecycle
@@ -670,6 +726,10 @@ Examples:
   lean-ctx knowledge export --format jsonl --output backup.jsonl
   lean-ctx knowledge import backup.json --merge skip-existing --dry-run
   lean-ctx knowledge remove --category auth --key token-type
+  lean-ctx knowledge consolidate
+  lean-ctx knowledge consolidate --all
+  lean-ctx knowledge consolidate --dry-run
+  lean-ctx knowledge restore --store facts --query auth
   lean-ctx knowledge status"
     );
 }

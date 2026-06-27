@@ -376,6 +376,15 @@ fn cmd_team_slo_report(args: &[String]) {
     }
 }
 
+/// Open-mode when a `--vscode` / `--open=vscode` hand-off cannot produce a
+/// native editor tab (extension missing, or not inside an editor). Invariant
+/// (#424/#587): an explicit vscode intent NEVER falls back to the external
+/// browser — it shows the URL + how to open the dashboard inside the editor
+/// instead. Only `--no-open` downgrades it to a silent "none".
+fn vscode_fallback_open_mode(no_open: bool) -> &'static str {
+    if no_open { "none" } else { "vscode" }
+}
+
 pub(super) fn cmd_dashboard(rest: &[String]) {
     if rest.iter().any(|a| a == "--help" || a == "-h") {
         println!(
@@ -399,7 +408,7 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
             "  lean-ctx dashboard --vscode         Open as a native editor tab (VS Code/Cursor/VSCodium/Windsurf) via the lean-ctx extension"
         );
         println!(
-            "  lean-ctx dashboard --open=vscode    Alias for --vscode (falls back to the browser if no editor/extension is found)"
+            "  lean-ctx dashboard --open=vscode    Alias for --vscode (falls back to printing how to open it inside the editor — never the external browser)"
         );
         println!("Environment:");
         println!(
@@ -478,8 +487,10 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
     // `--vscode` / `--open=vscode` (and LEAN_CTX_DASHBOARD_OPEN=vscode): open the
     // dashboard as a native editor tab by handing off to the lean-ctx extension's
     // URI handler. On a successful hand-off the extension owns the server, so we
-    // return without binding one here; otherwise fall back to the browser so the
-    // command is never a silent no-op (#875).
+    // return without binding one here. Otherwise we fall back to the `vscode`
+    // guidance mode — print the URL + how to open it inside the editor — and
+    // NEVER the external browser (#424/#587). It stays "never a silent no-op"
+    // (#875) because the URL and actionable steps are always printed.
     let want_vscode = rest.iter().any(|a| a == "--vscode")
         || matches!(open_mode.as_deref(), Some("vscode" | "code" | "editor"))
         || (open_mode.is_none()
@@ -491,11 +502,7 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
             }));
     let open_mode = if want_vscode {
         use crate::dashboard::vscode_open::{EditorOpen, open_in_editor};
-        let fallback = if rest.iter().any(|a| a == "--no-open") {
-            "none"
-        } else {
-            "browser"
-        };
+        let fallback = vscode_fallback_open_mode(rest.iter().any(|a| a == "--no-open"));
         match open_in_editor() {
             EditorOpen::Handed(label) => {
                 println!("\x1b[32m✓\x1b[0m Opening the lean-ctx dashboard in {label}…");
@@ -507,10 +514,10 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
             EditorOpen::NeedsExtension(label) => {
                 eprintln!(
                     "  \x1b[33m⚠\x1b[0m {label} detected, but the lean-ctx extension isn't \
-                     installed — opening in your browser instead."
+                     installed — showing how to open the dashboard inside {label} instead."
                 );
                 eprintln!(
-                    "  \x1b[2mInstall \"lean-ctx\" from the {label} Extensions view for a native tab.\x1b[0m"
+                    "  \x1b[2mInstall \"lean-ctx\" from the {label} Extensions view for a one-step native tab.\x1b[0m"
                 );
                 Some(fallback.to_string())
             }
@@ -1404,5 +1411,16 @@ mod tests {
         assert!(!wants_help(&args(&[])));
         // Values that merely contain "help" as a substring must not match.
         assert!(!wants_help(&args(&["--helper"])));
+    }
+
+    // GH #587: `--open=vscode` must never launch the external browser. The
+    // vscode-intent fallback resolves to the guidance mode ("vscode") or, with
+    // --no-open, to silent ("none") — but NEVER "browser" (the #424 contract).
+    #[test]
+    fn vscode_intent_never_falls_back_to_browser() {
+        assert_eq!(super::vscode_fallback_open_mode(false), "vscode");
+        assert_eq!(super::vscode_fallback_open_mode(true), "none");
+        assert_ne!(super::vscode_fallback_open_mode(false), "browser");
+        assert_ne!(super::vscode_fallback_open_mode(true), "browser");
     }
 }

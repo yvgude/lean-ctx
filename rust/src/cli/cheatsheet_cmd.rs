@@ -27,7 +27,7 @@ pub fn cmd_cheatsheet() {
   ctx_session finding \"...\"       \x1b[2m# record what you discovered\x1b[0m
   ctx_session decision \"...\"      \x1b[2m# record architectural choices\x1b[0m
   ctx_knowledge action=remember   \x1b[2m# store permanent project facts\x1b[0m
-  ctx_knowledge action=consolidate \x1b[2m# auto-extract session insights\x1b[0m
+  ctx_knowledge action=consolidate \x1b[2m# import session + run lifecycle\x1b[0m
   ctx_metrics                     \x1b[2m# see session statistics\x1b[0m
 
 \x1b[1;34m━━━ MULTI-AGENT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m

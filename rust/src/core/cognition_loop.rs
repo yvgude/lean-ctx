@@ -154,54 +154,33 @@ pub fn run_cognition_loop(project_root: &str, max_steps: u8) -> CognitionLoopRep
 }
 
 /// Step 1: Promote recent session decisions/findings into project knowledge.
+///
+/// Loads the session for the *requested* project root (not cwd, #2362) and reuses
+/// the canonical session-import core ([`crate::core::consolidation_engine::import_session_into`])
+/// so budgets, fact keys and confidences match every other consolidation driver.
+/// Runs inside the cognition loop's existing knowledge lock, so it imports
+/// directly rather than re-entering the locked orchestrator.
 fn step_seed_promote(
     project_root: &str,
     knowledge: &mut ProjectKnowledge,
     policy: &MemoryPolicy,
 ) -> u32 {
-    let Some(session) = crate::core::session::SessionState::load_latest() else {
+    let Some(session) =
+        crate::core::session::SessionState::load_latest_for_project_root(project_root)
+    else {
         return 0;
     };
 
-    let mut count = 0u32;
-    count += promote_proven_gotchas(project_root, knowledge, &session.id, policy);
-    let max_decisions = 5usize;
-    let max_findings = 8usize;
+    let gotchas = promote_proven_gotchas(project_root, knowledge, &session.id, policy);
 
-    let mut decisions = session.decisions.clone();
-    decisions.sort_by_key(|d| std::cmp::Reverse(d.timestamp));
-    decisions.truncate(max_decisions);
-    for d in &decisions {
-        let key = slug_key(&d.summary, 50);
-        knowledge.remember("decision", &key, &d.summary, &session.id, 0.9, policy);
-        count += 1;
-    }
+    let opts = crate::core::consolidation_engine::ConsolidateOptions::scheduled(
+        crate::core::consolidation_engine::ConsolidationBudgets::default(),
+    );
+    let imported = crate::core::consolidation_engine::import_session_into(
+        knowledge, &session, &opts, policy, None,
+    );
 
-    let mut findings = session.findings.clone();
-    findings.sort_by_key(|f| std::cmp::Reverse(f.timestamp));
-    let mut kept = 0usize;
-    for f in &findings {
-        if kept >= max_findings {
-            break;
-        }
-        if crate::core::memory_salience::text_salience(&f.summary) < 45 {
-            continue;
-        }
-        let key = if let Some(ref file) = f.file {
-            if let Some(line) = f.line {
-                format!("{file}:{line}")
-            } else {
-                file.clone()
-            }
-        } else {
-            format!("finding-{}", slug_key(&f.summary, 36))
-        };
-        knowledge.remember("finding", &key, &f.summary, &session.id, 0.75, policy);
-        count += 1;
-        kept += 1;
-    }
-
-    count
+    gotchas + imported.total() as u32
 }
 
 /// Loop-weighting bridge (#980): promote *proven* gotchas — high confidence, seen
@@ -220,7 +199,7 @@ fn promote_proven_gotchas(
     let store = crate::core::gotcha_tracker::GotchaStore::load(project_root);
     let mut count = 0u32;
     for g in store.promotable().into_iter().take(MAX_PROMOTED) {
-        let key = slug_key(&g.trigger, 50);
+        let key = crate::core::consolidation_engine::slug_key(&g.trigger, 50);
         let value = format!("{} → {}", g.trigger, g.resolution);
         knowledge.remember("gotcha", &key, &value, session_id, g.confidence, policy);
         count += 1;
@@ -365,19 +344,7 @@ fn step_decay(
     graph: &mut KnowledgeRelationGraph,
     policy: &MemoryPolicy,
 ) -> u32 {
-    let lifecycle_cfg = crate::core::memory_lifecycle::LifecycleConfig {
-        max_facts: policy.knowledge.max_facts,
-        decay_rate_per_day: policy.lifecycle.decay_rate,
-        low_confidence_threshold: policy.lifecycle.low_confidence_threshold,
-        stale_days: policy.lifecycle.stale_days,
-        consolidation_similarity: policy.lifecycle.similarity_threshold,
-        forgetting_model: crate::core::memory_lifecycle::ForgettingModel::parse(
-            &policy.lifecycle.forgetting_model,
-        ),
-        base_stability_days: policy.lifecycle.base_stability_days,
-        archetype_aware_decay: policy.lifecycle.archetype_aware_decay,
-        prune_unretrieved_after_days: policy.lifecycle.prune_unretrieved_after_days,
-    };
+    let lifecycle_cfg = crate::core::memory_lifecycle::LifecycleConfig::from_policy(policy);
     crate::core::memory_lifecycle::apply_confidence_decay(&mut knowledge.facts, &lifecycle_cfg);
 
     let low_conf_count = knowledge
@@ -589,24 +556,6 @@ fn truncate_on_char_boundary(s: &str, max: usize) -> String {
         end -= 1;
     }
     format!("{}…", &s[..end])
-}
-
-fn slug_key(s: &str, max: usize) -> String {
-    let mut out = String::new();
-    for ch in s.chars() {
-        if out.len() >= max {
-            break;
-        }
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
-        } else if (ch.is_whitespace() || ch == '-' || ch == '_')
-            && !out.ends_with('-')
-            && !out.is_empty()
-        {
-            out.push('-');
-        }
-    }
-    out.trim_matches('-').to_string()
 }
 
 #[cfg(test)]

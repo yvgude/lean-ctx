@@ -7,19 +7,18 @@
 //! - Archival of old/unused facts
 
 use chrono::{DateTime, Duration, Utc};
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use super::knowledge::KnowledgeFact;
+use super::knowledge::{KnowledgeFact, sort_fact_for_output};
+use super::memory_archive::{ArchiveConfig, MemoryStore};
 
 const DEFAULT_DECAY_RATE: f32 = 0.01;
 const DEFAULT_MAX_FACTS: usize = 1000;
 const LOW_CONFIDENCE_THRESHOLD: f32 = 0.3;
 const STALE_DAYS: i64 = 30;
-/// Bound archive-dir disk growth. The reader (`rehydrate_from_archives`) only ever
-/// consults the newest `KNOWLEDGE_REHYDRATE_MAX_ARCHIVES` (= 4) files, so any value
-/// well above that prunes only already-unreachable files.
-const MAX_ARCHIVE_FILES: usize = 16;
+/// Default proactive headroom on a capacity reclaim: settle a full store at 75%
+/// so it keeps real working room instead of churning at its cap.
+pub const DEFAULT_RECLAIM_HEADROOM_PCT: f32 = 0.25;
 
 /// Spacing/testing effect: how strongly each prior retrieval lengthens memory
 /// stability. 0.5 ⇒ ~10 retrievals make a fact roughly 6× more durable.
@@ -82,6 +81,14 @@ pub struct LifecycleConfig {
     /// `None` disables it (the default, so existing tuning is unchanged); the
     /// production policy can opt in. Reversible: pruned facts go to the archive.
     pub prune_unretrieved_after_days: Option<i64>,
+    /// Proactive headroom on a capacity reclaim (#995): when a store reaches its
+    /// cap, drop down to `reclaim_target(max_facts, reclaim_headroom_pct)` so it
+    /// settles with working room instead of churning at the cap. `0.25` = 75%.
+    pub reclaim_headroom_pct: f32,
+    /// Master switch for the proactive capacity reclaim (#995). `false` restores
+    /// the legacy "trim only the overflow" behavior — the documented escape
+    /// hatch. Eviction stays lossless either way (excess is archived).
+    pub reclaim_enabled: bool,
 }
 
 impl Default for LifecycleConfig {
@@ -96,6 +103,30 @@ impl Default for LifecycleConfig {
             base_stability_days: DEFAULT_BASE_STABILITY_DAYS,
             archetype_aware_decay: false,
             prune_unretrieved_after_days: None,
+            reclaim_headroom_pct: DEFAULT_RECLAIM_HEADROOM_PCT,
+            reclaim_enabled: true,
+        }
+    }
+}
+
+impl LifecycleConfig {
+    /// Map the persisted [`crate::core::memory_policy::MemoryPolicy`] to the
+    /// runtime lifecycle config. The single mapping site, so adding a knob
+    /// touches exactly one place (previously duplicated across the lifecycle and
+    /// cognition callers).
+    pub fn from_policy(policy: &crate::core::memory_policy::MemoryPolicy) -> Self {
+        Self {
+            max_facts: policy.knowledge.max_facts,
+            decay_rate_per_day: policy.lifecycle.decay_rate,
+            low_confidence_threshold: policy.lifecycle.low_confidence_threshold,
+            stale_days: policy.lifecycle.stale_days,
+            consolidation_similarity: policy.lifecycle.similarity_threshold,
+            forgetting_model: ForgettingModel::parse(&policy.lifecycle.forgetting_model),
+            base_stability_days: policy.lifecycle.base_stability_days,
+            archetype_aware_decay: policy.lifecycle.archetype_aware_decay,
+            prune_unretrieved_after_days: policy.lifecycle.prune_unretrieved_after_days,
+            reclaim_headroom_pct: policy.lifecycle.reclaim_headroom_pct,
+            reclaim_enabled: policy.lifecycle.reclaim_enabled,
         }
     }
 }
@@ -106,6 +137,10 @@ pub struct LifecycleReport {
     pub consolidated_count: usize,
     pub archived_count: usize,
     pub compacted_count: usize,
+    /// Of `archived_count`, how many facts were evicted purely for capacity
+    /// (the proactive reclaim) versus quality (low-confidence/stale/unretrieved).
+    /// Lets callers report per-store capacity reclaim distinctly (#995).
+    pub capacity_archived: usize,
     pub remaining_facts: usize,
 }
 
@@ -325,23 +360,15 @@ pub fn compact(
 
     to_archive.sort_unstable();
     to_archive.dedup();
-    let count = to_archive.len();
 
     for idx in to_archive.into_iter().rev() {
         archived.push(facts.remove(idx));
     }
 
-    if facts.len() > config.max_facts {
-        facts.sort_by(|a, b| {
-            b.confidence
-                .partial_cmp(&a.confidence)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        let excess: Vec<KnowledgeFact> = facts.drain(config.max_facts..).collect();
-        archived.extend(excess);
-    }
-
-    (count, archived)
+    // Quality-only archival here. Capacity reclaim moved to `run_lifecycle` so it
+    // flows through the single capacity manager ([`crate::core::memory_capacity`])
+    // like every other store, keeping `compact` a pure quality pass.
+    (archived.len(), archived)
 }
 
 /// Guardrails for cluster compaction (#971). See
@@ -541,77 +568,62 @@ pub fn run_lifecycle(facts: &mut Vec<KnowledgeFact>, config: &LifecycleConfig) -
         let _ = archive_facts(&archived);
     }
 
+    // Capacity reclaim (#995): facts settle at headroom via the single capacity
+    // manager, archiving the evicted tail losslessly under the legacy facts root
+    // — the same path quality archival uses, so recall rehydration is uniform.
+    let capacity_archived = crate::core::memory_capacity::reclaim_store(
+        MemoryStore::Facts,
+        None,
+        facts,
+        config.max_facts,
+        config.reclaim_headroom_pct,
+        config.reclaim_enabled,
+        |a, b| {
+            b.is_current()
+                .cmp(&a.is_current())
+                .then_with(|| sort_fact_for_output(a, b))
+        },
+    )
+    .len();
+
     LifecycleReport {
         decayed_count: decayed,
         consolidated_count: consolidated,
-        archived_count: archived.len(),
-        compacted_count: compacted,
+        archived_count: archived.len() + capacity_archived,
+        compacted_count: compacted + capacity_archived,
+        capacity_archived,
         remaining_facts: facts.len(),
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct ArchivedFacts {
-    pub archived_at: DateTime<Utc>,
-    pub facts: Vec<KnowledgeFact>,
-}
-
+/// Archive evicted facts (lossless). Facts keep the legacy global archive root
+/// for backward compatibility; the generic multi-store archive lives in
+/// [`crate::core::memory_archive`].
 pub fn archive_facts(facts: &[KnowledgeFact]) -> Result<(), String> {
-    let dir = crate::core::data_dir::lean_ctx_data_dir()?
-        .join("memory")
-        .join("archive");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("{e}"))?;
-
-    // Sub-second suffix avoids same-second filename collisions that would otherwise
-    // silently overwrite a prior archive written in the same wall-clock second.
-    let now = Utc::now();
-    let suffix = now.timestamp_subsec_nanos() % 1_000_000;
-    let filename = format!("archive-{}-{suffix:06}.json", now.format("%Y%m%d-%H%M%S"));
-    let archive = ArchivedFacts {
-        archived_at: now,
-        facts: facts.to_vec(),
-    };
-    let json = serde_json::to_string_pretty(&archive).map_err(|e| format!("{e}"))?;
-    std::fs::write(dir.join(filename), json).map_err(|e| format!("{e}"))?;
-
-    // Prune to the newest MAX_ARCHIVE_FILES; list_archives() is already sorted ascending
-    // (lexical == chronological for the zero-padded timestamp prefix). Best-effort: a
-    // prune failure must not fail the archive write itself.
-    let archives = list_archives();
-    if archives.len() > MAX_ARCHIVE_FILES {
-        for old in &archives[..archives.len() - MAX_ARCHIVE_FILES] {
-            let _ = std::fs::remove_file(old);
-        }
-    }
-    Ok(())
+    crate::core::memory_archive::archive_items(
+        MemoryStore::Facts,
+        None,
+        facts,
+        &ArchiveConfig::from_env(),
+    )
+    .map(|_| ())
 }
 
+/// Restore the facts from a single archive file (legacy `facts` key supported).
 pub fn restore_archive(archive_path: &str) -> Result<Vec<KnowledgeFact>, String> {
-    let data = std::fs::read_to_string(archive_path).map_err(|e| format!("{e}"))?;
-    let archive: ArchivedFacts = serde_json::from_str(&data).map_err(|e| format!("{e}"))?;
-    Ok(archive.facts)
+    crate::core::memory_archive::restore_items(std::path::Path::new(archive_path))
 }
 
+/// All facts archive files, sorted ascending (chronological).
 pub fn list_archives() -> Vec<PathBuf> {
-    let dir = match crate::core::data_dir::lean_ctx_data_dir() {
-        Ok(d) => d.join("memory").join("archive"),
-        Err(_) => return Vec::new(),
-    };
+    crate::core::memory_archive::list_archives(MemoryStore::Facts, None)
+}
 
-    if !dir.exists() {
-        return Vec::new();
-    }
-
-    let mut archives: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
-        .map(|e| e.path())
-        .collect();
-
-    archives.sort();
-    archives
+/// The newest reachable facts archives for the recall-miss rehydrate path —
+/// bounded by [`ArchiveConfig::rehydrate_reach`] so every retained archive is
+/// reachable (closes the pre-#995 retained-vs-reachable gap).
+pub fn reachable_archives(cfg: &ArchiveConfig) -> Vec<PathBuf> {
+    crate::core::memory_archive::reachable_archives(MemoryStore::Facts, None, cfg)
 }
 
 fn word_similarity(a: &str, b: &str) -> f32 {
@@ -638,6 +650,23 @@ fn word_similarity(a: &str, b: &str) -> f32 {
 mod tests {
     use super::*;
     use crate::core::knowledge::KnowledgeArchetype;
+
+    /// Capacity reclaim archives the evicted tail to disk, so any test that drives
+    /// [`run_lifecycle`] over capacity must sandbox the data dir.
+    fn with_temp_data_dir<T>(f: impl FnOnce() -> T) -> T {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let dir = std::env::temp_dir().join(format!(
+            "lctx-lifecycle-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        let out = f();
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+        out
+    }
 
     fn make_fact(category: &str, key: &str, value: &str, confidence: f32) -> KnowledgeFact {
         KnowledgeFact {
@@ -874,6 +903,74 @@ mod tests {
         assert_eq!(facts.len(), 1);
         assert_eq!(archived.len(), 1);
         assert_eq!(archived[0].key, "cache");
+    }
+
+    #[test]
+    fn compact_is_quality_only_and_ignores_capacity() {
+        // Post-#995: capacity reclaim moved out of `compact` into the single
+        // capacity manager (driven by `run_lifecycle`). A store full of healthy,
+        // current, high-confidence facts is a *capacity* concern, so `compact`
+        // (quality only) must leave it untouched.
+        let config = LifecycleConfig {
+            max_facts: 8,
+            ..Default::default()
+        };
+        let mut facts: Vec<KnowledgeFact> = (0..8)
+            .map(|i| make_fact("finding", &format!("k{i}"), &format!("value {i}"), 0.8))
+            .collect();
+
+        let (count, archived) = compact(&mut facts, &config);
+
+        assert_eq!(count, 0, "quality compact must not evict for capacity");
+        assert!(archived.is_empty());
+        assert_eq!(facts.len(), 8);
+    }
+
+    #[test]
+    fn run_lifecycle_reclaims_capacity_to_headroom() {
+        with_temp_data_dir(|| {
+            let config = LifecycleConfig {
+                max_facts: 8,
+                ..Default::default()
+            };
+            let mut facts: Vec<KnowledgeFact> = (0..8)
+                .map(|i| make_fact("finding", &format!("k{i}"), &format!("value {i}"), 0.8))
+                .collect();
+
+            let report = run_lifecycle(&mut facts, &config);
+
+            // Hysteresis: at cap (8) → settle to headroom target (6), archive 2.
+            assert_eq!(report.capacity_archived, 2);
+            assert_eq!(facts.len(), 6);
+            assert_eq!(report.remaining_facts, 6);
+        });
+    }
+
+    #[test]
+    fn run_lifecycle_evicts_expired_before_current() {
+        with_temp_data_dir(|| {
+            let config = LifecycleConfig {
+                max_facts: 4,
+                ..Default::default()
+            };
+            let decision = make_fact("decision", "keep-decision", "important decision", 0.7);
+            let finding = make_fact("finding", "keep-finding", "fresh finding", 0.9);
+            let mut old = make_fact("decision", "drop-archived", "old decision", 0.95);
+            // Definitively expired (not just "now") so retention ordering is stable.
+            old.valid_until = Some(Utc::now() - Duration::seconds(1));
+            let low = make_fact("misc", "drop-low", "low salience", 0.6);
+            let mut facts = vec![old, low, finding, decision];
+
+            let report = run_lifecycle(&mut facts, &config);
+            let keys: Vec<&str> = facts.iter().map(|f| f.key.as_str()).collect();
+
+            // 4 at cap → settle to 3; the expired fact sorts last (not current) and
+            // is the single eviction, so every current fact survives.
+            assert_eq!(report.capacity_archived, 1);
+            assert!(keys.contains(&"keep-decision"));
+            assert!(keys.contains(&"keep-finding"));
+            assert!(!keys.contains(&"drop-archived"));
+        });
     }
 
     #[test]

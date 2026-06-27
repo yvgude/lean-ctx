@@ -48,7 +48,7 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 |---------|---------|
 | `session` | Tasks/findings/decisions + adoption stats: `task`, `finding`, `decision`, `save`, `load`, `status`, `reset` |
 | `sessions` (`session-store`) | Manage saved CCP snapshots: `list`, `show`, `cleanup`, `doctor` |
-| `knowledge` | Project knowledge: `remember`, `recall`, `search`, `export`, `import`, `remove`, `status`, `health` |
+| `knowledge` | Project knowledge: `remember`, `recall`, `search`, `export`, `import`, `remove`, `consolidate [--all]`, `status`, `health`, `lifecycle` |
 | `overview [task]` | Project overview (task-contextualized) |
 | `compress` | Context-compression checkpoint; `--signatures` |
 | `control` | Context field manipulation: exclude/pin/priority |
