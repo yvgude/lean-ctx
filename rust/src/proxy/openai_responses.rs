@@ -368,6 +368,16 @@ enum JsonRewrite {
     Changed(String),
 }
 
+/// Rewrites text payloads inside a JSON-encoded tool-result envelope — the common
+/// case where a `function_call_output.output` string is itself JSON (e.g. an MCP
+/// `{"content":[{"type":"text","text":…}]}` envelope).
+///
+/// Returns [`JsonRewrite::NotJson`] when `text` is not a JSON object/array so the
+/// caller can fall back to the plain-text path. On a successful rewrite the value is
+/// re-emitted in compact/canonical form (whitespace and `serde_json::Value` key
+/// order), matching how the proxy already re-serializes the outer request body — so
+/// it is deterministic and semantically neutral. The rewrite is only adopted when it
+/// is strictly smaller than the original (shrink-only); it can never grow a payload.
 fn rewrite_json_payload_text(
     text: &str,
     kind: ToolResultKind,
@@ -493,6 +503,37 @@ mod tests {
         let output = parsed["input"][1]["output"].as_str().unwrap();
         let envelope: Value = serde_json::from_str(output).unwrap();
         assert_eq!(envelope["content"][0]["text"].as_str().unwrap(), expected);
+    }
+
+    #[test]
+    fn shell_json_envelope_non_text_field_is_compressed() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let raw = long_git_status();
+        let expected = compress_tool_result(&raw, Some("Bash"));
+        // Big shell output in a non-"text" field: the Shell/Search all-strings
+        // rewrite must still reach it, while small scalar fields stay intact.
+        let envelope = serde_json::to_string(&serde_json::json!({
+            "stdout": raw,
+            "exit_code": 0,
+        }))
+        .unwrap();
+
+        let body = serde_json::json!({
+            "model": "gpt-5",
+            "input": [
+                {"type": "function_call", "call_id": "call_1", "name": "Bash", "arguments": "{}"},
+                {"type": "function_call_output", "call_id": "call_1", "output": envelope}
+            ]
+        });
+        let bytes = serde_json::to_vec(&body).unwrap();
+        let (out, orig, comp) = compress_request_body(body, bytes.len());
+
+        assert!(comp < orig, "non-text shell field should be compressed");
+        let parsed: Value = serde_json::from_slice(&out).unwrap();
+        let output = parsed["input"][1]["output"].as_str().unwrap();
+        let envelope: Value = serde_json::from_str(output).unwrap();
+        assert_eq!(envelope["stdout"].as_str().unwrap(), expected);
+        assert_eq!(envelope["exit_code"].as_i64().unwrap(), 0);
     }
 
     #[test]

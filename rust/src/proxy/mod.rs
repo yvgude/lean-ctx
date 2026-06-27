@@ -131,12 +131,14 @@ impl ProxyStats {
         let (effective_compressed, saved_tokens, compressed_request) =
             self.record_totals(original, compressed);
 
-        self.provider(provider_label).record(
-            original,
-            effective_compressed,
-            compressed_request,
-            saved_tokens,
-        );
+        if let Some(provider) = self.provider(provider_label) {
+            provider.record(
+                original,
+                effective_compressed,
+                compressed_request,
+                saved_tokens,
+            );
+        }
     }
 
     fn record_totals(&self, original: usize, compressed: usize) -> (usize, u64, bool) {
@@ -163,12 +165,16 @@ impl ProxyStats {
         (1.0 - compressed as f64 / original as f64) * 100.0
     }
 
-    fn provider(&self, provider_label: &str) -> &ProviderStats {
+    /// Maps a proxy `provider_label` to its per-upstream bucket. Unknown labels
+    /// return `None` (still counted in the totals, never misattributed to a bucket);
+    /// every real upstream — Gemini included — passes an explicit label.
+    fn provider(&self, provider_label: &str) -> Option<&ProviderStats> {
         match provider_label {
-            "Anthropic" => &self.anthropic,
-            "OpenAI" => &self.openai,
-            "ChatGPT" => &self.chatgpt,
-            _ => &self.gemini,
+            "Anthropic" => Some(&self.anthropic),
+            "OpenAI" => Some(&self.openai),
+            "ChatGPT" => Some(&self.chatgpt),
+            "Gemini" => Some(&self.gemini),
+            _ => None,
         }
     }
 
@@ -275,6 +281,20 @@ mod stats_tests {
         stats.record_request(1_000, 500);
 
         assert_eq!(stats.requests_total.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.gemini.requests_total.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn unknown_label_is_not_recorded_to_any_bucket() {
+        let stats = ProxyStats::default();
+
+        stats.record_provider_request("Mystery", 1_000, 500);
+
+        // Totals still count it; no per-upstream bucket is touched.
+        assert_eq!(stats.requests_total.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.anthropic.requests_total.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.openai.requests_total.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.chatgpt.requests_total.load(Ordering::Relaxed), 0);
         assert_eq!(stats.gemini.requests_total.load(Ordering::Relaxed), 0);
     }
 }
