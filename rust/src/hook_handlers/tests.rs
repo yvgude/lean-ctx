@@ -461,7 +461,10 @@ fn compound_rewrite_and_chain() {
     let result = build_rewrite_compound("cd src && git status && echo done", "lean-ctx");
     assert_eq!(
         result,
-        Some(expect_wrapped("cd src && git status && echo done", "lean-ctx"))
+        Some(expect_wrapped(
+            "cd src && git status && echo done",
+            "lean-ctx"
+        ))
     );
 }
 
@@ -485,7 +488,10 @@ fn compound_rewrite_multiple_rewritable() {
     let result = build_rewrite_compound("git add . && cargo test && npm run lint", "lean-ctx");
     assert_eq!(
         result,
-        Some(expect_wrapped("git add . && cargo test && npm run lint", "lean-ctx"))
+        Some(expect_wrapped(
+            "git add . && cargo test && npm run lint",
+            "lean-ctx"
+        ))
     );
 }
 
