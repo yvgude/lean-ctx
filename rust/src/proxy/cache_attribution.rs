@@ -15,12 +15,10 @@
 //!   turn, volatile fields — see the cache-aligner #940/#974).
 //!
 //! This module classifies every anchored turn (`cached > 0`) into one of four
-//! outcomes by comparing the [`cached_prefix_hash`] and idle time against the
+//! outcomes by comparing the `cached_prefix_hash` and idle time against the
 //! conversation's previous turn, and exposes cumulative gauges on `/status`. It
 //! is **measurement-only** — the request body is never touched — and gated behind
 //! the opt-in `proxy.cache_policy`, so a default proxy pays nothing.
-//!
-//! [`cached_prefix_hash`]: crate::proxy::cold_prefix::cached_prefix_hash
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};

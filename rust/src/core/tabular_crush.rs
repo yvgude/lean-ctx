@@ -19,7 +19,7 @@
 //! is a pure function of the input (columns walked in header order, `_const`
 //! keyed deterministically), so identical input yields byte-identical output
 //! (#498). The crusher never inflates: callers gate on the shared
-//! [`KEEP_DATA_DIVISOR`] threshold and a no-op input returns [`None`].
+//! [`crate::core::json_crush::KEEP_DATA_DIVISOR`] threshold and a no-op input returns [`None`].
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -46,7 +46,7 @@ const ROWS_KEY: &str = "_rows";
 const MIN_ROWS: usize = 3;
 
 /// Lossless columnar crush of delimited `text`, returning the compact JSON form
-/// only when it clears the [`beneficial`] reduction gate. `None` for non-tabular,
+/// only when it clears the `beneficial` reduction gate. `None` for non-tabular,
 /// ragged, or low-redundancy input — the caller keeps its own path.
 pub fn crush_text_if_beneficial(text: &str, delimiter: char) -> Option<String> {
     let res = crush(text, delimiter, 1.0)?;
@@ -56,7 +56,7 @@ pub fn crush_text_if_beneficial(text: &str, delimiter: char) -> Option<String> {
 /// Lossy columnar crush of `text`: drops near-unique high-entropy columns whose
 /// distinct-value ratio is `>= drop_entropy`. Returns the [`CrushResult`] only
 /// when a column was **actually dropped** (`!lossless`) AND the compact form at
-/// least halves the input ([`KEEP_DATA_DIVISOR`]). Because data is then lost, the
+/// least halves the input ([`crate::core::json_crush::KEEP_DATA_DIVISOR`]). Because data is then lost, the
 /// caller MUST persist the verbatim original out-of-band (CCR) before emitting —
 /// the dropped columns are never reconstructible from the text. `None` for
 /// non-tabular, low-redundancy, or all-lossless input.

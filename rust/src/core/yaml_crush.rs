@@ -17,16 +17,16 @@
 //! - **Factor** redundant arrays-of-objects through [`crate::core::json_crush`]
 //!   (lossless `_defaults` hoisting; opt-in lossy high-entropy column dropping).
 //!
-//! The compact form is wrapped in a single-key [`MARKER`] envelope so it is
+//! The compact form is wrapped in a single-key `MARKER` envelope so it is
 //! self-identifying (re-entry safe) and exactly reversible to the parsed value via
 //! [`reconstruct`]. Output is a pure function of the input — `yaml_serde` →
 //! `serde_json::Value` → `json_crush` are all deterministic — so identical input
 //! yields byte-identical output (#498). The crusher never inflates: callers gate
-//! on the [`beneficial`] reduction threshold and a no-op input returns [`None`].
+//! on the `beneficial` reduction threshold and a no-op input returns [`None`].
 //!
 //! Exact original *bytes* (comments, key order, formatting) are recovered
 //! out-of-band — a `full`/`raw` re-read on the read path, or a CCR handle
-//! ([`crate::proxy::ccr::persist_yaml`]) when a lossy pass drops data.
+//! (`crate::proxy::ccr::persist_yaml`) when a lossy pass drops data.
 
 use serde_json::{Map, Value};
 
@@ -51,7 +51,7 @@ fn beneficial(compact: &str, raw: &str) -> bool {
 }
 
 /// Lossless crush of YAML `text`, returning the compact JSON envelope only when it
-/// clears the [`beneficial`] reduction gate. `None` for non-YAML, scalar-rooted,
+/// clears the `beneficial` reduction gate. `None` for non-YAML, scalar-rooted,
 /// or low-redundancy input — the caller keeps its own path.
 pub fn crush_text_if_beneficial(text: &str) -> Option<String> {
     let res = crush(text, 1.0)?;
@@ -62,7 +62,7 @@ pub fn crush_text_if_beneficial(text: &str) -> Option<String> {
 /// high-entropy columns from arrays-of-objects whose distinct-value ratio is
 /// `>= drop_entropy`. Returns the [`CrushResult`] only when a column was
 /// **actually dropped** (`!lossless`) AND the compact form clears the
-/// [`beneficial`] gate. Because data is then lost, the caller MUST persist the
+/// `beneficial` gate. Because data is then lost, the caller MUST persist the
 /// verbatim original out-of-band (CCR) before emitting — the dropped columns are
 /// never reconstructible from the text. `None` for non-YAML, low-redundancy, or
 /// all-lossless input.
