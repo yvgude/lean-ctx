@@ -94,7 +94,10 @@ pub(super) fn remove_binaries(home: &Path, dry_run: bool, keep_binary: bool) -> 
         return false;
     }
 
-    let mut removed = false;
+    // Remove our PATH-fallback shims (_lc/_lc_compress) alongside the binary —
+    // they are lean-ctx artifacts and would otherwise linger on PATH pointing at
+    // a now-deleted binary (the shim then just falls back to running raw).
+    let mut removed = remove_path_shims(home, dry_run);
     let mut cargo_hint = false;
     let mut brew_hint = false;
 
@@ -156,9 +159,123 @@ pub(super) fn remove_binaries(home: &Path, dry_run: bool, keep_binary: bool) -> 
     removed
 }
 
+/// PATH-fallback shims `init_posix` installs next to the binary (see
+/// `cli::shell_init::write_lc_path_shims`): `_lc` and `_lc_compress`.
+const PATH_SHIMS: [&str; 2] = ["_lc", "_lc_compress"];
+
+/// Marker every shim body carries (`cli::shell_init::shim_script`). Checked
+/// before deletion so uninstall only ever removes a file lean-ctx wrote, never
+/// an unrelated `_lc` a user happens to keep on PATH.
+const SHIM_MARKER: &str = "lean-ctx PATH fallback";
+
+/// Directories that may hold our shims: the parent of every managed binary
+/// candidate, minus dev-build (`target/`) dirs we must never touch. De-duped,
+/// order preserved.
+fn shim_dirs(home: &Path) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for path in candidate_paths(home) {
+        if matches!(classify(&path), Disposition::DevBuild) {
+            continue;
+        }
+        if let Some(dir) = path.parent() {
+            let dir = dir.to_path_buf();
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
+        }
+    }
+    dirs
+}
+
+/// Removes the marked `_lc`/`_lc_compress` shims from `dirs`. Split out from
+/// [`remove_path_shims`] so tests can target an explicit dir without env wiring.
+fn remove_shims_in_dirs(dirs: &[PathBuf], home: &Path, dry_run: bool) -> bool {
+    let mut removed = false;
+    for dir in dirs {
+        for name in PATH_SHIMS {
+            let shim = dir.join(name);
+            // Only delete a file we recognize as our own shim (marker present);
+            // a binary `_lc` or foreign script is read as non-matching and kept.
+            if !matches!(fs::read_to_string(&shim), Ok(body) if body.contains(SHIM_MARKER)) {
+                continue;
+            }
+            let short = shorten(&shim, home);
+            if dry_run {
+                println!("  Would remove shim ({short})");
+                removed = true;
+                continue;
+            }
+            match fs::remove_file(&shim) {
+                Ok(()) => {
+                    println!("  ✓ Shim removed ({short})");
+                    removed = true;
+                }
+                Err(e) => tracing::warn!("Failed to remove shim {}: {e}", shim.display()),
+            }
+        }
+    }
+    removed
+}
+
+/// Removes the `_lc`/`_lc_compress` PATH shims that pair with a managed binary.
+fn remove_path_shims(home: &Path, dry_run: bool) -> bool {
+    remove_shims_in_dirs(&shim_dirs(home), home, dry_run)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn marked_shim() -> &'static str {
+        "#!/bin/sh\n# lean-ctx PATH fallback for the `_lc` shell function\nexit 0\n"
+    }
+
+    #[test]
+    fn path_shims_removed_when_marked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        for name in PATH_SHIMS {
+            std::fs::write(dir.path().join(name), marked_shim()).unwrap();
+        }
+        let dirs = vec![dir.path().to_path_buf()];
+        assert!(remove_shims_in_dirs(&dirs, dir.path(), false));
+        for name in PATH_SHIMS {
+            assert!(
+                !dir.path().join(name).exists(),
+                "shim {name} should be gone"
+            );
+        }
+    }
+
+    #[test]
+    fn foreign_lc_file_is_left_untouched() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let foreign = dir.path().join("_lc");
+        std::fs::write(&foreign, "#!/bin/sh\necho not ours\n").unwrap();
+        let dirs = vec![dir.path().to_path_buf()];
+        assert!(!remove_shims_in_dirs(&dirs, dir.path(), false));
+        assert!(foreign.exists(), "a foreign _lc must never be deleted");
+    }
+
+    #[test]
+    fn dry_run_keeps_shims() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let shim = dir.path().join("_lc");
+        std::fs::write(&shim, marked_shim()).unwrap();
+        let dirs = vec![dir.path().to_path_buf()];
+        assert!(remove_shims_in_dirs(&dirs, dir.path(), true));
+        assert!(shim.exists(), "dry-run must not delete");
+    }
+
+    #[test]
+    fn shim_dirs_skip_dev_build() {
+        // current_exe() lives in target/ under the test runner → must be excluded.
+        let dirs = shim_dirs(&PathBuf::from("/home/tester"));
+        assert!(
+            dirs.iter()
+                .all(|d| !d.to_string_lossy().contains("/target/")),
+            "dev-build dir leaked into shim dirs: {dirs:?}"
+        );
+    }
 
     #[test]
     fn dev_builds_are_never_removed() {
