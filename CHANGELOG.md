@@ -176,6 +176,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   Default off — the request is byte-identical until you opt in.
 
 ### Fixed
+- **Codex proxy no longer hides past conversations (GH #597).** For a ChatGPT
+  subscription login, GH #568 pinned `model_provider = "leanctx-chatgpt"` (plus a
+  `[model_providers.leanctx-chatgpt]` block) in `~/.codex/config.toml` to route
+  turns through the proxy. But Codex scopes its local session history by the active
+  provider id *by design* (`openai/codex#15494`, `#19318`), so the pin hid every
+  prior `openai` conversation from `/resume`, `resume --last`, `fork`, and the
+  Desktop history picker (no data loss — rollouts + SQLite stay intact). lean-ctx
+  now keeps the **default `openai` provider** and redirects ChatGPT turns purely
+  via the top-level `openai_base_url`/`chatgpt_base_url` keys: Codex's
+  `to_api_provider` honors `openai_base_url` even under ChatGPT auth, and the proxy
+  answers the WebSocket upgrade on `/backend-api/codex/responses` with `426` so
+  Codex falls back to the HTTP/SSE path it compresses — **savings and history are
+  both preserved**, no custom provider needed. Upgrading auto-heals: the next
+  `lean-ctx proxy enable`/`setup` strips the stale `leanctx-chatgpt` provider so
+  conversations reappear, and `lean-ctx doctor` now flags a lingering pin.
 - **Shell hook no longer blocks Claude Code's Bash tool (GH #595).** Claude Code
   wraps every Bash call in its own scaffolding
   (`shopt -u extglob … && eval '<cmd>' < /dev/null && pwd -P >| /tmp/claude-XXXX-cwd`)
@@ -204,6 +219,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   - **Hijack protection kept:** following is allowed only when the resolved target
     stays within `$HOME`; a symlink whose target escapes `$HOME` is still refused,
     so a planted symlink can never redirect a config write to a system path.
+  - **Opt-in escape hatch for out-of-`$HOME` dotfiles:** power users who keep their
+    dotfiles repo outside `$HOME` (e.g. `/opt/dotfiles`) can now allow specific
+    trusted roots via the new `allow_symlink_roots` config key (or the
+    `LEAN_CTX_ALLOW_SYMLINK_ROOTS` env var). It is empty by default (strict
+    `$HOME`-only stays the default) and security-sensitive — like `extra_roots`, an
+    untrusted project-local config can never add a root. The refusal message now
+    spells out all three ways forward (`CLAUDE_CONFIG_DIR`/`CODEX_HOME`, move under
+    `$HOME`, or allow-list the root) instead of a bare "escapes `$HOME`".
   - **Robust directory setup:** a new `ensure_dir` tolerates a symlinked agent
     directory (and creates a dangling in-`$HOME` target), and the Claude/Codex
     setup steps now surface a clear error instead of silently swallowing a failed

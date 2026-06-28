@@ -155,6 +155,7 @@ fn integration_generic(
         }
         crate::core::editor_registry::types::ConfigType::Codex => {
             checks.push(check_codex_toml(&target.config_path, binary));
+            checks.push(check_codex_history_visibility(home));
             checks.push(check_codex_hooks_enabled(home));
             checks.push(check_codex_hooks_json(home, binary));
             checks.push(codex_desktop_note());
@@ -961,6 +962,42 @@ fn check_codex_toml(path: &std::path::Path, binary: &str) -> NamedCheck {
     }
 }
 
+/// #597: a pre-fix install pinned the top-level `model_provider` to lean-ctx's
+/// proxy provider (`leanctx-chatgpt`). Codex scopes its local conversation history
+/// by the active provider id, so that pin hid every prior `openai` conversation
+/// from `/resume`/`fork`/history. Detect the lingering pin (only a top-level key
+/// counts — a per-profile `model_provider` is the user's own choice) and point at
+/// the heal. Resolved automatically on the next `lean-ctx proxy enable`.
+fn check_codex_history_visibility(home: &std::path::Path) -> NamedCheck {
+    let codex_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
+    let path = codex_dir.join("config.toml");
+    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    let hidden = codex_history_hidden_by_proxy_provider(&content);
+    NamedCheck {
+        name: "Codex history".to_string(),
+        ok: !hidden,
+        detail: if hidden {
+            format!(
+                "model_provider = \"leanctx-chatgpt\" hides past Codex conversations (#597) — run `lean-ctx proxy enable` to heal ({})",
+                path.display()
+            )
+        } else {
+            "default provider — past conversations stay visible".to_string()
+        },
+    }
+}
+
+/// True when a *top-level* `model_provider = "leanctx-chatgpt"` pins Codex to
+/// lean-ctx's proxy provider (which hides prior history, #597). A per-profile
+/// `model_provider` (inside a `[table]`) is the user's own choice and ignored.
+fn codex_history_hidden_by_proxy_provider(config: &str) -> bool {
+    config
+        .lines()
+        .map(str::trim_start)
+        .take_while(|t| !t.starts_with('['))
+        .any(|t| t.starts_with("model_provider") && t.contains("leanctx-chatgpt"))
+}
+
 fn check_codex_hooks_enabled(home: &std::path::Path) -> NamedCheck {
     let codex_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
     let path = codex_dir.join("config.toml");
@@ -1411,6 +1448,26 @@ fn check_claude_hooks(path: &std::path::Path, binary: &str) -> NamedCheck {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn codex_history_hidden_detects_only_top_level_proxy_provider() {
+        // #597: a top-level pin hides history → flagged.
+        assert!(codex_history_hidden_by_proxy_provider(
+            "model_provider = \"leanctx-chatgpt\"\nmodel = \"gpt-5.5\"\n"
+        ));
+        // Default provider → fine.
+        assert!(!codex_history_hidden_by_proxy_provider(
+            "model_provider = \"openai\"\n"
+        ));
+        // Healed config (only base-URL overrides) → fine.
+        assert!(!codex_history_hidden_by_proxy_provider(
+            "openai_base_url = \"http://127.0.0.1:8765/backend-api/codex\"\n"
+        ));
+        // A per-profile choice is the user's own → not flagged.
+        assert!(!codex_history_hidden_by_proxy_provider(
+            "model = \"gpt-5.5\"\n\n[profiles.proxy]\nmodel_provider = \"leanctx-chatgpt\"\n"
+        ));
+    }
 
     #[test]
     fn codex_desktop_note_is_informational_and_never_fails() {
