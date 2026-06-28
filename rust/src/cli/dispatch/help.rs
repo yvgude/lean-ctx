@@ -148,6 +148,7 @@ COMMANDS:
     learning [status|export|import]  Adaptive-learning state: inspect, share with team, merge
          token-report [--json]          Token + memory report (project + session + CEP)
     pack --pr                      PR Context Pack (changed files, impact, tests, artifacts)
+    snapshot create|list|show|verify  Context Time Machine: git-anchored, signed snapshots
     index <status|build|build-full|watch>  Codebase index utilities
     cep                            CEP report (compression metrics, cache, modes, trends)
     verify-cache [path] [--json]   Prove the session cache: re-read collapses to a ~13-token stub

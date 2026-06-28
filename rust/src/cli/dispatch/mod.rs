@@ -160,6 +160,10 @@ pub fn run() {
                 crate::cli::cmd_proof(&rest);
                 return;
             }
+            "snapshot" => {
+                crate::cli::cmd_snapshot(&rest);
+                return;
+            }
             "verify" => {
                 crate::cli::cmd_verify(&rest);
                 return;

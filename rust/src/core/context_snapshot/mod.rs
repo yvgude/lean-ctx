@@ -18,12 +18,18 @@
 //! id/signing semantics, and their tests. The builder that fills snapshots from
 //! live stores and the append-only timeline index land in Phase 1 (#1024).
 
+pub mod builder;
 pub mod digest;
 pub mod signing;
+pub mod timeline;
 pub mod types;
 
+pub use builder::{SnapshotOptions, build, create};
 pub use digest::{canonical_body, compute_id, finalize_id};
 pub use signing::{sign_snapshot, verify_snapshot};
+pub use timeline::{
+    TimelineEntry, head_id, load_entries, read_snapshot, resolve_id, snapshots_dir, write_snapshot,
+};
 pub use types::{
     ContextSnapshotV1, GitAnchorV1, MAX_SNAPSHOT_LEDGER_ITEMS, MAX_SNAPSHOT_LINEAGE_ITEMS,
     MAX_SNAPSHOT_SESSION_LIST, SnapshotLedgerItemV1, SnapshotLedgerV1, SnapshotLineageItemV1,
