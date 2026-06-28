@@ -91,6 +91,7 @@ Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_d
 | Wrapped Permalink | `docs/contracts/wrapped-permalink-v1.md` | 1 | stable |
 | Hosted Personal Index | `docs/contracts/hosted-personal-index-v1.md` | 1 | experimental |
 | Personal Cloud Encryption | `docs/contracts/personal-cloud-encryption-v1.md` | 1 | experimental |
+| Context Snapshot | `docs/contracts/context-snapshot-v1.md` | 1 | experimental |
 
 ¹ The capabilities document is additive **by design**: its drift test binds the doc's key list to `server_capabilities::TOP_LEVEL_KEYS`, so the doc must grow whenever a key is added. Freezing the file would contradict its own contract; removal or mutation of existing keys remains a breaking change.
 
@@ -122,6 +123,7 @@ leanctx.contract.gotchas_reminders_v1.schema_version=1
 leanctx.contract.provider_framework_v1.schema_version=1
 leanctx.contract.http_mcp.contract_version=1
 leanctx.contract.team_server.contract_version=1
+leanctx.contract.context_snapshot_v1.schema_version=1
 <!-- leanctx-contracts-kv:end -->
 
 ---
@@ -151,6 +153,14 @@ Runtime observability for output verification (compression safety checks).
 
 - **Runtime source**: `rust/src/core/verification_observability.rs`
 - **Surface**: Verify footer in tool outputs when profile-enabled
+
+### Context Snapshot v1 (Context Time Machine)
+
+A git-anchored, signed, point-in-time record of the context-layer state — lineage (from IR), ledger Φ-scores + item states, token ROI, and session slice. Snapshots chain into an append-only timeline you can rewind, reproduce, resume, or share. Distilled-by-default (never raw transcripts), content-addressed id (BLAKE3), ed25519-signed.
+
+- **Doc**: `docs/contracts/context-snapshot-v1.md`
+- **Runtime source**: `rust/src/core/context_snapshot/`
+- **Surface**: Phase 0 contract (#1023); builder + `snapshot`/`timeline` CLI land in Phase 1 (#1024)
 
 ---
 
@@ -303,3 +313,4 @@ Define how LeanCTX communicates with the outside world.
 | Remote agents | HTTP | HTTP MCP v1 + typed errors | `lean-ctx serve` |
 | Teams | HTTP | Team Server v1 + audit log | `lean-ctx team serve` |
 | Future plugins | In-process / Subprocess | Provider v1 + CompressionPattern v1 + LcpTool v1 | `~/.config/lean-ctx/plugins/` |
+

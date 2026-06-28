@@ -22,6 +22,7 @@ pub const GOTCHAS_REMINDERS_V1_SCHEMA_VERSION: u32 = 1;
 pub const PROVIDER_FRAMEWORK_V1_SCHEMA_VERSION: u32 = 1;
 pub const CONTEXT_PACKAGE_V1_SCHEMA_VERSION: u32 = 1;
 pub const CONTEXT_PACKAGE_V2_SCHEMA_VERSION: u32 = 2;
+pub const CONTEXT_SNAPSHOT_V1_SCHEMA_VERSION: u32 = 1;
 
 pub const PACKAGE_EXTENSION: &str = "ctxpkg";
 pub const LEGACY_PACKAGE_EXTENSION: &str = "lctxpkg";
@@ -219,6 +220,14 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         doc("quality-loop", "quality-loop-v1.md", 1, Experimental),
         // Hosted ctxpkg registry (GL #406): fresh server surface.
         doc("ctxpkg-registry", "ctxpkg-registry-v1.md", 1, Experimental),
+        // Context Time Machine (GL #1022/#1023): git-anchored, signed temporal
+        // snapshot format — fresh surface, evolving additively until stable.
+        doc(
+            "context-snapshot",
+            "context-snapshot-v1.md",
+            1,
+            Experimental,
+        ),
         doc(
             "team-invite-links",
             "team-invite-links-v1.md",
@@ -333,6 +342,10 @@ pub fn versions_kv() -> BTreeMap<&'static str, u32> {
         (
             "leanctx.contract.context_package_v2.schema_version",
             CONTEXT_PACKAGE_V2_SCHEMA_VERSION,
+        ),
+        (
+            "leanctx.contract.context_snapshot_v1.schema_version",
+            CONTEXT_SNAPSHOT_V1_SCHEMA_VERSION,
         ),
         (
             "leanctx.contract.http_mcp.contract_version",
