@@ -478,7 +478,7 @@ fn redirect_output_carries_copilot_modified_args() {
     // #551: the read/grep redirect must also surface modifiedArgs so Copilot CLI
     // swaps in the lean-ctx temp-file path instead of reading the original.
     let tool_input = serde_json::json!({ "path": "src/main.rs" });
-    let out = build_redirect_output(Some(&tool_input), "path", "/tmp/x.lctx");
+    let out = build_redirect_output(Some(&tool_input), "path", "/tmp/x.lctx", None);
     let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
 
     assert_eq!(p["permissionDecision"], "allow");
@@ -504,7 +504,7 @@ fn read_redirect_resolves_and_rewrites_cursor_file_path() {
     assert_eq!(field, "file_path");
     assert_eq!(path, "/repo/src/main.rs");
 
-    let out = build_redirect_output(Some(&tool_input), field, "/tmp/x.lctx");
+    let out = build_redirect_output(Some(&tool_input), field, "/tmp/x.lctx", None);
     let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
     // The redirect rewrites file_path (what Cursor reads), not the absent `path`.
     assert_eq!(p["updated_input"]["file_path"], "/tmp/x.lctx");
@@ -933,4 +933,36 @@ fn redirect_read_args_pin_full_mode_never_auto() {
     assert_eq!(args, ["read", "/repo/src/main.rs", "-m", "full"]);
     assert!(args.contains(&"full"));
     assert!(!args.contains(&"auto"));
+}
+
+#[test]
+fn redirect_output_routes_shadow_note_to_additional_context() {
+    // #1019: the shadow nudge must ride the model-visible additionalContext side
+    // channel, never the temp file the host reads as content (a banner there
+    // round-tripped into config.toml on edit). updated_input / modifiedArgs keep
+    // pointing only at the faithful temp file, and no banner text leaks anywhere.
+    let tool_input = serde_json::json!({ "file_path": "/repo/src/main.rs" });
+    let note = "lean-ctx shadow mode: served by ctx_read.";
+    let out = build_redirect_output(Some(&tool_input), "file_path", "/tmp/x.lctx", Some(note));
+    let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
+
+    assert_eq!(p["hookSpecificOutput"]["additionalContext"], note);
+    assert_eq!(p["updated_input"]["file_path"], "/tmp/x.lctx");
+    assert_eq!(p["modifiedArgs"]["file_path"], "/tmp/x.lctx");
+    assert!(
+        !out.contains("shadow-mode:"),
+        "the legacy in-content banner must never reappear in redirect output"
+    );
+}
+
+#[test]
+fn redirect_output_omits_additional_context_without_shadow() {
+    // Outside shadow mode the redirect stays silent — no side-channel note at all.
+    let tool_input = serde_json::json!({ "path": "src/main.rs" });
+    let out = build_redirect_output(Some(&tool_input), "path", "/tmp/x.lctx", None);
+    let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
+    assert!(
+        p["hookSpecificOutput"].get("additionalContext").is_none(),
+        "no shadow note => no additionalContext key"
+    );
 }

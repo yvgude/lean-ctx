@@ -774,19 +774,16 @@ fn redirect_read(tool_input: Option<&serde_json::Value>) {
     let binary = resolve_binary();
     let temp_path = redirect_temp_path(&path);
 
-    if let Some(mut output) = run_with_timeout(
+    if let Some(output) = run_with_timeout(
         &binary,
         &redirect_read_args(&path),
         REDIRECT_SUBPROCESS_TIMEOUT,
     ) {
-        if shadow {
-            let header = format!(
-                "[shadow-mode: Read intercepted → ctx_read(\"{path}\", \"full\"). Use ctx_read directly for better performance.]\n\n"
-            );
-            let mut prefixed = header.into_bytes();
-            prefixed.append(&mut output);
-            output = prefixed;
-        }
+        // #1019: never prepend a banner to `output` — it is written to the temp
+        // file the host reads *as the file's content*, so an edit would round-trip
+        // the banner back into the real file (it corrupted config.toml). The
+        // shadow nudge rides the model-visible `additionalContext` side channel
+        // instead, and the intercept is still recorded in shadow.log.
         if !output.is_empty() && std::fs::write(&temp_path, &output).is_ok() {
             let temp_str = temp_path.to_str().unwrap_or("");
             debug_log::log_hook_decision(
@@ -796,9 +793,14 @@ fn redirect_read(tool_input: Option<&serde_json::Value>) {
                 &path,
                 "redirected to ctx_read",
             );
+            let shadow_note = shadow.then(|| {
+                format!(
+                    "lean-ctx shadow mode: this Read was served by ctx_read(\"{path}\", \"full\"). Call ctx_read directly for better performance."
+                )
+            });
             print!(
                 "{}",
-                build_redirect_output(tool_input, path_field, temp_str)
+                build_redirect_output(tool_input, path_field, temp_str, shadow_note.as_deref())
             );
             log_shadow_intercept("Read", &path);
             return;
@@ -879,19 +881,14 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) {
     let key = format!("grep:{pattern}:{search_path}");
     let temp_path = redirect_temp_path(&key);
 
-    if let Some(mut output) = run_with_timeout(
+    if let Some(output) = run_with_timeout(
         &binary,
         &["grep", pattern, search_path],
         REDIRECT_SUBPROCESS_TIMEOUT,
     ) {
-        if shadow {
-            let header = format!(
-                "[shadow-mode: Grep intercepted → ctx_search(\"{pattern}\", \"{search_path}\"). Use ctx_search directly for better performance.]\n\n"
-            );
-            let mut prefixed = header.into_bytes();
-            prefixed.append(&mut output);
-            output = prefixed;
-        }
+        // #1019: the temp file is re-grepped by the host, so a banner line would
+        // be a spurious match (and skew counts). Keep `output` byte-faithful; the
+        // shadow nudge rides `additionalContext`, and shadow.log records it.
         if !output.is_empty() && std::fs::write(&temp_path, &output).is_ok() {
             let temp_str = temp_path.to_str().unwrap_or("");
             debug_log::log_hook_decision(
@@ -901,7 +898,15 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) {
                 &format!("{pattern} in {search_path}"),
                 "redirected to ctx_search",
             );
-            print!("{}", build_redirect_output(tool_input, "path", temp_str));
+            let shadow_note = shadow.then(|| {
+                format!(
+                    "lean-ctx shadow mode: this Grep was served by ctx_search(\"{pattern}\", \"{search_path}\"). Call ctx_search directly for better performance."
+                )
+            });
+            print!(
+                "{}",
+                build_redirect_output(tool_input, "path", temp_str, shadow_note.as_deref())
+            );
             log_shadow_intercept("Grep", &format!("{pattern} in {search_path}"));
             return;
         }
@@ -1041,6 +1046,7 @@ fn build_redirect_output(
     tool_input: Option<&serde_json::Value>,
     field: &str,
     temp_path: &str,
+    shadow_note: Option<&str>,
 ) -> String {
     let updated_input = if let Some(obj) = tool_input.and_then(|v| v.as_object()) {
         let mut m = obj.clone();
@@ -1053,6 +1059,19 @@ fn build_redirect_output(
         serde_json::json!({ field: temp_path })
     };
 
+    // Claude Code / CodeBuddy hook output format (other hosts ignore it).
+    let mut hook_specific = serde_json::json!({
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "allow",
+        "updatedInput": updated_input.clone(),
+    });
+    // #1019: the shadow nudge travels here, not inside the file content. Hosts
+    // that honor it (Claude Code / Codex) surface it as model-visible context;
+    // others ignore it. Either way the temp file the host reads stays faithful.
+    if let Some(note) = shadow_note {
+        hook_specific["additionalContext"] = serde_json::Value::String(note.to_string());
+    }
+
     serde_json::json!({
         // Cursor hook output format.
         "permission": "allow",
@@ -1062,12 +1081,7 @@ fn build_redirect_output(
         // the lean-ctx temp file actually takes effect on Copilot (#551).
         "permissionDecision": "allow",
         "modifiedArgs": updated_input.clone(),
-        // Claude Code / CodeBuddy hook output format (other hosts ignore it).
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
-            "updatedInput": updated_input
-        }
+        "hookSpecificOutput": hook_specific
     })
     .to_string()
 }
