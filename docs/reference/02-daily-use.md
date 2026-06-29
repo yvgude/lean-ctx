@@ -207,8 +207,8 @@ compression opportunities in your shell history).
 AI sees. Fewer tools = less per-call overhead.
 
 ```bash
-lean-ctx tools minimal       # 10 essential tools
-lean-ctx tools standard      # 19 tools (balanced)
+lean-ctx tools minimal       # 5 essential tools
+lean-ctx tools standard      # 15 tools (balanced)
 lean-ctx tools power         # all 69 (default for existing installs)
 lean-ctx tools show          # current profile
 lean-ctx tools list          # what each profile contains

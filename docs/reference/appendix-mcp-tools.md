@@ -12,12 +12,12 @@ shows the smallest tool profile that exposes the tool (`M` minimal, `S` standard
 
 | Profile | Count | Who it's for |
 |---------|-------|--------------|
-| **minimal** | 10 | Lowest context overhead; the absolute essentials |
-| **standard** | 19 | Balanced default for most coding workflows |
+| **minimal** | 5 | Lowest context overhead; the absolute essentials |
+| **standard** | 15 | Balanced default for most coding workflows |
 | **power** | 76 | Everything (default for existing installs) |
 
-- **minimal (10):** `ctx_read`, `ctx_shell`, `shell`, `ctx_search`, `ctx_glob`, `ctx_tree`, `ctx_session`, `ctx_compose`, `ctx_knowledge`, `ctx_symbol`
-- **standard (+10):** + `ctx_callgraph`, `ctx_graph`, `ctx_semantic_search`, `ctx_explore`, `ctx_delta`, `ctx_execute`, `ctx_expand`, `ctx_overview`, `ctx_multi_read`, `ctx_url_read`
+- **minimal (5):** `ctx_read`, `ctx_shell`, `ctx_search`, `ctx_glob`, `ctx_tree`
+- **standard (+10):** + `ctx_compose`, `ctx_explore`, `ctx_knowledge`, `ctx_callgraph`, `ctx_graph`, `ctx_delta`, `ctx_execute`, `ctx_expand`, `ctx_overview`, `ctx_url_read`
 - **power (+48):** all remaining tools.
 
 ---

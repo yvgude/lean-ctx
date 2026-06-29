@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn minimal_arm_per_turn_prefix_stays_within_budget() {
-        // The "faithful arm" (#361): tool_profile=minimal (6 tools) +
+        // The "faithful arm" (#361): tool_profile=minimal (5 tools) +
         // LEAN_CTX_MINIMAL (no session/knowledge prefix) + rules_injection=off
         // (no rules block) must keep the fixed per-turn prefix tiny. This is the
         // regression guard for the "~3K tokens/turn injected" critique — if any

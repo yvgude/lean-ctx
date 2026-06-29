@@ -193,12 +193,14 @@ pub struct Config {
     /// Set via `lean-ctx config set profile passthrough` or editing config.toml.
     #[serde(default)]
     pub profile: Option<String>,
-    /// Tool visibility profile: "minimal" (10), "standard" (19), or "power" (all).
+    /// Tool visibility profile: "minimal" (5), "standard" (15), or "power" (all).
     /// Override via LEAN_CTX_TOOL_PROFILE env var.
     /// Existing installs default to "power" (backward compat).
     #[serde(default)]
     pub tool_profile: Option<String>,
     /// Explicit list of enabled tool names. Used only when no tool_profile is pinned (tool_profile takes precedence); leave tool_profile unset to apply this list.
+    /// The universal invoker `ctx_call` stays advertised so unlisted tools remain
+    /// reachable — add `ctx_call` to `disabled_tools` to make this allowlist authoritative.
     /// Example: `tools_enabled = ["ctx_read", "ctx_shell", "ctx_search"]`
     #[serde(default)]
     pub tools_enabled: Vec<String>,

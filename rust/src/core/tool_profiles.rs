@@ -125,14 +125,17 @@ impl fmt::Display for ToolProfile {
     }
 }
 
-/// `lean`/`lazy`/`reset` are not pinned tiers — they are the *unpin* sentinel
-/// that clears any pin so the default returns (lazy core advertised, everything
-/// callable via `ctx_call`). Centralised so the config loader, the CLI
-/// (`lean-ctx profile lean`) and the dashboard all agree on the same set (#431).
+/// `""`/`lean`/`lazy`/`reset` are not pinned tiers — they are the *unpin*
+/// sentinel that clears any pin so the default returns (lazy core advertised,
+/// everything callable via `ctx_call`). Empty/whitespace is the documented
+/// default of `tool_profile` (#613); treating it as unpinned avoids a spurious
+/// `Unknown tool_profile ''` warning on the documented default. Centralised so
+/// the config loader, the CLI (`lean-ctx profile lean`) and the dashboard all
+/// agree on the same set (#431).
 pub fn is_unpinned_alias(name: &str) -> bool {
     matches!(
         name.trim().to_ascii_lowercase().as_str(),
-        "lean" | "lazy" | "reset"
+        "" | "lean" | "lazy" | "reset"
     )
 }
 
@@ -447,6 +450,30 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(ToolProfile::from_config(&cfg), ToolProfile::Standard);
+    }
+
+    #[test]
+    fn empty_tool_profile_is_unpinned_so_tools_enabled_applies() {
+        // #613: `tool_profile = ""` is the documented default ("unpin"), not a
+        // bogus profile. It must resolve silently via the unpinned path (so an
+        // explicit `tools_enabled` takes effect) instead of warning
+        // "Unknown tool_profile ''".
+        assert!(is_unpinned_alias(""));
+        assert!(is_unpinned_alias("   "));
+
+        if std::env::var("LEAN_CTX_TOOL_PROFILE").is_ok() {
+            return;
+        }
+        let cfg = crate::core::config::Config {
+            tool_profile: Some(String::new()),
+            tools_enabled: vec!["ctx_read".to_string()],
+            ..Default::default()
+        };
+        assert_eq!(
+            ToolProfile::from_config(&cfg),
+            ToolProfile::Custom(vec!["ctx_read".to_string()]),
+            "empty tool_profile must unpin so tools_enabled takes effect"
+        );
     }
 
     #[test]

@@ -536,8 +536,8 @@ fn print_profile_help() {
 TOOL PROFILES — how many MCP tools your agent sees:
   lean-ctx tools                Show current tool profile
   lean-ctx tools lean           Lazy core advertised, all via ctx_call (default)
-  lean-ctx tools minimal        6 essential tools
-  lean-ctx tools standard       17 balanced tools
+  lean-ctx tools minimal        5 essential tools
+  lean-ctx tools standard       15 balanced tools
   lean-ctx tools power          All tools (highest context overhead)
   lean-ctx tools list           List tool profiles with counts
 

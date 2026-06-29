@@ -170,9 +170,9 @@ pub(crate) fn configure_tool_profile() {
         "  {cyan}lean{rst}      — {lazy_count} tools  {dim}(lazy core, recommended — lowest token overhead){rst}"
     );
     println!(
-        "  {cyan}minimal{rst}   — 6 tools  {dim}(ctx_read, ctx_shell, ctx_search, ctx_glob, ctx_tree, ctx_symbol){rst}"
+        "  {cyan}minimal{rst}   — 5 tools  {dim}(ctx_read, ctx_shell, ctx_search, ctx_glob, ctx_tree){rst}"
     );
-    println!("  {cyan}standard{rst}  — 17 tools  {dim}(balanced set for most workflows){rst}");
+    println!("  {cyan}standard{rst}  — 15 tools  {dim}(balanced set for most workflows){rst}");
     println!(
         "  {cyan}power{rst}     — {registry_count} tools  {dim}(everything advertised, costs the most context){rst}"
     );
