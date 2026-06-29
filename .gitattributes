@@ -3,3 +3,9 @@
 # is byte-stable — Windows checkouts would otherwise convert them to CRLF and
 # fail the comparison.
 docs/reference/generated/*.md text eol=lf
+
+# Testbench fixtures, suites, recordings and lock feed `RecordedRunner` replay
+# keys verbatim (file bytes are embedded into the assembled context that is
+# hashed). Pin them to LF so Windows checkouts don't convert them to CRLF and
+# break the byte-identical key match (off-vs-on testbench, #611/#498).
+rust/eval/testbench/** text eol=lf

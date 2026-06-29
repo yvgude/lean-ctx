@@ -197,11 +197,17 @@ fn resolve(root: &Path, file_path: &str) -> PathBuf {
 }
 
 /// Label for a file inside the workspace (relative when possible, else the file name).
+///
+/// Separators are normalized to `/` so the assembled context — and therefore
+/// every `RecordedRunner` replay key derived from it — is byte-identical on
+/// Windows and Unix (#498). Without this, a nested fixture such as
+/// `config/seed-data.json` would label as `config\seed-data.json` on Windows and
+/// never match the committed Unix-generated recording.
 fn rel_label(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
         .to_string_lossy()
-        .into_owned()
+        .replace('\\', "/")
 }
 
 /// Walks `root` (respecting .gitignore + hidden filters) and returns every readable UTF-8 file

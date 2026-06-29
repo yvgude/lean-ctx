@@ -86,19 +86,25 @@ fn bench_system_instructions_token_count() {
         "TDD instructions should be <2550 tokens, got {tok_tdd}"
     );
 
-    // The <=2048 char budget governs the STATIC cold first-contact handshake
+    // The char budget governs the STATIC cold first-contact handshake
     // instructions. A live build also appends dynamic session/knowledge/gotcha
     // payload, but that is capped by INSTRUCTION_CAP_TOKENS (token budget), not
     // this char budget — and it varies with whatever session is persisted on the
     // runner. Measuring the static surface keeps the assertion deterministic
     // (#498) instead of order/state-dependent.
+    //
+    // Budget history: 2048 → 2400 (#609). The agent-loop taxonomy added the
+    // `LOOP_NAV_COMPACT` one-liner to the COMPACT/Bare channel the cold handshake
+    // renders, growing it to 2201 bytes on Unix; Windows adds the platform shell
+    // hint (~48 bytes) on top, so 2400 clears every runner with headroom while
+    // still catching a runaway regression.
     let claude_code_instr = lean_ctx::server::build_claude_code_static_instructions_for_test();
     let claude_chars = claude_code_instr.len();
     let claude_tokens = count_tokens(&claude_code_instr);
     eprintln!("  Claude Code (static): {claude_tokens:>6} tokens ({claude_chars:>5} chars)");
     assert!(
-        claude_chars <= 2048,
-        "Claude Code static instructions MUST be <=2048 chars, got {claude_chars}"
+        claude_chars <= 2400,
+        "Claude Code static instructions MUST be <=2400 chars, got {claude_chars}"
     );
     assert!(
         compact_overhead.unsigned_abs() < 300,
