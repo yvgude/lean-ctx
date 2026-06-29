@@ -579,76 +579,23 @@ fn consolidate_to_session(chunks: &[crate::core::content_chunk::ContentChunk], c
 }
 
 /// Apply consolidation artifacts to BM25, Graph, and Knowledge stores.
+/// Persist provider artifacts into the shared stores (BM25, property graph,
+/// knowledge) with additive semantics. Thin delegate to
+/// [`crate::core::consolidation::apply_artifacts_to_stores`], which owns the
+/// store-write logic so providers and the code-health fabric share one path
+/// (the fabric passes a non-default [`consolidation::PrunePrior`] to replace,
+/// rather than append to, its prior pass).
+///
 /// Called from a background thread after provider queries.
 pub fn apply_artifacts_to_stores(
     artifacts: &consolidation::ConsolidationArtifacts,
     project_root: &str,
 ) {
-    let root_path = std::path::Path::new(project_root);
-
-    // BM25: load existing index, ingest provider chunks, save
-    if !artifacts.bm25_chunks.is_empty() {
-        let mut index = crate::core::bm25_index::BM25Index::load_or_build(root_path);
-        let ingested = index.ingest_content_chunks(artifacts.bm25_chunks.clone());
-        if ingested > 0 {
-            if let Err(e) = index.save(root_path) {
-                tracing::warn!("[ctx_provider] BM25 save failed: {e}");
-            } else {
-                tracing::info!("[ctx_provider] indexed {ingested} provider chunks into BM25");
-            }
-        }
-    }
-
-    // Cross-source edges → PropertyGraph (#682/#696): the property graph is the
-    // single authoritative store for the `ctx_read` cross-source hints. The
-    // legacy JSON graph_index write was removed with the graph_index teardown —
-    // reads go through the GraphProvider facade (PG), so a second JSON copy is
-    // pure redundant work.
-    if !artifacts.edges.is_empty() {
-        match crate::core::property_graph::CodeGraph::open(project_root) {
-            Ok(pg) => {
-                let mut added = 0usize;
-                for edge in &artifacts.edges {
-                    if pg
-                        .upsert_cross_source_edge(&edge.from, &edge.to, &edge.kind, edge.weight)
-                        .is_ok()
-                    {
-                        added += 1;
-                    }
-                }
-                tracing::info!("[ctx_provider] wrote {added} cross-source edges to property graph");
-            }
-            Err(e) => tracing::warn!("[ctx_provider] property graph open failed: {e}"),
-        }
-    }
-
-    // Knowledge: load or create, remember extracted facts, save
-    if !artifacts.facts.is_empty() {
-        let policy = crate::core::memory_policy::MemoryPolicy::default();
-        let mut knowledge = crate::core::knowledge::ProjectKnowledge::load(project_root)
-            .unwrap_or_else(|| crate::core::knowledge::ProjectKnowledge::new(project_root));
-
-        let session_id = format!("provider-ingest-{}", chrono::Utc::now().timestamp());
-        for fact in &artifacts.facts {
-            knowledge.remember(
-                &fact.category,
-                &fact.key,
-                &fact.value,
-                &session_id,
-                fact.confidence,
-                &policy,
-            );
-        }
-
-        if let Err(e) = knowledge.save() {
-            tracing::warn!("[ctx_provider] knowledge save failed: {e}");
-        } else {
-            tracing::info!(
-                "[ctx_provider] remembered {} facts from provider data",
-                artifacts.facts.len()
-            );
-        }
-    }
+    consolidation::apply_artifacts_to_stores(
+        artifacts,
+        project_root,
+        &consolidation::PrunePrior::default(),
+    );
 }
 
 fn format_chunks_compact(

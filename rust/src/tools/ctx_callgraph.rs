@@ -102,7 +102,7 @@ fn handle_risk(symbol: &str, project_root: &str) -> String {
     let level = RiskLevel::from_caller_count(count);
     let direct = graph.callers_of(symbol).len();
 
-    format!(
+    let mut out = format!(
         "Risk: {} — {} transitive caller(s) of '{}' (depth≤{}, {} direct)\n\
          Thresholds: CRITICAL >10 | HIGH 5–10 | MEDIUM 2–4 | LOW 0–1",
         level.label(),
@@ -110,7 +110,17 @@ fn handle_risk(symbol: &str, project_root: &str) -> String {
         symbol,
         MAX_BFS_DEPTH,
         direct,
-    )
+    );
+
+    // Fold in the code-health dimension (#1084): a symbol that is both
+    // widely-called AND cognitively complex is the highest-leverage refactor.
+    // Sourced from the persisted health fabric (best-effort, no parsing).
+    if let Some(cc) = crate::core::code_health::fabric::hotspot_cc(project_root, symbol) {
+        out.push_str(&format!(
+            "\nComplexity: cc={cc} (over navigability threshold) — high blast-radius and hard to read."
+        ));
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------

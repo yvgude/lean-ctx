@@ -74,7 +74,7 @@ pub fn categorize_tool(name: &str) -> ToolCategory {
 
         // Arch: on-demand architecture analysis
         "ctx_architecture" | "ctx_impact" | "ctx_callgraph" | "ctx_refactor" | "ctx_symbol"
-        | "ctx_routes" | "ctx_smells" | "ctx_index" => ToolCategory::Arch,
+        | "ctx_routes" | "ctx_smells" | "ctx_quality" | "ctx_index" => ToolCategory::Arch,
 
         // Debug/Verify: on-demand quality analysis
         "ctx_benchmark" | "ctx_verify" | "ctx_analyze" | "ctx_profile" | "ctx_proof"
@@ -201,6 +201,7 @@ pub fn is_readonly_tool(name: &str) -> bool {
             | "ctx_symbol"
             | "ctx_routes"
             | "ctx_smells"
+            | "ctx_quality"
             | "ctx_index"
             | "ctx_semantic_search"
             | "ctx_explore"

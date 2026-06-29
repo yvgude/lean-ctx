@@ -73,6 +73,14 @@ pub struct GatewayServer {
     /// what runs — also records what each server is allowed to do.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<AddonCapabilities>,
+
+    /// Typed-integration adapter override (#1096, L4). Empty = *auto*: derive the
+    /// adapter from the owning addon's category in the installed store. An
+    /// explicit value forces a specific adapter and bypasses the lookup:
+    /// `codebase-pack` | `code-graph` | `code-symbols` | `memory` |
+    /// `compression` | `none`. Drives routing in [`super::postprocess`].
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub integration: String,
 }
 
 impl Default for GatewayServer {
@@ -88,6 +96,7 @@ impl Default for GatewayServer {
             url: String::new(),
             headers: BTreeMap::new(),
             capabilities: None,
+            integration: String::new(),
         }
     }
 }
@@ -164,6 +173,24 @@ pub struct GatewayConfig {
     pub call_timeout_secs: u64,
     /// Downstream MCP servers to aggregate.
     pub servers: Vec<GatewayServer>,
+
+    // --- output post-processing (deeper addon integration) ---
+    /// L1 (#1093): run downstream tool output through lean-ctx's format-aware
+    /// compressor before it reaches the model. `false` → output passes through
+    /// unchanged (legacy). The transform is a deterministic function of
+    /// (content, budget) so it never defeats provider prompt-caching (#498).
+    pub compress_output: bool,
+    /// L2 (#1094): when output exceeds `output_budget_tokens`, spill the verbatim
+    /// blob to the content-addressed archive and hand the model a `ctx_expand`
+    /// handle + summary instead of the full payload.
+    pub handle_spill: bool,
+    /// L3 (#1095): side-channel — consolidate downstream output into the BM25
+    /// index, property graph, and knowledge store (so `ctx_search` /
+    /// `ctx_semantic_search` find it later), without altering the returned text.
+    pub index_output: bool,
+    /// Token budget driving the L1 compression target and the L2 spill
+    /// threshold. Inert while every post-processing flag is off.
+    pub output_budget_tokens: usize,
 }
 
 impl Default for GatewayConfig {
@@ -174,6 +201,10 @@ impl Default for GatewayConfig {
             cache_ttl_secs: 300,
             call_timeout_secs: 30,
             servers: Vec::new(),
+            compress_output: false,
+            handle_spill: false,
+            index_output: false,
+            output_budget_tokens: 2000,
         }
     }
 }
@@ -197,6 +228,20 @@ impl GatewayConfig {
     pub fn effective_top_n(&self) -> usize {
         self.top_n.clamp(1, 50)
     }
+
+    /// Whether any output post-processing is active (L1 compress / L2 spill /
+    /// L3 index). When `false`, [`super::postprocess`] is a pure pass-through
+    /// and the proxy hot-path pays nothing.
+    pub fn postprocess_active(&self) -> bool {
+        self.compress_output || self.handle_spill || self.index_output
+    }
+
+    /// Effective output token budget, clamped away from the degenerate `0`
+    /// (which would make L1 target nothing and L2 spill everything). Floors at
+    /// 256 tokens so a misconfigured `0` still yields sane behaviour.
+    pub fn effective_output_budget(&self) -> usize {
+        self.output_budget_tokens.max(256)
+    }
 }
 
 #[cfg(test)]
@@ -210,6 +255,46 @@ mod tests {
         assert!(!cfg.enabled_effective());
         assert_eq!(cfg.effective_top_n(), 5);
         assert!(cfg.servers.is_empty());
+        // Output post-processing is opt-in: every flag off by default.
+        assert!(!cfg.compress_output);
+        assert!(!cfg.handle_spill);
+        assert!(!cfg.index_output);
+        assert!(!cfg.postprocess_active());
+        assert_eq!(cfg.effective_output_budget(), 2000);
+    }
+
+    #[test]
+    fn zero_budget_floors_to_sane_minimum() {
+        let cfg = GatewayConfig {
+            output_budget_tokens: 0,
+            ..Default::default()
+        };
+        assert_eq!(cfg.effective_output_budget(), 256);
+    }
+
+    #[test]
+    fn server_integration_field_round_trips() {
+        let toml_src = r#"
+enabled = true
+compress_output = true
+index_output = true
+output_budget_tokens = 1500
+
+[[servers]]
+name = "repomix"
+command = "npx"
+args = ["-y", "repomix", "--mcp"]
+integration = "codebase-pack"
+"#;
+        let cfg: GatewayConfig = toml::from_str(toml_src).expect("parse");
+        assert!(cfg.compress_output);
+        assert!(cfg.index_output);
+        assert!(cfg.postprocess_active());
+        assert_eq!(cfg.effective_output_budget(), 1500);
+        assert_eq!(cfg.servers[0].integration, "codebase-pack");
+        // Re-serialize and ensure the integration override survives the trip.
+        let back = toml::to_string(&cfg).expect("serialize");
+        assert!(back.contains("integration = \"codebase-pack\""));
     }
 
     #[test]

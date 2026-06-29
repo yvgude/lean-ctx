@@ -12,6 +12,7 @@
       "cost_efficiency": 3,
       "quality": 76,
       "consistency": 29,
+      "navigability": 84,
       "trend": "Rising"
     }
   },
@@ -23,3 +24,4 @@
     { "path": "/x/backend.rs", "access_count": 3, "tokens_saved": 518625, "compression_pct": 99.84 }
   ]
 }
+

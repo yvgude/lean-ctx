@@ -916,6 +916,7 @@ impl LeanCtxServer {
                     | "ctx_impact"
                     | "ctx_architecture"
                     | "ctx_smells"
+                    | "ctx_quality"
                     | "ctx_workflow"
             );
 

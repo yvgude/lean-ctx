@@ -267,6 +267,18 @@ fn build_full_instructions(
         None => String::new(),
     };
 
+    let health_block = match &project_root_for_blocks {
+        Some(root) => {
+            let block = crate::core::code_health::persist::format_session_block(root);
+            if block.is_empty() {
+                String::new()
+            } else {
+                format!("\n{block}\n")
+            }
+        }
+        None => String::new(),
+    };
+
     let shell_hint = build_shell_hint();
 
     // Skeleton includes tool-mapping rules + compression prompt (if level active).
@@ -285,6 +297,7 @@ fn build_full_instructions(
         {session_block}\n\
         {knowledge_block}\n\
         {gotcha_block}\n\
+        {health_block}\n\
         {origin}\n\
         {litm_end_block}",
         decoder_block =

@@ -51,6 +51,7 @@ pub mod ctx_prefetch;
 pub mod ctx_preload;
 pub mod ctx_proof;
 pub mod ctx_provider;
+pub mod ctx_quality;
 pub mod ctx_radar;
 pub mod ctx_read;
 pub mod ctx_refactor;

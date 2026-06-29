@@ -109,6 +109,13 @@ pub fn run() {
                 cmd_conformance(&rest);
                 return;
             }
+            "health" => {
+                let code = crate::cli::health_cmd::cmd_health(&rest);
+                if code != 0 {
+                    std::process::exit(code);
+                }
+                return;
+            }
             "billing" => {
                 cmd_billing(&rest);
                 return;

@@ -234,7 +234,8 @@ CREATE TABLE IF NOT EXISTS gain_scores (
   trend TEXT,
   avoided_usd DOUBLE PRECISION,
   tool_spend_usd DOUBLE PRECISION,
-  model_key TEXT
+  model_key TEXT,
+  navigability DOUBLE PRECISION
 );
 
 CREATE TABLE IF NOT EXISTS gotchas (
@@ -307,6 +308,8 @@ DO $$ BEGIN
   ALTER TABLE buddy_state ADD COLUMN IF NOT EXISTS state_json TEXT;
   ALTER TABLE wrapped_cards ADD COLUMN IF NOT EXISTS leaderboard_opt_in BOOLEAN NOT NULL DEFAULT FALSE;
   ALTER TABLE wrapped_cards ADD COLUMN IF NOT EXISTS tokens_saved BIGINT NOT NULL DEFAULT 0;
+  -- Code Health Engine navigability component (#1086); nullable for pre-existing rows.
+  ALTER TABLE gain_scores ADD COLUMN IF NOT EXISTS navigability DOUBLE PRECISION;
 EXCEPTION WHEN others THEN NULL;
 END $$;
 ",

@@ -42,9 +42,12 @@ impl McpTool for CtxToolsTool {
     fn handle(
         &self,
         args: &Map<String, Value>,
-        _ctx: &ToolContext,
+        ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
-        match crate::tools::ctx_tools::run(args) {
+        // `project_root` is threaded through so the gateway's L3 consolidation
+        // (#1095) can write addon output into the project's BM25/graph/knowledge
+        // stores. Empty (one-shot CLI ctx) disables project-scoped indexing.
+        match crate::tools::ctx_tools::run(args, &ctx.project_root) {
             Ok(text) => Ok(ToolOutput::simple(text)),
             Err(e) => Err(ErrorData::invalid_params(e, None)),
         }

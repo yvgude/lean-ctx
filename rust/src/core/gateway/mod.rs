@@ -12,10 +12,12 @@
 //! Net effect: unlimited downstream tools at (roughly) constant context cost.
 //! Fully no-op until `gateway.enabled = true`.
 
+pub mod adapters;
 pub mod catalog;
 pub mod client;
 pub mod config;
 pub mod pool;
+pub mod postprocess;
 pub mod router;
 
 pub use catalog::Catalog;
@@ -47,10 +49,15 @@ pub async fn find(cfg: &GatewayConfig, query: &str) -> FindOutcome {
 }
 
 /// Proxy a `server::tool` call to its owning downstream server.
+///
+/// `project_root` is the caller's project root, forwarded to the output
+/// post-processor so L3 consolidation (#1095) can index the result into the
+/// project's stores. Empty disables project-scoped indexing.
 pub async fn proxy(
     cfg: &GatewayConfig,
     handle: &str,
     arguments: Map<String, Value>,
+    project_root: &str,
 ) -> Result<String, String> {
     let (server_name, tool) = catalog::split_namespaced(handle)
         .ok_or_else(|| format!("invalid tool handle `{handle}` (expected `server::tool`)"))?;
@@ -75,11 +82,19 @@ pub async fn proxy(
     let result = call?;
     // Downstream output is untrusted content (#866): redact secrets + audit it
     // before it enters the model context.
-    let text =
+    let scrubbed =
         crate::core::addons::runtime::scrub_output(server_name, &client::result_to_text(&result));
     if result.is_error.unwrap_or(false) {
-        return Err(format!("downstream `{handle}` reported an error:\n{text}"));
+        // Error text is surfaced verbatim (already scrubbed) — never compressed
+        // or spilled, so the failure reason stays fully legible.
+        return Err(format!(
+            "downstream `{handle}` reported an error:\n{scrubbed}"
+        ));
     }
+    // Deeper addon integration: apply lean-ctx's own context-engineering to the
+    // downstream output (compress / spill+handle / index). No-op unless any
+    // `gateway.*_output` flag is set.
+    let text = postprocess::process(cfg, server, tool, scrubbed, project_root);
     Ok(text)
 }
 

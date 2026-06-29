@@ -80,7 +80,7 @@ All lean-ctx measurements are **real values** measured on the test repository. C
 | Tree-sitter AST (18 langs) | — | ✅ | ✅ | — | ✅ |
 | MCP server | — | — | — | ✅ | ✅ |
 
-**lean-ctx feature count:** 23 operations across 80 MCP tools
+**lean-ctx feature count:** 23 operations across 81 MCP tools
 
 ## Session Simulation (30-min coding)
 

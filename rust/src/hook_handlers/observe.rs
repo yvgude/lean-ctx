@@ -25,6 +25,12 @@ pub fn handle_observe() {
     // three agents register `hook observe` on SessionStart, so this is the single
     // emit point (the Codex-specific handler stays silent in dedicated mode).
     emit_dedicated_session_context(&input);
+
+    // Native-edit code-health notice (#1085): when the agent edits code with the
+    // host's native Edit/MultiEdit tools (bypassing ctx_edit's gate), surface an
+    // advisory complexity-regression notice via PostToolUse additionalContext.
+    super::edit_health::maybe_emit(&input);
+
     let Some(event) = parse_observe_event(&input) else {
         return;
     };

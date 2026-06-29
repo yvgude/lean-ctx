@@ -62,7 +62,7 @@ Running `lean-ctx init --agent <name>` or `lean-ctx setup` configures:
 
 ## Common Tools Reference
 
-Every agent gets access to the same 80 MCP tools. The most important ones:
+Every agent gets access to the same 81 MCP tools. The most important ones:
 
 | Tool | Purpose | When to Use |
 |------|---------|-------------|
@@ -128,3 +128,4 @@ lean-ctx setup
 - [Tools Reference](https://leanctx.com/docs/tools/)
 - [CLI Reference](https://leanctx.com/docs/cli-reference/)
 - [Discord Community](https://discord.gg/pTHkG9Hew9)
+

@@ -34,6 +34,13 @@ pub struct AddonMeta {
     pub license: String,
     /// Coarse buckets for browsing (e.g. `plans`, `workflow`, `search`).
     pub categories: Vec<String>,
+    /// Typed-integration adapter for the gateway output pipeline (#1096, L4).
+    /// Empty = derive from [`Self::categories`]. An explicit value forces a
+    /// specific adapter: `codebase-pack` | `code-graph` | `code-symbols` |
+    /// `memory` | `compression` | `none`. Recorded into the installed
+    /// `[[gateway.servers]]` entry so the proxy can route output without a
+    /// catalog lookup on the hot path.
+    pub integration: String,
     /// Free-form search keywords.
     pub keywords: Vec<String>,
     /// Minimum lean-ctx version the addon targets (informational).
@@ -103,6 +110,20 @@ impl AddonManifest {
         Ok(manifest)
     }
 
+    /// Resolve the typed-integration adapter kind for this addon: the explicit
+    /// `addon.integration` if set, otherwise derived from `addon.categories`.
+    /// Returns the canonical adapter slug (or empty for none).
+    pub fn integration_kind(&self) -> String {
+        use crate::core::gateway::adapters::IntegrationKind;
+        let explicit = self.addon.integration.trim();
+        let kind = if explicit.is_empty() {
+            IntegrationKind::from_categories(&self.addon.categories)
+        } else {
+            IntegrationKind::parse(explicit)
+        };
+        kind.as_str().to_string()
+    }
+
     /// Human name for display (falls back to the slug).
     pub fn display_name(&self) -> &str {
         if self.addon.display_name.trim().is_empty() {
@@ -144,6 +165,9 @@ impl AddonManifest {
             url: self.mcp.url.clone(),
             headers: self.mcp.headers.clone(),
             capabilities: self.capabilities.clone(),
+            // L4 routing: resolved from the explicit manifest field or derived
+            // from the addon's categories (#1096). Empty = generic L1-L3 only.
+            integration: self.integration_kind(),
         }
     }
 

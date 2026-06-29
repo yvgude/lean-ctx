@@ -14,6 +14,7 @@ const HOOK_STDIN_TIMEOUT: Duration = Duration::from_secs(3);
 /// bounded here and FAILS OPEN instead of wedging the host's tool call (#1035).
 const HOOK_GATING_TIMEOUT: Duration = Duration::from_secs(15);
 mod dedup;
+mod edit_health;
 mod observe;
 mod payload;
 pub use observe::*;

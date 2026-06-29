@@ -18,6 +18,7 @@ class GainDataTest {
         assertEquals("fallback-blended", data.summary.model.modelKey)
         assertEquals(68, data.summary.score.total)
         assertEquals(3, data.summary.score.costEfficiency)
+        assertEquals(84, data.summary.score.navigability)
         assertEquals("Rising", data.summary.score.trend)
     }
 
@@ -48,6 +49,8 @@ class GainDataTest {
         val data = GainCodec.parse(json)
         assertTrue(data.tasks.isEmpty())
         assertTrue(data.heatmap.isEmpty())
+        // navigability is absent here (older CLI) — must default to 0, not crash.
+        assertEquals(0, data.summary.score.navigability)
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -60,3 +63,4 @@ class GainDataTest {
         GainCodec.parse("{not valid json")
     }
 }
+

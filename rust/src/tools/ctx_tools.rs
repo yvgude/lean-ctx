@@ -39,7 +39,11 @@ impl Rt {
 }
 
 /// Execute a `ctx_tools` action, returning response text or an error message.
-pub fn run(args: &Map<String, Value>) -> Result<String, String> {
+///
+/// `project_root` is the caller's project root (from [`ToolContext`]); it is
+/// forwarded to [`gateway::proxy`] so output post-processing (#1095) can index
+/// downstream results into the project's stores. Empty = no project scope.
+pub fn run(args: &Map<String, Value>, project_root: &str) -> Result<String, String> {
     let cfg = Config::load();
     if !cfg.gateway.enabled_effective() {
         return Err(DISABLED_HINT.to_string());
@@ -51,6 +55,10 @@ pub fn run(args: &Map<String, Value>) -> Result<String, String> {
                 .to_string(),
         );
     }
+
+    // L4: expose any compression-integration addon as a named lean-ctx
+    // compressor (once per process). No-op when none are configured.
+    gateway::adapters::compression::ensure_registered(&cfg.gateway);
 
     let action = args.get("action").and_then(Value::as_str).unwrap_or("find");
     let rt = match tokio::runtime::Handle::try_current() {
@@ -92,7 +100,7 @@ pub fn run(args: &Map<String, Value>) -> Result<String, String> {
                 None | Some(Value::Null) => Map::new(),
                 Some(_) => return Err("'arguments' must be a JSON object".to_string()),
             };
-            rt.block_on(gateway::proxy(&cfg.gateway, tool, arguments))
+            rt.block_on(gateway::proxy(&cfg.gateway, tool, arguments, project_root))
         }
         other => Err(format!(
             "invalid action '{other}' (use: find, call, list, refresh)"
@@ -117,8 +125,8 @@ mod tests {
             .build()
             .unwrap();
         let args = json!({ "action": "find", "query": "anything" });
-        let out =
-            rt.block_on(async { tokio::task::block_in_place(|| run(args.as_object().unwrap())) });
+        let out = rt
+            .block_on(async { tokio::task::block_in_place(|| run(args.as_object().unwrap(), "")) });
         // Either disabled (no global config) — the dominant case in CI — or, if a
         // developer machine has it enabled, we still must not panic. We only
         // assert the message shape in the disabled/empty case.
@@ -135,6 +143,6 @@ mod tests {
     fn run_without_ambient_runtime_does_not_panic() {
         crate::test_env::remove_var("LEAN_CTX_GATEWAY");
         let args = json!({ "action": "list" });
-        let _ = run(args.as_object().unwrap()); // Ok|Err, niemals Panic
+        let _ = run(args.as_object().unwrap(), ""); // Ok|Err, niemals Panic
     }
 }

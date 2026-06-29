@@ -456,7 +456,7 @@
     cost_saved: 'The estimated tokens saved priced at average LLM input rates ($2.50/1M tokens). Inherits the estimate methodology above \u2014 ROI & Plan shows the verified (signed-ledger) figure.',
     energy_saved: 'Estimated inference energy never burned, at ~0.4 J per saved token applied to the estimated savings (same basis as the community leaderboard at leanctx.com/metrics). Real figures vary by model and hardware.',
     compression_rate: 'Share of estimated input tokens removed before sending, all-time (estimated saved \u00f7 estimated input).',
-    gain_score: 'One number (0\u2013100) for how well lean-ctx works for you: 35% compression, 25% cost efficiency, 20% quality, 20% consistency. 80+ is excellent.',
+    gain_score: 'One number (0\u2013100) for how well lean-ctx works for you: 30% compression, 25% cost efficiency, 15% quality, 15% consistency, 15% code navigability (from the Code Health Engine). Without code-health data it falls back to 35/25/20/20. 80+ is excellent.',
     total_calls: 'Total number of tool calls (reads, searches, commands) processed by LeanCTX.',
     cumulative_savings: '30-day chart showing cumulative token savings growth over time.',
     cost_analysis: 'Side-by-side comparison of original vs. compressed token costs.',
@@ -627,3 +627,4 @@
     sparklineSvg,
   };
 })();
+

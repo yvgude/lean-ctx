@@ -218,6 +218,13 @@ impl CodeGraph {
         cross_source::count(&self.conn)
     }
 
+    /// Delete every cross-source edge of a given `kind`. Used by the code-health
+    /// fabric to replace its `health_hotspot` edges on each pass so resolved
+    /// hotspots never persist as stale hints. Returns the number removed.
+    pub fn delete_cross_source_edges_by_kind(&self, kind: &str) -> anyhow::Result<usize> {
+        cross_source::delete_by_kind(&self.conn, kind)
+    }
+
     pub fn clear(&self) -> anyhow::Result<()> {
         self.conn.execute_batch(
             "DELETE FROM edges; DELETE FROM nodes; DELETE FROM file_catalog; \

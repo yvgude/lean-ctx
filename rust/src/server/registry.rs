@@ -148,6 +148,7 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::ctx_impact::CtxImpactTool));
     registry.register(Box::new(registered::ctx_architecture::CtxArchitectureTool));
     registry.register(Box::new(registered::ctx_smells::CtxSmellsTool));
+    registry.register(Box::new(registered::ctx_quality::CtxQualityTool));
     registry.register(Box::new(registered::ctx_pack::CtxPackTool));
     registry.register(Box::new(registered::ctx_plugins::CtxPluginsTool));
     registry.register(Box::new(registered::ctx_rules::CtxRulesTool));

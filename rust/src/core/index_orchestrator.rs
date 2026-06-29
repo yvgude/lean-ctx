@@ -299,6 +299,10 @@ pub fn ensure_all_background(project_root: &str) {
                     if let Err(e) = idx.save() {
                         tracing::warn!("[index_orchestrator: graph save failed: {e}]");
                     }
+                    // Code Health: refresh the persisted NavigabilityScore from the
+                    // same freshly-indexed state (gated by a source fingerprint, so a
+                    // no-op when nothing changed). Off the hot path; never panics.
+                    crate::core::code_health::persist::refresh_if_stale(&graph_root, &idx);
                 });
                 if let Ok(()) = graph_result {
                     let mut s = graph_state

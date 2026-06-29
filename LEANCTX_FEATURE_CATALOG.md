@@ -21,7 +21,7 @@ This catalog is the single feature inventory for LeanCTX at release/runtime leve
 
 ## Runtime Surface (Current)
 
-- Granular MCP tools: **80**
+- Granular MCP tools: **81**
 - Unified MCP tools: **5**
 - MCP Resources: **5**
 - MCP Prompts: **5**
@@ -43,7 +43,7 @@ This catalog is the single feature inventory for LeanCTX at release/runtime leve
 
 ---
 
-## Granular MCP Tools (80)
+## Granular MCP Tools (81)
 
 ### A) Read / Search / IO Surface
 
@@ -74,6 +74,7 @@ This catalog is the single feature inventory for LeanCTX at release/runtime leve
 - `ctx_refactor` _(LSP: rename, references, definition, implementations)_
 - `ctx_architecture`
 - `ctx_impact`
+- `ctx_quality` _(navigability score + cognitive-complexity hotspots + estimated token "quality tax"; agent twin of `lean-ctx health`)_
 - `ctx_review`
 - `ctx_pack`
 - `ctx_index`
@@ -369,3 +370,4 @@ Context packages bundle Knowledge, Graph, Session, Patterns, and Gotchas into po
   - `rust/src/templates/*` where applicable
   - this catalog
 - Historical counts in old CHANGELOG entries remain unchanged by design.
+
