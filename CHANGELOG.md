@@ -215,6 +215,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   Default off — the request is byte-identical until you opt in.
 
 ### Fixed
+- **Cline/Roo rules are MCP-first — dropped the stale `lean-ctx -c` prefix guidance
+  (GH #603).** `install_cline_rules` hardcoded a `.clinerules` body telling the agent
+  to prefix every shell command with `lean-ctx -c`, even though Cline/Roo get the
+  lean-ctx MCP server installed and the shell hook already wraps real terminal
+  commands — so the manual prefix re-wrapped an already-wrapped command, tripped the
+  re-entry passthrough and returned uncompressed output. The body now derives from
+  `core::rules_canonical` (the single source of truth) like every other dedicated
+  rule file: MCP-first (`ctx_*`), no `lean-ctx -c`, wrapped in the canonical markers
+  so `uninstall` can strip it (the old freeform header was not removable). Reported
+  by @ousatov-ua.
 - **lean-ctx no longer touches Codex under a ChatGPT subscription login (GH #597).**
   GH #568 pinned `model_provider = "leanctx-chatgpt"` (plus a
   `[model_providers.leanctx-chatgpt]` block) and `openai_base_url`/`chatgpt_base_url`
