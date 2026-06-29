@@ -12,8 +12,16 @@ use super::{ProxyState, forward, openai_responses};
 /// path as OpenAI Responses, but target `https://chatgpt.com`.
 pub async fn codex_responses_handler(
     State(state): State<ProxyState>,
-    req: Request<Body>,
+    mut req: Request<Body>,
 ) -> Result<Response, StatusCode> {
+    // Drop the "responses-lite" marker before forwarding. Codex requests the
+    // reduced lite transport on its HTTP path (`supports_websockets = false`),
+    // but chatgpt.com rejects newer subscription models there
+    // ("This model is not supported when using X-OpenAI-Internal-Codex-Responses-Lite",
+    // seen with gpt-5.5). Stripping it makes chatgpt.com serve the full Responses
+    // rail every model supports; Codex parses the full stream identically
+    // (verified single- + multi-turn `previous_response_id` continuation). #623
+    req.headers_mut().remove(CODEX_RESPONSES_LITE_HEADER);
     let upstream = state.chatgpt_upstream();
     forward::forward_request(
         State(state),
@@ -26,6 +34,11 @@ pub async fn codex_responses_handler(
     )
     .await
 }
+
+/// Codex's HTTP fallback marks the reduced "responses-lite" transport with this
+/// header. chatgpt.com gates newer subscription models behind the full rail, so
+/// the Codex ChatGPT handler strips it (see [`codex_responses_handler`]).
+const CODEX_RESPONSES_LITE_HEADER: &str = "x-openai-internal-codex-responses-lite";
 
 /// ChatGPT's Codex rail rejects WS-only continuation fields such as
 /// `previous_response_id`; ask Codex to retry through the HTTP/SSE path.

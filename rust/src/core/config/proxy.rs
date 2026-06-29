@@ -162,6 +162,14 @@ pub struct ProxyConfig {
     /// `false`. Env `LEAN_CTX_PROXY_VERBOSITY_STEER`. See
     /// [`ProxyConfig::verbosity_steer_enabled`].
     pub verbosity_steer: Option<bool>,
+    /// Opt-in: route a Codex *ChatGPT-subscription* login through the proxy for
+    /// model-turn compression. Default `None`/`false` keeps Codex native (history
+    /// visible, cloud/remote intact, no #597). When `true`, Codex setup pins the
+    /// generated `leanctx-chatgpt` provider + `chatgpt_base_url`; that scopes Codex
+    /// history to the provider (#597), so it stays opt-in. Toggle durably with
+    /// `lean-ctx proxy codex-chatgpt on|off`; resolved via
+    /// [`ProxyConfig::codex_chatgpt_proxy_enabled`].
+    pub codex_chatgpt_proxy: Option<bool>,
 }
 
 /// Per-role prose-compression intensity for the proxy's frozen request region.
@@ -300,6 +308,14 @@ impl ProxyConfig {
                 || v.eq_ignore_ascii_case("yes");
         }
         self.verbosity_steer.unwrap_or(false)
+    }
+
+    /// Resolved Codex ChatGPT-subscription proxy opt-in (default off).
+    /// `LEAN_CTX_CODEX_CHATGPT_PROXY` (any value) forces it on for the current
+    /// process, then `[proxy] codex_chatgpt_proxy` in config.toml, else `false`.
+    pub fn codex_chatgpt_proxy_enabled(&self) -> bool {
+        std::env::var("LEAN_CTX_CODEX_CHATGPT_PROXY").is_ok()
+            || self.codex_chatgpt_proxy.unwrap_or(false)
     }
 
     /// Whether the opt-in cold-prefix repack (#480) is enabled. A wrong "cold"
@@ -1168,6 +1184,26 @@ mod tests {
         crate::test_env::set_var("LEAN_CTX_PROXY_VERBOSITY_STEER", "on");
         assert!(ProxyConfig::default().verbosity_steer_enabled());
         crate::test_env::remove_var("LEAN_CTX_PROXY_VERBOSITY_STEER");
+    }
+
+    #[test]
+    fn codex_chatgpt_proxy_flag_reads_config_and_env() {
+        // Isolate from a developer shell that may export the env override.
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_CODEX_CHATGPT_PROXY");
+        assert!(
+            !ProxyConfig::default().codex_chatgpt_proxy_enabled(),
+            "Codex ChatGPT proxy opt-in defaults off"
+        );
+        let cfg = ProxyConfig {
+            codex_chatgpt_proxy: Some(true),
+            ..Default::default()
+        };
+        assert!(cfg.codex_chatgpt_proxy_enabled());
+        // An explicit env value wins even over an unset/false config.
+        crate::test_env::set_var("LEAN_CTX_CODEX_CHATGPT_PROXY", "1");
+        assert!(ProxyConfig::default().codex_chatgpt_proxy_enabled());
+        crate::test_env::remove_var("LEAN_CTX_CODEX_CHATGPT_PROXY");
     }
 
     #[test]

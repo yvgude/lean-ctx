@@ -772,13 +772,178 @@ fn bridge_custom_upstream_optin() -> bool {
     }
 }
 
+/// Pure decision for [`bridge_codex_chatgpt_optin`]: persist the env opt-in only
+/// when it is present in the shell and `[proxy] codex_chatgpt_proxy` has not
+/// already enabled it (idempotent).
+#[cfg(feature = "http-server")]
+fn should_persist_codex_chatgpt_optin(env_present: bool, current: Option<bool>) -> bool {
+    env_present && current != Some(true)
+}
+
+/// Bridges the shell's `LEAN_CTX_CODEX_CHATGPT_PROXY` opt-in into `config.toml` so
+/// the managed proxy and every env-less setup pass (the LaunchAgent / systemd
+/// proxy, the lean-ctx daemon, editor integrations, `lean-ctx setup`) honor it —
+/// none of them inherit the shell env (#449 / #590). Without this the foreground
+/// `proxy enable` writes Codex's local `chatgpt_base_url`, but the next env-less
+/// `install_proxy_env` pass sees the opt-in as `false` and strips it straight back
+/// to native, so a ChatGPT subscription never actually routes through the proxy
+/// (#603 / #616).
+///
+/// No-op unless the env opt-in is present and the config flag is not already
+/// `true` (idempotent). Returns true when it persisted the flag.
+#[cfg(feature = "http-server")]
+fn bridge_codex_chatgpt_optin() -> bool {
+    let env_present = std::env::var("LEAN_CTX_CODEX_CHATGPT_PROXY").is_ok();
+    let current = crate::core::config::Config::load()
+        .proxy
+        .codex_chatgpt_proxy;
+    if !should_persist_codex_chatgpt_optin(env_present, current) {
+        return false;
+    }
+    match crate::core::config::Config::update_global(|c| {
+        c.proxy.codex_chatgpt_proxy = Some(true);
+    }) {
+        Ok(_) => {
+            println!(
+                "  \x1b[32m✓\x1b[0m Codex ChatGPT proxy opt-in persisted: [proxy] codex_chatgpt_proxy = true"
+            );
+            println!(
+                "  \x1b[2m  (so the managed proxy and every env-less setup pass route Codex through it — the shell env never reaches them, #603/#616)\x1b[0m"
+            );
+            true
+        }
+        Err(e) => {
+            tracing::warn!("could not persist codex_chatgpt_proxy: {e}");
+            false
+        }
+    }
+}
+
+/// Action selected by `proxy codex-chatgpt <arg>`. A bare/no-arg call reports
+/// status (read-only), never silently mutating state.
+#[cfg(feature = "http-server")]
+#[derive(Debug, PartialEq, Eq)]
+enum CodexChatgptAction {
+    On,
+    Off,
+    Status,
+    Unknown,
+}
+
+/// Pure arg → action mapping for `proxy codex-chatgpt`. `on/enable/true` and
+/// `off/disable/false` are accepted as synonyms; `status` or no arg reports state.
+#[cfg(feature = "http-server")]
+fn parse_codex_chatgpt_action(arg: Option<&str>) -> CodexChatgptAction {
+    match arg {
+        Some("on" | "enable" | "true") => CodexChatgptAction::On,
+        Some("off" | "disable" | "false") => CodexChatgptAction::Off,
+        Some("status") | None => CodexChatgptAction::Status,
+        Some(_) => CodexChatgptAction::Unknown,
+    }
+}
+
+/// `lean-ctx proxy codex-chatgpt on|off`: the durable, env-free switch for routing
+/// a Codex **ChatGPT-subscription** login through the proxy (#603/#616). It writes
+/// the opt-in straight to `config.toml` — the single source of truth the env-less
+/// managed proxy and every later setup pass read — then re-applies ONLY the Codex
+/// env so Codex's `chatgpt_base_url` is written (on) or stripped (off) right away.
+/// This is what fixes the trap where exporting `LEAN_CTX_CODEX_CHATGPT_PROXY` in a
+/// shell never reached the process that actually rewrote the Codex config.
+#[cfg(feature = "http-server")]
+fn codex_chatgpt_set(on: bool, port: u16) {
+    if let Err(e) =
+        crate::core::config::Config::update_global(|c| c.proxy.codex_chatgpt_proxy = Some(on))
+    {
+        println!("\x1b[31m✗\x1b[0m Could not persist [proxy] codex_chatgpt_proxy: {e}");
+        return;
+    }
+    if on {
+        println!(
+            "\x1b[32m✓\x1b[0m Codex ChatGPT proxy routing \x1b[1menabled\x1b[0m: [proxy] codex_chatgpt_proxy = true"
+        );
+    } else {
+        println!(
+            "\x1b[32m✓\x1b[0m Codex ChatGPT proxy routing \x1b[1mdisabled\x1b[0m: [proxy] codex_chatgpt_proxy = false"
+        );
+    }
+
+    // Apply now: writes (on) or strips (off) Codex's top-level `chatgpt_base_url`.
+    let home = dirs::home_dir().unwrap_or_default();
+    crate::proxy_setup::install_codex_env(&home, port, false);
+
+    if on && !crate::proxy_setup::is_proxy_reachable(port) {
+        println!();
+        println!(
+            "  \x1b[33m⚠ Proxy not running on port {port}\x1b[0m — Codex can't route until it is up."
+        );
+        println!("    Start it:  lean-ctx proxy enable        (managed autostart service)");
+        println!("    or:        lean-ctx proxy start --port={port}");
+        println!(
+            "  \x1b[2mThe opt-in is saved, so setup writes Codex's chatgpt_base_url once the proxy is reachable.\x1b[0m"
+        );
+    }
+}
+
+/// `lean-ctx proxy codex-chatgpt status` (also the bare/no-arg form): report the
+/// resolved opt-in, its source (config vs env), whether the Codex config actually
+/// carries the proxy rail, and whether the proxy is reachable — so a user can see
+/// at a glance why Codex is or isn't routed.
+#[cfg(feature = "http-server")]
+fn codex_chatgpt_status(port: u16) {
+    let cfg = crate::core::config::Config::load();
+    let effective = cfg.proxy.codex_chatgpt_proxy_enabled();
+    println!("Codex ChatGPT proxy routing:");
+    println!(
+        "  Effective: {}",
+        if effective {
+            "\x1b[32mon\x1b[0m"
+        } else {
+            "off"
+        }
+    );
+    match cfg.proxy.codex_chatgpt_proxy {
+        Some(true) => println!("  Config:    [proxy] codex_chatgpt_proxy = true"),
+        Some(false) => println!("  Config:    [proxy] codex_chatgpt_proxy = false"),
+        None => println!("  Config:    (unset → default off)"),
+    }
+    if let Ok(v) = std::env::var("LEAN_CTX_CODEX_CHATGPT_PROXY") {
+        println!("  Env:       LEAN_CTX_CODEX_CHATGPT_PROXY={v} (forces on for this process)");
+    }
+
+    let home = dirs::home_dir().unwrap_or_default();
+    let codex_cfg = crate::core::home::resolve_codex_dir()
+        .unwrap_or_else(|| home.join(".codex"))
+        .join("config.toml");
+    let routed = std::fs::read_to_string(&codex_cfg).is_ok_and(|c| c.contains("chatgpt_base_url"));
+    println!(
+        "  Codex cfg: {}",
+        if routed {
+            "chatgpt_base_url → proxy (routed)"
+        } else {
+            "native (no proxy entry)"
+        }
+    );
+    println!(
+        "  Proxy:     {}",
+        if crate::proxy_setup::is_proxy_reachable(port) {
+            "running"
+        } else {
+            "not running"
+        }
+    );
+    if !effective {
+        println!();
+        println!("  Enable: lean-ctx proxy codex-chatgpt on");
+    }
+}
+
 pub(super) fn cmd_proxy(rest: &[String]) {
     #[cfg(feature = "http-server")]
     {
         // `--help` anywhere must never execute the verb (GH #393).
         if wants_help(rest) {
             println!(
-                "Usage: lean-ctx proxy <start|stop|restart|status|enable|disable|cleanup> [--port=4444]"
+                "Usage: lean-ctx proxy <start|stop|restart|status|enable|disable|cleanup|codex-chatgpt> [--port=4444]"
             );
             println!();
             println!("Commands:");
@@ -793,6 +958,9 @@ pub(super) fn cmd_proxy(rest: &[String]) {
             println!("  enable    Enable the proxy: config flag, autostart service, env wiring");
             println!("  disable   Disable the proxy and restore the original endpoint");
             println!("  cleanup   Remove stale proxy URLs from AI tool configs");
+            println!(
+                "  codex-chatgpt <on|off|status>  Route a Codex ChatGPT-subscription login through the proxy"
+            );
             return;
         }
         let sub = rest.first().map_or("help", std::string::String::as_str);
@@ -825,6 +993,10 @@ pub(super) fn cmd_proxy(rest: &[String]) {
                     // #590: persist the shell's custom-upstream opt-in to config
                     // before the restart so the re-read picks up the custom host.
                     bridge_custom_upstream_optin();
+                    // #603/#616: likewise persist the Codex ChatGPT-subscription
+                    // opt-in so the restarted service keeps routing Codex through
+                    // the proxy (the service never sees the shell env var).
+                    bridge_codex_chatgpt_optin();
                     // Managed service (LaunchAgent / systemd): a clean bootout +
                     // bootstrap restarts the proxy so it re-reads config.toml. It
                     // deliberately drops any `LEAN_CTX_*_UPSTREAM` env override
@@ -925,6 +1097,12 @@ pub(super) fn cmd_proxy(rest: &[String]) {
                 // the managed proxy starts, so it reads the flag on startup (the
                 // service never inherits the shell's env var).
                 bridge_custom_upstream_optin();
+                // #603/#616: same hazard for the Codex ChatGPT-subscription opt-in.
+                // The env var only reaches this foreground process; persist it so
+                // the managed proxy and every later env-less `install_proxy_env`
+                // pass route Codex through the proxy instead of stripping its
+                // `chatgpt_base_url` back to native.
+                bridge_codex_chatgpt_optin();
 
                 let port = crate::proxy_setup::default_port();
                 crate::proxy_autostart::install(port, false);
@@ -960,9 +1138,30 @@ pub(super) fn cmd_proxy(rest: &[String]) {
                     println!("  No stale proxy URLs found. Nothing to clean up.");
                 }
             }
+            "codex-chatgpt" => {
+                let port = parse_proxy_port(rest);
+                // Skip the verb itself and any `--port=`/`-p=` flag to find the action.
+                let action_arg = rest
+                    .get(1..)
+                    .unwrap_or_default()
+                    .iter()
+                    .find(|a| !a.starts_with("--port=") && !a.starts_with("-p="))
+                    .map(std::string::String::as_str);
+                match parse_codex_chatgpt_action(action_arg) {
+                    CodexChatgptAction::On => codex_chatgpt_set(true, port),
+                    CodexChatgptAction::Off => codex_chatgpt_set(false, port),
+                    CodexChatgptAction::Status => codex_chatgpt_status(port),
+                    CodexChatgptAction::Unknown => {
+                        println!("Unknown argument '{}'.", action_arg.unwrap_or(""));
+                        println!(
+                            "Usage: lean-ctx proxy codex-chatgpt <on|off|status> [--port=4444]"
+                        );
+                    }
+                }
+            }
             _ => {
                 println!(
-                    "Usage: lean-ctx proxy <start|stop|restart|status|enable|disable|cleanup> [--port=4444]"
+                    "Usage: lean-ctx proxy <start|stop|restart|status|enable|disable|cleanup|codex-chatgpt> [--port=4444]"
                 );
             }
         }
@@ -1501,6 +1700,42 @@ mod tests {
         assert!(wants_help(&args(&["restart", "--help"])));
         assert!(wants_help(&args(&["help"])));
         assert!(wants_help(&args(&["--help"])));
+    }
+
+    // #603/#616: the Codex ChatGPT-subscription opt-in must be bridged from the
+    // shell env into config.toml (the managed proxy / env-less setup passes never
+    // see the env var), but only once and never overriding an explicit config.
+    #[cfg(feature = "http-server")]
+    #[test]
+    fn codex_chatgpt_optin_persists_only_when_env_set_and_not_already_on() {
+        use super::should_persist_codex_chatgpt_optin as persist;
+        // Env opt-in present and config has not enabled it yet → persist.
+        assert!(persist(true, None));
+        assert!(persist(true, Some(false)));
+        // Already enabled in config → idempotent no-op.
+        assert!(!persist(true, Some(true)));
+        // Env absent → never touch config; config stays the source of truth.
+        assert!(!persist(false, None));
+        assert!(!persist(false, Some(false)));
+        assert!(!persist(false, Some(true)));
+    }
+
+    // The durable `proxy codex-chatgpt <arg>` switch: on/off (+ synonyms) mutate,
+    // `status`/no-arg is read-only, anything else is rejected (never a silent flip).
+    #[cfg(feature = "http-server")]
+    #[test]
+    fn codex_chatgpt_action_parsing_is_explicit() {
+        use super::CodexChatgptAction::{Off, On, Status, Unknown};
+        use super::parse_codex_chatgpt_action as parse;
+        assert_eq!(parse(Some("on")), On);
+        assert_eq!(parse(Some("enable")), On);
+        assert_eq!(parse(Some("true")), On);
+        assert_eq!(parse(Some("off")), Off);
+        assert_eq!(parse(Some("disable")), Off);
+        assert_eq!(parse(Some("false")), Off);
+        assert_eq!(parse(Some("status")), Status);
+        assert_eq!(parse(None), Status, "bare call must be read-only status");
+        assert_eq!(parse(Some("nonsense")), Unknown);
     }
 
     #[test]
