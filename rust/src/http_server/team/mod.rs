@@ -34,6 +34,7 @@ use tokio::time::Duration;
 
 use crate::tools::LeanCtxServer;
 
+pub mod connectors;
 pub mod roles;
 pub use roles::TeamRole;
 
@@ -83,6 +84,11 @@ pub struct TeamServerConfig {
     /// refuses to start with a plaintext URL. Omitted ⇒ no webhook posts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roi_webhook_url: Option<String>,
+    /// Managed connectors (#281): scheduled hosted source syncs, rendered into
+    /// `team.json` by the control plane (which enforces the `managed_connectors`
+    /// entitlement count and encrypts each `secret` at rest). Omitted ⇒ none.
+    #[serde(default)]
+    pub connectors: Vec<connectors::ConnectorConfig>,
 }
 
 fn default_true() -> bool {
@@ -273,6 +279,11 @@ pub struct TeamState {
     pub storage_roots: super::team_billing::StorageRoots,
     /// 60 s cache for the measured storage report.
     pub storage_cache: Arc<tokio::sync::Mutex<super::team_billing::StorageCache>>,
+    /// Configured managed connectors (#281), secret-bearing — never serialized
+    /// back out; [`connectors::v1_connectors`] exposes a secret-free view.
+    pub connectors: Arc<Vec<connectors::ConnectorConfig>>,
+    /// Directory holding each connector's persisted run state (one file per id).
+    pub connectors_state_dir: Arc<std::path::PathBuf>,
 }
 
 #[derive(Clone)]
@@ -801,6 +812,7 @@ async fn team_auth_middleware(
         "/v1/savings/summary" => Some("savings_summary"),
         "/v1/storage" => Some("storage"),
         "/v1/usage" => Some("usage"),
+        "/v1/connectors" => Some("connectors"),
         p if p.starts_with("/v1/savings/member/") => Some("savings_member"),
         _ => None,
     };
@@ -1376,19 +1388,44 @@ pub async fn serve_team(cfg: TeamServerConfig) -> Result<()> {
         .iter()
         .map(|w| (w.id.clone(), w.root.clone()))
         .collect();
+    let storage_roots = super::team_billing::storage_roots_from_config(
+        &cfg.audit_log_path,
+        &workspace_roots,
+        cfg.storage_quota_bytes,
+    );
+    // Connector run state lives next to the audit log / savings store on the
+    // persistent data volume, so per-connector cursors survive redeploys.
+    let connectors_state_dir = cfg
+        .audit_log_path
+        .parent()
+        .unwrap_or(std::path::Path::new("."))
+        .join("connectors");
+    let connectors = Arc::new(cfg.connectors.clone());
+
+    // Hosted managed-connector scheduler (#281): scheduled in-process syncs of
+    // each configured source into the workspace's BM25/graph/knowledge stores,
+    // paused by the storage quota backstop (#282). A no-op with no connectors.
+    connectors::spawn_scheduler(
+        connectors.clone(),
+        team_server.roots.clone(),
+        cfg.default_workspace_id.clone(),
+        connectors_state_dir.clone(),
+        storage_roots.data_root.clone(),
+        storage_roots.quota_bytes,
+        Duration::from_mins(1),
+    );
+
     let team = Arc::new(TeamState {
         auth: Arc::new(cfg.tokens.clone()),
         engine,
         audit: Arc::new(tokio::sync::Mutex::new(audit_file)),
         savings_store_dir: Arc::new(tokio::sync::Mutex::new(savings_dir)),
-        storage_roots: super::team_billing::storage_roots_from_config(
-            &cfg.audit_log_path,
-            &workspace_roots,
-            cfg.storage_quota_bytes,
-        ),
+        storage_roots,
         storage_cache: Arc::new(tokio::sync::Mutex::new(
             super::team_billing::StorageCache::default(),
         )),
+        connectors,
+        connectors_state_dir: Arc::new(connectors_state_dir),
     });
 
     let state = TeamAppState {
@@ -1447,6 +1484,7 @@ pub async fn serve_team(cfg: TeamServerConfig) -> Result<()> {
         )
         .route("/v1/storage", get(super::team_billing::v1_storage))
         .route("/v1/usage", get(super::team_billing::v1_usage))
+        .route("/v1/connectors", get(connectors::v1_connectors))
         .route(
             "/api/v1/savings/ingest",
             axum::routing::post(super::savings_ingest::v1_savings_ingest),

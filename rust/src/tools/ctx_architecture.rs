@@ -10,22 +10,10 @@ use crate::core::property_graph::CodeGraph;
 use crate::core::tokens::count_tokens;
 use serde_json::{Value, json};
 
+use crate::tools::graph_meta::{graph_summary, project_meta};
+use crate::tools::output_format::{OutputFormat, parse_format};
+
 /// Dispatches architecture analysis actions (overview, clusters, layers, cycles, entrypoints, module).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum OutputFormat {
-    Text,
-    Json,
-}
-
-fn parse_format(format: Option<&str>) -> Result<OutputFormat, String> {
-    let f = format.unwrap_or("text").trim().to_lowercase();
-    match f.as_str() {
-        "text" => Ok(OutputFormat::Text),
-        "json" => Ok(OutputFormat::Json),
-        _ => Err("Error: format must be text|json".to_string()),
-    }
-}
-
 pub fn handle(action: &str, path: Option<&str>, root: &str, format: Option<&str>) -> String {
     let fmt = match parse_format(format) {
         Ok(f) => f,
@@ -1274,82 +1262,6 @@ fn common_prefix(files: &[String]) -> String {
     } else {
         common.join("/")
     }
-}
-
-fn project_meta(root: &str) -> Value {
-    let root_hash = crate::core::project_hash::hash_project_root(root);
-    let identity_hash = crate::core::project_hash::project_identity(root)
-        .as_deref()
-        .map(crate::core::hasher::hash_str);
-
-    let root_path = Path::new(root);
-    json!({
-        "project_root_hash": root_hash,
-        "project_identity_hash": identity_hash,
-        "git": {
-            "head": git_out(root_path, &["rev-parse", "--short", "HEAD"]),
-            "branch": git_out(root_path, &["rev-parse", "--abbrev-ref", "HEAD"]),
-            "dirty": git_dirty(root_path)
-        }
-    })
-}
-
-fn graph_summary(project_root: &Path) -> Value {
-    let root_str = project_root.to_string_lossy();
-    let graph_dir = crate::core::property_graph::graph_dir(&root_str);
-    let db_path = graph_dir.join("graph.db");
-    let db_path_display = db_path.display().to_string();
-    if !db_path.exists() {
-        return json!({
-            "exists": false,
-            "db_path": db_path_display,
-            "nodes": null,
-            "edges": null
-        });
-    }
-    match CodeGraph::open(&root_str) {
-        Ok(g) => json!({
-            "exists": true,
-            "db_path": g.db_path().display().to_string(),
-            "nodes": g.node_count().ok(),
-            "edges": g.edge_count().ok()
-        }),
-        Err(_) => json!({
-            "exists": true,
-            "db_path": db_path_display,
-            "nodes": null,
-            "edges": null
-        }),
-    }
-}
-
-fn git_dirty(project_root: &Path) -> bool {
-    let out = std::process::Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(project_root)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output();
-    match out {
-        Ok(o) if o.status.success() => !o.stdout.is_empty(),
-        _ => false,
-    }
-}
-
-fn git_out(project_root: &Path, args: &[&str]) -> Option<String> {
-    let out = std::process::Command::new("git")
-        .args(args)
-        .current_dir(project_root)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8(out.stdout).ok()?;
-    let s = s.trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
 }
 
 #[cfg(test)]

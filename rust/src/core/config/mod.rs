@@ -1,9 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use super::memory_policy::MemoryPolicy;
+
+/// Cache payload for [`Config::load_arc`]: the shared config alongside the
+/// content hashes of the global and project-local files it was built from, so a
+/// later load re-reads + re-hashes and only rebuilds on a real change (#406).
+type ConfigCacheSlot = Option<(Arc<Config>, Option<String>, Option<String>)>;
 
 mod defaults_allowlist;
 mod enums;
@@ -264,6 +269,16 @@ pub struct Config {
     /// Override via LEAN_CTX_READ_ONLY_ROOTS env var (path-list separator).
     #[serde(default)]
     pub read_only_roots: Vec<String>,
+    /// Extra trusted roots OUTSIDE `$HOME` that lean-ctx may follow when an agent
+    /// config file/dir (`~/.claude.json`, `~/.codex/config.toml`, …) is a symlink
+    /// pointing there (#596). Empty by default → the strict `$HOME`-only boundary
+    /// stays in force (a planted symlink can never redirect a config write out of
+    /// the user's home, preserving the GL#442 symlink-hijack protection). Add a
+    /// parent like `/opt/dotfiles` only for a location you own and trust. Like
+    /// `extra_roots`, security-sensitive: stripped from untrusted project-local
+    /// configs. Override via LEAN_CTX_ALLOW_SYMLINK_ROOTS env var (path-list sep).
+    #[serde(default)]
+    pub allow_symlink_roots: Vec<String>,
     /// Enable content-defined chunking (Rabin-Karp) for cache-optimal output ordering.
     /// Stable chunks are emitted first to maximize prompt cache hits.
     #[serde(default)]
@@ -603,6 +618,7 @@ impl Default for Config {
             allow_ide_config_dirs: None,
             extra_roots: Vec::new(),
             read_only_roots: Vec::new(),
+            allow_symlink_roots: Vec::new(),
             content_defined_chunking: false,
             minimal_overhead: true,
             symbol_map_auto: false,
@@ -714,6 +730,10 @@ fn strip_sensitive_overrides(local: &mut Config) -> Vec<&'static str> {
     if !local.extra_roots.is_empty() {
         local.extra_roots.clear();
         withheld.push("extra_roots");
+    }
+    if !local.allow_symlink_roots.is_empty() {
+        local.allow_symlink_roots.clear();
+        withheld.push("allow_symlink_roots");
     }
     if !local.custom_aliases.is_empty() {
         local.custom_aliases.clear();
@@ -1278,10 +1298,20 @@ impl Config {
     /// cache — saw the new one (#406). Config files are tiny, so reading +
     /// hashing them on every load is negligible and guarantees liveness.
     pub fn load() -> Self {
-        static CACHE: Mutex<Option<(Config, Option<String>, Option<String>)>> = Mutex::new(None);
+        (*Self::load_arc()).clone()
+    }
+
+    /// Shared-ownership variant of [`load`](Self::load): returns the cached
+    /// `Arc<Config>` so the per-dispatch hot path bumps a refcount instead of
+    /// deep-cloning the whole struct. Liveness is identical to `load` — the
+    /// global and project-local files are still read and content-hashed on
+    /// every call (#406); only the cache payload became an `Arc`, so a cache
+    /// hit is a cheap `Arc::clone`.
+    pub fn load_arc() -> Arc<Self> {
+        static CACHE: Mutex<ConfigCacheSlot> = Mutex::new(None);
 
         let Some(path) = Self::path() else {
-            return Self::default();
+            return Arc::new(Self::default());
         };
 
         let project_root = Self::find_project_root();
@@ -1306,7 +1336,7 @@ impl Config {
             && *cached_global == global_hash
             && *cached_local == local_hash
         {
-            return cfg.clone();
+            return Arc::clone(cfg);
         }
 
         let mut cfg: Config = if let Some(ref content) = global_content {
@@ -1346,8 +1376,9 @@ impl Config {
             cfg.merge_local(local, trusted);
         }
 
+        let cfg = Arc::new(cfg);
         if let Ok(mut guard) = CACHE.lock() {
-            *guard = Some((cfg.clone(), global_hash, local_hash));
+            *guard = Some((Arc::clone(&cfg), global_hash, local_hash));
         }
 
         cfg
@@ -1616,6 +1647,11 @@ impl Config {
         // boundary), never remove them — merge mirrors extra_roots (#475).
         if !local.read_only_roots.is_empty() {
             self.read_only_roots.extend(local.read_only_roots);
+        }
+        // Symlink write-through roots (#596) follow extra_roots: a *trusted*
+        // workspace may add roots, an untrusted one is stripped above.
+        if !local.allow_symlink_roots.is_empty() {
+            self.allow_symlink_roots.extend(local.allow_symlink_roots);
         }
         if local.minimal_overhead {
             self.minimal_overhead = true;

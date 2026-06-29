@@ -83,45 +83,48 @@ fn lean_ctx() -> Command {
     cmd
 }
 
-/// Run the sandboxed binary; return trimmed stdout and the exit code.
-fn run(args: &[&str]) -> (String, i32) {
+/// Run the sandboxed binary; return trimmed stdout, trimmed stderr and the exit
+/// code. Stderr matters because the unknown-command handler reports on stderr
+/// (#1046 premium UX), so the wiring detector keys off it.
+fn run(args: &[&str]) -> (String, String, i32) {
     let out = lean_ctx()
         .args(args)
         .output()
         .expect("failed to spawn lean-ctx binary");
     let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    (stdout, out.status.code().unwrap_or(-1))
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    (stdout, stderr, out.status.code().unwrap_or(-1))
 }
 
 #[test]
 fn cli_subcommands_are_wired() {
-    // The dispatch fallthrough for an unknown command is `_ => { print_help_concise();
-    // exit(1) }`: concise help on stdout, exit 1. That pair is the *signature* of
-    // "not wired" — the exact v3.4.7 `pack`/`index` regression. Derive it from a
-    // token that can never be a real command, so the detector validates itself.
-    let (fallthrough, code) = run(&["__leanctx_not_a_command__"]);
+    // The dispatch fallthrough for an unknown command (#1046 premium UX) reports on
+    // stderr — `lean-ctx: unknown command '<cmd>'` plus a "did you mean?" hint —
+    // with empty stdout and exit 1. That stderr marker is the *signature* of "not
+    // wired" — the exact v3.4.7 `pack`/`index` regression. Derive it from a token
+    // that can never be a real command, so the detector validates itself.
+    let (stdout, stderr, code) = run(&["__leanctx_not_a_command__"]);
     assert!(
-        !fallthrough.is_empty() && code == 1,
-        "unknown-command fallthrough changed (stdout_empty={}, exit={code}); the wiring \
-         detector below keys off it",
-        fallthrough.is_empty()
+        stdout.is_empty() && stderr.contains("unknown command") && code == 1,
+        "unknown-command fallthrough changed (stdout={stdout:?}, stderr={stderr:?}, \
+         exit={code}); the wiring detector below keys off the stderr marker"
     );
 
     // Probe each command with a *garbage subcommand* — never `--help`, since e.g.
     // `pack --help` skips dashed args and runs the default PR packer (a side effect).
-    // A wired command routes to its own handler (usage to stderr / its own stdout),
-    // never the concise help; an un-wired one hits the fallthrough → stdout ==
-    // `fallthrough`. Set = the regressed entrypoints (`pack`, `index`) plus
-    // representative read / compile / observability commands, each verified
-    // side-effect-free on an unknown subcommand. The *full* tool surface is guarded
-    // MCP-side by `mcp_entrypoint_tools_are_advertised`.
+    // A wired command routes to its own handler and never emits the top-level
+    // `unknown command '<cmd>'` marker; an un-wired one hits the fallthrough and
+    // does. Set = the regressed entrypoints (`pack`, `index`) plus representative
+    // read / compile / observability commands, each verified side-effect-free on an
+    // unknown subcommand. The *full* tool surface is guarded MCP-side by
+    // `mcp_entrypoint_tools_are_advertised`.
     let probe = "__leanctx_wiring_probe__";
     for cmd in ["pack", "index", "instructions", "verify"] {
-        let (stdout, _) = run(&[cmd, probe]);
-        assert_ne!(
-            stdout, fallthrough,
-            "`lean-ctx {cmd}` falls through to the concise global help — it is not wired \
-             in cli/dispatch (the v3.4.7 entrypoint regression)."
+        let (_stdout, stderr, _code) = run(&[cmd, probe]);
+        assert!(
+            !stderr.contains(&format!("unknown command '{cmd}'")),
+            "`lean-ctx {cmd}` falls through to the unknown-command handler — it is not \
+             wired in cli/dispatch (the v3.4.7 entrypoint regression)."
         );
     }
 }

@@ -234,12 +234,23 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     );
     assert!(content.contains("lean-ctx"), "must contain lean-ctx entry");
 
+    // `doctor` is a health gate (#1046): it exits non-zero whenever *any* check
+    // needs attention, and this sandbox legitimately fails several unrelated
+    // ones (no lean-ctx on PATH, no shell profile, a fake `claude` that exits 1)
+    // — the same reason the bootstrap smoke test tolerates a non-zero code. The
+    // contract under test is the `.claude.json` fallback *detection*, which is
+    // printed to stdout regardless of the gate, so assert on the report and only
+    // guard the exit code against a hard error (panic/crash → not 0/1).
     let out = Command::new(bin)
         .args(["doctor"])
         .envs(envs.iter().copied())
         .output()
         .expect("doctor");
-    assert!(out.status.success(), "doctor exit");
+    let code = out.status.code().unwrap_or(-1);
+    assert!(
+        code == 0 || code == 1,
+        "doctor must run as a health gate (exit 0 or 1), got {code}"
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("MCP config") && stdout.contains("lean-ctx found"),

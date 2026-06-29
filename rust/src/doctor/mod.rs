@@ -82,7 +82,10 @@ impl Scoreboard {
 }
 
 /// Run diagnostic checks and print colored results to stdout.
-pub fn run() {
+/// Renders the full diagnostics board and returns how many checks need
+/// attention, so `lean-ctx doctor` can exit non-zero when something is wrong
+/// (a health gate must fail loudly, not silently exit 0).
+pub fn run() -> u32 {
     let mut board = Scoreboard::default();
 
     println!("{BOLD}{WHITE}lean-ctx doctor{RST}  {DIM}diagnostics{RST}\n");
@@ -644,6 +647,8 @@ pub fn run() {
         println!();
         println!("{banner}");
     }
+
+    needs_attention
 }
 
 pub fn run_compact() {
@@ -700,8 +705,9 @@ pub fn run_cli(args: &[String]) -> i32 {
     }
 
     if !fix {
-        run();
-        return 0;
+        // Non-zero exit when checks need attention so `lean-ctx doctor` works
+        // as a CI/health gate, not just a pretty printer.
+        return i32::from(run() > 0);
     }
 
     match fix::run_fix(&fix::DoctorFixOptions { json }) {

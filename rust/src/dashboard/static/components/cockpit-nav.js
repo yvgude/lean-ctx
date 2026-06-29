@@ -91,6 +91,7 @@ const COCKPIT_NAV_SECTIONS = [
     area: 'proof',
     items: [
       { id: 'roi', label: 'ROI & Plan', desc: 'Signed, verifiable savings plus your plan and entitlements.' },
+      { id: 'replay', label: 'Time Machine', desc: 'Rewind to any snapshot — see what the model saw, why, and the token-ROI.' },
       { id: 'learning', label: 'Trends', desc: 'How your savings and efficiency change over time.' },
       { id: 'leaderboard', label: 'Leaderboard', desc: 'Submit your tokens saved to the community leaderboard.' },
     ],

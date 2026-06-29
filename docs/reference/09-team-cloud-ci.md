@@ -55,6 +55,47 @@ lean-ctx team sync --config team.toml [--workspace <id>]
 This `git fetch`es the configured workspaces so the server's index tracks the
 latest commits. Run it on a timer (cron / CI schedule) on the server host.
 
+### Managed connectors — continuous source sync
+
+`team sync` keeps *code* fresh; **managed connectors** keep *external context*
+fresh. A connector is a scheduled, in-process sync from GitLab or GitHub into a
+workspace's BM25 + graph + knowledge stores. Once it has run, every seat's
+`ctx_semantic_search` and `ctx_knowledge` surface that source's issues, merge
+requests / PRs and pipelines — with **no per-call credentials** and no manual
+`ctx_provider` calls.
+
+Connectors are declared in the team config (`connectors[]`) — typically managed
+for you from the hosted **Account → Team → Knowledge connectors** UI rather than
+hand-edited:
+
+```jsonc
+"connectors": [
+  {
+    "id": "core-issues",
+    "provider": "github",          // or "gitlab"
+    "resource": "issues",          // gitlab: issues|merge_requests|pipelines
+    "project": "acme/widgets",     // owner/repo (GitHub) or group/project (GitLab)
+    "intervalSecs": 3600,           // clamped to a 5-minute floor
+    "secret": "<provider token>",  // plaintext only inside the private team.json
+    "enabled": true
+  }
+]
+```
+
+Behaviour worth knowing:
+
+- **Cadence floor.** `intervalSecs` is clamped to 300 s so a misconfigured
+  connector can't hammer an external API.
+- **Quota backstop.** If the hosted index is over its storage quota, ingestion
+  pauses — it never deletes data and never gates reads.
+- **Secret hygiene.** The credential lives only in the injected `team.json`; it is
+  never written to disk by the server and never returned by an API.
+- **Status.** `GET /v1/connectors` (audit scope) returns a secret-free roster
+  with each connector's last run, status and item count.
+
+See the [Team Server Contract](../contracts/team-server-contract-v2.md#managed-connectors-281)
+for the full `ConnectorConfig` schema.
+
 ---
 
 ## 2. Cloud account — sync your own data across machines

@@ -67,6 +67,7 @@ fn cfg_two(tmp: &tempfile::TempDir) -> TeamServerConfig {
         json_response: true,
         storage_quota_bytes: None,
         roi_webhook_url: None,
+        connectors: vec![],
     }
 }
 
@@ -110,6 +111,13 @@ async fn build_app(cfg: TeamServerConfig) -> Router {
         storage_cache: Arc::new(tokio::sync::Mutex::new(
             super::super::team_billing::StorageCache::default(),
         )),
+        connectors: Arc::new(cfg.connectors.clone()),
+        connectors_state_dir: Arc::new(
+            cfg.audit_log_path
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join("connectors"),
+        ),
     });
     let state = TeamAppState {
         concurrency: Arc::new(tokio::sync::Semaphore::new(4)),
@@ -132,6 +140,7 @@ async fn build_app(cfg: TeamServerConfig) -> Router {
         )
         .route("/v1/storage", get(super::super::team_billing::v1_storage))
         .route("/v1/usage", get(super::super::team_billing::v1_usage))
+        .route("/v1/connectors", get(super::connectors::v1_connectors))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             team_auth_middleware,
@@ -179,6 +188,7 @@ fn cfg_savings(tmp: &tempfile::TempDir) -> TeamServerConfig {
         json_response: true,
         storage_quota_bytes: None,
         roi_webhook_url: None,
+        connectors: vec![],
     }
 }
 
@@ -621,4 +631,78 @@ async fn storage_and_usage_scope_gated_with_metering_shapes() {
         Some(super::super::team_billing::DEFAULT_TEAM_STORAGE_QUOTA_BYTES),
         "usage storage block must carry the resolved quota"
     );
+}
+
+/// `/v1/connectors` (#281) is audit-gated like the other billing-plane reads,
+/// and its roster is secret-free: the configured credential must never appear
+/// in the response (the secret lives only in the private team.json).
+#[tokio::test]
+async fn connectors_roster_is_audit_gated_and_secret_free() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut cfg = cfg_savings(&tmp);
+    let secret = "super-secret-token-value";
+    cfg.connectors.push(connectors::ConnectorConfig {
+        id: "gl-issues".into(),
+        provider: "gitlab".into(),
+        display_name: Some("GitLab Issues".into()),
+        workspace_id: None,
+        resource: "issues".into(),
+        project: Some("group/proj".into()),
+        host: None,
+        state: Some("opened".into()),
+        limit: None,
+        interval_secs: 3_600,
+        secret: Some(secret.into()),
+        enabled: true,
+    });
+    let app = build_app(cfg).await;
+
+    // No token → 401.
+    let req = Request::builder()
+        .method("GET")
+        .uri("/v1/connectors")
+        .header("Host", "localhost")
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(req).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+
+    // Member token (no audit scope) → 403.
+    let req = Request::builder()
+        .method("GET")
+        .uri("/v1/connectors")
+        .header("Host", "localhost")
+        .header("Authorization", "Bearer member-secret")
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(req).await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+
+    // Audit token → 200 with a secret-free roster.
+    let req = Request::builder()
+        .method("GET")
+        .uri("/v1/connectors")
+        .header("Host", "localhost")
+        .header("Authorization", "Bearer owner-secret")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let raw = String::from_utf8_lossy(&bytes);
+    assert!(
+        !raw.contains(secret),
+        "connector secret leaked into /v1/connectors response"
+    );
+    let v: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(v["connector_count"], 1);
+    assert_eq!(v["connectors"][0]["id"], "gl-issues");
+    assert_eq!(v["connectors"][0]["provider"], "gitlab");
+    assert_eq!(v["connectors"][0]["hasSecret"], true);
+    // No sync has run yet, so the status is the default (no last status).
+    assert!(v["connectors"][0]["status"]["lastStatus"].is_null());
 }

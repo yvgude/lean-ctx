@@ -6,6 +6,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Managed Connectors — hosted continuous source sync (#281).** The team server
+  runs a scheduled, in-process sync of configured GitLab/GitHub sources into a
+  workspace's BM25/graph/knowledge stores, so every seat's `ctx_semantic_search` /
+  `ctx_knowledge` surfaces the source's issues/PRs/pipelines without per-call
+  credentials or manual `ctx_provider` runs. Per-connector credentials live only
+  in the private `team.json` (encrypted at rest by the control plane) and are
+  never returned; `GET /v1/connectors` exposes a secret-free roster plus
+  per-connector health, audit-scope gated. Ingestion honours the hosted storage
+  quota as a non-destructive backstop (pauses, never deletes — #282), and
+  connector activity is rolled into the `/v1/usage` snapshot (#283). The
+  `managed_connectors` count remains entitlement-gated by the control plane at
+  provisioning.
+- **Context Time Machine — git-anchored, signed snapshots of the layer state
+  (epic #1022).** The state of the context layer (what the model saw, why, and at
+  what token ROI) becomes a navigable, reproducible, shareable artifact — the
+  temporal axis through everything lean-ctx does.
+  - **`CONTEXT_SNAPSHOT_V1` (#1023).** A distilled, typed, content-addressed
+    (BLAKE3) and ed25519-signable projection of the live stores — git anchor,
+    Context IR lineage, ledger Φ-scores, ROI, and the session slice — never raw
+    transcripts. Deterministic per the output-determinism contract
+    ([contract](docs/contracts/context-snapshot-v1.md)).
+  - **Headless engine (#1024).** `lean-ctx snapshot create [--sign] | list | show
+    | verify` builds a snapshot from the live stores, anchors it to the current
+    commit, and stores it on a crash-safe, append-only timeline (`index.jsonl`);
+    `verify` proves both integrity (body hashes to its id) and the signature.
+  - **Replay in the dashboard (#1025).** A new *Time Machine* tab scrubs the
+    timeline and shows, per frame, the git anchor, ROI, lineage, ledger Φ, and the
+    session behind it, over a JSON control-plane API.
+  - **Restore / resume (#1026).** `lean-ctx snapshot restore <id> [--git]` merges
+    the snapshot's session slice (task, decisions, files) into the live session so
+    the next agent resumes where it left off, and with `--git` checks out the
+    commit anchor — guarded so it never clobbers a dirty tree. Bare-CLI sessions
+    now stamp their project root (as the MCP daemon already did), so a CLI-only
+    `session … ; snapshot create` flow captures the session slice.
+  - **Share / import (#1027).** `lean-ctx snapshot publish <id> [--out <path>]`
+    writes a signed, portable `*.ctxsnapshot.json`; `lean-ctx snapshot import
+    <file>` proves its integrity and signature and appends it to the local
+    timeline (idempotent; tampered or wrongly-signed files are refused) — so a
+    teammate can `show`, `verify`, and `restore` exactly the state you shared.
 - **Lossless memory & one consolidation engine (#995).** Project memory is now
   fully recoverable and managed by a single capacity manager. Builds on and
   supersedes the original capacity-reclaim proposal by @ousatov-ua (PR #588).
@@ -176,6 +215,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   Default off — the request is byte-identical until you opt in.
 
 ### Fixed
+- **lean-ctx no longer touches Codex under a ChatGPT subscription login (GH #597).**
+  GH #568 pinned `model_provider = "leanctx-chatgpt"` (plus a
+  `[model_providers.leanctx-chatgpt]` block) and `openai_base_url`/`chatgpt_base_url`
+  overrides in `~/.codex/config.toml` to route ChatGPT turns through the proxy. That
+  was the wrong trade for a subscription: a ChatGPT plan is **flat-rate**, so
+  compression saves no money — while the pin hid every prior conversation (Codex
+  scopes history by provider id *by design*, `openai/codex#15494`/`#19318`) from
+  `/resume`, `fork` and the Desktop picker, the `backend-api` base-URL overrides
+  funnelled Codex's **cloud/remote** + login traffic through a proxy built only for
+  model turns (breaking `codex cloud`/remote), and they made Codex depend on a live
+  local proxy. lean-ctx now writes **nothing** for ChatGPT auth — Codex talks
+  directly to `chatgpt.com`, so history, `codex cloud`/remote and login all stay
+  native (no data loss; rollouts + SQLite were always intact). **API-key Codex is
+  unchanged**: it keeps the per-token `/v1` proxy rail, where compression actually
+  cuts cost. Upgrading auto-heals: the next `lean-ctx proxy enable`/`setup` strips
+  the stale `leanctx-chatgpt` provider **and** the `backend-api` base-URL overrides,
+  and `lean-ctx doctor` flags any lingering ChatGPT-proxy entries.
 - **Shell hook no longer blocks Claude Code's Bash tool (GH #595).** Claude Code
   wraps every Bash call in its own scaffolding
   (`shopt -u extglob … && eval '<cmd>' < /dev/null && pwd -P >| /tmp/claude-XXXX-cwd`)
@@ -204,6 +260,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   - **Hijack protection kept:** following is allowed only when the resolved target
     stays within `$HOME`; a symlink whose target escapes `$HOME` is still refused,
     so a planted symlink can never redirect a config write to a system path.
+  - **Opt-in escape hatch for out-of-`$HOME` dotfiles:** power users who keep their
+    dotfiles repo outside `$HOME` (e.g. `/opt/dotfiles`) can now allow specific
+    trusted roots via the new `allow_symlink_roots` config key (or the
+    `LEAN_CTX_ALLOW_SYMLINK_ROOTS` env var). It is empty by default (strict
+    `$HOME`-only stays the default) and security-sensitive — like `extra_roots`, an
+    untrusted project-local config can never add a root. The refusal message now
+    spells out all three ways forward (`CLAUDE_CONFIG_DIR`/`CODEX_HOME`, move under
+    `$HOME`, or allow-list the root) instead of a bare "escapes `$HOME`".
   - **Robust directory setup:** a new `ensure_dir` tolerates a symlinked agent
     directory (and creates a dangling in-`$HOME` target), and the Claude/Codex
     setup steps now surface a clear error instead of silently swallowing a failed

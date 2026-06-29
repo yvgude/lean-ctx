@@ -1306,10 +1306,22 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         && crate::core::config::Config::load()
             .allow_ide_config_dirs
             .is_none()
-        && let Err(e) =
-            crate::core::config::Config::update_global(|c| c.allow_ide_config_dirs = Some(true))
     {
-        tracing::warn!("could not enable IDE config access: {e}");
+        match crate::core::config::Config::update_global(|c| {
+            c.allow_ide_config_dirs = Some(true);
+        }) {
+            // --yes is consent, but say so out loud: the user should know the
+            // path jail now includes IDE config dirs, and how to revert it.
+            Ok(_) => {
+                if !opts.json {
+                    println!(
+                        "  Enabled IDE config access (allow_ide_config_dirs) — \
+                         disable: lean-ctx config set allow_ide_config_dirs false"
+                    );
+                }
+            }
+            Err(e) => tracing::warn!("could not enable IDE config access: {e}"),
+        }
     }
 
     let finished_at = Utc::now();

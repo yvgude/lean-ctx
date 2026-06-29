@@ -509,7 +509,10 @@ fn handle_with_options_resolved(
 /// dominant "re-read an unchanged file" case proceeds under a shared lock and
 /// parallel reads of distinct files no longer serialize on a global write lock.
 pub fn try_stub_hit_readonly(cache: &SessionCache, path: &str) -> Option<ReadOutput> {
-    let current_conversation = crate::core::conversation::current_conversation_id();
+    // Resolve the caller *fresh* (TTL-bypassed): the stub gate's concurrency
+    // detection must see a just-appeared second chat with zero lag, else a stub
+    // could leak across chats in the pre-detection window (#1042).
+    let current_conversation = crate::core::conversation::current_conversation_id_fresh();
     try_stub_hit_readonly_scoped(cache, path, current_conversation.as_deref())
 }
 

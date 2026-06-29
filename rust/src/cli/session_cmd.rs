@@ -154,7 +154,19 @@ pub fn cmd_session_action(args: &[String]) {
 }
 
 fn load_or_create_session() -> SessionState {
-    SessionState::load_latest().unwrap_or_default()
+    let mut session = SessionState::load_latest().unwrap_or_default();
+    // Stamp the project root on bare-CLI sessions the way the MCP daemon does
+    // from its roots handshake. Without it a CLI-only flow
+    // (`session task … ; snapshot create`) saves a rootless session that
+    // `load_latest_for_project_root` can never match — the snapshot would then
+    // silently drop its session slice.
+    if session.project_root.is_none()
+        && let Ok(cwd) = std::env::current_dir()
+        && !crate::core::pathutil::is_broad_or_unsafe_root(&cwd)
+    {
+        session.project_root = Some(cwd.to_string_lossy().to_string());
+    }
+    session
 }
 
 fn default_opts() -> SessionToolOptions<'static> {

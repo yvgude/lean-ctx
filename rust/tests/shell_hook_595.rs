@@ -36,7 +36,18 @@ fn run_dash_c(command: &str, home: &Path) -> Output {
         .expect("failed to spawn lean-ctx binary")
 }
 
+// Claude Code's cwd-snapshot wrapper is POSIX-bash: `pwd -P >| <path>`, `source`,
+// `/dev/null`. On Windows `lean-ctx` selects PowerShell/cmd unless it is running
+// inside Git Bash, and the Windows snapshot path (backslashes) breaks when
+// embedded in a bash redirect target — so the snapshot-file half of #595 is
+// exercised on POSIX only. The security boundary (a bare model-chosen `eval`
+// stays hard-blocked) is verified on every platform by
+// `model_chosen_eval_without_cwd_marker_still_blocks` below (#1057).
 #[test]
+#[cfg_attr(
+    windows,
+    ignore = "POSIX-bash cwd snapshot; cross-platform security covered by model_chosen_eval test (#1057)"
+)]
 fn claude_wrapper_runs_inner_command_and_preserves_cwd_snapshot() {
     let tmp = tempfile::tempdir().unwrap();
     // Detection keys on a cwd-snapshot target; `-cwd` mirrors Claude's naming.
@@ -77,7 +88,14 @@ fn claude_wrapper_runs_inner_command_and_preserves_cwd_snapshot() {
     );
 }
 
+// POSIX-bash only, for the same reason as the test above: the production
+// `bashProvider.ts` shape relies on `source`/`pwd -P >|` and a POSIX shell +
+// path semantics that Windows does not provide here (#1057).
 #[test]
+#[cfg_attr(
+    windows,
+    ignore = "POSIX-bash cwd snapshot; cross-platform security covered by model_chosen_eval test (#1057)"
+)]
 fn real_bashprovider_wrapper_with_source_prefix_runs() {
     // The exact production shape from Claude Code's `bashProvider.ts`:
     // `source <snapshot> … && shopt … && eval '<cmd>' < /dev/null && pwd -P >| …`

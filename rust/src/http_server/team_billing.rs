@@ -145,6 +145,17 @@ pub async fn v1_usage(State(state): State<TeamAppState>) -> impl IntoResponse {
         "quota_bytes": state.team.storage_roots.quota_bytes,
     });
 
+    // Managed-connector activity (#281/#283): a secret-free roll-up of each
+    // connector's persisted run state, read off the runtime so the small file
+    // walk never blocks the reactor. Empty when no connectors are configured.
+    let connectors = state.team.connectors.clone();
+    let connectors_dir = state.team.connectors_state_dir.as_ref().clone();
+    let connectors_usage = tokio::task::spawn_blocking(move || {
+        super::team::connectors::usage_rollup(&connectors, &connectors_dir)
+    })
+    .await
+    .unwrap_or_else(|_| json!({}));
+
     let body = json!({
         "schemaVersion": 1,
         "generatedAt": chrono::Utc::now().to_rfc3339(),
@@ -158,6 +169,7 @@ pub async fn v1_usage(State(state): State<TeamAppState>) -> impl IntoResponse {
         // honest "tool calls" figure (each ledger entry is one measured call).
         "toolCalls": summary.totals.total_events,
         "storage": storage,
+        "connectors": connectors_usage,
     });
     (StatusCode::OK, Json(body))
 }
@@ -261,6 +273,17 @@ fn dir_allocated_bytes(path: &Path) -> u64 {
     total
 }
 
+/// Hosted-index quota backstop (#282): is the server's measured footprint at or
+/// over the plan quota? The managed-connector scheduler ([`super::team::connectors`])
+/// calls this once per tick to pause ingestion when full — it never deletes and
+/// never gates reads. Measured with the same `dir_allocated_bytes` the billing
+/// report uses, so the backstop and the bill agree. A `quota_bytes` of `0` (no
+/// quota provisioned) never trips, so an unconfigured server keeps syncing.
+#[must_use]
+pub(crate) fn is_over_quota(data_root: &Path, quota_bytes: u64) -> bool {
+    quota_bytes > 0 && dir_allocated_bytes(data_root) >= quota_bytes
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -293,6 +316,28 @@ mod tests {
             DEFAULT_TEAM_STORAGE_QUOTA_BYTES
         );
         assert_eq!(DEFAULT_TEAM_STORAGE_QUOTA_BYTES, 5_368_709_120);
+    }
+
+    /// Quota backstop (#282) for the managed-connector scheduler: a `0` quota
+    /// (unprovisioned) never trips so syncing keeps working, a measured footprint
+    /// at/over the quota does trip, and a missing data root measures zero.
+    #[test]
+    fn over_quota_only_trips_with_a_positive_quota() {
+        let d = temp_dir("overquota");
+        std::fs::write(d.join("a.bin"), vec![b'x'; 20_000]).unwrap();
+        assert!(!is_over_quota(&d, 0), "0 quota must never trip");
+        assert!(is_over_quota(&d, 1_000), "20 KiB must exceed a 1 KiB quota");
+        assert!(
+            !is_over_quota(&d, 10 * 1024 * 1024),
+            "20 KiB must not exceed a 10 MiB quota"
+        );
+        let missing = std::env::temp_dir().join("leanctx_team_billing_overquota_missing_xyz");
+        let _ = std::fs::remove_dir_all(&missing);
+        assert!(
+            !is_over_quota(&missing, 1),
+            "missing dir is never over quota"
+        );
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

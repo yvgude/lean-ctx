@@ -7,6 +7,7 @@ mod help;
 mod lifecycle;
 mod network;
 mod server;
+mod suggest;
 
 #[allow(clippy::wildcard_imports)]
 use analytics::*;
@@ -157,6 +158,10 @@ pub fn run() {
             }
             "proof" => {
                 crate::cli::cmd_proof(&rest);
+                return;
+            }
+            "snapshot" => {
+                crate::cli::cmd_snapshot(&rest);
                 return;
             }
             "verify" => {
@@ -774,8 +779,12 @@ pub fn run() {
             }
             "mcp" => {}
             _ => {
-                tracing::error!("lean-ctx: unknown command '{}'", args[1]);
-                print_help_concise();
+                let unknown = &args[1];
+                eprintln!("lean-ctx: unknown command '{unknown}'");
+                if let Some(suggestion) = suggest::closest_command(unknown) {
+                    eprintln!("       did you mean '{suggestion}'?");
+                }
+                eprintln!("       run 'lean-ctx help' for the full command list");
                 std::process::exit(1);
             }
         }
@@ -842,9 +851,15 @@ fn passthrough(command: &str) -> ! {
 }
 
 pub(super) fn run_async<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Runtime::new()
-        .expect("failed to create async runtime")
-        .block_on(future)
+    // A failed runtime build (e.g. exhausted FDs) must not abort with a panic
+    // backtrace the user can't act on — report it plainly and exit.
+    match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt.block_on(future),
+        Err(e) => {
+            eprintln!("lean-ctx: failed to create async runtime: {e}");
+            std::process::exit(1);
+        }
+    }
 }
 
 #[cfg(test)]

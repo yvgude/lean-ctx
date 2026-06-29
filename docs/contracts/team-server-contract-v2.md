@@ -2,7 +2,7 @@
 
 GitLab: `#2331`, `#387`, `#388`  
 Pillar: Context Delivery  
-Scope: workspaces, scopes, audit log, dot-path rewrite, hosted-storage quota, ROI webhook
+Scope: workspaces, scopes, audit log, dot-path rewrite, hosted-storage quota, ROI webhook, managed connectors
 
 > v2 is **additive** over [v1](team-server-contract-v1.md): every v1 guarantee
 > holds unchanged. v2 adds the optional `storageQuotaBytes` and `roiWebhookUrl`
@@ -39,6 +39,9 @@ File is JSON.
   Slack/Discord/generic webhook; when set, the server posts a weekly team-ROI
   summary (once per ISO week, real reported numbers only; state in
   `savings/roi_webhook_state.json`). A non-https URL is a startup error.
+- `connectors` (array, optional, GL #281) — managed source syncs; each entry is a
+  `ConnectorConfig` (see [Managed Connectors](#managed-connectors-281)). Omitted ⇒
+  the feature is off and the scheduler never starts.
 
 ## Workspace selection
 
@@ -68,7 +71,7 @@ Scope enforcement is tool/action-aware. Tokens must include required scopes for 
 | `events` | `GET /v1/events` SSE stream |
 | `sessionMutations` | `ctx_session` (mutating: `save`, `set_task`, `task`, `checkpoint`, `finding`, `decision`, `reset`, `import`), `ctx_handoff`, `ctx_workflow`, `ctx_share` |
 | `knowledge` | `ctx_knowledge` (mutating: `remember`, `feedback`, `remove`, `consolidate`), `ctx_knowledge_relations` (mutating: `relate`, `unrelate`) |
-| `audit` | `GET /v1/metrics`, full-payload event access, audit log reads |
+| `audit` | `GET /v1/metrics`, `GET /v1/connectors`, full-payload event access, audit log reads |
 
 Errors:
 
@@ -96,6 +99,51 @@ with `lean-ctx team token create --role <viewer|member|admin|owner>` (or
 > Additive / Team-Cloud plane only — never gates the local plane. SSO/SCIM,
 > org-shared knowledge graph, and audit-retention dashboards build on this role
 > model and are tracked on the commercial plane (EPIC 13.2).
+
+## Managed Connectors (#281)
+
+A *connector* is a scheduled, in-process sync from an external source into a
+workspace's long-term stores (BM25 + graph + knowledge). Once a connector has
+run, `ctx_semantic_search` and `ctx_knowledge` surface the source's issues / PRs
+/ pipelines to every seat — no per-call credential transport, no manual
+`ctx_provider` invocation.
+
+### `ConnectorConfig`
+
+Each entry of `connectors[]` (camelCase JSON):
+
+- `id` (string, required) — stable, file-safe, unique within the instance.
+- `provider` (string, required) — `gitlab` | `github`.
+- `resource` (string, required) — gitlab `issues|merge_requests|pipelines`;
+  github `issues|pull_requests|actions`.
+- `project` (string, optional) — `group/project` (GitLab) or `owner/repo` (GitHub).
+- `host` (string, optional) — GitLab host (default `gitlab.com`) or GitHub API
+  base (default `https://api.github.com`).
+- `state` (string, optional) — provider state filter (e.g. `opened`).
+- `limit` (number, optional, default 50) — max items per sync.
+- `intervalSecs` (number, optional, default 3600) — sync cadence, **clamped to a
+  300 s floor** to protect external APIs.
+- `secret` (string, optional) — the provider credential. **Plaintext only inside
+  the private `team.json`** (a control-plane-injected env var); it is never
+  written to disk by the server and never returned by any endpoint.
+- `workspaceId` (string, optional) — target workspace; the instance default when omitted.
+- `displayName` (string, optional).
+- `enabled` (bool, default true).
+
+### Scheduler
+
+A single background scheduler ticks once a minute, runs each *due* connector
+(`now ≥ lastRun + effectiveInterval`) on the blocking pool, and records the
+outcome per connector under `<state_dir>/<id>.json` (never the credential). When
+the hosted index is **over quota** (GL #282) ingestion pauses (never deletes,
+never gates reads); the connector records an `error` status and waits its
+interval before retrying.
+
+### `GET /v1/connectors`
+
+Audit-scoped. Returns the **secret-free** roster + per-connector sync status
+(`lastRunAt`, `lastStatus` `ok|error`, `lastError`, `lastItemCount`,
+`totalRuns`, `totalItems`, `hasSecret`). The credential is never exposed.
 
 ## Audit log (JSONL)
 

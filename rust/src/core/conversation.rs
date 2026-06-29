@@ -31,6 +31,22 @@
 //! feed this signal (they short-circuit on their `task:` scope), so a parent +
 //! its subagents are not counted as concurrent.
 //!
+//! ### Zero detection lag, and the host limit (#1042)
+//!
+//! The stub decision resolves the caller with [`current_conversation_id_fresh`],
+//! which re-samples `active_transcript.json` (bypassing the `REFRESH_TTL`
+//! cache) and notes the writer *before* the gate runs. A freshly-appeared second
+//! chat is therefore detected with no lag, closing the small window in which a
+//! stub could still leak before the next refresh sampled it.
+//!
+//! What is *not* reachable as a pure lean-ctx change is recovering the stub
+//! savings while chats run concurrently: that needs a per-call caller identity,
+//! and Cursor exposes none. The MCP `tools/call` carries no conversation id (no
+//! documented `_meta`), and a `beforeMCPExecution` hook can gate a call's
+//! *permission* but not rewrite its *arguments*. So the daemon cannot prove
+//! which chat a direct `ctx_read` belongs to, and withholding under concurrency
+//! stays the correct ceiling until the host adds per-call identity.
+//!
 //! Disabled with `LEAN_CTX_CONVERSATION_SCOPE=0` (falls back to the legacy
 //! process-scoped behavior).
 
@@ -105,22 +121,58 @@ fn subagent_scope() -> Option<String> {
 /// The current conversation id, or `None` when no conversation context is
 /// available (hooks not installed, TTL expired with no prior value, or scoping
 /// disabled). `None` preserves the legacy process-scoped cache behavior.
+///
+/// Answers from the `REFRESH_TTL` cache when warm, so the read hot path never
+/// stats+parses a file on every call.
 pub fn current_conversation_id() -> Option<String> {
+    resolve_conversation_id(Freshness::Cached)
+}
+
+/// Like [`current_conversation_id`] but bypasses the `REFRESH_TTL` cache to
+/// re-sample `active_transcript.json` now. Used only on the re-read stub decision
+/// path: re-sampling notes a freshly-appeared second chat into the recency log
+/// (via `refresh`) *before* the gate runs, so concurrency is detected with no
+/// TTL lag and a stub can never leak to chat B in the window before detection
+/// catches up (#1042). The cost is one tiny, OS-cached transcript read per
+/// re-read — negligible against the source re-read it guards.
+pub fn current_conversation_id_fresh() -> Option<String> {
+    resolve_conversation_id(Freshness::Fresh)
+}
+
+/// Whether [`resolve_conversation_id`] may answer from the [`REFRESH_TTL`] cache
+/// ([`Freshness::Cached`]) or must re-sample the transcript ([`Freshness::Fresh`]).
+#[derive(Clone, Copy)]
+enum Freshness {
+    Cached,
+    Fresh,
+}
+
+/// Shared resolver behind [`current_conversation_id`] and its `_fresh` variant.
+/// The scope-off and subagent short-circuits are identical for both; only the
+/// `Cached` arm consults the TTL cache before falling through to [`refresh`].
+fn resolve_conversation_id(freshness: Freshness) -> Option<String> {
     if !scope_enabled() {
         return None;
     }
     // A subagent is its own scope (see `subagent_scope`) and that wins over the
-    // transcript id, so a subagent never inherits the parent's delivery identity.
+    // transcript id, so a subagent never inherits the parent's delivery identity
+    // — and never samples the transcript, so it can't feed the concurrency signal.
     if let Some(scope) = subagent_scope() {
         return Some(scope);
     }
     if let Ok(guard) = store().read()
         && let Some(cached) = guard.as_ref()
-        && cached.refreshed_at.elapsed() < REFRESH_TTL
+        && cache_is_usable(freshness, cached.refreshed_at.elapsed(), REFRESH_TTL)
     {
         return cached.value.clone();
     }
     refresh()
+}
+
+/// Pure core of the cache-vs-resample choice: a `Fresh` request always
+/// re-samples; a `Cached` one reuses an entry younger than `ttl`.
+fn cache_is_usable(freshness: Freshness, age: Duration, ttl: Duration) -> bool {
+    matches!(freshness, Freshness::Cached) && age < ttl
 }
 
 fn refresh() -> Option<String> {
@@ -309,6 +361,28 @@ mod tests {
     fn cold_stub_withheld_under_concurrency() {
         // #1040: a matching cold stub is still withheld while chats are multiplexed.
         assert!(!allows_cold_stub(true, Some("c"), Some("c")));
+    }
+
+    #[test]
+    fn fresh_request_resamples_cached_request_honors_ttl() {
+        let ttl = Duration::from_secs(3);
+        // `Fresh` ignores the cache even for a brand-new entry → always re-samples,
+        // so the stub gate sees a just-appeared second chat with zero lag (#1042).
+        assert!(!cache_is_usable(
+            Freshness::Fresh,
+            Duration::from_millis(0),
+            ttl
+        ));
+        assert!(!cache_is_usable(Freshness::Fresh, ttl * 100, ttl));
+        // `Cached` reuses a within-TTL entry but re-samples once it has expired
+        // (age == ttl is already expired: the window is a strict `<`).
+        assert!(cache_is_usable(
+            Freshness::Cached,
+            Duration::from_secs(1),
+            ttl
+        ));
+        assert!(!cache_is_usable(Freshness::Cached, ttl, ttl));
+        assert!(!cache_is_usable(Freshness::Cached, ttl * 2, ttl));
     }
 
     #[test]

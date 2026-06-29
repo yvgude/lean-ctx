@@ -647,6 +647,27 @@ pub fn builtin_profiles() -> HashMap<String, Profile> {
     map
 }
 
+/// Constructs a single built-in profile by name, building only the one
+/// requested.
+///
+/// `active_profile()` resolves to a built-in on most calls (no on-disk
+/// override), and it is invoked many times per tool dispatch. Going through
+/// [`builtin_profiles`] there materialized all seven profile structs just to
+/// drop six — this hot-path shortcut builds exactly one. The match arms must
+/// stay in sync with [`builtin_profiles`].
+fn builtin_profile(name: &str) -> Option<Profile> {
+    match name {
+        "coder" => Some(builtin_coder()),
+        "exploration" => Some(builtin_exploration()),
+        "bugfix" => Some(builtin_bugfix()),
+        "hotfix" => Some(builtin_hotfix()),
+        "ci-debug" => Some(builtin_ci_debug()),
+        "review" => Some(builtin_review()),
+        "passthrough" => Some(builtin_passthrough()),
+        _ => None,
+    }
+}
+
 // ── Loading ────────────────────────────────────────────────
 
 fn profiles_dir_global() -> Option<PathBuf> {
@@ -684,7 +705,7 @@ fn load_profile_recursive(name: &str, depth: usize) -> Option<Profile> {
         return None;
     }
 
-    let mut profile = load_profile_from_disk(name).or_else(|| builtin_profiles().remove(name))?;
+    let mut profile = load_profile_from_disk(name).or_else(|| builtin_profile(name))?;
     profile.profile.name = name.to_string();
 
     if let Some(ref parent_name) = profile.profile.inherits.clone()

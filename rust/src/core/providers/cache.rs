@@ -8,8 +8,6 @@ static PROVIDER_CACHE: std::sync::LazyLock<Mutex<ProviderCache>> =
 struct CacheEntry {
     data: String,
     expires_at: Instant,
-    #[allow(dead_code)]
-    created_at: SystemTime,
     provider_id: String,
 }
 
@@ -82,14 +80,13 @@ impl ProviderCache {
     }
 
     fn set(&mut self, key: String, data: String, ttl: Duration, provider_id: &str) {
-        let now = SystemTime::now();
-        self.last_fetch.insert(provider_id.to_string(), now);
+        self.last_fetch
+            .insert(provider_id.to_string(), SystemTime::now());
         self.entries.insert(
             key,
             CacheEntry {
                 data,
                 expires_at: Instant::now() + ttl,
-                created_at: now,
                 provider_id: provider_id.to_string(),
             },
         );

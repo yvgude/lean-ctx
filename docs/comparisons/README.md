@@ -85,6 +85,15 @@ frozen/stable/experimental, frozen surfaces SHA-256-locked in CI, and a public
 `/v1` API that can only grow. Integrations built on lean-ctx cannot silently
 break — a claim no other tool in this matrix makes.
 
+### Where this is heading: a temporal axis
+
+The three layers don't just stack — they're composing into a navigable history.
+lean-ctx already records *why* the model saw each item (Context Ledger), signs
+*what* it saw (Context Proof), and persists memory across runs, so that state can
+be git-anchored into a **Context Snapshot** you rewind, reproduce, resume, or
+share. This is a published direction, not yet a shipped feature — see the
+[Context Time Machine concept](../concepts/context-time-machine.md).
+
 ## Our Approach to Comparisons
 
 - **Factual and data-driven**: real feature counts, real star counts, real capabilities
@@ -98,3 +107,4 @@ break — a claim no other tool in this matrix makes.
 *Last updated: June 2026. Star counts and features reflect latest public releases; the lean-ctx tool count is generated from the registry (`docs/reference/generated/mcp-tools.md`).*
 
 [Get started with lean-ctx →](https://leanctx.com/docs/getting-started)
+

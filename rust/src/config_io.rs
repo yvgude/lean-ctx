@@ -256,7 +256,7 @@ fn resolve_write_target(path: &Path) -> Result<PathBuf, String> {
     }
 
     let real_target = resolve_symlink_target(path)?;
-    ensure_within_home(path, &real_target)?;
+    ensure_target_allowed(path, &real_target)?;
     Ok(real_target)
 }
 
@@ -308,20 +308,57 @@ fn canonicalize_existing_prefix(path: &Path) -> Result<PathBuf, String> {
     }
 }
 
-/// SECURITY (#596 / GL#442): a resolved symlink target must stay within `$HOME`.
-fn ensure_within_home(link_path: &Path, real_target: &Path) -> Result<(), String> {
+/// SECURITY (#596 / GL#442): a resolved symlink target must stay within `$HOME`
+/// or under one of the explicitly opted-in [`allowed_symlink_roots`]. Otherwise
+/// a planted symlink could redirect a config write to an attacker-chosen path.
+fn ensure_target_allowed(link_path: &Path, real_target: &Path) -> Result<(), String> {
     let home = crate::core::home::resolve_home_dir()
         .ok_or_else(|| "cannot determine $HOME to validate symlink target".to_string())?;
     let real_home = crate::core::pathutil::canonicalize_secure_or_self(&home);
     if real_target.starts_with(&real_home) {
-        Ok(())
-    } else {
-        Err(format!(
-            "refusing to write through symlink whose target escapes $HOME: {} -> {}",
-            link_path.display(),
-            real_target.display()
-        ))
+        return Ok(());
     }
+    if allowed_symlink_roots()
+        .iter()
+        .any(|root| real_target.starts_with(root))
+    {
+        return Ok(());
+    }
+    Err(format!(
+        "refusing to write through a symlink whose target escapes $HOME:\n  \
+         {} -> {}\n  \
+         The target is outside your home directory, so lean-ctx will not follow it \
+         (symlink-hijack protection). To allow this location, either:\n    \
+         - point the agent at the real path (set CLAUDE_CONFIG_DIR / CODEX_HOME), or\n    \
+         - move the target under $HOME, or\n    \
+         - add its parent to `allow_symlink_roots` in your lean-ctx config \
+         (or the LEAN_CTX_ALLOW_SYMLINK_ROOTS env var).",
+        link_path.display(),
+        real_target.display()
+    ))
+}
+
+/// Trusted roots OUTSIDE `$HOME` the user explicitly opted into for symlinked
+/// agent configs (#596). Sourced from the `LEAN_CTX_ALLOW_SYMLINK_ROOTS` env var
+/// (path-list separator) and the user-level `allow_symlink_roots` config key
+/// (untrusted project-local configs are stripped at load — see
+/// `strip_sensitive_overrides`). Each entry is made absolute + canonicalized so
+/// the boundary check compares real paths; relative/empty entries are dropped.
+fn allowed_symlink_roots() -> Vec<PathBuf> {
+    let mut raw: Vec<PathBuf> = Vec::new();
+    if let Some(env) = std::env::var_os("LEAN_CTX_ALLOW_SYMLINK_ROOTS") {
+        raw.extend(std::env::split_paths(&env));
+    }
+    raw.extend(
+        crate::core::config::Config::load()
+            .allow_symlink_roots
+            .into_iter()
+            .map(PathBuf::from),
+    );
+    raw.into_iter()
+        .filter(|p| !p.as_os_str().is_empty() && p.is_absolute())
+        .map(|p| crate::core::pathutil::canonicalize_secure_or_self(&p))
+        .collect()
 }
 
 /// `create_dir_all` that tolerates a user-managed symlinked directory (#596):
@@ -340,9 +377,10 @@ pub fn ensure_dir(dir: &Path) -> Result<(), String> {
                     dir.display()
                 )),
                 Err(_) => {
-                    // Dangling symlink: create the intended target if it is in $HOME.
+                    // Dangling symlink: create the intended target if it is in
+                    // $HOME (or an explicitly allow-listed root, #596).
                     let real_target = resolve_symlink_target(dir)?;
-                    ensure_within_home(dir, &real_target)?;
+                    ensure_target_allowed(dir, &real_target)?;
                     std::fs::create_dir_all(&real_target).map_err(|e| {
                         format!(
                             "cannot create symlink target dir {}: {e}",
@@ -585,10 +623,61 @@ mod symlink_596_tests {
 
         let err = write_atomic(&link, "x").unwrap_err();
         assert!(err.contains("escapes $HOME"), "got: {err}");
+        assert!(
+            err.contains("allow_symlink_roots"),
+            "error must point at the opt-in escape hatch, got: {err}"
+        );
         assert_eq!(
             std::fs::read_to_string(&target).unwrap(),
             "{}",
             "an escaping target must be left untouched"
+        );
+    }
+
+    /// RAII override of `LEAN_CTX_ALLOW_SYMLINK_ROOTS` (restores on drop).
+    struct AllowRootsGuard(Option<std::ffi::OsString>);
+    impl AllowRootsGuard {
+        fn set(value: &std::ffi::OsStr) -> Self {
+            let prev = std::env::var_os("LEAN_CTX_ALLOW_SYMLINK_ROOTS");
+            crate::test_env::set_var("LEAN_CTX_ALLOW_SYMLINK_ROOTS", value);
+            AllowRootsGuard(prev)
+        }
+    }
+    impl Drop for AllowRootsGuard {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(v) => crate::test_env::set_var("LEAN_CTX_ALLOW_SYMLINK_ROOTS", v),
+                None => crate::test_env::remove_var("LEAN_CTX_ALLOW_SYMLINK_ROOTS"),
+            }
+        }
+    }
+
+    #[test]
+    fn allows_symlink_escape_when_target_root_is_allowlisted() {
+        // #596 premium: an out-of-$HOME target IS written through once its root
+        // is explicitly opted into via LEAN_CTX_ALLOW_SYMLINK_ROOTS.
+        let _lock = crate::core::data_dir::test_env_lock();
+        let home = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let _home = HomeGuard::set(home.path());
+
+        // Canonical root (macOS tempdirs live under /var → /private/var).
+        let real_outside = std::fs::canonicalize(outside.path()).unwrap();
+        let target = real_outside.join("agent.json");
+        std::fs::write(&target, "{}\n").unwrap();
+        let link = home.path().join(".agent.json");
+        symlink(&target, &link).unwrap();
+
+        let _roots = AllowRootsGuard::set(real_outside.as_os_str());
+        write_atomic(&link, "{\"k\":1}\n").unwrap();
+
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "{\"k\":1}\n");
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "the user symlink must be preserved (write-through, not replace)"
         );
     }
 

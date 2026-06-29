@@ -49,6 +49,7 @@ const COCKPIT_AREAS = [
     job: 'proves what you save',
     tabs: [
       { tab: 'roi', view: 'roi', label: 'ROI & Plan' },
+      { tab: 'replay', view: 'replay', label: 'Time Machine' },
       { tab: 'trends', view: 'learning', label: 'Trends' },
       { tab: 'leaderboard', view: 'leaderboard', label: 'Leaderboard' },
     ],
@@ -88,6 +89,7 @@ const ROUTE_ALIASES = {
 const KNOWN_ROUTES = [
   'overview',
   'roi',
+  'replay',
   'learning',
   'leaderboard',
   'commander',
@@ -113,6 +115,7 @@ const KNOWN_ROUTES = [
 const ROUTE_LABELS = {
   overview: 'Home',
   roi: 'ROI & Plan',
+  replay: 'Time Machine',
   learning: 'Trends',
   leaderboard: 'Leaderboard',
   commander: 'Context Triage',
@@ -139,6 +142,7 @@ const ROUTE_LABELS = {
 const ROUTE_DESCRIPTIONS = {
   overview: 'Status, receipt and top savings — the 5-second answer.',
   roi: 'Signed, verifiable savings plus your plan and entitlements.',
+  replay: 'Rewind to any snapshot — see what the model saw, why, and the token-ROI.',
   learning: 'How your savings and efficiency change over time.',
   leaderboard: 'Submit your tokens saved to the community leaderboard.',
   commander: 'Context-window pressure and what to trim — your to-do list.',
@@ -358,6 +362,7 @@ function initRouter() {
   var viewElementMap = {
     overview: 'overviewView',
     roi: 'roiView',
+    replay: 'replayView',
     leaderboard: 'leaderboardView',
     commander: 'commanderView',
     context: 'contextView',

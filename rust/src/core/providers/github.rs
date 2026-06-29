@@ -328,6 +328,15 @@ impl GitHubProvider {
             config: GitHubConfig::from_env(),
         }
     }
+
+    /// Construct with an explicit config, bypassing env discovery. Used by the
+    /// hosted team server's managed connectors so each scheduled run carries its
+    /// own credential without mutating process-global env (which would race
+    /// across connectors).
+    #[must_use]
+    pub fn with_config(config: GitHubConfig) -> Self {
+        Self { config: Ok(config) }
+    }
 }
 
 impl Default for GitHubProvider {

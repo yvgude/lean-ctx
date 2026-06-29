@@ -287,6 +287,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
+        "allow_symlink_roots".into(),
+        key_with_env(
+            "string[]",
+            serde_json::json!(cfg.allow_symlink_roots),
+            "Trusted roots OUTSIDE $HOME lean-ctx may follow when an agent config is symlinked there (#596). Empty = strict $HOME-only",
+            "LEAN_CTX_ALLOW_SYMLINK_ROOTS",
+        ),
+    );
+    root.insert(
         "content_defined_chunking".into(),
         key(
             "bool",

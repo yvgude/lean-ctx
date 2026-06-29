@@ -25,7 +25,7 @@ flowchart TB
         DegradationEval["Degradation Policy — evaluate_v1_for_tool"]
         ContextGate["Context Gate — pre: bounce/intent/graph/knowledge; post: ledger, overlays, eviction, elicitation"]
         HybridDispatch["Hybrid Dispatch — Context Server (80 tools)"]
-        ToolRegistry["ToolRegistry — 75 trait-based tools (McpTool)"]
+        ToolRegistry["ToolRegistry — 80 trait-based tools (McpTool)"]
         DispatchRegistry["Registry dispatch — dispatch/mod.rs (majority of tools)"]
         PostPipeline["Post-Pipeline — Context IR, tokens, archive, density, translation, verify, enrich, auto-response, evidence, sandbox routing"]
     end
@@ -596,7 +596,7 @@ flowchart LR
 |:---|:---|
 | `server/mod.rs` | `LeanCtxServer` — MCP server state, `call_tool` pipeline (dispatch + post-processing + Context IR recording) |
 | `server/tool_trait.rs` | `McpTool` trait, `ToolOutput`, `ToolContext` — interface for self-contained tools |
-| `server/registry.rs` | `ToolRegistry` — HashMap-based tool lookup, `build_registry()` registers all 79 trait-based tools |
+| `server/registry.rs` | `ToolRegistry` — HashMap-based tool lookup, `build_registry()` registers all 80 trait-based tools |
 | `server/dispatch/mod.rs` | Registry dispatch — `dispatch_inner` resolves every tool through the `ToolRegistry` (80 tools); `ctx_call` routes meta-invocations back through it |
 | `server/context_gate.rs` | Context Gate — post-dispatch for ctx_read: ledger recording, eviction/elicitation hints, pressure tracking |
 | `server/resources.rs` | MCP Resources — 5 URI-addressable subscribe-capable resources (`lean-ctx://context/*`) |
@@ -1118,6 +1118,17 @@ The frontend (`cockpit-context.js`) renders these as a unified control panel wit
 34. **Dynamic tool categories** — Tools are organized into 6 categories (core, arch, debug, memory, metrics, session). Clients supporting `tools/list_changed` get only core+session at startup; others are loaded on-demand. This reduces initial schema overhead and respects tool count limits (e.g., Windsurf's 100-tool cap).
 
 35. **Dashboard Control Plane** — 4 new API endpoints (/api/context-bounce, -client, -pressure, -dynamic-tools) expose runtime state. The frontend cockpit-context.js panel provides live visibility into IDE detection, budget pressure, bounce rates, and dynamic tool loading.
+
+## Direction: Context Time Machine
+
+The IR / proof / ledger foundations above are designed to compose into a single
+temporal artifact. **Context IR** records live lineage (what entered context, from
+where, at what token cost); **Context Proof** signs point-in-time snapshots with
+replay hashes; the **Context Ledger** explains *why* each item was included, with
+its Φ-score. Git-anchoring these and chaining them across commits yields a
+**Context Snapshot** — a signed, navigable record you can rewind, reproduce,
+resume, or share. This is a documented direction (not yet shipped); the design
+lives in [`docs/concepts/context-time-machine.md`](docs/concepts/context-time-machine.md).
 
 ## Diagram 5: Context Field Theory (CFT) Architecture
 

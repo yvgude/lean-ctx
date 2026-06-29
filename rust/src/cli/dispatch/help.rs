@@ -148,6 +148,7 @@ COMMANDS:
     learning [status|export|import]  Adaptive-learning state: inspect, share with team, merge
          token-report [--json]          Token + memory report (project + session + CEP)
     pack --pr                      PR Context Pack (changed files, impact, tests, artifacts)
+    snapshot create|list|show|verify|restore|publish|import  Context Time Machine: git-anchored, signed snapshots; replay, resume + share
     index <status|build|build-full|watch>  Codebase index utilities
     cep                            CEP report (compression metrics, cache, modes, trends)
     verify-cache [path] [--json]   Prove the session cache: re-read collapses to a ~13-token stub
@@ -159,7 +160,7 @@ COMMANDS:
     daemon start|stop|restart|status  IPC daemon management
     daemon enable|disable          Auto-start daemon on login (systemd/LaunchAgent; prints service file)
     cache [list|clear|stats]       Show/manage file read cache
-    sessions [list|show|cleanup]   Manage saved CCP session snapshots (alias: session-store)
+    sessions [list|show|cleanup]   Manage saved session snapshots — PLURAL; see 'session' for live memory (alias: session-store)
     benchmark run [path] [--json]  Run real benchmark on project files
     benchmark report [path]        Generate shareable Markdown report
     benchmark compare [--output F] Head-to-head comparison vs competitors
@@ -182,7 +183,7 @@ COMMANDS:
     discover --card [=<path>]      Shareable 'before lean-ctx' SVG from your history
     ghost [--json]                 Ghost Token report: find hidden token waste
     filter [list|validate|init]    Manage custom compression filters (~/.lean-ctx/filters/)
-    session                        Show adoption statistics
+    session                        Live session memory — SINGULAR; see 'sessions' to manage snapshots
     session task <desc>            Set current task
     session finding <summary>      Record a finding
     session save                   Save current session

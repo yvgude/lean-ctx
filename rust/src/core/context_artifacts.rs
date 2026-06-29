@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 
 use crate::core::bm25_index::BM25Index;
+use crate::core::git_util::{git_dirty, git_out};
 use crate::core::graph_provider::{self, GraphProvider};
 
 #[derive(Debug, Clone, Copy)]
@@ -211,35 +212,6 @@ fn git_info(project_root: &Path) -> GitInfo {
         branch,
         dirty,
     }
-}
-
-fn git_dirty(project_root: &Path) -> bool {
-    let out = std::process::Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(project_root)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output();
-    match out {
-        Ok(o) if o.status.success() => !o.stdout.is_empty(),
-        _ => false,
-    }
-}
-
-fn git_out(project_root: &Path, args: &[&str]) -> Option<String> {
-    let out = std::process::Command::new("git")
-        .args(args)
-        .current_dir(project_root)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8(out.stdout).ok()?;
-    let s = s.trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
 }
 
 fn now_ms() -> u64 {

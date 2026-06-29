@@ -48,7 +48,10 @@ at fleet scale. Packages stay on the registry; the fabric keeps them alive.
 2. **CTXPKG** makes that knowledge portable and verifiable → assets instead of
    session artifacts. This includes *learned optimization profiles* — the
    engine learns locally (zero telemetry, always) and the results travel as
-   signed packages, not as harvested data.
+   signed packages, not as harvested data. Anchored to git and chained over
+   time, the same format becomes a *Context Snapshot* — version control for the
+   context layer (see
+   [`docs/concepts/context-time-machine.md`](docs/concepts/context-time-machine.md)).
 3. **ctxpkg.com** makes the assets distributable and worth money → publishers
    are paid to produce exactly what makes engines smarter.
 4. **CTXFabric** makes the assets organizational and alive → the value of

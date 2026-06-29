@@ -7,11 +7,15 @@ const INSTRUCTION_CAP_TOKENS: usize = 800;
 
 /// Token budget for the static instruction skeleton (no session/knowledge
 /// state).  Asserted in CI so instruction creep cannot silently tax every
-/// session.
+/// session. Raised (520→540 default, 600→640 TDD) as a deliberate, reviewed
+/// bump for the sharpened ctx_* redirects (#1030): the skeleton stays far under
+/// the 800-token runtime cap (`INSTRUCTION_CAP_TOKENS`), so the stronger nudge
+/// ships in full without truncating anything live — trimming it back would only
+/// weaken adoption.
 #[cfg(test)]
-const STATIC_INSTRUCTION_BUDGET_TOKENS: usize = 520;
+const STATIC_INSTRUCTION_BUDGET_TOKENS: usize = 540;
 #[cfg(test)]
-const STATIC_INSTRUCTION_BUDGET_TDD_TOKENS: usize = 600;
+const STATIC_INSTRUCTION_BUDGET_TDD_TOKENS: usize = 640;
 /// Windows carries a one-line SHELL hint inside the skeleton.
 #[cfg(all(test, windows))]
 const STATIC_INSTRUCTION_SHELL_HINT_TOKENS: usize = 25;

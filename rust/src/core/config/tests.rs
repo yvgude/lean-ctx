@@ -887,6 +887,22 @@ mod extra_roots_tests {
         assert_eq!(base.shell_allowlist, vec!["rm"]);
         assert_eq!(base.extra_roots, vec!["/etc"]);
     }
+
+    #[test]
+    fn allow_symlink_roots_follows_extra_roots_trust_semantics() {
+        // #596 premium: the symlink write-through allowlist is security-sensitive,
+        // so an untrusted workspace's entry is withheld while a trusted one applies.
+        let mut untrusted = Config::default();
+        untrusted.merge_local(r#"allow_symlink_roots = ["/opt/dotfiles"]"#, false);
+        assert!(
+            untrusted.allow_symlink_roots.is_empty(),
+            "symlink-escape roots must be withheld for an untrusted workspace"
+        );
+
+        let mut trusted = Config::default();
+        trusted.merge_local(r#"allow_symlink_roots = ["/opt/dotfiles"]"#, true);
+        assert_eq!(trusted.allow_symlink_roots, vec!["/opt/dotfiles"]);
+    }
 }
 
 #[cfg(test)]

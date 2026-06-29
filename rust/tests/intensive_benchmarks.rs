@@ -1024,7 +1024,7 @@ fn guard_essential_instructions_present() {
     // CLAUDE.md (FULL profile) that the agent loads alongside, keeping the
     // worst-case per-session MCP instructions under the 2048-char Claude cap.
     let required = vec![
-        "ALWAYS use lean-ctx tools",
+        "ALWAYS use lean-ctx ctx_* tools",
         "ctx_read",
         "ctx_shell",
         "ctx_search",

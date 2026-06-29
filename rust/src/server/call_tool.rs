@@ -254,7 +254,7 @@ impl LeanCtxServer {
                 None
             };
 
-        let config = crate::core::config::Config::load();
+        let config = crate::core::config::Config::load_arc();
         let minimal = config.minimal_overhead_effective();
 
         // IDE permission inheritance: when enabled, mirror the host IDE's
@@ -505,10 +505,15 @@ impl LeanCtxServer {
                 post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
         }
 
-        let profile_hints = crate::core::profiles::active_profile().output_hints;
+        // Resolve the active profile once per dispatch: it is stable for the
+        // lifetime of a single tool call, and `active_profile()` is an expensive
+        // resolve (config load + disk reads + inheritance merge). Reused below
+        // for the verify footer and the auto-checkpoint marker.
+        let active_profile = crate::core::profiles::active_profile();
+        let profile_hints = active_profile.output_hints.clone();
 
         if !is_raw_shell && !firewalled && profile_hints.verify_footer() {
-            let verify_cfg = crate::core::profiles::active_profile().verification;
+            let verify_cfg = active_profile.verification;
             let vr = crate::core::output_verification::verify_output(
                 &pre_compression,
                 &result_text,
@@ -939,14 +944,13 @@ impl LeanCtxServer {
         if !skip_checkpoint
             && self.increment_and_check()
             && let Some(checkpoint) = self.auto_checkpoint().await
+            && profile_hints.checkpoint_in_output()
+            && crate::core::protocol::meta_visible()
         {
-            let hints = crate::core::profiles::active_profile().output_hints;
-            if hints.checkpoint_in_output() && crate::core::protocol::meta_visible() {
-                // Stable header (#498): no interval interpolation — dynamic
-                // text in repeated markers degrades provider prompt caching.
-                let combined = format!("{result_text}\n\n--- AUTO CHECKPOINT ---\n{checkpoint}");
-                return Ok(finalize_call_result(combined, shell_outcome));
-            }
+            // Stable header (#498): no interval interpolation — dynamic
+            // text in repeated markers degrades provider prompt caching.
+            let combined = format!("{result_text}\n\n--- AUTO CHECKPOINT ---\n{checkpoint}");
+            return Ok(finalize_call_result(combined, shell_outcome));
         }
 
         // #1020: tool-calls.log is now written on the dispatch path

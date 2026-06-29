@@ -6,6 +6,7 @@
 use crate::core::property_graph::CodeGraph;
 use crate::core::smells::{self, Severity, SmellConfig, SmellFinding};
 use crate::core::tokens::count_tokens;
+use crate::tools::output_format::{OutputFormat, parse_format};
 use serde_json::{Value, json};
 
 pub fn handle(
@@ -26,21 +27,6 @@ pub fn handle(
         "rules" => handle_rules(fmt),
         "file" => handle_file(path, root, fmt),
         _ => "Unknown action. Use: scan, summary, rules, file".to_string(),
-    }
-}
-
-#[derive(Clone, Copy)]
-enum OutputFormat {
-    Text,
-    Json,
-}
-
-fn parse_format(format: Option<&str>) -> Result<OutputFormat, String> {
-    let f = format.unwrap_or("text").trim().to_lowercase();
-    match f.as_str() {
-        "text" => Ok(OutputFormat::Text),
-        "json" => Ok(OutputFormat::Json),
-        _ => Err("Error: format must be text|json".to_string()),
     }
 }
 

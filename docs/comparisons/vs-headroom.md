@@ -1,8 +1,9 @@
 # lean-ctx vs Headroom
 
-> **Last updated:** June 2026 | Both expose a drop-in `compress(messages, model)`
-> library that strips boilerplate from agent context before it reaches the LLM.
-> They differ most in *how* they compress and *what else* they bring.
+> **Last updated:** June 2026 | Both expose a drop-in `compress(messages, model)`,
+> but that shared surface hides the real difference: Headroom is a stateless
+> compression *library*; lean-ctx is a stateful context-engineering *layer* that
+> remembers, proves, and (next) replays the context it shapes.
 
 ## Overview
 
@@ -30,6 +31,16 @@ analysis, and a temporal knowledge graph — all 100% local, behind 29 published
 stability contracts. Its `/v1/compress` is **deterministic by contract**: the
 same `(messages, model)` produces byte-identical output, so Anthropic (90%) and
 OpenAI (50%) prompt-cache discounts survive compression.
+
+The gap is structural, not cosmetic. A `compress()` call is stateless by design:
+it sees one message list and returns a shorter one. lean-ctx keeps a stateful
+record *around* that call — a Context Ledger of why each item was kept or dropped
+(with Φ-scores), a signed Context Proof of what the model saw, plus session
+memory and a temporal knowledge graph that persist across runs. That state is the
+foundation for the **Context Time Machine** (direction; see
+[`docs/concepts/context-time-machine.md`](../concepts/context-time-machine.md)): a
+git-anchored, signed snapshot you can rewind, reproduce, resume, or share. A
+stateless library has nothing to anchor such a timeline to.
 
 ## Feature comparison
 
@@ -157,6 +168,10 @@ agent case — compress far more. See [`bench/compress/`](../../bench/compress/R
   sampling, ML weights or non-deterministic output.
 - **It's a whole layer** — compression is 1 of 80 MCP tools alongside cached
   reads, shell compression, semantic search, code intelligence and memory.
+- **Stateful, with a temporal axis** — a Context Ledger, signed proofs, session
+  memory and a temporal knowledge graph wrap every compression, and are composing
+  into a git-anchored **Context Time Machine** (rewind / reproduce / resume /
+  share). A stateless `compress()` library has no equivalent.
 - **100% local, single Rust binary** — no Python runtime, no telemetry by default.
 - **Stability contracts** — 29 published contracts, frozen surfaces SHA-256-locked
   in CI; integrations can't silently break.
@@ -204,3 +219,4 @@ See the [compress() SDK cookbook](../guides/compress-sdk.md) for full recipes.
 run the benchmark on your own corpus and choose what fits.*
 
 [Get started with lean-ctx](https://leanctx.com/docs/getting-started) | [Headroom on GitHub](https://github.com/chopratejas/headroom)
+

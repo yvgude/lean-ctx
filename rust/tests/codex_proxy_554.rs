@@ -1,7 +1,8 @@
-//! End-to-end regression for #554 plus ChatGPT subscription routing: `proxy enable`
-//! must write the right Codex base URLs for both auth modes. API-key mode uses
-//! `/v1`; ChatGPT login uses `/backend-api/codex` for model turns and
-//! `/backend-api` for aux calls.
+//! End-to-end regression for #554/#597: `proxy enable` must treat the two Codex
+//! auth modes differently. API-key mode is billed per token, so Codex is pointed
+//! at the proxy's `/v1` rail. A ChatGPT *subscription* login is flat-rate and
+//! breaks when proxied (#597), so its config is left native — no lean-ctx proxy
+//! entries are written.
 //!
 //! Both scenarios live in one serial test: they redirect Codex via `CODEX_HOME`
 //! (the documented override `resolve_codex_dir` honours) and a live dummy proxy so
@@ -47,7 +48,9 @@ fn proxy_enable_respects_codex_auth_mode_554() {
         return;
     }
 
-    // --- ChatGPT login: route Codex backend traffic through the proxy.
+    // --- ChatGPT login: a flat-rate subscription must be left native (#597).
+    // Routing it through the proxy saves no money and breaks Codex, so `proxy
+    // enable` writes no lean-ctx proxy entries into the config.
     {
         let home = tempfile::tempdir().unwrap();
         let codex = home.path().join(".codex");
@@ -65,16 +68,8 @@ fn proxy_enable_respects_codex_auth_mode_554() {
 
         let cfg = std::fs::read_to_string(codex.join("config.toml")).unwrap();
         assert!(
-            cfg.contains(&format!(
-                "openai_base_url = \"http://127.0.0.1:{port}/backend-api/codex\""
-            )),
-            "ChatGPT-login Codex must route model turns via backend-api/codex, got:\n{cfg}"
-        );
-        assert!(
-            cfg.contains(&format!(
-                "chatgpt_base_url = \"http://127.0.0.1:{port}/backend-api\""
-            )),
-            "ChatGPT-login Codex must route aux backend calls via backend-api, got:\n{cfg}"
+            !cfg.contains(&format!("127.0.0.1:{port}")),
+            "ChatGPT-login Codex must be left native — no lean-ctx proxy entries (#597), got:\n{cfg}"
         );
         assert!(
             cfg.contains("model = \"gpt-5.5\""),

@@ -136,6 +136,7 @@ pub mod context_policies;
 pub mod context_proof;
 pub mod context_proof_v2;
 pub mod context_radar;
+pub mod context_snapshot;
 pub mod cross_source_edges;
 pub mod cross_source_hints;
 
@@ -371,6 +372,7 @@ pub mod gateway;
 pub mod git;
 pub mod git_cache;
 pub mod git_signals;
+pub mod git_util;
 pub mod godot;
 pub mod gotcha_tracker;
 pub mod hasher;
