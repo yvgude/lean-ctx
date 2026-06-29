@@ -19,24 +19,35 @@ pub(crate) fn install_cline_rules(global: bool) {
         return;
     };
 
-    let binary = resolve_binary_path();
-    let rules = format!(
-        r"# lean-ctx Shell Optimization
-# Prefix all shell commands with `{binary} -c` for 60-90% token savings.
-
-When running shell commands, always prefix them with `{binary} -c` to compress output. For example:
-- `{binary} -c git status` instead of `git status`
-- `{binary} -c cargo test` instead of `cargo test`
-- `{binary} -c ls src/` instead of `ls src/`
-
-Supported commands: git, cargo, npm, pnpm, docker, kubectl, pip, ruff, go, curl, grep, find, ls, aws, helm, and 95+ more.
-"
-    );
-
-    write_file(&rules_path, &rules);
+    let shadow = crate::core::config::Config::load().shadow_mode;
+    write_file(&rules_path, &cline_rules_body(shadow));
     if !mcp_server_quiet_mode() {
         eprintln!("Installed .clinerules in current project.");
     }
+}
+
+/// Builds the `.clinerules` body from `rules_canonical` (the single source of
+/// truth) via the canonical `Dedicated` render.
+///
+/// Cline and Roo get the lean-ctx **MCP server** installed above, and the shell
+/// hook already wraps real terminal commands, so the rules must steer the agent
+/// to the `ctx_*` MCP tools — NOT tell it to hand-prefix every command with
+/// `lean-ctx -c`. The old guidance did exactly that, which double-wraps an
+/// already-wrapped command and trips the re-entry passthrough, so output came
+/// back uncompressed (GH #603).
+///
+/// Rendered at [`CompressionLevel::Off`](crate::core::config::CompressionLevel::Off)
+/// on purpose: the per-turn output-style payload is delivered by the MCP
+/// instructions channel and the deduped global `.cline/rules/lean-ctx.md`
+/// carrier. `.clinerules` is a project file the dedup pass does not scan, so
+/// emitting the compression block here too would only duplicate it (#684). The
+/// `START_MARK`/`END_MARK` wrapper is what `uninstall` strips.
+fn cline_rules_body(shadow: bool) -> String {
+    crate::core::rules_canonical::render(
+        shadow,
+        crate::core::rules_canonical::Wrapper::Dedicated,
+        crate::core::config::CompressionLevel::Off,
+    )
 }
 
 fn install_vscode_mcp_for_cline(mcp_path: &std::path::Path) {
@@ -55,4 +66,50 @@ fn install_vscode_mcp_for_cline(mcp_path: &std::path::Path) {
         "servers",
         entry,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::rules_canonical::{COMPRESSION_BLOCK_START, END_MARK, START_MARK};
+
+    /// #603: the old `.clinerules` told the agent to hand-prefix every shell
+    /// command with `lean-ctx -c`, which re-wraps an already-wrapped command and
+    /// passes through uncompressed. The rules must be MCP-first and carry NO
+    /// `lean-ctx -c` prefix guidance, derived from `rules_canonical`.
+    #[test]
+    fn cline_rules_are_mcp_first_without_lean_ctx_dash_c() {
+        let body = cline_rules_body(false);
+        assert!(
+            body.contains(START_MARK),
+            "must carry the canonical markers"
+        );
+        assert!(body.contains(END_MARK));
+        assert!(
+            body.contains("ctx_shell"),
+            "must steer to the ctx_* MCP tools:\n{body}"
+        );
+        assert!(
+            !body.contains("lean-ctx -c"),
+            "must NOT tell the agent to hand-prefix lean-ctx -c (#603):\n{body}"
+        );
+    }
+
+    /// #684: `.clinerules` is not scanned by the dedup pass, so it must never
+    /// carry the per-turn compression payload (delivered via MCP + the deduped
+    /// global carrier) — in either shadow or non-shadow mode.
+    #[test]
+    fn cline_rules_omit_per_turn_compression_block() {
+        for shadow in [false, true] {
+            let body = cline_rules_body(shadow);
+            assert!(
+                !body.contains(COMPRESSION_BLOCK_START),
+                "shadow={shadow}: .clinerules must not duplicate the compression block:\n{body}"
+            );
+            assert!(
+                !body.contains("lean-ctx -c"),
+                "shadow={shadow}: no lean-ctx -c prefix guidance:\n{body}"
+            );
+        }
+    }
 }
