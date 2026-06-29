@@ -16,6 +16,13 @@ pub struct ProxyConfig {
     /// Allow a non-loopback plaintext `http://` upstream (trusted local network
     /// only). Opt-in; see [`ProxyConfig::allows_insecure_http_upstream`]. (#440)
     pub allow_insecure_http_upstream: Option<bool>,
+    /// Allow a custom (non-allowlisted) **HTTPS** upstream host — e.g. a corporate
+    /// gateway in front of the provider API. Opt-in; see
+    /// [`ProxyConfig::allows_custom_upstream`]. Mirrors `allow_insecure_http_upstream`
+    /// so the long-lived managed proxy (LaunchAgent / systemd), which only reads
+    /// `config.toml` and never the shell's `LEAN_CTX_ALLOW_CUSTOM_UPSTREAM`, can
+    /// honor a custom upstream too (#590).
+    pub allow_custom_upstream: Option<bool>,
     /// Inject `stream_options.include_usage = true` into streamed OpenAI Chat
     /// Completions so the final chunk reports real token usage for the measured
     /// spend meter. Default on; set `false` for a client that mishandles the
@@ -478,6 +485,42 @@ impl ProxyConfig {
             || self.allow_insecure_http_upstream.unwrap_or(false)
     }
 
+    /// Whether a custom (non-allowlisted) HTTPS upstream host is allowed. Opt-in
+    /// only — lifting the built-in host allowlist points the proxy at a host you
+    /// control (e.g. a corporate gateway), so it must be deliberate.
+    /// `LEAN_CTX_ALLOW_CUSTOM_UPSTREAM` (any value) wins, then
+    /// `[proxy] allow_custom_upstream` in config.toml, default `false`.
+    ///
+    /// Unlike the env var, the **config flag reaches the managed (service-spawned)
+    /// proxy**, which only reads `config.toml` — that is the whole point of #590:
+    /// `proxy enable`/`restart` start the proxy via launchd/systemd, which never
+    /// inherits the shell's `LEAN_CTX_ALLOW_CUSTOM_UPSTREAM`.
+    pub fn allows_custom_upstream(&self) -> bool {
+        std::env::var("LEAN_CTX_ALLOW_CUSTOM_UPSTREAM").is_ok()
+            || self.allow_custom_upstream.unwrap_or(false)
+    }
+
+    /// True when any `*_upstream` configured in `config.toml` (env-independent) is a
+    /// custom HTTPS host outside the built-in allowlist — i.e. one that resolves
+    /// only with the [`Self::allows_custom_upstream`] opt-in. Plaintext-HTTP custom
+    /// hosts are governed by `allow_insecure_http_upstream` instead, so they are
+    /// excluded here. Lets `proxy enable`/`restart` persist the opt-in (so the
+    /// managed proxy honors it) and `proxy status` explain a blocked upstream,
+    /// without touching the allowlisted-host case (#590).
+    #[must_use]
+    pub fn has_custom_host_upstream(&self) -> bool {
+        [
+            self.anthropic_upstream.as_deref(),
+            self.openai_upstream.as_deref(),
+            self.chatgpt_upstream.as_deref(),
+            self.gemini_upstream.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .filter_map(normalize_url_opt)
+        .any(|u| is_custom_upstream_host(&u))
+    }
+
     /// `(env var, configured value, provider default)` for one provider.
     fn provider_spec(&self, provider: ProxyProvider) -> (&'static str, Option<&str>, &'static str) {
         match provider {
@@ -533,7 +576,11 @@ impl ProxyConfig {
         let candidate = env_val.or_else(|| config_val.and_then(normalize_url_opt));
         match candidate {
             None => Ok(normalize_url(default)),
-            Some(url) => validate_upstream_url(&url, self.allows_insecure_http_upstream()),
+            Some(url) => validate_upstream_url(
+                &url,
+                self.allows_insecure_http_upstream(),
+                self.allows_custom_upstream(),
+            ),
         }
     }
 
@@ -705,6 +752,7 @@ const ALLOWED_UPSTREAM_HOSTS: &[&str] = &[
 pub(super) fn validate_upstream_url(
     url: &str,
     allow_insecure_http: bool,
+    allow_custom_host: bool,
 ) -> Result<String, String> {
     let normalized = normalize_url(url);
     // Loopback HTTP never leaves the machine — always allowed.
@@ -736,15 +784,32 @@ pub(super) fn validate_upstream_url(
 
     let host = host_segment.split('/').next().unwrap_or("");
     let host_no_port = host.split(':').next().unwrap_or(host);
-    if ALLOWED_UPSTREAM_HOSTS.contains(&host_no_port)
-        || std::env::var("LEAN_CTX_ALLOW_CUSTOM_UPSTREAM").is_ok()
-    {
+    if ALLOWED_UPSTREAM_HOSTS.contains(&host_no_port) || allow_custom_host {
         Ok(normalized)
     } else {
         Err(format!(
-            "upstream host '{host_no_port}' not in allowlist {ALLOWED_UPSTREAM_HOSTS:?} (set LEAN_CTX_ALLOW_CUSTOM_UPSTREAM=1 to override)"
+            "upstream host '{host_no_port}' not in allowlist {ALLOWED_UPSTREAM_HOSTS:?} (for a \
+             custom upstream host opt in with LEAN_CTX_ALLOW_CUSTOM_UPSTREAM=1 or \
+             `[proxy] allow_custom_upstream = true`)"
         ))
     }
+}
+
+/// True when `url` is an HTTPS upstream whose host is not in the built-in
+/// allowlist (and not loopback) — the case the `allow_custom_upstream` opt-in
+/// governs. Plaintext-HTTP custom hosts are governed by
+/// `allow_insecure_http_upstream` instead, so they are excluded here.
+fn is_custom_upstream_host(url: &str) -> bool {
+    let n = normalize_url(url);
+    if is_local_proxy_url(&n) {
+        return false;
+    }
+    let Some(host_segment) = n.strip_prefix("https://") else {
+        return false;
+    };
+    let host = host_segment.split('/').next().unwrap_or("");
+    let host_no_port = host.split(':').next().unwrap_or(host);
+    !host_no_port.is_empty() && !ALLOWED_UPSTREAM_HOSTS.contains(&host_no_port)
 }
 
 pub fn is_local_proxy_url(value: &str) -> bool {
@@ -761,11 +826,11 @@ mod tests {
     #[test]
     fn loopback_http_is_always_allowed() {
         assert_eq!(
-            validate_upstream_url("http://127.0.0.1:4444", false).unwrap(),
+            validate_upstream_url("http://127.0.0.1:4444", false, false).unwrap(),
             "http://127.0.0.1:4444"
         );
         assert_eq!(
-            validate_upstream_url("http://localhost:2455/", false).unwrap(),
+            validate_upstream_url("http://localhost:2455/", false, false).unwrap(),
             "http://localhost:2455"
         );
     }
@@ -773,14 +838,15 @@ mod tests {
     #[test]
     fn https_allowlisted_host_is_allowed() {
         assert_eq!(
-            validate_upstream_url("https://api.openai.com", false).unwrap(),
+            validate_upstream_url("https://api.openai.com", false, false).unwrap(),
             "https://api.openai.com"
         );
     }
 
     #[test]
     fn non_loopback_http_is_rejected_without_optin() {
-        let err = validate_upstream_url("http://host.docker.internal:2455", false).unwrap_err();
+        let err =
+            validate_upstream_url("http://host.docker.internal:2455", false, false).unwrap_err();
         // The hint must point at the flag that actually lifts the scheme check
         // (#440). The old message pointed at LEAN_CTX_ALLOW_CUSTOM_UPSTREAM,
         // which never bypassed the HTTPS requirement.
@@ -793,14 +859,69 @@ mod tests {
     #[test]
     fn non_loopback_http_is_allowed_with_optin() {
         assert_eq!(
-            validate_upstream_url("http://host.docker.internal:2455", true).unwrap(),
+            validate_upstream_url("http://host.docker.internal:2455", true, false).unwrap(),
             "http://host.docker.internal:2455"
         );
     }
 
     #[test]
     fn unknown_scheme_is_rejected() {
-        assert!(validate_upstream_url("ftp://example.com", true).is_err());
+        assert!(validate_upstream_url("ftp://example.com", true, true).is_err());
+    }
+
+    #[test]
+    fn https_custom_host_is_rejected_without_optin() {
+        // #590: a custom HTTPS host (e.g. a corporate gateway) is blocked unless
+        // the operator opts in. The hint must name BOTH the env var and the
+        // config flag — only the config flag reaches the managed proxy.
+        let err =
+            validate_upstream_url("https://gw.corp.example/anthropic", false, false).unwrap_err();
+        assert!(
+            err.contains("LEAN_CTX_ALLOW_CUSTOM_UPSTREAM") && err.contains("allow_custom_upstream"),
+            "hint must name both opt-ins, got: {err}"
+        );
+    }
+
+    #[test]
+    fn https_custom_host_is_allowed_with_optin() {
+        // The opt-in (env or `[proxy] allow_custom_upstream`) lifts the allowlist.
+        assert_eq!(
+            validate_upstream_url("https://gw.corp.example/anthropic", false, true).unwrap(),
+            "https://gw.corp.example/anthropic"
+        );
+    }
+
+    #[test]
+    fn config_flag_enables_custom_upstream_optin() {
+        // #590: mirrors `config_flag_enables_insecure_http_optin`. `Some(true)`
+        // resolves to true regardless of the environment, so no env mutation.
+        let cfg = ProxyConfig {
+            allow_custom_upstream: Some(true),
+            ..Default::default()
+        };
+        assert!(cfg.allows_custom_upstream());
+    }
+
+    #[test]
+    fn has_custom_host_upstream_detects_only_custom_https() {
+        // A custom HTTPS host counts; an allowlisted host, a loopback URL, and an
+        // unset upstream do not (the http case is the insecure-http opt-in's job).
+        assert!(
+            ProxyConfig {
+                anthropic_upstream: Some("https://gw.corp.example/anthropic".into()),
+                ..Default::default()
+            }
+            .has_custom_host_upstream()
+        );
+        assert!(
+            !ProxyConfig {
+                openai_upstream: Some("https://api.openai.com".into()),
+                anthropic_upstream: Some("http://127.0.0.1:4444".into()),
+                ..Default::default()
+            }
+            .has_custom_host_upstream()
+        );
+        assert!(!ProxyConfig::default().has_custom_host_upstream());
     }
 
     #[test]
@@ -1086,6 +1207,38 @@ mod tests {
         assert_eq!(up.anthropic, "https://api.anthropic.com");
         assert_eq!(up.chatgpt, "https://chatgpt.com");
         assert_eq!(up.gemini, "https://generativelanguage.googleapis.com");
+    }
+
+    #[test]
+    fn resolve_all_disk_honors_custom_upstream_via_config_flag() {
+        // #590: `resolve_all_disk` is the env-independent view — exactly what the
+        // managed (service-spawned) proxy serves, since it never sees the shell's
+        // LEAN_CTX_ALLOW_CUSTOM_UPSTREAM. With the config opt-in, a custom HTTPS
+        // host resolves; without it, it falls back to the provider default. This
+        // is the regression guard for the reported bug.
+        let custom = ProxyConfig {
+            anthropic_upstream: Some("https://gw.corp.example/anthropic".into()),
+            allow_custom_upstream: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            custom.resolve_all_disk().anthropic,
+            "https://gw.corp.example/anthropic",
+            "config flag must let the managed proxy honor the custom upstream"
+        );
+
+        let blocked = ProxyConfig {
+            anthropic_upstream: Some("https://gw.corp.example/anthropic".into()),
+            ..Default::default()
+        };
+        // Isolate from a developer shell that may export the env opt-in.
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_ALLOW_CUSTOM_UPSTREAM");
+        assert_eq!(
+            blocked.resolve_all_disk().anthropic,
+            "https://api.anthropic.com",
+            "without the opt-in the custom host is rejected → provider default"
+        );
     }
 
     #[test]

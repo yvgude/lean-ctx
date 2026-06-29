@@ -132,6 +132,32 @@ allow_insecure_http_upstream = true
 > never for traffic that crosses an untrusted network. The proxy prints a warning at
 > startup whenever a non-loopback HTTP upstream is active.
 
+**Custom HTTPS upstream hosts (e.g. a corporate gateway).** By default the upstream
+host must be one of the provider defaults (`api.anthropic.com`, `api.openai.com`,
+`chatgpt.com`, `generativelanguage.googleapis.com`). To route through a custom HTTPS
+host you control — such as `https://gw.corp.example/anthropic` — opt in deliberately
+([#590](https://github.com/yvgude/lean-ctx/issues/590)):
+
+```bash
+# env (any value) — works for a foreground `lean-ctx proxy start`
+export LEAN_CTX_ALLOW_CUSTOM_UPSTREAM=1
+```
+
+```toml
+# persist it in config.toml — REQUIRED for the service-managed proxy
+[proxy]
+anthropic_upstream = "https://gw.corp.example/anthropic"
+allow_custom_upstream = true
+```
+
+> The env var only reaches a proxy you start **in the foreground** (`proxy start`),
+> because it inherits your shell. A proxy started by `lean-ctx proxy enable` /
+> `restart` runs as a LaunchAgent / systemd service that never sees your shell env,
+> so it would otherwise fall back to the provider default. `enable`/`restart`
+> therefore **auto-persist** `allow_custom_upstream = true` when you run them with
+> `LEAN_CTX_ALLOW_CUSTOM_UPSTREAM` set and a custom upstream configured — or set the
+> flag yourself with `lean-ctx config set proxy.allow_custom_upstream true`.
+
 **Live upstream — `config.toml` is the source of truth for a running proxy**
 ([#449](https://github.com/yvgude/lean-ctx/issues/449)). A long-lived proxy
 (LaunchAgent / systemd / IDE-spawned) re-reads its upstreams from `config.toml`

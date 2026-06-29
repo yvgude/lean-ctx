@@ -679,6 +679,58 @@ fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::conf
         println!();
         println!("{note}");
     }
+
+    // #590: a configured custom HTTPS upstream that is not permitted is silently
+    // ignored — the managed proxy can't see the shell's env opt-in, so it serves
+    // the provider default. Point the operator at the *persistent* config flag,
+    // which does reach the managed proxy. Suppressed once the opt-in is active
+    // (env or config), since the drift notes above then cover any remaining gap.
+    if cfg.proxy.has_custom_host_upstream() && !cfg.proxy.allows_custom_upstream() {
+        println!();
+        println!(
+            "  \x1b[33m⚠ A custom upstream host is configured but not permitted, so the proxy\x1b[0m"
+        );
+        println!(
+            "  \x1b[33m  serves the provider default. Allow it (reaches the managed proxy):\x1b[0m"
+        );
+        println!("  \x1b[33m    lean-ctx config set proxy.allow_custom_upstream true\x1b[0m");
+        println!("  \x1b[33m    lean-ctx proxy restart\x1b[0m");
+    }
+}
+
+/// Bridges the shell's `LEAN_CTX_ALLOW_CUSTOM_UPSTREAM` opt-in into `config.toml`
+/// so the managed (LaunchAgent / systemd) proxy — which only reads `config.toml`,
+/// never the shell env — honors a configured custom upstream (#590).
+///
+/// No-op unless all three hold: the env opt-in is present, a custom-host upstream
+/// is actually configured, and `[proxy] allow_custom_upstream` is not already
+/// `true` (idempotent). Returns true when it persisted the flag.
+#[cfg(feature = "http-server")]
+fn bridge_custom_upstream_optin() -> bool {
+    if std::env::var("LEAN_CTX_ALLOW_CUSTOM_UPSTREAM").is_err() {
+        return false;
+    }
+    let cfg = crate::core::config::Config::load();
+    if cfg.proxy.allow_custom_upstream == Some(true) || !cfg.proxy.has_custom_host_upstream() {
+        return false;
+    }
+    match crate::core::config::Config::update_global(|c| {
+        c.proxy.allow_custom_upstream = Some(true);
+    }) {
+        Ok(_) => {
+            println!(
+                "  \x1b[32m✓\x1b[0m Custom upstream opt-in persisted: [proxy] allow_custom_upstream = true"
+            );
+            println!(
+                "  \x1b[2m  (so the managed proxy honors your custom upstream — the env var never reaches it, #590)\x1b[0m"
+            );
+            true
+        }
+        Err(e) => {
+            tracing::warn!("could not persist allow_custom_upstream: {e}");
+            false
+        }
+    }
 }
 
 pub(super) fn cmd_proxy(rest: &[String]) {
@@ -731,6 +783,9 @@ pub(super) fn cmd_proxy(rest: &[String]) {
             "restart" => {
                 let port = parse_proxy_port(rest);
                 if crate::proxy_autostart::is_installed() {
+                    // #590: persist the shell's custom-upstream opt-in to config
+                    // before the restart so the re-read picks up the custom host.
+                    bridge_custom_upstream_optin();
                     // Managed service (LaunchAgent / systemd): a clean bootout +
                     // bootstrap restarts the proxy so it re-reads config.toml. It
                     // deliberately drops any `LEAN_CTX_*_UPSTREAM` env override
@@ -826,6 +881,11 @@ pub(super) fn cmd_proxy(rest: &[String]) {
                 {
                     tracing::warn!("could not persist proxy_enabled: {e}");
                 }
+
+                // #590: persist the shell's custom-upstream opt-in to config BEFORE
+                // the managed proxy starts, so it reads the flag on startup (the
+                // service never inherits the shell's env var).
+                bridge_custom_upstream_optin();
 
                 let port = crate::proxy_setup::default_port();
                 crate::proxy_autostart::install(port, false);

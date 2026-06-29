@@ -59,6 +59,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     proxy.insert(
+        "allow_custom_upstream".into(),
+        key_with_env(
+            "bool",
+            serde_json::json!(cfg.proxy.allow_custom_upstream.unwrap_or(false)),
+            "Allow a custom (non-allowlisted) HTTPS upstream host, e.g. a corporate gateway in front of the provider API. Opt-in; default false. Unlike the env var, this config flag reaches the managed (service-spawned) proxy started by `proxy enable`/`restart` (#590)",
+            "LEAN_CTX_ALLOW_CUSTOM_UPSTREAM",
+        ),
+    );
+    proxy.insert(
         "meter_openai_usage".into(),
         key(
             "bool",
