@@ -425,8 +425,45 @@ pub fn uninstall_all(quiet: bool) {
     }
 }
 
+/// Substrings that flag a host's agent-exec *sandbox wrapper* — which reports
+/// the real command's exit status over a dedicated fd (e.g. Cursor's
+/// `dump_zsh_state >&4; builtin exit $?`) and passes the command as a positional
+/// arg — or lean-ctx's *own* hook invocations. The non-interactive
+/// `.zshenv`/`.bashenv` redirect must never `exec lean-ctx -c` over these:
+/// doing so discards the wrapper's fd handshake and positional command, so the
+/// IDE reports "no exit status" for every command (and lean-ctx's 120s/8MB cap
+/// truncates long output). Inside such hosts the lean-ctx editor extension +
+/// hooks already provide integration, so the redirect is moot there anyway.
+const REDIRECT_SKIP_MARKERS: &[&str] = &[
+    "__CURSOR_SANDBOX", // Cursor/VSCode agent-exec sandbox wrapper (shell-agnostic)
+    "dump_zsh_state",   // Cursor zsh exit-code fd handshake
+    "lean-ctx hook ",   // lean-ctx's own preToolUse hook commands
+];
+
+/// Render the guarded non-interactive redirect shared by the zsh and bash
+/// installers. `exec_var` is the host's command variable
+/// (`ZSH_EXECUTION_STRING` / `BASH_EXECUTION_STRING`) and `env_check` is the
+/// agent-detection clause from [`build_env_check`]. The emitted `if` fires only
+/// for genuine agent commands — never for sandbox wrappers or lean-ctx hooks
+/// (see [`REDIRECT_SKIP_MARKERS`]).
+fn redirect_block(exec_var: &str, env_check: &str) -> String {
+    let mut lines = vec![format!(
+        "if [[ -z \"$LEAN_CTX_ACTIVE\" && -n \"${exec_var}\" ]] \\"
+    )];
+    for marker in REDIRECT_SKIP_MARKERS {
+        lines.push(format!("  && [[ \"${exec_var}\" != *\"{marker}\"* ]] \\"));
+    }
+    lines.push("  && command -v lean-ctx &>/dev/null; then".to_string());
+    lines.push(format!("  if {env_check}; then"));
+    lines.push("    export LEAN_CTX_ACTIVE=1".to_string());
+    lines.push(format!("    exec lean-ctx -c \"${exec_var}\""));
+    lines.push("  fi".to_string());
+    lines.push("fi".to_string());
+    lines.join("\n")
+}
+
 fn install_zshenv(home: &Path, quiet: bool, style: Style, stamp: &BackupStamp) {
-    let env_check = build_env_check();
+    let redirect = redirect_block("ZSH_EXECUTION_STRING", &build_env_check());
     let hook = format!(
         r#"{MARKER_START}
 # Passthrough stubs: ensure _lc/_lc_compress exist in ALL zsh contexts
@@ -435,12 +472,7 @@ fn install_zshenv(home: &Path, quiet: bool, style: Style, stamp: &BackupStamp) {
 # The full shell-hook.zsh overrides these when loaded via .zshrc.
 _lc()          {{ command "$@"; }}
 _lc_compress() {{ command "$@"; }}
-if [[ -z "$LEAN_CTX_ACTIVE" && -n "$ZSH_EXECUTION_STRING" ]] && command -v lean-ctx &>/dev/null; then
-  if {env_check}; then
-    export LEAN_CTX_ACTIVE=1
-    exec lean-ctx -c "$ZSH_EXECUTION_STRING"
-  fi
-fi
+{redirect}
 {MARKER_END}"#
     );
 
@@ -451,17 +483,12 @@ fi
 }
 
 fn install_bashenv(home: &Path, quiet: bool, style: Style, stamp: &BackupStamp) {
-    let env_check = build_env_check();
+    let redirect = redirect_block("BASH_EXECUTION_STRING", &build_env_check());
     let hook = format!(
         r#"{MARKER_START}
 _lc()          {{ command "$@"; }}
 _lc_compress() {{ command "$@"; }}
-if [[ -z "$LEAN_CTX_ACTIVE" && -n "$BASH_EXECUTION_STRING" ]] && command -v lean-ctx &>/dev/null; then
-  if {env_check}; then
-    export LEAN_CTX_ACTIVE=1
-    exec lean-ctx -c "$BASH_EXECUTION_STRING"
-  fi
-fi
+{redirect}
 {MARKER_END}"#
     );
 
@@ -1014,6 +1041,67 @@ mod tests {
             stub_pos < exec_pos && compress_pos < exec_pos,
             "bash stubs must be defined BEFORE the exec guard"
         );
+    }
+
+    // --- IDE agent-exec sandbox + lean-ctx hook guard ---
+    // The non-interactive redirect must never `exec lean-ctx -c` over a host's
+    // agent-exec sandbox wrapper (which reports the exit code via a dedicated fd:
+    // `dump_zsh_state >&4; builtin exit $?`) or lean-ctx's own hooks: doing so
+    // breaks the fd handshake so the IDE reports "no exit status" for every
+    // command (and the 120s/8MB cap truncates output). See REDIRECT_SKIP_MARKERS.
+
+    #[test]
+    fn redirect_block_guards_every_skip_marker() {
+        let block = redirect_block("ZSH_EXECUTION_STRING", "[[ -n \"$LEAN_CTX_AGENT\" ]]");
+        let exec_pos = block
+            .find("exec lean-ctx")
+            .expect("redirect must exec lean-ctx");
+        for marker in REDIRECT_SKIP_MARKERS {
+            let guard = format!("[[ \"$ZSH_EXECUTION_STRING\" != *\"{marker}\"* ]]");
+            let guard_pos = block
+                .find(&guard)
+                .unwrap_or_else(|| panic!("redirect must guard against {marker:?}:\n{block}"));
+            assert!(
+                guard_pos < exec_pos,
+                "guard for {marker:?} must precede the exec redirect"
+            );
+        }
+    }
+
+    #[test]
+    fn zshenv_redirect_skips_ide_sandbox_and_hooks() {
+        let tmp = tempfile::tempdir().unwrap();
+        install_zshenv(tmp.path(), true, Style::Inline, &test_stamp());
+        let body = std::fs::read_to_string(tmp.path().join(".zshenv")).unwrap();
+        let exec_pos = body.find("exec lean-ctx").expect("exec guard must exist");
+        for marker in REDIRECT_SKIP_MARKERS {
+            let guard = format!("[[ \"$ZSH_EXECUTION_STRING\" != *\"{marker}\"* ]]");
+            let pos = body
+                .find(&guard)
+                .unwrap_or_else(|| panic!(".zshenv must guard against {marker:?}"));
+            assert!(
+                pos < exec_pos,
+                "zshenv guard {marker:?} must precede the exec redirect"
+            );
+        }
+    }
+
+    #[test]
+    fn bashenv_redirect_skips_ide_sandbox_and_hooks() {
+        let tmp = tempfile::tempdir().unwrap();
+        install_bashenv(tmp.path(), true, Style::Inline, &test_stamp());
+        let body = std::fs::read_to_string(tmp.path().join(".bashenv")).unwrap();
+        let exec_pos = body.find("exec lean-ctx").expect("exec guard must exist");
+        for marker in REDIRECT_SKIP_MARKERS {
+            let guard = format!("[[ \"$BASH_EXECUTION_STRING\" != *\"{marker}\"* ]]");
+            let pos = body
+                .find(&guard)
+                .unwrap_or_else(|| panic!(".bashenv must guard against {marker:?}"));
+            assert!(
+                pos < exec_pos,
+                "bashenv guard {marker:?} must precede the exec redirect"
+            );
+        }
     }
 
     #[test]
