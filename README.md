@@ -20,7 +20,7 @@ they read, **compresses** what they send (an optional local proxy shrinks every
 request — system prompt, history and tool results — prompt-cache-safe),
 **remembers** what they learn, **guards** what they touch — and **proves** what
 they save with a signed, verifiable savings ledger. The result: 60–90% fewer
-tokens — and that's the receipt, not the product. Zero config required.
+tokens. Zero config required.
 Local-first.
 
 | Problem | With LeanCTX |
