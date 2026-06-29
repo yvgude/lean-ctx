@@ -516,10 +516,7 @@ fn collapse_nested_lean_ctx_exec(command: &str) -> Option<String> {
     let mut current = command.trim().to_string();
     let mut changed = false;
 
-    loop {
-        let Some(next) = strip_one_lean_ctx_exec(&current) else {
-            break;
-        };
+    while let Some(next) = strip_one_lean_ctx_exec(&current) {
         if next == current {
             break;
         }
@@ -583,21 +580,11 @@ fn split_simple_shell_words(command: &str) -> Option<Vec<SimpleShellWord>> {
         match quote {
             Some('\'') if ch == '\'' => quote = None,
             Some('"') if ch == '"' => quote = None,
-            Some('"') if ch == '\\' => {
-                current_start.get_or_insert(idx);
-                if let Some((_, next)) = chars.next() {
-                    current.push(next);
-                }
-            }
-            Some(_) => {
-                current_start.get_or_insert(idx);
-                current.push(ch);
-            }
             None if ch == '\'' || ch == '"' => {
                 current_start.get_or_insert(idx);
                 quote = Some(ch);
             }
-            None if ch == '\\' => {
+            Some('"') | None if ch == '\\' => {
                 current_start.get_or_insert(idx);
                 if let Some((_, next)) = chars.next() {
                     current.push(next);
@@ -611,7 +598,7 @@ fn split_simple_shell_words(command: &str) -> Option<Vec<SimpleShellWord>> {
                     });
                 }
             }
-            None => {
+            Some(_) | None => {
                 current_start.get_or_insert(idx);
                 current.push(ch);
             }
@@ -666,7 +653,7 @@ fn exec_shell_default(command: &str, shell: &str, shell_flag: &str) -> i32 {
     match status {
         Ok(s) => s.code().unwrap_or(1),
         Err(e) => {
-            eprintln!("lean-ctx: failed to execute '{}': {}", command, e);
+            eprintln!("lean-ctx: failed to execute '{command}': {e}");
             127
         }
     }
