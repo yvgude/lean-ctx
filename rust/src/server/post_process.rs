@@ -183,10 +183,11 @@ pub(super) fn finalize_token_count_and_adjust(
         crate::core::tokens::count_tokens(result_text)
     };
 
-    if result_text.len() != pre_terse_len && tool_saved_tokens > 0 {
+    if result_text.len() != pre_terse_len && output_tokens > 0 {
         let pre_savings = tool_saved_tokens;
+        let pre_sent = output_tokens as usize;
         let actual_sent = output_token_count;
-        let original = actual_sent + pre_savings;
+        let original = pre_sent + pre_savings;
         let actual_savings = original.saturating_sub(actual_sent);
         if actual_savings != pre_savings {
             let delta = pre_savings as i64 - actual_savings as i64;
