@@ -61,6 +61,20 @@ pub const RULES_VERSION: usize = 2;
 pub const CRITICAL: &str = "CRITICAL: ALWAYS use lean-ctx ctx_* tools instead of native equivalents. \
      This is NOT optional.";
 
+/// Weak-model adherence nudge (#1067 / GH #593). Smaller models (e.g. GLM 5.2 in
+/// Windsurf) often read the tool-mapping rules yet still answer from memory or
+/// reach for a built-in tool instead of emitting an actual MCP call — so
+/// `lean-ctx watch` stays empty and the layer looks "off". This one imperative
+/// line makes the *act of invoking* a ctx_* tool the explicit first step. It
+/// lives in the dedicated rule files of *every* agent (`FULL_NON_SHADOW`), which
+/// is what #1067 asks for; the Windsurf project template (`windsurfrules.txt`)
+/// carries its own copy. It is omitted where it would be dead weight: shadow
+/// mode enforces routing at the call layer, and the `Bare`/instructions channel
+/// is capped separately.
+pub const MUST_INVOKE: &str = "MUST actually CALL the ctx_* MCP tools, not just describe them: \
+    before reading, searching, or running a shell command, emit the matching ctx_* tool call \
+    (ctx_compose first, then ctx_read / ctx_search / ctx_shell).";
+
 /// Compact bullet-list mapping (for both dedicated and shared contexts).
 pub const BULLETS: &str = "\
 MANDATORY MAPPING (4 core redirects first):\n\
@@ -173,6 +187,7 @@ pub fn compression_text(level: CompressionLevel) -> &'static str {
 
 const FULL_NON_SHADOW: &[&str] = &[
     CRITICAL,
+    MUST_INVOKE,
     BULLETS,
     NEVER,
     INTENT,
@@ -541,6 +556,27 @@ mod tests {
         assert!(
             tail.contains("PREFERENCE") || tail.contains("NEVER"),
             "LITM: reinforcement near end, tail={tail:?}"
+        );
+    }
+
+    #[test]
+    fn dedicated_carries_weak_model_invoke_nudge() {
+        // #1067/GH #593: the "actually CALL ctx_*" nudge must ride every dedicated
+        // rule file (Windsurf, Cursor, Claude, …) in non-shadow mode, and must be
+        // absent where it is dead weight: shadow mode (call-layer routing) and the
+        // Bare/instructions channel (separately capped).
+        let dedicated = render(false, Wrapper::Dedicated, CompressionLevel::Off);
+        assert!(
+            dedicated.contains(MUST_INVOKE),
+            "dedicated non-shadow rules must carry the MUST_INVOKE nudge"
+        );
+        assert!(
+            !render(true, Wrapper::Dedicated, CompressionLevel::Off).contains(MUST_INVOKE),
+            "shadow mode must not carry the nudge (routing is enforced at the call layer)"
+        );
+        assert!(
+            !render(false, Wrapper::Bare, CompressionLevel::Off).contains(MUST_INVOKE),
+            "Bare/instructions channel is capped separately and carries no copy"
         );
     }
 
