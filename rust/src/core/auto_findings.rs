@@ -302,7 +302,7 @@ fn extract_ctx_semantic_search(output: &str) -> Option<AutoFinding> {
 /// VCS/dependency/build dirs, virtualenvs, caches, the user's home dotfiles
 /// (e.g. `~/.ssh/config`), and binary/log files. Such findings polluted the
 /// session and knowledge store (see EPIC 6 / #2363).
-fn is_noise_path(path: &str) -> bool {
+pub(crate) fn is_noise_path(path: &str) -> bool {
     let p = path.replace('\\', "/");
     const NOISE_SEGMENTS: &[&str] = &[
         ".git",

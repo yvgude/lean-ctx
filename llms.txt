@@ -2,7 +2,7 @@
 
 > The context-engineering layer for AI agents — one local Rust binary that decides what your agents read, compresses what they send to the model, remembers what they learn, guards what they touch, and proves what they save. Deterministic and prompt-cache-safe by contract; 60–90% fewer tokens.
 
-lean-ctx (LeanCTX, "Lean Context") runs between your AI agents and everything they touch — code, shell, data, and the model itself. It exposes 80 MCP tools plus a shell hook (the read path) and an optional local request proxy (the wire path) that compresses every request — system prompt, history and tool results — without breaking provider prompt caches. Compression is reversible: pruned or truncated content moves to a content-addressed store with a deterministic handle, so the model can always recover the original bytes. 100% local, no telemetry by default, Apache-2.0.
+lean-ctx (LeanCTX, "Lean Context") runs between your AI agents and everything they touch — code, shell, data, and the model itself. It exposes 81 MCP tools plus a shell hook (the read path) and an optional local request proxy (the wire path) that compresses every request — system prompt, history and tool results — without breaking provider prompt caches. Compression is reversible: pruned or truncated content moves to a content-addressed store with a deterministic handle, so the model can always recover the original bytes. 100% local, no telemetry by default, Apache-2.0.
 
 Key properties for an LLM evaluating lean-ctx:
 
@@ -47,3 +47,4 @@ Key properties for an LLM evaluating lean-ctx:
 - [Changelog](https://github.com/yvgude/lean-ctx/blob/main/CHANGELOG.md): release history (Keep a Changelog).
 - [Security](https://github.com/yvgude/lean-ctx/blob/main/SECURITY.md): hardening and disclosure policy.
 - [Pricing & Cloud](https://leanctx.com/pricing/): local use is free forever.
+

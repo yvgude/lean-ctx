@@ -430,6 +430,19 @@ fn do_replace(
         args.content.replacen(args.old_str, args.new_str, 1)
     };
 
+    // Code-health gate: warn on (or block) cognitive-complexity drift before write.
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let health_notice =
+        match crate::core::code_health::gate::evaluate(args.content, &new_content, ext) {
+            crate::core::code_health::gate::GateOutcome::Block(reason) => {
+                return (
+                    format!("ERROR: code-health gate: {reason}"),
+                    CacheEffect::None,
+                );
+            }
+            crate::core::code_health::gate::GateOutcome::Allow(notice) => notice,
+        };
+
     if let Err(e) = ensure_preimage_still_matches(path, &pre.fp, cap) {
         return (e, CacheEffect::None);
     }
@@ -515,6 +528,10 @@ postimage: bytes={}, mtime_ms={}, md5={}",
         out.push_str("\n\nevidence (diff, redacted, bounded):\n```diff\n");
         out.push_str(&diff);
         out.push_str("\n```");
+    }
+    if let Some(notice) = health_notice {
+        out.push_str("\n\n");
+        out.push_str(&notice);
     }
     (out, CacheEffect::Invalidate)
 }

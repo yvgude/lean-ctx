@@ -110,6 +110,9 @@ pub struct Config {
     /// Model declaration for measured-vs-estimated cost reporting (MCP-only IDEs).
     #[serde(default)]
     pub cost: CostConfig,
+    /// Code-health engine: cognitive complexity, naming, coupling, edit-gate.
+    #[serde(default)]
+    pub code_health: CodeHealthConfig,
     #[serde(default)]
     pub autonomy: AutonomyConfig,
     #[serde(default)]
@@ -585,6 +588,7 @@ impl Default for Config {
             cloud: CloudConfig::default(),
             gain: GainConfig::default(),
             cost: CostConfig::default(),
+            code_health: CodeHealthConfig::default(),
             autonomy: AutonomyConfig::default(),
             providers: ProvidersConfig::default(),
             proxy: ProxyConfig::default(),

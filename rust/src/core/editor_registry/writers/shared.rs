@@ -62,6 +62,7 @@ pub fn auto_approve_tools() -> Vec<&'static str> {
         "ctx_index",
         "ctx_artifacts",
         "ctx_smells",
+        "ctx_quality",
         "ctx_proof",
         "ctx_verify",
         "ctx_execute",

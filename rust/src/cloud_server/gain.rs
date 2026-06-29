@@ -16,6 +16,10 @@ pub(super) struct GainEntry {
     pub cost_efficiency: f64,
     pub quality: f64,
     pub consistency: f64,
+    /// Code Health Engine navigability (#1086); `default` keeps older clients
+    /// that don't send it deserialisable.
+    #[serde(default)]
+    pub navigability: Option<f64>,
     #[serde(default)]
     pub trend: Option<String>,
     #[serde(default)]
@@ -39,6 +43,7 @@ pub(super) struct GainRow {
     pub cost_efficiency: f64,
     pub quality: f64,
     pub consistency: f64,
+    pub navigability: Option<f64>,
     pub trend: Option<String>,
     pub avoided_usd: Option<f64>,
     pub tool_spend_usd: Option<f64>,
@@ -73,8 +78,8 @@ pub(super) async fn post_gain(
             client
                 .execute(
                     r"INSERT INTO gain_scores
-                       (id, user_id, recorded_at, total, compression, cost_efficiency, quality, consistency, trend, avoided_usd, tool_spend_usd, model_key)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+                       (id, user_id, recorded_at, total, compression, cost_efficiency, quality, consistency, trend, avoided_usd, tool_spend_usd, model_key, navigability)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
                     &[
                         &Uuid::new_v4(),
                         &user_id,
@@ -88,6 +93,7 @@ pub(super) async fn post_gain(
                         &entry.avoided_usd,
                         &entry.tool_spend_usd,
                         &entry.model_key,
+                        &entry.navigability,
                     ],
                 )
                 .await
@@ -108,7 +114,7 @@ pub(super) async fn get_gain(
 
     let rows = client
         .query(
-            r"SELECT recorded_at, total, compression, cost_efficiency, quality, consistency, trend, avoided_usd, tool_spend_usd, model_key
+            r"SELECT recorded_at, total, compression, cost_efficiency, quality, consistency, trend, avoided_usd, tool_spend_usd, model_key, navigability
                FROM gain_scores
                WHERE user_id = $1
                ORDER BY recorded_at DESC
@@ -133,6 +139,7 @@ pub(super) async fn get_gain(
                 avoided_usd: r.get(7),
                 tool_spend_usd: r.get(8),
                 model_key: r.get(9),
+                navigability: r.get(10),
             }
         })
         .collect();

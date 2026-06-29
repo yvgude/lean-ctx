@@ -4,7 +4,7 @@
 
 Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.
 
-lean-ctx registers **80 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
+lean-ctx registers **81 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
 
 ## `ctx_agent`
 
@@ -508,6 +508,15 @@ provider=id (github|gitlab|jira|mcp:<name>); resource=issues|pull_requests.
 Data flows through consolidation pipeline; results searchable via ctx_semantic_search.
 
 Parameters: `action`*, `iid`, `labels`, `limit`, `mode`, `provider`, `resource`, `state`, `status`
+
+## `ctx_quality`
+
+WORKFLOW: report (project score+hotspots+$ tax) → file (one file) → delta (vs HEAD).
+Code health = clean code as a token-cost lever: cognitive complexity, naming,
+and the estimated token 'quality tax' of over-threshold functions.
+ANTIPATTERN: NOT a linter/style checker — it scores navigability, not formatting.
+
+Parameters: `action`, `format`, `path`, `root`
 
 ## `ctx_radar`
 

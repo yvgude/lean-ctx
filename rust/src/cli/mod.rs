@@ -17,6 +17,7 @@ pub mod eval_cmd;
 pub mod explore_cmd;
 pub mod export_rules;
 pub mod harden;
+mod health_cmd;
 mod index_cmd;
 mod init_cmd;
 mod instructions_cmd;

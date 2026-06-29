@@ -203,7 +203,7 @@ compression opportunities in your shell history).
 
 ## 5. Choosing how much lean-ctx exposes — `lean-ctx tools`
 
-**What it does:** Sets the **tool profile** — how many of the 80 MCP tools your
+**What it does:** Sets the **tool profile** — how many of the 81 MCP tools your
 AI sees. Fewer tools = less per-call overhead.
 
 ```bash
@@ -242,3 +242,4 @@ Controls how aggressively shell/tool output is compressed (`terse` is an alias).
 - `gain` is the *only* place savings are shown, intentionally. New users
   sometimes expect inline footers; the empty-state message now sets that
   expectation.
+

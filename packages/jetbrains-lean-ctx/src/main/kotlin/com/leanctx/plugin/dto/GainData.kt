@@ -27,6 +27,8 @@ data class ScoreDTO(
     @SerializedName("cost_efficiency") val costEfficiency: Int,
     val quality: Int,
     val consistency: Int,
+    /** Code Health Engine navigability (#1086); defaults to 0 for older CLIs. */
+    val navigability: Int = 0,
     /** Raw serde variant: "Rising" | "Stable" | "Declining". */
     val trend: String,
 )
@@ -65,3 +67,4 @@ object GainCodec {
         )
     }
 }
+

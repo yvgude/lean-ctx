@@ -105,8 +105,9 @@ fn render_single(sym: &SymbolInfo, gp: &GraphProvider, project_root: &str) -> (S
     let snippet_tokens = count_tokens(&snippet);
 
     let vis = if sym.is_exported { "+" } else { "-" };
+    let cc_note = symbol_cc_note(&content, &sym.file, &sym.name, sym.start_line);
     let header = format!(
-        "{}::{} ({} {}, L{}-{})",
+        "{}::{} ({} {}, L{}-{}){cc_note}",
         sym.file, sym.name, vis, sym.kind, sym.start_line, sym.end_line
     );
 
@@ -146,6 +147,27 @@ fn render_multiple(
     }
 
     (out, total_original)
+}
+
+/// Optional ` · cc=NN` suffix for a symbol header — the code-health complexity
+/// of the function being shown (#1084). Computed fresh from the already-read
+/// file content, so it's exact for *any* symbol. Over-threshold functions are
+/// flagged `(over)`. Honors the `code_health.annotate_reads` opt-out and is
+/// empty for non-functions / when tree-sitter is off.
+fn symbol_cc_note(content: &str, file: &str, name: &str, start_line: usize) -> String {
+    let cfg = crate::core::config::Config::load();
+    if !cfg.code_health.annotate_reads {
+        return String::new();
+    }
+    let ext = Path::new(file)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    match crate::core::code_health::annotate::cognitive_for_symbol(content, ext, name, start_line) {
+        Some(cc) if cc > cfg.code_health.cognitive_threshold => format!(" · cc={cc} (over)"),
+        Some(cc) => format!(" · cc={cc}"),
+        None => String::new(),
+    }
 }
 
 fn resolve_file_path(relative: &str, project_root: &str) -> String {

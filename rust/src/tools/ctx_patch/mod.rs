@@ -150,18 +150,30 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         );
     }
 
+    let ext = Path::new(file_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+
     // Post-edit syntax gate (#1008): block a clean → broken regression before any
     // write. Pure (no I/O), so it runs before the TOCTOU re-read.
-    if params.validate_syntax {
-        let ext = Path::new(file_path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
-        if let Some(reason) = crate::core::syntax_validate::gate_edit(ext, &pre.text, &new_content)
-        {
-            return (reason, CacheEffect::None);
-        }
+    if params.validate_syntax
+        && let Some(reason) = crate::core::syntax_validate::gate_edit(ext, &pre.text, &new_content)
+    {
+        return (reason, CacheEffect::None);
     }
+
+    // Code-health gate: warn on (or block) cognitive-complexity drift before write.
+    let health_notice = match crate::core::code_health::gate::evaluate(&pre.text, &new_content, ext)
+    {
+        crate::core::code_health::gate::GateOutcome::Block(reason) => {
+            return (
+                format!("ERROR: code-health gate: {reason}"),
+                CacheEffect::None,
+            );
+        }
+        crate::core::code_health::gate::GateOutcome::Allow(notice) => notice,
+    };
 
     // TOCTOU guard: confirm the file did not change between read and write.
     if let Err(e) = ensure_preimage_still_matches(path, &pre.fp, cap) {
@@ -183,7 +195,7 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         bt.record_edit(file_path);
     }
 
-    let out = render_success(
+    let mut out = render_success(
         params,
         &pre.text,
         &new_content,
@@ -195,6 +207,10 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         n_edits,
         backup_path,
     );
+    if let Some(notice) = health_notice {
+        out.push_str("\n\n");
+        out.push_str(&notice);
+    }
     (out, CacheEffect::Invalidate)
 }
 

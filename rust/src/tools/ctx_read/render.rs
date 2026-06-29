@@ -57,6 +57,23 @@ fn techniques_tag(techniques: &[String]) -> String {
     }
 }
 
+/// Code-health annotations (function name → note like `cc=18`) for the
+/// over-threshold functions in `content`, honoring `[code_health].annotate_reads`.
+/// Empty when disabled, unsupported, or nothing qualifies. Deterministic
+/// (#498-safe): a pure function of content + the active threshold.
+fn health_annotations(content: &str, ext: &str) -> std::collections::HashMap<String, String> {
+    let cfg = crate::core::config::Config::load();
+    if !cfg.code_health.annotate_reads {
+        return std::collections::HashMap::new();
+    }
+    let annotations = crate::core::code_health::annotate::annotations_for_file(
+        content,
+        ext,
+        cfg.code_health.cognitive_threshold,
+    );
+    crate::core::code_health::annotate::by_name(&annotations)
+}
+
 pub(crate) fn format_full_output(
     file_ref: &str,
     short: &str,
@@ -250,12 +267,17 @@ pub(crate) fn process_mode_tuned(
                     output.push_str(&legend);
                 }
             }
+            let health = health_annotations(content, ext);
             for sig in &sigs {
                 output.push('\n');
                 if crp_mode.is_tdd() {
                     output.push_str(&sig.to_tdd_located());
                 } else {
                     output.push_str(&sig.to_compact_located());
+                }
+                if let Some(note) = health.get(&sig.name) {
+                    output.push_str("  ");
+                    output.push_str(note);
                 }
             }
             if let Some(body) = task_relevant_body(content, file_path, ext, task) {
@@ -358,12 +380,17 @@ pub(crate) fn process_mode_tuned(
                         output.push_str(&format!(" {legend}"));
                     }
                 }
+                let health = health_annotations(content, ext);
                 for sig in &key_sigs {
                     output.push_str("\n    ");
                     if crp_mode.is_tdd() {
                         output.push_str(&sig.to_tdd_located());
                     } else {
                         output.push_str(&sig.to_compact_located());
+                    }
+                    if let Some(note) = health.get(&sig.name) {
+                        output.push_str("  ");
+                        output.push_str(note);
                     }
                 }
             }

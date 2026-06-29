@@ -18,15 +18,27 @@ pub struct GainScore {
     pub cost_efficiency: u32,
     pub quality: u32,
     pub consistency: u32,
+    /// Code navigability of the current project (0–100), from the Code Health
+    /// Engine ([`crate::core::code_health`]). `0` when no health data exists
+    /// (engine not yet run / non-project context); in that case it is excluded
+    /// from `total` so users are never penalised for a signal we don't have.
+    /// `#[serde(default)]` keeps older persisted/synced payloads deserialisable.
+    #[serde(default)]
+    pub navigability: u32,
     pub trend: Trend,
 }
 
 impl GainScore {
+    /// `navigability` is the current project's code-health score (0–100) or
+    /// `None` when unavailable. When present it contributes 15% of `total`
+    /// (sharper code-quality signal); when absent the historical four-component
+    /// weighting is used unchanged (no degradation, #1086).
     pub fn compute(
         stats: &StatsStore,
         costs: &CostStore,
         pricing: &ModelPricing,
         model: Option<&str>,
+        navigability: Option<u32>,
     ) -> Self {
         let saved_tokens = stats
             .total_input_tokens
@@ -46,11 +58,26 @@ impl GainScore {
         let quality = quality_score(stats);
         let (consistency, trend) = consistency_and_trend(stats);
 
-        let total = ((compression as u64 * 35
-            + cost_efficiency as u64 * 25
-            + quality as u64 * 20
-            + consistency as u64 * 20)
-            / 100) as u32;
+        let total = match navigability {
+            // Code-health signal present → 30/25/15/15/15 (compression stays
+            // dominant; navigability shares the quality dimension).
+            Some(nav) => {
+                ((compression as u64 * 30
+                    + cost_efficiency as u64 * 25
+                    + quality as u64 * 15
+                    + consistency as u64 * 15
+                    + nav as u64 * 15)
+                    / 100) as u32
+            }
+            // No code-health data → historical 35/25/20/20 (unchanged).
+            None => {
+                ((compression as u64 * 35
+                    + cost_efficiency as u64 * 25
+                    + quality as u64 * 20
+                    + consistency as u64 * 20)
+                    / 100) as u32
+            }
+        };
 
         Self {
             total,
@@ -58,6 +85,7 @@ impl GainScore {
             cost_efficiency,
             quality,
             consistency,
+            navigability: navigability.unwrap_or(0),
             trend,
         }
     }
@@ -241,6 +269,7 @@ mod tests {
             cost_efficiency: 70,
             quality: 60,
             consistency: 90,
+            navigability: 0,
             trend: Trend::Rising,
         };
         let lvl = score.level();
@@ -256,9 +285,49 @@ mod tests {
             cost_efficiency: 50,
             quality: 50,
             consistency: 50,
+            navigability: 0,
             trend: Trend::Stable,
         };
         let p = score.level_progress();
         assert!(p > 0.0 && p < 1.0);
+    }
+
+    #[test]
+    fn navigability_absent_uses_legacy_weighting() {
+        // No code-health data must yield the historical 35/25/20/20 total so
+        // existing users are never penalised for a signal we don't have (#1086).
+        let stats = StatsStore::default();
+        let costs = CostStore::default();
+        let pricing = ModelPricing::load();
+        let none = GainScore::compute(&stats, &costs, &pricing, None, None);
+        let zero = GainScore::compute(&stats, &costs, &pricing, None, Some(0));
+        // With all-zero behavioural inputs both totals are 0, but the field must
+        // reflect the explicit nav input.
+        assert_eq!(none.navigability, 0);
+        assert_eq!(zero.navigability, 0);
+        assert_eq!(none.total, zero.total);
+    }
+
+    #[test]
+    fn navigability_present_lifts_total() {
+        // A high navigability with the 30/25/15/15/15 split must contribute to
+        // total even when behavioural components are flat. Non-zero token totals
+        // give compression a value so the weighting branch is observable.
+        let stats = StatsStore {
+            total_input_tokens: 1000,
+            total_output_tokens: 100,
+            ..Default::default()
+        };
+        let costs = CostStore::default();
+        let pricing = ModelPricing::load();
+        let without = GainScore::compute(&stats, &costs, &pricing, None, None);
+        let with = GainScore::compute(&stats, &costs, &pricing, None, Some(100));
+        assert_eq!(with.navigability, 100);
+        assert!(
+            with.total >= without.total,
+            "navigability=100 must not lower total: {} vs {}",
+            with.total,
+            without.total
+        );
     }
 }

@@ -537,6 +537,40 @@ impl CostConfig {
     }
 }
 
+/// Code-health engine (`[code_health]`): clean code as a token-cost lever.
+///
+/// Cognitive complexity, naming quality, and coupling are computed once during
+/// indexing and surfaced at read- and edit-time. These switches tune the
+/// thresholds and how assertively findings are surfaced.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CodeHealthConfig {
+    /// Cognitive-complexity threshold above which a function is a hotspot.
+    /// Mirrors `core::code_health::DEFAULT_COGNITIVE_THRESHOLD` (15).
+    pub cognitive_threshold: u32,
+    /// Edit-gate behavior on complexity drift: `"warn"` (annotate, default),
+    /// `"block"` (refuse clean→over-threshold edits), or `"off"`.
+    pub gate: String,
+    /// Annotate over-threshold functions inline in `ctx_read` output.
+    pub annotate_reads: bool,
+    /// Run the naming-quality heuristic.
+    pub naming: bool,
+    /// Compute module-coupling metrics.
+    pub coupling: bool,
+}
+
+impl Default for CodeHealthConfig {
+    fn default() -> Self {
+        Self {
+            cognitive_threshold: 15,
+            gate: "warn".to_string(),
+            annotate_reads: true,
+            naming: true,
+            coupling: true,
+        }
+    }
+}
+
 /// Settings for the code graph — in particular the *traversal* (co-access) edges
 /// learned from real agent sessions (#289).
 ///

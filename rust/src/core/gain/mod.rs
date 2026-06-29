@@ -89,6 +89,15 @@ pub struct FileGainRow {
     pub compression_pct: f32,
 }
 
+/// Navigability (0–100) of the project containing the current working dir, from
+/// the persisted Code Health report. `None` when not in a project or the engine
+/// has not computed health yet — the gain score then falls back to its legacy
+/// four-component weighting so users are never penalised (#1086).
+fn current_project_navigability() -> Option<u32> {
+    let root = crate::core::config::Config::find_project_root()?;
+    crate::core::code_health::persist::load(&root).map(|h| h.score.score)
+}
+
 impl GainEngine {
     pub fn load() -> Self {
         Self {
@@ -121,7 +130,13 @@ impl GainEngine {
         } else {
             None
         };
-        let score = GainScore::compute(&self.stats, &self.costs, &self.pricing, model);
+        let score = GainScore::compute(
+            &self.stats,
+            &self.costs,
+            &self.pricing,
+            model,
+            current_project_navigability(),
+        );
         // is_daemon_running() is cross-platform; the old #[cfg(not(unix))] = None
         // branch suppressed daemon state on Windows. See #576.
         let daemon_hint = if crate::daemon::is_daemon_running() {
@@ -176,7 +191,13 @@ impl GainEngine {
     }
 
     pub fn gain_score(&self, model: Option<&str>) -> GainScore {
-        GainScore::compute(&self.stats, &self.costs, &self.pricing, model)
+        GainScore::compute(
+            &self.stats,
+            &self.costs,
+            &self.pricing,
+            model,
+            current_project_navigability(),
+        )
     }
 
     pub fn task_breakdown(&self) -> Vec<TaskGainRow> {

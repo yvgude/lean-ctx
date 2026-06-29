@@ -34,6 +34,7 @@ Each journey document answers three questions for every feature:
 | 18 | [Adaptive Learning](18-adaptive-learning.md)                     | understanding how lean-ctx tunes itself              | learned thresholds, LITM calibration, scent field, playbook, `learning export/import`, efficacy           |
 | 19 | [JetBrains-Plugin](19-jetbrains-plugin.md)                      | using code intelligence from a running JetBrains IDE | `ctx_refactor`: navigation, structure, inspections, symbol-edits, rename/reformat/move/safe_delete/inline |
 | 20 | [Hermes Context Engine](20-hermes-context-engine.md)            | embedding lean-ctx as your agent's context engine    | `ctx_transcript_compact`, `serve`, `context.engine`, recall tools, session lifecycle                      |
+| 22 | [Code Health](22-code-health.md)                                | paying to re-read tangled, complex code              | `ctx_quality`, `lean-ctx health [--gate]`, cognitive complexity (S3776), navigability, edit-gate, gain `navigability` |
 
 ## Cross-cutting references
 
@@ -72,3 +73,4 @@ measure the payoff. **12–14 are the operations track**: a central troubleshoot
 playbook, the security/governance surface, and performance tuning for big repos
 and constrained machines. Every CLI command and MCP tool appears in at least one
 journey and in the appendices below.
+

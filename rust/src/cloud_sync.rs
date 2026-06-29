@@ -113,6 +113,7 @@ pub fn cloud_background_tasks() {
                 "cost_efficiency": summary.score.cost_efficiency as f64,
                 "quality": summary.score.quality as f64,
                 "consistency": summary.score.consistency as f64,
+                "navigability": summary.score.navigability as f64,
                 "trend": trend,
                 "avoided_usd": summary.avoided_usd,
                 "tool_spend_usd": summary.tool_spend_usd,

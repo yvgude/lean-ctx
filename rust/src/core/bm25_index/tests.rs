@@ -896,3 +896,63 @@ fn parallel_build_search_parity() {
         assert_eq!(s.score.to_bits(), p.score.to_bits(), "score parity");
     }
 }
+
+#[test]
+fn remove_chunks_with_prefix_evicts_only_matching() {
+    use crate::core::content_chunk::ContentChunk;
+
+    let mut index = BM25Index::from_chunks_for_test(vec![CodeChunk {
+        file_path: "src/lib.rs".into(),
+        symbol_name: "main".into(),
+        kind: ChunkKind::Function,
+        start_line: 1,
+        end_line: 2,
+        content: "fn main() {}".into(),
+        tokens: Vec::new(),
+        token_count: 0,
+    }]);
+    index.ingest_content_chunks(vec![
+        ContentChunk::from_provider(
+            "health",
+            "complexity",
+            "src/a.rs#big",
+            "big",
+            ChunkKind::Other,
+            "complex function body".into(),
+            vec![],
+            None,
+        ),
+        ContentChunk::from_provider(
+            "github",
+            "issues",
+            "42",
+            "bug",
+            ChunkKind::Issue,
+            "issue text".into(),
+            vec![],
+            None,
+        ),
+    ]);
+    assert_eq!(index.chunks.len(), 3);
+
+    let removed = index.remove_chunks_with_prefix("health://");
+    assert_eq!(removed, 1, "only the health chunk is evicted");
+    assert_eq!(index.chunks.len(), 2);
+    assert!(
+        index
+            .chunks
+            .iter()
+            .all(|c| !c.file_path.starts_with("health://")),
+        "no health chunks remain"
+    );
+    // Code chunk and the unrelated provider chunk survive.
+    assert!(index.chunks.iter().any(|c| c.file_path == "src/lib.rs"));
+    assert!(
+        index
+            .chunks
+            .iter()
+            .any(|c| c.file_path.starts_with("github://"))
+    );
+    // A no-match prefix is a no-op.
+    assert_eq!(index.remove_chunks_with_prefix("nope://"), 0);
+}

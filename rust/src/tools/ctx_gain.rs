@@ -60,7 +60,7 @@ fn format_summary(engine: &GainEngine, model: Option<&str>) -> String {
         "lean-ctx gain\n\
          ────────────\n\
          {bridge_line}\n\
-         Score: {total}/100  (compression {comp}, cost {cost}, quality {qual}, consistency {cons})  trend={trend}\n\
+         Score: {total}/100  (compression {comp}, cost {cost}, quality {qual}, consistency {cons}, navigability {nav})  trend={trend}\n\
          Tokens: {input} in → {out} out  | saved {saved}  ({rate:.1}%)\n\
          Gain: {avoided} avoided  | tool spend {spend}  | ROI {roi}\n\
          Impact: {energy} grid energy avoided  | {co2} CO₂e (est.)\n\
@@ -71,6 +71,7 @@ fn format_summary(engine: &GainEngine, model: Option<&str>) -> String {
         cost = s.score.cost_efficiency,
         qual = s.score.quality,
         cons = s.score.consistency,
+        nav = s.score.navigability,
         rate = s.gain_rate_pct,
         model_key = s.model.model_key,
         match_kind = s.model.match_kind,
@@ -126,12 +127,14 @@ fn format_score(engine: &GainEngine, model: Option<&str>) -> String {
          Cost efficiency: {}/100\n\
          Quality:         {}/100\n\
          Consistency:     {}/100\n\
+         Navigability:    {}/100\n\
          Trend:           {:?}\n",
         s.score.total,
         s.score.compression,
         s.score.cost_efficiency,
         s.score.quality,
         s.score.consistency,
+        s.score.navigability,
         s.score.trend
     )
 }
@@ -698,6 +701,8 @@ mod tests {
             "cost_efficiency",
             "quality",
             "consistency",
+            // Code Health Engine component (#1086) — part of the stable DTO.
+            "navigability",
             "trend",
         ] {
             assert!(score.get(k).is_some(), "score.{k} missing");

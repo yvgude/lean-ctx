@@ -1,6 +1,6 @@
 ---
 name: lean-ctx
-description: Context Engineering for AI Agents — 80 MCP tools, 10 read modes, 95+ shell patterns, tree-sitter AST for 18 languages. Compresses LLM context by up to 99%. Use when reading files, running shell commands, searching code, or exploring directories. Auto-installs if not present.
+description: Context Engineering for AI Agents — 81 MCP tools, 10 read modes, 95+ shell patterns, tree-sitter AST for 18 languages. Compresses LLM context by up to 99%. Use when reading files, running shell commands, searching code, or exploring directories. Auto-installs if not present.
 ---
 
 # lean-ctx — Context Engineering for AI Agents
@@ -61,8 +61,8 @@ Use native Edit/StrReplace. If unavailable, use `ctx_edit` immediately.
 
 ## More Tools (via ctx_call or ctx_load_tools)
 
-Architecture: ctx_symbol, ctx_callgraph, ctx_impact, ctx_architecture, ctx_routes, ctx_smells
-  ↳ "What breaks if I change this file/class/type?" → ctx_impact (file-level blast radius; resolves same-package/namespace type usage with no import for C#, Java, Go and Kotlin). "Who calls this function?" → ctx_callgraph (symbol-level).
+Architecture: ctx_symbol, ctx_callgraph, ctx_impact, ctx_architecture, ctx_routes, ctx_smells, ctx_quality
+  ↳ "What breaks if I change this file/class/type?" → ctx_impact (file-level blast radius; resolves same-package/namespace type usage with no import for C#, Java, Go and Kotlin). "Who calls this function?" → ctx_callgraph (symbol-level). "How navigable / how much is complexity costing me?" → ctx_quality (navigability score + token quality tax).
 Multi-agent: ctx_agent, ctx_share, ctx_task, ctx_handoff, ctx_workflow
 Verify: ctx_benchmark, ctx_verify, ctx_proof, ctx_review
 Batch: ctx_fill, ctx_execute, ctx_expand, ctx_pack

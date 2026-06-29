@@ -51,6 +51,17 @@ pub(super) fn count(conn: &Connection) -> anyhow::Result<usize> {
     Ok(c as usize)
 }
 
+/// Delete every cross-source edge of a given `kind`. Lets a recomputed source
+/// (the code-health fabric) evict its prior pass so resolved hotspots don't
+/// linger as stale `health_hotspot` hints. Returns the number of rows removed.
+pub(super) fn delete_by_kind(conn: &Connection, kind: &str) -> anyhow::Result<usize> {
+    let removed = conn.execute(
+        "DELETE FROM cross_source_edges WHERE kind = ?1",
+        params![kind],
+    )?;
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::CodeGraph;
@@ -88,5 +99,35 @@ mod tests {
         let g = CodeGraph::open_in_memory().unwrap();
         assert!(g.all_cross_source_edges().is_empty());
         assert_eq!(g.cross_source_edge_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn delete_by_kind_removes_only_that_kind() {
+        let g = CodeGraph::open_in_memory().unwrap();
+        g.upsert_cross_source_edge("src/a.rs", "health://complexity/a", "health_hotspot", 22.0)
+            .unwrap();
+        g.upsert_cross_source_edge("src/b.rs", "health://complexity/b", "health_hotspot", 31.0)
+            .unwrap();
+        g.upsert_cross_source_edge("src/a.rs", "github://issues/42", "mentions", 1.0)
+            .unwrap();
+
+        let removed = g
+            .delete_cross_source_edges_by_kind("health_hotspot")
+            .unwrap();
+        assert_eq!(removed, 2, "both hotspot edges removed");
+        assert_eq!(g.cross_source_edge_count().unwrap(), 1);
+        assert!(
+            g.all_cross_source_edges()
+                .iter()
+                .all(|e| e.kind == "mentions"),
+            "unrelated provider edge survives"
+        );
+
+        // Deleting an absent kind is a no-op.
+        assert_eq!(
+            g.delete_cross_source_edges_by_kind("health_hotspot")
+                .unwrap(),
+            0
+        );
     }
 }

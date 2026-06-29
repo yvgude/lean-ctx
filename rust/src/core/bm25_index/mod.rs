@@ -730,6 +730,20 @@ impl BM25Index {
             .filter(|c| c.file_path.contains("://"))
             .count()
     }
+
+    /// Remove every chunk whose `file_path` starts with `prefix` (e.g.
+    /// `health://`) and rebuild the inverted index. Lets a recomputed source
+    /// (like the code-health fabric) evict its prior pass so stale entries never
+    /// linger in search. Returns the number of chunks removed.
+    pub fn remove_chunks_with_prefix(&mut self, prefix: &str) -> usize {
+        let before = self.chunks.len();
+        self.chunks.retain(|c| !c.file_path.starts_with(prefix));
+        let removed = before - self.chunks.len();
+        if removed > 0 {
+            self.finalize();
+        }
+        removed
+    }
 }
 
 fn is_safe_bm25_root(root: &Path) -> bool {

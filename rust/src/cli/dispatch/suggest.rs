@@ -14,6 +14,7 @@ const KNOWN_COMMANDS: &[&str] = &[
     "learning",
     "conformance",
     "selftest",
+    "health",
     "billing",
     "finops",
     "roi",
