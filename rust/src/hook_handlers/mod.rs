@@ -1250,9 +1250,6 @@ pub fn handle_codex_session_start() {
     if crate::core::config::Config::load().dedicated_session_context_active() {
         return;
     }
-    emit_session_start_additional_context(
-        "For shell commands matched by lean-ctx compression rules, prefer `lean-ctx -c \"<command>\"`. If a Bash call is blocked, rerun it with the exact command suggested by the hook.",
-    );
 }
 
 /// Dedicated Copilot PreToolUse handler (dispatched via `hook copilot`).
