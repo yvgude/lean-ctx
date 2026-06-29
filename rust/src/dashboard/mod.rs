@@ -203,7 +203,9 @@ pub async fn start(
         }
     } else if is_local {
         // No-auth on loopback: header-based CSRF protection is the boundary.
-        println!("  Auth: \x1b[1;33mDISABLED\x1b[0m (no-auth) — CSRF protected via Sec-Fetch-Site/Origin/Host");
+        println!(
+            "  Auth: \x1b[1;33mDISABLED\x1b[0m (no-auth) — CSRF protected via Sec-Fetch-Site/Origin/Host"
+        );
         println!("  Browser URL:  http://localhost:{port}{base_path}/");
     } else {
         // No-auth + non-loopback bind (e.g. Docker --host=0.0.0.0). Browser
