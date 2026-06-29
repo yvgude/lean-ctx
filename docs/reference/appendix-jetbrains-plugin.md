@@ -46,7 +46,7 @@ Backing: **B** = JetBrains IDE (plugin via HTTP); **A** = rust-analyzer
 refactoring engine (`rename`/`move`/`safe_delete`/`inline`) is two-phase
 (`*Preview`→`*Apply`, `plan_hash`-protected) and has no headless path.
 
-> `find_symbol` (Serena) → `ctx_symbol` / `ctx_outline`, not `ctx_refactor`.
+> `find_symbol` (Serena) → `ctx_search action="symbol"` / `ctx_outline`, not `ctx_refactor`.
 
 ## IDE UI surfaces (non-HTTP)
 

@@ -56,7 +56,7 @@ lean-ctx becomes the sole interface for symbols, navigation, and refactoring.
 | `inline`                   | `inline`                         | `POST /inlinePreview` → `POST /inlineApply`         |
 
 > `find_symbol` (pure symbol search) is not part of `ctx_refactor` but of
-> `ctx_symbol` / `ctx_outline` (lean-ctx symbol index). See
+> `ctx_search action="symbol"` / `ctx_outline` (lean-ctx symbol index). See
 > [MCP tool map](appendix-mcp-tools.md).
 
 ---
@@ -223,7 +223,7 @@ curl -s -X POST http://127.0.0.1:$PORT/symbols_overview \
 {supertypes, subtypes}` (default `supertypes`), `scope`. `symbols_overview`: `path`.
 **Backing:** `type_hierarchy` is Backing-B-only. `symbols_overview` has a
 **lossless headless default** via the tree-sitter symbol index
-(`overview_from_index`, the same source as `ctx_symbol`/`ctx_outline`).
+(`overview_from_index`, the same source as `ctx_search action="symbol"` / `ctx_outline`).
 
 **IDE-neutral loading & degradation.** The Core `plugin.xml` depends only on
 `com.intellij.modules.platform`, so it loads in every IntelliJ IDE (RustRover, PyCharm,
@@ -801,7 +801,7 @@ ctx_refactor action=reformat path=src/Main.kt    # apply code style afterward
 
 - [Concise agent reference](appendix-jetbrains-plugin.md) — tables for quick lookup
 - [Per-IDE quickstarts](appendix-ide-quickstarts.md) — setup for JetBrains IDEs
-- [MCP tool map](appendix-mcp-tools.md) — all MCP tools incl. `ctx_refactor`, `ctx_symbol`
+- [MCP tool map](appendix-mcp-tools.md) — all MCP tools incl. `ctx_refactor`, `ctx_search`
 - [Journey 4 — Code Intelligence](04-code-intelligence.md)
 - [Journey 13 — Security & Governance](13-security-and-governance.md) — PathJail, auth
 - Source code: `rust/src/lsp/{backend,jetbrains_backend,router,edit_apply,port_discovery}.rs`,
