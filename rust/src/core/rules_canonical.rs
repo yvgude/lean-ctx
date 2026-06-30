@@ -64,9 +64,10 @@ pub const COMPRESSION_BLOCK_END: &str = "<!-- /lean-ctx-compression -->";
 /// injection layer can parse it and decide whether a file is up-to-date.
 ///
 /// History: v3 (#609) adds the `AGENT_LOOP` taxonomy + `NAV_PARADOX` guidance to
-/// the FULL profile and a compact one-liner to COMPACT. v4 adds the `RECOVER`
-/// section to FULL + COMPACT so agents learn the (MCP-optional) decompression
-/// paths proactively instead of re-reading compressed output line-by-line.
+/// the FULL profile and a compact one-liner to COMPACT. v4 adds recovery guidance
+/// so agents learn the (MCP-optional) decompression paths proactively instead of
+/// re-reading compressed output line-by-line — verbose [`RECOVER`] in FULL and the
+/// terse one-liner [`RECOVER_COMPACT`] in COMPACT (the cold-handshake budget).
 /// Bumping it forces every committed `LEAN-CTX.md` artifact to be regenerated
 /// (see `tests/rules_drift.rs`).
 pub const RULES_VERSION: usize = 4;
@@ -168,15 +169,27 @@ pub const AUTO: &str = "Auto: preload/dedup/compress run in background. \
     ctx_session=memory, ctx_knowledge=facts, ctx_semantic_search=meaning search, \
     ctx_shell raw=true=uncompressed. Details: LEAN-CTX.md";
 
-/// Recovery vocabulary. lean-ctx compression is fully reversible (CCR), but agents
-/// otherwise only discover the escape hatch reactively from output hints — so they
-/// re-read compressed files line-by-line instead of expanding (the "too compressed"
-/// complaint). Teaching it proactively here (FULL + COMPACT/Bare) fixes that, and
-/// the MCP-free path ("read the shown file path with any tool") covers orgs that
-/// forbid MCP. Mirrors the reactive footers in `ctx_read`/`archive`/`ctx_shell`.
+/// Recovery vocabulary (verbose, FULL profile). lean-ctx compression is fully
+/// reversible (CCR), but agents otherwise only discover the escape hatch reactively
+/// from output hints — so they re-read compressed files line-by-line instead of
+/// expanding (the "too compressed" complaint). Teaching it proactively in the
+/// dedicated rule files fixes that, and the MCP-free path ("read the shown file
+/// path with any tool") covers orgs that forbid MCP. The COMPACT/Bare channel
+/// carries the terser [`RECOVER_COMPACT`] instead. Mirrors the reactive footers in
+/// `ctx_read`/`archive`/`ctx_shell`.
 pub const RECOVER: &str = "RECOVER: compressed output is reversible — never re-read line-by-line. \
     Need full/exact? Read the shown file path with any tool (no MCP), or \
     ctx_read(mode=full|raw=true); [Archived]/tee/firewall → ctx_expand(id=...).";
+
+/// Terse COMPACT/Bare variant of [`RECOVER`]. The cold first-contact handshake
+/// renders the COMPACT profile, so it carries this one-liner to stay within the
+/// static char/token budget (`tests/intensive_benchmarks.rs`, `instructions.rs`)
+/// — the verbose block ships in the FULL dedicated rule files. Keeps the two
+/// primary MCP-optional paths and the "never line-by-line" rule; the
+/// `[Archived]`/tee → `ctx_expand` path is still taught reactively by the output
+/// footers. Must keep the `(no MCP)` clause (asserted in tests).
+pub const RECOVER_COMPACT: &str = "RECOVER: compression is reversible — read the shown path \
+    (no MCP) or ctx_read(raw=true), never re-read line-by-line.";
 
 /// Context Engineering Protocol version reference.
 pub const CEP: &str = "CEP v1: 1.ACT FIRST 2.DELTA ONLY (Fn refs) 3.STRUCTURED (+/-/~) \
@@ -270,7 +283,7 @@ const COMPACT_NON_SHADOW: &[&str] = &[
     LOOP_NAV_COMPACT,
     ANTI,
     PARALLEL,
-    RECOVER,
+    RECOVER_COMPACT,
 ];
 
 const COMPACT_SHADOW: &[&str] = &[SHADOW_MINIMAL];
@@ -626,25 +639,38 @@ mod tests {
     #[test]
     fn recover_reaches_every_non_shadow_carrier() {
         // The recovery vocabulary must reach FULL *and* COMPACT/Bare so agents
-        // never re-read compressed output line-by-line, and must lead with the
-        // MCP-free path ("read the shown path with any tool") for orgs that ban
-        // MCP. Bare resolves to COMPACT, so it carries RECOVER too.
-        for wrapper in [Wrapper::Dedicated, Wrapper::Shared, Wrapper::Bare] {
+        // never re-read compressed output line-by-line, and every carrier must
+        // keep the MCP-free path ("read the shown path") for orgs that ban MCP.
+        // FULL carries the verbose RECOVER; COMPACT/Bare carry the terse
+        // RECOVER_COMPACT one-liner (cold-handshake budget).
+        let full = render(false, Wrapper::Dedicated, CompressionLevel::Off);
+        assert!(
+            full.contains(RECOVER),
+            "FULL non-shadow must carry the verbose RECOVER verbatim"
+        );
+        for wrapper in [Wrapper::Shared, Wrapper::Bare] {
             let out = render(false, wrapper, CompressionLevel::Off);
             assert!(
-                out.contains(RECOVER),
-                "{wrapper:?} non-shadow must carry RECOVER verbatim"
+                out.contains(RECOVER_COMPACT),
+                "{wrapper:?} (COMPACT) must carry RECOVER_COMPACT verbatim"
             );
             assert!(
-                out.contains("(no MCP)"),
-                "{wrapper:?} RECOVER must lead with the MCP-free path"
+                !out.contains(RECOVER),
+                "{wrapper:?} (COMPACT) must not inline the verbose RECOVER block"
+            );
+        }
+        for wrapper in [Wrapper::Dedicated, Wrapper::Shared, Wrapper::Bare] {
+            assert!(
+                render(false, wrapper, CompressionLevel::Off).contains("(no MCP)"),
+                "{wrapper:?} recovery line must keep the MCP-free path"
             );
         }
         // Shadow stays minimal; the reactive footers still cover recovery there.
         for wrapper in [Wrapper::Dedicated, Wrapper::Shared] {
+            let out = render(true, wrapper, CompressionLevel::Off);
             assert!(
-                !render(true, wrapper, CompressionLevel::Off).contains(RECOVER),
-                "{wrapper:?} shadow drops RECOVER"
+                !out.contains(RECOVER) && !out.contains(RECOVER_COMPACT),
+                "{wrapper:?} shadow drops all RECOVER guidance"
             );
         }
     }
