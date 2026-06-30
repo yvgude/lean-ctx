@@ -56,6 +56,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   small-chunk re-read anti-pattern. The raw spellings (`lean-ctx raw`,
   `lean-ctx -c --raw`) are reentrance-safe: the rewrite hook leaves any command
   starting with `lean-ctx ` untouched, so the agent always reaches verbatim bytes.
+- **`ctx_shell` now surfaces when a requested `cwd` was rejected by the project-root
+  jail (#629).** A `cwd` resolving outside the session's `project_root` is rejected
+  by the path jail and silently replaced with the project root — correct sandboxing
+  (it stops MCP clients escaping the workspace), but the *silent* fallback made the
+  parameter look ignored: a caller running `pwd && ls` in what they thought was dir
+  A actually ran in the root with no indication why. The jail is untouched;
+  `effective_cwd_checked` now returns the rejection reason and `ctx_shell` appends a
+  one-line `[cwd: …]` hint naming the reason and the directory it ran in instead.
+  Thanks to @mahmoudps for the report and the original patch (#630).
 - **`ctx_search` no longer returns a false `No matches` for content edited after
   the index warmed (#624).** The resident trigram index treated itself as *fresh*
   for a fixed 15 s TTL with no per-file change detection, so in hybrid setups
