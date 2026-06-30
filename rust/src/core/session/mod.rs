@@ -191,6 +191,37 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    /// The checked variant must report *why* a jailed cwd was rejected, so
+    /// `ctx_shell` can surface it instead of silently swapping in the root (#629).
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn effective_cwd_checked_reports_jail_rejection_reason() {
+        let tmp = std::env::temp_dir().join("lean-ctx-test-cwd-checked");
+        let _ = std::fs::create_dir_all(&tmp);
+        let root_canon = crate::core::pathutil::safe_canonicalize_or_self(&tmp)
+            .to_string_lossy()
+            .to_string();
+
+        let mut session = SessionState::new();
+        session.project_root = Some(root_canon.clone());
+
+        // Rejected: falls back to the root AND surfaces a non-empty reason.
+        let (path, reason) = session.effective_cwd_checked(Some("/nonexistent-outside-path"));
+        assert_eq!(path, root_canon);
+        let reason = reason.expect("a jailed cwd must report a rejection reason");
+        assert!(!reason.is_empty(), "the rejection reason must not be empty");
+
+        // Accepted (no explicit cwd): no reason, path is the project root.
+        let (accepted, none_reason) = session.effective_cwd_checked(None);
+        assert_eq!(accepted, root_canon);
+        assert!(
+            none_reason.is_none(),
+            "a non-jailed path must not report a reason"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     #[test]
     fn effective_cwd_shell_cwd_second_priority() {
         let mut session = SessionState::new();
