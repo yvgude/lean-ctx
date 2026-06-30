@@ -714,6 +714,66 @@ fn raw_mode_returns_exact_file_content() {
     assert!(!output.contains("deps"), "raw mode must not contain deps");
 }
 
+/// Regression for GH #628: the verbatim views (`full`, `raw`, `lines:N-M`) must
+/// reproduce every source line — including decorative separator comments
+/// (`// ————`, `// ----`) — so the content the model edits never diverges from
+/// disk. The original report saw these silently stripped, which then broke
+/// `ctx_edit` on a whitespace mismatch.
+#[test]
+fn verbatim_modes_preserve_decorative_comment_lines() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    let sep_em = "// ————————————————————————————————————————";
+    let sep_dash = "// ------------------------------------------";
+    let content = format!(
+        "import {{ describe, it, expect }} from \"vitest\";\n\
+         \n\
+         {sep_em}\n\
+         // Section: arithmetic\n\
+         {sep_em}\n\
+         describe(\"add\", () => {{\n  it(\"adds\", () => expect(1 + 1).toBe(2));\n}});\n\
+         \n\
+         {sep_dash}\n\
+         // Section: strings\n\
+         {sep_dash}\n"
+    );
+
+    for mode in ["full", "raw"] {
+        let (output, _) = render::process_mode(
+            &content,
+            mode,
+            "F1",
+            "math.test.ts",
+            "ts",
+            count_tokens(&content),
+            CrpMode::Off,
+            "/tmp/math.test.ts",
+            None,
+        );
+        assert!(
+            output.contains(sep_em) && output.contains(sep_dash),
+            "{mode} mode must keep every separator comment verbatim:\n{output}"
+        );
+        // Every source line is present (modes may add a header/footer, never drop).
+        for line in content.lines().filter(|l| !l.is_empty()) {
+            assert!(
+                output.contains(line),
+                "{mode} mode dropped a source line: {line:?}"
+            );
+        }
+    }
+
+    // A `lines:` window must keep separators too, with original line numbering.
+    let window = render::extract_line_range(&content, "1-5");
+    assert!(
+        window.contains(sep_em),
+        "lines: window dropped the separator comment:\n{window}"
+    );
+    assert!(
+        window.contains("   3| ") && window.contains("   5| "),
+        "lines: window must number the separator lines (3 and 5):\n{window}"
+    );
+}
+
 /// Determinism contract (#498): tool output must be a pure function of
 /// (content, mode, crp_mode, task). Timestamps, counters or random hints in
 /// the body would make otherwise-identical outputs unique and defeat

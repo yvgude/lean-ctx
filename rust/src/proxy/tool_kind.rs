@@ -202,6 +202,15 @@ pub fn should_protect(kind: ToolResultKind, content: &str) -> bool {
 /// Deliberately conservative — it only returns `true` when code signals clearly
 /// dominate and shell/log signals are essentially absent, so genuine logs and
 /// build output are still compressed. Used only when the tool name is unknown.
+///
+/// GH #628: the previous version under-counted real source — a decorative
+/// separator comment (`// ————`, `// ====`) and the call-shaped scaffolding of a
+/// test file (`describe(…) {`, `});`) scored as non-code, so a genuine source
+/// read routed through an unrecognized tool was lossy-compressed and silently
+/// lost those separator lines, breaking the model's subsequent exact-match edit.
+/// The fix: comment lines are *neutral* (never dilute the ratio) and top-level
+/// call/closer shapes count as code even at column 0. The shell-signal veto is
+/// untouched, so genuine logs and build output are still compressed.
 pub fn looks_like_source_code(content: &str) -> bool {
     let mut code_signals = 0usize;
     let mut shell_signals = 0usize;
@@ -213,6 +222,22 @@ pub fn looks_like_source_code(content: &str) -> bool {
         if trimmed.is_empty() {
             continue;
         }
+
+        // Comment lines are part of source but carry no compress-vs-keep signal
+        // on their own, and a decorative separator (`// ————`, `// ====`) or a
+        // doc-block continuation (` * @param`) must never *dilute* the code ratio
+        // — that false-negative is what let the proxy strip those lines (#628).
+        // Treat C-style comments as neutral: skip without counting. `#` is
+        // deliberately excluded (ambiguous with shell prompts / log levels /
+        // Python) so genuine shell output is still detected and compressed.
+        if trimmed.starts_with("//")
+            || trimmed.starts_with("/*")
+            || trimmed.starts_with("*/")
+            || trimmed.starts_with("* ")
+        {
+            continue;
+        }
+
         considered += 1;
 
         // Command/log markers — strong evidence this is NOT a file read.
@@ -242,6 +267,15 @@ pub fn looks_like_source_code(content: &str) -> bool {
             || trimmed.ends_with("=>")
             || trimmed.ends_with("->")
             || trimmed.ends_with(':');
+        // Top-level declarations, call statements and block closers carry code
+        // punctuation even at column 0 (`describe("x", () => {`, `});`), so the
+        // bare `is_indented && has_code_punct` test missed them — the exact
+        // test-DSL shape (`describe`/`it`/`expect`) behind the #628 false-negative.
+        // A call/closer *shape* with code punctuation is a strong code signal
+        // regardless of indentation.
+        let is_call_or_closer = (trimmed.contains('(') && trimmed.contains(')'))
+            || trimmed.starts_with('}')
+            || trimmed.starts_with(')');
         let has_keyword = [
             "fn ",
             "def ",
@@ -268,7 +302,10 @@ pub fn looks_like_source_code(content: &str) -> bool {
         .iter()
         .any(|k| trimmed.starts_with(k) || trimmed.contains(k));
 
-        if (is_indented && has_code_punct) || has_keyword {
+        // Code punctuation counts when the line is indented (a statement in a
+        // block) OR is a top-level call/closer shape (`describe(…) {`, `});`).
+        let has_code_shape = has_code_punct && (is_indented || is_call_or_closer);
+        if has_code_shape || has_keyword {
             code_signals += 1;
         }
     }
@@ -402,5 +439,71 @@ mod tests {
     fn plain_prose_not_code() {
         let prose = "This is a normal paragraph of text.\nIt has several sentences.\nNone of them are code.\nThey are just words on lines.\nMore words follow here.";
         assert!(!looks_like_source_code(prose));
+    }
+
+    /// Regression for GH #628: a real test file whose only "non-code-shaped"
+    /// lines are decorative separator comments must be recognized as source, so
+    /// the proxy protects it (when routed through an unrecognized tool) instead
+    /// of lossy-compressing it and silently dropping the `// ————` separators —
+    /// the exact divergence that made the model's `ctx_edit` fail on a whitespace
+    /// mismatch.
+    #[test]
+    fn test_file_with_separator_comments_is_source() {
+        let code = "import { describe, it, expect } from \"vitest\";\n\
+            \n\
+            // ————————————————————————————————————————————————————————\n\
+            // Section: arithmetic\n\
+            // ————————————————————————————————————————————————————————\n\
+            describe(\"add\", () => {\n\
+            \x20 it(\"adds\", () => {\n\
+            \x20   expect(1 + 1).toBe(2);\n\
+            \x20 });\n\
+            });\n\
+            \n\
+            // ----------------------------------------------------------\n\
+            // Section: strings\n\
+            // ----------------------------------------------------------\n\
+            describe(\"concat\", () => {\n\
+            \x20 it(\"joins\", () => {\n\
+            \x20   expect(\"a\" + \"b\").toBe(\"ab\");\n\
+            \x20 });\n\
+            });\n";
+        assert!(
+            looks_like_source_code(code),
+            "a .test.ts with decorative separator comments must read as source"
+        );
+        assert!(
+            should_protect(ToolResultKind::Other, code),
+            "an unrecognized tool returning this source must still be protected"
+        );
+    }
+
+    /// A comment-heavy source file (license header, doc block) is still source:
+    /// the neutral-comment rule must not let comments dilute the code ratio.
+    #[test]
+    fn comment_heavy_source_still_detected() {
+        let code = "/*\n\
+            \x20* Copyright (c) 2026. All rights reserved.\n\
+            \x20* This module wires the request pipeline.\n\
+            \x20*/\n\
+            export function build(cfg) {\n\
+            \x20 const app = create();\n\
+            \x20 app.use(cfg);\n\
+            \x20 return app;\n\
+            }\n";
+        assert!(looks_like_source_code(code));
+    }
+
+    /// The loosened call/closer signal must NOT start treating parenthesized log
+    /// output as code — the shell-signal veto and the punctuation requirement keep
+    /// genuine command output compressible.
+    #[test]
+    fn parenthesized_log_output_still_not_code() {
+        let log = "INFO  starting worker (pid=4211)\n\
+            processing batch (size=128) ok\n\
+            processing batch (size=64) ok\n\
+            WARN  slow response (842ms) from upstream\n\
+            done in 3.2s (0 errors)\n";
+        assert!(!looks_like_source_code(log));
     }
 }

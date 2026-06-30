@@ -32,6 +32,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
     non-MCP-first sentence.
 
 ### Fixed
+- **Source reads are no longer silently stripped of decorative separator comments,
+  which had broken follow-up edits (#628).** A file read carries lossless-only
+  intent — the model edits exactly what it sees — so the proxy never lossy-
+  compresses a recognized file read. The safety net for reads routed through an
+  *unrecognized* tool (the content heuristic) under-counted real source, though: a
+  decorative separator comment (`// ————`, `// ----`) and the call-shaped
+  scaffolding of a test file (`describe(…) {`, `});`) scored as non-code, so a
+  genuine `.test.ts` could be compressed on the wire and lose those separator
+  lines — after which `ctx_edit` failed on a whitespace mismatch against the
+  on-disk file. The heuristic now treats comment lines as neutral (they never
+  dilute the code ratio) and recognizes top-level call/closer shapes as code, so
+  real source is protected regardless of the originating tool. Regression tests
+  pin the verbatim `ctx_read` modes (`full`/`raw`/`lines:N-M`) to reproduce every
+  source line, including decorative comments.
 - **The Codex `lean-ctx -c` SessionStart hook is no longer a redundant nag (#625).**
   Codex's `PreToolUse` hook already rewrites every rewritable Bash command to
   `lean-ctx -c "<command>"` transparently (`permissionDecision: allow` +
