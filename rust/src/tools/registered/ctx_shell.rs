@@ -73,13 +73,23 @@ impl McpTool for CtxShellTool {
                 .ok_or_else(|| ErrorData::internal_error("session not available", None))?;
 
             let explicit_cwd = get_str(args, "cwd");
-            let effective_cwd = {
+            let (effective_cwd, cwd_jail_reason) = {
                 let guard = crate::server::bounded_lock::read(session_lock, "ctx_shell_cwd");
                 match guard {
-                    Some(session) => session.effective_cwd(explicit_cwd.as_deref()),
-                    None => explicit_cwd.unwrap_or_else(|| ".".to_string()),
+                    Some(session) => session.effective_cwd_checked(explicit_cwd.as_deref()),
+                    None => (explicit_cwd.clone().unwrap_or_else(|| ".".to_string()), None),
                 }
             };
+            // Surfaced at the end of the output so a jailed `cwd` request
+            // (rejected and silently replaced with the project root) is
+            // visible to the caller instead of passing unnoticed (#629).
+            let cwd_jail_hint = cwd_jail_reason
+                .map(|reason| {
+                    format!(
+                        "\n[cwd: requested path rejected by project-root jail ({reason}) \u{2014} ran in {effective_cwd} instead]"
+                    )
+                })
+                .unwrap_or_default();
 
             {
                 let Some(mut session) =
@@ -224,7 +234,7 @@ impl McpTool for CtxShellTool {
             } else {
                 String::new()
             };
-            let final_out = format!("{result_out}{tee_hint}{shell_mismatch}{exit_suffix}");
+            let final_out = format!("{result_out}{tee_hint}{shell_mismatch}{cwd_jail_hint}{exit_suffix}");
 
             Ok(ToolOutput {
                 text: final_out,

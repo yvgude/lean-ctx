@@ -411,6 +411,15 @@ impl SessionState {
     /// Explicit CWD and stored shell_cwd are jail-checked against the project root
     /// to prevent MCP clients from escaping the workspace.
     pub fn effective_cwd(&self, explicit_cwd: Option<&str>) -> String {
+        self.effective_cwd_checked(explicit_cwd).0
+    }
+
+    /// Like [`Self::effective_cwd`], but also reports when an explicit `cwd`
+    /// request was rejected by the project-root jail and silently replaced
+    /// with the project root (#629) -- callers that surface output to a
+    /// human/agent should report this instead of letting the substitution
+    /// pass unnoticed.
+    pub fn effective_cwd_checked(&self, explicit_cwd: Option<&str>) -> (String, Option<String>) {
         let root = self.project_root.as_deref().unwrap_or(".");
         if let Some(cwd) = explicit_cwd
             && !cwd.is_empty()
@@ -419,22 +428,27 @@ impl SessionState {
             return Self::jail_cwd(cwd, root);
         }
         if let Some(ref cwd) = self.shell_cwd {
-            return cwd.clone();
+            return (cwd.clone(), None);
         }
         if let Some(ref r) = self.project_root {
-            return r.clone();
+            return (r.clone(), None);
         }
-        std::env::current_dir()
-            .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string())
+        (
+            std::env::current_dir()
+                .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string()),
+            None,
+        )
     }
 
     /// Verifies that `candidate` is within the project jail.
-    /// Falls back to `fallback_root` if the candidate escapes.
-    fn jail_cwd(candidate: &str, fallback_root: &str) -> String {
+    /// Falls back to `fallback_root` if the candidate escapes, returning the
+    /// jail-rejection reason so callers can surface it instead of silently
+    /// substituting the root (#629).
+    fn jail_cwd(candidate: &str, fallback_root: &str) -> (String, Option<String>) {
         let p = std::path::Path::new(candidate);
         match crate::core::pathjail::jail_path(p, std::path::Path::new(fallback_root)) {
-            Ok(jailed) => jailed.to_string_lossy().to_string(),
-            Err(_) => fallback_root.to_string(),
+            Ok(jailed) => (jailed.to_string_lossy().to_string(), None),
+            Err(reason) => (fallback_root.to_string(), Some(reason)),
         }
     }
 
