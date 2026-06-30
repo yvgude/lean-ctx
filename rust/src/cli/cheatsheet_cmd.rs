@@ -22,6 +22,7 @@ pub fn cmd_cheatsheet() {
   ctx_multi_read        \x1b[2m# read multiple files at once\x1b[0m
   ctx_search            \x1b[2m# search with compressed results (~70%)\x1b[0m
   ctx_shell             \x1b[2m# run CLI with compressed output (~60-90%)\x1b[0m
+  ctx_read raw=true     \x1b[2m# escape hatch: exact bytes (CLI: lean-ctx raw \"cmd\")\x1b[0m
 
 \x1b[1;35m━━━ AFTER CODING ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m
   ctx_session finding \"...\"       \x1b[2m# record what you discovered\x1b[0m

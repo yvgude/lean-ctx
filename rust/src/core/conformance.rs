@@ -250,6 +250,14 @@ const MUST_KEEP_SYMBOLS: &[&str] = &["add_item", "total_count", "Inventory"];
 const MUST_DROP_BODIES: &[&str] = &["body_secret_alpha", "body_secret_beta"];
 
 fn render_mode(mode: &str) -> String {
+    render_mode_full(mode).0
+}
+
+/// Rendered view plus its pre-footer body token count. The compression-size
+/// invariant measures `.1` (the body), since the reactive recovery footer and the
+/// savings line are orthogonal affordances appended after compression, not part of
+/// the compressed content.
+fn render_mode_full(mode: &str) -> (String, usize) {
     crate::tools::ctx_read::render::process_mode(
         ACCURACY_FIXTURE,
         mode,
@@ -261,7 +269,6 @@ fn render_mode(mode: &str) -> String {
         "conformance/fixture.rs",
         None,
     )
-    .0
 }
 
 fn accuracy_checks() -> Vec<Check> {
@@ -302,7 +309,7 @@ fn accuracy_checks() -> Vec<Check> {
 
     let fixture_tokens = crate::core::tokens::count_tokens(ACCURACY_FIXTURE);
     for mode in ["map", "signatures", "aggressive"] {
-        let sent = crate::core::tokens::count_tokens(&render_mode(mode));
+        let sent = render_mode_full(mode).1;
         checks.push(Check::from_bool(
             "accuracy",
             format!("read_mode_compresses:{mode}"),

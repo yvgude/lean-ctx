@@ -59,6 +59,7 @@ GETTING STARTED:
 
 EVERYDAY COMMANDS:
     lean-ctx -c \"command\"          Run a shell command with compressed output
+    lean-ctx raw \"command\"         Same, but full uncompressed output (escape hatch)
     lean-ctx read <file>           Read a file with compression
     lean-ctx grep <pattern>        Search with compressed output
     lean-ctx dashboard             Open the web dashboard (localhost:3333)
@@ -110,6 +111,7 @@ USAGE:
     lean-ctx -t \"command\"          Track command (full output + stats, no compression)
     lean-ctx -c \"command\"          Execute with compressed output (used by AI hooks)
     lean-ctx -c --raw \"command\"    Execute without compression (full output)
+    lean-ctx raw \"command\"         Raw escape hatch: full, exact output (alias: bypass)
     lean-ctx exec \"command\"        Same as -c
     lean-ctx shell                 Interactive shell with compression
 

@@ -55,7 +55,7 @@ fn attach_ccr(original: &str, result: String) -> String {
             ),
             // Shared-filesystem default: the path handle (native read or slice).
             None => format!(
-                "{result}\n[lean-ctx: full original at {handle} — read it, or \
+                "{result}\n[lean-ctx: full original at {handle} — read it directly (no MCP), or \
                  ctx_expand(id=\"{handle}\", head=N|search=\"…\"|json_path=\"…\") for a slice]"
             ),
         },

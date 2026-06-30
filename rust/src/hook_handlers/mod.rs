@@ -1240,6 +1240,24 @@ pub(crate) fn emit_session_start_additional_context(additional_context: &str) {
     );
 }
 
+/// Codex SessionStart guidance for the shell-hook surface (GH #625).
+///
+/// The Codex `PreToolUse` hook already rewrites every rewritable Bash command to
+/// `lean-ctx -c "<cmd>"` automatically (`codex_rewrite_output`: `allow` +
+/// `updatedInput`), so the old "prefer `lean-ctx -c`" line was redundant *and*
+/// taught nothing about getting raw output back — the one thing an agent cannot
+/// reach on its own once a command is auto-compressed. That gap is the shell-side
+/// twin of the MCP "too compressed" complaint: lacking an escape hatch, agents
+/// re-read the compressed view in tiny chunks instead of asking for raw bytes.
+///
+/// This hint mirrors the MCP `RECOVER` rule
+/// ([`crate::core::rules_canonical::RECOVER`]) on the non-MCP CLI surface: it
+/// names the **reversible** nature of the compression and the concrete raw escape
+/// (`lean-ctx raw "<command>"`), which the rewrite hook leaves untouched (it
+/// already starts with `lean-ctx `, so `rewrite_candidate` returns `None`). The
+/// blocked-command sentence still covers the allowlist gate.
+pub(crate) const CODEX_SHELL_RECOVERY_HINT: &str = "lean-ctx auto-compresses shell output, and the compression is fully reversible: when you need the complete, exact output, re-run the command as `lean-ctx raw \"<command>\"` instead of reading it back in small chunks. If a Bash call is blocked, rerun it with the exact command the hook suggests.";
+
 pub fn handle_codex_session_start() {
     if is_quiet() {
         return;
@@ -1250,9 +1268,7 @@ pub fn handle_codex_session_start() {
     if crate::core::config::Config::load().dedicated_session_context_active() {
         return;
     }
-    emit_session_start_additional_context(
-        "For shell commands matched by lean-ctx compression rules, prefer `lean-ctx -c \"<command>\"`. If a Bash call is blocked, rerun it with the exact command suggested by the hook.",
-    );
+    emit_session_start_additional_context(CODEX_SHELL_RECOVERY_HINT);
 }
 
 /// Dedicated Copilot PreToolUse handler (dispatched via `hook copilot`).

@@ -772,6 +772,60 @@ fn process_mode_output_is_byte_stable_across_calls() {
     }
 }
 
+/// The reactive recovery footer (#premium-recovery): present on compressed views,
+/// leading with the MCP-free native path; absent from verbatim views and when the
+/// `recovery_hints` tier is `off`; and byte-stable across calls (#498).
+#[test]
+fn recovery_footer_is_compressed_only_and_togglable() {
+    // `isolated_data_dir()` already holds `test_env_lock` for its lifetime; taking
+    // the lock again here would self-deadlock (the mutex is non-reentrant).
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let content: String = (0..120)
+        .map(|i| format!("pub fn handler_{i}(x: u32) -> u32 {{ x * {i} }}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let tokens = count_tokens(&content);
+    let run = |mode: &str| {
+        render::process_mode(
+            &content,
+            mode,
+            "F1",
+            "rec.rs",
+            "rs",
+            tokens,
+            CrpMode::Off,
+            "/tmp/rec.rs",
+            None,
+        )
+        .0
+    };
+
+    // Default tier (minimal): a compressed view leads its footer with the native,
+    // MCP-free path so an agent needing the full source never reads line-by-line.
+    crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "minimal");
+    let sigs = run("signatures");
+    assert!(
+        sigs.contains("read \"/tmp/rec.rs\" directly (no MCP)"),
+        "compressed view must surface the MCP-free recovery path: {sigs}"
+    );
+    // Determinism (#498): byte-stable across calls.
+    assert_eq!(sigs, run("signatures"), "footer must be byte-stable");
+
+    // The verbatim escape hatch itself carries no footer (nothing to recover).
+    assert!(
+        !run("raw").contains("(no MCP)"),
+        "raw view needs no recovery footer"
+    );
+
+    // The off switch suppresses the footer cleanly.
+    crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "off");
+    assert!(
+        !run("signatures").contains("(no MCP)"),
+        "recovery_hints=off must drop the footer"
+    );
+    crate::test_env::remove_var("LEAN_CTX_RECOVERY_HINTS");
+}
+
 #[test]
 fn raw_mode_no_savings_footer() {
     let _lock = crate::core::data_dir::test_env_lock();

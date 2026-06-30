@@ -61,6 +61,7 @@ Top-level configuration keys
 - `proxy_require_token` (bool, default `false`) — Require lean-ctx Bearer token authentication and disable provider API key fallback
 - `proxy_timeout_ms` (u64?, default `null`) — Proxy reachability timeout in ms (default: 200). Override via LEAN_CTX_PROXY_TIMEOUT_MS
 - `read_only_roots` (string[], default `[]` — env `LEAN_CTX_READ_ONLY_ROOTS`) — Read-only sibling roots: reads allowed, writes always denied (edit/refactor/export)
+- `recovery_hints` (enum: off | minimal | full, default `minimal`) — Verbosity of the reactive recovery footer on compressed output (path-first, MCP-optional)
 - `redirect_exclude` (string[], default `[]`) — URL patterns to exclude from proxy redirection
 - `reference_results` (bool, default `false` — env `LEAN_CTX_REFERENCE_RESULTS`) — Store large tool outputs as references instead of inline content
 - `response_verbosity` (enum: normal | compact | minimal, default `normal` — env `LEAN_CTX_RESPONSE_VERBOSITY`) — Controls how verbose tool responses are
@@ -84,7 +85,7 @@ Top-level configuration keys
 - `team_auto_push` (bool, default `false`) — Opt-in: daemon periodically pushes your signed savings batch to team_url (off by default; requires team_url + team_token)
 - `team_token` (string?, default `null`) — Bearer token for the team server (push needs a member token; pull/auto-push needs the configured team token)
 - `team_url` (string?, default `null`) — Team server base URL for the opt-in savings roll-up (push/pull)
-- `tee_mode` (enum: never | failures | always, default `failures`) — Controls when shell output is tee'd to disk for later retrieval
+- `tee_mode` (enum: never | failures | highcompression | always, default `highcompression`) — Controls when shell output is tee'd to disk for later retrieval
 - `terse_agent` (enum: off | lite | full | ultra, default `off` — env `LEAN_CTX_TERSE_AGENT`) — Controls agent output verbosity via instructions injection
 - `theme` (string, default `default`) — Dashboard color theme
 - `tool_profile` (enum: minimal | standard | power, default `""`) — Tool visibility profile: minimal (5 tools), standard (15), power (all). Override via LEAN_CTX_TOOL_PROFILE

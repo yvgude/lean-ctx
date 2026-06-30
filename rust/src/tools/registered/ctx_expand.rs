@@ -20,6 +20,8 @@ impl McpTool for CtxExpandTool {
              Supports head/tail/search to filter lines and save tokens on re-read.\n\
              action=list browses all archives. action=search_all queries across archives.\n\
              Zero-loss: original preserved.\n\
+             NO MCP? The same bytes are a real file — every [Archived]/tee/firewall hint\n\
+             shows its on-disk path; read that path directly with any tool instead.\n\
              ANTIPATTERN: not for reading project files — use ctx_read or ctx_compose.",
             json!({
                 "type": "object",

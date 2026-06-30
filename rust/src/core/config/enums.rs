@@ -59,14 +59,72 @@ impl Effort {
 }
 
 /// Controls when shell output is tee'd to disk for later retrieval.
+///
+/// Default is `HighCompression` (not `Failures`): a heavily compressed but
+/// *successful* command is exactly the case where an agent later needs the raw
+/// bytes, and teeing them guarantees the MCP-free recovery path (a real file the
+/// agent can read with any tool) always exists. The archive GC (TTL + size cap)
+/// covers the extra files.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum TeeMode {
     Never,
-    #[default]
     Failures,
+    #[default]
     HighCompression,
     Always,
+}
+
+/// Controls the reactive recovery footer surfaced on compressed tool output
+/// (`ctx_read`, archive/firewall/spill handles, `ctx_shell` tee).
+///
+/// The proactive `RECOVER` rule teaches the vocabulary once in the system
+/// prompt; this knob governs the per-output reminder that names the concrete
+/// file path / handle at point-of-need:
+/// * `Minimal` (default) — a single, non-MCP-first line on the *first* compressed
+///   view of a file/handle per session.
+/// * `Full` — the richer ladder (`mode=full` · `raw=true` · `ctx_retrieve` ·
+///   `ctx_expand`); used by the `exploration`/`review` profiles.
+/// * `Off` — suppresses the footer entirely (the proactive rule still ships, so
+///   reversibility is never undiscoverable).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RecoveryHints {
+    Off,
+    #[default]
+    Minimal,
+    Full,
+}
+
+impl RecoveryHints {
+    /// Parse a config/env token. Returns `None` for unrecognized input so a typo
+    /// falls back to the default rather than silently disabling the feature.
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "off" | "none" | "false" => Some(Self::Off),
+            "minimal" | "min" | "on" | "true" => Some(Self::Minimal),
+            "full" => Some(Self::Full),
+            _ => None,
+        }
+    }
+
+    /// Reads the recovery-hint tier from `LEAN_CTX_RECOVERY_HINTS` (ops/test
+    /// override). Unset or unrecognized yields `None` (use the configured value).
+    #[must_use]
+    pub fn from_env() -> Option<Self> {
+        Self::parse(&std::env::var("LEAN_CTX_RECOVERY_HINTS").ok()?)
+    }
+
+    /// Stable lowercase label (config display, schema, `/status`).
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Minimal => "minimal",
+            Self::Full => "full",
+        }
+    }
 }
 
 /// Legacy: Controls agent output verbosity level injected into MCP instructions.

@@ -553,8 +553,8 @@ lean-ctx init --agent codex
 This installs:
 
 - `~/.codex/AGENTS.md` + `~/.codex/LEAN-CTX.md`
-- a `SessionStart` hook that reminds Codex to prefer `lean-ctx -c "<command>"` for rewritable shell commands
-- a `PreToolUse` hook that blocks rewritable raw Bash commands and tells Codex exactly how to rerun them through `lean-ctx`
+- a `PreToolUse` hook that transparently rewrites rewritable Bash commands to `lean-ctx -c "<command>"` (allowed + `updatedInput`), so shell output is compressed with zero agent effort
+- a `SessionStart` hook that teaches Codex the raw escape hatch — `lean-ctx raw "<command>"` for the full, exact output — so it never re-reads a compressed view in small chunks
 
 ### Google Antigravity
 
@@ -802,3 +802,4 @@ lean-ctx is a **privacy-first** tool — no tracking, no analytics, no PII colle
 ## License
 
 Apache-2.0 — see [LICENSE](../LICENSE) for details.
+

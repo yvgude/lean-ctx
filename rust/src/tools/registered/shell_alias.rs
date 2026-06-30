@@ -39,6 +39,10 @@ impl McpTool for ShellAliasTool {
                     "cwd": {
                         "type": "string",
                         "description": "Working dir"
+                    },
+                    "raw": {
+                        "type": "boolean",
+                        "description": "Return verbatim output (skip compression). Default false — pass true for the exact bytes."
                     }
                 },
                 "required": ["command"]
@@ -64,13 +68,16 @@ impl McpTool for ShellAliasTool {
 
         tokio::task::block_in_place(|| {
             let cwd = get_str(args, "cwd");
+            // Compressed by default (the point of this alias), but honor an explicit
+            // raw=true so clients restricted to "shell"/"bash" still have the verbatim
+            // escape the description advertises — no MCP-specific tool required.
+            let raw = args.get("raw").and_then(Value::as_bool).unwrap_or(false);
             let mut shell_args = Map::new();
             shell_args.insert("command".to_string(), Value::String(command));
             if let Some(dir) = cwd {
                 shell_args.insert("cwd".to_string(), Value::String(dir));
             }
-            // raw=false → always compress (the whole point of this alias)
-            shell_args.insert("raw".to_string(), Value::Bool(false));
+            shell_args.insert("raw".to_string(), Value::Bool(raw));
 
             crate::tools::registered::ctx_shell::CtxShellTool.handle(&shell_args, ctx)
         })

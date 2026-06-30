@@ -225,6 +225,8 @@ WORKFLOW: see [Archived:ID] → ctx_expand id=ID to restore full content.
 Supports head/tail/search to filter lines and save tokens on re-read.
 action=list browses all archives. action=search_all queries across archives.
 Zero-loss: original preserved.
+NO MCP? The same bytes are a real file — every [Archived]/tee/firewall hint
+shows its on-disk path; read that path directly with any tool instead.
 ANTIPATTERN: not for reading project files — use ctx_read or ctx_compose.
 
 Parameters: `action`, `end_line`, `head`, `id`, `json_keys`, `json_path`, `query`, `search`, `session_id`, `start_line`, `tail`
@@ -762,5 +764,5 @@ Output is compressed for token savings. For verbatim output pass raw=true.
 Use when your MCP client prefers shell/bash over ctx_shell — transparently
 delegates to ctx_shell internals.
 
-Parameters: `command`*, `cwd`
+Parameters: `command`*, `cwd`, `raw`
 

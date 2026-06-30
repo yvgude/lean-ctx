@@ -180,15 +180,16 @@ mod tests {
         // (no rules block) must keep the fixed per-turn prefix tiny. This is the
         // regression guard for the "~3K tokens/turn injected" critique — if any
         // knob silently stops applying, the total balloons and this fails.
-        // macOS/Linux baseline is ~1774 after two reviewed navigation additions:
-        // the v3 agent-loop + navigation-paradox one-liner (#609, always-on in the
-        // COMPACT skeleton) and the ctx_search `handle` param (#608) — together
-        // ~+47 tok over the prior ~1727. Windows additionally carries
-        // `build_shell_hint()` — a ~5-tok PowerShell-cmdlet warning that is empty on
-        // POSIX. The budget covers that surface plus a small margin for
-        // `shell_name()` variance (#1051), and still sits ~1.2K under the ~3K balloon
-        // this guard exists to catch — it is not a license for silent creep.
-        const MINIMAL_ARM_PREFIX_BUDGET_TOKENS: usize = 1790;
+        // macOS/Linux baseline is ~1829 after three reviewed additions: the v3
+        // agent-loop + navigation-paradox one-liner (#609, always-on in the COMPACT
+        // skeleton), the ctx_search `handle` param (#608), and the proactive
+        // `RECOVER` recovery one-liner + the `ctx_read` `raw` schema param
+        // (premium-recovery-layer) — together ~+39 tok over the prior ~1790. Windows
+        // additionally carries `build_shell_hint()` — a ~5-tok PowerShell-cmdlet
+        // warning that is empty on POSIX. The budget covers that surface plus a small
+        // margin for `shell_name()` variance (#1051), and still sits ~1.1K under the
+        // ~3K balloon this guard exists to catch — it is not a license for silent creep.
+        const MINIMAL_ARM_PREFIX_BUDGET_TOKENS: usize = 1835;
 
         let _iso = crate::core::data_dir::isolated_data_dir();
         crate::test_env::set_var("LEAN_CTX_TOOL_PROFILE", "minimal");

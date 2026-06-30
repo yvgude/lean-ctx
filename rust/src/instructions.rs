@@ -11,13 +11,16 @@ const INSTRUCTION_CAP_TOKENS: usize = 800;
 /// so the budget is deterministic across dev machines, not just clean CI (#498).
 /// Raised in reviewed steps: 520→540 / 600→640 for the sharpened ctx_* redirects
 /// (#1030), then 540→590 / 640→680 for the v3 agent-loop + navigation-paradox
-/// one-liner now carried in the COMPACT profile (#609). Both stay far under the
+/// one-liner now carried in the COMPACT profile (#609), then 590→615 / 680→712 for
+/// the proactive `RECOVER` recovery one-liner now carried in COMPACT_NON_SHADOW
+/// (premium-recovery-layer): it teaches the MCP-optional decompression paths so
+/// agents stop re-reading compressed output line-by-line. All stay far under the
 /// 800-token runtime cap (`INSTRUCTION_CAP_TOKENS`), so the guidance ships in
 /// full without truncating anything live.
 #[cfg(test)]
-const STATIC_INSTRUCTION_BUDGET_TOKENS: usize = 590;
+const STATIC_INSTRUCTION_BUDGET_TOKENS: usize = 615;
 #[cfg(test)]
-const STATIC_INSTRUCTION_BUDGET_TDD_TOKENS: usize = 680;
+const STATIC_INSTRUCTION_BUDGET_TDD_TOKENS: usize = 712;
 /// Windows carries a one-line SHELL hint inside the skeleton.
 #[cfg(all(test, windows))]
 const STATIC_INSTRUCTION_SHELL_HINT_TOKENS: usize = 25;

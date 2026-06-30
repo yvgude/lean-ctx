@@ -5,7 +5,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Compressed output is now visibly reversible — a first-class recovery layer on
+  every surface (#625).** Agents (Codex especially) were re-reading compressed
+  views line-by-line because nothing taught them how to get the raw bytes back —
+  the real cause behind "too compressed" reports. The escape hatch already
+  existed; it is now *discoverable* and *consistent*, with the non-MCP path
+  treated as first-class (many orgs forbid MCP):
+  - **Proactive (MCP rules v4).** A new `RECOVER` rule states the invariant —
+    compressed output is reversible, never re-read it line-by-line — and names the
+    recovery grammar: read the shown file path with any tool (no MCP), or
+    `ctx_read(mode=full|raw=true)`; `[Archived]`/tee/firewall handles →
+    `ctx_expand(id=…)`.
+  - **Reactive (ctx_read footer).** Every lossy `ctx_read` view ends with a
+    recovery footer that leads with the native file path, then the MCP fallbacks;
+    `full`/`raw` views carry no footer (deduped by mode). `ctx_read` gained an
+    explicit `raw` parameter (verbatim bytes, unframed escape hatch).
+  - **CLI / shell-hook surface.** `lean-ctx raw "<command>"` is now surfaced in
+    `help`, `help all` and the cheatsheet, so the raw path is reachable without
+    MCP.
+  - **Guaranteed raw on disk.** The default `tee_mode` is now `high-compression`:
+    whenever a view compresses heavily a verbatim copy is one `ctx_expand`/file
+    read away. The new `recovery_hints` config (`off|minimal|full`) tunes footer
+    verbosity. All recovery grammar (archive, firewall, spill, tee, ctx_shell)
+    flows through one `recovery` module, so every channel speaks the same
+    non-MCP-first sentence.
+
 ### Fixed
+- **The Codex `lean-ctx -c` SessionStart hook is no longer a redundant nag (#625).**
+  Codex's `PreToolUse` hook already rewrites every rewritable Bash command to
+  `lean-ctx -c "<command>"` transparently (`permissionDecision: allow` +
+  `updatedInput`), so the old SessionStart line ("prefer `lean-ctx -c`") taught
+  nothing actionable — and crucially said nothing about getting *raw* output,
+  which is the one thing an agent cannot reach once a command is auto-compressed.
+  The hint now teaches the raw escape (`lean-ctx raw "<command>"`) and forbids the
+  small-chunk re-read anti-pattern. The raw spellings (`lean-ctx raw`,
+  `lean-ctx -c --raw`) are reentrance-safe: the rewrite hook leaves any command
+  starting with `lean-ctx ` untouched, so the agent always reaches verbatim bytes.
 - **`ctx_search` no longer returns a false `No matches` for content edited after
   the index warmed (#624).** The resident trigram index treated itself as *fresh*
   for a fixed 15 s TTL with no per-file change detection, so in hybrid setups

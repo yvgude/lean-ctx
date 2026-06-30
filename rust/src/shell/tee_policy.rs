@@ -17,8 +17,11 @@ use crate::core::config::TeeMode;
 /// - `Never` never tees.
 /// - `Always` tees any non-blank output.
 /// - `Failures` tees exactly when the command failed (`exit_code != 0`).
-/// - `HighCompression` tees when compression removed >70% of a sizable output,
-///   so a heavily-digested *successful* run stays recoverable.
+/// - `HighCompression` (the default) is a *superset* of `Failures`: it tees on
+///   failure **and** when compression removed >70% of a sizable output. As the
+///   default it guarantees the MCP-free recovery path — a real raw file — exists
+///   for both the cases an agent actually re-reads: failures and heavily-digested
+///   successful runs.
 pub(crate) fn should_tee(
     mode: &TeeMode,
     exit_code: i32,
@@ -34,7 +37,8 @@ pub(crate) fn should_tee(
         TeeMode::Always => true,
         TeeMode::Failures => exit_code != 0,
         TeeMode::HighCompression => {
-            original_tokens > 100 && savings_pct(original_tokens, compressed_tokens) > 70.0
+            exit_code != 0
+                || (original_tokens > 100 && savings_pct(original_tokens, compressed_tokens) > 70.0)
         }
     }
 }
@@ -84,6 +88,22 @@ mod tests {
         assert!(!should_tee(&TeeMode::HighCompression, 0, false, 1000, 900));
         // Savings high but the output is too small to bother.
         assert!(!should_tee(&TeeMode::HighCompression, 0, false, 80, 1));
+    }
+
+    #[test]
+    fn high_compression_is_a_superset_of_failures() {
+        // As the default tee mode, HighCompression must still tee failures (so the
+        // raw-file recovery path exists for them) even when output is tiny and
+        // barely compressed — exactly the case `Failures` covered before.
+        assert!(should_tee(&TeeMode::HighCompression, 1, false, 5, 5));
+        assert!(should_tee(&TeeMode::HighCompression, 127, false, 5, 5));
+        // A blank failure still has nothing worth saving.
+        assert!(!should_tee(&TeeMode::HighCompression, 1, true, 0, 0));
+    }
+
+    #[test]
+    fn default_tee_mode_is_high_compression() {
+        assert_eq!(TeeMode::default(), TeeMode::HighCompression);
     }
 
     #[test]

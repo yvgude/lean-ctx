@@ -64,9 +64,12 @@ pub const COMPRESSION_BLOCK_END: &str = "<!-- /lean-ctx-compression -->";
 /// injection layer can parse it and decide whether a file is up-to-date.
 ///
 /// History: v3 (#609) adds the `AGENT_LOOP` taxonomy + `NAV_PARADOX` guidance to
-/// the FULL profile and a compact one-liner to COMPACT; bumping it forces every
-/// committed `LEAN-CTX.md` artifact to be regenerated (see `tests/rules_drift.rs`).
-pub const RULES_VERSION: usize = 3;
+/// the FULL profile and a compact one-liner to COMPACT. v4 adds the `RECOVER`
+/// section to FULL + COMPACT so agents learn the (MCP-optional) decompression
+/// paths proactively instead of re-reading compressed output line-by-line.
+/// Bumping it forces every committed `LEAN-CTX.md` artifact to be regenerated
+/// (see `tests/rules_drift.rs`).
+pub const RULES_VERSION: usize = 4;
 
 /// Banner placed at the top of dedicated rule files (non-shadow only).
 pub const CRITICAL: &str = "CRITICAL: ALWAYS use lean-ctx ctx_* tools instead of native equivalents. \
@@ -165,6 +168,16 @@ pub const AUTO: &str = "Auto: preload/dedup/compress run in background. \
     ctx_session=memory, ctx_knowledge=facts, ctx_semantic_search=meaning search, \
     ctx_shell raw=true=uncompressed. Details: LEAN-CTX.md";
 
+/// Recovery vocabulary. lean-ctx compression is fully reversible (CCR), but agents
+/// otherwise only discover the escape hatch reactively from output hints — so they
+/// re-read compressed files line-by-line instead of expanding (the "too compressed"
+/// complaint). Teaching it proactively here (FULL + COMPACT/Bare) fixes that, and
+/// the MCP-free path ("read the shown file path with any tool") covers orgs that
+/// forbid MCP. Mirrors the reactive footers in `ctx_read`/`archive`/`ctx_shell`.
+pub const RECOVER: &str = "RECOVER: compressed output is reversible — never re-read line-by-line. \
+    Need full/exact? Read the shown file path with any tool (no MCP), or \
+    ctx_read(mode=full|raw=true); [Archived]/tee/firewall → ctx_expand(id=...).";
+
 /// Context Engineering Protocol version reference.
 pub const CEP: &str = "CEP v1: 1.ACT FIRST 2.DELTA ONLY (Fn refs) 3.STRUCTURED (+/-/~) \
      4.ONE LINE PER ACTION 5.QUALITY ANCHOR";
@@ -237,6 +250,7 @@ const FULL_NON_SHADOW: &[&str] = &[
     NAV_PARADOX,
     PARALLEL,
     AUTO,
+    RECOVER,
     CEP,
     INTELLIGENCE,
     LITM_END,
@@ -256,6 +270,7 @@ const COMPACT_NON_SHADOW: &[&str] = &[
     LOOP_NAV_COMPACT,
     ANTI,
     PARALLEL,
+    RECOVER,
 ];
 
 const COMPACT_SHADOW: &[&str] = &[SHADOW_MINIMAL];
@@ -604,6 +619,32 @@ mod tests {
             assert!(
                 !out.contains("NAVIGATION PARADOX"),
                 "{wrapper:?} shadow drops paradox"
+            );
+        }
+    }
+
+    #[test]
+    fn recover_reaches_every_non_shadow_carrier() {
+        // The recovery vocabulary must reach FULL *and* COMPACT/Bare so agents
+        // never re-read compressed output line-by-line, and must lead with the
+        // MCP-free path ("read the shown path with any tool") for orgs that ban
+        // MCP. Bare resolves to COMPACT, so it carries RECOVER too.
+        for wrapper in [Wrapper::Dedicated, Wrapper::Shared, Wrapper::Bare] {
+            let out = render(false, wrapper, CompressionLevel::Off);
+            assert!(
+                out.contains(RECOVER),
+                "{wrapper:?} non-shadow must carry RECOVER verbatim"
+            );
+            assert!(
+                out.contains("(no MCP)"),
+                "{wrapper:?} RECOVER must lead with the MCP-free path"
+            );
+        }
+        // Shadow stays minimal; the reactive footers still cover recovery there.
+        for wrapper in [Wrapper::Dedicated, Wrapper::Shared] {
+            assert!(
+                !render(true, wrapper, CompressionLevel::Off).contains(RECOVER),
+                "{wrapper:?} shadow drops RECOVER"
             );
         }
     }

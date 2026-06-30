@@ -33,7 +33,8 @@ pub fn unified_tool_defs() -> Vec<Tool> {
                     "start_line": { "type": "integer", "description": "Read from this 1-based line on (alias: offset)" },
                     "offset": { "type": "integer", "description": "Alias for start_line (1-based first line)" },
                     "limit": { "type": "integer", "description": "Max number of lines to read from start_line/offset" },
-                    "fresh": { "type": "boolean" }
+                    "fresh": { "type": "boolean" },
+                    "raw": { "type": "boolean", "description": "Exact bytes, unframed — skips compression (verbatim escape hatch)" }
                 },
                 "required": ["path"]
             }),

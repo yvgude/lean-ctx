@@ -465,8 +465,19 @@ pub fn disk_usage_bytes() -> u64 {
     total
 }
 
+/// Filesystem path of an archived entry's verbatim content. Exposed so recovery
+/// hints can offer the MCP-free "read this file directly" route alongside
+/// `ctx_expand(id=...)` — the same content is reachable both ways.
+pub fn content_path_str(id: &str) -> String {
+    content_path(id).to_string_lossy().into_owned()
+}
+
 pub fn format_hint(id: &str, size_chars: usize, size_tokens: usize) -> String {
-    format!("[Archived: {size_chars} chars ({size_tokens} tok). Retrieve: ctx_expand(id=\"{id}\")]")
+    // Unified, non-MCP-first recovery grammar (see [`crate::core::recovery`]): the
+    // archived blob is a real file readable with any tool, and `ctx_expand(id)`
+    // reaches the same bytes for surgical slices.
+    let clause = crate::core::recovery::handle_clause(id, Some(&content_path_str(id)));
+    format!("[Archived: {size_chars} chars ({size_tokens} tok). {clause}]")
 }
 
 #[cfg(test)]

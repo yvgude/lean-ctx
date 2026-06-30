@@ -405,6 +405,22 @@ fn rewrite_candidate_returns_none_for_existing_lean_ctx_command() {
 }
 
 #[test]
+fn rewrite_candidate_leaves_raw_escape_hatch_untouched() {
+    // GH #625: the raw escape hatch the SessionStart hint teaches must not be
+    // re-wrapped back into a compressing `lean-ctx -c "…"`, or the agent could
+    // never actually reach raw bytes. Both spellings already start with
+    // `lean-ctx `, so the rewrite hook leaves them as-is (reentrance-safe).
+    assert_eq!(
+        rewrite_candidate("lean-ctx raw \"git diff\"", "lean-ctx"),
+        None
+    );
+    assert_eq!(
+        rewrite_candidate("lean-ctx -c --raw \"git diff\"", "lean-ctx"),
+        None
+    );
+}
+
+#[test]
 fn rewrite_candidate_wraps_single_command() {
     assert_eq!(
         rewrite_candidate("git status", "lean-ctx"),
@@ -834,6 +850,39 @@ fn session_start_uses_codex_additional_context_channel() {
             .as_str()
             .unwrap_or_default(),
         "prefer lean-ctx -c"
+    );
+}
+
+#[test]
+fn codex_session_start_hint_teaches_the_raw_escape_hatch() {
+    // GH #625: the PreToolUse hook already auto-compresses every Bash command, so
+    // the SessionStart hint's job is to teach the *raw* escape — otherwise agents
+    // re-read the compressed view in small chunks (the shell-side "too compressed"
+    // complaint). It must name the reversible compression, the concrete raw CLI
+    // (`lean-ctx raw "<command>"`), and forbid the small-chunk anti-pattern; the
+    // redundant "prefer `lean-ctx -c`" coaching is gone (compression is automatic).
+    let hint = CODEX_SHELL_RECOVERY_HINT;
+    assert!(
+        hint.contains("lean-ctx raw \"<command>\""),
+        "names the raw CLI: {hint}"
+    );
+    assert!(hint.contains("reversible"), "states reversibility: {hint}");
+    assert!(
+        hint.contains("small chunks"),
+        "forbids chunked re-reads: {hint}"
+    );
+    assert!(
+        !hint.contains("prefer `lean-ctx -c`"),
+        "drops the redundant prefer-c coaching (auto-rewrite handles it): {hint}"
+    );
+    // The hint must survive the additionalContext JSON channel byte-for-byte.
+    let json = session_start_additional_context_json(hint);
+    let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    assert_eq!(
+        v["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap_or_default(),
+        hint
     );
 }
 

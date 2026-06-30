@@ -29,8 +29,8 @@ mod tests;
 
 pub(crate) use defaults_allowlist::{cloud_infra_commands, default_shell_allowlist};
 pub use enums::{
-    CompressionLevel, Effort, OutputDensity, PermissionInheritance, ResponseVerbosity,
-    RulesInjection, RulesScope, SessionDegrade, TeeMode, TerseAgent,
+    CompressionLevel, Effort, OutputDensity, PermissionInheritance, RecoveryHints,
+    ResponseVerbosity, RulesInjection, RulesScope, SessionDegrade, TeeMode, TerseAgent,
 };
 pub use memory::{MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter};
 pub use provenance::{ConfigProvenance, EnvOverride};
@@ -77,6 +77,10 @@ pub struct Config {
     pub ultra_compact: bool,
     #[serde(default, deserialize_with = "serde_defaults::deserialize_tee_mode")]
     pub tee_mode: TeeMode,
+    /// Verbosity of the reactive recovery footer on compressed output
+    /// (`off|minimal|full`, default `minimal`). See [`RecoveryHints`].
+    #[serde(default)]
+    pub recovery_hints: RecoveryHints,
     #[serde(default)]
     pub output_density: OutputDensity,
     pub checkpoint_interval: u32,
@@ -590,6 +594,7 @@ impl Default for Config {
         Self {
             ultra_compact: false,
             tee_mode: TeeMode::default(),
+            recovery_hints: RecoveryHints::default(),
             output_density: OutputDensity::default(),
             checkpoint_interval: 15,
             excluded_commands: Vec::new(),
@@ -1439,6 +1444,9 @@ impl Config {
         }
         if local.tee_mode != TeeMode::default() {
             self.tee_mode = local.tee_mode;
+        }
+        if local.recovery_hints != RecoveryHints::default() {
+            self.recovery_hints = local.recovery_hints;
         }
         if local.output_density != OutputDensity::default() {
             self.output_density = local.output_density;

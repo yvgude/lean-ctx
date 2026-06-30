@@ -84,6 +84,12 @@ pub fn summarize(full: &str, archive_id: &str, tool: &str, output_tokens: usize)
     }
 
     out.push_str("--- retrieve full output ---\n");
+    // Non-MCP route first: the verbatim blob is a real file any tool can read,
+    // for agents/orgs where MCP is unavailable or forbidden.
+    out.push_str(&format!(
+        "Direct:  read {} directly (no MCP)\n",
+        crate::core::archive::content_path_str(archive_id)
+    ));
     out.push_str(&format!("Full:    ctx_expand(id=\"{archive_id}\")\n"));
     out.push_str(&format!(
         "Range:   ctx_expand(id=\"{archive_id}\", start_line=1, end_line=80)\n"

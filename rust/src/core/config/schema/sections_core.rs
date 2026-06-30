@@ -20,9 +20,17 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     root.insert(
         "tee_mode".into(),
         key_enum(
-            &["never", "failures", "always"],
-            "failures",
+            &["never", "failures", "highcompression", "always"],
+            "highcompression",
             "Controls when shell output is tee'd to disk for later retrieval",
+        ),
+    );
+    root.insert(
+        "recovery_hints".into(),
+        key_enum(
+            &["off", "minimal", "full"],
+            "minimal",
+            "Verbosity of the reactive recovery footer on compressed output (path-first, MCP-optional)",
         ),
     );
     root.insert(
