@@ -333,6 +333,12 @@ pub fn generate_hook_fish(binary: &str) -> String {
         \tset -q LEAN_CTX_AGENT; or set -q CODEX_CLI_SESSION; or set -q CLAUDECODE; or set -q CODEBUDDY; or set -q GEMINI_SESSION\n\
         end\n\
         \n\
+        function _lean_ctx_notice\n\
+        \tif isatty stdout; and set -q LEAN_CTX_DEBUG\n\
+        \t\techo $argv\n\
+        \tend\n\
+        end\n\
+        \n\
         function _lc\n\
         \tif set -q LEAN_CTX_DISABLED; or set -q LEAN_CTX_NO_HOOK\n\
         \t\tcommand $argv\n\
@@ -375,7 +381,7 @@ pub fn generate_hook_fish(binary: &str) -> String {
         \tend\n\
         \talias k '_lc kubectl'\n\
         \tset -gx LEAN_CTX_ENABLED 1\n\
-        \tisatty stdout; and echo 'lean-ctx: ON (track mode — output unchanged, token savings recorded)'\n\
+        \t_lean_ctx_notice 'lean-ctx: ON (track mode — output unchanged, token savings recorded)'\n\
         end\n\
         \n\
         function lean-ctx-off\n\
@@ -384,7 +390,7 @@ pub fn generate_hook_fish(binary: &str) -> String {
         \tend\n\
         \tfunctions --erase k 2>/dev/null; true\n\
         \tset -gx LEAN_CTX_ENABLED 0\n\
-        \tisatty stdout; and echo 'lean-ctx: OFF'\n\
+        \t_lean_ctx_notice 'lean-ctx: OFF'\n\
         end\n\
         \n\
         function lean-ctx-mode\n\
@@ -395,7 +401,7 @@ pub fn generate_hook_fish(binary: &str) -> String {
         \t\t\t\tend\n\
         \t\t\talias k '_lc_compress kubectl'\n\
         \t\t\tset -gx LEAN_CTX_ENABLED 1\n\
-        \t\t\tisatty stdout; and echo 'lean-ctx: COMPRESS mode (all output compressed)'\n\
+        \t\t\t_lean_ctx_notice 'lean-ctx: COMPRESS mode (all output compressed)'\n\
         \t\tcase track\n\
         \t\t\tlean-ctx-on\n\
         \t\tcase off\n\
@@ -479,6 +485,10 @@ _lc_is_agent() {{
     [ -n "${{LEAN_CTX_AGENT:-}}" ] || [ -n "${{CODEX_CLI_SESSION:-}}" ] || [ -n "${{CLAUDECODE:-}}" ] || [ -n "${{CODEBUDDY:-}}" ] || [ -n "${{GEMINI_SESSION:-}}" ]
 }}
 
+_lean_ctx_notice() {{
+    [ -n "${{LEAN_CTX_DEBUG:-}}" ] && [ -t 1 ] && echo "$@"
+}}
+
 _lc() {{
     if [ -n "${{LEAN_CTX_DISABLED:-}}" ] || [ -n "${{LEAN_CTX_NO_HOOK:-}}" ]; then
         command "$@"
@@ -522,7 +532,7 @@ lean-ctx-on() {{
     done
     alias k='_lc kubectl'
     export LEAN_CTX_ENABLED=1
-    [ -t 1 ] && echo "lean-ctx: ON (track mode — output unchanged, token savings recorded)"
+    _lean_ctx_notice "lean-ctx: ON (track mode — output unchanged, token savings recorded)"
 }}
 
 lean-ctx-off() {{
@@ -531,7 +541,7 @@ lean-ctx-off() {{
     done
     unalias k 2>/dev/null || true
     export LEAN_CTX_ENABLED=0
-    [ -t 1 ] && echo "lean-ctx: OFF"
+    _lean_ctx_notice "lean-ctx: OFF"
 }}
 
 lean-ctx-mode() {{
@@ -543,7 +553,7 @@ lean-ctx-mode() {{
             done
             alias k='_lc_compress kubectl'
             export LEAN_CTX_ENABLED=1
-            [ -t 1 ] && echo "lean-ctx: COMPRESS mode (all output compressed)"
+            _lean_ctx_notice "lean-ctx: COMPRESS mode (all output compressed)"
             ;;
         track)
             lean-ctx-on

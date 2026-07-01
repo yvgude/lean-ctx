@@ -326,6 +326,7 @@ EXAMPLES:
     lean-ctx-on                    Enable shell aliases in track mode (full output + stats)
     lean-ctx-off                   Disable all shell aliases
     lean-ctx-mode track            Track mode: full output, stats recorded (default)
+    LEAN_CTX_DEBUG=1 lean-ctx-on   Show shell hook mode-change notices
     lean-ctx-mode compress         Compress mode: all output compressed (power users)
     lean-ctx-mode off              Same as lean-ctx-off
     lean-ctx-status                Show whether compression is active
