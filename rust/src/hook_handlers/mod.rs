@@ -1276,8 +1276,18 @@ pub(crate) fn emit_session_start_additional_context(additional_context: &str) {
 /// (`lean-ctx raw "<command>"`), which the rewrite hook leaves untouched (it
 /// already starts with `lean-ctx `, so `rewrite_candidate` returns `None`). The
 /// blocked-command sentence still covers the allowlist gate.
-pub(crate) const CODEX_SHELL_RECOVERY_HINT: &str = "lean-ctx auto-compresses shell output, and the compression is fully reversible: when you need the complete, exact output, re-run the command as `lean-ctx raw \"<command>\"` instead of reading it back in small chunks. If a Bash call is blocked, rerun it with the exact command the hook suggests.";
+pub(crate) const CODEX_SHELL_RECOVERY_HINT: &str = r#"RAW OUTPUT RULE — HARD
 
+  Compressed shell output != exact evidence.
+
+  Need exact file/log/text/quotes/line content? MUST rerun:
+  `lean-ctx raw "<exact command>"`
+
+  Never reconstruct exact output via chunks (`cat|sed|head|tail`).
+  Never quote compressed output as exact.
+  If hook blocks Bash, rerun exact suggested command.
+
+  Final check: exact claim -> `lean-ctx raw` evidence."#;
 pub fn handle_codex_session_start() {
     if is_quiet() {
         return;
