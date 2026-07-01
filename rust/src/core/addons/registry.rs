@@ -237,6 +237,12 @@ mod tests {
         // full host env" path to the scrubbed path (env_clear + base allowlist) —
         // so a runnable addon without one silently leaks host API keys to the
         // child. See `core::addons::env_scrub` + `core::gateway::client`.
+        //
+        // A block may pass through a *small, reviewed* set of BYO-key env names
+        // (e.g. cognee needs `LLM_API_KEY`). Any name outside this allowlist must
+        // be justified with an explicit review entry here, so a new addon can
+        // never silently widen the host-secret surface.
+        const REVIEWED_ADDON_ENV: &[&str] = &["LLM_API_KEY"];
         for m in bundled() {
             if !m.is_installable() {
                 continue; // listed-only entries are never spawned
@@ -248,15 +254,19 @@ mod tests {
                     m.addon.name
                 )
             });
-            // The bundled tools need no host secrets, so none may request extra
-            // env names beyond the base allowlist.
-            assert!(
-                caps.env.is_empty(),
-                "runnable addon `{}` requests host env vars {:?} — bundled addons must run \
-                 with a scrubbed environment",
-                m.addon.name,
-                caps.env,
-            );
+            // Any passed-through env name must be on the small, reviewed
+            // BYO-key allowlist — everything else stays scrubbed.
+            for var in &caps.env {
+                assert!(
+                    REVIEWED_ADDON_ENV.contains(&var.as_str()),
+                    "runnable addon `{}` requests host env var `{}` outside the reviewed \
+                     allowlist {:?} — bundled addons must run scrubbed; add an explicit \
+                     review entry only if the key is genuinely required",
+                    m.addon.name,
+                    var,
+                    REVIEWED_ADDON_ENV,
+                );
+            }
         }
     }
 

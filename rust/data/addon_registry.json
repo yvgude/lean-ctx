@@ -244,7 +244,7 @@
       "addon": {
         "name": "cognee",
         "display_name": "Cognee",
-        "description": "Builds a queryable knowledge graph plus vector store from your data (ECL / GraphRAG pipeline). Ships an MCP server with local default databases, but needs an LLM API key to process, so it is listed rather than auto-installed.",
+        "description": "Builds a queryable knowledge graph plus vector store from your data (ECL / GraphRAG pipeline). Installs on add (uv tool install) and runs fully local by default (SQLite + LanceDB + Kuzu); set LLM_API_KEY so it can process. Wires its MCP server (cognee-mcp) into the lean-ctx gateway.",
         "author": "topoteretes",
         "homepage": "https://github.com/topoteretes/cognee",
         "license": "Apache-2.0",
@@ -252,6 +252,17 @@
         "integration": "memory",
         "keywords": ["memory", "knowledge-graph", "graphrag", "recall", "competitor", "mcp"],
         "min_lean_ctx": "3.8.0"
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "cognee-mcp"
+      },
+      "capabilities": { "network": "full", "filesystem": "read_write", "env": ["LLM_API_KEY"] },
+      "install": {
+        "manager": "uv",
+        "package": "cognee-mcp",
+        "version": "0.5.4",
+        "bin": "cognee-mcp"
       }
     },
     {

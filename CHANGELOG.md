@@ -23,6 +23,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   non-blocking `Addon Registry Freshness` workflow (weekly + whenever the registry
   changes) so a curated pin is never silently stale — and an upstream release
   never breaks our own build.
+- **Cognee is now 1-click installable** (`addon add cognee`). It ships a published
+  MCP package (`cognee-mcp`) and runs fully local by default (SQLite + LanceDB +
+  Kuzu), so it fits the standard `uv tool install` bootstrap; the only runtime
+  requirement is an `LLM_API_KEY`, which is passed through via a reviewed
+  single-entry capability allowlist (all other host env stays scrubbed). The
+  remaining memory/graph listings (mem0, graphiti, zep, letta, claude-context)
+  stay directory-only because they need external infrastructure (a vector/graph
+  DB, or a managed account) that a one-command install cannot provision.
 
 ### Changed
 - Refreshed bundled addon pins to current upstream: Headroom `0.27.0 → 0.28.0`,
