@@ -88,6 +88,10 @@ pub const LOCAL_ALWAYS_ON_FEATURES: &[&str] = &[
     "sensitivity_floor",
     "savings_ledger",
     "audit_trail",
+    // Cost/intent routing (classify -> tier -> model). Lowering your own bill
+    // is a local capability by contract (11-core-vs-enterprise-boundary §5);
+    // org-wide *enforced* budgets/policies are the commercial add-on.
+    "routing",
 ];
 
 /// Local capabilities that are free but gated by *compilation* only (Cargo
@@ -97,6 +101,9 @@ pub const LOCAL_OPTIONAL_FEATURES: &[&str] = &[
     "semantic_search",
     "http_server",
     "wasm_runtime",
+    // Self-hosted org gateway run-mode (remote bind + usage store + admin API).
+    // Free to self-host; only compile-gated (`gateway-server` Cargo feature).
+    "gateway_server",
 ];
 
 /// Commercial-plane capabilities — additive, opt-in, and never required for any
@@ -115,10 +122,12 @@ fn features() -> Value {
         "sensitivity_floor": true,
         "savings_ledger": true,
         "audit_trail": true,
+        "routing": true,
         "ast_compression": cfg!(feature = "tree-sitter"),
         "semantic_search": cfg!(feature = "embeddings"),
         "http_server": cfg!(feature = "http-server"),
         "wasm_runtime": cfg!(feature = "wasm"),
+        "gateway_server": cfg!(feature = "gateway-server"),
         "team_server": cfg!(feature = "team-server"),
         "cloud_server": cfg!(feature = "cloud-server"),
     })

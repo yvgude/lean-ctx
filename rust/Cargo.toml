@@ -104,6 +104,15 @@ http-server = [
 ]
 qdrant = ["embeddings"]
 team-server = ["http-server"]
+# Self-hostable org gateway (proxy remote-bind + usage store + admin API).
+# LOCAL_OPTIONAL: free, gated by compilation only — never by account/license/plan
+# (Local-Free Invariant; enforcement lives in lean-ctx-enterprise, not here).
+gateway-server = [
+  "http-server",
+  "dep:deadpool-postgres",
+  "dep:tokio-postgres",
+  "dep:hex",
+]
 secure-update = []
 cloud-server = [
   "http-server",
