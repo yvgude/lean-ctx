@@ -145,6 +145,7 @@ pub(super) async fn lookup_sso_org(cfg: &Config, domain: &str) -> Result<Option<
     let url = format!("{base}/api/billing/sso/lookup/{domain}");
     let resp = tokio::task::spawn_blocking(move || {
         let agent: ureq::Agent = ureq::Agent::config_builder()
+            .tls_config(crate::core::http_client::platform_tls_config())
             .http_status_as_error(false)
             .build()
             .into();

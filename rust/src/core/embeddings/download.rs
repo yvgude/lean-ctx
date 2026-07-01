@@ -122,6 +122,7 @@ fn download_file(
     tracing::info!("Downloading {local_name} ...");
 
     let agent: ureq::Agent = ureq::Agent::config_builder()
+        .tls_config(crate::core::http_client::platform_tls_config())
         .timeout_connect(Some(Duration::from_secs(30)))
         .timeout_global(Some(Duration::from_mins(5)))
         .build()

@@ -74,8 +74,9 @@ pub struct QdrantHit {
 impl QdrantStore {
     pub fn from_env() -> Result<Self, String> {
         let cfg = QdrantConfig::from_env()?;
-        let agent = ureq::Agent::new_with_config(
+        let agent = crate::core::http_client::ureq_agent(
             ureq::config::Config::builder()
+                .tls_config(crate::core::http_client::platform_tls_config())
                 .timeout_global(Some(std::time::Duration::from_secs(cfg.timeout_secs)))
                 .http_status_as_error(false)
                 .build(),

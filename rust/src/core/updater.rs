@@ -659,24 +659,17 @@ fn release_api_url(version: Option<&str>) -> String {
 /// platform verifier. ureq's default `RootCerts::WebPki` ignores the system
 /// store, so updates fail with `UnknownIssuer` behind TLS-intercepting proxies.
 fn https_agent() -> ureq::Agent {
-    use std::time::Duration;
-    ureq::Agent::config_builder()
-        .tls_config(
-            ureq::tls::TlsConfig::builder()
-                .root_certs(ureq::tls::RootCerts::PlatformVerifier)
-                .build(),
-        )
-        // Bound the connection-setup phases so a dead network, a stuck DNS
-        // resolver or an unresponsive server can never make `lean-ctx update`
-        // hang indefinitely (the reported "stuck updating"). These cap DNS,
-        // TCP connect and time-to-first-byte only — a large but *progressing*
-        // binary download is intentionally NOT limited (no global / recv-body
-        // cap on this shared agent), so slow links still complete.
-        .timeout_resolve(Some(Duration::from_secs(15)))
-        .timeout_connect(Some(Duration::from_secs(20)))
-        .timeout_recv_response(Some(Duration::from_secs(30)))
-        .build()
-        .into()
+    // Bound the connection-setup phases so a dead network, a stuck DNS
+    // resolver or an unresponsive server can never make `lean-ctx update`
+    // hang indefinitely (the reported "stuck updating"). These cap DNS,
+    // TCP connect and time-to-first-byte only — a large but *progressing*
+    // binary download is intentionally NOT limited (no global / recv-body
+    // cap on this shared agent), so slow links still complete.
+    crate::core::http_client::ureq_agent_with_timeouts(
+        Some(std::time::Duration::from_secs(15)),
+        Some(std::time::Duration::from_secs(20)),
+        Some(std::time::Duration::from_secs(30)),
+    )
 }
 
 /// Fetches release metadata from GitHub. `version = None` returns the latest

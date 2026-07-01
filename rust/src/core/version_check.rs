@@ -48,8 +48,9 @@ fn is_cache_stale(cache: &VersionCache) -> bool {
 }
 
 fn fetch_latest_version() -> Result<String, String> {
-    let agent = ureq::Agent::new_with_config(
+    let agent = crate::core::http_client::ureq_agent(
         ureq::config::Config::builder()
+            .tls_config(crate::core::http_client::platform_tls_config())
             .timeout_global(Some(std::time::Duration::from_secs(5)))
             .build(),
     );

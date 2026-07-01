@@ -101,8 +101,9 @@ pub fn push_once() -> Result<usize, String> {
     let payload = serde_json::json!({ "series": series });
     let body = serde_json::to_vec(&payload).map_err(|e| e.to_string())?;
 
-    let agent = ureq::Agent::new_with_config(
+    let agent = crate::core::http_client::ureq_agent(
         ureq::config::Config::builder()
+            .tls_config(crate::core::http_client::platform_tls_config())
             .timeout_global(Some(Duration::from_secs(10)))
             .http_status_as_error(false)
             .build(),

@@ -168,8 +168,9 @@ fn call_llm(cfg: &LlmConfig, prompt: &str) -> Result<String, String> {
 }
 
 fn make_agent(cfg: &LlmConfig) -> ureq::Agent {
-    ureq::Agent::new_with_config(
+    crate::core::http_client::ureq_agent(
         ureq::config::Config::builder()
+            .tls_config(crate::core::http_client::platform_tls_config())
             .timeout_global(Some(cfg.timeout()))
             .build(),
     )

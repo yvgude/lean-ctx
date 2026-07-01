@@ -131,8 +131,9 @@ pub fn post(
 }
 
 fn build_agent(timeout_secs: u64) -> ureq::Agent {
-    ureq::Agent::new_with_config(
+    crate::core::http_client::ureq_agent(
         ureq::config::Config::builder()
+            .tls_config(crate::core::http_client::platform_tls_config())
             .timeout_global(Some(Duration::from_secs(timeout_secs)))
             .max_redirects(0)
             .http_status_as_error(false)

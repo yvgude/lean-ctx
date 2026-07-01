@@ -92,8 +92,9 @@ pub fn upload(csv: &str) -> Result<String, String> {
     body.extend_from_slice(csv.as_bytes());
     body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
 
-    let agent = ureq::Agent::new_with_config(
+    let agent = crate::core::http_client::ureq_agent(
         ureq::config::Config::builder()
+            .tls_config(crate::core::http_client::platform_tls_config())
             .timeout_global(Some(std::time::Duration::from_secs(30)))
             .http_status_as_error(false)
             .build(),
