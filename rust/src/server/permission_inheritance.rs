@@ -14,7 +14,7 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, ContentBlock};
 use serde_json::{Map, Value};
 
 use crate::core::config::{Config, PermissionInheritance};
@@ -223,7 +223,7 @@ fn load_policy(client_id: &str, project_root: Option<&str>) -> IdePermissionPoli
 #[must_use]
 pub fn into_call_tool_result(check: &PermissionCheck) -> Option<CallToolResult> {
     if check.blocked {
-        Some(CallToolResult::success(vec![Content::text(
+        Some(CallToolResult::success(vec![ContentBlock::text(
             check
                 .message
                 .clone()

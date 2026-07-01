@@ -562,7 +562,7 @@ impl ServerHandler for LeanCtxServer {
                     detector.record_error_outcome(&tool_name_for_panic, &args_fp_for_panic);
                 }
 
-                Ok(CallToolResult::error(vec![Content::text(
+                Ok(CallToolResult::error(vec![ContentBlock::text(
                     "ERROR: lean-ctx internal error. The MCP server is still running. \
                      Please retry or use a different approach."
                         .to_string(),

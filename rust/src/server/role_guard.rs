@@ -3,7 +3,7 @@
 //! Checks the active role's tool policy before dispatching a tool call.
 //! Returns `Some(CallToolResult)` with a denial message if blocked, `None` if allowed.
 
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, ContentBlock};
 
 use crate::core::roles;
 
@@ -120,7 +120,7 @@ pub fn check_tool_access(tool_name: &str) -> RoleCheckResult {
 
 pub fn into_call_tool_result(check: &RoleCheckResult) -> Option<CallToolResult> {
     if check.blocked {
-        Some(CallToolResult::success(vec![Content::text(
+        Some(CallToolResult::success(vec![ContentBlock::text(
             check.message.as_deref().unwrap_or("Blocked by role policy"),
         )]))
     } else {

@@ -15,12 +15,14 @@ impl ProgressSender {
     }
 
     pub fn send(&self, progress: f64, total: Option<f64>, message: Option<String>) {
-        let params = ProgressNotificationParam {
-            progress_token: self.token.clone(),
-            progress,
-            total,
-            message,
-        };
+        // ProgressNotificationParam is #[non_exhaustive] since rmcp 2.0 — build via ctor.
+        let mut params = ProgressNotificationParam::new(self.token.clone(), progress);
+        if let Some(total) = total {
+            params = params.with_total(total);
+        }
+        if let Some(message) = message {
+            params = params.with_message(message);
+        }
         let peer = self.peer.clone();
         tokio::spawn(async move {
             if let Err(e) = peer.notify_progress(params).await {

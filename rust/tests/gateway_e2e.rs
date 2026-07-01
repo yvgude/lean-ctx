@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, Content, ListToolsResult, PaginatedRequestParams,
+    CallToolRequestParams, CallToolResult, ContentBlock, ListToolsResult, PaginatedRequestParams,
     ServerCapabilities, ServerInfo, Tool,
 };
 use rmcp::service::RequestContext;
@@ -86,7 +86,7 @@ impl ServerHandler for EchoServer {
         std::future::ready(match request.name.as_ref() {
             "echo" => {
                 let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
-                Ok(CallToolResult::success(vec![Content::text(format!(
+                Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                     "echo:{text}"
                 ))]))
             }
@@ -99,7 +99,7 @@ impl ServerHandler for EchoServer {
                     .get("b")
                     .and_then(serde_json::Value::as_i64)
                     .unwrap_or(0);
-                Ok(CallToolResult::success(vec![Content::text(
+                Ok(CallToolResult::success(vec![ContentBlock::text(
                     (a + b).to_string(),
                 )]))
             }

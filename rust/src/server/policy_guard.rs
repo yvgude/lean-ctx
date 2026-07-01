@@ -11,7 +11,7 @@
 //! - **No self-lockout:** the `EXEMPT_TOOLS` meta tools can never be
 //!   policy-denied, so an operator can always switch roles/policies back out.
 
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, ContentBlock};
 
 use crate::core::policy::runtime::{self, ActivePolicy};
 
@@ -91,7 +91,7 @@ fn evaluate(active: Option<&ActivePolicy>, tool_name: &str) -> PolicyCheckResult
 
 pub fn into_call_tool_result(check: &PolicyCheckResult) -> Option<CallToolResult> {
     check.blocked.then(|| {
-        CallToolResult::success(vec![Content::text(
+        CallToolResult::success(vec![ContentBlock::text(
             check
                 .message
                 .as_deref()

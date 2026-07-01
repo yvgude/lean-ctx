@@ -42,6 +42,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   mental model; covered by a CLI characterization test.
 
 ### Changed
+- **RMCP SDK upgraded `1.7 → 2.0` (MCP `2025-11-25` alignment, #656).** The MCP
+  server/client stack now builds on rmcp 2.0: `Content` is the spec-unified
+  `ContentBlock`, prompt roles use the shared `Role`, resources are plain
+  `Resource` structs, and progress notifications use the new constructor API.
+  Pulls in rmcp 2.0's security fixes (OAuth resource-spoofing/metadata-SSRF
+  hardening, streamable-HTTP session-leak fix) and unlocks 2025-11-25 protocol
+  features (tool icons, URL-mode elicitation, tasks) for future releases.
+  Protocol negotiation with older clients (`2025-06-18` and earlier) is
+  unchanged — verified end-to-end over stdio against the 1.7 baseline (identical
+  tool surface, identical negotiated protocol). Client-facing roots-based
+  project-root auto-detection stays in place (SEP-2577 deprecation
+  acknowledged upstream, still fully functional).
 - Refreshed bundled addon pins to current upstream: Headroom `0.27.0 → 0.28.0`,
   Repomix `1.15.0 → 1.16.0`.
 

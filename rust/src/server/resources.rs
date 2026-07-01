@@ -1,4 +1,4 @@
-use rmcp::model::{Annotated, RawResource, Resource, ResourceContents};
+use rmcp::model::{Resource, ResourceContents};
 
 const URI_SUMMARY: &str = "lean-ctx://context/summary";
 const URI_PINNED: &str = "lean-ctx://context/pinned";
@@ -51,10 +51,9 @@ pub fn read_resource(
 }
 
 fn make_resource(uri: &str, name: &str, desc: &str) -> Resource {
-    let raw = RawResource::new(uri, name)
+    Resource::new(uri, name)
         .with_description(desc)
-        .with_mime_type("text/plain");
-    Annotated::new(raw, None)
+        .with_mime_type("text/plain")
 }
 
 fn build_summary(ledger: &crate::core::context_ledger::ContextLedger) -> String {

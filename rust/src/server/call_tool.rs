@@ -82,7 +82,7 @@ impl LeanCtxServer {
                 if let Some(reason) = active.egress.check_content(&payload, &active.redaction) {
                     tracing::warn!(tool = name, %reason, "agent egress blocked by policy");
                     policy_guard::audit_egress(name, &reason);
-                    return Ok(CallToolResult::success(vec![Content::text(format!(
+                    return Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                         "[POLICY BLOCKED] {kind} blocked by context policy pack egress rule \
                          ({reason}). Adjust .lean-ctx/policy.toml to proceed."
                     ))]));
@@ -92,7 +92,7 @@ impl LeanCtxServer {
                 {
                     tracing::warn!(tool = name, max, "agent egress rate limit exceeded");
                     policy_guard::audit_egress(name, "rate-limit");
-                    return Ok(CallToolResult::success(vec![Content::text(format!(
+                    return Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                         "[POLICY BLOCKED] {kind} rate limit exceeded ({max}/min) by context \
                          policy pack. Slow agent writes/actions or adjust .lean-ctx/policy.toml."
                     ))]));
@@ -116,7 +116,7 @@ impl LeanCtxServer {
                         let mut shown = allowed.clone();
                         shown.sort();
                         shown.truncate(30);
-                        return Ok(CallToolResult::success(vec![Content::text(format!(
+                        return Ok(CallToolResult::success(vec![ContentBlock::text(format!(
                             "Tool '{name}' blocked by workflow '{}' (state: {}). Allowed: {}. Use ctx_workflow(action=\"stop\") to exit.",
                             run.spec.name,
                             run.current,
@@ -244,7 +244,7 @@ impl LeanCtxServer {
 
         if throttle_result.level == crate::core::loop_detection::ThrottleLevel::Blocked {
             let msg = throttle_result.message.unwrap_or_default();
-            return Ok(CallToolResult::success(vec![Content::text(msg)]));
+            return Ok(CallToolResult::success(vec![ContentBlock::text(msg)]));
         }
 
         let throttle_warning =
@@ -282,7 +282,7 @@ impl LeanCtxServer {
 
         if let Some(msg) = post_process::budget_exhausted_message(name) {
             tracing::warn!(tool = name, "{msg}");
-            return Ok(CallToolResult::success(vec![Content::text(msg)]));
+            return Ok(CallToolResult::success(vec![ContentBlock::text(msg)]));
         }
 
         if is_shell_tool_name(name) {
@@ -1001,6 +1001,10 @@ impl LeanCtxServer {
     /// Resolve project root from MCP client roots (once per session).
     /// Called on the first tool call. If the client supports `roots/list`,
     /// we query it and pick the best root with project markers.
+    ///
+    /// Roots is SEP-2577-deprecated in rmcp 2.0 but still fully functional; we
+    /// keep it for client-driven project-root auto-detection until MCP removes it.
+    #[expect(deprecated)]
     async fn resolve_roots_once(&self) {
         use std::sync::atomic::Ordering;
         if !self.has_client_roots.load(Ordering::Relaxed) {
@@ -1087,7 +1091,7 @@ fn finalize_call_result(
     result_text: String,
     shell_outcome: Option<crate::server::tool_trait::ShellOutcome>,
 ) -> CallToolResult {
-    let mut result = CallToolResult::success(vec![Content::text(result_text)]);
+    let mut result = CallToolResult::success(vec![ContentBlock::text(result_text)]);
     if let Some(outcome) = shell_outcome {
         if outcome.is_error() {
             result.is_error = Some(true);

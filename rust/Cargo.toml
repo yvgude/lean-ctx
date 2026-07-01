@@ -150,7 +150,7 @@ tree-sitter = [
 wasm = ["dep:wasmi"]
 
 [dependencies]
-rmcp = { version = "1.7", features = [
+rmcp = { version = "2", features = [
   "server",
   "client",
   "transport-io",
