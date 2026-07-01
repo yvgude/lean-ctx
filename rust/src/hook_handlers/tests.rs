@@ -858,20 +858,21 @@ fn codex_session_start_hint_teaches_the_raw_escape_hatch() {
     // GH #625: the PreToolUse hook already auto-compresses every Bash command, so
     // the SessionStart hint's job is to teach the *raw* escape — otherwise agents
     // re-read the compressed view in small chunks (the shell-side "too compressed"
-    // complaint). It must name exact evidence, the concrete raw CLI
-    // (`lean-ctx raw "<exact command>"`), and forbid the chunk anti-pattern; the
-    // redundant "prefer `lean-ctx -c`" coaching is gone (compression is automatic).
+    // complaint). It must state that compressed output is not exact evidence, name
+    // the concrete raw CLI (`lean-ctx raw "<exact command>"`), and forbid the
+    // chunked-read anti-pattern; the redundant "prefer `lean-ctx -c`" coaching is
+    // gone (compression is automatic).
     let hint = CODEX_SHELL_RECOVERY_HINT;
     assert!(
         hint.contains("lean-ctx raw \"<exact command>\""),
         "names the raw CLI: {hint}"
     );
     assert!(
-        hint.contains("Compressed shell output != exact evidence"),
+        hint.contains("is not exact evidence"),
         "states compressed output is not exact evidence: {hint}"
     );
     assert!(
-        hint.contains("via chunks"),
+        hint.contains("chunked reads"),
         "forbids chunk-based reconstruction: {hint}"
     );
     assert!(

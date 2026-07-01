@@ -1272,22 +1272,20 @@ pub(crate) fn emit_session_start_additional_context(additional_context: &str) {
 ///
 /// This hint mirrors the MCP `RECOVER` rule
 /// ([`crate::core::rules_canonical::RECOVER`]) on the non-MCP CLI surface: it
-/// names the **reversible** nature of the compression and the concrete raw escape
-/// (`lean-ctx raw "<command>"`), which the rewrite hook leaves untouched (it
+/// states that the compressed view is not exact evidence and names the raw escape
+/// (`lean-ctx raw "<exact command>"`), which the rewrite hook leaves untouched (it
 /// already starts with `lean-ctx `, so `rewrite_candidate` returns `None`). The
 /// blocked-command sentence still covers the allowlist gate.
-pub(crate) const CODEX_SHELL_RECOVERY_HINT: &str = r#"RAW OUTPUT RULE — HARD
+pub(crate) const CODEX_SHELL_RECOVERY_HINT: &str = r#"RAW OUTPUT RULE (shell)
 
-  Compressed shell output != exact evidence.
+Compressed shell output is not exact evidence. When you need exact content
+(file text, log lines, quotes, counts, line numbers), you MUST re-run the
+command as `lean-ctx raw "<exact command>"` — never reconstruct it from the
+compressed view with chunked reads (`cat`/`sed`/`head`/`tail`), and never quote
+compressed output as if it were exact. If a Bash call is blocked, re-run the
+exact command the hook suggests.
 
-  Need exact file/log/text/quotes/line content? MUST rerun:
-  `lean-ctx raw "<exact command>"`
-
-  Never reconstruct exact output via chunks (`cat|sed|head|tail`).
-  Never quote compressed output as exact.
-  If hook blocks Bash, rerun exact suggested command.
-
-  Final check: exact claim -> `lean-ctx raw` evidence."#;
+Rule of thumb: back every exact claim with `lean-ctx raw` output."#;
 pub fn handle_codex_session_start() {
     if is_quiet() {
         return;
