@@ -12,7 +12,7 @@
     }
   },
   "entries": {
-    "13deefd8cdb0a1b372b7750d83a6a3963df119122d1b4e28bf713f4b9f8898a4": {
+    "1311831e8bd7baab4338a41c47bf1cfaecebc44997060b1ca2c7c299ae7efd13": {
       "text": "The PaymentGateway retries failed charges with exponential backoff: a base delay of 200ms that doubles each attempt, up to a maximum of 5 attempts before the charge is marked permanently failed."
     },
     "1aaa8fd672e05f9a6db2c6537d0f1a405bc4decf4c099397880a779e92af895a": {
