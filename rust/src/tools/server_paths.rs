@@ -75,16 +75,20 @@ impl LeanCtxServer {
                             |v| v == "1" || v == "true",
                         );
                         let candidate_under_jail = resolved.starts_with(jail_root_path);
-                        // #580: when the server was launched from an agent/IDE
-                        // config dir (e.g. ~/.copilot), that jail is never a real
-                        // project boundary. `maybe_derive_project_root_from_absolute`
-                        // already guarantees the new root carries a real project
-                        // marker, so correcting to it is a root *fix*, not a jail
-                        // weakening — allow it without the `allow_auto_reroot`
-                        // opt-in. Non-agent weak roots keep the conservative gate.
+                        // #580/#649: when the MCP server was launched from an
+                        // agent/IDE config dir (e.g. ~/.copilot) or a markerless
+                        // client cwd (e.g. WSL VS Code starting in /mnt/c/Users),
+                        // that jail is not a real project boundary. The derived
+                        // root already carries a project marker, so correcting to
+                        // it is a root fix, not a jail weakening. Real project
+                        // roots and trusted startup roots still keep the
+                        // conservative gate.
                         let allow_reroot = if candidate_under_jail {
                             false
-                        } else if is_suspicious_root(jail_root_path) {
+                        } else if is_suspicious_root(jail_root_path)
+                            || (self.startup_project_root.is_none()
+                                && !has_project_marker(jail_root_path))
+                        {
                             true
                         } else if !cfg_allow {
                             false

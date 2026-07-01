@@ -22,6 +22,16 @@ use std::ffi::OsString;
 use std::net::TcpListener;
 use std::path::Path;
 
+/// The four XDG category overrides that the crate-private `data_dir::isolated_data_dir()`
+/// sets to isolate a test's config/data/state/cache. Re-declared here because that
+/// helper is `#[cfg(test)]` and therefore unavailable to this integration-test binary.
+const ISOLATED_ENV_VARS: [&str; 4] = [
+    "LEAN_CTX_DATA_DIR",
+    "LEAN_CTX_CONFIG_DIR",
+    "LEAN_CTX_STATE_DIR",
+    "LEAN_CTX_CACHE_DIR",
+];
+
 /// Scope-guard that points `CODEX_HOME` at `dir` and restores the previous value on
 /// drop. `set_var`/`remove_var` are `unsafe` on edition 2024; safe here because this
 /// test binary runs the single test below serially.
@@ -99,6 +109,20 @@ fn proxy_enable_respects_codex_auth_mode_554() {
     if std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.trim().is_empty()) {
         return;
     }
+
+    // Hermetic config isolation. The ChatGPT-proxy opt-in is resolved from the global
+    // `[proxy] codex_chatgpt_proxy` (env-independent, #603/#616), so without this a
+    // developer who enabled it would see the default opt-out scenario observe an
+    // opt-in it never set. Integration tests cannot use the crate-private
+    // `isolated_data_dir()` (`#[cfg(test)]`), so replicate it: point all four XDG
+    // category overrides at a throwaway dir. This binary runs one serial test in its
+    // own process, so mutating process env here is private and safe.
+    let data_home = tempfile::tempdir().unwrap();
+    let _iso: Vec<EnvVar> = ISOLATED_ENV_VARS
+        .iter()
+        .copied()
+        .map(|key| EnvVar::set(key, &data_home.path().to_string_lossy()))
+        .collect();
 
     const CHATGPT_AUTH: &str = r#"{"auth_mode":"chatgpt","tokens":{"access_token":"x"}}"#;
 

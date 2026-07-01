@@ -234,6 +234,90 @@ mod resolve_path_tests {
     #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
+    async fn resolve_path_auto_reroots_from_markerless_client_cwd_without_opt_in() {
+        // VS Code/WSL can launch the MCP server from /mnt/c/Users while the
+        // workspace lives under /mnt/d. That markerless cwd must not become a
+        // permanent PathJail root when the request points at a real project.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
+        let tmp = tempfile::tempdir().unwrap();
+        let client_cwd = tmp.path().join("Users").join("user");
+        let real = tmp.path().join("workspaces").join("lean-ctx");
+        std::fs::create_dir_all(&client_cwd).unwrap();
+        let real_root = create_git_root(&real);
+        std::fs::write(real.join("rust.rs"), "ok").unwrap();
+
+        let server = LeanCtxServer::new_with_startup(
+            None,
+            None,
+            SessionMode::Personal,
+            "default",
+            "default",
+        );
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(client_cwd.to_string_lossy().to_string());
+            session.shell_cwd = Some(client_cwd.to_string_lossy().to_string());
+        }
+
+        let out = server
+            .resolve_path(&real.join("rust.rs").to_string_lossy())
+            .await
+            .unwrap();
+        assert!(
+            out.ends_with("/rust.rs"),
+            "markerless client cwd must auto-correct: {out}"
+        );
+
+        let session = server.session.read().await;
+        assert_eq!(session.project_root.as_deref(), Some(real_root.as_str()));
+    }
+
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn resolve_path_markerless_root_still_blocks_markerless_escape() {
+        // #649 must not weaken PathJail: from a markerless client cwd, an absolute
+        // path that derives NO project marker stays blocked and the root is
+        // unchanged. Only rerooting *to a real project* is permitted.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
+        let tmp = tempfile::tempdir().unwrap();
+        let client_cwd = tmp.path().join("Users").join("user");
+        let loose = tmp.path().join("workspaces").join("loose");
+        std::fs::create_dir_all(&client_cwd).unwrap();
+        std::fs::create_dir_all(&loose).unwrap();
+        std::fs::write(loose.join("data.txt"), "no").unwrap();
+
+        let server = LeanCtxServer::new_with_startup(
+            None,
+            None,
+            SessionMode::Personal,
+            "default",
+            "default",
+        );
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(client_cwd.to_string_lossy().to_string());
+            session.shell_cwd = Some(client_cwd.to_string_lossy().to_string());
+        }
+
+        let err = server
+            .resolve_path(&loose.join("data.txt").to_string_lossy())
+            .await
+            .unwrap_err();
+        assert!(err.contains("path escapes project root"), "got: {err}");
+
+        let session = server.session.read().await;
+        assert_eq!(
+            session.project_root.as_deref(),
+            Some(client_cwd.to_string_lossy().as_ref())
+        );
+    }
+
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn resolve_path_agent_dir_still_blocks_markerless_escape() {
         // The agent-dir bypass only reroots to a *real* project (one carrying a
         // marker). A markerless absolute path outside the jail stays blocked —

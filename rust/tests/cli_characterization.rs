@@ -314,6 +314,12 @@ fn session_no_args_exits_cleanly() {
 }
 
 #[test]
+fn session_new_alias_resets_session() {
+    let out = run(&["session", "new"]);
+    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
+}
+
+#[test]
 fn knowledge_no_args_exits_cleanly() {
     let out = run(&["knowledge"]);
     let code = exit_code(&out);

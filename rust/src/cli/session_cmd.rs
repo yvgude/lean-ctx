@@ -126,7 +126,7 @@ pub fn cmd_session_action(args: &[String]) {
             let _ = session.save();
             println!("{out}");
         }
-        Some("reset") => {
+        Some("reset" | "new") => {
             #[cfg(unix)]
             {
                 #[cfg(unix)]
@@ -192,7 +192,7 @@ Usage:
   lean-ctx session save                 Save current session
   lean-ctx session load [session-id]    Load a session (latest if no ID)
   lean-ctx session status               Show session status
-  lean-ctx session reset                Reset session
+  lean-ctx session reset|new            Reset session
 
 Examples:
   lean-ctx session task \"implement JWT authentication\"
