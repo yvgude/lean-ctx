@@ -964,6 +964,10 @@ async fn v1_agents_events_sse()
 }
 
 fn build_app_router(cfg: &HttpServerConfig) -> Router {
+    build_app_router_with_auth(cfg, true)
+}
+
+fn build_app_router_with_auth(cfg: &HttpServerConfig, require_auth: bool) -> Router {
     let project_root = cfg.project_root.to_string_lossy().to_string();
     let service_project_root = project_root.clone();
     let service_factory = move || -> Result<LeanCtxServer, std::io::Error> {
@@ -984,7 +988,11 @@ fn build_app_router(cfg: &HttpServerConfig) -> Router {
     let rest_server = LeanCtxServer::new_shared_with_context(&project_root, "default", "default");
 
     let state = AppState {
-        token: cfg.effective_auth_token(),
+        token: if require_auth {
+            cfg.effective_auth_token()
+        } else {
+            None
+        },
         concurrency: Arc::new(tokio::sync::Semaphore::new(cfg.max_concurrency.max(1))),
         rate: Arc::new(RateLimiter::new(cfg.max_rps, cfg.rate_burst)),
         project_root,
@@ -1140,7 +1148,7 @@ pub async fn serve_ipc(cfg: HttpServerConfig, addr: crate::ipc::DaemonAddr) -> R
     match addr {
         #[cfg(unix)]
         crate::ipc::DaemonAddr::Unix(ref path) => {
-            let app = build_app_router(&cfg);
+            let app = build_app_router_with_auth(&cfg, false);
             let listener = crate::ipc::bind_listener(&addr)?;
 
             tracing::info!(
@@ -1159,7 +1167,7 @@ pub async fn serve_ipc(cfg: HttpServerConfig, addr: crate::ipc::DaemonAddr) -> R
         }
         #[cfg(windows)]
         crate::ipc::DaemonAddr::NamedPipe(ref name) => {
-            let app = build_app_router(&cfg);
+            let app = build_app_router_with_auth(&cfg, false);
             let listener = crate::ipc::bind_listener(&addr)?;
 
             tracing::info!(
@@ -1218,6 +1226,33 @@ mod tests {
         let minimal: IndexEnsureBody = serde_json::from_str(r#"{"root":"/a"}"#).unwrap();
         assert_eq!(minimal.root, "/a");
         assert!(minimal.extra_roots.is_empty());
+    }
+
+    #[tokio::test]
+    async fn ipc_router_allows_local_tools_without_bearer_header() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cfg = HttpServerConfig {
+            project_root: dir.path().to_path_buf(),
+            auth_token: Some("secret".to_string()),
+            ..HttpServerConfig::default()
+        };
+        let app = build_app_router_with_auth(&cfg, false);
+
+        let body = json!({
+            "name": "ctx_cache",
+            "arguments": { "action": "stats" }
+        })
+        .to_string();
+        let req = Request::builder()
+            .method("POST")
+            .uri("/v1/tools/call")
+            .header("Host", "localhost")
+            .header("Content-Type", "application/json")
+            .body(Body::from(body))
+            .expect("request");
+
+        let resp = app.oneshot(req).await.expect("resp");
+        assert_ne!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
