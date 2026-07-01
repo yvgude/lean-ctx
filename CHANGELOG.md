@@ -43,6 +43,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   Repomix `1.15.0 → 1.16.0`.
 
 ### Fixed
+- **MCP PathJail auto-corrects a stale markerless root instead of rejecting the
+  workspace (#649).** An MCP server launched by VS Code/WSL could adopt a
+  markerless client cwd (e.g. `/mnt/c/Users/<user>`) as its jail root; the first
+  absolute path into the real workspace on another mount was then rejected with
+  `path escapes project root`, breaking `ctx_compose` / `ctx_read` / `ctx_patch`.
+  `resolve_path` now reroots opt-in-free from such a markerless root to the
+  marker-bearing project derived from the requested path — the same rationale as
+  the agent-config-dir case (#580) — while a markerless target with no derivable
+  project stays blocked, so PathJail enforcement is unchanged.
 - **Enterprise/OS TLS roots are honored by every HTTP client (#643).** All ureq
   clients are now built through `core::http_client`, which injects
   `RootCerts::PlatformVerifier` so requests trust the system/enterprise trust store
