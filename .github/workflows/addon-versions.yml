@@ -1,0 +1,44 @@
+name: Addon Registry Freshness
+
+# The curated addon registry pins every upstream package to an exact version
+# (supply-chain safety), but pins go stale silently. This lightweight,
+# non-blocking check resolves each pin against its registry (PyPI/npm/NuGet/
+# crates.io) and reports drift. It is intentionally NOT part of the `CI Green`
+# gate — an upstream release must never break our own build.
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC — weekly drift alert
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    # Only when the registry or the checker itself changes, so unrelated PRs
+    # are never nagged — but a pin bump is validated the moment it is proposed.
+    paths:
+      - rust/data/addon_registry.json
+      - scripts/check-addon-versions.py
+      - .github/workflows/addon-versions.yml
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check addon pins vs upstream
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5 # v5
+        with:
+          python-version: "3.11"
+      - name: Resolve pinned addon versions against upstream registries
+        shell: bash
+        # Warn-only on PRs / manual runs (annotations, exit 0); the weekly
+        # scheduled run is `--strict` so drift turns the run red as a real alert.
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            python3 scripts/check-addon-versions.py --strict
+          else
+            python3 scripts/check-addon-versions.py
+          fi

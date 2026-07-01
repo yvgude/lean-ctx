@@ -230,6 +230,37 @@ mod tests {
     }
 
     #[test]
+    fn every_runnable_bundled_addon_declares_scrubbing_capabilities() {
+        // Regression for the env-isolation gap: a bundled addon is spawned as an
+        // untrusted child, and it is the *presence* of a `[capabilities]` block
+        // that flips the single gateway spawn point from the legacy "inherit the
+        // full host env" path to the scrubbed path (env_clear + base allowlist) —
+        // so a runnable addon without one silently leaks host API keys to the
+        // child. See `core::addons::env_scrub` + `core::gateway::client`.
+        for m in bundled() {
+            if !m.is_installable() {
+                continue; // listed-only entries are never spawned
+            }
+            let caps = m.capabilities.as_ref().unwrap_or_else(|| {
+                panic!(
+                    "runnable addon `{}` has no [capabilities] block — it would inherit the \
+                     full host environment (incl. API keys) when spawned",
+                    m.addon.name
+                )
+            });
+            // The bundled tools need no host secrets, so none may request extra
+            // env names beyond the base allowlist.
+            assert!(
+                caps.env.is_empty(),
+                "runnable addon `{}` requests host env vars {:?} — bundled addons must run \
+                 with a scrubbed environment",
+                m.addon.name,
+                caps.env,
+            );
+        }
+    }
+
+    #[test]
     fn validator_flags_insecure_unpinned_and_shell() {
         let insecure = AddonManifest::from_toml(
             "[addon]\nname = \"insecure\"\nauthor = \"a\"\nhomepage = \"https://h\"\nlicense = \"MIT\"\ndescription = \"d\"\n\
