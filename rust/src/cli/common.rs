@@ -198,14 +198,16 @@ fn normalize_explicit_root(path: &str) -> String {
 
 fn expand_home(path: &str) -> String {
     if path == "~" {
-        return dirs::home_dir()
-            .map(|home| home.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string());
+        return dirs::home_dir().map_or_else(
+            || path.to_string(),
+            |home| home.to_string_lossy().to_string(),
+        );
     }
     if let Some(rest) = path.strip_prefix("~/") {
-        return dirs::home_dir()
-            .map(|home| home.join(rest).to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string());
+        return dirs::home_dir().map_or_else(
+            || path.to_string(),
+            |home| home.join(rest).to_string_lossy().to_string(),
+        );
     }
     path.to_string()
 }
