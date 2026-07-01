@@ -5,6 +5,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Security
+- **Bundled addons now spawn with a scrubbed environment (addon env isolation).**
+  Every runnable registry addon (Headroom, Sophon, Repomix, Serena, …) now
+  declares a `[capabilities]` block. Its mere presence flips the single gateway
+  spawn point from the legacy "inherit the full host environment" path to the
+  scrubbed path (`env_clear` + base allowlist), so host API keys/tokens no longer
+  reach an untrusted addon child process. Network/filesystem grants are declared
+  honestly to match each tool's real needs (registry fetch, cache/index/vault
+  writes) — the empty env allowlist is the isolation win. A regression test
+  asserts every runnable bundled addon carries a capability block.
+
+### Added
+- **Addon registry version-staleness check (`scripts/check-addon-versions.py`).**
+  Resolves every pinned upstream (PyPI / npm / NuGet / crates.io) against its
+  registry and reports drift as GitHub annotations. Wired into a dedicated,
+  non-blocking `Addon Registry Freshness` workflow (weekly + whenever the registry
+  changes) so a curated pin is never silently stale — and an upstream release
+  never breaks our own build.
+- **Cognee is now 1-click installable** (`addon add cognee`). It ships a published
+  MCP package (`cognee-mcp`) and runs fully local by default (SQLite + LanceDB +
+  Kuzu), so it fits the standard `uv tool install` bootstrap; the only runtime
+  requirement is an `LLM_API_KEY`, which is passed through via a reviewed
+  single-entry capability allowlist (all other host env stays scrubbed). The
+  remaining memory/graph listings (mem0, graphiti, zep, letta, claude-context)
+  stay directory-only because they need external infrastructure (a vector/graph
+  DB, or a managed account) that a one-command install cannot provision.
+
+### Changed
+- Refreshed bundled addon pins to current upstream: Headroom `0.27.0 → 0.28.0`,
+  Repomix `1.15.0 → 1.16.0`.
+
 ## [3.8.18] — 2026-06-30
 
 ### Added

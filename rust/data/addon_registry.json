@@ -20,10 +20,11 @@
         "command": "headroom",
         "args": ["mcp", "serve"]
       },
+      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] },
       "install": {
         "manager": "uv",
         "package": "headroom-ai[mcp]",
-        "version": "0.27.0",
+        "version": "0.28.0",
         "bin": "headroom"
       }
     },
@@ -45,6 +46,7 @@
         "command": "sophon",
         "args": ["serve"]
       },
+      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] },
       "install": {
         "manager": "npm",
         "package": "mcp-sophon",
@@ -81,8 +83,9 @@
       "mcp": {
         "transport": "stdio",
         "command": "npx",
-        "args": ["-y", "repomix@1.15.0", "--mcp"]
-      }
+        "args": ["-y", "repomix@1.16.0", "--mcp"]
+      },
+      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] }
     },
     {
       "addon": {
@@ -101,7 +104,8 @@
         "transport": "stdio",
         "command": "uvx",
         "args": ["--from", "serena-agent==1.5.3", "serena", "start-mcp-server", "--context", "ide"]
-      }
+      },
+      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] }
     },
     {
       "addon": {
@@ -120,7 +124,8 @@
         "transport": "stdio",
         "command": "npx",
         "args": ["-y", "mcp-code-context@3.7.1"]
-      }
+      },
+      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] }
     },
     {
       "addon": {
@@ -139,7 +144,8 @@
         "transport": "stdio",
         "command": "npx",
         "args": ["-y", "mcp-codebase-intelligence@0.3.0"]
-      }
+      },
+      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] }
     },
     {
       "addon": {
@@ -158,6 +164,7 @@
         "transport": "stdio",
         "command": "codecompress-server"
       },
+      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] },
       "install": {
         "manager": "dotnet",
         "package": "CodeCompress.Server",
@@ -211,6 +218,7 @@
         "command": "context-mem",
         "args": ["serve"]
       },
+      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] },
       "install": {
         "manager": "npm",
         "package": "context-mem",
@@ -236,7 +244,7 @@
       "addon": {
         "name": "cognee",
         "display_name": "Cognee",
-        "description": "Builds a queryable knowledge graph plus vector store from your data (ECL / GraphRAG pipeline). Ships an MCP server with local default databases, but needs an LLM API key to process, so it is listed rather than auto-installed.",
+        "description": "Builds a queryable knowledge graph plus vector store from your data (ECL / GraphRAG pipeline). Installs on add (uv tool install) and runs fully local by default (SQLite + LanceDB + Kuzu); set LLM_API_KEY so it can process. Wires its MCP server (cognee-mcp) into the lean-ctx gateway.",
         "author": "topoteretes",
         "homepage": "https://github.com/topoteretes/cognee",
         "license": "Apache-2.0",
@@ -244,6 +252,17 @@
         "integration": "memory",
         "keywords": ["memory", "knowledge-graph", "graphrag", "recall", "competitor", "mcp"],
         "min_lean_ctx": "3.8.0"
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "cognee-mcp"
+      },
+      "capabilities": { "network": "full", "filesystem": "read_write", "env": ["LLM_API_KEY"] },
+      "install": {
+        "manager": "uv",
+        "package": "cognee-mcp",
+        "version": "0.5.4",
+        "bin": "cognee-mcp"
       }
     },
     {
@@ -305,7 +324,8 @@
         "transport": "stdio",
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"]
-      }
+      },
+      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] }
     },
     {
       "addon": {
@@ -338,7 +358,8 @@
         "transport": "stdio",
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-everything@2026.1.26"]
-      }
+      },
+      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] }
     }
   ]
 }

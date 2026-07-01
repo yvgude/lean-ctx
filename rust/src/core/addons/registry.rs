@@ -230,6 +230,47 @@ mod tests {
     }
 
     #[test]
+    fn every_runnable_bundled_addon_declares_scrubbing_capabilities() {
+        // Regression for the env-isolation gap: a bundled addon is spawned as an
+        // untrusted child, and it is the *presence* of a `[capabilities]` block
+        // that flips the single gateway spawn point from the legacy "inherit the
+        // full host env" path to the scrubbed path (env_clear + base allowlist) —
+        // so a runnable addon without one silently leaks host API keys to the
+        // child. See `core::addons::env_scrub` + `core::gateway::client`.
+        //
+        // A block may pass through a *small, reviewed* set of BYO-key env names
+        // (e.g. cognee needs `LLM_API_KEY`). Any name outside this allowlist must
+        // be justified with an explicit review entry here, so a new addon can
+        // never silently widen the host-secret surface.
+        const REVIEWED_ADDON_ENV: &[&str] = &["LLM_API_KEY"];
+        for m in bundled() {
+            if !m.is_installable() {
+                continue; // listed-only entries are never spawned
+            }
+            let caps = m.capabilities.as_ref().unwrap_or_else(|| {
+                panic!(
+                    "runnable addon `{}` has no [capabilities] block — it would inherit the \
+                     full host environment (incl. API keys) when spawned",
+                    m.addon.name
+                )
+            });
+            // Any passed-through env name must be on the small, reviewed
+            // BYO-key allowlist — everything else stays scrubbed.
+            for var in &caps.env {
+                assert!(
+                    REVIEWED_ADDON_ENV.contains(&var.as_str()),
+                    "runnable addon `{}` requests host env var `{}` outside the reviewed \
+                     allowlist {:?} — bundled addons must run scrubbed; add an explicit \
+                     review entry only if the key is genuinely required",
+                    m.addon.name,
+                    var,
+                    REVIEWED_ADDON_ENV,
+                );
+            }
+        }
+    }
+
+    #[test]
     fn validator_flags_insecure_unpinned_and_shell() {
         let insecure = AddonManifest::from_toml(
             "[addon]\nname = \"insecure\"\nauthor = \"a\"\nhomepage = \"https://h\"\nlicense = \"MIT\"\ndescription = \"d\"\n\
