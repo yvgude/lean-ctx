@@ -46,6 +46,11 @@ pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
     // Structured data (JSON/JSONL) carries no comments and barely compresses via
     // the line-based path below (~0% measured). Strip insignificant whitespace
     // losslessly instead — key order, numbers, and string contents are preserved.
+    if matches!(ext, Some("md" | "markdown" | "mdown" | "txt"))
+        && let Some(compacted) = crate::core::markdown_compact::compact_markdown(content)
+    {
+        return compacted;
+    }
     if let Some(compacted) = crate::core::structured_compact::compact_structured(content, ext) {
         return compacted;
     }

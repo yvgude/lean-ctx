@@ -256,6 +256,9 @@ pub(crate) fn compress_if_beneficial(command: &str, output: &str) -> String {
     // Compiler errors, type errors, lint findings etc. must be preserved verbatim
     // so the agent can see file paths, line numbers, and full diagnostics.
     if is_error_output_from_build_tool(command, output) {
+        if let Some(folded) = maybe_fold_progress(output, count_tokens(output)) {
+            return folded;
+        }
         return truncate_verbatim(output, count_tokens(output));
     }
 
@@ -264,6 +267,9 @@ pub(crate) fn compress_if_beneficial(command: &str, output: &str) -> String {
     // This holds for fully-passing runs too, so pass/fail summaries can never be
     // semantically compressed or deduplicated away — on any OS or client.
     if is_test_runner_command(command) {
+        if let Some(folded) = maybe_fold_progress(output, count_tokens(output)) {
+            return folded;
+        }
         return truncate_verbatim(output, count_tokens(output));
     }
 
@@ -690,7 +696,127 @@ fn truncate_with_safety_scan(lines: &[&str], original_tokens: usize) -> Option<S
     Some(shell_savings_footer(&compressed, original_tokens, ct))
 }
 
-/// Public wrapper for integration tests to exercise the compression pipeline.
+fn fold_repetitive_progress(output: &str) -> Option<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut pending_kind: Option<ProgressKind> = None;
+    let mut pending: Vec<&str> = Vec::new();
+    let mut omitted_low_signal = 0usize;
+
+    for line in output.lines() {
+        if is_low_signal_progress(line) {
+            omitted_low_signal += 1;
+            continue;
+        }
+
+        let kind = classify_foldable_progress(line);
+        if kind.is_some() && kind == pending_kind {
+            pending.push(line);
+            continue;
+        }
+
+        flush_progress_run(&mut out, pending_kind, &pending);
+        pending.clear();
+        pending_kind = kind;
+        if kind.is_some() {
+            pending.push(line);
+        } else {
+            out.push(line.to_string());
+        }
+    }
+
+    flush_progress_run(&mut out, pending_kind, &pending);
+    if omitted_low_signal > 0 {
+        out.push(format!(
+            "[{omitted_low_signal} low-signal progress lines omitted]"
+        ));
+    }
+
+    let folded = out.join("\n") + "\n";
+    (folded.len() < output.len()).then_some(folded)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProgressKind {
+    CargoCompile,
+    CargoFresh,
+    PytestPassed,
+    NpmProgress,
+}
+
+fn classify_foldable_progress(line: &str) -> Option<ProgressKind> {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("Compiling ") || trimmed.starts_with("Checking ") {
+        return Some(ProgressKind::CargoCompile);
+    }
+    if trimmed.starts_with("Fresh ")
+        || trimmed.starts_with("Downloaded ")
+        || trimmed.starts_with("Downloading ")
+    {
+        return Some(ProgressKind::CargoFresh);
+    }
+    if line.contains(" PASSED [") {
+        return Some(ProgressKind::PytestPassed);
+    }
+    if trimmed.starts_with('[') && trimmed.contains('%') && trimmed.contains('/') {
+        return Some(ProgressKind::NpmProgress);
+    }
+    None
+}
+
+fn is_low_signal_progress(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed == "." || trimmed == ".." || trimmed == "..." || trimmed == "...."
+}
+
+fn flush_progress_run(out: &mut Vec<String>, kind: Option<ProgressKind>, lines: &[&str]) {
+    let Some(kind) = kind else {
+        return;
+    };
+    if lines.is_empty() {
+        return;
+    }
+    let threshold = match kind {
+        ProgressKind::CargoCompile | ProgressKind::PytestPassed => 8,
+        ProgressKind::CargoFresh | ProgressKind::NpmProgress => 12,
+    };
+    if lines.len() < threshold {
+        out.extend(lines.iter().map(|line| (*line).to_string()));
+        return;
+    }
+
+    out.push(format!(
+        "[{} {} lines folded]",
+        lines.len(),
+        match kind {
+            ProgressKind::CargoCompile => "cargo compile/check",
+            ProgressKind::CargoFresh => "cargo download/fresh",
+            ProgressKind::PytestPassed => "pytest PASSED",
+            ProgressKind::NpmProgress => "package-manager progress",
+        }
+    ));
+    for line in lines.iter().take(3) {
+        out.push((*line).to_string());
+    }
+    if lines.len() > 5 {
+        out.push("…".to_string());
+    }
+    for line in lines
+        .iter()
+        .rev()
+        .take(2)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+    {
+        out.push((*line).to_string());
+    }
+}
+
+fn maybe_fold_progress(output: &str, original_tokens: usize) -> Option<String> {
+    let folded = fold_repetitive_progress(output)?;
+    (count_tokens(&folded) < original_tokens).then_some(folded)
+}
+
 pub fn compress_if_beneficial_pub(command: &str, output: &str) -> String {
     compress_if_beneficial(command, output)
 }

@@ -21,6 +21,7 @@ pub mod extractive;
 pub mod finops_export;
 pub mod information_bottleneck;
 pub mod json_crush;
+pub mod markdown_compact;
 pub mod output_sanitizer;
 pub mod policy;
 pub mod pop_pruning;
