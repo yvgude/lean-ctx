@@ -184,19 +184,28 @@ pub(super) fn finalize_token_count_and_adjust(
     };
 
     if result_text.len() != pre_terse_len && output_tokens > 0 {
-        let pre_savings = tool_saved_tokens;
-        let pre_sent = output_tokens as usize;
-        let actual_sent = output_token_count;
-        let original = pre_sent + pre_savings;
-        let actual_savings = original.saturating_sub(actual_sent);
-        if actual_savings != pre_savings {
-            let delta = pre_savings as i64 - actual_savings as i64;
-            if delta != 0 {
-                crate::core::stats::adjust_savings(name, delta);
-            }
+        let delta = terse_savings_delta(
+            output_tokens as usize,
+            output_token_count,
+            tool_saved_tokens,
+        );
+        if delta != 0 {
+            crate::core::stats::adjust_savings(name, delta);
         }
     }
     output_token_count
+}
+
+/// Signed OPT-4 correction added to persistent saved-tokens once terse
+/// post-processing shrinks the payload. `original` is reconstructed from
+/// `pre_sent` — the *pre-terse* token count — so the delta captures terse's
+/// actual reduction. Reconstructing from the post-terse count instead collapses
+/// `actual_savings` to `pre_savings`, making the delta always 0, so terse
+/// savings are never recorded. Returns 0 when there is nothing to adjust.
+fn terse_savings_delta(pre_sent: usize, actual_sent: usize, pre_savings: usize) -> i64 {
+    let original = pre_sent + pre_savings;
+    let actual_savings = original.saturating_sub(actual_sent);
+    pre_savings as i64 - actual_savings as i64
 }
 
 #[cfg(test)]
@@ -316,5 +325,24 @@ mod tests {
         let text = "hello world";
         let n = finalize_token_count_and_adjust("ctx_shell", text, text.len(), 42, 0);
         assert_eq!(n, 42);
+    }
+
+    #[test]
+    fn terse_delta_reconstructs_from_pre_terse_count() {
+        // Terse shrank 100 pre-terse tokens to 60 sent; the handler had already
+        // reported 20 saved. The true original is 120, so real savings are 60 and
+        // we must add the extra 40 (delta = 20 - 60 = -40). Reconstructing from the
+        // post-terse count (60) — the original bug — would give original = 80,
+        // actual_savings = 20, delta = 0: the terse reduction is silently lost.
+        assert_eq!(terse_savings_delta(100, 60, 20), -40);
+        // Regression guard: feeding the post-terse count as `pre_sent` yields the
+        // tautological no-op the fix removed.
+        assert_eq!(terse_savings_delta(60, 60, 20), 0);
+        // No handler savings (ctx_compose/ctx_search/…) still yields a correction
+        // when terse trims output — the case the old `tool_saved_tokens > 0` gate
+        // dropped entirely.
+        assert_eq!(terse_savings_delta(100, 70, 0), -30);
+        // Nothing to correct when terse did not change the count.
+        assert_eq!(terse_savings_delta(80, 80, 0), 0);
     }
 }
