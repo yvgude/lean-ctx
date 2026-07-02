@@ -105,7 +105,7 @@ fn build_full(project_root: &Path, files: &[String], warnings: &mut Vec<String>)
         let Some(state) = file_state(&abs) else {
             continue;
         };
-        let content = match std::fs::read_to_string(&abs) {
+        let content = match read_artifact_text(&abs) {
             Ok(s) => s,
             Err(e) => {
                 warnings.push(format!("artifact read failed: {rel} ({e})"));
@@ -169,7 +169,7 @@ fn rebuild_incremental(
             continue;
         }
 
-        let content = match std::fs::read_to_string(&abs) {
+        let content = match read_artifact_text(&abs) {
             Ok(s) => s,
             Err(e) => {
                 warnings.push(format!("artifact read failed: {rel} ({e})"));
@@ -343,7 +343,26 @@ fn is_artifact_text_file(path: &Path) -> bool {
             | "sh"
             | "bash"
             | "zsh"
+            | "pdf"
     )
+}
+
+fn is_pdf(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
+}
+
+/// Read an artifact as indexable text. PDFs go through the panic-safe
+/// `pdf-extract` wrapper (GL#1132) — a scanned/image-only or malformed PDF
+/// yields a warning instead of aborting the corpus build; everything else is
+/// read as UTF-8 like before.
+fn read_artifact_text(path: &Path) -> Result<String, String> {
+    if is_pdf(path) {
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        return crate::core::web::pdf::extract_text(&bytes);
+    }
+    std::fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
 fn file_state(path: &Path) -> Option<IndexedFileState> {
@@ -408,4 +427,153 @@ fn extract_artifact_chunks(file_path: &str, content: &str) -> Vec<CodeChunk> {
         tokens: Vec::new(),
         token_count,
     }]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Assemble a minimal, syntactically valid single-page PDF whose content
+    /// stream draws `text` — offsets in the xref table are computed, so the
+    /// fixture stays valid however the text changes.
+    fn tiny_pdf(text: &str) -> Vec<u8> {
+        let stream = format!("BT /F1 12 Tf 72 720 Td ({text}) Tj ET");
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R \
+             /Resources << /Font << /F1 5 0 R >> >> >>"
+                .to_string(),
+            format!(
+                "<< /Length {} >>\nstream\n{stream}\nendstream",
+                stream.len()
+            ),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+        ];
+
+        let mut out = String::from("%PDF-1.4\n");
+        let mut offsets = Vec::with_capacity(objects.len());
+        for (i, body) in objects.iter().enumerate() {
+            offsets.push(out.len());
+            out.push_str(&format!("{} 0 obj\n{body}\nendobj\n", i + 1));
+        }
+        let xref_at = out.len();
+        out.push_str(&format!("xref\n0 {}\n", objects.len() + 1));
+        out.push_str("0000000000 65535 f \n");
+        for off in &offsets {
+            out.push_str(&format!("{off:010} 00000 n \n"));
+        }
+        out.push_str(&format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF\n",
+            objects.len() + 1
+        ));
+        out.into_bytes()
+    }
+
+    fn project_with_docs(files: &[(&str, &[u8])]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let docs = dir.path().join("docs");
+        std::fs::create_dir_all(&docs).unwrap();
+        for (name, bytes) in files {
+            std::fs::write(docs.join(name), bytes).unwrap();
+        }
+        std::fs::write(
+            dir.path().join(".lean-ctx-artifacts.json"),
+            r#"{"artifacts":[{"name":"docs","path":"docs","description":"doc corpus"}]}"#,
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn artifact_text_file_accepts_pdf_and_rejects_env() {
+        assert!(is_artifact_text_file(Path::new("docs/spec.pdf")));
+        assert!(is_artifact_text_file(Path::new("docs/Spec.PDF")));
+        assert!(is_artifact_text_file(Path::new("notes.md")));
+        assert!(!is_artifact_text_file(Path::new(".env")));
+        assert!(!is_artifact_text_file(Path::new("logo.png")));
+    }
+
+    #[test]
+    fn read_artifact_text_extracts_pdf_body() {
+        let dir = tempfile::tempdir().unwrap();
+        let pdf_path = dir.path().join("spec.pdf");
+        std::fs::write(&pdf_path, tiny_pdf("Latency budget is 42ms")).unwrap();
+
+        let text = read_artifact_text(&pdf_path).unwrap();
+        assert!(
+            text.contains("Latency budget is 42ms"),
+            "extracted: {text:?}"
+        );
+    }
+
+    #[test]
+    fn read_artifact_text_reports_malformed_pdf_instead_of_panicking() {
+        let dir = tempfile::tempdir().unwrap();
+        let bad = dir.path().join("broken.pdf");
+        std::fs::write(&bad, b"%PDF-1.4\ngarbage without structure").unwrap();
+
+        let err = read_artifact_text(&bad).unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn corpus_build_indexes_markdown_and_pdf_deterministically() {
+        let dir = project_with_docs(&[
+            (
+                "runbook.md",
+                b"# Incident runbook\nRotate the signing key quarterly.".as_slice(),
+            ),
+            ("spec.pdf", &tiny_pdf("Latency budget is 42ms")),
+        ]);
+
+        let (files, warnings) = list_artifact_files(dir.path());
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(
+            files,
+            vec!["docs/runbook.md".to_string(), "docs/spec.pdf".to_string()]
+        );
+
+        let mut w = Vec::new();
+        let idx = build_full(dir.path(), &files, &mut w);
+        assert!(w.is_empty(), "{w:?}");
+
+        let md_hits = idx.search("signing key quarterly", 5);
+        assert!(md_hits.iter().any(|r| r.file_path == "docs/runbook.md"));
+        let pdf_hits = idx.search("latency budget", 5);
+        assert!(
+            pdf_hits.iter().any(|r| r.file_path == "docs/spec.pdf"),
+            "pdf chunk not found: {pdf_hits:?}"
+        );
+
+        // Determinism (#498): rebuilding the unchanged corpus yields the same
+        // chunk sequence, byte for byte.
+        let mut w2 = Vec::new();
+        let idx2 = build_full(dir.path(), &files, &mut w2);
+        let flat = |i: &BM25Index| {
+            i.chunks
+                .iter()
+                .map(|c| {
+                    format!(
+                        "{}|{}|{}|{}|{}",
+                        c.file_path, c.symbol_name, c.start_line, c.end_line, c.content
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(flat(&idx), flat(&idx2));
+    }
+
+    #[test]
+    fn incremental_rebuild_skips_unchanged_pdf() {
+        let dir = project_with_docs(&[("spec.pdf", &tiny_pdf("Latency budget is 42ms"))]);
+        let (files, _) = list_artifact_files(dir.path());
+
+        let mut w = Vec::new();
+        let full = build_full(dir.path(), &files, &mut w);
+        let rebuilt = rebuild_incremental(dir.path(), &full, &files, &mut w);
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(full.chunks.len(), rebuilt.chunks.len());
+        assert!(rebuilt.files.contains_key("docs/spec.pdf"));
+    }
 }

@@ -37,6 +37,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   asserts every runnable bundled addon carries a capability block.
 
 ### Added
+- **Doc corpora as first-class retrieval sources (Context Hub, GL#1132).** The
+  artifact index now ingests **PDF** (panic-safe local text extraction; a
+  scanned or malformed PDF becomes a warning, not a failed build), and the
+  artifact registry (`.lean-ctx-artifacts.json`) accepts **absolute/`~` paths**
+  so external doc folders — an Obsidian vault, `~/notes` — become searchable
+  corpora. PathJail stays the gate: external entries resolve only when
+  allow-listed (`read_only_roots` / `extra_roots` / `LEAN_CTX_ALLOW_PATH`); a
+  leading slash that matches an existing project path keeps its legacy
+  project-relative meaning. New CLI flag `semantic-search --artifacts` searches
+  the doc corpus; new guide `docs/guides/docs-sources.md`. Determinism guard:
+  re-indexing an unchanged corpus is byte-identical (#498).
 - **pgvector dense backend (Context Hub, GL#1136).** Teams that already operate
   PostgreSQL can point the dense half of hybrid retrieval at it:
   `LEANCTX_PGVECTOR_URL=postgres://…` (or `LEANCTX_DENSE_BACKEND=pgvector`)

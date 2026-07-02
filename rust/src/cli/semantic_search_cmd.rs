@@ -24,6 +24,7 @@ struct Args {
     json: bool,
     languages: Vec<String>,
     path_glob: Option<String>,
+    artifacts: bool,
     help: bool,
 }
 
@@ -39,6 +40,7 @@ impl Default for Args {
             json: false,
             languages: Vec::new(),
             path_glob: None,
+            artifacts: false,
             help: false,
         }
     }
@@ -83,6 +85,7 @@ fn parse_args(args: &[String]) -> Args {
                 i += 1;
                 parsed.path_glob = args.get(i).cloned();
             }
+            "--artifacts" => parsed.artifacts = true,
             // First bare token is the query; later bare tokens are ignored.
             other if !other.starts_with('-') && parsed.query.is_none() => {
                 parsed.query = Some(other.to_string());
@@ -115,6 +118,33 @@ pub(crate) fn cmd_semantic_search(args: &[String]) {
     } else {
         Some(parsed.languages.as_slice())
     };
+
+    // Doc-corpus search (GL#1132): BM25 over the artifact index (registered doc
+    // folders incl. PDFs) — a separate index with its own formatting, so it
+    // routes through `handle` rather than the code-index hit list.
+    if parsed.artifacts {
+        if parsed.json {
+            eprintln!("semantic-search: --json is not supported with --artifacts yet");
+            std::process::exit(2);
+        }
+        let out = ctx_semantic_search::handle(
+            &query,
+            &parsed.path,
+            parsed.top_k,
+            crate::core::protocol::CrpMode::Off,
+            languages,
+            parsed.path_glob.as_deref(),
+            Some("bm25"),
+            Some(false),
+            Some(true),
+        );
+        if let Some(err) = out.strip_prefix("ERR: ") {
+            eprintln!("semantic-search: {err}");
+            std::process::exit(1);
+        }
+        println!("{out}");
+        return;
+    }
 
     match ctx_semantic_search::search_hits(
         &query,
@@ -199,6 +229,8 @@ fn print_help() {
          \x20 -p, --path <dir>       Project root to search (default: cwd)\n\
          \x20     --lang <language>  Restrict to a language (repeatable), e.g. rust\n\
          \x20     --glob <pattern>   Restrict to paths matching a glob, e.g. 'src/**'\n\
+         \x20     --artifacts        Search the doc corpus (registered folders incl. PDFs)\n\
+         \x20                        instead of code — see .lean-ctx-artifacts.json\n\
          \x20     --json             Emit JSON array [{{file,line,content,score,...}}]\n\
          \x20 -h, --help             Show this help"
     );
@@ -220,7 +252,15 @@ mod tests {
         assert_eq!(a.mode, "bm25");
         assert_eq!(a.top_k, 10);
         assert!(!a.json);
+        assert!(!a.artifacts);
         assert_eq!(a.path, ".");
+    }
+
+    #[test]
+    fn parses_artifacts_flag() {
+        let a = parse_args(&args(&["key rotation", "--artifacts"]));
+        assert!(a.artifacts);
+        assert_eq!(a.query.as_deref(), Some("key rotation"));
     }
 
     #[test]

@@ -118,6 +118,7 @@ lean-ctx setup
 ## More Resources
 
 - [Context Infrastructure — the big picture](context-infrastructure.md)
+- [Doc Corpora — notes, wikis and PDFs as sources](docs-sources.md)
 - [Extending lean-ctx — which mechanism to use](extensions.md)
 - [Addons — Community Extensions](addons.md)
 - [Embed lean-ctx (Rust SDK)](embed-sdk.md)
