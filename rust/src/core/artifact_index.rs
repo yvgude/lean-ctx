@@ -273,11 +273,13 @@ fn list_artifact_files(project_root: &Path) -> (Vec<String>, Vec<String>) {
                 {
                     continue;
                 }
+                // Forward slashes on every platform: these strings are index
+                // keys and must match `ResolvedArtifact::path` semantics.
                 let rel = path
                     .strip_prefix(project_root)
                     .unwrap_or(path)
                     .to_string_lossy()
-                    .to_string();
+                    .replace('\\', "/");
                 if rel.is_empty() {
                     continue;
                 }

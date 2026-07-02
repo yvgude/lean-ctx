@@ -35,9 +35,10 @@ pub struct ResolvedArtifacts {
 
 pub fn load_resolved(project_root: &Path) -> ResolvedArtifacts {
     let mut out = ResolvedArtifacts::default();
-    let root_canon = project_root
-        .canonicalize()
-        .unwrap_or_else(|_| project_root.to_path_buf());
+    // Must go through the same canonicalizer as the jail below, otherwise the
+    // two sides disagree on Windows (verbatim prefix, 8.3 short names, case)
+    // and `strip_prefix` silently keeps absolute paths as index keys.
+    let root_canon = crate::core::pathutil::canonicalize_secure_or_self(project_root);
 
     let Some((registry_path, content)) = read_registry_file(project_root) else {
         return out;
@@ -100,11 +101,12 @@ pub fn load_resolved(project_root: &Path) -> ResolvedArtifacts {
             Err(_) => (false, false),
         };
 
+        // Forward slashes for index keys / display on every platform.
         let rel_out = abs
             .strip_prefix(&root_canon)
             .unwrap_or(&abs)
             .to_string_lossy()
-            .to_string();
+            .replace('\\', "/");
 
         out.artifacts.push(ResolvedArtifact {
             name,
