@@ -84,6 +84,10 @@ default = [
   "team-server",
   "secure-update",
   "jemalloc",
+  # Remote dense backends ship in release binaries so LEANCTX_QDRANT_URL /
+  # LEANCTX_PGVECTOR_URL work out of the box (both are env-gated at runtime).
+  "qdrant",
+  "pgvector",
 ]
 jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
 dev-tools = []
@@ -103,6 +107,7 @@ http-server = [
   "dep:rustls",
 ]
 qdrant = ["embeddings"]
+pgvector = ["embeddings"]
 team-server = ["http-server"]
 # Self-hostable org gateway (proxy remote-bind + usage store + admin API).
 # LOCAL_OPTIONAL: free, gated by compilation only — never by account/license/plan

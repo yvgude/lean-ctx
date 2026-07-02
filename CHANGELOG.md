@@ -26,6 +26,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   asserts every runnable bundled addon carries a capability block.
 
 ### Added
+- **pgvector dense backend (Context Hub, GL#1136).** Teams that already operate
+  PostgreSQL can point the dense half of hybrid retrieval at it:
+  `LEANCTX_PGVECTOR_URL=postgres://…` (or `LEANCTX_DENSE_BACKEND=pgvector`)
+  stores embeddings in per-project, per-dimension `vector(N)` tables — same
+  namespacing, point-id scheme and delete-by-file incremental sync as the
+  qdrant backend, so switching backends never mixes identities. Implemented
+  through the `psql` CLI (zero new crate dependencies, mirrors the postgres
+  provider); rows return as per-line JSON for robust parsing; identifiers and
+  literals are strictly validated/escaped. The `qdrant` + `pgvector` features
+  join the default feature set, so release binaries support all three backends
+  out of the box; a live end-to-end test (`pgvector_e2e_round_trip`, `--ignored`)
+  verifies table creation, cosine search, incremental replace and quote-escaping
+  against a real pgvector container. Guide: `docs/guides/dense-backends.md`.
 - **Addon registry: `qmd` + `memgraph-ingester` (Context Hub, GL#1134).** Two
   community tools from the Discord retrieval thread are now 1-command installs:
   `qmd` (on-device Markdown/notes search — BM25 + vectors + reranking, via

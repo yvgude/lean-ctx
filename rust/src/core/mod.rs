@@ -199,6 +199,8 @@ pub mod embedding_quant;
 pub mod embeddings;
 pub mod energy;
 pub mod hybrid_search;
+#[cfg(feature = "pgvector")]
+pub mod pgvector_store;
 #[cfg(feature = "qdrant")]
 pub mod qdrant_store;
 pub mod search_reranking;
