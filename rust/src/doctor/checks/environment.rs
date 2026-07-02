@@ -198,6 +198,28 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
         }
     }
 }
+/// WSL2 + VS Code (GH #669): VS Code's start-on-demand MCP lifecycle has a
+/// known client-side race — the first tool call of a fresh conversation can
+/// fire against cached tool metadata before the server's implementation is
+/// bound, failing with `Cannot read properties of undefined (reading 'invoke')`
+/// (microsoft/vscode#321150). Cold starts on WSL2 widen that window. Purely
+/// informational (ok: true): the defect is upstream, a retry always succeeds.
+pub(crate) fn wsl_vscode_mcp_outcome() -> Option<Outcome> {
+    if !crate::core::io_health::is_wsl() {
+        return None;
+    }
+    let home = dirs::home_dir()?;
+    if !lean_ctx_mcp_location_names(&home).contains("VS Code") {
+        return None;
+    }
+    Some(Outcome {
+        ok: true,
+        line: format!(
+            "{BOLD}WSL2 + VS Code{RST}  {YELLOW}known first-call race in VS Code's MCP client{RST}  {DIM}(a fresh conversation's first ctx_* call may fail with \"reading 'invoke'\" — retry succeeds; upstream: microsoft/vscode#321150. Mitigation: run the MCP server once via \"MCP: List Servers\" → lean-ctx → Start){RST}"
+        ),
+    })
+}
+
 pub(crate) fn port_3333_outcome() -> Outcome {
     match TcpListener::bind("127.0.0.1:3333") {
         Ok(_listener) => Outcome {

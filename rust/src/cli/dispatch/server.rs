@@ -8,18 +8,22 @@ use anyhow::Result;
 pub(super) fn run_mcp_server() -> Result<()> {
     use rmcp::ServiceExt;
 
+    // Time-to-initialize is the metric that decides whether a client's
+    // start-on-demand first tool call races us (GH #669) — measured from
+    // process entry to the completed MCP initialize handshake.
+    let started_at = std::time::Instant::now();
+
     // SAFETY: set once at MCP server startup, before the Tokio runtime is built
     // and any worker/blocking threads exist (runtime is constructed below).
     unsafe { std::env::set_var("LEAN_CTX_MCP_SERVER", "1") };
 
     crate::core::startup_guard::crash_loop_backoff(crate::core::startup_guard::MCP_PROCESS_NAME);
 
-    cleanup_orphan_mcp_processes();
-
     // Commit to the XDG layout (and drain any residual ~/.lean-ctx) once per
     // server start, so a stray marker can never re-collapse config/data/state/
     // cache while the server runs (GL #623). Every other process honors the pin
-    // through the same resolver once it exists.
+    // through the same resolver once it exists. Stays synchronous: everything
+    // below resolves paths through this pin, and it is a no-op once pinned.
     crate::core::layout_pin::heal();
 
     // Concurrency hardening:
@@ -75,20 +79,13 @@ pub(super) fn run_mcp_server() -> Result<()> {
     let server = tools::create_server();
     drop(startup_lock);
 
-    // Auto-start proxy in background so the dashboard gets exact token data.
-    spawn_proxy_if_needed();
-
-    // Throttled (24h), opt-in background publish of the savings recap so the public
-    // leaderboard/hero stay fresh without the user ever running `lean-ctx gain`.
-    // Silent + detached: must not touch stdout (MCP protocol channel) or block startup.
-    crate::cli::wrapped_publish::maybe_auto_publish_background();
-
     rt.block_on(async {
         core::logging::init_mcp_logging();
         core::protocol::set_mcp_context(true);
 
         // Activate the plugin registry once per server process, then announce the
         // session. `notify` is a no-op unless a plugin listens for the hook.
+        // Stays ahead of serve(): a plugin may hook the very first tool call.
         core::plugins::PluginManager::init();
         core::plugins::PluginManager::notify(core::plugins::executor::HookPoint::OnSessionStart);
 
@@ -104,6 +101,22 @@ pub(super) fn run_mcp_server() -> Result<()> {
         // Orphan watchdog: if our parent process dies (IDE crashed/closed without
         // closing stdin), we exit cleanly instead of hanging forever.
         spawn_parent_watchdog();
+
+        // Deferred housekeeping (GH #669): none of this is needed to answer
+        // `initialize`, but each item spawns processes or opens sockets — on a
+        // cold WSL2 / VS Code Server start that widened the window in which the
+        // client's start-on-demand first tool call races server readiness
+        // (microsoft/vscode#321150). Run it on the blocking pool, concurrent
+        // with the handshake, instead of in front of it.
+        let _housekeeping = tokio::task::spawn_blocking(|| {
+            // Kill orphan MCP processes whose parent IDE died (one `ps` per
+            // lean-ctx pid). Auto-start the proxy so the dashboard gets exact
+            // token data. Then the throttled (24h), opt-in publish of the
+            // savings recap — silent + detached, never touches stdout.
+            cleanup_orphan_mcp_processes();
+            spawn_proxy_if_needed();
+            crate::cli::wrapped_publish::maybe_auto_publish_background();
+        });
 
         let transport =
             mcp_stdio::HybridStdioTransport::new_server(tokio::io::stdin(), tokio::io::stdout());
@@ -122,6 +135,12 @@ pub(super) fn run_mcp_server() -> Result<()> {
                 return Err(e.into());
             }
         };
+        // serve() resolves once the client's initialize/initialized handshake
+        // completed — the span a start-on-demand client actually waits on.
+        tracing::info!(
+            time_to_initialize_ms = started_at.elapsed().as_millis() as u64,
+            "MCP server initialized"
+        );
         match service.waiting().await {
             Ok(reason) => {
                 tracing::info!("MCP server stopped: {reason:?}");

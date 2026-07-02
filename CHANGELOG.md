@@ -26,6 +26,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   (C2 — Managed) is surfaced from the README security section and Journey 13.
 
 ### Fixed
+- **pi-lean-ctx ships with zero runtime npm dependencies (GH #670).** pi
+  installs every package into one shared npm prefix and re-reifies the whole
+  tree on each `pi install`/`pi remove`; an interrupted rewrite (Windows
+  AV/file locks) stranded `zod/v3/locales/en.js` and the extension failed to
+  load — unrepairable by reinstalling, because npm never re-extracts a package
+  whose version matches. The MCP SDK (incl. zod) is now vendored as one
+  self-contained bundle (`extensions/vendor/mcp-sdk.cjs`, built at `prepack`),
+  so no corruptible dependency tree exists in the first place. Verified by an
+  isolation smoke: bundle in an empty dir, real initialize + tools/list
+  roundtrip, plus a jiti-loaded co-install with `pi-markdown-preview`.
+- **MCP server answers `initialize` before doing housekeeping (GH #669).**
+  Orphan-process sweep (one `ps` per running lean-ctx), proxy autostart (TCP
+  probe + detached spawn) and the throttled savings-recap publish ran in front
+  of the stdio transport bind — on a cold WSL2 / VS Code Server start this
+  widened the window in which VS Code's start-on-demand first tool call races
+  server readiness and dies with `Cannot read properties of undefined
+  (reading 'invoke')` (upstream: microsoft/vscode#321150). That work is now
+  deferred onto the blocking pool, concurrent with the handshake; a
+  `time_to_initialize_ms` log line makes the span measurable, `lean-ctx
+  doctor` surfaces the upstream race on WSL2 + VS Code setups, and a
+  regression test drives the exact race pattern (tools/call immediately after
+  the initialized notification) against the real binary.
 - **Zero-config golden path: `onboard --yes` now leaves `doctor` fully green.**
   Three healers that silently disagreed are aligned: the session-start heal
   installs the agent `SKILL.md` files alongside rules (previously `doctor`
