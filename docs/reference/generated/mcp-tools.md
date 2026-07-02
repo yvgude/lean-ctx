@@ -380,9 +380,10 @@ Multi-repository — add, remove, search project directories.
 WORKFLOW: list_roots → add_root/remove_root → search.
 ANTI-PATTERN: not for single-repo projects — use ctx_search.
 Actions: add_root|remove_root|list_roots|search|status|save_config.
-Cross-repo search uses RRF to merge results.
+Cross-repo search runs hybrid retrieval per root (BM25+dense+SPLADE)
+and merges with RRF; mode="bm25" forces lexical-only.
 
-Parameters: `action`*, `alias`, `max_results`, `path`, `query`, `roots`
+Parameters: `action`*, `alias`, `max_results`, `mode`, `path`, `query`, `roots`
 
 ## `ctx_outline`
 

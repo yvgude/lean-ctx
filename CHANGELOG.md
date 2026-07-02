@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Hybrid multi-repo search (Context Hub, GL#1133).** `ctx_multi_repo
+  action=search` now runs the full hybrid stack per root — BM25 + dense
+  embeddings + SPLADE boost + graph ranks, the same pipeline as single-root
+  semantic search — and fuses the per-root rankings with RRF (identical key and
+  score semantics as before, so fusion behavior is unchanged; only the per-root
+  signal got stronger). A root with a cold dense index degrades to its BM25
+  ranking with a warning instead of failing or inline-embedding under the query
+  (#512 semantics). `mode="bm25"` forces the legacy lexical-only path,
+  byte-identical to the previous output.
+
 ### Changed
 - **Benchmark numbers refreshed & self-footprint made a headline metric (#659).**
   `BENCHMARKS.md` regenerated with v3.8.18 (map 98.1% / signatures 96.7% on the

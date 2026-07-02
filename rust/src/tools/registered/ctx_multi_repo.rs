@@ -21,7 +21,8 @@ impl McpTool for CtxMultiRepoTool {
              WORKFLOW: list_roots → add_root/remove_root → search.\n\
              ANTI-PATTERN: not for single-repo projects — use ctx_search.\n\
              Actions: add_root|remove_root|list_roots|search|status|save_config.\n\
-             Cross-repo search uses RRF to merge results.",
+             Cross-repo search runs hybrid retrieval per root (BM25+dense+SPLADE)\n\
+             and merges with RRF; mode=\"bm25\" forces lexical-only.",
             json!({
                 "type": "object",
                 "properties": {
@@ -50,6 +51,11 @@ impl McpTool for CtxMultiRepoTool {
                     "max_results": {
                         "type": "integer",
                         "description": "Max results"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["hybrid", "bm25"],
+                        "description": "Per-root ranking signal (default: hybrid; bm25 = lexical only)"
                     }
                 },
                 "required": ["action"]
@@ -70,6 +76,7 @@ impl McpTool for CtxMultiRepoTool {
         let query = get_str(args, "query");
         let roots_filter = get_str_array(args, "roots");
         let max_results = get_usize(args, "max_results").unwrap_or(20).min(1000);
+        let mode = get_str(args, "mode");
 
         let (result, original_tokens) = crate::tools::ctx_multi_repo::handle(
             &action,
@@ -78,6 +85,7 @@ impl McpTool for CtxMultiRepoTool {
             query.as_deref(),
             roots_filter.as_deref(),
             max_results,
+            mode.as_deref(),
         );
 
         if result.starts_with("ERROR:") {

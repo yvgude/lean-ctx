@@ -377,7 +377,7 @@ pub fn boost_with_splade_pub(
 
 mod bm25_store;
 mod dense;
-mod multi_root;
+pub(crate) mod multi_root;
 mod scope;
 
 pub(crate) use bm25_store::*;

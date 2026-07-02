@@ -257,6 +257,12 @@ impl MultiRepoManager {
         self.roots.len()
     }
 
+    /// The configured RRF constant, so external fusers (e.g. the hybrid
+    /// multi-repo search) score identically to [`Self::search`].
+    pub fn rrf_k(&self) -> f64 {
+        self.rrf_k
+    }
+
     pub fn is_active(&self) -> bool {
         self.roots.len() > 1
     }

@@ -1,6 +1,6 @@
-use crate::core::multi_repo::{
-    MultiRepoConfig, RepoRootConfig, format_fused_results, global_manager,
-};
+mod search;
+
+use crate::core::multi_repo::{MultiRepoConfig, RepoRootConfig, global_manager};
 
 /// Handle `ctx_multi_repo` tool calls with action-based dispatch.
 pub fn handle(
@@ -10,12 +10,13 @@ pub fn handle(
     query: Option<&str>,
     roots_filter: Option<&[String]>,
     max_results: usize,
+    mode: Option<&str>,
 ) -> (String, usize) {
     match action {
         "add_root" => handle_add_root(path, alias),
         "remove_root" => handle_remove_root(path),
         "list_roots" => handle_list_roots(),
-        "search" => handle_search(query, max_results, roots_filter),
+        "search" => search::handle_search(query, max_results, roots_filter, mode),
         "status" => handle_status(),
         "save_config" => handle_save_config(),
         _ => (
@@ -98,33 +99,6 @@ fn handle_list_roots() -> (String, usize) {
     (out, 0)
 }
 
-fn handle_search(
-    query: Option<&str>,
-    max_results: usize,
-    roots_filter: Option<&[String]>,
-) -> (String, usize) {
-    let Some(query) = query else {
-        return ("ERROR: query is required for search".to_string(), 0);
-    };
-
-    let manager = global_manager();
-    let Ok(mut mgr) = manager.lock() else {
-        return ("ERROR: failed to acquire multi-repo lock".to_string(), 0);
-    };
-
-    if mgr.root_count() == 0 {
-        return (
-            "ERROR: no repo roots configured. Use add_root first.".to_string(),
-            0,
-        );
-    }
-
-    let results = mgr.search(query, max_results, roots_filter);
-    let output = format_fused_results(&results);
-    let tokens = crate::core::tokens::count_tokens(&output);
-    (output, tokens)
-}
-
 fn handle_status() -> (String, usize) {
     let manager = global_manager();
     let Ok(mgr) = manager.lock() else {
@@ -190,19 +164,19 @@ mod tests {
 
     #[test]
     fn handle_unknown_action() {
-        let (output, _) = handle("invalid", None, None, None, None, 10);
+        let (output, _) = handle("invalid", None, None, None, None, 10, None);
         assert!(output.contains("Unknown action"));
     }
 
     #[test]
     fn handle_add_root_missing_path() {
-        let (output, _) = handle("add_root", None, None, None, None, 10);
+        let (output, _) = handle("add_root", None, None, None, None, 10, None);
         assert!(output.contains("path is required"));
     }
 
     #[test]
     fn handle_search_missing_query() {
-        let (output, _) = handle("search", None, None, None, None, 10);
+        let (output, _) = handle("search", None, None, None, None, 10, None);
         assert!(output.contains("query is required"));
     }
 
