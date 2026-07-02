@@ -211,7 +211,16 @@ install_from_source() {
 
   if [ -d "$RUST_DIR" ]; then
     (cd "$RUST_DIR" && cargo build --release)
-    binary="$RUST_DIR/target/release/lean-ctx"
+    # Honour CARGO_TARGET_DIR / a config.toml [build] target-dir override
+    # (GH #671): with a hardcoded ./target, a stale binary from an earlier
+    # default-layout build gets linked instead of the one just built.
+    # `|| true` keeps a failing `cargo metadata` on the fallback path.
+    target_dir=$( (cd "$RUST_DIR" && cargo metadata --no-deps --format-version=1 2>/dev/null) \
+        | grep -o '"target_directory":"[^"]*"' \
+        | head -1 \
+        | sed -E 's/^"target_directory":"(.*)"$/\1/' \
+        | sed 's/\\\\/\//g' || true)
+    binary="${target_dir:-$RUST_DIR/target}/release/lean-ctx"
   else
     cargo install lean-ctx
     echo ""
@@ -220,7 +229,8 @@ install_from_source() {
   fi
 
   if [ ! -x "$binary" ]; then
-    echo "Error: build failed — binary not found"
+    echo "Error: build failed — binary not found at $binary"
+    echo "Hint: is CARGO_TARGET_DIR or ~/.cargo/config.toml [build] target-dir pointing elsewhere?"
     exit 1
   fi
   echo "Built: $binary"

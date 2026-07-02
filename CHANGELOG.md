@@ -55,6 +55,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   shell script fails loudly when the binary is absent instead of planting a
   dead symlink on PATH, the Rust path gained the same resolution plus the
   Windows `.exe` suffix, and `tests/pre_release_check.sh` follows suit.
+  Follow-up: `install.sh`'s source-build path (served at
+  `leanctx.com/install.sh`) had the same hardcode and could link a stale
+  binary from an earlier default-layout build — it now resolves via
+  `cargo metadata` identically and names the override in its error hint.
   Thanks [@getappz](https://github.com/getappz) for the report and the initial
   fix (#672)!
 - **pi-lean-ctx ships with zero runtime npm dependencies (GH #670).** pi
