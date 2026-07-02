@@ -151,11 +151,16 @@ pub(super) fn cmd_dev_install() {
         }
     }
 
-    let built_binary = cargo_root.join("target/release/lean-ctx");
+    let built_binary = resolve_cargo_target_dir(&cargo_root)
+        .join("release")
+        .join(format!("lean-ctx{}", std::env::consts::EXE_SUFFIX));
     if !built_binary.exists() {
         eprintln!(
             "  Error: Built binary not found at {}",
             built_binary.display()
+        );
+        eprintln!(
+            "  Hint: is CARGO_TARGET_DIR or a [build] target-dir override pointing elsewhere?"
         );
         std::process::exit(1);
     }
@@ -326,6 +331,39 @@ fn atomic_install_binary(src: &std::path::Path, dst: &std::path::Path) -> Result
     Ok(())
 }
 
+/// Resolve cargo's real target directory for the project at `cargo_root`.
+///
+/// A hardcoded `target/` breaks setups that redirect the target dir via
+/// `CARGO_TARGET_DIR` or a `~/.cargo/config.toml` `[build] target-dir`
+/// override (e.g. one shared build cache across worktrees, as recommended in
+/// CONTRIBUTING.md) — dev-install then silently installed a stale or missing
+/// binary (#671). `cargo metadata` is the canonical answer: it folds in env,
+/// config files and workspace settings. Runs under a hard timeout (cargo may
+/// touch the network lock) and falls back to `<root>/target` on any failure.
+fn resolve_cargo_target_dir(cargo_root: &std::path::Path) -> std::path::PathBuf {
+    use crate::ipc;
+
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.args(["metadata", "--no-deps", "--format-version=1"])
+        .current_dir(cargo_root);
+
+    ipc::process::run_with_timeout(cmd, std::time::Duration::from_secs(15))
+        .filter(|o| o.status.success())
+        .and_then(|o| target_dir_from_metadata(&String::from_utf8_lossy(&o.stdout)))
+        .unwrap_or_else(|| cargo_root.join("target"))
+}
+
+/// Extract `target_directory` from `cargo metadata` JSON. Split out from
+/// [`resolve_cargo_target_dir`] so the parsing is unit-testable without
+/// invoking cargo.
+fn target_dir_from_metadata(metadata_json: &str) -> Option<std::path::PathBuf> {
+    let value: serde_json::Value = serde_json::from_str(metadata_json).ok()?;
+    value
+        .get("target_directory")?
+        .as_str()
+        .map(std::path::PathBuf::from)
+}
+
 pub(super) fn find_cargo_project_root() -> Option<std::path::PathBuf> {
     let mut dir = std::env::current_dir().ok()?;
     loop {
@@ -472,6 +510,48 @@ pub(super) fn spawn_proxy_if_needed() {
     match crate::ipc::process::spawn_detached(&mut cmd) {
         Ok(_) => tracing::info!("auto-started proxy on port {port}"),
         Err(e) => tracing::debug!("could not auto-start proxy: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod target_dir_tests {
+    use super::{resolve_cargo_target_dir, target_dir_from_metadata};
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn extracts_target_directory_from_metadata_json() {
+        let json = r#"{"packages":[],"target_directory":"/shared/build/target","version":1}"#;
+        assert_eq!(
+            target_dir_from_metadata(json),
+            Some(PathBuf::from("/shared/build/target"))
+        );
+    }
+
+    #[test]
+    fn windows_paths_survive_json_unescaping() {
+        // serde_json decodes the escaped backslashes; no manual munging needed.
+        let json = r#"{"target_directory":"C:\\Users\\dev\\shared\\target"}"#;
+        assert_eq!(
+            target_dir_from_metadata(json),
+            Some(PathBuf::from(r"C:\Users\dev\shared\target"))
+        );
+    }
+
+    #[test]
+    fn malformed_or_incomplete_metadata_yields_none() {
+        assert_eq!(target_dir_from_metadata("not json"), None);
+        assert_eq!(target_dir_from_metadata("{}"), None);
+        assert_eq!(target_dir_from_metadata(r#"{"target_directory":42}"#), None);
+    }
+
+    #[test]
+    fn resolve_falls_back_to_root_target_without_manifest() {
+        // No Cargo.toml at / — `cargo metadata` fails, the fallback must kick in.
+        let root = if cfg!(windows) { r"C:\" } else { "/" };
+        assert_eq!(
+            resolve_cargo_target_dir(Path::new(root)),
+            Path::new(root).join("target")
+        );
     }
 }
 

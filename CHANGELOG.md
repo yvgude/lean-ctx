@@ -45,6 +45,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   (C2 — Managed) is surfaced from the README security section and Journey 13.
 
 ### Fixed
+- **`dev-install` honours redirected cargo target dirs (GH #671).** Both
+  `rust/dev-install.sh` and the `lean-ctx dev-install` command located the
+  built binary at a hardcoded `target/release/…`; with `CARGO_TARGET_DIR` or a
+  `~/.cargo/config.toml` `[build] target-dir` override (one shared build cache
+  across worktrees) they silently symlinked/installed a stale or missing
+  binary. The target dir is now resolved via `cargo metadata` (env, config
+  files and workspace settings all honoured) with a `./target` fallback, the
+  shell script fails loudly when the binary is absent instead of planting a
+  dead symlink on PATH, the Rust path gained the same resolution plus the
+  Windows `.exe` suffix, and `tests/pre_release_check.sh` follows suit.
+  Thanks [@getappz](https://github.com/getappz) for the report and the initial
+  fix (#672)!
 - **pi-lean-ctx ships with zero runtime npm dependencies (GH #670).** pi
   installs every package into one shared npm prefix and re-reifies the whole
   tree on each `pi install`/`pi remove`; an interrupted rewrite (Windows

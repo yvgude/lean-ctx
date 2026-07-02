@@ -4,7 +4,15 @@
 # Usage: cd rust && bash tests/pre_release_check.sh
 set -euo pipefail
 
-BIN="./target/release/lean-ctx"
+# Honour CARGO_TARGET_DIR / config.toml target-dir overrides (#671); fall back
+# to ./target when `cargo metadata` is unavailable. `|| true` keeps the
+# pipeline from tripping `set -euo pipefail` before the fallback applies.
+TARGET_DIR=$(cargo metadata --no-deps --format-version=1 2>/dev/null \
+    | grep -o '"target_directory":"[^"]*"' \
+    | head -1 \
+    | sed -E 's/^"target_directory":"(.*)"$/\1/' \
+    | sed 's/\\\\/\//g' || true)
+BIN="${TARGET_DIR:-./target}/release/lean-ctx"
 PASS=0
 FAIL=0
 
