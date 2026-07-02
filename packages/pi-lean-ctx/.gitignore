@@ -1,0 +1,4 @@
+# Generated at prepack/pretest by scripts/build-vendor.mjs — never committed.
+# (npm pack still includes it: the package.json "files" whitelist wins.)
+extensions/vendor/*.cjs
+dist/

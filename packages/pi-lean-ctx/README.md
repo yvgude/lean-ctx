@@ -127,6 +127,12 @@ Or use the automated setup:
 lean-ctx init --agent pi
 ```
 
+The published package has **zero runtime npm dependencies**: the MCP SDK
+(incl. zod) is shipped as a self-contained vendor bundle
+(`extensions/vendor/mcp-sdk.cjs`). This makes the extension immune to pi's
+shared npm prefix rewriting `node_modules` on every `pi install`/`pi remove`
+(which previously corrupted zod's locale files — GH #670).
+
 ## How it works
 
 ### ctx_ tools (CLI-backed)

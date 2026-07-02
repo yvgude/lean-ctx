@@ -351,6 +351,9 @@ jobs:
             echo "npm already has pi-lean-ctx@${PKG_VERSION} — skipping publish."
             exit 0
           fi
+          # prepack builds the self-contained vendor bundle (esbuild devDep),
+          # so the published package ships with zero runtime dependencies (#670).
+          npm ci
           npm publish --access public
 
   update-homebrew:

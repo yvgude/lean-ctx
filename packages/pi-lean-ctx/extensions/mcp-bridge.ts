@@ -1,5 +1,9 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+// The MCP SDK (incl. zod) is consumed through a self-contained vendor bundle
+// instead of node_modules: pi's shared npm prefix rewrites every installed
+// package on each `pi install`/`remove`, and an interrupted rewrite corrupted
+// zod beyond repair (GH #670). scripts/build-vendor.mjs generates the bundle
+// at prepack; extensions/vendor/mcp-sdk.d.cts carries its types.
+import { Client, StdioClientTransport } from "./vendor/mcp-sdk.cjs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type TSchema, Type } from "typebox";
 import type { McpBridgeRetryState, McpBridgeStatus } from "./types.js";

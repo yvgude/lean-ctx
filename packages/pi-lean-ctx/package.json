@@ -22,11 +22,11 @@
     "url": "https://github.com/yvgude/lean-ctx/issues"
   },
   "scripts": {
+    "build:vendor": "node scripts/build-vendor.mjs",
+    "prepack": "npm run build:vendor",
+    "pretest": "npm run build:vendor",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.74.0",
@@ -45,6 +45,8 @@
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.79.3",
     "@earendil-works/pi-tui": "^0.79.3",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "esbuild": "^0.28.1",
     "typebox": "^1.2.9",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
