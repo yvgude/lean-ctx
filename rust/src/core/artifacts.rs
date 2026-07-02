@@ -217,6 +217,9 @@ mod tests {
         assert_eq!(got, raw);
     }
 
+    // Verifies jail *behavior*, so it cannot run when the `no-jail` feature
+    // compiles the jail out entirely (CI runs tests with --all-features).
+    #[cfg(not(feature = "no-jail"))]
     #[test]
     fn external_corpus_requires_allow_list() {
         let _g = ENV_LOCK
