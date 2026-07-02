@@ -177,10 +177,8 @@ fn resolve_candidate(project_root: &Path, raw: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
+    #[cfg(not(feature = "no-jail"))]
     fn write_registry(root: &Path, body: &str) {
         std::fs::write(root.join(".lean-ctx-artifacts.json"), body).unwrap();
     }
@@ -222,9 +220,7 @@ mod tests {
     #[cfg(not(feature = "no-jail"))]
     #[test]
     fn external_corpus_requires_allow_list() {
-        let _g = ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _g = crate::core::data_dir::test_env_lock();
         let project = tempfile::tempdir().unwrap();
         let external = tempfile::tempdir().unwrap();
         let vault = external.path().join("vault");
