@@ -37,7 +37,16 @@ cargo build --release 2>&1 | tail -3
 
 # 3) Install
 mkdir -p "$INSTALL_DIR"
-TARGET="$(pwd)/target/release/lean-ctx"
+# Ask cargo for the real target dir — honours CARGO_TARGET_DIR and a
+# ~/.cargo/config.toml `[build] target-dir` override, not just the default
+# "./target" (a hardcoded path silently installed a stale binary here).
+TARGET_DIR=$(cargo metadata --no-deps --format-version=1 2>/dev/null \
+    | grep -o '"target_directory":"[^"]*"' \
+    | head -1 \
+    | sed -E 's/^"target_directory":"(.*)"$/\1/' \
+    | sed 's/\\\\/\//g')
+TARGET_DIR="${TARGET_DIR:-$(pwd)/target}"
+TARGET="${TARGET_DIR}/release/lean-ctx"
 TMP_LINK="${BINARY}.tmp.$$"
 ln -sf "$TARGET" "$TMP_LINK"
 mv -f "$TMP_LINK" "$BINARY"
