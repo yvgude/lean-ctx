@@ -188,6 +188,47 @@
     },
     {
       "addon": {
+        "name": "memgraph-ingester",
+        "display_name": "Memgraph Ingester",
+        "description": "Structure-aware RAG for 150+ languages: the memgraph-ingester CLI parses a codebase into a Memgraph code graph with project memory; this addon wires its MCP server (uvx memgraph-ingester-mcp) into the lean-ctx gateway for high-level graph queries. Needs a running Memgraph instance (e.g. Docker) plus a graph built with the ingester CLI — set MEMGRAPH_INGESTER_MCP_BOLT_URI to your Bolt endpoint.",
+        "author": "ousatov-ua",
+        "homepage": "https://github.com/ousatov-ua/memgraph-ingester",
+        "license": "MIT",
+        "categories": ["code-intelligence", "memory"],
+        "integration": "code-graph",
+        "keywords": ["knowledge-graph", "rag", "memgraph", "ast", "memory", "community", "mcp"],
+        "min_lean_ctx": "3.8.0"
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "uvx",
+        "args": ["--from", "memgraph-ingester-mcp==0.6.6", "memgraph-ingester-mcp"],
+        "env": { "MEMGRAPH_INGESTER_MCP_BOLT_URI": "bolt://localhost:7687" }
+      },
+      "capabilities": { "network": "full", "filesystem": "read_write", "env": ["MEMGRAPH_INGESTER_MCP_BOLT_URI", "MEMGRAPH_INGESTER_MCP_READ_ONLY"] }
+    },
+    {
+      "addon": {
+        "name": "qmd",
+        "display_name": "QMD (Query Markup Documents)",
+        "description": "On-device search engine for markdown notes, meeting transcripts, docs and knowledge bases — BM25 + vector search + LLM re-ranking, fully local via node-llama-cpp GGUF models. Register folders as collections (qmd collection add), then agents search them through its MCP server (qmd mcp) wired into the lean-ctx gateway.",
+        "author": "tobi",
+        "homepage": "https://github.com/tobi/qmd",
+        "license": "MIT",
+        "categories": ["search", "memory"],
+        "integration": "none",
+        "keywords": ["markdown", "notes", "semantic-search", "bm25", "local", "community", "mcp"],
+        "min_lean_ctx": "3.8.0"
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@tobilu/qmd@2.5.3", "mcp"]
+      },
+      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] }
+    },
+    {
+      "addon": {
         "name": "claude-context",
         "display_name": "Claude Context",
         "description": "Semantic code search over an entire codebase (hybrid BM25 + dense vectors) via @zilliz/claude-context-mcp. Needs a Milvus/Zilliz vector database and an embedding API key to run, so it is listed rather than auto-installed.",

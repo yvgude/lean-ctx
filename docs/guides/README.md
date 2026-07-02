@@ -117,11 +117,13 @@ lean-ctx setup
 
 ## More Resources
 
+- [Context Infrastructure — the big picture](context-infrastructure.md)
 - [Extending lean-ctx — which mechanism to use](extensions.md)
 - [Addons — Community Extensions](addons.md)
 - [Embed lean-ctx (Rust SDK)](embed-sdk.md)
 - [Monorepo Guide](monorepo.md)
 - [Custom Embedding Models](custom-embeddings.md)
+- [Dense Backends (local / Qdrant)](dense-backends.md)
 - [Context Policy Packs](policy-packs.md)
 - [Org Single Sign-On (OIDC) Setup](org-sso-setup.md)
 - [Getting Started](https://leanctx.com/docs/getting-started)

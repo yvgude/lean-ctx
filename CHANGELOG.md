@@ -26,6 +26,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   asserts every runnable bundled addon carries a capability block.
 
 ### Added
+- **Addon registry: `qmd` + `memgraph-ingester` (Context Hub, GL#1134).** Two
+  community tools from the Discord retrieval thread are now 1-command installs:
+  `qmd` (on-device Markdown/notes search — BM25 + vectors + reranking, via
+  `npx -y @tobilu/qmd@2.5.3 mcp`) and `memgraph-ingester` (structure-aware RAG
+  on a Memgraph code graph, via `uvx memgraph-ingester-mcp==0.6.6`; needs a
+  running Memgraph). Both ship scrubbed-env capability blocks; the memgraph
+  Bolt-URI/read-only toggles joined the reviewed env passthrough allowlist.
+- **Docs: the context-infrastructure map (GL#1135).** New
+  `docs/guides/context-infrastructure.md` (sources → one pipeline → hybrid
+  retrieval → OKF/ctxpkg portability → addons) and
+  `docs/guides/dense-backends.md` documenting the previously undocumented
+  Qdrant dense backend (`LEANCTX_DENSE_BACKEND`, `LEANCTX_QDRANT_URL`/`_API_KEY`
+  /`_TIMEOUT_SECS`/`_COLLECTION_PREFIX`) next to the default in-process store.
 - **Portable OKF knowledge export/import** (`knowledge export --format okf` /
   `knowledge import <dir>`, `ctx_knowledge`). Renders facts, patterns and typed
   relations from one shared `KnowledgeSnapshot` to the vendor-neutral Open

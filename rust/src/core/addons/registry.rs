@@ -242,7 +242,20 @@ mod tests {
         // (e.g. cognee needs `LLM_API_KEY`). Any name outside this allowlist must
         // be justified with an explicit review entry here, so a new addon can
         // never silently widen the host-secret surface.
-        const REVIEWED_ADDON_ENV: &[&str] = &["LLM_API_KEY"];
+        //
+        // Review log:
+        // - `LLM_API_KEY` — cognee BYO key (a secret, but explicitly the user's
+        //   own key for the addon to use).
+        // - `MEMGRAPH_INGESTER_MCP_BOLT_URI` / `MEMGRAPH_INGESTER_MCP_READ_ONLY`
+        //   — memgraph-ingester connection settings (a local Bolt endpoint URL
+        //   and a boolean toggle). Not host secrets; passing them through lets
+        //   users point the addon at a non-default Memgraph without editing the
+        //   installed gateway entry.
+        const REVIEWED_ADDON_ENV: &[&str] = &[
+            "LLM_API_KEY",
+            "MEMGRAPH_INGESTER_MCP_BOLT_URI",
+            "MEMGRAPH_INGESTER_MCP_READ_ONLY",
+        ];
         for m in bundled() {
             if !m.is_installable() {
                 continue; // listed-only entries are never spawned

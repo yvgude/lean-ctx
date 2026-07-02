@@ -120,6 +120,8 @@ registry validator, so upstream can't change under you silently.
 |---|---|---|---|
 | `repomix` | **yes** (runner) | `npx -y repomix@1.15.0 --mcp` | — |
 | `serena` | **yes** (runner) | `uvx --from serena-agent==1.5.3 serena start-mcp-server` | — |
+| `qmd` | **yes** (runner) | `npx -y @tobilu/qmd@2.5.3 mcp` — register folders first (`qmd collection add`) | — |
+| `memgraph-ingester` | **yes** (runner) | `uvx --from memgraph-ingester-mcp==0.6.6 memgraph-ingester-mcp` | needs a running Memgraph (`MEMGRAPH_INGESTER_MCP_BOLT_URI`) |
 | `sequential-thinking` | **yes** (runner) | `npx -y @modelcontextprotocol/server-sequential-thinking@…` | — |
 | `everything` | **yes** (runner) | `npx -y @modelcontextprotocol/server-everything@…` | — |
 | `headroom` | **yes** (`[install]`) | `uv tool install headroom-ai[mcp]==0.27.0` → `headroom mcp serve` | — |

@@ -110,5 +110,7 @@ different jobs; for coding agents, structure and the two-halves pipeline win.
 ---
 
 *See also: [How retrieval works](https://leanctx.com/docs/concepts/how-retrieval-works),
+[Context Infrastructure](../guides/context-infrastructure.md),
+[Dense Backends (local / Qdrant)](../guides/dense-backends.md),
 [Knowledge Formats](../guides/knowledge-formats.md),
 [lean-ctx vs Mem0](vs-mem0.md), [lean-ctx vs claude-context](vs-claude-context.md).*
