@@ -50,6 +50,13 @@ pub fn dropped_count() -> u64 {
     DROPPED.load(Ordering::Relaxed)
 }
 
+/// Events currently queued (sent but not yet consumed by the writer). Used by
+/// the gateway's graceful shutdown to drain metering before exit (#51).
+#[must_use]
+pub fn pending_count() -> usize {
+    SINK.get().map_or(0, |tx| tx.max_capacity() - tx.capacity())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

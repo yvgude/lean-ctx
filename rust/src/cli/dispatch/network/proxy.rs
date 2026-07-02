@@ -12,47 +12,6 @@ fn parse_proxy_port(rest: &[String]) -> u16 {
         .unwrap_or_else(crate::proxy_setup::default_port)
 }
 
-/// `lean-ctx gateway serve` (enterprise#10) — self-hosted org gateway:
-/// proxy (gateway hardening) + Postgres usage store + admin API + /metrics.
-#[cfg(feature = "gateway-server")]
-pub(crate) fn cmd_gateway(rest: &[String]) {
-    let sub = rest.first().map_or("help", std::string::String::as_str);
-    if sub == "serve" {
-        let port = parse_proxy_port(rest);
-        let admin_port: Option<u16> = rest
-            .iter()
-            .find_map(|p| p.strip_prefix("--admin-port="))
-            .and_then(|p| p.parse().ok());
-        let opts = crate::gateway_server::serve::ServeOptions { port, admin_port };
-        if let Err(e) = crate::cli::dispatch::run_async(crate::gateway_server::serve::serve(opts)) {
-            tracing::error!("Gateway error: {e}");
-            std::process::exit(1);
-        }
-        return;
-    }
-    use crate::gateway_server::serve::{ADMIN_TOKEN_ENV, DATABASE_URL_ENV};
-    println!("lean-ctx gateway — self-hosted org gateway (proxy + usage store + admin API)");
-    println!();
-    println!("Usage:");
-    println!("  lean-ctx gateway serve [--port=N] [--admin-port=N]");
-    println!();
-    println!("Ports:");
-    println!("  --port        proxy surface (default: configured proxy port)");
-    println!("  --admin-port  admin API + /metrics (default: proxy port + 1)");
-    println!();
-    println!("Environment:");
-    println!(
-        "  {DATABASE_URL_ENV}     Postgres for usage_events (off → metering disabled, fail-open)"
-    );
-    println!("  {ADMIN_TOKEN_ENV}  Bearer token of the admin listener (off → admin disabled)");
-    println!("  LEAN_CTX_PROXY_TOKEN            proxy Bearer token (else session token)");
-    println!();
-    println!("Config ([gateway_server] in config.toml): seats, org_label, admin_url.");
-    println!(
-        "Bind host/allowlist/rate limit: proxy_bind_host, proxy_allowed_hosts, proxy_max_rps."
-    );
-}
-
 /// Stops a standalone/foreground proxy by reading its PID from `/health` and
 /// terminating it (graceful, then force). Returns true if a proxy was reachable
 /// on `port`, false if nothing was listening. Shared by `stop` and `restart`.

@@ -137,7 +137,9 @@ pub(super) fn has_pipe_guard_in_content(content: &str) -> bool {
 }
 
 pub(super) fn rc_references_shell_hook(content: &str) -> bool {
-    content.contains("lean-ctx/shell-hook.") || content.contains("lean-ctx\\shell-hook.")
+    // Match any sourced hook file, not just the default `lean-ctx/` parent:
+    // with LEAN_CTX_CONFIG_DIR the rc block references e.g. `custom/shell-hook.bash`.
+    content.contains("shell-hook.")
 }
 
 pub(super) fn rc_has_pipe_guard(path: &PathBuf) -> bool {
@@ -167,16 +169,25 @@ pub(super) fn rc_has_pipe_guard(path: &PathBuf) -> bool {
 
 pub(super) fn hook_dirs() -> Vec<std::path::PathBuf> {
     let mut dirs = Vec::new();
-    if let Ok(d) = crate::core::data_dir::lean_ctx_data_dir() {
+    // Shell hooks are written to the *config* dir (`lean-ctx init`), which is
+    // relocatable via LEAN_CTX_CONFIG_DIR — without it the pipe-guard check
+    // reads a hook location the installer never used and reports a false
+    // "pipe guard missing" on every custom-config-dir install.
+    if let Ok(d) = crate::core::paths::config_dir() {
+        dirs.push(d);
+    }
+    if let Ok(d) = crate::core::data_dir::lean_ctx_data_dir()
+        && !dirs.contains(&d)
+    {
         dirs.push(d);
     }
     if let Some(home) = dirs::home_dir() {
         let legacy = home.join(".lean-ctx");
-        if !dirs.iter().any(|d| d == &legacy) {
+        if !dirs.contains(&legacy) {
             dirs.push(legacy);
         }
         let xdg = home.join(".config").join("lean-ctx");
-        if !dirs.iter().any(|d| d == &xdg) {
+        if !dirs.contains(&xdg) {
             dirs.push(xdg);
         }
     }

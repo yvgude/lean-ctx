@@ -43,6 +43,9 @@ pub struct RouteDecision {
     /// Registry entry whose `api_key_env` credential must be injected before
     /// the request leaves (gateway-held keys, enterprise#7).
     pub credential: Option<ResolvedProvider>,
+    /// Target's local-inference flag (shadow-rate billing): `Some` for
+    /// registry targets, `None` for built-ins (URL heuristic applies).
+    pub local: Option<bool>,
 }
 
 /// Maximum user-message prefix fed to the intent classifier. Classification is
@@ -83,8 +86,8 @@ pub fn route_request(
     let (provider, new_model) = parse_route_target(&target)?;
     let new_model = new_model.to_string();
 
-    let (provider_id, upstream_base, credential) = match provider {
-        None => (None, None, None),
+    let (provider_id, upstream_base, credential, local) = match provider {
+        None => (None, None, None, None),
         Some(p) => resolve_provider(p, request_shape, upstreams)?,
     };
 
@@ -99,21 +102,33 @@ pub fn route_request(
         provider_id,
         upstream_base,
         credential,
+        local,
     })
 }
 
-/// Resolves a route-target provider name to (id, upstream, credential),
+/// Resolves a route-target provider name to (id, upstream, credential, local),
 /// enforcing the within-shape rule. Unknown ids and shape mismatches are
 /// logged and route nothing.
+#[allow(clippy::type_complexity)]
 fn resolve_provider(
     name: &str,
     request_shape: WireShape,
     upstreams: &Upstreams,
-) -> Option<(Option<String>, Option<String>, Option<ResolvedProvider>)> {
-    let (target_shape, base_url, credential) = match name {
-        "anthropic" => (WireShape::Anthropic, upstreams.anthropic.clone(), None),
-        "openai" => (WireShape::OpenAi, upstreams.openai.clone(), None),
-        "gemini" => (WireShape::Gemini, upstreams.gemini.clone(), None),
+) -> Option<(
+    Option<String>,
+    Option<String>,
+    Option<ResolvedProvider>,
+    Option<bool>,
+)> {
+    let (target_shape, base_url, credential, local) = match name {
+        "anthropic" => (
+            WireShape::Anthropic,
+            upstreams.anthropic.clone(),
+            None,
+            None,
+        ),
+        "openai" => (WireShape::OpenAi, upstreams.openai.clone(), None, None),
+        "gemini" => (WireShape::Gemini, upstreams.gemini.clone(), None, None),
         id => {
             let Some(p) = upstreams.provider_by_id(id) else {
                 tracing::warn!(
@@ -125,6 +140,7 @@ fn resolve_provider(
                 p.shape,
                 p.base_url.clone(),
                 p.api_key_env.is_some().then(|| p.clone()),
+                Some(p.local),
             )
         }
     };
@@ -137,7 +153,7 @@ fn resolve_provider(
         );
         return None;
     }
-    Some((Some(name.to_string()), Some(base_url), credential))
+    Some((Some(name.to_string()), Some(base_url), credential, local))
 }
 
 /// Intent-tier target: classify the last user message, look the tier up in the
@@ -236,12 +252,14 @@ mod tests {
                     shape: WireShape::OpenAi,
                     base_url: "https://acme.services.ai.azure.com/openai".into(),
                     api_key_env: Some("FOUNDRY_API_KEY".into()),
+                    local: false,
                 },
                 ResolvedProvider {
                     id: "claudeish".into(),
                     shape: WireShape::Anthropic,
                     base_url: "https://anthropic-gw.example.com".into(),
                     api_key_env: None,
+                    local: false,
                 },
             ],
         }

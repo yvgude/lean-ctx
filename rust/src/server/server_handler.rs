@@ -178,6 +178,19 @@ impl ServerHandler for LeanCtxServer {
             if maintenance.is_some() {
                 if let Some(home) = dirs::home_dir() {
                     let _ = crate::rules_inject::inject_all_rules(&home);
+                    // The on-demand SKILL.md belongs to the same steering surface
+                    // as the rules block: the session-start heal writes rules for
+                    // every detected client, so a fresh machine that never ran
+                    // `lean-ctx setup` otherwise carries a permanent doctor
+                    // warning ("SKILL.md not installed"). Idempotent + gated on
+                    // the same opt-outs as setup (rules_injection=off inside,
+                    // auto_inject_skills=Some(false) here).
+                    if crate::core::config::Config::load()
+                        .setup
+                        .should_inject_skills()
+                    {
+                        let _ = crate::rules_inject::install_all_skills(&home);
+                    }
                 }
                 crate::hooks::refresh_installed_hooks();
                 crate::core::version_check::check_background();

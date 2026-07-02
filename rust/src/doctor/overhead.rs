@@ -32,8 +32,11 @@ pub(super) struct OverheadReport {
     pub lean_default_tool_tokens: usize,
     pub tool_profile: String,
     pub instruction_tokens: usize,
-    /// Tokens of the wakeup briefing (knowledge + session memory) re-injected on
-    /// session start — its own source, not folded into `instruction_tokens` (#964).
+    /// Tokens of the wakeup briefing (knowledge + session memory). With the
+    /// default `minimal_overhead = true` it is delivered via the first tool
+    /// call's AUTO CONTEXT block (instructions stay byte-stable, #498); with
+    /// `false` it is injected at session start. Either way it bills once per
+    /// session — its own source, not folded into `instruction_tokens` (#964).
     pub wakeup_tokens: usize,
     pub rules_files: Vec<RulesFileCost>,
     pub duplicate_clients: Vec<(String, usize)>,

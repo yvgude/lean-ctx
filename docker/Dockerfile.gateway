@@ -11,12 +11,24 @@
 
 FROM rust:1-bookworm AS builder
 
+# Memory-fit defaults for Docker Desktop's 8 GiB VM: the workspace profile
+# (fat LTO + codegen-units=1) needs >8 GiB in the single LTO link step and
+# dies with ResourceExhausted. Thin LTO + 4 jobs builds comfortably; the
+# runtime difference is irrelevant for a network-bound proxy. CI runners
+# with ≥16 GiB restore the fat profile:
+#   docker build --build-arg LTO=fat --build-arg CODEGEN_UNITS=1 --build-arg CARGO_JOBS=8 …
+ARG CARGO_JOBS=4
+ARG LTO=thin
+ARG CODEGEN_UNITS=16
+ENV CARGO_PROFILE_RELEASE_LTO=${LTO} \
+    CARGO_PROFILE_RELEASE_CODEGEN_UNITS=${CODEGEN_UNITS}
+
 WORKDIR /app
 # rust/ carries all compile-time data (pricing tables, compliance mappings)
 # that include_str! needs — one COPY covers the whole build context.
 COPY rust ./rust
 
-RUN cd rust && cargo build --release --features gateway-server
+RUN cd rust && cargo build --release --features gateway-server --jobs "${CARGO_JOBS}"
 
 FROM debian:bookworm-slim
 

@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>lean-ctx · Gateway Console</title>
+<link rel="stylesheet" href="/static/fonts/fonts.css">
+<link rel="stylesheet" href="/static/admin.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2309090b'/%3E%3Cpath d='M10 8v16h12' stroke='%2334d399' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<!-- ── Login ─────────────────────────────────────────────────────────── -->
+<div id="login" class="login-wrap" hidden>
+  <div class="login-card">
+    <div class="login-brand">
+      <span class="login-glyph">⌐</span>
+      <div>
+        <div class="login-title">Gateway Console</div>
+        <div class="login-sub">lean-ctx · self-hosted org gateway</div>
+      </div>
+    </div>
+    <label class="login-label" for="token-input">Admin token</label>
+    <form id="login-form" autocomplete="off">
+      <input id="token-input" class="login-input" type="password"
+             placeholder="LEAN_CTX_GATEWAY_ADMIN_TOKEN" spellcheck="false" autofocus>
+      <button id="login-btn" class="btn btn-primary" type="submit">Sign in</button>
+    </form>
+    <div id="login-error" class="login-error" hidden></div>
+    <div class="login-hint">
+      The token is the value of <code>LEAN_CTX_GATEWAY_ADMIN_TOKEN</code> on the
+      gateway host. It is kept in this tab's session only.
+    </div>
+  </div>
+</div>
+
+<!-- ── App ───────────────────────────────────────────────────────────── -->
+<div id="app" hidden>
+  <header class="topbar">
+    <div class="topbar-brand">
+      <span class="topbar-glyph">⌐</span>
+      <div class="topbar-names">
+        <span id="org-label" class="topbar-org">Gateway Console</span>
+        <span class="topbar-product">lean-ctx gateway <span id="version" class="mono"></span></span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div id="window-picker" class="seg" role="tablist" aria-label="Time window">
+        <button class="seg-btn" data-days="1">24h</button>
+        <button class="seg-btn" data-days="7">7d</button>
+        <button class="seg-btn active" data-days="30">30d</button>
+        <button class="seg-btn" data-days="90">90d</button>
+      </div>
+      <button id="refresh-btn" class="icon-btn" title="Refresh">↻</button>
+      <button id="theme-btn" class="icon-btn" title="Toggle theme">◐</button>
+      <button id="logout-btn" class="icon-btn" title="Sign out">⏻</button>
+    </div>
+  </header>
+
+  <main class="content">
+    <!-- Health strip: store / drops / routing / providers -->
+    <section id="health-strip" class="health-strip" aria-label="Gateway status"></section>
+
+    <!-- KPI grid -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Spend <span class="kpi-window-label"></span></div>
+        <div class="kpi-value mono" id="kpi-spend">—</div>
+        <div class="kpi-foot" id="kpi-spend-foot"></div>
+      </div>
+      <div class="kpi-card kpi-accent">
+        <div class="kpi-label">Saved <span class="kpi-window-label"></span></div>
+        <div class="kpi-value mono accent" id="kpi-saved">—</div>
+        <div class="kpi-foot" id="kpi-saved-foot"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Requests</div>
+        <div class="kpi-value mono" id="kpi-requests">—</div>
+        <div class="kpi-foot" id="kpi-requests-foot"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Active people</div>
+        <div class="kpi-value mono" id="kpi-persons">—</div>
+        <div class="kpi-foot" id="kpi-persons-foot"></div>
+      </div>
+      <div class="kpi-card kpi-projection">
+        <div class="kpi-label">Org projection <span class="info-dot" title="Per-active-person savings × configured seats, scaled to a 30-day month. A planning extrapolation — not a billing number.">i</span></div>
+        <div class="kpi-value mono" id="kpi-projection">—</div>
+        <div class="kpi-foot" id="kpi-projection-foot"></div>
+      </div>
+    </section>
+
+    <!-- Trend chart -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Spend &amp; savings trend</h2>
+        <div class="legend">
+          <span class="legend-item"><i class="dot dot-cost"></i>Spend</span>
+          <span class="legend-item"><i class="dot dot-saved"></i>Saved</span>
+          <span class="legend-item"><i class="dot dot-ref"></i>Baseline (avoided-cost reference)</span>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="trend-chart" height="240"></canvas></div>
+      <div id="trend-empty" class="empty" hidden>No usage in this window yet. Point a client at the proxy port and events will appear here within seconds.</div>
+    </section>
+
+    <!-- Breakdown -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Usage breakdown</h2>
+        <div class="panel-tools">
+          <div class="seg seg-sm" id="group-picker" role="tablist" aria-label="Group by">
+            <button class="seg-btn active" data-group="person">People</button>
+            <button class="seg-btn" data-group="project">Projects</button>
+            <button class="seg-btn" data-group="model">Models</button>
+            <button class="seg-btn" data-group="provider">Providers</button>
+          </div>
+          <input id="filter-input" class="filter-input" type="search" placeholder="Filter…" spellcheck="false">
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="breakdown-table">
+          <thead><tr id="breakdown-head"></tr></thead>
+          <tbody id="breakdown-body"></tbody>
+        </table>
+      </div>
+      <div id="breakdown-empty" class="empty" hidden>Nothing matches.</div>
+    </section>
+
+    <!-- Detail: raw rows -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>All segments <span class="muted">person × project × model × provider</span></h2>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table data-table-sm" id="detail-table">
+          <thead>
+            <tr>
+              <th data-sort="person">Person</th>
+              <th data-sort="project">Project</th>
+              <th data-sort="model">Model</th>
+              <th data-sort="provider">Provider</th>
+              <th class="num" data-sort="requests">Req</th>
+              <th class="num" data-sort="input_tokens">In tok</th>
+              <th class="num" data-sort="output_tokens">Out tok</th>
+              <th class="num" data-sort="saved_usd">Saved</th>
+              <th class="num" data-sort="cost_usd">Cost</th>
+            </tr>
+          </thead>
+          <tbody id="detail-body"></tbody>
+        </table>
+      </div>
+      <div id="detail-empty" class="empty" hidden>No segments in this window.</div>
+    </section>
+
+    <footer class="foot">
+      <span id="foot-window" class="mono"></span>
+      <span>numbers from <code>usage_events</code> · projection is an extrapolation, not billing</span>
+    </footer>
+  </main>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="/static/vendor/chart.umd.min.js"></script>
+<script src="/static/admin.js"></script>
+</body>
+</html>

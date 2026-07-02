@@ -75,18 +75,39 @@ pub struct UsageQuery {
     pub to: Option<String>,
 }
 
-/// Shared state of the admin router: the store pool + deployment parameters.
+/// Shared state of the admin router: the store pool + deployment parameters
+/// (the config/identity slice the status card and dashboard need).
 #[derive(Clone)]
 pub struct AdminState {
     pub pool: Pool,
     /// Seats for the projection (`[gateway_server].seats`).
     pub seats: Option<u32>,
+    /// `[gateway_server].org_label` — branding for the dashboard header.
+    pub org_label: Option<String>,
+    /// Process start, for the status card's uptime.
+    pub started_at: std::time::Instant,
+    /// Resolved provider registry snapshot (id/shape/credential presence).
+    pub providers: Vec<super::admin_status::ProviderStatus>,
+    /// `[proxy.routing].enabled`.
+    pub routing_enabled: bool,
+    /// `[proxy.baseline].reference_model`.
+    pub reference_model: Option<String>,
+    /// Effective local shadow rate (USD per MTok).
+    pub local_shadow_rate: f64,
 }
 
 /// Builds the admin API router. Mounted behind Bearer auth by `gateway serve`.
 pub fn router(state: AdminState) -> axum::Router {
     axum::Router::new()
         .route("/api/admin/usage", axum::routing::get(get_usage))
+        .route(
+            "/api/admin/timeseries",
+            axum::routing::get(super::admin_timeseries::get_timeseries),
+        )
+        .route(
+            "/api/admin/status",
+            axum::routing::get(super::admin_status::get_status),
+        )
         .with_state(Arc::new(state))
 }
 
@@ -141,7 +162,7 @@ async fn get_usage(State(state): State<Arc<AdminState>>, Query(q): Query<UsageQu
 
 /// Parses the window, defaulting to the last 30 days ending now. Rejects an
 /// inverted window instead of silently returning an empty result.
-fn resolve_window(
+pub(super) fn resolve_window(
     from: Option<&str>,
     to: Option<&str>,
 ) -> Result<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>), String> {

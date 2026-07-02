@@ -145,6 +145,11 @@ pub async fn forward_request(
         if let Some(id) = &route.provider_id {
             wire.provider = id.clone();
         }
+        // Registry route targets carry their own local-inference flag
+        // (shadow-rate billing); built-in targets keep the URL heuristic.
+        if let Some(local) = route.local {
+            wire.is_local = local;
+        }
     }
     let wire = Some(wire);
 
@@ -177,11 +182,14 @@ fn wire_context(
         .cloned()
         .unwrap_or_default();
     // Registry routes attribute usage to the provider identity ("foundry",
-    // "local"), not the wire-shape label ("OpenAI") — shape ≠ identity.
-    let provider = parts
+    // "local"), not the wire-shape label ("OpenAI") — shape ≠ identity. The
+    // entry's resolved local flag rides along (shadow-rate billing for
+    // non-loopback local endpoints, e.g. host.docker.internal).
+    let registry = parts
         .extensions
-        .get::<super::providers::RegistryProviderId>()
-        .map_or(provider_label, |id| id.0.as_str());
+        .get::<super::providers::RegistryProviderId>();
+    let provider = registry.map_or(provider_label, |r| r.id.as_str());
+    let is_local = registry.map_or_else(|| upstream_is_local(upstream_base), |r| r.local);
     Box::new(super::usage::WireContext {
         provider: provider.to_string(),
         person: tags.person,
@@ -190,7 +198,7 @@ fn wire_context(
         saved_tokens: tokens_saved,
         // bytes/4 — the same estimation basis the proxy stats use throughout.
         uncompressed_input_tokens: original_size as u64 / 4,
-        is_local: upstream_is_local(upstream_base),
+        is_local,
         routed_from: None, // populated by the routing hook (wave 3)
     })
 }
@@ -454,6 +462,23 @@ fn read_bounded<R: Read>(reader: R, max_bytes: usize) -> Result<Vec<u8>, StatusC
     Ok(out)
 }
 
+/// Statuses safe to retry once (enterprise#51): the upstream explicitly did
+/// NOT process the request (429 rejected, 502/503 gateway/unavailable). 500 and
+/// 504 are excluded — the model may have already consumed/billed the call.
+fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 429 | 502 | 503)
+}
+
+/// Short jittered backoff before the single retry: enough for a load balancer
+/// to fail over or a rate-limit window to move, never long enough to stack up
+/// under load (fail-open rule — the client's own retry logic stays primary).
+async fn retry_backoff() {
+    let mut buf = [0u8; 2];
+    let jitter_ms =
+        getrandom::fill(&mut buf).map_or(100, |()| u64::from(u16::from_le_bytes(buf)) % 200);
+    tokio::time::sleep(std::time::Duration::from_millis(150 + jitter_ms)).await;
+}
+
 async fn send_upstream(
     state: &ProxyState,
     parts: &Parts,
@@ -462,19 +487,47 @@ async fn send_upstream(
     provider_label: &str,
     preserve_content_encoding: bool,
 ) -> Result<reqwest::Response, StatusCode> {
-    let mut req = state.client.request(parts.method.clone(), url);
+    let send_once = |body: Vec<u8>| {
+        let mut req = state.client.request(parts.method.clone(), url);
+        for (key, value) in &parts.headers {
+            let k = key.as_str().to_lowercase();
+            if should_forward_request_header(&k, preserve_content_encoding) {
+                req = req.header(key.clone(), value.clone());
+            }
+        }
+        req.body(body).send()
+    };
 
-    for (key, value) in &parts.headers {
-        let k = key.as_str().to_lowercase();
-        if should_forward_request_header(&k, preserve_content_encoding) {
-            req = req.header(key.clone(), value.clone());
+    // First attempt. The request body is fully buffered, and no response byte
+    // has reached the client yet — retrying here is always safe for the
+    // client connection; the status filter keeps it safe semantically.
+    let first = send_once(body.clone()).await;
+    let retry_reason = match &first {
+        Ok(resp) if is_retryable_status(resp.status()) => {
+            format!("status {}", resp.status().as_u16())
+        }
+        Err(e) if e.is_connect() || e.is_timeout() => format!("connect error: {e}"),
+        Ok(resp) => {
+            let _ = resp; // healthy (or non-retryable) response — pass through
+            return first.map_err(|_| StatusCode::BAD_GATEWAY);
+        }
+        Err(e) => {
+            tracing::error!("lean-ctx proxy: {provider_label} upstream error: {e}");
+            return Err(StatusCode::BAD_GATEWAY);
+        }
+    };
+
+    tracing::warn!("lean-ctx proxy: {provider_label} upstream {retry_reason} — retrying once");
+    retry_backoff().await;
+    match send_once(body).await {
+        Ok(resp) => Ok(resp),
+        Err(e) => {
+            // Second failure: surface the ORIGINAL outcome when it was an HTTP
+            // response (its status/headers are more honest than our 502).
+            tracing::error!("lean-ctx proxy: {provider_label} retry failed: {e}");
+            first.map_err(|_| StatusCode::BAD_GATEWAY)
         }
     }
-
-    req.body(body).send().await.map_err(|e| {
-        tracing::error!("lean-ctx proxy: {provider_label} upstream error: {e}");
-        StatusCode::BAD_GATEWAY
-    })
 }
 
 pub(super) const FORWARDED_HEADERS: &[&str] = &[
@@ -642,9 +695,65 @@ mod tests {
         let mut parts = parts_for("/v1/chat/completions");
         parts
             .extensions
-            .insert(super::super::providers::RegistryProviderId("local".into()));
+            .insert(super::super::providers::RegistryProviderId {
+                id: "local".into(),
+                local: false,
+            });
         let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400);
         assert_eq!(wire.provider, "local");
+    }
+
+    #[test]
+    fn wire_context_registry_local_flag_beats_url_heuristic() {
+        // The containerized gateway reaches host Ollama via
+        // host.docker.internal — not loopback, but declared local = true must
+        // book the shadow rate (enterprise#15/#18). And the inverse: a
+        // loopback-tunneled cloud endpoint declared local = false must not.
+        let mut parts = parts_for("/v1/chat/completions");
+        parts
+            .extensions
+            .insert(super::super::providers::RegistryProviderId {
+                id: "local".into(),
+                local: true,
+            });
+        let wire = wire_context(
+            &parts,
+            "OpenAI",
+            "http://host.docker.internal:11434",
+            0,
+            400,
+        );
+        assert!(wire.is_local, "declared local flag must win");
+
+        let mut parts = parts_for("/v1/chat/completions");
+        parts
+            .extensions
+            .insert(super::super::providers::RegistryProviderId {
+                id: "tunnel".into(),
+                local: false,
+            });
+        let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:9999", 0, 400);
+        assert!(!wire.is_local, "declared non-local flag must win");
+    }
+
+    // --- enterprise#51: fail-open single retry ---
+
+    #[test]
+    fn retry_covers_exactly_not_processed_statuses() {
+        // Retryable: the upstream explicitly did not process the request.
+        for code in [429_u16, 502, 503] {
+            assert!(
+                is_retryable_status(reqwest::StatusCode::from_u16(code).unwrap()),
+                "{code} must be retryable"
+            );
+        }
+        // Not retryable: success, client errors, and "may have processed".
+        for code in [200_u16, 400, 401, 404, 500, 504] {
+            assert!(
+                !is_retryable_status(reqwest::StatusCode::from_u16(code).unwrap()),
+                "{code} must NOT be retryable"
+            );
+        }
     }
 
     #[test]

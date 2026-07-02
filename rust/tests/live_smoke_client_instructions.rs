@@ -281,6 +281,74 @@ fn codex_covered_client_gets_anchor() {
     assert_lazy_core_surface(&tools, "codex");
 }
 
+/// Zero-config golden path: the FIRST MCP session on a fresh machine must
+/// leave rules AND the on-demand SKILL.md behind (session-start heal), so
+/// `doctor` is green without the user ever running `lean-ctx setup`.
+///
+/// Unlike the other smokes this one does NOT set LEAN_CTX_HEADLESS — the
+/// startup-maintenance block (rules inject + skills install) is the unit
+/// under test. The maintenance runs async after initialize, so the test
+/// polls for the artifacts with a deadline while the session stays open.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
+)]
+fn first_session_heals_rules_and_skill() {
+    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+    let env = test_env();
+    // A Cursor install is just its config dir — no prior lean-ctx wiring.
+    std::fs::create_dir_all(env.home.join(".cursor")).unwrap();
+
+    let mut child: Child = Command::new(bin)
+        .arg("mcp")
+        .current_dir(&env.project)
+        .env("HOME", &env.home)
+        .env("LEAN_CTX_DATA_DIR", &env.data)
+        .env("CODEX_HOME", env.home.join(".codex"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("mcp server spawn");
+    let mut stdin = child.stdin.take().expect("child stdin");
+    let stdout = child.stdout.take().expect("child stdout");
+    let reader = std::thread::spawn(move || {
+        // Drain stdout so the server never blocks on a full pipe.
+        for _ in BufReader::new(stdout).lines() {}
+    });
+
+    let init = serde_json::json!({
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": { "name": "cursor", "version": "1.0.0" }
+        }
+    });
+    writeln!(stdin, "{init}").expect("write initialize");
+
+    let rules = env.home.join(".cursor/rules/lean-ctx.mdc");
+    let skill = env.home.join(".cursor/skills/lean-ctx/SKILL.md");
+    let deadline = std::time::Instant::now() + Duration::from_mins(1);
+    while (!rules.exists() || !skill.exists()) && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    drop(stdin);
+    let _ = child.wait();
+    let _ = reader.join();
+
+    assert!(
+        rules.exists(),
+        "session-start heal must write the Cursor rules file without any setup command"
+    );
+    assert!(
+        skill.exists(),
+        "session-start heal must install SKILL.md alongside the rules (zero-config: doctor green after first session)"
+    );
+}
+
 /// Guard the exact anchor prefix this smoke keys on: if `SKELETON_ANCHOR` in
 /// `instructions.rs` is reworded, this test points straight at the constant
 /// instead of three opaque handshake failures.

@@ -12,7 +12,6 @@ FROZEN_LIMIT=2000
 ALLOWLIST=(
   rust/src/proxy_setup.rs
   rust/src/core/config/mod.rs
-  rust/src/core/config/proxy.rs
   rust/src/core/config/tests.rs
   rust/src/tools/ctx_read/tests.rs
   rust/src/shell/compress/tests.rs

@@ -162,7 +162,13 @@ pub(crate) fn handle_remember(
             } => (category.clone(), key.clone(), value.clone()),
             _ => (cat.to_string(), k.to_string(), v.to_string()),
         };
-        if let Some(engine) = embedding_engine() {
+        // Non-blocking engine access: `remember` must never stall on a model
+        // download/load (fresh install, offline sandbox — the blocking variant
+        // hit the 120s tool watchdog before the first fact was ever embedded).
+        // When the engine is not loaded yet this kicks off the one-time
+        // background activation and skips the side-car for THIS call only;
+        // compaction / embeddings_reindex backfill the vector later.
+        if let Some(engine) = embedding_engine_nonblocking() {
             // Serialize the embedding index's read-modify-write under the same
             // per-project lock as the fact write above, and compact against the
             // freshly committed on-disk knowledge instead of this call's
@@ -170,8 +176,7 @@ pub(crate) fn handle_remember(
             // stale snapshot, so parallel `remember` calls clobbered each
             // other's vectors and pruned just-stored embeddings — semantic
             // recall then returned far fewer hits than facts stored (issue #412,
-            // a #326 follow-up). The model is fetched outside the lock so its
-            // load never serializes other writers.
+            // a #326 follow-up).
             let (warn, semantic) = ProjectKnowledge::with_project_lock(project_root, || {
                 let mut idx = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(
                     &knowledge.project_hash,

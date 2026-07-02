@@ -86,18 +86,24 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         }
     };
 
-    // -- Admin listener (admin API + /metrics, enterprise#20/#34) -----------
+    // -- Admin listener (dashboard + admin API + /metrics, #20/#34/#45) -----
     match (pool.clone(), admin_token()) {
         (Some(pool), Some(token)) => {
             let state = super::admin_api::AdminState {
                 pool,
                 seats: cfg.gateway_server.seats,
+                org_label: cfg.gateway_server.org_label.clone(),
+                started_at: std::time::Instant::now(),
+                providers: super::admin_status::provider_statuses(&cfg.proxy.resolve_providers()),
+                routing_enabled: cfg.proxy.routing.is_active(),
+                reference_model: cfg.proxy.baseline.reference_model.clone(),
+                local_shadow_rate: cfg.proxy.baseline.effective_local_shadow_rate(),
             };
             let router = admin_router(state, token);
             let addr = std::net::SocketAddr::from(([0, 0, 0, 0], admin_port));
             let listener = tokio::net::TcpListener::bind(addr).await?;
             println!(
-                "  Admin:     http://{addr}/api/admin/usage + /metrics (Bearer via {ADMIN_TOKEN_ENV})"
+                "  Admin:     http://{addr}/ (dashboard) + /api/admin/* + /metrics (Bearer via {ADMIN_TOKEN_ENV})"
             );
             tokio::spawn(async move {
                 if let Err(e) = axum::serve(listener, router).await {
@@ -107,7 +113,7 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         }
         (Some(_), None) => {
             println!(
-                "  Admin:     off — set {ADMIN_TOKEN_ENV} to serve /api/admin/usage + /metrics"
+                "  Admin:     off — set {ADMIN_TOKEN_ENV} to serve the dashboard + /api/admin/*"
             );
         }
         (None, _) => {
@@ -117,7 +123,30 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
 
     // -- Proxy (blocking; the actual gateway surface) ------------------------
     println!("lean-ctx gateway: starting proxy on port {} …", opts.port);
-    crate::proxy::start_proxy(opts.port).await
+    let result = crate::proxy::start_proxy(opts.port).await;
+
+    // Graceful drain (enterprise#51): the proxy returned after SIGTERM/Ctrl-C
+    // finished in-flight requests; give the store writer a bounded window to
+    // flush queued usage events so a rollout doesn't shed metering.
+    if pool.is_some() {
+        drain_usage_queue(std::time::Duration::from_secs(5)).await;
+    }
+    result
+}
+
+/// Waits until the usage sink queue is empty or the deadline passes.
+async fn drain_usage_queue(max_wait: std::time::Duration) {
+    let started = std::time::Instant::now();
+    let mut pending = crate::proxy::usage_sink::pending_count();
+    while pending > 0 && started.elapsed() < max_wait {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        pending = crate::proxy::usage_sink::pending_count();
+    }
+    if pending > 0 {
+        tracing::warn!("shutdown drain window elapsed with {pending} usage event(s) unflushed");
+    } else {
+        println!("  Store:     usage queue drained.");
+    }
 }
 
 fn admin_token() -> Option<String> {
@@ -127,7 +156,8 @@ fn admin_token() -> Option<String> {
         .filter(|t| !t.is_empty())
 }
 
-/// Admin router: `/healthz` open (liveness), everything else Bearer-guarded.
+/// Admin router: `/healthz` and the dashboard's static shell open (the login
+/// screen must render without a token), all data APIs + /metrics Bearer-guarded.
 fn admin_router(state: super::admin_api::AdminState, token: String) -> axum::Router {
     let token = Arc::new(token);
     super::admin_api::router(state)
@@ -137,6 +167,7 @@ fn admin_router(state: super::admin_api::AdminState, token: String) -> axum::Rou
             admin_auth_guard(req, next, token)
         }))
         .route("/healthz", axum::routing::get(|| async { "ok" }))
+        .merge(super::admin_ui::router())
 }
 
 async fn admin_auth_guard(

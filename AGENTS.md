@@ -41,7 +41,10 @@ lean-ctx automatically persists session context across restarts:
 - **Files**: Touched files with summaries and modification status
 - **Progress**: Task completion state and next steps
 
-This data is injected into every new session via the `ACTIVE SESSION` LITM block.
+This data is delivered through the first tool call's `--- AUTO CONTEXT ---`
+briefing (default `minimal_overhead = true`: initialize instructions stay
+byte-stable for provider prompt caching, #498). With `minimal_overhead = false`
+it is additionally injected at session start via the `ACTIVE SESSION` LITM block.
 
 ### Active Documentation (Agent Responsibility)
 

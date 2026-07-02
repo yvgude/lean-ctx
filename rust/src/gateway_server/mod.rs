@@ -14,5 +14,12 @@
 //! or down Postgres degrades metering, never live LLM traffic.
 
 pub mod admin_api;
+pub mod admin_status;
+pub mod admin_timeseries;
+pub mod admin_ui;
+pub mod doctor;
+pub mod init;
+pub mod keys_cli;
+pub mod report;
 pub mod serve;
 pub mod store;

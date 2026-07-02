@@ -36,14 +36,19 @@ use axum::{
 use super::{ProxyState, forward};
 use crate::core::config::{ResolvedProvider, WireShape};
 
-/// Request extension carrying the registry id of the serving provider.
+/// Request extension carrying the registry identity of the serving provider.
 ///
 /// Shape ≠ identity (module docs): the forward path only knows the wire shape
 /// ("OpenAI"), but usage metering must attribute to the provider *identity*
 /// ("foundry", "local") — otherwise every OpenAI-shaped registry entry shows
 /// up as "OpenAI" in `usage_events` and the admin breakdown (enterprise#20).
+/// `local` carries the entry's resolved local-inference flag so shadow-rate
+/// billing works for non-loopback local endpoints too (host.docker.internal).
 #[derive(Debug, Clone)]
-pub(super) struct RegistryProviderId(pub String);
+pub(super) struct RegistryProviderId {
+    pub id: String,
+    pub local: bool,
+}
 
 pub async fn handler(
     State(state): State<ProxyState>,
@@ -54,8 +59,10 @@ pub async fn handler(
         tracing::warn!("lean-ctx proxy: unknown registry provider '{id}' (404)");
         return Err(StatusCode::NOT_FOUND);
     };
-    req.extensions_mut()
-        .insert(RegistryProviderId(provider.id.clone()));
+    req.extensions_mut().insert(RegistryProviderId {
+        id: provider.id.clone(),
+        local: provider.local,
+    });
 
     // Strip the `/providers/{id}` prefix so the upstream sees the bare provider
     // path: `/providers/foundry/v1/chat/completions` → `/v1/chat/completions`.
@@ -181,6 +188,7 @@ mod tests {
             shape,
             base_url: "https://example.invalid".into(),
             api_key_env: api_key_env.map(str::to_string),
+            local: false,
         }
     }
 

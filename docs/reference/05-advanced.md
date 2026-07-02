@@ -175,6 +175,12 @@ api_key_env = "FOUNDRY_API_KEY"                         # optional: gateway-held
 id = "openrouter"
 shape = "openai"
 base_url = "https://openrouter.ai/api"
+
+[[proxy.providers]]
+id = "local"
+shape = "openai"
+base_url = "http://host.docker.internal:11434"          # gateway container → host Ollama
+local = true                                            # bill at the shadow rate
 ```
 
 - **Shape ≠ identity.** The proxy speaks three wire dialects; any number of
@@ -185,6 +191,13 @@ base_url = "https://openrouter.ai/api"
   credential header is stripped and replaced (callers authenticate with the
   lean-ctx Bearer token and never see the provider key). Unset → the caller's own
   credentials are forwarded verbatim, exactly like the built-ins.
+- **`local`** marks the endpoint as local inference for metering: usage is booked
+  at the transparent `local_shadow_rate` instead of cloud list prices. Unset, it
+  is derived from the URL (loopback hosts count as local) — declare it explicitly
+  when the endpoint is local but not loopback, e.g. the containerized gateway
+  reaching the host's Ollama via `host.docker.internal`, or an in-cluster vLLM
+  service. `local = false` likewise pins a loopback-tunneled cloud endpoint to
+  list-price billing.
 - Invalid entries are logged and skipped; the registry is hot-reloaded from
   `config.toml` like every upstream. Active entries appear on `/status` under
   `providers`.
@@ -300,9 +313,20 @@ lean-ctx gateway serve --port=8484 --admin-port=8485
 - **Admin listener** (`--admin-port`, default proxy port + 1): keep it
   cluster-internal (no ingress). Requires `LEAN_CTX_GATEWAY_ADMIN_TOKEN`
   (env-only, like all tokens); without it only the proxy runs.
+  - `GET /` — the **Gateway Console**: an embedded admin dashboard (login with
+    the admin token; kept in `sessionStorage` only). Org overview, spend/savings
+    trend, breakdowns by person/project/model/provider, provider credential
+    status, drop counter, seat projection. No CDN, no build step — served from
+    the binary.
   - `GET /api/admin/usage?from=<ISO>&to=<ISO>` — person × project × model ×
     provider breakdown with cost/savings sums, totals and the seat projection
     (window defaults to the last 30 days).
+  - `GET /api/admin/timeseries?from=<ISO>&to=<ISO>` — per-UTC-day
+    requests/cost/saved/reference series (gapless; empty days are explicit
+    zeros) for trend charts.
+  - `GET /api/admin/status` — live health/config card: version, uptime, store
+    connectivity (probed per request), drop counter, provider registry with
+    credential presence, routing/baseline posture.
   - `GET /metrics` — Prometheus text: per-model requests/tokens/cost, verified
     ledger savings (total + per mechanism), dropped-event counter.
   - `GET /healthz` — unauthenticated liveness.
@@ -316,6 +340,34 @@ org_label = "Acme AI Gateway"       # display name on cockpit + reports
 # the local snapshot of this machine only.
 admin_url = "https://gateway.internal:8485"
 ```
+
+**Gateway lifecycle CLI** (all under `lean-ctx gateway …`, `gateway-server`
+builds):
+
+```bash
+lean-ctx gateway init pilot --org="Acme AG" --seats=800 \
+  --reference-model=claude-opus-4.5 --person=alice@acme.com   # plug-and-play instance
+cd pilot && docker compose up -d                              # gateway + Postgres 17
+lean-ctx gateway doctor --dir .                               # go-live preflight (exit≠0 on FAIL)
+lean-ctx gateway keys add --person=bob@acme.com --team=core   # key shown once, hash stored
+lean-ctx gateway keys list && lean-ctx gateway keys revoke --person=bob@acme.com
+lean-ctx gateway report --out=q3.html                         # printable value report (usage_events)
+```
+
+- `init` generates `config.toml`, `.env` (0600; proxy/admin tokens + Postgres
+  password + `DATABASE_URL`), `docker-compose.yml` (healthchecks, restart
+  policies, admin port bound to `127.0.0.1`), `gateway-keys.toml`, `.gitignore`
+  and a README — and never overwrites an existing instance.
+- `doctor` checks config posture (open bind without required tokens = FAIL),
+  key-set validity, token presence/strength, Postgres connectivity
+  (`SELECT 1`), provider `api_key_env` presence and live ports — each line with
+  a concrete fix command.
+- **Upstream resilience:** the proxy retries exactly once (150–350 ms jittered
+  backoff) on connect errors and on 429/502/503 — statuses where the upstream
+  provably did not process the request. 500/504 and mid-stream failures are
+  never retried. On a failed retry the *original* upstream response is passed
+  through. On SIGTERM the gateway finishes in-flight requests and drains the
+  usage-event queue (bounded, 5 s) before exit.
 
 **Live upstream — `config.toml` is the source of truth for a running proxy**
 ([#449](https://github.com/yvgude/lean-ctx/issues/449)). A long-lived proxy

@@ -377,6 +377,15 @@ pub fn detect_claude_path() -> PathBuf {
         if claude_json.exists() {
             return claude_json;
         }
+        // State dir counts as installed: doctor's Claude checks, rules_inject
+        // and skills all key off `~/.claude/` existing. Without this fallback
+        // a machine with only the state dir hits a dead loop — doctor says
+        // "run: lean-ctx setup", but setup skips Claude (detect_path missing)
+        // and the warning never clears.
+        let state_dir = super::claude_state_dir(&home);
+        if state_dir.exists() {
+            return state_dir;
+        }
     }
     PathBuf::from("/nonexistent")
 }
@@ -403,6 +412,12 @@ pub fn detect_codebuddy_path() -> PathBuf {
         let codebuddy_json = codebuddy_mcp_json_path(&home);
         if codebuddy_json.exists() {
             return codebuddy_json;
+        }
+        // Same state-dir fallback as detect_claude_path (CodeBuddy mirrors
+        // Claude Code's layout everywhere else — doctor, rules, skills).
+        let state_dir = super::codebuddy_state_dir(&home);
+        if state_dir.exists() {
+            return state_dir;
         }
     }
     PathBuf::from("/nonexistent")
