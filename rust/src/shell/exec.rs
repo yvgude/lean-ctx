@@ -190,8 +190,28 @@ fn exec_limits(command: &str) -> (usize, std::time::Duration) {
 ///    `shell_timeout_secs`, else [`DEFAULT_TIMEOUT`].
 #[must_use]
 pub(crate) fn shell_timeout(command: &str) -> std::time::Duration {
+    shell_timeout_with_override(command, None)
+}
+
+/// Hard ceiling for a per-call `timeout_ms` override: generous enough for any
+/// legitimate build/release job, low enough that a typo'd value cannot wedge
+/// the executor for days.
+const MAX_CALL_TIMEOUT_MS: u64 = 3_600_000; // 1 hour
+
+/// [`shell_timeout`] with an optional per-call override (ctx_shell's
+/// `timeout_ms` arg). Precedence: operator env pin (`LEAN_CTX_SHELL_TIMEOUT_MS`)
+/// > per-call override (clamped to [`MAX_CALL_TIMEOUT_MS`], zero ignored)
+/// > per-tier env/config > built-in heavy/normal ceilings.
+#[must_use]
+pub(crate) fn shell_timeout_with_override(
+    command: &str,
+    override_ms: Option<u64>,
+) -> std::time::Duration {
     if let Some(ms) = env_u64("LEAN_CTX_SHELL_TIMEOUT_MS") {
         return std::time::Duration::from_millis(ms);
+    }
+    if let Some(ms) = override_ms.filter(|n| *n > 0) {
+        return std::time::Duration::from_millis(ms.min(MAX_CALL_TIMEOUT_MS));
     }
     if is_heavy_command(command) {
         if let Some(secs) = env_u64("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS")
@@ -269,6 +289,11 @@ fn is_heavy_command(command: &str) -> bool {
         // because the prefix is the full `git <verb>`.
         "git commit",
         "git push",
+        // Task runners wrap builds/test gates; the underlying job is what's
+        // heavy, so the wrapper gets the same ceiling. A fast subcommand
+        // (`mise ls`) merely inherits a longer kill deadline — harmless.
+        "mise ",
+        "just ",
     ];
     HEAVY_PREFIXES.iter().any(|p| lower.starts_with(p))
 }
@@ -1105,6 +1130,70 @@ mod exec_tests {
             if let Some(v) = saved {
                 crate::test_env::set_var(var, v);
             }
+        }
+    }
+
+    // Task runners (mise/just) wrap builds and test gates that routinely run
+    // past the 2-minute default; killing them mid-run loses the whole job.
+    // They get the heavy ceiling like the underlying build tools they invoke.
+    #[test]
+    fn task_runners_get_heavy_ceiling() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let saved_ms = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
+        let saved_heavy = std::env::var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS").ok();
+        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS");
+
+        assert_eq!(super::shell_timeout("mise gate"), super::HEAVY_TIMEOUT);
+        assert_eq!(super::shell_timeout("mise run gate"), super::HEAVY_TIMEOUT);
+        assert_eq!(super::shell_timeout("just build"), super::HEAVY_TIMEOUT);
+
+        if let Some(v) = saved_ms {
+            crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v);
+        }
+        if let Some(v) = saved_heavy {
+            crate::test_env::set_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS", v);
+        }
+    }
+
+    // Per-call `timeout_ms` (ctx_shell tool arg): explicit caller intent beats
+    // the built-in tiers in both directions, absurd values clamp to the 1h
+    // ceiling, zero is ignored, and the operator's universal env pin stays top.
+    #[test]
+    fn per_call_timeout_override_resolves_and_clamps() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let saved_ms = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
+        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
+
+        assert_eq!(
+            super::shell_timeout_with_override("git status", Some(300_000)),
+            std::time::Duration::from_secs(300)
+        );
+        assert_eq!(
+            super::shell_timeout_with_override("cargo build", Some(30_000)),
+            std::time::Duration::from_secs(30)
+        );
+        assert_eq!(
+            super::shell_timeout_with_override("git status", Some(999_000_000)),
+            std::time::Duration::from_millis(super::MAX_CALL_TIMEOUT_MS)
+        );
+        assert_eq!(
+            super::shell_timeout_with_override("git status", Some(0)),
+            super::DEFAULT_TIMEOUT
+        );
+        assert_eq!(
+            super::shell_timeout_with_override("git status", None),
+            super::DEFAULT_TIMEOUT
+        );
+
+        crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", "5000");
+        assert_eq!(
+            super::shell_timeout_with_override("git status", Some(300_000)),
+            std::time::Duration::from_secs(5)
+        );
+        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
+        if let Some(v) = saved_ms {
+            crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v);
         }
     }
 

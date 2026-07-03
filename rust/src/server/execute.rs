@@ -7,13 +7,14 @@ const READER_RESULT_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[cfg(test)]
 pub(crate) fn execute_command_in(command: &str, cwd: &str) -> (String, i32) {
-    execute_command_with_env(command, cwd, &std::collections::HashMap::new())
+    execute_command_with_env(command, cwd, &std::collections::HashMap::new(), None)
 }
 
 pub(crate) fn execute_command_with_env(
     command: &str,
     cwd: &str,
     extra_env: &std::collections::HashMap<String, String>,
+    timeout_ms: Option<u64>,
 ) -> (String, i32) {
     let (shell, flag) = crate::shell::shell_and_flag();
     let normalized_cmd = crate::tools::ctx_shell::normalize_command_for_shell(command);
@@ -83,7 +84,7 @@ pub(crate) fn execute_command_with_env(
     let (out_buf, out_done) = spawn_capture(child.stdout.take(), cap);
     let (err_buf, err_done) = spawn_capture(child.stderr.take(), cap);
 
-    let timeout = command_timeout(command);
+    let timeout = command_timeout(command, timeout_ms);
     let start = Instant::now();
     let (code, timed_out) = loop {
         match child.try_wait() {
@@ -229,11 +230,11 @@ fn ensure_utf8_locale(
     crate::shell::platform::apply_utf8_locale(cmd);
 }
 
-fn command_timeout(command: &str) -> Duration {
-    // Single source of truth: env (MS / per-tier SECS) > config > built-in
-    // heavy/normal ceilings. Keeps this path identical to `ctx_shell` and the
-    // interactive hook (`shell::exec::shell_timeout`).
-    crate::shell::shell_timeout(command)
+fn command_timeout(command: &str, timeout_ms: Option<u64>) -> Duration {
+    // Single source of truth: operator env pin > per-call `timeout_ms` >
+    // per-tier env/config > built-in heavy/normal ceilings. Keeps this path
+    // identical to the interactive hook (`shell::exec::shell_timeout`).
+    crate::shell::shell_timeout_with_override(command, timeout_ms)
 }
 
 #[cfg(test)]
@@ -249,15 +250,17 @@ mod tests {
         let saved = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
         crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
 
-        assert!(command_timeout("cargo install --path .") > command_timeout("git status"));
+        assert!(
+            command_timeout("cargo install --path .", None) > command_timeout("git status", None)
+        );
 
         crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", "5000");
         assert_eq!(
-            command_timeout("cargo install --path ."),
+            command_timeout("cargo install --path .", None),
             std::time::Duration::from_secs(5)
         );
         assert_eq!(
-            command_timeout("git status"),
+            command_timeout("git status", None),
             std::time::Duration::from_secs(5)
         );
 
@@ -378,6 +381,24 @@ mod tests {
         assert!(
             output.contains("TID=thread-from-hook"),
             "captured agent runtime var must be forwarded, got: {output}"
+        );
+    }
+
+    /// Per-call `timeout_ms` must reach the kill loop: a command that sleeps
+    /// past its 200ms budget is killed with the timeout exit code and message.
+    #[test]
+    #[cfg_attr(windows, ignore)] // POSIX sleep
+    fn per_call_timeout_kills_long_command() {
+        let (output, code) = super::execute_command_with_env(
+            "sleep 3",
+            ".",
+            &std::collections::HashMap::new(),
+            Some(200),
+        );
+        assert_eq!(code, 124, "timed-out command must exit 124: {output}");
+        assert!(
+            output.contains("timed out after 200ms"),
+            "timeout message must carry the per-call budget, got: {output}"
         );
     }
 
