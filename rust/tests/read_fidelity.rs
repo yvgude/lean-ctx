@@ -51,10 +51,16 @@ fn cli_lines_read_is_byte_exact() {
 
     let out = read_output(dir.path(), &file, "lines:1-3");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    // The contract under test is fidelity: the source must survive verbatim with
-    // no terse substitutions, regardless of how the range is rendered.
-    assert!(
-        stdout.contains(SAMPLE),
-        "lines: read must not terse-mangle source; got:\n{stdout}"
-    );
+    // The contract under test is fidelity: the SELECTED lines must survive
+    // verbatim with no terse substitutions, regardless of how the range is
+    // rendered. `lines:1-3` is windowed output, not a full-file dump, so the
+    // oracle is the selected slice — not the whole SAMPLE (#684 fix made
+    // `lines:` actually honour the window instead of returning the full file).
+    let selected_lines = &SAMPLE.lines().collect::<Vec<_>>()[..3];
+    for line in selected_lines {
+        assert!(
+            line.is_empty() || stdout.contains(line),
+            "lines: read must not terse-mangle selected source; missing {line:?} in:\n{stdout}"
+        );
+    }
 }
