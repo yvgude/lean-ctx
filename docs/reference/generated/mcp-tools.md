@@ -389,7 +389,7 @@ Parameters: `action`*, `alias`, `max_results`, `mode`, `path`, `query`, `roots`
 
 WORKFLOW: call BEFORE ctx_read to map code structure (a syntax-aware table of contents).
 Accepts a FILE or a DIRECTORY (folder surface — per-file symbols). Symbols come from
-tree-sitter (26 languages, real line spans); a conservative regex fallback covers the rest.
+tree-sitter (27 languages, real line spans); a conservative regex fallback covers the rest.
 kind=fn|struct|class|trait|enum|impl|all filters by kind; match=<substr> filters by name
 (case-insensitive); format=json emits deterministic JSON labelling the backend per file.
 ANTIPATTERN: NOT for file content (use ctx_read) or deep understanding (use ctx_compose).
