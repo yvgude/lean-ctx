@@ -18,7 +18,7 @@ impl McpTool for CtxOutlineTool {
             "ctx_outline",
             "WORKFLOW: call BEFORE ctx_read to map code structure (a syntax-aware table of contents).\n\
             Accepts a FILE or a DIRECTORY (folder surface — per-file symbols). Symbols come from\n\
-            tree-sitter (26 languages, real line spans); a conservative regex fallback covers the rest.\n\
+            tree-sitter (27 languages, real line spans); a conservative regex fallback covers the rest.\n\
             kind=fn|struct|class|trait|enum|impl|all filters by kind; match=<substr> filters by name\n\
             (case-insensitive); format=json emits deterministic JSON labelling the backend per file.\n\
             ANTIPATTERN: NOT for file content (use ctx_read) or deep understanding (use ctx_compose).",

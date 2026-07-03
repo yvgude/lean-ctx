@@ -230,10 +230,14 @@ fn functional_signature(kind: &str, name: &str) -> Option<Signature> {
         | "function" | "bind"                                   // Haskell
         | "assignment"                                          // Julia short-form `f(x) = …`
         | "modifier_definition"                                 // Solidity
+        | "function_statement"                                  // PowerShell
         | "binding" => "fn",                                    // Nix function binding
+        "class_method_definition" => "method",                  // PowerShell
+        "enum_statement" => "enum",                             // PowerShell
         "data_type" | "newtype" | "type_synomym"                // Haskell
         | "abstract_definition" => "type",                      // Julia `abstract type`
-        "contract_declaration" | "library_declaration" => "class", // Solidity
+        "contract_declaration" | "library_declaration"          // Solidity
+        | "class_statement" => "class",                         // PowerShell
         "module_definition" => "module",                        // OCaml / Julia
         "module_type_definition" => "interface",                // OCaml signature
         "struct_definition" => "struct",                        // Julia

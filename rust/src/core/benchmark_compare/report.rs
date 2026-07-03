@@ -286,7 +286,7 @@ fn write_feature_matrix(out: &mut Vec<String>, report: &CompareReport) {
         ("Repo map generation", [false, true, true, false, true]),
         ("Knowledge base", [false, false, false, true, true]),
         (
-            "Tree-sitter AST (26 langs)",
+            "Tree-sitter AST (27 langs)",
             [false, true, true, false, true],
         ),
         ("MCP server", [false, false, false, true, true]),

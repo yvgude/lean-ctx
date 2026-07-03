@@ -294,6 +294,18 @@ const QUERY_NIX: &str = r"
 (binding attrpath: (attrpath) @name expression: (function_expression)) @def
 ";
 
+/// Queries [tree-sitter-powershell](https://crates.io/crates/tree-sitter-powershell)
+/// (airbus-cert grammar). Names are carried by child nodes (`function_name`,
+/// `simple_name`), not named fields. `(A (B) @name)` matches direct children
+/// only, so enum members (wrapped in their own nodes) and method parameters
+/// (`variable` nodes) never leak into the capture.
+const QUERY_POWERSHELL: &str = r"
+(function_statement (function_name) @name) @def
+(class_statement (simple_name) @name) @def
+(class_method_definition (simple_name) @name) @def
+(enum_statement (simple_name) @name) @def
+";
+
 pub(super) fn get_language(ext: &str) -> Option<Language> {
     Some(match ext {
         "rs" => tree_sitter_rust::LANGUAGE.into(),
@@ -324,6 +336,7 @@ pub(super) fn get_language(ext: &str) -> Option<Language> {
         "jl" => tree_sitter_julia::LANGUAGE.into(),
         "sol" => tree_sitter_solidity::LANGUAGE.into(),
         "nix" => tree_sitter_nix::LANGUAGE.into(),
+        "ps1" | "psm1" => tree_sitter_powershell::LANGUAGE.into(),
         _ => return None,
     })
 }
@@ -357,6 +370,7 @@ pub(super) fn get_query(ext: &str) -> Option<&'static str> {
         "jl" => QUERY_JULIA,
         "sol" => QUERY_SOLIDITY,
         "nix" => QUERY_NIX,
+        "ps1" | "psm1" => QUERY_POWERSHELL,
         _ => return None,
     })
 }

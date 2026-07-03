@@ -3,7 +3,7 @@
 //! IMPORTANT for readers skimming the repo: this file is the *fallback*, not the
 //! primary engine. The default build extracts signatures with **tree-sitter** via
 //! declarative per-language queries in [`crate::core::signatures_ts`] (real ASTs,
-//! real multi-line spans, ~26 languages). [`extract_signatures`] tries that path
+//! real multi-line spans, ~27 languages). [`extract_signatures`] tries that path
 //! first and only drops to the line-oriented regex extractors here when the
 //! `tree-sitter` feature is off or a parse yields nothing usable for a file.
 //!
@@ -690,6 +690,10 @@ fn extract_generic_signatures(content: &str) -> Vec<Signature> {
     let re_func = static_regex!(
         r"^\s*(?:(?:public|private|protected|static|async|abstract|virtual|override|final|def|func|fun|fn)\s+)+(\w+)\s*\("
     );
+    // PowerShell-style declarations: `function Verb-Noun {` — no paren required,
+    // hyphens allowed in the name. Also catches bash-like dialects the keyword+
+    // paren pattern above misses.
+    let re_ps_func = static_regex!(r"^\s*function\s+([\w-]+)");
     let re_class = static_regex!(
         r"^\s*(?:(?:public|private|protected|abstract|final|sealed|partial)\s+)*(?:class|struct|enum|interface|trait|module|object|record)\s+(\w+)"
     );
@@ -725,6 +729,18 @@ fn extract_generic_signatures(content: &str) -> Vec<Signature> {
                 params: String::new(),
                 return_type: String::new(),
                 is_async: trimmed.contains("async"),
+                is_exported: true,
+                indent: 0,
+                start_line: Some(line_no),
+                end_line: Some(line_no),
+            });
+        } else if let Some(caps) = re_ps_func.captures(trimmed) {
+            sigs.push(Signature {
+                kind: "fn",
+                name: caps[1].to_string(),
+                params: String::new(),
+                return_type: String::new(),
+                is_async: false,
                 is_exported: true,
                 indent: 0,
                 start_line: Some(line_no),
@@ -837,5 +853,21 @@ mod tests {
         let run = sigs.iter().find(|s| s.name == "run").unwrap();
         assert_eq!(run.start_line, Some(4));
         assert_eq!(run.end_line, Some(4));
+    }
+
+    // PowerShell in the generic regex fallback: `function Verb-Noun {` has no
+    // paren and a hyphenated name, which the old keyword+paren pattern missed
+    // entirely (limitation audit 2026-07-03). Covers non-tree-sitter builds.
+    #[test]
+    fn regex_fallback_matches_powershell_functions() {
+        let src = "function Get-CargoBinDir {\n}\nfunction Install($x) {\n}\n# function Commented-Out {\n";
+        let sigs = extract_generic_signatures(src);
+        let names: Vec<&str> = sigs.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"Get-CargoBinDir"), "got {names:?}");
+        assert!(names.contains(&"Install"), "got {names:?}");
+        assert!(
+            !names.contains(&"Commented-Out"),
+            "comment must be skipped; got {names:?}"
+        );
     }
 }

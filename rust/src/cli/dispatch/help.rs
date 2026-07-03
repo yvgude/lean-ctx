@@ -271,7 +271,7 @@ READ MODES:
     auto                           Auto-select optimal mode (default)
     full                           Full content (cached re-reads = 13 tokens)
     map                            Dependency graph + API signatures
-    signatures                     tree-sitter AST extraction (26 languages)
+    signatures                     tree-sitter AST extraction (27 languages)
     task                           Task-relevant filtering (requires ctx_session task)
     reference                      One-line reference stub (cheap cache key)
     aggressive                     Syntax-stripped content
