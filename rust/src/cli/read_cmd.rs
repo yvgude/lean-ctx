@@ -46,6 +46,28 @@ fn should_force_fresh(args: &[String], hook_child: bool) -> bool {
     hook_child || args.iter().any(|a| a == "--fresh" || a == "--no-cache")
 }
 
+/// Resolve the read mode from CLI args. `--mode`/`-m` wins; otherwise the
+/// first positional after the path that parses as a known mode counts — a bare
+/// `lean-ctx read f.ps1 map` used to silently serve the `auto` default instead
+/// of the requested view (limitations audit 2026-07-03). Unknown positionals
+/// and flags are left alone so existing invocations keep their meaning.
+fn resolve_cli_read_mode(args: &[String]) -> &str {
+    if let Some(m) = args
+        .iter()
+        .position(|a| a == "--mode" || a == "-m")
+        .and_then(|i| args.get(i + 1))
+    {
+        return m.as_str();
+    }
+    args.iter()
+        .skip(1)
+        .find(|a| {
+            !a.starts_with('-')
+                && a.parse::<crate::tools::ctx_read::ReadMode>().is_ok()
+        })
+        .map_or("auto", std::string::String::as_str)
+}
+
 pub fn cmd_read(args: &[String]) {
     if args.is_empty() {
         eprintln!(
@@ -64,11 +86,7 @@ pub fn cmd_read(args: &[String]) {
         raw_path.clone()
     };
     let path = path.as_str();
-    let mode = args
-        .iter()
-        .position(|a| a == "--mode" || a == "-m")
-        .and_then(|i| args.get(i + 1))
-        .map_or("auto", std::string::String::as_str);
+    let mode = resolve_cli_read_mode(args);
     // #1037: redirect/rewrite hook children pipe `-m full` output into a temp file the
     // host reads back AS the file's content, so a `cached <file> [NL]` cache-hit stub
     // corrupts the read (and round-trips the stub into the real file on the next edit).
@@ -700,5 +718,46 @@ mod fresh_tests {
         assert!(should_force_fresh(&["--fresh".to_string()], false));
         assert!(should_force_fresh(&["--no-cache".to_string()], false));
         assert!(!should_force_fresh(&["file.rs".to_string()], false));
+    }
+}
+
+#[cfg(test)]
+mod mode_arg_tests {
+    use super::resolve_cli_read_mode;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(ToString::to_string).collect()
+    }
+
+    // `lean-ctx read f.ps1 map` used to silently IGNORE the positional mode and
+    // serve the `auto` default — reads must honour it like `--mode map`
+    // (limitations audit 2026-07-03).
+    #[test]
+    fn positional_mode_is_honoured() {
+        assert_eq!(resolve_cli_read_mode(&args(&["f.ps1", "map"])), "map");
+        assert_eq!(
+            resolve_cli_read_mode(&args(&["f.rs", "lines:5-10"])),
+            "lines:5-10"
+        );
+    }
+
+    #[test]
+    fn mode_flag_wins_over_positional() {
+        assert_eq!(
+            resolve_cli_read_mode(&args(&["f.rs", "map", "--mode", "signatures"])),
+            "signatures"
+        );
+        assert_eq!(
+            resolve_cli_read_mode(&args(&["f.rs", "-m", "full"])),
+            "full"
+        );
+    }
+
+    #[test]
+    fn defaults_to_auto_and_skips_flags_and_junk() {
+        assert_eq!(resolve_cli_read_mode(&args(&["f.rs"])), "auto");
+        assert_eq!(resolve_cli_read_mode(&args(&["f.rs", "--fresh"])), "auto");
+        // An unknown positional is not silently treated as a mode.
+        assert_eq!(resolve_cli_read_mode(&args(&["f.rs", "banana"])), "auto");
     }
 }

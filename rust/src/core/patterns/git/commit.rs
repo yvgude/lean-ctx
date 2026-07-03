@@ -12,7 +12,19 @@ pub(super) fn compress_add(output: &str) -> String {
     if lines.len() <= 3 {
         return trimmed.to_string();
     }
-    format!("ok (+{} files)", lines.len())
+    // Only `add '<path>'` verbose lines are files; anything else in the output
+    // (hook chatter, a chained `git commit`'s summary) must not be counted as
+    // one — a summary may only state numbers parsed from the output (#2 in the
+    // limitations audit: "ok (+7 files)" for a 1-file commit).
+    let added = lines
+        .iter()
+        .filter(|l| l.trim_start().starts_with("add '"))
+        .count();
+    if added > 0 {
+        format!("ok (+{added} files)")
+    } else {
+        format!("ok ({} lines)", lines.len())
+    }
 }
 
 pub(super) fn compress_commit(output: &str) -> String {

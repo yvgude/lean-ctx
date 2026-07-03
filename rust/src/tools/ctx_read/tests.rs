@@ -343,6 +343,94 @@ fn map_mode_inlines_task_relevant_body() {
     );
 }
 
+// `lines:5,10-12` is multi-select (comma-separated lines/ranges), not a range.
+// Callers who meant a span get stray lines back — the output must say what
+// the comma did so the mistake is visible (limitations audit 2026-07-03, #7).
+#[test]
+fn lines_comma_multiselect_gets_hint() {
+    let content = (1..=30)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let tokens = count_tokens(&content);
+    let (out, _) = process_mode(
+        &content,
+        "lines:5,10-12",
+        "F1",
+        "t.txt",
+        "txt",
+        tokens,
+        CrpMode::Off,
+        "t.txt",
+        None,
+    );
+    assert!(out.contains("line 5") && out.contains("line 10"), "{out}");
+    assert!(
+        out.contains("multi-select"),
+        "comma form must carry a hint: {out}"
+    );
+}
+
+// A map/signatures read of a language with no extractor must say so instead of
+// returning a bare header the caller mistakes for "file has no API"
+// (limitations audit 2026-07-03, #4 residual).
+#[test]
+fn map_on_unsupported_language_carries_marker() {
+    let content = "some plain text\nwith no code\nstructure at all\n";
+    let tokens = count_tokens(content);
+    let (out, _) = process_mode(
+        content,
+        "map",
+        "F1",
+        "notes.txt",
+        "txt",
+        tokens,
+        CrpMode::Off,
+        "notes.txt",
+        None,
+    );
+    assert!(
+        out.contains("no extractable structure"),
+        "empty map must carry a marker: {out}"
+    );
+}
+
+#[test]
+fn signatures_on_unsupported_language_carries_marker() {
+    let content = "some plain text\nwith no code\nstructure at all\n";
+    let tokens = count_tokens(content);
+    let (out, _) = process_mode(
+        content,
+        "signatures",
+        "F1",
+        "notes.txt",
+        "txt",
+        tokens,
+        CrpMode::Off,
+        "notes.txt",
+        None,
+    );
+    assert!(
+        out.contains("no extractable structure"),
+        "empty signatures must carry a marker: {out}"
+    );
+}
+
+// UTF-8 BOM must not leak into the first line of ctx_read output
+// (limitations doc #11).
+#[test]
+fn read_file_lossy_strips_utf8_bom() {
+    let p = std::env::temp_dir().join("lean_ctx_bom_test.txt");
+    std::fs::write(&p, b"\xEF\xBB\xBFhello\n").unwrap();
+    let s = read_file_lossy(p.to_str().unwrap()).unwrap();
+    let _ = std::fs::remove_file(&p);
+    assert!(
+        !s.starts_with('\u{feff}'),
+        "BOM must be stripped from read content"
+    );
+    assert!(s.starts_with("hello"), "content after BOM must survive: {s}");
+}
+
 #[test]
 fn compressed_cache_key_distinguishes_task() {
     let no_task = compressed_cache_key("map", CrpMode::Off, None, None, &[]);

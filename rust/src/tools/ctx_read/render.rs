@@ -280,6 +280,13 @@ pub(crate) fn process_mode_tuned(
                     output.push_str(note);
                 }
             }
+            // Same honesty rule as map: an empty signature view for a language
+            // without an extractor must be labeled (limitations audit, #4).
+            if sigs.is_empty() && dep_info.imports.is_empty() {
+                output.push_str(&format!(
+                    "\n  [no extractable structure for .{ext} — header only; use mode=\"lines:N-M\" or \"full\"]"
+                ));
+            }
             if let Some(body) = task_relevant_body(content, file_path, ext, task) {
                 output.push('\n');
                 output.push_str(&body);
@@ -395,6 +402,15 @@ pub(crate) fn process_mode_tuned(
                         output.push_str(note);
                     }
                 }
+            }
+
+            // Nothing extractable (no grammar/regex coverage for this language):
+            // an information-free map must say so, or the caller reads the bare
+            // header as "this file has no API" (limitations audit, #4 residual).
+            if key_sigs.is_empty() && dep_info.imports.is_empty() && extra_exports.is_empty() {
+                output.push_str(&format!(
+                    "\n  [no extractable structure for .{ext} — header only; use mode=\"lines:N-M\" or \"full\"]"
+                ));
             }
 
             if let Some(body) = task_relevant_body(content, file_path, ext, task) {
@@ -677,9 +693,17 @@ pub(crate) fn process_mode_tuned(
             } else {
                 format!("{short} {line_count}L lines:{range_str}")
             };
+            // Comma is multi-select, not a range — a caller who meant `N-M`
+            // gets stray single lines back, so say what the comma did instead
+            // of letting the wrong window pass silently (limitations #7).
+            let multi_hint = if range_str.contains(',') {
+                "\n[lines: comma = multi-select (e.g. 5,10-20 picks line 5 and lines 10-20); use N-M for one span]"
+            } else {
+                ""
+            };
             let sent = count_tokens(&extracted);
             let savings = protocol::format_savings(original_tokens, sent);
-            (format!("{header}\n{extracted}\n{savings}"), sent)
+            (format!("{header}\n{extracted}{multi_hint}\n{savings}"), sent)
         }
         mode if mode.starts_with("density:") => {
             // SDE target-density mode: compress to a token budget instead of

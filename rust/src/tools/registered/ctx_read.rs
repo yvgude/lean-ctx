@@ -45,7 +45,7 @@ impl McpTool for CtxReadTool {
                     "paths": { "type": "array", "items": { "type": "string" }, "description": "Batch read" },
                     "mode": {
                         "type": "string",
-                        "description": "REQUIRED. full=verbatim(edit-ready) anchored=full+N:hh|anchors(edit via ctx_patch) raw=exact-bytes signatures=API map=structure auto=smart diff=git-delta lines:N-M=window reference=quotes task=focus"
+                        "description": "REQUIRED. full=verbatim(edit-ready) anchored=full+N:hh|anchors(edit via ctx_patch) raw=exact-bytes signatures=API map=structure auto=smart diff=git-delta lines:N-M=window (comma multi-selects: lines:5,10-20) reference=quotes task=focus"
                     },
                     "raw": { "type": "boolean", "description": "Verbatim (= mode=raw + fresh)" },
                     "start_line": { "type": "integer", "description": "1-based" },
