@@ -428,7 +428,10 @@ fn read_file_lossy_strips_utf8_bom() {
         !s.starts_with('\u{feff}'),
         "BOM must be stripped from read content"
     );
-    assert!(s.starts_with("hello"), "content after BOM must survive: {s}");
+    assert!(
+        s.starts_with("hello"),
+        "content after BOM must survive: {s}"
+    );
 }
 
 #[test]

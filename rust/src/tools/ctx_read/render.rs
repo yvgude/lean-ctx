@@ -703,7 +703,10 @@ pub(crate) fn process_mode_tuned(
             };
             let sent = count_tokens(&extracted);
             let savings = protocol::format_savings(original_tokens, sent);
-            (format!("{header}\n{extracted}{multi_hint}\n{savings}"), sent)
+            (
+                format!("{header}\n{extracted}{multi_hint}\n{savings}"),
+                sent,
+            )
         }
         mode if mode.starts_with("density:") => {
             // SDE target-density mode: compress to a token budget instead of
