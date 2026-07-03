@@ -129,7 +129,7 @@ Your AI agent reads files and runs commands. LeanCTX compresses both automatical
 - **Target density** (`density:0.4`): SDE-style budget compression — keeps the highest-entropy lines until ~40% of the original tokens remain, deterministic
 - **JIT disclosure**: `signatures` carries line spans and points at `lines:N-M` for targeted expansion — outline first, bodies on demand
 - **Shell output**: 95+ shell-output patterns compress git, npm, cargo, docker, kubectl, terraform and more (270 passthrough rules)
-- **Tree-sitter AST**: structural understanding for 26 languages — not just text compression
+- **Tree-sitter AST**: structural understanding for 27 languages — not just text compression
 - **Reversible by design (CCR)**: compression never *discards* content — pruned or truncated payloads move to a content-addressed store with a deterministic handle, so the model can pull the original bytes back on demand via `ctx_expand`, `ctx_retrieve`, an in-band marker, or `GET /v1/references/{id}`. [Five recovery paths →](docs/comparisons/vs-headroom.md#reversibility)
 
 ### 2. Routing — the right fidelity per read

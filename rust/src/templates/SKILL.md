@@ -1,6 +1,6 @@
 ---
 name: lean-ctx
-description: Context Engineering for AI Agents — 81 MCP tools, 10 read modes, 95+ shell patterns, tree-sitter AST for 26 languages. Compresses LLM context by up to 99%. Use when reading files, running shell commands, searching code, or exploring directories. Auto-installs if not present.
+description: Context Engineering for AI Agents — 81 MCP tools, 10 read modes, 95+ shell patterns, tree-sitter AST for 27 languages. Compresses LLM context by up to 99%. Use when reading files, running shell commands, searching code, or exploring directories. Auto-installs if not present.
 ---
 
 # lean-ctx — Context Engineering for AI Agents

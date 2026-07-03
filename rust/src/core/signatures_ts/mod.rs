@@ -826,7 +826,7 @@ end
         let langs: &[&str] = &[
             "rs", "ts", "js", "py", "go", "java", "c", "cpp", "rb", "cs", "kt", "swift", "php",
             "sh", "dart", "scala", "ex", "zig", "gd", "lua", "luau", "ml", "mli", "hs", "jl",
-            "sol", "nix",
+            "sol", "nix", "ps1",
         ];
         let mut failures = Vec::new();
         for ext in langs {
@@ -1033,5 +1033,42 @@ library SafeMath {
             !names.contains(&"plainValue"),
             "non-function binding must be skipped; got {names:?}"
         );
+    }
+
+    #[test]
+    fn test_powershell_signatures() {
+        let src = r#"
+function Get-CargoBinDir {
+    param([string]$Path)
+    return $Path
+}
+
+function Stop-RunningLeanCtx() {
+    Write-Host 'stopping'
+}
+
+class BuildResult {
+    [string]$Name
+    [void] Publish($target) {
+    }
+}
+
+enum BuildKind {
+    Debug
+    Release
+}
+"#;
+        let sigs = extract_signatures_ts(src, "ps1").unwrap();
+        let names: Vec<&str> = sigs.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"Get-CargoBinDir"), "got {names:?}");
+        assert!(names.contains(&"Stop-RunningLeanCtx"), "got {names:?}");
+        assert!(names.contains(&"BuildResult"), "got {names:?}");
+        assert!(names.contains(&"BuildKind"), "got {names:?}");
+        assert!(names.contains(&"Publish"), "got {names:?}");
+
+        let cls = sigs.iter().find(|s| s.name == "BuildResult").unwrap();
+        assert_eq!(cls.kind, "class");
+        let f = sigs.iter().find(|s| s.name == "Get-CargoBinDir").unwrap();
+        assert_eq!(f.kind, "fn");
     }
 }
