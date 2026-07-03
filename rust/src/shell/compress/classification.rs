@@ -212,6 +212,14 @@ fn is_file_viewer(command: &str) -> bool {
     match first {
         "cat" | "bat" | "batcat" | "pygmentize" | "highlight" => true,
         "head" | "tail" => !command.contains("-f") && !command.contains("--follow"),
+        // #1: sed/awk are commonly used as range/pattern file viewers
+        // (`sed -n '10,50p' file`, `awk '{print}' file`). Their output must
+        // never enter the generic terse pipeline — the dictionary layer
+        // word-substitutes code identifiers with no code-awareness. In-place
+        // edit flags are excluded since they don't dump content to stdout.
+        "sed" | "awk" | "gawk" | "mawk" | "nawk" => {
+            !command.contains("-i") && !command.contains("--in-place")
+        }
         _ => false,
     }
 }

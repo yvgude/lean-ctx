@@ -418,6 +418,26 @@ mod verbatim_output_tests {
         assert!(!is_verbatim_output("tail --follow server.log"));
     }
 
+    /// #1 (severe): a `sed`/`awk` file dump must never enter the generic terse
+    /// pipeline — its dictionary layer word-substitutes code identifiers that
+    /// happen to match English words (`function`→`fn`, `return`→`ret`) with no
+    /// code-awareness, corrupting source read via a range-print instead of `cat`.
+    #[test]
+    fn sed_awk_file_dumps_are_verbatim() {
+        assert!(is_verbatim_output("sed -n '1,50p' build_windows.ps1"));
+        assert!(is_verbatim_output("sed -n '/start/,/end/p' file.rs"));
+        assert!(is_verbatim_output("sed 's/foo/bar/' file.txt"));
+        assert!(is_verbatim_output("awk '{print}' file.txt"));
+        assert!(is_verbatim_output("awk -F, '{print $1}' data.csv"));
+        assert!(is_verbatim_output("gawk '{print $0}' file.log"));
+    }
+
+    #[test]
+    fn sed_awk_in_place_not_verbatim() {
+        assert!(!is_verbatim_output("sed -i 's/foo/bar/' file.txt"));
+        assert!(!is_verbatim_output("sed --in-place 's/foo/bar/' file.txt"));
+    }
+
     #[test]
     fn data_format_tools_are_verbatim() {
         assert!(is_verbatim_output("jq '.items' data.json"));
@@ -906,6 +926,20 @@ mod verbatim_output_tests {
         assert!(
             result.contains(r#""version": "3.5.16""#),
             "cat output must be preserved, got: {result}"
+        );
+    }
+
+    /// #1 (severe) regression: a `sed -n` range-print of PowerShell source must
+    /// come back byte-exact. Before the classification fix, this fell through
+    /// to the generic terse pipeline, which word-substituted `function`->`fn`,
+    /// `return`->`ret` and dropped bare `else` lines as low-information.
+    #[test]
+    fn sed_dump_of_powershell_code_is_byte_exact() {
+        let content = "function Sign-File([string]$path) {\n    param(\n        [string]$certPath,\n        [string]$password\n    )\n    $env = [Environment]::GetEnvironmentVariable(\"CERT_PATH\")\n    if ($path -eq $env) {\n        Write-Host \"Signing $path with certificate\"\n        return $true\n    } else {\n        Write-Host \"Skipping unsigned file\"\n        return $false\n    }\n}\n";
+        let result = compress_if_beneficial("sed -n '1,13p' build_windows.ps1", content);
+        assert_eq!(
+            result, content,
+            "sed range-print of source must be byte-exact, got:\n{result}"
         );
     }
 
