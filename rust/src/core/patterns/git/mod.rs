@@ -154,6 +154,30 @@ mod tests {
         assert!(result.contains("ok"), "git add should compress to 'ok'");
     }
 
+    // A chained `git add … && git commit …` routes the whole compound output
+    // through the add-compressor, which used to label OUTPUT LINE COUNT as a
+    // file count ("ok (+7 files)" for a 1-file commit). Numbers in summaries
+    // must come from the output, not be fabricated (limitations audit, #2).
+    #[test]
+    fn git_add_does_not_label_line_count_as_files() {
+        let output = "[main abc1234] fix: x\n 1 file changed, 1 insertion(+)\nhook line\nanother\nmore\nlines\nseven\n";
+        let result = compress("git add . && git commit -m 'x'", output).unwrap();
+        assert!(
+            !result.contains("files)"),
+            "line count must not be presented as a file count: {result}"
+        );
+    }
+
+    #[test]
+    fn git_add_verbose_counts_real_added_files() {
+        let output = "add 'a.rs'\nadd 'b.rs'\nadd 'c.rs'\nadd 'd.rs'\n";
+        let result = compress("git add -v .", output).unwrap();
+        assert!(
+            result.contains("+4 files"),
+            "verbose add lines are the real file count: {result}"
+        );
+    }
+
     #[test]
     fn git_commit_extracts_hash() {
         let output =
