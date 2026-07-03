@@ -265,6 +265,11 @@ pub fn cmd_read(args: &[String]) {
                         buf.push_str(&format!("\n    {}", sig.to_compact_located()));
                     }
                 }
+                // Same honesty rule as the MCP renderer: an information-free
+                // map must say so (limitations audit, #4).
+                if key_sigs.is_empty() && dep_info.imports.is_empty() && extra_exports.is_empty() {
+                    buf.push_str(&crate::tools::ctx_read::no_structure_marker(ext));
+                }
                 buf
             } else {
                 format!("{short} [{line_count}L]\n{structured}")
@@ -291,6 +296,10 @@ pub fn cmd_read(args: &[String]) {
             let mut output_buf = format!("{short} [{line_count}L]");
             for sig in &sigs {
                 output_buf.push_str(&format!("\n{}", sig.to_compact_located()));
+            }
+            // Same honesty rule as the MCP renderer (limitations audit, #4).
+            if sigs.is_empty() {
+                output_buf.push_str(&crate::tools::ctx_read::no_structure_marker(ext));
             }
             if requested_auto {
                 output_buf = cap_cli_to_raw(output_buf, &content, original_tokens);
@@ -341,13 +350,38 @@ pub fn cmd_read(args: &[String]) {
                 read_start.elapsed(),
             );
         }
+        m if m.starts_with("lines:") => {
+            // The CLI used to drop the window and print the whole file — a
+            // `lines:` read must return the requested selection, with the same
+            // comma-multi-select hint as the MCP renderer (limitations #7).
+            let range_str = &m[6..];
+            let extracted = crate::tools::ctx_read::extract_line_range(&content, range_str);
+            let multi_hint = if range_str.contains(',') {
+                crate::tools::ctx_read::LINES_COMMA_HINT
+            } else {
+                ""
+            };
+            let output =
+                format!("{short} [{line_count}L] lines:{range_str}\n{extracted}{multi_hint}");
+            println!("{output}");
+            let sent = count_tokens(&output);
+            print_savings(original_tokens, sent);
+            super::common::cli_track_read(
+                path,
+                "lines",
+                original_tokens,
+                sent,
+                &output,
+                read_start.elapsed(),
+            );
+        }
         _ => {
-            // `full`, `lines:` and any unrecognized mode land here. These are
+            // `full` and any unrecognized mode land here. These are
             // verbatim reads — the prose terse pipeline would mangle source
             // (dictionary substitutions, line-drop dedup) and break a `full`
             // read's "complete content" contract, so it must never run here
             // (#404). Intentionally-lossy modes (map/signatures/aggressive/
-            // entropy) have their own arms above.
+            // entropy/lines) have their own arms above.
             let mut output = format!("{short} [{line_count}L]\n{content}");
             if !crate::core::terse::is_verbatim_read("ctx_read", Some(mode)) {
                 let config = crate::core::config::Config::load();
