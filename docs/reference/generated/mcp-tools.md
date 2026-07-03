@@ -629,7 +629,7 @@ raw=true for verbatim output.
 [exit:N] on errors (lossless).
 ANTIPATTERN: multi-line scripts → ctx_execute.
 
-Parameters: `command`*, `cwd`, `env`, `raw`
+Parameters: `command`*, `cwd`, `env`, `raw`, `timeout_ms`
 
 ## `ctx_skillify`
 
