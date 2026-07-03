@@ -3,7 +3,12 @@
 # crate exactly as before — build the SDK explicitly with `-p lean-ctx-sdk` or
 # the whole workspace with `--workspace`.
 [workspace]
-members = [".", "crates/lean-ctx-sdk"]
+members = [
+  ".",
+  "crates/lean-ctx-sdk",
+  "experiments/grammar-dlopen-spike/dylib",
+  "experiments/grammar-dlopen-spike/host",
+]
 default-members = ["."]
 
 [package]

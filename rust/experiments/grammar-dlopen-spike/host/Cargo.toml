@@ -1,0 +1,11 @@
+[package]
+name = "grammar-dlopen-host"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Phase 0 spike for #690 — dlopen a grammar dylib, parse real source with it"
+
+[dependencies]
+tree-sitter = "0.26"
+tree-sitter-language = "0.1"
+libloading = "0.8"
