@@ -316,10 +316,7 @@ fn atomic_install_binary(src: &std::path::Path, dst: &std::path::Path) -> Result
     #[cfg(target_os = "macos")]
     let _ = std::fs::remove_file(dst);
 
-    if let Err(e) = std::fs::rename(&staged, dst) {
-        let _ = std::fs::remove_file(&staged);
-        return Err(format!("atomic rename failed: {e}"));
-    }
+    rename_with_retry(&staged, dst)?;
 
     // #356: prefer the persistent identity (stable cdhash anchor → TCC grant
     // survives updates); ad-hoc fallback keeps the binary launchable regardless.
@@ -329,6 +326,63 @@ fn atomic_install_binary(src: &std::path::Path, dst: &std::path::Path) -> Result
     }
 
     Ok(())
+}
+
+/// Rename `staged` onto `dst`, retrying briefly on failure.
+///
+/// dev-install deliberately never SIGKILLs the IDE-owned MCP stdio server
+/// (#1036) — killing it would drop the editor's MCP connection for minutes,
+/// and the binary it respawns is the freshly installed one anyway. On Windows
+/// that still-running process's open handle to the old binary can make a
+/// single-shot rename fail with ACCESS_DENIED.
+///
+/// Field data (2026-07-03) ruled out a short timing race: a 2.25s retry
+/// budget failed, and so did 60s — the hold does not clear on any timer, it
+/// lasts for the connected MCP session's lifetime. No retry budget can
+/// out-wait that, so this keeps only a brief retry (catches a genuinely quick
+/// transient, e.g. AV/EDR scanning the freshly written exe) and instead makes
+/// the failure actionable: the error explains the likely cause and the real
+/// fix (reconnect the MCP client) instead of a bare OS error code.
+fn rename_with_retry(staged: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+    rename_with_retry_within(
+        staged,
+        dst,
+        std::time::Duration::from_secs(5),
+        std::time::Duration::from_millis(300),
+    )
+}
+
+/// Core retry loop, parameterized so tests can use short budgets instead of
+/// waiting out the real production ceiling.
+fn rename_with_retry_within(
+    staged: &std::path::Path,
+    dst: &std::path::Path,
+    max_wait: std::time::Duration,
+    step: std::time::Duration,
+) -> Result<(), String> {
+    let deadline = std::time::Instant::now() + max_wait;
+    let err = loop {
+        match std::fs::rename(staged, dst) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                if std::time::Instant::now() >= deadline {
+                    break e;
+                }
+                std::thread::sleep(step);
+            }
+        }
+    };
+
+    let _ = std::fs::remove_file(staged);
+    Err(format!(
+        "atomic rename failed after {:.0}s: {err}\n  \
+         This usually means another process still has the old binary open — \
+         most commonly an IDE/editor's MCP connection to lean-ctx, which \
+         dev-install deliberately does not kill (#1036). Disconnect and \
+         reconnect your MCP client (e.g. `/mcp` in Claude Code) and re-run \
+         `lean-ctx dev-install`.",
+        max_wait.as_secs_f64()
+    ))
 }
 
 /// Resolve cargo's real target directory for the project at `cargo_root`.
@@ -582,5 +636,167 @@ mod tests {
         )));
         assert!(!is_homebrew_cellar_link(Path::new("/usr/local/bin/other")));
         assert!(!is_homebrew_cellar_link(Path::new("lean-ctx")));
+    }
+}
+
+/// dev-install (#1036) deliberately leaves the IDE-owned MCP stdio server
+/// running rather than SIGKILLing it (killing it drops the editor's MCP
+/// connection for minutes). On Windows that process's still-open handle to
+/// the old binary can make a single-shot `rename` fail with ACCESS_DENIED
+/// even though the hold is transient. Retrying with backoff lets the install
+/// succeed once the handle clears, without ever killing the IDE's process.
+#[cfg(all(test, windows))]
+mod windows_rename_retry_tests {
+    use super::{rename_with_retry, rename_with_retry_within};
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::time::Duration;
+
+    const FILE_SHARE_READ: u32 = 0x1;
+
+    #[test]
+    fn recovers_from_transient_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let dst = dir.path().join("target.exe");
+        let staged = dir.path().join("target.exe.new");
+        std::fs::write(&dst, b"old").unwrap();
+        std::fs::write(&staged, b"new").unwrap();
+
+        let locked_dst = dst.clone();
+        let locker = std::thread::spawn(move || {
+            let _handle = std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(FILE_SHARE_READ) // no FILE_SHARE_DELETE: blocks rename
+                .open(&locked_dst)
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(400));
+        });
+        std::thread::sleep(Duration::from_millis(50)); // let the lock actually take
+
+        let result = rename_with_retry(&staged, &dst);
+        locker.join().unwrap();
+
+        assert!(
+            result.is_ok(),
+            "should recover once the lock clears: {result:?}"
+        );
+        assert_eq!(std::fs::read(&dst).unwrap(), b"new");
+    }
+
+    #[test]
+    fn single_shot_rename_fails_during_the_same_lock() {
+        // Sanity check that the lock we simulate above is real: proves the
+        // retry loop is doing actual work, not passing by coincidence.
+        let dir = tempfile::tempdir().unwrap();
+        let dst = dir.path().join("target.exe");
+        let staged = dir.path().join("target.exe.new");
+        std::fs::write(&dst, b"old").unwrap();
+        std::fs::write(&staged, b"new").unwrap();
+
+        let _lock = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(&dst)
+            .unwrap();
+
+        assert!(std::fs::rename(&staged, &dst).is_err());
+    }
+
+    /// Live 2026-07-03 field failure: the first (2.25s-budget) version of this
+    /// retry loop still hit "atomic rename failed after 6 attempts" against a
+    /// real held-open binary — the hold outlasted a couple of seconds. Proves
+    /// a longer-than-that lock now succeeds given a longer configured budget.
+    #[test]
+    fn recovers_from_lock_longer_than_the_original_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let dst = dir.path().join("target.exe");
+        let staged = dir.path().join("target.exe.new");
+        std::fs::write(&dst, b"old").unwrap();
+        std::fs::write(&staged, b"new").unwrap();
+
+        let locked_dst = dst.clone();
+        let locker = std::thread::spawn(move || {
+            let _handle = std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(FILE_SHARE_READ)
+                .open(&locked_dst)
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(3000));
+        });
+        std::thread::sleep(Duration::from_millis(50));
+
+        let result = rename_with_retry_within(
+            &staged,
+            &dst,
+            Duration::from_secs(5),
+            Duration::from_millis(200),
+        );
+        locker.join().unwrap();
+
+        assert!(
+            result.is_ok(),
+            "should recover once the lock clears: {result:?}"
+        );
+        assert_eq!(std::fs::read(&dst).unwrap(), b"new");
+    }
+
+    #[test]
+    fn gives_up_after_deadline_on_a_permanent_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let dst = dir.path().join("target.exe");
+        let staged = dir.path().join("target.exe.new");
+        std::fs::write(&dst, b"old").unwrap();
+        std::fs::write(&staged, b"new").unwrap();
+
+        let _lock = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(&dst)
+            .unwrap();
+
+        let result = rename_with_retry_within(
+            &staged,
+            &dst,
+            Duration::from_millis(300),
+            Duration::from_millis(50),
+        );
+
+        assert!(result.is_err(), "must not hang forever on a permanent lock");
+        assert!(
+            !staged.exists(),
+            "staged temp file must be cleaned up after giving up"
+        );
+    }
+
+    /// Live 2026-07-03 field failure #2: even a 60s retry budget still hit
+    /// ACCESS_DENIED — the lock is held for the connected MCP session's
+    /// lifetime, not cleared by any timer. A blind wait can never out-last
+    /// that, so the failure message must point the user at the actual fix
+    /// (reconnect the MCP client) instead of a bare OS error code.
+    #[test]
+    fn permanent_lock_error_explains_the_likely_cause() {
+        let dir = tempfile::tempdir().unwrap();
+        let dst = dir.path().join("target.exe");
+        let staged = dir.path().join("target.exe.new");
+        std::fs::write(&dst, b"old").unwrap();
+        std::fs::write(&staged, b"new").unwrap();
+
+        let _lock = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(&dst)
+            .unwrap();
+
+        let result = rename_with_retry_within(
+            &staged,
+            &dst,
+            Duration::from_millis(100),
+            Duration::from_millis(20),
+        );
+
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("MCP") && err.contains("reconnect"),
+            "error should point at the MCP-connection cause and the fix, got: {err}"
+        );
     }
 }
