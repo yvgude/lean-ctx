@@ -61,10 +61,7 @@ fn resolve_cli_read_mode(args: &[String]) -> &str {
     }
     args.iter()
         .skip(1)
-        .find(|a| {
-            !a.starts_with('-')
-                && a.parse::<crate::tools::ctx_read::ReadMode>().is_ok()
-        })
+        .find(|a| !a.starts_with('-') && a.parse::<crate::tools::ctx_read::ReadMode>().is_ok())
         .map_or("auto", std::string::String::as_str)
 }
 
