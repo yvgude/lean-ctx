@@ -283,9 +283,7 @@ pub(crate) fn process_mode_tuned(
             // Same honesty rule as map: an empty signature view for a language
             // without an extractor must be labeled (limitations audit, #4).
             if sigs.is_empty() && dep_info.imports.is_empty() {
-                output.push_str(&format!(
-                    "\n  [no extractable structure for .{ext} — header only; use mode=\"lines:N-M\" or \"full\"]"
-                ));
+                output.push_str(&no_structure_marker(ext));
             }
             if let Some(body) = task_relevant_body(content, file_path, ext, task) {
                 output.push('\n');
@@ -408,9 +406,7 @@ pub(crate) fn process_mode_tuned(
             // an information-free map must say so, or the caller reads the bare
             // header as "this file has no API" (limitations audit, #4 residual).
             if key_sigs.is_empty() && dep_info.imports.is_empty() && extra_exports.is_empty() {
-                output.push_str(&format!(
-                    "\n  [no extractable structure for .{ext} — header only; use mode=\"lines:N-M\" or \"full\"]"
-                ));
+                output.push_str(&no_structure_marker(ext));
             }
 
             if let Some(body) = task_relevant_body(content, file_path, ext, task) {
@@ -697,7 +693,7 @@ pub(crate) fn process_mode_tuned(
             // gets stray single lines back, so say what the comma did instead
             // of letting the wrong window pass silently (limitations #7).
             let multi_hint = if range_str.contains(',') {
-                "\n[lines: comma = multi-select (e.g. 5,10-20 picks line 5 and lines 10-20); use N-M for one span]"
+                LINES_COMMA_HINT
             } else {
                 ""
             };
@@ -833,6 +829,20 @@ pub(crate) fn task_relevant_body(
         "  ▸ body {} L{}-{}:\n{body}{truncated}",
         ch.symbol_name, ch.start_line, ch.end_line
     ))
+}
+
+/// One-line explainer appended whenever a `lines:` payload uses a comma —
+/// comma means multi-select, and a caller who meant a `N-M` span must be able
+/// to see that from the output (limitations #7). Shared with the CLI arm.
+pub(crate) const LINES_COMMA_HINT: &str = "\n[lines: comma = multi-select (e.g. 5,10-20 picks line 5 and lines 10-20); use N-M for one span]";
+
+/// Marker for a map/signatures view that extracted nothing — a language with
+/// no grammar/regex coverage must be distinguishable from a file with no API
+/// (limitations audit, #4). Shared with the CLI arms.
+pub(crate) fn no_structure_marker(ext: &str) -> String {
+    format!(
+        "\n  [no extractable structure for .{ext} — header only; use mode=\"lines:N-M\" or \"full\"]"
+    )
 }
 
 pub(crate) fn extract_line_range(content: &str, range_str: &str) -> String {

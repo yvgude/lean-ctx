@@ -163,12 +163,7 @@ pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
         Ok(s) => s,
         Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned(),
     };
-    // A UTF-8 BOM is an encoding artifact, not content — leaking it corrupts
-    // the first line of every downstream view (limitations doc #11).
-    Ok(match s.strip_prefix('\u{feff}') {
-        Some(rest) => rest.to_owned(),
-        None => s,
-    })
+    Ok(crate::core::io_boundary::strip_utf8_bom(s))
 }
 
 /// Opens a file, retrying once after a brief pause on NotFound.
