@@ -44,7 +44,7 @@
 //!   per-platform dylib + mandatory SHA-256 pin, tree-sitter ABI version).
 //! - [`grammar_registry`] — its bundled/local-override catalog, reusing only
 //!   [`signing`] and [`binhash`] from the MCP addon machinery.
-//! - [`grammar_install`] — zero-config fetch (#690, Phase 1d): downloads a
+//! - `grammar_install` (internal) — zero-config fetch (#690, Phase 1d): downloads a
 //!   missing pinned dylib on first use, silent on any failure (offline,
 //!   network error, hash mismatch) so it degrades to the regex-signature
 //!   fallback exactly like "not installed" — no `addon add` consent step,
