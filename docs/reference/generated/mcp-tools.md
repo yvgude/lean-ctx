@@ -382,6 +382,9 @@ ANTI-PATTERN: not for single-repo projects — use ctx_search.
 Actions: add_root|remove_root|list_roots|search|status|save_config.
 Cross-repo search runs hybrid retrieval per root (BM25+dense+SPLADE)
 and merges with RRF; mode="bm25" forces lexical-only.
+ctx_search/ctx_glob/ctx_tree/ctx_read all accept a repo=<alias>
+arg (not in their own schema) to target a registered root by
+alias instead of the project root — list_roots shows the aliases.
 
 Parameters: `action`*, `alias`, `max_results`, `mode`, `path`, `query`, `roots`
 
