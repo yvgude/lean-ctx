@@ -2,6 +2,7 @@ mod queries;
 
 mod ast_prune;
 mod extract;
+mod grammar_loader;
 mod handlers;
 mod helpers;
 mod query_cache;

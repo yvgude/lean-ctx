@@ -87,7 +87,9 @@ pub fn all() -> Vec<GrammarManifest> {
 /// Look up a single grammar addon by its slug (case-insensitive).
 pub fn get(name: &str) -> Option<GrammarManifest> {
     let needle = name.trim().to_ascii_lowercase();
-    all().into_iter().find(|m| m.name.to_ascii_lowercase() == needle)
+    all()
+        .into_iter()
+        .find(|m| m.name.to_ascii_lowercase() == needle)
 }
 
 /// Find the grammar addon that claims the given file extension (no leading

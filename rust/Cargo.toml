@@ -180,6 +180,8 @@ tree-sitter = [
   "dep:tree-sitter-solidity",
   "dep:tree-sitter-nix",
   "dep:tree-sitter-powershell",
+  "dep:tree-sitter-language",
+  "dep:libloading",
 ]
 wasm = ["dep:wasmi"]
 
@@ -266,6 +268,11 @@ tree-sitter-julia = { version = "0.23", optional = true }
 tree-sitter-solidity = { version = "1.2", optional = true }
 tree-sitter-nix = { version = "0.3", optional = true }
 tree-sitter-powershell = { version = "0.26", optional = true }
+# Grammar-addon loader (#690, Phase 1b): dlopen a per-platform grammar cdylib
+# and reconstruct a tree_sitter::Language from its exported LanguageFn, same
+# as the Phase 0 spike (experiments/grammar-dlopen-spike).
+tree-sitter-language = { version = "0.1", optional = true }
+libloading = { version = "0.8", optional = true }
 # Exact pin: `ort` 2.0 is still in its release-candidate phase (no stable 2.0.0
 # yet; rc.12 is the upstream-recommended production build). RCs can carry breaking
 # API changes between candidates, so `=` prevents `cargo update` from silently
