@@ -59,6 +59,21 @@ fn dylib_dir(name: &str) -> Option<PathBuf> {
     )
 }
 
+/// A group- or other-writable dir/file lets any other local account swap the
+/// dylib between our hash check and `dlopen` (or plant one before either
+/// runs) — the SHA-256 pin only proves the bytes we're about to load match
+/// the manifest, not that nothing else on the box can rewrite them next.
+#[cfg(unix)]
+fn is_world_writable(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|m| m.permissions().mode() & 0o022 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_world_writable(_path: &std::path::Path) -> bool {
+    false
+}
+
 /// Load extension `ext`'s grammar from an installed addon dylib, if the
 /// registry claims the extension and the pinned dylib is present on disk.
 /// Verifies the SHA-256 pin and the tree-sitter ABI version before handing
@@ -77,6 +92,16 @@ fn load_uncached(ext: &str) -> Option<Language> {
         && let Err(e) = grammar_install::ensure_installed(&manifest, asset, &path)
     {
         tracing::debug!("grammar addon `{}` not available: {e}", manifest.name);
+        return None;
+    }
+
+    if let Some(dir) = path.parent()
+        && (is_world_writable(dir) || is_world_writable(&path))
+    {
+        tracing::warn!(
+            "[SECURITY] grammar addon `{}` dir or dylib is world-writable — refusing to load",
+            manifest.name
+        );
         return None;
     }
 
@@ -172,5 +197,24 @@ mod tests {
     #[test]
     fn missing_extension_returns_none_without_panicking() {
         assert!(get_addon_language("this-extension-has-no-addon-xyz").is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn world_writable_dir_is_detected() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!(
+            "lc-grammar-loader-test-{}-world-writable",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(is_world_writable(&dir));
+
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(!is_world_writable(&dir));
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
