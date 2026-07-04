@@ -35,6 +35,15 @@
 //! - [`meter`]    — per-addon / per-tool usage metering (analytics + billing base, P5).
 //! - [`sandbox`]  — per-addon OS sandbox for spawned stdio servers.
 //! - [`runtime`]  — redaction + audit of untrusted addon tool output.
+//!
+//! Grammar addons (#690) are a separate, smaller concept living alongside
+//! this module rather than inside it — a long-tail tree-sitter grammar is a
+//! `cdylib` `dlopen`'d directly into lean-ctx's own process, not an MCP
+//! server, so none of the subprocess/gateway-shaped layers above apply:
+//! - [`grammar_manifest`] — the grammar-addon manifest (language, extensions,
+//!   per-platform dylib + mandatory SHA-256 pin, tree-sitter ABI version).
+//! - [`grammar_registry`] — its bundled/local-override catalog, reusing only
+//!   [`signing`] and [`binhash`] from the MCP addon machinery.
 
 pub mod audit;
 pub mod binhash;
@@ -42,6 +51,8 @@ pub mod bootstrap;
 pub mod capabilities;
 pub mod commerce;
 pub mod env_scrub;
+pub mod grammar_manifest;
+pub mod grammar_registry;
 pub mod health;
 pub mod install;
 pub mod integrity;
@@ -61,6 +72,7 @@ pub use audit::{AuditReport, AuditVerdict};
 pub use bootstrap::{AddonInstall, BootstrapStatus, InstallReceipt, Manager};
 pub use capabilities::{AddonCapabilities, FilesystemAccess, NetworkAccess};
 pub use commerce::{AddonPricing, PaidGate, PricingModel, paid_listing_gate};
+pub use grammar_manifest::{GrammarAsset, GrammarManifest};
 pub use health::ProbeReport;
 pub use manifest::{AddonManifest, AddonMcp, AddonMeta};
 pub use policy::{AddonPolicy, AddonsConfig};
