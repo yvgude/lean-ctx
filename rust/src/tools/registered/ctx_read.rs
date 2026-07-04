@@ -1417,7 +1417,6 @@ mod tests {
         assert_eq!(mode, "signatures");
         assert!(degraded);
     }
-
 }
 
 // #660 LOC gate: repo-param tests split out to keep this file under the line
