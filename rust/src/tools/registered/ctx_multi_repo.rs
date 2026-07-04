@@ -22,7 +22,10 @@ impl McpTool for CtxMultiRepoTool {
              ANTI-PATTERN: not for single-repo projects — use ctx_search.\n\
              Actions: add_root|remove_root|list_roots|search|status|save_config.\n\
              Cross-repo search runs hybrid retrieval per root (BM25+dense+SPLADE)\n\
-             and merges with RRF; mode=\"bm25\" forces lexical-only.",
+             and merges with RRF; mode=\"bm25\" forces lexical-only.\n\
+             ctx_search/ctx_glob/ctx_tree/ctx_read all accept a repo=<alias>\n\
+             arg (not in their own schema) to target a registered root by\n\
+             alias instead of the project root — list_roots shows the aliases.",
             json!({
                 "type": "object",
                 "properties": {

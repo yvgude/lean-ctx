@@ -408,6 +408,17 @@ pub fn resolve_repo_root(repo: &str) -> Option<String> {
     Some(mgr.roots[idx].path.to_string_lossy().to_string())
 }
 
+/// Every registered repo alias, for naming known aliases in an "unknown repo"
+/// error — a bare `resolve_repo_root` miss gives no hint of what *was*
+/// registered, which just invites another guess.
+pub fn known_aliases() -> Vec<String> {
+    let manager = global_manager();
+    let Ok(mgr) = manager.lock() else {
+        return Vec::new();
+    };
+    mgr.roots.iter().map(ActiveRepoRoot::alias).collect()
+}
+
 /// Check if multi-repo mode is active (more than 1 root configured).
 pub fn is_multi_repo_active() -> bool {
     let manager = global_manager();
