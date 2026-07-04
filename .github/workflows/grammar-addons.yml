@@ -1,0 +1,256 @@
+# Grammar-addon CI matrix (#690, Phase 1c).
+#
+# Builds each `crates/grammar-addons/<name>` cdylib for every supported
+# platform, uploads the dylibs to the rolling `grammar-addons` GitHub
+# Release, and regenerates `rust/data/grammar_registry.json` with the
+# resulting download URLs + SHA-256 pins via a PR (same bot-commit +
+# `gh pr create` pattern as dep-update.yml).
+#
+# The bundled registry is trusted by construction (it is compiled into the
+# lean-ctx binary itself, same as data/addon_registry.json — see
+# core/addons/signing.rs's doc comment) — no separate Ed25519 signing step
+# is needed here; the release binary's own provenance is the trust anchor.
+#
+# Trigger: manual only, like dep-update.yml — publishing a new grammar
+# dylib is a deliberate, reviewed action, not a per-commit side effect.
+#
+# Adding a new grammar: add `crates/grammar-addons/<name>` (mirror `lua/`,
+# package name `grammar-<name>`) and a workspace member entry in
+# rust/Cargo.toml — this workflow discovers it automatically, no edits here.
+
+name: Grammar Addons
+
+on:
+  workflow_dispatch:
+    inputs:
+      grammar:
+        description: 'Grammar to build (slug under crates/grammar-addons/), or "all"'
+        default: 'all'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    name: Discover grammar-addon crates
+    runs-on: ubuntu-latest
+    outputs:
+      grammars: ${{ steps.list.outputs.grammars }}
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - name: List crates/grammar-addons/*
+        id: list
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd rust/crates/grammar-addons
+          if [[ "${{ inputs.grammar }}" == "all" || -z "${{ inputs.grammar }}" ]]; then
+            NAMES=$(find . -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
+          else
+            NAMES="${{ inputs.grammar }}"
+          fi
+          JSON=$(printf '%s\n' "$NAMES" | jq -R . | jq -sc .)
+          echo "grammars=${JSON}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.grammar }} (${{ matrix.target }})
+    needs: discover
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        grammar: ${{ fromJson(needs.discover.outputs.grammars) }}
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            ext: so
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04
+            ext: so
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            ext: dylib
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            ext: dylib
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            ext: dll
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.cross == true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Build
+        working-directory: rust
+        shell: bash
+        run: cargo build --release --locked -p "grammar-${{ matrix.grammar }}" --target ${{ matrix.target }}
+
+      - name: Rename + hash
+        id: asset
+        working-directory: rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          crate_underscored="grammar_$(echo '${{ matrix.grammar }}' | tr '-' '_')"
+          src="target/${{ matrix.target }}/release/${crate_underscored}.${{ matrix.ext }}"
+          name="${{ matrix.grammar }}-${{ matrix.target }}.${{ matrix.ext }}"
+          cp "$src" "$name"
+          sha256sum "$name" > "${name}.sha256"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      # ABI version is a property of the grammar dylib itself (which
+      # tree-sitter core/tree-sitter-language version it was built against),
+      # not of the target platform — so it only needs deriving once per
+      # grammar. Native (non-cross) x86_64-linux is the one leg guaranteed
+      # to be able to run the dylib it just built, generically for any
+      # grammar via grammar-dlopen-host's --abi-only mode.
+      - name: Derive abi_version (native leg only)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        id: abi
+        working-directory: rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p grammar-dlopen-host --target ${{ matrix.target }}
+          out="$(./target/${{ matrix.target }}/release/grammar-dlopen-host \
+            "${{ steps.asset.outputs.name }}" --abi-only)"
+          echo "$out" > "${{ matrix.grammar }}.abi"
+          echo "${out#abi_version=}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.asset.outputs.name }}
+          path: |
+            rust/${{ steps.asset.outputs.name }}
+            rust/${{ steps.asset.outputs.name }}.sha256
+            rust/${{ matrix.grammar }}.abi
+
+  publish:
+    name: Publish release assets + registry PR
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Upload dylibs to the rolling grammar-addons release
+        env:
+          GH_TOKEN: ${{ secrets.DEP_UPDATE_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh release view grammar-addons --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release create grammar-addons --repo "${{ github.repository }}" \
+              --title "Grammar addons" \
+              --notes "Rolling release: per-platform grammar-addon dylibs referenced by rust/data/grammar_registry.json. Not a lean-ctx version release." \
+              --prerelease
+          fi
+          shopt -s nullglob
+          for f in artifacts/*.dll artifacts/*.dylib artifacts/*.so; do
+            gh release upload grammar-addons "$f" --repo "${{ github.repository }}" --clobber
+          done
+
+      - name: Regenerate rust/data/grammar_registry.json
+        id: regen
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/download/grammar-addons"
+
+          for dir in rust/crates/grammar-addons/*/; do
+            grammar="$(basename "$dir")"
+            crate="grammar-${grammar}"
+            version="$(grep -m1 '^version' "$dir/Cargo.toml" | sed -E 's/.*"([^"]+)".*/\1/')"
+            license="$(grep -m1 '^license' "$dir/Cargo.toml" | sed -E 's/.*"([^"]+)".*/\1/')"
+            # Derived on the native x86_64-linux build leg (see "Derive
+            # abi_version" step) — not a platform-specific value, so any one
+            # leg's reading is authoritative for every asset below.
+            abi_file="artifacts/${grammar}.abi"
+            if [ ! -f "$abi_file" ]; then
+              echo "::error::no ${abi_file} — did the x86_64-unknown-linux-gnu leg run for '${grammar}'?" >&2
+              exit 1
+            fi
+            abi_version="$(sed -E 's/^abi_version=//' "$abi_file")"
+
+            assets="{}"
+            for shafile in artifacts/"${grammar}"-*.sha256; do
+              [ -e "$shafile" ] || continue
+              filename="$(basename "${shafile%.sha256}")"
+              sha="$(awk '{print $1}' "$shafile")"
+              target="${filename#"${grammar}"-}"
+              target="${target%.*}"
+              assets=$(jq --arg t "$target" --arg f "$filename" --arg u "${RELEASE_URL}/${filename}" --arg s "$sha" \
+                '.[$t] = {filename: $f, url: $u, sha256: $s}' <<<"$assets")
+            done
+
+            jq -n --arg name "$grammar" --arg version "$version" --arg license "$license" \
+              --argjson abi_version "$abi_version" --argjson assets "$assets" \
+              '{name: $name, display_name: ($name | ascii_upcase[0:1] + $name[1:]), version: $version, license: $license, extensions: [$name], abi_version: $abi_version, assets: $assets}' \
+              > "/tmp/${grammar}.json"
+          done
+
+          jq -s '{"$schema": "https://leanctx.dev/schema/grammar-registry-v1.json", registry_version: 1, grammars: .}' \
+            /tmp/*.json > rust/data/grammar_registry.json.new
+          mv rust/data/grammar_registry.json.new rust/data/grammar_registry.json
+
+          if git diff --quiet -- rust/data/grammar_registry.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or update pull request
+        if: steps.regen.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.DEP_UPDATE_TOKEN || github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          BRANCH="grammar-addons/registry-update"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git switch -C "$BRANCH"
+          git add rust/data/grammar_registry.json
+          git commit -m "chore(grammar-addons): regenerate grammar_registry.json"
+          git push --force \
+            "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" \
+            "HEAD:${BRANCH}"
+
+          BODY="Regenerated by .github/workflows/grammar-addons.yml after building/publishing the grammar-addon dylibs. Review the diff before merging — this changes what lean-ctx's next release will fetch and dlopen."
+
+          if gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
+            gh pr edit "$BRANCH" --body "$BODY"
+          else
+            gh pr create --base main --head "$BRANCH" \
+              --title "chore(grammar-addons): regenerate grammar_registry.json" \
+              --body "$BODY"
+          fi

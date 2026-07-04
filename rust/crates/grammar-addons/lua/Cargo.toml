@@ -1,0 +1,16 @@
+[package]
+name = "grammar-lua"
+# Tracks tree-sitter-lua's own version (below) — the grammar-addons.yml CI
+# release tag is `grammar-lua-v<version>`, so this is the single source of
+# truth for both.
+version = "0.5.0"
+edition = "2021"
+publish = false
+license = "MIT"
+description = "Lua tree-sitter grammar as a dlopen-able cdylib grammar addon (#690)"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+tree-sitter-lua = "0.5.0"

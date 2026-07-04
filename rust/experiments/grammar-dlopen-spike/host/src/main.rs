@@ -1,14 +1,21 @@
 //! Phase 0 spike for #690: dlopen a grammar dylib, resolve `lc_grammar_language`,
 //! reconstruct a `tree_sitter::Language`, and parse real source with it — proving
 //! the full round trip, not just that the symbol resolves. See ../README.md.
+//!
+//! `--abi-only` skips the Lua-specific "return 42" parse+assert and just
+//! prints `abi_version=<n>` — grammar-addons.yml (Phase 1c) uses this mode
+//! to derive each grammar's `abi_version` for `grammar_registry.json` from
+//! the native x86_64-linux build leg, generically across any grammar dylib.
 
 use libloading::{Library, Symbol};
 use tree_sitter_language::LanguageFn;
 
 fn main() {
-    let dylib_path = std::env::args()
-        .nth(1)
-        .expect("usage: grammar-dlopen-host <path-to-dylib>");
+    let mut args = std::env::args().skip(1);
+    let dylib_path = args
+        .next()
+        .expect("usage: grammar-dlopen-host <path-to-dylib> [--abi-only]");
+    let abi_only = args.next().as_deref() == Some("--abi-only");
 
     unsafe {
         let lib = Library::new(&dylib_path).expect("failed to load dylib");
@@ -18,6 +25,12 @@ fn main() {
 
         let language_fn = LanguageFn::from_raw(*sym);
         let language: tree_sitter::Language = language_fn.into();
+
+        if abi_only {
+            println!("abi_version={}", language.abi_version());
+            std::mem::forget(lib);
+            return;
+        }
 
         println!("loaded language, abi_version = {}", language.abi_version());
 

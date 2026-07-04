@@ -1737,8 +1737,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "grammar-lua-dylib"
-version = "0.0.0"
+name = "grammar-lua"
+version = "0.5.0"
 dependencies = [
  "tree-sitter-lua",
 ]

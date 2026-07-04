@@ -5,12 +5,19 @@ runtime addons). Answers the single highest-risk question before committing to
 a manifest schema or CI matrix: **can a tree-sitter grammar be loaded from a
 platform-specific dylib fetched at runtime, instead of statically linked?**
 
+**Phase 1c update:** the grammar dylib this spike proved out graduated into a
+real, CI-built crate at `crates/grammar-addons/lua` (package `grammar-lua`,
+built by `.github/workflows/grammar-addons.yml`) and a real loader at
+`core::signatures_ts::grammar_loader`. `host/` below stays put as a
+standalone manual-verification harness for locally-built dylibs — it is not
+part of the release pipeline.
+
 ## Result: yes, proven on Windows
 
 ```
-$ cargo build --release -p grammar-lua-dylib
+$ cargo build --release -p grammar-lua
 $ cargo build --release -p grammar-dlopen-host
-$ ./target/release/grammar-dlopen-host <path-to>/grammar_lua_dylib.dll
+$ ./target/release/grammar-dlopen-host <path-to>/grammar_lua.dll
 loaded language, abi_version = 15
 parsed root kind: chunk
 SPIKE OK: dlopen-loaded Lua grammar parsed "return 42" cleanly
@@ -92,16 +99,18 @@ meaningfully simpler than the binary-update case.
 
 ## Running it
 
-This crate pair is an **opt-in** workspace member (`experiments/...`), not in
+`host/` is an **opt-in** workspace member (`experiments/...`), not in
 `default-members` — `cargo build`/`test`/`clippy` on the main crate are
-unaffected. Build and run explicitly with `-p`:
+unaffected. Point it at any locally-built grammar-addon dylib (e.g. the real
+`grammar-lua` crate) with `-p`:
 
 ```
-cargo build --release -p grammar-lua-dylib
+cargo build --release -p grammar-lua
 cargo build --release -p grammar-dlopen-host
-./target/release/grammar-dlopen-host <path-to-built>/grammar_lua_dylib.dll
+./target/release/grammar-dlopen-host <path-to-built>/grammar_lua.dll
 ```
 
-No automated test wraps this yet — it's a manual-run feasibility spike, not
-production code. Automated CI coverage is Phase 1+ scope once the loader is
-wired behind the real entry point.
+Automated coverage now lives with the real pieces: `grammar-addons.yml` CI
+builds `grammar-lua` per platform, and `core::signatures_ts::grammar_loader`
+has its own unit tests. This harness stays a manual debugging tool for a
+locally-built dylib, not a CI-run test.

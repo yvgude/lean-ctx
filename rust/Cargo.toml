@@ -6,7 +6,14 @@
 members = [
   ".",
   "crates/lean-ctx-sdk",
-  "experiments/grammar-dlopen-spike/dylib",
+  # Grammar-addon cdylibs (#690, Phase 1c) — one crate per long-tail
+  # tree-sitter grammar, built per-platform by grammar-addons.yml and
+  # dlopen'd at runtime by core::signatures_ts::grammar_loader. Add a new
+  # `crates/grammar-addons/<lang>` member (mirroring lua/) plus a matrix
+  # entry in the workflow when tiering another grammar out (scope item 1).
+  "crates/grammar-addons/lua",
+  # Standalone manual-verification harness the grammar-addon design proved
+  # out against (Phase 0 spike, #693) — not part of the release pipeline.
   "experiments/grammar-dlopen-spike/host",
 ]
 default-members = ["."]
