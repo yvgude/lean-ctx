@@ -28,7 +28,7 @@ use tree_sitter::Language;
 use tree_sitter_language::LanguageFn;
 
 use crate::core::addons::grammar_manifest::GRAMMAR_SYMBOL;
-use crate::core::addons::{binhash, grammar_registry};
+use crate::core::addons::{binhash, grammar_install, grammar_registry};
 
 /// Rust target-triple key this build was compiled for — matches the asset
 /// keys the CI dylib matrix (Phase 1c) publishes under.
@@ -67,7 +67,16 @@ fn load_uncached(ext: &str) -> Option<Language> {
     let manifest = grammar_registry::find_by_extension(ext)?;
     let asset = manifest.asset_for(current_target_triple())?;
     let path = dylib_dir(&manifest.name)?.join(&asset.filename);
-    if !path.is_file() {
+
+    // Zero-config fetch (#690, Phase 1d): transparently install a missing
+    // dylib on first use. Any failure here (offline, network error, hash
+    // mismatch, `addons.policy = locked`) is silent — `path` simply stays
+    // absent, indistinguishable from "no addon fetched yet", and the caller
+    // falls through to the regex-signature extractor exactly as before.
+    if !path.is_file()
+        && let Err(e) = grammar_install::ensure_installed(&manifest, asset, &path)
+    {
+        tracing::debug!("grammar addon `{}` not available: {e}", manifest.name);
         return None;
     }
 
@@ -116,12 +125,29 @@ fn load_uncached(ext: &str) -> Option<Language> {
 pub(super) fn get_addon_language(ext: &str) -> Option<Language> {
     static CACHE: OnceLock<Mutex<HashMap<String, Option<Language>>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut cache = cache
+
+    if let Some(hit) = cache
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(ext)
+    {
+        return hit.clone();
+    }
+
+    // Computed outside the lock: `load_uncached` may block on network I/O
+    // (Phase 1d's zero-config fetch), and a single process-wide `Mutex`
+    // guarding the whole map would otherwise serialize every extension's
+    // extraction behind whichever one is mid-fetch. A concurrent miss on
+    // the same never-before-seen `ext` does duplicate, harmless work (the
+    // download is idempotent — `ensure_installed`'s atomic rename and its
+    // own pre-check make a repeat fetch a no-op).
+    let result = load_uncached(ext);
+
     cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .entry(ext.to_string())
-        .or_insert_with(|| load_uncached(ext))
+        .or_insert(result)
         .clone()
 }
 

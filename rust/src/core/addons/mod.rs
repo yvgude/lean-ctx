@@ -44,6 +44,11 @@
 //!   per-platform dylib + mandatory SHA-256 pin, tree-sitter ABI version).
 //! - [`grammar_registry`] — its bundled/local-override catalog, reusing only
 //!   [`signing`] and [`binhash`] from the MCP addon machinery.
+//! - [`grammar_install`] — zero-config fetch (#690, Phase 1d): downloads a
+//!   missing pinned dylib on first use, silent on any failure (offline,
+//!   network error, hash mismatch) so it degrades to the regex-signature
+//!   fallback exactly like "not installed" — no `addon add` consent step,
+//!   since a grammar addon is a parsing fallback, not a spawned process.
 
 pub mod audit;
 pub mod binhash;
@@ -51,7 +56,14 @@ pub mod bootstrap;
 pub mod capabilities;
 pub mod commerce;
 pub mod env_scrub;
+// Grammar addons only matter to a build that can dlopen a Language into a
+// tree-sitter parser at all — dead weight in the no-tree-sitter slim build
+// (#663), so gated the same way `core::signatures_ts` is.
+#[cfg(feature = "tree-sitter")]
+pub(crate) mod grammar_install;
+#[cfg(feature = "tree-sitter")]
 pub mod grammar_manifest;
+#[cfg(feature = "tree-sitter")]
 pub mod grammar_registry;
 pub mod health;
 pub mod install;
@@ -72,6 +84,7 @@ pub use audit::{AuditReport, AuditVerdict};
 pub use bootstrap::{AddonInstall, BootstrapStatus, InstallReceipt, Manager};
 pub use capabilities::{AddonCapabilities, FilesystemAccess, NetworkAccess};
 pub use commerce::{AddonPricing, PaidGate, PricingModel, paid_listing_gate};
+#[cfg(feature = "tree-sitter")]
 pub use grammar_manifest::{GrammarAsset, GrammarManifest};
 pub use health::ProbeReport;
 pub use manifest::{AddonManifest, AddonMcp, AddonMeta};
