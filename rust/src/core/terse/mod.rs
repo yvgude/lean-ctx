@@ -19,6 +19,7 @@
 //! - **Layer 4** (`mcp_compress.rs`): MCP description compression — shrinks tool
 //!   descriptions, lazy-load stubs, on-demand expansion.
 
+pub mod auto_dict;
 pub mod counter;
 pub mod dictionaries;
 pub mod engine;

@@ -437,7 +437,7 @@ fn is_word_boundary(b: u8) -> bool {
     !b.is_ascii_alphanumeric() && b != b'-' && b != b'_' && b != b'\'' && b != b'"'
 }
 
-fn replace_whole_word(text: &str, pattern: &str, replacement: &str) -> String {
+pub(crate) fn replace_whole_word(text: &str, pattern: &str, replacement: &str) -> String {
     if pattern.is_empty() {
         return text.to_string();
     }

@@ -148,6 +148,10 @@ fn compress_at_level(text: &str, tokens_before: u32, level: &CompressionLevel) -
         CompressionLevel::Lite | CompressionLevel::Off => DictLevel::General,
     };
     let compressed = dictionaries::apply_dictionaries(&filtered, dict_level);
+    let compressed = match dict_level {
+        DictLevel::Full => super::auto_dict::apply(&compressed).unwrap_or(compressed),
+        DictLevel::General => compressed,
+    };
     let tokens_after = counter::count(&compressed);
 
     EngineResult {
