@@ -387,6 +387,7 @@ mod tests {
             agent_id: "local".into(),
             prev_hash: String::new(),
             entry_hash: String::new(),
+            version: "3.9.0".into(),
         }
     }
 

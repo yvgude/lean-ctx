@@ -123,6 +123,7 @@ fn new_event(tool: &str) -> SavingsEvent {
         agent_id: agent_id().to_string(),
         prev_hash: String::new(),
         entry_hash: String::new(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
     }
 }
 

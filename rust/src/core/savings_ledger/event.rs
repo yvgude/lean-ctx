@@ -22,6 +22,14 @@ fn default_mechanism() -> String {
     MECHANISM_COMPRESSION.to_string()
 }
 
+/// Pre-v4 events carry no `version` field. Empty, not the current crate
+/// version — an empty string honestly says "unknown" instead of implying an
+/// old entry was written by whatever binary happens to be reading it now.
+/// Same convention as `DayStats::version` in `core/stats/model.rs`.
+fn default_version() -> String {
+    String::new()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SavingsEvent {
     pub ts: String,
@@ -59,13 +67,20 @@ pub struct SavingsEvent {
     pub agent_id: String,
     pub prev_hash: String,
     pub entry_hash: String,
+    /// lean-ctx version active when this event was recorded (`CARGO_PKG_VERSION`,
+    /// #NNN). Lets a `stats.json` rebuilt from the ledger (after corruption or
+    /// otherwise) recover the per-day version tag `lean-ctx gain --daily` shows,
+    /// which the ledger previously had no way to answer. Pre-v4 events default
+    /// to empty (unknown), never a guessed version.
+    #[serde(default = "default_version")]
+    pub version: String,
 }
 
 impl SavingsEvent {
-    /// Canonical (v3) representation of the *content* fields (everything except the chain
-    /// hashes), hashed on append and re-hashed on verify. v3 = v2 + the `mechanism`
-    /// attribution field (enterprise#19); the `v3|` prefix pins the scheme so a downgrade
-    /// is itself tamper-evident.
+    /// Canonical (v4) representation of the *content* fields (everything except the chain
+    /// hashes), hashed on append and re-hashed on verify. v4 = v3 + the `version`
+    /// field (#NNN); the `v4|` prefix pins the scheme so a downgrade is itself
+    /// tamper-evident.
     ///
     /// Monetary values are committed as integer **micro-USD** rather than `{:.6}` of a raw
     /// `f64`. A fixed-precision float string is *not* round-trip stable: a value sitting on a
@@ -73,6 +88,29 @@ impl SavingsEvent {
     /// that `{:.6}` rounds the other way, which silently broke the chain for untampered data.
     /// Integers serialise/parse exactly, so the hash is reproducible.
     pub fn canonical_content(&self) -> String {
+        format!(
+            "v4|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            self.ts,
+            self.tool,
+            self.mechanism,
+            self.model_id,
+            self.tokenizer,
+            self.baseline_tokens,
+            self.actual_tokens,
+            self.saved_tokens,
+            self.bounce_adjustment,
+            micro_usd(self.unit_price_per_m_usd),
+            micro_usd(self.saved_usd),
+            self.repo_hash,
+            self.agent_id,
+            self.version,
+        )
+    }
+
+    /// v3 canonical (pre-`version`): v2 + the `mechanism` attribution field
+    /// (enterprise#19). Retained so ledgers written between the v3 fix and v4
+    /// keep verifying unchanged.
+    pub fn canonical_content_v3(&self) -> String {
         format!(
             "v3|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             self.ts,
@@ -132,12 +170,13 @@ impl SavingsEvent {
         )
     }
 
-    /// True if `entry_hash` matches the current (v3) canonical hash, the v2 hash, or the
-    /// legacy v1 hash. Accepting all three lets `verify` validate ledgers written under any
-    /// scheme without forcing a migration (clean old ledgers stay valid; broken-by-bug ones
-    /// are repaired by `rechain`, which re-hashes under v3).
+    /// True if `entry_hash` matches the current (v4) canonical hash, the v3 hash, the v2
+    /// hash, or the legacy v1 hash. Accepting all four lets `verify` validate ledgers
+    /// written under any scheme without forcing a migration (clean old ledgers stay
+    /// valid; broken-by-bug ones are repaired by `rechain`, which re-hashes under v4).
     pub fn hash_matches(&self, prev_hash: &str) -> bool {
         self.entry_hash == compute_hash(prev_hash, &self.canonical_content())
+            || self.entry_hash == compute_hash(prev_hash, &self.canonical_content_v3())
             || self.entry_hash == compute_hash(prev_hash, &self.canonical_content_v2())
             || self.entry_hash == compute_hash(prev_hash, &self.canonical_content_legacy())
     }
@@ -188,6 +227,7 @@ mod tests {
             agent_id: "local".into(),
             prev_hash: String::new(),
             entry_hash: String::new(),
+            version: "3.9.0".into(),
         }
     }
 
@@ -305,6 +345,37 @@ mod tests {
         assert!(
             !forged.hash_matches(&forged.prev_hash),
             "reattributing a routing saving to compression must be tamper-evident"
+        );
+    }
+
+    #[test]
+    fn v3_hash_still_verifies_and_v4_commits_version() {
+        // Pre-version (v3) entries — including their JSON form without the
+        // field — must keep verifying after the v4 upgrade (#NNN).
+        let mut e = ev();
+        e.prev_hash = "genesis".into();
+        e.entry_hash = compute_hash(&e.prev_hash, &e.canonical_content_v3());
+        assert!(e.hash_matches(&e.prev_hash), "v3 hash must verify");
+
+        let json = serde_json::to_string(&e).unwrap();
+        // `version` is the last struct field, so its JSON key is preceded by
+        // a comma, not followed by one.
+        let stripped = json.replace(r#","version":"3.9.0""#, "");
+        let parsed: SavingsEvent = serde_json::from_str(&stripped).unwrap();
+        assert_eq!(parsed.version, "", "serde default for a pre-v4 entry");
+        assert!(parsed.hash_matches(&parsed.prev_hash), "v3 after roundtrip");
+
+        // v4 commits the version: rewriting it breaks the hash.
+        let mut v4 = ev();
+        v4.version = "3.8.18".into();
+        v4.prev_hash = "genesis".into();
+        v4.entry_hash = compute_hash(&v4.prev_hash, &v4.canonical_content());
+        assert!(v4.hash_matches(&v4.prev_hash));
+        let mut forged = v4.clone();
+        forged.version = "3.9.0".into();
+        assert!(
+            !forged.hash_matches(&forged.prev_hash),
+            "rewriting which version recorded a saving must be tamper-evident"
         );
     }
 
