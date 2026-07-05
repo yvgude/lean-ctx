@@ -30,7 +30,8 @@ pub fn score_lines(text: &str) -> Vec<LineScore> {
         let trimmed = line.trim();
 
         let entropy = char_entropy(trimmed);
-        let has_marker = has_structural_marker(trimmed);
+        let is_noise = is_encoded_blob(trimmed);
+        let has_marker = !is_noise && has_structural_marker(trimmed);
         let rep_ratio = if trigram_saturated {
             0.0
         } else {
@@ -44,7 +45,7 @@ pub fn score_lines(text: &str) -> Vec<LineScore> {
             }
         }
 
-        let combined = compute_combined(entropy, has_marker, rep_ratio);
+        let combined = compute_combined(entropy, has_marker, rep_ratio, is_noise);
 
         scores.push(LineScore {
             line_idx: idx,
@@ -135,10 +136,41 @@ fn register_trigrams(line: &str, seen: &mut HashSet<String>) {
     }
 }
 
-fn compute_combined(entropy: f32, has_marker: bool, rep_ratio: f32) -> f32 {
+fn compute_combined(entropy: f32, has_marker: bool, rep_ratio: f32, is_noise: bool) -> f32 {
+    if is_noise {
+        return 0.0;
+    }
     let marker_bonus = if has_marker { 0.3 } else { 0.0 };
     let rep_penalty = rep_ratio * 0.5;
     (entropy + marker_bonus - rep_penalty).max(0.0)
+}
+
+/// True when `line` is a single encoded blob (base64 or hex) rather than
+/// prose/code — high Shannon entropy but zero semantic content, so it must
+/// not be scored as information-dense.
+fn is_encoded_blob(line: &str) -> bool {
+    const MIN_BLOB_LEN: usize = 24;
+
+    if line.len() < MIN_BLOB_LEN || line.contains(char::is_whitespace) {
+        return false;
+    }
+
+    let is_hex = line.chars().all(|c| c.is_ascii_hexdigit());
+
+    // Base64 padding/symbols are an unambiguous signal on their own. Without
+    // them, require the digit+upper+lower mix typical of random tokens so a
+    // long plain identifier (all-lowercase or camelCase, no digits) doesn't
+    // get misclassified as noise.
+    let has_b64_symbol = line.contains('+') || line.contains('/') || line.contains('=');
+    let charset_ok = line
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=');
+    let has_digit = line.chars().any(|c| c.is_ascii_digit());
+    let has_upper = line.chars().any(|c| c.is_ascii_uppercase());
+    let has_lower = line.chars().any(|c| c.is_ascii_lowercase());
+    let is_base64 = charset_ok && (has_b64_symbol || (has_digit && has_upper && has_lower));
+
+    is_hex || is_base64
 }
 
 #[cfg(test)]
@@ -176,6 +208,36 @@ mod tests {
     #[test]
     fn structural_marker_missing() {
         assert!(!has_structural_marker("this is a simple line"));
+    }
+
+    #[test]
+    fn encoded_blob_detected_as_noise() {
+        assert!(is_encoded_blob(
+            "MTIzNDU2Nzg5MGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6MDk4NzY1NDMyMQ=="
+        ));
+        assert!(is_encoded_blob(
+            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        ));
+        assert!(!is_encoded_blob("src/core/config.rs"));
+        assert!(!is_encoded_blob("this is a simple line with words"));
+    }
+
+    #[test]
+    fn long_camel_case_identifier_is_not_noise() {
+        assert!(!is_encoded_blob("configureApplicationRuntimeEnvironmentSettings"));
+        assert!(!is_encoded_blob("configure_premium_feature_flags_for_tenant"));
+    }
+
+    #[test]
+    fn encoded_blob_scores_lower_than_real_error_line() {
+        let text = "error: connection refused at host during handshake attempt\nMTIzNDU2Nzg5MGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6MDk4NzY1NDMyMQ==";
+        let scores = score_lines(text);
+        assert!(
+            scores[0].combined > scores[1].combined,
+            "real error line should score above encoded blob noise: {} vs {}",
+            scores[0].combined,
+            scores[1].combined
+        );
     }
 
     #[test]
