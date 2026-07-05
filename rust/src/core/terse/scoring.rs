@@ -145,29 +145,38 @@ fn compute_combined(entropy: f32, has_marker: bool, rep_ratio: f32, is_noise: bo
     (entropy + marker_bonus - rep_penalty).max(0.0)
 }
 
-/// True when `line` is a single encoded blob (base64 or hex) rather than
-/// prose/code — high Shannon entropy but zero semantic content, so it must
-/// not be scored as information-dense.
+/// True when `line` contains an encoded blob (base64 or hex) — either as the
+/// whole line or as one whitespace-delimited token in a `label: <blob>`
+/// shaped line (`trace id: <hex>`, `commit <sha>`, `session token: <b64>`,
+/// all common in real logs) — rather than prose/code. High Shannon entropy
+/// but zero semantic content, so it must not be scored as information-dense.
 fn is_encoded_blob(line: &str) -> bool {
+    line.split_whitespace().any(is_blob_token)
+}
+
+/// True when a single whitespace-delimited token looks like a random,
+/// non-prose blob (base64 or hex) rather than an English word or code
+/// identifier.
+fn is_blob_token(token: &str) -> bool {
     const MIN_BLOB_LEN: usize = 24;
 
-    if line.len() < MIN_BLOB_LEN || line.contains(char::is_whitespace) {
+    if token.len() < MIN_BLOB_LEN {
         return false;
     }
 
-    let is_hex = line.chars().all(|c| c.is_ascii_hexdigit());
+    let is_hex = token.chars().all(|c| c.is_ascii_hexdigit());
 
     // Base64 padding/symbols are an unambiguous signal on their own. Without
     // them, require the digit+upper+lower mix typical of random tokens so a
     // long plain identifier (all-lowercase or camelCase, no digits) doesn't
     // get misclassified as noise.
-    let has_b64_symbol = line.contains('+') || line.contains('/') || line.contains('=');
-    let charset_ok = line
+    let has_b64_symbol = token.contains('+') || token.contains('/') || token.contains('=');
+    let charset_ok = token
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=');
-    let has_digit = line.chars().any(|c| c.is_ascii_digit());
-    let has_upper = line.chars().any(|c| c.is_ascii_uppercase());
-    let has_lower = line.chars().any(|c| c.is_ascii_lowercase());
+    let has_digit = token.chars().any(|c| c.is_ascii_digit());
+    let has_upper = token.chars().any(|c| c.is_ascii_uppercase());
+    let has_lower = token.chars().any(|c| c.is_ascii_lowercase());
     let is_base64 = charset_ok && (has_b64_symbol || (has_digit && has_upper && has_lower));
 
     is_hex || is_base64
@@ -220,6 +229,27 @@ mod tests {
         ));
         assert!(!is_encoded_blob("src/core/config.rs"));
         assert!(!is_encoded_blob("this is a simple line with words"));
+    }
+
+    #[test]
+    fn prefixed_blob_is_still_detected_as_noise() {
+        // Real logs almost always label the blob rather than emit it bare
+        // (`trace id: <hex>`, `commit <sha>`, `session token: <b64>`). Built
+        // at runtime (not a literal) so a fake test token isn't itself
+        // mistaken for a real secret by tooling.
+        let hex64: String = "9f86d0".repeat(11);
+        let b64_padded: String = format!("{}==", "aZ9".repeat(8));
+
+        assert!(is_encoded_blob(&format!("trace id: {hex64}")));
+        assert!(is_encoded_blob(&format!("build session token: {b64_padded}")));
+        assert!(is_encoded_blob(&format!("commit {hex64}")));
+    }
+
+    #[test]
+    fn prefixed_real_content_is_not_noise() {
+        assert!(!is_encoded_blob(
+            "error in module ConfigurationManagerFactory during init"
+        ));
     }
 
     #[test]
