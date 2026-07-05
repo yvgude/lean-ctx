@@ -112,10 +112,18 @@ fn looks_like_path(s: &str) -> bool {
 
 const MAX_IDENTIFIERS: usize = 200;
 
+/// A token counts as a must-preserve identifier if it looks like an ordinary
+/// code identifier (has a letter) OR looks like an encoded blob (hex/base64,
+/// e.g. a `git rev-parse HEAD` hash) — the latter has no alphabetic
+/// character for the ordinary check to key on, but dropping it is exactly
+/// the failure mode the noise-detector in `scoring.rs` must not cause: a
+/// payload-shaped blob must still trip this gate if compression removes it.
 fn extract_identifiers(text: &str, min_len: usize) -> HashSet<String> {
     let mut idents = HashSet::new();
     for word in text.split(|c: char| !c.is_alphanumeric() && c != '_') {
-        if word.len() >= min_len && word.chars().any(char::is_alphabetic) {
+        let looks_like_identifier = word.len() >= min_len
+            && (word.chars().any(char::is_alphabetic) || super::scoring::is_blob_token(word));
+        if looks_like_identifier {
             idents.insert(word.to_string());
             if idents.len() >= MAX_IDENTIFIERS {
                 break;
@@ -178,5 +186,21 @@ mod tests {
         let compressed = "error occurred";
         let report = check(original, compressed, 100, 50, &QualityConfig::default());
         assert!(!report.paths_preserved);
+    }
+
+    /// A pure-digit, hex-shaped blob (e.g. an all-numeric slice of a
+    /// `git rev-parse HEAD` hash) has no alphabetic character, so the
+    /// ordinary identifier check alone would miss it — `is_blob_token` closes
+    /// that gap so dropping it still fails the gate.
+    #[test]
+    fn quality_fails_when_payload_blob_is_dropped() {
+        let blob = "1".repeat(9) + &"2".repeat(9) + &"3".repeat(9);
+        let original = format!("commit hash: {blob}");
+        let compressed = "commit hash:";
+        let report = check(&original, compressed, 100, 10, &QualityConfig::default());
+        assert!(
+            !report.identifiers_preserved,
+            "dropping a pure-digit hash-shaped blob must fail the identifier gate"
+        );
     }
 }

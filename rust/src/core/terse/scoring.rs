@@ -156,8 +156,12 @@ fn is_encoded_blob(line: &str) -> bool {
 
 /// True when a single whitespace-delimited token looks like a random,
 /// non-prose blob (base64 or hex) rather than an English word or code
-/// identifier.
-fn is_blob_token(token: &str) -> bool {
+/// identifier. `pub(super)` so `quality::check` can also treat a long blob
+/// as a must-preserve identifier — a payload-shaped blob (e.g. the resolved
+/// hash from `git rev-parse HEAD`) must still trip the quality gate if
+/// dropped, even though it has no alphabetic characters for the ordinary
+/// identifier check to key on.
+pub(super) fn is_blob_token(token: &str) -> bool {
     const MIN_BLOB_LEN: usize = 24;
 
     if token.len() < MIN_BLOB_LEN {
@@ -241,7 +245,9 @@ mod tests {
         let b64_padded: String = format!("{}==", "aZ9".repeat(8));
 
         assert!(is_encoded_blob(&format!("trace id: {hex64}")));
-        assert!(is_encoded_blob(&format!("build session token: {b64_padded}")));
+        assert!(is_encoded_blob(&format!(
+            "build session token: {b64_padded}"
+        )));
         assert!(is_encoded_blob(&format!("commit {hex64}")));
     }
 
@@ -254,8 +260,12 @@ mod tests {
 
     #[test]
     fn long_camel_case_identifier_is_not_noise() {
-        assert!(!is_encoded_blob("configureApplicationRuntimeEnvironmentSettings"));
-        assert!(!is_encoded_blob("configure_premium_feature_flags_for_tenant"));
+        assert!(!is_encoded_blob(
+            "configureApplicationRuntimeEnvironmentSettings"
+        ));
+        assert!(!is_encoded_blob(
+            "configure_premium_feature_flags_for_tenant"
+        ));
     }
 
     #[test]
