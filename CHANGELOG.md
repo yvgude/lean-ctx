@@ -3,7 +3,7 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [3.9.2] — 2026-07-06
 
 ### Added
 - **Unified distribution, Phase 1 (GH #724/#725): managed addon binaries +
@@ -22,8 +22,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   managed binaries; `doctor` verifies every receipt (exists + hash + not
   revoked). The grammar-dylib fetch (#690) now shares the same
   download→verify→install core (`artifact_install`), byte-identical behavior.
-
-## [3.9.2] — 2026-07-06
 
 ### Fixed
 - **Cursor sessions ran with read compression silently disabled (GH #722).**

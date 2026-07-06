@@ -250,7 +250,7 @@ Each phase closes a construction site and is releasable alone.
 - Works with the shipped bootstrap engine today; communicated on GH PR #721.
 - Closes: the contributor's waiting state. Cost: one manifest line.
 
-### Phase 1 — `kind` field + unified artifact installer (target v3.9.3)
+### Phase 1 — `kind` field + unified artifact installer (target v3.9.2)
 
 - `kind` on `PackageManifest` + schema + validation (`context` default).
 - Generalise `grammar_install.rs` → `core/addons/artifact_install.rs`
