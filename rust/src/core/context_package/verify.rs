@@ -8,7 +8,8 @@
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
-use super::manifest::PackageManifest;
+use super::content::PackageContent;
+use super::manifest::{PackageKind, PackageManifest};
 
 /// Strip insignificant whitespace outside string literals (spec §8).
 pub(crate) fn compact_json_text(text: &str) -> String {
@@ -135,6 +136,74 @@ pub(crate) fn extract_top_level_value_text<'a>(doc: &'a str, member: &str) -> Op
     }
 }
 
+/// Kind ↔ payload coherence (GH #724/#726): the declared `kind` must match
+/// the content payload it ships, so a mislabeled package can never route
+/// into the wrong trust chain (an "addon" without an addon manifest, or a
+/// context pack smuggling one in).
+pub fn validate_kind_coherence(
+    manifest: &PackageManifest,
+    content: &PackageContent,
+) -> Result<(), Vec<String>> {
+    let mut errors = Vec::new();
+    match manifest.kind {
+        PackageKind::Addon => match &content.addon {
+            None => errors.push("kind=addon requires a content.addon payload".into()),
+            Some(payload) => {
+                match crate::core::addons::manifest::AddonManifest::from_toml(
+                    &payload.manifest_toml,
+                ) {
+                    Err(e) => errors.push(format!("embedded addon manifest does not parse: {e}")),
+                    Ok(addon) => {
+                        if let Err(e) = addon.validate() {
+                            errors.push(format!("embedded addon manifest is invalid: {e}"));
+                        }
+                        // The pack is @ns/<slug>; the embedded manifest is the
+                        // slug's source of truth — they must agree, as must the
+                        // versions, or resolve-by-name breaks after install.
+                        let slug = manifest
+                            .name
+                            .rsplit('/')
+                            .next()
+                            .unwrap_or(manifest.name.as_str());
+                        if addon.addon.name != slug {
+                            errors.push(format!(
+                                "embedded addon name `{}` does not match the package name \
+                                 `{slug}`",
+                                addon.addon.name
+                            ));
+                        }
+                        if addon.addon.version != manifest.version {
+                            errors.push(format!(
+                                "embedded addon version `{}` does not match the package \
+                                 version `{}`",
+                                addon.addon.version, manifest.version
+                            ));
+                        }
+                        if !addon.is_installable() {
+                            errors.push(
+                                "embedded addon manifest has no runnable [mcp] endpoint".into(),
+                            );
+                        }
+                    }
+                }
+            }
+        },
+        PackageKind::Context | PackageKind::Skills | PackageKind::Grammar => {
+            if content.addon.is_some() {
+                errors.push(format!(
+                    "content.addon payload requires kind=addon (manifest declares kind={})",
+                    manifest.kind.as_str()
+                ));
+            }
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
 /// Outcome of one verification check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CheckOutcome {
@@ -219,6 +288,17 @@ pub fn verify_package_text(doc: &str) -> VerifyReport {
         errors: Vec::new(),
     };
     if let Err(errs) = manifest.validate() {
+        report.structure = CheckOutcome::Fail;
+        report.errors.extend(errs);
+        return report;
+    }
+
+    // Kind ↔ payload coherence (GH #726) — a structural property: the
+    // declared kind must match the payload the document actually carries.
+    if let Ok(content) =
+        serde_json::from_value::<PackageContent>(value.get("content").cloned().unwrap_or_default())
+        && let Err(errs) = validate_kind_coherence(&manifest, &content)
+    {
         report.structure = CheckOutcome::Fail;
         report.errors.extend(errs);
         return report;
@@ -432,5 +512,102 @@ mod tests {
         let report = verify_package_text("{\"content\":{}}");
         assert_eq!(report.structure, CheckOutcome::Fail);
         assert!(report.errors[0].contains("manifest"));
+    }
+
+    // --- kind ↔ payload coherence (GH #726) ---
+
+    const COHERENT_ADDON_TOML: &str = r#"
+[addon]
+name = "lean-md"
+version = "1.2.0"
+description = "Markdown skills runtime"
+
+[mcp]
+transport = "stdio"
+command = "lean-md"
+args = ["serve"]
+"#;
+
+    fn kinded_manifest(kind: super::PackageKind, name: &str, version: &str) -> PackageManifest {
+        PackageManifest {
+            schema_version: crate::core::contracts::CONTEXT_PACKAGE_V2_SCHEMA_VERSION,
+            conformance_level: None,
+            kind,
+            name: name.into(),
+            version: version.into(),
+            description: "coherence test".into(),
+            author: None,
+            scope: None,
+            created_at: Utc::now(),
+            updated_at: None,
+            layers: vec![],
+            dependencies: vec![],
+            tags: vec![],
+            visibility: None,
+            integrity: PackageIntegrity {
+                sha256: "a".repeat(64),
+                content_hash: "b".repeat(64),
+                byte_size: 1,
+            },
+            provenance: PackageProvenance {
+                tool: "lean-ctx".into(),
+                tool_version: "0.0.0".into(),
+                project_hash: None,
+                source_session_id: None,
+            },
+            compatibility: CompatibilitySpec::default(),
+            stats: PackageStats::default(),
+            signature: None,
+            graph_summary: None,
+            marketplace: None,
+        }
+    }
+
+    fn addon_content(toml: &str) -> PackageContent {
+        PackageContent {
+            addon: Some(crate::core::context_package::content::AddonContent {
+                manifest_toml: toml.to_string(),
+            }),
+            ..PackageContent::default()
+        }
+    }
+
+    #[test]
+    fn coherent_addon_pack_passes() {
+        let manifest = kinded_manifest(super::PackageKind::Addon, "@acme/lean-md", "1.2.0");
+        assert!(validate_kind_coherence(&manifest, &addon_content(COHERENT_ADDON_TOML)).is_ok());
+    }
+
+    #[test]
+    fn addon_kind_without_payload_fails() {
+        let manifest = kinded_manifest(super::PackageKind::Addon, "@acme/lean-md", "1.2.0");
+        let errs =
+            validate_kind_coherence(&manifest, &PackageContent::default()).expect_err("must fail");
+        assert!(errs[0].contains("requires a content.addon"), "{errs:?}");
+    }
+
+    #[test]
+    fn context_pack_with_addon_payload_fails() {
+        let manifest = kinded_manifest(super::PackageKind::Context, "plain-pack", "1.0.0");
+        let errs = validate_kind_coherence(&manifest, &addon_content(COHERENT_ADDON_TOML))
+            .expect_err("must fail");
+        assert!(errs[0].contains("requires kind=addon"), "{errs:?}");
+    }
+
+    #[test]
+    fn addon_name_and_version_must_match_the_pack() {
+        let manifest = kinded_manifest(super::PackageKind::Addon, "@acme/other-name", "9.9.9");
+        let errs = validate_kind_coherence(&manifest, &addon_content(COHERENT_ADDON_TOML))
+            .expect_err("must fail");
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("does not match the package name")),
+            "{errs:?}"
+        );
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("does not match the package version")),
+            "{errs:?}"
+        );
     }
 }

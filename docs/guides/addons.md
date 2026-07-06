@@ -78,7 +78,8 @@ instead of being encapsulated by it.
 lean-ctx addon list               # installed addons + the registry
 lean-ctx addon search markdown    # search the registry (empty = list all)
 lean-ctx addon info <name>        # details + the MCP wiring it would add
-lean-ctx addon add <name>         # install (asks for confirmation)
+lean-ctx addon add <name>         # install from the curated registry
+lean-ctx addon add acme/tool      # install a hosted pack from ctxpkg.com
 lean-ctx addon remove <name>      # uninstall
 ```
 
@@ -87,6 +88,14 @@ asks before changing anything. Pass `--yes` / `-y` to skip the prompt in
 scripts. Installing an addon enables the MCP gateway (`gateway.enabled = true`);
 its tools become reachable via `ctx_tools` (find/call) — restart your MCP client
 to pick them up.
+
+A `<namespace>/<name>` target resolves against the hosted ctxpkg registry
+(GH #726): lean-ctx downloads the signed `kind=addon` pack, verifies the
+artifact hash against the registry index, the pack's integrity hashes, its
+**mandatory** ed25519 signature and the kind ↔ payload coherence — then the
+embedded manifest walks the exact same consent → preflight → health-probe
+pipeline as a local or curated install. `@version` pins a release;
+`addon update` re-resolves from wherever the addon was installed.
 
 ### Install on add — artifacts, ephemeral runners & the `[install]` block
 
@@ -270,9 +279,31 @@ sha256 = "…the digest…"           # the gateway refuses a mismatch, fail-clo
 A pinned binary is one of the requirements for the verified/paid tier (see the
 audit gate below).
 
-### 4. Get listed in the registry
+### 4. Publish it
 
-Open a merge request adding your manifest as an entry to
+Two distribution channels, one trust chain:
+
+**Self-service — `addon publish` (GH #726).** Ship without waiting for a
+review cycle: your `lean-ctx-addon.toml` is wrapped verbatim into a signed
+`kind=addon` context package and uploaded to the hosted ctxpkg registry.
+
+```bash
+lean-ctx addon publish --namespace <your-handle> --check   # every gate, no upload
+CTXPKG_TOKEN=ctxp_… lean-ctx addon publish --namespace <your-handle>
+```
+
+`publish` refuses locally what the registry would refuse remotely — schema
+errors, a missing runnable `[mcp]` endpoint, an empty description, and every
+blocking audit finding (shell-exec wiring, non-HTTPS endpoints, malware
+heuristics, under-declared capabilities). A `review`-level audit publishes
+with the findings disclosed. After that, anyone installs it with:
+
+```bash
+lean-ctx addon add <your-handle>/my-addon
+```
+
+**Curated default catalog.** For the addons every lean-ctx binary should know
+about offline, open a merge request adding your manifest as an entry to
 `rust/data/addon_registry.json`:
 
 ```json
@@ -296,11 +327,14 @@ Open a merge request adding your manifest as an entry to
 }
 ```
 
-Before opening the merge request, validate the registry locally — the same bar
-CI enforces:
+Before opening the merge request, validate and canonicalize the registry
+locally — the same bar CI enforces. The registry files are **generated
+snapshots**: `gen_registry` sorts entries by name and writes one canonical
+form, and CI fails on any byte drift, so hand-edits can't diverge:
 
 ```bash
 lean-ctx addon registry validate rust/data/addon_registry.json
+cargo run --example gen_registry --features dev-tools   # canonicalize in place
 ```
 
 Once merged, everyone can run `lean-ctx addon add my-addon`, and your addon
@@ -500,3 +534,4 @@ lean-ctx status                   # MCP server / gateway status
 
 If a freshly installed addon's tools do not appear, restart your MCP client so
 it re-reads the gateway catalog.
+

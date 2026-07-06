@@ -69,6 +69,11 @@ path = "src/bin/gen_docs.rs"
 required-features = ["dev-tools"]
 
 [[example]]
+name = "gen_registry"
+path = "src/bin/gen_registry.rs"
+required-features = ["dev-tools"]
+
+[[example]]
 name = "gen_rules"
 path = "src/bin/gen_rules.rs"
 required-features = ["dev-tools"]
@@ -472,4 +477,5 @@ harness = false
 [[bench]]
 name = "efficiency"
 harness = false
+
 

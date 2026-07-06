@@ -4,403 +4,881 @@
   "addons": [
     {
       "addon": {
-        "name": "headroom",
-        "display_name": "Headroom",
-        "description": "Reversible context compression for tool outputs, logs, files and RAG chunks — 60–95% fewer tokens, originals retrievable on demand. Installs on add (uv tool install) and wires its MCP server (headroom mcp serve) into the lean-ctx gateway.",
-        "author": "chopratejas",
-        "homepage": "https://github.com/chopratejas/headroom",
-        "license": "Apache-2.0",
-        "categories": ["compression"],
-        "integration": "compression",
-        "keywords": ["compression", "tokens", "rag", "reversible", "ccr", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
+        "name": "claude-context",
+        "display_name": "Claude Context",
+        "version": "",
+        "description": "Semantic code search over an entire codebase (hybrid BM25 + dense vectors) via @zilliz/claude-context-mcp. Needs a Milvus/Zilliz vector database and an embedding API key to run, so it is listed rather than auto-installed.",
+        "author": "zilliztech",
+        "homepage": "https://github.com/zilliztech/claude-context",
+        "license": "MIT",
+        "categories": [
+          "code-intelligence"
+        ],
+        "integration": "none",
+        "keywords": [
+          "semantic-search",
+          "codebase",
+          "embeddings",
+          "retrieval",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
       },
       "mcp": {
         "transport": "stdio",
-        "command": "headroom",
-        "args": ["mcp", "serve"]
-      },
-      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] },
-      "install": {
-        "manager": "uv",
-        "package": "headroom-ai[mcp]",
-        "version": "0.28.0",
-        "bin": "headroom"
+        "command": "",
+        "args": [],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
       }
-    },
-    {
-      "addon": {
-        "name": "sophon",
-        "display_name": "Sophon",
-        "description": "Deterministic context compressor for MCP agents — shrinks prompts, conversation history, code digests, file deltas and shell output with zero ML at query time. Single Rust binary; installs on add (npm) and wires its MCP server (sophon serve) into the lean-ctx gateway.",
-        "author": "lacausecrypto",
-        "homepage": "https://github.com/lacausecrypto/mcp-sophon",
-        "license": "MIT",
-        "categories": ["compression"],
-        "integration": "compression",
-        "keywords": ["compression", "deterministic", "rust", "tokens", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
-      },
-      "mcp": {
-        "transport": "stdio",
-        "command": "sophon",
-        "args": ["serve"]
-      },
-      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] },
-      "install": {
-        "manager": "npm",
-        "package": "mcp-sophon",
-        "version": "0.5.4",
-        "bin": "sophon"
-      }
-    },
-    {
-      "addon": {
-        "name": "rtk",
-        "display_name": "RTK (Rust Token Killer)",
-        "description": "Single-binary CLI proxy that filters and compresses shell command output by 60–90%. Reaches MCP clients through the community rtk-mcp bridge (built from source), so the lean-ctx gateway can run commands through it.",
-        "author": "rtk-ai",
-        "homepage": "https://github.com/rtk-ai/rtk",
-        "categories": ["compression"],
-        "integration": "compression",
-        "keywords": ["compression", "shell", "cli", "tokens", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
-      }
-    },
-    {
-      "addon": {
-        "name": "repomix",
-        "display_name": "Repomix",
-        "description": "Packs a whole repository into a single AI-ready file. Its MCP server (npx repomix --mcp) lets agents pack local or remote repos and grep the output on demand.",
-        "author": "yamadashy",
-        "homepage": "https://repomix.com",
-        "license": "MIT",
-        "categories": ["code-intelligence"],
-        "integration": "codebase-pack",
-        "keywords": ["codebase", "packing", "context", "repo", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
-      },
-      "mcp": {
-        "transport": "stdio",
-        "command": "npx",
-        "args": ["-y", "repomix@1.16.0", "--mcp"]
-      },
-      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] }
-    },
-    {
-      "addon": {
-        "name": "serena",
-        "display_name": "Serena",
-        "description": "LSP-backed semantic code retrieval, editing and refactoring — the IDE for your coding agent. Connects over MCP via stdio or Streamable HTTP.",
-        "author": "oraios",
-        "homepage": "https://github.com/oraios/serena",
-        "license": "MIT",
-        "categories": ["code-intelligence"],
-        "integration": "code-symbols",
-        "keywords": ["lsp", "symbols", "refactor", "navigation", "semantic", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
-      },
-      "mcp": {
-        "transport": "stdio",
-        "command": "uvx",
-        "args": ["--from", "serena-agent==1.5.3", "serena", "start-mcp-server", "--context", "ide"]
-      },
-      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] }
-    },
-    {
-      "addon": {
-        "name": "mcp-code-context",
-        "display_name": "MCP Code Context",
-        "description": "Compresses any codebase into LLM-ready semantic context with Tree-sitter WASM (TypeScript, JavaScript, Python, PHP, Dart) — symbol-level reads and AST-aware edits. Runs on add via npx; no install or native build needed.",
-        "author": "achatainga",
-        "homepage": "https://github.com/achatainga/mcp-code-context",
-        "license": "MIT",
-        "categories": ["code-intelligence"],
-        "integration": "code-symbols",
-        "keywords": ["ast", "tree-sitter", "symbols", "codebase", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
-      },
-      "mcp": {
-        "transport": "stdio",
-        "command": "npx",
-        "args": ["-y", "mcp-code-context@3.7.1"]
-      },
-      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] }
     },
     {
       "addon": {
         "name": "codebase-intelligence",
         "display_name": "Codebase Intelligence",
+        "version": "",
         "description": "Parses your whole repo with Tree-sitter into a semantic graph of symbols, references and dependencies — symbol search, call graphs and impact analysis. 18 tools, 8 languages, zero infrastructure or keys. Runs on add via npx.",
         "author": "g-tiwari",
         "homepage": "https://github.com/g-tiwari/mcp-codebase-intelligence",
         "license": "MIT",
-        "categories": ["code-intelligence"],
+        "categories": [
+          "code-intelligence"
+        ],
         "integration": "code-graph",
-        "keywords": ["call-graph", "symbols", "references", "tree-sitter", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
+        "keywords": [
+          "call-graph",
+          "symbols",
+          "references",
+          "tree-sitter",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
       },
       "mcp": {
         "transport": "stdio",
         "command": "npx",
-        "args": ["-y", "mcp-codebase-intelligence@0.3.0"]
+        "args": [
+          "-y",
+          "mcp-codebase-intelligence@0.3.0"
+        ],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
       },
-      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] }
+      "capabilities": {
+        "network": "full",
+        "filesystem": "read_write",
+        "env": [],
+        "exec": "none"
+      }
     },
     {
       "addon": {
         "name": "codecompress",
         "display_name": "CodeCompress",
+        "version": "",
         "description": "Local code-intelligence index that gives agents surgical access to symbols — project outline, get/expand symbol, hot-path and references — backed by a SQLite index. Installs on add (.NET global tool) and wires its MCP server.",
         "author": "MCrank",
         "homepage": "https://github.com/MCrank/code-compress",
         "license": "MIT",
-        "categories": ["code-intelligence"],
+        "categories": [
+          "code-intelligence"
+        ],
         "integration": "code-symbols",
-        "keywords": ["symbols", "index", "outline", "references", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
+        "keywords": [
+          "symbols",
+          "index",
+          "outline",
+          "references",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
       },
       "mcp": {
         "transport": "stdio",
-        "command": "codecompress-server"
+        "command": "codecompress-server",
+        "args": [],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
       },
-      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] },
+      "capabilities": {
+        "network": "full",
+        "filesystem": "read_write",
+        "env": [],
+        "exec": "none"
+      },
       "install": {
         "manager": "dotnet",
         "package": "CodeCompress.Server",
         "version": "0.15.0",
-        "bin": "codecompress-server"
-      }
-    },
-    {
-      "addon": {
-        "name": "graphify",
-        "display_name": "Graphify",
-        "description": "Turns code, docs, schemas and more into one queryable knowledge graph for agents. Ships an MCP server (stdio + HTTP), but serving needs a graph built by `graphify extract` (an LLM-backed step), so it is listed rather than auto-installed.",
-        "author": "safishamsi",
-        "homepage": "https://github.com/safishamsi/graphify",
-        "license": "MIT",
-        "categories": ["code-intelligence", "memory"],
-        "integration": "code-graph",
-        "keywords": ["knowledge-graph", "code", "graphrag", "ast", "memory", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
-      }
-    },
-    {
-      "addon": {
-        "name": "memgraph-ingester",
-        "display_name": "Memgraph Ingester",
-        "description": "Structure-aware RAG for 150+ languages: the memgraph-ingester CLI parses a codebase into a Memgraph code graph with project memory; this addon wires its MCP server (uvx memgraph-ingester-mcp) into the lean-ctx gateway for high-level graph queries. Needs a running Memgraph instance (e.g. Docker) plus a graph built with the ingester CLI — set MEMGRAPH_INGESTER_MCP_BOLT_URI to your Bolt endpoint.",
-        "author": "ousatov-ua",
-        "homepage": "https://github.com/ousatov-ua/memgraph-ingester",
-        "license": "MIT",
-        "categories": ["code-intelligence", "memory"],
-        "integration": "code-graph",
-        "keywords": ["knowledge-graph", "rag", "memgraph", "ast", "memory", "community", "mcp"],
-        "min_lean_ctx": "3.8.0"
-      },
-      "mcp": {
-        "transport": "stdio",
-        "command": "uvx",
-        "args": ["--from", "memgraph-ingester-mcp==0.6.6", "memgraph-ingester-mcp"],
-        "env": { "MEMGRAPH_INGESTER_MCP_BOLT_URI": "bolt://localhost:7687" }
-      },
-      "capabilities": { "network": "full", "filesystem": "read_write", "env": ["MEMGRAPH_INGESTER_MCP_BOLT_URI", "MEMGRAPH_INGESTER_MCP_READ_ONLY"] }
-    },
-    {
-      "addon": {
-        "name": "qmd",
-        "display_name": "QMD (Query Markup Documents)",
-        "description": "On-device search engine for markdown notes, meeting transcripts, docs and knowledge bases — BM25 + vector search + LLM re-ranking, fully local via node-llama-cpp GGUF models. Register folders as collections (qmd collection add), then agents search them through its MCP server (qmd mcp) wired into the lean-ctx gateway.",
-        "author": "tobi",
-        "homepage": "https://github.com/tobi/qmd",
-        "license": "MIT",
-        "categories": ["search", "memory"],
-        "integration": "none",
-        "keywords": ["markdown", "notes", "semantic-search", "bm25", "local", "community", "mcp"],
-        "min_lean_ctx": "3.8.0"
-      },
-      "mcp": {
-        "transport": "stdio",
-        "command": "npx",
-        "args": ["-y", "@tobilu/qmd@2.5.3", "mcp"]
-      },
-      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] }
-    },
-    {
-      "addon": {
-        "name": "claude-context",
-        "display_name": "Claude Context",
-        "description": "Semantic code search over an entire codebase (hybrid BM25 + dense vectors) via @zilliz/claude-context-mcp. Needs a Milvus/Zilliz vector database and an embedding API key to run, so it is listed rather than auto-installed.",
-        "author": "zilliztech",
-        "homepage": "https://github.com/zilliztech/claude-context",
-        "license": "MIT",
-        "categories": ["code-intelligence"],
-        "integration": "none",
-        "keywords": ["semantic-search", "codebase", "embeddings", "retrieval", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
-      }
-    },
-    {
-      "addon": {
-        "name": "context-mem",
-        "display_name": "Context-Mem",
-        "description": "Local long-term memory and context compression for coding agents — a markdown vault with hybrid BM25 + vector search and progressive disclosure, no API key required. Installs on add (npm) and wires its MCP server (context-mem serve).",
-        "author": "JubaKitiashvili",
-        "homepage": "https://github.com/jubakitiashvili/context-mem",
-        "license": "MIT",
-        "categories": ["memory"],
-        "integration": "memory",
-        "keywords": ["memory", "compression", "local", "recall", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
-      },
-      "mcp": {
-        "transport": "stdio",
-        "command": "context-mem",
-        "args": ["serve"]
-      },
-      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] },
-      "install": {
-        "manager": "npm",
-        "package": "context-mem",
-        "version": "4.0.0",
-        "bin": "context-mem"
-      }
-    },
-    {
-      "addon": {
-        "name": "mem0",
-        "display_name": "Mem0",
-        "description": "Drop-in long-term memory for agents (vector + graph + key-value). Provides an official MCP server, but needs an API key/backend to run, so it is listed rather than auto-installed.",
-        "author": "mem0ai",
-        "homepage": "https://github.com/mem0ai/mem0",
-        "license": "Apache-2.0",
-        "categories": ["memory"],
-        "integration": "memory",
-        "keywords": ["memory", "personalization", "recall", "vector", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
+        "bin": "codecompress-server",
+        "verify": []
       }
     },
     {
       "addon": {
         "name": "cognee",
         "display_name": "Cognee",
+        "version": "",
         "description": "Builds a queryable knowledge graph plus vector store from your data (ECL / GraphRAG pipeline). Installs on add (uv tool install) and runs fully local by default (SQLite + LanceDB + Kuzu); set LLM_API_KEY so it can process. Wires its MCP server (cognee-mcp) into the lean-ctx gateway.",
         "author": "topoteretes",
         "homepage": "https://github.com/topoteretes/cognee",
         "license": "Apache-2.0",
-        "categories": ["memory"],
+        "categories": [
+          "memory"
+        ],
         "integration": "memory",
-        "keywords": ["memory", "knowledge-graph", "graphrag", "recall", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
+        "keywords": [
+          "memory",
+          "knowledge-graph",
+          "graphrag",
+          "recall",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
       },
       "mcp": {
         "transport": "stdio",
-        "command": "cognee-mcp"
+        "command": "cognee-mcp",
+        "args": [],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
       },
-      "capabilities": { "network": "full", "filesystem": "read_write", "env": ["LLM_API_KEY"] },
+      "capabilities": {
+        "network": "full",
+        "filesystem": "read_write",
+        "env": [
+          "LLM_API_KEY"
+        ],
+        "exec": "none"
+      },
       "install": {
         "manager": "uv",
         "package": "cognee-mcp",
         "version": "0.5.4",
-        "bin": "cognee-mcp"
+        "bin": "cognee-mcp",
+        "verify": []
       }
     },
     {
       "addon": {
-        "name": "letta",
-        "display_name": "Letta (MemGPT)",
-        "description": "Stateful agent runtime that manages its own memory like an operating system (core + archival tiers). Exposes MCP-compatible tools, but needs a running server + database, so it is listed rather than auto-installed.",
-        "author": "letta-ai",
-        "homepage": "https://github.com/letta-ai/letta",
-        "license": "Apache-2.0",
-        "categories": ["memory"],
-        "integration": "memory",
-        "keywords": ["memory", "agent-runtime", "stateful", "memgpt", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
-      }
-    },
-    {
-      "addon": {
-        "name": "graphiti",
-        "display_name": "Graphiti (Zep)",
-        "description": "Temporal knowledge-graph memory for agents — a bi-temporal entity/edge graph with hybrid semantic, keyword and graph search. Ships an MCP server, but needs a Neo4j/FalkorDB backend and an LLM API key, so it is listed rather than auto-installed.",
-        "author": "getzep",
-        "homepage": "https://github.com/getzep/graphiti",
-        "license": "Apache-2.0",
-        "categories": ["memory"],
-        "integration": "memory",
-        "keywords": ["memory", "knowledge-graph", "temporal", "graphrag", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
-      }
-    },
-    {
-      "addon": {
-        "name": "zep",
-        "display_name": "Zep",
-        "description": "Memory platform for AI agents — persistent threads, a knowledge graph and semantic recall via a managed cloud or self-hosted Community Edition. Reaches agents over MCP, but needs an account/API key, so it is listed rather than auto-installed.",
-        "author": "getzep",
-        "homepage": "https://github.com/getzep/zep",
-        "license": "Apache-2.0",
-        "categories": ["memory"],
-        "integration": "memory",
-        "keywords": ["memory", "recall", "knowledge-graph", "cloud", "competitor", "mcp"],
-        "min_lean_ctx": "3.8.0"
-      }
-    },
-    {
-      "addon": {
-        "name": "sequential-thinking",
-        "display_name": "Sequential Thinking",
-        "description": "Structured step-by-step reasoning tool — the official MCP reference server for breaking a hard problem into revisable thoughts.",
-        "author": "modelcontextprotocol",
-        "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
+        "name": "context-mem",
+        "display_name": "Context-Mem",
+        "version": "",
+        "description": "Local long-term memory and context compression for coding agents — a markdown vault with hybrid BM25 + vector search and progressive disclosure, no API key required. Installs on add (npm) and wires its MCP server (context-mem serve).",
+        "author": "JubaKitiashvili",
+        "homepage": "https://github.com/jubakitiashvili/context-mem",
         "license": "MIT",
-        "categories": ["reasoning", "workflow"],
-        "integration": "none",
-        "keywords": ["thinking", "reasoning", "planning", "chain-of-thought"],
-        "min_lean_ctx": "3.8.0"
+        "categories": [
+          "memory"
+        ],
+        "integration": "memory",
+        "keywords": [
+          "memory",
+          "compression",
+          "local",
+          "recall",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
       },
       "mcp": {
         "transport": "stdio",
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"]
+        "command": "context-mem",
+        "args": [
+          "serve"
+        ],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
       },
-      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] }
-    },
-    {
-      "addon": {
-        "name": "lmd",
-        "display_name": "Lean-MarkDown (LMD)",
-        "description": "Directive-driven Markdown for agent plans. Reusable macros, phase-isolation and single-sourcing keep plans token-lean and cache-safe — written hard against lean-ctx, inspired by MarkdownAI.",
-        "author": "dasTholo",
-        "homepage": "https://github.com/dasTholo/lean-ctx/tree/feat-lmd-v1",
-        "license": "Apache-2.0",
-        "categories": ["plans", "workflow"],
-        "integration": "none",
-        "keywords": ["markdown", "plans", "macros", "directives", "phase-isolation", "subagents"],
-        "min_lean_ctx": "3.8.0"
+      "capabilities": {
+        "network": "full",
+        "filesystem": "read_write",
+        "env": [],
+        "exec": "none"
+      },
+      "install": {
+        "manager": "npm",
+        "package": "context-mem",
+        "version": "4.0.0",
+        "bin": "context-mem",
+        "verify": []
       }
     },
     {
       "addon": {
         "name": "everything",
         "display_name": "Everything (MCP smoke-test)",
+        "version": "",
         "description": "Official MCP reference server that exercises every protocol feature — install it to verify your lean-ctx gateway can discover and call downstream tools.",
         "author": "modelcontextprotocol",
         "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/everything",
         "license": "MIT",
-        "categories": ["testing"],
+        "categories": [
+          "testing"
+        ],
         "integration": "none",
-        "keywords": ["test", "reference", "diagnostics", "gateway"],
-        "min_lean_ctx": "3.8.0"
+        "keywords": [
+          "test",
+          "reference",
+          "diagnostics",
+          "gateway"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
       },
       "mcp": {
         "transport": "stdio",
         "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-everything@2026.1.26"]
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-everything@2026.1.26"
+        ],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
       },
-      "capabilities": { "network": "full", "filesystem": "read_write", "env": [] }
+      "capabilities": {
+        "network": "full",
+        "filesystem": "read_write",
+        "env": [],
+        "exec": "none"
+      }
+    },
+    {
+      "addon": {
+        "name": "graphify",
+        "display_name": "Graphify",
+        "version": "",
+        "description": "Turns code, docs, schemas and more into one queryable knowledge graph for agents. Ships an MCP server (stdio + HTTP), but serving needs a graph built by `graphify extract` (an LLM-backed step), so it is listed rather than auto-installed.",
+        "author": "safishamsi",
+        "homepage": "https://github.com/safishamsi/graphify",
+        "license": "MIT",
+        "categories": [
+          "code-intelligence",
+          "memory"
+        ],
+        "integration": "code-graph",
+        "keywords": [
+          "knowledge-graph",
+          "code",
+          "graphrag",
+          "ast",
+          "memory",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "",
+        "args": [],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      }
+    },
+    {
+      "addon": {
+        "name": "graphiti",
+        "display_name": "Graphiti (Zep)",
+        "version": "",
+        "description": "Temporal knowledge-graph memory for agents — a bi-temporal entity/edge graph with hybrid semantic, keyword and graph search. Ships an MCP server, but needs a Neo4j/FalkorDB backend and an LLM API key, so it is listed rather than auto-installed.",
+        "author": "getzep",
+        "homepage": "https://github.com/getzep/graphiti",
+        "license": "Apache-2.0",
+        "categories": [
+          "memory"
+        ],
+        "integration": "memory",
+        "keywords": [
+          "memory",
+          "knowledge-graph",
+          "temporal",
+          "graphrag",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "",
+        "args": [],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      }
+    },
+    {
+      "addon": {
+        "name": "headroom",
+        "display_name": "Headroom",
+        "version": "",
+        "description": "Reversible context compression for tool outputs, logs, files and RAG chunks — 60–95% fewer tokens, originals retrievable on demand. Installs on add (uv tool install) and wires its MCP server (headroom mcp serve) into the lean-ctx gateway.",
+        "author": "chopratejas",
+        "homepage": "https://github.com/chopratejas/headroom",
+        "license": "Apache-2.0",
+        "categories": [
+          "compression"
+        ],
+        "integration": "compression",
+        "keywords": [
+          "compression",
+          "tokens",
+          "rag",
+          "reversible",
+          "ccr",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "headroom",
+        "args": [
+          "mcp",
+          "serve"
+        ],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      },
+      "capabilities": {
+        "network": "full",
+        "filesystem": "read_write",
+        "env": [],
+        "exec": "none"
+      },
+      "install": {
+        "manager": "uv",
+        "package": "headroom-ai[mcp]",
+        "version": "0.28.0",
+        "bin": "headroom",
+        "verify": []
+      }
+    },
+    {
+      "addon": {
+        "name": "letta",
+        "display_name": "Letta (MemGPT)",
+        "version": "",
+        "description": "Stateful agent runtime that manages its own memory like an operating system (core + archival tiers). Exposes MCP-compatible tools, but needs a running server + database, so it is listed rather than auto-installed.",
+        "author": "letta-ai",
+        "homepage": "https://github.com/letta-ai/letta",
+        "license": "Apache-2.0",
+        "categories": [
+          "memory"
+        ],
+        "integration": "memory",
+        "keywords": [
+          "memory",
+          "agent-runtime",
+          "stateful",
+          "memgpt",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "",
+        "args": [],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      }
+    },
+    {
+      "addon": {
+        "name": "lmd",
+        "display_name": "Lean-MarkDown (LMD)",
+        "version": "",
+        "description": "Directive-driven Markdown for agent plans. Reusable macros, phase-isolation and single-sourcing keep plans token-lean and cache-safe — written hard against lean-ctx, inspired by MarkdownAI.",
+        "author": "dasTholo",
+        "homepage": "https://github.com/dasTholo/lean-ctx/tree/feat-lmd-v1",
+        "license": "Apache-2.0",
+        "categories": [
+          "plans",
+          "workflow"
+        ],
+        "integration": "none",
+        "keywords": [
+          "markdown",
+          "plans",
+          "macros",
+          "directives",
+          "phase-isolation",
+          "subagents"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "",
+        "args": [],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      }
+    },
+    {
+      "addon": {
+        "name": "mcp-code-context",
+        "display_name": "MCP Code Context",
+        "version": "",
+        "description": "Compresses any codebase into LLM-ready semantic context with Tree-sitter WASM (TypeScript, JavaScript, Python, PHP, Dart) — symbol-level reads and AST-aware edits. Runs on add via npx; no install or native build needed.",
+        "author": "achatainga",
+        "homepage": "https://github.com/achatainga/mcp-code-context",
+        "license": "MIT",
+        "categories": [
+          "code-intelligence"
+        ],
+        "integration": "code-symbols",
+        "keywords": [
+          "ast",
+          "tree-sitter",
+          "symbols",
+          "codebase",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "mcp-code-context@3.7.1"
+        ],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      },
+      "capabilities": {
+        "network": "full",
+        "filesystem": "read_write",
+        "env": [],
+        "exec": "none"
+      }
+    },
+    {
+      "addon": {
+        "name": "mem0",
+        "display_name": "Mem0",
+        "version": "",
+        "description": "Drop-in long-term memory for agents (vector + graph + key-value). Provides an official MCP server, but needs an API key/backend to run, so it is listed rather than auto-installed.",
+        "author": "mem0ai",
+        "homepage": "https://github.com/mem0ai/mem0",
+        "license": "Apache-2.0",
+        "categories": [
+          "memory"
+        ],
+        "integration": "memory",
+        "keywords": [
+          "memory",
+          "personalization",
+          "recall",
+          "vector",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "",
+        "args": [],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      }
+    },
+    {
+      "addon": {
+        "name": "memgraph-ingester",
+        "display_name": "Memgraph Ingester",
+        "version": "",
+        "description": "Structure-aware RAG for 150+ languages: the memgraph-ingester CLI parses a codebase into a Memgraph code graph with project memory; this addon wires its MCP server (uvx memgraph-ingester-mcp) into the lean-ctx gateway for high-level graph queries. Needs a running Memgraph instance (e.g. Docker) plus a graph built with the ingester CLI — set MEMGRAPH_INGESTER_MCP_BOLT_URI to your Bolt endpoint.",
+        "author": "ousatov-ua",
+        "homepage": "https://github.com/ousatov-ua/memgraph-ingester",
+        "license": "MIT",
+        "categories": [
+          "code-intelligence",
+          "memory"
+        ],
+        "integration": "code-graph",
+        "keywords": [
+          "knowledge-graph",
+          "rag",
+          "memgraph",
+          "ast",
+          "memory",
+          "community",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "uvx",
+        "args": [
+          "--from",
+          "memgraph-ingester-mcp==0.6.6",
+          "memgraph-ingester-mcp"
+        ],
+        "env": {
+          "MEMGRAPH_INGESTER_MCP_BOLT_URI": "bolt://localhost:7687"
+        },
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      },
+      "capabilities": {
+        "network": "full",
+        "filesystem": "read_write",
+        "env": [
+          "MEMGRAPH_INGESTER_MCP_BOLT_URI",
+          "MEMGRAPH_INGESTER_MCP_READ_ONLY"
+        ],
+        "exec": "none"
+      }
+    },
+    {
+      "addon": {
+        "name": "qmd",
+        "display_name": "QMD (Query Markup Documents)",
+        "version": "",
+        "description": "On-device search engine for markdown notes, meeting transcripts, docs and knowledge bases — BM25 + vector search + LLM re-ranking, fully local via node-llama-cpp GGUF models. Register folders as collections (qmd collection add), then agents search them through its MCP server (qmd mcp) wired into the lean-ctx gateway.",
+        "author": "tobi",
+        "homepage": "https://github.com/tobi/qmd",
+        "license": "MIT",
+        "categories": [
+          "search",
+          "memory"
+        ],
+        "integration": "none",
+        "keywords": [
+          "markdown",
+          "notes",
+          "semantic-search",
+          "bm25",
+          "local",
+          "community",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@tobilu/qmd@2.5.3",
+          "mcp"
+        ],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      },
+      "capabilities": {
+        "network": "full",
+        "filesystem": "read_write",
+        "env": [],
+        "exec": "none"
+      }
+    },
+    {
+      "addon": {
+        "name": "repomix",
+        "display_name": "Repomix",
+        "version": "",
+        "description": "Packs a whole repository into a single AI-ready file. Its MCP server (npx repomix --mcp) lets agents pack local or remote repos and grep the output on demand.",
+        "author": "yamadashy",
+        "homepage": "https://repomix.com",
+        "license": "MIT",
+        "categories": [
+          "code-intelligence"
+        ],
+        "integration": "codebase-pack",
+        "keywords": [
+          "codebase",
+          "packing",
+          "context",
+          "repo",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "repomix@1.16.0",
+          "--mcp"
+        ],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      },
+      "capabilities": {
+        "network": "full",
+        "filesystem": "read_write",
+        "env": [],
+        "exec": "none"
+      }
+    },
+    {
+      "addon": {
+        "name": "rtk",
+        "display_name": "RTK (Rust Token Killer)",
+        "version": "",
+        "description": "Single-binary CLI proxy that filters and compresses shell command output by 60–90%. Reaches MCP clients through the community rtk-mcp bridge (built from source), so the lean-ctx gateway can run commands through it.",
+        "author": "rtk-ai",
+        "homepage": "https://github.com/rtk-ai/rtk",
+        "license": "",
+        "categories": [
+          "compression"
+        ],
+        "integration": "compression",
+        "keywords": [
+          "compression",
+          "shell",
+          "cli",
+          "tokens",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "",
+        "args": [],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      }
+    },
+    {
+      "addon": {
+        "name": "sequential-thinking",
+        "display_name": "Sequential Thinking",
+        "version": "",
+        "description": "Structured step-by-step reasoning tool — the official MCP reference server for breaking a hard problem into revisable thoughts.",
+        "author": "modelcontextprotocol",
+        "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
+        "license": "MIT",
+        "categories": [
+          "reasoning",
+          "workflow"
+        ],
+        "integration": "none",
+        "keywords": [
+          "thinking",
+          "reasoning",
+          "planning",
+          "chain-of-thought"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-sequential-thinking@2025.12.18"
+        ],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      },
+      "capabilities": {
+        "network": "full",
+        "filesystem": "read_write",
+        "env": [],
+        "exec": "none"
+      }
+    },
+    {
+      "addon": {
+        "name": "serena",
+        "display_name": "Serena",
+        "version": "",
+        "description": "LSP-backed semantic code retrieval, editing and refactoring — the IDE for your coding agent. Connects over MCP via stdio or Streamable HTTP.",
+        "author": "oraios",
+        "homepage": "https://github.com/oraios/serena",
+        "license": "MIT",
+        "categories": [
+          "code-intelligence"
+        ],
+        "integration": "code-symbols",
+        "keywords": [
+          "lsp",
+          "symbols",
+          "refactor",
+          "navigation",
+          "semantic",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "uvx",
+        "args": [
+          "--from",
+          "serena-agent==1.5.3",
+          "serena",
+          "start-mcp-server",
+          "--context",
+          "ide"
+        ],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      },
+      "capabilities": {
+        "network": "full",
+        "filesystem": "read_write",
+        "env": [],
+        "exec": "none"
+      }
+    },
+    {
+      "addon": {
+        "name": "sophon",
+        "display_name": "Sophon",
+        "version": "",
+        "description": "Deterministic context compressor for MCP agents — shrinks prompts, conversation history, code digests, file deltas and shell output with zero ML at query time. Single Rust binary; installs on add (npm) and wires its MCP server (sophon serve) into the lean-ctx gateway.",
+        "author": "lacausecrypto",
+        "homepage": "https://github.com/lacausecrypto/mcp-sophon",
+        "license": "MIT",
+        "categories": [
+          "compression"
+        ],
+        "integration": "compression",
+        "keywords": [
+          "compression",
+          "deterministic",
+          "rust",
+          "tokens",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "sophon",
+        "args": [
+          "serve"
+        ],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      },
+      "capabilities": {
+        "network": "full",
+        "filesystem": "read_write",
+        "env": [],
+        "exec": "none"
+      },
+      "install": {
+        "manager": "npm",
+        "package": "mcp-sophon",
+        "version": "0.5.4",
+        "bin": "sophon",
+        "verify": []
+      }
+    },
+    {
+      "addon": {
+        "name": "zep",
+        "display_name": "Zep",
+        "version": "",
+        "description": "Memory platform for AI agents — persistent threads, a knowledge graph and semantic recall via a managed cloud or self-hosted Community Edition. Reaches agents over MCP, but needs an account/API key, so it is listed rather than auto-installed.",
+        "author": "getzep",
+        "homepage": "https://github.com/getzep/zep",
+        "license": "Apache-2.0",
+        "categories": [
+          "memory"
+        ],
+        "integration": "memory",
+        "keywords": [
+          "memory",
+          "recall",
+          "knowledge-graph",
+          "cloud",
+          "competitor",
+          "mcp"
+        ],
+        "min_lean_ctx": "3.8.0",
+        "verified": false
+      },
+      "mcp": {
+        "transport": "stdio",
+        "command": "",
+        "args": [],
+        "env": {},
+        "sha256": "",
+        "url": "",
+        "headers": {}
+      }
     }
   ]
 }

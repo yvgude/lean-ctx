@@ -52,6 +52,7 @@ pub fn cmd_addon(args: &[String]) {
             Some(target) => cmd_audit(&target),
             None => usage_exit("lean-ctx addon audit <name|path-to-lean-ctx-addon.toml>"),
         },
+        "publish" => cmd_publish(args),
         "help" | "--help" | "-h" => print_help(),
         _ => {
             eprintln!("Unknown addon action: {action}");
@@ -276,9 +277,27 @@ fn cmd_info(name: &str) {
 }
 
 fn cmd_add(target: &str, args: &[String]) {
-    let (manifest, source) = if looks_like_path(target) {
+    // Resolution order: local manifest file → hosted ctxpkg pack (`ns/slug`,
+    // GH #726) → bundled registry slug. A bare `ns/slug` that exists on disk
+    // is treated as the local path it names.
+    let is_local_path = Path::new(target)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"))
+        || target.starts_with('.')
+        || target.starts_with('/')
+        || Path::new(target).exists();
+    let (manifest, source) = if is_local_path {
         match AddonManifest::from_path(Path::new(target)) {
             Ok(m) => (m, "local".to_string()),
+            Err(e) => {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
+    } else if let Some(remote_ref) = crate::core::context_package::remote::parse_remote_ref(target)
+    {
+        match fetch_addon_pack(&remote_ref, flag_value(args, "--registry").as_deref()) {
+            Ok(pair) => pair,
             Err(e) => {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
@@ -288,7 +307,8 @@ fn cmd_add(target: &str, args: &[String]) {
         let Some(m) = registry::get(target) else {
             eprintln!(
                 "Unknown addon `{target}`.\n\
-                 Browse with `lean-ctx addon search`, or pass a path to a \
+                 Browse with `lean-ctx addon search`, install a hosted pack with \
+                 `lean-ctx addon add <namespace>/<name>`, or pass a path to a \
                  lean-ctx-addon.toml."
             );
             std::process::exit(1);
@@ -460,6 +480,185 @@ fn provision_and_wire(
     Ok((outcome, verified))
 }
 
+/// Resolve `ns/slug[@version]` against the hosted ctxpkg registry and unwrap
+/// the `kind=addon` pack into the addon manifest it embeds (GH #726).
+///
+/// Trust chain before anything is returned: artifact SHA-256 against the
+/// registry index (in `download_verified`), then full pack verification —
+/// integrity hashes, **mandatory** ed25519 signature (packs carrying
+/// executable references get no unsigned path), kind=addon and
+/// kind↔payload coherence. The embedded TOML then walks the exact same
+/// consent/preflight/probe pipeline as every other source.
+fn fetch_addon_pack(
+    remote_ref: &crate::core::context_package::remote::RemoteRef,
+    registry_flag: Option<&str>,
+) -> Result<(AddonManifest, String), String> {
+    use crate::core::context_package::{remote, verify};
+
+    let base = remote::registry_base(registry_flag);
+    let ns = &remote_ref.namespace;
+    let name = &remote_ref.name;
+    let token = remote::publish_token(None);
+
+    println!("Resolving @{ns}/{name} via {base} …");
+    let versions = remote::fetch_versions(&base, ns, name, token.as_deref())?;
+    let info = remote::select_version(&versions, remote_ref.version.as_deref())?;
+    if info.yanked {
+        eprintln!(
+            "WARNING: @{ns}/{name}@{} is YANKED — installing only because the version \
+             was pinned explicitly",
+            info.version
+        );
+    }
+    let bytes = remote::download_verified(&base, ns, name, info, token.as_deref())?;
+    let text = String::from_utf8(bytes).map_err(|_| "package is not valid UTF-8".to_string())?;
+
+    let report = verify::verify_package_text(&text);
+    if !report.valid() {
+        return Err(format!(
+            "pack verification failed — refusing to install:\n  {}",
+            report.errors.join("\n  ")
+        ));
+    }
+    if report.signature != verify::CheckOutcome::Pass {
+        return Err(
+            "pack is unsigned — addon packs reference executables, so a verifying \
+             ed25519 signature is mandatory"
+                .into(),
+        );
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Bundle {
+        manifest: crate::core::context_package::PackageManifest,
+        content: crate::core::context_package::PackageContent,
+    }
+    let bundle: Bundle = serde_json::from_str(&text).map_err(|e| format!("parse package: {e}"))?;
+
+    if bundle.manifest.kind != crate::core::context_package::manifest::PackageKind::Addon {
+        return Err(format!(
+            "@{ns}/{name} is a kind={} package — install it with `lean-ctx pack install \
+             {ns}/{name}` instead",
+            bundle.manifest.kind.as_str()
+        ));
+    }
+    verify::validate_kind_coherence(&bundle.manifest, &bundle.content)
+        .map_err(|errs| errs.join("; "))?;
+
+    let payload = bundle
+        .content
+        .addon
+        .expect("coherence guarantees content.addon for kind=addon");
+    let manifest = AddonManifest::from_toml(&payload.manifest_toml)?;
+
+    let source = format!("ctxpkg:@{ns}/{name}@{}", info.version);
+    Ok((manifest, source))
+}
+
+/// `addon publish [manifest] --namespace <ns>` — build the signed
+/// `kind=addon` pack from a `lean-ctx-addon.toml` and upload it to the
+/// hosted ctxpkg registry (GH #726). `--check` runs every local gate
+/// (schema, audit, signing, self-verification) and stops before the network.
+fn cmd_publish(args: &[String]) {
+    let manifest_path = args
+        .iter()
+        .skip(1)
+        .find(|a| {
+            !a.starts_with('-')
+                && Path::new(a.as_str())
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"))
+        })
+        .map_or_else(|| "lean-ctx-addon.toml".to_string(), String::clone);
+
+    let Some(namespace) = flag_value(args, "--namespace") else {
+        eprintln!(
+            "Usage: lean-ctx addon publish [lean-ctx-addon.toml] --namespace <ns> \
+             [--check] [--registry <url>] [--token <ctxp_…>]"
+        );
+        eprintln!();
+        eprintln!("The namespace is your ctxpkg.com account handle — the pack publishes");
+        eprintln!("as @<ns>/<addon-name>. `--check` validates and signs locally without");
+        eprintln!("uploading anything.");
+        std::process::exit(1);
+    };
+
+    let plan =
+        match crate::core::addons::publish::build_addon_pack(Path::new(&manifest_path), &namespace)
+        {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        };
+
+    println!(
+        "Built @{}/{}@{} (kind=addon, {} bytes)",
+        plan.namespace,
+        plan.slug,
+        plan.version,
+        plan.bundle_json.len()
+    );
+    println!("  Audit verdict: {}", plan.audit.verdict.as_str());
+    for f in &plan.audit.findings {
+        println!("    {} {} — {}", f.level.as_str(), f.code, f.message);
+    }
+    if plan.artifact_platforms.is_empty() {
+        println!("  Artifacts: none (installs use the runner/[install] path)");
+    } else {
+        println!("  Artifacts: {}", plan.artifact_platforms.join(", "));
+    }
+    if plan.has_bootstrap {
+        println!("  Bootstrap: [install] fallback for platforms without an artifact");
+    }
+
+    if args.iter().any(|a| a == "--check") {
+        println!("\n--check: all local gates passed — nothing was uploaded.");
+        return;
+    }
+
+    use crate::core::context_package::remote;
+    let base = remote::registry_base(flag_value(args, "--registry").as_deref());
+    let Some(token) = remote::publish_token(flag_value(args, "--token").as_deref()) else {
+        eprintln!("ERROR: no publish token — pass --token or set CTXPKG_TOKEN");
+        eprintln!("Mint one at ctxpkg.com/account (sign in, then Tokens → Mint).");
+        std::process::exit(1);
+    };
+    if token.starts_with("ctxr_") {
+        eprintln!(
+            "ERROR: this is a read-only install token (ctxr_) — publishing needs a ctxp_ token"
+        );
+        std::process::exit(1);
+    }
+
+    println!(
+        "\nPublishing @{}/{}@{} to {base} …",
+        plan.namespace, plan.slug, plan.version
+    );
+    match remote::publish(
+        &base,
+        &token,
+        &plan.namespace,
+        &plan.slug,
+        &plan.version,
+        plan.bundle_json.as_bytes(),
+    ) {
+        Ok(receipt) => {
+            println!("Published: {}", receipt.published);
+            println!("Artifact SHA-256: {}", receipt.artifact_sha256);
+            println!(
+                "Install with: lean-ctx addon add {}/{}",
+                plan.namespace, plan.slug
+            );
+        }
+        Err(e) => {
+            eprintln!("ERROR: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 /// `addon update <name>` — re-resolve the registry entry and reinstall when it
 /// changed (GH #725). Managed binaries install side-by-side into a new version
 /// dir; only after the health probe passes is the gateway pointer flipped and
@@ -476,9 +675,34 @@ fn cmd_update(name: &str, args: &[String]) {
         );
         std::process::exit(1);
     }
-    let Some(manifest) = registry::get(name) else {
-        eprintln!("`{name}` is no longer in the registry — remove it or reinstall from a path.");
-        std::process::exit(1);
+    // Re-resolve from where it came: a hosted ctxpkg pack updates against the
+    // registry it was installed from (latest non-yanked version), everything
+    // else against the bundled registry snapshot.
+    let (manifest, update_source) = if let Some(spec) = entry.source.strip_prefix("ctxpkg:") {
+        let unpinned = spec.split('@').take(2).collect::<Vec<_>>().join("@");
+        let Some(remote_ref) = crate::core::context_package::remote::parse_remote_ref(&unpinned)
+        else {
+            eprintln!(
+                "`{name}` has a malformed install source `{}`.",
+                entry.source
+            );
+            std::process::exit(1);
+        };
+        match fetch_addon_pack(&remote_ref, flag_value(args, "--registry").as_deref()) {
+            Ok(pair) => pair,
+            Err(e) => {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        let Some(m) = registry::get(name) else {
+            eprintln!(
+                "`{name}` is no longer in the registry — remove it or reinstall from a path."
+            );
+            std::process::exit(1);
+        };
+        (m, entry.source.clone())
     };
 
     let force = args.iter().any(|a| a == "--force" || a == "-f");
@@ -523,7 +747,7 @@ fn cmd_update(name: &str, args: &[String]) {
     }
 
     let new_version = manifest.addon.version.clone();
-    match provision_and_wire(manifest, &entry.source, force, no_verify, &cfg) {
+    match provision_and_wire(manifest, &update_source, force, no_verify, &cfg) {
         Ok((outcome, verified)) => {
             // The new version is wired and healthy — now prune superseded
             // managed binaries (side-by-side rollback safety until here).
@@ -1111,10 +1335,13 @@ fn print_help() {
              categories           Browse the registry by category\n    \
              usage                Per-addon / per-tool call counters\n    \
              info <name|path>     Show an addon's details + MCP wiring\n    \
-             add <name|path>      Install from the registry or a local\n                         \
+             add <name|path>      Install from the registry, a hosted pack\n                         \
+                                  (<namespace>/<name>, ctxpkg.com) or a local\n                         \
                                   lean-ctx-addon.toml (asks for confirmation)\n    \
-             update <name>        Update a registry addon (side-by-side managed\n                         \
-                                  binary, health-gated, auto-prune)\n    \
+             update <name>        Update an addon from where it came (side-by-\n                         \
+                                  side managed binary, health-gated, auto-prune)\n    \
+             publish [manifest]   Build + sign the kind=addon pack and upload\n                         \
+                                  it to ctxpkg.com --namespace <ns> [--check]\n    \
              remove <name>        Uninstall an addon\n    \
              revoke <name>        Block an addon from running (kill-switch)\n                         \
                                   [--reason \"…\"] [--version X]\n    \
@@ -1162,8 +1389,11 @@ fn print_help() {
                  exec = \"none\"                # or [\"lean-ctx\"] if you spawn subprocesses\n\
          \n    \
              3. Test it live:  lean-ctx addon add ./lean-ctx-addon.toml\n    \
-             4. Get listed:    open a merge request adding your entry to\n                      \
-                               rust/data/addon_registry.json (see docs/guides/addons.md).\n\
+             4. Publish:       lean-ctx addon publish --namespace <your-handle>\n                      \
+                               — self-service via ctxpkg.com; users install with\n                      \
+                               `lean-ctx addon add <your-handle>/my-addon`.\n                      \
+                               (Curated default catalog: MR against\n                      \
+                               rust/data/addon_registry.json, docs/guides/addons.md.)\n\
          \n    \
              Full guide: docs/guides/addons.md"
     );

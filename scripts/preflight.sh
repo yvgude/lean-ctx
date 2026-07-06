@@ -212,6 +212,13 @@ else
 fi
 
 if [[ "$RUN_RUST" -eq 1 ]]; then
+  step "Registry-snapshot drift (gen_registry --check)" \
+    cargo run --quiet --example gen_registry --features dev-tools -- --check
+else
+  skip "Registry-snapshot drift (gen_registry --check)" "no Rust files changed"
+fi
+
+if [[ "$RUN_RUST" -eq 1 ]]; then
   if rustup target list --installed 2>/dev/null | grep -qx "$WIN_TARGET"; then
     step "Windows cross-compile ($WIN_TARGET)" \
       env RUSTFLAGS=-Dwarnings cargo check --target "$WIN_TARGET" --lib --tests \
@@ -280,3 +287,4 @@ if [ "${#FAILED[@]}" -gt 0 ]; then
 fi
 
 printf "\n${GREEN}preflight PASSED — safe to push.${RESET}\n"
+

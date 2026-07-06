@@ -105,16 +105,19 @@ content embeds the addon manifest plus artifact references:
   },
   "content": {
     "addon": {
-      "manifest_toml": "<verbatim lean-ctx-addon.toml>",
-      "artifacts": {
-        "aarch64-apple-darwin":   { "url": "…", "sha256": "…", "byte_size": 4200000 },
-        "x86_64-unknown-linux-gnu": { "url": "…", "sha256": "…", "byte_size": 4600000 },
-        "x86_64-pc-windows-msvc": { "url": "…", "sha256": "…", "byte_size": 4800000 }
-      }
+      "manifest_toml": "<verbatim lean-ctx-addon.toml>"
     }
   }
 }
 ```
+
+Since Phase 1 the per-platform artifact references live **inside the TOML**
+(`[artifacts.<target-triple>]` tables, GH #725) — the pack payload embeds the
+TOML verbatim and adds nothing beside it, so there is no second copy that
+could drift. Kind ↔ payload coherence is enforced on both ends
+(`validate_kind_coherence`): a `kind=addon` pack must embed a parseable,
+valid, runnable addon manifest whose name/version match the pack's; any
+other kind must not carry an `addon` payload.
 
 The artifact shape is **`GrammarAsset` generalised** (`filename`/`url`/`sha256`
 — same fields, same semantics, one struct shared by both kinds after Phase 1).
@@ -264,16 +267,27 @@ Each phase closes a construction site and is releasable alone.
   full determinism suite green.
 - Closes: "where does the addon binary come from" — permanently.
 
-### Phase 2 — Publish flow + registry consolidation (target: next release after Phase 1)
+### Phase 2 — Publish flow + registry consolidation (client side: v3.9.2)
 
 - `lean-ctx addon publish`: builds the `kind=addon` pack from
-  `lean-ctx-addon.toml` + CI artifact URLs/hashes, signs with publisher key,
-  uploads via existing `remote.rs` publish path; verified-publisher +
-  audit gate (`core/addons/audit.rs`) enforced server-side before listing.
-- ctxpkg registry API: `kind` filter on resolve/search/catalog.
-- `addon_registry.json` + `grammar_registry.json` become CI-generated
-  snapshots (deterministic generator + drift check); hand-editing ends.
-- leanctx.com/addons renders the `kind=addon` catalog view from ctxpkg.com.
+  `lean-ctx-addon.toml` (artifact URLs/hashes live in its `[artifacts]`
+  tables), gates locally (schema + audit + runnable endpoint), signs with the
+  publisher key, uploads via the existing `remote.rs` publish path; `--check`
+  runs every gate without network I/O. The audit gate
+  (`core/addons/audit.rs`) is additionally enforced server-side before
+  listing.
+- `lean-ctx addon add <ns>/<name>[@version]` resolves the hosted pack:
+  index → hash-verified download → full verification (integrity +
+  **mandatory** signature + kind coherence) → embedded TOML enters the
+  normal consent/preflight/probe pipeline. `addon update` re-resolves from
+  the source it was installed from. The context registry refuses to import
+  `kind=addon` packs (they must go through the addon trust chain).
+- `addon_registry.json` + `grammar_registry.json` are generated snapshots
+  (`gen_registry`, deterministic + timestamp-free) with a drift check in CI
+  and preflight; hand-editing ends.
+- Server side (remaining, tracked in GH #726): ctxpkg registry API `kind`
+  filter on resolve/search/catalog; leanctx.com/addons renders the
+  `kind=addon` catalog view from ctxpkg.com.
 - Closes: double-registry maintenance; "two marketplaces" story.
 
 ### Phase 3 — `kind=skills` + dependency resolution (target: after Phase 2)
@@ -331,3 +345,4 @@ Each phase closes a construction site and is releasable alone.
 - Epic + phase issues: GitHub `yvgude/lean-ctx` (see epic issue for links).
 - GitLab mirror (scoped labels, `status::…`): pending token renewal
   (`glab auth login --hostname gitlab.pounce.ch`), then mirror per parity rule.
+

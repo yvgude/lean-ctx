@@ -19,6 +19,23 @@ pub struct PackageContent {
     pub gotchas: Option<GotchasLayer>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_graph: Option<ContextGraph>,
+    /// `kind=addon` payload (GH #724/#726): the embedded addon manifest.
+    /// Absent for every other kind — enforced by
+    /// [`super::verify::validate_kind_coherence`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub addon: Option<AddonContent>,
+}
+
+/// Distribution view of an addon (unified distribution, GH #726): the
+/// authoring `lean-ctx-addon.toml` embedded **verbatim**. The TOML is the
+/// single source of truth — MCP wiring, capabilities, `[install]` bootstrap
+/// and the per-platform `[artifacts]` tables (GH #725) all live inside it,
+/// so nothing is duplicated at the pack layer that could drift.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AddonContent {
+    /// Verbatim `lean-ctx-addon.toml` text (authoring contract
+    /// `docs/contracts/addon-manifest-v1.md`).
+    pub manifest_toml: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,6 +146,9 @@ impl PackageContent {
             n += 1;
         }
         if self.context_graph.is_some() {
+            n += 1;
+        }
+        if self.addon.is_some() {
             n += 1;
         }
         n

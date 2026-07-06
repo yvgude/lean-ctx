@@ -263,6 +263,21 @@ impl LocalRegistry {
 
         bundle.manifest.validate().map_err(|errs| errs.join("; "))?;
 
+        // Kind gate (GH #726): the local context registry stores knowledge,
+        // not capabilities. A kind=addon pack routes through the addon trust
+        // chain (consent, sandbox, binhash) — importing it here would sidestep
+        // every one of those gates.
+        super::verify::validate_kind_coherence(&bundle.manifest, &bundle.content)
+            .map_err(|errs| errs.join("; "))?;
+        if bundle.manifest.kind == super::manifest::PackageKind::Addon {
+            return Err(format!(
+                "`{}` is a kind=addon package — install it with `lean-ctx addon add {}` \
+                 (addon installs need capability consent + the addon trust chain)",
+                bundle.manifest.name,
+                bundle.manifest.name.trim_start_matches('@'),
+            ));
+        }
+
         let content_text = extract_top_level_value_text(&json, "content")
             .ok_or_else(|| "package has no top-level content member".to_string())?;
         verify_integrity(&bundle.manifest, content_text)?;
@@ -653,5 +668,37 @@ mod tests {
         let bad_path = dir.path().join("test.json");
         std::fs::write(&bad_path, "{}").unwrap();
         assert!(reg.import_from_file(&bad_path).is_err());
+    }
+
+    /// A `kind=addon` pack must not enter the context registry (GH #726) —
+    /// it would bypass the addon trust chain (consent, sandbox, binhash).
+    #[test]
+    fn import_refuses_addon_kind_packs() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_path = dir.path().join("lean-ctx-addon.toml");
+        std::fs::write(
+            &toml_path,
+            r#"
+[addon]
+name = "gate-check"
+version = "1.0.0"
+description = "import gate test"
+
+[mcp]
+transport = "stdio"
+command = "gate-check"
+args = ["serve"]
+"#,
+        )
+        .unwrap();
+        let plan = crate::core::addons::publish::build_addon_pack(&toml_path, "acme")
+            .expect("build addon pack");
+
+        let pkg_path = dir.path().join("gate-check.ctxpkg");
+        std::fs::write(&pkg_path, &plan.bundle_json).unwrap();
+
+        let reg = LocalRegistry::open_at(dir.path()).unwrap();
+        let err = reg.import_from_file(&pkg_path).expect_err("must refuse");
+        assert!(err.contains("addon add"), "got: {err}");
     }
 }

@@ -601,6 +601,9 @@ jobs:
       - name: Check generated reference docs are current
         working-directory: rust
         run: cargo run --example gen_docs --features dev-tools -- --check
+      - name: Check bundled registry snapshots are canonical
+        working-directory: rust
+        run: cargo run --example gen_registry --features dev-tools -- --check
       - name: Check committed testbench recording is current
         working-directory: rust
         run: cargo run --example gen_testbench_recording --features dev-tools -- --check
@@ -649,3 +652,4 @@ jobs:
           PY
 
   # Security audit runs in security-check.yml workflow
+

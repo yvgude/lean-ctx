@@ -29,6 +29,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [3.9.2] — 2026-07-06
 
 ### Added
+- **Unified distribution, Phase 2 (GH #724/#726): self-service addon
+  publishing + hosted installs.** New `lean-ctx addon publish --namespace
+  <ns>` wraps the authoring `lean-ctx-addon.toml` verbatim into a signed
+  `kind=addon` context package and uploads it through the existing ctxpkg
+  publish path — after local gates that mirror the hosted listing bar
+  (schema, runnable `[mcp]` endpoint, audit verdict: blocking findings
+  refuse, `review` publishes disclosed; `--check` runs everything without
+  network I/O). `lean-ctx addon add <ns>/<name>[@version]` installs hosted
+  packs: index-verified download, integrity hashes, **mandatory** ed25519
+  signature, kind ↔ payload coherence — then the embedded manifest walks the
+  unchanged consent → preflight → health-probe pipeline; `addon update`
+  re-resolves from the install source. The context registry refuses to
+  import `kind=addon` packs (wrong trust chain, use `addon add`). The
+  bundled registries are now generated snapshots: `gen_registry` validates,
+  sorts and canonicalizes `rust/data/{addon,grammar}_registry.json`;
+  CI + preflight fail on drift (deterministic, timestamp-free, #498).
 - **Unified distribution, Phase 1 (GH #724/#725): managed addon binaries +
   the `kind` package taxonomy.** `.ctxpkg` manifests gain an optional `kind`
   field (`context` | `skills` | `addon` | `grammar`; default `context`,
