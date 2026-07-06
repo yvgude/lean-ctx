@@ -287,4 +287,3 @@ if [ "${#FAILED[@]}" -gt 0 ]; then
 fi
 
 printf "\n${GREEN}preflight PASSED — safe to push.${RESET}\n"
-

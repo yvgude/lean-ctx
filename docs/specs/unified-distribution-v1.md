@@ -345,4 +345,3 @@ Each phase closes a construction site and is releasable alone.
 - Epic + phase issues: GitHub `yvgude/lean-ctx` (see epic issue for links).
 - GitLab mirror (scoped labels, `status::…`): pending token renewal
   (`glab auth login --hostname gitlab.pounce.ch`), then mirror per parity rule.
-
