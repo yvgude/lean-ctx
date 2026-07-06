@@ -71,6 +71,7 @@ pub mod install;
 pub mod integrity;
 pub mod manifest;
 pub mod meter;
+pub mod ort_provision;
 pub mod policy;
 pub mod publish;
 pub mod registry;

@@ -152,6 +152,7 @@ COMMANDS:
     pack --pr                      PR Context Pack (changed files, impact, tests, artifacts)
     snapshot create|list|show|verify|restore|publish|import  Context Time Machine: git-anchored, signed snapshots; replay, resume + share
     index <status|build|build-full|watch>  Codebase index utilities
+    embeddings <status|provision>  Managed ONNX Runtime for semantic embeddings (official CPU build, sha256-pinned)
     cep                            CEP report (compression metrics, cache, modes, trends)
     verify-cache [path] [--json]   Prove the session cache: re-read collapses to a ~13-token stub
     health [path] [--json] [--gate]  Code-health report: cognitive complexity, naming, navigability score + token tax

@@ -317,6 +317,12 @@ pub fn run() -> u32 {
         board.check(&managed_bins);
     }
 
+    // 5b3d) Managed ONNX Runtime (GH #732): present + readable on
+    // embedding-enabled builds. Silent when not provisioned (opt-in).
+    if let Some(managed_ort) = managed_ort_outcome() {
+        board.check(&managed_ort);
+    }
+
     // 5b4) Cognition v2 activation (science subsystems wired + active)
     let cognition = cognition_activity_outcome();
     board.check(&cognition);

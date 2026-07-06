@@ -13,6 +13,7 @@ mod context_cmd;
 mod debug_log_cmd;
 mod discover_cmd;
 pub mod dispatch;
+pub(crate) mod embeddings_cmd;
 pub mod eval_cmd;
 pub mod explore_cmd;
 pub mod export_rules;

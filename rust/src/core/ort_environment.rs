@@ -7,10 +7,12 @@
 //! # Search order
 //!
 //! 1. `ORT_DYLIB_PATH` env var (resolved relative to the executable directory)
-//! 2. Nix profile paths — `/run/current-system/sw/lib/`, `~/.nix-profile/lib/` (Linux)
-//! 3. Well-known system directories per platform, including the active
+//! 2. The lean-ctx managed runtime (`lean-ctx embeddings provision`, GH #732)
+//!    — version-matched to this build's `ort` API level by construction
+//! 3. Nix profile paths — `/run/current-system/sw/lib/`, `~/.nix-profile/lib/` (Linux)
+//! 4. Well-known system directories per platform, including the active
 //!    `HOMEBREW_PREFIX` and the standard Homebrew/Linuxbrew lib dirs
-//! 4. `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH`
+//! 5. `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH`
 //!
 //! If no copy is found, [`ensure_ort_env`] returns an eager error — session
 //! creation hangs rather than failing, so we fail fast.
@@ -157,31 +159,40 @@ fn resolve_ort_dylib() -> anyhow::Result<PathBuf> {
         anyhow::bail!("ORT_DYLIB_PATH={p} set but file does not exist");
     }
 
-    // 2. Nix profile paths (Linux) — system & user profiles always point to
+    // 2. Managed runtime (GH #732) — installed by `lean-ctx embeddings
+    //    provision`, SHA-256 pinned to the official release and version-
+    //    matched to this build's ort API level. After ORT_DYLIB_PATH so an
+    //    operator override always wins.
+    if let Some(found) = crate::core::addons::ort_provision::managed_dylib_path() {
+        return Ok(found);
+    }
+
+    // 3. Nix profile paths (Linux) — system & user profiles always point to
     //    the currently activated version.
     #[cfg(target_os = "linux")]
     if let Some(found) = nix_profile_search(name) {
         return Ok(found);
     }
 
-    // 3. Well-known system paths (per platform)
+    // 4. Well-known system paths (per platform)
     if let Some(found) = well_known_paths(name) {
         return Ok(found);
     }
 
-    // 4. LD_LIBRARY_PATH / DYLD_LIBRARY_PATH
+    // 5. LD_LIBRARY_PATH / DYLD_LIBRARY_PATH
     if let Some(found) = lib_path_search(name) {
         return Ok(found);
     }
 
     anyhow::bail!(
         "libonnxruntime not found.\n\
-         Set ORT_DYLIB_PATH=<path> to point to the shared library.\n\
+         Managed:  lean-ctx embeddings provision  (official CPU runtime, sha256-pinned)\n\
+         Or set ORT_DYLIB_PATH=<path> to point to the shared library.\n\
          Install:  pip install onnxruntime  (Python bundles the .so)\n\
          NixOS:    nix-shell -p onnxruntime\n\
          Homebrew: brew install onnxruntime\n\
-         Searched: ORT_DYLIB_PATH, Nix store, well-known system dirs, \
-         LD_LIBRARY_PATH/DYLD_LIBRARY_PATH"
+         Searched: ORT_DYLIB_PATH, managed runtime dir, Nix store, \
+         well-known system dirs, LD_LIBRARY_PATH/DYLD_LIBRARY_PATH"
     )
 }
 

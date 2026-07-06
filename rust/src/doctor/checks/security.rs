@@ -317,3 +317,30 @@ pub(crate) fn managed_addon_binaries_outcome() -> Option<Outcome> {
         ),
     })
 }
+
+/// Managed ONNX Runtime state (GH #732). Only rendered on embedding-enabled
+/// builds; `None` when the runtime is simply not provisioned (embeddings are
+/// opt-in — a missing optional runtime is not a finding, the provision hint
+/// lives in the embeddings CLI and the resolver error).
+pub(crate) fn managed_ort_outcome() -> Option<Outcome> {
+    if !cfg!(feature = "embeddings") {
+        return None;
+    }
+    let path = crate::core::addons::ort_provision::managed_dylib_path()?;
+    let ok = crate::core::addons::binhash::sha256_file(&path).is_ok();
+    Some(Outcome {
+        ok,
+        line: if ok {
+            format!(
+                "{BOLD}Managed ONNX Runtime{RST}  {GREEN}{}{RST}  {DIM}({}){RST}",
+                crate::core::addons::ort_provision::ORT_VERSION,
+                path.display()
+            )
+        } else {
+            format!(
+                "{BOLD}Managed ONNX Runtime{RST}  {RED}unreadable{RST}  {DIM}({} — fix: lean-ctx embeddings provision --force){RST}",
+                path.display()
+            )
+        },
+    })
+}
