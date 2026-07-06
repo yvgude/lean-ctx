@@ -100,6 +100,14 @@ pub struct AddonManifest {
     /// binary or an ephemeral `npx`/`uvx` runner).
     #[serde(default, skip_serializing_if = "AddonInstall::is_absent")]
     pub install: AddonInstall,
+    /// `[artifacts]` — optional prebuilt binaries keyed by Rust target triple
+    /// (GH #724/#725, Phase 1). When the current platform has an entry, `add`
+    /// downloads it into the managed bin dir (never `PATH`), pins its SHA-256
+    /// as the spawn-time binhash, and rewrites the gateway command to the
+    /// absolute managed path. Resolution order: `artifacts` → `[install]`
+    /// bootstrap → `[mcp] command` on `PATH`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub artifacts: BTreeMap<String, super::artifact_install::ArtifactAsset>,
 }
 
 impl AddonManifest {
@@ -157,7 +165,31 @@ impl AddonManifest {
             caps.validate()?;
         }
         self.install.validate()?;
+        for (triple, asset) in &self.artifacts {
+            if asset.filename.trim().is_empty() {
+                return Err(format!(
+                    "addon `{name}` artifact for `{triple}` is missing `filename`"
+                ));
+            }
+            if asset.url.trim().is_empty() {
+                return Err(format!(
+                    "addon `{name}` artifact for `{triple}` is missing `url`"
+                ));
+            }
+            if asset.sha256.trim().is_empty() {
+                return Err(format!(
+                    "addon `{name}` artifact for `{triple}` is missing `sha256` — a managed \
+                     binary must be pinned"
+                ));
+            }
+        }
         Ok(())
+    }
+
+    /// The prebuilt artifact for the running platform, if this addon ships one.
+    pub fn artifact_for_current_platform(&self) -> Option<&super::artifact_install::ArtifactAsset> {
+        self.artifacts
+            .get(super::artifact_install::current_target_triple())
     }
 
     /// The gateway server entry this addon installs.
@@ -380,5 +412,79 @@ bin = "boot"
         assert!(!is_slug("x-"));
         assert!(!is_slug("under_score"));
         assert!(!is_slug(""));
+    }
+
+    // ── [artifacts] — managed prebuilt binaries (GH #724/#725) ──
+
+    fn artifacts_manifest() -> AddonManifest {
+        AddonManifest::from_toml(
+            r#"
+[addon]
+name = "lean-md"
+version = "0.2.0"
+
+[mcp]
+transport = "stdio"
+command = "lean-md"
+args = ["mcp"]
+
+[artifacts.aarch64-apple-darwin]
+filename = "lean-md-aarch64-apple-darwin"
+url = "https://github.com/dasTholo/lean-md/releases/download/v0.2.0/lean-md-aarch64-apple-darwin"
+sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+[artifacts.x86_64-unknown-linux-gnu]
+filename = "lean-md-x86_64-unknown-linux-gnu"
+url = "https://github.com/dasTholo/lean-md/releases/download/v0.2.0/lean-md-x86_64-unknown-linux-gnu"
+sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+"#,
+        )
+        .expect("parse")
+    }
+
+    #[test]
+    fn artifacts_block_parses_and_validates() {
+        let m = artifacts_manifest();
+        assert!(m.validate().is_ok());
+        assert_eq!(m.artifacts.len(), 2);
+        let asset = &m.artifacts["aarch64-apple-darwin"];
+        assert_eq!(asset.filename, "lean-md-aarch64-apple-darwin");
+        assert_eq!(asset.sha256, "a".repeat(64));
+    }
+
+    #[test]
+    fn unpinned_artifact_fails_validation() {
+        let mut m = artifacts_manifest();
+        m.artifacts.get_mut("aarch64-apple-darwin").unwrap().sha256 = String::new();
+        let err = m.validate().unwrap_err();
+        assert!(err.contains("sha256"), "got: {err}");
+    }
+
+    #[test]
+    fn artifact_missing_url_fails_validation() {
+        let mut m = artifacts_manifest();
+        m.artifacts.get_mut("aarch64-apple-darwin").unwrap().url = String::new();
+        let err = m.validate().unwrap_err();
+        assert!(err.contains("url"), "got: {err}");
+    }
+
+    #[test]
+    fn artifact_for_current_platform_resolves_by_triple() {
+        let m = artifacts_manifest();
+        let triple = super::super::artifact_install::current_target_triple();
+        assert_eq!(
+            m.artifact_for_current_platform().is_some(),
+            m.artifacts.contains_key(triple)
+        );
+    }
+
+    /// Manifests without `[artifacts]` (all pre-#725 entries) parse, validate
+    /// and serialize exactly as before — the field is additive-only.
+    #[test]
+    fn absent_artifacts_is_empty_and_not_serialized() {
+        let m = stdio_manifest();
+        assert!(m.artifacts.is_empty());
+        let toml = toml::to_string(&m).expect("serialize");
+        assert!(!toml.contains("[artifacts"), "got: {toml}");
     }
 }

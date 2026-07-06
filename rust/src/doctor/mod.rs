@@ -310,6 +310,13 @@ pub fn run() -> u32 {
     let secret_detection = secret_detection_outcome();
     board.check(&secret_detection);
 
+    // 5b3c) Managed addon binaries (GH #725): receipt path + sha256 pin +
+    // revocation, so binhash-gate refusals surface here instead of at first
+    // tool call. Silent when nothing is managed.
+    if let Some(managed_bins) = managed_addon_binaries_outcome() {
+        board.check(&managed_bins);
+    }
+
     // 5b4) Cognition v2 activation (science subsystems wired + active)
     let cognition = cognition_activity_outcome();
     board.check(&cognition);

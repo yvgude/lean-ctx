@@ -185,6 +185,7 @@ mod tests {
             granted_capabilities: None,
             content_hash: None,
             install: None,
+            artifact: None,
         });
         store.save().expect("save");
 

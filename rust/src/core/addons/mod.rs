@@ -50,6 +50,7 @@
 //!   fallback exactly like "not installed" — no `addon add` consent step,
 //!   since a grammar addon is a parsing fallback, not a spawned process.
 
+pub mod artifact_install;
 pub mod audit;
 pub mod binhash;
 pub mod bootstrap;
@@ -80,6 +81,7 @@ pub mod signing;
 pub mod store;
 pub mod trust;
 
+pub use artifact_install::{ArtifactAsset, current_target_triple};
 pub use audit::{AuditReport, AuditVerdict};
 pub use bootstrap::{AddonInstall, BootstrapStatus, InstallReceipt, Manager};
 pub use capabilities::{AddonCapabilities, FilesystemAccess, NetworkAccess};

@@ -13,6 +13,22 @@ use serde::{Deserialize, Serialize};
 use super::bootstrap::InstallReceipt;
 use super::capabilities::AddonCapabilities;
 
+/// Receipt of a managed prebuilt binary installed from a `[artifacts]` entry
+/// (GH #724/#725, Phase 1): what was downloaded, where it lives, and the
+/// SHA-256 the gateway pins at spawn. `doctor` re-verifies it; `remove` and
+/// `update` clean up exactly what was installed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArtifactReceipt {
+    /// Rust target triple the asset was resolved for.
+    pub platform: String,
+    /// Download URL the binary came from.
+    pub url: String,
+    /// SHA-256 pin (also mirrored into the gateway server's `binary_sha256`).
+    pub sha256: String,
+    /// Absolute managed path the gateway spawns.
+    pub path: String,
+}
+
 /// One installed addon and the gateway server it owns.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstalledAddon {
@@ -37,6 +53,11 @@ pub struct InstalledAddon {
     /// with no bootstrap (ephemeral runners or already-present binaries).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub install: Option<InstallReceipt>,
+    /// Managed-binary receipt (GH #725): the prebuilt artifact `add` installed
+    /// into the managed bin dir. `None` for addons resolved via `PATH`,
+    /// bootstrap, or an ephemeral runner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<ArtifactReceipt>,
 }
 
 /// The on-disk installed-addons index.
@@ -106,6 +127,7 @@ mod tests {
             granted_capabilities: None,
             content_hash: None,
             install: None,
+            artifact: None,
         }
     }
 

@@ -265,3 +265,55 @@ pub(crate) fn permission_inheritance_outcome() -> Outcome {
         line: format!("{BOLD}Permission inheritance{RST}  {GREEN}on{RST}  {DIM}({detail}){RST}"),
     }
 }
+
+/// Verifies managed addon binaries (GH #725): every install receipt's binary
+/// must exist, match its pinned SHA-256, and not be revoked. `None` when no
+/// managed binaries are installed (the check would only add noise). Drift here
+/// means the spawn-time binhash gate will refuse the addon — surface it now
+/// with a fix, not opaquely at first tool call.
+pub(crate) fn managed_addon_binaries_outcome() -> Option<Outcome> {
+    let store = crate::core::addons::InstalledStore::load();
+    let managed: Vec<_> = store
+        .list()
+        .into_iter()
+        .filter_map(|a| a.artifact.as_ref().map(|r| (a, r)))
+        .collect();
+    if managed.is_empty() {
+        return None;
+    }
+
+    let mut broken: Vec<String> = Vec::new();
+    for (addon, receipt) in &managed {
+        let path = std::path::Path::new(&receipt.path);
+        if let Some(reason) = crate::core::addons::revocation::blocked_reason(&addon.name) {
+            broken.push(format!("{} revoked ({reason})", addon.name));
+        } else if !path.is_file() {
+            broken.push(format!("{} binary missing", addon.name));
+        } else {
+            match crate::core::addons::binhash::sha256_file(path) {
+                Ok(h) if h.eq_ignore_ascii_case(&receipt.sha256) => {}
+                Ok(_) => broken.push(format!("{} hash mismatch", addon.name)),
+                Err(e) => broken.push(format!("{} unreadable ({e})", addon.name)),
+            }
+        }
+    }
+
+    if broken.is_empty() {
+        return Some(Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}Managed addon binaries{RST}  {GREEN}{} verified{RST}  {DIM}(exists + sha256 pin + not revoked){RST}",
+                managed.len()
+            ),
+        });
+    }
+    Some(Outcome {
+        ok: false,
+        line: format!(
+            "{BOLD}Managed addon binaries{RST}  {RED}{} of {} broken{RST}  {DIM}({} — fix: lean-ctx addon update <name>, or remove){RST}",
+            broken.len(),
+            managed.len(),
+            broken.join("; ")
+        ),
+    })
+}

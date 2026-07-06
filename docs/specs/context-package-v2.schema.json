@@ -24,6 +24,12 @@
           "enum": [1, 2, 3],
           "description": "1=Basic, 2=Graph, 3=Cognitive"
         },
+        "kind": {
+          "type": "string",
+          "enum": ["context", "skills", "addon", "grammar"],
+          "default": "context",
+          "description": "What the package delivers (unified distribution). Omitted for the default 'context'; non-context kinds require schema_version 2."
+        },
         "name": {
           "type": "string",
           "minLength": 1,
@@ -346,3 +352,4 @@
     }
   }
 }
+

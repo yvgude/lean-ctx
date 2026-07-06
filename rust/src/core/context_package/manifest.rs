@@ -3,11 +3,48 @@ use serde::{Deserialize, Serialize};
 
 use super::graph_model::{GraphSummary, MarketplaceMeta};
 
+/// What a package delivers (unified distribution, GH #724). One taxonomy for
+/// everything an agent can install: knowledge (`context`), workflow content
+/// (`skills`), MCP servers (`addon`) and tree-sitter grammars (`grammar`).
+///
+/// Serialization is additive-only: the field is omitted for the default
+/// `context`, so every pre-existing v1/v2 package stays **byte-identical**
+/// and old readers (which tolerate unknown fields) keep working.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PackageKind {
+    #[default]
+    Context,
+    Skills,
+    Addon,
+    Grammar,
+}
+
+impl PackageKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Context => "context",
+            Self::Skills => "skills",
+            Self::Addon => "addon",
+            Self::Grammar => "grammar",
+        }
+    }
+
+    /// True for the default kind (used to omit the field when serializing).
+    pub fn is_context(&self) -> bool {
+        matches!(self, Self::Context)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageManifest {
     pub schema_version: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conformance_level: Option<u32>,
+    /// What this package delivers (GH #724). Defaults to `context`; omitted
+    /// from serialized manifests for that default (byte-compat guarantee).
+    #[serde(default, skip_serializing_if = "PackageKind::is_context")]
+    pub kind: PackageKind,
     pub name: String,
     pub version: String,
     pub description: String,
@@ -170,6 +207,16 @@ impl PackageManifest {
         if self.layers.is_empty() && !self.is_v2() {
             errors.push("at least one layer is required".into());
         }
+        // Unified distribution (GH #724): non-context kinds are a v2-era
+        // concept — a v1 package claiming to be an addon/skills/grammar pack
+        // is malformed, not merely old.
+        if !self.kind.is_context() && !self.is_v2() {
+            errors.push(format!(
+                "kind = {} requires schema_version {} (v2)",
+                self.kind.as_str(),
+                crate::core::contracts::CONTEXT_PACKAGE_V2_SCHEMA_VERSION,
+            ));
+        }
         let mut seen_layers = std::collections::HashSet::new();
         for layer in &self.layers {
             if !seen_layers.insert(layer.as_str()) {
@@ -214,6 +261,7 @@ mod tests {
         PackageManifest {
             schema_version: crate::core::contracts::CONTEXT_PACKAGE_V1_SCHEMA_VERSION,
             conformance_level: None,
+            kind: PackageKind::default(),
             name: "test-pkg".into(),
             version: "0.1.0".into(),
             description: "A test package".into(),
@@ -362,5 +410,59 @@ mod tests {
         let mut m = minimal_manifest();
         m.name = "@org/team/service".into();
         assert!(m.validate().is_ok());
+    }
+
+    // ── kind taxonomy (GH #724, unified distribution) ──
+
+    /// Byte-compat guarantee: the default `context` kind is omitted when
+    /// serializing, so pre-#724 packages and fresh ones are byte-identical.
+    #[test]
+    fn default_kind_is_omitted_from_serialization() {
+        let json = serde_json::to_string(&minimal_manifest()).unwrap();
+        assert!(!json.contains("\"kind\""), "got: {json}");
+        let decoded: PackageManifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.kind, PackageKind::Context);
+    }
+
+    #[test]
+    fn non_default_kind_round_trips() {
+        let mut m = minimal_manifest();
+        m.schema_version = crate::core::contracts::CONTEXT_PACKAGE_V2_SCHEMA_VERSION;
+        m.kind = PackageKind::Addon;
+        let json = serde_json::to_string(&m).unwrap();
+        assert!(json.contains("\"kind\":\"addon\""), "got: {json}");
+        let decoded: PackageManifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.kind, PackageKind::Addon);
+        assert!(decoded.validate().is_ok());
+    }
+
+    /// A v1 manifest claiming a non-context kind is malformed, not merely old.
+    #[test]
+    fn non_context_kind_requires_v2_schema() {
+        let mut m = minimal_manifest();
+        m.kind = PackageKind::Skills;
+        let errs = m.validate().unwrap_err();
+        assert!(
+            errs.iter().any(|e| e.contains("requires schema_version")),
+            "got: {errs:?}"
+        );
+        m.schema_version = crate::core::contracts::CONTEXT_PACKAGE_V2_SCHEMA_VERSION;
+        assert!(m.validate().is_ok());
+    }
+
+    /// Old readers must not choke on a manifest that carries the new field —
+    /// and new readers must parse legacy manifests without it (serde default).
+    #[test]
+    fn kind_field_is_forward_and_backward_tolerant() {
+        let mut m = minimal_manifest();
+        m.schema_version = crate::core::contracts::CONTEXT_PACKAGE_V2_SCHEMA_VERSION;
+        m.kind = PackageKind::Grammar;
+        let with_kind = serde_json::to_string(&m).unwrap();
+        let decoded: PackageManifest = serde_json::from_str(&with_kind).unwrap();
+        assert_eq!(decoded.kind, PackageKind::Grammar);
+
+        let legacy = serde_json::to_string(&minimal_manifest()).unwrap();
+        let decoded: PackageManifest = serde_json::from_str(&legacy).unwrap();
+        assert_eq!(decoded.kind, PackageKind::Context);
     }
 }

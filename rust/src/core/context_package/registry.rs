@@ -391,6 +391,7 @@ mod tests {
         let manifest = PackageManifest {
             schema_version: crate::core::contracts::CONTEXT_PACKAGE_V1_SCHEMA_VERSION,
             conformance_level: None,
+            kind: crate::core::context_package::manifest::PackageKind::default(),
             name: "test-pkg".into(),
             version: "1.0.0".into(),
             description: "test".into(),
@@ -460,6 +461,7 @@ mod tests {
         let manifest = PackageManifest {
             schema_version: crate::core::contracts::CONTEXT_PACKAGE_V1_SCHEMA_VERSION,
             conformance_level: None,
+            kind: crate::core::context_package::manifest::PackageKind::default(),
             name: "export-test".into(),
             version: "2.0.0".into(),
             description: "round trip test".into(),
@@ -525,6 +527,7 @@ mod tests {
         let mut manifest = PackageManifest {
             schema_version: crate::core::contracts::CONTEXT_PACKAGE_V1_SCHEMA_VERSION,
             conformance_level: None,
+            kind: crate::core::context_package::manifest::PackageKind::default(),
             name: "signed-test".into(),
             version: "1.0.0".into(),
             description: "signature gate test".into(),
@@ -602,6 +605,7 @@ mod tests {
         let manifest = PackageManifest {
             schema_version: crate::core::contracts::CONTEXT_PACKAGE_V1_SCHEMA_VERSION,
             conformance_level: None,
+            kind: crate::core::context_package::manifest::PackageKind::default(),
             name: "legacy-test".into(),
             version: "1.0.0".into(),
             description: "legacy extension test".into(),

@@ -5,25 +5,20 @@
 //! unlike MCP addons (a grammar addon is a parsing fallback the process
 //! loads into itself, not a spawned/trusted server the user opts into).
 //!
-//! Reuses [`crate::core::http_client::ureq_agent_with_timeouts`] — the same
-//! bounded-timeout primitive `core::updater`'s self-updater builds on — so
-//! this needed no extraction from `updater.rs` after all; that module's
-//! `https_agent`/`download_bytes` turned out to be thin wrappers over an
-//! already-shared primitive, not the reusable core themselves. Also reuses
-//! [`super::binhash::sha256_file`] to verify the pin, rather than adding yet
-//! another `sha256_hex` (several already exist per-module in this crate).
-//!
-//! Fetch is skipped when `addons.policy = locked`; any other failure
-//! (offline, network error, hash mismatch) is silent to the caller —
-//! [`super::super::signatures_ts::grammar_loader`] treats "could not fetch"
-//! exactly like "not installed" and falls through to the regex-signature
-//! extractor. This is the "offline & hermetic" guarantee from
-//! `signatures_ts::queries`'s doc comment: a sandbox with no network sees no
-//! new failure mode, only no widened success path.
+//! Since GH #724 Phase 1 the download → verify → atomic-install mechanics
+//! live in [`super::artifact_install`] (shared with managed addon binaries);
+//! this module keeps only the grammar-specific policy gates and the silent
+//! failure contract. Fetch is skipped when `addons.policy = locked`; any
+//! other failure (offline, network error, hash mismatch) is silent to the
+//! caller — [`super::super::signatures_ts::grammar_loader`] treats "could
+//! not fetch" exactly like "not installed" and falls through to the
+//! regex-signature extractor. This is the "offline & hermetic" guarantee
+//! from `signatures_ts::queries`'s doc comment: a sandbox with no network
+//! sees no new failure mode, only no widened success path.
 
-use std::io::Read;
 use std::path::Path;
 
+use super::artifact_install::{ArtifactUse, fetch_verified};
 use super::binhash::sha256_file;
 use super::grammar_manifest::{GrammarAsset, GrammarManifest};
 use super::policy::AddonPolicy;
@@ -49,61 +44,15 @@ pub(crate) fn ensure_installed(
     if !addons.grammar_auto_fetch {
         return Err("addons.grammar_auto_fetch = false: fetch disabled".into());
     }
-    if asset.sha256.trim().is_empty() {
-        return Err(format!(
-            "grammar `{}` asset has no sha256 pin — refusing to fetch",
-            manifest.name
-        ));
-    }
 
-    let agent = crate::core::http_client::ureq_agent_with_timeouts(
-        Some(std::time::Duration::from_secs(10)),
-        Some(std::time::Duration::from_secs(15)),
-        Some(std::time::Duration::from_secs(20)),
-    );
-    let response = agent
-        .get(&asset.url)
-        .header(
-            "User-Agent",
-            &format!("lean-ctx/{}", env!("CARGO_PKG_VERSION")),
-        )
-        .call()
-        .map_err(|e| format!("grammar `{}` fetch failed: {e}", manifest.name))?;
-    let mut bytes = Vec::new();
-    response
-        .into_body()
-        .into_reader()
-        .read_to_end(&mut bytes)
-        .map_err(|e| format!("grammar `{}` download read failed: {e}", manifest.name))?;
-
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let tmp = dest.with_extension("tmp");
-    std::fs::write(&tmp, &bytes).map_err(|e| e.to_string())?;
-
-    let actual = sha256_file(&tmp)?;
-    if !actual.eq_ignore_ascii_case(&asset.sha256) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(format!(
-            "grammar `{}` download hash mismatch: expected {}, got {actual} — refusing to install",
-            manifest.name, asset.sha256
-        ));
-    }
-
-    // The dylib is dlopen'd into our own process: read-only on disk so a
-    // stray write is refused at the OS level (a deliberate swap still fails
-    // the per-load hash pin in grammar_loader), and ad-hoc signed on macOS so
-    // a copy that picked up a quarantine xattr along the way stays loadable.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o444));
-    }
-    #[cfg(target_os = "macos")]
-    crate::core::codesign::adhoc_sign(&tmp);
-
-    std::fs::rename(&tmp, dest).map_err(|e| e.to_string())?;
+    let context = format!("grammar `{}`", manifest.name);
+    fetch_verified(
+        &context,
+        &asset.url,
+        &asset.sha256,
+        dest,
+        ArtifactUse::InProcessDylib,
+    )?;
     // Egress transparency: the fetch is zero-config by design (#690 — a
     // grammar addon is a parsing fallback, not a spawned server), so the one
     // network round-trip it performs must at least be visible in the log.

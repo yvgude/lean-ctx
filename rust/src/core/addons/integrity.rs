@@ -117,6 +117,7 @@ mod tests {
             granted_capabilities: None,
             content_hash: hash,
             install: None,
+            artifact: None,
         }
     }
 

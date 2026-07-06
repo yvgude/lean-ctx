@@ -405,6 +405,7 @@ impl PackageBuilder {
         let manifest = PackageManifest {
             schema_version,
             conformance_level: if is_v2 { Some(self.level) } else { None },
+            kind: super::manifest::PackageKind::default(),
             name: self.name,
             version: self.version,
             description: self.description,

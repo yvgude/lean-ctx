@@ -3,6 +3,26 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- **Unified distribution, Phase 1 (GH #724/#725): managed addon binaries +
+  the `kind` package taxonomy.** `.ctxpkg` manifests gain an optional `kind`
+  field (`context` | `skills` | `addon` | `grammar`; default `context`,
+  omitted when serializing, so every existing package stays byte-identical —
+  non-context kinds require schema v2). Addon manifests gain an
+  `[artifacts.<target-triple>]` block: `addon add` downloads the prebuilt
+  binary for the current platform into the managed bin dir
+  (`<data_dir>/addons/bin/<name>/<version>/`, never `PATH`), verifies its
+  SHA-256 before the atomic install, auto-pins that hash as the spawn-time
+  binhash, and rewrites the gateway command to the absolute managed path —
+  zero `PATH` interaction, tamper ⇒ spawn refused, `addons.policy = locked`
+  blocks the fetch before any network I/O. New `lean-ctx addon update <name>`
+  installs side-by-side, health-gates, then prunes; `addon remove` deletes the
+  managed binaries; `doctor` verifies every receipt (exists + hash + not
+  revoked). The grammar-dylib fetch (#690) now shares the same
+  download→verify→install core (`artifact_install`), byte-identical behavior.
+
 ## [3.9.2] — 2026-07-06
 
 ### Fixed

@@ -9,7 +9,7 @@
 
 use super::manifest::AddonManifest;
 use super::policy::AddonsConfig;
-use super::store::{InstalledAddon, InstalledStore};
+use super::store::{ArtifactReceipt, InstalledAddon, InstalledStore};
 use crate::core::config::Config;
 use crate::core::gateway::GatewayServer;
 
@@ -94,13 +94,17 @@ fn enforce_capability_coherence(manifest: &AddonManifest, force: bool) -> Result
 /// Wire `manifest` into the global gateway and record it in the store.
 ///
 /// `source` is recorded for `addon list` (`"registry"` or `"local"`). `force`
-/// bypasses the capability-coherence gate (#1080). Replaces any existing gateway
-/// server / store entry with the same name (idempotent re-install). Returns an
-/// error if any [`preflight`] check rejects the addon.
+/// bypasses the capability-coherence gate (#1080). `artifact` is the receipt
+/// of a managed prebuilt binary the CLI layer installed beforehand (GH #725) —
+/// like the bootstrap, the impure download runs in the CLI layer and only the
+/// receipt is persisted here. Replaces any existing gateway server / store
+/// entry with the same name (idempotent re-install). Returns an error if any
+/// [`preflight`] check rejects the addon.
 pub fn install(
     manifest: &AddonManifest,
     source: &str,
     force: bool,
+    artifact: Option<ArtifactReceipt>,
 ) -> Result<InstallOutcome, String> {
     let cfg = Config::load();
     let server = preflight(manifest, &cfg.addons, force)?;
@@ -134,6 +138,7 @@ pub fn install(
             .install
             .is_declared()
             .then(|| manifest.install.to_receipt()),
+        artifact,
     });
     store.save()?;
 
@@ -198,7 +203,7 @@ mod tests {
     fn install_then_remove_round_trip() {
         let _iso = isolated_data_dir();
 
-        let out = install(&manifest("demo"), "registry", false).expect("install");
+        let out = install(&manifest("demo"), "registry", false, None).expect("install");
         assert_eq!(out.gateway_server, "demo");
         assert!(out.enabled_gateway, "gateway was off, install enables it");
 
@@ -211,7 +216,7 @@ mod tests {
         assert!(InstalledStore::load().get("demo").is_some());
 
         // Re-install is idempotent (no duplicate server).
-        let out2 = install(&manifest("demo"), "registry", false).expect("reinstall");
+        let out2 = install(&manifest("demo"), "registry", false, None).expect("reinstall");
         assert!(!out2.enabled_gateway, "already enabled");
         let cfg = Config::load();
         assert_eq!(
@@ -237,6 +242,34 @@ mod tests {
         assert!(remove("nope").is_err());
     }
 
+    /// GH #725: the managed-artifact receipt the CLI layer hands over is
+    /// persisted verbatim, so `doctor`/`update`/`remove` can re-verify and
+    /// clean up exactly what was installed.
+    #[test]
+    fn artifact_receipt_is_persisted() {
+        let _iso = isolated_data_dir();
+        let receipt = ArtifactReceipt {
+            platform: "aarch64-apple-darwin".into(),
+            url: "https://example.com/demo-bin".into(),
+            sha256: "c".repeat(64),
+            path: "/managed/bin/demo/1.0.0/demo-bin".into(),
+        };
+        install(&manifest("demo"), "registry", false, Some(receipt.clone())).expect("install");
+        let stored = InstalledStore::load();
+        let entry = stored.get("demo").expect("stored");
+        assert_eq!(entry.artifact.as_ref(), Some(&receipt));
+
+        // Reinstall without a receipt clears it (idempotent upsert semantics).
+        install(&manifest("demo"), "registry", false, None).expect("reinstall");
+        assert!(
+            InstalledStore::load()
+                .get("demo")
+                .unwrap()
+                .artifact
+                .is_none()
+        );
+    }
+
     #[test]
     fn under_declared_capabilities_block_install_unless_forced() {
         // #1080: a manifest that launches `npx` (needs network) but declares
@@ -250,7 +283,7 @@ mod tests {
         )
         .expect("parse");
 
-        let Err(err) = install(&incoherent, "local", false) else {
+        let Err(err) = install(&incoherent, "local", false, None) else {
             panic!("under-declared capabilities must block the install");
         };
         assert!(err.contains("under-state"), "got: {err}");
@@ -265,7 +298,7 @@ mod tests {
 
         // --force overrides the coherence gate.
         assert!(
-            install(&incoherent, "local", true).is_ok(),
+            install(&incoherent, "local", true, None).is_ok(),
             "force bypasses the coherence gate"
         );
     }
@@ -274,7 +307,7 @@ mod tests {
     fn listed_only_manifest_refuses_install() {
         let _iso = isolated_data_dir();
         let listed = AddonManifest::from_toml("[addon]\nname = \"listed\"\n").expect("parse");
-        assert!(install(&listed, "registry", false).is_err());
+        assert!(install(&listed, "registry", false, None).is_err());
     }
 
     #[test]
@@ -283,7 +316,7 @@ mod tests {
         let mut list = super::super::revocation::RevocationList::load();
         list.revoke("demo", "kill-switch test", None);
         list.save().expect("save");
-        let Err(err) = install(&manifest("demo"), "registry", false) else {
+        let Err(err) = install(&manifest("demo"), "registry", false, None) else {
             panic!("revoked addon must refuse to install");
         };
         assert!(err.contains("revoked"), "got: {err}");

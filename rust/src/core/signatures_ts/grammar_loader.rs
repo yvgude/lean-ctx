@@ -27,28 +27,9 @@ use std::sync::{Mutex, OnceLock};
 use tree_sitter::Language;
 use tree_sitter_language::LanguageFn;
 
+use crate::core::addons::artifact_install::current_target_triple;
 use crate::core::addons::grammar_manifest::GRAMMAR_SYMBOL;
 use crate::core::addons::{binhash, grammar_install, grammar_registry};
-
-/// Rust target-triple key this build was compiled for — matches the asset
-/// keys the CI dylib matrix (Phase 1c) publishes under.
-fn current_target_triple() -> &'static str {
-    if cfg!(all(target_arch = "x86_64", target_os = "windows")) {
-        "x86_64-pc-windows-msvc"
-    } else if cfg!(all(target_arch = "aarch64", target_os = "windows")) {
-        "aarch64-pc-windows-msvc"
-    } else if cfg!(all(target_arch = "x86_64", target_os = "macos")) {
-        "x86_64-apple-darwin"
-    } else if cfg!(all(target_arch = "aarch64", target_os = "macos")) {
-        "aarch64-apple-darwin"
-    } else if cfg!(all(target_arch = "x86_64", target_os = "linux")) {
-        "x86_64-unknown-linux-gnu"
-    } else if cfg!(all(target_arch = "aarch64", target_os = "linux")) {
-        "aarch64-unknown-linux-gnu"
-    } else {
-        "unknown"
-    }
-}
 
 fn dylib_dir(name: &str) -> Option<PathBuf> {
     Some(
@@ -179,20 +160,6 @@ pub(super) fn get_addon_language(ext: &str) -> Option<Language> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn current_target_triple_is_known_on_ci_platforms() {
-        // Windows/macOS/Linux x86_64+aarch64 must resolve to a real triple —
-        // "unknown" would silently make every addon lookup miss.
-        if cfg!(any(
-            target_os = "windows",
-            target_os = "macos",
-            target_os = "linux"
-        )) && cfg!(any(target_arch = "x86_64", target_arch = "aarch64"))
-        {
-            assert_ne!(current_target_triple(), "unknown");
-        }
-    }
 
     #[test]
     fn missing_extension_returns_none_without_panicking() {

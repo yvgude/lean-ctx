@@ -96,6 +96,7 @@ mod tests {
         PackageManifest {
             schema_version: 1,
             conformance_level: None,
+            kind: crate::core::context_package::manifest::PackageKind::default(),
             name: "test-pkg".into(),
             version: "1.0.0".into(),
             description: "test".into(),

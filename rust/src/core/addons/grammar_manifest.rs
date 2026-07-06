@@ -24,19 +24,13 @@ use serde::{Deserialize, Serialize};
 pub const GRAMMAR_SYMBOL: &[u8] = b"lc_grammar_language\0";
 
 /// One platform's downloadable asset for a grammar dylib.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct GrammarAsset {
-    /// Release asset filename, e.g. `lua-x86_64-pc-windows-msvc.dll`.
-    pub filename: String,
-    /// Download URL for this asset.
-    pub url: String,
-    /// SHA-256 of the dylib bytes (hex). Mandatory in practice — unlike the
-    /// MCP addon `sha256` pin (optional, subprocess-only), a grammar dylib
-    /// runs in-process, so [`GrammarManifest::validate`] refuses an entry
-    /// with a blank hash.
-    pub sha256: String,
-}
+///
+/// Since the unified artifact installer (GH #724 Phase 1) this is the same
+/// struct MCP-addon binaries use — one asset shape across every managed
+/// artifact. The SHA-256 pin is mandatory in practice here — unlike the MCP
+/// addon `sha256` pin (optional, subprocess-only), a grammar dylib runs
+/// in-process, so [`GrammarManifest::validate`] refuses a blank hash.
+pub type GrammarAsset = super::artifact_install::ArtifactAsset;
 
 /// A grammar addon: one tree-sitter language, one dylib per platform.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

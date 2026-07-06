@@ -54,6 +54,7 @@ my-package.ctxpkg (ZIP)
 | Field | Type | Description |
 |-------|------|-------------|
 | `conformance_level` | `u32` | `1`, `2`, or `3` |
+| `kind` | `string?` | What the package delivers: `context` (default), `skills`, `addon`, `grammar` — see §3.4 |
 | `scope` | `string?` | Namespace prefix (e.g., `@company`) |
 | `graph_summary` | `object?` | Node/edge counts, types, activation mean |
 | `marketplace` | `object?` | Categories, badges, license |
@@ -109,6 +110,29 @@ my-package.ctxpkg (ZIP)
   }
 }
 ```
+
+### 3.4 Package kinds (unified distribution)
+
+Since spec revision 2.1 (2026-07), a package declares **what it delivers** via
+the optional `kind` field. This unifies the distribution of agent knowledge and
+agent capabilities under one format, one registry and one trust chain (design:
+`docs/specs/unified-distribution-v1.md`):
+
+| `kind` | Payload | Notes |
+|--------|---------|-------|
+| `context` | knowledge/graph/session/patterns/gotchas layers | The default. Behavior of all pre-existing packages, unchanged. |
+| `skills` | markdown/script documents as verified content blobs | Content only — no execution semantics in lean-ctx. |
+| `addon` | embedded addon manifest + per-platform binary artifact references | Installs through the addon trust chain (capabilities, sandbox, binhash, revocation). |
+| `grammar` | embedded grammar manifest (signed tree-sitter dylib references) | In-process loading ⇒ mandatory hash + signature. |
+
+Rules:
+
+- `kind` **defaults to `context`** and writers MUST omit the field for that
+  default — every pre-`kind` package stays byte-identical.
+- Non-`context` kinds REQUIRE `schema_version: 2`; validators reject a v1
+  manifest carrying a non-default `kind`.
+- Readers MUST tolerate unknown `kind` values by refusing installation with a
+  clear "newer lean-ctx required" error (never by misinterpreting the payload).
 
 ## 4. Knowledge Graph (`context_graph`)
 
@@ -332,3 +356,4 @@ The `.ctxpkg v2` format is informed by research across multiple disciplines:
 | Naming | Flat names | Scoped `@org/name` |
 | Adoption path | All-or-nothing | 3 conformance levels |
 | Marketplace | None | Categories, badges, license |
+

@@ -9,8 +9,8 @@ use std::path::Path;
 
 use crate::core::addons::manifest::AddonManifest;
 use crate::core::addons::revocation::RevocationList;
-use crate::core::addons::store::InstalledStore;
-use crate::core::addons::{bootstrap, install, registry};
+use crate::core::addons::store::{ArtifactReceipt, InstalledStore};
+use crate::core::addons::{artifact_install, bootstrap, install, registry};
 
 pub fn cmd_addon(args: &[String]) {
     let action = args.first().map_or("list", String::as_str);
@@ -33,6 +33,10 @@ pub fn cmd_addon(args: &[String]) {
         "remove" | "rm" | "uninstall" => match positional(args) {
             Some(name) => cmd_remove(&name, args),
             None => usage_exit("lean-ctx addon remove <name>"),
+        },
+        "update" | "upgrade" => match positional(args) {
+            Some(name) => cmd_update(&name, args),
+            None => usage_exit("lean-ctx addon update <name>"),
         },
         "revoke" => match positional(args) {
             Some(name) => cmd_revoke(&name, args),
@@ -319,13 +323,12 @@ fn cmd_add(target: &str, args: &[String]) {
     // Fail fast (#1080): run the full pre-persist gate — policy, kill-switch,
     // capability coherence — before rendering the preview or spawning a probe,
     // so a rejected addon surfaces a clear verdict and nothing is touched.
-    let server = match install::preflight(&manifest, &cfg.addons, force) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+    // (The health probe later targets the post-artifact wiring instead of
+    // this resolution, so only the verdict matters here.)
+    if let Err(e) = install::preflight(&manifest, &cfg.addons, force) {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
 
     println!("About to install `{}`:\n", manifest.addon.name);
     print_install_preview(&manifest);
@@ -341,65 +344,8 @@ fn cmd_add(target: &str, args: &[String]) {
         return;
     }
 
-    // Bootstrap (#1105): provision the upstream package via its pinned manager
-    // *before* probing — the [mcp] command depends on it being installed. The
-    // policy floor (addons.allow_bootstrap) was already enforced in preflight.
-    if manifest.install.is_declared() {
-        println!(
-            "\nInstalling `{}` via {} (pinned {})…",
-            manifest.install.package.trim(),
-            manifest.install.manager.trim(),
-            manifest.install.version.trim()
-        );
-        match bootstrap::ensure_installed(&manifest.install) {
-            Ok(outcome) => {
-                match outcome.status {
-                    bootstrap::BootstrapStatus::AlreadyPresent => {
-                        println!("  Already installed — skipped.");
-                    }
-                    bootstrap::BootstrapStatus::Installed => println!("  ✓ Installed."),
-                }
-                if let Some(warning) = outcome.warning {
-                    eprintln!("  ⚠ {warning}");
-                }
-            }
-            Err(e) => {
-                eprintln!("Error: bootstrap install failed: {e}\n  Nothing was wired.");
-                std::process::exit(1);
-            }
-        }
-    }
-
-    // Health probe (#1076): confirm the server actually speaks MCP *before* we
-    // wire it, so a broken command/args fails now with a clear message instead
-    // of opaquely at first `ctx_tools` use. Skip with `--no-verify`.
-    let mut verified: Option<usize> = None;
-    if !no_verify {
-        // First spawn may download a package (npx/uvx), so allow extra headroom
-        // over the per-call timeout.
-        let timeout = std::time::Duration::from_secs(cfg.gateway.call_timeout_secs.max(60));
-        print!("Verifying the MCP server responds… ");
-        let _ = std::io::Write::flush(&mut std::io::stdout());
-        match crate::core::addons::health::probe(&server, timeout) {
-            Ok(report) => {
-                println!("ok ({} tool(s)).", report.tool_count);
-                verified = Some(report.tool_count);
-            }
-            Err(e) => {
-                println!("failed.");
-                eprintln!(
-                    "Error: `{}` did not pass its health check: {e}\n  \
-                     Nothing was installed. Check the command/args (and capabilities), then retry \
-                     — or skip the check with `--no-verify`.",
-                    manifest.addon.name
-                );
-                std::process::exit(1);
-            }
-        }
-    }
-
-    match install::install(&manifest, &source, force) {
-        Ok(outcome) => {
+    match provision_and_wire(manifest, &source, force, no_verify, &cfg) {
+        Ok((outcome, verified)) => {
             println!(
                 "\n✓ Installed `{}` → gateway server `{}`.",
                 outcome.name, outcome.gateway_server
@@ -417,6 +363,182 @@ fn cmd_add(target: &str, args: &[String]) {
         }
         Err(e) => {
             eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// The impure provisioning pipeline `add` and `update` share, run after user
+/// consent: managed artifact (GH #725) → bootstrap (#1105) → health probe
+/// (#1076) → wire. On any error nothing is wired. Returns the install outcome
+/// plus the probed tool count (`None` with `--no-verify`).
+fn provision_and_wire(
+    mut manifest: AddonManifest,
+    source: &str,
+    force: bool,
+    no_verify: bool,
+    cfg: &crate::core::config::Config,
+) -> Result<(install::InstallOutcome, Option<usize>), String> {
+    // Managed artifact (GH #725, Phase 1): a prebuilt binary for this platform
+    // takes precedence over [install]/PATH. It lands in the managed bin dir
+    // (never PATH), hash-verified; the gateway command is rewritten to the
+    // absolute path and the SHA-256 auto-pinned as the spawn-time binhash.
+    let mut artifact_receipt: Option<ArtifactReceipt> = None;
+    if let Some(asset) = manifest.artifact_for_current_platform().cloned() {
+        let triple = artifact_install::current_target_triple();
+        println!("\nInstalling prebuilt binary for {triple} (sha256-pinned)…");
+        let path = artifact_install::ensure_addon_binary(
+            &manifest.addon.name,
+            &manifest.addon.version,
+            &asset,
+        )
+        .map_err(|e| format!("artifact install failed: {e}\n  Nothing was wired."))?;
+        println!("  ✓ {}", path.display());
+        artifact_receipt = Some(ArtifactReceipt {
+            platform: triple.to_string(),
+            url: asset.url.clone(),
+            sha256: asset.sha256.clone(),
+            path: path.display().to_string(),
+        });
+        manifest.mcp.command = path.display().to_string();
+        manifest.mcp.sha256 = asset.sha256;
+    } else if manifest.install.is_declared() {
+        // Bootstrap (#1105): provision the upstream package via its pinned
+        // manager *before* probing — the [mcp] command depends on it. The
+        // policy floor (addons.allow_bootstrap) was already enforced in
+        // preflight. Skipped when a managed artifact resolved above (the
+        // artifact IS the binary the bootstrap would have provisioned).
+        println!(
+            "\nInstalling `{}` via {} (pinned {})…",
+            manifest.install.package.trim(),
+            manifest.install.manager.trim(),
+            manifest.install.version.trim()
+        );
+        let outcome = bootstrap::ensure_installed(&manifest.install)
+            .map_err(|e| format!("bootstrap install failed: {e}\n  Nothing was wired."))?;
+        match outcome.status {
+            bootstrap::BootstrapStatus::AlreadyPresent => {
+                println!("  Already installed — skipped.");
+            }
+            bootstrap::BootstrapStatus::Installed => println!("  ✓ Installed."),
+        }
+        if let Some(warning) = outcome.warning {
+            eprintln!("  ⚠ {warning}");
+        }
+    }
+
+    // Health probe (#1076): confirm the server actually speaks MCP *before* we
+    // wire it, so a broken command/args fails now with a clear message instead
+    // of opaquely at first `ctx_tools` use. Skip with `--no-verify`. Probes the
+    // post-artifact wiring, i.e. exactly what the gateway will spawn.
+    let server = manifest.to_gateway_server();
+    let mut verified: Option<usize> = None;
+    if !no_verify {
+        // First spawn may download a package (npx/uvx), so allow extra headroom
+        // over the per-call timeout.
+        let timeout = std::time::Duration::from_secs(cfg.gateway.call_timeout_secs.max(60));
+        print!("Verifying the MCP server responds… ");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        match crate::core::addons::health::probe(&server, timeout) {
+            Ok(report) => {
+                println!("ok ({} tool(s)).", report.tool_count);
+                verified = Some(report.tool_count);
+            }
+            Err(e) => {
+                println!("failed.");
+                return Err(format!(
+                    "`{}` did not pass its health check: {e}\n  \
+                     Nothing was installed. Check the command/args (and capabilities), then retry \
+                     — or skip the check with `--no-verify`.",
+                    manifest.addon.name
+                ));
+            }
+        }
+    }
+
+    let outcome = install::install(&manifest, source, force, artifact_receipt)?;
+    Ok((outcome, verified))
+}
+
+/// `addon update <name>` — re-resolve the registry entry and reinstall when it
+/// changed (GH #725). Managed binaries install side-by-side into a new version
+/// dir; only after the health probe passes is the gateway pointer flipped and
+/// the old version pruned — a failed update leaves the working install intact.
+fn cmd_update(name: &str, args: &[String]) {
+    let Some(entry) = InstalledStore::load().get(name).cloned() else {
+        eprintln!("Addon `{name}` is not installed.");
+        std::process::exit(1);
+    };
+    if entry.source == "local" {
+        eprintln!(
+            "`{name}` was installed from a local manifest — update it by re-running \
+             `lean-ctx addon add <path-to-lean-ctx-addon.toml>`."
+        );
+        std::process::exit(1);
+    }
+    let Some(manifest) = registry::get(name) else {
+        eprintln!("`{name}` is no longer in the registry — remove it or reinstall from a path.");
+        std::process::exit(1);
+    };
+
+    let force = args.iter().any(|a| a == "--force" || a == "-f");
+    let no_verify = args.iter().any(|a| a == "--no-verify");
+
+    // Up-to-date check: same version and (for managed binaries) same artifact
+    // pin ⇒ nothing to do. `--force` reinstalls anyway.
+    let same_version = manifest.addon.version == entry.version;
+    let same_artifact = match (
+        manifest.artifact_for_current_platform(),
+        entry.artifact.as_ref(),
+    ) {
+        (Some(asset), Some(receipt)) => asset.sha256.eq_ignore_ascii_case(&receipt.sha256),
+        (None, None) => true,
+        _ => false,
+    };
+    if same_version && same_artifact && !force {
+        println!(
+            "`{name}` is up to date (v{}).",
+            if entry.version.is_empty() {
+                "unversioned".to_string()
+            } else {
+                entry.version.clone()
+            }
+        );
+        return;
+    }
+
+    let cfg = crate::core::config::Config::load();
+    if let Err(e) = install::preflight(&manifest, &cfg.addons, force) {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
+
+    println!(
+        "Updating `{name}`: v{} → v{}",
+        entry.version, manifest.addon.version
+    );
+    if !super::prompt::confirm("Proceed with the update?", super::prompt::wants_yes(args)) {
+        println!("Aborted. Nothing was changed.");
+        return;
+    }
+
+    let new_version = manifest.addon.version.clone();
+    match provision_and_wire(manifest, &entry.source, force, no_verify, &cfg) {
+        Ok((outcome, verified)) => {
+            // The new version is wired and healthy — now prune superseded
+            // managed binaries (side-by-side rollback safety until here).
+            artifact_install::prune_other_versions(name, &new_version);
+            println!(
+                "\n✓ Updated `{}` to v{new_version} (gateway server `{}`).",
+                outcome.name, outcome.gateway_server
+            );
+            if let Some(n) = verified {
+                println!("  Verified: {n} tool(s) reachable.");
+            }
+            println!("  Restart your MCP client to pick up the new version.");
+        }
+        Err(e) => {
+            eprintln!("Error: {e}\n  The previous install remains wired.");
             std::process::exit(1);
         }
     }
@@ -457,6 +579,10 @@ fn cmd_remove(name: &str, args: &[String]) {
                         receipt.package
                     ),
                 }
+            }
+            // Delete managed binaries (GH #725), best-effort for the same reason.
+            if entry.artifact.is_some() && artifact_install::remove_managed_binaries(name) {
+                println!("  ✓ Deleted managed binaries.");
             }
             if outcome.last_removed {
                 println!(
@@ -829,6 +955,12 @@ fn print_install_preview(manifest: &AddonManifest) {
             if !mcp.sha256.trim().is_empty() {
                 println!("  binary:    sha256-pinned");
             }
+            if let Some(asset) = manifest.artifact_for_current_platform() {
+                println!(
+                    "  artifact:  {} → managed bin dir (sha256-pinned, never PATH)",
+                    asset.filename
+                );
+            }
         }
         crate::core::gateway::TransportKind::Http => {
             println!("  url:       {}", mcp.url);
@@ -848,6 +980,16 @@ fn print_install_preview(manifest: &AddonManifest) {
 fn print_bootstrap(manifest: &AddonManifest) {
     let install = &manifest.install;
     if !install.is_declared() {
+        return;
+    }
+    // A managed artifact for this platform supersedes the bootstrap (GH #725) —
+    // say so instead of describing an install that will not run.
+    if manifest.artifact_for_current_platform().is_some() {
+        println!(
+            "\n  Install on add: skipped — the prebuilt artifact above is used \
+             instead of `{}`.",
+            install.manager.trim()
+        );
         return;
     }
     let prog = install
@@ -971,6 +1113,8 @@ fn print_help() {
              info <name|path>     Show an addon's details + MCP wiring\n    \
              add <name|path>      Install from the registry or a local\n                         \
                                   lean-ctx-addon.toml (asks for confirmation)\n    \
+             update <name>        Update a registry addon (side-by-side managed\n                         \
+                                  binary, health-gated, auto-prune)\n    \
              remove <name>        Uninstall an addon\n    \
              revoke <name>        Block an addon from running (kill-switch)\n                         \
                                   [--reason \"…\"] [--version X]\n    \

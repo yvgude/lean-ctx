@@ -88,18 +88,43 @@ scripts. Installing an addon enables the MCP gateway (`gateway.enabled = true`);
 its tools become reachable via `ctx_tools` (find/call) — restart your MCP client
 to pick them up.
 
-### Install on add — ephemeral runners & the `[install]` block
+### Install on add — artifacts, ephemeral runners & the `[install]` block
 
-There are two ways `add` makes a tool runnable, both pinned and disclosed:
+There are three ways `add` makes a tool runnable, all pinned and disclosed —
+resolved in this order:
 
-1. **Ephemeral runner** — when the `[mcp]` command is `npx` (Node) or `uvx`
+1. **`[artifacts]` block** (GH #725) — the manifest declares prebuilt binaries
+   per platform (Rust target triple). `add` downloads the one for your
+   platform into the **managed bin dir**
+   (`<data_dir>/addons/bin/<name>/<version>/`, never `PATH`), verifies its
+   SHA-256 before the atomic install, pins that hash as the spawn-time
+   binhash, and wires the gateway to the absolute path. A tampered binary is
+   refused at spawn; `lean-ctx addon update <name>` installs the next version
+   side-by-side, health-checks it, then prunes the old one.
+2. **Ephemeral runner** — when the `[mcp]` command is `npx` (Node) or `uvx`
    (uv/Python), the package is downloaded and run **lazily on the first tool
    call**, then cached. `add` only writes the `[[gateway.servers]]` entry;
    *adding is installing*, provided the runner is on your `PATH`.
-2. **`[install]` block** (#1105, Phase 2) — for tools that need a one-time
+3. **`[install]` block** (#1105, Phase 2) — for tools that need a one-time
    bootstrap before a runnable command exists, the manifest declares a pinned
    package-manager install. On `add`, lean-ctx runs it (idempotently); on
    `remove`, it uninstalls it. The exact commands are shown before anything runs.
+
+```toml
+[artifacts.aarch64-apple-darwin]
+filename = "my-addon-aarch64-apple-darwin"
+url = "https://github.com/you/my-addon/releases/download/v1.2.0/my-addon-aarch64-apple-darwin"
+sha256 = "…"                  # mandatory pin — unpinned artifacts are rejected
+
+[artifacts.x86_64-unknown-linux-gnu]
+filename = "my-addon-x86_64-unknown-linux-gnu"
+url = "https://github.com/you/my-addon/releases/download/v1.2.0/my-addon-x86_64-unknown-linux-gnu"
+sha256 = "…"
+```
+
+Platforms without an `[artifacts]` entry fall through to the runner /
+`[install]` path, so one manifest can serve prebuilt binaries where you build
+them and a `cargo install` bootstrap everywhere else.
 
 ```toml
 [install]
@@ -475,3 +500,4 @@ lean-ctx status                   # MCP server / gateway status
 
 If a freshly installed addon's tools do not appear, restart your MCP client so
 it re-reads the gateway catalog.
+
