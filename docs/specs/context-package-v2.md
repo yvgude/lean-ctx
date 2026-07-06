@@ -356,4 +356,3 @@ The `.ctxpkg v2` format is informed by research across multiple disciplines:
 | Naming | Flat names | Scoped `@org/name` |
 | Adoption path | All-or-nothing | 3 conformance levels |
 | Marketplace | None | Categories, badges, license |
-

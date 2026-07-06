@@ -500,4 +500,3 @@ lean-ctx status                   # MCP server / gateway status
 
 If a freshly installed addon's tools do not appear, restart your MCP client so
 it re-reads the gateway catalog.
-
