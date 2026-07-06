@@ -747,6 +747,14 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             },
         );
 
+    sections.insert(
+            "model_context_windows".into(),
+            SectionSchema {
+                description: "Per-model context-window overrides in tokens. Keys are model names (case-insensitive), values override every registry layer — use for models the bundled/local registry does not know yet. Bracketed window markers in the model name itself (e.g. `claude-opus-4-8[1m]`) are parsed automatically and need no entry here. Example: `[model_context_windows]\\n\"my-custom-model\" = 500000`".into(),
+                keys: BTreeMap::new(),
+            },
+        );
+
     let mut lsp_keys = BTreeMap::new();
     lsp_keys.insert(
         "rust".into(),

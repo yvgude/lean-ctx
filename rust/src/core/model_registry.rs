@@ -69,6 +69,34 @@ fn user_config_override(model: &str) -> Option<usize> {
         .copied()
 }
 
+/// Parse a trailing long-context marker like `[1m]` / `[1M]` / `[200k]` into
+/// its token window (GH #739). Clients append these suffixes for context-beta
+/// variants (e.g. `claude-opus-4-8[1m]`); the marker is an explicit statement
+/// of the window, so it wins over any registry entry for the base model.
+fn window_from_suffix(model: &str) -> Option<usize> {
+    let (_, marker) = split_window_suffix(model)?;
+    let digits: String = marker.chars().take_while(char::is_ascii_digit).collect();
+    let n: usize = digits.parse().ok()?;
+    let unit = &marker[digits.len()..];
+    match unit {
+        "m" => Some(n.checked_mul(1_000_000)?),
+        "k" => Some(n.checked_mul(1_000)?),
+        _ => None,
+    }
+}
+
+/// Split `name[marker]` into `(name, lowercased marker)` when the model ends
+/// in a bracketed suffix. Returns `None` for models without one.
+fn split_window_suffix(model: &str) -> Option<(&str, String)> {
+    let stripped = model.strip_suffix(']')?;
+    let open = stripped.rfind('[')?;
+    let marker = stripped[open + 1..].to_lowercase();
+    if marker.is_empty() {
+        return None;
+    }
+    Some((&model[..open], marker))
+}
+
 fn registry_lookup(model: &str, registry: &Registry) -> Option<usize> {
     let m = model.to_lowercase();
 
@@ -105,22 +133,34 @@ fn registry_lookup(model: &str, registry: &Registry) -> Option<usize> {
 }
 
 /// Look up context window for a model name.
-/// Layers: User Config → Local Registry → Bundled Registry → 200k default.
+/// Layers: User Config → `[1m]`-style suffix → Local Registry → Bundled
+/// Registry → 200k default.
 pub fn context_window_for_model(model: &str) -> usize {
-    // Layer 1: User config override
+    // Layer 1: User config override ([model_context_windows] in config.toml)
     if let Some(w) = user_config_override(model) {
         return w;
     }
 
-    // Layer 2: Local registry (auto-updated via lean-ctx update)
+    // Layer 2: explicit window marker in the model name itself (GH #739).
+    // `claude-opus-4-8[1m]` means the client runs the 1M-context variant —
+    // registries would only ever know the base model's window.
+    if let Some(w) = window_from_suffix(model) {
+        return w;
+    }
+
+    // Registry lookups see the base name so `foo[1m]` variants of unknown
+    // markers still match their base entry instead of falling through.
+    let base = split_window_suffix(model).map_or(model, |(base, _)| base);
+
+    // Layer 3: Local registry (auto-updated via lean-ctx update)
     if let Some(local) = local_registry()
-        && let Some(w) = registry_lookup(model, local)
+        && let Some(w) = registry_lookup(base, local)
     {
         return w;
     }
 
-    // Layer 3: Bundled registry (compiled into binary)
-    if let Some(w) = registry_lookup(model, bundled()) {
+    // Layer 4: Bundled registry (compiled into binary)
+    if let Some(w) = registry_lookup(base, bundled()) {
         return w;
     }
 
@@ -175,5 +215,37 @@ mod tests {
             context_window_for_model("totally-unknown-model-xyz"),
             200_000
         );
+    }
+
+    #[test]
+    fn long_context_suffix_wins_over_registry() {
+        // GH #739: the [1m] marker is the client's explicit window statement.
+        assert_eq!(context_window_for_model("claude-opus-4-8[1m]"), 1_000_000);
+        assert_eq!(context_window_for_model("claude-opus-4-8[1M]"), 1_000_000);
+        assert_eq!(context_window_for_model("some-future-model[200k]"), 200_000);
+        assert_eq!(context_window_for_model("gpt-5.5[2m]"), 2_000_000);
+    }
+
+    #[test]
+    fn base_model_of_suffix_variant_resolves_normally() {
+        // Without the marker the registry (exact/prefix/family) decides.
+        assert_eq!(context_window_for_model("claude-opus-4-8"), 200_000);
+    }
+
+    #[test]
+    fn unknown_marker_falls_back_to_base_lookup() {
+        // A non-window bracket suffix must not break base-model resolution.
+        assert_eq!(context_window_for_model("gpt-5.5[thinking]"), 1_048_576);
+    }
+
+    #[test]
+    fn suffix_parsing_is_strict() {
+        assert_eq!(window_from_suffix("model[1m]"), Some(1_000_000));
+        assert_eq!(window_from_suffix("model[128k]"), Some(128_000));
+        assert_eq!(window_from_suffix("model[]"), None);
+        assert_eq!(window_from_suffix("model[m]"), None);
+        assert_eq!(window_from_suffix("model[1x]"), None);
+        assert_eq!(window_from_suffix("model"), None);
+        assert_eq!(window_from_suffix("model[1m"), None);
     }
 }

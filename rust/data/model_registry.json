@@ -29,6 +29,8 @@
     "claude-4.5-sonnet": { "context_window": 200000, "max_output": 16000 },
     "claude-4.6-opus": { "context_window": 200000, "max_output": 32000 },
     "claude-4.6-sonnet": { "context_window": 200000, "max_output": 16000 },
+    "claude-opus-4-8": { "context_window": 200000, "max_output": 32000 },
+    "claude-4.8-opus": { "context_window": 200000, "max_output": 32000 },
     "claude-3.5-sonnet": { "context_window": 200000, "max_output": 8192 },
     "claude-3.5-haiku": { "context_window": 200000, "max_output": 8192 },
     "gemini-2.5-pro": { "context_window": 1048576, "max_output": 65536 },
@@ -59,3 +61,4 @@
     "codex": 192000
   }
 }
+

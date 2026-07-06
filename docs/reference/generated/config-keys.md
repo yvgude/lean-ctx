@@ -324,6 +324,12 @@ Procedural memory budgets (learned patterns)
 - `min_repetitions` (usize, default `3`) — Minimum repetitions before a pattern is stored
 - `min_sequence_len` (usize, default `2`) — Minimum sequence length for procedure detection
 
+## `[model_context_windows]`
+
+Per-model context-window overrides in tokens. Keys are model names (case-insensitive), values override every registry layer — use for models the bundled/local registry does not know yet. Bracketed window markers in the model name itself (e.g. `claude-opus-4-8[1m]`) are parsed automatically and need no entry here. Example: `[model_context_windows]\n"my-custom-model" = 500000`
+
+_No sub-keys (presence of the section toggles the feature)._
+
 ## `[providers]`
 
 External context providers (GitHub, GitLab, Jira, MCP bridges, etc.). Set tokens via env vars (GITHUB_TOKEN, GITLAB_TOKEN). MCP bridges connect external MCP servers as context sources.
