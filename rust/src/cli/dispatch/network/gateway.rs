@@ -73,8 +73,16 @@ fn gdpr(rest: &[String]) {
     let (_url, pool) = require_pool();
     match action {
         "export" => {
+            // Art. 15 covers everything attributed to the person: LLM turns
+            // (usage_events) and MCP tool calls (mcp_events, GL#102). A
+            // missing mcp_events table (no MCP traffic ever) exports zero
+            // MCP rows instead of failing the whole request.
             let rows = match crate::cli::dispatch::run_async(async move {
-                crate::gateway_server::store::person_events(&pool, &keys).await
+                let llm = crate::gateway_server::store::person_events(&pool, &keys).await?;
+                let mcp = crate::gateway_server::mcp::store::person_events(&pool, &keys)
+                    .await
+                    .unwrap_or_default();
+                anyhow::Ok((llm, mcp))
             }) {
                 Ok(rows) => rows,
                 Err(e) => {
@@ -82,11 +90,16 @@ fn gdpr(rest: &[String]) {
                     std::process::exit(1);
                 }
             };
-            let jsonl: String = rows.iter().fold(String::new(), |mut acc, r| {
-                acc.push_str(&r.to_string());
-                acc.push('\n');
-                acc
-            });
+            let (llm_rows, mcp_rows) = rows;
+            let jsonl: String =
+                llm_rows
+                    .iter()
+                    .chain(mcp_rows.iter())
+                    .fold(String::new(), |mut acc, r| {
+                        acc.push_str(&r.to_string());
+                        acc.push('\n');
+                        acc
+                    });
             match flag_value(rest, "out") {
                 Some(path) => {
                     if let Err(e) = std::fs::write(path, &jsonl) {
@@ -94,8 +107,9 @@ fn gdpr(rest: &[String]) {
                         std::process::exit(1);
                     }
                     println!(
-                        "\x1b[32m✓\x1b[0m {} events of {person} written to {path} (JSONL)",
-                        rows.len()
+                        "\x1b[32m✓\x1b[0m {} LLM + {} MCP events of {person} written to {path} (JSONL)",
+                        llm_rows.len(),
+                        mcp_rows.len()
                     );
                 }
                 None => print!("{jsonl}"),
@@ -103,15 +117,21 @@ fn gdpr(rest: &[String]) {
         }
         "delete" => {
             if !rest.iter().any(|a| a == "--yes") {
-                eprintln!("This permanently deletes ALL usage_events of {person}.");
+                eprintln!("This permanently deletes ALL usage_events and mcp_events of {person}.");
                 eprintln!("Re-run with --yes to confirm (GDPR Art. 17 erasure).");
                 std::process::exit(2);
             }
             match crate::cli::dispatch::run_async(async move {
-                crate::gateway_server::store::delete_person_events(&pool, &keys).await
+                let llm = crate::gateway_server::store::delete_person_events(&pool, &keys).await?;
+                let mcp = crate::gateway_server::mcp::store::delete_person_events(&pool, &keys)
+                    .await
+                    .unwrap_or(0);
+                anyhow::Ok((llm, mcp))
             }) {
-                Ok(deleted) => {
-                    println!("\x1b[32m✓\x1b[0m Deleted {deleted} usage events of {person}.");
+                Ok((llm, mcp)) => {
+                    println!(
+                        "\x1b[32m✓\x1b[0m Deleted {llm} usage events and {mcp} MCP events of {person}."
+                    );
                     println!(
                         "  Also revoke their key: lean-ctx gateway keys revoke --person={person}"
                     );

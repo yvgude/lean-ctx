@@ -21,6 +21,7 @@ pub mod doctor;
 pub mod evidence;
 pub mod init;
 pub mod keys_cli;
+pub mod mcp;
 pub mod report;
 pub mod security;
 pub mod serve;

@@ -21,6 +21,7 @@ const state = {
   usage: null,
   series: null,
   status: null,
+  mcp: null,
   chart: null,
   refreshTimer: null,
   updatedTimer: null,
@@ -57,14 +58,18 @@ function windowQuery() {
 
 async function loadAll() {
   const q = windowQuery();
-  const [usage, series, status] = await Promise.all([
+  const [usage, series, status, mcp] = await Promise.all([
     api(`/api/admin/usage?${q}`),
     api(`/api/admin/timeseries?${q}`),
     api('/api/admin/status'),
+    // Tool channel (GL#91): absent/unreachable MCP data must never take the
+    // LLM cockpit down — the panel simply stays hidden then.
+    api(`/api/admin/mcp?${q}`).catch(() => null),
   ]);
   state.usage = usage;
   state.series = series;
   state.status = status;
+  state.mcp = mcp;
   state.lastLoaded = Date.now();
 }
 
@@ -147,6 +152,7 @@ function renderAll() {
   renderKpis();
   renderTrend();
   renderBreakdown();
+  renderMcp();
   renderDetail();
   renderUpdated();
   const u = state.usage;
@@ -332,6 +338,73 @@ function renderBreakdown() {
   $('#breakdown-empty').hidden = groups.length > 0;
 }
 
+/* tool channel (MCP observe, GL#91) */
+function renderMcp() {
+  const m = state.mcp;
+  const panel = $('#mcp-panel');
+  // No registered servers → the whole section disappears (zero noise for
+  // LLM-only deployments).
+  if (!m || !m.servers || m.servers.length === 0) { panel.hidden = true; return; }
+  panel.hidden = false;
+
+  const strip = m.servers.map((s) => {
+    const st = s.changed_tools > 0 ? 'st-warn' : 'st-ok';
+    const cred = s.credential === 'gateway' ? 'gateway-held credential' : 'caller credentials';
+    const changed = s.changed_tools > 0 ? ` · ${s.changed_tools} changed` : '';
+    return pill(st, `/mcp/${esc(s.id)}`, `${esc(s.url)} · ${cred} · ${num(s.tools)} tools${changed}`);
+  });
+  $('#mcp-strip').innerHTML = strip.join('');
+
+  const t = m.totals;
+  $('#mcp-kpi-calls').textContent = num(t.calls);
+  $('#mcp-kpi-calls-foot').textContent = t.errors > 0
+    ? `${num(t.errors)} errors` : (t.calls > 0 ? `${num(t.persons)} people` : '');
+  $('#mcp-kpi-tokens').textContent = num(t.result_tokens);
+  $('#mcp-kpi-tokens-foot').textContent = t.calls > 0
+    ? `≈ ${num(Math.round(t.result_tokens / Math.max(1, t.calls)))} tok / call` : '';
+  $('#mcp-kpi-cost').textContent = usd(t.context_cost_usd);
+  $('#mcp-kpi-cost-foot').textContent = m.reference_model
+    ? `at ${m.reference_model} input rate` : 'set [proxy.baseline].reference_model to price context';
+  const changedTotal = (m.inventory || []).filter((i) => i.change_count > 0).length;
+  $('#mcp-kpi-changed').textContent = num(changedTotal);
+  $('#mcp-kpi-changed-foot').textContent = changedTotal > 0 ? 'review before trusting' : 'all stable';
+
+  const changedByKey = new Map((m.inventory || []).map((i) => [`${i.server_id}\u0000${i.tool}`, i]));
+  const rows = m.tools || [];
+  $('#mcp-body').innerHTML = rows.map((r) => {
+    const inv = changedByKey.get(`${r.server_id}\u0000${r.tool}`);
+    const def = inv
+      ? (inv.change_count > 0
+        ? `<span class="pill"><span class="st st-warn"></span>changed ×${inv.change_count} <span class="mono muted">${esc(inv.schema_sha256.slice(0, 8))}</span></span>`
+        : `<span class="pill"><span class="st st-ok"></span>stable <span class="mono muted">${esc(inv.schema_sha256.slice(0, 8))}</span></span>`)
+      : '<span class="muted">—</span>';
+    return `
+    <tr>
+      <td>${esc(r.server_id)}</td>
+      <td>${esc(r.tool)}</td>
+      <td class="num">${num(r.calls)}</td>
+      <td class="num${r.errors > 0 ? ' saved-cell' : ''}">${num(r.errors)}</td>
+      <td class="num">${num(r.persons)}</td>
+      <td class="num">${num(r.result_tokens)}</td>
+      <td class="num">${usd(r.context_cost_usd)}</td>
+      <td class="num">${num(Math.round(r.p50_duration_ms))}</td>
+      <td>${def}</td>
+    </tr>`;
+  }).join('');
+  $('#mcp-empty').hidden = rows.length > 0;
+}
+
+function exportMcpCsv() {
+  const rows = (state.mcp?.tools || []).map((r) => [
+    r.server_id, r.tool, r.calls, r.errors, r.persons,
+    r.result_tokens, r.context_cost_usd.toFixed(6),
+    Math.round(r.p50_duration_ms), r.max_duration_ms,
+  ]);
+  downloadCsv(`gateway-mcp-tools-${state.windowDays}d-${stamp()}.csv`,
+    ['server', 'tool', 'calls', 'errors', 'persons', 'result_tokens',
+      'context_cost_usd', 'p50_ms', 'max_ms'], rows);
+}
+
 /* detail table */
 function visibleDetailRows() {
   const rows = state.usage.rows
@@ -474,6 +547,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('#export-breakdown').addEventListener('click', exportBreakdownCsv);
   $('#export-detail').addEventListener('click', exportDetailCsv);
+  $('#export-mcp').addEventListener('click', exportMcpCsv);
 
   if (state.token) {
     startApp().catch(() => showLogin());

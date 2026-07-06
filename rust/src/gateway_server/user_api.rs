@@ -170,6 +170,17 @@ pub struct MeProjectRow {
     pub saved_usd: f64,
 }
 
+/// One aggregated MCP tool row of the personal breakdown (GL#104): the tools
+/// this person called through `/mcp/{server}` and what that context costs.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MeToolRow {
+    pub server_id: String,
+    pub tool: String,
+    pub calls: i64,
+    pub result_tokens: i64,
+    pub context_cost_usd: f64,
+}
+
 /// Personal aggregate totals over the queried window.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MeTotals {
@@ -201,6 +212,10 @@ pub struct MeUsageResponse {
     pub totals: MeTotals,
     pub by_model: Vec<MeModelRow>,
     pub by_project: Vec<MeProjectRow>,
+    /// MCP tools this person used (empty without MCP traffic — the shell
+    /// hides the section entirely then).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<MeToolRow>,
     pub days: Vec<TimeseriesPoint>,
 }
 
@@ -352,6 +367,24 @@ pub async fn personal_usage(
         })
         .collect();
 
+    // MCP tool usage (GL#104). A gateway that never served MCP traffic has no
+    // mcp_events table — that is an empty section, not an error.
+    let tools = client
+        .query(super::mcp::store::ME_TOOLS_SQL, &[&from, &to, &person])
+        .await
+        .map(|rows| {
+            rows.iter()
+                .map(|r| MeToolRow {
+                    server_id: r.get("server_id"),
+                    tool: r.get("tool"),
+                    calls: r.get("calls"),
+                    result_tokens: r.get("result_tokens"),
+                    context_cost_usd: r.get("context_cost_usd"),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     let measured: Vec<TimeseriesPoint> = client
         .query(ME_TIMESERIES_SQL, &[&from, &to, &person])
         .await?
@@ -379,6 +412,7 @@ pub async fn personal_usage(
         totals,
         by_model,
         by_project,
+        tools,
         days: fill_gaps(&measured, from, to),
     })
 }
@@ -482,6 +516,13 @@ mod tests {
                 requests: 412,
                 cost_usd: 84.12,
                 saved_usd: 41.90,
+            }],
+            tools: vec![MeToolRow {
+                server_id: "github".into(),
+                tool: "get_issue".into(),
+                calls: 31,
+                result_tokens: 128_000,
+                context_cost_usd: 0.32,
             }],
             days: vec![],
         };

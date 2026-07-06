@@ -118,12 +118,20 @@ mod tests {
     fn shell_never_embeds_credentials() {
         // The shell is served unguarded — it must not contain tokens or
         // secret-looking material (the Bearer token arrives via user input).
-        for needle in ["Bearer ", "LEAN_CTX_GATEWAY_ADMIN_TOKEN="] {
+        // Documentation placeholders (`Bearer &lt;…&gt;` in onboarding
+        // snippets) are fine; anything else after "Bearer " is not.
+        for (idx, _) in ADMIN_INDEX_HTML.match_indices("Bearer ") {
+            let after = &ADMIN_INDEX_HTML[idx + "Bearer ".len()..];
             assert!(
-                !ADMIN_INDEX_HTML.contains(needle),
-                "index.html must not embed {needle}"
+                after.starts_with("&lt;"),
+                "index.html embeds 'Bearer ' followed by non-placeholder material: {:?}",
+                &after[..after.len().min(40)]
             );
         }
+        assert!(
+            !ADMIN_INDEX_HTML.contains("LEAN_CTX_GATEWAY_ADMIN_TOKEN="),
+            "index.html must not embed the admin token env assignment"
+        );
         assert!(
             !ADMIN_JS.contains("localStorage.setItem('leanctx-admin-token'"),
             "token must live in sessionStorage, not persist in localStorage"

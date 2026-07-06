@@ -98,6 +98,7 @@ function renderAll() {
   renderTrend();
   renderModels();
   renderProjects();
+  renderTools();
 
   $('#foot-window').textContent = `${d.from.slice(0, 16)}Z → ${d.to.slice(0, 16)}Z`;
   $$('.kpi-window-label').forEach((el) => { el.textContent = `· ${state.windowDays}d`; });
@@ -185,6 +186,22 @@ function renderProjects() {
       <td class="num">${usd(r.cost_usd)}</td>
     </tr>`).join('');
   $('#projects-empty').hidden = rows.length > 0;
+}
+
+function renderTools() {
+  const rows = state.data.tools || [];
+  // The panel only exists for people who used the tool channel — LLM-only
+  // users never see an empty MCP section.
+  $('#tools-panel').hidden = rows.length === 0;
+  if (rows.length === 0) return;
+  $('#tools-body').innerHTML = rows.map((r) => `
+    <tr>
+      <td>${esc(r.server_id)}</td>
+      <td>${esc(r.tool)}</td>
+      <td class="num">${num(r.calls)}</td>
+      <td class="num">${num(r.result_tokens)}</td>
+      <td class="num">${usd(r.context_cost_usd)}</td>
+    </tr>`).join('');
 }
 
 /* ── login / session ───────────────────────────────────────────────── */

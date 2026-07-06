@@ -563,6 +563,50 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         },
     );
 
+    // Org-gateway MCP registry (GL#91) — distinct from `[[gateway.servers]]`
+    // (the local tool-catalog aggregator above): these are the MCP servers the
+    // *org gateway* reverse-proxies, meters and inventories under /mcp/{id}.
+    let mut mcp_servers = BTreeMap::new();
+    mcp_servers.insert(
+        "id".into(),
+        key(
+            "string",
+            serde_json::json!(""),
+            "Registry id; becomes the governed route `/mcp/{id}` on the proxy port (lowercase alnum/-/_)",
+        ),
+    );
+    mcp_servers.insert(
+        "url".into(),
+        key(
+            "string",
+            serde_json::json!(""),
+            "Upstream Streamable-HTTP endpoint (HTTPS; loopback HTTP ok; plain HTTP needs [proxy] allow_insecure_http_upstream)",
+        ),
+    );
+    mcp_servers.insert(
+        "auth_env".into(),
+        key(
+            "string",
+            serde_json::json!(""),
+            "Env var holding the upstream credential the gateway injects as `Authorization: Bearer <env value>` (callers never see it)",
+        ),
+    );
+    mcp_servers.insert(
+        "enabled".into(),
+        key(
+            "bool",
+            serde_json::json!(true),
+            "Per-server switch (default true)",
+        ),
+    );
+    sections.insert(
+        "gateway_server.mcp_servers".into(),
+        SectionSchema {
+            description: "Org-gateway MCP registry (array of tables: `[[gateway_server.mcp_servers]]`): reverse-proxied under /mcp/{id} with per-person keys, metered into mcp_events, tool definitions hash-tracked (observe stage, GL#91)".into(),
+            keys: mcp_servers,
+        },
+    );
+
     let mut addons = BTreeMap::new();
     addons.insert(
         "policy".into(),

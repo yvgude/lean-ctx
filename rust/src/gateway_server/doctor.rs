@@ -200,10 +200,9 @@ pub async fn run_checks(dir: &Path, proxy_port: u16, admin_port: u16) -> Vec<Che
     if let Some(raw) = &config_raw
         && let Ok(v) = toml::from_str::<toml::Value>(raw)
     {
-        results.extend(check_provider_credentials(
-            &v,
-            &parse_env_names(&dir.join(".env")),
-        ));
+        let env_names = parse_env_names(&dir.join(".env"));
+        results.extend(check_provider_credentials(&v, &env_names));
+        results.extend(check_mcp_servers(&v, &env_names).await);
     }
 
     // -- live ports ----------------------------------------------------------
@@ -333,6 +332,99 @@ fn check_provider_credentials(v: &toml::Value, env_file_names: &[String]) -> Vec
         }
     }
     out
+}
+
+/// MCP registry checks (GL#99): every enabled `[[gateway_server.mcp_servers]]`
+/// entry gets its config validated (id/URL through the same resolver the
+/// proxy uses), its `auth_env` presence verified, and its endpoint probed —
+/// an MCP server that answers anything at all to a bare GET is reachable
+/// (405/406 are normal answers for a GET without an SSE accept header).
+async fn check_mcp_servers(v: &toml::Value, env_file_names: &[String]) -> Vec<CheckResult> {
+    let mut out = Vec::new();
+    let Some(entries) = v
+        .get("gateway_server")
+        .and_then(|g| g.get("mcp_servers"))
+        .and_then(|m| m.as_array())
+    else {
+        return out;
+    };
+    if entries.is_empty() {
+        return out;
+    }
+
+    // Re-parse through the typed config so doctor applies exactly the rules
+    // the serving proxy applies (single source of validation truth).
+    let typed: Vec<crate::core::config::McpServerEntry> = entries
+        .iter()
+        .filter_map(|e| e.clone().try_into().ok())
+        .collect();
+    let cfg = crate::core::config::GatewayServerConfig {
+        mcp_servers: typed.clone(),
+        ..Default::default()
+    };
+    let allow_insecure = v
+        .get("proxy")
+        .and_then(|p| p.get("allow_insecure_http_upstream"))
+        .and_then(toml::Value::as_bool)
+        .unwrap_or(false);
+    let resolved = cfg.resolve_mcp_servers(allow_insecure);
+
+    let enabled_count = typed.iter().filter(|e| e.enabled.unwrap_or(true)).count();
+    if resolved.len() < enabled_count {
+        out.push(fail(
+            "mcp registry",
+            format!(
+                "{} of {enabled_count} enabled entr{} rejected (invalid id or URL)",
+                enabled_count - resolved.len(),
+                if enabled_count == 1 { "y" } else { "ies" }
+            ),
+            "check the gateway logs at startup — ids are lowercase alnum/-/_, URLs need \
+             https:// (or the insecure-HTTP opt-in for trusted LANs)",
+        ));
+    }
+
+    for server in &resolved {
+        if let Some(env_name) = server.auth_env.as_deref() {
+            let present = std::env::var(env_name).is_ok_and(|x| !x.trim().is_empty())
+                || env_file_names.iter().any(|n| n == env_name);
+            if !present {
+                out.push(fail(
+                    "mcp credential",
+                    format!("{}: {env_name} missing", server.id),
+                    format!(
+                        "add {env_name}=<token> to .env (and pass it through in docker-compose.yml)"
+                    ),
+                ));
+                continue;
+            }
+        }
+        out.push(probe_mcp_endpoint(server).await);
+    }
+    out
+}
+
+/// Reachability probe for one MCP upstream. Any HTTP answer (including 4xx —
+/// Streamable-HTTP servers commonly reject bare GETs) proves the endpoint is
+/// alive; only a transport error is a warning.
+async fn probe_mcp_endpoint(server: &crate::core::config::ResolvedMcpServer) -> CheckResult {
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(4))
+        .timeout(std::time::Duration::from_secs(6))
+        .build();
+    let Ok(client) = client else {
+        return warn("mcp upstream", "probe client failed to build", "retry");
+    };
+    match client.get(&server.url).send().await {
+        Ok(resp) => ok(
+            "mcp upstream",
+            format!("{}: reachable (HTTP {})", server.id, resp.status().as_u16()),
+        ),
+        Err(e) => warn(
+            "mcp upstream",
+            format!("{}: unreachable: {e}", server.id),
+            "traffic through /mcp/{id} will answer 502 until the upstream is up (fail-open metering)",
+        ),
+    }
 }
 
 /// PG TLS posture (#54/#58): managed Postgres must say `sslmode=require`;

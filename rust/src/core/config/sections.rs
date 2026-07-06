@@ -757,9 +757,99 @@ pub struct GatewayServerConfig {
     /// working. Default `false` (cleartext person tags).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pseudonymize_persons: Option<bool>,
+    /// MCP upstream registry (GL#91/#99, Doc 15 §7 — the observe stage of MCP
+    /// context governance). Each entry publishes a governed reverse-proxy
+    /// route `/mcp/{id}` on the proxy port: same per-person key auth as the
+    /// LLM channel, tool calls metered into `mcp_events`, tool definitions
+    /// inventoried + hash-tracked (rug-pull detection). Observe-only: the
+    /// gateway never blocks or rewrites MCP traffic in this stage.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_servers: Vec<McpServerEntry>,
+}
+
+/// One `[[gateway_server.mcp_servers]]` registry entry — an MCP server the org
+/// gateway fronts. Distinct from `[[gateway.servers]]` (the *local* tool-
+/// catalog aggregator, #210): this registry is the org-facing reverse proxy.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct McpServerEntry {
+    /// Registry id, used in the `/mcp/{id}` route. Lowercase alphanumeric
+    /// plus `-`/`_` (it becomes a URL path segment).
+    pub id: String,
+    /// Upstream Streamable-HTTP endpoint (the server's single MCP endpoint,
+    /// e.g. `https://mcp.example.com/mcp`). HTTPS for any non-loopback host;
+    /// plaintext HTTP needs the same explicit opt-in as LLM upstreams
+    /// (`[proxy] allow_insecure_http_upstream`).
+    pub url: String,
+    /// Name of the environment variable holding the upstream credential. When
+    /// set, the gateway sends `Authorization: Bearer <value>` upstream — the
+    /// credential lives in the gateway's environment, never on laptops. The
+    /// caller's own `Authorization` header (their gateway key) is **always**
+    /// stripped before forwarding, with or without this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_env: Option<String>,
+    /// Set `false` to keep the entry in config but take it out of service.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
+/// A validated, ready-to-serve MCP registry entry (runtime view of
+/// [`McpServerEntry`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedMcpServer {
+    pub id: String,
+    pub url: String,
+    pub auth_env: Option<String>,
 }
 
 impl GatewayServerConfig {
+    /// Validate + resolve the `[[gateway_server.mcp_servers]]` registry.
+    /// Same resilience contract as `[[proxy.providers]]`: invalid entries are
+    /// logged and skipped (one typo never takes the gateway down), duplicates
+    /// keep the first occurrence. `allow_insecure_http` mirrors the proxy's
+    /// plaintext-HTTP opt-in so the two registries share one security posture.
+    #[must_use]
+    pub fn resolve_mcp_servers(&self, allow_insecure_http: bool) -> Vec<ResolvedMcpServer> {
+        let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        let mut out = Vec::new();
+        for entry in &self.mcp_servers {
+            if !entry.enabled.unwrap_or(true) {
+                continue;
+            }
+            let id = entry.id.trim();
+            if !is_valid_mcp_server_id(id) {
+                tracing::warn!(
+                    "[gateway_server.mcp_servers] invalid id '{id}' \
+                     (lowercase alnum/-/_ only) — entry skipped"
+                );
+                continue;
+            }
+            if !seen.insert(id) {
+                tracing::warn!(
+                    "[gateway_server.mcp_servers] duplicate id '{id}' — keeping first entry"
+                );
+                continue;
+            }
+            match validate_mcp_upstream_url(&entry.url, allow_insecure_http) {
+                Ok(url) => out.push(ResolvedMcpServer {
+                    id: id.to_string(),
+                    url,
+                    auth_env: entry
+                        .auth_env
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|v| !v.is_empty())
+                        .map(str::to_string),
+                }),
+                Err(e) => {
+                    tracing::warn!(
+                        "[gateway_server.mcp_servers] '{id}' has invalid url — skipped: {e}"
+                    );
+                }
+            }
+        }
+        out
+    }
+
     /// Effective admin bind address (see `admin_bind_host`). Precedence:
     /// `LEAN_CTX_GATEWAY_ADMIN_BIND_HOST` env > config > `127.0.0.1`.
     #[must_use]
@@ -778,6 +868,46 @@ impl GatewayServerConfig {
             _ => std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
         }
     }
+}
+
+/// True when `id` is usable as an MCP registry id: non-empty, lowercase alnum
+/// plus `-`/`_` (it becomes a URL path segment). Same shape rule as
+/// `[[proxy.providers]]` ids; no built-in namespace exists to shadow here.
+fn is_valid_mcp_server_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+}
+
+/// Validates an MCP upstream URL. A declared registry entry is itself the
+/// deliberate custom-host opt-in (same rationale as `[[proxy.providers]]`):
+/// any HTTPS host is accepted; loopback HTTP is always fine; non-loopback
+/// plaintext HTTP requires the explicit insecure-HTTP opt-in. This is the
+/// SSRF boundary — the proxy only ever connects to URLs that passed here.
+fn validate_mcp_upstream_url(url: &str, allow_insecure_http: bool) -> Result<String, String> {
+    let trimmed = url.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err("empty url".into());
+    }
+    if crate::core::config::is_local_proxy_url(trimmed) {
+        return Ok(trimmed.to_string());
+    }
+    if trimmed.starts_with("http://") {
+        if allow_insecure_http {
+            return Ok(trimmed.to_string());
+        }
+        return Err(format!(
+            "MCP upstream must use HTTPS: {trimmed} (for a trusted local-network HTTP \
+             upstream opt in with `[proxy] allow_insecure_http_upstream = true`)"
+        ));
+    }
+    if trimmed.starts_with("https://") {
+        return Ok(trimmed.to_string());
+    }
+    Err(format!(
+        "MCP upstream must start with http:// or https://: {trimmed}"
+    ))
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -831,5 +961,60 @@ mod gateway_server_tests {
             !cfg.resolved_admin_bind_host().is_loopback(),
             "explicit opt-in widens the bind"
         );
+    }
+
+    fn mcp_entry(id: &str, url: &str) -> McpServerEntry {
+        McpServerEntry {
+            id: id.into(),
+            url: url.into(),
+            auth_env: None,
+            enabled: None,
+        }
+    }
+
+    #[test]
+    fn mcp_registry_validates_ids_urls_and_duplicates() {
+        let cfg = GatewayServerConfig {
+            mcp_servers: vec![
+                mcp_entry("github", "https://mcp.example.com/mcp/"),
+                // invalid id (uppercase) — skipped, never panics
+                mcp_entry("GitHub", "https://mcp.example.com/mcp"),
+                // duplicate — first occurrence wins
+                mcp_entry("github", "https://other.example.com/mcp"),
+                // plaintext HTTP on a non-loopback host without the opt-in — skipped
+                mcp_entry("plain", "http://mcp.example.com/mcp"),
+                // loopback HTTP is always fine (local/dev)
+                mcp_entry("local", "http://127.0.0.1:9200/mcp"),
+                McpServerEntry {
+                    enabled: Some(false),
+                    ..mcp_entry("disabled", "https://mcp.example.com/mcp")
+                },
+                McpServerEntry {
+                    auth_env: Some("  GITHUB_MCP_PAT  ".into()),
+                    ..mcp_entry("authed", "https://api.githubcopilot.com/mcp")
+                },
+            ],
+            ..Default::default()
+        };
+        let resolved = cfg.resolve_mcp_servers(false);
+        let ids: Vec<&str> = resolved.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["github", "local", "authed"]);
+        // Trailing slash normalized; the duplicate kept the first URL.
+        assert_eq!(resolved[0].url, "https://mcp.example.com/mcp");
+        assert_eq!(resolved[2].auth_env.as_deref(), Some("GITHUB_MCP_PAT"));
+
+        // The insecure-HTTP opt-in admits the plaintext entry (trusted LAN).
+        let with_optin = cfg.resolve_mcp_servers(true);
+        assert!(with_optin.iter().any(|s| s.id == "plain"));
+    }
+
+    #[test]
+    fn mcp_upstream_url_rules_match_the_proxy_posture() {
+        assert!(validate_mcp_upstream_url("https://mcp.example.com/mcp", false).is_ok());
+        assert!(validate_mcp_upstream_url("http://localhost:9200/mcp", false).is_ok());
+        assert!(validate_mcp_upstream_url("http://mcp.example.com/mcp", false).is_err());
+        assert!(validate_mcp_upstream_url("http://mcp.example.com/mcp", true).is_ok());
+        assert!(validate_mcp_upstream_url("ftp://mcp.example.com", false).is_err());
+        assert!(validate_mcp_upstream_url("   ", false).is_err());
     }
 }

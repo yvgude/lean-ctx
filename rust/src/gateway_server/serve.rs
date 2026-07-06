@@ -97,6 +97,28 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         );
     }
 
+    // MCP observe channel (GL#91): with both a store and a registered MCP
+    // server, meter the tool channel into `mcp_events` + `mcp_tool_inventory`.
+    // Same fail-open contract as the LLM store — schema init failure degrades
+    // bookkeeping (the writer retries per event), never tool traffic.
+    let mcp_registered = !cfg
+        .gateway_server
+        .resolve_mcp_servers(cfg.proxy.allows_insecure_http_upstream())
+        .is_empty();
+    if mcp_registered && let Some(pool) = pool.clone() {
+        match super::mcp::store::init_schema(&pool).await {
+            Ok(()) => println!("  MCP-Store: mcp_events + tool inventory ready (Postgres)"),
+            Err(e) => {
+                println!("  MCP-Store: ⚠ Postgres unreachable at startup (fail-open): {e:#}");
+            }
+        }
+        if !super::mcp::metering::spawn_writer(pool) {
+            tracing::warn!("mcp metering sink already installed — writer not started twice");
+        }
+    } else if mcp_registered {
+        println!("  MCP-Store: off — set {DATABASE_URL_ENV} to meter MCP tool calls (mcp_events)");
+    }
+
     // -- Admin listener (dashboard + admin API + /metrics, #20/#34/#45) -----
     match (pool.clone(), admin_token()) {
         (Some(pool), Some(token)) => {
@@ -110,6 +132,9 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
                 routing_aliases: cfg.proxy.routing.aliases.clone(),
                 reference_model: cfg.proxy.baseline.reference_model.clone(),
                 local_shadow_rate: cfg.proxy.baseline.effective_local_shadow_rate(),
+                mcp_servers: cfg
+                    .gateway_server
+                    .resolve_mcp_servers(cfg.proxy.allows_insecure_http_upstream()),
             };
             let router = admin_router(state, token);
             // Secure by default (#54/#56): loopback unless explicitly widened
@@ -177,7 +202,9 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
     if retention_days > 0
         && let Some(pool) = pool.clone()
     {
-        println!("  Retention: usage_events kept {retention_days} days (purge every 6h)");
+        println!(
+            "  Retention: usage_events + mcp_events kept {retention_days} days (purge every 6h)"
+        );
         tokio::spawn(async move {
             loop {
                 match super::store::purge_events_older_than(&pool, retention_days).await {
@@ -189,6 +216,16 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
                     }
                     Err(e) => {
                         tracing::debug!("usage retention purge skipped: {e:#}");
+                    }
+                }
+                // MCP events share the retention window (GL#102). A missing
+                // mcp_events table (no MCP traffic ever) is a silent no-op.
+                match super::mcp::store::purge_events_older_than(&pool, retention_days).await {
+                    Ok(0) | Err(_) => {}
+                    Ok(purged) => {
+                        tracing::info!(
+                            "mcp retention: purged {purged} events older than {retention_days} days"
+                        );
                     }
                 }
                 tokio::time::sleep(std::time::Duration::from_hours(6)).await;
@@ -209,16 +246,18 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
     result
 }
 
-/// Waits until the usage sink queue is empty or the deadline passes.
+/// Waits until the usage + MCP sink queues are empty or the deadline passes.
 async fn drain_usage_queue(max_wait: std::time::Duration) {
     let started = std::time::Instant::now();
-    let mut pending = crate::proxy::usage_sink::pending_count();
-    while pending > 0 && started.elapsed() < max_wait {
+    let pending =
+        || crate::proxy::usage_sink::pending_count() + super::mcp::metering::pending_count();
+    let mut left = pending();
+    while left > 0 && started.elapsed() < max_wait {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        pending = crate::proxy::usage_sink::pending_count();
+        left = pending();
     }
-    if pending > 0 {
-        tracing::warn!("shutdown drain window elapsed with {pending} usage event(s) unflushed");
+    if left > 0 {
+        tracing::warn!("shutdown drain window elapsed with {left} event(s) unflushed");
     } else {
         println!("  Store:     usage queue drained.");
     }
@@ -405,6 +444,11 @@ fn render_metrics(out: &mut String) {
         out,
         "# HELP leanctx_usage_events_dropped_total Usage events dropped because the store writer was saturated (fail-open).\n# TYPE leanctx_usage_events_dropped_total counter\nleanctx_usage_events_dropped_total {}",
         crate::proxy::usage_sink::dropped_count()
+    );
+    let _ = writeln!(
+        out,
+        "# HELP leanctx_mcp_events_dropped_total MCP exchanges dropped because the metering writer was saturated (fail-open).\n# TYPE leanctx_mcp_events_dropped_total counter\nleanctx_mcp_events_dropped_total {}",
+        super::mcp::metering::dropped_count()
     );
 
     // Org-policy gate (enterprise#25, #66): blocked-request counters.

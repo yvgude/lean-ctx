@@ -139,6 +139,25 @@
       <div id="projects-empty" class="empty" hidden>No project usage in this window.</div>
     </section>
 
+    <!-- Tools (MCP) — hidden entirely until this person used the tool channel -->
+    <section class="panel" id="tools-panel" hidden>
+      <div class="panel-head">
+        <h2>My tools <span class="muted">MCP via gateway</span></h2>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="tools-table">
+          <thead>
+            <tr>
+              <th>Server</th><th>Tool</th>
+              <th class="num">Calls</th><th class="num">Result tok</th>
+              <th class="num">Context cost <span class="info-dot" title="Tool-result tokens priced at the org's reference model input rate — what this context costs each time it flows into a model turn.">i</span></th>
+            </tr>
+          </thead>
+          <tbody id="tools-body"></tbody>
+        </table>
+      </div>
+    </section>
+
     <footer class="foot">
       <span id="foot-window" class="mono"></span>
       <span>your rows only · numbers from <code>usage_events</code></span>

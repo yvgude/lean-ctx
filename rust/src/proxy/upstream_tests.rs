@@ -26,6 +26,7 @@ async fn proxy_state_reads_upstream_live_from_watch() {
         introspect: Arc::new(introspect::IntrospectState::default()),
         upstreams: rx,
         chatgpt_cookies: chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
+        mcp_servers: Arc::new(Vec::new()),
     };
     assert_eq!(state.openai_upstream(), "https://old.example");
 

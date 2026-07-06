@@ -190,6 +190,7 @@ mod tests {
             upstreams: rx,
             chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(
             ),
+            mcp_servers: Arc::new(Vec::new()),
         }
     }
 

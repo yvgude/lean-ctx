@@ -135,6 +135,62 @@ export ANTHROPIC_AUTH_TOKEN=&lt;personal key — see `lean-ctx gateway keys add`
       <div id="breakdown-empty" class="empty" hidden>Nothing matches.</div>
     </section>
 
+    <!-- Tool channel (MCP observe, GL#91) -->
+    <section class="panel" id="mcp-panel" hidden>
+      <div class="panel-head">
+        <h2>Tool channel <span class="muted">MCP · observed</span></h2>
+        <div class="panel-tools">
+          <button id="export-mcp" class="tool-btn" title="Download tool activity as CSV">CSV ↓</button>
+        </div>
+      </div>
+      <div id="mcp-strip" class="health-strip" aria-label="MCP servers"></div>
+      <div class="kpi-grid kpi-grid-sub">
+        <div class="kpi-card">
+          <div class="kpi-label">Tool calls <span class="kpi-window-label"></span></div>
+          <div class="kpi-value mono" id="mcp-kpi-calls">—</div>
+          <div class="kpi-foot" id="mcp-kpi-calls-foot"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Context tokens <span class="info-dot" title="Tokens of tool results flowing back into agent sessions — context the org pays for on every subsequent model turn.">i</span></div>
+          <div class="kpi-value mono" id="mcp-kpi-tokens">—</div>
+          <div class="kpi-foot" id="mcp-kpi-tokens-foot"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Context cost <span class="info-dot" title="Tool-result tokens priced at the reference model's input rate — what this context costs each time it is sent to a model.">i</span></div>
+          <div class="kpi-value mono" id="mcp-kpi-cost">—</div>
+          <div class="kpi-foot" id="mcp-kpi-cost-foot"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Changed definitions <span class="info-dot" title="Tools whose definition fingerprint (SHA-256) changed since first seen — review them: a silent redefinition is the MCP 'rug pull' pattern.">i</span></div>
+          <div class="kpi-value mono" id="mcp-kpi-changed">—</div>
+          <div class="kpi-foot" id="mcp-kpi-changed-foot"></div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="mcp-table">
+          <thead>
+            <tr>
+              <th>Server</th>
+              <th>Tool</th>
+              <th class="num">Calls</th>
+              <th class="num">Errors</th>
+              <th class="num">People</th>
+              <th class="num">Result tok</th>
+              <th class="num">Context cost</th>
+              <th class="num">p50 ms</th>
+              <th>Definition</th>
+            </tr>
+          </thead>
+          <tbody id="mcp-body"></tbody>
+        </table>
+      </div>
+      <div id="mcp-empty" class="empty empty-onboard" hidden>
+        <p><b>No tool calls in this window yet.</b> Point an MCP client at the gateway:</p>
+        <pre class="mono">"url": "http://&lt;gateway-host&gt;:8484/mcp/&lt;server-id&gt;",
+"headers": { "Authorization": "Bearer &lt;personal key&gt;" }</pre>
+      </div>
+    </section>
+
     <!-- Detail: raw rows -->
     <section class="panel">
       <div class="panel-head">
@@ -166,7 +222,7 @@ export ANTHROPIC_AUTH_TOKEN=&lt;personal key — see `lean-ctx gateway keys add`
 
     <footer class="foot">
       <span id="foot-window" class="mono"></span>
-      <span>numbers from <code>usage_events</code> · projection is an extrapolation, not billing</span>
+      <span>numbers from <code>usage_events</code> + <code>mcp_events</code> · projection is an extrapolation, not billing</span>
     </footer>
   </main>
 </div>

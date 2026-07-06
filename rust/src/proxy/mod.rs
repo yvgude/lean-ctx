@@ -77,9 +77,40 @@ pub struct ProxyState {
     /// ChatGPT WebSocket passthrough replays the same clearance to chatgpt.com
     /// that the reqwest rail accumulated (#597).
     pub(crate) chatgpt_cookies: Arc<chatgpt_cookies::ChatGptCloudflareCookieStore>,
+    /// Resolved `[[gateway_server.mcp_servers]]` registry snapshot (GL#100).
+    /// Empty when none are registered; the `/mcp/{server}` routes are only
+    /// mounted with the `gateway-server` feature. Startup snapshot, restart
+    /// to reload — the same lifecycle as `gateway-keys.toml`.
+    pub mcp_servers: Arc<Vec<crate::core::config::ResolvedMcpServer>>,
 }
 
 impl ProxyState {
+    /// Test-only construction for modules outside `proxy` (the cookie store
+    /// field is deliberately `pub(crate)`-narrow): default upstreams, fresh
+    /// stats, the given MCP registry. Gated with the sole consumer
+    /// (`gateway_server::mcp::e2e_tests`) so feature-reduced builds don't
+    /// carry dead test scaffolding.
+    #[cfg(all(test, feature = "gateway-server"))]
+    pub(crate) fn for_tests(mcp_servers: Vec<crate::core::config::ResolvedMcpServer>) -> Self {
+        // Dropping the sender is fine: handlers only `borrow()` the last value.
+        let (_tx, rx) = tokio::sync::watch::channel(Arc::new(Upstreams {
+            anthropic: "https://api.anthropic.com".into(),
+            openai: "https://api.openai.com".into(),
+            chatgpt: "https://chatgpt.com".into(),
+            gemini: "https://generativelanguage.googleapis.com".into(),
+            providers: Vec::new(),
+        }));
+        Self {
+            client: reqwest::Client::new(),
+            port: 0,
+            stats: Arc::new(ProxyStats::default()),
+            introspect: Arc::new(introspect::IntrospectState::default()),
+            upstreams: rx,
+            chatgpt_cookies: chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
+            mcp_servers: Arc::new(mcp_servers),
+        }
+    }
+
     /// Consistent snapshot of all upstreams for the current request/response.
     pub fn upstream_snapshot(&self) -> Arc<Upstreams> {
         self.upstreams.borrow().clone()
@@ -442,6 +473,15 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         providers: initial_providers,
     } = initial;
 
+    // Governed MCP reverse proxy registry (GL#91/#100): resolved once at
+    // startup (restart to reload — the gateway-keys.toml lifecycle). The
+    // `/mcp/{server}` routes are mounted below with the gateway-server
+    // feature; the snapshot lives in ProxyState either way.
+    let mcp_servers = Arc::new(
+        cfg.gateway_server
+            .resolve_mcp_servers(cfg.proxy.allows_insecure_http_upstream()),
+    );
+
     let state = ProxyState {
         client,
         port,
@@ -449,6 +489,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         introspect: Arc::new(introspect::IntrospectState::default()),
         upstreams: upstream_rx,
         chatgpt_cookies,
+        mcp_servers: mcp_servers.clone(),
     };
 
     // `mut` is only exercised by the gateway-server merge below.
@@ -515,6 +556,19 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     #[cfg(feature = "gateway-server")]
     {
         app = app.merge(crate::gateway_server::user_api::router());
+    }
+
+    // Governed MCP reverse proxy (GL#91/#100): `/mcp/{server}` fronts the
+    // `[[gateway_server.mcp_servers]]` registry. Registered before the guard
+    // layers, so the same Bearer auth + host allowlist + rate limit wrap the
+    // tool channel — and `/mcp/*` is not a provider route, so the loopback
+    // provider-key fallback never authenticates it.
+    #[cfg(feature = "gateway-server")]
+    {
+        use crate::gateway_server::mcp::proxy::handler as mcp_handler;
+        app = app
+            .route("/mcp/{server}", any(mcp_handler))
+            .route("/mcp/{server}/", any(mcp_handler));
     }
 
     let mut app = app
@@ -594,6 +648,18 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
             p.shape.as_str(),
             if p.api_key_env.is_some() {
                 ", gateway-held key"
+            } else {
+                ""
+            }
+        );
+    }
+    for s in mcp_servers.iter() {
+        println!(
+            "  MCP:       any  /mcp/{} → {} (observed{})",
+            s.id,
+            s.url,
+            if s.auth_env.is_some() {
+                ", gateway-held credential"
             } else {
                 ""
             }

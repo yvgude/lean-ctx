@@ -97,6 +97,9 @@ pub struct AdminState {
     pub reference_model: Option<String>,
     /// Effective local shadow rate (USD per MTok).
     pub local_shadow_rate: f64,
+    /// Resolved `[[gateway_server.mcp_servers]]` registry snapshot (GL#104) —
+    /// the console's "Tools" section lists these alongside live inventory.
+    pub mcp_servers: Vec<crate::core::config::ResolvedMcpServer>,
 }
 
 /// Builds the admin API router. Mounted behind Bearer auth by `gateway serve`.
@@ -112,6 +115,10 @@ pub fn router(state: AdminState) -> axum::Router {
             axum::routing::get(super::admin_status::get_status),
         )
         .route("/api/admin/evidence", axum::routing::get(get_evidence))
+        .route(
+            "/api/admin/mcp",
+            axum::routing::get(super::mcp::admin::get_mcp),
+        )
         .with_state(Arc::new(state))
 }
 

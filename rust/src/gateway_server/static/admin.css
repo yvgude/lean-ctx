@@ -123,6 +123,11 @@ code{font-family:var(--mono);font-size:11px;background:var(--surface-2);border:1
 
 /* KPI grid */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+/* sub-grid inside a panel (tool channel): tighter and visually nested */
+.kpi-grid-sub{margin:12px 0 14px}
+.kpi-grid-sub .kpi-card{padding:12px 14px}
+.kpi-grid-sub .kpi-value{font-size:20px}
+#mcp-strip{margin-bottom:2px}
 .kpi-card{
   background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
   padding:16px 18px;display:flex;flex-direction:column;gap:6px;min-width:0;
