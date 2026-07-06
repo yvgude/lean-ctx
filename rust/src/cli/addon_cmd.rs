@@ -412,7 +412,7 @@ fn cmd_add(target: &str, args: &[String]) {
             }
             if let Some(pm) = pack_manifest.as_ref().filter(|_| !resolved_deps.is_empty()) {
                 let project_root = super::common::detect_project_root(args);
-                if let Err(e) = super::pack_cmd::install_declared_dependencies(
+                if let Err(e) = super::pack_remote::install_declared_dependencies(
                     pm,
                     &registry_base,
                     reg_token.as_deref(),
@@ -855,7 +855,7 @@ fn refresh_pack_dependencies(
     let token = crate::core::context_package::remote::publish_token(None);
     let project_root = super::common::detect_project_root(args);
     println!("Refreshing declared dependencies (depth-1) …");
-    if let Err(e) = super::pack_cmd::install_declared_dependencies(
+    if let Err(e) = super::pack_remote::install_declared_dependencies(
         pm,
         &base,
         token.as_deref(),

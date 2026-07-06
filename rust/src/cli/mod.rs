@@ -28,6 +28,7 @@ mod ledger_cmd;
 mod output_savings_cmd;
 mod overview_cmd;
 mod pack_cmd;
+mod pack_remote;
 pub mod plugin_cmd;
 mod policy_cmd;
 mod policy_enforce_cmd;
