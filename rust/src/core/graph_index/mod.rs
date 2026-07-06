@@ -608,11 +608,14 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
         // No persisted index yet — the existence/TTL checks above already decided.
         return false;
     };
+    // #735: excluded files must not flag the index stale (a change to CSV seed
+    // data would otherwise force needless graph rescans forever).
+    let index_filter = crate::core::index_filter::IndexFileFilter::effective();
     let walker = ignore::WalkBuilder::new(root_abs)
         .hidden(true)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
+        .git_ignore(index_filter.respect_gitignore)
+        .git_global(index_filter.respect_gitignore)
+        .git_exclude(index_filter.respect_gitignore)
         .require_git(false)
         .max_depth(Some(20))
         .filter_entry(crate::core::walk_filter::keep_entry)
@@ -644,6 +647,9 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
         }
         // Candidate: confirm against the stored content hash.
         let rel = make_relative(&path.to_string_lossy(), root_abs);
+        if index_filter.is_excluded(&rel.replace('\\', "/")) {
+            continue;
+        }
         let Some(file_entry) = index.files.get(&rel) else {
             // A newly added indexable file is genuinely new content.
             return true;
@@ -744,17 +750,20 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         HashMap::new()
     };
 
+    let cfg = crate::core::config::Config::load();
+    // #735: shared corpus filter — same membership decision as the BM25 walk.
+    let index_filter = crate::core::index_filter::IndexFileFilter::resolve(&cfg);
+
     let walker = ignore::WalkBuilder::new(&project_root)
         .hidden(true)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
+        .git_ignore(index_filter.respect_gitignore)
+        .git_global(index_filter.respect_gitignore)
+        .git_exclude(index_filter.respect_gitignore)
         .require_git(false)
         .max_depth(Some(20))
         .filter_entry(crate::core::walk_filter::keep_entry)
         .build();
 
-    let cfg = crate::core::config::Config::load();
     let extra_ignores: Vec<glob::Pattern> = cfg
         .extra_ignore_patterns
         .iter()
@@ -863,6 +872,9 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
 
         let rel = make_relative(&file_path, &project_root);
         if extra_ignores.iter().any(|p| p.matches(&rel)) {
+            continue;
+        }
+        if index_filter.is_excluded(&rel.replace('\\', "/")) {
             continue;
         }
 

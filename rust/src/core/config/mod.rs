@@ -399,6 +399,10 @@ pub struct Config {
     /// Code-graph settings, including traversal (co-access) edges (#289).
     #[serde(default)]
     pub graph: GraphConfig,
+    /// Index-time file filters (#735): include/exclude globs + gitignore
+    /// handling, applied by every index builder via `core::index_filter`.
+    #[serde(default)]
+    pub index: IndexConfig,
     /// Skillify miner settings (#290): codify recurring patterns into rules.
     #[serde(default)]
     pub skillify: SkillifyConfig,
@@ -738,6 +742,7 @@ impl Default for Config {
             auto_capture: true,
             search: crate::core::hybrid_search::HybridConfig::default(),
             graph: GraphConfig::default(),
+            index: IndexConfig::default(),
             skillify: SkillifyConfig::default(),
             summaries: SummariesConfig::default(),
             llm: crate::core::llm_enhance::LlmConfig::default(),
@@ -1619,6 +1624,19 @@ impl Config {
         if !local.extra_ignore_patterns.is_empty() {
             self.extra_ignore_patterns
                 .extend(local.extra_ignore_patterns);
+        }
+        // Index filters (#735): repo-local excludes extend the global list; a
+        // repo-local include set (the stricter, corpus-defining axis) replaces
+        // the global one; gitignore handling can only be switched off locally
+        // (same only-tighten pattern as the bool flags above).
+        if !local.index.exclude.is_empty() {
+            self.index.exclude.extend(local.index.exclude);
+        }
+        if !local.index.include.is_empty() {
+            self.index.include = local.index.include;
+        }
+        if !local.index.respect_gitignore {
+            self.index.respect_gitignore = false;
         }
         if local.rules_scope.is_some() {
             self.rules_scope = local.rules_scope;

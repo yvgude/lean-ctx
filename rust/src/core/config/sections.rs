@@ -577,6 +577,40 @@ impl Default for CodeHealthConfig {
     }
 }
 
+/// Index-time file filters (#735): declare the retrieval corpus explicitly
+/// instead of abusing `.gitignore` for retrieval policy.
+///
+/// Applies to every index builder through one shared filter layer
+/// (`core::index_filter`): BM25, graph, and the watch/incremental path; the
+/// semantic index chunks the BM25 corpus and inherits the same universe.
+/// Excluded files never produce chunks, graph nodes, or embeddings. Globs are
+/// matched against the root-relative path (forward slashes); exclude wins
+/// over include. The empty default preserves today's behavior byte-for-byte.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct IndexConfig {
+    /// Honor `.gitignore` / global gitignore / `.git/info/exclude` during
+    /// index walks. `false` indexes ignored files too (rarely wanted; the
+    /// vendor-directory guard still applies).
+    pub respect_gitignore: bool,
+    /// Files to drop from the index corpus, e.g. `["**/*.csv", "fixtures/**"]`.
+    /// Evaluated after `include`; a file matching both is excluded.
+    pub exclude: Vec<String>,
+    /// When non-empty, ONLY matching files enter the index corpus, e.g.
+    /// `["**/*.rs", "**/*.ts"]`. Empty = no restriction.
+    pub include: Vec<String>,
+}
+
+impl Default for IndexConfig {
+    fn default() -> Self {
+        Self {
+            respect_gitignore: true,
+            exclude: Vec::new(),
+            include: Vec::new(),
+        }
+    }
+}
+
 /// Settings for the code graph — in particular the *traversal* (co-access) edges
 /// learned from real agent sessions (#289).
 ///

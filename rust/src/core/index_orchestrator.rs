@@ -273,7 +273,13 @@ pub fn ensure_all_background(project_root: &str) {
     // one is running and we aren't it. Deduped naturally — we only reach here
     // when this process is actually about to start a build. Purely additive: the
     // local build below still runs and load-shares via the per-repo locks.
-    nudge_daemon_index(project_root);
+    //
+    // #735 exception: with a per-run CLI filter overlay active, the daemon
+    // (which builds with *its* config, not the overlay) could overwrite the
+    // filtered result — the one-off run keeps the build local instead.
+    if !crate::core::index_filter::cli_overlay_active() {
+        nudge_daemon_index(project_root);
+    }
 
     let state = entry_for(project_root);
     let root = project_root.to_string();
@@ -691,6 +697,10 @@ struct StatusResponse<'a> {
     /// in; "ready" means embeddings are persisted and search will use them.
     semantic_index: ComponentStatus<'a>,
     disk: DiskStatusAll,
+    /// Active corpus filter summary (#735). Omitted for the unfiltered
+    /// default, keeping default output byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index_filters: Option<String>,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -822,6 +832,7 @@ pub fn status_json(project_root: &str) -> String {
         bm25_index: component_status(&s.bm25),
         semantic_index: component_status(&s.semantic),
         disk,
+        index_filters: crate::core::index_filter::IndexFileFilter::effective().summary(),
     };
     serde_json::to_string(&res).unwrap_or_else(|_| "{}".to_string())
 }

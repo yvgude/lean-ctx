@@ -6,10 +6,12 @@ pub(crate) fn cmd_index(args: &[String]) {
     let project_root = super::common::detect_project_root(args);
     let root = Path::new(&project_root);
 
-    let sub = args
-        .iter()
-        .find(|a| !a.starts_with("--"))
-        .map(String::as_str);
+    // #735: install the per-run filter overlay (repeatable --include/--exclude
+    // globs, --no-gitignore/--respect-gitignore) before any builder runs, so
+    // BM25 + graph + semantic + watch share the declared corpus for this run.
+    install_filter_overlay(args);
+
+    let sub = find_subcommand(args);
     match sub {
         Some("status") => {
             let json_flag = args.iter().any(|a| a == "--json");
@@ -190,16 +192,91 @@ pub(crate) fn cmd_index(args: &[String]) {
         _ => {
             eprintln!(
                 "Usage: lean-ctx index <status|build|build-full|build-graph|build-semantic|watch> [--root <path>]\n\
+                 Filter flags (#735, apply to this run; persist via [index] config):\n\
+                   --exclude <glob>       drop matching files from the corpus (repeatable)\n\
+                   --include <glob>       corpus = matching files only (repeatable)\n\
+                   --no-gitignore         index .gitignore'd files too\n\
+                   --respect-gitignore    honor .gitignore (default)\n\
                  Examples:\n\
                    lean-ctx index status\n\
                    lean-ctx index build              (graph + BM25 indexes)\n\
                    lean-ctx index build-full         (force rebuild all indexes)\n\
+                   lean-ctx index build-full --exclude \"**/*.csv\" --exclude \"**/*.jsonl\"\n\
+                   lean-ctx index build-semantic --include \"**/*.{{java,kt,ts}}\"\n\
                    lean-ctx index build-graph        (SQLite property graph for impact analysis)\n\
                    lean-ctx index build-semantic     (dense embedding index, builds BM25 first if needed)\n\
                    lean-ctx index watch"
             );
         }
     }
+}
+
+/// First non-flag token, skipping the values of value-taking flags — so
+/// `index build --exclude "**/*.csv"` resolves the subcommand `build`, not the
+/// glob (#735).
+fn find_subcommand(args: &[String]) -> Option<&str> {
+    const VALUE_FLAGS: [&str; 4] = ["--exclude", "--include", "--root", "--project-root"];
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if VALUE_FLAGS.contains(&a.as_str()) {
+            let _ = it.next();
+            continue;
+        }
+        if a.starts_with("--") {
+            continue;
+        }
+        return Some(a.as_str());
+    }
+    None
+}
+
+/// Parse the #735 filter flags and install the per-run overlay. No-op when no
+/// filter flag is present, so config-only runs take the config path.
+fn install_filter_overlay(args: &[String]) {
+    let (include, exclude, respect_gitignore) = parse_filter_flags(args);
+    if !include.is_empty() || !exclude.is_empty() || respect_gitignore.is_some() {
+        crate::core::index_filter::set_cli_overlay(include, exclude, respect_gitignore);
+    }
+}
+
+/// Pure #735 flag parser: `--exclude` / `--include` are repeatable and accept
+/// both `--flag value` and `--flag=value` forms; the last of `--no-gitignore`
+/// / `--respect-gitignore` wins.
+fn parse_filter_flags(args: &[String]) -> (Vec<String>, Vec<String>, Option<bool>) {
+    let mut include: Vec<String> = Vec::new();
+    let mut exclude: Vec<String> = Vec::new();
+    let mut respect_gitignore: Option<bool> = None;
+
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--exclude" => {
+                if let Some(v) = it.next() {
+                    exclude.push(v.clone());
+                } else {
+                    eprintln!("--exclude requires a glob argument");
+                }
+            }
+            "--include" => {
+                if let Some(v) = it.next() {
+                    include.push(v.clone());
+                } else {
+                    eprintln!("--include requires a glob argument");
+                }
+            }
+            "--no-gitignore" => respect_gitignore = Some(false),
+            "--respect-gitignore" => respect_gitignore = Some(true),
+            other => {
+                if let Some(v) = other.strip_prefix("--exclude=") {
+                    exclude.push(v.to_string());
+                } else if let Some(v) = other.strip_prefix("--include=") {
+                    include.push(v.to_string());
+                }
+            }
+        }
+    }
+
+    (include, exclude, respect_gitignore)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -248,11 +325,14 @@ fn run_watcher(project_root: &Path) {
 }
 
 fn snapshot_code_files(project_root: &Path) -> HashMap<String, FileState> {
+    // #735: the watcher observes the same declared corpus as the builders it
+    // triggers — a change to an excluded file must not cause rebuild churn.
+    let filter = crate::core::index_filter::IndexFileFilter::effective();
     let walker = ignore::WalkBuilder::new(project_root)
         .hidden(true)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
+        .git_ignore(filter.respect_gitignore)
+        .git_global(filter.respect_gitignore)
+        .git_exclude(filter.respect_gitignore)
         .require_git(false)
         .filter_entry(crate::core::walk_filter::keep_entry)
         .build();
@@ -291,6 +371,9 @@ fn snapshot_code_files(project_root: &Path) -> HashMap<String, FileState> {
         if rel.is_empty() {
             continue;
         }
+        if filter.is_excluded(&rel.replace('\\', "/")) {
+            continue;
+        }
 
         out.insert(
             rel,
@@ -323,6 +406,12 @@ fn print_human_status(project_root: &str) {
         "  Semantic Index: {}",
         format_disk_line(&disk.semantic_index, "vectors")
     );
+    // #735: surface the active corpus filter so a filtered index is always
+    // recognizable. Absent for the default (unfiltered) config, keeping the
+    // default output byte-identical.
+    if let Some(summary) = crate::core::index_filter::IndexFileFilter::effective().summary() {
+        println!("  Index Filters:  {summary}");
+    }
 }
 
 fn format_disk_line(ds: &crate::core::index_orchestrator::DiskStatus, count_label: &str) -> String {
@@ -351,5 +440,79 @@ fn format_bytes(bytes: u64) -> String {
         format!("{:.1} KB", bytes as f64 / 1024.0)
     } else {
         format!("{bytes} B")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn subcommand_found_before_flags() {
+        assert_eq!(
+            find_subcommand(&args(&["build", "--root", "/x"])),
+            Some("build")
+        );
+        assert_eq!(find_subcommand(&args(&["status"])), Some("status"));
+    }
+
+    #[test]
+    fn subcommand_skips_filter_flag_values() {
+        // The glob value must never be mistaken for the subcommand (#735).
+        assert_eq!(
+            find_subcommand(&args(&["--exclude", "**/*.csv", "build-full"])),
+            Some("build-full")
+        );
+        assert_eq!(
+            find_subcommand(&args(&["build-semantic", "--include", "**/*.java"])),
+            Some("build-semantic")
+        );
+        assert_eq!(
+            find_subcommand(&args(&["--root", "/x", "--no-gitignore", "watch"])),
+            Some("watch")
+        );
+    }
+
+    #[test]
+    fn subcommand_none_for_flag_only_args() {
+        assert_eq!(find_subcommand(&args(&["--exclude", "**/*.csv"])), None);
+        assert_eq!(find_subcommand(&[]), None);
+    }
+
+    #[test]
+    fn filter_flags_repeatable_and_both_forms() {
+        let (include, exclude, gitignore) = parse_filter_flags(&args(&[
+            "build-full",
+            "--exclude",
+            "**/*.csv",
+            "--exclude=**/*.jsonl",
+            "--include",
+            "**/*.rs",
+            "--include=**/*.ts",
+        ]));
+        assert_eq!(exclude, vec!["**/*.csv", "**/*.jsonl"]);
+        assert_eq!(include, vec!["**/*.rs", "**/*.ts"]);
+        assert_eq!(gitignore, None);
+    }
+
+    #[test]
+    fn gitignore_flags_last_one_wins() {
+        let (_, _, gitignore) =
+            parse_filter_flags(&args(&["build", "--no-gitignore", "--respect-gitignore"]));
+        assert_eq!(gitignore, Some(true));
+        let (_, _, gitignore) = parse_filter_flags(&args(&["build", "--no-gitignore"]));
+        assert_eq!(gitignore, Some(false));
+    }
+
+    #[test]
+    fn no_filter_flags_yields_empty_overlay_inputs() {
+        let (include, exclude, gitignore) = parse_filter_flags(&args(&["build", "--root", "/x"]));
+        assert!(include.is_empty());
+        assert!(exclude.is_empty());
+        assert_eq!(gitignore, None);
     }
 }

@@ -913,6 +913,41 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         },
     );
 
+    let mut index = BTreeMap::new();
+    index.insert(
+        "respect_gitignore".into(),
+        key(
+            "bool",
+            serde_json::json!(cfg.index.respect_gitignore),
+            "Honor .gitignore / global gitignore / .git/info/exclude during index walks. false indexes ignored files too (the vendor-directory guard still applies). CLI override: --no-gitignore / --respect-gitignore.",
+        ),
+    );
+    index.insert(
+        "exclude".into(),
+        key(
+            "string[]",
+            serde_json::json!(cfg.index.exclude),
+            "Globs dropped from the index corpus (root-relative, forward slashes), e.g. [\"**/*.csv\", \"fixtures/**\"]. Wins over include. CLI --exclude appends per run. Excluded files produce no chunks, graph nodes, or embeddings.",
+        ),
+    );
+    index.insert(
+        "include".into(),
+        key(
+            "string[]",
+            serde_json::json!(cfg.index.include),
+            "When non-empty, ONLY matching files enter the index corpus, e.g. [\"**/*.rs\", \"**/*.ts\"]. Empty = no restriction. CLI --include replaces this set per run.",
+        ),
+    );
+    sections.insert(
+        "index".into(),
+        SectionSchema {
+            description:
+                "Index-time file filters: declare the retrieval corpus explicitly (BM25 + graph + semantic + watch share one filter layer, #735)"
+                    .into(),
+            keys: index,
+        },
+    );
+
     let mut skillify = BTreeMap::new();
     skillify.insert(
         "enabled".into(),

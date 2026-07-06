@@ -236,6 +236,14 @@ Per-IDE allowed paths. Keys are agent names (cursor, codex, opencode, antigravit
 
 _No sub-keys (presence of the section toggles the feature)._
 
+## `[index]`
+
+Index-time file filters: declare the retrieval corpus explicitly (BM25 + graph + semantic + watch share one filter layer, #735)
+
+- `exclude` (string[], default `[]`) — Globs dropped from the index corpus (root-relative, forward slashes), e.g. ["**/*.csv", "fixtures/**"]. Wins over include. CLI --exclude appends per run. Excluded files produce no chunks, graph nodes, or embeddings.
+- `include` (string[], default `[]`) — When non-empty, ONLY matching files enter the index corpus, e.g. ["**/*.rs", "**/*.ts"]. Empty = no restriction. CLI --include replaces this set per run.
+- `respect_gitignore` (bool, default `true`) — Honor .gitignore / global gitignore / .git/info/exclude during index walks. false indexes ignored files too (the vendor-directory guard still applies). CLI override: --no-gitignore / --respect-gitignore.
+
 ## `[llm]`
 
 Optional LLM enhancement settings (query expansion, contradiction explanation). Deterministic fallback when disabled or unreachable.

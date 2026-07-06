@@ -6,6 +6,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Index-time include/exclude filters (GH #735).** The retrieval corpus is
+  now declared explicitly instead of abusing `.gitignore` for retrieval
+  policy: new `[index]` config (`exclude`, `include`, `respect_gitignore`)
+  plus per-run CLI overlays on every `lean-ctx index` build command —
+  repeatable `--exclude <glob>` / `--include <glob>` (both `--flag value` and
+  `--flag=value` forms) and `--no-gitignore` / `--respect-gitignore`. One
+  shared filter layer (`core::index_filter`) drives the BM25 walk, the graph
+  scan, the graph staleness check, and the watch snapshot; the semantic index
+  chunks the BM25 corpus and inherits the same universe — excluded files
+  produce no chunks, graph nodes, or embeddings. Globs match the
+  root-relative path (forward slashes on every platform); exclude wins over
+  include; a non-empty include list admits matching files only. CLI
+  `--exclude` appends to config, `--include` replaces the config set for the
+  run, and a run with overlay flags skips the daemon delegation so the
+  one-off corpus can't be overwritten by a config-built index. `index status`
+  (human + `--json`) reports the active filter summary; repo-local config
+  extends global excludes and can only tighten gitignore handling. Empty
+  filters preserve today's behavior byte-for-byte.
 - **Personas now drive the whole pipeline (persona-spec-v1 runtime wiring,
   GL #1178).** The five declared persona fields were spec +
   capability-reporting only; every one of them is now consumed at runtime:

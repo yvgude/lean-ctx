@@ -876,17 +876,22 @@ fn index_dir(root: &Path) -> PathBuf {
 }
 
 fn list_code_files(root: &Path) -> Vec<String> {
+    let cfg = crate::core::config::Config::load();
+    // #735: the declared corpus filter ([index] config + CLI overlay) decides
+    // membership before anything is chunked; the semantic index chunks this
+    // corpus, so it inherits the same universe.
+    let filter = crate::core::index_filter::IndexFileFilter::resolve(&cfg);
+
     let walker = ignore::WalkBuilder::new(root)
         .hidden(true)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
+        .git_ignore(filter.respect_gitignore)
+        .git_global(filter.respect_gitignore)
+        .git_exclude(filter.respect_gitignore)
         .require_git(false)
         .max_depth(Some(20))
         .filter_entry(crate::core::walk_filter::keep_entry)
         .build();
 
-    let cfg = crate::core::config::Config::load();
     let mut ignore_patterns: Vec<glob::Pattern> = DEFAULT_BM25_IGNORES
         .iter()
         .filter_map(|p| glob::Pattern::new(p).ok())
@@ -898,6 +903,7 @@ fn list_code_files(root: &Path) -> Vec<String> {
     );
 
     let mut files: Vec<String> = Vec::new();
+    let mut filtered_out = 0usize;
     for entry in walker.flatten() {
         let path = entry.path();
         if !path.is_file() {
@@ -917,6 +923,13 @@ fn list_code_files(root: &Path) -> Vec<String> {
         if ignore_patterns.iter().any(|p| p.matches(&rel)) {
             continue;
         }
+        // Match on forward slashes so globs behave identically on Windows;
+        // the index key keeps the platform separator (existing indexes stay
+        // valid).
+        if filter.is_excluded(&rel.replace('\\', "/")) {
+            filtered_out += 1;
+            continue;
+        }
         if files.len() >= MAX_BM25_FILES {
             tracing::warn!(
                 "[bm25] file cap reached ({MAX_BM25_FILES}), skipping remaining files in {}",
@@ -925,6 +938,13 @@ fn list_code_files(root: &Path) -> Vec<String> {
             break;
         }
         files.push(rel);
+    }
+
+    if filtered_out > 0 {
+        tracing::info!(
+            "[bm25] index filter excluded {filtered_out} files ({})",
+            filter.summary().unwrap_or_default()
+        );
     }
 
     files.sort();
