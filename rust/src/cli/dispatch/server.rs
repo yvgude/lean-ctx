@@ -79,7 +79,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
     let server = tools::create_server();
     drop(startup_lock);
 
-    rt.block_on(async {
+    let result = rt.block_on(async {
         core::logging::init_mcp_logging();
         core::protocol::set_mcp_context(true);
 
@@ -181,7 +181,27 @@ pub(super) fn run_mcp_server() -> Result<()> {
         core::efficacy::capture();
 
         Ok(())
-    })
+    });
+
+    shutdown_runtime_bounded(rt);
+
+    result
+}
+
+/// Tear the server runtime down with a bounded grace period instead of the
+/// implicit `Drop`, which BLOCKS until every `spawn_blocking` task finishes.
+///
+/// A hung tool handler survives its watchdog (#271 abandons the join handle;
+/// the blocking thread keeps running), so after the client disconnected the
+/// implicit drop kept the whole process alive indefinitely. Clients that
+/// force-reconnect on tool timeout (e.g. the Pi extension's MCP bridge) spawn
+/// a *fresh* server per reconnect, so every abandoned handler leaked one
+/// ~26 MB stdio-server process — on low-RAM machines that accumulation
+/// exhausted memory within a single session (#733). Stragglers are abandoned
+/// after the grace period: their threads die with the process, which holds no
+/// client-visible state at this point (transport closed, telemetry flushed).
+fn shutdown_runtime_bounded(rt: tokio::runtime::Runtime) {
+    rt.shutdown_timeout(std::time::Duration::from_secs(2));
 }
 
 /// Kill orphan MCP server processes whose parent (IDE) has died.
@@ -354,6 +374,50 @@ mod tests {
         // zero-thread pool that rayon would reject.
         assert_eq!(herd_aware_index_threads(4, 32), 1);
         assert_eq!(herd_aware_index_threads(0, 0), 1);
+    }
+
+    /// #733: after the transport closes, the server process must exit even if
+    /// an abandoned (#271) tool handler still occupies a blocking thread. An
+    /// implicit runtime drop waits forever on such a task; the bounded
+    /// shutdown must return within the grace period.
+    #[test]
+    fn runtime_shutdown_is_bounded_despite_hung_blocking_task() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::time::{Duration, Instant};
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .expect("runtime builds");
+
+        // Simulated hung handler: parks its blocking thread far beyond the
+        // shutdown grace period, checking a stop flag so the thread ends
+        // promptly once the test (process) is done with it.
+        let stop = std::sync::Arc::new(AtomicBool::new(false));
+        let stop_in = stop.clone();
+        rt.block_on(async {
+            let _abandoned = tokio::task::spawn_blocking(move || {
+                for _ in 0..600 {
+                    if stop_in.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            });
+            // Give the blocking pool a beat to actually start the task.
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        });
+
+        let started = Instant::now();
+        shutdown_runtime_bounded(rt);
+        let elapsed = started.elapsed();
+        stop.store(true, Ordering::Relaxed);
+
+        assert!(
+            elapsed < Duration::from_secs(10),
+            "bounded shutdown must not wait for the hung task (took {elapsed:?})"
+        );
     }
 
     #[cfg(unix)]

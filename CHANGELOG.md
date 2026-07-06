@@ -6,6 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Fixed
+- **MCP stdio server processes leaked after client disconnect (GH #733).**
+  When the transport closed while an abandoned tool handler (#271 watchdog)
+  still occupied a blocking thread, the implicit Tokio runtime drop blocked
+  on that thread forever — the server process survived the disconnect
+  invisibly. Clients that force-reconnect on tool timeout (e.g. the Pi
+  extension's MCP bridge) spawn a fresh server per reconnect, so every
+  abandoned handler leaked one ~26 MB `lean-ctx` process; on a 1.9 GB
+  machine 50+ accumulated within a session and exhausted RAM + swap. The
+  runtime now shuts down with a bounded 2 s grace period after the transport
+  closes (telemetry is already flushed at that point); hung stragglers die
+  with the process.
 - **Gateway console showed ~15x the real OpenRouter bill for unknown models
   (GL #1179).** An external gateway run (Claude Code → lean-ctx → OpenRouter,
   `deepseek/deepseek-v4-flash`) was billed $0.05 by OpenRouter while the
