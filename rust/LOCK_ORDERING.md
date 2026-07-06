@@ -71,6 +71,7 @@ All `std::sync::Mutex` unless noted otherwise.
 | L58 | `SNAPSHOT` | `proxy/policy_gate.rs:76` | `RwLock<Option<CachedSnapshot>>` | TTL-cached org-policy gate rules (enterprise#25) so the forward path re-verifies the signed policy at most once per minute; independent leaf lock, never nested |
 | L59 | `LEDGER` | `proxy/policy_gate.rs:247` | `OnceLock<Mutex<BudgetLedger>>` | In-process person/day + project/month spend counters backing hard budget caps (enterprise#25); fed from the metering choke-point, seeded from Postgres when available; independent leaf lock, never nested |
 | L60 | `RATE` | `proxy/policy_gate.rs:281` | `OnceLock<Mutex<RateLedger>>` | Per-person accepted-request counts for the current UTC minute backing the org-policy rate limit (enterprise#66); reset on every minute roll, at most one entry per active person; independent leaf lock, never nested |
+| L61 | `CLI_OVERLAY` | `core/index_filter.rs:31` | `RwLock<Option<CliOverlay>>` | Per-run index corpus filter overlay (#735): written once by the `index` CLI dispatch before builders start, read by every index walk via `IndexFileFilter::resolve`; independent leaf lock, never nested |
 
 ### Test / Environment Locks (serialise env-var mutations)
 
@@ -180,9 +181,9 @@ Override via `LEAN_CTX_WORKER_THREADS` (positive integer) for environments with 
 concurrent subagents. Example: `LEAN_CTX_WORKER_THREADS=8`. The blocking thread pool
 is always `worker_threads * 4`, clamped to `[8, 32]`.
 
-### Independent Static Locks (L3–L57)
+### Independent Static Locks (L3–L61)
 
-All other static locks (L3–L57) — **except the L22 → L4 pair documented above** — are
+All other static locks (L3–L61) — **except the L22 → L4 pair documented above** — are
 **independent singletons**: they protect isolated subsystem state and are never nested inside
 each other. Each should be acquired in isolation:
 
@@ -241,4 +242,5 @@ across any other lock acquisition.
 3. Assign a lock number (append to Section 1) and document the acquisition order here.
 4. If nesting is required, document the outer → inner relationship in Section 3.
 5. Run `cargo check --all-features` to verify `Send`/`Sync` bounds.
+
 
