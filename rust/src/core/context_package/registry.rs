@@ -71,6 +71,23 @@ impl LocalRegistry {
     ) -> Result<PathBuf, String> {
         manifest.validate().map_err(|errs| errs.join("; "))?;
 
+        // kind=skills (GH #727): materialize the verified blobs under the
+        // store *before* touching the index — a tampered blob aborts the
+        // whole install, never leaving a half-registered package.
+        if manifest.kind == super::manifest::PackageKind::Skills {
+            let docs = content
+                .documents
+                .as_ref()
+                .ok_or("kind=skills package has no documents payload")?;
+            let root = super::skills::materialize_documents(&self.root, manifest, docs)?;
+            tracing::info!(
+                "skills pack {}@{} materialized at {}",
+                manifest.name,
+                manifest.version,
+                root.display()
+            );
+        }
+
         let pkg_dir = self.package_dir(&manifest.name, &manifest.version);
         std::fs::create_dir_all(&pkg_dir).map_err(|e| format!("create package dir: {e}"))?;
 
@@ -120,6 +137,12 @@ impl LocalRegistry {
             let dir = self.package_dir(n, v);
             if dir.exists() {
                 let _ = std::fs::remove_dir_all(&dir);
+            }
+            // Materialized skills files (GH #727) live outside the package
+            // dir — clean them up with the same lifetime.
+            let skills = super::skills::skills_dir(&self.root, n, v);
+            if skills.exists() {
+                let _ = std::fs::remove_dir_all(&skills);
             }
         }
 

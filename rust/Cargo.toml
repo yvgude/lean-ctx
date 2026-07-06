@@ -156,7 +156,6 @@ cloud-server = [
   "dep:tokio-postgres",
   "dep:lettre",
   "dep:jsonwebtoken",
-  "dep:base64",
   "dep:uuid",
   "dep:hex",
   "dep:rand",
@@ -339,7 +338,9 @@ lettre = { version = "0.11", default-features = false, features = [
   "builder",
 ], optional = true }
 jsonwebtoken = { version = "10.4", optional = true }
-base64 = { version = "0.22", optional = true }
+# Non-optional since GH #727: `kind=skills` document blobs (featureless
+# context_package core) encode zstd bodies as base64 inside the pack JSON.
+base64 = "0.22"
 uuid = { version = "1.23", features = ["v4", "serde"], optional = true }
 hex = { version = "0.4", optional = true }
 hmac = "0.13"
@@ -377,6 +378,7 @@ resvg = { version = "0.47", optional = true }
 wasmi = { version = "1.1", optional = true }
 gethostname = "1.1"
 yaml_serde = "0.10.4"
+semver = "1.0.28"
 
 [lints.rust]
 unreachable_pub = "warn"
@@ -477,3 +479,4 @@ harness = false
 [[bench]]
 name = "efficiency"
 harness = false
+

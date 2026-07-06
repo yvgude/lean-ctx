@@ -3,6 +3,7 @@ pub mod builder;
 pub mod bundle;
 pub mod composition;
 pub mod content;
+pub mod deps;
 pub mod export;
 pub mod graph_model;
 pub mod import;
@@ -13,6 +14,7 @@ pub mod manifest;
 pub mod registry;
 pub mod remote;
 pub mod signing;
+pub mod skills;
 pub mod verify;
 
 pub use auto_load::auto_load_packages;

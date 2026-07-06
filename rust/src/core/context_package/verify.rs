@@ -188,10 +188,25 @@ pub fn validate_kind_coherence(
                 }
             }
         },
-        PackageKind::Context | PackageKind::Skills | PackageKind::Grammar => {
+        PackageKind::Skills => {
+            if content.addon.is_some() {
+                errors.push("content.addon payload requires kind=addon".into());
+            }
+            match &content.documents {
+                None => errors.push("kind=skills requires a content.documents payload".into()),
+                Some(docs) => validate_documents(docs, &mut errors),
+            }
+        }
+        PackageKind::Context | PackageKind::Grammar => {
             if content.addon.is_some() {
                 errors.push(format!(
                     "content.addon payload requires kind=addon (manifest declares kind={})",
+                    manifest.kind.as_str()
+                ));
+            }
+            if content.documents.is_some() {
+                errors.push(format!(
+                    "content.documents payload requires kind=skills (manifest declares kind={})",
                     manifest.kind.as_str()
                 ));
             }
@@ -202,6 +217,77 @@ pub fn validate_kind_coherence(
     } else {
         Err(errors)
     }
+}
+
+/// Structural + integrity validation of a `kind=skills` payload (GH #727).
+/// Every blob must decode and match its plaintext hash — a tampered body
+/// fails verification, so it can never be materialized on disk.
+fn validate_documents(docs: &super::content::DocumentsContent, errors: &mut Vec<String>) {
+    use super::content::{MAX_DOCUMENT_FILES, MAX_DOCUMENTS_TOTAL_BYTES};
+
+    if docs.files.is_empty() {
+        errors.push("kind=skills payload has no files".into());
+        return;
+    }
+    if docs.files.len() > MAX_DOCUMENT_FILES {
+        errors.push(format!(
+            "skills payload has {} files (cap: {MAX_DOCUMENT_FILES})",
+            docs.files.len()
+        ));
+        return;
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    let mut total: usize = 0;
+    for blob in &docs.files {
+        if let Err(e) = validate_document_path(&blob.path) {
+            errors.push(e);
+            continue;
+        }
+        if !seen.insert(blob.path.as_str()) {
+            errors.push(format!("duplicate document path `{}`", blob.path));
+            continue;
+        }
+        if blob.sha256.len() != 64 || !blob.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+            errors.push(format!(
+                "`{}`: sha256 must be a 64-char hex string",
+                blob.path
+            ));
+            continue;
+        }
+        match blob.decode_verified() {
+            Ok(plain) => total += plain.len(),
+            Err(e) => errors.push(e),
+        }
+    }
+    if total > MAX_DOCUMENTS_TOTAL_BYTES {
+        errors.push(format!(
+            "skills payload decodes to {total} bytes (cap: {MAX_DOCUMENTS_TOTAL_BYTES})"
+        ));
+    }
+}
+
+/// Path safety for document blobs: relative, `/`-separated, no traversal, no
+/// absolute/drive/backslash forms — the materializer joins these under the
+/// pack store and must never be able to escape it.
+pub(crate) fn validate_document_path(path: &str) -> Result<(), String> {
+    if path.is_empty() || path.len() > 512 {
+        return Err(format!(
+            "invalid document path `{path}` (empty or too long)"
+        ));
+    }
+    if path.starts_with('/') || path.contains('\\') || path.contains(':') {
+        return Err(format!(
+            "invalid document path `{path}` (must be relative with `/` separators)"
+        ));
+    }
+    let has_bad_component = path
+        .split('/')
+        .any(|c| c.is_empty() || c == "." || c == ".." || c.starts_with(".."));
+    if has_bad_component || path.chars().any(char::is_control) {
+        return Err(format!("invalid document path `{path}` (unsafe component)"));
+    }
+    Ok(())
 }
 
 /// Outcome of one verification check.

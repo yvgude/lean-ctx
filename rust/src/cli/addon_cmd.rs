@@ -286,6 +286,7 @@ fn cmd_add(target: &str, args: &[String]) {
         || target.starts_with('.')
         || target.starts_with('/')
         || Path::new(target).exists();
+    let mut pack_manifest: Option<crate::core::context_package::PackageManifest> = None;
     let (manifest, source) = if is_local_path {
         match AddonManifest::from_path(Path::new(target)) {
             Ok(m) => (m, "local".to_string()),
@@ -297,7 +298,10 @@ fn cmd_add(target: &str, args: &[String]) {
     } else if let Some(remote_ref) = crate::core::context_package::remote::parse_remote_ref(target)
     {
         match fetch_addon_pack(&remote_ref, flag_value(args, "--registry").as_deref()) {
-            Ok(pair) => pair,
+            Ok((m, s, pm)) => {
+                pack_manifest = Some(pm);
+                (m, s)
+            }
             Err(e) => {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
@@ -352,6 +356,36 @@ fn cmd_add(target: &str, args: &[String]) {
 
     println!("About to install `{}`:\n", manifest.addon.name);
     print_install_preview(&manifest);
+
+    // Depth-1 dependency resolution (GH #727): declared deps are part of the
+    // consent surface — resolve before asking, install after wiring succeeds.
+    let registry_base = crate::core::context_package::remote::registry_base(
+        flag_value(args, "--registry").as_deref(),
+    );
+    let reg_token = crate::core::context_package::remote::publish_token(None);
+    let resolved_deps = match pack_manifest.as_ref() {
+        Some(pm) if pm.dependencies.iter().any(|d| !d.optional) => {
+            match crate::core::context_package::deps::resolve_dependencies(
+                pm,
+                &registry_base,
+                reg_token.as_deref(),
+            ) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        _ => Vec::new(),
+    };
+    if !resolved_deps.is_empty() {
+        println!("\nDeclared dependencies (installed alongside, depth-1):");
+        for d in &resolved_deps {
+            println!("  + {}@{}", d.name, d.version);
+        }
+    }
+
     println!(
         "\nThis runs/connects to the above MCP server and exposes its tools through lean-ctx."
     );
@@ -375,6 +409,23 @@ fn cmd_add(target: &str, args: &[String]) {
             }
             if let Some(n) = verified {
                 println!("  Verified: {n} tool(s) reachable.");
+            }
+            if let Some(pm) = pack_manifest.as_ref().filter(|_| !resolved_deps.is_empty()) {
+                let project_root = super::common::detect_project_root(args);
+                if let Err(e) = super::pack_cmd::install_declared_dependencies(
+                    pm,
+                    &registry_base,
+                    reg_token.as_deref(),
+                    &project_root,
+                    false,
+                ) {
+                    eprintln!("Error: dependency install failed: {e}");
+                    eprintln!(
+                        "  The addon itself is wired; re-run `lean-ctx addon add {}` to retry.",
+                        outcome.name
+                    );
+                    std::process::exit(1);
+                }
             }
             println!(
                 "  Its tools are reachable via `ctx_tools` (find/call). \
@@ -492,7 +543,14 @@ fn provision_and_wire(
 fn fetch_addon_pack(
     remote_ref: &crate::core::context_package::remote::RemoteRef,
     registry_flag: Option<&str>,
-) -> Result<(AddonManifest, String), String> {
+) -> Result<
+    (
+        AddonManifest,
+        String,
+        crate::core::context_package::PackageManifest,
+    ),
+    String,
+> {
     use crate::core::context_package::{remote, verify};
 
     let base = remote::registry_base(registry_flag);
@@ -534,25 +592,29 @@ fn fetch_addon_pack(
         content: crate::core::context_package::PackageContent,
     }
     let bundle: Bundle = serde_json::from_str(&text).map_err(|e| format!("parse package: {e}"))?;
+    let Bundle {
+        manifest: pack_manifest,
+        content,
+    } = bundle;
 
-    if bundle.manifest.kind != crate::core::context_package::manifest::PackageKind::Addon {
+    if pack_manifest.kind != crate::core::context_package::manifest::PackageKind::Addon {
         return Err(format!(
             "@{ns}/{name} is a kind={} package — install it with `lean-ctx pack install \
              {ns}/{name}` instead",
-            bundle.manifest.kind.as_str()
+            pack_manifest.kind.as_str()
         ));
     }
-    verify::validate_kind_coherence(&bundle.manifest, &bundle.content)
-        .map_err(|errs| errs.join("; "))?;
+    verify::validate_kind_coherence(&pack_manifest, &content).map_err(|errs| errs.join("; "))?;
 
-    let payload = bundle
-        .content
+    let payload = content
         .addon
         .expect("coherence guarantees content.addon for kind=addon");
     let manifest = AddonManifest::from_toml(&payload.manifest_toml)?;
 
     let source = format!("ctxpkg:@{ns}/{name}@{}", info.version);
-    Ok((manifest, source))
+    // The pack manifest rides along for depth-1 dependency resolution
+    // (GH #727): declared skills/context deps install with the addon.
+    Ok((manifest, source, pack_manifest))
 }
 
 /// `addon publish [manifest] --namespace <ns>` — build the signed
@@ -678,6 +740,7 @@ fn cmd_update(name: &str, args: &[String]) {
     // Re-resolve from where it came: a hosted ctxpkg pack updates against the
     // registry it was installed from (latest non-yanked version), everything
     // else against the bundled registry snapshot.
+    let mut pack_manifest: Option<crate::core::context_package::PackageManifest> = None;
     let (manifest, update_source) = if let Some(spec) = entry.source.strip_prefix("ctxpkg:") {
         let unpinned = spec.split('@').take(2).collect::<Vec<_>>().join("@");
         let Some(remote_ref) = crate::core::context_package::remote::parse_remote_ref(&unpinned)
@@ -689,7 +752,10 @@ fn cmd_update(name: &str, args: &[String]) {
             std::process::exit(1);
         };
         match fetch_addon_pack(&remote_ref, flag_value(args, "--registry").as_deref()) {
-            Ok(pair) => pair,
+            Ok((m, s, pm)) => {
+                pack_manifest = Some(pm);
+                (m, s)
+            }
             Err(e) => {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
@@ -728,6 +794,9 @@ fn cmd_update(name: &str, args: &[String]) {
                 entry.version.clone()
             }
         );
+        // A skills/context dependency may have bumped even when the addon
+        // itself did not (GH #727) — refresh those without re-wiring.
+        refresh_pack_dependencies(pack_manifest.as_ref(), args);
         return;
     }
 
@@ -759,12 +828,41 @@ fn cmd_update(name: &str, args: &[String]) {
             if let Some(n) = verified {
                 println!("  Verified: {n} tool(s) reachable.");
             }
+            refresh_pack_dependencies(pack_manifest.as_ref(), args);
             println!("  Restart your MCP client to pick up the new version.");
         }
         Err(e) => {
             eprintln!("Error: {e}\n  The previous install remains wired.");
             std::process::exit(1);
         }
+    }
+}
+
+/// Re-resolve and install the declared dependencies of an addon's pack
+/// manifest (GH #727) — used on `addon update`, where a dependency can move
+/// forward independently of the addon binary.
+fn refresh_pack_dependencies(
+    pack_manifest: Option<&crate::core::context_package::PackageManifest>,
+    args: &[String],
+) {
+    let Some(pm) = pack_manifest else { return };
+    if pm.dependencies.iter().all(|d| d.optional) {
+        return;
+    }
+    let base = crate::core::context_package::remote::registry_base(
+        flag_value(args, "--registry").as_deref(),
+    );
+    let token = crate::core::context_package::remote::publish_token(None);
+    let project_root = super::common::detect_project_root(args);
+    println!("Refreshing declared dependencies (depth-1) …");
+    if let Err(e) = super::pack_cmd::install_declared_dependencies(
+        pm,
+        &base,
+        token.as_deref(),
+        &project_root,
+        true,
+    ) {
+        eprintln!("Warning: dependency refresh failed: {e}\n  The addon update itself succeeded.");
     }
 }
 

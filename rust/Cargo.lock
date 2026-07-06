@@ -2452,6 +2452,7 @@ dependencies = [
  "rpassword",
  "rusqlite",
  "rustls",
+ "semver",
  "serde",
  "serde_json",
  "serial_test",
