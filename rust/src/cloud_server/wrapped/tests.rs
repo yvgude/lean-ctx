@@ -29,14 +29,7 @@ fn accepts_a_well_formed_payload() {
     assert!(valid().validate().is_ok());
 }
 
-fn raw_card(
-    id: &str,
-    user: Option<&str>,
-    pub_key: &str,
-    tokens: i64,
-    name: &str,
-    rate: f64,
-) -> RawLeaderCard {
+fn raw_card(id: &str, user: Option<&str>, tokens: i64, name: &str, rate: f64) -> RawLeaderCard {
     let payload = serde_json::json!({
         "period": "all",
         "tokens_saved": tokens,
@@ -50,7 +43,21 @@ fn raw_card(
         id: id.to_string(),
         payload_json: payload,
         user_id: user.map(str::to_string),
-        pub_key: pub_key.to_string(),
+        link_group: None,
+    }
+}
+
+fn raw_card_linked(
+    id: &str,
+    user: Option<&str>,
+    tokens: i64,
+    name: &str,
+    rate: f64,
+    group: &str,
+) -> RawLeaderCard {
+    RawLeaderCard {
+        link_group: Some(group.to_string()),
+        ..raw_card(id, user, tokens, name, rate)
     }
 }
 
@@ -58,8 +65,8 @@ fn raw_card(
 fn machines_claimed_to_one_account_stack() {
     // Two machines, same account → one stacked entry (the #488 fix).
     let raw = vec![
-        raw_card("cardA", Some("user-1"), "pubA", 1_000, "Stephen", 80.0),
-        raw_card("cardB", Some("user-1"), "pubB", 3_000, "Stephen", 90.0),
+        raw_card("cardA", Some("user-1"), 1_000, "Stephen", 80.0),
+        raw_card("cardB", Some("user-1"), 3_000, "Stephen", 90.0),
     ];
     let out = aggregate_by_account(raw, "https://leanctx.com");
     assert_eq!(
@@ -79,9 +86,9 @@ fn machines_claimed_to_one_account_stack() {
 #[test]
 fn distinct_accounts_and_unclaimed_cards_stay_separate() {
     let raw = vec![
-        raw_card("a", Some("user-1"), "pubA", 1_000, "A", 80.0),
-        raw_card("b", Some("user-2"), "pubB", 2_000, "B", 80.0),
-        raw_card("c", None, "pubC", 1_500, "C", 80.0), // unclaimed, stays individual
+        raw_card("a", Some("user-1"), 1_000, "A", 80.0),
+        raw_card("b", Some("user-2"), 2_000, "B", 80.0),
+        raw_card("c", None, 1_500, "C", 80.0), // unclaimed, stays individual
     ];
     let out = aggregate_by_account(raw, "https://x");
     assert_eq!(out.len(), 3);
@@ -94,8 +101,8 @@ fn distinct_accounts_and_unclaimed_cards_stay_separate() {
 #[test]
 fn aggregation_order_is_deterministic_on_ties() {
     let raw = vec![
-        raw_card("zzz", Some("u1"), "p1", 1_000, "Z", 50.0),
-        raw_card("aaa", Some("u2"), "p2", 1_000, "A", 50.0),
+        raw_card("zzz", Some("u1"), 1_000, "Z", 50.0),
+        raw_card("aaa", Some("u2"), 1_000, "A", 50.0),
     ];
     let out = aggregate_by_account(raw, "https://x");
     assert_eq!(
@@ -107,12 +114,72 @@ fn aggregation_order_is_deterministic_on_ties() {
 
 #[test]
 fn single_machine_is_unchanged_by_aggregation() {
-    let raw = vec![raw_card("solo", None, "pSolo", 1_234, "Solo", 73.0)];
+    let raw = vec![raw_card("solo", None, 1_234, "Solo", 73.0)];
     let out = aggregate_by_account(raw, "https://leanctx.com");
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].tokens_saved, 1_234);
     assert_eq!(out[0].display_name.as_deref(), Some("Solo"));
     assert!((out[0].compression_rate_pct - 73.0).abs() < 1e-9);
+}
+
+#[test]
+fn link_group_stacks_machines_without_account() {
+    // The #736 fix: two machines paired via `gain --link` — no user_id at all.
+    let raw = vec![
+        raw_card_linked("m1", None, 32_900_000, "Stephen.S", 80.0, "g1"),
+        raw_card_linked("m2", None, 2_100_000, "Stephen.S", 70.0, "g1"),
+        raw_card("other", None, 5_000_000, "Other", 60.0),
+    ];
+    let out = aggregate_by_account(raw, "https://x");
+    assert_eq!(out.len(), 2, "linked machines collapse, others stay");
+    assert_eq!(out[0].tokens_saved, 35_000_000);
+    assert!(
+        out[0].url.ends_with("/w/m1"),
+        "highest-saving machine represents the group"
+    );
+    assert_eq!(out[1].id, "other");
+}
+
+#[test]
+fn link_group_and_account_claim_merge_transitively() {
+    // A+B share a link_group; B+C share a user_id → all three are one entry.
+    let raw = vec![
+        raw_card_linked("a", None, 1_000, "N", 50.0, "g"),
+        raw_card_linked("b", Some("u1"), 2_000, "N", 50.0, "g"),
+        raw_card("c", Some("u1"), 4_000, "N", 50.0),
+    ];
+    let out = aggregate_by_account(raw, "https://x");
+    assert_eq!(out.len(), 1, "link_group and user_id chains merge");
+    assert_eq!(out[0].tokens_saved, 7_000);
+    assert!(out[0].url.ends_with("/w/c"));
+}
+
+#[test]
+fn distinct_link_groups_stay_separate() {
+    let raw = vec![
+        raw_card_linked("a", None, 1_000, "A", 50.0, "g1"),
+        raw_card_linked("b", None, 2_000, "B", 50.0, "g2"),
+    ];
+    let out = aggregate_by_account(raw, "https://x");
+    assert_eq!(out.len(), 2, "different groups never merge");
+}
+
+#[test]
+fn link_code_format_is_canonical_and_unambiguous() {
+    for _ in 0..64 {
+        let code = generate_link_code();
+        assert_eq!(code.len(), 9, "XXXX-XXXX");
+        assert_eq!(&code[4..5], "-");
+        assert!(
+            code.chars()
+                .filter(|c| *c != '-')
+                .all(|c| "ABCDEFGHJKMNPQRSTUVWXYZ23456789".contains(c)),
+            "no ambiguous characters (0/O, 1/I/L): {code}"
+        );
+    }
+    // Normalization: user may paste with or without the dash, any case.
+    assert_eq!(format_link_code("KQ3F8ZTN"), "KQ3F-8ZTN");
+    assert_eq!(format_link_code("KQ3F-8ZTN"), "KQ3F-8ZTN");
 }
 
 #[test]

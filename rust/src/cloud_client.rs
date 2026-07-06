@@ -459,6 +459,49 @@ pub fn claim_wrapped(id: &str, edit_token: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// A freshly minted pairing code for login-less machine linking (GH #736).
+#[derive(serde::Deserialize)]
+pub struct LinkCode {
+    pub code: String,
+    pub expires_in_secs: i64,
+}
+
+/// Start a login-less machine link: mint a short-lived pairing code for this card.
+/// Auth: the card's `edit_token` only — no account. Server: `POST /api/wrapped/:id/link/start`.
+pub fn link_wrapped_start(id: &str, edit_token: &str) -> Result<LinkCode, String> {
+    let url = format!("{}/api/wrapped/{id}/link/start", api_url());
+
+    let resp = ureq::post(&url)
+        .header("X-Edit-Token", edit_token)
+        .send_empty()
+        .map_err(|e| format!("Link start failed: {e}"))?;
+    let body = resp
+        .into_body()
+        .read_to_string()
+        .map_err(|e| format!("Failed to read response: {e}"))?;
+    serde_json::from_str(&body).map_err(|e| format!("Invalid response: {e}"))
+}
+
+/// Complete a login-less machine link on the second machine: join this card into
+/// the pairing code's group. Auth: this card's `edit_token` — no account.
+/// Server: `POST /api/wrapped/:id/link/complete`.
+pub fn link_wrapped_complete(id: &str, edit_token: &str, code: &str) -> Result<(), String> {
+    let url = format!("{}/api/wrapped/{id}/link/complete", api_url());
+    let body = serde_json::json!({ "code": code });
+
+    ureq::post(&url)
+        .header("X-Edit-Token", edit_token)
+        .header("Content-Type", "application/json")
+        .send(&serde_json::to_vec(&body).map_err(|e| format!("JSON error: {e}"))?)
+        .map_err(|e| match e {
+            ureq::Error::StatusCode(404) => {
+                "code invalid or expired — mint a fresh one with  lean-ctx gain --link".to_string()
+            }
+            other => format!("Link failed: {other}"),
+        })?;
+    Ok(())
+}
+
 /// Push the knowledge store as a zero-knowledge vault (GL #467): entries are
 /// sealed client-side (XChaCha20-Poly1305, domain-separated HKDF key) — the
 /// backend stores ciphertext and can never read them. The first vault push

@@ -69,6 +69,14 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         crate::cli::wrapped_publish::publish(&period, name_arg(rest).as_deref(), leaderboard);
         return;
     }
+    if let Some(req) = link_request(rest) {
+        let code = match &req {
+            LinkReq::Complete(c) => Some(c.as_str()),
+            LinkReq::Start => None,
+        };
+        crate::cli::wrapped_publish::link(code);
+        return;
+    }
 
     if let Some(svg_path) = svg_target(rest) {
         let report = core::wrapped::WrappedReport::generate(&period);
@@ -381,6 +389,28 @@ fn unpublish_request(rest: &[String]) -> Option<UnpublishReq> {
         }
         if a == "--unpublish" {
             return Some(UnpublishReq::Latest);
+        }
+    }
+    None
+}
+
+/// A requested `--link`: start a pairing (mint a code) or complete one with a code.
+enum LinkReq {
+    Start,
+    Complete(String),
+}
+
+/// Parses `--link[=CODE]` / `--link CODE` (GH #736). `None` = not requested.
+fn link_request(rest: &[String]) -> Option<LinkReq> {
+    for (i, a) in rest.iter().enumerate() {
+        if let Some(v) = a.strip_prefix("--link=") {
+            return Some(LinkReq::Complete(v.to_string()));
+        }
+        if a == "--link" {
+            return Some(match rest.get(i + 1) {
+                Some(next) if !next.starts_with('-') => LinkReq::Complete(next.clone()),
+                _ => LinkReq::Start,
+            });
         }
     }
     None

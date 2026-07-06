@@ -42,6 +42,8 @@ shareable URL (`https://leanctx.com/w/<id>`). No login is required to publish; a
 | GET | `/api/wrapped/:id` | none | Fetch the public card; increments `view_count` |
 | DELETE | `/api/wrapped/:id` | `X-Edit-Token` | Delete the card (wrong/absent token → 403) |
 | POST | `/api/wrapped/:id/claim` | account bearer + `X-Edit-Token` | Bind the anonymous card to the account |
+| POST | `/api/wrapped/:id/link/start` | `X-Edit-Token` | Mint a short-lived pairing code for login-less machine linking → `{ code, expires_in_secs }` |
+| POST | `/api/wrapped/:id/link/complete` | `X-Edit-Token` | Join this card into the code's `link_group` (body: `{ "code": "XXXX-XXXX" }`) |
 | GET | `/api/wrapped/:id/card.svg` | none | Server-rendered share card (SVG) |
 | GET | `/api/wrapped/:id/card.png` | none | Rasterized Open Graph image (PNG, 1200×630, `resvg`) |
 | GET | `/w/:id` | none | Crawler-friendly permalink page (per-card OG/Twitter meta); counts as a view |
@@ -62,6 +64,14 @@ directly, so no asset route needs proxying on the canonical host.
 - **Claim** — an authenticated user (identified by a standard bearer credential — API key or OAuth —
   in the `Authorization` request header) who also presents the matching `X-Edit-Token` binds the card
   to their `user_id`. This is the bridge to future cloud sync; claiming is idempotent and never required.
+- **Link (login-less, v1.2, GH #736)** — two machines merge into one leaderboard entry without any
+  account. Machine A mints a pairing code (`POST /:id/link/start`, authorized by its own
+  `X-Edit-Token`); machine B presents the code plus *its own* `X-Edit-Token`
+  (`POST /:id/link/complete`). Both cards then share a `link_group` and the leaderboard stacks them
+  (tokens summed, token-weighted rate, highest-saving machine as representative). Grouping is
+  transitive across `link_group` and `user_id`. Codes: 8 chars from an unambiguous alphabet
+  (`XXXX-XXXX`), single-use, 10-minute TTL, at most 3 outstanding per card, stored hashed
+  (`sha256`). A leaked expired code is useless; no PII is involved at any point.
 
 ---
 
@@ -214,3 +224,4 @@ person-facing field is the user-chosen `display_name`. Everything else is an agg
 - **Body cap** 8 KB; **`display_name`** length-capped and rejected if it contains markup/control
   characters (defence against stored XSS); the frontend additionally HTML-escapes on render.
 - **Ids** are ≥128-bit from a CSPRNG → not enumerable; `GET` never reveals the `edit_token`.
+

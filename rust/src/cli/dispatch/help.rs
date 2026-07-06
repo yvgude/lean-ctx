@@ -144,6 +144,7 @@ COMMANDS:
     gain --svg|--share --open      Also open the written card/page in your browser
     gain --publish [--name=<n>]    Publish an opt-in permalink (leanctx.com/w/<id>)
     gain --publish --leaderboard   Also list the card on the public leaderboard (opt-in)
+    gain --link [CODE]             Combine machines into one leaderboard entry (pairing code, no account)
     gain --unpublish[=<id>]        Remove a published permalink (most recent if no id)
     config set gain.auto_publish true  Auto-(re)publish your recap on each `gain` (opt-in, throttled, off by default)
     savings [summary|verify|export|sign|verify-batch] Verified savings ledger (local, signed)

@@ -298,6 +298,21 @@ ALTER TABLE wrapped_cards ADD COLUMN IF NOT EXISTS period TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS wrapped_cards_publisher_period
   ON wrapped_cards (publisher_id, period) WHERE publisher_id IS NOT NULL;
 
+-- Login-less machine linking (GH #736): cards sharing a link_group stack as one
+-- leaderboard entry. Set via the short-lived pairing-code flow
+-- (/api/wrapped/{id}/link/start + /link/complete); authorization is edit_token
+-- possession on both sides -- no account involved.
+ALTER TABLE wrapped_cards ADD COLUMN IF NOT EXISTS link_group TEXT;
+CREATE INDEX IF NOT EXISTS wrapped_cards_link_group
+  ON wrapped_cards (link_group) WHERE link_group IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS wrapped_link_codes (
+  code_hash  TEXT PRIMARY KEY,
+  card_id    TEXT NOT NULL REFERENCES wrapped_cards(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+
 DROP TABLE IF EXISTS team_invites CASCADE;
 DROP TABLE IF EXISTS team_members CASCADE;
 DROP TABLE IF EXISTS teams CASCADE;

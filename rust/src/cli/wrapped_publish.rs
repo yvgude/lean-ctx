@@ -215,6 +215,71 @@ pub(crate) fn set_auto_submit(on: bool) -> Result<(), String> {
     .map_err(|e| format!("could not save config: {e}"))
 }
 
+// ─── Login-less machine linking (GH #736) ─────────────────────────────────────
+
+/// This machine's linkable card: the all-time card if present (the one the
+/// leaderboard represents), else the most recent one — with a stored edit_token.
+fn linkable_card(store: &PublishedStore) -> Option<&PublishedEntry> {
+    store
+        .cards
+        .iter()
+        .filter(|c| !c.edit_token.is_empty())
+        .max_by_key(|c| (c.period == "all", c.published_at.clone()))
+}
+
+/// `lean-ctx gain --link [CODE]` — merge this machine's leaderboard entry with
+/// another machine's, without any account (GH #736).
+///
+/// Without a code: mints a short-lived pairing code for this machine's card.
+/// With a code (from the other machine): joins both cards into one link group;
+/// the public leaderboard then shows a single combined entry.
+pub(crate) fn link(code: Option<&str>) {
+    let store = PublishedStore::load();
+    let Some(card) = linkable_card(&store) else {
+        eprintln!(
+            "No published card on this machine yet.\n\
+             Publish first:  lean-ctx gain --publish --leaderboard"
+        );
+        std::process::exit(1);
+    };
+
+    match code {
+        None => match cloud_client::link_wrapped_start(&card.id, &card.edit_token) {
+            Ok(minted) => {
+                let mins = (minted.expires_in_secs / 60).max(1);
+                println!("Pairing code:  {}", minted.code);
+                println!();
+                println!("On your other machine, run within {mins} minutes:");
+                println!("  lean-ctx gain --link {}", minted.code);
+                println!();
+                println!(
+                    "Both machines will then appear as one combined leaderboard entry \
+                     (tokens summed). No account needed — the code proves card ownership."
+                );
+            }
+            Err(e) => {
+                eprintln!("Could not create a pairing code: {e}");
+                std::process::exit(1);
+            }
+        },
+        Some(code) => match cloud_client::link_wrapped_complete(&card.id, &card.edit_token, code) {
+            Ok(()) => {
+                println!(
+                    "Linked! This machine and the code's machine now stack as one \
+                     leaderboard entry."
+                );
+                println!(
+                    "Link more machines anytime:  lean-ctx gain --link   (on any linked machine)"
+                );
+            }
+            Err(e) => {
+                eprintln!("Could not complete the link: {e}");
+                std::process::exit(1);
+            }
+        },
+    }
+}
+
 impl PublishedStore {
     fn load() -> Self {
         store_path()
@@ -377,16 +442,16 @@ pub(crate) fn publish(period: &str, name: Option<&str>, leaderboard: bool) {
                 if let Some(base) = card.url.split("/w/").next() {
                     println!("Listed on the community leaderboard: {base}/metrics#leaderboard");
                 }
-                // Account linking (#488): logged-in machines stack under one entry; otherwise
-                // each machine is a separate row. `record_published` did the actual claim — this
-                // only reflects the state to the user.
+                // Machine stacking: logged-in machines stack automatically (#488); everyone
+                // else links machines login-lessly via a pairing code (#736).
                 if cloud_client::is_logged_in() {
                     println!(
                         "Linked to your account — all your machines now stack under one leaderboard entry."
                     );
                 } else {
                     println!(
-                        "Tip: run  lean-ctx login  so your machines stack under one leaderboard entry instead of separate rows."
+                        "Tip: more than one machine? Run  lean-ctx gain --link  to combine them \
+                         into one leaderboard entry (no account needed)."
                     );
                 }
                 // A nameless entry shows as "anonymous" on the board — nudge once toward a handle.
