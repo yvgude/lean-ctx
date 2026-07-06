@@ -285,9 +285,13 @@ Each phase closes a construction site and is releasable alone.
 - `addon_registry.json` + `grammar_registry.json` are generated snapshots
   (`gen_registry`, deterministic + timestamp-free) with a drift check in CI
   and preflight; hand-editing ends.
-- Server side (remaining, tracked in GH #726): ctxpkg registry API `kind`
-  filter on resolve/search/catalog; leanctx.com/addons renders the
-  `kind=addon` catalog view from ctxpkg.com.
+- Server side, registry API (shipped with this phase): publish-time `kind`
+  validation (unknown kinds 400, non-context kinds require schema v2,
+  structural kind ↔ `content.addon` coherence), `kind` persisted per package
+  and exposed in every catalog/search/publisher/package response, and an
+  optional `?kind=` filter on `index.json`, `search` and the publisher feed
+  (unknown values 400). Remaining, tracked in GH #726: leanctx.com/addons
+  renders the `kind=addon` catalog view from ctxpkg.com.
 - Closes: double-registry maintenance; "two marketplaces" story.
 
 ### Phase 3 — `kind=skills` + dependency resolution (target: after Phase 2)
@@ -345,3 +349,4 @@ Each phase closes a construction site and is releasable alone.
 - Epic + phase issues: GitHub `yvgude/lean-ctx` (see epic issue for links).
 - GitLab mirror (scoped labels, `status::…`): pending token renewal
   (`glab auth login --hostname gitlab.pounce.ch`), then mirror per parity rule.
+
