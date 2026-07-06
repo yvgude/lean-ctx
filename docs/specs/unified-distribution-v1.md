@@ -250,7 +250,7 @@ Each phase closes a construction site and is releasable alone.
 - Works with the shipped bootstrap engine today; communicated on GH PR #721.
 - Closes: the contributor's waiting state. Cost: one manifest line.
 
-### Phase 1 — `kind` field + unified artifact installer (target v3.10)
+### Phase 1 — `kind` field + unified artifact installer (target v3.9.3)
 
 - `kind` on `PackageManifest` + schema + validation (`context` default).
 - Generalise `grammar_install.rs` → `core/addons/artifact_install.rs`
@@ -264,7 +264,7 @@ Each phase closes a construction site and is releasable alone.
   full determinism suite green.
 - Closes: "where does the addon binary come from" — permanently.
 
-### Phase 2 — Publish flow + registry consolidation (target v3.11)
+### Phase 2 — Publish flow + registry consolidation (target: next release after Phase 1)
 
 - `lean-ctx addon publish`: builds the `kind=addon` pack from
   `lean-ctx-addon.toml` + CI artifact URLs/hashes, signs with publisher key,
@@ -276,7 +276,7 @@ Each phase closes a construction site and is releasable alone.
 - leanctx.com/addons renders the `kind=addon` catalog view from ctxpkg.com.
 - Closes: double-registry maintenance; "two marketplaces" story.
 
-### Phase 3 — `kind=skills` + dependency resolution (target v3.11+)
+### Phase 3 — `kind=skills` + dependency resolution (target: after Phase 2)
 
 - `documents` content payload (§3.2) + redaction-on-load.
 - Depth-1 SemVer dependency resolution at install, lockfile-recorded (§3.3).
