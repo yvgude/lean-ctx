@@ -215,9 +215,16 @@ fn nix_profile_search(name: &str) -> Option<PathBuf> {
     let user_profile = home
         .as_ref()
         .map(|h| h.join(".nix-profile").join("lib").join(name));
+    let nixos_user_profile = std::env::var("USER").ok().map(|u| {
+        PathBuf::from("/etc/profiles/per-user")
+            .join(u)
+            .join("lib")
+            .join(name)
+    });
     let candidates = [
         Some(Path::new("/run/current-system/sw/lib").join(name)),
         user_profile,
+        nixos_user_profile,
     ];
     candidates.into_iter().flatten().find(|c| c.is_file())
 }
