@@ -17,7 +17,7 @@ mod merge;
 mod provenance;
 mod proxy;
 mod read_dedup;
-mod read_redirect;
+pub(crate) mod read_redirect;
 mod render;
 pub mod risk;
 pub mod schema;
@@ -498,7 +498,7 @@ pub struct Config {
     #[serde(default)]
     pub memory_profile: MemoryProfile,
     /// Controls how aggressively memory is freed when idle.
-    /// Values: "aggressive" (default, 5 min TTL), "shared" (30 min TTL for multi-IDE use).
+    /// Values: "shared" (default, 1h TTL), "aggressive" (5 min TTL for low-memory devices).
     /// Override via LEAN_CTX_MEMORY_CLEANUP env var.
     #[serde(default)]
     pub memory_cleanup: MemoryCleanup,
@@ -568,7 +568,7 @@ pub struct Config {
     /// plus an incoming read would exceed this, lean-ctx evicts the least-valuable
     /// entries *immediately* (RRF: recency × frequency × size) so the read always
     /// proceeds — eviction is never deferred to the staleness TTL. `0` uses the
-    /// built-in default (500k). `LEAN_CTX_CACHE_MAX_TOKENS` env var overrides this.
+    /// built-in default (2M). `LEAN_CTX_CACHE_MAX_TOKENS` env var overrides this.
     #[serde(default)]
     pub cache_max_tokens: usize,
     /// Cross-project boundary policy.

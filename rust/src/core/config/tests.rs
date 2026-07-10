@@ -1061,8 +1061,8 @@ mod memory_cleanup_tests {
     use super::super::*;
 
     #[test]
-    fn default_is_aggressive() {
-        assert_eq!(MemoryCleanup::default(), MemoryCleanup::Aggressive);
+    fn default_is_shared() {
+        assert_eq!(MemoryCleanup::default(), MemoryCleanup::Shared);
     }
 
     #[test]
@@ -1071,8 +1071,8 @@ mod memory_cleanup_tests {
     }
 
     #[test]
-    fn shared_ttl_is_1800() {
-        assert_eq!(MemoryCleanup::Shared.idle_ttl_secs(), 1800);
+    fn shared_ttl_is_3600() {
+        assert_eq!(MemoryCleanup::Shared.idle_ttl_secs(), 3600);
     }
 
     #[test]
@@ -1084,9 +1084,9 @@ mod memory_cleanup_tests {
     }
 
     #[test]
-    fn deserialization_defaults_to_aggressive() {
+    fn deserialization_defaults_to_shared() {
         let cfg: Config = toml::from_str("").unwrap();
-        assert_eq!(cfg.memory_cleanup, MemoryCleanup::Aggressive);
+        assert_eq!(cfg.memory_cleanup, MemoryCleanup::Shared);
     }
 
     #[test]

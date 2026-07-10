@@ -258,17 +258,26 @@ fn has_host_scaffold(command: &str) -> bool {
     MARKERS.iter().any(|m| prefix.contains(m))
 }
 
-/// True when the command ends with a bare `&& pwd` or `&& pwd -P` (stdout
-/// capture, no file redirect). This is the zsh sandbox variant of cwd tracking.
+/// True when the command ends with a bare `&& pwd [flags]` (stdout capture, no
+/// file redirect). This is the zsh sandbox variant of cwd tracking. Covers all
+/// observed Claude Code variants: `&& pwd`, `&& pwd -P`, `&& pwd -` (#745 v3).
 fn has_trailing_bare_pwd(command: &str) -> bool {
     let trimmed = command.trim_end();
-    if trimmed.ends_with("&& pwd -P") || trimmed.ends_with("&& pwd") {
-        let pwd_idx = trimmed.rfind("pwd").unwrap();
-        let after_pwd = &trimmed[pwd_idx + 3..];
-        !after_pwd.contains('>')
-    } else {
-        false
+    let Some(last_and) = trimmed.rfind("&& ") else {
+        return false;
+    };
+    let after_and = trimmed[last_and + 3..].trim();
+    // Must start with `pwd` as a standalone token
+    if !after_and.starts_with("pwd") {
+        return false;
     }
+    let rest = after_and[3..].trim();
+    // After `pwd` only flags (starting with -) or nothing — no redirect
+    if rest.is_empty() {
+        return true;
+    }
+    rest.split_whitespace()
+        .all(|tok| tok.starts_with('-') && !tok.contains('>'))
 }
 
 /// Extract the cwd-snapshot target of a trailing `pwd … >| <file>` (or `> <file>`)
@@ -522,5 +531,35 @@ mod tests {
         assert_eq!(u.inner, "ls -la");
         assert!(u.stdout_cwd);
         assert_eq!(u.rebuild(), "ls -la && pwd");
+    }
+
+    // --- #745 v3: pwd - variant (lone dash flag) ---
+
+    #[test]
+    fn unwraps_zsh_sandbox_pwd_dash() {
+        let cmd = "setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'echo hi' < /dev/null && pwd -";
+        let u = unwrap_agent_wrapper(cmd).expect("must detect pwd - variant");
+        assert_eq!(u.inner, "echo hi");
+        assert!(u.stdout_cwd);
+        assert_eq!(u.rebuild(), "echo hi && pwd");
+    }
+
+    // --- #745 v3: unquoted eval arg (eval pwd instead of eval 'pwd') ---
+
+    #[test]
+    fn unwraps_unquoted_eval_arg() {
+        let cmd = "setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval pwd < /dev/null && pwd -P >| /tmp/claude-xx-cwd";
+        let u = unwrap_agent_wrapper(cmd).expect("must detect unquoted eval arg");
+        assert_eq!(u.inner, "pwd");
+        assert_eq!(u.cwd_snapshot.as_deref(), Some("/tmp/claude-xx-cwd"));
+        assert!(!u.stdout_cwd);
+    }
+
+    #[test]
+    fn unwraps_unquoted_eval_arg_stdout_cwd() {
+        let cmd = "setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval pwd < /dev/null && pwd -";
+        let u = unwrap_agent_wrapper(cmd).expect("must detect unquoted eval + pwd -");
+        assert_eq!(u.inner, "pwd");
+        assert!(u.stdout_cwd);
     }
 }

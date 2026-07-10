@@ -1,6 +1,6 @@
 {
   "name": "lean-ctx-bin",
-  "version": "3.9.5",
+  "version": "3.9.6",
   "description": "LeanCTX \u2014 the Context OS for AI coding agents. One local binary that compresses, remembers, routes, and verifies every token between your code and the model. No Rust required.",
   "keywords": [
     "lean-ctx",

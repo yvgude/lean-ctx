@@ -653,10 +653,10 @@ pub fn cmd_ls(args: &[String]) {
     }
     super::common::daemon_fallback_hint();
 
-    let (out, _original) =
+    let (out, original) =
         crate::tools::ctx_tree::handle(path, depth, show_hidden, respect_gitignore);
     println!("{out}");
-    super::common::cli_track_tree(0, count_tokens(&out));
+    super::common::cli_track_tree(original, count_tokens(&out));
 }
 
 pub fn cmd_deps(args: &[String]) {

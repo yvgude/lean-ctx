@@ -334,7 +334,7 @@ pub(crate) fn memory_cleanup_outcome() -> Outcome {
         ),
         crate::core::config::MemoryCleanup::Shared => (
             "shared",
-            "cache retained 30 min, multi-IDE/multi-model optimized",
+            "cache retained 1 hour, multi-IDE/multi-model optimized",
         ),
     };
     let source = if crate::core::config::MemoryCleanup::from_env().is_some() {

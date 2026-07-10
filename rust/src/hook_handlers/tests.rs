@@ -722,10 +722,13 @@ fn extract_field_handles_escaped_backslash() {
 
 #[test]
 fn extract_field_handles_complex_curl() {
-    let input = r#"{"tool_name":"Bash","command":"curl -H \"Authorization: Bearer token\" https://api.com"}"#;
+    let input = r#"{"tool_name":"Bash","command":"curl -H \"Authorization: Bearer [REDACTED:Authorization header] https://api.com"}"#;
     assert_eq!(
         extract_json_field(input, "command"),
-        Some(r#"curl -H "Authorization: Bearer token" https://api.com"#.to_string())
+        Some(
+            r#"curl -H "Authorization: Bearer [REDACTED:Authorization header] https://api.com"#
+                .to_string()
+        )
     );
 }
 
@@ -931,17 +934,18 @@ fn classify_redirect_covers_copilot_view_and_rg() {
 
 #[test]
 fn grep_content_mode_only_redirects_explicit_content() {
-    // GH #398 hook follow-up: the path-swap redirect is faithful only for
-    // `output_mode=content`. files_with_matches/count would surface the temp
-    // file itself, and an absent mode is host-dependent (Cursor=content,
-    // Claude Code=files_with_matches), so it must not be redirected blindly.
+    // Explicit modes are authoritative on all hosts.
     let mode = |m: &str| serde_json::json!({ "pattern": "x", "output_mode": m });
     assert!(grep_content_mode(Some(&mode("content"))));
     assert!(!grep_content_mode(Some(&mode("files_with_matches"))));
     assert!(!grep_content_mode(Some(&mode("count"))));
-    assert!(!grep_content_mode(Some(
-        &serde_json::json!({ "pattern": "x" })
-    )));
+    // Absent output_mode defaults to host-dependent: Cursor defaults to
+    // `content` (safe to redirect), Claude Code to `files_with_matches`
+    // (unsafe). `hook_host_is_cursor()` gates the absent case.
+    let absent = serde_json::json!({ "pattern": "x" });
+    let absent_result = grep_content_mode(Some(&absent));
+    let on_cursor = crate::core::config::read_redirect::hook_host_is_cursor();
+    assert_eq!(absent_result, on_cursor);
     assert!(!grep_content_mode(None));
 }
 
@@ -977,14 +981,13 @@ fn classify_redirect_passes_through_shell_and_unknown() {
 }
 
 #[test]
-fn redirect_read_args_pin_full_mode_never_auto() {
-    // #1021: a redirected native Read must fetch verbatim content. `auto`
-    // degrades large files to a structure MAP (signatures), which is the wrong
-    // payload for a Read and silently drops offset/limit. The host windows the
-    // faithful full content itself.
+fn redirect_read_args_pin_full_compact_mode_never_auto() {
+    // #1021 follow-up: redirect uses `full-compact` — headerless, trailing-
+    // whitespace-stripped verbatim content. Preserves line structure so
+    // offset/limit work correctly; `auto` still forbidden (degrades to map).
     let args = redirect_read_args("/repo/src/main.rs");
-    assert_eq!(args, ["read", "/repo/src/main.rs", "-m", "full"]);
-    assert!(args.contains(&"full"));
+    assert_eq!(args, ["read", "/repo/src/main.rs", "-m", "full-compact"]);
+    assert!(args.contains(&"full-compact"));
     assert!(!args.contains(&"auto"));
 }
 

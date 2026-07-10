@@ -8,8 +8,6 @@ pub(super) fn handle(
         "/api/stats" => {
             let store = crate::core::stats::load();
             let mut value = serde_json::to_value(&store).unwrap_or_else(|_| serde_json::json!({}));
-            // Output-echo summary (#501): how much of recent agent replies
-            // re-quoted content that was already in context.
             if let Some(obj) = value.as_object_mut() {
                 let echo = crate::core::output_echo::load_stats();
                 obj.insert(
@@ -20,12 +18,11 @@ pub(super) fn handle(
                         "total_analyzed": echo.total_analyzed,
                     }),
                 );
-                // Edit-efficiency channel (#1008): anchored vs str_replace
-                // counters for the ROI "Edit Efficiency" card.
                 obj.insert(
                     "edit_efficiency".to_string(),
                     crate::core::edit_metering::metrics_snapshot(),
                 );
+                obj.insert("channel_breakdown".to_string(), channel_breakdown(&store));
             }
             let json = serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string());
             Some(("200 OK", "application/json", json))
@@ -90,4 +87,51 @@ pub(super) fn handle(
         }
         _ => None,
     }
+}
+
+/// Classify every recorded command into its delivery channel:
+///
+/// - **redirect**: `cli_full`, `cli_ls`, `cli_grep` — native tool calls
+///   intercepted by the PreToolUse hook and redirected through lean-ctx
+/// - **rewrite**: `cli_shell`, `cli_map`, `cli_signatures` — shell commands
+///   rewritten to use lean-ctx (e.g. `grep` → `lean-ctx grep`)
+/// - **mcp**: `ctx_*` — direct MCP tool calls to the lean-ctx server
+fn channel_breakdown(store: &crate::core::stats::StatsStore) -> serde_json::Value {
+    let (mut rd, mut rw, mut mcp) = (
+        ChannelAgg::default(),
+        ChannelAgg::default(),
+        ChannelAgg::default(),
+    );
+    for (cmd, s) in &store.commands {
+        let ch = classify_channel(cmd);
+        let agg = match ch {
+            "redirect" => &mut rd,
+            "rewrite" => &mut rw,
+            _ => &mut mcp,
+        };
+        agg.calls += s.count;
+        agg.input += s.input_tokens;
+        agg.output += s.output_tokens;
+    }
+    serde_json::json!({
+        "redirect": { "calls": rd.calls, "input_tokens": rd.input, "output_tokens": rd.output, "saved": rd.input.saturating_sub(rd.output) },
+        "rewrite":  { "calls": rw.calls, "input_tokens": rw.input, "output_tokens": rw.output, "saved": rw.input.saturating_sub(rw.output) },
+        "mcp":      { "calls": mcp.calls, "input_tokens": mcp.input, "output_tokens": mcp.output, "saved": mcp.input.saturating_sub(mcp.output) },
+    })
+}
+
+fn classify_channel(cmd: &str) -> &'static str {
+    match cmd {
+        "cli_full" | "cli_ls" | "cli_read_dedup" => "redirect",
+        "cli_shell" | "cli_grep" | "cli_map" | "cli_signatures" => "rewrite",
+        c if c.starts_with("ctx_") => "mcp",
+        _ => "mcp",
+    }
+}
+
+#[derive(Default)]
+struct ChannelAgg {
+    calls: u64,
+    input: u64,
+    output: u64,
 }

@@ -128,7 +128,7 @@ class CockpitLearning extends HTMLElement {
       '</div>' +
       // Source/task split moved here from Home with the slim-Home cut (GL #486).
       '<div class="row" style="grid-template-columns:1fr 1fr;margin-top:16px">' +
-      '<div class="card"><div class="card-header"><h3>MCP vs Shell' + tip('mcp_vs_shell') + '</h3></div>' +
+      '<div class="card"><div class="card-header"><h3>Channel Breakdown' + tip('channel_breakdown') + '</h3></div>' +
       '<canvas id="ckle-mcpshell" height="180"></canvas>' +
       '<div id="ckle-mcpShellGrid"></div></div>' +
       '<div class="card"><div class="card-header"><h3>Task breakdown' + tip('task_breakdown') + '</h3></div>' +
@@ -359,55 +359,72 @@ class CockpitLearning extends HTMLElement {
     });
   }
 
-  /** Saved-token split by source (MCP vs shell hooks) — moved from Home. */
+  /** Saved-token split by delivery channel (MCP / rewrite / redirect). */
   _chartMcpShell() {
     var Ch = remCharts();
     if (!Ch.doughnutChart || typeof Chart === 'undefined') return;
     var stats = this._data;
-    if (!stats || !stats.commands) return;
+    if (!stats) return;
 
     var F = remFmt();
-    var ss = F.ss || function () {
-      return { m: { c: 0, i: 0, o: 0, s: 0 }, h: { c: 0, i: 0, o: 0, s: 0 } };
-    };
     var ff = F.ff || function (n) { return String(n); };
     var fmt = F.fmt || function (n) { return String(n); };
 
-    var entries = [];
-    var cmds = stats.commands;
-    var keys = Object.keys(cmds);
-    for (var i = 0; i < keys.length; i++) {
-      entries.push([keys[i], cmds[keys[i]]]);
-    }
-    var split = ss(entries);
+    var cb = stats.channel_breakdown;
+    var hasCb = cb && (cb.mcp || cb.rewrite || cb.redirect);
 
-    if (split.m.s + split.h.s > 0) {
-      Ch.doughnutChart(
-        'ckle-mcpshell',
-        ['MCP', 'Shell Hook'],
-        [split.m.s, split.h.s],
-        ['#818cf8', '#38bdf8']
-      );
-    }
+    if (hasCb) {
+      var mSaved = (cb.mcp && cb.mcp.saved) || 0;
+      var rwSaved = (cb.rewrite && cb.rewrite.saved) || 0;
+      var rdSaved = (cb.redirect && cb.redirect.saved) || 0;
 
-    var grid = document.getElementById('ckle-mcpShellGrid');
-    if (grid) {
-      grid.innerHTML =
-        '<div class="src-grid" style="margin-top:12px">' +
-        '<div class="src-item">' +
-        '<h4><span class="d" style="background:var(--purple)"></span> MCP</h4>' +
-        '<div class="sr"><span class="sl">Calls</span>' +
-        '<span class="sv">' + ff(split.m.c) + '</span></div>' +
-        '<div class="sr"><span class="sl">Saved</span>' +
-        '<span class="sv">' + fmt(split.m.s) + '</span></div>' +
-        '</div>' +
-        '<div class="src-item">' +
-        '<h4><span class="d" style="background:var(--blue)"></span> Shell</h4>' +
-        '<div class="sr"><span class="sl">Calls</span>' +
-        '<span class="sv">' + ff(split.h.c) + '</span></div>' +
-        '<div class="sr"><span class="sl">Saved</span>' +
-        '<span class="sv">' + fmt(split.h.s) + '</span></div>' +
-        '</div></div>';
+      if (mSaved + rwSaved + rdSaved > 0) {
+        Ch.doughnutChart(
+          'ckle-mcpshell',
+          ['MCP (ctx_*)', 'Rewrite (shell)', 'Redirect (read/grep)'],
+          [mSaved, rwSaved, rdSaved],
+          ['#818cf8', '#38bdf8', '#fb923c']
+        );
+      }
+
+      var mCalls = (cb.mcp && cb.mcp.calls) || 0;
+      var rwCalls = (cb.rewrite && cb.rewrite.calls) || 0;
+      var rdCalls = (cb.redirect && cb.redirect.calls) || 0;
+      var mIn = (cb.mcp && cb.mcp.input_tokens) || 0;
+      var rwIn = (cb.rewrite && cb.rewrite.input_tokens) || 0;
+      var rdIn = (cb.redirect && cb.redirect.input_tokens) || 0;
+      var mRate = mIn > 0 ? ((mSaved / mIn) * 100).toFixed(1) + '%' : '\u2014';
+      var rwRate = rwIn > 0 ? ((rwSaved / rwIn) * 100).toFixed(1) + '%' : '\u2014';
+      var rdRate = rdIn > 0 ? ((rdSaved / rdIn) * 100).toFixed(1) + '%' : '\u2014';
+
+      var grid = document.getElementById('ckle-mcpShellGrid');
+      if (grid) {
+        grid.innerHTML =
+          '<div class="src-grid" style="margin-top:12px;grid-template-columns:1fr 1fr 1fr">' +
+          '<div class="src-item">' +
+          '<h4><span class="d" style="background:#818cf8"></span> MCP</h4>' +
+          '<div class="sr"><span class="sl">Calls</span><span class="sv">' + ff(mCalls) + '</span></div>' +
+          '<div class="sr"><span class="sl">Saved</span><span class="sv">' + fmt(mSaved) + '</span></div>' +
+          '<div class="sr"><span class="sl">Rate</span><span class="sv">' + mRate + '</span></div></div>' +
+          '<div class="src-item">' +
+          '<h4><span class="d" style="background:#38bdf8"></span> Rewrite</h4>' +
+          '<div class="sr"><span class="sl">Calls</span><span class="sv">' + ff(rwCalls) + '</span></div>' +
+          '<div class="sr"><span class="sl">Saved</span><span class="sv">' + fmt(rwSaved) + '</span></div>' +
+          '<div class="sr"><span class="sl">Rate</span><span class="sv">' + rwRate + '</span></div></div>' +
+          '<div class="src-item">' +
+          '<h4><span class="d" style="background:#fb923c"></span> Redirect</h4>' +
+          '<div class="sr"><span class="sl">Calls</span><span class="sv">' + ff(rdCalls) + '</span></div>' +
+          '<div class="sr"><span class="sl">Saved</span><span class="sv">' + fmt(rdSaved) + '</span></div>' +
+          '<div class="sr"><span class="sl">Rate</span><span class="sv">' + rdRate + '</span></div></div>' +
+          '</div>';
+      }
+    } else {
+      var grid = document.getElementById('ckle-mcpShellGrid');
+      if (grid) {
+        grid.innerHTML =
+          '<p style="color:var(--c-muted);text-align:center;padding:24px 0">' +
+          'No channel data yet \u2014 start a session to see savings by channel (MCP / Shell / Read).</p>';
+      }
     }
   }
 

@@ -20,7 +20,7 @@ default-members = ["."]
 
 [package]
 name = "lean-ctx"
-version = "3.9.5"
+version = "3.9.6"
 edition = "2024"
 autobins = false
 description = "Context Runtime for AI Agents with CCP. 71 MCP tools, 10 read modes, 95+ compression patterns, cross-session memory (CCP), persistent AI knowledge with temporal facts + contradiction detection, multi-agent context sharing, LITM-aware positioning, AAAK compact format, adaptive compression with Thompson Sampling bandits. Supports 24+ AI tools. Reduces LLM token consumption by up to 99%."

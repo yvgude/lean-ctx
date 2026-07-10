@@ -92,6 +92,23 @@ pub(crate) fn format_full_output(
     (protocol::append_savings(&output, tokens, sent), sent)
 }
 
+/// Headerless, trailing-whitespace-stripped output for the Read redirect path.
+///
+/// The hook redirect writes this into a temp file the host reads *as* the real
+/// file's content. No framing header (fixes offset/limit correctness, #1021
+/// follow-up) and trailing whitespace is stripped per line for modest
+/// compression without breaking line structure or edit round-trips.
+pub(crate) fn format_full_compact_output(content: &str) -> (String, usize) {
+    let _mode_guard = crate::core::savings_footer::ModeGuard::new("full-compact");
+    let output: String = content
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let sent = count_tokens(&output);
+    (output, sent)
+}
+
 /// Render `content` with per-line `N:hh|` hash anchors for `ctx_patch`
 /// (mode=anchored, epic #1008). The body is verbatim source prefixed with a
 /// stable, self-describing one-line legend so a vanilla agent can read the
@@ -248,6 +265,7 @@ pub(crate) fn process_mode_tuned(
             line_count,
             task,
         ),
+        "full-compact" => format_full_compact_output(content),
         "anchored" => format_anchored_output(file_ref, short, content, line_count),
         "signatures" => render_signatures(content, ctx),
         "map" => render_map(content, ctx),

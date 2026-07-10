@@ -124,6 +124,14 @@ fn compute_read_dedup(input: &str) -> Option<String> {
         return None;
     }
     let updated = replace_slot(tool_response, &slot, &stub)?;
+
+    // Track dedup savings in stats.json so CEP/dashboard can report them.
+    // The hook subprocess is short-lived, so flush immediately.
+    let original_tokens = crate::core::tokens::count_tokens(original);
+    let stub_tokens = crate::core::tokens::count_tokens(&stub);
+    crate::core::stats::record("cli_read_dedup", original_tokens, stub_tokens);
+    crate::core::stats::flush();
+
     debug_log::log_hook_decision(
         "read-dedup",
         "Read",

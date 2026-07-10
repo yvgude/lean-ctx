@@ -15,6 +15,8 @@ static COMPACTION: AtomicU64 = AtomicU64::new(0);
 static IDLE: AtomicU64 = AtomicU64::new(0);
 static EVICTION: AtomicU64 = AtomicU64::new(0);
 static CONVERSATION: AtomicU64 = AtomicU64::new(0);
+static RAW_CAP_COUNT: AtomicU64 = AtomicU64::new(0);
+static RAW_CAP_PREVENTED: AtomicU64 = AtomicU64::new(0);
 
 /// Fully-delivered entries whose delivery flag was reset by a host compaction.
 pub fn record_compaction(n: u64) {
@@ -43,6 +45,14 @@ pub fn record_conversation_mismatch() {
     CONVERSATION.fetch_add(1, Ordering::Relaxed);
 }
 
+/// Framed output was larger than raw content — `cap_to_raw()` fell back to
+/// verbatim to prevent negative savings. Tracked so the dashboard can
+/// distinguish "no savings" from "savings prevented inflation".
+pub fn record_raw_cap(prevented_inflation_tokens: u64) {
+    RAW_CAP_COUNT.fetch_add(1, Ordering::Relaxed);
+    RAW_CAP_PREVENTED.fetch_add(prevented_inflation_tokens, Ordering::Relaxed);
+}
+
 /// Immutable snapshot of the re-delivery counters.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Snapshot {
@@ -50,6 +60,8 @@ pub struct Snapshot {
     pub idle: u64,
     pub eviction: u64,
     pub conversation: u64,
+    pub raw_cap_count: u64,
+    pub raw_cap_prevented: u64,
 }
 
 impl Snapshot {
@@ -69,6 +81,8 @@ pub fn snapshot() -> Snapshot {
         idle: IDLE.load(Ordering::Relaxed),
         eviction: EVICTION.load(Ordering::Relaxed),
         conversation: CONVERSATION.load(Ordering::Relaxed),
+        raw_cap_count: RAW_CAP_COUNT.load(Ordering::Relaxed),
+        raw_cap_prevented: RAW_CAP_PREVENTED.load(Ordering::Relaxed),
     }
 }
 
@@ -83,6 +97,8 @@ mod tests {
             idle: 2,
             eviction: 4,
             conversation: 8,
+            raw_cap_count: 0,
+            raw_cap_prevented: 0,
         };
         assert_eq!(s.total(), 15);
     }

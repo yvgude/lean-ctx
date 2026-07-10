@@ -223,7 +223,10 @@ pub const HOOK_COVERED_HEADER: &str = "\
 CRITICAL: ALWAYS prefer lean-ctx ctx_* tools over native equivalents — ctx_* tools \
 provide superior caching, compression, and session memory. Hooks compress native \
 Shell/Read/Grep as fallback, but direct ctx_* calls are the primary path.\n\
-ACTUALLY EMIT the ctx_* tool call (ctx_compose first) — describing a tool is not calling it.";
+ACTUALLY EMIT the ctx_* tool call (ctx_compose first) — describing a tool is not calling it.\n\
+WHY ctx_read > native Read: ctx_read picks the optimal mode (map/signatures/terse) \
+per file, caches for instant re-reads (~13 tokens), and compresses 26-92%. Native \
+Read through hook redirect is limited to verbatim pass-through (~5% savings).";
 
 /// The tools worth an explicit MCP call on a hook-covered host: capabilities
 /// with *no* native equivalent the hooks could intercept. Kept in sync with

@@ -289,7 +289,7 @@ impl CtxReadTool {
         let mut delta_explicit_note: Option<String> = None;
         if !fresh
             && explicit_mode
-            && (mode == "full" || mode.starts_with("lines:"))
+            && (mode == "full" || mode == "full-compact" || mode.starts_with("lines:"))
             && crate::core::config::Config::load().delta_explicit_effective()
             && let Ok(cache) = cache_lock.try_read()
         {
@@ -363,7 +363,7 @@ impl CtxReadTool {
                 // Phase 2. When aggressiveness is set `mode` was already rewritten
                 // to `density:` upstream, so it never reaches this `auto` branch.
                 if !fresh
-                    && (mode == "full" || mode == "auto")
+                    && (mode == "full" || mode == "full-compact" || mode == "auto")
                     && let Ok(cache) = cache_lock.try_read()
                     && let Some(read_output) =
                         crate::tools::ctx_read::try_stub_hit_readonly(&cache, path)
@@ -466,7 +466,7 @@ impl CtxReadTool {
                     // missing in the slow path, forcing every slow-path call into
                     // the expensive write-lock branch.
                     if !fresh
-                        && (mode == "full" || mode == "auto")
+                        && (mode == "full" || mode == "full-compact" || mode == "auto")
                         && let Ok(cache) = cache_lock.try_read()
                         && let Some(read_output) =
                             crate::tools::ctx_read::try_stub_hit_readonly(&cache, &path_owned)

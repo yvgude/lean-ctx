@@ -670,14 +670,13 @@ fn produce_redirect_output(kind: RedirectKind, tool_args: Option<&serde_json::Va
 
 /// Argv for the `lean-ctx read` subprocess a redirected native Read runs.
 ///
-/// Pinned to `-m full` (verbatim, edit-ready content). The default `auto`
-/// mode degrades a large file to a structure MAP — signatures, not content —
-/// so the host's native Read would receive the wrong thing and silently
-/// ignore `offset`/`limit` (#1021). With the temp file holding faithful full
-/// content the host applies its own `offset`/`limit` to it, so windowed reads
-/// keep working without lean-ctx having to reimplement them.
+/// Uses `full-compact`: verbatim content with trailing whitespace stripped per
+/// line, no framing header. Preserves line structure so the host's
+/// `offset`/`limit` work correctly, while giving modest compression (~5-10%)
+/// and fixing the header-in-temp-file offset bug from the original `full`
+/// mode (#1021 follow-up).
 fn redirect_read_args(path: &str) -> [&str; 4] {
-    ["read", path, "-m", "full"]
+    ["read", path, "-m", "full-compact"]
 }
 
 /// Redirect Read through lean-ctx for compression + caching.
@@ -808,14 +807,20 @@ fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
 /// only faithful for `output_mode=content` (see [`redirect_grep`]). For
 /// `files_with_matches` the host would report the temp file itself as the match,
 /// and for `count` it would count lines in the temp file — both wrong. The hook
-/// is host-agnostic (Cursor defaults to `content`, Claude Code to
-/// `files_with_matches`), so an absent mode cannot be assumed safe: only an
-/// explicit `content` mode is redirectable. (GH #398 hook follow-up)
+/// Hosts disagree on the Grep default: Cursor defaults to `content`, Claude
+/// Code to `files_with_matches`. An explicit non-content mode (`count`,
+/// `files_with_matches`) must NOT be redirected — the path-swap would surface
+/// the temp file itself. When `output_mode` is absent, Cursor's default is
+/// `content`, so the redirect is safe there. (GH #398 hook follow-up)
 fn grep_content_mode(tool_input: Option<&serde_json::Value>) -> bool {
-    tool_input
-        .and_then(|ti| ti.get("output_mode"))
-        .and_then(|m| m.as_str())
-        == Some("content")
+    let Some(ti) = tool_input else {
+        return false;
+    };
+    match ti.get("output_mode").and_then(|m| m.as_str()) {
+        Some("content") => true,
+        Some(_) => false,
+        None => crate::core::config::read_redirect::hook_host_is_cursor(),
+    }
 }
 
 fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {

@@ -696,7 +696,11 @@ pub fn resolve_explicit_delta_mode(
         mode: mode.to_string(),
         note: None,
     };
-    if fresh || !enabled || !explicit_mode || !(mode == "full" || mode.starts_with("lines:")) {
+    if fresh
+        || !enabled
+        || !explicit_mode
+        || !(mode == "full" || mode == "full-compact" || mode.starts_with("lines:"))
+    {
         return unchanged;
     }
     let Some(entry) = cache.get(path) else {
@@ -829,13 +833,30 @@ fn handle_with_options_inner(
             mode.to_string()
         };
 
-        if resolved_mode == "full" {
-            // Read-locked stub fast path (single source of truth, shared with
-            // the registered handler's concurrent read-lock attempt). Reached by
-            // an explicit `mode=full` and by `auto` that resolved to a full
-            // cache-hit, so both collapse identically to the `[unchanged]` stub.
+        if resolved_mode == "full" || resolved_mode == "full-compact" {
             if let Some(out) = try_stub_hit_readonly(cache, path) {
                 return out;
+            }
+            if resolved_mode == "full-compact" {
+                let content = match read_file_lossy(path) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let msg = format!("ERROR: {e}");
+                        return ReadOutput {
+                            content: msg,
+                            resolved_mode: "error".into(),
+                            output_tokens: 0,
+                        };
+                    }
+                };
+                let (out, _) = format_full_compact_output(&content);
+                let out = crate::core::redaction::redact_text_if_enabled(&out);
+                let sent = count_tokens(&out);
+                return ReadOutput {
+                    content: out,
+                    resolved_mode: "full-compact".into(),
+                    output_tokens: sent,
+                };
             }
             let (out, _) = handle_full_with_auto_delta(cache, path, &file_ref, &short, ext, task);
             let out = crate::core::redaction::redact_text_if_enabled(&out);
@@ -857,7 +878,7 @@ fn handle_with_options_inner(
             );
             let compressed_hit = cache.get_compressed(path, &cache_key).cloned();
             if let Some(cached_output) = compressed_hit {
-                cache.record_cache_hit(path);
+                // get_compressed() already recorded the cache hit (stats + event)
                 let out = crate::core::redaction::redact_text_if_enabled(&cached_output);
                 let sent = count_tokens(&out);
                 return ReadOutput {
@@ -952,8 +973,20 @@ fn handle_with_options_inner(
     // after releasing the lock and appends it to the response.
     let graph_hint: Option<String> = None;
 
-    if mode == "full" {
+    if mode == "full" || mode == "full-compact" {
         cache.mark_full_delivered(path);
+
+        if mode == "full-compact" {
+            let (output, _) = format_full_compact_output(&content);
+            let output = crate::core::redaction::redact_text_if_enabled(&output);
+            let sent = count_tokens(&output);
+            return ReadOutput {
+                content: output,
+                resolved_mode: "full-compact".into(),
+                output_tokens: sent,
+            };
+        }
+
         let (mut output, _) = format_full_output(
             &file_ref,
             &short,
@@ -1089,6 +1122,8 @@ fn cap_to_raw(
     raw_tokens: usize,
 ) -> String {
     if raw_tokens > 0 && framed_tokens > raw_tokens {
+        let prevented = (framed_tokens - raw_tokens) as u64;
+        crate::core::cache_telemetry::record_raw_cap(prevented);
         raw_content.to_string()
     } else {
         framed

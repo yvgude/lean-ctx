@@ -5,13 +5,13 @@ use serde::{Deserialize, Serialize};
 use super::Config;
 
 /// Controls how aggressively lean-ctx frees memory when idle.
-/// - `aggressive`: (Default) Cache cleared after short idle period (5 min). Best for single-IDE use.
-/// - `shared`: Cache retained longer (30 min). Best when multiple IDEs/models share lean-ctx context.
+/// - `aggressive`: Cache cleared after short idle period (5 min). Best for low-memory devices.
+/// - `shared`: (Default) Cache retained for 1 hour. Best for typical agent sessions with think pauses.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum MemoryCleanup {
-    #[default]
     Aggressive,
+    #[default]
     Shared,
 }
 
@@ -37,7 +37,7 @@ impl MemoryCleanup {
     pub fn idle_ttl_secs(&self) -> u64 {
         match self {
             Self::Aggressive => 300,
-            Self::Shared => 1800,
+            Self::Shared => 3600,
         }
     }
 

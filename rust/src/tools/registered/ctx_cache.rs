@@ -93,6 +93,12 @@ impl McpTool for CtxCacheTool {
                         t.compaction, t.idle, t.eviction, t.conversation, t.total()
                     ));
                 }
+                if t.raw_cap_count > 0 {
+                    lines.push(format!(
+                        "raw-cap fallbacks: {} (prevented {} tokens inflation)",
+                        t.raw_cap_count, t.raw_cap_prevented
+                    ));
+                }
                 lines.join("\n")
             }
             "clear" => {

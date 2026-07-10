@@ -65,6 +65,10 @@ impl fmt::Display for LineRange {
 pub(crate) enum ReadMode {
     /// Verbatim, edit-ready (framed) — `"full"`.
     Full,
+    /// Headerless, trailing-whitespace-stripped verbatim — `"full-compact"`.
+    /// Used by the Read redirect to produce temp files faithful to the
+    /// original line structure while saving framing overhead.
+    FullCompact,
     /// Verbatim + per-line `N:hh|` hash anchors, edit-ready for `ctx_patch`
     /// (epic #1008) — `"anchored"`. Lossless (a strict superset of `full`).
     Anchored,
@@ -133,6 +137,7 @@ impl FromStr for ReadMode {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
             "full" => ReadMode::Full,
+            "full-compact" => ReadMode::FullCompact,
             "anchored" => ReadMode::Anchored,
             "raw" => ReadMode::Raw,
             "signatures" => ReadMode::Signatures,
@@ -164,6 +169,7 @@ impl fmt::Display for ReadMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let keyword = match self {
             ReadMode::Full => "full",
+            ReadMode::FullCompact => "full-compact",
             ReadMode::Anchored => "anchored",
             ReadMode::Raw => "raw",
             ReadMode::Signatures => "signatures",
@@ -232,7 +238,11 @@ impl ReadMode {
     pub(crate) fn counts_as_compressed(&self) -> bool {
         // `anchored` is lossless (verbatim + anchors), so like `full` it must not
         // count as a "compressed" read for bounce/quality tracking.
-        !matches!(self, ReadMode::Full | ReadMode::Diff | ReadMode::Anchored)
+        // `full-compact` only strips trailing whitespace — functionally verbatim.
+        !matches!(
+            self,
+            ReadMode::Full | ReadMode::FullCompact | ReadMode::Diff | ReadMode::Anchored
+        )
     }
 }
 
@@ -243,6 +253,7 @@ mod tests {
     /// Every canonical mode string the handler/`render.rs` produce or accept.
     const CANONICAL: &[&str] = &[
         "full",
+        "full-compact",
         "anchored",
         "raw",
         "signatures",
@@ -277,7 +288,10 @@ mod tests {
     }
 
     fn legacy_counts_as_compressed(mode: &str) -> bool {
-        !matches!(mode, "full" | "diff" | "lines" | "anchored")
+        !matches!(
+            mode,
+            "full" | "full-compact" | "diff" | "lines" | "anchored"
+        )
     }
 
     #[test]

@@ -1,6 +1,6 @@
 {
   "name": "pi-lean-ctx",
-  "version": "3.9.5",
+  "version": "3.9.6",
   "description": "Pi Coding Agent extension \u2014 routes bash/read/grep/find/ls through lean-ctx for strong token savings. The embedded MCP bridge (on by default) adds a persistent session cache so unchanged re-reads cost ~13 tokens.",
   "keywords": [
     "pi-package",
