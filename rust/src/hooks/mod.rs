@@ -418,6 +418,10 @@ if [ -z "$CMD" ] || echo "$CMD" | grep -qE "^(lean-ctx |\"?$LEAN_CTX_BIN\"? )"; 
   exit 0
 fi
 
+# Skip multi-line commands: the grep/sed extraction above does not decode
+# JSON \n into real newlines, so lean-ctx -c would receive fused lines (#787).
+if printf '%s' "$CMD" | grep -qF '\n'; then exit 0; fi
+
 case "$CMD" in
   {case_pattern})
     # Shell-escape then JSON-escape (two passes)
@@ -443,6 +447,7 @@ LEAN_CTX_BIN={quoted_binary}
 INPUT=$(cat)
 CMD=$(echo "$INPUT" | grep -oE '"command":"([^"\\]|\\.)*"' | head -1 | sed 's/^"command":"//;s/"$//' | sed 's/\\"/"/g;s/\\\\/\\/g' 2>/dev/null || echo "")
 if [ -z "$CMD" ] || echo "$CMD" | grep -qE "^(lean-ctx |\"?$LEAN_CTX_BIN\"? )"; then exit 0; fi
+if printf '%s' "$CMD" | grep -qF '\n'; then exit 0; fi
 case "$CMD" in
   {case_pattern})
     SHELL_ESC=$(printf '%s' "$CMD" | sed 's/\\/\\\\/g;s/"/\\"/g')

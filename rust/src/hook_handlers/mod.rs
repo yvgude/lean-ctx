@@ -1327,5 +1327,34 @@ fn extract_json_field(input: &str, field: &str) -> Option<String> {
         return None;
     }
     let raw = &rest[..end];
-    Some(raw.replace("\\\"", "\"").replace("\\\\", "\\"))
+    Some(unescape_json_string(raw))
+}
+
+/// Single-pass JSON string unescaping (#787).
+///
+/// Handles \\, \", \n, \t, \r, \/ — the standard JSON escape sequences
+/// that agents actually emit in hook payloads. \uXXXX is passed through
+/// unchanged (extremely rare in shell commands, not worth the complexity).
+fn unescape_json_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('t') => out.push('\t'),
+                Some('r') => out.push('\r'),
+                Some('"') => out.push('"'),
+                Some('/') => out.push('/'),
+                Some('\\') | None => out.push('\\'),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }

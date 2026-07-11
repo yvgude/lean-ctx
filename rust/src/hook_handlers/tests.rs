@@ -733,6 +733,45 @@ fn extract_field_handles_complex_curl() {
 }
 
 #[test]
+fn extract_field_decodes_json_newlines() {
+    let input = r#"{"tool_name":"Bash","command":"git add .\ngit commit -m \"done\""}"#;
+    assert_eq!(
+        extract_json_field(input, "command"),
+        Some("git add .\ngit commit -m \"done\"".to_string())
+    );
+}
+
+#[test]
+fn extract_field_decodes_json_tab_and_cr() {
+    let input = r#"{"command":"echo\t\"hello\"\r\n"}"#;
+    assert_eq!(
+        extract_json_field(input, "command"),
+        Some("echo\t\"hello\"\r\n".to_string())
+    );
+}
+
+#[test]
+fn extract_field_preserves_escaped_backslash_before_n() {
+    let input = r#"{"command":"echo \\n"}"#;
+    assert_eq!(
+        extract_json_field(input, "command"),
+        Some("echo \\n".to_string())
+    );
+}
+
+#[test]
+fn unescape_json_string_roundtrips() {
+    assert_eq!(super::unescape_json_string(r"a\nb"), "a\nb");
+    assert_eq!(super::unescape_json_string(r"a\tb"), "a\tb");
+    assert_eq!(super::unescape_json_string(r"a\\b"), "a\\b");
+    assert_eq!(super::unescape_json_string(r#"a\"b"#), "a\"b");
+    assert_eq!(super::unescape_json_string(r"a\/b"), "a/b");
+    assert_eq!(super::unescape_json_string(r"a\r\nb"), "a\r\nb");
+    assert_eq!(super::unescape_json_string(r"\\n"), "\\n");
+    assert_eq!(super::unescape_json_string("plain"), "plain");
+}
+
+#[test]
 fn to_bash_compatible_path_windows_drive() {
     let p = crate::hooks::to_bash_compatible_path(r"E:\packages\lean-ctx.exe");
     assert_eq!(p, "/e/packages/lean-ctx.exe");

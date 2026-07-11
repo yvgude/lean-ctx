@@ -675,6 +675,20 @@ fn rewrite_scripts_contain_all_registry_commands() {
 }
 
 #[test]
+fn rewrite_script_skips_multiline_commands() {
+    let script = generate_rewrite_script("lean-ctx");
+    assert!(
+        script.contains(r"grep -qF '\n'"),
+        "rewrite script must guard against unresolved JSON \\n (#787)"
+    );
+    let compact = generate_compact_rewrite_script("lean-ctx");
+    assert!(
+        compact.contains(r"grep -qF '\n'"),
+        "compact rewrite script must guard against unresolved JSON \\n (#787)"
+    );
+}
+
+#[test]
 fn codex_is_hybrid() {
     assert_eq!(recommend_hook_mode("codex"), HookMode::Hybrid);
 }
