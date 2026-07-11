@@ -1,3 +1,12 @@
 {
-   "signedContributors": []
+  "signedContributors": [
+    {
+      "name": "getappz",
+      "id": 243991427,
+      "comment_id": 4945070622,
+      "created_at": "2026-07-11T10:52:54Z",
+      "repoId": 1189918673,
+      "pullRequestNo": 792
+    }
+  ]
 }
