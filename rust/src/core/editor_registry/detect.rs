@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 
 use super::paths::{
     augment_cli_settings_path, augment_vscode_mcp_path, claude_mcp_json_path, cline_mcp_path,
-    codebuddy_mcp_json_path, qoder_all_mcp_paths, qoderwork_mcp_path, roo_mcp_path,
-    vscode_insiders_mcp_path, vscode_mcp_path, zed_config_dir, zed_settings_path,
+    codebuddy_mcp_json_path, detect_vibe_path, qoder_all_mcp_paths, qoderwork_mcp_path,
+    roo_mcp_path, vibe_config_path, vscode_insiders_mcp_path, vscode_mcp_path, zed_config_dir,
+    zed_settings_path,
 };
 use super::types::{ConfigType, EditorTarget};
 
@@ -277,6 +278,13 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
             // a top-level `mcpServers` key ("Unrecognized key") — it requires
             // the nested `mcp.servers` schema (GitHub #390).
             config_type: ConfigType::OpenClaw,
+        },
+        EditorTarget {
+            name: "Mistral Vibe",
+            agent_key: "vibe".to_string(),
+            config_path: vibe_config_path(home),
+            detect_path: detect_vibe_path(home),
+            config_type: ConfigType::VibeToml,
         },
     ];
 

@@ -62,6 +62,7 @@ pub fn write_config_with_options(
         ConfigType::QoderSettings => write_qoder_settings(target, binary, opts),
         ConfigType::AugmentVsCode => write_augment_vscode(target, binary, opts),
         ConfigType::OpenClaw => write_openclaw_config(target, binary, opts),
+        ConfigType::VibeToml => write_vibe_toml(target, binary, opts),
     }
 }
 
@@ -90,6 +91,7 @@ pub fn remove_lean_ctx_server(
             remove_lean_ctx_augment_vscode_server(&target.config_path, opts)
         }
         ConfigType::OpenClaw => remove_lean_ctx_openclaw_server(&target.config_path, opts),
+        ConfigType::VibeToml => remove_lean_ctx_vibe_toml_server(&target.config_path, opts),
     }
 }
 

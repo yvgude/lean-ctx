@@ -32,4 +32,6 @@ pub enum ConfigType {
     /// Older versions use the legacy camelCase key — the writer detects the
     /// version via `meta.lastTouchedVersion` and migrates (GitHub #390).
     OpenClaw,
+    /// Mistral Vibe (`~/.vibe/config.toml`): TOML-based config with `[[mcp_servers]]` array
+    VibeToml,
 }

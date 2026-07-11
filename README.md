@@ -517,6 +517,7 @@ LeanCTX is a standard **MCP server**, so it works with any MCP-compatible client
 | Trae | ● | | `lean-ctx init --agent trae` |
 | Verdent | ● | | `lean-ctx init --agent verdent` |
 | Aider | | ● | `lean-ctx init --agent aider` |
+| Mistral Vibe | | ● | `lean-ctx init --agent vibe` |
 | Continue | | ● | `lean-ctx init --agent continue` |
 | JetBrains IDEs | | ● | `lean-ctx init --agent jetbrains` |
 | QoderWork | | ● | `lean-ctx init --agent qoderwork` |

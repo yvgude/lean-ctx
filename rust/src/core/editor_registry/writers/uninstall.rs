@@ -492,3 +492,53 @@ pub(super) fn remove_lean_ctx_augment_vscode_server(
         note: Some("removed lean-ctx from augment vscode mcp list".to_string()),
     })
 }
+
+// ---------------------------------------------------------------------------
+// Mistral Vibe TOML removal
+// ---------------------------------------------------------------------------
+
+pub(super) fn remove_lean_ctx_vibe_toml_server(
+    path: &std::path::Path,
+    _opts: WriteOptions,
+) -> Result<WriteResult, String> {
+    if !path.exists() {
+        return Ok(WriteResult {
+            action: WriteAction::Already,
+            note: Some("config file does not exist".to_string()),
+        });
+    }
+
+    let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let mut doc = content
+        .parse::<toml_edit::Document>()
+        .map_err(|e| e.to_string())?;
+
+    let removed = if let Some(toml_edit::Item::ArrayOfTables(aot)) = doc.get_mut("mcp_servers") {
+        let before = aot.len();
+        aot.retain(|table| table.get("name").and_then(|n| n.as_str()) != Some("lean-ctx"));
+        before != aot.len()
+    } else {
+        false
+    };
+
+    if !removed {
+        return Ok(WriteResult {
+            action: WriteAction::Already,
+            note: Some("lean-ctx not configured in vibe".to_string()),
+        });
+    }
+
+    // Clean up empty mcp_servers array
+    if let Some(toml_edit::Item::ArrayOfTables(aot)) = doc.get("mcp_servers") {
+        if aot.is_empty() {
+            doc.remove("mcp_servers");
+        }
+    }
+
+    let formatted = doc.to_string();
+    crate::config_io::write_atomic_with_backup(path, &formatted)?;
+    Ok(WriteResult {
+        action: WriteAction::Updated,
+        note: Some("removed lean-ctx from vibe mcp_servers".to_string()),
+    })
+}
