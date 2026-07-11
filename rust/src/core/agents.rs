@@ -534,19 +534,15 @@ fn generate_short_id() -> String {
     format!("{:08x}", hasher.finish() as u32)
 }
 
+/// #576 already fixed this exact hardcoded-`true` anti-pattern for
+/// `daemon::is_daemon_running` by delegating to `ipc::process::is_alive`
+/// (which has a real Windows `OpenProcess` check); this duplicate copy was
+/// missed, so on non-unix targets `cleanup_stale` could never flip a dead
+/// MCP session's entry to `Finished`, leaving `registry.json` accumulating
+/// stale `Active` entries forever — the root cause of the "N active agents"
+/// dashboard bug on Windows.
 pub fn is_process_alive(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        std::process::Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .output()
-            .is_ok_and(|o| o.status.success())
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = pid;
-        true
-    }
+    crate::ipc::process::is_alive(pid)
 }
 
 pub(crate) struct FileLock {
@@ -1009,17 +1005,23 @@ mod tests {
     /// #419: a crashed/exited MCP process leaves an `Active` entry behind.
     /// `cleanup_stale` must flip it to `Finished` (regardless of age) so
     /// `list_active` no longer surfaces it as a live peer — the ghost the
-    /// briefing used to show.
-    #[cfg(unix)]
+    /// briefing used to show. Previously `#[cfg(unix)]`-only, which is why
+    /// the non-unix `is_process_alive` hardcoded-`true` regression (see its
+    /// doc comment) shipped unnoticed: this exact test never ran on Windows.
     #[test]
     fn cleanup_stale_prunes_dead_pid_from_active_list() {
         // Reap a child so its PID is guaranteed dead at assertion time.
         let reaped = {
-            let mut child = std::process::Command::new("true")
-                .spawn()
-                .expect("spawn true");
+            let mut cmd = if cfg!(windows) {
+                let mut c = std::process::Command::new("cmd");
+                c.args(["/C", "exit"]);
+                c
+            } else {
+                std::process::Command::new("true")
+            };
+            let mut child = cmd.spawn().expect("spawn short-lived helper process");
             let pid = child.id();
-            child.wait().expect("reap true");
+            child.wait().expect("reap helper process");
             pid
         };
 
