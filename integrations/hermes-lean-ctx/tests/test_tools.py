@@ -44,13 +44,13 @@ def test_handle_unknown_tool_returns_error():
 
 def test_handle_known_tool_daemon_down_returns_error():
     out = tools.handle_tool_call(_offline_gateway(), "ctx_search", {"pattern": "x"})
-    assert "unavailable" in json.loads(out)["error"]
+    assert json.loads(out)["error"].startswith("lean-ctx call failed:")
 
 
 def test_handle_tool_coerces_string_args():
     # invalid name still short-circuits before any call; string args must parse
     out = tools.handle_tool_call(_offline_gateway(), "ctx_search", "{\"pattern\": \"x\"}")
-    assert "unavailable" in json.loads(out)["error"]  # reached daemon path, then no-op
+    assert json.loads(out)["error"].startswith("lean-ctx call failed:")
 
 
 def test_recall_hint_lists_tools():

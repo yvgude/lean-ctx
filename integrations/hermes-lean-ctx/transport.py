@@ -28,6 +28,7 @@ class ToolGateway:
         self._client_error: Optional[str] = None
         self._healthy: Optional[bool] = None
         self._health_checked_at: float = 0.0
+        self.last_error: Optional[str] = None
 
     # --- client construction ------------------------------------------------
 
@@ -95,11 +96,13 @@ class ToolGateway:
         """Call a tool, returning its text result or ``None`` on any failure."""
         client = self._get_client()
         if client is None:
+            self.last_error = self._client_error
             return None
         try:
             return client.call_tool_text(name, arguments or {})
         except Exception as exc:
             logger.warning("lean-ctx engine: tool '%s' failed: %s", name, exc)
+            self.last_error = str(exc)
             self._healthy = False
             self._health_checked_at = time.monotonic()
             return None

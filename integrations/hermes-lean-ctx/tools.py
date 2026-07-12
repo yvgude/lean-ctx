@@ -54,7 +54,8 @@ def handle_tool_call(
     arguments: Optional[Dict[str, Any]] = _coerce_args(args)
     text = gateway.call_text(name, arguments)
     if text is None:
+        detail = gateway.last_error or "daemon unavailable"
         return json.dumps(
-            {"error": f"lean-ctx daemon unavailable; '{name}' could not be executed."}
+            {"error": f"lean-ctx call failed: {detail}; '{name}' could not be executed."}
         )
     return text
