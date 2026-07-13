@@ -219,7 +219,7 @@ pub fn build_report(
         String::new()
     } else {
         format!(
-            "consider disabling {} low-value tool(s) to reclaim {reclaimable_tokens} tok/session: {} — apply via `tools_disabled` in config or a leaner `tool_profile`",
+            "consider disabling {} low-value tool(s) to reclaim {reclaimable_tokens} tok/session: {} — apply via `disabled_tools` in config or a leaner `tool_profile`",
             disable_candidates.len(),
             disable_candidates.join(", ")
         )
