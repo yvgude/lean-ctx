@@ -1,5 +1,5 @@
 //! Client-specific config formats (Zed, VS Code, Augment, Copilot CLI,
-//! OpenCode, Crush, OpenClaw, Amp, Hermes).
+//! OpenCode, Crush, OpenClaw, Amp, Hermes, Vibe).
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -437,6 +437,49 @@ pub(crate) fn check_hermes_yaml(
             format!("ok ({})", path.display())
         } else {
             format!("drift ({})", path.display())
+        },
+    }
+}
+
+pub(crate) fn check_vibe_config(path: &std::path::Path, binary: &str) -> NamedCheck {
+    if !path.exists() {
+        return NamedCheck {
+            name: "Vibe config".to_string(),
+            ok: false,
+            detail: format!("missing ({})", path.display()),
+        };
+    }
+    let content = std::fs::read_to_string(path).unwrap_or_default();
+    let parsed = content.parse::<toml_edit::DocumentMut>();
+    let Ok(doc) = parsed else {
+        return NamedCheck {
+            name: "Vibe config".to_string(),
+            ok: false,
+            detail: format!("invalid TOML ({})", path.display()),
+        };
+    };
+
+    // Check if mcp_servers array exists and contains lean-ctx
+    let has_lean_ctx = if let Some(toml_edit::Item::ArrayOfTables(aot)) = doc.get("mcp_servers") {
+        aot.iter().any(|table| {
+            if let Some(toml_edit::Item::Value(toml_edit::Value::String(name))) = table.get("name") {
+                name.value() == "lean-ctx"
+                    && table.get("command").and_then(|c| c.as_str()) == Some(binary)
+            } else {
+                false
+            }
+        })
+    } else {
+        false
+    };
+
+    NamedCheck {
+        name: "Vibe config".to_string(),
+        ok: has_lean_ctx,
+        detail: if has_lean_ctx {
+            format!("ok ({})", path.display())
+        } else {
+            format!("lean-ctx missing ({})", path.display())
         },
     }
 }

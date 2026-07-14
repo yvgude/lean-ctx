@@ -510,12 +510,19 @@ pub(super) fn remove_lean_ctx_vibe_toml_server(
 
     let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     let mut doc = content
-        .parse::<toml_edit::Document>()
+        .parse::<toml_edit::DocumentMut>()
         .map_err(|e| e.to_string())?;
 
     let removed = if let Some(toml_edit::Item::ArrayOfTables(aot)) = doc.get_mut("mcp_servers") {
         let before = aot.len();
-        aot.retain(|table| table.get("name").and_then(|n| n.as_str()) != Some("lean-ctx"));
+        aot.retain(|table| {
+            table.get("name")
+                .and_then(|n| match n {
+                    toml_edit::Item::Value(toml_edit::Value::String(s)) => Some(s.value()),
+                    _ => None,
+                })
+                != Some(&"lean-ctx".to_string())
+        });
         before != aot.len()
     } else {
         false

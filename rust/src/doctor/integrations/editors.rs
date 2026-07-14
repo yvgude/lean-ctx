@@ -82,6 +82,10 @@ pub(crate) fn integration_generic(
         crate::core::editor_registry::types::ConfigType::OpenClaw => {
             checks.push(check_openclaw_config(&target.config_path, binary, data_dir));
         }
+        crate::core::editor_registry::types::ConfigType::VibeToml => {
+            // Vibe uses TOML config, check if lean-ctx is in mcp_servers
+            checks.push(check_vibe_config(&target.config_path, binary));
+        }
     }
 
     if let Some(rules_path) = rules_path_for(target.name, home) {

@@ -295,7 +295,7 @@ pub fn vibe_config_path(home: &Path) -> PathBuf {
     home.join(".vibe/config.toml")
 }
 
-fn detect_vibe_path(home: &Path) -> PathBuf {
+pub fn detect_vibe_path(home: &Path) -> PathBuf {
     let vibe_dir = home.join(".vibe");
     if vibe_dir.exists() {
         return vibe_dir;

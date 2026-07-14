@@ -121,7 +121,7 @@ use agents::{
     install_gemini_hook, install_gemini_hook_config, install_gemini_hook_scripts, install_grok_mcp,
     install_hermes_hook_with_mode, install_jetbrains_hook, install_kiro_hook,
     install_openclaw_hook, install_opencode_hook_with_mode, install_pi_hook_with_mode,
-    install_qoder_hook, install_qoder_hook_with_mode, install_windsurf_hooks,
+    install_qoder_hook, install_qoder_hook_with_mode, install_vibe_hook, install_windsurf_hooks,
     install_windsurf_hooks_replace, install_windsurf_rules,
 };
 use support::{
