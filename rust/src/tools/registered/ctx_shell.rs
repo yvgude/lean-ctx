@@ -59,13 +59,6 @@ impl McpTool for CtxShellTool {
             });
         }
 
-        if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(&command) {
-            return Ok(ToolOutput {
-                shell_outcome: Some(ShellOutcome::Blocked),
-                ..ToolOutput::simple(msg.to_string())
-            });
-        }
-
         warn_shell_secret_paths(&command);
 
         tokio::task::block_in_place(|| {
@@ -83,6 +76,19 @@ impl McpTool for CtxShellTool {
                     None => (explicit_cwd.unwrap_or_else(|| ".".to_string()), None),
                 }
             };
+
+            // Gated here (after cwd resolution, not before) so `trust_project_binaries`
+            // (#813) can resolve a relative binary path (`./cbc_old`) against the
+            // session's tracked cwd, not this process's own launch directory.
+            if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist_with_cwd(
+                &command,
+                &effective_cwd,
+            ) {
+                return Ok(ToolOutput {
+                    shell_outcome: Some(ShellOutcome::Blocked),
+                    ..ToolOutput::simple(msg.to_string())
+                });
+            }
             // A `cwd` rejected by the project-root jail is silently replaced with
             // the root (deliberate sandboxing). Surface that swap as a one-line
             // hint so the caller does not mistake the run dir for the requested

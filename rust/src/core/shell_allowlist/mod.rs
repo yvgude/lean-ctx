@@ -20,10 +20,20 @@ pub use mode::ShellSecurity;
 /// - [`ShellSecurity::Warn`] → run the checks, log any violation, return `Ok`.
 /// - [`ShellSecurity::Enforce`] → block on violation (the secure default).
 pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
+    check_shell_allowlist_with_cwd(command, &current_process_cwd())
+}
+
+/// Same as [`check_shell_allowlist`] but resolves `trust_project_binaries`
+/// paths against an explicit `cwd` instead of this process's own working
+/// directory. MCP sessions track a *virtual* cwd (via `cd` commands run
+/// through `ctx_shell`) that can diverge from the server process's real cwd,
+/// so callers with a session-tracked cwd must use this variant for the
+/// project-root trust check to resolve relative binaries correctly (#813).
+pub fn check_shell_allowlist_with_cwd(command: &str, cwd: &str) -> Result<(), ShellError> {
     match ShellSecurity::resolve() {
         ShellSecurity::Off => Ok(()),
         ShellSecurity::Warn => {
-            if let Err(msg) = enforce_shell_allowlist(command) {
+            if let Err(msg) = enforce_shell_allowlist(command, cwd) {
                 tracing::warn!(
                     target: "shell_security",
                     "warn-only: would block ({})",
@@ -32,7 +42,7 @@ pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
             }
             Ok(())
         }
-        ShellSecurity::Enforce => enforce_shell_allowlist(command),
+        ShellSecurity::Enforce => enforce_shell_allowlist(command, cwd),
     }
 }
 
@@ -49,7 +59,7 @@ pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
 /// just as wrong as blocking it would be in `enforce`.
 #[must_use]
 pub fn passes_enforced(command: &str) -> bool {
-    enforce_shell_allowlist(command).is_ok()
+    enforce_shell_allowlist(command, &current_process_cwd()).is_ok()
 }
 
 /// Allowlist + dangerous-pattern enforcement, evaluated as if in `enforce` mode.
@@ -58,7 +68,7 @@ pub fn passes_enforced(command: &str) -> bool {
 ///
 /// When the allowlist is empty, all commands pass (blocklist-only mode).
 /// When non-empty, EVERY command segment in the pipeline must match.
-fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
+fn enforce_shell_allowlist(command: &str, cwd: &str) -> Result<(), ShellError> {
     let normalized = normalize_line_continuations(command);
     let cmd = normalized.as_str();
 
@@ -81,7 +91,7 @@ fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
         check_unconditional_blocked_only(cmd)?;
         return Ok(());
     }
-    check_all_segments(cmd, &allowlist)
+    check_all_segments(cmd, &allowlist, cwd)
 }
 
 /// Normalize the command string: remove backslash-newline continuations and
@@ -799,7 +809,7 @@ fn contains_double_semicolon(command: &str) -> bool {
     false
 }
 
-fn check_all_segments(command: &str, allowlist: &[String]) -> Result<(), ShellError> {
+fn check_all_segments(command: &str, allowlist: &[String], cwd: &str) -> Result<(), ShellError> {
     if allowlist.is_empty() {
         return Ok(());
     }
@@ -838,6 +848,9 @@ fn check_all_segments(command: &str, allowlist: &[String]) -> Result<(), ShellEr
         check_interpreter_abuse(seg, allowlist)?;
         check_dangerous_flags(seg)?;
         if !allowlist.iter().any(|a| a == &base) {
+            if is_trusted_project_binary(&extract_first_token_from_segment(seg), cwd) {
+                continue;
+            }
             // #815: for compound commands, tell the user which segment was
             // blocked and that nothing ran (the pipeline is rejected as a
             // whole before execution, so no prefix commands executed).
@@ -1056,6 +1069,68 @@ fn extract_base_from_segment(segment: &str) -> String {
         .next()
         .unwrap_or(first_token)
         .to_string()
+}
+
+/// Like [`extract_base_from_segment`] but keeps the full first token verbatim
+/// (no basename stripping), so a path like `./cbc_old` or `build/cbc_new`
+/// stays resolvable against the project root for the `trust_project_binaries`
+/// check (#813). Bare command names (no `/`) come back unchanged.
+fn extract_first_token_from_segment(segment: &str) -> String {
+    let trimmed = segment.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let cmd_part = skip_env_assignments(trimmed);
+    shell_tokenize(cmd_part).into_iter().next().unwrap_or_default()
+}
+
+/// True when `trust_project_binaries` is enabled and `first_token` resolves to
+/// an executable path inside the project root (or a `trusted_build_dirs`
+/// entry). Only explicit paths (containing `/`) are considered — a bare
+/// command name (found via PATH) still requires the allowlist, since
+/// resolving *those* against the project root would be meaningless (#813).
+fn is_trusted_project_binary(first_token: &str, cwd: &str) -> bool {
+    if !first_token.contains('/') {
+        return false;
+    }
+    let cfg = crate::core::config::Config::load();
+    if !cfg.trust_project_binaries {
+        return false;
+    }
+
+    let candidate = std::path::Path::new(first_token);
+    let absolute = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        std::path::Path::new(cwd).join(candidate)
+    };
+    let Ok(resolved) = absolute.canonicalize() else {
+        return false;
+    };
+
+    let mut trusted_roots: Vec<std::path::PathBuf> = cfg
+        .trusted_build_dirs
+        .iter()
+        .filter_map(|d| std::path::Path::new(d).canonicalize().ok())
+        .collect();
+    if trusted_roots.is_empty()
+        && let Some(root) = crate::core::config::Config::find_project_root()
+        && let Ok(canon_root) = std::path::Path::new(&root).canonicalize()
+    {
+        trusted_roots.push(canon_root);
+    }
+
+    trusted_roots.iter().any(|root| resolved.starts_with(root))
+}
+
+/// This process's own working directory, used by [`check_shell_allowlist`] /
+/// [`passes_enforced`] callers that don't track a separate session cwd (the
+/// CLI shell entrypoints and the PreToolUse hook, where the process cwd IS
+/// the real invoking directory). MCP `ctx_shell` uses
+/// [`check_shell_allowlist_with_cwd`] instead, since its session-tracked
+/// virtual cwd can diverge from this process's real one (#813).
+fn current_process_cwd() -> String {
+    std::env::current_dir().map_or_else(|_| ".".to_string(), |p| p.display().to_string())
 }
 
 /// Skip leading KEY=VALUE environment variable assignments.

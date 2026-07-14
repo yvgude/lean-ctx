@@ -746,6 +746,22 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "LEAN_CTX_SHELL_ALLOW_WRITES",
         ),
     );
+    root.insert(
+        "trust_project_binaries".into(),
+        key(
+            "bool",
+            serde_json::json!(false),
+            "Auto-allow executables whose resolved path is inside the project root (or trusted_build_dirs) even when not in shell_allowlist. Only explicit paths (containing /) are considered — bare command names still require the allowlist. Global-config only, not overridable from a project-local .lean-ctx.toml",
+        ),
+    );
+    root.insert(
+        "trusted_build_dirs".into(),
+        key(
+            "array",
+            serde_json::json!([]),
+            "Directories (in addition to the project root) that trust_project_binaries treats as trusted when non-empty. Empty (default) means just the project root",
+        ),
+    );
 
     sections.insert(
         "root".into(),

@@ -95,6 +95,8 @@ Top-level configuration keys
 - `theme` (string, default `default`) — Dashboard color theme
 - `tool_profile` (enum: minimal | standard | power, default `""`) — Tool visibility profile: minimal (5 tools), standard (16), power (all). Override via LEAN_CTX_TOOL_PROFILE
 - `tools_enabled` (string[], default `[]`) — Explicit list of enabled tool names. Used only when no tool_profile is pinned (tool_profile takes precedence); leave tool_profile unset to apply this list. The universal invoker ctx_call stays advertised so unlisted tools remain reachable — add it to disabled_tools (disabled_tools = ["ctx_call"]) to make this allowlist authoritative.
+- `trust_project_binaries` (bool, default `false`) — Auto-allow executables whose resolved path is inside the project root (or trusted_build_dirs) even when not in shell_allowlist. Only explicit paths (containing /) are considered — bare command names still require the allowlist. Global-config only, not overridable from a project-local .lean-ctx.toml
+- `trusted_build_dirs` (array, default `[]`) — Directories (in addition to the project root) that trust_project_binaries treats as trusted when non-empty. Empty (default) means just the project root
 - `ultra_compact` (bool, default `false`) — Legacy flag for maximum compression (use compression_level instead)
 - `update_check_disabled` (bool, default `false` — env `LEAN_CTX_NO_UPDATE_CHECK`) — Disable the daily version check
 

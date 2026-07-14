@@ -58,14 +58,6 @@ impl McpTool for ShellAliasTool {
         let command = get_str(args, "command")
             .ok_or_else(|| ErrorData::invalid_params("command is required", None))?;
 
-        if let Some(rejection) = crate::tools::ctx_shell::validate_command(&command) {
-            return Ok(ToolOutput::simple(rejection));
-        }
-
-        if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(&command) {
-            return Ok(ToolOutput::simple(msg.to_string()));
-        }
-
         tokio::task::block_in_place(|| {
             let cwd = get_str(args, "cwd");
             // Compressed by default (the point of this alias), but honor an explicit

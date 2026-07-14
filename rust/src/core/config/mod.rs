@@ -693,6 +693,24 @@ pub struct Config {
     #[serde(default)]
     pub shell_allow_writes: bool,
 
+    /// When true, `ctx_shell` auto-allows executables whose resolved path is
+    /// inside the project root (or `trusted_build_dirs`, if set) even when the
+    /// binary's base name is not in `shell_allowlist`. Fixes A/B benchmarking
+    /// workflows where a throwaway build (`./cbc_old`, `build/cbc_new`) would
+    /// otherwise need its own `lean-ctx allow <name>` (#813). Default false —
+    /// global-config only (not overridable from a project-local
+    /// `.lean-ctx.toml`, same as `shell_security`): a repo cannot use its own
+    /// config to trust binaries it ships. Only explicit paths (containing `/`)
+    /// are considered; a bare command name still requires the allowlist.
+    #[serde(default)]
+    pub trust_project_binaries: bool,
+
+    /// Directories (in addition to the project root) that `trust_project_binaries`
+    /// treats as trusted when non-empty. Empty (default) means "just the project
+    /// root". Only consulted when `trust_project_binaries = true`.
+    #[serde(default)]
+    pub trusted_build_dirs: Vec<String>,
+
     /// Setup behavior: controls what gets injected during setup and updates.
     #[serde(default)]
     pub setup: SetupConfig,
@@ -820,6 +838,8 @@ impl Default for Config {
             shell_timeout_secs: None,
             shell_heavy_timeout_secs: None,
             shell_allow_writes: false,
+            trust_project_binaries: false,
+            trusted_build_dirs: Vec::new(),
             setup: SetupConfig::default(),
         }
     }
