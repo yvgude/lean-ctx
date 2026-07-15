@@ -538,10 +538,14 @@ mod tests {
     /// worst case (no client quirks): clients with a reliable native editor
     /// (Cursor, Zed, Windsurf, …) skip `ctx_patch` via `ClientQuirks` and stay
     /// at the previous ~1685-tok surface.
+    ///
+    /// Bumped to 2060 for #870: `ctx_search` gained `exclude`/`exclude_pattern`
+    /// negative filters (+~7 tok on its schema). The per-tool 300 gate is
+    /// unchanged — ctx_search stays well under it (~292 tok).
     #[test]
     fn core_tool_surface_stays_within_budget() {
         const PER_TOOL_BUDGET: usize = 300;
-        const TOTAL_BUDGET: usize = 2050;
+        const TOTAL_BUDGET: usize = 2060;
 
         let _guard = crate::core::data_dir::isolated_data_dir();
         let core = crate::tool_defs::core_tool_names();
