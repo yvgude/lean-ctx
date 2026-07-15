@@ -71,7 +71,7 @@ pub fn pre_dispatch_read_for_agent(
                 );
                 let mut result = no_change.clone();
                 result.budget_warning = Some(warning);
-                if requested_mode == "diff" || requested_mode.starts_with("lines") {
+                if requested_mode == "diff" || requested_mode.starts_with("lines") || requested_mode.starts_with("anchored") {
                     return result;
                 }
                 let rest = pre_dispatch_inner(path, requested_mode, task, project_root, pressure);
@@ -102,7 +102,7 @@ fn pre_dispatch_inner(
         budget_warning: None,
     };
 
-    if requested_mode == "diff" || requested_mode.starts_with("lines") {
+    if requested_mode == "diff" || requested_mode.starts_with("lines") || requested_mode.starts_with("anchored") {
         return no_change;
     }
 
@@ -471,6 +471,38 @@ mod tests {
     fn pre_dispatch_passthrough_for_diff() {
         let result = pre_dispatch_read("src/main.rs", "diff", None, None, None);
         assert!(result.overridden_mode.is_none());
+    }
+
+    #[test]
+    fn pre_dispatch_passthrough_for_anchored_window() {
+        // #843: a windowed anchored:N-M read must keep its hash anchors —
+        // bounce-prevention, pressure-downgrade, etc. must not clobber it to
+        // "full" and silently drop the window.
+        {
+            let mut bt = crate::core::bounce_tracker::global().lock().unwrap();
+            bt.set_seq(101);
+            bt.record_read("anchored-bouncy.yml", "map", 30, 400);
+            bt.set_seq(102);
+            bt.record_read("anchored-bouncy.yml", "full", 400, 400);
+            bt.set_seq(103);
+            bt.record_read("a2.yml", "map", 30, 400);
+            bt.set_seq(104);
+            bt.record_read("a2.yml", "full", 400, 400);
+            bt.set_seq(105);
+            bt.record_read("a3.yml", "map", 30, 400);
+            bt.set_seq(106);
+            bt.record_read("a3.yml", "full", 400, 400);
+        }
+        let result = pre_dispatch_read("anchored-new.yml", "anchored:10-40", None, None, None);
+        assert!(
+            result.overridden_mode.is_none(),
+            "anchored:N-M must not be overridden by bounce-prevention"
+        );
+        let bare = pre_dispatch_read("anchored-new.yml", "anchored", None, None, None);
+        assert!(
+            bare.overridden_mode.is_none(),
+            "bare anchored mode must not be overridden by bounce-prevention"
+        );
     }
 
     #[test]
