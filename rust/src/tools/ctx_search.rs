@@ -70,13 +70,45 @@ fn search_deadline() -> Option<Duration> {
     (ms > 0).then(|| Duration::from_millis(ms))
 }
 
+/// Back-compat shim: the pre-#870 8-arg entry point. Delegates to
+/// [`handle_filtered`] with no exclude filters. New callers pass the two
+/// `exclude` args directly.
+#[allow(clippy::too_many_arguments)]
+pub fn handle(
+    pattern: &str,
+    dir: &str,
+    include: Option<&str>,
+    max_results: usize,
+    crp_mode: CrpMode,
+    respect_gitignore: bool,
+    allow_secret_paths: bool,
+    anchored: bool,
+) -> SearchOutcome {
+    handle_filtered(
+        pattern,
+        dir,
+        include,
+        max_results,
+        crp_mode,
+        respect_gitignore,
+        allow_secret_paths,
+        anchored,
+        None,
+        None,
+    )
+}
+
 /// Searches files for a regex pattern with compressed output and monorepo scope hints.
 ///
 /// `anchored` (opt-in, #1008) appends a `:hh` line-hash to every match
 /// (`path:line:hh content`) so a hit can be edited directly with `ctx_patch`
 /// without a separate `ctx_read(mode="anchored")`. Default output is byte-for-byte
 /// unchanged (#498).
-pub fn handle(
+///
+/// `exclude` (path glob, complement of `include`) and `exclude_pattern` (regex
+/// on result lines, like `grep -v`) are the negative filters added in #870.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_filtered(
     pattern: &str,
     dir: &str,
     include: Option<&str>,
@@ -85,6 +117,8 @@ pub fn handle(
     respect_gitignore: bool,
     allow_secret_paths: bool,
     anchored: bool,
+    exclude: Option<&str>,
+    exclude_pattern: Option<&str>,
 ) -> SearchOutcome {
     // `include` is a glob matched against each file's path *relative to* `dir`
     // (e.g. `*.ts`, `*.{rs,ts}`, `src/**/*.tsx`). Bare globs without `/` match
@@ -93,6 +127,9 @@ pub fn handle(
     // support for it. An empty result (no `include`, or only unparsable globs)
     // means "no filter", so a typo never silently drops every match.
     let include_patterns = compile_include(include);
+    // `exclude` is the negative complement of `include`: a file matching any
+    // exclude glob is dropped, even when it also matches `include` (#870).
+    let exclude_patterns = compile_include(exclude);
     const MAX_PATTERN_LEN: usize = 1024;
     const MAX_REGEX_SIZE: usize = 1 << 20; // 1 MiB DFA limit
 
@@ -111,6 +148,16 @@ pub fn handle(
         Ok(r) => r,
         Err(e) => return SearchOutcome::error(format!("ERROR: invalid regex: {e}")),
     };
+    // #870: `exclude_pattern` drops any *result line* matching this regex — the
+    // in-pipeline equivalent of `grep -v`. An unparsable pattern is ignored
+    // (no exclusion), so a typo never silently hides every match.
+    let exclude_re = exclude_pattern.and_then(|p| {
+        RegexBuilder::new(p)
+            .size_limit(MAX_REGEX_SIZE)
+            .dfa_size_limit(MAX_REGEX_SIZE)
+            .build()
+            .ok()
+    });
 
     let root = Path::new(dir);
     if !root.exists() {
@@ -206,6 +253,16 @@ pub fn handle(
         }
     }
 
+    // #870: drop excluded paths after both the index and walk populate `files`,
+    // so the negative glob filter applies uniformly to either collection path.
+    if !exclude_patterns.is_empty() {
+        files.retain(|path| {
+            let rel = path.strip_prefix(root).unwrap_or(path);
+            let rel_str = rel.to_string_lossy();
+            !exclude_patterns.iter().any(|p| p.matches(&rel_str))
+        });
+    }
+
     // Deterministic search: stable file ordering makes max_results truncation reproducible.
     files.sort_unstable_by(|a, b| a.as_os_str().cmp(b.as_os_str()));
 
@@ -270,7 +327,8 @@ pub fn handle(
         let mut file_enclosing: Option<EnclosingIndex> = None;
 
         for (i, line) in content.lines().enumerate() {
-            if re.is_match(line) {
+            // #870: `exclude_pattern` filters out matching lines (grep -v).
+            if re.is_match(line) && !exclude_re.as_ref().is_some_and(|ex| ex.is_match(line)) {
                 let short_path =
                     protocol::shorten_path_relative(&path.to_string_lossy(), &root_str);
                 // Count raw tokens incrementally (avoids separate Vec + join)
@@ -1238,6 +1296,75 @@ mod tests {
             !out.contains("top.rs"),
             "root file outside src/ must be excluded: {out}"
         );
+    }
+
+    #[test]
+    fn exclude_glob_drops_paths_and_exclude_pattern_drops_lines() {
+        // #870: `exclude` is the negative complement of `include` (path glob),
+        // and `exclude_pattern` is a `grep -v` over result lines.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("app.rs"), "needle\n// needle skip me\n").unwrap();
+        std::fs::write(dir.path().join("app_test.rs"), "needle\n").unwrap();
+        let root = dir.path().to_string_lossy().into_owned();
+
+        // exclude drops the *_test.rs file entirely.
+        let out = handle_filtered(
+            "needle",
+            &root,
+            None,
+            10,
+            CrpMode::Off,
+            true,
+            true,
+            false,
+            Some("*_test.rs"),
+            None,
+        )
+        .text;
+        assert!(out.contains("app.rs"), "app.rs must match: {out}");
+        assert!(
+            !out.contains("app_test.rs"),
+            "excluded path must be dropped: {out}"
+        );
+
+        // exclude_pattern drops the commented match line but keeps the real one.
+        let out2 = handle_filtered(
+            "needle",
+            &root,
+            Some("app.rs"),
+            10,
+            CrpMode::Off,
+            true,
+            true,
+            false,
+            None,
+            Some("skip me"),
+        )
+        .text;
+        assert!(out2.contains("1 matches"), "one line kept: {out2}");
+        assert!(!out2.contains("skip me"), "grep -v line dropped: {out2}");
+    }
+
+    #[test]
+    fn invalid_exclude_pattern_is_ignored_not_fatal() {
+        // #870: a malformed exclude regex must not hide matches — it's ignored.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "needle\n").unwrap();
+        let root = dir.path().to_string_lossy().into_owned();
+        let out = handle_filtered(
+            "needle",
+            &root,
+            None,
+            10,
+            CrpMode::Off,
+            true,
+            true,
+            false,
+            None,
+            Some("([unclosed"),
+        )
+        .text;
+        assert!(out.contains("a.rs"), "invalid exclude → no filter: {out}");
     }
 
     #[test]

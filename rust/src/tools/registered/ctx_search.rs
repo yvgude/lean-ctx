@@ -78,6 +78,8 @@ impl McpTool for CtxSearchTool {
                     "path": { "type": "string", "description": "Scope dir/root" },
                     "paths": { "type": "array", "items": { "type": "string" } },
                     "include": { "type": "string", "description": "Glob, e.g. *.rs" },
+                    "exclude": { "type": "string", "description": "Path glob to drop (complement of include)" },
+                    "exclude_pattern": { "type": "string", "description": "Regex; matching result lines are dropped (grep -v)" },
                     "anchored": { "type": "boolean" },
                     "max_results": { "type": "integer" },
                     "top_k": { "type": "integer" },
@@ -117,6 +119,8 @@ const KNOWN_KEYS: &[&str] = &[
     "path",
     "paths",
     "include",
+    "exclude",
+    "exclude_pattern",
     "ext",
     "anchored",
     "max_results",
@@ -160,6 +164,10 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
     // #1008: opt-in N:hh line anchors on each hit for direct ctx_patch edits.
     let anchored = get_bool(args, "anchored").unwrap_or(false);
+    // #870: negative filters — `exclude` (path glob, complement of `include`)
+    // and `exclude_pattern` (regex dropping matching result lines, grep -v).
+    let exclude = get_str(args, "exclude");
+    let exclude_pattern = get_str(args, "exclude_pattern");
 
     if no_gitignore
         && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_search")
@@ -181,6 +189,8 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
             respect,
             allow_secret_paths,
             anchored,
+            exclude.as_deref(),
+            exclude_pattern.as_deref(),
         );
     }
 
@@ -193,7 +203,7 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     for root in &resolved.roots {
         let search_result = tokio::task::block_in_place(|| {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                crate::tools::ctx_search::handle(
+                crate::tools::ctx_search::handle_filtered(
                     &pattern,
                     root,
                     include.as_deref(),
@@ -202,6 +212,8 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
                     respect,
                     allow_secret_paths,
                     anchored,
+                    exclude.as_deref(),
+                    exclude_pattern.as_deref(),
                 )
             }))
             .ok()
@@ -415,12 +427,14 @@ fn search_single(
     respect_gitignore: bool,
     allow_secret_paths: bool,
     anchored: bool,
+    exclude: Option<&str>,
+    exclude_pattern: Option<&str>,
 ) -> Result<ToolOutput, ErrorData> {
     let _mode_guard = crate::core::savings_footer::ModeGuard::new("search");
 
     let search_result = tokio::task::block_in_place(|| {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::tools::ctx_search::handle(
+            crate::tools::ctx_search::handle_filtered(
                 pattern,
                 path,
                 include,
@@ -429,6 +443,8 @@ fn search_single(
                 respect_gitignore,
                 allow_secret_paths,
                 anchored,
+                exclude,
+                exclude_pattern,
             )
         }));
         match result {
