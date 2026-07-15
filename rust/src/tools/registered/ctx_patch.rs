@@ -216,16 +216,90 @@ fn delegate_replace_symbol(
     })
 }
 
+/// #879: resolve `find`/`replace` for replace_all, failing *closed* on the
+/// destructive path. Historically a missing `replace` defaulted to "" — so a
+/// typo'd replacement key (`new_string=`/`new_text=` carried over from the other
+/// ops) meant "delete every match" and still reported success. Now: reject
+/// replacement keys that belong to other ops, and require `replace` to be
+/// present. An empty deletion must be opted into explicitly with `replace=""`.
+fn resolve_find_replace(args: &Map<String, Value>) -> Result<(String, String), String> {
+    let find = get_str(args, "find")
+        .filter(|s| !s.is_empty())
+        .ok_or("replace_all requires non-empty 'find'")?;
+
+    for foreign in ["new_text", "new_string", "old_string", "new_body"] {
+        if args.contains_key(foreign) {
+            return Err(format!(
+                "replace_all names its replacement 'replace', not '{foreign}' — rename it \
+                 (an unrecognized replacement key would silently delete every match)"
+            ));
+        }
+    }
+
+    let replace = args
+        .get("replace")
+        .and_then(Value::as_str)
+        .map(String::from)
+        .ok_or(
+            "replace_all requires 'replace' (the replacement text); pass replace=\"\" \
+             explicitly to delete every match",
+        )?;
+
+    Ok((find, replace))
+}
+
+#[cfg(test)]
+mod replace_all_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn obj(v: Value) -> Map<String, Value> {
+        match v {
+            Value::Object(m) => m,
+            _ => panic!("expected object"),
+        }
+    }
+
+    #[test]
+    fn resolves_find_and_replace() {
+        let (f, r) = resolve_find_replace(&obj(json!({"find": "a", "replace": "b"}))).unwrap();
+        assert_eq!((f.as_str(), r.as_str()), ("a", "b"));
+    }
+
+    #[test]
+    fn explicit_empty_replace_is_a_deletion() {
+        let (_f, r) = resolve_find_replace(&obj(json!({"find": "a", "replace": ""}))).unwrap();
+        assert_eq!(r, "");
+    }
+
+    #[test]
+    fn missing_replace_is_rejected_not_silent_delete() {
+        let err = resolve_find_replace(&obj(json!({"find": "a"}))).unwrap_err();
+        assert!(err.contains("requires 'replace'"), "got: {err}");
+    }
+
+    #[test]
+    fn foreign_replacement_key_is_rejected() {
+        for key in ["new_string", "new_text", "old_string", "new_body"] {
+            let err = resolve_find_replace(&obj(json!({"find": "a", key: "b"}))).unwrap_err();
+            assert!(err.contains(key), "must name the offending key {key}: {err}");
+        }
+    }
+
+    #[test]
+    fn empty_find_is_rejected() {
+        let err = resolve_find_replace(&obj(json!({"find": "", "replace": "b"}))).unwrap_err();
+        assert!(err.contains("find"), "got: {err}");
+    }
+}
 /// #825: Bulk literal find-and-replace — no anchors needed.
 fn handle_replace_all(
     args: &Map<String, Value>,
     ctx: &ToolContext,
 ) -> Result<ToolOutput, ErrorData> {
     let path = require_resolved_path(ctx, args, "path")?;
-    let find = get_str(args, "find")
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| ErrorData::invalid_params("replace_all requires non-empty 'find'", None))?;
-    let replace = get_str(args, "replace").unwrap_or_default();
+    let (find, replace) =
+        resolve_find_replace(args).map_err(|e| ErrorData::invalid_params(e, None))?;
     let dry_run = get_bool(args, "dry_run").unwrap_or(false);
 
     let content = std::fs::read_to_string(&path)
