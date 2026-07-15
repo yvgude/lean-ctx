@@ -599,7 +599,7 @@ Parameters: `action`*, `agent`
 
 Search code; `action` picks the engine (default regex). regex(pattern) | semantic(query, by meaning) | symbol(name, AST-exact; or handle=path#name@Lline) | reindex | find_related(file_path,line). anchored=true tags hits for ctx_patch. Run ctx_compose FIRST.
 
-Parameters: `action`, `anchored`, `file`, `file_path`, `handle`, `include`, `kind`, `line`, `max_results`, `mode`, `name`, `path`, `paths`, `pattern`, `query`, `top_k`
+Parameters: `action`, `anchored`, `exclude`, `exclude_pattern`, `file`, `file_path`, `handle`, `include`, `kind`, `line`, `max_results`, `mode`, `name`, `path`, `paths`, `pattern`, `query`, `top_k`
 
 ## `ctx_semantic_search`
 
