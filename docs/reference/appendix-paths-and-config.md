@@ -194,7 +194,7 @@ they overlap, so here is exactly what each one does:
 | Knob | Effect | Use when |
 |------|--------|----------|
 | `allow_paths = ["…"]` (root key) | **Adds** directories to PathJail's whitelist. Tools may read/edit under them, but `ctx_tree`/`ctx_search` do **not** scan them. | One extra directory needs to be readable/editable (e.g. a shared skills folder). |
-| `extra_roots = ["…"]` (root key) | Same whitelist effect as `allow_paths` **plus** multi-root scanning: `ctx_tree`, `ctx_search`, overview treat them as additional project roots. | Multi-repo workspaces. |
+| `extra_roots = ["…"]` (root key) | Same whitelist effect as `allow_paths` **plus** multi-root scanning: `ctx_tree`, `ctx_search`, overview treat them as additional project roots. | Multi-repo workspaces; agent-harness memory/state dirs outside the project (e.g. Claude Code's `~/.claude/projects/<slug>/memory/`). |
 | `path_jail = false` (root key) | **Disables PathJail entirely** — every absolute path is allowed. | Sandboxed environments (bwrap, containers, VMs) where the OS is the boundary. |
 | `allow_ide_config_dirs = true` (root key) | **Adds every supported editor's config dir** to the read whitelist — registry-derived (`~/.cursor`, VS Code, Cline/Roo, JetBrains, …). Opt-in; exposes other agents' sessions/credentials. | Letting the agent manage MCP setup across editors. |
 

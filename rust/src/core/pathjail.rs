@@ -445,10 +445,17 @@ pub fn jail_path_with_roots(
                     ". Hint: set LEAN_CTX_ALLOW_PATH={dir} for read-write access \
                      (colon-separated for multiple: /path/a:/path/b), \
                      LEAN_CTX_READ_ONLY_ROOTS={dir} for read-only, \
-                     or add entries to allow_paths = [\"{dir}\"] in ~/.config/lean-ctx/config.toml"
+                     or add entries to allow_paths = [\"{dir}\"] or extra_roots = [\"{dir}\"] \
+                     in ~/.config/lean-ctx/config.toml"
                 )
             } else {
-                String::new()
+                // Agents otherwise get a bare rejection and shell out to work
+                // around the jail; name the config keys the same way the
+                // shell-allowlist block message names its key. The env-var and
+                // config-path detail above stays meta-gated (#540, #887).
+                ". Fix (additive): add the directory to extra_roots or allow_paths in \
+                 ~/.config/lean-ctx/config.toml — `lean-ctx doctor` shows the config in effect"
+                    .to_string()
             };
             // An untrusted workspace's project-local `allow_paths` is silently
             // withheld; always surface that reason (the stderr warning is
@@ -812,6 +819,30 @@ mod tests {
         assert!(
             err.to_string().contains("path escapes project root"),
             "error should mention escape: {err}"
+        );
+    }
+
+    // GH #887: over MCP (meta hints gated off) the rejection was bare, so
+    // agents shelled out to work around the jail instead of widening it via
+    // config. The agent-visible error must name the sanctioned config keys.
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn escape_error_names_config_keys_without_meta() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::remove_var("LEAN_CTX_META");
+        crate::test_env::remove_var("LEAN_CTX_DIAGNOSTICS");
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("root");
+        let other = tmp.path().join("other");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("b.txt"), "no").unwrap();
+
+        let err = jail_path(&other.join("b.txt"), &root).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("extra_roots") && msg.contains("allow_paths"),
+            "agent-visible escape error should name the config keys: {msg}"
         );
     }
 
