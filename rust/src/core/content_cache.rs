@@ -22,11 +22,12 @@
 //!   eviction orchestrator can [`clear`] the cache on `UnloadIndices` /
 //!   `EmergencyDrop`.
 
-use std::collections::HashMap;
 use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::UNIX_EPOCH;
+
+use lru::LruCache;
 
 /// Default resident byte budget when `LEAN_CTX_CONTENT_CACHE_MB` is unset.
 const DEFAULT_BUDGET_MB: usize = 128;
@@ -64,15 +65,19 @@ impl FileState {
 struct Entry {
     state: FileState,
     content: Arc<str>,
-    /// Logical clock tick of the last hit/insert — drives approximate LRU.
-    last_used: u64,
 }
 
 struct Cache {
-    map: HashMap<PathBuf, Entry>,
+    /// Unbounded by entry count — eviction is driven by `total_bytes` vs
+    /// `budget_bytes` below, not by a capacity `lru::LruCache` would enforce on
+    /// its own. `LruCache` gives O(1) recency tracking and O(1) LRU-victim
+    /// lookup (`pop_lru`), replacing a hand-rolled `last_used` clock plus an
+    /// O(n) `min_by_key` scan per eviction — the scan was rare per insert as
+    /// originally noted, but `trim_oldest_percent` called it in a loop, making
+    /// a big trim O(n²) over the resident set.
+    map: LruCache<PathBuf, Entry>,
     total_bytes: usize,
     budget_bytes: usize,
-    clock: u64,
     hits: u64,
     misses: u64,
     inserts: u64,
@@ -82,10 +87,9 @@ struct Cache {
 impl Cache {
     fn new(budget_bytes: usize) -> Self {
         Self {
-            map: HashMap::new(),
+            map: LruCache::unbounded(),
             total_bytes: 0,
             budget_bytes,
-            clock: 0,
             hits: 0,
             misses: 0,
             inserts: 0,
@@ -93,31 +97,19 @@ impl Cache {
         }
     }
 
-    fn tick(&mut self) -> u64 {
-        self.clock += 1;
-        self.clock
-    }
-
     fn remove_entry(&mut self, path: &Path) {
-        if let Some(old) = self.map.remove(path) {
+        if let Some(old) = self.map.pop(path) {
             self.total_bytes = self.total_bytes.saturating_sub(old.content.len());
         }
     }
 
-    /// Evict approximate-LRU entries until the budget is satisfied. Eviction
-    /// only runs after an over-budget insert, so the `O(n)` min-scan is rare and
-    /// dwarfed by the disk reads it prevents.
+    /// Evict LRU entries until the budget is satisfied. O(1) per eviction.
     fn evict_to_budget(&mut self) {
-        while self.total_bytes > self.budget_bytes && !self.map.is_empty() {
-            let Some(victim) = self
-                .map
-                .iter()
-                .min_by_key(|(_, e)| e.last_used)
-                .map(|(p, _)| p.clone())
-            else {
+        while self.total_bytes > self.budget_bytes {
+            let Some((_, victim)) = self.map.pop_lru() else {
                 break;
             };
-            self.remove_entry(&victim);
+            self.total_bytes = self.total_bytes.saturating_sub(victim.content.len());
             self.evictions += 1;
         }
     }
@@ -160,23 +152,23 @@ pub fn get(path: &Path, current: FileState) -> Option<Arc<str>> {
         return None;
     }
     let mut c = lock();
-    let Some(entry) = c.map.get(path) else {
+    // `peek` (not `get`) first: a stale hit must not promote to MRU on its way
+    // to being evicted.
+    let Some(entry) = c.map.peek(path) else {
         c.misses += 1;
         return None;
     };
-    let matches = entry.state == current;
-    if !matches {
+    if entry.state != current {
         // Stale version cached — drop it so we don't keep paying for it.
         c.remove_entry(path);
         c.misses += 1;
         return None;
     }
-    let tick = c.tick();
     c.hits += 1;
-    // The entry is present under the lock we still hold, but degrade gracefully
-    // instead of panicking on the read hot path if that invariant ever changes.
-    let entry = c.map.get_mut(path)?;
-    entry.last_used = tick;
+    // `get` promotes to MRU; present under the lock we still hold, but degrade
+    // gracefully instead of panicking on the read hot path if that invariant
+    // ever changes.
+    let entry = c.map.get(path)?;
     Some(Arc::clone(&entry.content))
 }
 
@@ -194,15 +186,7 @@ pub fn insert(path: &Path, state: FileState, content: Arc<str>) {
         return;
     }
     c.remove_entry(path);
-    let tick = c.tick();
-    c.map.insert(
-        path.to_path_buf(),
-        Entry {
-            state,
-            content,
-            last_used: tick,
-        },
-    );
+    c.map.put(path.to_path_buf(), Entry { state, content });
     c.total_bytes += len;
     c.inserts += 1;
     if c.total_bytes > c.budget_bytes {
@@ -251,15 +235,10 @@ pub fn trim_oldest_percent(percent: u8) {
     let pct = (percent.min(100)) as usize;
     let target_evictions = c.map.len() * pct / 100;
     for _ in 0..target_evictions {
-        let Some(victim) = c
-            .map
-            .iter()
-            .min_by_key(|(_, e)| e.last_used)
-            .map(|(p, _)| p.clone())
-        else {
+        let Some((_, victim)) = c.map.pop_lru() else {
             break;
         };
-        c.remove_entry(&victim);
+        c.total_bytes = c.total_bytes.saturating_sub(victim.content.len());
         c.evictions += 1;
     }
 }
