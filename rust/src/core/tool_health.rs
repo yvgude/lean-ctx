@@ -598,9 +598,11 @@ mod tests {
     fn shell_alias_inherits_ctx_shell_usage_838() {
         let shell_tool = tool("shell");
         let mut usage = CostStore::default();
-        let mut tc = ToolCost::default();
-        tc.total_calls = 42;
-        tc.last_used = Some("2026-07-15".to_string());
+        let tc = ToolCost {
+            total_calls: 42,
+            last_used: Some("2026-07-15".to_string()),
+            ..ToolCost::default()
+        };
         usage.tools.insert("ctx_shell".to_string(), tc);
         let report = build_report(
             &[shell_tool],

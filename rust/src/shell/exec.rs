@@ -1174,7 +1174,7 @@ mod exec_tests {
     }
 
     /// #806: piped stdin must be forwarded to the child via Stdio::piped()
-    /// + relay, not nulled. Tests the relay pattern: write data to child
+    /// and relayed, not nulled. Tests the relay pattern: write data to child
     /// stdin, close it (EOF), child reads and exits.
     #[cfg(unix)]
     #[test]

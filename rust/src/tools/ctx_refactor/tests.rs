@@ -771,7 +771,7 @@ fn handle_replace_symbol_worktree_mismatch_blocks_write() {
 
     // The symbol resolves via the main-root index to "src/lib.rs".
     let resolved = super::resolve_name_path("worktree_canary_zz", &root);
-    assert!(resolved.is_ok(), "symbol should resolve: {:?}", resolved);
+    assert!(resolved.is_ok(), "symbol should resolve: {resolved:?}");
 
     // Caller provides a path inside the worktree that differs from the
     // index-resolved location — this must be caught.

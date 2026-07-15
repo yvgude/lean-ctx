@@ -1370,8 +1370,7 @@ fn enforce_allows_project_root_binary_path() {
     crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
     assert!(
         result.is_ok(),
-        "project-root binary path must be auto-allowed: {:?}",
-        result
+        "project-root binary path must be auto-allowed: {result:?}"
     );
 }
 
@@ -1397,8 +1396,7 @@ fn python3_inline_allowed_with_opt_in() {
     crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
     assert!(
         result.is_ok(),
-        "python3 -c must be allowed with opt-in: {:?}",
-        result
+        "python3 -c must be allowed with opt-in: {result:?}"
     );
 }
 
@@ -1413,7 +1411,6 @@ fn node_eval_allowed_with_opt_in() {
     crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
     assert!(
         result.is_ok(),
-        "node -e must be allowed with opt-in: {:?}",
-        result
+        "node -e must be allowed with opt-in: {result:?}"
     );
 }

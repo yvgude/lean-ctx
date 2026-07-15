@@ -1033,8 +1033,7 @@ mod tests {
         if state.exists() {
             assert!(
                 result.is_ok(),
-                "tee-file path under lean-ctx state dir must be auto-allowed: {:?}",
-                result
+                "tee-file path under lean-ctx state dir must be auto-allowed: {result:?}"
             );
         }
         std::fs::remove_dir_all(&fake_root).ok();
