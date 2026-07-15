@@ -732,10 +732,12 @@ fn render_unchanged_stub(file_ref: &str, path: &str, line_count: usize) -> ReadO
     let short = protocol::shorten_path(path);
     let out = if crate::core::protocol::meta_visible() {
         format!(
-            "{file_ref}={short} [unchanged {line_count}L]\nUnchanged on disk. Use fresh=true to force re-read.",
+            "{file_ref}={short} [unchanged {line_count}L]\nFull content already delivered earlier this conversation (not just disk-unchanged — a prior partial-mode read does not clear this). Use fresh=true to force re-read.",
         )
     } else {
-        format!("{file_ref}={short} [unchanged {line_count}L · fresh=true to re-read]")
+        format!(
+            "{file_ref}={short} [unchanged {line_count}L · already delivered in full this conversation · fresh=true to re-read]"
+        )
     };
     let out = crate::core::redaction::redact_text_if_enabled(&out);
     let sent = count_tokens(&out);
@@ -1377,7 +1379,7 @@ fn handle_full_with_auto_delta(
         if policy_allows_stub && store_result.full_content_delivered {
             let out = if crate::core::protocol::meta_visible() {
                 format!(
-                    "{file_ref}={short} [unchanged {}L]\nUnchanged on disk. Use fresh=true to force re-read.",
+                    "{file_ref}={short} [unchanged {}L]\nFull content already delivered earlier this conversation (not just disk-unchanged — a prior partial-mode read does not clear this). Use fresh=true to force re-read.",
                     store_result.line_count
                 )
             } else {
@@ -1385,7 +1387,7 @@ fn handle_full_with_auto_delta(
                 // try_stub_hit_readonly). The `fresh=true` escape is a static
                 // suffix, so non-meta re-readers still see how to force content (#513).
                 format!(
-                    "{file_ref}={short} [unchanged {}L · fresh=true to re-read]",
+                    "{file_ref}={short} [unchanged {}L · already delivered in full this conversation · fresh=true to re-read]",
                     store_result.line_count
                 )
             };
