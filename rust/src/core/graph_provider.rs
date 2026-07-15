@@ -175,10 +175,19 @@ impl GraphProvider {
     ) -> Vec<SymbolInfo> {
         match self {
             GraphProvider::PropertyGraph(g) => g
-                .find_symbols(name, file_filter, kind_filter)
+                // Kind is filtered AFTER mapping, not in SQL: the PG `nodes.kind`
+                // column is the coarse `NodeKind` (every code symbol is `"symbol"`),
+                // while the precise source kind (`struct`, `fn`, …) lives in metadata
+                // and is recovered by `symbol_info_from_node`. Passing `kind_filter`
+                // to the SQL query matched it against `"symbol"` and dropped every
+                // hit — an exported struct queried with kind="struct" came back empty
+                // (#889). ponytail: the SQL LIMIT 100 caps candidates pre-kind-filter,
+                // fine until a name substring has >100 cross-kind matches.
+                .find_symbols(name, file_filter, None)
                 .unwrap_or_default()
                 .into_iter()
                 .map(symbol_info_from_node)
+                .filter(|s| kind_filter.is_none_or(|k| s.kind == k))
                 .collect(),
             GraphProvider::GraphIndex(i) => {
                 let name_lower = name.to_lowercase();
@@ -783,6 +792,35 @@ mod tests {
         let gp = handle_provider();
         let h = crate::core::handle::SymbolHandle::new("src/nope.rs", "Config::load", 22);
         assert!(gp.find_symbol_by_handle(&h).is_none());
+    }
+
+    #[test]
+    fn pg_kind_filter_matches_precise_metadata_kind() {
+        // #889: a PG symbol's coarse `nodes.kind` is always `"symbol"`; the
+        // source kind (`struct`) lives in metadata. Filtering by kind="struct"
+        // must still find it (previously matched the coarse column → empty).
+        use super::super::property_graph::{Node, NodeKind};
+
+        let pg = CodeGraph::open_in_memory().unwrap();
+        pg.upsert_node(
+            &Node::symbol("State", "simplex/simplex.go", NodeKind::Symbol)
+                .with_lines(129, 140)
+                .with_metadata(r#"{"kind":"struct","exported":true}"#),
+        )
+        .unwrap();
+        let gp = GraphProvider::PropertyGraph(pg);
+
+        let hits = gp.find_symbols("State", None, Some("struct"));
+        assert_eq!(
+            hits.len(),
+            1,
+            "kind=struct must resolve the exported struct"
+        );
+        assert_eq!(hits[0].kind, "struct");
+        assert!(hits[0].is_exported);
+
+        // A non-matching kind still filters it out.
+        assert!(gp.find_symbols("State", None, Some("fn")).is_empty());
     }
 
     #[test]
