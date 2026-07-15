@@ -193,7 +193,11 @@ fn compress_issue_list(output: &str) -> String {
 }
 
 fn compress_issue_view(output: &str) -> String {
-    compact_output(output, 15)
+    // #884: an issue's body is the payload; the metadata fields above it are
+    // boilerplate. Head-only truncation (`compact_output`) dropped the body
+    // wholesale on any issue longer than the field block, forcing a second
+    // `--json body` call. Keep head AND tail so the body survives.
+    compact_head_tail(output, 40, 40)
 }
 
 fn compress_run_list(output: &str) -> String {
@@ -225,7 +229,9 @@ fn compress_run_list(output: &str) -> String {
 }
 
 fn compress_run_view(output: &str) -> String {
-    compact_output(output, 15)
+    // #884: a run's failure summary lives at the tail — head-only truncation hid
+    // exactly the part the agent came for. Keep head AND tail.
+    compact_head_tail(output, 40, 40)
 }
 
 fn compress_repo(output: &str) -> String {
@@ -259,4 +265,75 @@ fn compact_output(text: &str, max: usize) -> String {
         lines[..max].join("\n"),
         lines.len() - max
     )
+}
+
+/// Head+tail compaction (#884): keep the first `head` and last `tail` non-empty
+/// lines, eliding only the middle. Unlike [`compact_output`] (head-only), this
+/// never drops the tail — used for single-record `view` output whose payload (an
+/// issue/PR body, a run's failure summary) follows the metadata header.
+fn compact_head_tail(text: &str, head: usize, tail: usize) -> String {
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.len() <= head + tail {
+        return lines.join("\n");
+    }
+    let omitted = lines.len() - head - tail;
+    format!(
+        "{}\n... ({omitted} more lines)\n{}",
+        lines[..head].join("\n"),
+        lines[lines.len() - tail..].join("\n"),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn issue_view_keeps_body_not_just_metadata() {
+        // gh issue view: a metadata field block then the body. Head-only
+        // truncation (`compact_output(_, 15)`) dropped the body entirely (#884).
+        let mut out = String::new();
+        for f in [
+            "title:\tSomething broke",
+            "state:\tOPEN",
+            "author:\tandig",
+            "labels:",
+            "comments:\t0",
+            "assignees:",
+            "projects:",
+            "milestone:",
+            "number:\t875",
+            "--",
+        ] {
+            out.push_str(f);
+            out.push('\n');
+        }
+        for i in 0..40 {
+            out.push_str(&format!("body line {i} - the actual payload\n"));
+        }
+        let compressed = compress_issue_view(&out);
+        assert!(
+            compressed.contains("body line 39 - the actual payload"),
+            "the end of the body must survive compaction: {compressed}"
+        );
+        assert!(
+            compressed.contains("title:\tSomething broke"),
+            "metadata head must still be present: {compressed}"
+        );
+    }
+
+    #[test]
+    fn head_tail_returns_small_output_verbatim() {
+        assert_eq!(compact_head_tail("a\nb\nc\n", 40, 40), "a\nb\nc");
+    }
+
+    #[test]
+    fn head_tail_elides_only_the_middle() {
+        let lines: String = (0..200).map(|i| format!("L{i}\n")).collect();
+        let out = compact_head_tail(&lines, 5, 5);
+        assert!(out.contains("L0") && out.contains("L4"));
+        assert!(out.contains("L195") && out.contains("L199"));
+        assert!(out.contains("... (190 more lines)"));
+        assert!(!out.contains("L100"));
+    }
 }
