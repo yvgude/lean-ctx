@@ -335,7 +335,10 @@ fn strip_leaves_unquoted_heredoc_body_intact() {
 
 #[test]
 fn heredoc_quoted_delims_variants() {
-    assert_eq!(heredoc_quoted_delims("cat <<-\"END\""), vec!["END".to_string()]);
+    assert_eq!(
+        heredoc_quoted_delims("cat <<-\"END\""),
+        vec!["END".to_string()]
+    );
     assert_eq!(
         heredoc_quoted_delims("a <<'X' b <<'Y'"),
         vec!["X".to_string(), "Y".to_string()]
