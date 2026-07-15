@@ -248,6 +248,19 @@ impl ReadMode {
             ReadMode::Full | ReadMode::FullCompact | ReadMode::Diff | ReadMode::Anchored(_)
         )
     }
+
+    /// Precise, pinned reads (#843): the caller asked for an exact byte-window
+    /// or delta and must get exactly that back. Context-gate overrides
+    /// (bounce-prevention, pressure-downgrade, graph/knowledge heuristics)
+    /// must never silently reinterpret one of these to e.g. `full` — that
+    /// discards the window/anchors/delta the caller explicitly asked for.
+    /// Kept as an enum match (not a string-prefix check) so a future mode
+    /// variant that's also precise/pinned has to be added here explicitly
+    /// instead of silently falling through an allowlist.
+    #[must_use]
+    pub(crate) fn is_precise_pinned_read(&self) -> bool {
+        matches!(self, ReadMode::Diff | ReadMode::Lines(_) | ReadMode::Anchored(_))
+    }
 }
 
 #[cfg(test)]
@@ -417,5 +430,23 @@ mod tests {
         let parsed: ReadMode = "density:0.5".parse().unwrap();
         assert_eq!(parsed, ReadMode::Density(0.5));
         assert_eq!(parsed.to_string(), "density:0.50");
+    }
+
+    #[test]
+    fn is_precise_pinned_read_covers_diff_lines_and_anchored() {
+        for mode in ["diff", "lines:5-10", "anchored", "anchored:5-10"] {
+            let parsed: ReadMode = mode.parse().expect("canonical mode parses");
+            assert!(
+                parsed.is_precise_pinned_read(),
+                "'{mode}' must be a precise pinned read"
+            );
+        }
+        for mode in ["full", "map", "signatures", "auto", "task"] {
+            let parsed: ReadMode = mode.parse().expect("canonical mode parses");
+            assert!(
+                !parsed.is_precise_pinned_read(),
+                "'{mode}' must not be a precise pinned read"
+            );
+        }
     }
 }

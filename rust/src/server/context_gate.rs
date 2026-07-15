@@ -2,6 +2,22 @@ use crate::core::context_field::{ContextItemId, ContextState};
 use crate::core::context_ledger::{ContextLedger, PressureAction};
 use crate::core::context_overlay::{OverlayOp, OverlayStore};
 
+/// #843: precise, pinned reads (`diff`, `lines:N-M`, `anchored`/`anchored:N-M`)
+/// must pass through every mode-override path untouched — bounce-prevention,
+/// pressure-downgrade, and the graph/knowledge heuristics below must never
+/// silently reinterpret one of these to e.g. `full`, which would discard the
+/// exact window/anchors/delta the caller asked for. Classifies off the typed
+/// `ReadMode` (single source of truth, see `tools::ctx_read::mode`) rather than
+/// a hand-maintained string-prefix list, so a future precise mode has to be
+/// added to `ReadMode::is_precise_pinned_read` explicitly instead of silently
+/// falling through an allowlist. An unparseable mode is conservatively treated
+/// as *not* pinned, matching prior behaviour for anything outside this set.
+fn is_precise_pinned_mode(requested_mode: &str) -> bool {
+    requested_mode
+        .parse::<crate::tools::ctx_read::ReadMode>()
+        .is_ok_and(|m| m.is_precise_pinned_read())
+}
+
 #[derive(Debug, Clone)]
 pub struct PreDispatchResult {
     pub overridden_mode: Option<String>,
@@ -71,7 +87,7 @@ pub fn pre_dispatch_read_for_agent(
                 );
                 let mut result = no_change.clone();
                 result.budget_warning = Some(warning);
-                if requested_mode == "diff" || requested_mode.starts_with("lines") || requested_mode.starts_with("anchored") {
+                if is_precise_pinned_mode(requested_mode) {
                     return result;
                 }
                 let rest = pre_dispatch_inner(path, requested_mode, task, project_root, pressure);
@@ -102,7 +118,7 @@ fn pre_dispatch_inner(
         budget_warning: None,
     };
 
-    if requested_mode == "diff" || requested_mode.starts_with("lines") || requested_mode.starts_with("anchored") {
+    if is_precise_pinned_mode(requested_mode) {
         return no_change;
     }
 
