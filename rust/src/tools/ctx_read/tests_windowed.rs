@@ -84,3 +84,61 @@ fn disk_windowed_anchored_read_serves_file_over_the_size_cap() {
         out.content
     );
 }
+
+/// #875: a windowed `anchored:N-M` read served through the two-phase
+/// (`preread`-supplied) slow path must still return only that window with its
+/// `N:hh|` hash anchors — never fall through to a full-file dump. The
+/// disk-streaming short-circuit (#811) only fires on the fast path, where no
+/// preread is in hand; the slow path (spawned-thread read under lock
+/// contention) hands `handle_with_options_inner` the whole file as `preread`,
+/// so `try_disk_anchored_window` bows out and the window must instead be cut
+/// and anchored by `process_mode_tuned`. Before the anchored:N-M arm existed
+/// there, this path dumped the entire file with no anchors — the exact symptom
+/// #875 reported after the first windowed read.
+#[test]
+fn windowed_anchored_read_via_preread_slow_path_stays_windowed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("big.rs");
+    let body = (1..=200)
+        .map(|i| format!("fn function_number_{i}() {{}}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(&path, format!("{body}\n")).unwrap();
+    let p = path.to_string_lossy().to_string();
+    let preread = std::fs::read_to_string(&path).unwrap();
+
+    let mut cache = SessionCache::new();
+    let out = handle_with_options_inner(
+        &mut cache,
+        &p,
+        "anchored:109-118",
+        /* fresh */ true,
+        CrpMode::Off,
+        None,
+        ReadTuning::default(),
+        Some(preread),
+    );
+
+    assert_eq!(out.resolved_mode, "anchored:109-118");
+    assert!(
+        out.content.contains("function_number_109") && out.content.contains("function_number_118"),
+        "must contain the requested window: {}",
+        out.content
+    );
+    assert!(
+        !out.content.contains("function_number_50") && !out.content.contains("function_number_200"),
+        "must NOT dump lines outside the window: {}",
+        out.content
+    );
+    // Each served line keeps its `N:hh|` hash anchor (edit-ready for ctx_patch).
+    assert!(
+        out.content.contains("\n109:") && out.content.contains("118:"),
+        "windowed lines must keep N:hh| anchors: {}",
+        out.content
+    );
+    assert!(
+        out.content.contains("200L"),
+        "header must report the file's true total line count: {}",
+        out.content
+    );
+}
