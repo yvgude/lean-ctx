@@ -259,7 +259,10 @@ impl ReadMode {
     /// instead of silently falling through an allowlist.
     #[must_use]
     pub(crate) fn is_precise_pinned_read(&self) -> bool {
-        matches!(self, ReadMode::Diff | ReadMode::Lines(_) | ReadMode::Anchored(_))
+        matches!(
+            self,
+            ReadMode::Diff | ReadMode::Lines(_) | ReadMode::Anchored(_)
+        )
     }
 }
 
