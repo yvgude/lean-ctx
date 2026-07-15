@@ -11,7 +11,17 @@ pub(super) fn resolve_rename_target(
     project_root: &str,
 ) -> Result<(String, usize, usize), String> {
     if let Some(np) = args.get("name_path").and_then(Value::as_str) {
-        let r = resolve_name_path(np, project_root)?;
+        // #845: a caller-supplied `path` alongside `name_path` scopes
+        // resolution to that file, so a common method name that's ambiguous
+        // repo-wide can still resolve in one call. Basename only — see the
+        // matching comment in mod.rs::handle_symbol_edit for why (worktree
+        // roots differ from the index's).
+        let file_filter = args
+            .get("path")
+            .and_then(Value::as_str)
+            .and_then(|p| std::path::Path::new(p).file_name())
+            .and_then(|f| f.to_str());
+        let r = resolve_name_path(np, project_root, file_filter)?;
         Ok((r.rel_path, r.start_line, r.end_line))
     } else {
         let path = args
@@ -456,7 +466,7 @@ pub(super) fn resolve_move_target(
             })
         }
         (None, Some(parent_np)) => {
-            let r = resolve_name_path(parent_np, project_root)?; // NO_SYMBOL / AMBIGUOUS_SYMBOL
+            let r = resolve_name_path(parent_np, project_root, None)?; // NO_SYMBOL / AMBIGUOUS_SYMBOL
             let abs =
                 crate::core::path_resolve::resolve_tool_path(Some(project_root), None, &r.rel_path)
                     .map_err(|e| {
@@ -829,7 +839,7 @@ pub(super) fn resolve_reformat_scope(
             Err("INVALID_TARGET: set exactly one of 'name_path' or 'path' for reformat".to_string())
         }
         (Some(np), None) => {
-            let r = resolve_name_path(np, project_root)?; // NO_SYMBOL / AMBIGUOUS_SYMBOL
+            let r = resolve_name_path(np, project_root, None)?; // NO_SYMBOL / AMBIGUOUS_SYMBOL
             let abs =
                 crate::core::path_resolve::resolve_tool_path(Some(project_root), None, &r.rel_path)
                     .map_err(|e| format!("INVALID_TARGET: path blocked by jail: {e}"))?;

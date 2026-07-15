@@ -222,7 +222,7 @@ fn resolve_name_path_unique_class() {
     .unwrap();
     let root = proj.to_string_lossy().to_string();
 
-    let r = super::resolve_name_path("UniqueZqWidget", &root).expect("unique resolution");
+    let r = super::resolve_name_path("UniqueZqWidget", &root, None).expect("unique resolution");
     assert!(r.rel_path.ends_with("lib.rs"), "got: {}", r.rel_path);
     assert!(r.end_line >= r.start_line && r.start_line > 0);
 
@@ -251,7 +251,7 @@ fn resolve_name_path_unknown_is_no_symbol() {
     .unwrap();
     let root = proj.to_string_lossy().to_string();
 
-    let err = super::resolve_name_path("ZzzNoSuchSymbol123", &root).unwrap_err();
+    let err = super::resolve_name_path("ZzzNoSuchSymbol123", &root, None).unwrap_err();
     assert!(err.starts_with("NO_SYMBOL"), "got: {err}");
 
     crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
@@ -283,7 +283,7 @@ fn resolve_name_path_trait_impl_method() {
     .unwrap();
     let root = proj.to_string_lossy().to_string();
 
-    let r = super::resolve_name_path("RenderBridge/execute", &root)
+    let r = super::resolve_name_path("RenderBridge/execute", &root, None)
         .expect("trait-impl method should resolve");
     assert!(r.rel_path.ends_with("lib.rs"), "got: {}", r.rel_path);
     // Muss auf den Impl-Methoden-Body zeigen (Zeile >= 3), nicht auf das
@@ -333,7 +333,7 @@ fn resolve_name_path_inherent_impl_method() {
     .unwrap();
     let root = proj.to_string_lossy().to_string();
 
-    let r = super::resolve_name_path("RenderBridge/run", &root)
+    let r = super::resolve_name_path("RenderBridge/run", &root, None)
         .expect("inherent-impl method should still resolve");
     assert!(r.rel_path.ends_with("lib.rs"), "got: {}", r.rel_path);
     assert!(r.start_line >= 2 && r.end_line >= r.start_line);
@@ -386,9 +386,19 @@ fn resolve_name_path_ambiguous_trait_impls() {
     // "RenderBridge/execute": two segments → container_matches_ancestor runs for each hit.
     // "A for RenderBridge" and "B for RenderBridge" both match ancestor "RenderBridge",
     // producing two distinct hits (src/a.rs and src/b.rs) → AMBIGUOUS_SYMBOL.
-    let err = super::resolve_name_path("RenderBridge/execute", &root)
+    let err = super::resolve_name_path("RenderBridge/execute", &root, None)
         .expect_err("two trait impls (cross-file) with same method must be ambiguous");
     assert!(err.starts_with("AMBIGUOUS_SYMBOL"), "got: {err}");
+    assert!(
+        err.contains("pass path="),
+        "unscoped ambiguity error should hint at the path= scoping option: {err}"
+    );
+
+    // #845: the same repo-wide-ambiguous name resolves cleanly once a
+    // file_filter (the caller's `path` arg) narrows it to one file.
+    let r = super::resolve_name_path("RenderBridge/execute", &root, Some("a.rs"))
+        .expect("file_filter should disambiguate to the single match in a.rs");
+    assert!(r.rel_path.ends_with("a.rs"), "got: {}", r.rel_path);
 
     crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }
@@ -770,7 +780,7 @@ fn handle_replace_symbol_worktree_mismatch_blocks_write() {
     .unwrap();
 
     // The symbol resolves via the main-root index to "src/lib.rs".
-    let resolved = super::resolve_name_path("worktree_canary_zz", &root);
+    let resolved = super::resolve_name_path("worktree_canary_zz", &root, None);
     assert!(resolved.is_ok(), "symbol should resolve: {resolved:?}");
 
     // Caller provides a path inside the worktree that differs from the
@@ -819,4 +829,58 @@ fn handle_replace_symbol_same_path_succeeds() {
     assert!(out.contains("replace_symbol_body applied"), "got: {out}");
     let after = std::fs::read_to_string(dir.path().join("a.rs")).unwrap();
     assert!(after.contains("fn new()"), "file: {after}");
+}
+
+/// #845: `name_path` + `path` scopes an otherwise repo-wide-ambiguous symbol
+/// name to one file — the end-to-end `ctx_refactor(action="replace_symbol_body")`
+/// path, not just the isolated `resolve_name_path` unit.
+#[test]
+fn handle_replace_symbol_with_name_and_path_scopes_ambiguous_symbol() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.to_string_lossy().to_string());
+
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(proj.join("src")).unwrap();
+    std::fs::write(
+        proj.join("Cargo.toml"),
+        "[package]\nname=\"x\"\nversion=\"0.0.0\"\n",
+    )
+    .unwrap();
+    std::fs::write(proj.join("src/a.rs"), "fn shared() {\n  1\n}\n").unwrap();
+    std::fs::write(proj.join("src/b.rs"), "fn shared() {\n  2\n}\n").unwrap();
+    let root = proj.to_string_lossy().to_string();
+
+    // Unscoped: "shared" exists in both a.rs and b.rs -> AMBIGUOUS_SYMBOL.
+    let ambiguous_args = serde_json::json!({
+        "action": "replace_symbol_body",
+        "name_path": "shared",
+        "new_body": "fn shared() {\n  NEW\n}"
+    });
+    let ambiguous_out = super::handle(&ambiguous_args, &root, "");
+    assert!(
+        ambiguous_out.contains("AMBIGUOUS_SYMBOL"),
+        "got: {ambiguous_out}"
+    );
+
+    // Scoped via `path`: resolves to a.rs only, b.rs is untouched.
+    let scoped_args = serde_json::json!({
+        "action": "replace_symbol_body",
+        "name_path": "shared",
+        "path": "src/a.rs",
+        "new_body": "fn shared() {\n  NEW\n}"
+    });
+    let out = super::handle(&scoped_args, &root, "");
+    assert!(out.contains("replace_symbol_body applied"), "got: {out}");
+    let after_a = std::fs::read_to_string(proj.join("src/a.rs")).unwrap();
+    assert!(after_a.contains("NEW"), "a.rs: {after_a}");
+    let after_b = std::fs::read_to_string(proj.join("src/b.rs")).unwrap();
+    assert!(
+        !after_b.contains("NEW"),
+        "b.rs must be untouched: {after_b}"
+    );
+
+    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }

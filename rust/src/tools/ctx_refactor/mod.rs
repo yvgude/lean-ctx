@@ -284,7 +284,18 @@ fn container_matches_ancestor(name: &str, ancestor: &str) -> bool {
 /// Resolve a `name_path` (`Class/method` or bare `name`) to a single symbol via
 /// the tree-sitter index (spec v2a §3/§5.3). Disambiguates a qualified path by
 /// enclosing-range containment (ancestor symbol's line span contains the leaf's).
-pub(crate) fn resolve_name_path(name_path: &str, project_root: &str) -> Result<Resolved, String> {
+///
+/// `file_filter` (#845) narrows candidates to files whose path *contains* the
+/// given substring — the caller's `path` arg (e.g. `MyClass.cs`) — before the
+/// ambiguity check runs, so a common method name (`Dispose`, `ToString`) that
+/// exists in many classes across a large repo can be resolved with `name` +
+/// `path` in one call instead of a NO_SYMBOL/AMBIGUOUS_SYMBOL round trip
+/// followed by a fallback to `path`+`line`.
+pub(crate) fn resolve_name_path(
+    name_path: &str,
+    project_root: &str,
+    file_filter: Option<&str>,
+) -> Result<Resolved, String> {
     use crate::core::graph_provider;
     let open = graph_provider::open_or_build(project_root)
         .ok_or_else(|| "NO_SYMBOL: no symbol index available".to_string())?;
@@ -297,7 +308,7 @@ pub(crate) fn resolve_name_path(name_path: &str, project_root: &str) -> Result<R
 
     // Exact-name leaf candidates (case-sensitive — the index may substring-match).
     let mut leaves: Vec<_> = gp
-        .find_symbols(leaf, None, None)
+        .find_symbols(leaf, file_filter, None)
         .into_iter()
         .filter(|s| s.name == leaf)
         .collect();
@@ -305,7 +316,7 @@ pub(crate) fn resolve_name_path(name_path: &str, project_root: &str) -> Result<R
     if segments.len() >= 2 {
         let ancestor = segments[segments.len() - 2];
         let parents: Vec<_> = gp
-            .find_symbols(ancestor, None, None)
+            .find_symbols(ancestor, file_filter, None)
             .into_iter()
             .filter(|s| container_matches_ancestor(&s.name, ancestor))
             .collect();
@@ -319,9 +330,15 @@ pub(crate) fn resolve_name_path(name_path: &str, project_root: &str) -> Result<R
     }
 
     match leaves.len() {
-        0 => Err(format!(
-            "NO_SYMBOL: '{name_path}' did not resolve to any indexed symbol"
-        )),
+        0 => Err(if file_filter.is_some() {
+            format!(
+                "NO_SYMBOL: '{name_path}' did not resolve to any indexed symbol under a path \
+                 matching '{}'",
+                file_filter.unwrap_or_default()
+            )
+        } else {
+            format!("NO_SYMBOL: '{name_path}' did not resolve to any indexed symbol")
+        }),
         1 => Ok(Resolved {
             rel_path: leaves[0].file.clone(),
             start_line: leaves[0].start_line,
@@ -337,6 +354,11 @@ pub(crate) fn resolve_name_path(name_path: &str, project_root: &str) -> Result<R
                     "  {}:{} (L{}-{})\n",
                     s.file, s.name, s.start_line, s.end_line
                 ));
+            }
+            if file_filter.is_none() {
+                msg.push_str(
+                    "  (pass path=\"<file>\" alongside name to scope resolution to one file)\n",
+                );
             }
             Err(msg)
         }
@@ -449,7 +471,17 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
     let (rel_path, start_line, end_line) = if let Some(np) =
         args.get("name_path").and_then(Value::as_str)
     {
-        match resolve_name_path(np, project_root) {
+        // #845: a caller-supplied `path` alongside `name`/`name_path` scopes
+        // resolution to that file, so a common method name (Dispose, ToString)
+        // that's ambiguous repo-wide can still resolve in one call. Filter on
+        // the *basename* only (not the full path): the caller's `path` may be
+        // rooted differently than the index (e.g. a linked git worktree vs.
+        // the main checkout the index was built from — see the
+        // WORKTREE_MISMATCH check below), and basenames still match across
+        // roots while full-path substring matching would not.
+        let file_filter = explicit_path
+            .and_then(|p| std::path::Path::new(p).file_name().and_then(|f| f.to_str()));
+        match resolve_name_path(np, project_root, file_filter) {
             Ok(r) => {
                 // #803 WORKTREE SAFETY: when the caller also provided `path`,
                 // verify the index-resolved file matches the caller's target.
