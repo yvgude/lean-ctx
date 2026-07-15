@@ -96,6 +96,34 @@ fn find_unique_shifted_line(lines: &[String], hash: &str) -> Option<usize> {
     Some(first)
 }
 
+/// The two-endpoint sibling of [`find_unique_shifted_line`], for `replace_lines`/
+/// `delete` spans: when a prior edit shifted a multi-line block (insert/delete
+/// elsewhere moved it, but its own content is untouched), look for a position
+/// where BOTH the start and end anchors still match at the *original* span
+/// length (`end_line - start_line`) elsewhere in the file. Same unambiguous-
+/// match-only philosophy as #812 — 0 or 2+ candidate positions fall through to
+/// a normal stale-anchor conflict rather than guessing. Only the two endpoints
+/// are re-checked (not every line in between), matching how the initial
+/// anchor check itself only validates the span's boundaries.
+fn find_unique_shifted_span(
+    lines: &[String],
+    start_hash: &str,
+    end_hash: &str,
+    span_len: usize,
+) -> Option<usize> {
+    let mut matches = (0..lines.len()).filter(|&i| {
+        anchor::hash_matches(&lines[i], start_hash)
+            && lines
+                .get(i + span_len)
+                .is_some_and(|l| anchor::hash_matches(l, end_hash))
+    });
+    let first = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(first)
+}
+
 /// Validate every op's anchors against `lines` (the single preimage) and
 /// normalize them to splices. Collects *all* stale anchors before failing so the
 /// model gets the complete picture in one round-trip.
@@ -171,15 +199,35 @@ pub(crate) fn resolve_ops(
                 if let Err(e) = check_range(*start_line, *end_line, len) {
                     return Err(ResolveError::Invalid(e));
                 }
-                check(*start_line, start_hash, &mut misses);
-                check(*end_line, end_hash, &mut misses);
-                edits.push(ResolvedEdit {
-                    start_idx: start_line - 1,
-                    remove_count: end_line - start_line + 1,
-                    new_lines: split_new_text(new_text),
-                    lo: *start_line,
-                    hi: *end_line,
-                });
+                let span_len = end_line - start_line;
+                let start_ok = lines
+                    .get(*start_line - 1)
+                    .is_some_and(|cur| anchor::hash_matches(cur, start_hash));
+                let end_ok = lines
+                    .get(*end_line - 1)
+                    .is_some_and(|cur| anchor::hash_matches(cur, end_hash));
+                if start_ok && end_ok {
+                    edits.push(ResolvedEdit {
+                        start_idx: start_line - 1,
+                        remove_count: span_len + 1,
+                        new_lines: split_new_text(new_text),
+                        lo: *start_line,
+                        hi: *end_line,
+                    });
+                } else if let Some(idx) =
+                    find_unique_shifted_span(lines, start_hash, end_hash, span_len)
+                {
+                    edits.push(ResolvedEdit {
+                        start_idx: idx,
+                        remove_count: span_len + 1,
+                        new_lines: split_new_text(new_text),
+                        lo: idx + 1,
+                        hi: idx + 1 + span_len,
+                    });
+                } else {
+                    check(*start_line, start_hash, &mut misses);
+                    check(*end_line, end_hash, &mut misses);
+                }
             }
             AnchorOp::Delete {
                 start_line,
@@ -190,15 +238,35 @@ pub(crate) fn resolve_ops(
                 if let Err(e) = check_range(*start_line, *end_line, len) {
                     return Err(ResolveError::Invalid(e));
                 }
-                check(*start_line, start_hash, &mut misses);
-                check(*end_line, end_hash, &mut misses);
-                edits.push(ResolvedEdit {
-                    start_idx: start_line - 1,
-                    remove_count: end_line - start_line + 1,
-                    new_lines: Vec::new(),
-                    lo: *start_line,
-                    hi: *end_line,
-                });
+                let span_len = end_line - start_line;
+                let start_ok = lines
+                    .get(*start_line - 1)
+                    .is_some_and(|cur| anchor::hash_matches(cur, start_hash));
+                let end_ok = lines
+                    .get(*end_line - 1)
+                    .is_some_and(|cur| anchor::hash_matches(cur, end_hash));
+                if start_ok && end_ok {
+                    edits.push(ResolvedEdit {
+                        start_idx: start_line - 1,
+                        remove_count: span_len + 1,
+                        new_lines: Vec::new(),
+                        lo: *start_line,
+                        hi: *end_line,
+                    });
+                } else if let Some(idx) =
+                    find_unique_shifted_span(lines, start_hash, end_hash, span_len)
+                {
+                    edits.push(ResolvedEdit {
+                        start_idx: idx,
+                        remove_count: span_len + 1,
+                        new_lines: Vec::new(),
+                        lo: idx + 1,
+                        hi: idx + 1 + span_len,
+                    });
+                } else {
+                    check(*start_line, start_hash, &mut misses);
+                    check(*end_line, end_hash, &mut misses);
+                }
             }
             // Handled by `run_io` before the preimage read; reaching the line
             // model with a Create means it was mixed into a batch.
@@ -639,20 +707,92 @@ mod tests {
     }
 
     #[test]
-    fn recovery_does_not_apply_to_replace_lines_spans() {
-        // Scoped to single-line anchors (set_line/insert_after) — a shifted
-        // replace_lines span still hard-fails rather than guessing where a
-        // two-anchor range landed.
+    fn replace_lines_recovers_when_span_shifted_to_a_different_unique_position() {
+        // Extends #812 to two-endpoint spans: "start"/"end" were originally
+        // lines 1-2 (from an earlier, separate ctx_patch call that has since
+        // inserted a line above them). They now live at lines 3-4 unchanged —
+        // the edit should land there instead of hard-failing.
         let lines = vec![
             "intro".to_string(),
             "filler".to_string(),
             "start".to_string(),
             "end".to_string(),
+            "tail".to_string(),
         ];
         let ops = vec![AnchorOp::ReplaceLines {
             start_line: 1, // stale: "start"/"end" used to be lines 1-2
             start_hash: anc(1, "start"),
             end_line: 2,
+            end_hash: anc(2, "end"),
+            new_text: "X".into(),
+        }];
+        let edits = resolve_ops(&lines, &ops).ok().unwrap();
+        assert_eq!(
+            apply_edits(lines, edits),
+            vec!["intro", "filler", "X", "tail"]
+        );
+    }
+
+    #[test]
+    fn delete_span_recovers_when_shifted_to_a_different_unique_position() {
+        let lines = vec![
+            "intro".to_string(),
+            "filler".to_string(),
+            "start".to_string(),
+            "end".to_string(),
+            "tail".to_string(),
+        ];
+        let ops = vec![AnchorOp::Delete {
+            start_line: 1, // stale: "start"/"end" used to be lines 1-2
+            start_hash: anc(1, "start"),
+            end_line: 2,
+            end_hash: anc(2, "end"),
+        }];
+        let edits = resolve_ops(&lines, &ops).ok().unwrap();
+        assert_eq!(apply_edits(lines, edits), vec!["intro", "filler", "tail"]);
+    }
+
+    #[test]
+    fn replace_lines_recovery_declines_on_ambiguous_duplicate_span() {
+        // The "start"/"end" pair appears twice — redirecting would be a guess,
+        // so this must still report a stale-anchor conflict rather than pick
+        // one silently.
+        let lines = vec![
+            "start".to_string(),
+            "end".to_string(),
+            "filler".to_string(),
+            "start".to_string(),
+            "end".to_string(),
+        ];
+        let ops = vec![AnchorOp::ReplaceLines {
+            start_line: 3, // "filler" — wrong hash, forces the fallback search
+            start_hash: anc(1, "start"),
+            end_line: 3,
+            end_hash: anc(2, "end"),
+            new_text: "X".into(),
+        }];
+        match resolve_ops(&lines, &ops) {
+            Err(ResolveError::Conflict(misses)) => assert_eq!(misses.len(), 2),
+            _ => panic!("expected a conflict"),
+        }
+    }
+
+    #[test]
+    fn replace_lines_recovery_requires_both_endpoints_to_shift_together() {
+        // The start hash exists uniquely elsewhere, but not immediately followed
+        // by a line matching the end hash at the original span length — this is
+        // NOT a "the whole span moved" case, so it must still hard-fail rather
+        // than silently redirecting just the start.
+        let lines = vec![
+            "intro".to_string(),
+            "start".to_string(),
+            "unrelated".to_string(),
+            "end".to_string(),
+        ];
+        let ops = vec![AnchorOp::ReplaceLines {
+            start_line: 1, // stale
+            start_hash: anc(1, "start"),
+            end_line: 2, // stale
             end_hash: anc(2, "end"),
             new_text: "X".into(),
         }];
