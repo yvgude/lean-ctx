@@ -60,6 +60,10 @@ pub fn passes_enforced(command: &str) -> bool {
 /// When non-empty, EVERY command segment in the pipeline must match.
 fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
     let normalized = normalize_line_continuations(command);
+    // #876: a quoted-delimiter heredoc body (`<<'EOF' … EOF`) is literal stdin
+    // data, not commands. Strip it before analysis so the operator-splitter can't
+    // dice a commit message (`feat(...)`) into bogus "segments" and block them.
+    let normalized = strip_quoted_heredoc_bodies(&normalized);
     let cmd = normalized.as_str();
 
     if has_dangerous_patterns(cmd) {
@@ -91,6 +95,159 @@ fn normalize_line_continuations(command: &str) -> String {
         .replace("\\\r\n", "")
         .replace("\\\n", "")
         .replace(['\u{2028}', '\u{2029}'], "\n")
+}
+
+/// Strip the *bodies* of quoted-delimiter heredocs (`<<'EOF' … EOF`,
+/// `<<-"E" … E`) prior to allowlist analysis (#876).
+///
+/// A quoted heredoc delimiter disables all shell expansion, so every body line
+/// is pure literal stdin data — never an executable command. Left in place, the
+/// operator-splitter dices those lines into "segments" and blocks the first word
+/// that isn't allowlisted (e.g. a commit message piped via `git commit -F -`,
+/// whose first token is `feat(...)`).
+///
+/// Only quoted delimiters are stripped. An *unquoted* `<<EOF` heredoc DOES expand
+/// `$()`/backticks/`$VAR` in its body, so those bodies are deliberately left
+/// intact for the command-substitution checks to see.
+fn strip_quoted_heredoc_bodies(command: &str) -> String {
+    if !command.contains("<<") {
+        return command.to_string();
+    }
+    let mut out: Vec<&str> = Vec::new();
+    // Delimiters awaiting their terminator line, in body order (stacked heredocs
+    // `cmd <<'A' <<'B'` drain A's body first, then B's).
+    let mut pending: Vec<String> = Vec::new();
+    for line in command.lines() {
+        if pending.is_empty() {
+            out.push(line);
+            pending = heredoc_quoted_delims(line);
+        } else if line.trim_start_matches('\t').trim() == pending[0] {
+            // Terminator line: drop it and resume. `<<-` allows leading tabs; be
+            // lenient (over-stripping body data is harmless — a heredoc body is
+            // never a command anyway).
+            pending.remove(0);
+        }
+        // else: a heredoc body line — dropped (not pushed to `out`).
+    }
+    out.join("\n")
+}
+
+/// Scan one line for heredoc operators with a **quoted** delimiter and return
+/// their bare delimiter names in source order. Quote-aware, so a `<<` inside a
+/// quoted string is ignored; a `<<<` here-string (no body) is skipped.
+fn heredoc_quoted_delims(line: &str) -> Vec<String> {
+    let bytes = line.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut delims = Vec::new();
+    while i < len {
+        let ch = bytes[i];
+        if in_single {
+            if ch == b'\'' {
+                in_single = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_double {
+            match ch {
+                b'\\' => i = (i + 2).min(len),
+                b'"' => {
+                    in_double = false;
+                    i += 1;
+                }
+                _ => i += 1,
+            }
+            continue;
+        }
+        match ch {
+            b'\\' => i = (i + 2).min(len),
+            b'\'' => {
+                in_single = true;
+                i += 1;
+            }
+            b'"' => {
+                in_double = true;
+                i += 1;
+            }
+            b'<' if i + 1 < len && bytes[i + 1] == b'<' => {
+                // `<<<` is a here-string (no body), not a heredoc.
+                if i + 2 < len && bytes[i + 2] == b'<' {
+                    i += 3;
+                    continue;
+                }
+                let mut j = i + 2;
+                if j < len && bytes[j] == b'-' {
+                    j += 1; // `<<-` (tab-stripped terminator)
+                }
+                while j < len && (bytes[j] == b' ' || bytes[j] == b'\t') {
+                    j += 1;
+                }
+                if let Some((delim, quoted, next)) = read_heredoc_delim(bytes, j) {
+                    if quoted {
+                        delims.push(delim);
+                    }
+                    i = next;
+                    continue;
+                }
+                i = j;
+            }
+            _ => i += 1,
+        }
+    }
+    delims
+}
+
+/// Parse a heredoc delimiter token starting at `start`, returning its bare name
+/// (quotes/escapes removed), whether any part was quoted, and the index just
+/// past the token. `None` when no delimiter is present.
+fn read_heredoc_delim(bytes: &[u8], start: usize) -> Option<(String, bool, usize)> {
+    let len = bytes.len();
+    let mut i = start;
+    let mut name: Vec<u8> = Vec::new();
+    let mut quoted = false;
+    while i < len {
+        match bytes[i] {
+            b'\'' => {
+                quoted = true;
+                i += 1;
+                while i < len && bytes[i] != b'\'' {
+                    name.push(bytes[i]);
+                    i += 1;
+                }
+                i += usize::from(i < len); // skip closing quote if present
+            }
+            b'"' => {
+                quoted = true;
+                i += 1;
+                while i < len && bytes[i] != b'"' {
+                    name.push(bytes[i]);
+                    i += 1;
+                }
+                i += usize::from(i < len);
+            }
+            b'\\' => {
+                quoted = true;
+                i += 1;
+                if i < len {
+                    name.push(bytes[i]);
+                    i += 1;
+                }
+            }
+            b' ' | b'\t' | b'<' | b'>' | b'|' | b'&' | b';' => break,
+            c => {
+                name.push(c);
+                i += 1;
+            }
+        }
+    }
+    if name.is_empty() {
+        None
+    } else {
+        Some((String::from_utf8_lossy(&name).into_owned(), quoted, i))
+    }
 }
 
 /// $(), backticks, <() in arguments: warn by default, **block** when

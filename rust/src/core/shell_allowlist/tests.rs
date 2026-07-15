@@ -291,6 +291,64 @@ fn allows_git_commit_with_cat_heredoc() {
 }
 
 #[test]
+fn allows_git_commit_heredoc_body_with_conventional_prefix() {
+    // #876: `git commit -F - <<'EOF' … EOF` — the quoted heredoc body is literal
+    // stdin data. Its lines (a commit message starting `feat(...)`) must not be
+    // diced into segments and blocked as unknown commands.
+    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "git");
+    let cmd = "git commit -F - <<'EOF'\nfeat(#870): add exclude filters\n\n- bullet one\nEOF";
+    let result = super::enforce_shell_allowlist(cmd);
+    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+    assert!(
+        result.is_ok(),
+        "quoted heredoc body must not be validated as commands: {result:?}"
+    );
+}
+
+#[test]
+fn unquoted_heredoc_body_substitution_still_blocked() {
+    // #876 security: an UNQUOTED `<<EOF` heredoc expands its body, so a command
+    // substitution there is real and must stay blocked — never stripped.
+    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "cat");
+    let cmd = "cat <<EOF\n$(rm -rf /)\nEOF";
+    let result = super::enforce_shell_allowlist(cmd);
+    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+    assert!(
+        result.is_err(),
+        "unquoted heredoc body substitution must stay blocked: {result:?}"
+    );
+}
+
+#[test]
+fn strip_quoted_heredoc_removes_body_keeps_operator_line() {
+    assert_eq!(
+        strip_quoted_heredoc_bodies("git commit -F - <<'EOF'\nfeat(x): y\nEOF"),
+        "git commit -F - <<'EOF'"
+    );
+}
+
+#[test]
+fn strip_leaves_unquoted_heredoc_body_intact() {
+    let cmd = "cat <<EOF\n$(x)\nEOF";
+    assert_eq!(strip_quoted_heredoc_bodies(cmd), cmd);
+}
+
+#[test]
+fn heredoc_quoted_delims_variants() {
+    assert_eq!(heredoc_quoted_delims("cat <<-\"END\""), vec!["END".to_string()]);
+    assert_eq!(
+        heredoc_quoted_delims("a <<'X' b <<'Y'"),
+        vec!["X".to_string(), "Y".to_string()]
+    );
+    // `<<` inside a quoted string is not an operator.
+    assert!(heredoc_quoted_delims("echo '<<NOPE'").is_empty());
+    // here-string `<<<` has no body.
+    assert!(heredoc_quoted_delims("cat <<<herestring").is_empty());
+    // unquoted delimiter → not a candidate for stripping.
+    assert!(heredoc_quoted_delims("cat <<EOF").is_empty());
+}
+
+#[test]
 fn allows_backticks_in_arguments() {
     let list = allow(&["echo"]);
     assert!(check_all_segments("echo `date`", &list).is_ok());
