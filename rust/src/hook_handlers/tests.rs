@@ -483,7 +483,11 @@ fn codex_deny_output_with_nested_quotes_is_valid_json() {
     let parsed: serde_json::Value =
         serde_json::from_str(&output).expect("codex_deny_output must be valid JSON");
     assert_eq!(parsed["hookSpecificOutput"]["permissionDecision"], "deny");
-    let reason = parsed["hookSpecificOutput"]["reason"]
+    assert!(
+        parsed["hookSpecificOutput"].get("reason").is_none(),
+        "Codex rejects unknown fields in hookSpecificOutput"
+    );
+    let reason = parsed["hookSpecificOutput"]["permissionDecisionReason"]
         .as_str()
         .unwrap_or("");
     assert!(

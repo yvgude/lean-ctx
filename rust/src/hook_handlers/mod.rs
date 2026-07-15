@@ -1206,7 +1206,7 @@ fn codex_deny_output(original_cmd: &str) -> String {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
-            "reason": msg
+            "permissionDecisionReason": msg
         }
     })
     .to_string()
