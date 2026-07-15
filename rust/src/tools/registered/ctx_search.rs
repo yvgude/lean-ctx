@@ -150,8 +150,6 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
                 None,
             )
         })?;
-    let resolved = crate::server::multi_path::resolve_tool_paths(args, ctx)
-        .map_err(|e| ErrorData::invalid_params(format!("ERROR: {e}"), None))?;
     // `include` is the canonical glob filter; `ext` is the deprecated alias
     // (bare extension → `*.{ext}`). `include` wins when both are supplied.
     let include =
@@ -170,6 +168,33 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     let crp = ctx.crp_mode;
     let respect = !no_gitignore;
     let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;
+
+    // #846: an explicit `file_path` scopes the search to exactly that one
+    // file — it was documented for `find_related` only, but was silently a
+    // no-op for regex/symbol/semantic search (resolve_tool_paths never read
+    // it), so callers scoping to a file got unscoped, project-wide results
+    // with no error. `path`/`paths` remain the general, documented scoping
+    // mechanism and win when the caller supplies either.
+    if !args.contains_key("path") && !args.contains_key("paths") {
+        if let Some(fp) = ctx.resolved_path("file_path") {
+            return search_single(
+                &pattern,
+                fp,
+                include.as_deref(),
+                max,
+                crp,
+                respect,
+                allow_secret_paths,
+                anchored,
+            );
+        }
+        if let Some(err) = ctx.path_error("file_path") {
+            return Err(ErrorData::invalid_params(format!("file_path: {err}"), None));
+        }
+    }
+
+    let resolved = crate::server::multi_path::resolve_tool_paths(args, ctx)
+        .map_err(|e| ErrorData::invalid_params(format!("ERROR: {e}"), None))?;
 
     if !resolved.is_multi {
         return search_single(
@@ -590,6 +615,69 @@ mod tests {
         assert_eq!(ext_to_include("*.rs"), "*.rs");
         assert_eq!(ext_to_include("*.{rs,ts}"), "*.{rs,ts}");
         assert_eq!(ext_to_include("src/**/*.tsx"), "src/**/*.tsx");
+    }
+
+    // --- #846: file_path scoping ---
+
+    fn ctx_with_resolved_file_path(path: &str) -> crate::server::tool_trait::ToolContext {
+        let mut ctx = crate::server::tool_trait::ToolContext::default();
+        ctx.resolved_paths
+            .insert("file_path".to_string(), path.to_string());
+        ctx
+    }
+
+    #[test]
+    fn file_path_scopes_regex_search_to_one_file() {
+        // Before the fix, file_path was declared in the schema but never read
+        // by resolve_tool_paths for action=regex — the search silently fell
+        // back to the whole project root instead of just this file.
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target.rs");
+        let other = tmp.path().join("other.rs");
+        std::fs::write(&target, "fn needle() {}\n").unwrap();
+        std::fs::write(&other, "fn needle_elsewhere() {}\n").unwrap();
+
+        let ctx = ctx_with_resolved_file_path(target.to_str().unwrap());
+        let args = args(&[("pattern", json!("needle"))]);
+        let out = super::handle_regex(&args, &ctx).unwrap();
+
+        assert!(
+            out.text.contains("needle()"),
+            "must find the match in the scoped file: {}",
+            out.text
+        );
+        assert!(
+            !out.text.contains("needle_elsewhere"),
+            "must NOT search other.rs when file_path scopes to target.rs: {}",
+            out.text
+        );
+    }
+
+    #[test]
+    fn explicit_path_still_wins_over_file_path() {
+        // `path` (a directory) remains the general, documented scoping
+        // mechanism and must win if the caller supplies both.
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target.rs");
+        let other = tmp.path().join("other.rs");
+        std::fs::write(&target, "fn needle() {}\n").unwrap();
+        std::fs::write(&other, "fn needle_elsewhere() {}\n").unwrap();
+
+        let mut ctx = ctx_with_resolved_file_path(target.to_str().unwrap());
+        ctx.resolved_paths
+            .insert("path".to_string(), tmp.path().to_str().unwrap().to_string());
+        let mut args = args(&[("pattern", json!("needle"))]);
+        args.insert(
+            "path".to_string(),
+            json!(tmp.path().to_str().unwrap().to_string()),
+        );
+        let out = super::handle_regex(&args, &ctx).unwrap();
+
+        assert!(
+            out.text.contains("needle_elsewhere"),
+            "path must win: {}",
+            out.text
+        );
     }
 
     #[test]

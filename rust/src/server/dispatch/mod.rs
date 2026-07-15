@@ -590,6 +590,10 @@ const PATH_LIKE_KEYS: &[&str] = &[
     "project_root",
     "root",
     "file",
+    // #846: ctx_search's `file_path` (used to scope a regex/symbol/semantic
+    // search to one file) was never jailed/resolved because "file_path" isn't
+    // "file" — the mismatch also meant it silently never scoped anything.
+    "file_path",
     "directory",
     "dir",
     "target",
