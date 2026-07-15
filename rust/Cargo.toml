@@ -228,7 +228,7 @@ anyhow = "1.0"
 regex = "1.12"
 walkdir = "2.5"
 ignore = "0.4"
-lru = "0.12"
+lru = "0.18.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2.0"
