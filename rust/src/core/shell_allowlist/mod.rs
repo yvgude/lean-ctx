@@ -253,15 +253,21 @@ pub fn shell_tokenize(input: &str) -> Vec<String> {
     tokens
 }
 
-/// Returns the byte length of the first shell token in `input`, respecting quotes.
-/// Used by `skip_env_assignments` to advance past env assignments with quoted values
-/// like `FOO="bar baz"`.
+/// Returns the byte length of the first shell token in `input`, respecting quotes
+/// and `(...)` nesting. Used by `skip_env_assignments` to advance past env
+/// assignments with quoted values like `FOO="bar baz"` — and, critically, past
+/// assignments whose value is a command substitution like `FOO=$(cmd a b)`
+/// (#855): without paren-depth tracking, whitespace *inside* the unclosed
+/// `$(...)` looked like the end of the token, splitting `s=$(gh pr view …)`
+/// into a bogus token `s=$(gh` plus a leftover `pr` that got misread as the
+/// base command.
 fn quote_aware_token_end(input: &str) -> usize {
     let bytes = input.as_bytes();
     let len = bytes.len();
     let mut i = 0;
     let mut in_single = false;
     let mut in_double = false;
+    let mut paren_depth: u32 = 0;
 
     while i < len {
         let ch = bytes[i];
@@ -277,7 +283,17 @@ fn quote_aware_token_end(input: &str) -> usize {
             b'\\' if !in_single => {
                 i = (i + 2).min(len);
             }
-            b if b.is_ascii_whitespace() && !in_single && !in_double => return i,
+            b'(' if !in_single && !in_double => {
+                paren_depth += 1;
+                i += 1;
+            }
+            b')' if !in_single && !in_double && paren_depth > 0 => {
+                paren_depth -= 1;
+                i += 1;
+            }
+            b if b.is_ascii_whitespace() && !in_single && !in_double && paren_depth == 0 => {
+                return i;
+            }
             _ => i += 1,
         }
     }
@@ -640,12 +656,155 @@ fn resolve_segment_leaves(
         }
         return Ok(());
     }
+    // #855: a segment that is *entirely* env-var assignments (`VAR=$(cmd …)`,
+    // nothing left over — `out=$(gh pr view …)` is a common, legitimate idiom
+    // for capturing command output) still executes the substituted command.
+    // extract_base_from_segment resolves this segment's own base to empty
+    // (skip_env_assignments consumes the whole thing), so without this the
+    // substituted command would silently escape validation entirely — not
+    // just fail to be *found*, but never be *checked* at all. Recurse into it
+    // as its own leaf so `gh`, not the assignment wrapper, is what actually
+    // gets checked against the allowlist.
+    for inner in assignment_substitution_leaves(s) {
+        for inner_seg in extract_all_commands(inner) {
+            resolve_segment_leaves(&inner_seg, depth + 1, out)?;
+        }
+    }
     // Anything else (incl. `( … ) trailing`, brace groups, leftover delimiters) is
     // pushed verbatim: base-extraction below sees a first token like `(ls)` or `{`
     // that cannot match any allowlist entry, so it is blocked. `cmd (sub)` without
     // a separator is a shell syntax error, so no executable leaf escapes here.
     out.push(s.to_string());
     Ok(())
+}
+
+/// Find the inner text of a `$(...)` command substitution whose `(` sits at
+/// byte offset `open` in `s`. Quote-aware (mirrors `balanced_paren_inner`) so
+/// a nested quoted `)` — e.g. inside a jq filter — doesn't end the walk early.
+/// Returns `(inner, end)` with `end` just past the matching `)`; `None` if
+/// unbalanced.
+fn balanced_paren_at(s: &str, open: usize) -> Option<(&str, usize)> {
+    let bytes = s.as_bytes();
+    let len = bytes.len();
+    let mut depth: i32 = 0;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut i = open;
+    while i < len {
+        let ch = bytes[i];
+        if in_single_quote {
+            if ch == b'\'' {
+                in_single_quote = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_double_quote {
+            match ch {
+                b'\\' => i = (i + 2).min(len),
+                b'"' => {
+                    in_double_quote = false;
+                    i += 1;
+                }
+                _ => i += 1,
+            }
+            continue;
+        }
+        match ch {
+            b'\\' => i = (i + 2).min(len),
+            b'\'' => {
+                in_single_quote = true;
+                i += 1;
+            }
+            b'"' => {
+                in_double_quote = true;
+                i += 1;
+            }
+            b'(' => {
+                depth += 1;
+                i += 1;
+            }
+            b')' => {
+                depth -= 1;
+                i += 1;
+                if depth == 0 {
+                    return Some((&s[open + 1..i - 1], i));
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// #855: the leading run of `VAR=value` assignment tokens in `s` (the same
+/// prefix `skip_env_assignments` walks past) — as a slice of `s`, covering
+/// both `VAR=$(cmd)` alone and `A=1 B=$(cmd) realcmd args` (the assignments
+/// still execute even when a real command follows them).
+fn leading_assignment_prefix(s: &str) -> &str {
+    let rest = skip_env_assignments(s);
+    let offset = (rest.as_ptr() as usize).saturating_sub(s.as_ptr() as usize);
+    &s[..offset.min(s.len())]
+}
+
+/// #855: collect the inner command text of every top-level `$(...)` found in
+/// `s`'s leading env-assignment prefix (`VAR=$(cmd)`, `A=1 B=$(cmd) realcmd`,
+/// …) — those substitutions execute regardless of whether a real command
+/// follows the assignments. `cmd "$(sub)"` in *argument* position (after the
+/// real command) is untouched here and keeps its existing warn-only handling
+/// (`check_substitution_in_args`); this only closes the gap for substitutions
+/// hiding in a leading assignment.
+fn assignment_substitution_leaves(s: &str) -> Vec<&str> {
+    let prefix = leading_assignment_prefix(s);
+    if prefix.is_empty() {
+        return Vec::new();
+    }
+    let mut found = Vec::new();
+    let bytes = prefix.as_bytes();
+    let len = bytes.len();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut i = 0;
+    while i < len {
+        let ch = bytes[i];
+        if in_single_quote {
+            if ch == b'\'' {
+                in_single_quote = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_double_quote {
+            match ch {
+                b'\\' => {
+                    i = (i + 2).min(len);
+                    continue;
+                }
+                b'"' => in_double_quote = false,
+                _ => {}
+            }
+            i += 1;
+            continue;
+        }
+        match ch {
+            b'\\' => {
+                i = (i + 2).min(len);
+                continue;
+            }
+            b'\'' => in_single_quote = true,
+            b'"' => in_double_quote = true,
+            b'$' if i + 1 < len && bytes[i + 1] == b'(' => {
+                if let Some((inner, end)) = balanced_paren_at(prefix, i + 1) {
+                    found.push(inner);
+                    i = end;
+                    continue;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    found
 }
 
 /// Return the substring after the first whitespace-delimited (quote-aware) token.
