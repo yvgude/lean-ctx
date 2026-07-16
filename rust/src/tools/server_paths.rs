@@ -90,6 +90,22 @@ impl LeanCtxServer {
         ) {
             Ok(p) => p,
             Err(e) => {
+                // #899: the rejected path is dependency source in a language
+                // cache (Go module cache, cargo registry, site-packages,
+                // node_modules, …). Register its root as a session-scoped
+                // read-only root and ask the agent to retry — the next resolve
+                // sees it in the read allow-list. Stays fail-closed: this first
+                // call still errors, and writes into the cache remain denied.
+                if let Some((label, cache_root)) =
+                    crate::core::pathjail::detect_language_cache_root(&resolved)
+                    && crate::core::pathjail::register_session_read_only_root(&cache_root)
+                {
+                    return Err(format!(
+                        "Auto-detected {label} at {} — added as a read-only root for this \
+                         session. Retry the read.",
+                        cache_root.display()
+                    ));
+                }
                 if p.is_absolute() {
                     if let Some(new_root) = maybe_derive_project_root_from_absolute(&resolved) {
                         let cfg_allow = std::env::var("LEAN_CTX_ALLOW_REROOT").map_or_else(

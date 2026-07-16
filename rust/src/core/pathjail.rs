@@ -131,7 +131,50 @@ fn canonicalized_roots(config_entries: &[String], env_var: &str) -> Vec<PathBuf>
 /// for everyone who hasn't opted in (#475).
 pub fn read_only_roots_from_env_and_config() -> Vec<PathBuf> {
     let cfg = crate::core::config::Config::load();
-    canonicalized_roots(&cfg.read_only_roots, "LEAN_CTX_READ_ONLY_ROOTS")
+    let mut roots = canonicalized_roots(&cfg.read_only_roots, "LEAN_CTX_READ_ONLY_ROOTS");
+    // #899: session-scoped roots auto-detected from language caches. Consulted
+    // by both the read allow-list (jail) and `is_read_only_path` (write-deny),
+    // so a cache root is readable but never writable — exactly like a configured
+    // read-only root, minus the config-file edit.
+    roots.extend(session_read_only_roots());
+    roots
+}
+
+static SESSION_READ_ONLY_ROOTS: std::sync::OnceLock<std::sync::Mutex<Vec<PathBuf>>> =
+    std::sync::OnceLock::new();
+
+fn session_read_only_roots_cell() -> &'static std::sync::Mutex<Vec<PathBuf>> {
+    SESSION_READ_ONLY_ROOTS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+}
+
+/// The session-scoped read-only roots auto-registered this process (#899).
+pub fn session_read_only_roots() -> Vec<PathBuf> {
+    session_read_only_roots_cell()
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_default()
+}
+
+/// Register a session-scoped read-only root (an auto-detected language cache).
+/// Returns `true` when newly added. Idempotent on the canonicalized path.
+///
+/// ponytail: process-global set, not per-session — language caches
+/// (`~/go/pkg/mod`, `~/.cargo/registry`, …) are machine-global read-only dirs,
+/// so sharing read access across sessions grants nothing a session couldn't
+/// already get by reading them; per-session isolation would be plumbing for no
+/// security gain. Upgrade to a session-keyed map only if writable roots ever go
+/// down this path.
+pub fn register_session_read_only_root(root: &Path) -> bool {
+    let canon = canonicalize_secure(root);
+    let mut guard = match session_read_only_roots_cell().lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if guard.iter().any(|r| r == &canon) {
+        return false;
+    }
+    guard.push(canon);
+    true
 }
 
 /// A single active relaxation of the path jail. Each one widens or disables what
@@ -358,38 +401,62 @@ pub fn jail_path(candidate: &Path, jail_root: &Path) -> Result<PathBuf, PathJail
     jail_path_with_roots(candidate, jail_root, &[])
 }
 
-/// Detect well-known language cache paths and return a targeted hint.
+/// Known language-cache markers (#899): (path substring, human label, config
+/// example). Single source of truth shared by [`detected_cache_hint`] (the
+/// jail-error suggestion) and [`detect_language_cache_root`] (session
+/// auto-registration), so the two never drift.
+const LANGUAGE_CACHE_PATTERNS: &[(&str, &str, &str)] = &[
+    ("/go/pkg/mod/", "Go module cache", "~/go/pkg/mod"),
+    (
+        "/.cargo/registry/",
+        "Rust crate registry",
+        "~/.cargo/registry",
+    ),
+    (
+        "/site-packages/",
+        "Python site-packages",
+        "<venv>/lib/pythonX.Y/site-packages",
+    ),
+    ("/node_modules/", "Node modules", "<project>/node_modules"),
+    (
+        "/.m2/repository/",
+        "Maven local repository",
+        "~/.m2/repository",
+    ),
+    ("/.gradle/caches/", "Gradle cache", "~/.gradle/caches"),
+    (
+        "/.nuget/packages/",
+        "NuGet package cache",
+        "~/.nuget/packages",
+    ),
+];
+
+/// Detect well-known language cache paths and return a targeted hint. Used for
+/// jail callers that don't auto-register (e.g. batch reads); the single-path
+/// ctx_read flow instead auto-registers via [`detect_language_cache_root`].
 fn detected_cache_hint(candidate: &std::path::Path) -> Option<String> {
     let s = candidate.to_string_lossy();
-    let patterns: &[(&str, &str, &str)] = &[
-        ("/go/pkg/mod/", "Go module cache", "~/go/pkg/mod"),
-        (
-            "/.cargo/registry/",
-            "Rust crate registry",
-            "~/.cargo/registry",
-        ),
-        (
-            "/site-packages/",
-            "Python site-packages",
-            "<venv>/lib/pythonX.Y/site-packages",
-        ),
-        (
-            "/.m2/repository/",
-            "Maven local repository",
-            "~/.m2/repository",
-        ),
-        ("/.gradle/caches/", "Gradle cache", "~/.gradle/caches"),
-        (
-            "/.nuget/packages/",
-            "NuGet package cache",
-            "~/.nuget/packages",
-        ),
-    ];
-    for &(pattern, name, example) in patterns {
+    for &(pattern, name, example) in LANGUAGE_CACHE_PATTERNS {
         if s.contains(pattern) {
             return Some(format!(
-                ". Detected {name} — add read_only_roots = [\"{example}\"] to                  ~/.config/lean-ctx/config.toml for cached, compressed reads without write access"
+                ". Detected {name} — add read_only_roots = [\"{example}\"] to \
+                 ~/.config/lean-ctx/config.toml for cached, compressed reads without write access"
             ));
+        }
+    }
+    None
+}
+
+/// If `candidate` sits inside a known language cache, return `(label, root)`
+/// where `root` is the path truncated at the end of the marker directory (no
+/// trailing slash). resolve_path uses this to auto-register a session read-only
+/// root so the retry resolves without a config edit or a subprocess (#899).
+pub fn detect_language_cache_root(candidate: &Path) -> Option<(&'static str, PathBuf)> {
+    let s = candidate.to_string_lossy().replace('\\', "/");
+    for &(marker, label, _) in LANGUAGE_CACHE_PATTERNS {
+        if let Some(idx) = s.find(marker) {
+            let end = idx + marker.len() - 1; // keep the marker dir, drop trailing '/'
+            return Some((label, PathBuf::from(&s[..end])));
         }
     }
     None
@@ -1130,5 +1197,80 @@ mod tests {
 
         let normal = detected_cache_hint(Path::new("/home/x/projects/myapp/src/main.rs"));
         assert!(normal.is_none(), "Normal project path should not match");
+    }
+
+    #[test]
+    fn detect_cache_root_extracts_marker_dir() {
+        let cases = [
+            (
+                "/Users/x/go/pkg/mod/github.com/foo/bar@v1.2.3/baz.go",
+                "Go module cache",
+                "/Users/x/go/pkg/mod",
+            ),
+            (
+                "/home/u/.cargo/registry/src/index-abc/serde-1.0/src/lib.rs",
+                "Rust crate registry",
+                "/home/u/.cargo/registry",
+            ),
+            (
+                "/opt/venv/lib/python3.12/site-packages/requests/api.py",
+                "Python site-packages",
+                "/opt/venv/lib/python3.12/site-packages",
+            ),
+            (
+                "/w/app/node_modules/react/index.js",
+                "Node modules",
+                "/w/app/node_modules",
+            ),
+        ];
+        for (path, want_label, want_root) in cases {
+            let (label, root) = detect_language_cache_root(Path::new(path))
+                .unwrap_or_else(|| panic!("expected cache match for {path}"));
+            assert_eq!(label, want_label, "label for {path}");
+            assert_eq!(root, PathBuf::from(want_root), "root for {path}");
+        }
+        assert!(
+            detect_language_cache_root(Path::new("/home/u/proj/src/main.rs")).is_none(),
+            "a normal project path is not a cache"
+        );
+    }
+
+    /// The core #899 guarantee: once a detected cache root is registered, a path
+    /// under it *reads* (jail resolves) but never *writes* (enforce_writable
+    /// denies), and registration is idempotent.
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn registered_cache_root_reads_allow_writes_deny() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+
+        let tmp = tempfile::tempdir().unwrap();
+        // A fake Go module cache so detect_language_cache_root matches the path.
+        let dep = tmp.path().join("go/pkg/mod/example.com/lib@v1");
+        std::fs::create_dir_all(&dep).unwrap();
+        let file = dep.join("lib.go");
+        std::fs::write(&file, "package lib").unwrap();
+
+        // A project jail that does NOT contain the cache.
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+
+        // Before registration: the read escapes the jail.
+        assert!(jail_path_with_roots(&file, &project, &[]).is_err());
+
+        // Register the detected root; the second call is a no-op.
+        let (_, root) = detect_language_cache_root(&file).expect("cache match");
+        assert!(register_session_read_only_root(&root), "first register is new");
+        assert!(!register_session_read_only_root(&root), "re-register is a no-op");
+
+        // After: the read resolves, but writes are denied (read-only tier).
+        assert!(
+            jail_path_with_roots(&file, &project, &[]).is_ok(),
+            "registered cache root must be readable"
+        );
+        assert!(is_read_only_path(&file), "cache file is read-only");
+        assert!(
+            enforce_writable(&file).is_err(),
+            "writes into the cache root must be denied"
+        );
     }
 }

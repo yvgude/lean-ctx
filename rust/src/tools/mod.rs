@@ -190,6 +190,54 @@ mod resolve_path_tests {
     #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
+    async fn resolve_path_auto_registers_language_cache_then_retry_succeeds() {
+        // #899: reading dependency source in a language cache (here a Go module
+        // cache outside the project) fails closed once with an auto-detect hint,
+        // then resolves on retry — no config edit, no subprocess.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        create_git_root(&root);
+        let dep = tmp.path().join("go/pkg/mod/example.com/lib@v1");
+        std::fs::create_dir_all(&dep).unwrap();
+        let file = dep.join("lib.go");
+        std::fs::write(&file, "package lib").unwrap();
+
+        let server = LeanCtxServer::new_with_startup(
+            None,
+            Some(root.as_path()),
+            SessionMode::Personal,
+            "default",
+            "default",
+        );
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(root.to_string_lossy().to_string());
+            session.shell_cwd = Some(root.to_string_lossy().to_string());
+        }
+
+        // First read: fail-closed, with the targeted retry hint.
+        let err = server
+            .resolve_path(&file.to_string_lossy())
+            .await
+            .unwrap_err();
+        assert!(
+            err.contains("Auto-detected Go module cache"),
+            "expected auto-detect hint, got: {err}"
+        );
+        assert!(err.contains("Retry"), "hint must ask for a retry: {err}");
+
+        // Retry: the cache is now a session read-only root, so the read resolves.
+        let ok = server
+            .resolve_path(&file.to_string_lossy())
+            .await
+            .unwrap_or_else(|e| panic!("retry must resolve, got: {e}"));
+        assert!(ok.ends_with("/lib.go"), "retry resolves the cache file: {ok}");
+    }
+
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn resolve_path_auto_reroots_from_agent_config_dir_without_opt_in() {
         // #580: the MCP server is launched from an agent/IDE config dir
         // (~/.copilot-style) and wrongly adopts it as the root. With no
