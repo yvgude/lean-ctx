@@ -2,6 +2,28 @@ use crate::core::sandbox::{self, SandboxResult};
 use crate::core::tokens::count_tokens;
 use crate::server::tool_trait::ShellOutcome;
 
+/// #905: `ctx_execute(language=shell)` used to skip the ctx_shell security gate
+/// entirely, so the allowlist boundary was one tool-name swap from a full bypass.
+/// Route shell code through the identical write-doctrine + allowlist checks that
+/// ctx_shell applies (`registered/ctx_shell.rs`). Non-shell languages are
+/// unaffected. Returns the blocked `(message, outcome)` when the gate rejects.
+fn shell_security_gate(language: &str, code: &str) -> Option<(String, ShellOutcome)> {
+    if !matches!(language.to_lowercase().as_str(), "shell" | "bash" | "sh") {
+        return None;
+    }
+    // Write-doctrine (`>`, tee, heredoc-to-file, curl -o, …) is opt-out via
+    // `shell_allow_writes`, exactly as in ctx_shell (#523).
+    if !crate::core::config::Config::load().shell_allow_writes_effective()
+        && let Some(rejection) = crate::tools::ctx_shell::validate_command(code)
+    {
+        return Some((rejection, ShellOutcome::Blocked));
+    }
+    if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(code) {
+        return Some((msg.to_string(), ShellOutcome::Blocked));
+    }
+    None
+}
+
 /// Executes a code snippet in a sandboxed environment.
 /// Returns the formatted output plus the structured outcome so the MCP layer
 /// can set `isError`/`structuredContent` on failures (GitHub #389).
@@ -11,6 +33,9 @@ pub fn handle(
     intent: Option<&str>,
     timeout: Option<u64>,
 ) -> (String, ShellOutcome) {
+    if let Some(blocked) = shell_security_gate(language, code) {
+        return blocked;
+    }
     let result = sandbox::execute(language, code, timeout);
     (
         format_result(&result, intent),
@@ -81,6 +106,13 @@ pub fn handle_file(
 /// results. The outcome carries the first non-zero exit code (0 when all
 /// tasks succeeded), so one failing task marks the whole batch as failed.
 pub fn handle_batch(items: &[(String, String)]) -> (String, ShellOutcome) {
+    // #905: fail-closed if any shell item is blocked, before anything runs —
+    // action=batch must not become the escape hatch action=code just closed.
+    for (language, code) in items {
+        if let Some(blocked) = shell_security_gate(language, code) {
+            return blocked;
+        }
+    }
     let results = sandbox::batch_execute(items);
     let mut output = Vec::new();
 
@@ -335,14 +367,23 @@ mod tests {
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn batch_with_failing_task_reports_failure() {
+        // Pin the allowlist so exit-propagation (#389) is tested independently of
+        // the ambient shell-security config, which #905 now gates batch items on.
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "echo,false");
+
         let items = vec![
             ("shell".to_string(), "echo ok".to_string()),
-            ("shell".to_string(), "exit 3".to_string()),
+            ("shell".to_string(), "false".to_string()),
         ];
         let (_, outcome) = handle_batch(&items);
+
+        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
         assert_eq!(
             outcome,
-            ShellOutcome::Exit(3),
+            ShellOutcome::Exit(1),
             "one failing task marks the whole batch as failed (#389)"
         );
     }
@@ -353,5 +394,37 @@ mod tests {
         assert!(outcome.is_error(), "precondition failures are tool errors");
         assert_eq!(outcome, ShellOutcome::Blocked, "nothing was executed");
         assert!(!result.is_empty());
+    }
+
+    /// #905: `ctx_execute(language=shell)` must enforce the same allowlist as
+    /// ctx_shell — a non-allowlisted command is blocked, an allowlisted one runs,
+    /// and non-shell languages are untouched. Pins mode + allowlist via env so it
+    /// is independent of the ambient config.
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn ctx_execute_shell_honors_allowlist_gate() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "echo");
+
+        // Non-allowlisted shell command is blocked, never executed.
+        let (_, blocked) = handle("shell", "curl http://evil.example", None, None);
+        assert_eq!(blocked, ShellOutcome::Blocked, "non-allowlisted cmd must block");
+
+        // action=batch is gated on the same policy (fail-closed).
+        let items = vec![("shell".to_string(), "curl http://evil.example".to_string())];
+        let (_, batch_blocked) = handle_batch(&items);
+        assert_eq!(batch_blocked, ShellOutcome::Blocked, "batch must fail-closed");
+
+        // Allowlisted shell command still runs.
+        let (_, ok) = handle("shell", "echo hi", None, None);
+        assert_eq!(ok, ShellOutcome::Exit(0), "allowlisted cmd must run");
+
+        // Non-shell languages bypass the shell gate entirely.
+        let (_, py) = handle("python", "print(1)", None, None);
+        assert_eq!(py, ShellOutcome::Exit(0), "non-shell language unaffected");
+
+        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
     }
 }
