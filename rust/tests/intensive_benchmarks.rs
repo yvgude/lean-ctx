@@ -1023,6 +1023,45 @@ fn guard_tool_descriptions_not_empty() {
     );
 }
 
+/// #905: the ctx_shell/ctx_execute policy split is intentional, so the split must
+/// be self-describing. An agent that learns "ctx_execute runs what ctx_shell blocks"
+/// only by exhausting dead ctx_shell calls is paying for our documentation gap —
+/// pin the cross-reference in both directions so it cannot silently rot away.
+#[test]
+fn guard_shell_execute_policy_is_discoverable() {
+    let descs = lean_ctx::server::tool_descriptions_for_test();
+    let desc_of = |name: &str| -> String {
+        descs
+            .iter()
+            .find(|(n, _)| n == name)
+            .unwrap_or_else(|| panic!("tool '{name}' must be registered"))
+            .1
+            .clone()
+    };
+
+    let shell = desc_of("ctx_shell");
+    assert!(
+        shell.contains("ctx_execute"),
+        "ctx_shell must name ctx_execute as the escalation path (#905), got: '{shell}'"
+    );
+    assert!(
+        shell.contains("allowlist"),
+        "ctx_shell must state that it is the allowlisted path (#905), got: '{shell}'"
+    );
+
+    let execute = desc_of("ctx_execute");
+    assert!(
+        execute.contains("allowlist"),
+        "ctx_execute must state its no-allowlist policy (#905), got: '{execute}'"
+    );
+    assert!(
+        execute.contains("ctx_shell"),
+        "ctx_execute must point one-liners back at ctx_shell (#905), got: '{execute}'"
+    );
+
+    eprintln!("\n  [guard] ctx_shell/ctx_execute policy split is documented in both descriptions ✓");
+}
+
 #[test]
 fn guard_essential_instructions_present() {
     let instr = lean_ctx::server::build_instructions_for_test(CrpMode::Off);
