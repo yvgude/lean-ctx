@@ -15,6 +15,8 @@ use crate::core::import_resolver;
 use crate::core::signatures;
 mod edges;
 pub(crate) use edges::*;
+#[allow(unreachable_pub)]
+pub(crate) mod file_id;
 #[cfg(test)]
 mod tests;
 
@@ -230,6 +232,11 @@ pub struct ProjectIndex {
     pub files: HashMap<String, FileEntry>,
     pub edges: Vec<IndexEdge>,
     pub symbols: HashMap<String, SymbolEntry>,
+    /// Graph-local path interner: one owned allocation per distinct file path.
+    /// Populated during scan; used for O(1) path→id lookups in queries.
+    /// Skipped during serde — rebuilt from `files` keys on deserialization.
+    #[serde(skip)]
+    pub(crate) interner: file_id::PathInterner,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -275,7 +282,19 @@ impl ProjectIndex {
             files: HashMap::new(),
             edges: Vec::new(),
             symbols: HashMap::new(),
+            interner: file_id::PathInterner::new(),
         }
+    }
+
+    /// Rebuild the interner from the current `files` keys. Called after
+    /// deserialization or materialization from the property graph, where
+    /// `interner` is skipped/absent.
+    pub(crate) fn rebuild_interner(&mut self) {
+        let mut interner = file_id::PathInterner::with_capacity(self.files.len());
+        for key in self.files.keys() {
+            interner.intern(key);
+        }
+        self.interner = interner;
     }
 
     pub fn index_dir(project_root: &str) -> Option<std::path::PathBuf> {
@@ -297,7 +316,9 @@ impl ProjectIndex {
             return None;
         }
         let provider = crate::core::graph_provider::GraphProvider::PropertyGraph(graph);
-        Some(provider.materialize_project_index(project_root))
+        let mut index = provider.materialize_project_index(project_root);
+        index.rebuild_interner();
+        Some(index)
     }
 
     /// Persist the index by mirroring it into the property graph (the sole store
@@ -942,6 +963,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         }
     }
 
+    index.rebuild_interner();
     build_edges_cached(&mut index, &content_cache);
 
     if let Err(e) = index.save() {

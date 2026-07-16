@@ -475,6 +475,7 @@ impl GraphProvider {
                 weight: e.weight as f32,
             });
         }
+        idx.rebuild_interner();
         idx
     }
 
