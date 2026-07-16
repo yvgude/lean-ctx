@@ -302,10 +302,10 @@ pub fn ensure_all_background(project_root: &str) {
     }
 }
 
-/// The actual per-root build work: search-index pre-warm, then graph + BM25 in
-/// parallel (two threads for *one* root), joined before returning. Blocking —
-/// callers own the threading. Requires the caller to have claimed the worker
-/// slot via [`try_claim_worker`]; releases it on exit.
+/// Actual per-root build work. Heavy phases run in a fixed, memory-bounded order:
+/// graph → reclaim → BM25 → reclaim → resident search pre-warm. Blocking — callers
+/// own the threading. Requires the caller to have claimed the worker slot via
+/// [`try_claim_worker`]; releases it on exit.
 fn run_build_worker(root: &str) {
     // #790: start memory guardian for daemon-spawned builds. Previously only
     // the CLI path (index_cmd.rs) started the guardian, leaving background
@@ -323,19 +323,10 @@ fn run_build_worker(root: &str) {
         crate::core::memory_guard::force_purge();
     }));
 
-    // Pre-warm the resident line-search index in parallel (own thread,
-    // deduped internally) so the first ctx_search hits the fast path.
-    crate::core::search_index::ensure_background(root, true, false);
-
-    // ---- Graph + BM25 build phase ----
-    // #790: under memory pressure, run graph → purge → BM25 sequentially so
-    // their peak allocations don't compound. Normal: parallel (faster).
-    let sequential = crate::core::memory_guard::is_under_pressure();
-    if sequential {
-        tracing::info!(
-            "[index_orchestrator: memory pressure detected — running graph → BM25 sequentially]"
-        );
-    }
+    // Graph, BM25, and the resident search index each retain substantial live
+    // state. Running them concurrently defeats cache eviction because active
+    // builders still own their allocations. Keep phases strictly ordered and
+    // reclaim between them (#918); intra-phase Rayon parallelism remains intact.
 
     let graph_state = entry_for(root);
     let graph_root = root.to_string();
@@ -413,29 +404,15 @@ fn run_build_worker(root: &str) {
         }
     };
 
-    if sequential {
-        build_graph();
-        crate::core::content_cache::clear();
-        crate::core::memory_guard::force_purge();
-        build_bm25();
-    } else {
-        let graph_handle = std::thread::Builder::new()
-            .name("leanctx-graph".to_string())
-            .stack_size(INDEXER_STACK_BYTES)
-            .spawn(build_graph)
-            .expect("spawning graph index thread");
-        let bm25_handle = std::thread::Builder::new()
-            .name("leanctx-bm25".to_string())
-            .stack_size(INDEXER_STACK_BYTES)
-            .spawn(build_bm25)
-            .expect("spawning BM25 index thread");
-        if let Err(e) = graph_handle.join() {
-            tracing::error!("[index_orchestrator: graph thread panicked: {e:?}]");
-        }
-        if let Err(e) = bm25_handle.join() {
-            tracing::error!("[index_orchestrator: BM25 thread panicked: {e:?}]");
-        }
-    }
+    run_memory_bounded_phases(
+        build_graph,
+        build_bm25,
+        || crate::core::search_index::ensure_background(root, true, false),
+        || {
+            crate::core::content_cache::clear();
+            crate::core::memory_guard::force_purge();
+        },
+    );
 
     // Post-build memory reclamation: the parallel build allocates large
     // transient structures (file contents, token vectors, inverted postings).
@@ -451,6 +428,22 @@ fn run_build_worker(root: &str) {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     s.worker_running = false;
+}
+
+/// Execute index phases without overlapping their retained working sets.
+/// Kept as a small pure coordinator so ordering remains regression-testable.
+fn run_memory_bounded_phases<G, B, S, R>(graph: G, bm25: B, search: S, mut reclaim: R)
+where
+    G: FnOnce(),
+    B: FnOnce(),
+    S: FnOnce(),
+    R: FnMut(),
+{
+    graph();
+    reclaim();
+    bm25();
+    reclaim();
+    search();
 }
 
 /// Build only the semantic (dense embedding) index from the existing BM25 index.
@@ -880,6 +873,21 @@ mod tests {
     fn status_json_is_valid_json() {
         let s = status_json("/tmp");
         let _: serde_json::Value = serde_json::from_str(&s).unwrap();
+    }
+
+    #[test]
+    fn background_build_phases_are_serialized_with_reclamation() {
+        let events = std::cell::RefCell::new(Vec::new());
+        run_memory_bounded_phases(
+            || events.borrow_mut().push("graph"),
+            || events.borrow_mut().push("bm25"),
+            || events.borrow_mut().push("search"),
+            || events.borrow_mut().push("reclaim"),
+        );
+        assert_eq!(
+            events.into_inner(),
+            ["graph", "reclaim", "bm25", "reclaim", "search"]
+        );
     }
 
     #[test]
