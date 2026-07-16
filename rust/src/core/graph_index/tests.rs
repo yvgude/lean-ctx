@@ -1042,10 +1042,10 @@ fn write_scan_corpus(root: &std::path::Path, n: usize) -> Vec<(String, String, S
 fn scan_targets_parallel_matches_sequential() {
     let td = tempdir().expect("tempdir");
     let targets = write_scan_corpus(td.path(), 40);
-    let old = OldFileSymbols::new();
+    let previous = PreviousSymbols::new();
 
-    let seq = process_scan_targets(&targets, &old, None, false);
-    let par = process_scan_targets(&targets, &old, None, true);
+    let seq = process_scan_targets(&targets, &previous, None, false);
+    let par = process_scan_targets(&targets, &previous, None, true);
 
     assert_eq!(par.len(), targets.len(), "all files processed");
     assert!(par.iter().all(|r| !r.reused), "cold scan parses every file");
@@ -1062,23 +1062,20 @@ fn scan_targets_parallel_reuse_path_matches_sequential() {
     let targets = write_scan_corpus(td.path(), 36);
 
     // Cold scan, then synthesize the prior-index state it would have produced.
-    let cold = process_scan_targets(&targets, &OldFileSymbols::new(), None, false);
+    let cold = process_scan_targets(&targets, &PreviousSymbols::new(), None, false);
     let mut existing = ProjectIndex::new(&td.path().to_string_lossy());
-    let mut old: OldFileSymbols = HashMap::new();
     for r in &cold {
         existing.files.insert(r.rel.clone(), r.file_entry.clone());
         for (k, s) in &r.symbols {
             existing.symbols.insert(k.clone(), s.clone());
         }
-        old.insert(
-            r.rel.clone(),
-            (r.file_entry.hash.clone(), r.symbols.clone()),
-        );
     }
 
-    // Unchanged files must be reused identically on both paths.
-    let seq = process_scan_targets(&targets, &old, Some(&existing), false);
-    let par = process_scan_targets(&targets, &old, Some(&existing), true);
+    // Unchanged files must be reused identically on both paths without cloning
+    // the complete previous symbol table.
+    let previous = previous_symbols_by_file(&existing);
+    let seq = process_scan_targets(&targets, &previous, Some(&existing), false);
+    let par = process_scan_targets(&targets, &previous, Some(&existing), true);
     assert!(par.iter().all(|r| r.reused), "unchanged files are reused");
     assert_eq!(seq, par, "parallel reuse must equal sequential reuse");
 }

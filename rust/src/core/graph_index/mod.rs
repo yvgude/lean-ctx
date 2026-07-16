@@ -754,22 +754,13 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     let existing = ProjectIndex::load(&project_root);
     let mut index = ProjectIndex::new(&project_root);
 
-    let old_files: OldFileSymbols = if let Some(ref prev) = existing {
-        prev.files
-            .iter()
-            .map(|(path, entry)| {
-                let syms: Vec<(String, SymbolEntry)> = prev
-                    .symbols
-                    .iter()
-                    .filter(|(_, s)| s.file == *path)
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect();
-                (path.clone(), (entry.hash.clone(), syms))
-            })
-            .collect()
-    } else {
-        HashMap::new()
-    };
+    // Borrow prior symbols instead of cloning every hash, key, and SymbolEntry up
+    // front. Reused symbols are cloned only for the current scan batch as they
+    // move into the replacement index, avoiding a third full-index copy.
+    let previous_symbols = existing
+        .as_ref()
+        .map(previous_symbols_by_file)
+        .unwrap_or_default();
 
     let cfg = crate::core::config::Config::load();
     // #735: shared corpus filter — same membership decision as the BM25 walk.
@@ -817,7 +808,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     // carries the traversal caps / timeout / memory early-breaks) and collects
     // the files to index. Phase 2 fans the expensive per-file signature
     // extraction across a rayon pool — pure and thread-safe (the tree-sitter
-    // parser is `thread_local!`; `old_files`/`existing` are read-only). Phase 3
+    // parser is `thread_local!`; `previous_symbols`/`existing` are read-only). Phase 3
     // merges sequentially: `files`/`symbols` are keyed per file, so the result is
     // identical to a sequential scan (edges are built and sorted afterwards).
     let mut targets: Vec<(String, String, String)> = Vec::new();
@@ -950,7 +941,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         let batch_end = (files_done + batch_size).min(targets.len());
         let results = process_scan_targets(
             &targets[files_done..batch_end],
-            &old_files,
+            &previous_symbols,
             existing.as_ref(),
             parallel,
         );
@@ -992,9 +983,21 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     (index, content_cache)
 }
 
-/// Previous-scan symbols per file: `rel -> (content_hash, [(symbol_key, symbol)])`.
-/// Used to reuse unchanged files without re-parsing.
-type OldFileSymbols = HashMap<String, (String, Vec<(String, SymbolEntry)>)>;
+/// Borrowed previous-scan symbols grouped by file. This index stores only
+/// references, so incremental scans do not clone the complete prior index before
+/// processing starts.
+type PreviousSymbols<'a> = HashMap<&'a str, Vec<(&'a str, &'a SymbolEntry)>>;
+
+fn previous_symbols_by_file(index: &ProjectIndex) -> PreviousSymbols<'_> {
+    let mut by_file: PreviousSymbols<'_> = HashMap::new();
+    for (key, symbol) in &index.symbols {
+        by_file
+            .entry(symbol.file.as_str())
+            .or_default()
+            .push((key.as_str(), symbol));
+    }
+    by_file
+}
 
 /// One file's contribution to the scan, produced off-thread by
 /// [`process_scan_file`] and merged sequentially by [`scan_inner`].
@@ -1015,7 +1018,7 @@ fn process_scan_file(
     file_path: &str,
     rel: &str,
     ext: &str,
-    old_files: &OldFileSymbols,
+    previous_symbols: &PreviousSymbols<'_>,
     existing: Option<&ProjectIndex>,
 ) -> Option<ScanFileResult> {
     if crate::core::memory_guard::abort_requested() {
@@ -1024,15 +1027,22 @@ fn process_scan_file(
     let content = std::fs::read_to_string(file_path).ok()?;
     let hash = compute_hash(&content);
 
-    // Unchanged file with a prior entry: reuse verbatim (no re-parse).
-    if let Some((old_hash, old_syms)) = old_files.get(rel)
-        && *old_hash == hash
-        && let Some(old_entry) = existing.and_then(|p| p.files.get(rel))
+    // Unchanged file with a prior entry: reuse verbatim (no re-parse). Clone
+    // only this file's symbols into the replacement index; the complete prior
+    // symbol table remains borrowed throughout the scan.
+    if let Some(old_entry) = existing.and_then(|p| p.files.get(rel))
+        && old_entry.hash == hash
     {
+        let symbols = previous_symbols
+            .get(rel)
+            .into_iter()
+            .flatten()
+            .map(|(key, symbol)| ((*key).to_string(), (*symbol).clone()))
+            .collect();
         return Some(ScanFileResult {
             rel: rel.to_string(),
             file_entry: old_entry.clone(),
-            symbols: old_syms.clone(),
+            symbols,
             content,
             reused: true,
         });
@@ -1100,7 +1110,7 @@ fn process_scan_file(
 /// equivalence anchor for the determinism tests.
 fn process_scan_targets(
     targets: &[(String, String, String)],
-    old_files: &OldFileSymbols,
+    previous_symbols: &PreviousSymbols<'_>,
     existing: Option<&ProjectIndex>,
     parallel: bool,
 ) -> Vec<ScanFileResult> {
@@ -1108,14 +1118,14 @@ fn process_scan_targets(
         targets
             .par_iter()
             .filter_map(|(file_path, rel, ext)| {
-                process_scan_file(file_path, rel, ext, old_files, existing)
+                process_scan_file(file_path, rel, ext, previous_symbols, existing)
             })
             .collect()
     } else {
         targets
             .iter()
             .filter_map(|(file_path, rel, ext)| {
-                process_scan_file(file_path, rel, ext, old_files, existing)
+                process_scan_file(file_path, rel, ext, previous_symbols, existing)
             })
             .collect()
     }
