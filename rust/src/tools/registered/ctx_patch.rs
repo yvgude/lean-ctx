@@ -27,7 +27,7 @@ impl McpTool for CtxPatchTool {
              set_line(path, line, hash, new_text) | insert_after(path, line, hash, new_text) | delete(path, line, hash).\n\
              replace_symbol(path, name, new_body) | create(path, new_text) | replace_all(path, find, replace, dry_run?).\n\
              Batch: ops:[{op, path, ...}] — not replace_symbol/replace_all.\n\
-             CONFLICT = stale anchors, re-read. NEVER patch by line number alone (no hash → error).",
+             CONFLICT = stale anchors, re-read. NEVER patch by line number alone.",
             json!({
                 "type": "object",
                 "properties": {
