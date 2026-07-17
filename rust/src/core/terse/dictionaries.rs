@@ -299,7 +299,7 @@ pub const GIT: &[Abbreviation] = &[
         short: "!!",
     },
     Abbreviation {
-        long: "changes not staged for commit",
+        long: "Changes not staged for commit",
         short: "unstaged",
     },
     Abbreviation {
@@ -433,38 +433,46 @@ pub enum DictLevel {
     Full,
 }
 
-fn is_word_boundary(b: u8) -> bool {
-    !b.is_ascii_alphanumeric() && b != b'-' && b != b'_' && b != b'\'' && b != b'"'
+fn is_word_boundary(c: char) -> bool {
+    !c.is_alphanumeric() && c != '-' && c != '_' && c != '\'' && c != '"'
 }
 
+/// Replaces `pattern` with `replacement` at word boundaries.
+///
+/// Matching is case-sensitive (#981): the dictionaries spell each entry the way
+/// it is meant to appear, so `context` abbreviates the prose word while
+/// `context.Context` — package and type, two distinct Go identifiers — survives
+/// intact. Matching on a lowercased copy also skewed every offset, because
+/// `to_lowercase` is a Unicode mapping that can change byte length (`İ` is 2
+/// bytes, its lowercase form 3), which panicked when the offsets were applied
+/// back to the original string.
 pub(crate) fn replace_whole_word(text: &str, pattern: &str, replacement: &str) -> String {
-    if pattern.is_empty() {
-        return text.to_string();
-    }
-
-    let pattern_lower = pattern.to_lowercase();
-    let text_lower = text.to_lowercase();
-
-    if !text_lower.contains(&pattern_lower) {
+    if pattern.is_empty() || !text.contains(pattern) {
         return text.to_string();
     }
 
     let mut result = String::with_capacity(text.len());
     let mut start = 0;
 
-    while let Some(pos) = text_lower[start..].find(&pattern_lower) {
+    while let Some(pos) = text[start..].find(pattern) {
         let abs_pos = start + pos;
         let end_pos = abs_pos + pattern.len();
 
-        let before_ok = abs_pos == 0 || is_word_boundary(text.as_bytes()[abs_pos - 1]);
-        let after_ok = end_pos >= text.len() || is_word_boundary(text.as_bytes()[end_pos]);
+        // Boundaries are checked per-char, not per-byte: indexing raw bytes
+        // inspects a UTF-8 continuation byte on a multi-byte char and reports
+        // it as a boundary, so `contextü` would abbreviate to `ctxü`.
+        let before_ok = text[..abs_pos]
+            .chars()
+            .next_back()
+            .is_none_or(is_word_boundary);
+        let after_ok = text[end_pos..].chars().next().is_none_or(is_word_boundary);
 
         result.push_str(&text[start..abs_pos]);
 
         if before_ok && after_ok {
             result.push_str(replacement);
         } else {
-            result.push_str(&text[start + pos..end_pos]);
+            result.push_str(&text[abs_pos..end_pos]);
         }
         start = end_pos;
     }
@@ -504,6 +512,43 @@ mod tests {
     fn whole_word_with_punctuation() {
         let r = replace_whole_word("function(arg)", "function", "fn");
         assert_eq!(r, "fn(arg)");
+    }
+
+    /// #981: `.` is a word boundary, so a case-insensitive pass matched both
+    /// halves of `context.Context` and collapsed the Go package and the Go
+    /// type into the same `ctx`.
+    #[test]
+    fn whole_word_keeps_capitalized_identifier_distinct() {
+        let r = replace_whole_word("context.Context", "context", "ctx");
+        assert_eq!(r, "ctx.Context");
+    }
+
+    /// #981: `error` is Go's type when capitalized and prose when not; only
+    /// the prose form is the dictionary's to abbreviate.
+    #[test]
+    fn whole_word_leaves_capitalized_word_alone() {
+        assert_eq!(replace_whole_word("Error", "error", "err"), "Error");
+        assert_eq!(
+            replace_whole_word("(api.Charger, error)", "error", "err"),
+            "(api.Charger, err)"
+        );
+    }
+
+    /// #981: `to_lowercase` is a Unicode mapping — `İ` (U+0130, 2 bytes) lowers
+    /// to 3 bytes — so offsets taken from the lowered copy overran the original
+    /// and panicked on the final slice.
+    #[test]
+    fn whole_word_survives_non_ascii_that_changes_length_when_lowercased() {
+        assert_eq!(replace_whole_word("İ error", "error", "err"), "İ err");
+        assert_eq!(replace_whole_word("ẞ error", "error", "err"), "ẞ err");
+    }
+
+    /// #981: a non-ASCII letter is part of the word, not a boundary — checking
+    /// raw bytes saw a UTF-8 continuation byte and abbreviated anyway.
+    #[test]
+    fn whole_word_treats_non_ascii_letter_as_part_of_word() {
+        assert_eq!(replace_whole_word("contextü", "context", "ctx"), "contextü");
+        assert_eq!(replace_whole_word("ücontext", "context", "ctx"), "ücontext");
     }
 
     #[test]
