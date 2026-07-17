@@ -132,6 +132,15 @@ pub(crate) fn default_shell_allowlist() -> Vec<String> {
         "du",
         "df",
         "ps",
+        // #996: read-only process/system inspection — same safety class as
+        // the `ps`/`lsof` above (print state, mutate nothing). `pgrep`/`pidof`
+        // filter what `ps` already exposes; `nproc` drives `make -j$(nproc)`.
+        "pgrep",
+        "pidof",
+        "pstree",
+        "nproc",
+        "uptime",
+        "free",
         "lsof",
         "watch",
         "tee",
@@ -317,6 +326,22 @@ mod tests {
     fn c_and_cpp_compilers_are_in_the_default_allowlist() {
         let defaults = default_shell_allowlist();
         for tool in ["gcc", "cc", "clang", "g++", "c++", "clang++"] {
+            assert!(
+                defaults.contains(&tool.to_string()),
+                "{tool} must be in the default allowlist"
+            );
+        }
+    }
+
+    // #996: `pgrep` and its read-only inspection siblings are the same safety
+    // class as the already-defaulted `ps`/`lsof` (print state, mutate nothing).
+    // Process-signalling (kill/pkill) is intentionally NOT defaulted — it needs
+    // session-ownership scoping the allowlist can't express (per-binary, not
+    // per-target-PID), so it stays behind explicit opt-in.
+    #[test]
+    fn process_inspection_in_default_allowlist() {
+        let defaults = default_shell_allowlist();
+        for tool in ["pgrep", "pidof", "pstree", "nproc", "uptime", "free"] {
             assert!(
                 defaults.contains(&tool.to_string()),
                 "{tool} must be in the default allowlist"
