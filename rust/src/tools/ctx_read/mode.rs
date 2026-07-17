@@ -93,6 +93,16 @@ pub(crate) enum ReadMode {
     Diff,
     /// Line window — `"lines:start-end"`.
     Lines(LineRange),
+    /// Comma multi-select — `"lines:5,10-20"` (#971).
+    ///
+    /// The parts are validated but kept verbatim rather than re-derived into
+    /// `Vec<LineRange>`. The window semantics live in
+    /// `render::extract_line_range`, which reads the raw mode string, so a
+    /// structured payload here would have no consumer — and it could not
+    /// round-trip: a bare `5` selects *line 5*, which no `LineRange` spells
+    /// without becoming `5-5`. Validation is what this type owes its callers;
+    /// interpretation belongs to the renderer.
+    LinesMulti(String),
     /// Target-density compression — `"density:0.NN"`.
     Density(f64),
 }
@@ -116,6 +126,29 @@ impl fmt::Display for ParseModeError {
 }
 
 impl std::error::Error for ParseModeError {}
+
+/// Validate a comma multi-select payload (`"5,10-20"`) and return it verbatim
+/// (#971).
+///
+/// Each part must be a bare line `N` or a span `N-M`, so garbage still fails
+/// exactly as it does for a single range. Before this existed, a comma payload
+/// hit [`parse_line_range`]'s `split_once('-')` and left `"622,1214-1218"` for
+/// `parse::<u32>()`, making the whole mode unparseable — which silently cost it
+/// [`ReadMode::is_precise_pinned_read`] and let bounce-prevention rewrite a
+/// window request to `full`.
+fn parse_line_multi(payload: &str) -> Result<String, ParseModeError> {
+    let malformed = || ParseModeError::Malformed(format!("lines:{payload}"));
+    for part in payload.split(',') {
+        let part = part.trim();
+        if let Some((start, end)) = part.split_once('-') {
+            start.trim().parse::<u32>().map_err(|_| malformed())?;
+            end.trim().parse::<u32>().map_err(|_| malformed())?;
+        } else {
+            part.parse::<u32>().map_err(|_| malformed())?;
+        }
+    }
+    Ok(payload.to_string())
+}
 
 /// Parse the payload of a `lines:` mode (`"5-10"`, `"5-999999"`, or a bare
 /// `"5"` meaning "from line 5 to EOF").
@@ -151,7 +184,12 @@ impl FromStr for ReadMode {
             "diff" => ReadMode::Diff,
             other => {
                 if let Some(payload) = other.strip_prefix("lines:") {
-                    ReadMode::Lines(parse_line_range(payload)?)
+                    // #971: a comma payload is a multi-select, not a span.
+                    if payload.contains(',') {
+                        ReadMode::LinesMulti(parse_line_multi(payload)?)
+                    } else {
+                        ReadMode::Lines(parse_line_range(payload)?)
+                    }
                 } else if let Some(payload) = other.strip_prefix("anchored:") {
                     ReadMode::Anchored(Some(parse_line_range(payload)?))
                 } else if let Some(payload) = other.strip_prefix("density:") {
@@ -185,6 +223,7 @@ impl fmt::Display for ReadMode {
             ReadMode::Anchored(None) => "anchored",
             ReadMode::Anchored(Some(range)) => return write!(f, "anchored:{range}"),
             ReadMode::Lines(range) => return write!(f, "lines:{range}"),
+            ReadMode::LinesMulti(payload) => return write!(f, "lines:{payload}"),
             // Matches the handler's historical `format!("density:{:.2}", …)`.
             ReadMode::Density(target) => return write!(f, "density:{target:.2}"),
         };
@@ -208,6 +247,7 @@ impl ReadMode {
         !matches!(
             self,
             ReadMode::Lines(_)
+                | ReadMode::LinesMulti(_)
                 | ReadMode::Reference
                 | ReadMode::Diff
                 | ReadMode::Raw
@@ -261,7 +301,7 @@ impl ReadMode {
     pub(crate) fn is_precise_pinned_read(&self) -> bool {
         matches!(
             self,
-            ReadMode::Diff | ReadMode::Lines(_) | ReadMode::Anchored(_)
+            ReadMode::Diff | ReadMode::Lines(_) | ReadMode::LinesMulti(_) | ReadMode::Anchored(_)
         )
     }
 }
@@ -396,6 +436,71 @@ mod tests {
             "lines:5".parse::<ReadMode>().unwrap(),
             ReadMode::Lines(LineRange::to_eof(5))
         );
+    }
+
+    // --- #971: comma multi-select ---
+
+    #[test]
+    fn comma_multi_select_parses() {
+        // The exact payload from #971, plus the form the tool description
+        // documents (`lines:5,10-20`) — both used to be Malformed.
+        assert_eq!(
+            "lines:620-622,1214-1218".parse::<ReadMode>().unwrap(),
+            ReadMode::LinesMulti("620-622,1214-1218".to_string())
+        );
+        assert_eq!(
+            "lines:5,10-20".parse::<ReadMode>().unwrap(),
+            ReadMode::LinesMulti("5,10-20".to_string())
+        );
+    }
+
+    #[test]
+    fn comma_multi_select_round_trips_byte_identically() {
+        // The module contract: Display reproduces the canonical string exactly.
+        for mode in ["lines:5,10-20", "lines:620-622,1214-1218", "lines:1,2,3"] {
+            assert_eq!(mode.parse::<ReadMode>().unwrap().to_string(), mode);
+        }
+    }
+
+    #[test]
+    fn comma_multi_select_is_pinned_and_never_capped() {
+        // The #971 regression in one place: an unparseable mode was treated as
+        // not-pinned, which let bounce-prevention rewrite the window to `full`,
+        // and opted it into the #361 raw cap that `lines:` must never get. Both
+        // must hold for the comma form exactly as for `lines:N-M`.
+        let multi: ReadMode = "lines:620-622,1214-1218".parse().unwrap();
+        assert!(
+            multi.is_precise_pinned_read(),
+            "a comma multi-select is still a precise pinned read (#843)"
+        );
+        assert!(
+            !multi.allows_raw_cap(),
+            "a comma multi-select is a selection view and is never raw-capped (#361)"
+        );
+        // Classified identically to the single-range form.
+        let single: ReadMode = "lines:620-622".parse().unwrap();
+        assert_eq!(
+            multi.is_precise_pinned_read(),
+            single.is_precise_pinned_read()
+        );
+        assert_eq!(multi.allows_raw_cap(), single.allows_raw_cap());
+        assert_eq!(multi.counts_as_compressed(), single.counts_as_compressed());
+        assert_eq!(multi.is_lossy_summary(), single.is_lossy_summary());
+        assert_eq!(
+            multi.is_compressed_cacheable(),
+            single.is_compressed_cacheable()
+        );
+    }
+
+    #[test]
+    fn malformed_multi_select_still_rejected() {
+        // Validation must not weaken: garbage in a part fails as before.
+        for mode in ["lines:5,abc", "lines:5-x,10", "lines:5,,10", "lines:5,10-"] {
+            assert!(
+                mode.parse::<ReadMode>().is_err(),
+                "'{mode}' must not parse as a valid multi-select"
+            );
+        }
     }
 
     #[test]

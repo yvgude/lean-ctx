@@ -254,13 +254,24 @@ fn estimate_read_tokens(path: &str, mode: &str) -> usize {
         "diff" => full_tokens / 10,
         _ if mode.starts_with("lines:") => {
             if let Some(range) = mode.strip_prefix("lines:") {
-                let parts: Vec<&str> = range.split('-').collect();
-                if parts.len() == 2 {
-                    let start = parts[0].parse::<usize>().unwrap_or(1);
-                    let end = parts[1].parse::<usize>().unwrap_or(start + 100);
-                    (end.saturating_sub(start) + 1) * 10
-                } else {
+                // #971: comma is multi-select. Splitting the whole payload on
+                // '-' yields 3 parts for `620-622,1214-1218` and fell through to
+                // the whole-file tenth; sum the selected spans instead.
+                let mut selected = 0usize;
+                for part in range.split(',') {
+                    let part = part.trim();
+                    selected += if let Some((s, e)) = part.split_once('-') {
+                        let start = s.trim().parse::<usize>().unwrap_or(1);
+                        let end = e.trim().parse::<usize>().unwrap_or(start + 100);
+                        end.saturating_sub(start) + 1
+                    } else {
+                        1
+                    };
+                }
+                if selected == 0 {
                     full_tokens / 10
+                } else {
+                    selected * 10
                 }
             } else {
                 full_tokens / 10
@@ -520,6 +531,52 @@ mod tests {
         assert!(
             bare.overridden_mode.is_none(),
             "bare anchored mode must not be overridden by bounce-prevention"
+        );
+    }
+
+    #[test]
+    fn pre_dispatch_passthrough_for_lines_multi_select() {
+        // #971: `lines:A-B,C-D` is a precise pinned window exactly like
+        // `lines:A-B`, but it parsed as Malformed, so `is_precise_pinned_mode`
+        // reported "not pinned" and bounce-prevention rewrote an 8-line request
+        // into a full-file read. Exercises the edit-forced branch, which is what
+        // the field report actually hit (a ctx_patch anchored edit immediately
+        // before the read).
+        {
+            let mut bt = crate::core::bounce_tracker::global()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            bt.set_seq(201);
+            bt.record_edit("multi-select-971.rs");
+            bt.set_seq(202);
+        }
+
+        // Precondition: the tracker really is armed for this path, so the
+        // assertions below cannot pass vacuously.
+        let forced = pre_dispatch_read("multi-select-971.rs", "map", None, None, None);
+        assert_eq!(
+            forced.overridden_mode.as_deref(),
+            Some("full"),
+            "precondition: a recent edit must force a non-pinned mode to full"
+        );
+
+        let multi = pre_dispatch_read(
+            "multi-select-971.rs",
+            "lines:620-622,1214-1218",
+            None,
+            None,
+            None,
+        );
+        assert!(
+            multi.overridden_mode.is_none(),
+            "lines:A-B,C-D must not be overridden by bounce-prevention (#971)"
+        );
+
+        // Control: the single-range form was already protected.
+        let single = pre_dispatch_read("multi-select-971.rs", "lines:620-622", None, None, None);
+        assert!(
+            single.overridden_mode.is_none(),
+            "lines:A-B must not be overridden by bounce-prevention"
         );
     }
 
