@@ -74,7 +74,39 @@ pub fn has_structural_output(command: &str) -> bool {
     if is_standalone_diff_command(command) {
         return true;
     }
+    if is_source_search(command) {
+        return true;
+    }
     is_structural_git_command(command)
+}
+
+/// Grep-family searches, whose matched lines are verbatim source (#980).
+///
+/// Structural rather than verbatim, deliberately. `patterns::grep` groups
+/// matches by file and caps them per file **without touching line content**, so
+/// this tier keeps search output compressed *and* keeps it away from the terse
+/// dictionary (`error`→`err`, `return`→`ret`, `context.Context`→`ctx.Context`).
+///
+/// This is the one route that serves both callers. The proxy's `infer_command`
+/// synthesises a bare `grep` from any tool named `*search*`/`*grep*`/`*find*`:
+/// classifying grep verbatim strands those results with no compression, while
+/// exempting the bare form from verbatim strands them in the terse pipeline and
+/// corrupts them. Structural serves both, so the classification never has to
+/// discriminate on argument count.
+///
+/// Segment-aware for the same reason [`is_verbatim_compound_tail`] is: a
+/// `cd /repo && grep …` must classify on the segment that produces stdout.
+fn is_source_search(command: &str) -> bool {
+    command
+        .split(['&', '|', ';'])
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .any(|segment| {
+            matches!(
+                first_binary(segment),
+                "grep" | "egrep" | "fgrep" | "rg" | "ag" | "ack" | "ugrep" | "sift"
+            )
+        })
 }
 
 /// Returns true for commands where the output IS the purpose of the command.
@@ -231,12 +263,12 @@ fn is_file_viewer(command: &str) -> bool {
     let first = first_binary(command);
     match first {
         "cat" | "bat" | "batcat" | "pygmentize" | "highlight" => true,
-        // #980: grep-family output is source code / structured search results.
-        // Guard: a bare `"grep"` (no arguments) arrives from the proxy's
-        // `infer_command` for tool names like `search_files` — these proxy
-        // payloads benefit from structural compression, so only match when the
-        // command carries at least one argument (a real shell invocation).
-        "grep" | "rg" | "ag" | "ack" | "sift" => command.split_whitespace().count() > 1,
+        // #980: grep-family is deliberately NOT here. It routes to
+        // `has_structural_output` via `is_source_search`, which keeps the
+        // dedicated `patterns::grep` compressor (dictionary-free) for *both* the
+        // bare `grep` the proxy's `infer_command` synthesises and a real
+        // `grep -rn pattern src/`. Both forms then compress and neither reaches
+        // the terse dictionary, so no argument-count discrimination is needed.
         "head" | "tail" => !command.contains("-f") && !command.contains("--follow"),
         // sed/awk are commonly used as range/pattern file viewers
         // (`sed -n '10,50p' file`, `awk '{print}' file`, GH #688). Their stdout
@@ -926,10 +958,27 @@ mod verbatim_classification_tests {
 
     // #980: grep-family must be classified as verbatim.
     #[test]
-    fn grep_is_verbatim() {
-        assert!(is_verbatim_output("grep -rn 'fn main' src/"));
-        assert!(is_verbatim_output("rg 'TODO' --type rust"));
-        assert!(is_verbatim_output("ag 'pattern' src/"));
+    fn grep_is_structural_not_terse() {
+        // Structural, not verbatim: `patterns::grep` compresses the matches
+        // without touching line content, so both halves hold — the dictionary
+        // never sees source, and search output still shrinks. The bare form is
+        // included because that is what the proxy's `infer_command` produces,
+        // and it must take the same route as a real invocation.
+        for cmd in [
+            "grep -rn 'fn main' src/",
+            "rg 'TODO' --type rust",
+            "ag 'pattern' src/",
+            "grep",
+        ] {
+            assert!(
+                has_structural_output(cmd),
+                "'{cmd}' must be structural so the dictionary never sees source lines"
+            );
+            assert!(
+                !is_verbatim_output(cmd),
+                "'{cmd}' must stay compressible via patterns::grep"
+            );
+        }
     }
 
     // #980: `cd /repo && cat file` — last compound segment is a file viewer.
@@ -942,8 +991,9 @@ mod verbatim_classification_tests {
     }
 
     #[test]
-    fn compound_cd_then_grep_is_verbatim() {
-        assert!(is_verbatim_output("cd /repo && grep -n 'error' log.txt"));
+    fn compound_cd_then_grep_is_structural() {
+        assert!(has_structural_output("cd /repo && grep -n 'error' log.txt"));
+        assert!(has_structural_output("cat file.go | grep func"));
     }
 
     #[test]

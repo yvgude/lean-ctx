@@ -255,8 +255,15 @@ mod tests {
         // to the shared engine, so its output matches the name-routed engine
         // byte-for-byte (the contract that distinguishes this from `None`).
         // `infer_command`'s use of the name is unit-tested in `compress.rs`.
+        // #980: matches share one file so the `patterns::grep` compressor —
+        // which wins by grouping and capping matches *per file* — can shrink
+        // them. Each match previously had its own file, a shape only the generic
+        // terse pipeline could shrink, and that pipeline is exactly what must
+        // never see source lines. The routing contract under test is unchanged;
+        // `search_tool_result_is_compressed_without_corrupting_source` in
+        // `proxy::compress` covers the content side.
         let raw = (0..60)
-            .map(|i| format!("src/file_{i}.rs:{i}:    let matched = find(foo, bar, baz);"))
+            .map(|i| format!("src/matches.rs:{i}:    let matched = find(foo, bar, baz);"))
             .collect::<Vec<_>>()
             .join("\n");
         let routed = compress_tool_result(&raw, Some("search_files"));

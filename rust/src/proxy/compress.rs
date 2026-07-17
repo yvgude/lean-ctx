@@ -323,6 +323,42 @@ mod tests {
     use super::*;
     use serial_test::serial;
 
+    /// #980: a search tool result must come back *correct*, not merely smaller.
+    ///
+    /// `infer_command` maps any `*search*`/`*grep*`/`*find*` tool name onto the
+    /// bare command `grep`, so this is the path every proxied agent's search
+    /// results take. Nothing asserted their content before — only their size —
+    /// which is why the terse dictionary could rewrite them unnoticed. Both
+    /// halves matter and are asserted together: correctness would be trivially
+    /// satisfied by not compressing at all, and compression alone is what the
+    /// corrupting path already provided.
+    #[test]
+    fn search_tool_result_is_compressed_without_corrupting_source() {
+        let raw = (0..60)
+            .map(|i| {
+                format!(
+                    "src/h.go:{i}:func handler{i}(ctx context.Context) (api.Result, error) \
+                     {{ return doWork(ctx) }}"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let out = compress_tool_result(&raw, Some("search_files"));
+
+        assert!(
+            out.len() < raw.len(),
+            "search results must still compress ({} -> {})",
+            raw.len(),
+            out.len()
+        );
+        for keyword in ["context.Context", "(api.Result, error)", "return"] {
+            assert!(
+                out.contains(keyword),
+                "the terse dictionary rewrote `{keyword}` out of a search result:\n{out}"
+            );
+        }
+    }
+
     #[test]
     fn short_content_unchanged() {
         let short = "hello world";
