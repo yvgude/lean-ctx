@@ -295,6 +295,8 @@ fn allows_git_commit_heredoc_body_with_conventional_prefix() {
     // #876: `git commit -F - <<'EOF' … EOF` — the quoted heredoc body is literal
     // stdin data. Its lines (a commit message starting `feat(...)`) must not be
     // diced into segments and blocked as unknown commands.
+    // #975: mutating the environment without the lock races every other test.
+    let _lock = crate::core::data_dir::test_env_lock();
     crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "git");
     let cmd = "git commit -F - <<'EOF'\nfeat(#870): add exclude filters\n\n- bullet one\nEOF";
     let result = super::enforce_shell_allowlist(cmd);
@@ -309,6 +311,8 @@ fn allows_git_commit_heredoc_body_with_conventional_prefix() {
 fn unquoted_heredoc_body_substitution_still_blocked() {
     // #876 security: an UNQUOTED `<<EOF` heredoc expands its body, so a command
     // substitution there is real and must stay blocked — never stripped.
+    // #975: mutating the environment without the lock races every other test.
+    let _lock = crate::core::data_dir::test_env_lock();
     crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "cat");
     let cmd = "cat <<EOF\n$(rm -rf /)\nEOF";
     let result = super::enforce_shell_allowlist(cmd);
@@ -570,6 +574,10 @@ fn empty_allowlist_still_blocks_dollar_paren_at_start() {
 
 #[test]
 fn python_c_blocked() {
+    // Reads LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS through Config::load(), so it
+    // depends on the environment without naming it. Without the lock, the opt-in
+    // tests that set the flag leak `1` in and this stops blocking (#975).
+    let _lock = crate::core::data_dir::test_env_lock();
     let list = allow(&["python3"]);
     let result = check_all_segments("python3 -c 'import os; os.system(\"id\")'", &list);
     assert!(result.is_err(), "python3 -c must be blocked");
@@ -577,6 +585,8 @@ fn python_c_blocked() {
 
 #[test]
 fn node_e_blocked() {
+    // Same env dependency as python_c_blocked (#975).
+    let _lock = crate::core::data_dir::test_env_lock();
     let list = allow(&["node"]);
     let result = check_all_segments("node -e 'process.exit(1)'", &list);
     assert!(result.is_err(), "node -e must be blocked");
@@ -1165,6 +1175,8 @@ fn subshell_then_interpreter_c_blocked() {
 #[test]
 fn loop_body_interpreter_eval_blocked() {
     // python3 is allowlisted, but inline `-c` execution stays blocked per leaf.
+    // Same env dependency as python_c_blocked (#975).
+    let _lock = crate::core::data_dir::test_env_lock();
     let list = allow(&["python3"]);
     assert!(check_all_segments("for i in a; do python3 -c 'x'; done", &list).is_err());
 }
