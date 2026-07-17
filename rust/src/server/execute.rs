@@ -5,6 +5,12 @@ use std::time::{Duration, Instant};
 
 const READER_RESULT_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// Prefix of the synthetic notice appended when a command is killed on timeout.
+/// The tee/recovery-banner path keys off this to tell a timeout that captured
+/// real output from one that captured nothing (#995) — a banner pointing at a
+/// tee holding only this line is doubly misleading (#992), so it is suppressed.
+pub(crate) const TIMEOUT_NOTICE_PREFIX: &str = "ERROR: command timed out after";
+
 #[cfg(test)]
 pub(crate) fn execute_command_in(command: &str, cwd: &str) -> (String, i32) {
     execute_command_with_env(command, cwd, &std::collections::HashMap::new(), None)
@@ -74,6 +80,16 @@ pub(crate) fn execute_command_with_env(
     }
     let cap = crate::core::limits::max_shell_bytes();
 
+    // Own process group (Unix) so a timeout kill signals the whole group,
+    // reaping the shell's grandchildren (cargo→rustc, …). Without it only the
+    // direct child dies; orphans keep the captured pipes open so the partial
+    // output never flushes before we give up (#995, mirrors shell::exec).
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+
     let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
         Ok(c) => c,
         Err(e) => return (format!("ERROR: {e}"), 1),
@@ -91,7 +107,7 @@ pub(crate) fn execute_command_with_env(
             Ok(Some(status)) => break (status.code().unwrap_or(1), false),
             Ok(None) => {
                 if start.elapsed() >= timeout {
-                    let _ = child.kill();
+                    kill_process_group(&mut child);
                     let _ = child.wait();
                     break (124, true);
                 }
@@ -145,12 +161,28 @@ pub(crate) fn execute_command_with_env(
             text.push('\n');
         }
         text.push_str(&format!(
-            "ERROR: command timed out after {}ms",
+            "{TIMEOUT_NOTICE_PREFIX} {}ms",
             timeout.as_millis()
         ));
     }
 
     (text, code)
+}
+
+/// Kill a timed-out child and, on Unix, its whole process group — SIGKILL to
+/// the negative pgid reaps the shell's grandchildren so the captured pipes
+/// actually close and the partial output flushes (#995). Mirrors
+/// `shell::exec::kill_child`; the child is spawned with `process_group(0)`.
+fn kill_process_group(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        let pgid = child.id() as libc::pid_t;
+        if pgid > 0 {
+            // SAFETY: plain syscall; a stale pgid at worst returns ESRCH.
+            unsafe { libc::killpg(pgid, libc::SIGKILL) };
+        }
+    }
+    let _ = child.kill();
 }
 
 /// Shared, cap-bounded capture buffer for one child pipe. The reader thread
@@ -399,6 +431,48 @@ mod tests {
         assert!(
             output.contains("timed out after 200ms"),
             "timeout message must carry the per-call budget, got: {output}"
+        );
+    }
+
+    /// #995: a command killed on timeout must still return the output it
+    /// emitted before the kill. The process-group kill reaps grandchildren so
+    /// the captured pipe closes and the partial prefix is flushed, not lost.
+    #[test]
+    #[cfg_attr(windows, ignore)] // POSIX sleep + process groups
+    fn timeout_preserves_partial_output_before_kill() {
+        let (output, code) = super::execute_command_with_env(
+            "echo REPRO_CANARY_995; sleep 5",
+            ".",
+            &std::collections::HashMap::new(),
+            Some(300),
+        );
+        assert_eq!(code, 124, "timed-out command must exit 124: {output}");
+        assert!(
+            output.contains("REPRO_CANARY_995"),
+            "output emitted before the timeout kill must survive, got: {output:?}"
+        );
+        assert!(
+            !output.trim_start().starts_with(super::TIMEOUT_NOTICE_PREFIX),
+            "real output must precede the synthetic timeout notice, got: {output:?}"
+        );
+    }
+
+    /// #995: when a timeout captures no real output, the returned body is only
+    /// the synthetic notice — ctx_shell keys off `TIMEOUT_NOTICE_PREFIX` to skip
+    /// the tee recovery banner (#992) in that case. Assert the marker holds.
+    #[test]
+    #[cfg_attr(windows, ignore)] // POSIX sleep
+    fn timeout_with_no_output_is_notice_only() {
+        let (output, code) = super::execute_command_with_env(
+            "sleep 3",
+            ".",
+            &std::collections::HashMap::new(),
+            Some(200),
+        );
+        assert_eq!(code, 124);
+        assert!(
+            output.trim_start().starts_with(super::TIMEOUT_NOTICE_PREFIX),
+            "a no-output timeout must be only the notice so ctx_shell can suppress the tee, got: {output:?}"
         );
     }
 

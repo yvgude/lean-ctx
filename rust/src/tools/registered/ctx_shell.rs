@@ -231,10 +231,17 @@ impl McpTool for CtxShellTool {
                 let cfg = crate::core::config::Config::load();
                 // Shared tee policy (#811): identical decision to the CLI path —
                 // `Failures` keys off the real exit code, not a substring match.
+                // #995: a timeout that captured no real output is only the
+                // synthetic notice — teeing it advertises a recovery path (#992)
+                // to an empty file, so treat it as empty and skip.
+                let timeout_only = exit_code == 124
+                    && output
+                        .trim_start()
+                        .starts_with(crate::server::execute::TIMEOUT_NOTICE_PREFIX);
                 let tee_hint = if crate::shell::tee_policy::should_tee(
                     &cfg.tee_mode,
                     exit_code,
-                    output.trim().is_empty(),
+                    output.trim().is_empty() || timeout_only,
                     original,
                     sent,
                 ) {
