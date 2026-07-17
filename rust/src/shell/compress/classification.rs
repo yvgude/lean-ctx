@@ -74,6 +74,12 @@ pub fn has_structural_output(command: &str) -> bool {
     if is_standalone_diff_command(command) {
         return true;
     }
+    // #980: grep-family matches are source lines. Owning them here hands them to
+    // the dedicated `patterns::grep` compressor and keeps them out of the terse
+    // dictionary, which has no code-awareness.
+    if is_source_search(command) {
+        return true;
+    }
     is_structural_git_command(command)
 }
 
@@ -207,20 +213,71 @@ fn is_http_client(command: &str) -> bool {
     )
 }
 
+/// Split a compound command into the segments that can each produce stdout,
+/// on `&&`, `||`, `;` and `|` (GH #980).
+///
+/// Classifying only `first_binary(command)` reads `cd` as the binary for
+/// `cd /repo && cat file.yaml`, so the file payload misses the allowlist and
+/// falls into the terse pipeline — the exact corruption the note on
+/// [`is_file_viewer`] says must never happen. [`is_structural_git_command`]
+/// already scans every token for the same reason; this gives the viewer path
+/// the same treatment.
+///
+/// Quote-blind by design: a `|` or `&&` inside a quoted pattern
+/// (`grep -rn "a|b" .`) yields extra segments, but the segment holding the
+/// binary still classifies, so the error can only ever be *more* verbatim,
+/// never less. For file payload that is the safe direction.
+fn command_segments(command: &str) -> impl Iterator<Item = &str> {
+    command
+        .split(['&', '|', ';'])
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+}
+
+/// True when any segment of `command` dumps file payload to stdout.
+///
+/// Segment-aware (#980): `cd /repo && cat file` is a file view, and so is
+/// `… | sed -n '10,50p' file`.
 fn is_file_viewer(command: &str) -> bool {
-    let first = first_binary(command);
+    command_segments(command).any(is_file_viewer_segment)
+}
+
+fn is_file_viewer_segment(segment: &str) -> bool {
+    let first = first_binary(segment);
     match first {
         "cat" | "bat" | "batcat" | "pygmentize" | "highlight" => true,
-        "head" | "tail" => !command.contains("-f") && !command.contains("--follow"),
+        "head" | "tail" => !segment.contains("-f") && !segment.contains("--follow"),
         // sed/awk are commonly used as range/pattern file viewers
         // (`sed -n '10,50p' file`, `awk '{print}' file`, GH #688). Their stdout
         // is file payload and must never enter the generic terse pipeline —
         // the dictionary layer word-substitutes code identifiers
         // (`function`→`fn`, `return`→`ret`) with no code-awareness. In-place
         // edit invocations are excluded: they print nothing to compress.
-        "sed" | "awk" | "gawk" | "mawk" | "nawk" => !has_in_place_flag(command),
+        "sed" | "awk" | "gawk" | "mawk" | "nawk" => !has_in_place_flag(segment),
         _ => false,
     }
+}
+
+/// Grep-family searches, whose matched lines are verbatim source (GH #980).
+///
+/// Routed to [`has_structural_output`], **not** [`is_verbatim_output`]: the
+/// dedicated `patterns::grep` compressor groups matches by file and caps them
+/// per file without ever touching line content, so search output stays
+/// compressible while the generic terse pipeline — which word-substitutes
+/// `error`→`err`, `return`→`ret` and collapses `context.Context`→`ctx.ctx` —
+/// never sees it.
+///
+/// Classifying these verbatim instead would also silently disable proxy
+/// compression for every search-type tool result, since `infer_command` maps any
+/// tool named `*search*`/`*grep*`/`*find*` onto the bare command `grep`.
+fn is_source_search(command: &str) -> bool {
+    command_segments(command).any(|segment| {
+        let first = first_binary(segment);
+        matches!(
+            first,
+            "grep" | "egrep" | "fgrep" | "rg" | "ag" | "ack" | "ugrep"
+        )
+    })
 }
 
 /// True when a sed/awk invocation carries an in-place edit flag: `-i`,

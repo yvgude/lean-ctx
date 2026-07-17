@@ -374,6 +374,7 @@ mod passthrough_tests {
 
 #[cfg(test)]
 mod verbatim_output_tests {
+    use super::super::classification::has_structural_output;
     use super::super::classification::is_git_data_command;
     use super::super::classification::is_verbatim_output;
     use super::super::engine::compress_if_beneficial;
@@ -416,6 +417,56 @@ mod verbatim_output_tests {
     fn tail_follow_not_verbatim() {
         assert!(!is_verbatim_output("tail -f /var/log/syslog"));
         assert!(!is_verbatim_output("tail --follow server.log"));
+    }
+
+    /// GH #980 repro B: `cat` is allowlisted, but classification only read the
+    /// first token of the command string — `cd` — so the file payload fell
+    /// through into the terse pipeline and came back with its YAML indentation
+    /// stripped and lines deduplicated. For YAML, indentation *is* the
+    /// semantics, so the reported document was a different document.
+    #[test]
+    fn file_viewer_survives_cd_prefix() {
+        assert!(is_verbatim_output(
+            "cd /path/to/repo && cat tests/basics.yaml"
+        ));
+        assert!(is_verbatim_output("cd /repo; cat file.yaml"));
+        assert!(is_verbatim_output("cd /repo || cat fallback.yaml"));
+        assert!(is_verbatim_output("cd /repo && head -50 src/main.rs"));
+        assert!(is_verbatim_output(
+            "cd /repo && sed -n '10,50p' src/main.rs"
+        ));
+        // The pre-#980 behaviour, kept: a bare viewer is still verbatim.
+        assert!(is_verbatim_output("cat tests/basics.yaml"));
+    }
+
+    /// GH #980 repro A: grep matches are source lines. They must be owned by the
+    /// dedicated `patterns::grep` compressor (structural), never the generic
+    /// terse pipeline, whose dictionary returned Go as `error`→`err`,
+    /// `return`→`ret`, `context.Context`→`ctx.ctx`, `map[string]any`→`map[str]any`.
+    ///
+    /// Structural — deliberately *not* verbatim: `infer_command` maps every
+    /// `*search*`/`*grep*`/`*find*` tool name onto the bare command `grep`, so
+    /// classifying it verbatim would silently disable proxy compression for all
+    /// search-type tool results.
+    #[test]
+    fn grep_over_source_is_structural_not_terse() {
+        for cmd in [
+            "grep -rn \"NewPhoenixEVEth\" --include='*.go' .",
+            "rg NewPhoenixEVEth",
+            "ag pattern src/",
+            "ack pattern",
+            "egrep -rn pattern .",
+            // The bare form the proxy infers from a tool name.
+            "grep",
+            // Compound forms must hold too.
+            "cd /repo && grep -rn pattern .",
+            "cat file.go | grep func",
+        ] {
+            assert!(
+                has_structural_output(cmd),
+                "'{cmd}' must be structural so the terse dictionary never sees source lines"
+            );
+        }
     }
 
     /// GH #688 (severe): a `sed`/`awk` file dump must never enter the generic

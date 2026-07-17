@@ -345,10 +345,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         },
         |c, output| ruby::compress(c, output),
     ),
-    (
-        |c| c.starts_with("grep ") || c.starts_with("rg "),
-        |_c, output| grep::compress(output),
-    ),
+    (|c| is_grep_family(c), |_c, output| grep::compress(output)),
     (
         |c| c.starts_with("find "),
         |_c, output| find::compress(output),
@@ -622,6 +619,24 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c, output| deploy::compress(c, output),
     ),
 ];
+
+/// A grep-family search, bare or with arguments (#980).
+///
+/// The **bare** form matters: `proxy::compress::infer_command` synthesises the
+/// command `grep` (no arguments) from any tool named `*search*`/`*grep*`/
+/// `*find*`, and the previous `starts_with("grep ")` test — which requires a
+/// trailing space — never matched it. Those tool results therefore missed this
+/// compressor and fell into the generic terse pipeline, whose dictionary
+/// rewrites the source lines it finds (`error`→`err`, `context.Context`→
+/// `ctx.ctx`).
+fn is_grep_family(cmd: &str) -> bool {
+    let first = cmd.split_whitespace().next().unwrap_or("");
+    let base = first.rsplit('/').next().unwrap_or(first);
+    matches!(
+        base,
+        "grep" | "egrep" | "fgrep" | "rg" | "ag" | "ack" | "ugrep"
+    )
+}
 
 pub fn try_specific_pattern(cmd: &str, output: &str) -> Option<String> {
     let cl = cmd.to_ascii_lowercase();
