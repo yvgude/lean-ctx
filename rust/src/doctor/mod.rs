@@ -603,6 +603,10 @@ pub fn run() -> u32 {
     let mcp_cwd = mcp_server_cwd_outcome();
     board.check(&mcp_cwd);
 
+    // #970: checkout/binary version skew (only fires inside a lean-ctx checkout)
+    let skew = checkout_version_skew_outcome();
+    board.check(&skew);
+
     // LSP servers (optional, informational)
     println!("\n  {BOLD}{WHITE}LSP (optional — for ctx_refactor):{RST}");
     let lsp_outcomes = lsp_server_outcomes();

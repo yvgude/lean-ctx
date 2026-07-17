@@ -720,3 +720,154 @@ pub(crate) fn mcp_server_cwd_outcome() -> Outcome {
         }
     }
 }
+
+/// The lean-ctx version declared by a lean-ctx *source checkout* rooted at
+/// `dir`, or `None` when `dir` is not one.
+///
+/// Returns `None` for the overwhelmingly common case — a user's own project —
+/// so the skew check stays silent for everyone except people hacking on
+/// lean-ctx itself. The manifest is a workspace root whose `[package]` is not
+/// the first table, so it is parsed rather than scanned for the first
+/// `version =`. The `name` guard keeps an unrelated `rust/Cargo.toml` from
+/// being read as a lean-ctx checkout.
+fn checkout_version(dir: &std::path::Path) -> Option<String> {
+    // Only the two fields that matter; serde ignores the rest of the manifest.
+    // `toml::from_str` (not `str::parse`) — `Value`'s `FromStr` parses a single
+    // TOML *value*, so it reads `[workspace]` as an array literal and then errors
+    // with "expected nothing", silently yielding None for every real manifest.
+    #[derive(serde::Deserialize)]
+    struct Manifest {
+        package: Option<Package>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Package {
+        name: String,
+        version: String,
+    }
+
+    let manifest = ["rust/Cargo.toml", "Cargo.toml"]
+        .iter()
+        .map(|rel| dir.join(rel))
+        .find(|p| p.is_file())?;
+    let text = std::fs::read_to_string(manifest).ok()?;
+    let package = toml::from_str::<Manifest>(&text).ok()?.package?;
+    (package.name == "lean-ctx").then_some(package.version)
+}
+
+/// Renders the skew verdict. Split from [`checkout_version_skew_outcome`] so the
+/// comparison is testable without a real checkout on disk.
+fn skew_outcome(checkout: Option<&str>, running: &str) -> Outcome {
+    match checkout {
+        None => Outcome {
+            ok: true,
+            line: format!("{BOLD}Checkout version{RST}  {DIM}(not a lean-ctx checkout){RST}"),
+        },
+        Some(version) if version == running => Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}Checkout version{RST}  {GREEN}matches running binary{RST}  {DIM}{version}{RST}"
+            ),
+        },
+        Some(version) => Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}Checkout version{RST}  {YELLOW}differs from running binary{RST}  {DIM}This binary is lean-ctx {running}; the checkout here is {version}. ctx_* tool calls are served by the installed binary, so they do NOT exercise your working tree — a source change can look verified when the tool never ran it. Verify with `cargo test` or ./target/debug/lean-ctx instead.{RST}"
+            ),
+        },
+    }
+}
+
+/// Warn when the checkout being edited is not the code answering `ctx_*` calls
+/// (#970).
+///
+/// When you develop lean-ctx *with* lean-ctx, the MCP server is the installed
+/// binary while the source under edit is the checkout. Nothing at the call site
+/// distinguishes them, so verification silently reports on the wrong build — in
+/// the dangerous direction, a working-tree fix appears confirmed by a tool that
+/// never executed it.
+///
+/// Deliberately not gated on `LEAN_CTX_MCP_SERVER`: `doctor` is normally run
+/// from a terminal, not from the MCP process, so gating it there would hide the
+/// warning from exactly the person who needs it.
+pub(crate) fn checkout_version_skew_outcome() -> Outcome {
+    let checkout = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| checkout_version(&cwd));
+    skew_outcome(checkout.as_deref(), env!("CARGO_PKG_VERSION"))
+}
+
+#[cfg(test)]
+mod skew_tests {
+    use super::{checkout_version, skew_outcome};
+
+    #[test]
+    fn matching_version_passes() {
+        let out = skew_outcome(Some("3.9.11"), "3.9.11");
+        assert!(out.ok, "same version must not warn: {}", out.line);
+    }
+
+    #[test]
+    fn differing_version_warns_and_names_both() {
+        let out = skew_outcome(Some("3.9.10"), "3.9.11");
+        assert!(!out.ok, "version skew must warn");
+        assert!(
+            out.line.contains("3.9.10"),
+            "must name the checkout version"
+        );
+        assert!(out.line.contains("3.9.11"), "must name the running binary");
+    }
+
+    #[test]
+    fn non_checkout_stays_silent() {
+        let out = skew_outcome(None, "3.9.11");
+        assert!(out.ok, "a user's own project must never warn: {}", out.line);
+    }
+
+    #[test]
+    fn checkout_version_reads_workspace_manifest_not_first_table() {
+        // The real manifest is a workspace root: `[workspace]` precedes
+        // `[package]`, and the members carry their own `version`. A naive "first
+        // version = line" scan reads the wrong one.
+        let tmp = tempfile::tempdir().unwrap();
+        let rust = tmp.path().join("rust");
+        std::fs::create_dir_all(&rust).unwrap();
+        std::fs::write(
+            rust.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/sdk\"]\n\n[package]\nname = \"lean-ctx\"\nversion = \"9.9.9\"\n",
+        )
+        .unwrap();
+        assert_eq!(checkout_version(tmp.path()).as_deref(), Some("9.9.9"));
+    }
+
+    #[test]
+    fn unrelated_rust_project_is_not_a_lean_ctx_checkout() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname = \"some-other-crate\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        assert_eq!(checkout_version(tmp.path()), None);
+    }
+
+    #[test]
+    fn real_repo_manifest_is_recognised() {
+        // The negative cases below pass for either reason — a parser that returns
+        // None for *every* manifest satisfies them too, which is exactly the bug
+        // this check shipped with first (`str::parse::<toml::Value>()` reads a
+        // single value, not a document). Only asserting against the real manifest
+        // proves the check can ever actually fire.
+        let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        assert_eq!(
+            checkout_version(crate_root).as_deref(),
+            Some(env!("CARGO_PKG_VERSION")),
+            "lean-ctx's own manifest must be recognised as a lean-ctx checkout"
+        );
+    }
+
+    #[test]
+    fn missing_manifest_is_not_a_checkout() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(checkout_version(tmp.path()), None);
+    }
+}

@@ -11,8 +11,8 @@
 use serde::Serialize;
 
 use super::checks::{
-    capacity_warnings, mcp_config_outcome, mcp_server_cwd_outcome, shell_aliases_outcome,
-    skill_files_outcome,
+    capacity_warnings, checkout_version_skew_outcome, mcp_config_outcome, mcp_server_cwd_outcome,
+    shell_aliases_outcome, skill_files_outcome,
 };
 use super::common::{path_in_path_env, resolve_lean_ctx_binary};
 use super::deprecations::deprecations_outcome;
@@ -166,6 +166,10 @@ pub fn health_report() -> HealthReport {
     let mcp_cwd = mcp_server_cwd_outcome();
     if !mcp_cwd.ok {
         warnings.push(strip_ansi(&mcp_cwd.line));
+    }
+    let skew = checkout_version_skew_outcome();
+    if !skew.ok {
+        warnings.push(strip_ansi(&skew.line));
     }
 
     let level = HealthReport::classify(passed, total, !warnings.is_empty());
