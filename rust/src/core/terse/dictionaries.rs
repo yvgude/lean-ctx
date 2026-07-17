@@ -10,248 +10,39 @@ pub struct Abbreviation {
     pub short: &'static str,
 }
 
-pub const GENERAL: &[Abbreviation] = &[
-    Abbreviation {
-        long: "function",
-        short: "fn",
-    },
-    Abbreviation {
-        long: "configuration",
-        short: "cfg",
-    },
-    Abbreviation {
-        long: "implementation",
-        short: "impl",
-    },
-    Abbreviation {
-        long: "dependencies",
-        short: "deps",
-    },
-    Abbreviation {
-        long: "dependency",
-        short: "dep",
-    },
-    Abbreviation {
-        long: "request",
-        short: "req",
-    },
-    Abbreviation {
-        long: "response",
-        short: "res",
-    },
-    Abbreviation {
-        long: "context",
-        short: "ctx",
-    },
-    Abbreviation {
-        long: "error",
-        short: "err",
-    },
-    Abbreviation {
-        long: "return",
-        short: "ret",
-    },
-    Abbreviation {
-        long: "argument",
-        short: "arg",
-    },
-    Abbreviation {
-        long: "value",
-        short: "val",
-    },
-    Abbreviation {
-        long: "module",
-        short: "mod",
-    },
-    Abbreviation {
-        long: "package",
-        short: "pkg",
-    },
-    Abbreviation {
-        long: "directory",
-        short: "dir",
-    },
-    Abbreviation {
-        long: "parameter",
-        short: "param",
-    },
-    Abbreviation {
-        long: "variable",
-        short: "var",
-    },
-    Abbreviation {
-        long: "information",
-        short: "info",
-    },
-    Abbreviation {
-        long: "application",
-        short: "app",
-    },
-    Abbreviation {
-        long: "environment",
-        short: "env",
-    },
-    Abbreviation {
-        long: "repository",
-        short: "repo",
-    },
-    Abbreviation {
-        long: "authentication",
-        short: "auth",
-    },
-    Abbreviation {
-        long: "authorization",
-        short: "authz",
-    },
-    Abbreviation {
-        long: "description",
-        short: "desc",
-    },
-    Abbreviation {
-        long: "development",
-        short: "dev",
-    },
-    Abbreviation {
-        long: "production",
-        short: "prod",
-    },
-    Abbreviation {
-        long: "connection",
-        short: "conn",
-    },
-    Abbreviation {
-        long: "database",
-        short: "db",
-    },
-    Abbreviation {
-        long: "temporary",
-        short: "tmp",
-    },
-    Abbreviation {
-        long: "document",
-        short: "doc",
-    },
-    Abbreviation {
-        long: "maximum",
-        short: "max",
-    },
-    Abbreviation {
-        long: "minimum",
-        short: "min",
-    },
-    Abbreviation {
-        long: "number",
-        short: "num",
-    },
-    Abbreviation {
-        long: "reference",
-        short: "ref",
-    },
-    Abbreviation {
-        long: "string",
-        short: "str",
-    },
-    Abbreviation {
-        long: "message",
-        short: "msg",
-    },
-    Abbreviation {
-        long: "command",
-        short: "cmd",
-    },
-    Abbreviation {
-        long: "expression",
-        short: "expr",
-    },
-    Abbreviation {
-        long: "iteration",
-        short: "iter",
-    },
-    Abbreviation {
-        long: "previous",
-        short: "prev",
-    },
-    Abbreviation {
-        long: "current",
-        short: "cur",
-    },
-    Abbreviation {
-        long: "original",
-        short: "orig",
-    },
-    Abbreviation {
-        long: "destination",
-        short: "dst",
-    },
-    Abbreviation {
-        long: "source",
-        short: "src",
-    },
-    Abbreviation {
-        long: "attribute",
-        short: "attr",
-    },
-    Abbreviation {
-        long: "allocation",
-        short: "alloc",
-    },
-    Abbreviation {
-        long: "generation",
-        short: "gen",
-    },
-    Abbreviation {
-        long: "specification",
-        short: "spec",
-    },
-    Abbreviation {
-        long: "initialization",
-        short: "init",
-    },
-    Abbreviation {
-        long: "operation",
-        short: "op",
-    },
-    Abbreviation {
-        long: "optional",
-        short: "opt",
-    },
-    Abbreviation {
-        long: "utility",
-        short: "util",
-    },
-    Abbreviation {
-        long: "execution",
-        short: "exec",
-    },
-    Abbreviation {
-        long: "property",
-        short: "prop",
-    },
-    Abbreviation {
-        long: "statistics",
-        short: "stats",
-    },
-    Abbreviation {
-        long: "accumulator",
-        short: "acc",
-    },
-    Abbreviation {
-        long: "synchronize",
-        short: "sync",
-    },
-    Abbreviation {
-        long: "asynchronous",
-        short: "async",
-    },
-    Abbreviation {
-        long: "certificate",
-        short: "cert",
-    },
-    Abbreviation {
-        long: "identifier",
-        short: "id",
-    },
-];
+/// Intentionally empty (#980, #973, #982).
+///
+/// This held 60 single-English-word abbreviations (`function`→`fn`,
+/// `error`→`err`, `context`→`ctx`, `environment`→`env`, …). Measured against
+/// this crate's own `count_tokens`, **every one of them saved zero tokens** —
+/// BPE already encodes each of those common words as a single token, so
+/// `error` (1 tok) → `err` (1 tok) is a no-op, and `authorization` (1 tok) →
+/// `authz` (2 tok) actively inflated. A representative prose sentence measured
+/// 15 tokens before and 15 after.
+///
+/// They were not free, though. Because a bare English word is also a keyword,
+/// a type name, or a path component, this dictionary rewrote:
+///
+/// - Go/TS/Rust source read through the shell — `context.Context` → `ctx.Context`,
+///   `(api.Result, error)` → `(api.Result, err)`, `return` → `ret` (#980)
+/// - file paths — `src/environment.rs` → `src/env.rs`, naming a file that does
+///   not exist (#973)
+/// - every proxied agent's search results, via `infer_command`'s bare `grep`
+///
+/// That is the same hazard class `BPE_ALIGNED_RULES` in
+/// `core::neural::token_optimizer` already documents removals for ("breaks
+/// semantics or compilability"), and the same conclusion the project's own
+/// guidance reaches: an invented abbreviation tokenizes identically to the full
+/// word, so it costs readability and correctness to save nothing.
+///
+/// Phrase-level entries are a different proposition and are kept — collapsing
+/// `nothing to commit, working tree clean` (7 tok) → `clean` (1 tok) is a real
+/// 6-token win, and a multi-word output phrase does not collide with an
+/// identifier. See [`GIT`], [`CARGO`], [`NPM`].
+///
+/// `every_abbreviation_must_save_tokens` enforces the invariant, so a
+/// zero-saving entry cannot be reintroduced here or anywhere else.
+pub const GENERAL: &[Abbreviation] = &[];
 
 pub const GIT: &[Abbreviation] = &[
     Abbreviation {
@@ -282,14 +73,9 @@ pub const GIT: &[Abbreviation] = &[
         long: "deletion",
         short: "-",
     },
-    Abbreviation {
-        long: "upstream",
-        short: "u/",
-    },
-    Abbreviation {
-        long: "origin",
-        short: "o/",
-    },
+    // #980: `upstream` -> `u/` and `origin` -> `o/` both INFLATE (1 tok -> 2)
+    // while mangling a remote name that callers copy verbatim into commands.
+    // Removed rather than kept: they cost tokens and correctness.
     Abbreviation {
         long: "detached",
         short: "det",
@@ -372,14 +158,8 @@ pub const NPM: &[Abbreviation] = &[
         long: "removed",
         short: "-",
     },
-    Abbreviation {
-        long: "packages",
-        short: "pkgs",
-    },
-    Abbreviation {
-        long: "vulnerabilities",
-        short: "vulns",
-    },
+    // #980: `packages` -> `pkgs` and `vulnerabilities` -> `vulns` both INFLATE
+    // (1 tok -> 2). Removed: they cost tokens and readability for nothing.
     Abbreviation {
         long: "deprecated",
         short: "depr",
@@ -497,6 +277,7 @@ pub(crate) fn replace_whole_word(text: &str, pattern: &str, replacement: &str) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::tokens::count_tokens;
 
     #[test]
     fn whole_word_replaces_standalone() {
@@ -583,10 +364,13 @@ mod tests {
     }
 
     #[test]
-    fn general_dict_applies() {
-        let r = apply_dictionaries("the configuration directory", DictLevel::General);
-        assert!(r.contains("cfg"));
-        assert!(r.contains("dir"));
+    fn general_dict_is_a_no_op() {
+        // Was `general_dict_applies`, asserting `configuration` -> `cfg` and
+        // `directory` -> `dir`. Both measured 1 token -> 1 token: the rewrite
+        // never bought anything, and the same rule turned `src/configuration.rs`
+        // into `src/cfg.rs` (#973). General English is now left alone.
+        let input = "the configuration directory";
+        assert_eq!(apply_dictionaries(input, DictLevel::General), input);
     }
 
     #[test]
@@ -595,12 +379,68 @@ mod tests {
         assert!(r.contains("CC"), "cargo abbreviation should apply: {r}");
     }
 
+    /// #980/#973: the invariant that replaces the old `GENERAL.len() >= 60`
+    /// count — which mandated the very entries that were corrupting source.
+    ///
+    /// An abbreviation exists to save tokens. If it does not, it is pure
+    /// downside: a bare English word is also a keyword, a type name, or a path
+    /// component, so rewriting it corrupts code and paths for no gain. BPE
+    /// already gives every common word one token, which is why single-word
+    /// entries never pay — only multi-word phrase collapse does.
     #[test]
-    fn dict_count_general() {
+    fn general_dict_stays_empty() {
         assert!(
-            GENERAL.len() >= 60,
-            "should have 60+ general abbreviations, got {}",
-            GENERAL.len()
+            GENERAL.is_empty(),
+            "GENERAL held 60 single-English-word rules that measured 0 token \
+             savings while rewriting `context.Context` -> `ctx.Context` and \
+             `src/environment.rs` -> `src/env.rs`. A bare English word is also a \
+             keyword, a type name, or a path component, and BPE already gives it \
+             one token, so there is nothing to win here — put phrase-level rules \
+             in the domain dictionaries instead (#980, #973)."
+        );
+    }
+
+    /// No rule may make the output *larger*. This is the floor, independent of
+    /// the judgement call about single-word rules that merely break even:
+    /// `authorization` -> `authz`, `origin` -> `o/`, `packages` -> `pkgs` each
+    /// measured 1 token -> 2 while also mangling identifiers (#980).
+    #[test]
+    fn no_abbreviation_inflates_tokens() {
+        for (name, dict) in [
+            ("GENERAL", GENERAL),
+            ("GIT", GIT),
+            ("CARGO", CARGO),
+            ("NPM", NPM),
+        ] {
+            for a in dict {
+                // Leading space: how the tokenizer actually sees a word mid-output.
+                let long = count_tokens(&format!(" {}", a.long));
+                let short = count_tokens(&format!(" {}", a.short));
+                assert!(
+                    short <= long,
+                    "{name}: `{}` ({long} tok) -> `{}` ({short} tok) INFLATES — \
+                     it costs tokens and readability at once (#980).",
+                    a.long,
+                    a.short,
+                );
+            }
+        }
+    }
+
+    /// The dictionary must never again rewrite source-code identifiers.
+    #[test]
+    fn dictionaries_leave_source_code_intact() {
+        let go = "func handler(ctx context.Context) (api.Result, error) { return doWork(ctx) }";
+        assert_eq!(
+            apply_dictionaries(go, DictLevel::Full),
+            go,
+            "Go source must survive the dictionaries verbatim (#980)"
+        );
+        let path = "src/environment.rs and src/configuration.rs";
+        assert_eq!(
+            apply_dictionaries(path, DictLevel::Full),
+            path,
+            "file paths must survive the dictionaries verbatim (#973)"
         );
     }
 
