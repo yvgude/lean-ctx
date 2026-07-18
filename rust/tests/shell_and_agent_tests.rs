@@ -479,7 +479,7 @@ fn agent_init_lists_grok_in_supported() {
 }
 
 #[test]
-fn agent_init_grok_writes_mcp_hooks_and_skill() {
+fn agent_init_grok_writes_mcp_without_unsupported_hooks() {
     let tmpdir = tempfile::tempdir().expect("create tempdir");
     let home = tmpdir.path();
     std::fs::create_dir_all(home.join(".grok")).unwrap();
@@ -515,10 +515,9 @@ fn agent_init_grok_writes_mcp_hooks_and_skill() {
         "MCP section missing: {config}"
     );
 
-    let hooks = std::fs::read_to_string(home.join(".grok/hooks/lean-ctx.json")).unwrap();
     assert!(
-        hooks.contains("hook rewrite") && hooks.contains("PreToolUse"),
-        "hooks missing rewrite: {hooks}"
+        !home.join(".grok/hooks/lean-ctx.json").exists(),
+        "Grok Build's documented integration is MCP-only; do not install an unverified hook format"
     );
 
     let skill = home.join(".grok/skills/lean-ctx/SKILL.md");
