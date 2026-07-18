@@ -25,14 +25,14 @@ impl McpTool for CtxPatchTool {
             "Hash-anchored edit. ALWAYS ctx_read(mode=\"anchored\") first → lines like 42:a1b2|code (line=42, hash=a1b2).\n\
              replace_lines(path, start_line, start_hash, end_line, end_hash, new_text) — ALL required.\n\
              set_line(path, line, hash, new_text) | insert_after(path, line, hash, new_text) | delete(path, line, hash).\n\
-             replace_symbol(path, name, new_body) | create(path, new_text) | replace_all(path, find, replace, dry_run?).\n\
+             replace_symbol(path, name, new_body) | create(path, new_text) | replace_all(path, find, replace, dry_run?) | replace(path, old_text, new_text): unique match, no anchor.\n\
              Batch: ops:[{op, path, ...}] — not replace_symbol/replace_all.\n\
              CONFLICT = stale anchors, re-read. Line-only patch (no hash) → error.",
             json!({
                 "type": "object",
                 "properties": {
                     "path": { "type": "string" },
-                    "op": { "type": "string", "enum": ["set_line", "replace_lines", "insert_after", "delete", "replace_symbol", "create", "replace_all"] },
+                    "op": { "type": "string", "enum": ["set_line", "replace_lines", "insert_after", "delete", "replace_symbol", "create", "replace_all", "replace"] },
                     "line": { "type": "integer" },
                     "hash": { "type": "string" },
                     "start_line": { "type": "integer" },
@@ -40,6 +40,7 @@ impl McpTool for CtxPatchTool {
                     "end_line": { "type": "integer" },
                     "end_hash": { "type": "string" },
                     "new_text": { "type": "string" },
+                    "old_text": { "type": "string" },
                     "name": { "type": "string" },
                     "new_body": { "type": "string" },
                     "find": { "type": "string", "description": "Literal text to find (replace_all)" },
@@ -66,6 +67,12 @@ impl McpTool for CtxPatchTool {
         // #825: replace_all short-circuits before anchor parsing.
         if get_str(args, "op").as_deref() == Some("replace_all") {
             return handle_replace_all(args, ctx);
+        }
+
+        // #1010: content-anchored single-shot edit — unique old_text→new_text,
+        // no preceding anchored read. Delegates to ctx_edit's str_replace.
+        if get_str(args, "op").as_deref() == Some("replace") {
+            return delegate_str_replace(args, ctx);
         }
 
         let path = require_resolved_path(ctx, args, "path")?;
@@ -180,6 +187,46 @@ impl McpTool for CtxPatchTool {
             })
         })
     }
+}
+
+/// Handle `op="replace"` (#1010): map ctx_patch's `old_text`/`new_text` onto
+/// `ctx_edit`'s str_replace and dispatch, reusing its uniqueness + race guards.
+fn delegate_str_replace(
+    args: &Map<String, Value>,
+    ctx: &ToolContext,
+) -> Result<ToolOutput, ErrorData> {
+    let edit_args = str_replace_args(args).map_err(|e| ErrorData::invalid_params(e, None))?;
+    crate::tools::registered::ctx_edit::CtxEditTool.handle(&edit_args, ctx)
+}
+
+/// Pure mapping of `op="replace"` args to `ctx_edit` args. `old_text`/`new_text`
+/// are ctx_patch-native; `old_string`/`new_string` are accepted as aliases.
+fn str_replace_args(args: &Map<String, Value>) -> Result<Map<String, Value>, String> {
+    let old = get_str(args, "old_text")
+        .or_else(|| get_str(args, "old_string"))
+        .unwrap_or_default();
+    let new = get_str(args, "new_text")
+        .or_else(|| get_str(args, "new_string"))
+        .ok_or("op=replace requires new_text (the replacement)")?;
+    let mut out = Map::new();
+    out.insert("old_string".into(), Value::String(old));
+    out.insert("new_string".into(), Value::String(new));
+    // Pass through path + the shared guard/backup/evidence knobs verbatim.
+    for k in [
+        "path",
+        "replace_all",
+        "backup",
+        "backup_path",
+        "evidence",
+        "diff_max_lines",
+        "allow_lossy_utf8",
+        "expected_md5",
+    ] {
+        if let Some(v) = args.get(k) {
+            out.insert(k.to_string(), v.clone());
+        }
+    }
+    Ok(out)
 }
 
 /// Handle `op="replace_symbol"` by translating to `ctx_refactor`'s
@@ -346,5 +393,125 @@ mod replace_all_tests {
     fn empty_find_is_rejected() {
         let err = resolve_find_replace(&obj(json!({"find": "", "replace": "b"}))).unwrap_err();
         assert!(err.contains("find"), "got: {err}");
+    }
+}
+
+#[cfg(test)]
+mod str_replace_op_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn obj(v: Value) -> Map<String, Value> {
+        match v {
+            Value::Object(m) => m,
+            _ => panic!("expected object"),
+        }
+    }
+
+    #[test]
+    fn maps_old_new_text_to_ctx_edit_args() {
+        let out = str_replace_args(&obj(json!({
+            "op": "replace", "path": "a.rs", "old_text": "foo", "new_text": "bar"
+        })))
+        .unwrap();
+        assert_eq!(out.get("old_string").unwrap(), "foo");
+        assert_eq!(out.get("new_string").unwrap(), "bar");
+        assert_eq!(out.get("path").unwrap(), "a.rs");
+    }
+
+    #[test]
+    fn accepts_old_string_new_string_aliases_and_passes_replace_all() {
+        let out = str_replace_args(&obj(json!({
+            "old_string": "x", "new_string": "y", "replace_all": true
+        })))
+        .unwrap();
+        assert_eq!(out.get("old_string").unwrap(), "x");
+        assert_eq!(out.get("new_string").unwrap(), "y");
+        assert_eq!(out.get("replace_all").unwrap(), true);
+    }
+
+    #[test]
+    fn missing_replacement_is_rejected() {
+        let err = str_replace_args(&obj(json!({"old_text": "foo"}))).unwrap_err();
+        assert!(err.contains("new_text"), "got: {err}");
+    }
+
+    #[test]
+    fn absent_old_text_maps_to_empty_so_ctx_edit_rejects_it() {
+        // Empty old_string → ctx_edit errors "must not be empty" (no silent
+        // whole-file write); we only assert the mapping, not the downstream call.
+        let out = str_replace_args(&obj(json!({"new_text": "bar"}))).unwrap();
+        assert_eq!(out.get("old_string").unwrap(), "");
+    }
+}
+
+#[cfg(test)]
+mod str_replace_e2e {
+    use super::*;
+    use crate::server::tool_trait::McpTool;
+
+    fn ctx_for(path: &str) -> ToolContext {
+        let cache = std::sync::Arc::new(tokio::sync::RwLock::new(
+            crate::core::cache::SessionCache::new(),
+        ));
+        let mut resolved = std::collections::HashMap::new();
+        resolved.insert("path".to_string(), path.to_string());
+        ToolContext {
+            cache: Some(cache),
+            resolved_paths: resolved,
+            ..ToolContext::default()
+        }
+    }
+
+    fn args(v: Value) -> Map<String, Value> {
+        match v {
+            Value::Object(m) => m,
+            _ => panic!("expected object"),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn replace_op_applies_unique_match_and_rejects_ambiguous() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.rs");
+        let p = file.to_string_lossy().to_string();
+
+        // Unique match → single-shot edit, no anchored read.
+        std::fs::write(&file, "let x = 1;\nlet y = 2;\n").unwrap();
+        let out = CtxPatchTool
+            .handle(
+                &args(json!({"op":"replace","path":&p,"old_text":"let x = 1;","new_text":"let x = 42;"})),
+                &ctx_for(&p),
+            )
+            .unwrap();
+        assert!(
+            !out.text.starts_with("ERROR"),
+            "unexpected error: {}",
+            out.text
+        );
+        assert!(
+            std::fs::read_to_string(&file)
+                .unwrap()
+                .contains("let x = 42;")
+        );
+
+        // Ambiguous match (2×) without replace_all → error, file untouched.
+        std::fs::write(&file, "dup\ndup\n").unwrap();
+        let out = CtxPatchTool
+            .handle(
+                &args(json!({"op":"replace","path":&p,"old_text":"dup","new_text":"z"})),
+                &ctx_for(&p),
+            )
+            .unwrap();
+        assert!(
+            out.text.contains("ERROR"),
+            "ambiguous edit should error: {}",
+            out.text
+        );
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "dup\ndup\n",
+            "ambiguous edit must not write"
+        );
     }
 }
