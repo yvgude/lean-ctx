@@ -479,11 +479,7 @@ pub fn load_detected_model() -> Option<(String, usize)> {
     Some((model, window))
 }
 
-fn persist_transcript_path(
-    path: &str,
-    conversation_id: Option<&str>,
-    session_id: Option<&str>,
-) {
+fn persist_transcript_path(path: &str, conversation_id: Option<&str>, session_id: Option<&str>) {
     let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
         return;
     };
