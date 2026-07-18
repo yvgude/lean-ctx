@@ -1,0 +1,17 @@
+{
+  "schema_version": "leanctx.history-policy/v1",
+  "limits": {"max_commits": 20000, "max_objects": 300000, "max_findings": 100, "command_timeout_seconds": 120},
+  "forbidden_paths": [
+    {"id": "IP001", "prefix": "cloud/"},
+    {"id": "IP002", "prefix": "docs/business/"},
+    {"id": "IP003", "prefix": "memory-bank/"},
+    {"id": "IP004", "prefix": "server.md"},
+    {"id": "IP005", "prefix": "rust/src/core/licensing/keygen.rs"},
+    {"id": "IP006", "prefix": "rust/src/core/billing/stripe_invoice.rs"}
+  ],
+  "secret_rule": {"id": "SEC001", "pickaxe_regex": "AKIA|ghp_|gho_|ghs_|ghu_|ghr_|sk_live_|PRIVATE KEY-----|postgres://|postgresql://|mysql://"},
+  "policy_source_path": "security/history-policy-v1.json",
+  "scanner_source_paths": ["security/history-policy-v1.json", ".github/workflows/security-check.yml"],
+  "scanner_source_sha256": {".github/workflows/security-check.yml": "456098e147b565eec36e0f0e95df8d35d3feec670dae3f3034aa2d5fbbd0f996", "scripts/history-policy-gate.py": "5dca7289a61ca2652a241d38aea20c6237a798816f6b353b3e6d5f15e0416d63", "tests/security/test_history_policy_gate.py": "d8a18aa1e97717b6f320e9725957dc02702c1fdeb9ddb0fc65a5ebe0ff497ae4"},
+  "baseline": {"commit": "edc5dd27b8b0895a21aa29edc9602ea6dc222fec", "report": "security/evidence/full-history-baseline-v1.json", "report_sha256": "eb119bb31ae94907aea59c929fefe5419ce86e311f108d724c15d7f5b8092ced"}
+}

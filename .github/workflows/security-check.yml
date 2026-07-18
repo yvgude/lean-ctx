@@ -15,6 +15,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Required public-tree and audited-baseline delta gate
+        run: >-
+          python3 scripts/history-policy-gate.py gate --root .
+          --policy security/history-policy-v1.json
+          --output history-delta-evidence.json
+
+      - name: Upload bounded history-delta evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: history-delta-evidence
+          path: history-delta-evidence.json
+          if-no-files-found: ignore
 
       - name: Check for dangerous patterns
         run: |
@@ -168,4 +185,3 @@ jobs:
           cat audit-output.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           exit $AUDIT_EXIT
-
