@@ -39,7 +39,11 @@ impl McpTool for CtxGraphTool {
                     "since": { "type": "string", "description": "Git ref (default HEAD~1)" },
                     "project_root": { "type": "string" }
                 },
-                "required": ["action"]
+                "required": ["action"],
+                "allOf": [
+                    { "if": { "properties": { "action": { "enum": ["related", "symbol", "impact", "neighbors", "explain", "path"] } }, "required": ["action"] }, "then": { "required": ["path"] } },
+                    { "if": { "properties": { "action": { "const": "path" } }, "required": ["action"] }, "then": { "required": ["path", "to"] } }
+                ]
             }),
         )
     }

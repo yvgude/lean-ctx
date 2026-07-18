@@ -81,6 +81,9 @@ pub mod ctx_workflow;
 pub mod plugin_tool;
 pub mod shell_alias;
 
+#[cfg(test)]
+mod schema_qa_tests;
+
 /// Resolve a relative path against session state (sync version).
 /// Must be called within `tokio::task::block_in_place`.
 pub(crate) fn resolve_path_sync(

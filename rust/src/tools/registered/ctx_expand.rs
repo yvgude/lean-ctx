@@ -33,7 +33,11 @@ impl McpTool for CtxExpandTool {
                     "json_path": { "type": "string", "description": "e.g. data.items.0" },
                     "query": { "type": "string" },
                     "session_id": { "type": "string" }
-                }
+                },
+                "allOf": [
+                    { "if": { "properties": { "action": { "const": "search_all" } }, "required": ["action"] }, "then": { "required": ["query"] } },
+                    { "if": { "not": { "properties": { "action": { "enum": ["list", "search_all"] } }, "required": ["action"] } }, "then": { "required": ["id"] } }
+                ]
             }),
         )
     }

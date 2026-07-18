@@ -112,6 +112,14 @@ pub fn normalize_for_strict_validators(schema: &mut Map<String, Value>) {
             }
         }
     }
+    // #1008: action-conditional requireds are expressed with `allOf` of
+    // `if`/`then`(/`else`) branches — recurse into those sub-schemas too so any
+    // nested object/array positions get the same strict-validator guarantees.
+    for keyword in ["if", "then", "else"] {
+        if let Some(Value::Object(sub)) = schema.get_mut(keyword) {
+            normalize_for_strict_validators(sub);
+        }
+    }
 }
 
 pub const CORE_TOOL_NAMES: &[&str] = &[

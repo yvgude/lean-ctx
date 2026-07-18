@@ -37,6 +37,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                     "category": { "type": "string", "description": "Fact category" },
                     "key": { "type": "string" },
                     "value": { "type": "string" },
+                    "content": { "type": "string", "description": "remember: alias for value" },
                     "query": { "type": "string", "description": "Query for recall/search/relate/restore" },
                     "mode": { "type": "string", "description": "auto|exact|semantic|hybrid" },
                     "as_of": { "type": "string", "description": "YYYY-MM-DD date filter" },
@@ -50,7 +51,13 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                     "path": { "type": "string", "description": "export/import: bundle directory (OKF) or file path" },
                     "merge": { "type": "string", "description": "import: replace|append|skip-existing (default skip-existing)" }
                 },
-                "required": ["action"]
+                "required": ["action"],
+                "allOf": [
+                    { "if": { "properties": { "action": { "const": "remember" } }, "required": ["action"] }, "then": { "required": ["category"], "anyOf": [{ "required": ["value"] }, { "required": ["content"] }] } },
+                    { "if": { "properties": { "action": { "const": "pattern" } }, "required": ["action"] }, "then": { "required": ["value"] } },
+                    { "if": { "properties": { "action": { "const": "search" } }, "required": ["action"] }, "then": { "required": ["query"] } },
+                    { "if": { "properties": { "action": { "const": "gotcha" } }, "required": ["action"] }, "then": { "required": ["trigger", "resolution"] } }
+                ]
             }),
         )
     }

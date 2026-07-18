@@ -31,7 +31,12 @@ impl McpTool for CtxCallgraphTool {
                     "depth": { "type": "integer", "minimum": 1, "maximum": 5 },
                     "from": { "type": "string" },
                     "to": { "type": "string" }
-                }
+                },
+                "required": ["action"],
+                "allOf": [
+                    { "if": { "properties": { "action": { "enum": ["callers", "callees", "risk"] } }, "required": ["action"] }, "then": { "required": ["symbol"] } },
+                    { "if": { "properties": { "action": { "const": "trace" } }, "required": ["action"] }, "then": { "required": ["from", "to"] } }
+                ]
             }),
         )
     }
