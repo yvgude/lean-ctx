@@ -26,7 +26,7 @@ impl McpTool for CtxPatchTool {
              replace_lines(path, start_line, start_hash, end_line, end_hash, new_text) — ALL required.\n\
              set_line(path, line, hash, new_text) | insert_after(path, line, hash, new_text) | delete(path, line, hash).\n\
              replace_symbol(path, name, new_body) | create(path, new_text) | replace_all(path, find, replace, dry_run?).\n\
-             Batch: ops:[{op, path, ...}] — not replace_symbol/replace_all.\n\
+             Batch: ops:[{op, path, ...}] — per-op path (cross-file); top-level path then optional. Not replace_symbol/replace_all.\n\
              CONFLICT = stale anchors, re-read. Line-only patch (no hash) → error.",
             json!({
                 "type": "object",
@@ -45,7 +45,7 @@ impl McpTool for CtxPatchTool {
                     "find": { "type": "string", "description": "Literal text to find (replace_all)" },
                     "replace": { "type": "string", "description": "Replacement text (replace_all)" },
                     "dry_run": { "type": "boolean", "description": "Preview only, do not write (replace_all)" },
-                    "ops": { "type": "array", "items": { "type": "object" }, "description": "Batch: each item is an op object that may carry its own 'path' (cross-file); it falls back to the top-level 'path'. When 'ops' is present the top-level 'path' is optional." }
+                    "ops": { "type": "array", "items": { "type": "object" } }
                 }
             }),
         )
