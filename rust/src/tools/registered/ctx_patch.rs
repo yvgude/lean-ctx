@@ -45,9 +45,8 @@ impl McpTool for CtxPatchTool {
                     "find": { "type": "string", "description": "Literal text to find (replace_all)" },
                     "replace": { "type": "string", "description": "Replacement text (replace_all)" },
                     "dry_run": { "type": "boolean", "description": "Preview only, do not write (replace_all)" },
-                    "ops": { "type": "array", "items": { "type": "object" } }
-                },
-                "required": ["path"]
+                    "ops": { "type": "array", "items": { "type": "object" }, "description": "Batch: each item is an op object that may carry its own 'path' (cross-file); it falls back to the top-level 'path'. When 'ops' is present the top-level 'path' is optional." }
+                }
             }),
         )
     }
@@ -68,11 +67,6 @@ impl McpTool for CtxPatchTool {
             return handle_replace_all(args, ctx);
         }
 
-        let path = require_resolved_path(ctx, args, "path")?;
-
-        let ops = crate::tools::ctx_patch::parse_ops(args)
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
-
         let expected_md5 = get_str(args, "expected_md5");
         let backup = get_bool(args, "backup").unwrap_or(false);
         let backup_path = get_str(args, "backup_path")
@@ -84,102 +78,200 @@ impl McpTool for CtxPatchTool {
         let allow_lossy_utf8 = get_bool(args, "allow_lossy_utf8").unwrap_or(false);
         let validate_syntax = get_bool(args, "validate_syntax").unwrap_or(true);
 
-        let patch_params = crate::tools::ctx_patch::PatchParams {
-            path: path.clone(),
-            ops,
-            expected_md5,
-            backup,
-            backup_path,
-            evidence,
-            diff_max_lines,
-            allow_lossy_utf8,
-            validate_syntax,
-        };
+        // #1005: a batch (`ops[]`) groups its ops by each op's own `path`, so a
+        // batch may span files and needs no top-level `path`. A single op still
+        // requires the top-level `path`.
+        let groups = plan_groups(args, ctx)?;
 
-        tokio::task::block_in_place(|| {
-            let cache_lock = ctx
-                .cache
-                .as_ref()
-                .ok_or_else(|| ErrorData::internal_error("cache not available", None))?;
-            let rt = tokio::runtime::Handle::current();
-
-            // Serialize edits to the SAME file via the shared per-file lock (the
-            // same registry ctx_edit/ctx_read use), so anchored and str_replace
-            // edits of one file never interleave (issue #320). Correctness across
-            // processes still rests on the TOCTOU preimage guard + atomic rename.
-            let file_lock = crate::core::path_locks::per_file_lock(&path);
-            let _file_guard = {
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-                loop {
-                    if let Ok(guard) = file_lock.try_lock() {
-                        break guard;
-                    }
-                    if std::time::Instant::now() >= deadline {
-                        return Err(ErrorData::internal_error(
-                            format!(
-                                "per-file edit lock contention for {path} — another edit to the same file is in progress, retry in a moment"
-                            ),
-                            None,
-                        ));
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(20));
-                }
+        let mut texts = Vec::with_capacity(groups.len());
+        let mut last_path = String::new();
+        for (path, ops) in groups {
+            let patch_params = crate::tools::ctx_patch::PatchParams {
+                path: path.clone(),
+                ops,
+                expected_md5: expected_md5.clone(),
+                backup,
+                backup_path: backup_path.clone(),
+                evidence,
+                diff_max_lines,
+                allow_lossy_utf8,
+                validate_syntax,
             };
+            texts.push(apply_one(ctx, &patch_params)?);
+            last_path = path;
+        }
 
-            let last_mode = match rt.block_on(tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                cache_lock.read(),
-            )) {
-                Ok(cache) => cache
-                    .get(&path)
-                    .map(|e| e.last_mode.clone())
-                    .unwrap_or_default(),
-                Err(_) => String::new(),
-            };
-
-            // Heavy disk I/O — no global cache lock held here.
-            let (output, effect) = crate::tools::ctx_patch::run_io(&patch_params, &last_mode);
-
-            crate::tools::ctx_patch::record_outcome(&patch_params, &last_mode, &output, &effect);
-
-            if !matches!(effect, crate::tools::ctx_edit::CacheEffect::None) {
-                match rt.block_on(tokio::time::timeout(
-                    std::time::Duration::from_secs(5),
-                    cache_lock.write(),
-                )) {
-                    Ok(mut cache) => {
-                        crate::tools::ctx_edit::apply_cache_effect(&mut cache, &path, effect);
-                    }
-                    Err(_) => {
-                        tracing::warn!(
-                            "ctx_patch: cache write-lock timeout (5s) applying post-edit cache effect for {path}"
-                        );
-                    }
-                }
-            }
-
-            if let Some(session_lock) = ctx.session.as_ref() {
-                let guard = rt.block_on(tokio::time::timeout(
-                    std::time::Duration::from_secs(5),
-                    session_lock.write(),
-                ));
-                if let Ok(mut session) = guard {
-                    session.mark_modified(&path);
-                }
-            }
-
-            Ok(ToolOutput {
-                text: output,
-                original_tokens: 0,
-                saved_tokens: 0,
-                mode: None,
-                path: Some(path),
-                changed: false,
-                shell_outcome: None,
-                content_blocks: None,
-            })
+        Ok(ToolOutput {
+            text: texts.join("\n\n"),
+            original_tokens: 0,
+            saved_tokens: 0,
+            mode: None,
+            path: Some(last_path),
+            changed: false,
+            shell_outcome: None,
+            content_blocks: None,
         })
     }
+}
+
+/// Build the per-file work list. A single op targets the top-level `path`
+/// (still required). A batch (`ops[]`) groups its ops by each op's own `path`,
+/// falling back to the top-level `path`, so a batch may span files without a
+/// top-level `path` (#1005).
+fn plan_groups(
+    args: &Map<String, Value>,
+    ctx: &ToolContext,
+) -> Result<Vec<(String, Vec<crate::tools::ctx_patch::AnchorOp>)>, ErrorData> {
+    let Some(ops_val) = args.get("ops") else {
+        let path = require_resolved_path(ctx, args, "path")?;
+        let ops = crate::tools::ctx_patch::parse_ops(args)
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        return Ok(vec![(path, ops)]);
+    };
+
+    let arr = ops_val
+        .as_array()
+        .ok_or_else(|| ErrorData::invalid_params("ops must be an array of edit objects", None))?;
+    let grouped = group_ops_by_path(arr, get_str(args, "path").as_deref())
+        .map_err(|e| ErrorData::invalid_params(e, None))?;
+
+    let mut groups = Vec::with_capacity(grouped.len());
+    for (raw_path, op_objs) in grouped {
+        let resolved = ctx
+            .resolve_path_sync(&raw_path)
+            .map_err(|e| ErrorData::invalid_params(format!("path: {e}"), None))?;
+        ctx.ensure_writable(&resolved)
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        let sub = Map::from_iter([("ops".to_string(), Value::Array(op_objs))]);
+        let ops = crate::tools::ctx_patch::parse_ops(&sub)
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        groups.push((resolved, ops));
+    }
+    Ok(groups)
+}
+
+/// Pure grouping: bucket batch op objects by their own `path` (or the batch's
+/// top-level `path` fallback), preserving first-seen file order. Errors if an op
+/// names no path and there is no top-level fallback.
+fn group_ops_by_path(
+    ops: &[Value],
+    top_path: Option<&str>,
+) -> Result<Vec<(String, Vec<Value>)>, String> {
+    if ops.is_empty() {
+        return Err("ops[] is empty — provide at least one edit".to_string());
+    }
+    let mut order: Vec<String> = Vec::new();
+    let mut by_path: std::collections::HashMap<String, Vec<Value>> =
+        std::collections::HashMap::new();
+    for (i, op) in ops.iter().enumerate() {
+        let obj = op
+            .as_object()
+            .ok_or_else(|| format!("ops[{i}] must be an object"))?;
+        let raw = obj
+            .get("path")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| top_path.map(str::to_string))
+            .ok_or_else(|| {
+                format!("ops[{i}] needs its own 'path' (no top-level 'path' to fall back to)")
+            })?;
+        if !by_path.contains_key(&raw) {
+            order.push(raw.clone());
+        }
+        by_path.entry(raw).or_default().push(op.clone());
+    }
+    Ok(order
+        .into_iter()
+        .map(|p| {
+            let ops = by_path.remove(&p).unwrap_or_default();
+            (p, ops)
+        })
+        .collect())
+}
+
+/// Apply one file's anchored patch: acquire the per-file lock, run the I/O off
+/// the global cache lock, then fold the resulting cache effect and session mark.
+/// Returns the rendered patch/CONFLICT text. Shared by the single-op and the
+/// per-file batch paths (#1005).
+fn apply_one(
+    ctx: &ToolContext,
+    params: &crate::tools::ctx_patch::PatchParams,
+) -> Result<String, ErrorData> {
+    let path = params.path.clone();
+    tokio::task::block_in_place(|| {
+        let cache_lock = ctx
+            .cache
+            .as_ref()
+            .ok_or_else(|| ErrorData::internal_error("cache not available", None))?;
+        let rt = tokio::runtime::Handle::current();
+
+        // Serialize edits to the SAME file via the shared per-file lock (the same
+        // registry ctx_edit/ctx_read use), so anchored and str_replace edits of
+        // one file never interleave (issue #320). Correctness across processes
+        // still rests on the TOCTOU preimage guard + atomic rename.
+        let file_lock = crate::core::path_locks::per_file_lock(&path);
+        let _file_guard = {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            loop {
+                if let Ok(guard) = file_lock.try_lock() {
+                    break guard;
+                }
+                if std::time::Instant::now() >= deadline {
+                    return Err(ErrorData::internal_error(
+                        format!(
+                            "per-file edit lock contention for {path} — another edit to the same file is in progress, retry in a moment"
+                        ),
+                        None,
+                    ));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        };
+
+        let last_mode = match rt.block_on(tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            cache_lock.read(),
+        )) {
+            Ok(cache) => cache
+                .get(&path)
+                .map(|e| e.last_mode.clone())
+                .unwrap_or_default(),
+            Err(_) => String::new(),
+        };
+
+        // Heavy disk I/O — no global cache lock held here.
+        let (output, effect) = crate::tools::ctx_patch::run_io(params, &last_mode);
+
+        crate::tools::ctx_patch::record_outcome(params, &last_mode, &output, &effect);
+
+        if !matches!(effect, crate::tools::ctx_edit::CacheEffect::None) {
+            match rt.block_on(tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                cache_lock.write(),
+            )) {
+                Ok(mut cache) => {
+                    crate::tools::ctx_edit::apply_cache_effect(&mut cache, &path, effect);
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "ctx_patch: cache write-lock timeout (5s) applying post-edit cache effect for {path}"
+                    );
+                }
+            }
+        }
+
+        if let Some(session_lock) = ctx.session.as_ref() {
+            let guard = rt.block_on(tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                session_lock.write(),
+            ));
+            if let Ok(mut session) = guard {
+                session.mark_modified(&path);
+            }
+        }
+
+        Ok(output)
+    })
 }
 
 /// Handle `op="replace_symbol"` by translating to `ctx_refactor`'s
@@ -346,5 +438,49 @@ mod replace_all_tests {
     fn empty_find_is_rejected() {
         let err = resolve_find_replace(&obj(json!({"find": "", "replace": "b"}))).unwrap_err();
         assert!(err.contains("find"), "got: {err}");
+    }
+}
+
+#[cfg(test)]
+mod batch_grouping_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// #1005: a batch spanning two files groups ops per file, preserving the
+    /// first-seen file order — no top-level `path` needed.
+    #[test]
+    fn groups_ops_across_files_preserving_order() {
+        let ops = vec![
+            json!({"op":"insert_after","path":"a.go","line":1,"hash":"aa","new_text":"x"}),
+            json!({"op":"insert_after","path":"b.go","line":2,"hash":"bb","new_text":"y"}),
+            json!({"op":"set_line","path":"a.go","line":3,"hash":"cc","new_text":"z"}),
+        ];
+        let g = group_ops_by_path(&ops, None).unwrap();
+        assert_eq!(g.len(), 2);
+        assert_eq!(g[0].0, "a.go");
+        assert_eq!(g[0].1.len(), 2);
+        assert_eq!(g[1].0, "b.go");
+        assert_eq!(g[1].1.len(), 1);
+    }
+
+    #[test]
+    fn ops_without_path_fall_back_to_top_level() {
+        let ops = vec![json!({"op":"set_line","line":1,"hash":"aa","new_text":"x"})];
+        let g = group_ops_by_path(&ops, Some("top.go")).unwrap();
+        assert_eq!(g.len(), 1);
+        assert_eq!(g[0].0, "top.go");
+    }
+
+    #[test]
+    fn op_without_path_and_no_top_level_is_rejected() {
+        let ops = vec![json!({"op":"set_line","line":1,"hash":"aa","new_text":"x"})];
+        let err = group_ops_by_path(&ops, None).unwrap_err();
+        assert!(err.contains("path"), "got: {err}");
+    }
+
+    #[test]
+    fn empty_ops_rejected() {
+        let err = group_ops_by_path(&[], None).unwrap_err();
+        assert!(err.contains("empty"), "got: {err}");
     }
 }
