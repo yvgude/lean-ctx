@@ -81,7 +81,7 @@ action=callers|callees symbol='fn' → every call site with file:line.
 action=trace from→to finds the path between two symbols (depth=N).
 For end-to-end flow understanding use ctx_compose FIRST.
 
-Parameters: `action`, `depth`, `file`, `from`, `symbol`, `to`
+Parameters: `action`*, `depth`, `file`, `from`, `symbol`, `to`
 
 ## `ctx_checkpoint`
 
@@ -339,7 +339,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
 action=gotcha trigger='X' resolution='Y' for known pitfalls.
 mode=semantic|exact for recall. category groups related facts.
 
-Parameters: `action`*, `as_of`, `category`, `confidence`, `dry_run`, `examples`, `format`, `key`, `limit`, `merge`, `mode`, `path`, `pattern_type`, `query`, `resolution`, `severity`, `store`, `trigger`, `value`
+Parameters: `action`*, `as_of`, `category`, `confidence`, `content`, `dry_run`, `examples`, `format`, `key`, `limit`, `merge`, `mode`, `path`, `pattern_type`, `query`, `resolution`, `severity`, `store`, `trigger`, `value`
 
 ## `ctx_ledger`
 
