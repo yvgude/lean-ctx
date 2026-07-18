@@ -147,11 +147,21 @@ fn parse_observe_event(input: &str) -> Option<ObserveEvent> {
         .filter(|t| !t.is_empty())
         .map(String::from);
 
+    // Claude Code / Codex / CodeBuddy carry a per-session `session_id` but no
+    // `conversation_id`. Persisting it lets the read-cache scope a session's
+    // deliveries the same way Cursor's `conversation_id` does, so a new session
+    // never inherits a prior one's `[unchanged]` stubs (#1004).
+    let session_id = v
+        .get("session_id")
+        .and_then(|s| s.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+
     if let Some(ref m) = model {
         persist_detected_model(m);
     }
     if let Some(ref tp) = transcript_path {
-        persist_transcript_path(tp, conversation_id.as_deref());
+        persist_transcript_path(tp, conversation_id.as_deref(), session_id.as_deref());
     }
 
     let mut event = detect_event_type(&v, ts)?;
@@ -469,7 +479,11 @@ pub fn load_detected_model() -> Option<(String, usize)> {
     Some((model, window))
 }
 
-fn persist_transcript_path(path: &str, conversation_id: Option<&str>) {
+fn persist_transcript_path(
+    path: &str,
+    conversation_id: Option<&str>,
+    session_id: Option<&str>,
+) {
     let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
         return;
     };
@@ -481,6 +495,7 @@ fn persist_transcript_path(path: &str, conversation_id: Option<&str>) {
     let payload = serde_json::json!({
         "transcript_path": path,
         "conversation_id": conversation_id,
+        "session_id": session_id,
         "updated_at": ts,
     });
     if let Ok(json) = serde_json::to_string_pretty(&payload) {
@@ -497,9 +512,13 @@ pub fn load_active_transcript() -> Option<(String, Option<String>)> {
     let content = std::fs::read_to_string(&path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&content).ok()?;
     let tp = v.get("transcript_path")?.as_str()?.to_string();
+    // Prefer Cursor's `conversation_id`; fall back to the host `session_id`
+    // (Claude Code / Codex / CodeBuddy) so the read-cache still has a per-session
+    // identity to scope stubs against (#1004).
     let conv = v
         .get("conversation_id")
         .and_then(|c| c.as_str())
+        .or_else(|| v.get("session_id").and_then(|s| s.as_str()))
         .map(String::from);
     let updated = v.get("updated_at")?.as_u64()?;
     let now = std::time::SystemTime::now()
@@ -767,5 +786,25 @@ mod tests {
     fn session_start_skipped_for_non_session_event() {
         let v = serde_json::json!({ "hook_event_name": "PreToolUse", "session_id": "x" });
         assert!(!session_start_honours_additional_context(&v));
+    }
+
+    /// #1004: a Claude/Codex/CodeBuddy payload has no `conversation_id`, so the
+    /// persisted `session_id` must surface as the scope id — otherwise the read
+    /// cache sees `None` and a new session inherits the prior one's stubs.
+    #[test]
+    fn session_id_is_used_as_scope_id_when_no_conversation_id() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        persist_transcript_path("/tmp/x/abc.jsonl", None, Some("sess-abc"));
+        let (_, conv) = load_active_transcript().expect("marker just written");
+        assert_eq!(conv.as_deref(), Some("sess-abc"));
+    }
+
+    /// Cursor's `conversation_id` still wins when both are present.
+    #[test]
+    fn conversation_id_wins_over_session_id() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        persist_transcript_path("/tmp/x/abc.jsonl", Some("conv-1"), Some("sess-abc"));
+        let (_, conv) = load_active_transcript().expect("marker just written");
+        assert_eq!(conv.as_deref(), Some("conv-1"));
     }
 }

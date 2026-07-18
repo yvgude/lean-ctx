@@ -6,8 +6,12 @@
 //! chats served by one daemon, so without scoping a file delivered in chat A
 //! could be stubbed for a re-read in chat B (which never received it).
 //!
-//! Cursor's hooks write the live conversation id to `active_transcript.json`
-//! (2h TTL); we read it via [`crate::hook_handlers::load_active_transcript`] but
+//! Cursor's hooks write the live conversation id to `active_transcript.json`;
+//! hosts without one (Claude Code / Codex / CodeBuddy) supply a per-session
+//! `session_id` instead, which `load_active_transcript` returns as the scope id
+//! so a new session never inherits a prior one's stubs (#1004). Either way it
+//! carries a 2h TTL and we read it via
+//! [`crate::hook_handlers::load_active_transcript`] but
 //! cache it behind a short TTL so the read hot path never stats+parses a file on
 //! every call. The last-known-good value is retained across a transient refresh
 //! miss, so a momentary read failure never spuriously invalidates valid stubs.
