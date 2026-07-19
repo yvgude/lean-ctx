@@ -424,20 +424,20 @@ mod tests {
 
     #[test]
     fn cache_stores_and_retrieves() {
-        let mut cache = ResponseCache::new(8, Duration::from_secs(60));
+        let mut cache = ResponseCache::new(8, Duration::from_mins(1));
         cache.put(42, "hello world".to_string(), 5);
         assert_eq!(cache.get(42), Some("hello world"));
     }
 
     #[test]
     fn cache_miss_returns_none() {
-        let mut cache = ResponseCache::new(8, Duration::from_secs(60));
+        let mut cache = ResponseCache::new(8, Duration::from_mins(1));
         assert_eq!(cache.get(99), None);
     }
 
     #[test]
     fn cache_respects_capacity() {
-        let mut cache = ResponseCache::new(3, Duration::from_secs(60));
+        let mut cache = ResponseCache::new(3, Duration::from_mins(1));
         cache.put(1, "a".into(), 1);
         cache.put(2, "b".into(), 1);
         cache.put(3, "c".into(), 1);
@@ -451,7 +451,7 @@ mod tests {
 
     #[test]
     fn cache_updates_existing_key() {
-        let mut cache = ResponseCache::new(8, Duration::from_secs(60));
+        let mut cache = ResponseCache::new(8, Duration::from_mins(1));
         cache.put(1, "old".into(), 5);
         cache.put(1, "new".into(), 5);
         assert_eq!(cache.get(1), Some("new"));

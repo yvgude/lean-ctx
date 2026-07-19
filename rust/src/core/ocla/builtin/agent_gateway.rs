@@ -82,7 +82,7 @@ mod tests {
         let env = AgentEnvelopeV1 {
             schema_version: AGENT_ENVELOPE_SCHEMA_VERSION,
             relay_id: "agent-relay:pending".to_string(),
-            from_agent_id: "".to_string(),
+            from_agent_id: String::new(),
             to_agent_id: "target".to_string(),
             capsule_ref: "capsule:abc".to_string(),
             budget_tokens: 100,
