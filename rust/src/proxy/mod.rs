@@ -33,8 +33,6 @@ pub mod cost;
 pub mod counterfactual;
 pub mod effort;
 pub mod effort_routing;
-pub mod model_router;
-pub mod response_optimizer;
 pub mod forward;
 pub mod gateway_identity;
 pub mod google;

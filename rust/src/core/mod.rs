@@ -367,7 +367,6 @@ pub mod editor_signal;
 pub mod egress;
 pub mod error;
 pub mod events;
-pub mod ocla_bus;
 pub mod eviction_orchestrator;
 pub mod evidence;
 pub mod evidence_ledger;
