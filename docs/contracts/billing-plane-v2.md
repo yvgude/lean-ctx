@@ -73,9 +73,11 @@ All of `billing-plane-v1`'s invariants, plus
 3. `projectedCostCents = 0` (and is suppressed) whenever `billingActive = false`
    — display-first never bills.
 4. The `metering` block is privacy-preserving (numbers only).
-5. Only `signed && chain_valid` savings-derived usage is ever billable
-   (unchanged from v1 `Usage::is_billable`); the storage dimension is
-   server-measured and additive.
+5. Only `signed && chain_valid` savings-derived usage passes the frozen v1
+   `Usage::is_billable` source-integrity predicate; this alone never
+   authorizes settlement or an invoice (see
+   [`settlement-evidence-v2`](settlement-evidence-v2.md)). The storage dimension
+   is server-measured and additive.
 6. Nothing in the metering path gates a local feature (Local-Free preserved).
 
 ## Team-server report endpoints (GL #463)

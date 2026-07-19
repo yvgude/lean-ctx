@@ -8,8 +8,8 @@
 //! 2. recorded into the append-only, SHA-256 hash-chained **savings ledger**;
 //! 3. exported as an Ed25519 **signed batch** and verified **offline** (plus a
 //!    tamper check that must break the signature);
-//! 4. metered into a **billable usage** record (`is_billable = signed &&
-//!    chain_valid`);
+//! 4. projected into a frozen v1 **source-integrity-verified usage** record
+//!    (`is_billable = signed && chain_valid` remains the compatibility alias);
 //! 5. rendered as a **FOCUS** `FinOps` export carrying the savings as a Credit row.
 //!
 //! The private control-plane (`lean-ctx-cloud`) consumes the verified total from
@@ -59,7 +59,7 @@ fn record_real_compression(command: &str, raw: &str) -> (usize, usize) {
 }
 
 #[test]
-fn outcome_pricing_golden_path_is_real_and_billable() {
+fn outcome_pricing_golden_path_has_verified_source_integrity() {
     // Isolated data dir → the savings ledger AND the Ed25519 keystore both live
     // in a throwaway temp dir (`agent_identity::key_path` resolves via the data
     // dir), so signing is real but touches nothing on the developer machine.
@@ -130,18 +130,21 @@ fn outcome_pricing_golden_path_is_real_and_billable() {
         "tampering with the totals invalidates the signature"
     );
 
-    // ── 4. Billable usage meter (is_billable = signed && chain_valid) ─────────
+    // ── 4. Frozen v1 source-integrity predicate ───────────────────────────────
     let usage = metered_usage(AGENT_ID);
     assert!(
-        usage.is_billable(),
-        "usage is billable: {}",
+        usage.source_integrity_verified(),
+        "usage source integrity verifies: {}",
         usage.headline()
     );
+    // Compatibility remains exact, but this legacy alias is not v2 settlement
+    // eligibility or invoice authority.
+    assert_eq!(usage.is_billable(), usage.source_integrity_verified());
     assert!(usage.signed && usage.chain_valid);
     assert_eq!(
         usage.net_saved_tokens,
         summary.net_saved_tokens(),
-        "the billed quantity is exactly the verified, signed savings"
+        "the v1 usage quantity is exactly the verified, signed savings"
     );
 
     // ── 5. FOCUS FinOps export — savings as a Credit row ──────────────────────

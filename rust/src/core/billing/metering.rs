@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::savings_ledger::{RoiReport, roi_report};
 
-/// A billable usage record for a metering period. Carries only counts, sums,
-/// and provenance hashes — no paths, prompts, or content (inherited from
-/// [`RoiReport`]'s privacy guarantee).
+/// Frozen billing-plane-v1 usage record for a metering period. Carries only
+/// counts, sums, and provenance hashes — no paths, prompts, or content
+/// (inherited from [`RoiReport`]'s privacy guarantee).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Usage {
     /// Schema version of the metering record.
@@ -64,12 +64,20 @@ impl Usage {
         }
     }
 
-    /// Whether this usage record is safe to bill on: it must derive from an
-    /// intact, signed chain. Unsigned/broken aggregates are observable locally
-    /// but are **not** billable (fail-closed for *billing*, never for the user).
+    /// Frozen billing-plane-v1 compatibility predicate.
+    ///
+    /// It remains exactly `signed && chain_valid`. In settlement-evidence-v2
+    /// that proves only source integrity; it does not prove quality, exclusive
+    /// attribution, contract validity, customer approval, or invoice authority.
     #[must_use]
     pub fn is_billable(&self) -> bool {
         self.signed && self.chain_valid
+    }
+
+    /// Honest name for the exact frozen v1 predicate.
+    #[must_use]
+    pub fn source_integrity_verified(&self) -> bool {
+        self.is_billable()
     }
 
     /// Compact one-line metering headline.
@@ -86,10 +94,10 @@ impl Usage {
             } else {
                 "chain BROKEN"
             },
-            if self.is_billable() {
-                "billable"
+            if self.source_integrity_verified() {
+                "source integrity verified"
             } else {
-                "not billable"
+                "source integrity unverified"
             },
         )
     }
@@ -149,7 +157,9 @@ mod tests {
 
     #[test]
     fn only_signed_intact_chains_are_billable() {
-        assert!(Usage::from_roi(&roi(1, 1, 0.0, true, true)).is_billable());
+        let usage = Usage::from_roi(&roi(1, 1, 0.0, true, true));
+        assert!(usage.is_billable());
+        assert!(usage.source_integrity_verified());
         assert!(!Usage::from_roi(&roi(1, 1, 0.0, false, true)).is_billable());
         assert!(!Usage::from_roi(&roi(1, 1, 0.0, true, false)).is_billable());
     }

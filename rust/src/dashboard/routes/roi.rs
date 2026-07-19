@@ -5,7 +5,7 @@
 //! - the daily savings trend (for the chart),
 //! - the effective commercial plan + entitlements (cache-only — applies offline
 //!   grace, never hits the network on a dashboard request),
-//! - the metered-usage billable flag.
+//! - the frozen v1 source-integrity flag (legacy `billable` alias retained).
 //!
 //! It is **individual + local only**: it shows *your own* signed savings and a
 //! read-only plan status. The team roll-up is a separate surface (the web account
@@ -58,7 +58,12 @@ fn roi() -> (&'static str, &'static str, String) {
             "entitlements": entitlements,
         },
         "usage": {
+            // Frozen v1 field retained for wire compatibility. Its exact
+            // predicate is source integrity, not settlement eligibility.
             "billable": usage.is_billable(),
+            "billable_semantics": "legacy_source_integrity_compatibility_only",
+            "source_integrity_verified": usage.source_integrity_verified(),
+            "settlement_eligible": false,
             "metered_events": usage.metered_events,
             "net_saved_tokens": usage.net_saved_tokens,
             "saved_usd": usage.saved_usd,

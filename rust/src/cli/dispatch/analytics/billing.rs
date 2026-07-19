@@ -4,7 +4,8 @@
 use super::savings::savings_agent_id;
 use crate::core;
 
-/// `lean-ctx billing <plans|entitlements|usage>` — the commercial-plane billing
+/// `lean-ctx billing <plans|entitlements|usage|settlement>` — read-only
+/// commercial-plane reporting and offline settlement-evidence verification.
 /// substrate (EPIC 13.6). All subcommands are **informational and read-only**:
 /// they describe plans/entitlements and meter local savings. The local plane is
 /// never gated — there are no entitlement checks here, only reporting.
@@ -20,9 +21,10 @@ pub(in crate::cli::dispatch) fn cmd_billing(rest: &[String]) {
         "plans" => cmd_billing_plans(json),
         "entitlements" => cmd_billing_entitlements(rest.get(1).map(String::as_str), json),
         "usage" => cmd_billing_usage(json),
+        "settlement" => cmd_billing_settlement(rest, json),
         other => {
             eprintln!(
-                "unknown billing action '{other}'. Use: status | plans | entitlements <plan> | usage [--json]"
+                "unknown billing action '{other}'. Use: status | plans | entitlements <plan> | usage | settlement <verify|export> [--json]"
             );
             std::process::exit(1);
         }
@@ -201,14 +203,91 @@ fn cmd_billing_usage(json: bool) {
     println!("  Net tokens:    {}", usage.net_saved_tokens);
     println!("  Saved USD:     ${:.4}", usage.saved_usd);
     println!(
-        "  Billable:      {}",
-        if usage.is_billable() {
-            "yes (signed + chain intact)"
+        "  Source integrity: {}",
+        if usage.source_integrity_verified() {
+            "verified (signed + chain intact)"
         } else {
-            "no (requires a signed, intact ledger)"
+            "unverified (requires a signed, intact ledger)"
         }
     );
+    println!("  Settlement:    not evaluated by billing-plane-v1 usage");
     println!("  Provenance:    {}", usage.last_entry_hash);
+}
+
+fn cmd_billing_settlement(rest: &[String], json: bool) {
+    let action = rest.get(1).map_or("verify", String::as_str);
+    let positional: Vec<&str> = rest
+        .iter()
+        .skip(2)
+        .filter(|arg| !arg.starts_with("--"))
+        .map(String::as_str)
+        .collect();
+    let Some(input) = positional.first() else {
+        eprintln!(
+            "Usage: lean-ctx billing settlement verify <manifest.json> <trust-store.json> [--json]\n       lean-ctx billing settlement export <manifest.json> <trust-store.json> <canonical.json> [--json]"
+        );
+        std::process::exit(2);
+    };
+    let manifest =
+        match core::billing::SettlementEvidenceManifestV2::load(std::path::Path::new(input)) {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                eprintln!("settlement evidence load failed: {error}");
+                std::process::exit(2);
+            }
+        };
+    let Some(trust_path) = positional.get(1) else {
+        eprintln!("settlement verification requires an out-of-band trust-store path");
+        std::process::exit(2);
+    };
+    let trust_store = match core::billing::settlement_evidence::SettlementEvidenceTrustStoreV2::load(
+        std::path::Path::new(trust_path),
+    ) {
+        Ok(store) => store,
+        Err(error) => {
+            eprintln!("settlement trust-store load failed: {error}");
+            std::process::exit(2);
+        }
+    };
+    let result = core::billing::reconcile_settlement_evidence_v2(&manifest, &trust_store);
+    if action == "export" {
+        let Some(output) = positional.get(2) else {
+            eprintln!("settlement export requires an output path");
+            std::process::exit(2);
+        };
+        if let Err(error) = manifest.export(std::path::Path::new(output)) {
+            eprintln!("settlement evidence export failed: {error}");
+            std::process::exit(2);
+        }
+    } else if action != "verify" {
+        eprintln!("unknown settlement action '{action}'. Use: verify | export");
+        std::process::exit(2);
+    }
+    if json {
+        print_json_or_die(&result, "settlement evidence");
+    } else {
+        println!(
+            "Settlement evidence v2: {}",
+            if result.eligible {
+                "structurally eligible"
+            } else {
+                "ineligible"
+            }
+        );
+        println!("  Manifest: {}", result.manifest_id);
+        println!("  Trust store: {}", result.trust_store_id);
+        println!(
+            "  Evidence: {}/{} active",
+            result.active_evidence_count, result.evidence_count
+        );
+        for reason in &result.reasons {
+            println!("  - {reason:?}");
+        }
+        println!("  Invoice/contract/approval authority: not asserted by OSS verifier");
+    }
+    if !result.eligible {
+        std::process::exit(2);
+    }
 }
 
 /// Render a quota: [`core::billing::plans::UNBOUNDED`] → "unlimited", else the
