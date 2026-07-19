@@ -34,7 +34,13 @@ impl McpTool for CtxToolsTool {
                     "query": { "type": "string", "description": "What you want to do (for find)" },
                     "tool": { "type": "string", "description": "`server::tool` handle (for call)" },
                     "arguments": { "type": "object", "description": "Arguments for downstream tool (call)" }
-                }
+                },
+                "allOf": [
+                    {
+                        "if": { "properties": { "action": { "const": "call" } }, "required": ["action"] },
+                        "then": { "required": ["action", "tool"] }
+                    }
+                ]
             }),
         )
     }

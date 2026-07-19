@@ -43,6 +43,12 @@ impl McpTool for CtxSemanticSearchTool {
                     },
                     "path_glob": { "type": "string", "description": "Glob over relative file paths" }
                 },
+                "allOf": [
+                    {
+                        "if": { "properties": { "action": { "const": "find_related" } }, "required": ["action"] },
+                        "then": { "required": ["action", "file_path"] }
+                    }
+                ],
                 "required": ["query"]
             }),
         )

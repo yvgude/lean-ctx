@@ -33,6 +33,20 @@ impl McpTool for CtxPluginsTool {
                         "description": "Plugin name (required for enable, disable, info)"
                     }
                 },
+                "allOf": [
+                    {
+                        "if": { "properties": { "action": { "const": "enable" } }, "required": ["action"] },
+                        "then": { "required": ["action", "name"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "disable" } }, "required": ["action"] },
+                        "then": { "required": ["action", "name"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "info" } }, "required": ["action"] },
+                        "then": { "required": ["action", "name"] }
+                    }
+                ],
                 "required": ["action"]
             }),
         )

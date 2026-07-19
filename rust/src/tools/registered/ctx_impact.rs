@@ -42,7 +42,27 @@ impl McpTool for CtxImpactTool {
                         "type": "string",
                         "description": "Output format"
                     }
-                }
+                },
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": { "action": { "const": "analyze" } },
+                            "required": ["action"]
+                        },
+                        "then": {
+                            "required": ["action", "path"]
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": { "action": { "const": "chain" } },
+                            "required": ["action"]
+                        },
+                        "then": {
+                            "required": ["action", "path"]
+                        }
+                    }
+                ]
             }),
         )
     }

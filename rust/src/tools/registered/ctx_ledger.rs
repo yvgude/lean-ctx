@@ -36,7 +36,16 @@ impl McpTool for CtxLedgerTool {
                         "description": "Paths to evict (comma-separated)"
                     }
                 },
-                "required": ["action"]
+                "required": ["action"],
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": { "action": { "const": "evict" } },
+                            "required": ["action"]
+                        },
+                        "then": { "required": ["action", "targets"] }
+                    }
+                ]
             }),
         )
     }

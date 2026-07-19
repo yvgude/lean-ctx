@@ -34,6 +34,22 @@ impl McpTool for CtxLoadToolsTool {
                         "description": "arch|debug|memory|metrics|session"
                     }
                 },
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": { "action": { "const": "load" } },
+                            "required": ["action"]
+                        },
+                        "then": { "required": ["action", "category"] }
+                    },
+                    {
+                        "if": {
+                            "properties": { "action": { "const": "unload" } },
+                            "required": ["action"]
+                        },
+                        "then": { "required": ["action", "category"] }
+                    }
+                ],
                 "required": ["action"]
             }),
         )

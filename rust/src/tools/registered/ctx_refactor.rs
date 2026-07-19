@@ -63,6 +63,72 @@ impl McpTool for CtxRefactorTool {
                     "keep_definition": { "type": "boolean", "description": "Keep declaration after inline" },
                     "optimize_imports": { "type": "boolean", "description": "Remove unused imports" }
                 },
+                "allOf": [
+                    {
+                        "if": { "properties": { "action": { "const": "rename" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path", "new_name"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "references" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "definition" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "implementations" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "declaration" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "type_hierarchy" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "symbols_overview" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "inspections" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "replace_symbol_body" } }, "required": ["action"] },
+                        "then": { "required": ["action", "new_text"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "insert_before_symbol" } }, "required": ["action"] },
+                        "then": { "required": ["action", "text"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "insert_after_symbol" } }, "required": ["action"] },
+                        "then": { "required": ["action", "text"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "rename_preview" } }, "required": ["action"] },
+                        "then": { "required": ["action", "new_name"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "rename_apply" } }, "required": ["action"] },
+                        "then": { "required": ["action", "new_name", "plan_hash"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "safe_delete_apply" } }, "required": ["action"] },
+                        "then": { "required": ["action", "plan_hash"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "move_apply" } }, "required": ["action"] },
+                        "then": { "required": ["action", "plan_hash"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "inline_apply" } }, "required": ["action"] },
+                        "then": { "required": ["action", "plan_hash"] }
+                    }
+                ],
                 "required": ["action"]
             }),
         )

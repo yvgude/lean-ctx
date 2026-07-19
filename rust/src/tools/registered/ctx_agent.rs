@@ -57,6 +57,17 @@ impl McpTool for CtxAgentTool {
                         "description": "active|idle|finished"
                     }
                 },
+                "allOf": [
+                    { "if": { "properties": { "action": { "const": "post" } }, "required": ["action"] }, "then": { "required": ["action", "message"] } },
+                    { "if": { "properties": { "action": { "const": "status" } }, "required": ["action"] }, "then": { "required": ["action", "status"] } },
+                    { "if": { "properties": { "action": { "const": "handoff" } }, "required": ["action"] }, "then": { "required": ["action", "to_agent"] } },
+                    { "if": { "properties": { "action": { "const": "claim" } }, "required": ["action"] }, "then": { "required": ["action", "message"] } },
+                    { "if": { "properties": { "action": { "const": "release" } }, "required": ["action"] }, "then": { "required": ["action", "message"] } },
+                    { "if": { "properties": { "action": { "const": "brief" } }, "required": ["action"] }, "then": { "required": ["action", "message"] } },
+                    { "if": { "properties": { "action": { "const": "return" } }, "required": ["action"] }, "then": { "required": ["action", "message"] } },
+                    { "if": { "properties": { "action": { "const": "diary" } }, "required": ["action"] }, "then": { "required": ["action", "message"] } },
+                    { "if": { "properties": { "action": { "const": "share_knowledge" } }, "required": ["action"] }, "then": { "required": ["action", "message"] } }
+                ],
                 "required": ["action"]
             }),
         )

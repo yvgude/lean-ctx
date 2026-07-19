@@ -37,6 +37,16 @@ impl McpTool for CtxPackageTool {
                         "description": "Package description (for save action)"
                     }
                 },
+                "allOf": [
+                    {
+                        "if": { "properties": { "action": { "const": "resume" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "info" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    }
+                ],
                 "required": []
             }),
         )
