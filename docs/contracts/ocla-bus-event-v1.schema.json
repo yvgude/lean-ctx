@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lean-ctx.dev/contracts/ocla-bus-event-v1.schema.json",
+  "title": "OCLA Bus Event V1",
+  "description": "Schema for events emitted on the OCLA event bus (P2). All 10 event types are defined as a discriminated union on the 'type' field.",
+  "type": "object",
+  "required": ["id", "timestamp_ms", "event"],
+  "properties": {
+    "id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonically increasing event ID within the bus instance."
+    },
+    "timestamp_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix timestamp in milliseconds when the event was emitted."
+    },
+    "event": {
+      "type": "object",
+      "required": ["type"],
+      "description": "The event payload, discriminated by the 'type' field.",
+      "oneOf": [
+        {
+          "properties": {
+            "type": { "const": "RequestCompleted" },
+            "model": { "type": "string" },
+            "input_tokens": { "type": "integer", "minimum": 0 },
+            "output_tokens": { "type": "integer", "minimum": 0 },
+            "duration_ms": { "type": "integer", "minimum": 0 },
+            "session_id": { "type": ["string", "null"] }
+          },
+          "required": ["type", "model", "input_tokens", "output_tokens", "duration_ms"]
+        },
+        {
+          "properties": {
+            "type": { "const": "FeedbackRecorded" },
+            "session_id": { "type": "string" },
+            "outcome": { "type": "string", "enum": ["accept", "reject", "partial"] },
+            "tool": { "type": ["string", "null"] }
+          },
+          "required": ["type", "session_id", "outcome"]
+        },
+        {
+          "properties": {
+            "type": { "const": "ThresholdShift" },
+            "language": { "type": "string" },
+            "old_value": { "type": "number" },
+            "new_value": { "type": "number" },
+            "metric": { "type": "string", "enum": ["entropy", "jaccard"] }
+          },
+          "required": ["type", "language", "old_value", "new_value", "metric"]
+        },
+        {
+          "properties": {
+            "type": { "const": "CompressionApplied" },
+            "path": { "type": ["string", "null"] },
+            "before_tokens": { "type": "integer", "minimum": 0 },
+            "after_tokens": { "type": "integer", "minimum": 0 },
+            "strategy": { "type": "string" }
+          },
+          "required": ["type", "before_tokens", "after_tokens", "strategy"]
+        },
+        {
+          "properties": {
+            "type": { "const": "SavingsRecorded" },
+            "input_saved": { "type": "integer", "minimum": 0 },
+            "output_saved": { "type": "integer", "minimum": 0 },
+            "source": { "type": "string", "enum": ["compression", "cache", "routing", "verbosity", "response_cache"] }
+          },
+          "required": ["type", "input_saved", "output_saved", "source"]
+        },
+        {
+          "properties": {
+            "type": { "const": "IntentClassified" },
+            "tier": { "type": "string" },
+            "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["type", "tier", "confidence", "reasoning"]
+        },
+        {
+          "properties": {
+            "type": { "const": "OutcomeRecorded" },
+            "session_id": { "type": "string" },
+            "accepted": { "type": "boolean" },
+            "implicit": { "type": "boolean" }
+          },
+          "required": ["type", "session_id", "accepted", "implicit"]
+        },
+        {
+          "properties": {
+            "type": { "const": "ResponseOptimized" },
+            "cache_hit": { "type": "boolean" },
+            "is_duplicate": { "type": "boolean" },
+            "tokens_saved": { "type": "integer", "minimum": 0 }
+          },
+          "required": ["type", "cache_hit", "is_duplicate", "tokens_saved"]
+        },
+        {
+          "properties": {
+            "type": { "const": "ModelRouted" },
+            "requested_model": { "type": "string" },
+            "routed_model": { "type": "string" },
+            "tier": { "type": "string" },
+            "model_changed": { "type": "boolean" }
+          },
+          "required": ["type", "requested_model", "routed_model", "tier", "model_changed"]
+        },
+        {
+          "properties": {
+            "type": { "const": "AgentChainEvent" },
+            "agent_id": { "type": "string" },
+            "action": { "type": "string" },
+            "parent_agent": { "type": ["string", "null"] }
+          },
+          "required": ["type", "agent_id", "action"]
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}
