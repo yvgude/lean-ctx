@@ -526,12 +526,14 @@ jobs:
       # must stay under budget. Runs in a scratch HOME + empty cwd so only OUR
       # footprint is measured — no repo rules files, no developer state.
       # Baseline: ~2790 tok (schemas ~2320, instructions ~470).
-      # Raised 2700→2800 after #1017 added background-shell controls; keep a
-      # small headroom while preserving the gate against further creep.
+      # Raised 2700→2800 after #1017 added background-shell controls.
+      # Raised 2800→3000 after #1020 encoded per-op required params in the
+      # ctx_patch schema as if/then conditionals (~183 tok of discoverability on
+      # the advertised surface); keep small headroom against further creep.
       - name: Self-footprint gate (doctor overhead)
         shell: bash
         env:
-          LEAN_CTX_CONTEXT_BUDGET_TOKENS: "2800"
+          LEAN_CTX_CONTEXT_BUDGET_TOKENS: "3000"
         run: |
           set -euo pipefail
           BIN="$GITHUB_WORKSPACE/rust/target/debug/lean-ctx"
