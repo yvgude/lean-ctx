@@ -433,7 +433,7 @@ mod tests {
         let widths: Vec<usize> = out
             .lines()
             .filter(|l| is_box_line(l))
-            .map(|l| l.chars().count())
+            .map(|l| crate::core::theme::visual_len(l))
             .collect();
         assert!(widths.len() >= 4, "expected several box lines:\n{out}");
         let first = widths[0];
@@ -458,13 +458,13 @@ mod tests {
         let max = out
             .lines()
             .filter(|l| is_box_line(l))
-            .map(|l| l.chars().count())
+            .map(|l| crate::core::theme::visual_len(l))
             .max()
             .unwrap_or(0);
         let min = out
             .lines()
             .filter(|l| is_box_line(l))
-            .map(|l| l.chars().count())
+            .map(|l| crate::core::theme::visual_len(l))
             .min()
             .unwrap_or(0);
         assert_eq!(max, min, "top line overflowed the box:\n{out}");
