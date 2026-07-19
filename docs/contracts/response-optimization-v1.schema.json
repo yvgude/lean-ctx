@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lean-ctx.dev/contracts/response-optimization-v1.schema.json",
+  "title": "OCLA Response Optimization Decision V1",
+  "description": "Records a response optimization decision made by the ResponseOptimizer (DIM 2). Emitted for observability, audit, and future OCLA bus integration.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "cache_hit",
+    "is_duplicate",
+    "cache_key",
+    "tokens_saved",
+    "source"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "Schema version for forward-compatible evolution."
+    },
+    "cache_hit": {
+      "type": "boolean",
+      "description": "Whether the response was served from the response cache."
+    },
+    "is_duplicate": {
+      "type": "boolean",
+      "description": "Whether the response was flagged as a duplicate of a recent answer."
+    },
+    "cache_key": {
+      "type": "integer",
+      "description": "The computed cache key (FNV-1a hash of model + system + messages)."
+    },
+    "tokens_saved": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Output tokens saved by this optimization (0 if no optimization applied)."
+    },
+    "source": {
+      "type": "string",
+      "enum": ["none", "cache", "dedup", "cache_and_dedup"],
+      "description": "What triggered the optimization."
+    }
+  },
+  "additionalProperties": false
+}
