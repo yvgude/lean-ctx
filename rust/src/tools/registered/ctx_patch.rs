@@ -43,7 +43,28 @@ impl McpTool for CtxPatchTool {
                     "replace": { "type": "string" },
                     "dry_run": { "type": "boolean" },
                     "ops": { "type": "array", "items": { "type": "object" } }
-                }
+                },
+                // Per-op required params encoded as the source of truth (#1020):
+                // a client reading the schema knows which fields an op needs
+                // BEFORE calling. Each `if` requires `op` so it stays dormant for
+                // batch calls (which carry `op` inside ops[], not at top level).
+                // Only ops with UNCONDITIONAL requirements are listed — insert_after
+                // (hash optional when line=0) and delete (single vs range) keep their
+                // requirements in the parser to avoid rejecting valid calls.
+                "allOf": [
+                    { "if": { "properties": { "op": { "const": "set_line" } }, "required": ["op"] },
+                      "then": { "required": ["op", "line", "hash", "new_text"] } },
+                    { "if": { "properties": { "op": { "const": "replace_lines" } }, "required": ["op"] },
+                      "then": { "required": ["op", "start_line", "start_hash", "end_line", "end_hash", "new_text"] } },
+                    { "if": { "properties": { "op": { "const": "replace_unique" } }, "required": ["op"] },
+                      "then": { "required": ["op", "old_text", "new_text"] } },
+                    { "if": { "properties": { "op": { "const": "replace_symbol" } }, "required": ["op"] },
+                      "then": { "required": ["op", "new_text"] } },
+                    { "if": { "properties": { "op": { "const": "create" } }, "required": ["op"] },
+                      "then": { "required": ["op", "new_text"] } },
+                    { "if": { "properties": { "op": { "const": "replace_all" } }, "required": ["op"] },
+                      "then": { "required": ["op", "find", "replace"] } }
+                ]
             }),
         )
     }
