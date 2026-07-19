@@ -192,17 +192,12 @@ fn req_str(obj: &Map<String, Value>, key: &str) -> Result<String, String> {
 
 /// `new_text` must be *present* but may be empty (`""` = delete).
 fn req_new_text(obj: &Map<String, Value>) -> Result<String, String> {
-    obj.get("new_text")
-        .and_then(|v| v.as_str())
-        .map(String::from)
-        .ok_or_else(|| "missing 'new_text' (use \"\" to delete)".to_string())
+    get_str(obj, "new_text").ok_or_else(|| "missing 'new_text' (use \"\" to delete)".to_string())
 }
 
 /// `new_text` for `create` — must be present; `""` creates an empty file.
 fn req_new_text_create(obj: &Map<String, Value>) -> Result<String, String> {
-    obj.get("new_text")
-        .and_then(|v| v.as_str())
-        .map(String::from)
+    get_str(obj, "new_text")
         .ok_or_else(|| "create requires 'new_text' (the full file content)".to_string())
 }
 
@@ -393,5 +388,23 @@ mod tests {
         assert!(err.contains("start_hash"), "must mention start_hash: {err}");
         assert!(err.contains("end_line"), "must mention end_line: {err}");
         assert!(err.contains("end_hash"), "must mention end_hash: {err}");
+    }
+
+    #[test]
+    fn new_body_is_not_accepted_new_text_is_the_only_key() {
+        // #1020: new_body was fully retired in favour of new_text (no fallback).
+        // A stray new_body must fail with the canonical new_text error, not apply.
+        let err = parse_ops(&obj(
+            json!({"op": "set_line", "line": 3, "hash": "ab12", "new_body": "x"}),
+        ))
+        .unwrap_err();
+        assert!(err.contains("new_text"), "got: {err}");
+        assert!(
+            !err.contains("new_body"),
+            "error must steer to new_text: {err}"
+        );
+
+        let err = parse_ops(&obj(json!({"op": "create", "new_body": "content"}))).unwrap_err();
+        assert!(err.contains("new_text"), "got: {err}");
     }
 }

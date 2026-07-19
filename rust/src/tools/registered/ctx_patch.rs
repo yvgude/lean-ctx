@@ -39,7 +39,6 @@ impl McpTool for CtxPatchTool {
                     "new_text": { "type": "string" },
                     "old_text": { "type": "string" },
                     "name": { "type": "string" },
-                    "new_body": { "type": "string" },
                     "find": { "type": "string" },
                     "replace": { "type": "string" },
                     "dry_run": { "type": "boolean" },
@@ -374,7 +373,7 @@ fn resolve_find_replace(args: &Map<String, Value>) -> Result<(String, String), S
         .filter(|s| !s.is_empty())
         .ok_or("replace_all requires non-empty 'find'")?;
 
-    for foreign in ["new_text", "new_string", "old_string", "new_body"] {
+    for foreign in ["new_text", "new_string", "old_string"] {
         if args.contains_key(foreign) {
             return Err(format!(
                 "replace_all names its replacement 'replace', not '{foreign}' — rename it \
@@ -477,7 +476,7 @@ mod replace_all_tests {
 
     #[test]
     fn foreign_replacement_key_is_rejected() {
-        for key in ["new_string", "new_text", "old_string", "new_body"] {
+        for key in ["new_string", "new_text", "old_string"] {
             let err = resolve_find_replace(&obj(json!({"find": "a", key: "b"}))).unwrap_err();
             assert!(
                 err.contains(key),

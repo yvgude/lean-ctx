@@ -546,8 +546,8 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
         .map(String::from);
     let (range, text) = match action {
         "replace_symbol_body" => {
-            let Some(new_body) = args.get("new_body").and_then(Value::as_str) else {
-                return "ERROR: 'new_body' is required for replace_symbol_body.".to_string();
+            let Some(new_text) = args.get("new_text").and_then(Value::as_str) else {
+                return "ERROR: 'new_text' is required for replace_symbol_body.".to_string();
             };
             let end_col = content
                 .lines()
@@ -560,7 +560,7 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
                     end_line: (end_line - 1) as u32,
                     end_char: end_col,
                 },
-                new_body.to_string(),
+                new_text.to_string(),
             )
         }
         "insert_before_symbol" | "insert_after_symbol" => {

@@ -295,7 +295,7 @@ symbol index. Alternatively as a fallback via `path`+`line`(+`end_line`).
 
 ```text
 ctx_refactor action=replace_symbol_body name_path=Main/run \
-  new_body="fun run() { println(\"new\") }" expected_hash=<blake3-hex>
+  new_text="fun run() { println(\"new\") }" expected_hash=<blake3-hex>
 
 ctx_refactor action=insert_after_symbol name_path=Main/run \
   text="fun helper() = 42"
@@ -321,7 +321,7 @@ curl -s -X POST http://127.0.0.1:$PORT/replaceSymbolBody \
 ```
 
 **Parameters (action):** `name_path` **or** `path`+`line`(+`end_line`);
-`new_body` (replace) or `text` (insert); optional `expected_hash`.
+`new_text` (replace) or `text` (insert); optional `expected_hash`.
 **Behavior:** Backing B executes the edit as a `WriteCommandAction` (a
 single undo entry, document save). Headless writes atomically via `local_range_write`
 (temp file + `rename`). **Both paths apply the same tree-sitter range
@@ -773,7 +773,7 @@ as `200` + `INTERNAL`.)
 ctx_refactor action=symbols_overview path=src/Main.kt        # find symbol + line
 # 2. replace, secured against the expected hash
 ctx_refactor action=replace_symbol_body name_path=Main/run \
-  new_body="fun run() { println(\"v2\") }" expected_hash=<blake3-hex>
+  new_text="fun run() { println(\"v2\") }" expected_hash=<blake3-hex>
 # → applied:true ; on a concurrent change → CONFLICT (file untouched)
 ```
 
@@ -790,7 +790,7 @@ ctx_refactor action=rename path=src/Main.kt line=7 column=4 new_name=execute
 **Example 3 — Reformat a file (after an edit).**
 
 ```text
-ctx_refactor action=replace_symbol_body name_path=Main/run new_body="…"
+ctx_refactor action=replace_symbol_body name_path=Main/run new_text="…"
 ctx_refactor action=reformat path=src/Main.kt    # apply code style afterward
 # → {"reformatted":true,"path":"src/Main.kt"}
 ```

@@ -30,8 +30,8 @@ use serde_json::{Map, Value};
 /// governed egress payload.
 ///
 /// `ctx_patch` (#1008) can carry several write bodies in one call — top-level
-/// `new_text` (anchored ops / create), `new_body` (replace_symbol) and each
-/// `ops[].new_text` of a batch — all are concatenated for inspection.
+/// `new_text` (anchored ops / create / replace_symbol) and each `ops[].new_text`
+/// of a batch — all are concatenated for inspection.
 #[must_use]
 pub fn write_payload(
     tool: &str,
@@ -50,10 +50,8 @@ pub fn write_payload(
 fn patch_payload(args: Option<&Map<String, Value>>) -> Option<String> {
     let map = args?;
     let mut parts: Vec<&str> = Vec::new();
-    for key in ["new_text", "new_body"] {
-        if let Some(s) = map.get(key).and_then(Value::as_str) {
-            parts.push(s);
-        }
+    if let Some(s) = map.get("new_text").and_then(Value::as_str) {
+        parts.push(s);
     }
     if let Some(ops) = map.get("ops").and_then(Value::as_array) {
         for op in ops {
@@ -283,7 +281,7 @@ mod tests {
             Some(("top".to_string(), "Write"))
         );
 
-        let symbol = args(serde_json::json!({"op": "replace_symbol", "new_body": "fn x() {}"}));
+        let symbol = args(serde_json::json!({"op": "replace_symbol", "new_text": "fn x() {}"}));
         assert_eq!(
             write_payload("ctx_patch", Some(&symbol)),
             Some(("fn x() {}".to_string(), "Write"))

@@ -487,7 +487,7 @@ fn handle_replace_symbol_body_via_position_fallback() {
         "path": "a.rs",
         "line": 1,
         "end_line": 3,
-        "new_body": "fn new() {\n  2\n}"
+        "new_text": "fn new() {\n  2\n}"
     });
     let out = super::handle(&args, dir.path().to_str().unwrap(), "");
     assert!(out.contains("replace_symbol_body applied"), "got: {out}");
@@ -503,7 +503,7 @@ fn handle_replace_symbol_body_conflict_on_stale_hash() {
     let stale = serde_json::json!({
         "action": "replace_symbol_body",
         "path": "a.rs", "line": 1, "end_line": 3,
-        "new_body": "fn new() {\n  2\n}",
+        "new_text": "fn new() {\n  2\n}",
         "expected_hash": "deadbeefnotahash"
     });
     let out = super::handle(&stale, dir.path().to_str().unwrap(), "");
@@ -821,7 +821,7 @@ fn handle_replace_symbol_worktree_mismatch_blocks_write() {
         "action": "replace_symbol_body",
         "name_path": "worktree_canary_zz",
         "path": wt_file.to_string_lossy().to_string(),
-        "new_body": "fn worktree_canary_zz() { panic!(\"CANARY\"); }"
+        "new_text": "fn worktree_canary_zz() { panic!(\"CANARY\"); }"
     });
     let out = super::handle(&args, &root, "");
     assert!(
@@ -854,7 +854,7 @@ fn handle_replace_symbol_same_path_succeeds() {
         "path": "a.rs",
         "line": 1,
         "end_line": 3,
-        "new_body": "fn new() {\n  2\n}"
+        "new_text": "fn new() {\n  2\n}"
     });
     let out = super::handle(&args, dir.path().to_str().unwrap(), &abs);
     assert!(out.contains("replace_symbol_body applied"), "got: {out}");

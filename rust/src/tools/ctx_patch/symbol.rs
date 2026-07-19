@@ -24,14 +24,13 @@ pub(crate) fn is_replace_symbol(args: &Map<String, Value>) -> bool {
 /// `replace_symbol_body` argument object. Pure + validated so it is unit-testable
 /// without invoking the LSP layer.
 ///
-/// Field mapping: `name`/`name_path` → `name_path`; `new_body`/`new_text` →
-/// `new_body`; `path`+`line`(+`end_line`) and `expected_hash` pass through.
+/// Field mapping: `name`/`name_path` → `name_path`; `new_text` → `new_text`;
+/// `path`+`line`(+`end_line`) and `expected_hash` pass through. `new_text` is the
+/// single replacement-field name across every ctx_patch op (#1020).
 pub(crate) fn build_refactor_args(args: &Map<String, Value>) -> Result<Map<String, Value>, String> {
-    let new_body = str_field(args, "new_body")
-        .or_else(|| str_field(args, "new_text"))
-        .ok_or_else(|| {
-            "replace_symbol requires 'new_body' (the full replacement declaration)".to_string()
-        })?;
+    let new_text = str_field(args, "new_text").ok_or_else(|| {
+        "replace_symbol requires 'new_text' (the full replacement declaration)".to_string()
+    })?;
 
     let name = str_field(args, "name").or_else(|| str_field(args, "name_path"));
     let has_path = args.get("path").and_then(Value::as_str).is_some();
@@ -57,7 +56,7 @@ pub(crate) fn build_refactor_args(args: &Map<String, Value>) -> Result<Map<Strin
             }
         }
     }
-    out.insert("new_body".to_string(), Value::String(new_body));
+    out.insert("new_text".to_string(), Value::String(new_text));
     if let Some(h) = str_field(args, "expected_hash") {
         out.insert("expected_hash".to_string(), Value::String(h));
     }
@@ -95,17 +94,17 @@ mod tests {
     #[test]
     fn maps_name_route() {
         let out = build_refactor_args(&obj(json!({
-            "op": "replace_symbol", "name": "Foo::bar", "new_body": "fn bar() {}"
+            "op": "replace_symbol", "name": "Foo::bar", "new_text": "fn bar() {}"
         })))
         .unwrap();
         assert_eq!(out["action"], json!("replace_symbol_body"));
         assert_eq!(out["name_path"], json!("Foo::bar"));
-        assert_eq!(out["new_body"], json!("fn bar() {}"));
+        assert_eq!(out["new_text"], json!("fn bar() {}"));
         assert!(!out.contains_key("path"));
     }
 
     #[test]
-    fn maps_path_line_route_and_new_text_alias() {
+    fn maps_path_line_route() {
         let out = build_refactor_args(&obj(json!({
             "op": "replace_symbol", "path": "src/a.rs", "line": 10, "end_line": 20,
             "new_text": "fn a() {}", "expected_hash": "abcd"
@@ -114,22 +113,22 @@ mod tests {
         assert_eq!(out["path"], json!("src/a.rs"));
         assert_eq!(out["line"], json!(10));
         assert_eq!(out["end_line"], json!(20));
-        assert_eq!(out["new_body"], json!("fn a() {}"));
+        assert_eq!(out["new_text"], json!("fn a() {}"));
         assert_eq!(out["expected_hash"], json!("abcd"));
         assert!(!out.contains_key("name_path"));
     }
 
     #[test]
-    fn requires_new_body() {
+    fn requires_new_text() {
         let err =
             build_refactor_args(&obj(json!({"op": "replace_symbol", "name": "foo"}))).unwrap_err();
-        assert!(err.contains("new_body"), "got: {err}");
+        assert!(err.contains("new_text"), "got: {err}");
     }
 
     #[test]
     fn requires_target() {
         let err = build_refactor_args(&obj(json!({
-            "op": "replace_symbol", "new_body": "x"
+            "op": "replace_symbol", "new_text": "x"
         })))
         .unwrap_err();
         assert!(err.contains("name") || err.contains("path"), "got: {err}");

@@ -32,7 +32,7 @@
 | `type_hierarchy`       | `POST /type_hierarchy`                         | super-/subtype tree           | `path`, `line`, `column`, `direction`                  | B-only                      |
 | `symbols_overview`     | `POST /symbols_overview`                       | top-level symbols of the file | `path`                                                 | B (+headless tree-sitter)   |
 | `inspections`          | `POST /inspections`, `POST /list_inspections`  | run/list inspections          | `path`, `mode=run\|list`                               | B-only                      |
-| `replace_symbol_body`  | `POST /replaceSymbolBody`                      | replace symbol body           | `name_path`/`path`+`line`, `new_body`, `expected_hash` | B (+headless)               |
+| `replace_symbol_body`  | `POST /replaceSymbolBody`                      | replace symbol body           | `name_path`/`path`+`line`, `new_text`, `expected_hash` | B (+headless)               |
 | `insert_before_symbol` | `POST /insertBeforeSymbol`                     | insert sibling before         | `name_path`, `text`, `expected_hash`                   | B (+headless)               |
 | `insert_after_symbol`  | `POST /insertAfterSymbol`                      | insert sibling after          | `name_path`, `text`, `expected_hash`                   | B (+headless)               |
 | `rename`               | `POST /renamePreview` → `/renameApply`         | rename symbol + all usages    | `new_name`, `force`, `search_comments`                 | B-only (`BACKEND_REQUIRED`) |
