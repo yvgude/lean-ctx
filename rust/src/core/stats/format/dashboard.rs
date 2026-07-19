@@ -455,7 +455,7 @@ fn gain_dashboard(t: &Theme, tick: Option<u64>, with_footer: bool) -> String {
     };
 
     out.push(sec_line(&format!(
-        "  {m}Without lean-ctx{rst}  {:>10}  {without_bar}",
+        "  {m}Without lean-ctx{rst}   {:>10}  {without_bar}",
         format_usd(cost.total_cost_without),
         m = t.muted.fg(),
     )));
@@ -476,11 +476,17 @@ fn gain_dashboard(t: &Theme, tick: Option<u64>, with_footer: bool) -> String {
     // -- TOP COMMANDS section --
     if !store.commands.is_empty() {
         out.push(format!("  {}", t.box_top_labeled(w, "TOP COMMANDS")));
-        out.push(sec_line(&format!(
-            "  {dim}{}{rst}",
-            "Command          Runs  Compression               Saved  Rate",
-            dim = t.muted.fg()
-        )));
+        // Build the header from the same column widths as the data rows below,
+        // so labels sit over their columns (1-space lead, runs 6-wide, etc.).
+        let hdr = format!(
+            " {} {:>6}  {} {}{:>4}",
+            theme::pad_right("Command", 16),
+            "Runs",
+            theme::pad_right("Compression", 20),
+            theme::pad_right("Saved", 7),
+            "Rate",
+        );
+        out.push(sec_line(&format!("{dim}{hdr}{rst}", dim = t.muted.fg())));
 
         let mut sorted: Vec<_> = store
             .commands
@@ -516,7 +522,7 @@ fn gain_dashboard(t: &Theme, tick: Option<u64>, with_footer: bool) -> String {
             let saved_col =
                 theme::pad_right(&format!("{bold}{pc}{}{rst}", format_big(cmd_saved)), 7);
             let row = format!(
-                " {cmd_col} {:>4}x {bar} {saved_col}{dim}{cmd_pct:>3.0}%{rst}",
+                " {cmd_col} {:>6}x {bar} {saved_col}{dim}{cmd_pct:>3.0}%{rst}",
                 stats.count,
             );
             out.push(sec_line(&row));

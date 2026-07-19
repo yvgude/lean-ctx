@@ -391,7 +391,7 @@ fn format_cost_themed(
                 .map(|mk| format!(" {dim}[{mk}]{rst}"))
                 .unwrap_or_default();
             out.push(sec_line(&format!(
-                " {dim}{}. {rst}{name} {bar} {cost_s} {dim}{}c{rst}{model_tag}",
+                " {dim}{:>2}. {rst}{name} {bar} {cost_s} {dim}{}c{rst}{model_tag}",
                 i + 1,
                 agent.total_calls
             )));
@@ -414,7 +414,7 @@ fn format_cost_themed(
             );
             let cost_s = format!("{s}${:.4}{rst}", tool.cost_usd);
             out.push(sec_line(&format!(
-                " {dim}{}. {rst}{name} {bar} {cost_s} {dim}{}c avg {:.0}in+{:.0}out{rst}",
+                " {dim}{:>2}. {rst}{name} {bar} {cost_s} {dim}{}c avg {:.0}in+{:.0}out{rst}",
                 i + 1,
                 tool.total_calls,
                 tool.avg_input_tokens,
@@ -476,7 +476,7 @@ fn format_agents_themed(
             format_tokens(agent.total_output_tokens)
         );
         out.push(sec_line(&format!(
-            " {dim}{}.{rst} {name} {bar} {calls} {toks}",
+            " {dim}{:>2}.{rst} {name} {bar} {calls} {toks}",
             i + 1
         )));
     }
