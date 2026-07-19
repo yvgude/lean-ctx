@@ -14,8 +14,13 @@
 //!   No local feature is ever gated.
 //! * [`metering`](crate::core::billing::metering) —
 //!   [`Usage`](crate::core::billing::Usage) derived read-only from the
-//!   privacy-preserving, Ed25519-signed ledger aggregate. Only signed + intact
-//!   chains are billable.
+//!   privacy-preserving, Ed25519-signed ledger aggregate. Its frozen v1
+//!   `is_billable` predicate means source integrity only; it is not settlement
+//!   authority.
+//! * [`settlement_evidence`](crate::core::billing::settlement_evidence) — bounded,
+//!   payload-free v2 evidence reconciliation.
+//!   It never calculates prices, approves customers, decides disputes, or
+//!   issues invoices.
 //!
 //! Crucially, this module computes and *describes* commercial state; it never
 //! enforces anything against the local plane. Enforcement (checkout, plan
@@ -25,9 +30,13 @@
 
 pub mod metering;
 pub mod plans;
+pub mod settlement_evidence;
 
 pub use metering::{Usage, metered_usage};
 pub use plans::{Entitlements, Plan, entitlement_allows, min_plan_for};
+pub use settlement_evidence::{
+    SettlementEligibilityV2, SettlementEvidenceManifestV2, reconcile_settlement_evidence_v2,
+};
 
 #[cfg(test)]
 mod tests {

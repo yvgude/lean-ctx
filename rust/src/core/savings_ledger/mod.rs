@@ -5,15 +5,23 @@
 //! `docs/business/03-verified-savings-ledger.md`.
 
 pub mod event;
+pub mod evidence_projection;
 pub mod push;
 pub mod roi;
 pub mod signed_batch;
 pub mod store;
 
 pub use event::{MECHANISM_CACHING, MECHANISM_COMPRESSION, MECHANISM_ROUTING, SavingsEvent};
+pub use evidence_projection::{
+    LedgerAttributionLinkV2, LedgerEvidenceProjectionV2, LedgerEvidenceSourceBindingV2,
+    LedgerProjectionErrorV2, VerifiedLedgerSnapshotV2, load_projection_artifact_v2,
+    project_settlement_attribution_v2,
+};
 pub use roi::{RoiReport, roi_report};
 pub use signed_batch::{BatchVerifyResult, SignedSavingsBatchV1};
-pub use store::{LedgerSummary, VerifyResult};
+pub use store::{
+    LedgerSnapshotReadErrorV2, LedgerSummary, VerifyResult, read_verified_snapshot_v2,
+};
 
 use std::sync::OnceLock;
 

@@ -627,9 +627,13 @@ class CockpitRoi extends HTMLElement {
     var signTag = roi.signed
       ? '<span class="tag tg">signed (Ed25519)</span>'
       : '<span class="tag ty">unsigned</span>';
-    var billTag = usage.billable
-      ? '<span class="tag tg">billable</span>'
-      : '<span class="tag tb">not billable</span>';
+    // `billable` is the frozen v1 wire alias. New servers expose its honest
+    // meaning explicitly; old servers remain display-compatible.
+    var sourceIntegrity = usage.source_integrity_verified;
+    if (typeof sourceIntegrity !== 'boolean') sourceIntegrity = usage.billable;
+    var integrityTag = sourceIntegrity
+      ? '<span class="tag tg">source integrity verified</span>'
+      : '<span class="tag tb">source integrity unverified</span>';
     var signer = roi.signed && roi.signer_public_key
       ? '<div class="sr"><span class="sl">Signer</span><span class="sv mono">' +
         esc(String(roi.signer_public_key).slice(0, 24)) + '\u2026</span></div>'
@@ -638,13 +642,14 @@ class CockpitRoi extends HTMLElement {
       '<div class="card" style="margin-bottom:16px">' +
       '<div class="card-header"><h3>Verification</h3>' + chainTag + '</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">' +
-      signTag + billTag + '</div>' +
+      signTag + integrityTag + '</div>' +
       '<div class="sr"><span class="sl">Chain head</span><span class="sv mono">' +
       esc(String(roi.last_entry_hash || '\u2014').slice(0, 24)) + '\u2026</span></div>' +
       signer +
       '<p class="hs" style="margin-top:8px;color:var(--muted)">' +
       'Numbers derive from a local, hash-chained, Ed25519-signed savings ledger \u2014 ' +
-      'tamper-evident and shareable.</p>' +
+      'tamper-evident and shareable. This does not establish quality, exclusive ' +
+      'attribution, customer approval, settlement eligibility, or invoice authority.</p>' +
       '</div>'
     );
   }
