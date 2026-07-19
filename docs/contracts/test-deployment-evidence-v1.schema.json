@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanctx.dev/contracts/test-deployment-evidence-v1.schema.json",
+  "title": "LeanCTX Test Deployment Evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "delivery", "target", "health", "workflow", "trust", "signature"],
+  "properties": {
+    "schema_version": { "const": "leanctx.test-deployment-evidence/v1" },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest_sha256", "image_digest", "source_commit"],
+      "properties": {
+        "manifest_sha256": { "$ref": "#/$defs/contentId" },
+        "image_digest": { "$ref": "#/$defs/contentId" },
+        "source_commit": { "$ref": "#/$defs/commit" }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment_id", "deployment_id", "health_endpoint", "image_digest"],
+      "properties": {
+        "environment_id": { "$ref": "#/$defs/identifier" },
+        "deployment_id": { "$ref": "#/$defs/identifier" },
+        "health_endpoint": { "$ref": "#/$defs/httpsUrl" },
+        "image_digest": { "$ref": "#/$defs/contentId" }
+      }
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "observed_at", "expires_at", "status", "status_code", "desired_replicas", "ready_replicas", "response_sha256", "image_digest"],
+      "properties": {
+        "endpoint": { "$ref": "#/$defs/httpsUrl" },
+        "observed_at": { "$ref": "#/$defs/timestamp" },
+        "expires_at": { "$ref": "#/$defs/timestamp" },
+        "status": { "const": "ready" },
+        "status_code": { "const": 200 },
+        "desired_replicas": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "ready_replicas": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "response_sha256": { "$ref": "#/$defs/contentId" },
+        "image_digest": { "$ref": "#/$defs/contentId" }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "repository", "workflow_ref", "run_id", "run_attempt", "source_commit"],
+      "properties": {
+        "provider": { "enum": ["github-actions", "gitlab-ci"] },
+        "repository": { "$ref": "#/$defs/httpsUrl" },
+        "workflow_ref": { "type": "string", "pattern": "^[A-Za-z0-9._/-]+\\.ya?ml@[0-9a-f]{40}$", "maxLength": 256 },
+        "run_id": { "type": "string", "pattern": "^[1-9][0-9]{0,31}$" },
+        "run_attempt": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "source_commit": { "$ref": "#/$defs/commit" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "provider": { "const": "github-actions" } }, "required": ["provider"] },
+          "then": { "properties": { "workflow_ref": { "pattern": "^\\.github/workflows/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.ya?ml@[0-9a-f]{40}$" } } }
+        },
+        {
+          "if": { "properties": { "provider": { "const": "gitlab-ci" } }, "required": ["provider"] },
+          "then": { "properties": { "workflow_ref": { "pattern": "^(?:\\.gitlab-ci\\.yml|\\.gitlab/ci/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.ya?ml)@[0-9a-f]{40}$" } } }
+        }
+      ]
+    },
+    "trust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_role", "key_id", "trust_root_sha256"],
+      "properties": {
+        "policy_role": { "enum": ["conformance-fixture", "deployment-attestor"] },
+        "key_id": { "$ref": "#/$defs/contentId" },
+        "trust_root_sha256": { "$ref": "#/$defs/contentId" }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "algorithm", "key_id", "payload_sha256", "signature"],
+      "properties": {
+        "schema_version": { "const": "leanctx.test-deployment-signature/v1" },
+        "algorithm": { "const": "Ed25519" },
+        "key_id": { "$ref": "#/$defs/contentId" },
+        "payload_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "signature": { "type": "string", "pattern": "^[A-Za-z0-9+/]{86}==$" }
+      }
+    }
+  },
+  "$defs": {
+    "contentId": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "identifier": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$" },
+    "timestamp": { "type": "string", "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$" },
+    "httpsUrl": { "type": "string", "pattern": "^https://[^\\s]+$", "maxLength": 512 }
+  }
+}

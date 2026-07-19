@@ -15,7 +15,7 @@ target the same versioned contract:
 
 ```toml
 [dependencies]
-lean-ctx-client = { git = "https://github.com/yvgude/lean-ctx", package = "lean-ctx-client" }
+lean-ctx-client = { version = "0.2", git = "https://github.com/yvgude/lean-ctx", package = "lean-ctx-client" }
 serde_json = "1"
 ```
 
@@ -65,6 +65,71 @@ Open-ended documents (`manifest`, `capabilities`, `openapi.json`) are returned
 as `serde_json::Value`, so new server keys never break a client build. Branch on
 stable fields (`capabilities["plane"]`, `LeanCtxError::error_code()`), not on
 human-readable messages.
+
+## Offline OCLA v1 verification
+
+The standalone client also decodes the public
+`CanonicalTokenEnvelopeV1` and `AgentEnvelopeV1` JSON contracts without a
+running server or an engine-crate dependency:
+
+```rust
+use lean_ctx_client::{
+    decode_agent_envelope, decode_canonical_token_envelope,
+    verify_agent_gateway_admissibility,
+};
+
+fn verify(token_wire: &[u8], agent_wire: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    let token = decode_canonical_token_envelope(token_wire)?;
+    let agent = decode_agent_envelope(agent_wire)?;
+    verify_agent_gateway_admissibility(&agent)?;
+    println!("{} {}", token.provider, agent.relay_id);
+    Ok(())
+}
+```
+
+Both decoders cap documents at 64 KiB and fail closed on malformed, unknown,
+duplicate, non-canonical, unsupported-version, lineage, accounting, and
+content-derived relay-ID drift. They verify local wire integrity only. The
+separate gateway helper adds one explicit client policy: self-relays are
+rejected. Neither layer claims remote admission or delivery, live adapter
+interoperability, billing, savings, gRPC/OpenAPI delivery, or N-1
+compatibility. Authoritative schemas are packaged with the crate and mirrored
+from:
+
+- `docs/contracts/ocla-wire-v1.schema.json`
+- `docs/contracts/ocla-agent-envelope-v1.schema.json`
+
+For process-level offline checks, the same bounded verifier is available from
+the source checkout:
+
+```bash
+cargo run --locked --bin lean-ctx-ocla-verify -- token envelope.json
+cargo run --locked --bin lean-ctx-ocla-verify -- agent relay.json --gateway
+```
+
+The CLI accepts only direct regular files. On Unix it atomically refuses
+symlinks and opens non-blocking before validating the opened handle, so FIFOs,
+devices, and directories cannot bypass its 64 KiB bound or block the process.
+Other platforms apply the same pre-/post-open regular-file checks using the
+available standard-library primitives.
+
+## Local verification gates
+
+The declared MSRV is Rust 1.74. Generate and verify the lockfile with that exact
+toolchain before testing newer stable Rust:
+
+```bash
+rustup toolchain install 1.74.0 --profile minimal
+cargo +1.74.0 generate-lockfile
+cargo +1.74.0 test --locked
+cargo test --locked
+cargo clippy --locked --all-targets -- -D warnings
+./scripts/verify-packaged-source.sh
+```
+
+The committed lock intentionally pins the release-critical dependency graph.
+This is local compatibility evidence, not a crates.io release or external
+certification.
 
 ## Non-goals (the embedding boundary)
 

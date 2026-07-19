@@ -112,6 +112,22 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         ),
         doc("billing-plane", "billing-plane-v1.md", 1, Frozen),
         doc("wasm-abi", "wasm-abi-v1.md", 1, Frozen),
+        // Release promotion, offline rollback rehearsal and signing-key
+        // rotation are externally consumed fail-closed supply-chain formats.
+        // Their exact v1 semantics are immutable; evolution requires v2.
+        doc("delivery-manifest", "delivery-manifest-v1.md", 1, Frozen),
+        doc(
+            "deployment-rehearsal",
+            "deployment-rehearsal-v1.md",
+            1,
+            Frozen,
+        ),
+        doc(
+            "release-key-rotation",
+            "release-key-rotation-v1.md",
+            1,
+            Frozen,
+        ),
         // ── Stable: additive evolution allowed ──────────────────────────────
         // capabilities is additive BY DESIGN: its drift test binds the doc's
         // key list to TOP_LEVEL_KEYS, so the doc grows with every new key —
@@ -123,6 +139,13 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         // v3 = v1 + business plan + sso_oidc entitlement (GL #460/#533); additive.
         doc("evidence-bundle", "evidence-bundle-v1.md", 1, Stable),
         // Offline-verifiable audit evidence ZIP (GL #425, H3 Epic A).
+        doc(
+            "settlement-evidence",
+            "settlement-evidence-v2.md",
+            2,
+            Stable,
+        ),
+        // Payload-free OSS eligibility evidence; approval/invoice authority stays private.
         doc("team-server-v2", "team-server-contract-v2.md", 2, Stable),
         doc("a2a", "a2a-contract-v1.md", 1, Stable),
         doc(
@@ -134,6 +157,12 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         doc("autonomy-drivers", "autonomy-drivers-v1.md", 1, Stable),
         doc("ccp-session-bundle", "ccp-session-bundle-v1.md", 1, Stable),
         doc("conformance", "conformance-v1.md", 1, Stable),
+        doc(
+            "ocla-verifier-conformance",
+            "ocla-verifier-conformance-v1.md",
+            1,
+            Stable,
+        ),
         doc("degradation-policy", "degradation-policy-v1.md", 1, Stable),
         doc("extension-trust", "extension-trust-v1.md", 1, Stable),
         doc("extractors", "extractors-v1.md", 1, Stable),
@@ -192,6 +221,36 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         // evolves additively (new optional fields), so Stable, not Frozen.
         doc("addon-manifest", "addon-manifest-v1.md", 1, Stable),
         // ── Experimental: may change without notice ─────────────────────────
+        // W0/W1 token-intelligence foundations are locally verified but do not
+        // yet claim complete hotpath adoption or externally consumed stability.
+        doc(
+            "context-candidate-admission",
+            "context-candidate-admission-v1.md",
+            1,
+            Experimental,
+        ),
+        doc(
+            "multi-agent-efficiency-benchmark",
+            "multi-agent-efficiency-benchmark-v1.md",
+            1,
+            Experimental,
+        ),
+        // The committed artifact is conformance-only; external deployment use
+        // and governed attestor adoption remain deliberately unclaimed.
+        doc(
+            "test-deployment-evidence",
+            "test-deployment-evidence-v1.md",
+            1,
+            Experimental,
+        ),
+        // Local Rust adapter only; external callability, authenticated approval,
+        // and recovery orchestration are deliberately not claimed by v2.
+        doc(
+            "ocla-config-tuning",
+            "ocla-config-tuning-v2.md",
+            2,
+            Experimental,
+        ),
         doc(
             "hosted-personal-index",
             "hosted-personal-index-v1.md",
@@ -404,6 +463,9 @@ mod tests {
             "oss-plane-separation",
             "billing-plane",
             "wasm-abi",
+            "delivery-manifest",
+            "deployment-rehearsal",
+            "release-key-rotation",
         ] {
             let entry = docs.iter().find(|d| d.id == id).expect("listed");
             assert_eq!(
@@ -421,6 +483,9 @@ mod tests {
         assert_eq!(kv["http-mcp"], "frozen");
         assert_eq!(kv["hosted-personal-index"], "experimental");
         assert_eq!(kv["personal-cloud-encryption"], "experimental");
+        assert_eq!(kv["context-candidate-admission"], "experimental");
+        assert_eq!(kv["multi-agent-efficiency-benchmark"], "experimental");
+        assert_eq!(kv["test-deployment-evidence"], "experimental");
     }
 
     #[test]

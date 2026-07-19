@@ -31,6 +31,9 @@ crewai = ["crewai>=0.30"]
 Homepage = "https://github.com/yvgude/lean-ctx"
 Repository = "https://github.com/yvgude/lean-ctx"
 
+[project.scripts]
+leanctx-ocla-verify = "leanctx.ocla_verify:main"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["leanctx*"]

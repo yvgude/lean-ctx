@@ -77,6 +77,32 @@ The SDK's major version follows the engine's `http_mcp` contract major
 (CONTRACTS.md § Versioning rules): a `v2` contract ships as SDK `2.x`, and
 `1.x` keeps speaking `v1`.
 
+## OCLA wire verification
+
+The SDK also exposes dependency-free, engine-independent OCLA v1 wire types
+and strict offline decoders:
+
+```python
+from leanctx import decode_canonical_token_envelope
+
+wire = open("canonical-token-envelope-v1.json", "rb").read()
+envelope = decode_canonical_token_envelope(wire)
+```
+
+The installed `leanctx-ocla-verify` command accepts `token` or `agent`, plus
+an optional `--gateway` policy check for agent envelopes. It bounds input to
+64 KiB and rejects duplicate fields, non-canonical JSON, unsupported versions,
+invalid lineage/accounting/digests, symlinks, and special files.
+
+This proves local public-wire integrity only. It does not prove remote
+delivery, authorization, settlement, third-party interoperability, external
+certification, or G6 completion.
+
+The packaging smoke fetches only hash-pinned build tools from the public PyPI
+index; wheel construction and the clean-environment install then run without
+dependency resolution or index access. This pins bootstrap inputs, but is not
+an air-gapped or byte-for-byte reproducible build claim.
+
 ## Framework adapters
 
 Expose the lean-ctx tool surface to popular agent frameworks. Each framework is

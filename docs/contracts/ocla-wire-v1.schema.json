@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanctx.com/schemas/ocla/v1/canonical-token-envelope.json",
+  "title": "LeanCTX CanonicalTokenEnvelopeV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "context", "surface", "direction", "provider", "model", "token_balance", "idempotency_key"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "session_id", "agent_id", "content_ref", "tenant_id"],
+      "properties": {
+        "request_id": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+        "session_id": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+        "agent_id": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+        "content_ref": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+        "tenant_id": { "type": ["string", "null"] }
+      }
+    },
+    "surface": { "enum": ["mcp", "proxy", "shell", "agent"] },
+    "direction": { "enum": ["input", "output"] },
+    "provider": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+    "model": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+    "token_balance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["original_tokens", "materialized_tokens", "delivered_tokens", "provider_billed_tokens"],
+      "properties": {
+        "original_tokens": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "materialized_tokens": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "delivered_tokens": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "provider_billed_tokens": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 }
+      }
+    },
+    "route_ref": { "type": ["string", "null"] },
+    "policy_ref": { "type": ["string", "null"] },
+    "idempotency_key": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" }
+  },
+  "x-ocla-api-version": "ocla/v1"
+}

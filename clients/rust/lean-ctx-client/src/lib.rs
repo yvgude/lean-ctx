@@ -40,6 +40,8 @@
 //! - `GET /v1/events` as a blocking [`EventStream`] iterator (SSE)
 //! - `GET /v1/context/summary`, `GET /v1/events/search`,
 //!   `GET /v1/events/lineage`, `GET /v1/metrics`
+//! - Offline, bounded OCLA v1 wire verification for the public canonical token
+//!   and agent wire envelopes, plus an explicit self-relay gateway policy check
 //!
 //! ## SemVer coupling
 //!
@@ -83,6 +85,7 @@ mod client;
 mod conformance;
 mod error;
 mod events;
+mod ocla;
 mod tool_text;
 mod types;
 
@@ -93,5 +96,12 @@ pub use conformance::{
 };
 pub use error::{HttpError, LeanCtxError, Result};
 pub use events::EventStream;
+pub use ocla::{
+    decode_agent_envelope, decode_canonical_token_envelope, verify_agent_gateway_admissibility,
+    AgentEnvelopeV1, CanonicalTokenEnvelopeV1, OclaGatewayAdmissibilityError, OclaRequestContext,
+    OclaWireError, TokenBalanceV1, TokenEnvelopeSurface, TokenFlowDirection,
+    AGENT_ENVELOPE_SCHEMA_ID, AGENT_ENVELOPE_SCHEMA_VERSION, CANONICAL_TOKEN_ENVELOPE_SCHEMA_ID,
+    CANONICAL_TOKEN_ENVELOPE_SCHEMA_VERSION, MAX_OCLA_WIRE_BYTES, OCLA_API_VERSION,
+};
 pub use tool_text::tool_result_to_text;
 pub use types::{CallContext, ContextEventV1, ListToolsResponse, ToolCallResponse};

@@ -1,0 +1,52 @@
+//! Standalone consumer for the public OCLA wire contract.
+
+use std::error::Error;
+use std::fs::File;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+use lean_ctx_client::{
+    decode_agent_envelope, decode_canonical_token_envelope, verify_agent_gateway_admissibility,
+    MAX_OCLA_WIRE_BYTES, OCLA_API_VERSION,
+};
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let mut arguments = std::env::args_os().skip(1);
+    let token_path = required_path(&mut arguments, "canonical token envelope path is required")?;
+    let agent_path = required_path(&mut arguments, "agent envelope path is required")?;
+    if arguments.next().is_some() {
+        return Err("expected exactly two wire document paths".into());
+    }
+
+    let token_wire = read_bounded(&token_path)?;
+    let agent_wire = read_bounded(&agent_path)?;
+    let token = decode_canonical_token_envelope(&token_wire)?;
+    let agent = decode_agent_envelope(&agent_wire)?;
+    verify_agent_gateway_admissibility(&agent)?;
+
+    println!(
+        "ocla_api={};token_schema_version={};agent_schema_version={};gateway_admissible=true",
+        OCLA_API_VERSION, token.schema_version, agent.schema_version
+    );
+    Ok(())
+}
+
+fn read_bounded(path: &Path) -> Result<Vec<u8>, Box<dyn Error>> {
+    let limit = u64::try_from(MAX_OCLA_WIRE_BYTES)? + 1;
+    let mut wire = Vec::with_capacity(MAX_OCLA_WIRE_BYTES.min(8 * 1024));
+    File::open(path)?.take(limit).read_to_end(&mut wire)?;
+    if wire.len() > MAX_OCLA_WIRE_BYTES {
+        return Err("OCLA wire document exceeds the public size bound".into());
+    }
+    Ok(wire)
+}
+
+fn required_path(
+    arguments: &mut impl Iterator<Item = std::ffi::OsString>,
+    message: &'static str,
+) -> Result<PathBuf, Box<dyn Error>> {
+    arguments
+        .next()
+        .map(PathBuf::from)
+        .ok_or_else(|| message.into())
+}

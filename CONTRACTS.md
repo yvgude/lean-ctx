@@ -68,13 +68,18 @@ Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_d
 | OSS Plane Separation | `docs/contracts/oss-plane-separation-v1.md` | 1 | frozen |
 | Billing Plane | `docs/contracts/billing-plane-v1.md` | 1 | frozen |
 | WASM ABI | `docs/contracts/wasm-abi-v1.md` | 1 | frozen |
+| Delivery Manifest | `docs/contracts/delivery-manifest-v1.md` | 1 | frozen |
+| Deployment Rehearsal | `docs/contracts/deployment-rehearsal-v1.md` | 1 | frozen |
+| Release Key Rotation | `docs/contracts/release-key-rotation-v1.md` | 1 | frozen |
 | Capabilities | `docs/contracts/capabilities-contract-v1.md` | 1 | stable¹ |
 | Billing Plane v2 | `docs/contracts/billing-plane-v2.md` | 2 | stable |
+| Settlement Evidence | `docs/contracts/settlement-evidence-v2.md` | 2 | stable |
 | A2A | `docs/contracts/a2a-contract-v1.md` | 1 | stable |
 | Attention Layout Driver | `docs/contracts/attention-layout-driver-v1.md` | 1 | stable |
 | Autonomy Drivers | `docs/contracts/autonomy-drivers-v1.md` | 1 | stable |
 | CCP Session Bundle | `docs/contracts/ccp-session-bundle-v1.md` | 1 | stable |
 | Conformance | `docs/contracts/conformance-v1.md` | 1 | stable |
+| OCLA Verifier Conformance | `docs/contracts/ocla-verifier-conformance-v1.md` | 1 | stable |
 | Degradation Policy | `docs/contracts/degradation-policy-v1.md` | 1 | stable |
 | Extension Trust | `docs/contracts/extension-trust-v1.md` | 1 | stable |
 | Extractors | `docs/contracts/extractors-v1.md` | 1 | stable |
@@ -89,9 +94,13 @@ Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_d
 | Tokenizer Translation Driver | `docs/contracts/tokenizer-translation-driver-v1.md` | 1 | stable |
 | Workflow Evidence Ledger | `docs/contracts/workflow-evidence-ledger-v1.md` | 1 | stable |
 | Wrapped Permalink | `docs/contracts/wrapped-permalink-v1.md` | 1 | stable |
+| Context Candidate Admission | `docs/contracts/context-candidate-admission-v1.md` | 1 | experimental |
+| Multi-Agent Efficiency Benchmark | `docs/contracts/multi-agent-efficiency-benchmark-v1.md` | 1 | experimental |
+| Test Deployment Evidence | `docs/contracts/test-deployment-evidence-v1.md` | 1 | experimental |
 | Hosted Personal Index | `docs/contracts/hosted-personal-index-v1.md` | 1 | experimental |
 | Personal Cloud Encryption | `docs/contracts/personal-cloud-encryption-v1.md` | 1 | experimental |
 | Context Snapshot | `docs/contracts/context-snapshot-v1.md` | 1 | experimental |
+| OCLA Config Tuning | `docs/contracts/ocla-config-tuning-v2.md` | 2 | experimental |
 
 ¹ The capabilities document is additive **by design**: its drift test binds the doc's key list to `server_capabilities::TOP_LEVEL_KEYS`, so the doc must grow whenever a key is added. Freezing the file would contradict its own contract; removal or mutation of existing keys remains a breaking change.
 

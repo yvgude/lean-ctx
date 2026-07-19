@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package leanctx.ocla.v1;
+
+// Bounded transport projection of the public OCLA v1 JSON contracts.
+service OclaVerifier {
+  rpc VerifyTokenEnvelope(CanonicalTokenEnvelope) returns (VerificationResult);
+  rpc VerifyAgentEnvelope(AgentEnvelope) returns (VerificationResult);
+}
+
+message RequestContext {
+  string request_id = 1;
+  string session_id = 2;
+  string agent_id = 3;
+  string content_ref = 4;
+  optional string tenant_id = 5;
+}
+
+enum Surface {
+  SURFACE_UNSPECIFIED = 0;
+  SURFACE_MCP = 1;
+  SURFACE_PROXY = 2;
+  SURFACE_SHELL = 3;
+  SURFACE_AGENT = 4;
+}
+
+enum Direction {
+  DIRECTION_UNSPECIFIED = 0;
+  DIRECTION_INPUT = 1;
+  DIRECTION_OUTPUT = 2;
+}
+
+message TokenBalance {
+  uint64 original_tokens = 1;
+  uint64 materialized_tokens = 2;
+  uint64 delivered_tokens = 3;
+  uint64 provider_billed_tokens = 4;
+}
+
+message CanonicalTokenEnvelope {
+  uint32 schema_version = 1;
+  RequestContext context = 2;
+  Surface surface = 3;
+  Direction direction = 4;
+  string provider = 5;
+  string model = 6;
+  TokenBalance token_balance = 7;
+  optional string route_ref = 8;
+  optional string policy_ref = 9;
+  string idempotency_key = 10;
+}
+
+message AgentEnvelope {
+  uint32 schema_version = 1;
+  string relay_id = 2;
+  RequestContext context = 3;
+  string from_agent_id = 4;
+  string to_agent_id = 5;
+  string capsule_ref = 6;
+  uint64 budget_tokens = 7;
+}
+
+enum Rejection {
+  REJECTION_UNSPECIFIED = 0;
+  REJECTION_NONE = 1;
+  REJECTION_OVERSIZE = 2;
+  REJECTION_MALFORMED = 3;
+  REJECTION_UNSUPPORTED_VERSION = 4;
+  REJECTION_INVALID_INVARIANT = 5;
+  REJECTION_NON_CANONICAL = 6;
+  REJECTION_SELF_RELAY = 7;
+}
+
+message VerificationResult {
+  bool accepted = 1;
+  Rejection rejection = 2;
+  string api_version = 3;
+}

@@ -1,0 +1,1 @@
+{"roots":[{"endpoint_hosts":["test-deployment.example.invalid"],"environment_ids":["fixture-contract-test"],"key_id":"sha256:39f713d0a644253f04529421b9f51b9b08979d08295959c4f3990ee617f5139f","role":"conformance-fixture","trust_root_sha256":"sha256:c1fd2e306488bd0f965670c887e4d087b24f13b3a469782f48a0b4550dec0e19"}],"schema_version":"leanctx.test-deployment-trust-policy/v1"}

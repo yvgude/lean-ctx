@@ -1,3 +1,2 @@
 /target
-# Library crate: lock file is not committed (resolved fresh by consumers/CI).
-/Cargo.lock
+# Cargo.lock is committed so standalone boundary checks run with --locked.

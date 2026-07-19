@@ -1,0 +1,529 @@
+{
+  "schema_version": 1,
+  "contract": "leanctx-runtime-reality/v1",
+  "scope": "Canonical audited v1 baseline of OSS repository ingress, interception, wire protocols, context stores, central runtime configuration and committed deployment surfaces. Endpoint variants are grouped under their production router or transport boundary; the gate prevents baseline shrink but does not claim automatic discovery of every future file.",
+  "maturity_levels": ["absent", "prototype", "integrated", "hardened", "certified"],
+  "proof_ladder": {
+    "absent": ["absence"],
+    "prototype": ["source"],
+    "integrated": ["source", "test"],
+    "hardened": ["source", "test", "security_test", "required_ci"],
+    "certified": ["source", "test", "security_test", "required_ci", "certification"]
+  },
+  "non_goals": [
+    "Individual HTTP endpoints are not separate capabilities; their owning router is the inventory unit.",
+    "A green source or unit test is not certification, production deployment, commercial eligibility or external interoperability evidence.",
+    "Private repositories, customer overlays and uncommitted infrastructure are outside this OSS inventory.",
+    "MCP availability does not imply full-inline interception for every IDE or client.",
+    "New surface families require an explicit reviewed baseline update; absence from this v1 list is not proof that arbitrary future files do not exist."
+  ],
+  "completeness_categories": [
+    {
+      "id": "request_path",
+      "owner": "runtime-platform",
+      "boundary": "Canonical v1 product ingress, interception and request-routing families audited at contract creation; individual routes are grouped by production entrypoint.",
+      "coverage_rule": "The named MCP, CLI, hook, shell, proxy, dashboard, gateway, cloud, daemon IPC and LSP baseline IDs cannot shrink without a validator change.",
+      "baseline_item_ids": [
+        "request-mcp-stdio", "request-cli-dispatch", "request-agent-hooks",
+        "request-shell-hook", "request-provider-proxy", "request-dashboard-http",
+        "request-org-gateway", "request-cloud-api", "request-daemon-ipc",
+        "request-lsp-adapter"
+      ],
+      "non_goals": ["No claim that all client applications exercise every path."]
+    },
+    {
+      "id": "protocol",
+      "owner": "protocol-platform",
+      "boundary": "Canonical v1 wire protocols accepted or emitted by the audited runtime, including the standalone OCLA verifier sidecar.",
+      "coverage_rule": "The named provider wire-shape, streaming and WebSocket baseline IDs cannot shrink without a validator change.",
+      "baseline_item_ids": [
+        "protocol-mcp-jsonrpc-stdio", "protocol-openai-chat-http",
+        "protocol-anthropic-messages-http", "protocol-gemini-generate-http",
+        "protocol-openai-responses-http", "protocol-provider-sse",
+        "protocol-openai-responses-websocket", "protocol-agent-hook-json",
+        "protocol-ocla-grpc"
+      ],
+      "non_goals": ["Protocol parsing does not prove cross-vendor semantic conformance."]
+    },
+    {
+      "id": "store",
+      "owner": "context-platform",
+      "boundary": "The canonical context-store baseline is delegated to the independently code-linked context reality map.",
+      "coverage_rule": "Reference exactly one canonical store inventory and its executable completeness gate instead of duplicating store rows here.",
+      "baseline_item_ids": ["store-context-reality-map"],
+      "non_goals": ["This reference does not upgrade shadow hot paths to enforced runtime adoption."]
+    },
+    {
+      "id": "central_config",
+      "owner": "runtime-platform",
+      "boundary": "Canonical v1 central configuration roots audited for request routing, security or deployment behavior.",
+      "coverage_rule": "Inventory global/project TOML, proxy, dashboard, gateway, cloud and LSP configuration roots.",
+      "baseline_item_ids": [
+        "config-global-project-toml", "config-proxy-runtime",
+        "config-dashboard-runtime", "config-gateway-generated",
+        "config-cloud-environment", "config-lsp-registry"
+      ],
+      "non_goals": ["Per-command flags and test-only environment variables are not separate central configs."]
+    },
+    {
+      "id": "deployment",
+      "owner": "release-engineering",
+      "boundary": "Canonical v1 installer, service-manager, container, manifest and target deployment surfaces.",
+      "coverage_rule": "Inventory local install, daemon services, gateway/cloud containers, delivery contracts and explicit Helm/Terraform/air-gap/test-deployment gaps.",
+      "baseline_item_ids": [
+        "deployment-universal-installer", "deployment-daemon-services",
+        "deployment-gateway-compose", "deployment-gateway-image",
+        "deployment-cloud-image", "deployment-delivery-manifest",
+        "deployment-test-environment", "deployment-helm",
+        "deployment-terraform", "deployment-airgap-bundle"
+      ],
+      "non_goals": ["A build recipe or hermetic rehearsal is not evidence that production deployment or rollback occurred."]
+    }
+  ],
+  "items": [
+    {
+      "id": "request-mcp-stdio",
+      "category": "request_path",
+      "surface": "MCP stdio tool/resource/prompt dispatch",
+      "maturity": "prototype",
+      "owner": "mcp-runtime",
+      "boundary": "Local MCP client process to LeanCtxServer through the hybrid stdio transport.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/server/server_handler.rs", "language": "rust", "symbol_kind": "function", "symbol": "call_tool"}
+      ],
+      "non_goals": ["Does not establish proprietary IDE full-inline interception."]
+    },
+    {
+      "id": "request-cli-dispatch",
+      "category": "request_path",
+      "surface": "Local CLI command dispatch",
+      "maturity": "prototype",
+      "owner": "cli-runtime",
+      "boundary": "Human or agent process invoking the lean-ctx binary.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/cli/dispatch/mod.rs", "language": "rust", "symbol_kind": "function", "symbol": "run"}
+      ],
+      "non_goals": ["CLI presence does not prove every subcommand has protocol-level conformance coverage."]
+    },
+    {
+      "id": "request-agent-hooks",
+      "category": "request_path",
+      "surface": "Agent pre/post-tool hook interception",
+      "maturity": "prototype",
+      "owner": "agent-integrations",
+      "boundary": "Supported agent hook JSON on stdin to fail-open/fail-closed hook handlers.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/hook_handlers/mod.rs", "language": "rust", "symbol_kind": "function", "symbol": "handle_rewrite"}
+      ],
+      "non_goals": ["Hook installation does not prove runtime activation in every supported client."]
+    },
+    {
+      "id": "request-shell-hook",
+      "category": "request_path",
+      "surface": "Shell command wrapper interception",
+      "maturity": "prototype",
+      "owner": "shell-runtime",
+      "boundary": "Installed zsh/bash startup hook redirects eligible non-interactive commands to lean-ctx.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/shell_hook.rs", "language": "rust", "symbol_kind": "function", "symbol": "install_all"}
+      ],
+      "non_goals": ["Interactive human commands and explicit bypass markers remain outside interception."]
+    },
+    {
+      "id": "request-provider-proxy",
+      "category": "request_path",
+      "surface": "Provider HTTP reverse proxy",
+      "maturity": "prototype",
+      "owner": "proxy-runtime",
+      "boundary": "Loopback HTTP ingress through provider routers to configured upstreams.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/proxy/mod.rs", "language": "rust", "symbol_kind": "function", "symbol": "start_proxy_with_token"}
+      ],
+      "non_goals": ["Integrated routing is not a certified transparent proxy for every provider feature."]
+    },
+    {
+      "id": "request-dashboard-http",
+      "category": "request_path",
+      "surface": "Local dashboard HTTP/API server",
+      "maturity": "prototype",
+      "owner": "observability-ui",
+      "boundary": "Authenticated or explicitly no-auth local dashboard socket.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/dashboard/mod.rs", "language": "rust", "symbol_kind": "function", "symbol": "handle_request"}
+      ],
+      "non_goals": ["Dashboard projections are not settlement or production monitoring certification."]
+    },
+    {
+      "id": "request-org-gateway",
+      "category": "request_path",
+      "surface": "Self-hosted organization gateway HTTP servers",
+      "maturity": "prototype",
+      "owner": "gateway-runtime",
+      "boundary": "Gateway proxy, user API, admin API and metrics listeners backed by configured PostgreSQL.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/gateway_server/serve.rs", "language": "rust", "symbol_kind": "function", "symbol": "serve"}
+      ],
+      "non_goals": ["No claim of HA, disaster recovery or production deployment."]
+    },
+    {
+      "id": "request-cloud-api",
+      "category": "request_path",
+      "surface": "Hosted cloud HTTP API",
+      "maturity": "prototype",
+      "owner": "cloud-runtime",
+      "boundary": "Axum cloud API router enabled by the cloud binary and environment configuration.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/cloud_server/mod.rs", "language": "rust", "symbol_kind": "function", "symbol": "run"}
+      ],
+      "non_goals": ["No OSS evidence of production SLO, deployment or external certification."]
+    },
+    {
+      "id": "request-daemon-ipc",
+      "category": "request_path",
+      "surface": "Local daemon IPC lifecycle",
+      "maturity": "prototype",
+      "owner": "daemon-runtime",
+      "boundary": "Unix socket or Windows loopback daemon address used by local processes.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/ipc/mod.rs", "language": "rust", "symbol_kind": "function", "symbol": "bind_listener"}
+      ],
+      "non_goals": ["Local IPC is not a remote multi-node control plane."]
+    },
+    {
+      "id": "request-lsp-adapter",
+      "category": "request_path",
+      "surface": "LSP and JetBrains backend request routing",
+      "maturity": "prototype",
+      "owner": "language-intelligence",
+      "boundary": "Tool request to language-specific stdio LSP or discovered JetBrains HTTP backend.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/lsp/router.rs", "language": "rust", "symbol_kind": "function", "symbol": "with_backend"}
+      ],
+      "non_goals": ["Backend selection does not certify all language servers or IDE versions."]
+    },
+    {
+      "id": "protocol-mcp-jsonrpc-stdio",
+      "category": "protocol",
+      "surface": "MCP JSON-RPC over newline or Content-Length framed stdio",
+      "maturity": "integrated",
+      "owner": "mcp-runtime",
+      "boundary": "Bidirectional rmcp messages on stdin/stdout.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/mcp_stdio.rs", "language": "rust", "symbol_kind": "struct", "symbol": "HybridJsonRpcMessageCodec"},
+        {"kind": "test", "source": "rust/src/mcp_stdio.rs", "language": "rust", "symbol_kind": "test", "symbol": "decodes_content_length_and_marks_protocol", "covers_source_symbols": ["HybridJsonRpcMessageCodec"]}
+      ],
+      "non_goals": ["No external MCP certification claim."]
+    },
+    {
+      "id": "protocol-openai-chat-http",
+      "category": "protocol",
+      "surface": "OpenAI-compatible chat request-body transformation",
+      "maturity": "integrated",
+      "owner": "proxy-runtime",
+      "boundary": "Production OpenAI-shaped request-body transformer called by the provider handler.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/proxy/openai.rs", "language": "rust", "symbol_kind": "function", "symbol": "compress_request_body"},
+        {"kind": "test", "source": "rust/src/proxy/openai.rs", "language": "rust", "symbol_kind": "test", "symbol": "openai_prose_compression_is_deterministic", "covers_source_symbols": ["compress_request_body"]}
+      ],
+      "non_goals": ["Does not claim full OpenAI API surface coverage."]
+    },
+    {
+      "id": "protocol-anthropic-messages-http",
+      "category": "protocol",
+      "surface": "Anthropic Messages request-body transformation",
+      "maturity": "integrated",
+      "owner": "proxy-runtime",
+      "boundary": "Production Anthropic-shaped request-body transformer called by the provider handler.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/proxy/anthropic.rs", "language": "rust", "symbol_kind": "function", "symbol": "compress_request_body"},
+        {"kind": "test", "source": "rust/src/proxy/anthropic.rs", "language": "rust", "symbol_kind": "test", "symbol": "compress_request_body_is_deterministic", "covers_source_symbols": ["compress_request_body"]}
+      ],
+      "non_goals": ["Does not claim full Anthropic API surface coverage."]
+    },
+    {
+      "id": "protocol-gemini-generate-http",
+      "category": "protocol",
+      "surface": "Gemini generate-content request-body transformation",
+      "maturity": "integrated",
+      "owner": "proxy-runtime",
+      "boundary": "Production Gemini-shaped request-body transformer called by the provider handler.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/proxy/google.rs", "language": "rust", "symbol_kind": "function", "symbol": "compress_request_body"},
+        {"kind": "test", "source": "rust/src/proxy/google.rs", "language": "rust", "symbol_kind": "test", "symbol": "gemini_compression_is_deterministic", "covers_source_symbols": ["compress_request_body"]}
+      ],
+      "non_goals": ["Does not claim full Google AI API surface coverage."]
+    },
+    {
+      "id": "protocol-openai-responses-http",
+      "category": "protocol",
+      "surface": "OpenAI Responses request-body transformation",
+      "maturity": "integrated",
+      "owner": "proxy-runtime",
+      "boundary": "Production Responses-shaped request-body transformer called by the provider handler.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/proxy/openai_responses.rs", "language": "rust", "symbol_kind": "function", "symbol": "compress_request_body"},
+        {"kind": "test", "source": "rust/src/proxy/openai_responses.rs", "language": "rust", "symbol_kind": "test", "symbol": "responses_compression_is_deterministic", "covers_source_symbols": ["compress_request_body"]}
+      ],
+      "non_goals": ["Does not claim every Responses event type is transformed."]
+    },
+    {
+      "id": "protocol-provider-sse",
+      "category": "protocol",
+      "surface": "Provider unbounded-stream detection",
+      "maturity": "integrated",
+      "owner": "proxy-runtime",
+      "boundary": "Production decision that selects the no-idle-timeout upstream client for SSE-shaped requests.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/proxy/forward.rs", "language": "rust", "symbol_kind": "function", "symbol": "expects_unbounded_stream"},
+        {"kind": "test", "source": "rust/src/proxy/forward/tests.rs", "language": "rust", "symbol_kind": "test", "symbol": "long_lived_stream_detection_honors_sse_accept_header", "covers_source_symbols": ["expects_unbounded_stream"]}
+      ],
+      "non_goals": ["Streaming survival does not prove semantic parity for every event schema."]
+    },
+    {
+      "id": "protocol-openai-responses-websocket",
+      "category": "protocol",
+      "surface": "OpenAI Responses WebSocket create-event conversion",
+      "maturity": "integrated",
+      "owner": "proxy-runtime",
+      "boundary": "Production conversion of accepted local WebSocket create events into upstream Responses bodies.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/proxy/openai_responses_ws.rs", "language": "rust", "symbol_kind": "function", "symbol": "build_upstream_body"},
+        {"kind": "test", "source": "rust/src/proxy/openai_responses_ws.rs", "language": "rust", "symbol_kind": "test", "symbol": "build_upstream_body_rejects_non_create_events", "covers_source_symbols": ["build_upstream_body"]}
+      ],
+      "non_goals": ["The bridge is not a general bidirectional provider WebSocket proxy."]
+    },
+    {
+      "id": "protocol-agent-hook-json",
+      "category": "protocol",
+      "surface": "Codex hook deny-output JSON projection",
+      "maturity": "integrated",
+      "owner": "agent-integrations",
+      "boundary": "Production Codex hook denial projected into the client-specific JSON response contract.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/hook_handlers/codex.rs", "language": "rust", "symbol_kind": "function", "symbol": "codex_deny_output"},
+        {"kind": "test", "source": "rust/src/hook_handlers/codex.rs", "language": "rust", "symbol_kind": "test", "symbol": "codex_deny_does_not_block_leanctx_cli_invocations", "covers_source_symbols": ["codex_deny_output"]}
+      ],
+      "non_goals": ["No claim of identical hook semantics across proprietary clients."]
+    },
+    {
+      "id": "protocol-ocla-grpc",
+      "category": "protocol",
+      "surface": "OCLA gRPC verifier sidecar",
+      "maturity": "integrated",
+      "owner": "ocla-contracts",
+      "boundary": "Loopback-only gRPC projection of the public OCLA token and agent envelope verifier.",
+      "evidence": [
+        {"kind": "source", "source": "packages/ocla-grpc/src/lib.rs", "language": "rust", "symbol_kind": "function", "symbol": "serve"},
+        {"kind": "test", "source": "packages/ocla-grpc/tests/grpc_e2e.rs", "language": "rust", "symbol_kind": "test", "symbol": "real_loopback_grpc_verifies_health_and_contract_boundaries", "covers_source_symbols": ["serve"]}
+      ],
+      "non_goals": ["The loopback verifier is not an engine-inline adapter, remote TLS/auth service, independently maintained implementation, certification or G6 evidence."]
+    },
+    {
+      "id": "store-context-reality-map",
+      "category": "store",
+      "surface": "Canonical context store/handle/planner inventory",
+      "maturity": "prototype",
+      "owner": "context-platform",
+      "boundary": "Delegated canonical v1 component baseline of context stores, identities, invalidation and hot paths.",
+      "evidence": [
+        {"kind": "source", "source": "docs/contracts/context-reality-map-v1.json", "language": "json", "symbol_kind": "contract", "symbol": "leanctx-context-reality-map/v1"}
+      ],
+      "non_goals": ["Shadow-mode entries remain shadow and are not upgraded by this reference."]
+    },
+    {
+      "id": "config-global-project-toml",
+      "category": "central_config",
+      "surface": "Global and project-local TOML configuration",
+      "maturity": "prototype",
+      "owner": "runtime-platform",
+      "boundary": "Global config merged with workspace-local non-sensitive overrides.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/core/config/mod.rs", "language": "rust", "symbol_kind": "function", "symbol": "load_arc"}
+      ],
+      "non_goals": ["Configuration loading does not prove every option is safe for enterprise policy."]
+    },
+    {
+      "id": "config-proxy-runtime",
+      "category": "central_config",
+      "surface": "Provider proxy bind, auth and upstream configuration",
+      "maturity": "prototype",
+      "owner": "proxy-runtime",
+      "boundary": "Config-derived listener and provider upstream selection.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/proxy/mod.rs", "language": "rust", "symbol_kind": "struct", "symbol": "ProxyState"}
+      ],
+      "non_goals": ["No centralized fleet policy or remote configuration claim."]
+    },
+    {
+      "id": "config-dashboard-runtime",
+      "category": "central_config",
+      "surface": "Dashboard bind, host, base-path and auth configuration",
+      "maturity": "prototype",
+      "owner": "observability-ui",
+      "boundary": "CLI/config/environment precedence before local listener startup.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/dashboard/mod.rs", "language": "rust", "symbol_kind": "function", "symbol": "resolve_auth_enabled"}
+      ],
+      "non_goals": ["No external identity-provider or enterprise RBAC claim."]
+    },
+    {
+      "id": "config-gateway-generated",
+      "category": "central_config",
+      "surface": "Self-hosted gateway generated config and secret environment",
+      "maturity": "integrated",
+      "owner": "gateway-runtime",
+      "boundary": "Gateway init renders compose, config and secret env for a local customer-managed instance.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/gateway_server/init.rs", "language": "rust", "symbol_kind": "function", "symbol": "run"},
+        {"kind": "test", "source": "rust/src/gateway_server/init.rs", "language": "rust", "symbol_kind": "test", "symbol": "init_creates_complete_runnable_instance", "covers_source_symbols": ["run"]}
+      ],
+      "non_goals": ["Generated local files are not a deployed customer environment."]
+    },
+    {
+      "id": "config-cloud-environment",
+      "category": "central_config",
+      "surface": "Hosted cloud environment configuration",
+      "maturity": "prototype",
+      "owner": "cloud-runtime",
+      "boundary": "Cloud API database, auth, mail and bind configuration loaded from environment.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/cloud_server/config.rs", "language": "rust", "symbol_kind": "function", "symbol": "from_env"}
+      ],
+      "non_goals": ["No committed production secret distribution or configuration certification."]
+    },
+    {
+      "id": "config-lsp-registry",
+      "category": "central_config",
+      "surface": "Language-server defaults and binary discovery",
+      "maturity": "prototype",
+      "owner": "language-intelligence",
+      "boundary": "Local language-to-LSP mapping and executable discovery.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/lsp/config.rs", "language": "rust", "symbol_kind": "const", "symbol": "KNOWN_SERVERS"}
+      ],
+      "non_goals": ["No centrally managed enterprise LSP fleet."]
+    },
+    {
+      "id": "deployment-universal-installer",
+      "category": "deployment",
+      "surface": "Checksum-verifying local install script",
+      "maturity": "prototype",
+      "owner": "release-engineering",
+      "boundary": "Download or source-build installation into the invoking user environment.",
+      "evidence": [
+        {"kind": "source", "source": "install.sh", "language": "shell", "symbol_kind": "function", "symbol": "verify_checksum"}
+      ],
+      "non_goals": ["Local installation is not customer deployment evidence."]
+    },
+    {
+      "id": "deployment-daemon-services",
+      "category": "deployment",
+      "surface": "LaunchAgent and systemd user services",
+      "maturity": "prototype",
+      "owner": "daemon-runtime",
+      "boundary": "Per-user daemon autostart on supported macOS and Linux hosts.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/daemon_autostart.rs", "language": "rust", "symbol_kind": "function", "symbol": "install"}
+      ],
+      "non_goals": ["No system-wide HA service management or Windows service deployment."]
+    },
+    {
+      "id": "deployment-gateway-compose",
+      "category": "deployment",
+      "surface": "Generated self-hosted gateway Docker Compose instance",
+      "maturity": "integrated",
+      "owner": "gateway-runtime",
+      "boundary": "Local compose definition for gateway and PostgreSQL generated by gateway init.",
+      "evidence": [
+        {"kind": "source", "source": "rust/src/gateway_server/init.rs", "language": "rust", "symbol_kind": "function", "symbol": "run"},
+        {"kind": "test", "source": "rust/src/gateway_server/init.rs", "language": "rust", "symbol_kind": "test", "symbol": "init_creates_complete_runnable_instance", "covers_source_symbols": ["run"]}
+      ],
+      "non_goals": ["Generation is not evidence that the compose stack was deployed or rolled back."]
+    },
+    {
+      "id": "deployment-gateway-image",
+      "category": "deployment",
+      "surface": "Gateway OCI build recipe",
+      "maturity": "prototype",
+      "owner": "release-engineering",
+      "boundary": "Multi-stage container recipe for the gateway-server feature.",
+      "evidence": [
+        {"kind": "source", "source": "docker/Dockerfile.gateway", "language": "dockerfile", "symbol_kind": "instruction", "symbol": "ENTRYPOINT [\"lean-ctx\"]"}
+      ],
+      "non_goals": ["A Dockerfile is not a signed, deployed or health-checked image."]
+    },
+    {
+      "id": "deployment-cloud-image",
+      "category": "deployment",
+      "surface": "Cloud API OCI build recipe",
+      "maturity": "prototype",
+      "owner": "release-engineering",
+      "boundary": "Multi-stage container recipe for the hosted cloud API binary.",
+      "evidence": [
+        {"kind": "source", "source": "cloud-infra/Dockerfile.cloud-api", "language": "dockerfile", "symbol_kind": "instruction", "symbol": "CMD [\"lean-ctx-cloud-api\"]"}
+      ],
+      "non_goals": ["A Dockerfile is not production deployment or cloud CI evidence."]
+    },
+    {
+      "id": "deployment-delivery-manifest",
+      "category": "deployment",
+      "surface": "Digest-bound delivery manifest verification",
+      "maturity": "integrated",
+      "owner": "release-engineering",
+      "boundary": "Offline verifier binds component, commit, contract, image, SBOM, config and migration references.",
+      "evidence": [
+        {"kind": "source", "source": "scripts/verify-delivery-manifest.py", "language": "python", "symbol_kind": "function", "symbol": "verify"},
+        {"kind": "test", "source": "tests/delivery/test_verify_delivery_manifest.py", "language": "python", "symbol_kind": "test", "symbol": "DeliveryManifestTests.test_valid_manifest", "covers_source_symbols": ["verify"]}
+      ],
+      "non_goals": ["Manifest verification is not deployment, promotion approval or rollback execution."]
+    },
+    {
+      "id": "deployment-test-environment",
+      "category": "deployment",
+      "surface": "Digest-proven test deployment evidence",
+      "maturity": "absent",
+      "owner": "release-engineering",
+      "boundary": "Required G0 evidence from an actually deployed and health-checked test environment.",
+      "evidence": [
+        {"kind": "absence", "paths": ["security/evidence/test-deployment-v1.json"], "globs": ["security/evidence/*test-deployment*.json"]}
+      ],
+      "non_goals": ["Hermetic local rehearsal must not be relabeled as actual deployment."]
+    },
+    {
+      "id": "deployment-helm",
+      "category": "deployment",
+      "surface": "Kubernetes Helm deployment",
+      "maturity": "absent",
+      "owner": "release-engineering",
+      "boundary": "Target customer-managed Kubernetes packaging.",
+      "evidence": [
+        {"kind": "absence", "paths": ["deploy/helm/Chart.yaml", "helm/lean-ctx/Chart.yaml"], "globs": ["**/Chart.yaml"]}
+      ],
+      "non_goals": ["Docker Compose is not represented as Kubernetes support."]
+    },
+    {
+      "id": "deployment-terraform",
+      "category": "deployment",
+      "surface": "Terraform infrastructure deployment",
+      "maturity": "absent",
+      "owner": "release-engineering",
+      "boundary": "Target reproducible infrastructure provisioning.",
+      "evidence": [
+        {"kind": "absence", "paths": ["deploy/terraform/main.tf", "terraform/main.tf"], "globs": ["**/*.tf"]}
+      ],
+      "non_goals": ["Shell scripts and Dockerfiles are not represented as Terraform support."]
+    },
+    {
+      "id": "deployment-airgap-bundle",
+      "category": "deployment",
+      "surface": "Air-gapped deployment bundle",
+      "maturity": "absent",
+      "owner": "release-engineering",
+      "boundary": "Target offline bundle with pinned images, contracts, SBOM and verification material.",
+      "evidence": [
+        {"kind": "absence", "paths": ["deploy/airgap/bundle-manifest.json", "airgap/bundle-manifest.json"], "globs": ["**/*airgap*manifest*.json"]}
+      ],
+      "non_goals": ["Offline signature verification alone is not an air-gap deployment bundle."]
+    }
+  ]
+}

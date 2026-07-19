@@ -1,0 +1,29 @@
+[package]
+name = "lean-ctx-ocla-grpc"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+license = "Apache-2.0"
+description = "Loopback-only gRPC verifier for public LeanCTX OCLA v1 envelopes"
+
+[dependencies]
+lean-ctx-client = { path = "../../clients/rust/lean-ctx-client" }
+prost = "=0.14.4"
+serde_json = "=1.0.108"
+tokio = { version = "=1.52.0", features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
+tokio-stream = { version = "=0.1.17", features = ["net"] }
+tonic = { version = "=0.14.6", features = ["transport"] }
+tonic-health = "=0.14.6"
+tonic-prost = "=0.14.6"
+
+[build-dependencies]
+protoc-bin-vendored = "=3.2.0"
+tonic-prost-build = "=0.14.6"
+
+[lints.rust]
+missing_docs = "warn"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

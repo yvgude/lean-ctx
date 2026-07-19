@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanctx.com/schemas/ocla/v1/agent-envelope.json",
+  "title": "LeanCTX AgentEnvelopeV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "relay_id", "context", "from_agent_id", "to_agent_id", "capsule_ref", "budget_tokens"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "relay_id": { "type": "string", "pattern": "^agent-relay:[0-9a-f]{64}$" },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "session_id", "agent_id", "content_ref", "tenant_id"],
+      "properties": {
+        "request_id": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+        "session_id": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+        "agent_id": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[!-~]+$" },
+        "content_ref": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+        "tenant_id": { "type": ["string", "null"] }
+      }
+    },
+    "from_agent_id": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[!-~]+$" },
+    "to_agent_id": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[!-~]+$" },
+    "capsule_ref": { "type": "string", "pattern": "^capsule:[0-9a-f]{64}$" },
+    "budget_tokens": { "type": "integer", "minimum": 1, "maximum": 18446744073709551615 }
+  },
+  "x-ocla-api-version": "ocla/v1",
+  "x-evidence-boundary": "admission_only"
+}

@@ -1,0 +1,17 @@
+[package]
+name = "lean-ctx-ocla-external-consumer"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+publish = false
+license = "Apache-2.0"
+description = "Standalone downstream example for the public lean-ctx OCLA wire contract"
+
+[dependencies]
+lean-ctx-client = { version = "=0.2.0", path = "../../.." }
+
+[lints.rust]
+missing_docs = "warn"
+
+[lints.clippy]
+all = "warn"
