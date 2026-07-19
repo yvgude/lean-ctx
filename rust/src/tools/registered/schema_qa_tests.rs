@@ -1,5 +1,7 @@
 //! Runtime validation of published action-conditional tool schemas (#1008).
 
+use std::collections::HashSet;
+
 use serde_json::{Value, json};
 
 use super::ctx_callgraph::CtxCallgraphTool;
@@ -58,35 +60,109 @@ fn knowledge_search_and_execute_require_mode_specific_inputs() {
     assert!(!execute.is_valid(&json!({"action":"batch"})));
 }
 
-/// Prose regression guard (#1020): the published ctx_patch description teaches
-/// callers which param each op needs. A rename that updates the code but not the
-/// prose (e.g. new_body→new_text) leaves the schema description silently stale.
-/// Assert every op's required param is still named, and the retired alias is not.
-#[test]
-fn patch_description_names_each_ops_required_param() {
-    let def = CtxPatchTool.tool_def();
-    let desc = def.description.as_deref().unwrap_or("");
+/// Collect every declared `properties` key anywhere in a schema (top level and
+/// nested — object params, `if`/`then` applicators, array `items`).
+fn collect_property_names(node: &Value, out: &mut HashSet<String>) {
+    match node {
+        Value::Object(map) => {
+            if let Some(Value::Object(props)) = map.get("properties") {
+                out.extend(props.keys().cloned());
+            }
+            for v in map.values() {
+                collect_property_names(v, out);
+            }
+        }
+        Value::Array(arr) => arr.iter().for_each(|v| collect_property_names(v, out)),
+        _ => {}
+    }
+}
 
-    for token in [
-        "line",
-        "hash", // anchored ops: set_line/replace_lines/insert_after/delete
-        "old_text",
-        "new_text", // replace_unique(path,old_text,new_text)
-        "replace_symbol",
-        "create",
-        "replace_all",
-        "ops[]", // op routing
-    ] {
-        assert!(
-            desc.contains(token),
-            "ctx_patch description must name `{token}`; got: {desc}"
-        );
+/// Collect every string listed in any `required` array anywhere in a schema —
+/// including the `then.required` of conditional (`if`/`then`) subschemas.
+fn collect_required(node: &Value, out: &mut Vec<String>) {
+    match node {
+        Value::Object(map) => {
+            if let Some(Value::Array(req)) = map.get("required") {
+                out.extend(req.iter().filter_map(|r| r.as_str().map(str::to_string)));
+            }
+            for v in map.values() {
+                collect_required(v, out);
+            }
+        }
+        Value::Array(arr) => arr.iter().for_each(|v| collect_required(v, out)),
+        _ => {}
+    }
+}
+
+/// Generic schema-integrity guard (#1020): once per-op requirements live in the
+/// schema (as `if`/`then` conditionals) rather than only in imperative parser
+/// code, the schema IS the source of truth — and requiring a param the schema
+/// never declares is a self-contradiction a client hits before the handler runs.
+/// Assert, for every registered tool, that every `required` token is a declared
+/// property. A `then: {required:["new_body"]}` left after `new_body` was renamed
+/// to `new_text` fails here, for all tools, with no per-tool hardcoding.
+#[test]
+fn every_required_param_is_a_declared_property() {
+    let registry = crate::server::registry::build_registry();
+    let mut violations = Vec::new();
+
+    for def in registry.tool_defs() {
+        let schema = Value::Object((*def.input_schema).clone());
+        let mut props = HashSet::new();
+        collect_property_names(&schema, &mut props);
+        let mut required = Vec::new();
+        collect_required(&schema, &mut required);
+        for r in required {
+            if !props.contains(&r) {
+                violations.push(format!(
+                    "{}: schema requires `{r}` but declares no such property",
+                    def.name
+                ));
+            }
+        }
     }
 
-    // new_text is the single write-param name across every op (#1020); new_body
-    // was fully retired (no alias) — it must never reappear in the published prose.
     assert!(
-        !desc.contains("new_body"),
-        "new_body is retired; published prose must say new_text"
+        violations.is_empty(),
+        "tool schemas require undeclared params (retired/typo'd field?):\n  {}",
+        violations.join("\n  ")
     );
+}
+
+/// The sharp ctx_patch schema (#1020) encodes per-op required params, so a
+/// client knows before calling that `replace_lines` needs `new_text` — not the
+/// retired `new_body`. Exercise the conditionals directly.
+#[test]
+fn patch_schema_encodes_per_op_required_params() {
+    let patch = validator(&CtxPatchTool);
+
+    // set_line requires new_text; the retired new_body does not satisfy it.
+    assert!(
+        patch.is_valid(&json!({"op":"set_line","path":"a","line":1,"hash":"aa","new_text":"x"}))
+    );
+    assert!(
+        !patch.is_valid(&json!({"op":"set_line","path":"a","line":1,"hash":"aa","new_body":"x"}))
+    );
+
+    // replace_lines requires all four anchors + new_text.
+    assert!(patch.is_valid(&json!({
+        "op":"replace_lines","path":"a",
+        "start_line":1,"start_hash":"aa","end_line":2,"end_hash":"bb","new_text":"y"
+    })));
+    assert!(!patch.is_valid(&json!({
+        "op":"replace_lines","path":"a",
+        "start_line":1,"start_hash":"aa","end_line":2,"end_hash":"bb"
+    })));
+
+    // create/replace_all bodies.
+    assert!(!patch.is_valid(&json!({"op":"create","path":"a"})));
+    assert!(patch.is_valid(&json!({"op":"create","path":"a","new_text":""})));
+    assert!(!patch.is_valid(&json!({"op":"replace_all","path":"a","find":"x"})));
+    assert!(patch.is_valid(&json!({"op":"replace_all","path":"a","find":"x","replace":"y"})));
+
+    // Conditionals stay dormant for batch calls: `op` lives inside ops[], so no
+    // top-level `if op==…` fires and the batch validates without body params.
+    assert!(patch.is_valid(&json!({
+        "ops":[{"op":"set_line","path":"a","line":1,"hash":"aa","new_text":"x"}]
+    })));
 }
