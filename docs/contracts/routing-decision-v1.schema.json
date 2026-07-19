@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lean-ctx.dev/contracts/routing-decision-v1.schema.json",
+  "title": "OCLA Routing Decision V1",
+  "description": "Records a model routing decision made by the ModelRouter (DIM 3). Emitted for observability, audit, and future OCLA bus integration.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "requested_model",
+    "routed_model",
+    "tier",
+    "confidence",
+    "reasoning",
+    "model_changed"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "Schema version for forward-compatible evolution."
+    },
+    "requested_model": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The model identifier the client originally requested."
+    },
+    "routed_model": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The model identifier after routing (may equal requested_model)."
+    },
+    "routed_provider": {
+      "type": ["string", "null"],
+      "description": "Provider the request is re-targeted to. Null when upstream is unchanged."
+    },
+    "tier": {
+      "type": "string",
+      "enum": ["fast", "standard", "premium"],
+      "description": "The intent-classified tier that drove the routing decision."
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Classification confidence (0.0 = unknown, 1.0 = certain)."
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "Human-readable, deterministic explanation of the classification path."
+    },
+    "model_changed": {
+      "type": "boolean",
+      "description": "Whether the routing decision actually swapped the model."
+    },
+    "estimated_cost_ratio": {
+      "type": ["number", "null"],
+      "minimum": 0.0,
+      "description": "Estimated cost ratio (routed/original). Null when either model cost is unknown."
+    }
+  },
+  "additionalProperties": false
+}
