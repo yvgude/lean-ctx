@@ -263,8 +263,9 @@ impl std::fmt::Debug for OclaBus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OclaBus")
             .field("enabled", &self.is_enabled())
+            .field("ring_len", &self.len())
             .field("capacity", &self.capacity)
-            .field("len", &self.len())
+            .field("next_id", &self.next_id.load(Ordering::Relaxed))
             .finish()
     }
 }
@@ -321,11 +322,8 @@ pub fn total_emitted() -> u64 {
 /// This ensures backward compatibility — the dashboard, CLI, and JSONL all
 /// continue to see events through the legacy path.
 pub fn emit_and_bridge(event: OclaEvent) -> u64 {
-    let id = emit(event.clone());
-    if id > 0 {
-        bridge_to_legacy(&event);
-    }
-    id
+    bridge_to_legacy(&event);
+    emit(event)
 }
 
 /// Convert an OCLA event to a legacy EventKind and emit it.

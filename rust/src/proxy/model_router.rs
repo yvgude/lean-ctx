@@ -170,7 +170,7 @@ fn extract_last_user_content(messages: &Value) -> Option<String> {
                     return Some(text);
                 }
             }
-            _ => continue,
+            _ => {}
         }
     }
     None
@@ -192,32 +192,28 @@ fn estimate_cost_ratio(original: &str, routed: &str) -> Option<f64> {
 /// the model-prices.json file are used for actual billing.
 fn model_cost_tier(model: &str) -> Option<f64> {
     let m = model.to_lowercase();
-    Some(match () {
-        // Nano tier (~0.02x Sonnet) — must precede "mini" substring matches
-        _ if m.contains("nano") || m.contains("gpt-4.1-nano") => 0.04,
-        // Fast tier (~0.1-0.3x Sonnet) — must precede "gpt-4o" (catches "4o-mini")
-        _ if m.contains("haiku")
-            || m.contains("flash")
-            || m.contains("4o-mini")
-            || m.contains("4.1-mini")
-            || m.contains("deepseek") =>
-        {
-            0.2
-        }
-        // Premium tier (~5x Sonnet)
-        _ if m.contains("opus") || m.contains("o3-pro") || m.contains("o1-pro") => 5.0,
-        // High tier (~2-3x Sonnet)
-        _ if m.contains("o3") || m.contains("o1") || m.contains("gpt-5") => 2.5,
-        // Standard tier (= Sonnet baseline)
-        _ if m.contains("sonnet")
-            || m.contains("gpt-4o")
-            || m.contains("gemini-2.5-pro")
-            || m.contains("gemini-2.0-pro") =>
-        {
-            1.0
-        }
-        _ => return None,
-    })
+    if m.contains("nano") || m.contains("gpt-4.1-nano") {
+        Some(0.04)
+    } else if m.contains("haiku")
+        || m.contains("flash")
+        || m.contains("4o-mini")
+        || m.contains("4.1-mini")
+        || m.contains("deepseek")
+    {
+        Some(0.2)
+    } else if m.contains("opus") || m.contains("o3-pro") || m.contains("o1-pro") {
+        Some(5.0)
+    } else if m.contains("o3") || m.contains("o1") || m.contains("gpt-5") {
+        Some(2.5)
+    } else if m.contains("sonnet")
+        || m.contains("gpt-4o")
+        || m.contains("gemini-2.5-pro")
+        || m.contains("gemini-2.0-pro")
+    {
+        Some(1.0)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
