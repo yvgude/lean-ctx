@@ -127,7 +127,9 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         return;
     }
 
-    if rest.iter().any(|a| a == "--graph") {
+    if rest.iter().any(|a| a == "--by-tool") {
+        cmd_by_tool(rest, limit);
+    } else if rest.iter().any(|a| a == "--graph") {
         println!("{}", core::stats::format_gain_graph());
     } else if rest.iter().any(|a| a == "--daily") {
         println!("{}", core::stats::format_gain_daily());
@@ -597,6 +599,93 @@ fn cmd_opportunity() {
     let sec = t.secondary.fg();
     println!("  {sec}lean-ctx init --global{rst}   {dim}Compress everything{rst}");
     println!();
+}
+
+/// `gain --by-tool` — per-tool savings breakdown from the verified savings
+/// ledger (calls, tokens saved, USD, compression %). The aggregate `gain`
+/// headline hides which tool earned the savings; this surfaces it. Honors
+/// `--limit` and `--json`.
+fn cmd_by_tool(rest: &[String], limit: usize) {
+    use std::collections::HashMap;
+
+    #[derive(Default)]
+    struct Agg {
+        calls: u64,
+        saved_tokens: u64,
+        saved_usd: f64,
+        baseline_tokens: u64,
+    }
+
+    let mut by_tool: HashMap<String, Agg> = HashMap::new();
+    for e in core::savings_ledger::all_events() {
+        let a = by_tool.entry(e.tool).or_default();
+        a.calls += 1;
+        a.saved_tokens += e.saved_tokens;
+        a.saved_usd += e.saved_usd;
+        a.baseline_tokens += e.baseline_tokens;
+    }
+
+    let mut rows: Vec<(String, Agg)> = by_tool.into_iter().collect();
+    // Heaviest saver first; tie-break by name so the view is deterministic.
+    rows.sort_by(|a, b| {
+        b.1.saved_tokens
+            .cmp(&a.1.saved_tokens)
+            .then_with(|| a.0.cmp(&b.0))
+    });
+    rows.truncate(limit);
+
+    let pct = |a: &Agg| -> f64 {
+        if a.baseline_tokens > 0 {
+            a.saved_tokens as f64 / a.baseline_tokens as f64 * 100.0
+        } else {
+            0.0
+        }
+    };
+
+    if rest.iter().any(|a| a == "--json") {
+        let arr: Vec<_> = rows
+            .iter()
+            .map(|(tool, a)| {
+                serde_json::json!({
+                    "tool": tool,
+                    "calls": a.calls,
+                    "saved_tokens": a.saved_tokens,
+                    "saved_usd": a.saved_usd,
+                    "baseline_tokens": a.baseline_tokens,
+                    "saved_pct": pct(a),
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&arr).unwrap_or_else(|_| "[]".to_string())
+        );
+        return;
+    }
+
+    if rows.is_empty() {
+        println!(
+            "No per-tool savings recorded yet. Use lean-ctx-backed tools (ctx_read, \
+             ctx_search, ctx_shell) to populate the ledger."
+        );
+        return;
+    }
+
+    println!("Savings by tool (most saved first):\n");
+    println!(
+        "  {:<16} {:>8} {:>12} {:>10} {:>7}",
+        "TOOL", "CALLS", "SAVED", "USD", "SAVED%"
+    );
+    for (tool, a) in &rows {
+        println!(
+            "  {:<16} {:>8} {:>12} {:>10} {:>6.1}%",
+            tool,
+            a.calls,
+            core::wrapped::format_tokens(a.saved_tokens),
+            format!("${:.2}", a.saved_usd),
+            pct(a),
+        );
+    }
 }
 
 /// `gain --raw` — plain stats (absorbs former `lean-ctx stats` command).
