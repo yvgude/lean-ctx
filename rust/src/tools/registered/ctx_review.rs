@@ -36,7 +36,30 @@ impl McpTool for CtxReviewTool {
                         "description": "Analysis breadth (default 3)"
                     }
                 },
-                "required": ["action"]
+                "required": ["action"],
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": { "action": { "const": "review" } },
+                            "required": ["action"]
+                        },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": {
+                            "properties": { "action": { "const": "diff-review" } },
+                            "required": ["action"]
+                        },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": {
+                            "properties": { "action": { "const": "checklist" } },
+                            "required": ["action"]
+                        },
+                        "then": { "required": ["action", "path"] }
+                    }
+                ]
             }),
         )
     }

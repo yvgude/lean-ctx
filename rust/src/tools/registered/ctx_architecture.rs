@@ -41,7 +41,13 @@ impl McpTool for CtxArchitectureTool {
                         "type": "string",
                         "description": "Output format: text|json (default text)"
                     }
-                }
+                },
+                "allOf": [
+                    {
+                        "if": { "properties": { "action": { "const": "module" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    }
+                ]
             }),
         )
     }

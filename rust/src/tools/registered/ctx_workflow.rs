@@ -34,7 +34,13 @@ impl McpTool for CtxWorkflowTool {
                     "to": { "type": "string", "description": "Target state (for transition)" },
                     "key": { "type": "string", "description": "Evidence key (for evidence_add)" },
                     "value": { "type": "string", "description": "Evidence value or transition note" }
-                }
+                },
+                "allOf": [
+                    { "if": { "properties": { "action": { "const": "transition" } }, "required": ["action"] },
+                      "then": { "required": ["action", "to"] } },
+                    { "if": { "properties": { "action": { "const": "evidence_add" } }, "required": ["action"] },
+                      "then": { "required": ["action", "key"] } }
+                ]
             }),
         )
     }

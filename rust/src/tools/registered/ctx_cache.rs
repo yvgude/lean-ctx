@@ -33,6 +33,15 @@ impl McpTool for CtxCacheTool {
                         "description": "File path for invalidate action (only used with action=invalidate)"
                     }
                 },
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": { "action": { "const": "invalidate" } },
+                            "required": ["action"]
+                        },
+                        "then": { "required": ["action", "path"] }
+                    }
+                ],
                 "required": ["action"]
             }),
         )

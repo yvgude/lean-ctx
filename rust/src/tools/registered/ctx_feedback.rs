@@ -37,7 +37,13 @@ impl McpTool for CtxFeedbackTool {
                     "latency_ms": { "type": "integer", "description": "Latency in ms (for record)" },
                     "note": { "type": "string", "description": "Note (no prompts/PII)" },
                     "limit": { "type": "integer", "description": "Max recent events (default: 500)" }
-                }
+                },
+                "allOf": [
+                    {
+                        "if": { "properties": { "action": { "const": "record" } }, "required": ["action"] },
+                        "then": { "required": ["action", "llm_input_tokens", "llm_output_tokens"] }
+                    }
+                ]
             }),
         )
     }

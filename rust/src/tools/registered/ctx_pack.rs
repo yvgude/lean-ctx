@@ -99,7 +99,33 @@ impl McpTool for CtxPackTool {
                         "description": "Enable auto-load (default: true)"
                     }
                 },
-                "required": ["action"]
+                "required": ["action"],
+                "allOf": [
+                    {
+                        "if": { "properties": { "action": { "const": "create" } }, "required": ["action"] },
+                        "then": { "required": ["action", "name"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "info" } }, "required": ["action"] },
+                        "then": { "required": ["action", "name"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "remove" } }, "required": ["action"] },
+                        "then": { "required": ["action", "name"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "install" } }, "required": ["action"] },
+                        "then": { "required": ["action", "name"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "export" } }, "required": ["action"] },
+                        "then": { "required": ["action", "name"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "import" } }, "required": ["action"] },
+                        "then": { "required": ["action", "file"] }
+                    }
+                ]
             }),
         )
     }

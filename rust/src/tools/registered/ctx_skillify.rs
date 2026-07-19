@@ -31,7 +31,13 @@ impl McpTool for CtxSkillifyTool {
                         "type": "string",
                         "description": "Rule slug (for promote)"
                     }
-                }
+                },
+                "allOf": [
+                    {
+                        "if": { "properties": { "action": { "const": "promote" } }, "required": ["action"] },
+                        "then": { "required": ["action", "slug"] }
+                    }
+                ]
             }),
         )
     }

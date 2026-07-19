@@ -37,7 +37,21 @@ impl McpTool for CtxHandoffTool {
                     "apply_workflow": { "type": "boolean", "description": "Apply workflow state" },
                     "apply_session": { "type": "boolean", "description": "Apply session snapshot" },
                     "apply_knowledge": { "type": "boolean", "description": "Import knowledge facts" }
-                }
+                },
+                "allOf": [
+                    {
+                        "if": { "properties": { "action": { "const": "show" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "pull" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "import" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    }
+                ]
             }),
         )
     }

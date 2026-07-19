@@ -39,6 +39,17 @@ impl McpTool for CtxShareTool {
                         "description": "Context message about what was shared"
                     }
                 },
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": { "action": { "const": "push" } },
+                            "required": ["action"]
+                        },
+                        "then": {
+                            "required": ["action", "paths"]
+                        }
+                    }
+                ],
                 "required": ["action"]
             }),
         )

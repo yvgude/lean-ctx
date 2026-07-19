@@ -46,6 +46,12 @@ impl McpTool for CtxGitReadTool {
                     "max_tokens": { "type": "integer", "description": "Token budget (default: 6000)" },
                     "timeout_secs": { "type": "integer", "description": "Timeout seconds (default: 90, max: 300)" }
                 },
+                "allOf": [
+                    {
+                        "if": { "properties": { "mode": { "const": "grep" } }, "required": ["mode"] },
+                        "then": { "required": ["mode", "query"] }
+                    }
+                ],
                 "required": ["url"]
             }),
         )

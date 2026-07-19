@@ -34,7 +34,29 @@ impl McpTool for CtxTaskTool {
                     "state": { "type": "string", "description": "New state (working|input-required|completed|failed|canceled)" },
                     "message": { "type": "string", "description": "Message or reason" }
                 },
-                "required": ["action"]
+                "required": ["action"],
+                "allOf": [
+                    {
+                        "if": { "properties": { "action": { "const": "create" } }, "required": ["action"] },
+                        "then": { "required": ["action", "to_agent"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "update" } }, "required": ["action"] },
+                        "then": { "required": ["action", "task_id", "state"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "get" } }, "required": ["action"] },
+                        "then": { "required": ["action", "task_id"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "cancel" } }, "required": ["action"] },
+                        "then": { "required": ["action", "task_id"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "message" } }, "required": ["action"] },
+                        "then": { "required": ["action", "task_id", "message"] }
+                    }
+                ]
             }),
         )
     }

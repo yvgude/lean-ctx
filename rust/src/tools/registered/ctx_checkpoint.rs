@@ -43,7 +43,13 @@ ANTIPATTERN: Never touches the user's repository — completely isolated shadow 
                     "ref": { "type": "string", "description": "Checkpoint SHA to restore (required for action=restore)" },
                     "path": { "type": "string", "description": "File/dir to restore (omit for full restore, action=restore only)" },
                     "limit": { "type": "integer", "description": "Max checkpoints in log (default: 20, max: 200)" }
-                }
+                },
+                "allOf": [
+                    {
+                        "if": { "properties": { "action": { "const": "restore" } }, "required": ["action"] },
+                        "then": { "required": ["action", "ref"] }
+                    }
+                ]
             }),
         )
     }

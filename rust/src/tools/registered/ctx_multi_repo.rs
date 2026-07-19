@@ -61,7 +61,21 @@ impl McpTool for CtxMultiRepoTool {
                         "description": "Per-root ranking signal (default: hybrid; bm25 = lexical only)"
                     }
                 },
-                "required": ["action"]
+                "required": ["action"],
+                "allOf": [
+                    {
+                        "if": { "properties": { "action": { "const": "add_root" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "remove_root" } }, "required": ["action"] },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "search" } }, "required": ["action"] },
+                        "then": { "required": ["action", "query"] }
+                    }
+                ]
             }),
         )
     }

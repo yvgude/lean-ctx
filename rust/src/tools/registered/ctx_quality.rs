@@ -39,7 +39,23 @@ impl McpTool for CtxQualityTool {
                         "type": "string",
                         "description": "Output format (text|json)"
                     }
-                }
+                },
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": { "action": { "const": "file" } },
+                            "required": ["action"]
+                        },
+                        "then": { "required": ["action", "path"] }
+                    },
+                    {
+                        "if": {
+                            "properties": { "action": { "const": "delta" } },
+                            "required": ["action"]
+                        },
+                        "then": { "required": ["action", "path"] }
+                    }
+                ]
             }),
         )
     }
