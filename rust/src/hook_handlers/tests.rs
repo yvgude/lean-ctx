@@ -463,14 +463,11 @@ fn codex_rewrite_output_uses_native_updated_input_contract() {
     );
 }
 
-/// #809: codex_allow_output produces valid JSON with allow decision.
+/// An unchanged PreToolUse call is allowed by a successful hook with no stdout.
 #[test]
-fn codex_allow_output_is_valid_json() {
+fn codex_allow_output_is_empty() {
     let output = codex_allow_output();
-    let parsed: serde_json::Value =
-        serde_json::from_str(&output).expect("codex_allow_output must be valid JSON");
-    assert_eq!(parsed["hookSpecificOutput"]["hookEventName"], "PreToolUse");
-    assert_eq!(parsed["hookSpecificOutput"]["permissionDecision"], "allow");
+    assert!(output.is_empty());
 }
 
 /// #809: codex_deny_output with heavily escaped content is valid JSON.

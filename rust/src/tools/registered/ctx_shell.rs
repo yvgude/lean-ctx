@@ -572,17 +572,15 @@ fn redact_shell_output_secrets(output: &str) -> String {
     redacted
 }
 
-/// The Codex MCP client abandons a tool call after five minutes. A serial test
-/// batch cannot reliably finish inside that transport deadline even when its
-/// shell timeout is longer, so detach it and return a pollable job instead.
+/// The Codex MCP client abandons a tool call after five minutes. A Cargo test
+/// with an explicit five-minute-or-longer shell timeout cannot reliably finish
+/// inside that transport deadline (and can wait on Cargo's target lock), so
+/// detach it and return a pollable job instead.
 fn should_auto_background(command: &str, timeout_ms: Option<u64>) -> bool {
-    timeout_ms.is_some_and(|timeout| timeout > 300_000)
+    timeout_ms.is_some_and(|timeout| timeout >= 300_000)
         && command
             .lines()
-            .filter(|line| line.trim_start().starts_with("cargo test"))
-            .take(2)
-            .count()
-            == 2
+            .any(|line| line.trim_start().starts_with("cargo test"))
 }
 
 /// #842: detect a bare `cat <single_file>` command (no pipes, redirects, flags).
@@ -617,19 +615,13 @@ mod tests {
     use super::{is_timeout_notice_only, should_auto_background};
 
     #[test]
-    fn long_serial_cargo_test_batch_is_auto_backgrounded() {
+    fn long_cargo_test_is_auto_backgrounded() {
         assert!(should_auto_background(
             "cargo test --lib a\ncargo test --lib b",
             Some(3_600_000)
         ));
-        assert!(!should_auto_background(
-            "cargo test --lib a",
-            Some(3_600_000)
-        ));
-        assert!(!should_auto_background(
-            "cargo test --lib a\ncargo test --lib b",
-            Some(300_000)
-        ));
+        assert!(should_auto_background("cargo test --lib a", Some(300_000)));
+        assert!(!should_auto_background("cargo test --lib a", Some(299_999)));
     }
 
     #[test]

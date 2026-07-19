@@ -29,7 +29,6 @@ pub fn handle_codex_pretooluse() {
     }
     let binary = resolve_binary();
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
-        // #809: always emit valid JSON — empty stdout is invalid for Codex CLI.
         print!("{}", codex_allow_output());
         return;
     };
@@ -79,7 +78,6 @@ pub fn handle_codex_pretooluse() {
     if mode == crate::hooks::HookMode::Replace {
         print!("{}", codex_deny_output(cmd));
     } else {
-        // #809: always emit valid JSON — Codex CLI requires it.
         print!("{}", codex_allow_output());
     }
 }
@@ -100,16 +98,12 @@ pub(super) fn codex_deny_output(original_cmd: &str) -> String {
 }
 
 /// Allow-passthrough output for the Codex PreToolUse hook (#809).
-/// Every code path must emit valid JSON — Codex CLI parses stdout as JSON
-/// and reports "invalid pre-tool-use JSON output" on empty/malformed output.
+/// Codex treats an exit-0 hook with no stdout as an allowed tool call. Its
+/// `permissionDecision: "allow"` form is only valid when paired with
+/// `updatedInput`; emitting it for an unchanged command makes current Codex
+/// report `unsupported permissionDecision:allow` (#1019).
 pub(super) fn codex_allow_output() -> String {
-    serde_json::json!({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow"
-        }
-    })
-    .to_string()
+    String::new()
 }
 
 /// Emit SessionStart guidance through Codex's documented hidden-context channel.
@@ -189,15 +183,8 @@ mod tests {
         // This is the deny message format — verify it exists for native commands
         assert!(deny_msg.contains("deny"), "deny output must contain deny");
 
-        // The allow output must NOT contain deny
+        // A successful PreToolUse hook with no output allows the command.
         let allow_msg = codex_allow_output();
-        assert!(
-            allow_msg.contains("allow"),
-            "allow output must contain allow"
-        );
-        assert!(
-            !allow_msg.contains("deny"),
-            "allow output must not contain deny"
-        );
+        assert!(allow_msg.is_empty(), "allow output must be empty");
     }
 }
