@@ -224,11 +224,15 @@ fn bench_total_input_overhead() {
     // lifted the actual to ~15116 (instr ~502 + desc ~5905 + schemas ~8709), over
     // the previous 15000 ceiling. Per #290 the ceiling must carry "a tool or two"
     // of slack over the actual, so 16000 (actual ~15116, ~2 tools headroom)
-    // restores that buffer. The lazy default surface users actually pay is
-    // unaffected (bench_lazy_default_vs_full_overhead).
+    // restores that buffer.
+    // Raised 16000 -> 18000 for #1020: per-action schema conditionals across 23
+    // tools added ~1300 tok to the full profile (actual ~17293). Default profile
+    // is unaffected (conditionals only on non-default-advertised tools).
+    // The lazy default surface users actually pay is unaffected
+    // (bench_lazy_default_vs_full_overhead).
     assert!(
-        total < 16000,
-        "Total input overhead should be <16000 tokens, got {total}"
+        total < 18000,
+        "Total input overhead should be <18000 tokens, got {total}"
     );
 }
 

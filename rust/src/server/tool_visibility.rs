@@ -545,10 +545,13 @@ mod tests {
     /// Bumped to 370/2500 for #871: `ctx_search` gained `queries` batch mode
     /// and restored full action descriptions. Tool correctness > token savings —
     /// incomplete descriptions cause agents to misuse parameters.
+    ///
+    /// Bumped to 410/3000 for #1020: `ctx_patch` gained per-op JSON Schema
+    /// if/then conditionals so required params are discoverable pre-call.
     #[test]
     fn core_tool_surface_stays_within_budget() {
-        const PER_TOOL_BUDGET: usize = 370;
-        const TOTAL_BUDGET: usize = 2500;
+        const PER_TOOL_BUDGET: usize = 410;
+        const TOTAL_BUDGET: usize = 3000;
 
         let _guard = crate::core::data_dir::isolated_data_dir();
         let core = crate::tool_defs::core_tool_names();
