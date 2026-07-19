@@ -20,7 +20,7 @@ transport = "stdio"
 command = "{}"
 args = ["serve"]
 "#,
-        binary
+        { binary }
     );
 
     if config_path.exists() {
@@ -34,22 +34,9 @@ args = ["serve"]
         if content.contains("[[mcp_servers]]") {
             // Append to existing mcp_servers
             let updated_content = if content.ends_with('\n') {
-                format!("{}{}", content, server_entry)
+                format!("{content}{server_entry}")
             } else {
-                format!("{}\n{}", content, server_entry)
-            };
-            if let Err(e) = std::fs::write(&config_path, &updated_content) {
-                tracing::error!("Failed to update Vibe config: {}", e);
-                return;
-            }
-            eprintln!("  \x1b[32m✓\x1b[0m Vibe MCP server added to {display_path}");
-            return;
-        } else {
-            // Add mcp_servers section at the end
-            let updated_content = if content.ends_with('\n') {
-                format!("{}\n{}", content, server_entry)
-            } else {
-                format!("{}\n\n{}", content, server_entry)
+                format!("{content}\n{server_entry}")
             };
             if let Err(e) = std::fs::write(&config_path, &updated_content) {
                 tracing::error!("Failed to update Vibe config: {}", e);

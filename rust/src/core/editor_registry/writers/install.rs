@@ -1334,41 +1334,53 @@ pub(super) fn write_vibe_toml(
     lean_ctx_server.insert("name", toml_edit::value("lean-ctx"));
     lean_ctx_server.insert("transport", toml_edit::value("stdio"));
     lean_ctx_server.insert("command", toml_edit::value(binary));
-    
+
     // Create args array
     let mut args_array = toml_edit::Array::new();
-    args_array.push(toml_edit::Value::String(toml_edit::Formatted::new("serve".to_string())));
-    lean_ctx_server.insert("args", toml_edit::Item::Value(toml_edit::Value::Array(args_array)));
+    args_array.push(toml_edit::Value::String(toml_edit::Formatted::new(
+        "serve".to_string(),
+    )));
+    lean_ctx_server.insert(
+        "args",
+        toml_edit::Item::Value(toml_edit::Value::Array(args_array)),
+    );
 
     if target.config_path.exists() {
         let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let mut doc = content.parse::<toml_edit::DocumentMut>().map_err(|e| e.to_string())?;
+        let mut doc = content
+            .parse::<toml_edit::DocumentMut>()
+            .map_err(|e| e.to_string())?;
 
         // Check if lean-ctx server already exists
-        let already_exists = if let Some(toml_edit::Item::ArrayOfTables(aot)) = doc.get_mut("mcp_servers") {
+        let already_exists = if let Some(toml_edit::Item::ArrayOfTables(aot)) =
+            doc.get_mut("mcp_servers")
+        {
             let mut found = false;
             for table in aot.iter_mut() {
-                if let Some(toml_edit::Item::Value(toml_edit::Value::String(name))) = table.get("name") {
-                    if name.value() == "lean-ctx" {
-                        found = true;
-                        // Check if it matches what we want to write
-                        let existing_command = table.get("command").and_then(|v| v.as_str());
-                        if existing_command == Some(binary) {
-                            // Check args exist and match
-                            if let Some(toml_edit::Item::Value(toml_edit::Value::Array(existing_args))) = table.get("args") {
-                                if existing_args.len() == 1 && existing_args.get(0).and_then(|v| v.as_str()) == Some("serve") {
-                                    return Ok(WriteResult {
-                                        action: WriteAction::Already,
-                                        note: None,
-                                    });
-                                }
-                            }
+                if let Some(toml_edit::Item::Value(toml_edit::Value::String(name))) =
+                    table.get("name")
+                    && name.value() == "lean-ctx"
+                {
+                    found = true;
+                    // Check if it matches what we want to write
+                    let existing_command = table.get("command").and_then(|v| v.as_str());
+                    if existing_command == Some(binary) {
+                        // Check args exist and match
+                        if let Some(toml_edit::Item::Value(toml_edit::Value::Array(existing_args))) =
+                            table.get("args")
+                            && existing_args.len() == 1
+                            && existing_args.get(0).and_then(|v| v.as_str()) == Some("serve")
+                        {
+                            return Ok(WriteResult {
+                                action: WriteAction::Already,
+                                note: None,
+                            });
                         }
-                        // Update existing entry - replace the table's contents
-                        table.clear();
-                        table.extend(lean_ctx_server.clone().into_iter());
-                        break;
                     }
+                    // Update existing entry - replace the table's contents
+                    table.clear();
+                    table.extend(lean_ctx_server.clone());
+                    break;
                 }
             }
             if !found {

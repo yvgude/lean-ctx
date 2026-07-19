@@ -462,7 +462,8 @@ pub(crate) fn check_vibe_config(path: &std::path::Path, binary: &str) -> NamedCh
     // Check if mcp_servers array exists and contains lean-ctx
     let has_lean_ctx = if let Some(toml_edit::Item::ArrayOfTables(aot)) = doc.get("mcp_servers") {
         aot.iter().any(|table| {
-            if let Some(toml_edit::Item::Value(toml_edit::Value::String(name))) = table.get("name") {
+            if let Some(toml_edit::Item::Value(toml_edit::Value::String(name))) = table.get("name")
+            {
                 name.value() == "lean-ctx"
                     && table.get("command").and_then(|c| c.as_str()) == Some(binary)
             } else {

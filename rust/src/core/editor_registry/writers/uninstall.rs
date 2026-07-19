@@ -516,12 +516,10 @@ pub(super) fn remove_lean_ctx_vibe_toml_server(
     let removed = if let Some(toml_edit::Item::ArrayOfTables(aot)) = doc.get_mut("mcp_servers") {
         let before = aot.len();
         aot.retain(|table| {
-            table.get("name")
-                .and_then(|n| match n {
-                    toml_edit::Item::Value(toml_edit::Value::String(s)) => Some(s.value()),
-                    _ => None,
-                })
-                != Some(&"lean-ctx".to_string())
+            table.get("name").and_then(|n| match n {
+                toml_edit::Item::Value(toml_edit::Value::String(s)) => Some(s.value()),
+                _ => None,
+            }) != Some(&"lean-ctx".to_string())
         });
         before != aot.len()
     } else {
@@ -536,10 +534,10 @@ pub(super) fn remove_lean_ctx_vibe_toml_server(
     }
 
     // Clean up empty mcp_servers array
-    if let Some(toml_edit::Item::ArrayOfTables(aot)) = doc.get("mcp_servers") {
-        if aot.is_empty() {
-            doc.remove("mcp_servers");
-        }
+    if let Some(toml_edit::Item::ArrayOfTables(aot)) = doc.get("mcp_servers")
+        && aot.is_empty()
+    {
+        doc.remove("mcp_servers");
     }
 
     let formatted = doc.to_string();
