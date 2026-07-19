@@ -172,6 +172,9 @@ impl LedgerEvidenceProjectionV2 {
         if self.schema_version != PROJECTION_SCHEMA_VERSION || self.kind != PROJECTION_KIND {
             return Err(LedgerProjectionErrorV2::InvalidProjectionIdentity);
         }
+        if !is_address(&self.subject_id, "subject:blake3:") {
+            return Err(LedgerProjectionErrorV2::InvalidSubjectId);
+        }
         if self.ledger_snapshot_id != snapshot.snapshot_id
             || self.event_count != snapshot.events.len()
             || self.first_entry_hash != snapshot.first_entry_hash

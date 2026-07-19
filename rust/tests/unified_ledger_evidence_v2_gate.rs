@@ -361,6 +361,15 @@ fn projection_artifact_and_signed_batch_binding_are_offline_verifiable() {
     .unwrap();
     projection.verify(&batch, &snapshot).unwrap();
 
+    let mut malformed_subject = projection.clone();
+    malformed_subject.subject_id = "subject:not-a-blake3-digest".into();
+    malformed_subject.settlement_attribution_items[0].subject_id =
+        malformed_subject.subject_id.clone();
+    assert!(matches!(
+        malformed_subject.verify(&batch, &snapshot),
+        Err(LedgerProjectionErrorV2::InvalidSubjectId)
+    ));
+
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("projection.json");
     std::fs::write(&path, projection.canonical_json(&batch, &snapshot).unwrap()).unwrap();
@@ -368,6 +377,17 @@ fn projection_artifact_and_signed_batch_binding_are_offline_verifiable() {
         load_projection_artifact_v2(&path, &batch, &snapshot).unwrap(),
         projection
     );
+
+    let malformed_path = dir.path().join("malformed-subject.json");
+    std::fs::write(
+        &malformed_path,
+        serde_json::to_vec(&malformed_subject).unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(
+        load_projection_artifact_v2(&malformed_path, &batch, &snapshot),
+        Err(LedgerProjectionErrorV2::InvalidSubjectId)
+    ));
 
     let mut wrong_id = projection.clone();
     wrong_id.projection_id = artifact("forged-projection");
