@@ -105,8 +105,6 @@ impl ResponseCache {
         let pos = self.entries.iter().position(|(k, _)| *k == key)?;
         // Move to back (LRU touch).
         let entry = self.entries.remove(pos)?;
-        let response = &entry.1.response_body;
-        let result = response.as_str();
         self.entries.push_back(entry);
         // Safety: we just pushed it back, reference is valid for the borrow.
         self.entries.back().map(|(_, e)| e.response_body.as_str())
@@ -363,15 +361,19 @@ impl SimpleHasher {
 
 /// Global optimizer registry — maps session IDs to their optimizer instances.
 /// In production, session lifetime is managed by the proxy's connection tracking.
-static OPTIMIZERS: std::sync::OnceLock<Mutex<std::collections::HashMap<String, Arc<Mutex<SessionOptimizer>>>>> =
-    std::sync::OnceLock::new();
+static OPTIMIZERS: std::sync::OnceLock<
+    Mutex<std::collections::HashMap<String, Arc<Mutex<SessionOptimizer>>>>,
+> = std::sync::OnceLock::new();
 
 fn registry() -> &'static Mutex<std::collections::HashMap<String, Arc<Mutex<SessionOptimizer>>>> {
     OPTIMIZERS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
 }
 
 /// Get or create the optimizer for a session.
-pub fn get_or_create(session_id: &str, config: &ResponseOptimizerConfig) -> Arc<Mutex<SessionOptimizer>> {
+pub fn get_or_create(
+    session_id: &str,
+    config: &ResponseOptimizerConfig,
+) -> Arc<Mutex<SessionOptimizer>> {
     let mut reg = registry()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -395,7 +397,9 @@ pub fn global_stats() -> OptimizerStats {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut total = OptimizerStats::default();
     for opt in reg.values() {
-        let guard = opt.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let guard = opt
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         total.cache_hits += guard.stats.cache_hits;
         total.cache_misses += guard.stats.cache_misses;
         total.dedup_detections += guard.stats.dedup_detections;
@@ -476,16 +480,6 @@ mod tests {
         assert!(dedup.record(3), "3 still in window");
         assert!(!dedup.record(2), "2 was evicted when 1 was added");
     }
-
-
-
-
-
-
-
-
-
-
 
     // ─── Cache key computation ───────────────────────────────────────────
 

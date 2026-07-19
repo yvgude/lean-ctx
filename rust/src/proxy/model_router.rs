@@ -1,7 +1,7 @@
 //! Intent-based model routing (P8 / DIM 3 — Leistungsstufe).
 //!
 //! Classifies each request's last user message via [`crate::core::intent_engine`]
-//! and resolves the resulting [`ModelTier`] to a concrete routing target using
+//! and resolves the resulting a model tier to a concrete routing target using
 //! `[proxy.routing.tiers]`. The forward path then rewrites the request body's
 //! `model` field (and optionally re-targets the upstream provider).
 //!
@@ -31,8 +31,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::core::config::{parse_route_target, RoutingRules};
-use crate::core::intent_engine::{self, ModelTier, TaskClassification};
+use crate::core::config::{RoutingRules, parse_route_target};
+use crate::core::intent_engine::{self, TaskClassification};
 
 /// A routing decision record — emitted for observability and future OCLA bus
 /// integration (P2). Deterministic: same input → same decision (#498).
@@ -219,7 +219,6 @@ fn model_cost_tier(model: &str) -> Option<f64> {
         _ => return None,
     })
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -426,8 +425,13 @@ mod tests {
 
     #[test]
     fn cost_tiers_are_ordered() {
-        assert!(model_cost_tier("claude-opus-4").unwrap() > model_cost_tier("claude-sonnet-4").unwrap());
-        assert!(model_cost_tier("claude-sonnet-4").unwrap() > model_cost_tier("claude-haiku-4-5").unwrap());
+        assert!(
+            model_cost_tier("claude-opus-4").unwrap() > model_cost_tier("claude-sonnet-4").unwrap()
+        );
+        assert!(
+            model_cost_tier("claude-sonnet-4").unwrap()
+                > model_cost_tier("claude-haiku-4-5").unwrap()
+        );
         assert!(model_cost_tier("gpt-4o").unwrap() > model_cost_tier("gpt-4o-mini").unwrap());
     }
 

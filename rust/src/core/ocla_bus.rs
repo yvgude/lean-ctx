@@ -330,7 +330,7 @@ pub fn emit_and_bridge(event: OclaEvent) -> u64 {
 
 /// Convert an OCLA event to a legacy EventKind and emit it.
 fn bridge_to_legacy(event: &OclaEvent) {
-    use super::events::{emit as legacy_emit, EventKind};
+    use super::events::{EventKind, emit as legacy_emit};
 
     let kind = match event {
         OclaEvent::CompressionApplied {

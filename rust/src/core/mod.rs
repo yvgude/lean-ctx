@@ -367,7 +367,6 @@ pub mod editor_signal;
 pub mod egress;
 pub mod error;
 pub mod events;
-pub mod ocla_bus;
 pub mod eviction_orchestrator;
 pub mod evidence;
 pub mod evidence_ledger;
@@ -393,6 +392,7 @@ pub mod home;
 pub mod homeostasis;
 pub mod immune_detector;
 pub mod mcp_catalog;
+pub mod ocla_bus;
 pub mod qubo_select;
 
 pub mod agent_registry;
