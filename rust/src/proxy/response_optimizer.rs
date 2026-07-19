@@ -79,6 +79,7 @@ impl Default for ResponseOptimizerConfig {
 struct CacheEntry {
     response_body: String,
     created_at: Instant,
+    #[allow(dead_code)] // read in future stats aggregation
     output_tokens_saved: u64,
 }
 

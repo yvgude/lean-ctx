@@ -1,9 +1,12 @@
 {
   "billing-plane-v1.md": "6cf3ac0ed5b7e9ad753ed5d23482772013a41478d9fa4d38f2f8f959f9cece2d",
   "context-ir-v1.md": "f551d5d48daeda34d7f7bee57582984e58d7f65659ec52a55b23946fc942a81c",
+  "delivery-manifest-v1.md": "2aed9735fc42baa10ca96a7edd786f8c2e26b568b6a6325ce2e4bcded33fe5b1",
+  "deployment-rehearsal-v1.md": "db76d9779887e3e5493a99b4356a1629df34607b54f52815e4da0e29ecfc832d",
   "http-mcp-contract-v1.md": "523eed99932abfdb27f120eb5faa0910536fbe5f638570109b396c531bc765c3",
   "local-free-invariant-v1.md": "a7ca430fa961e1b0bdd700d39deae74e003133789d9e65e84502fd5c8abe6a51",
   "oss-plane-separation-v1.md": "dbf432ae3804a54d7869663893fbc5d623dc2e3d9f9c515cfcc0859edeb8cab9",
+  "release-key-rotation-v1.md": "814b6adb8e6c496b0554cf821738b41fe1472e4565449d1924f9324a491b19ea",
   "team-server-contract-v1.md": "bc0131ca39a181918a8b254f095f358076115bd355a649c7409bd35c310e330c",
   "wasm-abi-v1.md": "9f126d3d3cdc106b9fef30d2a8d3000e279980a7cc6f2ec0197b40c6aad2a707"
 }
