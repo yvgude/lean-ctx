@@ -274,9 +274,10 @@ mod tests {
     #[test]
     fn idempotent_grant_blocks_foreign_owner() {
         let mut reg = AgentLeaseRegistryV1::default();
-        let granted = match reg.acquire(request("agent-a", "request:a"), 10).unwrap() {
-            AgentLeaseAcquireV1::Granted(l) => l,
-            _ => panic!("expected grant"),
+        let AgentLeaseAcquireV1::Granted(granted) =
+            reg.acquire(request("agent-a", "request:a"), 10).unwrap()
+        else {
+            panic!("expected grant")
         };
         assert_eq!(
             reg.acquire(request("agent-a", "request:a"), 20).unwrap(),
@@ -301,9 +302,10 @@ mod tests {
     #[test]
     fn release_requires_owner() {
         let mut reg = AgentLeaseRegistryV1::default();
-        let granted = match reg.acquire(request("agent-a", "request:a"), 10).unwrap() {
-            AgentLeaseAcquireV1::Granted(l) => l,
-            _ => panic!("expected grant"),
+        let AgentLeaseAcquireV1::Granted(granted) =
+            reg.acquire(request("agent-a", "request:a"), 10).unwrap()
+        else {
+            panic!("expected grant")
         };
         assert!(
             reg.release(
