@@ -43,7 +43,7 @@ NAVIGATION PARADOX: reading more ≠ understanding more.
 
 PARALLEL: fire independent tool calls in the SAME turn — ctx_compose bundles multiple lookups into one call.
 
-Auto: preload/dedup/compress run in background. ctx_session=memory, ctx_knowledge=facts, ctx_shell raw=true=uncompressed. Full guide: LEAN-CTX.md
+Long shell jobs: ctx_shell(run_in_background=true), then poll job_id. ctx_session=memory; full guide: LEAN-CTX.md
 
 RECOVER: compressed output is reversible — never re-read line-by-line. Need full/exact? Read the shown file path with any tool (no MCP), or ctx_read(mode=full|raw=true); [Archived]/tee/firewall → ctx_expand(id=...).
 
