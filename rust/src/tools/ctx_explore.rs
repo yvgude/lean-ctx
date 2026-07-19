@@ -679,6 +679,7 @@ mod tests {
         // #498: the output is a pure function of (content, query, options). Two
         // back-to-back runs on the same fixture must be byte-identical — no
         // session writes, no Hebbian co-access, no timestamps.
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::write(
