@@ -265,15 +265,21 @@ impl McpTool for CtxShellTool {
                 })
                 .unwrap_or_default();
 
-            if get_bool(args, "run_in_background").unwrap_or(false) {
+            let auto_background = should_auto_background(&cmd_clone, timeout_ms);
+            if get_bool(args, "run_in_background").unwrap_or(false) || auto_background {
                 let job_id = crate::server::background_shell::start(
                     cmd_clone, cwd_clone, extra_env, timeout_ms,
                 );
+                let mode = if auto_background {
+                    "auto-background"
+                } else {
+                    "background"
+                };
                 return Ok(ToolOutput {
                     shell_outcome: Some(ShellOutcome::Exit(0)),
                     content_blocks: None,
                     ..ToolOutput::simple(format!(
-                        "[background:{job_id} started — use ctx_shell(background_action=\"status\", job_id=\"{job_id}\") to poll or background_action=\"cancel\" to stop it]"
+                        "[{mode}:{job_id} started — use ctx_shell(background_action=\"status\", job_id=\"{job_id}\") to poll or background_action=\"cancel\" to stop it]"
                     ))
                 });
             }
@@ -566,6 +572,19 @@ fn redact_shell_output_secrets(output: &str) -> String {
     redacted
 }
 
+/// The Codex MCP client abandons a tool call after five minutes. A serial test
+/// batch cannot reliably finish inside that transport deadline even when its
+/// shell timeout is longer, so detach it and return a pollable job instead.
+fn should_auto_background(command: &str, timeout_ms: Option<u64>) -> bool {
+    timeout_ms.is_some_and(|timeout| timeout > 300_000)
+        && command
+            .lines()
+            .filter(|line| line.trim_start().starts_with("cargo test"))
+            .take(2)
+            .count()
+            == 2
+}
+
 /// #842: detect a bare `cat <single_file>` command (no pipes, redirects, flags).
 fn detect_bare_cat_file(command: &str) -> Option<String> {
     let trimmed = command.trim();
@@ -595,7 +614,23 @@ fn detect_bare_cat_file(command: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_timeout_notice_only;
+    use super::{is_timeout_notice_only, should_auto_background};
+
+    #[test]
+    fn long_serial_cargo_test_batch_is_auto_backgrounded() {
+        assert!(should_auto_background(
+            "cargo test --lib a\ncargo test --lib b",
+            Some(3_600_000)
+        ));
+        assert!(!should_auto_background(
+            "cargo test --lib a",
+            Some(3_600_000)
+        ));
+        assert!(!should_auto_background(
+            "cargo test --lib a\ncargo test --lib b",
+            Some(300_000)
+        ));
+    }
 
     #[test]
     fn timeout_notice_without_child_output_is_not_recoverable() {

@@ -166,9 +166,8 @@ NAVIGATION PARADOX: reading more ≠ understanding more.\n\
 • Navigate structure (signatures, symbols) before reading entire files";
 
 /// One-line automation reminder.
-pub const AUTO: &str = "Auto: preload/dedup/compress run in background. \
-    ctx_session=memory, ctx_knowledge=facts, ctx_shell raw=true=uncompressed. \
-    Full guide: LEAN-CTX.md";
+pub const AUTO: &str = "Long shell jobs: ctx_shell(run_in_background=true), then poll job_id. \
+    ctx_session=memory; full guide: LEAN-CTX.md";
 
 /// Recovery vocabulary (verbose, LONGFORM profile). lean-ctx compression is fully
 /// reversible (CCR), but agents otherwise only discover the escape hatch reactively
