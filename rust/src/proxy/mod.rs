@@ -41,7 +41,6 @@ pub mod holdout;
 pub mod image_compression;
 pub mod introspect;
 pub mod metrics;
-pub mod model_router;
 pub mod models_api;
 pub mod openai;
 pub mod openai_responses;
@@ -54,7 +53,6 @@ pub mod prefix_replay;
 pub mod prose;
 pub mod prose_ranker;
 pub mod providers;
-pub mod response_optimizer;
 pub mod routing;
 #[cfg(feature = "shape-xlat")]
 pub mod shape_xlat;
