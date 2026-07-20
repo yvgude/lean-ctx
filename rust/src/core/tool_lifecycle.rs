@@ -12,6 +12,7 @@ use crate::core::context_ir::{ContextIrSourceKindV1, ContextIrV1, RecordIrInput}
 use crate::core::context_ledger::ContextLedger;
 use crate::core::heatmap;
 use crate::core::intent_engine::StructuredIntent;
+use crate::core::ocla::EfficiencyAnalyzer;
 use crate::core::session::SessionState;
 use crate::core::stats;
 
@@ -185,14 +186,34 @@ fn record_read_learning(
     is_cache_hit: bool,
     project_root: &str,
 ) {
+    let task_completed = crate::core::bounce_tracker::global()
+        .lock()
+        .ok()
+        .and_then(|bt| bt.bounce_rate_for_extension(path))
+        .is_none_or(|rate| rate < 0.30);
+
+    // Route the realized read through the OCLA efficiency capability so the
+    // production CLI path records the same ETPAO semantics as the contract.
+    // The analyzer is local and deterministic; failure keeps the legacy ratio.
+    let ocla_density = ocla_read_density(
+        path,
+        resolved_mode,
+        original_tokens,
+        output_tokens,
+        task_completed,
+        project_root,
+    );
+
     // Mode predictor: train auto-mode selection on the realized compression
     // density, exactly as the MCP background thread does.
     let sig = crate::core::mode_predictor::FileSignature::from_path(path, original_tokens);
-    let density = if output_tokens > 0 {
-        original_tokens as f64 / output_tokens as f64
-    } else {
-        1.0
-    };
+    let density = ocla_density.unwrap_or_else(|| {
+        if output_tokens > 0 {
+            original_tokens as f64 / output_tokens as f64
+        } else {
+            1.0
+        }
+    });
     let outcome = crate::core::mode_predictor::ModeOutcome {
         mode: resolved_mode.to_string(),
         tokens_in: original_tokens,
@@ -227,11 +248,7 @@ fn record_read_learning(
         // A compressed read only counts as task-completing when this extension
         // is not in a high-bounce state (#593); unknown stays optimistic so the
         // cold start matches the MCP path. 0.30 mirrors BOUNCE_RATE_THRESHOLD.
-        task_completed: crate::core::bounce_tracker::global()
-            .lock()
-            .ok()
-            .and_then(|bt| bt.bounce_rate_for_extension(path))
-            .is_none_or(|rate| rate < 0.30),
+        task_completed,
         timestamp: chrono::Local::now().to_rfc3339(),
     };
     let mut store = crate::core::feedback::FeedbackStore::load();
@@ -243,6 +260,57 @@ fn record_read_learning(
     // marker starts at 0), so the single shadow read persists before exit.
     crate::core::anomaly::record_metric("tokens_per_call", output_tokens as f64);
     crate::core::anomaly::save_debounced();
+}
+
+/// Compute read density through the production OCLA efficiency capability.
+/// Returns `None` when no accepted outcome can produce an ETPAO value.
+fn ocla_read_density(
+    path: &str,
+    resolved_mode: &str,
+    original_tokens: usize,
+    output_tokens: usize,
+    task_completed: bool,
+    project_root: &str,
+) -> Option<f64> {
+    let analyzer = crate::core::ocla::OclaRegistry::global()
+        .efficiency_analyzer
+        .as_ref();
+    read_density_with_analyzer(
+        analyzer,
+        path,
+        resolved_mode,
+        original_tokens,
+        output_tokens,
+        task_completed,
+        project_root,
+    )
+}
+
+fn read_density_with_analyzer(
+    analyzer: &dyn EfficiencyAnalyzer,
+    path: &str,
+    resolved_mode: &str,
+    original_tokens: usize,
+    output_tokens: usize,
+    task_completed: bool,
+    project_root: &str,
+) -> Option<f64> {
+    analyzer
+        .analyze_efficiency(crate::core::ocla::EfficiencySample {
+            context: crate::core::ocla::OclaRequestContext {
+                request_id: format!("read:{path}:{resolved_mode}"),
+                session_id: project_root.to_string(),
+                agent_id: "lean-ctx".to_string(),
+                content_ref: path.to_string(),
+                tenant_id: None,
+            },
+            original_tokens: original_tokens as u64,
+            delivered_tokens: output_tokens as u64,
+            accepted: Some(task_completed),
+        })
+        .ok()
+        .and_then(|analysis| analysis.etpao_milli)
+        .map(|milli| milli as f64 / 1000.0)
 }
 
 /// Record a search/grep operation with full Context OS side effects.
@@ -372,11 +440,64 @@ fn maybe_consolidate(project_root: Option<&str>, calls: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct SpyAnalyzer {
+        calls: AtomicUsize,
+    }
+
+    impl crate::core::ocla::OclaService for SpyAnalyzer {
+        fn capability(&self) -> crate::core::ocla::OclaCapability {
+            crate::core::ocla::OclaCapability::available(
+                crate::core::ocla::OclaCapabilityKind::EfficiencyAnalyzer,
+            )
+        }
+    }
+
+    impl EfficiencyAnalyzer for SpyAnalyzer {
+        fn analyze_efficiency(
+            &self,
+            sample: crate::core::ocla::EfficiencySample,
+        ) -> crate::core::ocla::OclaResult<crate::core::ocla::EfficiencyAnalysis> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            assert_eq!(sample.original_tokens, 1000);
+            assert_eq!(sample.delivered_tokens, 375);
+            Ok(crate::core::ocla::EfficiencyAnalysis {
+                etpao_milli: sample.accepted.map(|_| 375),
+                duplicate_ratio_milli: 625,
+                recommendation_refs: Vec::new(),
+            })
+        }
+    }
 
     // The record_* paths now drive process-global telemetry sinks (mode
     // predictor buffer, anomaly singleton) and read the data-dir env (#550), so
     // every test here takes the shared isolation lock to serialize that state
     // and keep its disk writes inside a throwaway dir.
+
+    #[test]
+    fn ocla_read_density_uses_etpao_for_accepted_reads() {
+        assert_eq!(
+            ocla_read_density("src/main.rs", "aggressive", 1000, 250, true, "."),
+            Some(0.25)
+        );
+        assert_eq!(
+            ocla_read_density("src/main.rs", "aggressive", 1000, 250, false, "."),
+            None
+        );
+    }
+
+    #[test]
+    fn ocla_read_density_accepts_injected_analyzer() {
+        let spy = SpyAnalyzer {
+            calls: AtomicUsize::new(0),
+        };
+        assert_eq!(
+            read_density_with_analyzer(&spy, "src/main.rs", "full", 1000, 375, true, "."),
+            Some(0.375)
+        );
+        assert_eq!(spy.calls.load(Ordering::Relaxed), 1);
+    }
 
     #[test]
     fn record_file_read_does_not_panic_without_session() {
