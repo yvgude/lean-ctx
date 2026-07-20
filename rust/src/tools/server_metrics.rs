@@ -4,6 +4,49 @@ use super::server::{CepComputedStats, CrpMode, LeanCtxServer, ToolCallRecord};
 use super::startup::auto_consolidate_knowledge;
 use super::{ctx_compress, ctx_share};
 
+/// Build payload-free OCLA metrics for one completed MCP tool call.
+///
+/// Values use milli-units and saturate at the signed metric contract's upper
+/// bound. Tool dimensions are bounded metadata; request payloads and paths
+/// never enter the exporter.
+fn ocla_metric_points(
+    context: &crate::core::ocla::OclaRequestContext,
+    tool: &str,
+    original: usize,
+    saved: usize,
+    duration_ms: u64,
+) -> Vec<crate::core::ocla::MetricPoint> {
+    let mut dimensions = std::collections::BTreeMap::new();
+    dimensions.insert("tool".to_string(), tool.to_string());
+    let original = metric_milli(original as u64);
+    let saved = metric_milli(saved as u64);
+    let duration = metric_milli(duration_ms);
+    vec![
+        crate::core::ocla::MetricPoint {
+            context: context.clone(),
+            name: "mcp.tool.original_tokens".to_string(),
+            value_milli: original,
+            dimensions: dimensions.clone(),
+        },
+        crate::core::ocla::MetricPoint {
+            context: context.clone(),
+            name: "mcp.tool.saved_tokens".to_string(),
+            value_milli: saved,
+            dimensions: dimensions.clone(),
+        },
+        crate::core::ocla::MetricPoint {
+            context: context.clone(),
+            name: "mcp.tool.duration_ms".to_string(),
+            value_milli: duration,
+            dimensions,
+        },
+    ]
+}
+
+fn metric_milli(value: u64) -> i64 {
+    i64::try_from(value.saturating_mul(1_000)).unwrap_or(i64::MAX)
+}
+
 impl LeanCtxServer {
     /// Records a tool call's token savings without timing information.
     pub async fn record_call(
@@ -139,7 +182,7 @@ impl LeanCtxServer {
             let _ = hook.observe(observation);
 
             let outcome = crate::core::ocla::Outcome {
-                context: ctx,
+                context: ctx.clone(),
                 accepted: Some(saved > 0),
                 quality_score_milli: if original > 0 {
                     Some(((saved as u64 * 1000) / original as u64).min(1000) as u16)
@@ -151,6 +194,14 @@ impl LeanCtxServer {
             let _ = crate::core::ocla::OclaRegistry::global()
                 .outcome_tracker
                 .record_outcome(outcome);
+
+            // OCLA MetricsExporter projection: one bounded, local batch per
+            // tool call. This is observational only and cannot affect stats,
+            // billing, or external export destinations.
+            let metrics = ocla_metric_points(&ctx, tool, original, saved, duration_ms);
+            let _ = crate::core::ocla::OclaRegistry::global()
+                .metrics_exporter
+                .export_metrics(metrics);
         }
         let mut session = self.session.write().await;
         session.record_tool_call(saved as u64, original as u64);
@@ -678,5 +729,36 @@ mod activity_score_tests {
         let (score, sig, _, _) = LeanCtxServer::compute_activity_score(&calls, None);
         assert_eq!(score, 2 + 4 + 4 + 3 + 2);
         assert_eq!(sig, 4);
+    }
+
+    #[test]
+    fn ocla_metrics_are_payload_free_and_saturating() {
+        let context = crate::core::ocla::OclaRequestContext {
+            request_id: "mcp-1".into(),
+            session_id: "session-1".into(),
+            agent_id: "agent-1".into(),
+            content_ref: "tool:ctx_read".into(),
+            tenant_id: None,
+        };
+        let points = super::ocla_metric_points(&context, "ctx_read", 750, 125, 42);
+        assert_eq!(points.len(), 3);
+        assert_eq!(points[0].name, "mcp.tool.original_tokens");
+        assert_eq!(points[0].value_milli, 750_000);
+        assert_eq!(points[1].name, "mcp.tool.saved_tokens");
+        assert_eq!(points[1].value_milli, 125_000);
+        assert_eq!(points[2].name, "mcp.tool.duration_ms");
+        assert_eq!(points[2].value_milli, 42_000);
+        assert_eq!(points[0].dimensions["tool"], "ctx_read");
+        assert_eq!(points[0].context, context);
+        assert!(!points[0].dimensions.contains_key("path"));
+
+        let saturated = super::ocla_metric_points(
+            &points[0].context,
+            "ctx_shell",
+            usize::MAX,
+            usize::MAX,
+            u64::MAX,
+        );
+        assert!(saturated.iter().all(|point| point.value_milli == i64::MAX));
     }
 }
