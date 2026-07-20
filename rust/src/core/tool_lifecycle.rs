@@ -666,9 +666,8 @@ mod tests {
 /// Best-effort: silently drops if provider is unavailable or source_ref can't be
 /// constructed. This is the canonical production callsite for the compression capability.
 fn project_ocla_compression(path: &str, source_tokens: u64, output_tokens: u64) {
-    use crate::core::ocla::traits::CompressionProvider;
-    use crate::core::ocla::types::{CompressionRequest, OclaRequestContext};
     use crate::core::ocla::OclaRegistry;
+    use crate::core::ocla::types::{CompressionRequest, OclaRequestContext};
 
     let reg = OclaRegistry::global();
     let source_ref = format!("file:{path}");

@@ -10,13 +10,13 @@ use std::sync::OnceLock;
 
 use crate::core::compressor;
 use crate::core::config::Config;
+use crate::core::ocla::OclaError;
 use crate::core::ocla::content_port::CompressionContentPort;
 use crate::core::ocla::traits::{CompressionProvider, OclaService};
 use crate::core::ocla::types::{
-    CompressionRequest, CompressionResult, OclaCapability, OclaCapabilityKind,
-    OclaCapabilityStatus, OclaResult, OCLA_API_VERSION,
+    CompressionRequest, CompressionResult, OCLA_API_VERSION, OclaCapability, OclaCapabilityKind,
+    OclaCapabilityStatus, OclaResult,
 };
-use crate::core::ocla::OclaError;
 use crate::core::ocla_bus::{self, OclaEvent};
 use crate::core::tokens;
 
