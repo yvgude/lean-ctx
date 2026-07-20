@@ -1438,3 +1438,24 @@ fn warm_daemon_cache_tolerates_missing_socket() {
     // disk it returns immediately.
     warm_daemon_cache("/nonexistent/file.rs");
 }
+
+#[test]
+fn shell_tokenize_preserves_backslashes_in_double_quotes() {
+    let result = shell_tokenize(r#"cat "C:\Users\me\file.txt""#);
+    assert_eq!(result, vec!["cat", r"C:\Users\me\file.txt"]);
+}
+
+#[test]
+fn shell_tokenize_escapes_posix_specials_in_double_quotes() {
+    let result = shell_tokenize(r#"echo "hello\"world""#);
+    assert_eq!(result, vec!["echo", r#"hello"world"#]);
+
+    let result = shell_tokenize(r#"echo "a\\b""#);
+    assert_eq!(result, vec!["echo", r"a\b"]);
+}
+
+#[test]
+fn shell_tokenize_unquoted_backslash_still_escapes() {
+    let result = shell_tokenize(r"echo hello\ world");
+    assert_eq!(result, vec!["echo", "hello world"]);
+}

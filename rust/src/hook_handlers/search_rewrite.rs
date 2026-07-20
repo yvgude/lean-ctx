@@ -341,8 +341,21 @@ pub fn shell_tokenize(input: &str) -> Vec<String> {
             '\'' if !in_double => in_single = !in_single,
             '"' if !in_single => in_double = !in_double,
             '\\' if !in_single => {
-                if let Some(next) = chars.next() {
-                    current.push(next);
+                if let Some(&next) = chars.peek() {
+                    if in_double {
+                        // POSIX: inside double quotes only \\ \" \$ \` \newline
+                        // are special. Everything else (including Windows path
+                        // separators like \U \f) keeps the backslash (#1038).
+                        if matches!(next, '\\' | '"' | '$' | '`' | '\n') {
+                            chars.next();
+                            current.push(next);
+                        } else {
+                            current.push('\\');
+                        }
+                    } else {
+                        chars.next();
+                        current.push(next);
+                    }
                 }
             }
             c if c.is_whitespace() && !in_single && !in_double => {
