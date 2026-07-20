@@ -188,7 +188,13 @@ async function main() {
     fs.mkdirSync(BIN_DIR, { recursive: true });
 
     if (IS_WIN) {
+      // Windows locks running executables — rename-before-extract (#1039).
+      // Renaming a running .exe IS allowed on Windows; overwriting is not.
+      const oldBin = BINARY_PATH + ".old";
+      try { fs.unlinkSync(oldBin); } catch {}
+      try { fs.renameSync(BINARY_PATH, oldBin); } catch {}
       execSync(`tar -xf "${archivePath}" -C "${BIN_DIR}"`, { stdio: "ignore" });
+      try { fs.unlinkSync(oldBin); } catch {}
     } else {
       await extractTarGz(archivePath, BIN_DIR, "lean-ctx");
     }
