@@ -109,9 +109,57 @@ pub struct WireContext {
     /// or no probe was spawned; an empty slot at read time (probe failed or
     /// still in flight) degrades the row to the local estimate.
     pub counterfactual: Option<super::counterfactual::CounterfactualSlot>,
+    /// Complete, validated OCLA lineage for managed HTTP requests. `None` keeps
+    /// legacy, malformed and non-HTTP traffic explicitly unmanaged.
+    pub lineage: Option<crate::core::ocla::OclaRequestContext>,
+}
+
+impl WireContext {
+    #[must_use]
+    pub fn ocla_request_context(&self) -> Option<&crate::core::ocla::OclaRequestContext> {
+        self.lineage.as_ref()
+    }
 }
 
 impl RealUsage {
+    /// Projects measured proxy usage into the payload-free canonical OCLA record.
+    /// Missing lineage is unmanaged; invalid data and arithmetic overflow fail
+    /// closed for OCLA without disturbing the existing usage pipeline.
+    pub fn to_ocla_usage_record(
+        &self,
+    ) -> crate::core::ocla::OclaResult<Option<crate::core::ocla::UsageRecord>> {
+        use crate::core::ocla::{OclaError, UsageRecord};
+
+        let Some(context) = self
+            .wire
+            .as_deref()
+            .and_then(WireContext::ocla_request_context)
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        context.validate()?;
+        if self.model.trim().is_empty() {
+            return Err(OclaError::InvalidRequest("model is required".into()));
+        }
+        let input_tokens = self
+            .input_tokens
+            .checked_add(self.cache_read_tokens)
+            .and_then(|value| value.checked_add(self.cache_write_tokens))
+            .ok_or_else(|| OclaError::InvalidRequest("input token total overflow".into()))?;
+        let provider_billed_tokens = input_tokens
+            .checked_add(self.output_tokens)
+            .ok_or_else(|| OclaError::InvalidRequest("billed token total overflow".into()))?;
+
+        Ok(Some(UsageRecord {
+            context,
+            model: self.model.clone(),
+            input_tokens,
+            output_tokens: self.output_tokens,
+            provider_billed_tokens,
+        }))
+    }
+
     /// True once any model, token or measured-cost field has been observed —
     /// the gate for recording. Avoids emitting empty rows for streams that
     /// never reported usage.
@@ -563,6 +611,7 @@ mod tests {
             is_local: false,
             routed_from: None,
             counterfactual: None,
+            lineage: None,
         });
         let mut s = Scanner::new(Provider::Anthropic, None).with_wire_context(Some(wire.clone()));
         s.feed_body(
@@ -570,6 +619,77 @@ mod tests {
         );
         let u = s.finalize().expect("usage");
         assert_eq!(u.wire, Some(wire));
+    }
+
+    fn managed_context() -> crate::core::ocla::OclaRequestContext {
+        crate::core::ocla::OclaRequestContext {
+            request_id: "req-1".into(),
+            session_id: "session-1".into(),
+            agent_id: "agent-1".into(),
+            content_ref: "blake3:abc".into(),
+            tenant_id: None,
+        }
+    }
+
+    #[test]
+    fn ocla_projection_includes_cache_tokens_once() {
+        let usage = RealUsage {
+            model: "gpt-5".into(),
+            input_tokens: 100,
+            output_tokens: 40,
+            cache_read_tokens: 20,
+            cache_write_tokens: 5,
+            wire: Some(Box::new(WireContext {
+                lineage: Some(managed_context()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        let record = usage
+            .to_ocla_usage_record()
+            .expect("valid projection")
+            .expect("managed record");
+        assert_eq!(record.input_tokens, 125);
+        assert_eq!(record.output_tokens, 40);
+        assert_eq!(record.provider_billed_tokens, 165);
+        assert_eq!(record.context, managed_context());
+    }
+
+    #[test]
+    fn ocla_projection_keeps_missing_lineage_unmanaged() {
+        let usage = RealUsage {
+            model: "gpt-5".into(),
+            input_tokens: 1,
+            ..Default::default()
+        };
+        assert_eq!(usage.to_ocla_usage_record().unwrap(), None);
+    }
+
+    #[test]
+    fn ocla_projection_fails_closed_on_overflow_or_invalid_context() {
+        let overflow = RealUsage {
+            model: "gpt-5".into(),
+            input_tokens: u64::MAX,
+            cache_read_tokens: 1,
+            wire: Some(Box::new(WireContext {
+                lineage: Some(managed_context()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        assert!(overflow.to_ocla_usage_record().is_err());
+
+        let mut invalid = managed_context();
+        invalid.request_id.clear();
+        let invalid = RealUsage {
+            model: "gpt-5".into(),
+            wire: Some(Box::new(WireContext {
+                lineage: Some(invalid),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        assert!(invalid.to_ocla_usage_record().is_err());
     }
 
     #[test]

@@ -56,6 +56,10 @@ pub async fn forward_request(
     let body_bytes = axum::body::to_bytes(body, max_body_bytes())
         .await
         .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
+    // These local control headers are trusted by the auth middleware and never
+    // forwarded upstream. Hash the exact bounded inbound bytes before any JSON
+    // parse, routing, serialization or compression changes their representation.
+    let lineage = super::lineage::from_trusted_headers(&parts.headers, &body_bytes);
 
     // Org-policy gate (enterprise#25): under a signed + trusted + enforced org
     // policy, refuse models outside the ceiling and requests over a hard
@@ -272,6 +276,7 @@ pub async fn forward_request(
         upstream_base,
         tokens_saved,
         original_size,
+        lineage,
     );
     if let Some(route) = &route {
         wire.routed_from = Some(route.routed_from.clone());
@@ -332,6 +337,7 @@ fn wire_context(
     upstream_base: &str,
     tokens_saved: u64,
     original_size: usize,
+    lineage: Option<crate::core::ocla::OclaRequestContext>,
 ) -> Box<super::usage::WireContext> {
     let tags = parts
         .extensions
@@ -358,6 +364,7 @@ fn wire_context(
         is_local,
         routed_from: None,    // populated by the routing hook (wave 3)
         counterfactual: None, // populated after the probe spawn (#701)
+        lineage,
     })
 }
 
@@ -996,7 +1003,14 @@ mod tests {
                 team: Some("platform".into()),
                 project: Some("billing".into()),
             });
-        let wire = wire_context(&parts, "Anthropic", "https://api.anthropic.com", 750, 4000);
+        let wire = wire_context(
+            &parts,
+            "Anthropic",
+            "https://api.anthropic.com",
+            750,
+            4000,
+            None,
+        );
         assert_eq!(wire.provider, "Anthropic");
         assert_eq!(wire.person.as_deref(), Some("yves"));
         assert_eq!(wire.team.as_deref(), Some("platform"));
@@ -1019,7 +1033,7 @@ mod tests {
                 id: "local".into(),
                 local: false,
             });
-        let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400);
+        let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400, None);
         assert_eq!(wire.provider, "local");
     }
 
@@ -1042,6 +1056,7 @@ mod tests {
             "http://host.docker.internal:11434",
             0,
             400,
+            None,
         );
         assert!(wire.is_local, "declared local flag must win");
 
@@ -1052,7 +1067,7 @@ mod tests {
                 id: "tunnel".into(),
                 local: false,
             });
-        let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:9999", 0, 400);
+        let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:9999", 0, 400, None);
         assert!(!wire.is_local, "declared non-local flag must win");
     }
 
@@ -1080,11 +1095,40 @@ mod tests {
     fn wire_context_without_tags_still_carries_baseline() {
         // Local solo mode: no identity, but savings + baseline are still real.
         let parts = parts_for("/v1/chat/completions");
-        let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400);
+        let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400, None);
         assert_eq!(wire.person, None);
         assert_eq!(wire.project, None);
         assert_eq!(wire.uncompressed_input_tokens, 100);
         assert!(wire.is_local);
+    }
+
+    #[test]
+    fn wire_context_carries_managed_lineage_without_forwarding_control_headers() {
+        let parts = Request::builder().body(()).unwrap().into_parts().0;
+        let lineage = crate::core::ocla::OclaRequestContext {
+            request_id: "req-1".into(),
+            session_id: "session-1".into(),
+            agent_id: "agent-1".into(),
+            content_ref: "blake3:abc".into(),
+            tenant_id: None,
+        };
+        let wire = wire_context(
+            &parts,
+            "OpenAI",
+            "https://api.openai.com",
+            0,
+            4,
+            Some(lineage.clone()),
+        );
+        assert_eq!(wire.ocla_request_context(), Some(&lineage));
+        for header in [
+            super::super::lineage::REQUEST_ID_HEADER,
+            super::super::lineage::SESSION_ID_HEADER,
+            super::super::lineage::AGENT_ID_HEADER,
+        ] {
+            assert!(!is_allowed_request_header(header));
+            assert!(!should_forward_request_header(header, false));
+        }
     }
 
     #[test]

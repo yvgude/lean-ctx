@@ -497,6 +497,7 @@ mod tests {
             is_local: false,
             routed_from: Some("claude-opus-4-5".into()),
             counterfactual: None,
+            lineage: None,
         })));
         let event = UsageEvent::from_usage(
             &usage,
@@ -547,6 +548,7 @@ mod tests {
             is_local: false,
             routed_from: None,
             counterfactual: None,
+            lineage: None,
         })));
         usage.provider_cost_usd = Some(0.0123);
         let event =
@@ -584,6 +586,7 @@ mod tests {
             is_local: true,
             routed_from: None,
             counterfactual: None,
+            lineage: None,
         })));
         usage.provider_cost_usd = Some(9.99);
         let event =
@@ -628,6 +631,7 @@ mod tests {
             is_local: true,
             routed_from: None,
             counterfactual: None,
+            lineage: None,
         })));
         let event =
             UsageEvent::from_usage(&usage, &ModelPricing::load(), &BaselineConfig::default());

@@ -40,6 +40,7 @@ pub mod history_prune;
 pub mod holdout;
 pub mod image_compression;
 pub mod introspect;
+mod lineage;
 pub mod metrics;
 pub mod model_router;
 pub mod models_api;
