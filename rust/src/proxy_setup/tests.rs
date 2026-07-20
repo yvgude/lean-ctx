@@ -1064,6 +1064,7 @@ fn sample_provider(id: &str, base_url: &str) -> crate::core::config::ProviderEnt
         shape: crate::core::config::WireShape::OpenAi,
         base_url: base_url.to_string(),
         api_key_env: Some("XAI_API_KEY".into()),
+        aws_region: None,
         enabled: Some(true),
         local: None,
     }

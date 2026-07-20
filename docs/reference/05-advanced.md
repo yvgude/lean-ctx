@@ -159,7 +159,7 @@ allow_custom_upstream = true
 > flag yourself with `lean-ctx config set proxy.allow_custom_upstream true`.
 
 **Universal provider registry — `[[proxy.providers]]`.** Beyond the four built-in
-provider routes, any OpenAI/Anthropic/Gemini-*compatible* endpoint (Azure AI
+provider routes, any OpenAI/Anthropic/Gemini/Bedrock-compatible endpoint (Azure AI
 Foundry, OpenRouter, Groq, vLLM, Ollama, a corporate gateway…) can be declared as
 data — no code change. Each entry is served under `/providers/{id}/...` with full
 compression, introspection and usage metering for its wire shape:
@@ -167,7 +167,7 @@ compression, introspection and usage metering for its wire shape:
 ```toml
 [[proxy.providers]]
 id = "foundry"                                          # route: /providers/foundry/...
-shape = "openai"                                        # anthropic | openai | gemini
+shape = "openai"                                        # anthropic | openai | gemini | bedrock
 base_url = "https://acme.services.ai.azure.com"
 api_key_env = "FOUNDRY_API_KEY"                         # optional: gateway-held key
 
@@ -183,7 +183,24 @@ base_url = "http://host.docker.internal:11434"          # gateway container → 
 local = true                                            # bill at the shadow rate
 ```
 
-- **Shape ≠ identity.** The proxy speaks three wire dialects; any number of
+Bedrock Runtime uses a signed registry entry; credentials never live in
+`config.toml`:
+
+```toml
+[[proxy.providers]]
+id = "bedrock-prod"
+shape = "bedrock"
+base_url = "https://bedrock-runtime.us-east-1.amazonaws.com"
+aws_region = "us-east-1"
+```
+
+Set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (plus optional
+`AWS_SESSION_TOKEN`) in the service secret store. The proxy signs the final
+bounded body bytes with SigV4. Bedrock binary event streams are forwarded
+unchanged; SSE keepalives are never injected into them. Forwarded
+`x-amzn-*` request metadata is included in the signed-header set.
+
+- **Shape ≠ identity.** The proxy speaks four wire dialects; any number of
   provider identities map onto them. A declared HTTPS entry is itself the
   custom-host opt-in (no separate `allow_custom_upstream` needed); plaintext HTTP
   still requires loopback or `allow_insecure_http_upstream`.

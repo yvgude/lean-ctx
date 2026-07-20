@@ -144,14 +144,12 @@ pub fn provider_statuses(
     providers
         .iter()
         .map(|p| {
-            let credential_present = p.api_key_env.as_deref().is_some_and(|env_name| {
-                std::env::var(env_name).is_ok_and(|v| !v.trim().is_empty())
-            });
+            let credential_present = p.gateway_credential_present();
             ProviderStatus {
                 id: p.id.clone(),
                 shape: p.shape.as_str().to_string(),
                 base_url: p.base_url.clone(),
-                injects_credential: p.api_key_env.is_some(),
+                injects_credential: p.injects_gateway_credential(),
                 credential_present,
                 local: p.local,
             }
@@ -172,6 +170,7 @@ mod tests {
                 shape: WireShape::OpenAi,
                 base_url: "http://127.0.0.1:11434".into(),
                 api_key_env: None,
+                aws_region: None,
                 local: true,
             },
             ResolvedProvider {
@@ -179,6 +178,7 @@ mod tests {
                 shape: WireShape::OpenAi,
                 base_url: "https://example.services.ai.azure.com/models".into(),
                 api_key_env: Some("LEANCTX_TEST_STATUS_KEY_UNSET".into()),
+                aws_region: None,
                 local: false,
             },
         ];

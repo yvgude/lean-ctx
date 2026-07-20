@@ -207,6 +207,7 @@ pub(super) fn reconcile_proxy_provider(
         shape: WireShape::OpenAi,
         base_url: desired,
         api_key_env: None, // forward caller's Bearer (session or XAI_API_KEY)
+        aws_region: None,
         enabled: None,
         local: None,
     });

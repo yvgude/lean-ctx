@@ -544,6 +544,7 @@ fn entry(id: &str, shape: WireShape, base_url: &str) -> ProviderEntry {
         shape,
         base_url: base_url.into(),
         api_key_env: None,
+        aws_region: None,
         enabled: None,
         local: None,
     }
@@ -599,6 +600,31 @@ fn provider_registry_resolves_valid_entries() {
         "base_url must be normalized (trailing slash stripped)"
     );
     assert_eq!(resolved[1].base_url, "http://127.0.0.1:8000");
+}
+
+#[test]
+fn bedrock_provider_requires_region_matching_endpoint_and_aws_env_mode() {
+    let mut valid = entry(
+        "bedrock",
+        WireShape::Bedrock,
+        "https://bedrock-runtime.us-east-1.amazonaws.com",
+    );
+    valid.aws_region = Some("us-east-1".into());
+    let mut wrong_region = valid.clone();
+    wrong_region.id = "wrong-region".into();
+    wrong_region.aws_region = Some("eu-west-1".into());
+    let mut keyed = valid.clone();
+    keyed.id = "caller-key".into();
+    keyed.api_key_env = Some("AWS_ACCESS_KEY_ID".into());
+    let resolved = ProxyConfig {
+        providers: vec![valid, wrong_region, keyed],
+        ..Default::default()
+    }
+    .resolve_providers();
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(resolved[0].shape, WireShape::Bedrock);
+    assert_eq!(resolved[0].aws_region.as_deref(), Some("us-east-1"));
+    assert!(resolved[0].injects_gateway_credential());
 }
 
 #[test]

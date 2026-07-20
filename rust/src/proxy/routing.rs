@@ -315,6 +315,7 @@ mod tests {
                     shape: WireShape::OpenAi,
                     base_url: "https://acme.services.ai.azure.com/openai".into(),
                     api_key_env: Some("FOUNDRY_API_KEY".into()),
+                    aws_region: None,
                     local: false,
                 },
                 ResolvedProvider {
@@ -322,6 +323,7 @@ mod tests {
                     shape: WireShape::Anthropic,
                     base_url: "https://anthropic-gw.example.com".into(),
                     api_key_env: None,
+                    aws_region: None,
                     local: false,
                 },
             ],
@@ -446,6 +448,7 @@ mod tests {
             shape: WireShape::OpenAi,
             base_url: "https://oai-compat.example.com".into(),
             api_key_env: None,
+            aws_region: None,
             local: false,
         });
         let mut body =

@@ -15,6 +15,7 @@
 pub mod anthropic;
 #[cfg(test)]
 mod auth_tests;
+pub mod bedrock;
 pub mod cache_aligner;
 pub mod cache_attribution;
 pub mod cache_breakpoint;
@@ -1081,7 +1082,7 @@ fn is_client_auth_registry_route(path: &str, upstreams: &Upstreams) -> bool {
     upstreams
         .providers
         .iter()
-        .any(|p| p.id == id && p.api_key_env.is_none())
+        .any(|p| p.id == id && !p.injects_gateway_credential())
 }
 
 fn is_provider_route(path: &str) -> bool {

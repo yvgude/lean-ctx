@@ -53,7 +53,8 @@ pub async fn forward_request(
     extra_stream_types: &[&str],
 ) -> Result<Response, StatusCode> {
     let (mut parts, body) = req.into_parts();
-    let body_bytes = axum::body::to_bytes(body, max_body_bytes())
+    let body_limit = super::bedrock::request_body_limit(&parts).unwrap_or_else(max_body_bytes);
+    let body_bytes = axum::body::to_bytes(body, body_limit)
         .await
         .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
     let lineage = super::lineage::from_trusted_headers(&parts.headers, &body_bytes);
@@ -127,6 +128,9 @@ pub async fn forward_request(
         upstream_base,
         provider_label == "OpenAI",
     )?;
+    if prepared.body.len() > body_limit {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
     let original_size = prepared.original_size;
     let compressed_size = prepared.compressed_size;
     let compression_candidate = prepared.compression_candidate;
@@ -145,7 +149,7 @@ pub async fn forward_request(
     }
     if let Some(ref parsed) = parsed {
         let provider = match provider_label {
-            "Anthropic" => super::introspect::Provider::Anthropic,
+            "Anthropic" | "Bedrock" => super::introspect::Provider::Anthropic,
             "OpenAI" | "ChatGPT" => super::introspect::Provider::OpenAi,
             _ => super::introspect::Provider::Gemini,
         };
@@ -217,6 +221,8 @@ pub async fn forward_request(
     };
 
     let forwarded_body = prepared.body;
+
+    super::bedrock::sign_request_from_environment(&mut parts, &upstream_url, &forwarded_body)?;
 
     // Prefix replay: record the exact forwarded bytes for byte-identical
     // replay on subsequent append-only turns (ProxyMode::Cache).
@@ -611,6 +617,17 @@ pub(super) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
     "cache-control",
     "x-goog-api-key",
     "x-goog-api-client",
+    "x-amz-date",
+    "x-amz-content-sha256",
+    "x-amz-security-token",
+    "x-amzn-bedrock-accept",
+    "x-amzn-bedrock-trace",
+    "x-amzn-bedrock-guardrailidentifier",
+    "x-amzn-bedrock-guardrailversion",
+    "x-amzn-bedrock-guardrailtrace",
+    "x-amzn-bedrock-performanceconfig-latency",
+    "x-amzn-bedrock-service-tier",
+    "x-amzn-bedrock-request-metadata",
     // Grok CLI → cli-chat-proxy.grok.com (subscription rail). Enumerated like
     // Codex/OpenAI above — no prefix wildcards. Missing `x-grok-client-version`
     // makes upstream return 426 Upgrade Required with version "(none)".
@@ -811,6 +828,15 @@ pub(super) fn is_forwarded_response_header(name: &str) -> bool {
     FORWARDED_HEADERS.contains(&name)
         || name.starts_with("x-codex-")
         || name.starts_with("x-ratelimit-")
+        || name.starts_with("x-amzn-bedrock-")
+        || matches!(name, "x-amzn-requestid" | "x-amzn-errortype")
+}
+
+pub(super) fn response_is_sse(headers: &axum::http::HeaderMap) -> bool {
+    headers
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().contains("text/event-stream"))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -835,12 +861,12 @@ async fn build_response(
     let header_cost =
         super::usage_accounting::cost_from_headers(&resp_headers, extra_cost_header.as_deref());
 
-    let is_stream = resp_headers
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|ct| {
-            ct.contains("text/event-stream") || extra_stream_types.iter().any(|t| ct.contains(t))
-        });
+    let is_sse = response_is_sse(&resp_headers);
+    let is_stream = is_sse
+        || resp_headers
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|ct| extra_stream_types.iter().any(|t| ct.contains(t)));
 
     if is_stream {
         // Tee the stream through a usage Scanner: each chunk is forwarded
@@ -854,8 +880,12 @@ async fn build_response(
             .with_header_cost(header_cost);
         let inner = Box::pin(response.bytes_stream());
         let teed = Box::pin(super::usage::tee_stream(inner, scanner));
-        let kept_alive = super::sse_keepalive::keepalive_stream(teed);
-        let body = xlat_stream_body(kept_alive, xlat);
+        let body = if is_sse {
+            let kept_alive = super::sse_keepalive::keepalive_stream(teed);
+            xlat_stream_body(kept_alive, xlat)
+        } else {
+            xlat_stream_body(teed, xlat)
+        };
         let mut resp = Response::builder().status(status);
         for (k, v) in &resp_headers {
             let ks = k.as_str().to_lowercase();

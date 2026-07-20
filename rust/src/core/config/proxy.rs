@@ -12,7 +12,7 @@ pub struct ProxyConfig {
     pub gemini_upstream: Option<String>,
     /// Universal provider registry (`[[proxy.providers]]`): additional upstream
     /// providers beyond the four built-ins, declared as data — id + wire shape +
-    /// base URL — so a new OpenAI/Anthropic/Gemini-compatible endpoint (Azure AI
+    /// base URL — so a new OpenAI/Anthropic/Gemini/Bedrock endpoint (Azure AI
     /// Foundry, OpenRouter, Groq, vLLM/Ollama, a corporate gateway…) is a pure
     /// config entry, never a code change. Reachable under
     /// `/providers/{id}/...` on the proxy and addressable by the router.
@@ -318,7 +318,7 @@ pub fn parse_route_target(target: &str) -> Option<(Option<&str>, &str)> {
 }
 
 /// The API dialect an upstream endpoint speaks — deliberately separate from the
-/// provider's *identity*. lean-ctx understands three wire shapes; any number of
+/// provider's *identity*. lean-ctx understands four wire shapes; any number of
 /// configured providers (Foundry, OpenRouter, Groq, a local vLLM…) map onto
 /// them. New shape = code; new provider = config (universal-provider-framework).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -331,6 +331,8 @@ pub enum WireShape {
     OpenAi,
     /// Google Gemini `generateContent` API.
     Gemini,
+    /// Amazon Bedrock Runtime `InvokeModel` / event-stream API.
+    Bedrock,
 }
 
 impl WireShape {
@@ -341,6 +343,7 @@ impl WireShape {
             WireShape::Anthropic => "anthropic",
             WireShape::OpenAi => "openai",
             WireShape::Gemini => "gemini",
+            WireShape::Bedrock => "bedrock",
         }
     }
 }
@@ -352,7 +355,7 @@ pub struct ProviderEntry {
     /// rules. Lowercase alphanumeric plus `-`/`_`; must not shadow a built-in
     /// provider name (`anthropic`, `openai`, `chatgpt`, `gemini`).
     pub id: String,
-    /// Which API dialect the endpoint speaks (`anthropic|openai|gemini`).
+    /// Which API dialect the endpoint speaks (`anthropic|openai|gemini|bedrock`).
     pub shape: WireShape,
     /// Endpoint base URL. HTTPS for any non-loopback host; a declared registry
     /// entry is itself the custom-host opt-in (no separate allowlist flag).
@@ -362,6 +365,10 @@ pub struct ProviderEntry {
     /// forward the caller's own credentials verbatim (default, loopback mode).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key_env: Option<String>,
+    /// AWS region for Bedrock SigV4. Bedrock uses standard AWS credential
+    /// environment variables and rejects `api_key_env`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aws_region: Option<String>,
     /// Set `false` to keep the entry in config but take it out of service.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
@@ -383,6 +390,8 @@ pub struct ResolvedProvider {
     pub shape: WireShape,
     pub base_url: String,
     pub api_key_env: Option<String>,
+    /// Validated SigV4 region for Bedrock; absent for other shapes.
+    pub aws_region: Option<String>,
     /// Billed as local inference (shadow rate). Explicit `local` flag when the
     /// entry declares one, otherwise loopback-URL derivation.
     pub local: bool,
@@ -399,6 +408,61 @@ fn is_valid_provider_id(id: &str) -> bool {
         && id
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+}
+
+fn valid_aws_region(region: &str) -> bool {
+    !region.is_empty()
+        && region.len() <= 32
+        && region
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
+fn valid_bedrock_endpoint(base_url: &str, region: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(base_url) else {
+        return false;
+    };
+    if !matches!(url.path(), "" | "/") || url.query().is_some() || url.fragment().is_some() {
+        return false;
+    }
+    let Some(host) = url.host_str().map(str::to_ascii_lowercase) else {
+        return false;
+    };
+    let loopback = host == "localhost"
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback());
+    if loopback {
+        return true;
+    }
+    let accepted = [
+        format!("bedrock-runtime.{region}.amazonaws.com"),
+        format!("bedrock-runtime.{region}.amazonaws.com.cn"),
+        format!("bedrock-runtime.{region}.api.aws"),
+        format!("bedrock-runtime-fips.{region}.amazonaws.com"),
+        format!("bedrock-runtime-fips.{region}.api.aws"),
+    ];
+    accepted.iter().any(|candidate| candidate == &host)
+        || host.ends_with(&format!(".bedrock-runtime.{region}.vpce.amazonaws.com"))
+}
+
+impl ResolvedProvider {
+    #[must_use]
+    pub fn injects_gateway_credential(&self) -> bool {
+        self.api_key_env.is_some() || self.shape == WireShape::Bedrock
+    }
+
+    #[must_use]
+    pub fn gateway_credential_present(&self) -> bool {
+        if self.shape == WireShape::Bedrock {
+            return ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
+                .into_iter()
+                .all(|name| std::env::var(name).is_ok_and(|value| !value.trim().is_empty()));
+        }
+        self.api_key_env
+            .as_deref()
+            .is_some_and(|name| std::env::var(name).is_ok_and(|value| !value.trim().is_empty()))
+    }
 }
 
 /// Per-role prose-compression intensity for the proxy's frozen request region.
@@ -1023,6 +1087,32 @@ impl ProxyConfig {
             match validate_upstream_url(&entry.base_url, self.allows_insecure_http_upstream(), true)
             {
                 Ok(base_url) => {
+                    let aws_region = entry
+                        .aws_region
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty());
+                    if entry.shape == WireShape::Bedrock {
+                        let Some(region) = aws_region.filter(|value| valid_aws_region(value))
+                        else {
+                            tracing::warn!(
+                                "[proxy.providers] Bedrock provider '{id}' requires valid aws_region — skipped"
+                            );
+                            continue;
+                        };
+                        if entry.api_key_env.is_some() || !valid_bedrock_endpoint(&base_url, region)
+                        {
+                            tracing::warn!(
+                                "[proxy.providers] Bedrock provider '{id}' has invalid credential mode or endpoint — skipped"
+                            );
+                            continue;
+                        }
+                    } else if aws_region.is_some() {
+                        tracing::warn!(
+                            "[proxy.providers] non-Bedrock provider '{id}' cannot set aws_region — skipped"
+                        );
+                        continue;
+                    }
                     // Explicit `local` flag wins; otherwise loopback URLs are
                     // local (host.docker.internal etc. need the explicit flag).
                     let local = entry.local.unwrap_or_else(|| is_local_proxy_url(&base_url));
@@ -1036,6 +1126,7 @@ impl ProxyConfig {
                             .map(str::trim)
                             .filter(|v| !v.is_empty())
                             .map(str::to_string),
+                        aws_region: aws_region.map(str::to_string),
                         local,
                     });
                 }

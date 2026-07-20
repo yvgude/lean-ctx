@@ -15,7 +15,7 @@
 //! api_key_env = "FOUNDRY_API_KEY"   # optional: gateway-held credential
 //! ```
 //!
-//! Shape ≠ identity: the proxy understands three wire dialects (the shapes) and
+//! Shape ≠ identity: the proxy understands four wire dialects (the shapes) and
 //! any number of provider identities map onto them. Compression, introspection
 //! and usage metering all run exactly as they do for the built-in routes of the
 //! same shape.
@@ -104,7 +104,10 @@ pub async fn handler(
     .map_err(|_| StatusCode::BAD_REQUEST)?;
     *req.uri_mut() = uri;
 
-    if provider.api_key_env.is_some() {
+    if provider.shape == WireShape::Bedrock {
+        super::bedrock::validate_invoke_request(&req)?;
+        super::bedrock::attach_signing_context(&provider, &mut req)?;
+    } else if provider.api_key_env.is_some() {
         inject_gateway_credential(&provider, req.headers_mut())?;
     }
 
@@ -115,7 +118,7 @@ pub async fn handler(
                 req,
                 &provider.base_url,
                 "/v1/messages",
-                super::anthropic::compress_request_body,
+                super::bedrock::passthrough_request_body,
                 "Anthropic",
                 &[],
             )
@@ -165,6 +168,18 @@ pub async fn handler(
                 },
                 "Gemini",
                 &["application/x-ndjson"],
+            )
+            .await
+        }
+        WireShape::Bedrock => {
+            forward::forward_request(
+                State(state),
+                req,
+                &provider.base_url,
+                "/",
+                super::bedrock::passthrough_request_body,
+                "Bedrock",
+                &["application/vnd.amazon.eventstream"],
             )
             .await
         }
@@ -223,6 +238,7 @@ pub(super) fn inject_gateway_credential(
         WireShape::Gemini => {
             headers.insert("x-goog-api-key", value(key)?);
         }
+        WireShape::Bedrock => unreachable!("Bedrock uses SigV4, not api_key_env"),
     }
     Ok(())
 }
@@ -269,6 +285,7 @@ mod tests {
             shape,
             base_url: "https://example.invalid".into(),
             api_key_env: api_key_env.map(str::to_string),
+            aws_region: None,
             local: false,
         }
     }
