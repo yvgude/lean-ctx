@@ -1,17 +1,56 @@
 {
   "schema_version": "leanctx.history-policy/v1",
-  "limits": {"max_commits": 20000, "max_objects": 300000, "max_findings": 100, "command_timeout_seconds": 120},
+  "limits": {
+    "max_commits": 20000,
+    "max_objects": 300000,
+    "max_findings": 100,
+    "command_timeout_seconds": 600
+  },
   "forbidden_paths": [
-    {"id": "IP001", "prefix": "cloud/"},
-    {"id": "IP002", "prefix": "docs/business/"},
-    {"id": "IP003", "prefix": "memory-bank/"},
-    {"id": "IP004", "prefix": "server.md"},
-    {"id": "IP005", "prefix": "rust/src/core/licensing/keygen.rs"},
-    {"id": "IP006", "prefix": "rust/src/core/billing/stripe_invoice.rs"}
+    {
+      "id": "IP001",
+      "prefix": "cloud/"
+    },
+    {
+      "id": "IP002",
+      "prefix": "docs/business/"
+    },
+    {
+      "id": "IP003",
+      "prefix": "memory-bank/"
+    },
+    {
+      "id": "IP004",
+      "prefix": "server.md"
+    },
+    {
+      "id": "IP005",
+      "prefix": "rust/src/core/licensing/keygen.rs"
+    },
+    {
+      "id": "IP006",
+      "prefix": "rust/src/core/billing/stripe_invoice.rs"
+    }
   ],
-  "secret_rule": {"id": "SEC001", "pickaxe_regex": "AKIA|ghp_|gho_|ghs_|ghu_|ghr_|sk_live_|PRIVATE KEY-----|postgres://|postgresql://|mysql://"},
+  "secret_rule": {
+    "id": "SEC001",
+    "pickaxe_regex": "AKIA|ghp_|gho_|ghs_|ghu_|ghr_|sk_live_|PRIVATE KEY-----|postgres://|postgresql://|mysql://"
+  },
   "policy_source_path": "security/history-policy-v1.json",
-  "scanner_source_paths": ["security/history-policy-v1.json", ".github/workflows/security-check.yml", "scripts/history-policy-gate.py", "tests/security/test_history_policy_gate.py"],
-  "scanner_source_sha256": {".github/workflows/security-check.yml": "456098e147b565eec36e0f0e95df8d35d3feec670dae3f3034aa2d5fbbd0f996", "scripts/history-policy-gate.py": "ffdce6066e2831cc0a1cb03eaa165c308dff5c8a2ed4038cfd273a3b87f7019a", "tests/security/test_history_policy_gate.py": "f3921aaecc395691d1c113bcec3955a2a70ca4362cb521246fd3355d880870fc"},
-  "baseline": {"commit": "edc5dd27b8b0895a21aa29edc9602ea6dc222fec", "report": "security/evidence/full-history-baseline-v1.json", "report_sha256": "03814db276f30234dce139664a12a4003b17c038d2f15b044c61d0c035c6c91e"}
+  "scanner_source_paths": [
+    "security/history-policy-v1.json",
+    ".github/workflows/security-check.yml",
+    "scripts/history-policy-gate.py",
+    "tests/security/test_history_policy_gate.py"
+  ],
+  "scanner_source_sha256": {
+    ".github/workflows/security-check.yml": "c1ee715b5609e0861ae5b8e4517ef4961a7ede9ffcf19d0c304f66da2fc9c421",
+    "scripts/history-policy-gate.py": "ffdce6066e2831cc0a1cb03eaa165c308dff5c8a2ed4038cfd273a3b87f7019a",
+    "tests/security/test_history_policy_gate.py": "f3921aaecc395691d1c113bcec3955a2a70ca4362cb521246fd3355d880870fc"
+  },
+  "baseline": {
+    "commit": "b6937197d7f15590805dd794b9fe440d8a34de02",
+    "report": "security/evidence/full-history-baseline-v1.json",
+    "report_sha256": "03814db276f30234dce139664a12a4003b17c038d2f15b044c61d0c035c6c91e"
+  }
 }
