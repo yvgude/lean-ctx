@@ -1,9 +1,13 @@
 pub fn cmd_cheatsheet() {
     let ver = env!("CARGO_PKG_VERSION");
+    // Right-aligned in the 31 columns the title leaves inside the 62-column
+    // frame, minus the 2-space gutter before the border. A fixed literal run of
+    // spaces here drifts as soon as the version string changes length.
+    // ponytail: overflows past a 29-char version; cargo versions never get there.
     let ver_pad = format!("v{ver}");
     let header = format!(
         "\x1b[1;36m╔══════════════════════════════════════════════════════════════╗\x1b[0m
-\x1b[1;36m║\x1b[0m  \x1b[1;37mlean-ctx Workflow Cheat Sheet\x1b[0m                     \x1b[2m{ver_pad:>6}\x1b[0m  \x1b[1;36m║\x1b[0m
+\x1b[1;36m║\x1b[0m  \x1b[1;37mlean-ctx Workflow Cheat Sheet\x1b[0m\x1b[2m{ver_pad:>29}\x1b[0m  \x1b[1;36m║\x1b[0m
 \x1b[1;36m╚══════════════════════════════════════════════════════════════╝\x1b[0m");
     println!(
         "{header}

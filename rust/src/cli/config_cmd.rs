@@ -1136,73 +1136,73 @@ fn cmd_show_effective() {
     let compression = config::CompressionLevel::effective(&cfg);
     let policy = cfg.memory_policy_effective().unwrap_or_default();
 
-    println!("╭─── Simplified (high-level) ───────────────────────────────╮");
-    println!(
-        "│ compression_level   = {:10}  {}",
+    println!("{}", box_top("Simplified (high-level)"));
+    box_row(&format!(
+        " compression_level   = {:10}  {}",
         format!("{compression:?}"),
         source_hint(
             "LEAN_CTX_COMPRESSION",
             cfg.compression_level != config::CompressionLevel::Off
         )
-    );
-    println!(
-        "│ max_disk_mb         = {:10}  {}",
+    ));
+    box_row(&format!(
+        " max_disk_mb         = {:10}  {}",
         cfg.max_disk_mb_effective(),
         source_hint("LEAN_CTX_MAX_DISK_MB", cfg.max_disk_mb > 0)
-    );
-    println!(
-        "│ max_ram_percent     = {:10}  {}",
+    ));
+    box_row(&format!(
+        " max_ram_percent     = {:10}  {}",
         cfg.max_ram_percent,
         source_hint("LEAN_CTX_MAX_RAM_PERCENT", cfg.max_ram_percent != 5)
-    );
-    println!(
-        "│ max_staleness_days  = {:10}  {}",
+    ));
+    box_row(&format!(
+        " max_staleness_days  = {:10}  {}",
         cfg.max_staleness_days_effective(),
         source_hint("LEAN_CTX_MAX_STALENESS_DAYS", cfg.max_staleness_days > 0)
-    );
-    println!(
-        "│ memory_profile      = {:10}  {}",
+    ));
+    box_row(&format!(
+        " memory_profile      = {:10}  {}",
         format!("{:?}", cfg.memory_profile),
         source_hint("LEAN_CTX_MEMORY_PROFILE", false)
-    );
-    println!("╰────────────────────────────────────────────────────────────╯");
+    ));
+    println!("{}", box_bottom());
 
     println!();
-    println!("╭─── Derived effective limits ────────────────────────────────╮");
-    println!(
-        "│ archive_max_disk_mb    = {:>6} MB",
+    println!("{}", box_top("Derived effective limits"));
+    box_row(&format!(
+        " archive_max_disk_mb    = {:>6} MB",
         cfg.archive_max_disk_mb_effective()
-    );
-    println!(
-        "│ bm25_max_cache_mb      = {:>6} MB",
+    ));
+    box_row(&format!(
+        " bm25_max_cache_mb      = {:>6} MB",
         cfg.bm25_max_cache_mb_effective()
-    );
-    println!(
-        "│ archive_max_age_hours  = {:>6} h",
+    ));
+    box_row(&format!(
+        " archive_max_age_hours  = {:>6} h",
         cfg.archive_max_age_hours_effective()
-    );
-    println!(
-        "│ graph_index_max_files  = {:>6}",
+    ));
+    box_row(&format!(
+        " graph_index_max_files  = {:>6}",
         cfg.graph_index_max_files
-    );
-    println!("│");
-    println!(
-        "│ memory.knowledge.max_facts     = {:>6}",
+    ));
+    box_row("");
+    box_row(&format!(
+        " memory.knowledge.max_facts     = {:>6}",
         policy.knowledge.max_facts
-    );
-    println!(
-        "│ memory.knowledge.max_patterns  = {:>6}",
+    ));
+    box_row(&format!(
+        " memory.knowledge.max_patterns  = {:>6}",
         policy.knowledge.max_patterns
-    );
-    println!(
-        "│ memory.episodic.max_episodes   = {:>6}",
+    ));
+    box_row(&format!(
+        " memory.episodic.max_episodes   = {:>6}",
         policy.episodic.max_episodes
-    );
-    println!(
-        "│ memory.procedural.max_procedures = {:>4}",
+    ));
+    box_row(&format!(
+        " memory.procedural.max_procedures = {:>4}",
         policy.procedural.max_procedures
-    );
-    println!("╰────────────────────────────────────────────────────────────╯");
+    ));
+    println!("{}", box_bottom());
 
     if cfg.max_disk_mb_effective() > 0 {
         println!();
@@ -1212,6 +1212,26 @@ fn cmd_show_effective() {
             (cfg.max_disk_mb_effective() as f64 / 500.0).clamp(0.5, 10.0)
         );
     }
+}
+
+/// Interior width of the `config show` frames, in terminal columns.
+const SHOW_BOX_W: usize = 60;
+
+/// `╭─── Label ───…───╮`, always `SHOW_BOX_W` columns wide inside the corners.
+fn box_top(label: &str) -> String {
+    let head = format!("─── {label} ");
+    let fill = SHOW_BOX_W.saturating_sub(crate::core::theme::visual_len(&head));
+    format!("╭{head}{}╮", "─".repeat(fill))
+}
+
+fn box_bottom() -> String {
+    format!("╰{}╯", "─".repeat(SHOW_BOX_W))
+}
+
+/// Print one framed row, padded (or truncated) to the frame's interior width so
+/// the right border lines up regardless of the value's length.
+fn box_row(content: &str) {
+    println!("│{}│", crate::core::theme::pad_right(content, SHOW_BOX_W));
 }
 
 fn source_hint(env_var: &str, config_set: bool) -> &'static str {
@@ -1242,6 +1262,19 @@ fn dir_size(path: &std::path::Path) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn show_box_borders_line_up() {
+        use crate::core::theme::{pad_right, visual_len};
+        let bottom = visual_len(&box_bottom());
+        for label in ["Simplified (high-level)", "Derived effective limits", ""] {
+            assert_eq!(visual_len(&box_top(label)), bottom, "top border: {label:?}");
+        }
+        // Rows track the same width, short and overlong alike.
+        for row in ["", " x = 1", &" long ".repeat(40)] {
+            assert_eq!(visual_len(&pad_right(row, SHOW_BOX_W)) + 2, bottom);
+        }
+    }
 
     // Reproduces `Config::save()`'s on-disk merge without touching the real
     // config path: serialize `cfg`, then merge it onto `existing` exactly as

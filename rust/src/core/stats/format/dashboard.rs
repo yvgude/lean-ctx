@@ -169,20 +169,24 @@ pub fn format_gain_hero_themed(t: &Theme) -> String {
             .sum();
         if week_saved > 0 {
             let accent = t.accent.fg();
-            out.push(format!("  {}", t.box_top(42)));
+            let nw = 42;
             let nside = t.box_side();
-            out.push(format!(
-                "  {nside} {accent}{bold}Your first week!{rst}                          {nside}"
-            ));
-            out.push(format!(
-                "  {nside} You saved {c1}{bold}{}{rst} tokens this week.      {nside}",
+            // Pad to visual width: the token count is variable-length and the
+            // labels carry ANSI colour, so hardcoded spacing skews the border.
+            let nudge_line = |content: &str| -> String {
+                format!("  {nside}{}{nside}", theme::pad_right(content, nw))
+            };
+            out.push(format!("  {}", t.box_top(nw)));
+            out.push(nudge_line(&format!(" {accent}{bold}Your first week!{rst}")));
+            out.push(nudge_line(&format!(
+                " You saved {c1}{bold}{}{rst} tokens this week.",
                 crate::core::wrapped::format_tokens(week_saved),
-            ));
-            out.push(format!(
-                "  {nside} Share your card? {sec}lean-ctx gain --wrapped{rst} {nside}",
+            )));
+            out.push(nudge_line(&format!(
+                " Share your card? {sec}lean-ctx gain --wrapped{rst}",
                 sec = t.secondary.fg(),
-            ));
-            out.push(format!("  {}", t.box_bottom(42)));
+            )));
+            out.push(format!("  {}", t.box_bottom(nw)));
             out.push(String::new());
         }
     }
