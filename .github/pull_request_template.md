@@ -4,7 +4,7 @@ What does this PR change and why?
 
 ## Test plan
 
-- [ ] `cd rust && cargo test`
+- [ ] `cd rust && cargo test -- --test-threads=1` (the suite shares process-global state; CI serializes it too)
 - [ ] `cd rust && cargo clippy --all-targets --all-features -- -D warnings`
 - [ ] `cd rust && cargo fmt --check`
 - [ ] If cookbook/packages changed: relevant `npm test` / build steps

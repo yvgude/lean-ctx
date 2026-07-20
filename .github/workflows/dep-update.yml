@@ -73,7 +73,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo build
-          cargo test
+          cargo test -- --test-threads=1
           cargo clippy -- -D warnings
       # or set to workflow_run?
       - name: Create or update pull request

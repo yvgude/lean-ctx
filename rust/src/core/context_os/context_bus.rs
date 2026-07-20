@@ -217,6 +217,14 @@ struct Inner {
 
 impl Inner {
     fn open_read_conn(path: &PathBuf) -> Connection {
+        // The process-global runtime (context_os::runtime) captures its DB path
+        // once, from LEAN_CTX_DATA_DIR. Under `cargo test`, a parallel
+        // `isolated_data_dir` can delete that directory after the runtime bound
+        // to it, so a lazily-opened read connection would hit a missing dir.
+        // Recreating the parent keeps opens infallible (matches `open_at`).
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         let conn = Connection::open(path).expect("open read context-os db");
         let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
         let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA query_only=ON;");
