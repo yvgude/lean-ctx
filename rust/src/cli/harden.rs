@@ -1,6 +1,11 @@
 use std::path::PathBuf;
 
 pub fn run(args: &[String]) {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        print_help();
+        return;
+    }
+
     let undo = args.iter().any(|a| a == "--undo");
     let level = if args.iter().any(|a| a == "--hard") {
         "hard"
@@ -13,6 +18,18 @@ pub fn run(args: &[String]) {
     } else {
         apply_harden(level);
     }
+}
+
+fn print_help() {
+    println!("lean-ctx harden — tighten IDE security by denying native Read/Grep/Glob");
+    println!();
+    println!("USAGE:");
+    println!("    lean-ctx harden [OPTIONS]");
+    println!();
+    println!("OPTIONS:");
+    println!("    --hard     Replace mode: deny native tools across all IDEs");
+    println!("    --undo     Revert all harden changes");
+    println!("    --help     Show this help message");
 }
 
 fn apply_harden(level: &str) {

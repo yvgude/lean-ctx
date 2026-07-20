@@ -491,7 +491,7 @@ fn ensure_command_hook(pre_arr: &mut Vec<serde_json::Value>, matcher: &str, comm
                 .or_insert_with(|| serde_json::json!([]))
                 .as_array_mut()
             {
-                Some(hooks) => hooks.push(desired),
+                Some(hooks) => hooks.insert(0, desired),
                 None => {
                     obj.insert("hooks".to_string(), serde_json::json!([desired]));
                 }
