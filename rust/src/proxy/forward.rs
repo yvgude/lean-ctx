@@ -128,9 +128,6 @@ pub async fn forward_request(
         upstream_base,
         provider_label == "OpenAI",
     )?;
-    if prepared.body.len() > body_limit {
-        return Err(StatusCode::PAYLOAD_TOO_LARGE);
-    }
     let original_size = prepared.original_size;
     let compressed_size = prepared.compressed_size;
     let compression_candidate = prepared.compression_candidate;
@@ -200,13 +197,6 @@ pub async fn forward_request(
         build_upstream_url(&parts, upstream_base, default_path)
     };
 
-    // Counterfactual probe (#701, opt-in, Anthropic native only — a
-    // cross-shape route has no Anthropic upstream to ask): fire the free
-    // count_tokens call with the ORIGINAL body, concurrent with the forward
-    // below; `usage_meter::record` reads the slot when the billed usage
-    // arrives at response end. `parsed` is the pre-compression body
-    // (compression ran on a clone) — exactly what the counterfactual must
-    // count. A detached task: it can never delay or fail the real request.
     let counterfactual = if provider_label == "Anthropic" && !xlat {
         super::counterfactual::maybe_spawn_probe(
             &state.client,
@@ -220,16 +210,15 @@ pub async fn forward_request(
         None
     };
 
-    let forwarded_body =
-        super::bedrock::final_request_body(provider_label, &parts, &body_bytes, prepared.body);
-    if forwarded_body.len() > body_limit {
-        return Err(StatusCode::PAYLOAD_TOO_LARGE);
-    }
+    let forwarded_body = super::bedrock::finalize_request(
+        provider_label,
+        &mut parts,
+        &body_bytes,
+        prepared.body,
+        body_limit,
+        &upstream_url,
+    )?;
 
-    super::bedrock::sign_request_from_environment(&mut parts, &upstream_url, &forwarded_body)?;
-
-    // Prefix replay: record the exact forwarded bytes for byte-identical
-    // replay on subsequent append-only turns (ProxyMode::Cache).
     if let Some(ref pre) = parsed {
         let cfg_replay = crate::core::config::Config::load();
         if matches!(
@@ -433,7 +422,7 @@ struct PreparedRequestBody {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum RequestBodyEncoding {
+enum RequestBodyEncoding {
     Identity,
     Gzip,
     Zstd,
@@ -621,17 +610,6 @@ pub(super) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
     "cache-control",
     "x-goog-api-key",
     "x-goog-api-client",
-    "x-amz-date",
-    "x-amz-content-sha256",
-    "x-amz-security-token",
-    "x-amzn-bedrock-accept",
-    "x-amzn-bedrock-trace",
-    "x-amzn-bedrock-guardrailidentifier",
-    "x-amzn-bedrock-guardrailversion",
-    "x-amzn-bedrock-guardrailtrace",
-    "x-amzn-bedrock-performanceconfig-latency",
-    "x-amzn-bedrock-service-tier",
-    "x-amzn-bedrock-request-metadata",
     // Grok CLI → cli-chat-proxy.grok.com (subscription rail). Enumerated like
     // Codex/OpenAI above — no prefix wildcards. Missing `x-grok-client-version`
     // makes upstream return 426 Upgrade Required with version "(none)".
@@ -656,7 +634,7 @@ pub(super) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
 ];
 
 pub(super) fn is_allowed_request_header(name: &str) -> bool {
-    ALLOWED_REQUEST_HEADERS.contains(&name)
+    ALLOWED_REQUEST_HEADERS.contains(&name) || super::bedrock::is_bedrock_request_header(name)
 }
 
 fn should_forward_request_header(name: &str, preserve_content_encoding: bool) -> bool {
@@ -664,7 +642,7 @@ fn should_forward_request_header(name: &str, preserve_content_encoding: bool) ->
         || (preserve_content_encoding && name.eq_ignore_ascii_case("content-encoding"))
 }
 
-pub(super) fn request_body_encoding(parts: &Parts) -> RequestBodyEncoding {
+fn request_body_encoding(parts: &Parts) -> RequestBodyEncoding {
     let Some(value) = parts
         .headers
         .get(axum::http::header::CONTENT_ENCODING)
@@ -832,15 +810,7 @@ pub(super) fn is_forwarded_response_header(name: &str) -> bool {
     FORWARDED_HEADERS.contains(&name)
         || name.starts_with("x-codex-")
         || name.starts_with("x-ratelimit-")
-        || name.starts_with("x-amzn-bedrock-")
-        || matches!(name, "x-amzn-requestid" | "x-amzn-errortype")
-}
-
-pub(super) fn response_is_sse(headers: &axum::http::HeaderMap) -> bool {
-    headers
-        .get("content-type")
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.to_ascii_lowercase().contains("text/event-stream"))
+        || super::bedrock::is_bedrock_response_header(name)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -865,7 +835,7 @@ async fn build_response(
     let header_cost =
         super::usage_accounting::cost_from_headers(&resp_headers, extra_cost_header.as_deref());
 
-    let is_sse = response_is_sse(&resp_headers);
+    let is_sse = super::bedrock::response_is_sse(&resp_headers);
     let is_stream = is_sse
         || resp_headers
             .get("content-type")
@@ -873,27 +843,18 @@ async fn build_response(
             .is_some_and(|ct| extra_stream_types.iter().any(|t| ct.contains(t)));
 
     if is_stream {
-        // Tee the stream through a usage Scanner: each chunk is forwarded
-        // byte-for-byte while the real model + billed tokens are extracted from
-        // the final event and recorded when the stream ends. A cross-shape
-        // route (enterprise#16) additionally translates the teed bytes back to
-        // Anthropic SSE — metering always reads the raw upstream stream.
         let scanner = super::usage::Scanner::new(usage_provider, url_model)
             .with_cohort(cohort)
             .with_wire_context(wire)
             .with_header_cost(header_cost);
         let inner = Box::pin(response.bytes_stream());
-        let body = if is_sse {
-            let teed = Box::pin(super::usage::tee_stream(inner, scanner));
-            let kept_alive = super::sse_keepalive::keepalive_stream(teed);
-            xlat_stream_body(kept_alive, xlat)
-        } else if extra_stream_types.contains(&"application/vnd.amazon.eventstream") {
-            let teed = Box::pin(super::bedrock::tee_eventstream(inner, scanner));
-            xlat_stream_body(teed, xlat)
-        } else {
-            let teed = Box::pin(super::usage::tee_stream(inner, scanner));
-            xlat_stream_body(teed, xlat)
-        };
+        let body = super::bedrock::build_stream_body(
+            inner,
+            scanner,
+            is_sse,
+            extra_stream_types.contains(&"application/vnd.amazon.eventstream"),
+            xlat,
+        );
         let mut resp = Response::builder().status(status);
         for (k, v) in &resp_headers {
             let ks = k.as_str().to_lowercase();
@@ -940,7 +901,7 @@ async fn build_response(
 
 /// Streaming body, translated back to Anthropic SSE when `xlat` is set.
 #[cfg(feature = "shape-xlat")]
-fn xlat_stream_body<S>(teed: S, xlat: bool) -> Body
+pub(super) fn xlat_stream_body<S>(teed: S, xlat: bool) -> Body
 where
     S: futures::Stream<Item = Result<axum::body::Bytes, reqwest::Error>> + Send + Unpin + 'static,
 {
@@ -952,7 +913,7 @@ where
 }
 
 #[cfg(not(feature = "shape-xlat"))]
-fn xlat_stream_body<S>(teed: S, _xlat: bool) -> Body
+pub(super) fn xlat_stream_body<S>(teed: S, _xlat: bool) -> Body
 where
     S: futures::Stream<Item = Result<axum::body::Bytes, reqwest::Error>> + Send + Unpin + 'static,
 {

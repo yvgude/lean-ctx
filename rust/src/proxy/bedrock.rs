@@ -23,6 +23,34 @@ const MAX_CREDENTIAL_BYTES: usize = 4 * 1024;
 const ACCESS_KEY_ENV: &str = "AWS_ACCESS_KEY_ID";
 const SECRET_KEY_ENV: &str = "AWS_SECRET_ACCESS_KEY";
 const SESSION_TOKEN_ENV: &str = "AWS_SESSION_TOKEN";
+const BEDROCK_REQUEST_HEADERS: &[&str] = &[
+    "x-amz-date",
+    "x-amz-content-sha256",
+    "x-amz-security-token",
+    "x-amzn-bedrock-accept",
+    "x-amzn-bedrock-trace",
+    "x-amzn-bedrock-guardrailidentifier",
+    "x-amzn-bedrock-guardrailversion",
+    "x-amzn-bedrock-guardrailtrace",
+    "x-amzn-bedrock-performanceconfig-latency",
+    "x-amzn-bedrock-service-tier",
+    "x-amzn-bedrock-request-metadata",
+];
+
+pub(super) fn is_bedrock_request_header(name: &str) -> bool {
+    BEDROCK_REQUEST_HEADERS.contains(&name)
+}
+
+pub(super) fn is_bedrock_response_header(name: &str) -> bool {
+    name.starts_with("x-amzn-bedrock-") || matches!(name, "x-amzn-requestid" | "x-amzn-errortype")
+}
+
+pub(super) fn response_is_sse(headers: &HeaderMap) -> bool {
+    headers
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().contains("text/event-stream"))
+}
 
 #[allow(clippy::needless_pass_by_value)]
 pub(super) fn passthrough_request_body(
@@ -39,14 +67,27 @@ pub(super) fn final_request_body(
     raw: &[u8],
     transformed: Vec<u8>,
 ) -> Vec<u8> {
-    if provider_label == "Bedrock"
-        && super::forward::request_body_encoding(parts)
-            == super::forward::RequestBodyEncoding::Identity
-    {
+    if provider_label == "Bedrock" && !parts.headers.contains_key("content-encoding") {
         raw.to_vec()
     } else {
         transformed
     }
+}
+
+pub(super) fn finalize_request(
+    provider_label: &str,
+    parts: &mut Parts,
+    raw: &[u8],
+    transformed: Vec<u8>,
+    limit: usize,
+    url: &str,
+) -> Result<Vec<u8>, StatusCode> {
+    let body = final_request_body(provider_label, parts, raw, transformed);
+    if body.len() > limit {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    sign_request_from_environment(parts, url, &body)?;
+    Ok(body)
 }
 
 /// AWS event-stream frame decoder used only for usage observation. Bytes still
@@ -157,6 +198,33 @@ where
                 }
             }
         },
+    )
+}
+
+pub(super) fn build_stream_body<S>(
+    inner: S,
+    scanner: crate::proxy::usage::Scanner,
+    is_sse: bool,
+    eventstream: bool,
+    xlat: bool,
+) -> axum::body::Body
+where
+    S: Stream<Item = Result<axum::body::Bytes, reqwest::Error>> + Send + Unpin + 'static,
+{
+    if is_sse {
+        return super::forward::xlat_stream_body(
+            super::sse_keepalive::keepalive_stream(Box::pin(crate::proxy::usage::tee_stream(
+                inner, scanner,
+            ))),
+            xlat,
+        );
+    }
+    if eventstream {
+        return super::forward::xlat_stream_body(Box::pin(tee_eventstream(inner, scanner)), xlat);
+    }
+    super::forward::xlat_stream_body(
+        Box::pin(crate::proxy::usage::tee_stream(inner, scanner)),
+        xlat,
     )
 }
 
@@ -550,8 +618,12 @@ mod tests {
 
     #[test]
     fn bedrock_sigv4_matches_fixed_reference_vector() {
-        // Fixed AWS SigV4 reference inputs (the same credential/date discipline
-        // used by the AWS signing examples), with the Bedrock service scope.
+        // Provenance: AWS General Reference, "Signing AWS API requests with
+        // Signature Version 4" —
+        // https://docs.aws.amazon.com/general/latest/gr/signature-version-4.html.
+        // The published canonical/HMAC procedure is adapted here to the
+        // Bedrock Runtime host and service scope; expected Authorization stays
+        // a fixed, independently recomputed vector (no live AWS call).
         let credentials = Credentials {
             access_key: "AKIDEXAMPLE".into(),
             secret_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".into(),
@@ -648,18 +720,14 @@ mod tests {
             "content-type",
             "application/vnd.amazon.eventstream".parse().unwrap(),
         );
-        assert!(!super::super::forward::response_is_sse(&headers));
+        assert!(!response_is_sse(&headers));
         headers.insert(
             "content-type",
             "text/event-stream; charset=utf-8".parse().unwrap(),
         );
-        assert!(super::super::forward::response_is_sse(&headers));
-        assert!(super::super::forward::is_forwarded_response_header(
-            "x-amzn-requestid"
-        ));
-        assert!(!super::super::forward::is_forwarded_response_header(
-            "x-amzn-secret"
-        ));
+        assert!(response_is_sse(&headers));
+        assert!(is_bedrock_response_header("x-amzn-requestid"));
+        assert!(!is_bedrock_response_header("x-amzn-secret"));
     }
 
     #[test]

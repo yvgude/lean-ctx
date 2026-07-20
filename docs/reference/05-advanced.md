@@ -199,6 +199,10 @@ Set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (plus optional
 bounded body bytes with SigV4. Bedrock binary event streams are forwarded
 unchanged; SSE keepalives are never injected into them. Forwarded
 `x-amzn-*` request metadata is included in the signed-header set.
+The fixed-vector regression follows the AWS General Reference SigV4 procedure
+([official signing reference](https://docs.aws.amazon.com/general/latest/gr/signature-version-4.html))
+with the Bedrock Runtime host/service scope; it is deterministic offline
+evidence, not a live AWS credential test.
 
 - **Shape ≠ identity.** The proxy speaks four wire dialects; any number of
   provider identities map onto them. A declared HTTPS entry is itself the
