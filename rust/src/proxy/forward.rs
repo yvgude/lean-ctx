@@ -887,10 +887,7 @@ async fn build_response(
             let teed = Box::pin(super::usage::tee_stream(inner, scanner));
             let kept_alive = super::sse_keepalive::keepalive_stream(teed);
             xlat_stream_body(kept_alive, xlat)
-        } else if extra_stream_types
-            .iter()
-            .any(|kind| *kind == "application/vnd.amazon.eventstream")
-        {
+        } else if extra_stream_types.contains(&"application/vnd.amazon.eventstream") {
             let teed = Box::pin(super::bedrock::tee_eventstream(inner, scanner));
             xlat_stream_body(teed, xlat)
         } else {
