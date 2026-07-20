@@ -12,7 +12,7 @@ use std::time::Instant;
 /// (current_state, baseline_from_disk, last_flush_time)
 static STATS_BUFFER: Mutex<Option<(StatsStore, StatsStore, Instant)>> = Mutex::new(None);
 
-const FLUSH_INTERVAL_SECS: u64 = 30;
+const FLUSH_INTERVAL_SECS: u64 = 2;
 
 /// Daily savings history retained on disk (~10 years of active days). This is a
 /// storage/sync safety bound, NOT a display limit: all-time token totals are
@@ -97,6 +97,26 @@ pub fn flush() {
         *store = merged.clone();
         *baseline = merged;
         *last_flush = Instant::now();
+    }
+}
+
+/// Debounced flush: persists at most once per FLUSH_INTERVAL_SECS.
+/// Call from post_dispatch on every tool call to bound data loss
+/// on abrupt MCP termination to at most 2 seconds of events.
+pub fn flush_if_due() {
+    let due = {
+        let guard = STATS_BUFFER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match guard.as_ref() {
+            Some((_, _, last_flush)) => {
+                last_flush.elapsed().as_secs() >= FLUSH_INTERVAL_SECS
+            }
+            None => false,
+        }
+    };
+    if due {
+        flush();
     }
 }
 
