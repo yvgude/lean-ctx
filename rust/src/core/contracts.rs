@@ -315,6 +315,12 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Experimental,
         ),
+        doc(
+            "tokenizer-calibration",
+            "tokenizer-calibration-v1.md",
+            1,
+            Experimental,
+        ),
     ]
 }
 
