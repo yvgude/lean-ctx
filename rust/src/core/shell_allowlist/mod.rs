@@ -66,10 +66,14 @@ fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
     // #876: quoted-delimiter heredoc body = literal stdin, not commands.
     // Substitution checks ($(), backticks) need the quoted-only strip so they
     // can still flag expanding substitutions in unquoted bodies.
-    let quoted_stripped = strip_quoted_heredoc_bodies(&normalized);
+    // #1109: a shell comment (`# …`) is not a command. Strip comments after the
+    // heredoc bodies are gone, so a `#` inside a (now-removed) body can't be
+    // mistaken for a comment and, conversely, a real comment line between
+    // commands isn't diced into a bogus `#` segment and blocked.
+    let quoted_stripped = strip_comments(&strip_quoted_heredoc_bodies(&normalized));
     // #931: for command-segment and redirect checks, strip ALL heredoc bodies
     // (quoted + unquoted) — a `>` or command word in any body is opaque data.
-    let all_stripped = strip_all_heredoc_bodies(&normalized);
+    let all_stripped = strip_comments(&strip_all_heredoc_bodies(&normalized));
     let cmd = quoted_stripped.as_str();
     let cmd_all = all_stripped.as_str();
 
@@ -157,6 +161,110 @@ pub fn strip_all_heredoc_bodies(command: &str) -> String {
         }
     }
     out.join("\n")
+}
+
+/// Strip shell comments (`#` to end-of-line) so the allowlist tokenizer never
+/// mistakes a comment for a command (#1109).
+///
+/// Per POSIX, `#` only starts a comment when it is unquoted and begins a word:
+/// at the start of the command, or immediately after whitespace or one of the
+/// unquoted metacharacters `;`, `&`, `|`, `(`. Anywhere else the `#` is part of
+/// a word, so this deliberately leaves intact:
+///   - `#` inside single or double quotes (`echo "# not a comment"`),
+///   - parameter expansions like `${#arr}` and `${var#prefix}`,
+///   - arithmetic bases like `$((16#ff))`,
+///   - URLs / fragments like `http://host/path#frag`,
+///   - an escaped `\#`.
+///
+/// Run this AFTER heredoc bodies are stripped: a body line may legitimately
+/// contain `#`, and once the body is gone it can't be misread here.
+fn strip_comments(command: &str) -> String {
+    if !command.contains('#') {
+        return command.to_string();
+    }
+    let bytes = command.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut in_single = false;
+    let mut in_double = false;
+    // The start of the command counts as a word boundary.
+    let mut at_boundary = true;
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if in_single {
+            out.push(c);
+            if c == b'\'' {
+                in_single = false;
+            }
+            at_boundary = false;
+            i += 1;
+            continue;
+        }
+        if in_double {
+            // A backslash inside double quotes escapes the next byte; copy both
+            // so a `\"` doesn't prematurely close the quote.
+            if c == b'\\' && i + 1 < bytes.len() {
+                out.push(c);
+                out.push(bytes[i + 1]);
+                at_boundary = false;
+                i += 2;
+                continue;
+            }
+            out.push(c);
+            if c == b'"' {
+                in_double = false;
+            }
+            at_boundary = false;
+            i += 1;
+            continue;
+        }
+        match c {
+            b'\'' => {
+                in_single = true;
+                out.push(c);
+                at_boundary = false;
+                i += 1;
+            }
+            b'"' => {
+                in_double = true;
+                out.push(c);
+                at_boundary = false;
+                i += 1;
+            }
+            b'\\' => {
+                // An unquoted backslash escapes the next byte, so `\#` is a
+                // literal `#`, never a comment.
+                out.push(c);
+                if i + 1 < bytes.len() {
+                    out.push(bytes[i + 1]);
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+                at_boundary = false;
+            }
+            b'#' if at_boundary => {
+                // Comment: drop everything up to (but not including) the newline.
+                while i < bytes.len() && bytes[i] != b'\n' && bytes[i] != b'\r' {
+                    i += 1;
+                }
+                // `at_boundary` stays true; the newline (if any) is emitted next.
+            }
+            b'\n' | b'\r' | b' ' | b'\t' | b';' | b'&' | b'|' | b'(' => {
+                out.push(c);
+                at_boundary = true;
+                i += 1;
+            }
+            _ => {
+                out.push(c);
+                at_boundary = false;
+                i += 1;
+            }
+        }
+    }
+    // Every non-ASCII (multi-byte) byte is copied verbatim through the `_` arm,
+    // so the result is always valid UTF-8; fall back to the input if not.
+    String::from_utf8(out).unwrap_or_else(|_| command.to_string())
 }
 
 /// Scan one line for heredoc operators with a **quoted** delimiter and return

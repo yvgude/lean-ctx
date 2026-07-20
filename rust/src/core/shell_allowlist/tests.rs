@@ -339,6 +339,78 @@ fn strip_leaves_unquoted_heredoc_body_intact() {
     assert_eq!(strip_quoted_heredoc_bodies(cmd), cmd);
 }
 
+// --- Comment stripping (#1109) ---
+
+#[test]
+fn strip_comments_drops_standalone_comment_line() {
+    // #1109: a bare `#` comment line between commands must be removed, not diced
+    // into a `#` segment that the allowlist then rejects.
+    assert_eq!(
+        strip_comments("cd /repo\n# drop the block\nsed s/a/b/ f"),
+        "cd /repo\n\nsed s/a/b/ f"
+    );
+}
+
+#[test]
+fn strip_comments_drops_trailing_and_post_operator_comment() {
+    assert_eq!(strip_comments("ls -la # list files"), "ls -la ");
+    assert_eq!(strip_comments("ls;# c"), "ls;");
+    assert_eq!(strip_comments("ls |# c"), "ls |");
+}
+
+#[test]
+fn strip_comments_keeps_hash_inside_quotes() {
+    assert_eq!(
+        strip_comments("echo \"# not a comment\""),
+        "echo \"# not a comment\""
+    );
+    assert_eq!(strip_comments("echo '#nope'"), "echo '#nope'");
+}
+
+#[test]
+fn strip_comments_keeps_hash_in_words_and_expansions() {
+    // `#` mid-word, `${#arr}` length, `${v#pre}` prefix removal, `16#ff`
+    // arithmetic base, a URL fragment, and an escaped `\#` are not comments.
+    assert_eq!(strip_comments("echo ${#arr}"), "echo ${#arr}");
+    assert_eq!(strip_comments("echo ${v#pre}"), "echo ${v#pre}");
+    assert_eq!(strip_comments("echo $((16#ff))"), "echo $((16#ff))");
+    assert_eq!(
+        strip_comments("curl http://h/p#frag"),
+        "curl http://h/p#frag"
+    );
+    assert_eq!(strip_comments("echo a\\#b"), "echo a\\#b");
+}
+
+#[test]
+fn comment_line_between_commands_does_not_block() {
+    // #1109 end-to-end: a `#` comment line in a multi-line command was parsed as
+    // a command named `#` and blocked the whole pipeline.
+    // #975: mutating the environment without the lock races every other test.
+    let _lock = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "cd,sed,grep");
+    let cmd = "cd /repo\n# drop the conflict block\nsed s/a/b/ f\ngrep -c x f";
+    let result = super::enforce_shell_allowlist(cmd);
+    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+    assert!(
+        result.is_ok(),
+        "a comment line must not be treated as a command: {result:?}"
+    );
+}
+
+#[test]
+fn commented_out_command_is_not_executed_but_does_not_leak() {
+    // A `#`-commented command is dropped (as the shell would), so an unlisted
+    // command hidden behind `#` neither runs nor blocks the allowed prefix.
+    let _lock = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "ls");
+    let result = super::enforce_shell_allowlist("ls # rm -rf /");
+    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+    assert!(
+        result.is_ok(),
+        "trailing comment must not block: {result:?}"
+    );
+}
+
 #[test]
 fn heredoc_delims_variants() {
     assert_eq!(
