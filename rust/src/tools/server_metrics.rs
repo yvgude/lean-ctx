@@ -106,6 +106,39 @@ impl LeanCtxServer {
             crate::core::savings_ledger::record_tool_event(tool, original, output_tokens);
         }
 
+
+        // OCLA ObservationHook: project every MCP tool call as a structured
+        // observation for the canonical observation capability.
+        {
+            let session_r = self.session.read().await;
+            let agent_id = self
+                .presence_agent_id
+                .read()
+                .await
+                .clone()
+                .unwrap_or_default();
+            let ctx = crate::core::ocla::OclaRequestContext {
+                request_id: format!("mcp-{}", self.call_count.load(Ordering::Relaxed)),
+                session_id: session_r.id.clone(),
+                agent_id,
+                content_ref: path.map_or_else(|| format!("tool:{tool}"), |p| format!("file:{p}")),
+                tenant_id: None,
+            };
+            drop(session_r);
+            let observation = crate::core::ocla::Observation {
+                context: ctx,
+                name: format!("tool_call:{tool}"),
+                attributes: std::collections::BTreeMap::from([
+                    ("original_tokens".into(), original.to_string()),
+                    ("saved_tokens".into(), saved.to_string()),
+                    ("duration_ms".into(), duration_ms.to_string()),
+                ]),
+            };
+            let hook = crate::core::ocla::OclaRegistry::global()
+                .observation_hook
+                .as_ref();
+            let _ = hook.observe(observation);
+        }
         let mut session = self.session.write().await;
         session.record_tool_call(saved as u64, original as u64);
         if tool == "ctx_shell" {
