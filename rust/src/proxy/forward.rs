@@ -220,7 +220,11 @@ pub async fn forward_request(
         None
     };
 
-    let forwarded_body = prepared.body;
+    let forwarded_body =
+        super::bedrock::final_request_body(provider_label, &parts, &body_bytes, prepared.body);
+    if forwarded_body.len() > body_limit {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
 
     super::bedrock::sign_request_from_environment(&mut parts, &upstream_url, &forwarded_body)?;
 
@@ -429,7 +433,7 @@ struct PreparedRequestBody {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RequestBodyEncoding {
+pub(super) enum RequestBodyEncoding {
     Identity,
     Gzip,
     Zstd,
@@ -660,7 +664,7 @@ fn should_forward_request_header(name: &str, preserve_content_encoding: bool) ->
         || (preserve_content_encoding && name.eq_ignore_ascii_case("content-encoding"))
 }
 
-fn request_body_encoding(parts: &Parts) -> RequestBodyEncoding {
+pub(super) fn request_body_encoding(parts: &Parts) -> RequestBodyEncoding {
     let Some(value) = parts
         .headers
         .get(axum::http::header::CONTENT_ENCODING)
@@ -879,11 +883,18 @@ async fn build_response(
             .with_wire_context(wire)
             .with_header_cost(header_cost);
         let inner = Box::pin(response.bytes_stream());
-        let teed = Box::pin(super::usage::tee_stream(inner, scanner));
         let body = if is_sse {
+            let teed = Box::pin(super::usage::tee_stream(inner, scanner));
             let kept_alive = super::sse_keepalive::keepalive_stream(teed);
             xlat_stream_body(kept_alive, xlat)
+        } else if extra_stream_types
+            .iter()
+            .any(|kind| *kind == "application/vnd.amazon.eventstream")
+        {
+            let teed = Box::pin(super::bedrock::tee_eventstream(inner, scanner));
+            xlat_stream_body(teed, xlat)
         } else {
+            let teed = Box::pin(super::usage::tee_stream(inner, scanner));
             xlat_stream_body(teed, xlat)
         };
         let mut resp = Response::builder().status(status);

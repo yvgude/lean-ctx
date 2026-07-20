@@ -10,6 +10,7 @@ use axum::http::{
     HeaderMap, HeaderName, HeaderValue, Method, Request, StatusCode, header, request::Parts,
 };
 use chrono::Utc;
+use futures::{Stream, StreamExt};
 use hmac::{Hmac, KeyInit, Mac};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -30,6 +31,133 @@ pub(super) fn passthrough_request_body(
 ) -> (Vec<u8>, usize, usize) {
     let body = serde_json::to_vec(&parsed).unwrap_or_default();
     (body, original_size, original_size)
+}
+
+pub(super) fn final_request_body(
+    provider_label: &str,
+    parts: &Parts,
+    raw: &[u8],
+    transformed: Vec<u8>,
+) -> Vec<u8> {
+    if provider_label == "Bedrock"
+        && super::forward::request_body_encoding(parts)
+            == super::forward::RequestBodyEncoding::Identity
+    {
+        raw.to_vec()
+    } else {
+        transformed
+    }
+}
+
+/// AWS event-stream frame decoder used only for usage observation. Bytes still
+/// flow through unchanged; JSON payloads are fed to the Anthropic-shaped usage
+/// scanner, while malformed/unknown frames fail closed for metering only.
+struct EventStreamScanner {
+    buffered: Vec<u8>,
+    scanner: crate::proxy::usage::Scanner,
+}
+
+impl EventStreamScanner {
+    fn new(scanner: crate::proxy::usage::Scanner) -> Self {
+        Self {
+            buffered: Vec::new(),
+            scanner,
+        }
+    }
+
+    fn feed(&mut self, chunk: &[u8]) {
+        self.buffered.extend_from_slice(chunk);
+        loop {
+            if self.buffered.len() < 12 {
+                return;
+            }
+            let total = u32::from_be_bytes(self.buffered[0..4].try_into().unwrap()) as usize;
+            let headers = u32::from_be_bytes(self.buffered[4..8].try_into().unwrap()) as usize;
+            if !(16..=8 * 1024 * 1024).contains(&total) || headers > total - 16 {
+                self.buffered.clear();
+                return;
+            }
+            if self.buffered.len() < total {
+                return;
+            }
+            let frame: Vec<u8> = self.buffered.drain(..total).collect();
+            if crc32(&frame[..8]) != u32::from_be_bytes(frame[8..12].try_into().unwrap())
+                || crc32(&frame[..total - 4])
+                    != u32::from_be_bytes(frame[total - 4..].try_into().unwrap())
+            {
+                continue;
+            }
+            let payload_end = total - 4;
+            let payload = &frame[12 + headers..payload_end];
+            let Ok(value) = serde_json::from_slice::<Value>(payload) else {
+                continue;
+            };
+            if let Some(metrics) = value.get("amazon-bedrock-invocationMetrics") {
+                let mapped = serde_json::json!({
+                    "usage": {
+                        "input_tokens": metrics.get("inputTokenCount").and_then(Value::as_u64).unwrap_or(0),
+                        "output_tokens": metrics.get("outputTokenCount").and_then(Value::as_u64).unwrap_or(0),
+                    }
+                });
+                self.scanner
+                    .feed_body(&serde_json::to_vec(&mapped).unwrap_or_default());
+            } else {
+                self.scanner.feed_body(payload);
+            }
+        }
+    }
+
+    fn finalize(self) -> Option<crate::proxy::usage::RealUsage> {
+        self.scanner.finalize()
+    }
+}
+
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut crc = u32::MAX;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = if crc & 1 == 1 {
+                (crc >> 1) ^ 0xedb88320
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    !crc
+}
+
+pub(super) fn tee_eventstream<S, B, E>(
+    inner: S,
+    scanner: crate::proxy::usage::Scanner,
+) -> impl Stream<Item = Result<B, E>> + Send + 'static
+where
+    S: Stream<Item = Result<B, E>> + Send + Unpin + 'static,
+    B: AsRef<[u8]> + Send + 'static,
+    E: Send + 'static,
+{
+    futures::stream::unfold(
+        (inner, Some(EventStreamScanner::new(scanner))),
+        |(mut inner, mut scanner)| async move {
+            match inner.next().await {
+                Some(Ok(chunk)) => {
+                    if let Some(s) = scanner.as_mut() {
+                        s.feed(chunk.as_ref());
+                    }
+                    Some((Ok(chunk), (inner, scanner)))
+                }
+                Some(err) => Some((err, (inner, scanner))),
+                None => {
+                    if let Some(s) = scanner.take()
+                        && let Some(usage) = s.finalize()
+                    {
+                        crate::proxy::usage_meter::record(&usage);
+                    }
+                    None
+                }
+            }
+        },
+    )
 }
 
 #[derive(Clone)]
@@ -532,6 +660,72 @@ mod tests {
         assert!(!super::super::forward::is_forwarded_response_header(
             "x-amzn-secret"
         ));
+    }
+
+    #[test]
+    fn identity_body_preserves_provider_bytes() {
+        let parts = Request::post("/model/demo/invoke")
+            .body(())
+            .unwrap()
+            .into_parts()
+            .0;
+        let raw = br#"{"b":1,"a":2}"#;
+        assert_eq!(
+            final_request_body("Bedrock", &parts, raw, br#"{"a":2,"b":1}"#.to_vec()),
+            raw
+        );
+    }
+
+    fn event_frame(payload: &[u8]) -> Vec<u8> {
+        let total = 16 + payload.len() as u32;
+        let mut frame = Vec::with_capacity(total as usize);
+        frame.extend_from_slice(&total.to_be_bytes());
+        frame.extend_from_slice(&0u32.to_be_bytes());
+        frame.extend_from_slice(&crc32(&frame).to_be_bytes());
+        frame.extend_from_slice(payload);
+        let crc = crc32(&frame);
+        frame.extend_from_slice(&crc.to_be_bytes());
+        frame
+    }
+
+    #[test]
+    fn framed_eventstream_decodes_metrics_across_chunks() {
+        let frame = event_frame(
+            br#"{"amazon-bedrock-invocationMetrics":{"inputTokenCount":17,"outputTokenCount":9}}"#,
+        );
+        let mut stream = EventStreamScanner::new(crate::proxy::usage::Scanner::new(
+            crate::proxy::usage::Provider::Anthropic,
+            None,
+        ));
+        stream.feed(&frame[..7]);
+        stream.feed(&frame[7..]);
+        let usage = stream.finalize().expect("Bedrock metrics extracted");
+        assert_eq!(usage.input_tokens, 17);
+        assert_eq!(usage.output_tokens, 9);
+    }
+
+    #[tokio::test]
+    async fn framed_eventstream_tee_replays_exact_bytes() {
+        let frame = event_frame(
+            br#"{"amazon-bedrock-invocationMetrics":{"inputTokenCount":3,"outputTokenCount":2}}"#,
+        );
+        let split = frame.len() / 2;
+        let chunks = vec![
+            Ok::<_, std::convert::Infallible>(frame[..split].to_vec()),
+            Ok(frame[split..].to_vec()),
+        ];
+        let stream = tee_eventstream(
+            futures::stream::iter(chunks),
+            crate::proxy::usage::Scanner::new(crate::proxy::usage::Provider::Anthropic, None),
+        );
+        let replayed = stream
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .map(Result::unwrap)
+            .collect::<Vec<Vec<u8>>>()
+            .concat();
+        assert_eq!(replayed, frame);
     }
 
     #[test]
