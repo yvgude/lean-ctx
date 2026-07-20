@@ -303,6 +303,7 @@ pub mod litm_calibration;
 pub mod mode_predictor;
 pub mod model_registry;
 pub mod task_relevance;
+pub mod token_calibration;
 
 // ---------------------------------------------------------------------------
 // Domain: Diagnostics & Quality

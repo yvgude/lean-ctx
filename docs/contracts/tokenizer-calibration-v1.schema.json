@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanctx.dev/contracts/tokenizer-calibration-v1.schema.json",
+  "title": "LeanCTX tokenizer calibration evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "report_version",
+    "provider",
+    "model",
+    "tokenizer_family",
+    "authority_ref",
+    "entries",
+    "corpus_digest"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "leanctx.token-calibration/v1"
+    },
+    "report_version": {
+      "const": "1.0.0"
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "tokenizer_family": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "authority_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sample_ref", "provider_tokens"],
+        "properties": {
+          "sample_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "provider_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 18446744073709551615
+          }
+        }
+      }
+    },
+    "corpus_digest": {
+      "type": "string",
+      "pattern": "^blake3:[0-9a-f]{64}$"
+    }
+  }
+}
