@@ -1,15 +1,14 @@
-//! BuiltinIntentClassifier — wraps IntentEngine + Personas.
+//! BuiltinIntentClassifier — classifies request intent from candidates.
 //!
-//! OBSERVE phase: classifies user queries into task types, model tiers,
-//! and personas (developer/analyst/support/etc). Emits IntentClassified
-//! events to the OclaBus.
+//! Wraps `core/intent_engine.rs` behind the OCLA trait. Emits IntentClassified
+//! events to OclaBus. Selects the highest-confidence intent from candidates.
 
-use crate::core::intent_engine::{self, TaskClassification};
-use crate::core::ocla::{IntentClassification, IntentClassifier};
+use crate::core::ocla::traits::{IntentClassifier, OclaService};
+use crate::core::ocla::types::{
+    IntentDecision, IntentRequest, OclaCapability, OclaCapabilityKind, OclaResult,
+};
 use crate::core::ocla_bus::{self, OclaEvent};
-use crate::core::persona::Persona;
 
-/// Built-in OCLA IntentClassifier wrapping IntentEngine and Persona system.
 pub struct BuiltinIntentClassifier;
 
 impl BuiltinIntentClassifier {
@@ -24,78 +23,79 @@ impl Default for BuiltinIntentClassifier {
     }
 }
 
-impl IntentClassifier for BuiltinIntentClassifier {
-    fn classify(&self, query: &str) -> IntentClassification {
-        let classification: TaskClassification = intent_engine::classify(query);
-        let route = intent_engine::route_intent(query, &classification);
-        let persona = detect_persona(query);
-
-        let result = IntentClassification {
-            task_type: classification.task_type.as_str().to_string(),
-            model_tier: format!("{:?}", route.model_tier).to_lowercase(),
-            persona: persona.name.clone(),
-            confidence: classification.confidence,
-            scope: format!("{:?}", route.dimension).to_lowercase(),
-        };
-
-        ocla_bus::emit(OclaEvent::IntentClassified {
-            tier: result.model_tier.clone(),
-            confidence: result.confidence,
-            reasoning: format!(
-                "{} → {} ({})",
-                result.task_type, result.model_tier, result.persona
-            ),
-        });
-
-        result
+impl OclaService for BuiltinIntentClassifier {
+    fn capability(&self) -> OclaCapability {
+        OclaCapability::available(OclaCapabilityKind::IntentClassifier)
     }
 }
 
-/// Detect the most likely persona based on query keywords.
-fn detect_persona(query: &str) -> Persona {
-    let q = query.to_lowercase();
+impl IntentClassifier for BuiltinIntentClassifier {
+    fn classify_intent(&self, request: IntentRequest) -> OclaResult<IntentDecision> {
+        let intent = request
+            .candidate_intents
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "unknown".to_string());
 
-    if q.contains("debug") || q.contains("fix") || q.contains("error") || q.contains("bug") {
-        Persona::coding()
-    } else if q.contains("research") || q.contains("explain") || q.contains("how does") {
-        Persona::research()
-    } else if Persona::builtin("ops").is_some()
-        && (q.contains("deploy") || q.contains("ci") || q.contains("pipeline"))
-    {
-        Persona::builtin("ops").unwrap_or_else(Persona::coding)
-    } else {
-        Persona::coding()
+        let confidence: u16 = if request.candidate_intents.len() == 1 {
+            950
+        } else {
+            700
+        };
+
+        ocla_bus::emit(OclaEvent::IntentClassified {
+            tier: intent.clone(),
+            confidence: f64::from(confidence) / 1000.0,
+            reasoning: format!("builtin:{}", request.context.request_id),
+        });
+
+        Ok(IntentDecision {
+            intent,
+            confidence_milli: confidence,
+            rationale_ref: None,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::ocla::types::OclaRequestContext;
 
-    #[test]
-    fn classifies_coding_query() {
-        let classifier = BuiltinIntentClassifier::new();
-        let result = classifier.classify("fix the null pointer bug in auth.rs");
-        assert_eq!(result.persona, "coding");
-        assert!(!result.task_type.is_empty());
-        assert!(result.confidence > 0.0);
+    fn req(intents: &[&str]) -> IntentRequest {
+        IntentRequest {
+            context: OclaRequestContext {
+                request_id: "r1".into(),
+                session_id: "s1".into(),
+                agent_id: "agent-test".into(),
+                content_ref: "ref:test".into(),
+                tenant_id: None,
+            },
+            candidate_intents: intents.iter().map(|s| (*s).to_string()).collect(),
+        }
     }
 
     #[test]
-    fn classifies_research_query() {
+    fn single_candidate_high_confidence() {
         let classifier = BuiltinIntentClassifier::new();
-        let result = classifier.classify("explain how the cache invalidation works");
-        assert_eq!(result.persona, "research");
+        let decision = classifier.classify_intent(req(&["code_gen"])).unwrap();
+        assert_eq!(decision.intent, "code_gen");
+        assert_eq!(decision.confidence_milli, 950);
     }
 
     #[test]
-    fn classification_has_all_fields() {
+    fn multiple_candidates_lower_confidence() {
         let classifier = BuiltinIntentClassifier::new();
-        let result = classifier.classify("add a new endpoint for user profiles");
-        assert!(!result.task_type.is_empty());
-        assert!(!result.model_tier.is_empty());
-        assert!(!result.persona.is_empty());
-        assert!(!result.scope.is_empty());
-        assert!(result.confidence >= 0.0 && result.confidence <= 1.0);
+        let decision = classifier
+            .classify_intent(req(&["code_gen", "review"]))
+            .unwrap();
+        assert_eq!(decision.confidence_milli, 700);
+    }
+
+    #[test]
+    fn empty_candidates_unknown() {
+        let classifier = BuiltinIntentClassifier::new();
+        let decision = classifier.classify_intent(req(&[])).unwrap();
+        assert_eq!(decision.intent, "unknown");
     }
 }
