@@ -45,7 +45,7 @@
   ],
   "scanner_source_sha256": {
     ".github/workflows/security-check.yml": "c1ee715b5609e0861ae5b8e4517ef4961a7ede9ffcf19d0c304f66da2fc9c421",
-    "scripts/history-policy-gate.py": "ffdce6066e2831cc0a1cb03eaa165c308dff5c8a2ed4038cfd273a3b87f7019a",
+    "scripts/history-policy-gate.py": "e554c071cd785dc82fa73e5f0144d080a516550a17732fe103b4a4788db43182",
     "tests/security/test_history_policy_gate.py": "f3921aaecc395691d1c113bcec3955a2a70ca4362cb521246fd3355d880870fc"
   },
   "baseline": {

@@ -47,7 +47,9 @@ def load_policy(path):
     if not isinstance(policy, dict) or set(policy) != expected or policy["schema_version"] != "leanctx.history-policy/v1":
         raise GateError("invalid policy contract")
     limits = policy["limits"]
-    if set(limits) != {"max_commits", "max_objects", "max_findings", "command_timeout_seconds"} or not all(isinstance(v, int) and v > 0 for v in limits.values()):
+    required_keys = {"max_commits", "max_objects", "max_findings", "command_timeout_seconds"}
+    optional_keys = {"full_audit_timeout_seconds"}
+    if not required_keys <= set(limits) or not set(limits) <= required_keys | optional_keys or not all(isinstance(v, int) and v > 0 for v in limits.values()):
         raise GateError("invalid policy limits")
     baseline = policy["baseline"]
     if set(baseline) != {"commit", "report", "report_sha256"} or not re.fullmatch(r"[0-9a-f]{40}", baseline["commit"]) or not re.fullmatch(r"[0-9a-f]{64}", baseline["report_sha256"]):
@@ -218,7 +220,7 @@ def gate(root, policy):
 
 
 def full_audit(root, policy):
-    timeout = policy["limits"]["command_timeout_seconds"]
+    timeout = policy["limits"].get("full_audit_timeout_seconds", policy["limits"]["command_timeout_seconds"] * 5)
     commits = git(root, timeout, "rev-list", "--all").decode().splitlines()
     objects = git(root, timeout, "rev-list", "--objects", "--all").splitlines()
     if not commits or len(commits) > policy["limits"]["max_commits"] or len(objects) > policy["limits"]["max_objects"]:
