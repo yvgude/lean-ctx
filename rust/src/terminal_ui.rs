@@ -354,48 +354,6 @@ impl ProgressIndicator {
     }
 }
 
-#[cfg(test)]
-mod progress_tests {
-    use super::*;
-
-    #[test]
-    fn determinate_includes_arrow_and_percent() {
-        let line = ProgressIndicator::render_determinate("BM25", 50, 100);
-        assert!(line.contains("BM25"), "{line}");
-        assert!(line.contains('→'), "{line}");
-        assert!(line.contains("50%"), "{line}");
-        assert!(line.contains('['), "{line}");
-    }
-
-    #[test]
-    fn determinate_full_is_100() {
-        let line = ProgressIndicator::render_determinate("semantic", 10, 10);
-        assert!(line.contains("100%"), "{line}");
-        assert!(line.contains('→'), "{line}");
-    }
-
-    #[test]
-    fn indeterminate_bounces_left_and_right() {
-        let right = ProgressIndicator::render_indeterminate("graph", 0);
-        assert!(right.contains('→'), "{right}");
-        assert!(!right.contains('%'), "{right}");
-
-        let max = PROGRESS_BAR_WIDTH.saturating_sub(1).max(1);
-        let left = ProgressIndicator::render_indeterminate("graph", max + 1);
-        assert!(left.contains('←'), "{left}");
-    }
-
-    #[test]
-    fn set_and_indeterminate_toggle() {
-        let mut p = ProgressIndicator::new("BM25");
-        p.tty = false;
-        p.set(2, 8);
-        assert!(p.render_line().contains("25%"));
-        p.indeterminate();
-        assert!(!p.render_line().contains('%'));
-    }
-}
-
 /// Animated dashboard intro: logo wave, then KPI count-up, then section-by-section reveal.
 /// `header_box` is the pre-rendered KPI box (with placeholder values for frame 0).
 /// `kpi_values` are (final_value, width) for the 4 KPI counters.
@@ -485,4 +443,46 @@ pub fn print_setup_header() {
     println!("  {dim}│{rst}  {dim}Configuring your development environment{rst} {dim}│{rst}");
     println!("  {dim}╰──────────────────────────────────────────╯{rst}");
     println!();
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use super::*;
+
+    #[test]
+    fn determinate_includes_arrow_and_percent() {
+        let line = ProgressIndicator::render_determinate("BM25", 50, 100);
+        assert!(line.contains("BM25"), "{line}");
+        assert!(line.contains('→'), "{line}");
+        assert!(line.contains("50%"), "{line}");
+        assert!(line.contains('['), "{line}");
+    }
+
+    #[test]
+    fn determinate_full_is_100() {
+        let line = ProgressIndicator::render_determinate("semantic", 10, 10);
+        assert!(line.contains("100%"), "{line}");
+        assert!(line.contains('→'), "{line}");
+    }
+
+    #[test]
+    fn indeterminate_bounces_left_and_right() {
+        let right = ProgressIndicator::render_indeterminate("graph", 0);
+        assert!(right.contains('→'), "{right}");
+        assert!(!right.contains('%'), "{right}");
+
+        let max = PROGRESS_BAR_WIDTH.saturating_sub(1).max(1);
+        let left = ProgressIndicator::render_indeterminate("graph", max + 1);
+        assert!(left.contains('←'), "{left}");
+    }
+
+    #[test]
+    fn set_and_indeterminate_toggle() {
+        let mut p = ProgressIndicator::new("BM25");
+        p.tty = false;
+        p.set(2, 8);
+        assert!(p.render_line().contains("25%"));
+        p.indeterminate();
+        assert!(!p.render_line().contains('%'));
+    }
 }

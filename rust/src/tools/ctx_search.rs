@@ -1221,12 +1221,16 @@ mod tests {
     #[test]
     fn include_glob_filters_by_brace_expansion() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("a.rs"), "needle\n").unwrap();
-        std::fs::write(dir.path().join("b.ts"), "needle\n").unwrap();
-        std::fs::write(dir.path().join("c.py"), "needle\n").unwrap();
+        // Unique needle: the global search-delta tracker (src/core/search_delta.rs)
+        // is keyed by pattern, so sharing "needle" with sibling tests lets a
+        // parallel run mark our matches "unchanged" and drop them. A pattern
+        // unique to this test guarantees a fresh tracker key. (#flaky)
+        std::fs::write(dir.path().join("a.rs"), "brace_glob_needle\n").unwrap();
+        std::fs::write(dir.path().join("b.ts"), "brace_glob_needle\n").unwrap();
+        std::fs::write(dir.path().join("c.py"), "brace_glob_needle\n").unwrap();
 
         let out = handle(
-            "needle",
+            "brace_glob_needle",
             dir.path().to_string_lossy().as_ref(),
             Some("*.{rs,ts}"),
             10,

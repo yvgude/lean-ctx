@@ -489,15 +489,23 @@ mod tests {
     fn protected_pids_cover_own_process_group() {
         // SAFETY: getpgrp() takes no arguments and cannot fail.
         let pgid = unsafe { libc::getpgrp() };
-        // Snapshot before `protected_self_pids`: querying with another `pgrep`
-        // afterwards races with that query process joining the same foreground
-        // group and tests an impossible temporal invariant.
-        let members = process_group_pids(pgid);
+        // Bracket `protected_self_pids` with two group snapshots. A single
+        // snapshot is racy under `cargo test` parallelism: sibling tests spawn
+        // short-lived subprocesses (git/ps/pgrep) that transiently join this
+        // foreground process group, so a member seen once may already be gone
+        // when `protected_self_pids` runs — or appear only afterwards. Only PIDs
+        // present in BOTH snapshots were alive across the whole window and must
+        // therefore be covered by the protected set.
+        let members_before = process_group_pids(pgid);
         let protected = protected_self_pids();
-        for pid in members {
+        let members_after = process_group_pids(pgid);
+        for pid in members_before {
+            if !members_after.contains(&pid) {
+                continue; // transient foreign subprocess from a parallel test
+            }
             assert!(
                 protected.contains(&pid),
-                "group member {pid} missing from protected set"
+                "stable group member {pid} missing from protected set"
             );
         }
     }

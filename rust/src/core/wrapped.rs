@@ -428,6 +428,11 @@ mod tests {
 
     #[test]
     fn wrapped_ascii_box_lines_have_uniform_width() {
+        // `format_ascii` calls `Config::load()` for the theme; serialize against
+        // tests that mutate the data-dir / env (they hold the same lock via
+        // `isolated_data_dir`) so a parallel run can't swap the config — and thus
+        // the theme's box glyphs / brand width — out from under us mid-format.
+        let _env = crate::core::data_dir::test_env_lock();
         // In the test runner, stdout is not a TTY, so colors are auto-disabled.
         let out = sample().format_ascii();
         let widths: Vec<usize> = out
