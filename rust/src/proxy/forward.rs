@@ -56,9 +56,6 @@ pub async fn forward_request(
     let body_bytes = axum::body::to_bytes(body, max_body_bytes())
         .await
         .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
-    // These local control headers are trusted by the auth middleware and never
-    // forwarded upstream. Hash the exact bounded inbound bytes before any JSON
-    // parse, routing, serialization or compression changes their representation.
     let lineage = super::lineage::from_trusted_headers(&parts.headers, &body_bytes);
 
     // Org-policy gate (enterprise#25): under a signed + trusted + enforced org
