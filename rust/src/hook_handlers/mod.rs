@@ -26,8 +26,10 @@ mod redirect;
 // Search/dir-list rewriting and shell tokenization extracted to
 // `search_rewrite` submodule (#660 LOC gate).
 mod search_rewrite;
+mod vibe;
 pub(crate) use codex::emit_session_start_additional_context;
 pub use codex::{handle_codex_pretooluse, handle_codex_session_start};
+pub use vibe::handle_vibe_pre_tool;
 // Test-only re-export: only `hook_handlers::tests` (cfg(test)) reaches these
 // through this path; codex.rs's own production use of them is internal.
 #[cfg(test)]

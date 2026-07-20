@@ -690,26 +690,31 @@ fn rewrite_script_skips_multiline_commands() {
 
 #[test]
 fn codex_is_replace() {
+    let _env = crate::core::data_dir::test_env_lock();
     assert_eq!(recommend_hook_mode("codex"), HookMode::Replace);
 }
 
 #[test]
 fn cursor_is_replace() {
+    let _env = crate::core::data_dir::test_env_lock();
     assert_eq!(recommend_hook_mode("cursor"), HookMode::Replace);
 }
 
 #[test]
 fn gemini_is_replace() {
+    let _env = crate::core::data_dir::test_env_lock();
     assert_eq!(recommend_hook_mode("gemini"), HookMode::Replace);
 }
 
 #[test]
 fn claude_is_replace() {
+    let _env = crate::core::data_dir::test_env_lock();
     assert_eq!(recommend_hook_mode("claude"), HookMode::Replace);
 }
 
 #[test]
 fn hybrid_fallback_agents() {
+    let _env = crate::core::data_dir::test_env_lock();
     assert_eq!(recommend_hook_mode("crush"), HookMode::Hybrid);
     assert_eq!(recommend_hook_mode("cline"), HookMode::Hybrid);
     assert_eq!(recommend_hook_mode("kiro"), HookMode::Hybrid);
@@ -717,6 +722,7 @@ fn hybrid_fallback_agents() {
 
 #[test]
 fn unknown_agent_falls_back_to_mcp() {
+    let _env = crate::core::data_dir::test_env_lock();
     assert_eq!(recommend_hook_mode("unknown-agent"), HookMode::Mcp);
 }
 
@@ -775,25 +781,28 @@ fn roundtrip_unix_path() {
 
 #[test]
 fn disabled_env_caps_replace_at_hybrid() {
-    unsafe { std::env::set_var("LEAN_CTX_DISABLED", "1") };
+    let _env = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var("LEAN_CTX_DISABLED", "1");
     assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
     assert_eq!(recommend_hook_mode("cursor"), HookMode::Hybrid);
     assert_eq!(recommend_hook_mode("crush"), HookMode::Hybrid);
     assert_eq!(recommend_hook_mode("unknown-agent"), HookMode::Mcp);
-    unsafe { std::env::remove_var("LEAN_CTX_DISABLED") };
+    crate::test_env::remove_var("LEAN_CTX_DISABLED");
 }
 
 #[test]
 fn shadow_mode_false_env_caps_replace_at_hybrid() {
-    unsafe { std::env::set_var("LEAN_CTX_SHADOW_MODE", "false") };
+    let _env = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var("LEAN_CTX_SHADOW_MODE", "false");
     assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
     assert_eq!(recommend_hook_mode("gemini"), HookMode::Hybrid);
-    unsafe { std::env::remove_var("LEAN_CTX_SHADOW_MODE") };
+    crate::test_env::remove_var("LEAN_CTX_SHADOW_MODE");
 }
 
 #[test]
 fn heal_off_env_caps_replace_at_hybrid() {
-    unsafe { std::env::set_var("LEAN_CTX_HEAL", "off") };
+    let _env = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var("LEAN_CTX_HEAL", "off");
     assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
-    unsafe { std::env::remove_var("LEAN_CTX_HEAL") };
+    crate::test_env::remove_var("LEAN_CTX_HEAL");
 }
