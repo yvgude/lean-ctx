@@ -126,7 +126,7 @@ impl LeanCtxServer {
             };
             drop(session_r);
             let observation = crate::core::ocla::Observation {
-                context: ctx,
+                context: ctx.clone(),
                 name: format!("tool_call:{tool}"),
                 attributes: std::collections::BTreeMap::from([
                     ("original_tokens".into(), original.to_string()),
@@ -138,6 +138,20 @@ impl LeanCtxServer {
                 .observation_hook
                 .as_ref();
             let _ = hook.observe(observation);
+
+            let outcome = crate::core::ocla::Outcome {
+                context: ctx,
+                accepted: Some(saved > 0),
+                quality_score_milli: if original > 0 {
+                    Some(((saved as u64 * 1000) / original as u64).min(1000) as u16)
+                } else {
+                    None
+                },
+                outcome_ref: None,
+            };
+            let _ = crate::core::ocla::OclaRegistry::global()
+                .outcome_tracker
+                .record_outcome(outcome);
         }
         let mut session = self.session.write().await;
         session.record_tool_call(saved as u64, original as u64);
