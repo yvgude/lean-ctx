@@ -62,6 +62,7 @@ def load_policy(path):
         or not isinstance(sources, dict)
         or not sources
         or not all(isinstance(path, str) and re.fullmatch(r"[0-9a-f]{64}", digest) for path, digest in sources.items())
+        or set(source_paths) - {policy["policy_source_path"]} != set(sources)
     ):
         raise GateError("invalid scanner-source contract")
     return policy

@@ -60,7 +60,7 @@ class HistoryPolicyGateTests(unittest.TestCase):
             "forbidden_paths": [{"id": "IP001", "prefix": "private/"}],
             "secret_rule": {"id": "SEC001", "pickaxe_regex": "sk_" + "live_|PRIVATE " + "KEY-----"},
             "policy_source_path": "policy.json",
-            "scanner_source_paths": ["policy.json"],
+            "scanner_source_paths": ["policy.json", "scanner.py"],
             "scanner_source_sha256": {"scanner.py": hashlib.sha256((self.repo / "scanner.py").read_bytes()).hexdigest()},
             "baseline": {"commit": commit, "report": report, "report_sha256": digest},
         }
@@ -132,6 +132,20 @@ class HistoryPolicyGateTests(unittest.TestCase):
         (self.repo / "scanner.py").write_text("# modified scanner\n")
         with self.assertRaises(GATE.GateError):
             GATE.gate(self.repo, self.policy())
+
+    def test_scanner_source_path_hash_set_drift_fails(self):
+        value = json.loads(self.policy_path.read_text())
+        value["scanner_source_paths"].append("missing.py")
+        self.policy_path.write_bytes(GATE.canonical(value))
+        with self.assertRaises(GATE.GateError):
+            GATE.load_policy(self.policy_path)
+
+        value = json.loads(self.policy_path.read_text())
+        value["scanner_source_paths"].remove("missing.py")
+        value["scanner_source_sha256"]["missing.py"] = "0" * 64
+        self.policy_path.write_bytes(GATE.canonical(value))
+        with self.assertRaises(GATE.GateError):
+            GATE.load_policy(self.policy_path)
 
     def test_baseline_report_symlink_fails(self):
         target = self.repo / "baseline-target.json"
