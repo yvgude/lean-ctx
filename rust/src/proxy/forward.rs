@@ -56,7 +56,7 @@ pub async fn forward_request(
     let body_bytes = axum::body::to_bytes(body, max_body_bytes())
         .await
         .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
-    let lineage = super::lineage::from_trusted_headers(&parts.headers, &body_bytes);
+    let lineage = super::lineage::from_trusted_request(&parts, &body_bytes);
 
     // Org-policy gate (enterprise#25): under a signed + trusted + enforced org
     // policy, refuse models outside the ceiling and requests over a hard

@@ -916,6 +916,8 @@ async fn proxy_auth_guard(
 
     // #755: loopback-open mode skips all auth — every local process is trusted.
     if loopback_open {
+        req.extensions_mut()
+            .insert(gateway_identity::TrustedGatewayRequest);
         attach_gateway_tags(&mut req, gateway_identity::GatewayTags::default());
         return Ok(next.run(req).await);
     }
@@ -930,6 +932,8 @@ async fn proxy_auth_guard(
     if let Some(token) = bearer.as_deref()
         && constant_time_eq(token.as_bytes(), expected_token.as_bytes())
     {
+        req.extensions_mut()
+            .insert(gateway_identity::TrustedGatewayRequest);
         attach_gateway_tags(&mut req, gateway_identity::GatewayTags::default());
         return Ok(next.run(req).await);
     }
@@ -940,6 +944,8 @@ async fn proxy_auth_guard(
     if let Some(token) = bearer.as_deref()
         && let Some(tags) = gateway_keys.lookup(token)
     {
+        req.extensions_mut()
+            .insert(gateway_identity::TrustedGatewayRequest);
         attach_gateway_tags(&mut req, tags);
         return Ok(next.run(req).await);
     }

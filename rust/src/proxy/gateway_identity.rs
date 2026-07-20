@@ -36,6 +36,12 @@ pub struct GatewayTags {
     pub project: Option<String>,
 }
 
+/// Internal trust marker set only after the proxy auth guard accepts a
+/// gateway-owned credential (or explicit loopback-open mode). Provider API-key
+/// fallback must not be able to manufacture managed OCLA lineage headers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct TrustedGatewayRequest;
+
 impl GatewayTags {
     /// True when there is anything worth stamping.
     #[must_use]

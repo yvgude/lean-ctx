@@ -1,6 +1,6 @@
 //! Trusted, payload-free OCLA lineage admitted at the HTTP proxy boundary.
 
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, request::Parts};
 
 use crate::core::ocla::OclaRequestContext;
 
@@ -40,6 +40,19 @@ pub(super) fn from_trusted_headers(
     })
 }
 
+/// Admits caller-supplied lineage only after the proxy auth guard has marked
+/// the request as gateway-trusted. Provider-key fallback remains unmanaged;
+/// its upstream credential authenticates the provider, not OCLA metadata.
+pub(super) fn from_trusted_request(
+    parts: &Parts,
+    exact_bounded_body: &[u8],
+) -> Option<OclaRequestContext> {
+    parts
+        .extensions
+        .get::<super::gateway_identity::TrustedGatewayRequest>()
+        .and_then(|_| from_trusted_headers(&parts.headers, exact_bounded_body))
+}
+
 fn exact_id(headers: &HeaderMap, name: &'static str) -> Option<String> {
     let mut values = headers.get_all(name).iter();
     let value = values.next()?;
@@ -59,7 +72,7 @@ fn exact_id(headers: &HeaderMap, name: &'static str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use axum::http::{HeaderMap, HeaderValue};
+    use axum::http::{HeaderMap, HeaderValue, Request};
 
     use super::*;
 
@@ -157,6 +170,34 @@ mod tests {
         assert_eq!(
             content_ref_v1(b""),
             "blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        );
+    }
+
+    #[test]
+    fn lineage_headers_require_gateway_auth_marker() {
+        let request = Request::builder()
+            .header(REQUEST_ID_HEADER, "req-1")
+            .header(SESSION_ID_HEADER, "session-1")
+            .header(AGENT_ID_HEADER, "agent-1")
+            .body(())
+            .unwrap();
+        let (mut parts, _) = request.into_parts();
+
+        // Provider-key fallback can carry these headers, but must remain
+        // unmanaged because it has no gateway trust marker.
+        assert!(from_trusted_request(&parts, b"raw-body").is_none());
+
+        parts
+            .extensions
+            .insert(super::super::gateway_identity::TrustedGatewayRequest);
+        let context = from_trusted_request(&parts, b"raw-body").expect("managed lineage");
+        assert_eq!(context.request_id, "req-1");
+        assert_eq!(context.session_id, "session-1");
+        assert_eq!(context.agent_id, "agent-1");
+        assert_eq!(context.tenant_id, None);
+        assert_eq!(
+            context.content_ref,
+            format!("blake3:{}", blake3::hash(b"raw-body").to_hex())
         );
     }
 }
