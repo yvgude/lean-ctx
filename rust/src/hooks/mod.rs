@@ -38,6 +38,15 @@ impl HookMode {
         }
     }
 
+    /// Downgrade Replace → Hybrid; leave Hybrid/Mcp unchanged.
+    pub fn cap_at_hybrid(self) -> Self {
+        if matches!(self, Self::Replace) {
+            Self::Hybrid
+        } else {
+            self
+        }
+    }
+
     pub fn description(&self) -> &'static str {
         match self {
             Self::Mcp => "MCP server only (extension/plugin-based agents without reliable shell)",
@@ -93,13 +102,27 @@ pub const HYBRID_AGENTS: &[&str] = &[
 
 /// Auto-detect the best hook mode for a given agent key.
 ///
-/// Priority: config override > Replace > Hybrid > Mcp
+/// Priority: disabled/shadow_mode cap > config override > Replace > Hybrid > Mcp
 /// - Replace: native tools denied, MCP-only path (zero tool drift)
 /// - Hybrid: MCP + shell hooks (fallback for agents without deny support)
 /// - Mcp: MCP server only (no shell hooks available)
+///
+/// `LEAN_CTX_DISABLED=1` or `shadow_mode = false` cap the mode at Hybrid so
+/// the deny-list is never injected when the user opted out (#1037).
 pub fn recommend_hook_mode(agent_key: &str) -> HookMode {
+    let deny_suppressed = is_deny_suppressed();
     if let Some(override_mode) = crate::core::config::Config::load().hook_mode_override() {
-        return override_mode;
+        return if deny_suppressed {
+            override_mode.cap_at_hybrid()
+        } else {
+            override_mode
+        };
+    }
+    if deny_suppressed {
+        if REPLACE_AGENTS.contains(&agent_key) || HYBRID_AGENTS.contains(&agent_key) {
+            return HookMode::Hybrid;
+        }
+        return HookMode::Mcp;
     }
     if REPLACE_AGENTS.contains(&agent_key) {
         HookMode::Replace
@@ -108,6 +131,23 @@ pub fn recommend_hook_mode(agent_key: &str) -> HookMode {
     } else {
         HookMode::Mcp
     }
+}
+
+/// True when the user explicitly opted out of deny-list injection.
+fn is_deny_suppressed() -> bool {
+    if std::env::var("LEAN_CTX_DISABLED").is_ok() {
+        return true;
+    }
+    if matches!(std::env::var("LEAN_CTX_SHADOW_MODE"), Ok(v) if v.trim() == "false" || v.trim() == "0")
+    {
+        return true;
+    }
+    if matches!(std::env::var("LEAN_CTX_HEAL"), Ok(v) if v.trim().eq_ignore_ascii_case("off") || v.trim() == "0")
+    {
+        return true;
+    }
+    let cfg = crate::core::config::Config::load();
+    !cfg.shadow_mode
 }
 use agents::{
     install_amp_hook, install_antigravity_cli_hook, install_antigravity_hook,

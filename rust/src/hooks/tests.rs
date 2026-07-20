@@ -772,3 +772,28 @@ fn roundtrip_unix_path() {
     let back = from_bash_to_native_path(&bash);
     assert_eq!(back, native);
 }
+
+#[test]
+fn disabled_env_caps_replace_at_hybrid() {
+    unsafe { std::env::set_var("LEAN_CTX_DISABLED", "1") };
+    assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
+    assert_eq!(recommend_hook_mode("cursor"), HookMode::Hybrid);
+    assert_eq!(recommend_hook_mode("crush"), HookMode::Hybrid);
+    assert_eq!(recommend_hook_mode("unknown-agent"), HookMode::Mcp);
+    unsafe { std::env::remove_var("LEAN_CTX_DISABLED") };
+}
+
+#[test]
+fn shadow_mode_false_env_caps_replace_at_hybrid() {
+    unsafe { std::env::set_var("LEAN_CTX_SHADOW_MODE", "false") };
+    assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
+    assert_eq!(recommend_hook_mode("gemini"), HookMode::Hybrid);
+    unsafe { std::env::remove_var("LEAN_CTX_SHADOW_MODE") };
+}
+
+#[test]
+fn heal_off_env_caps_replace_at_hybrid() {
+    unsafe { std::env::set_var("LEAN_CTX_HEAL", "off") };
+    assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
+    unsafe { std::env::remove_var("LEAN_CTX_HEAL") };
+}
