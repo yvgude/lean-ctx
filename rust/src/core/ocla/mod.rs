@@ -5,6 +5,7 @@
 //! versioned boundary but must never become a data-plane dependency.
 
 pub mod builtin;
+pub mod content_port;
 pub mod registry;
 pub mod traits;
 pub mod types;
