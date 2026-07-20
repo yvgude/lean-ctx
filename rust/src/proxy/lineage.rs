@@ -181,7 +181,7 @@ mod tests {
             .header(AGENT_ID_HEADER, "agent-1")
             .body(())
             .unwrap();
-        let (mut parts, _) = request.into_parts();
+        let (mut parts, ()) = request.into_parts();
 
         // Provider-key fallback can carry these headers, but must remain
         // unmanaged because it has no gateway trust marker.
