@@ -17,6 +17,19 @@ use std::sync::{Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 
 use crate::core::gain::model_pricing::ModelPricing;
+use crate::core::ocla::{OclaRegistry, UsageSink};
+
+/// Projects one managed, provider-measured turn into the OCLA usage sink.
+///
+/// This is deliberately one-way and best-effort: the existing meter remains
+/// authoritative for billing/ledger totals, while OCLA receives a validated
+/// payload-free projection only when complete lineage is present.
+fn project_ocla_usage(u: &super::usage::RealUsage, sink: &dyn UsageSink) {
+    let Ok(Some(record)) = u.to_ocla_usage_record() else {
+        return;
+    };
+    let _ = sink.record_usage(record);
+}
 
 /// Cumulative real token counts for one model. Cost is derived at read time so a
 /// pricing-table change re-values historical usage consistently.
@@ -252,6 +265,11 @@ pub fn record(u: &super::usage::RealUsage) {
     // Gateway store subscription (enterprise#17): forward the full record to
     // the installed sink (no-op locally). Never blocks the request path.
     super::usage_sink::push(u);
+
+    // OCLA projection: keep the canonical usage capability on the same single
+    // finalized-turn choke-point without feeding back into billing or ledger
+    // aggregation. Invalid/missing lineage stays explicitly unmanaged.
+    project_ocla_usage(u, OclaRegistry::global().usage_sink.as_ref());
 
     // Budget windows (enterprise#25): book this turn's measured cost against
     // the person/day and project/month accumulators the policy gate checks.
@@ -809,5 +827,43 @@ mod tests {
         let json = serde_json::to_string(&p).unwrap();
         let back: PersistedUsage = serde_json::from_str(&json).unwrap();
         assert_eq!(back.cohorts.get("control").unwrap().output_tokens, 300);
+    }
+
+    #[test]
+    fn managed_usage_projects_once_and_unmanaged_is_skipped() {
+        let sink = crate::core::ocla::builtin::usage_sink::BuiltinUsageSink::new();
+        let usage = super::super::usage::RealUsage {
+            model: "gpt-5".into(),
+            input_tokens: 100,
+            output_tokens: 40,
+            cache_read_tokens: 20,
+            cache_write_tokens: 5,
+            wire: Some(Box::new(super::super::usage::WireContext {
+                lineage: Some(crate::core::ocla::OclaRequestContext {
+                    request_id: "request-1".into(),
+                    session_id: "session-1".into(),
+                    agent_id: "agent-1".into(),
+                    content_ref: "blake3:content".into(),
+                    tenant_id: None,
+                }),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+
+        project_ocla_usage(&usage, &sink);
+        assert_eq!(sink.record_count(), 1);
+        assert_eq!(sink.total_input_tokens(), 125);
+        assert_eq!(sink.total_output_tokens(), 40);
+
+        project_ocla_usage(
+            &super::super::usage::RealUsage {
+                model: "unmanaged".into(),
+                input_tokens: 999,
+                ..Default::default()
+            },
+            &sink,
+        );
+        assert_eq!(sink.record_count(), 1);
     }
 }
