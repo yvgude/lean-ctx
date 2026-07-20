@@ -1294,6 +1294,5 @@ pub enum SettlementEvidenceError {
     Deserialize(serde_json::Error),
 }
 
-
 #[cfg(test)]
 mod tests;
