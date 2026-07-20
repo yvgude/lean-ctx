@@ -355,6 +355,17 @@ fn is_heavy_command(command: &str) -> bool {
         // because the prefix is the full `git <verb>`.
         "git commit",
         "git push",
+        // Scripts and test runners that scan repos, run audits, or invoke
+        // subprocesses with their own timeouts. Killing them mid-run wastes
+        // agent tokens on retries.
+        "python3 ",
+        "python ",
+        "pytest",
+        "bash scripts/",
+        "sh scripts/",
+        "./scripts/",
+        // `timeout N cmd` wraps an intentionally long command — respect it.
+        "timeout ",
         // Task runners wrap builds/test gates; the underlying job is what's
         // heavy, so the wrapper gets the same ceiling. A fast subcommand
         // (`mise ls`) merely inherits a longer kill deadline — harmless.
@@ -362,7 +373,11 @@ fn is_heavy_command(command: &str) -> bool {
         "just ",
     ];
 
-    let matches_heavy = |s: &str| HEAVY_PREFIXES.iter().any(|p| s.starts_with(p));
+    let cfg_prefixes = config::Config::load().shell_heavy_prefixes;
+    let matches_heavy = |s: &str| {
+        HEAVY_PREFIXES.iter().any(|p| s.starts_with(p))
+            || cfg_prefixes.iter().any(|p| s.starts_with(p.as_str()))
+    };
 
     if matches_heavy(&lower) {
         return true;
@@ -1468,6 +1483,57 @@ mod exec_tests {
         assert_eq!(super::shell_timeout("mise gate"), super::HEAVY_TIMEOUT);
         assert_eq!(super::shell_timeout("mise run gate"), super::HEAVY_TIMEOUT);
         assert_eq!(super::shell_timeout("just build"), super::HEAVY_TIMEOUT);
+
+        if let Some(v) = saved_ms {
+            crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v);
+        }
+        if let Some(v) = saved_heavy {
+            crate::test_env::set_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS", v);
+        }
+    }
+
+    #[test]
+    fn scripts_and_timeout_get_heavy_ceiling() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let saved_ms = std::env::var("LEAN_CTX_SHELL_TIMEOUT_MS").ok();
+        let saved_heavy = std::env::var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS").ok();
+        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS");
+
+        assert_eq!(
+            super::shell_timeout("python3 scripts/audit.py"),
+            super::HEAVY_TIMEOUT
+        );
+        assert_eq!(
+            super::shell_timeout("python scripts/gate.py --root ."),
+            super::HEAVY_TIMEOUT
+        );
+        assert_eq!(super::shell_timeout("pytest tests/"), super::HEAVY_TIMEOUT);
+        assert_eq!(
+            super::shell_timeout("bash scripts/loc-gate.sh"),
+            super::HEAVY_TIMEOUT
+        );
+        assert_eq!(
+            super::shell_timeout("sh scripts/run.sh"),
+            super::HEAVY_TIMEOUT
+        );
+        assert_eq!(
+            super::shell_timeout("./scripts/deploy.sh"),
+            super::HEAVY_TIMEOUT
+        );
+        assert_eq!(
+            super::shell_timeout("timeout 300 python3 audit.py"),
+            super::HEAVY_TIMEOUT
+        );
+
+        assert_eq!(
+            super::shell_timeout("cd /repo && python3 gate.py"),
+            super::HEAVY_TIMEOUT
+        );
+        assert_eq!(
+            super::shell_timeout("cd /repo && timeout 600 make"),
+            super::HEAVY_TIMEOUT
+        );
 
         if let Some(v) = saved_ms {
             crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v);

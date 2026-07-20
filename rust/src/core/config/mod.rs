@@ -686,6 +686,11 @@ pub struct Config {
     #[serde(default)]
     pub shell_heavy_timeout_secs: Option<u64>,
 
+    /// Extra command prefixes that get the heavy timeout ceiling. Merged with
+    /// the built-in list. Useful for project-specific long-running scripts.
+    /// Example: `shell_heavy_prefixes = ["python3 ", "./scripts/"]`
+    #[serde(default)]
+    pub shell_heavy_prefixes: Vec<String>,
     /// When true, `ctx_shell` accepts shell file-write redirects (`>`, `>>`,
     /// `tee`, heredoc-to-file, `curl -o`, `wget` default mode). Default false —
     /// the native Write/Edit tool is preferred. Opt-in for power users who want
@@ -827,6 +832,7 @@ impl Default for Config {
             shell_security: None,
             shell_timeout_secs: None,
             shell_heavy_timeout_secs: None,
+            shell_heavy_prefixes: Vec::new(),
             shell_allow_writes: false,
             shell_allow_inline_scripts: false,
             setup: SetupConfig::default(),
