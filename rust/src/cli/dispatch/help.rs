@@ -145,7 +145,7 @@ COMMANDS:
     gain --limit=<N>               Row limit for tables (default: 10, max: 50)
     gain --wrapped                 Shareable Wrapped card (terminal)
     gain --svg [=<path>]           Shareable Wrapped card as SVG (social/OG image)
-    gain --share [=<path>]         Self-hostable Wrapped page (HTML, opt-in permalink)
+    gain --share [=<path>]         Self-hostable Wrapped page (HTML; alias: --page)
     gain --copy                    Copy a ready-to-post share line to the clipboard
     gain --svg|--share --open      Also open the written card/page in your browser
     gain --publish [--name=<n>]    Publish an opt-in permalink (leanctx.com/w/<id>)
@@ -158,7 +158,7 @@ COMMANDS:
          token-report [--json]          Token + memory report (project + session + CEP)
     pack --pr                      PR Context Pack (changed files, impact, tests, artifacts)
     snapshot create|list|show|verify|restore|publish|import  Context Time Machine: git-anchored, signed snapshots; replay, resume + share
-    index <status|build|build-full|watch>  Codebase index utilities
+    index <status|build|build-full|watch> [--force]  Codebase index utilities
     embeddings <status|provision>  Managed ONNX Runtime for semantic embeddings (official CPU build, sha256-pinned)
     cep                            CEP report (compression metrics, cache, modes, trends)
     verify-cache [path] [--json]   Prove the session cache: re-read collapses to a ~13-token stub
@@ -166,7 +166,7 @@ COMMANDS:
     watch                          Live TUI dashboard (real-time event stream)
     dashboard [--port=N] [--host=H] [--base-path=/prefix] [--open=browser|none|vscode]  Open web dashboard (default: http://localhost:3333)
     serve [--host H] [--port N]    MCP over HTTP (Streamable HTTP, local-first)
-    proxy start [--port=4444]      API proxy: compress tool_results before LLM API
+    proxy start [--port=4444] [--detach]  API proxy: compress tool_results before LLM API
     proxy status                   Show proxy statistics
     daemon start|stop|restart|status  IPC daemon management
     daemon enable|disable          Auto-start daemon on login (systemd/LaunchAgent; prints service file)
@@ -207,7 +207,7 @@ COMMANDS:
     knowledge remove --category <c> --key <k>             Remove a fact
     knowledge status               Knowledge base summary
     overview [task]                Project overview (task-contextualized if given)
-    explore <query> [--citation]   Iterative code exploration → file:line citations
+    explore <query> [--citation] [--depth=N]  Iterative code exploration → file:line citations
     compress [--signatures]        Context compression checkpoint
     compress diff <file|-> [--shell \"cmd\"] [--json]  Preview compression: original vs emitted + token diff
     config                         Show/edit configuration (~/.lean-ctx/config.toml)
