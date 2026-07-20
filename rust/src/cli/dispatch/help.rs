@@ -133,6 +133,7 @@ COMMANDS:
     output-savings [--json]        Output-token reduction (A/B measured w/ 95% CI, else estimated)
     gain --tasks                   Task breakdown by category
     gain --agents                  Top agents by tool spend
+    gain --by-tool [--json]        Per-tool savings breakdown (calls, tokens, USD, %)
     gain --heatmap                 Top files by tokens saved
     gain --json                    Raw JSON export of all stats
     gain --pipeline                Pipeline compression stats
