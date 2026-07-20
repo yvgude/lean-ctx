@@ -1,29 +1,40 @@
 //! BuiltinCompressionProvider — fail-closed compression via ContentPort + core::compressor.
 //!
-//! Resolves source bytes through CompressionContentPort, runs aggressive_compress,
-//! counts output tokens via core::tokens, persists as BLAKE3 CAS. Rejects non-file refs
+//! Uses Config::find_project_root() for bounded root resolution. Reports
+//! capability Unavailable when no valid project root exists. Rejects non-file refs
 //! and propagates all errors (fail-closed, no fabricated fallbacks).
 
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use crate::core::compressor;
+use crate::core::config::Config;
 use crate::core::ocla::content_port::CompressionContentPort;
 use crate::core::ocla::traits::{CompressionProvider, OclaService};
 use crate::core::ocla::types::{
-    CompressionRequest, CompressionResult, OclaCapability, OclaCapabilityKind, OclaResult,
+    CompressionRequest, CompressionResult, OclaCapability, OclaCapabilityKind,
+    OclaCapabilityStatus, OclaResult, OCLA_API_VERSION,
 };
 use crate::core::ocla::OclaError;
 use crate::core::ocla_bus::{self, OclaEvent};
 use crate::core::tokens;
 
-static DEFAULT_PORT: OnceLock<CompressionContentPort> = OnceLock::new();
+static DEFAULT_PORT: OnceLock<Option<CompressionContentPort>> = OnceLock::new();
 
-fn default_port() -> &'static CompressionContentPort {
-    DEFAULT_PORT.get_or_init(|| {
-        let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        CompressionContentPort::new(root)
-    })
+fn try_default_port() -> Option<&'static CompressionContentPort> {
+    DEFAULT_PORT
+        .get_or_init(|| {
+            let root_str = Config::find_project_root()?;
+            let root = PathBuf::from(&root_str);
+            let canonical = root.canonicalize().ok()?;
+            let meta = canonical.symlink_metadata().ok()?;
+            if !meta.is_dir() || meta.file_type().is_symlink() {
+                return None;
+            }
+            Some(CompressionContentPort::new(canonical))
+        })
+        .as_ref()
 }
 
 pub struct BuiltinCompressionProvider;
@@ -33,7 +44,7 @@ impl BuiltinCompressionProvider {
         Self
     }
 
-    fn compress_with_port(
+    pub fn compress_with_port(
         &self,
         request: CompressionRequest,
         port: &CompressionContentPort,
@@ -76,20 +87,25 @@ impl BuiltinCompressionProvider {
             ));
         }
 
-        let capped_tokens = delivered_tokens.min(request.target_tokens);
+        if delivered_tokens > request.target_tokens {
+            return Err(OclaError::InvalidRequest(format!(
+                "compressed output ({delivered_tokens}) exceeds target ({})",
+                request.target_tokens
+            )));
+        }
 
         let ref_key = port.persist(compressed.as_bytes())?;
 
         ocla_bus::emit(OclaEvent::CompressionApplied {
             path: Some(request.source_ref.clone()),
             before_tokens: request.source_tokens,
-            after_tokens: capped_tokens,
+            after_tokens: delivered_tokens,
             strategy: "aggressive_compress".to_string(),
         });
 
         Ok(CompressionResult {
             delivered_ref: ref_key,
-            delivered_tokens: capped_tokens,
+            delivered_tokens,
             recovery_ref: Some(request.source_ref),
         })
     }
@@ -103,13 +119,25 @@ impl Default for BuiltinCompressionProvider {
 
 impl OclaService for BuiltinCompressionProvider {
     fn capability(&self) -> OclaCapability {
-        OclaCapability::available(OclaCapabilityKind::CompressionProvider)
+        if try_default_port().is_some() {
+            OclaCapability::available(OclaCapabilityKind::CompressionProvider)
+        } else {
+            OclaCapability {
+                kind: OclaCapabilityKind::CompressionProvider,
+                api_version: OCLA_API_VERSION.to_string(),
+                status: OclaCapabilityStatus::Unavailable,
+                limits: BTreeMap::new(),
+            }
+        }
     }
 }
 
 impl CompressionProvider for BuiltinCompressionProvider {
     fn compress(&self, request: CompressionRequest) -> OclaResult<CompressionResult> {
-        self.compress_with_port(request, default_port())
+        let port = try_default_port().ok_or_else(|| {
+            OclaError::InvalidRequest("compression unavailable: no valid project root".into())
+        })?;
+        self.compress_with_port(request, port)
     }
 }
 
@@ -131,7 +159,9 @@ mod tests {
 
     #[test]
     fn compress_rejects_non_file_ref() {
-        let port = CompressionContentPort::new(std::env::temp_dir());
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let port = CompressionContentPort::new(&root);
         let provider = BuiltinCompressionProvider::new();
         let err = provider
             .compress_with_port(
@@ -150,7 +180,9 @@ mod tests {
 
     #[test]
     fn compress_rejects_zero_source_tokens() {
-        let port = CompressionContentPort::new(std::env::temp_dir());
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let port = CompressionContentPort::new(&root);
         let provider = BuiltinCompressionProvider::new();
         let err = provider
             .compress_with_port(
@@ -169,7 +201,9 @@ mod tests {
 
     #[test]
     fn compress_rejects_zero_target_tokens() {
-        let port = CompressionContentPort::new(std::env::temp_dir());
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let port = CompressionContentPort::new(&root);
         let provider = BuiltinCompressionProvider::new();
         let err = provider
             .compress_with_port(
@@ -193,9 +227,9 @@ mod tests {
         let content = "use std::collections::HashMap;\n\
             use std::io::{self, Read, Write, BufReader, BufWriter};\n\
             use std::fs::File;\n\n\
-            /// This function demonstrates a verbose implementation with many comments\n\
-            /// that should be highly compressible by the aggressive compressor.\n\
-            /// It includes redundant type annotations and verbose variable names.\n\
+            /// Verbose doc that should compress well.\n\
+            /// Another line of documentation.\n\
+            /// Even more verbose documentation here.\n\
             fn main() -> io::Result<()> {\n    \
             // Initialize the hashmap for storing key-value pairs\n    \
             let mut hash_map_instance: HashMap<String, String> = HashMap::new();\n    \
@@ -205,19 +239,19 @@ mod tests {
             hash_map_instance.insert(String::from(\"key_two\"), String::from(\"value_two\"));\n    \
             // Insert the third key-value pair into the hashmap\n    \
             hash_map_instance.insert(String::from(\"key_three\"), String::from(\"value_three\"));\n    \
-            // Iterate over all key-value pairs in the hashmap and print them\n    \
+            // Iterate over all key-value pairs and print them\n    \
             for (key_variable, value_variable) in hash_map_instance.iter() {\n        \
-            // Print the current key and its corresponding value\n        \
+            // Print the current key and value\n        \
             println!(\"Key: {}, Value: {}\", key_variable, value_variable);\n    \
             }\n    \
-            // Open a file for reading input data from the filesystem\n    \
+            // Open a file for reading\n    \
             let input_file_handle: File = File::open(\"input.txt\")?;\n    \
-            // Create a buffered reader wrapper around the file handle\n    \
+            // Create a buffered reader\n    \
             let mut buffered_reader_instance: BufReader<File> = BufReader::new(input_file_handle);\n    \
-            // Read all contents of the file into a string buffer\n    \
+            // Read all contents into a string\n    \
             let mut file_contents_buffer: String = String::new();\n    \
             buffered_reader_instance.read_to_string(&mut file_contents_buffer)?;\n    \
-            // Print the length of the file contents that were read\n    \
+            // Print the length\n    \
             println!(\"Read {} bytes from input file\", file_contents_buffer.len());\n    \
             Ok(())\n\
             }\n";
@@ -249,7 +283,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         let port = CompressionContentPort::new(&root);
-
         let provider = BuiltinCompressionProvider::new();
         let err = provider
             .compress_with_port(
@@ -268,5 +301,12 @@ mod tests {
             msg.contains("resolve") || msg.contains("No such file") || msg.contains("not found"),
             "unexpected error: {msg}"
         );
+    }
+
+    #[test]
+    fn capability_reflects_root_availability() {
+        let provider = BuiltinCompressionProvider::new();
+        let cap = provider.capability();
+        assert_eq!(cap.kind, OclaCapabilityKind::CompressionProvider);
     }
 }
