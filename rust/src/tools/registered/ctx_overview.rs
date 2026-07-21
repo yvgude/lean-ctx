@@ -66,7 +66,7 @@ impl McpTool for CtxOverviewTool {
                 "[overview temporarily unavailable — cache busy]".to_string(),
             ));
         };
-        let result = crate::tools::ctx_overview::handle(
+        let (result, _complete) = crate::tools::ctx_overview::handle(
             &guard,
             task.as_deref(),
             resolved_path.as_deref(),

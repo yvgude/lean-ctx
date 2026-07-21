@@ -77,7 +77,7 @@ impl McpTool for CtxPreloadTool {
                 "[preload skipped — cache temporarily unavailable]".to_string(),
             ));
         };
-        let mut result = crate::tools::ctx_preload::handle(
+        let (mut result, _usable) = crate::tools::ctx_preload::handle(
             &mut cache_guard,
             &task,
             resolved_path.as_deref(),

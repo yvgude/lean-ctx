@@ -34,7 +34,8 @@ pub(crate) fn cmd_overview(args: &[String]) {
     }
 
     let cache = SessionCache::new();
-    let out = ctx_overview::handle(&cache, task.as_deref(), Some(&project_root), CrpMode::Off);
+    let (out, _complete) =
+        ctx_overview::handle(&cache, task.as_deref(), Some(&project_root), CrpMode::Off);
 
     if json {
         let payload = serde_json::json!({

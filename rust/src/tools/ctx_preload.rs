@@ -10,21 +10,30 @@ const MAX_CRITICAL_LINES: usize = 15;
 const SIGNATURES_BUDGET: usize = 10;
 const TOTAL_TOKEN_BUDGET: usize = 4000;
 
+/// Returns the rendered preload plus whether it actually carries context
+/// (#1134). Callers must not re-derive that from the body: the guidance
+/// strings below are prose and drift, and a preloaded file may quote them.
 pub fn handle(
     cache: &mut SessionCache,
     task: &str,
     path: Option<&str>,
     crp_mode: CrpMode,
-) -> String {
+) -> (String, bool) {
     if task.trim().is_empty() {
-        return "ERROR: ctx_preload requires a task description".to_string();
+        return (
+            "ERROR: ctx_preload requires a task description".to_string(),
+            false,
+        );
     }
 
     let project_root = path.map_or_else(|| ".".to_string(), std::string::ToString::to_string);
     let jail_root = std::path::Path::new(&project_root);
 
     let Some(open) = graph_provider::open_or_build(&project_root) else {
-        return format!("[task: {task}]\nNo graph available. Use ctx_overview for project map.");
+        return (
+            format!("[task: {task}]\nNo graph available. Use ctx_overview for project map."),
+            false,
+        );
     };
     let gp = &open.provider;
 
@@ -57,8 +66,11 @@ pub fn handle(
         crate::core::pop_pruning::filter_candidates_by_pop(&project_root, &scored, &pop);
 
     if candidates.is_empty() {
-        return format!(
-            "[task: {task}]\nNo directly relevant files found. Use ctx_overview for project map."
+        return (
+            format!(
+                "[task: {task}]\nNo directly relevant files found. Use ctx_overview for project map."
+            ),
+            false,
         );
     }
 
@@ -269,13 +281,14 @@ pub fn handle(
     let preload_tokens = count_tokens(&preload_result);
     let savings = protocol::format_savings(total_estimated_saved, preload_tokens);
 
-    if crp_mode.is_tdd() {
+    let body = if crp_mode.is_tdd() {
         format!("{preload_result}\n{savings}")
     } else {
         format!(
             "{preload_result}\n\nNext: ctx_read(path, mode=\"full\") for any file above.\n{savings}"
         )
-    }
+    };
+    (body, true)
 }
 
 /// Boltzmann distribution for token budget allocation across files.
@@ -479,6 +492,24 @@ fn compute_heat(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #1134: the "did this preload carry anything" answer travels with the
+    /// body. The guidance text is prose that has drifted before, so autonomy
+    /// must not have to recognise it.
+    #[test]
+    fn guidance_only_preloads_report_themselves_as_unusable() {
+        let mut cache = SessionCache::new();
+        let (body, usable) = handle(&mut cache, "   ", None, CrpMode::Off);
+        assert!(!usable, "an empty task carries no context: {body}");
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_string_lossy().to_string();
+        let (body, usable) = handle(&mut cache, "unrelated task", Some(&root), CrpMode::Off);
+        assert!(
+            !usable,
+            "a preload with no candidate files carries no context: {body}"
+        );
+    }
 
     #[test]
     fn extract_critical_lines_finds_keywords() {

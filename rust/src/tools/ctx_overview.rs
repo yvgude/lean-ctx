@@ -14,19 +14,22 @@ use crate::tools::CrpMode;
 ///
 /// This implements lazy evaluation for context: start with the overview,
 /// then zoom into specific files as needed.
+/// Returns the rendered overview plus whether it is the complete graph-backed
+/// view (#1134). `false` means the partial, still-indexing fallback — callers
+/// must take it from here rather than pattern-matching the body text.
 pub fn handle(
     _cache: &SessionCache,
     task: Option<&str>,
     path: Option<&str>,
     _crp_mode: CrpMode,
-) -> String {
+) -> (String, bool) {
     let project_root = path.map_or_else(|| ".".to_string(), std::string::ToString::to_string);
 
     let auto_loaded = crate::core::context_package::auto_load_packages(&project_root);
 
     let Some(open) = graph_provider::open_or_build(&project_root) else {
         crate::core::index_orchestrator::ensure_all_background(&project_root);
-        return partial_overview(&project_root);
+        return (partial_overview(&project_root), false);
     };
     let gp = &open.provider;
 
@@ -242,7 +245,7 @@ pub fn handle(
     output.push(String::new());
     output.push(crate::core::protocol::format_savings(original, compressed));
 
-    output.join("\n")
+    (output.join("\n"), true)
 }
 
 fn append_knowledge_task_section(output: &mut Vec<String>, project_root: &str, task: &str) {
@@ -669,7 +672,8 @@ mod tests {
         graph.save().expect("persist call graph");
 
         let cache = SessionCache::new();
-        let out = handle(&cache, None, Some(root_str), CrpMode::Off);
+        let (out, complete) = handle(&cache, None, Some(root_str), CrpMode::Off);
+        assert!(complete, "graph-backed overview must not report as partial");
         assert!(
             out.contains("1 call edges"),
             "overview header must show persisted call edges, got:\n{out}"

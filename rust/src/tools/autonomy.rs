@@ -208,16 +208,14 @@ pub fn session_lifecycle_pre_hook(
         return None;
     }
 
-    let result = if let Some(task_desc) = task {
+    let (result, usable) = if let Some(task_desc) = task {
         crate::tools::ctx_preload::handle(cache, task_desc, Some(&root), crp_mode)
     } else {
         let cache_readonly = &*cache;
         crate::tools::ctx_overview::handle(cache_readonly, None, Some(&root), crp_mode)
     };
 
-    let empty = result.trim().is_empty()
-        || result.contains("No directly relevant files")
-        || result.contains("INDEXING IN PROGRESS");
+    let empty = !usable || result.trim().is_empty();
     decisions.push(AutonomyDriverDecisionV1 {
         driver: AutonomyDriverKindV1::Preload,
         verdict: AutonomyVerdictV1::Run,
