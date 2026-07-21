@@ -10,6 +10,7 @@ use std::sync::{
     Arc, LazyLock, Mutex,
     atomic::{AtomicBool, Ordering},
 };
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum JobState {
@@ -91,6 +92,65 @@ pub fn start(
     id
 }
 
+/// Outcome of a foreground run that is allowed to detach on a soft cap.
+pub enum ForegroundResult {
+    /// The command finished within the soft cap; output is returned inline and
+    /// the job has been removed from the registry.
+    Finished { output: String, exit_code: i32 },
+    /// The command was still running at the soft cap and was left running as a
+    /// pollable background job (#1106).
+    Detached { job_id: String },
+}
+
+/// Run `command` as a managed background job but block up to `soft_cap` waiting
+/// for it to finish, so fast commands still return their output inline.
+///
+/// The MCP host aborts a tool call that stays in the foreground too long
+/// (~120s) and hands back a task id that `background_action=status` cannot
+/// resolve. By detaching *before* that deadline we always return a real
+/// `shell_*` job id the caller can poll or cancel (#1106).
+pub fn run_foreground_or_detach(
+    command: String,
+    cwd: String,
+    extra_env: std::collections::HashMap<String, String>,
+    timeout_ms: Option<u64>,
+    soft_cap: Duration,
+) -> ForegroundResult {
+    let id = start(command, cwd, extra_env, timeout_ms);
+    let deadline = Instant::now() + soft_cap;
+    loop {
+        match status(&id) {
+            Some(JobState::Completed { output, exit_code }) => {
+                remove(&id);
+                return ForegroundResult::Finished { output, exit_code };
+            }
+            // A cancel can only be requested via background_action once the job
+            // is detached, so an inline wait realistically only sees Completed;
+            // handle Cancelled defensively with the timeout exit code.
+            Some(JobState::Cancelled { output }) => {
+                remove(&id);
+                return ForegroundResult::Finished {
+                    output,
+                    exit_code: 130,
+                };
+            }
+            _ => {}
+        }
+        if Instant::now() >= deadline {
+            return ForegroundResult::Detached { job_id: id };
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Drop a finished job from the registry so inline foreground runs do not
+/// accumulate completed entries.
+fn remove(id: &str) {
+    JOBS.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(id);
+}
+
 pub fn status(id: &str) -> Option<JobState> {
     JOBS.lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -111,8 +171,48 @@ pub fn cancel(id: &str) -> Option<JobState> {
 
 #[cfg(test)]
 mod tests {
-    use super::{JobState, cancel, start, status};
+    use super::{
+        ForegroundResult, JobState, cancel, run_foreground_or_detach, start, status,
+    };
     use std::time::Duration;
+
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn foreground_run_finishing_within_cap_returns_inline() {
+        let result = run_foreground_or_detach(
+            "printf FG_OK".to_string(),
+            ".".to_string(),
+            std::collections::HashMap::default(),
+            Some(10_000),
+            Duration::from_secs(10),
+        );
+        match result {
+            ForegroundResult::Finished { output, exit_code } => {
+                assert_eq!(exit_code, 0);
+                assert!(output.contains("FG_OK"));
+            }
+            ForegroundResult::Detached { .. } => panic!("fast command should not detach"),
+        }
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn foreground_run_exceeding_cap_detaches_to_pollable_job() {
+        let result = run_foreground_or_detach(
+            "sleep 5; printf SLOW_OK".to_string(),
+            ".".to_string(),
+            std::collections::HashMap::default(),
+            Some(10_000),
+            Duration::from_millis(100),
+        );
+        let ForegroundResult::Detached { job_id } = result else {
+            panic!("slow command should detach");
+        };
+        assert!(job_id.starts_with("shell_"));
+        // The returned id must resolve via status — the core #1106 guarantee.
+        assert!(status(&job_id).is_some());
+        cancel(&job_id);
+    }
 
     #[test]
     #[cfg_attr(windows, ignore)]

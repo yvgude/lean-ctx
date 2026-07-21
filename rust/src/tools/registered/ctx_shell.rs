@@ -247,7 +247,7 @@ impl McpTool for CtxShellTool {
             let arg_raw = get_bool(args, "raw").unwrap_or(false);
             let arg_bypass = get_bool(args, "bypass").unwrap_or(false);
             let env_disabled = std::env::var("LEAN_CTX_DISABLED").is_ok();
-            let env_raw = crate::core::runtime_flags::raw_enabled();
+            let env_raw = std::env::var("LEAN_CTX_RAW").is_ok();
             let (raw, bypass) = resolve_shell_raw_flags(arg_raw, arg_bypass, env_disabled, env_raw);
 
             let crp_mode = ctx.crp_mode;
@@ -284,9 +284,33 @@ impl McpTool for CtxShellTool {
                 });
             }
 
-            let (raw_output, exit_code) = crate::server::execute::execute_command_with_env(
-                &cmd_clone, &cwd_clone, &extra_env, timeout_ms,
-            );
+            // Foreground runs still detach onto a pollable job if they outlast
+            // the soft cap, so the MCP host's ~120s abort never strands the
+            // result behind an unresolvable task id (#1106).
+            let soft_cap = std::time::Duration::from_millis(foreground_soft_cap_ms());
+            let (raw_output, exit_code) =
+                match crate::server::background_shell::run_foreground_or_detach(
+                    cmd_clone.clone(),
+                    cwd_clone.clone(),
+                    extra_env.clone(),
+                    timeout_ms,
+                    soft_cap,
+                ) {
+                    crate::server::background_shell::ForegroundResult::Finished {
+                        output,
+                        exit_code,
+                    } => (output, exit_code),
+                    crate::server::background_shell::ForegroundResult::Detached { job_id } => {
+                        return Ok(ToolOutput {
+                            shell_outcome: Some(ShellOutcome::Exit(0)),
+                            content_blocks: None,
+                            ..ToolOutput::simple(format!(
+                                "[auto-background:{job_id} started — command exceeded the {}s foreground cap and keeps running; use ctx_shell(background_action=\"status\", job_id=\"{job_id}\") to poll or background_action=\"cancel\" to stop it]",
+                                soft_cap.as_secs()
+                            ))
+                        });
+                    }
+                };
 
             // Structured diagnostics (#499) — same hook as the CLI path.
             crate::core::diagnostics_store::record_from_shell(&cmd_clone, &raw_output, exit_code);
@@ -581,6 +605,18 @@ fn should_auto_background(command: &str, timeout_ms: Option<u64>) -> bool {
         && command
             .lines()
             .any(|line| line.trim_start().starts_with("cargo test"))
+}
+
+/// Foreground wait budget before a still-running command is detached into a
+/// pollable background job. Kept below the MCP host's ~120s tool-call abort so
+/// the caller always receives a real `shell_*` job id instead of an
+/// unresolvable task id (#1106). Override with `LEAN_CTX_SHELL_FG_CAP_MS`.
+fn foreground_soft_cap_ms() -> u64 {
+    std::env::var("LEAN_CTX_SHELL_FG_CAP_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|&ms| ms > 0)
+        .unwrap_or(110_000)
 }
 
 /// #842: detect a bare `cat <single_file>` command (no pipes, redirects, flags).
