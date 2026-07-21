@@ -372,12 +372,10 @@ impl CtxReadTool {
                     && let Some(read_output) =
                         crate::tools::ctx_read::try_stub_hit_readonly(&cache, path)
                 {
+                    let hit = read_output.cache_hit;
                     let content = read_output.content;
                     let rmode = read_output.resolved_mode;
                     let orig = cache.get(path).map_or(0, |e| e.original_tokens);
-                    let hit = content.contains(" cached ")
-                        || content.contains("[unchanged")
-                        || content.contains("[delta:");
                     let fref = cache.file_ref_map().get(path).cloned();
                     let stats = cache.get_stats();
                     let stats_snapshot = (stats.total_reads(), stats.cache_hits());
@@ -410,12 +408,10 @@ impl CtxReadTool {
                         &protect,
                     )
                 };
+                let hit = read_output.cache_hit;
                 let content = read_output.content;
                 let rmode = read_output.resolved_mode;
                 let orig = cache.get(path).map_or(0, |e| e.original_tokens);
-                let hit = content.contains(" cached ")
-                    || content.contains("[unchanged")
-                    || content.contains("[delta:");
                 let fref = cache.file_ref_map().get(path).cloned();
                 let stats = cache.get_stats();
                 let stats_snapshot = (stats.total_reads(), stats.cache_hits());

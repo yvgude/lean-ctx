@@ -33,6 +33,11 @@ pub struct ReadOutput {
     /// Approximate output token count from mode processing.
     /// The dispatch layer recounts the final assembled string for accurate savings.
     pub output_tokens: usize,
+    /// Whether this read was served from the cache instead of re-delivering
+    /// content (#1133). Set by whoever served the read — the dispatch layer must
+    /// not re-derive it by inspecting `content`, which cannot distinguish a stub
+    /// from a file that merely quotes one.
+    pub cache_hit: bool,
 }
 
 /// SSOT via [`ReadMode`] (#528): the `map`/`signatures` summaries whose rendered
@@ -261,6 +266,7 @@ fn try_disk_anchored_window(
         content: out,
         resolved_mode: mode.to_string(),
         output_tokens: sent,
+        cache_hit: false,
     })
 }
 
@@ -753,6 +759,7 @@ fn render_unchanged_stub(file_ref: &str, path: &str, line_count: usize) -> ReadO
         content: out,
         resolved_mode: "full".into(),
         output_tokens: sent,
+        cache_hit: true,
     }
 }
 
@@ -885,6 +892,7 @@ fn handle_with_options_inner(
                 content: warning.to_string(),
                 resolved_mode: "diff".into(),
                 output_tokens: count_tokens(warning),
+                cache_hit: false,
             };
         }
         cache.invalidate(path);
@@ -907,6 +915,7 @@ fn handle_with_options_inner(
             content: out,
             resolved_mode: "diff".into(),
             output_tokens: sent,
+            cache_hit: false,
         };
     }
 
@@ -961,6 +970,7 @@ fn handle_with_options_inner(
                             content: msg,
                             resolved_mode: "error".into(),
                             output_tokens: 0,
+                            cache_hit: false,
                         };
                     }
                 };
@@ -971,6 +981,7 @@ fn handle_with_options_inner(
                     content: out,
                     resolved_mode: "full-compact".into(),
                     output_tokens: sent,
+                    cache_hit: false,
                 };
             }
             let (out, _) = handle_full_with_auto_delta(cache, path, &file_ref, &short, ext, task);
@@ -980,6 +991,7 @@ fn handle_with_options_inner(
                 content: out,
                 resolved_mode: "full".into(),
                 output_tokens: sent,
+                cache_hit: false,
             };
         }
 
@@ -1000,6 +1012,7 @@ fn handle_with_options_inner(
                     content: out,
                     resolved_mode,
                     output_tokens: sent,
+                    cache_hit: true,
                 };
             }
         }
@@ -1044,6 +1057,7 @@ fn handle_with_options_inner(
                 content: out,
                 resolved_mode,
                 output_tokens: sent,
+                cache_hit: false,
             };
         }
         cache.invalidate(path);
@@ -1065,6 +1079,7 @@ fn handle_with_options_inner(
                     content: msg,
                     resolved_mode: "error".into(),
                     output_tokens: tokens,
+                    cache_hit: false,
                 };
             }
         }
@@ -1099,6 +1114,7 @@ fn handle_with_options_inner(
                 content: output,
                 resolved_mode: "full-compact".into(),
                 output_tokens: sent,
+                cache_hit: false,
             };
         }
 
@@ -1130,6 +1146,7 @@ fn handle_with_options_inner(
             content: output,
             resolved_mode: "full".into(),
             output_tokens: sent,
+            cache_hit: false,
         };
     }
 
@@ -1191,6 +1208,7 @@ fn handle_with_options_inner(
         content: output,
         resolved_mode,
         output_tokens: final_tokens,
+        cache_hit: false,
     }
 }
 

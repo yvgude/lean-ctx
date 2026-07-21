@@ -230,6 +230,38 @@ fn conversation_scoped_stub_withheld_for_other_conversation() {
     );
 }
 
+/// #1133: cache-hit-ness travels on `ReadOutput`, so a file that merely quotes
+/// the stub markers in its own text is not mistaken for a cache hit.
+#[test]
+fn cache_hit_flag_is_structural_not_sniffed_from_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("quotes_the_stub.rs");
+    let p = path.to_string_lossy().to_string();
+    // Content deliberately contains every marker the old substring check used.
+    std::fs::write(
+        &path,
+        "// renders \"[unchanged 12L]\" and \"[delta:full]\" for a cached read\nfn main() {}\n",
+    )
+    .unwrap();
+
+    let mut cache = SessionCache::new();
+    let first = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    assert!(
+        first.content.contains("[unchanged"),
+        "fixture must carry the marker the old substring check keyed on: {}",
+        first.content
+    );
+    assert!(
+        !first.cache_hit,
+        "first read delivers content — quoting the markers must not score a hit"
+    );
+
+    let delivered = cache.get(&p).unwrap().delivered_conversation.clone();
+    let stub = try_stub_hit_readonly_scoped(&cache, &p, delivered.as_deref())
+        .expect("same-conversation re-read serves the stub");
+    assert!(stub.cache_hit, "a served stub is a cache hit");
+}
+
 #[test]
 fn conversation_scoped_stub_served_when_no_context() {
     let dir = tempfile::tempdir().unwrap();
