@@ -33,7 +33,8 @@ pub(crate) fn validate_command_with_write_allow_paths(
             "ERROR: ctx_shell detected a file-write command (shell redirect > or >>). \
              Use the native Write tool to create/modify files. \
              ctx_shell is ONLY for reading command output (git status, cargo test, npm run, etc.). \
-             File writes via shell cause MCP protocol corruption on large payloads."
+             File writes via shell cause MCP protocol corruption on large payloads. \
+             Output capture to temp paths (/tmp, /var/tmp, $TMPDIR) is allowed."
                 .to_string(),
         );
     }
@@ -214,7 +215,11 @@ fn is_write_allowed_redirect_target(
     write_allow_paths: &[String],
     project_root: Option<&str>,
 ) -> bool {
-    let t = target.trim_start_matches(['>', '&']);
+    // `>|` is the noclobber-override form of `>`; the `|` is not part of the path.
+    let t = target.trim_start_matches(['>', '&', '|']);
+    // #1142: agents quote scratch paths (`> "$TMPDIR/x.log"`, `> "/private/tmp/x"`);
+    // strip quotes so quoted and unquoted targets are judged identically.
+    let t = t.trim_matches(['"', '\'']);
     if t.starts_with('$') || t.starts_with("${") {
         // Preserve #989's escape hatch for harness-provided scratch paths.
         return true;
@@ -348,6 +353,15 @@ fn has_file_write_redirect(
                 .take_while(|c| !c.is_whitespace())
                 .collect();
             if target == "/dev/null" || target == "/dev/stdout" || target == "/dev/stderr" {
+                i += 1;
+                continue;
+            }
+            // #1142: `>&1` / `>&2` duplicate a file descriptor — no file involved.
+            // (`2>&1` is already skipped by the `2>` case above.)
+            if let Some(fd) = target.strip_prefix('&')
+                && !fd.is_empty()
+                && (fd == "-" || fd.chars().all(|c| c.is_ascii_digit()))
+            {
                 i += 1;
                 continue;
             }
@@ -1013,6 +1027,50 @@ COMMIT_MSG"
             validate_command(cmd).is_none(),
             "unquoted heredoc body with >> must not be flagged"
         );
+    }
+
+    // --- GH #1142: literal scratch paths outside project root ---
+
+    #[test]
+    fn issue_1142_private_tmp_redirect_allowed() {
+        // exact repro from the issue: capture test log under /private/tmp scratchpad
+        assert!(
+            validate_command(
+                "go test ./... > /private/tmp/claude-502/scratchpad/gotest.log 2>&1; echo EXIT:$?"
+            )
+            .is_none()
+        );
+        assert!(validate_command("cargo test > /var/tmp/out.log 2>&1").is_none());
+        assert!(validate_command("make 2>> /private/tmp/err.log").is_none());
+    }
+
+    #[test]
+    fn issue_1142_quoted_scratch_target_allowed() {
+        // quoted targets must be judged like unquoted ones
+        assert!(validate_command("cargo test > \"/private/tmp/x/build.log\"").is_none());
+        assert!(validate_command("cargo test > \"$TMPDIR/build.log\"").is_none());
+        assert!(validate_command("cargo test > '$SCRATCH/build.log'").is_none());
+    }
+
+    #[test]
+    fn issue_1142_fd_dup_allowed() {
+        assert!(validate_command("echo error >&2").is_none());
+        assert!(validate_command("printf 'x' 1>&2 && git status").is_none());
+    }
+
+    #[test]
+    fn issue_1142_project_writes_still_blocked() {
+        assert!(validate_command("cargo test > build.log").is_some());
+        assert!(validate_command("echo x > /Users/me/project/out.txt").is_some());
+        assert!(validate_command("echo x > \"./out.txt\"").is_some());
+        // /tmpfoo is not a temp dir
+        assert!(validate_command("echo x > /private/tmpfoo/out.txt").is_some());
+    }
+
+    #[test]
+    fn issue_1142_noclobber_to_scratch_allowed() {
+        assert!(validate_command("cargo test >|/tmp/out.log").is_none());
+        assert!(validate_command("echo x >|out.txt").is_some());
     }
 
     #[test]
