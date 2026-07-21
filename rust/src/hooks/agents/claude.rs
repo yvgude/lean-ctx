@@ -165,7 +165,7 @@ pub(crate) fn install_claude_permissions_deny_replace(home: &std::path::Path) {
 /// appended a duplicate (GH #549).
 pub(crate) const CLAUDE_MD_BLOCK_START: &str = crate::core::rules_canonical::AGENTS_BLOCK_START;
 const CLAUDE_MD_BLOCK_END: &str = crate::core::rules_canonical::AGENTS_BLOCK_END;
-const CLAUDE_MD_BLOCK_VERSION: &str = "lean-ctx-claude-v6";
+const CLAUDE_MD_BLOCK_VERSION: &str = "lean-ctx-claude-v7";
 
 // v3 (GL #555): self-contained, no `@rules/lean-ctx.md` import. Claude Code
 // expands `@` imports inline at launch ("imports do not reduce context usage"
@@ -184,9 +184,15 @@ const CLAUDE_MD_BLOCK_VERSION: &str = "lean-ctx-claude-v6";
 // in the lazy core for Claude Code) — line+hash anchors instead of old_string
 // reproduction; `ctx_edit` demoted to a legacy power-profile mention. Native
 // Read → Edit stays fully supported (v4's guard semantics unchanged).
+//
+// v7 (#1091): fix the Replace-mode block's write guidance. "Write and Delete —
+// use native tools normally" was wrong under Replace mode: native `Edit` needs
+// a prior native `Read` (denied), and native `Write` only succeeds for
+// brand-new files, so `ctx_patch` is the actual edit path. The MCP block is
+// unchanged; the shared version tag bumps so existing blocks get rewritten.
 const CLAUDE_MD_BLOCK_CONTENT_MCP: &str = "\
 <!-- lean-ctx -->
-<!-- lean-ctx-claude-v6 -->
+<!-- lean-ctx-claude-v7 -->
 ## lean-ctx — Context Runtime
 
 When the `ctx_*` MCP tools are listed in this session, prefer them over native equivalents:
@@ -206,7 +212,7 @@ Details live in the `lean-ctx` skill (loads on demand — keep this file lean).
 
 const CLAUDE_MD_BLOCK_CONTENT_REPLACE: &str = "\
 <!-- lean-ctx -->
-<!-- lean-ctx-claude-v6 -->
+<!-- lean-ctx-claude-v7 -->
 ## lean-ctx — Replace Mode (native tools denied)
 
 Native Read/Grep/Glob/Bash are denied by policy. Use ONLY `ctx_*` MCP tools:
@@ -217,7 +223,7 @@ Native Read/Grep/Glob/Bash are denied by policy. Use ONLY `ctx_*` MCP tools:
 - `ctx_glob` instead of Glob (file pattern matching)
 - Edits: `ctx_read(mode=\"anchored\")` → `ctx_patch` (line+hash anchors, never echo old text; `op=create` for new files).
 
-Write and Delete — use native tools normally.
+`ctx_patch` is the edit path: native `Edit` needs a prior native `Read` (denied), and native `Write` only succeeds for brand-new files. Use `op=create` for new files; native Delete is fine.
 Do NOT attempt native Read, Grep, Glob, or Bash — they will be denied.
 
 Read modes: anchored (edit), full (verbatim), map (overview), signatures (API), diff (post-edit), lines:N-M (range), auto.
