@@ -1204,22 +1204,28 @@ fn roots_list_failure_is_permanent(e: &rmcp::ServiceError) -> bool {
 }
 
 /// Build the final `CallToolResult`, surfacing shell failures in MCP metadata
-/// (GitHub #389): a non-zero exit or a blocked command sets `isError: true`
-/// and a `structuredContent` payload (`{"exitCode": N}` / `{"blocked": true}`),
-/// so clients no longer have to regex-parse the `[exit:N]` text footer. The
-/// text content is identical in both cases — only the metadata changes.
+/// (GitHub #389): a failing or blocked command sets `isError: true` and a
+/// `structuredContent` payload (`{"exitCode": N}` / `{"blocked": true}`), so
+/// clients no longer have to regex-parse the `[exit:N]` text footer. The text
+/// content is identical in both cases — only the metadata changes. A non-zero
+/// exit that is *not* a failure (#1090/#1086) carries neither, because some
+/// clients render `structuredContent` in place of the text (#1127).
 fn finalize_call_result(
     result_text: &str,
     shell_outcome: Option<crate::server::tool_trait::ShellOutcome>,
 ) -> CallToolResult {
     let mut result = CallToolResult::success(vec![ContentBlock::text(result_text.to_owned())]);
-    if let Some(outcome) = shell_outcome {
-        if is_shell_error(outcome, result_text) {
-            result.is_error = Some(true);
-        }
-        if let Some(structured) = outcome.structured() {
-            result.structured_content = Some(structured);
-        }
+    if let Some(outcome) = shell_outcome
+        && is_shell_error(outcome, result_text)
+    {
+        // #1127: clients that understand `structuredContent` render it *instead
+        // of* the text block on a non-error result, so attaching it to a benign
+        // non-zero exit (exit 1 with output per #1090, exit 124 with partial
+        // output per #1086) hid the command output completely — `ls /nope` came
+        // back as a bare `{"exitCode":1}`. Only errors, whose text the client
+        // surfaces separately, carry the structured payload.
+        result.is_error = Some(true);
+        result.structured_content = outcome.structured();
     }
     result
 }
@@ -1291,11 +1297,35 @@ mod shell_outcome_tests {
             Some(true),
             "exit 1 with output must NOT set isError (#1090)"
         );
-        assert_eq!(
-            r.structured_content,
-            Some(serde_json::json!({ "exitCode": 1 })),
-            "structuredContent still reports the exit code"
+        // #1127: and it must carry no structuredContent either — clients that
+        // prefer it would render `{"exitCode":1}` and drop the output.
+        assert!(
+            r.structured_content.is_none(),
+            "benign exit 1 must not shadow its output with structuredContent (#1127)"
         );
+        assert_eq!(text_of(&r), "boom\n[exit:1]", "output text is preserved");
+    }
+
+    #[test]
+    fn stderr_only_failure_keeps_its_text() {
+        // #1127: `ls /nonexistent` writes only to stderr and exits 1. The text
+        // block is the sole carrier of the diagnostic, so it must survive.
+        let text = "ls: /nonexistent-path-xyz: No such file or directory\n[exit:1]";
+        let r = finalize_call_result(text, Some(ShellOutcome::Exit(1)));
+        assert_ne!(r.is_error, Some(true));
+        assert!(r.structured_content.is_none());
+        assert_eq!(text_of(&r), text);
+    }
+
+    #[test]
+    fn timeout_with_partial_output_keeps_its_text() {
+        // #1086/#1127: same shape for exit 124 — partial output is a success
+        // result, so structuredContent must not displace it.
+        let text = "line one\nERROR: command timed out after 5000ms";
+        let r = finalize_call_result(text, Some(ShellOutcome::Exit(124)));
+        assert_ne!(r.is_error, Some(true));
+        assert!(r.structured_content.is_none());
+        assert_eq!(text_of(&r), text);
     }
 
     #[test]
