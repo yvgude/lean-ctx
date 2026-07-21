@@ -148,7 +148,7 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.80.0",
-    "@vscode/vsce": "^3.0.0",
+    "@vscode/vsce": "^3.9.2",
     "eslint": "^9.0.0",
     "ovsx": "^0.10.0",
     "typescript": "^5.5.0"
