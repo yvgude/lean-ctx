@@ -18,7 +18,7 @@ use lean_ctx::core::savings_ledger::{
     project_settlement_attribution_v2 as project_with_batch,
 };
 
-const SETTLEMENT_FIXTURE: &str = include_str!("fixtures/settlement-evidence-v2/eligible.json");
+const SETTLEMENT_FIXTURE: &str = include_str!("../fixtures/settlement-evidence-v2/eligible.json");
 
 fn artifact(label: &str) -> String {
     format!(

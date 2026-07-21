@@ -37,9 +37,9 @@ For the `lean-ctx` release version (`MAJOR.MINOR.PATCH`):
 
 A versioned contract doc (`docs/contracts/<name>-vN.md`) is an **artifact, not a living document**:
 
-- Frozen docs never change — CI (`rust/tests/contracts_frozen.rs`) hashes them and fails on any edit.
+- Frozen docs never change — CI (`rust/tests/suite/contracts_frozen.rs`) hashes them and fails on any edit.
 - A semantic revision lands as a **new file** (`<name>-v2.md`); the old file remains for existing integrations and gains a deprecation pointer in CONTRACTS.md (not in the frozen file itself).
-- Typo fixes in frozen docs are deliberately treated as changes: regenerate the hash snapshot via `LEANCTX_UPDATE_FROZEN_HASHES=1 cargo test --test contracts_frozen` and justify it in the PR.
+- Typo fixes in frozen docs are deliberately treated as changes: regenerate the hash snapshot via `LEANCTX_UPDATE_FROZEN_HASHES=1 cargo test --test main suite::contracts_frozen` and justify it in the PR.
 
 ### Deprecation policy
 

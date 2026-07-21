@@ -12,11 +12,11 @@ use std::io::Write;
 fn server_dispatch_src() -> String {
     format!(
         "{}\n{}\n{}\n{}\n{}",
-        include_str!("../src/server/mod.rs"),
-        include_str!("../src/server/call_tool.rs"),
-        include_str!("../src/server/server_handler.rs"),
-        include_str!("../src/server/post_process.rs"),
-        include_str!("../src/server/post_dispatch.rs"),
+        include_str!("../../src/server/mod.rs"),
+        include_str!("../../src/server/call_tool.rs"),
+        include_str!("../../src/server/server_handler.rs"),
+        include_str!("../../src/server/post_process.rs"),
+        include_str!("../../src/server/post_dispatch.rs"),
     )
 }
 
@@ -165,7 +165,7 @@ mod double_compression_guard {
         // Verify the dispatch_tool return type includes saved_tokens (the
         // third element carries the shell outcome for MCP isError, GH #389)
         // and content_blocks (fourth element for image/binary MCP output).
-        let src = include_str!("../src/server/dispatch/mod.rs");
+        let src = include_str!("../../src/server/dispatch/mod.rs");
         assert!(
             src.contains("Option<Vec<ContentBlock>>"),
             "dispatch_tool must return (String, saved_tokens, shell_outcome, content_blocks)"
@@ -174,14 +174,14 @@ mod double_compression_guard {
 
     #[test]
     fn scenario_skip_terse_when_already_compressed() {
-        let src = crate::server_dispatch_src();
+        let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
 
         // Reads already produce mode-aware, structure-preserving output, so the
         // generic terse layer must never re-compress them. The guard skips the
         // whole read family unconditionally (a verbatim `full`/`lines:` read has
         // 0 savings yet must still be protected from dictionary-mangling). The
         // read-family + verbatim-mode decision lives in `is_verbatim_read`.
-        let body = crate::skip_terse_body(&src);
+        let body = crate::suite::hn_hardening_scenarios::skip_terse_body(&src);
         assert!(
             body.contains("is_verbatim_read"),
             "skip_terse must skip verbatim reads (read family) to avoid re-compressing them"
@@ -198,8 +198,8 @@ mod double_compression_guard {
 
     #[test]
     fn scenario_raw_shell_still_bypasses() {
-        let src = crate::server_dispatch_src();
-        let body = crate::skip_terse_body(&src);
+        let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
+        let body = crate::suite::hn_hardening_scenarios::skip_terse_body(&src);
         let raw_idx = body
             .find("is_raw_shell")
             .expect("skip_terse must reference is_raw_shell");
@@ -438,7 +438,7 @@ mod confidence_signal {
     fn scenario_high_compression_hint_format() {
         // Verify the hint format exists in source. The local var was renamed
         // savings_pct -> pct in the shell-fidelity refactor (42a186a65c).
-        let src = include_str!("../src/tools/registered/ctx_shell.rs");
+        let src = include_str!("../../src/tools/registered/ctx_shell.rs");
         assert!(
             src.contains("compressed {pct:.0}%: full output at"),
             "high compression hint must use correct format"
@@ -449,7 +449,7 @@ mod confidence_signal {
     fn scenario_threshold_is_70_percent() {
         // The 70% tee threshold now lives in the shared tee_policy (single source
         // of truth), not inline in ctx_shell.rs (refactor 42a186a65c).
-        let src = include_str!("../src/shell/tee_policy.rs");
+        let src = include_str!("../../src/shell/tee_policy.rs");
         assert!(src.contains("> 70.0"), "threshold must be 70%");
     }
 }
@@ -501,7 +501,7 @@ mod auto_degrade {
 
     #[test]
     fn scenario_degradation_policy_reports_correction_rate_high() {
-        let src = include_str!("../src/core/degradation_policy.rs");
+        let src = include_str!("../../src/core/degradation_policy.rs");
         assert!(
             src.contains("correction_rate_high"),
             "degradation policy must have correction_rate_high reason_code"
@@ -547,7 +547,7 @@ mod auto_degrade {
 mod first_contact {
     #[test]
     fn scenario_meta_visible_guard_removed() {
-        let src = crate::server_dispatch_src();
+        let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
         // Find the auto_context section
         let auto_ctx_pos = src
             .find("let Some(ctx) = auto_context")
@@ -563,7 +563,7 @@ mod first_contact {
 
     #[test]
     fn scenario_token_budget_enforced() {
-        let src = crate::server_dispatch_src();
+        let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
         let auto_ctx_pos = src
             .find("let Some(ctx) = auto_context")
             .expect("auto_context block must exist");
@@ -577,7 +577,7 @@ mod first_contact {
 
     #[test]
     fn scenario_raw_shell_still_skips_auto_context() {
-        let src = crate::server_dispatch_src();
+        let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
         // Collapse whitespace so the gating check survives the edition-2024
         // let-chain collapse (`if !is_raw_shell { if let Some(ctx) = … }` →
         // `if !is_raw_shell && let Some(ctx) = …`) and any rustfmt line wrapping.
@@ -647,7 +647,7 @@ mod overview_descriptions {
 
     #[test]
     fn scenario_overview_source_has_extract_call() {
-        let src = include_str!("../src/tools/ctx_overview.rs");
+        let src = include_str!("../../src/tools/ctx_overview.rs");
         assert!(
             src.contains("extract_module_doc"),
             "ctx_overview must call extract_module_doc"
@@ -738,7 +738,7 @@ mod integration {
     #[test]
     fn scenario_shell_compression_with_saved_tokens_skips_terse() {
         // Structural test: verify the pipeline
-        let src = crate::server_dispatch_src();
+        let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
 
         // 1. dispatch threads saved_tokens (+ shell outcome, GH #389,
         // content_blocks) out of the tool call

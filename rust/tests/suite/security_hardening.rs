@@ -8,11 +8,11 @@
 fn server_dispatch_src() -> String {
     format!(
         "{}\n{}\n{}\n{}\n{}",
-        include_str!("../src/server/mod.rs"),
-        include_str!("../src/server/call_tool.rs"),
-        include_str!("../src/server/server_handler.rs"),
-        include_str!("../src/server/post_process.rs"),
-        include_str!("../src/server/post_dispatch.rs"),
+        include_str!("../../src/server/mod.rs"),
+        include_str!("../../src/server/call_tool.rs"),
+        include_str!("../../src/server/server_handler.rs"),
+        include_str!("../../src/server/post_process.rs"),
+        include_str!("../../src/server/post_dispatch.rs"),
     )
 }
 
@@ -21,7 +21,7 @@ fn server_dispatch_src() -> String {
 // ---------------------------------------------------------------------------
 #[test]
 fn dashboard_route_response_omits_token_without_valid_query() {
-    let src = include_str!("../src/dashboard/routes/mod.rs");
+    let src = include_str!("../../src/dashboard/routes/mod.rs");
 
     assert!(
         src.contains("is_some_and(|q| super::constant_time_eq(q.as_bytes(), expected.as_bytes()))"),
@@ -43,7 +43,7 @@ fn dashboard_route_response_omits_token_without_valid_query() {
 
 #[test]
 fn dashboard_api_auth_never_bypassed_for_loopback() {
-    let src = include_str!("../src/dashboard/mod.rs");
+    let src = include_str!("../../src/dashboard/mod.rs");
     assert!(
         !src.contains("if requires_auth && !has_header_auth && !is_loopback"),
         "C1: API auth must NOT be bypassed for loopback — only HTML token injection is allowed"
@@ -56,7 +56,7 @@ fn dashboard_api_auth_never_bypassed_for_loopback() {
 
 #[test]
 fn dashboard_check_auth_uses_constant_time_eq() {
-    let src = include_str!("../src/dashboard/mod.rs");
+    let src = include_str!("../../src/dashboard/mod.rs");
     assert!(
         src.contains("constant_time_eq(token.trim().as_bytes(), expected_token.as_bytes())"),
         "C1: check_auth must use constant_time_eq, not plain =="
@@ -65,7 +65,7 @@ fn dashboard_check_auth_uses_constant_time_eq() {
 
 #[test]
 fn dashboard_probe_sends_bearer_token() {
-    let src = include_str!("../src/dashboard/mod.rs");
+    let src = include_str!("../../src/dashboard/mod.rs");
     assert!(
         src.contains("Authorization: Bearer {t}"),
         "C1: dashboard_responding probe must send saved Bearer token"
@@ -74,7 +74,7 @@ fn dashboard_probe_sends_bearer_token() {
 
 #[test]
 fn dashboard_metrics_requires_auth() {
-    let src = include_str!("../src/dashboard/mod.rs");
+    let src = include_str!("../../src/dashboard/mod.rs");
     assert!(
         src.contains(r#"path == "/metrics""#),
         "C1: /metrics must be in the requires_auth path"
@@ -86,7 +86,7 @@ fn dashboard_metrics_requires_auth() {
 // ---------------------------------------------------------------------------
 #[test]
 fn context_views_use_resolve_workspace() {
-    let src = include_str!("../src/http_server/context_views.rs");
+    let src = include_str!("../../src/http_server/context_views.rs");
 
     assert!(
         src.contains("fn resolve_workspace"),
@@ -104,7 +104,7 @@ fn context_views_use_resolve_workspace() {
 
 #[test]
 fn lineage_filters_by_workspace() {
-    let src = include_str!("../src/core/context_os/context_bus.rs");
+    let src = include_str!("../../src/core/context_os/context_bus.rs");
 
     let lineage_fn = src.find("fn lineage(").expect("lineage fn missing");
     let lineage_sig = &src[lineage_fn..lineage_fn + 200];
@@ -125,7 +125,7 @@ fn lineage_filters_by_workspace() {
 // ---------------------------------------------------------------------------
 #[test]
 fn effective_cwd_calls_jail() {
-    let src = include_str!("../src/core/session/state.rs");
+    let src = include_str!("../../src/core/session/state.rs");
 
     // `effective_cwd` must not bypass the jail: it delegates to the checked
     // variant, which is the single enforcement point (#629/#633 refactor).
@@ -151,7 +151,7 @@ fn effective_cwd_calls_jail() {
 
 #[test]
 fn update_shell_cwd_calls_jail_path() {
-    let src = include_str!("../src/core/session/state.rs");
+    let src = include_str!("../../src/core/session/state.rs");
 
     let uscwd_fn = src
         .find("fn update_shell_cwd(")
@@ -168,7 +168,7 @@ fn update_shell_cwd_calls_jail_path() {
 // ---------------------------------------------------------------------------
 #[test]
 fn resolve_path_includes_secret_check() {
-    let src = include_str!("../src/tools/server_paths.rs");
+    let src = include_str!("../../src/tools/server_paths.rs");
 
     let resolve_fn = src.find("fn resolve_path(").expect("resolve_path missing");
     let resolve_body = &src[resolve_fn..];
@@ -187,7 +187,7 @@ fn resolve_path_includes_secret_check() {
 // ---------------------------------------------------------------------------
 #[test]
 fn event_search_applies_redaction() {
-    let src = include_str!("../src/http_server/context_views.rs");
+    let src = include_str!("../../src/http_server/context_views.rs");
 
     let search_fn = src
         .find("v1_events_search")
@@ -201,7 +201,7 @@ fn event_search_applies_redaction() {
 
 #[test]
 fn event_lineage_applies_redaction() {
-    let src = include_str!("../src/http_server/context_views.rs");
+    let src = include_str!("../../src/http_server/context_views.rs");
 
     let lineage_fn = src
         .find("v1_event_lineage")
@@ -218,7 +218,7 @@ fn event_lineage_applies_redaction() {
 // ---------------------------------------------------------------------------
 #[test]
 fn team_auth_rejects_batch_requests() {
-    let src = include_str!("../src/http_server/team/mod.rs");
+    let src = include_str!("../../src/http_server/team/mod.rs");
 
     assert!(
         src.contains("batch_requests_not_supported"),
@@ -235,7 +235,7 @@ fn team_auth_rejects_batch_requests() {
 // ---------------------------------------------------------------------------
 #[test]
 fn postinstall_has_sha256_verification() {
-    let src = include_str!("../../packages/lean-ctx-bin/postinstall.js");
+    let src = include_str!("../../../packages/lean-ctx-bin/postinstall.js");
 
     assert!(
         src.contains("createHash(\"sha256\")") || src.contains("createHash('sha256')"),
@@ -256,7 +256,7 @@ fn postinstall_has_sha256_verification() {
 // ---------------------------------------------------------------------------
 #[test]
 fn pipeline_archive_uses_redacted_output() {
-    let src = crate::server_dispatch_src();
+    let src = crate::suite::security_hardening::server_dispatch_src();
 
     assert!(
         src.contains("redact_text_if_enabled"),
@@ -269,7 +269,7 @@ fn pipeline_archive_uses_redacted_output() {
 // ---------------------------------------------------------------------------
 #[test]
 fn ctx_search_has_pattern_length_limit() {
-    let src = include_str!("../src/tools/ctx_search.rs");
+    let src = include_str!("../../src/tools/ctx_search.rs");
 
     assert!(
         src.contains("MAX_PATTERN_LEN"),
@@ -290,7 +290,7 @@ fn ctx_search_has_pattern_length_limit() {
 // ---------------------------------------------------------------------------
 #[test]
 fn mcp_stdio_has_bounded_max_length() {
-    let src = include_str!("../src/mcp_stdio.rs");
+    let src = include_str!("../../src/mcp_stdio.rs");
 
     assert!(
         !src.contains("max_length: usize::MAX"),
@@ -307,7 +307,7 @@ fn mcp_stdio_has_bounded_max_length() {
 // ---------------------------------------------------------------------------
 #[test]
 fn uds_socket_sets_permissions() {
-    let src = include_str!("../src/ipc/unix.rs");
+    let src = include_str!("../../src/ipc/unix.rs");
 
     assert!(
         src.contains("PermissionsExt"),
@@ -324,7 +324,7 @@ fn uds_socket_sets_permissions() {
 // ---------------------------------------------------------------------------
 #[test]
 fn http_server_sanitizes_error_responses() {
-    let src = include_str!("../src/http_server/mod.rs");
+    let src = include_str!("../../src/http_server/mod.rs");
 
     let v1_fn = src.find("v1_tool_call").expect("v1_tool_call missing");
     let v1_body = &src[v1_fn..v1_fn + 600];
@@ -339,7 +339,7 @@ fn http_server_sanitizes_error_responses() {
 // ---------------------------------------------------------------------------
 #[test]
 fn csp_nonce_covers_all_inline_scripts() {
-    let src = include_str!("../src/dashboard/mod.rs");
+    let src = include_str!("../../src/dashboard/mod.rs");
     assert!(
         src.contains("add_nonce_to_inline_scripts"),
         "dashboard must use add_nonce_to_inline_scripts for all inline scripts"
@@ -375,7 +375,7 @@ fn add_nonce_skips_external_scripts() {
 // ---------------------------------------------------------------------------
 #[test]
 fn raw_shell_skips_all_postprocessing() {
-    let src = crate::server_dispatch_src().replace("\r\n", "\n");
+    let src = crate::suite::security_hardening::server_dispatch_src().replace("\r\n", "\n");
     assert!(
         src.contains("let is_raw_shell = name == \"ctx_shell\""),
         "call_tool must compute is_raw_shell flag"

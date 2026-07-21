@@ -481,7 +481,7 @@ jobs:
           workspaces: rust -> target
       - name: Run adversarial compression tests
         working-directory: rust
-        run: cargo test --test adversarial_compression -- --nocapture
+        run: cargo test --test main suite::adversarial_compression -- --nocapture
 
   bench:
     name: Benchmarks

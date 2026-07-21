@@ -11,7 +11,7 @@
 //!    drifting hash means someone edited a frozen artifact: semantic changes
 //!    must land as a new `-v2.md` file instead. Deliberate typo fixes update
 //!    the snapshot via `LEANCTX_UPDATE_FROZEN_HASHES=1 cargo test --test
-//!    contracts_frozen` and must be justified in the PR.
+//!    main suite::contracts_frozen` and must be justified in the PR.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -108,7 +108,7 @@ fn frozen_contract_docs_are_immutable() {
         serde_json::from_str(&std::fs::read_to_string(&snap_path).unwrap_or_else(|e| {
             panic!(
                 "missing {} — generate it once via \
-                 LEANCTX_UPDATE_FROZEN_HASHES=1 cargo test --test contracts_frozen ({e})",
+                 LEANCTX_UPDATE_FROZEN_HASHES=1 cargo test --test main suite::contracts_frozen ({e})",
                 snap_path.display()
             )
         }))
@@ -118,7 +118,7 @@ fn frozen_contract_docs_are_immutable() {
         match snapshot.get(file) {
             None => panic!(
                 "{file} is frozen but missing from frozen-hashes.json — \
-                 regenerate via LEANCTX_UPDATE_FROZEN_HASHES=1 cargo test --test contracts_frozen"
+                 regenerate via LEANCTX_UPDATE_FROZEN_HASHES=1 cargo test --test main suite::contracts_frozen"
             ),
             Some(expected) if expected != hash => panic!(
                 "FROZEN CONTRACT MODIFIED: docs/contracts/{file} changed.\n\
@@ -126,7 +126,7 @@ fn frozen_contract_docs_are_immutable() {
                  → semantic change: create the next version file (e.g. -v2.md) and classify it; \
                  leave the v1 file untouched.\n\
                  → deliberate typo fix: LEANCTX_UPDATE_FROZEN_HASHES=1 cargo test --test \
-                 contracts_frozen, and justify the edit in the PR."
+                 main suite::contracts_frozen, and justify the edit in the PR."
             ),
             Some(_) => {}
         }

@@ -5,7 +5,7 @@ use std::time::Duration;
 use lean_ctx::proxy::response_optimizer::{ResponseCache, compute_cache_key};
 use serde::Deserialize;
 
-const REQUESTS: &str = include_str!("fixtures/etpao_requests.json");
+const REQUESTS: &str = include_str!("../fixtures/etpao_requests.json");
 
 #[derive(Debug, Deserialize)]
 struct Fixture {

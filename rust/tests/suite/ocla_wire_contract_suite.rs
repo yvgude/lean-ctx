@@ -17,10 +17,10 @@ use lean_ctx::core::ocla::wire_stream::{StreamFrame, decode_frame, encode_frame}
 use serde_json::Value;
 use tower::ServiceExt;
 
-const GOLDEN_ENVELOPE: &str = include_str!("fixtures/ocla_envelope_golden.json");
-const GOLDEN_SCHEMA: &str = include_str!("fixtures/ocla_schema_golden.json");
-const MIXED_BATCH: &str = include_str!("fixtures/envelope_batch_mixed.json");
-const LEGACY_ENVELOPE: &str = include_str!("fixtures/envelope_v1_legacy.json");
+const GOLDEN_ENVELOPE: &str = include_str!("../fixtures/ocla_envelope_golden.json");
+const GOLDEN_SCHEMA: &str = include_str!("../fixtures/ocla_schema_golden.json");
+const MIXED_BATCH: &str = include_str!("../fixtures/envelope_batch_mixed.json");
+const LEGACY_ENVELOPE: &str = include_str!("../fixtures/envelope_v1_legacy.json");
 
 fn golden_document() -> Value {
     serde_json::from_str(GOLDEN_ENVELOPE).expect("valid OCLA envelope fixture")

@@ -401,7 +401,7 @@ mod context_provider_trait {
 mod contracts_integrity {
     #[test]
     fn contracts_kv_block_parseable() {
-        let content = include_str!("../../CONTRACTS.md");
+        let content = include_str!("../../../CONTRACTS.md");
         let begin_marker = "<!-- leanctx-contracts-kv:begin -->";
         let end_marker = "<!-- leanctx-contracts-kv:end -->";
 
@@ -435,7 +435,7 @@ mod contracts_integrity {
 
     #[test]
     fn contracts_has_protocol_family_structure() {
-        let content = include_str!("../../CONTRACTS.md");
+        let content = include_str!("../../../CONTRACTS.md");
 
         assert!(
             content.contains("## Core Context Contracts"),
@@ -461,7 +461,7 @@ mod contracts_integrity {
 
     #[test]
     fn architecture_references_ir_in_hotpath() {
-        let content = include_str!("../../ARCHITECTURE.md");
+        let content = include_str!("../../../ARCHITECTURE.md");
 
         assert!(
             content.contains("IRRecord"),
@@ -494,7 +494,7 @@ mod contracts_integrity {
     /// logging single-source-of-truth instead.
     #[test]
     fn mcp_logging_targets_stderr_never_stdout() {
-        let logging = include_str!("../src/core/logging.rs");
+        let logging = include_str!("../../src/core/logging.rs");
         assert!(
             logging.matches("with_writer(std::io::stderr)").count() >= 2,
             "both init_logging and init_mcp_logging must pin the tracing writer to stderr"

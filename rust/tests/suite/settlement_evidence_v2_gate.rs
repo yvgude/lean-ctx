@@ -12,9 +12,9 @@ use lean_ctx::core::billing::settlement_evidence::{
     reconcile_settlement_evidence_v2,
 };
 
-const FIXTURE: &str = include_str!("fixtures/settlement-evidence-v2/eligible.json");
-const TRUST_FIXTURE: &str = include_str!("fixtures/settlement-evidence-v2/trusted-decisions.json");
-const LEGACY_USAGE_V1: &str = include_str!("fixtures/settlement-evidence-v2/legacy-usage-v1.json");
+const FIXTURE: &str = include_str!("../fixtures/settlement-evidence-v2/eligible.json");
+const TRUST_FIXTURE: &str = include_str!("../fixtures/settlement-evidence-v2/trusted-decisions.json");
+const LEGACY_USAGE_V1: &str = include_str!("../fixtures/settlement-evidence-v2/legacy-usage-v1.json");
 
 fn manifest() -> SettlementEvidenceManifestV2 {
     serde_json::from_str(FIXTURE).expect("canonical v2 fixture parses")
