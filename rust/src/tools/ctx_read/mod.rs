@@ -1382,26 +1382,13 @@ fn handle_full_with_auto_delta(
     let store_result = cache.store(path, &disk_content);
 
     if store_result.was_hit {
-        let policy_allows_stub =
-            crate::server::compaction_sync::effective_cache_policy() != "safe" && !force_full;
-        if policy_allows_stub && store_result.full_content_delivered {
-            let out = if crate::core::protocol::meta_visible() {
-                format!(
-                    "{file_ref}={short} [unchanged {}L]\nUnchanged on disk. Use fresh=true to force re-read.",
-                    store_result.line_count
-                )
-            } else {
-                // #498 determinism: byte-stable cache-hit stub (see
-                // try_stub_hit_readonly). The `fresh=true` escape is a static
-                // suffix, so non-meta re-readers still see how to force content (#513).
-                format!(
-                    "{file_ref}={short} [unchanged {}L · fresh=true to re-read]",
-                    store_result.line_count
-                )
-            };
-            let sent = count_tokens(&out);
-            return (out, sent);
-        }
+        // #1128: no stub here. Whether an unchanged file may collapse to
+        // `[unchanged …]` is decided once, by `try_stub_hit_readonly`, which the
+        // caller already consulted before routing here — and only that gate knows
+        // whether THIS conversation received the content (#954/#955). A second
+        // decision built from `StoreResult` cannot: `full_content_delivered` is
+        // carried over from the cache entry, so it answers "some conversation got
+        // this", which is the question the gate exists to stop trusting.
         cache.mark_full_delivered(path);
         return format_full_output(
             file_ref,

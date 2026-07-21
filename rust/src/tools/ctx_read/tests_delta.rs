@@ -230,6 +230,31 @@ fn conversation_scoped_stub_withheld_for_other_conversation() {
     );
 }
 
+/// #1128: the full-read fallback must never mint a stub of its own. The gate
+/// above is the single decision point, so once a read reaches
+/// `handle_full_with_auto_delta` it owes the caller content — regardless of what
+/// an earlier (possibly foreign) conversation was delivered.
+#[test]
+fn full_read_fallback_never_serves_a_stub() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("warm.rs");
+    let p = path.to_string_lossy().to_string();
+    std::fs::write(&path, "fn main() { let x = 1; }\n").unwrap();
+
+    let mut cache = primed_full_cache(&p);
+    // Same bytes on disk, so `store` reports a hit and the old code took the
+    // ungated `full_content_delivered` branch here.
+    let (out, _) = super::handle_full_with_auto_delta(&mut cache, &p, "F1", &p, "rs", None);
+    assert!(
+        !out.contains("[unchanged"),
+        "full-read fallback must not decide stubbing on its own: {out}"
+    );
+    assert!(
+        out.contains("fn main"),
+        "full-read fallback must deliver content: {out}"
+    );
+}
+
 #[test]
 fn conversation_scoped_stub_served_when_no_context() {
     let dir = tempfile::tempdir().unwrap();
