@@ -35,6 +35,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[serial_test::serial]
     fn normalize_session_skips_marker_probe_for_real_roots() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         // A session whose project_root is a plausible real project must not be
         // marker-probed at load time when the process is TCC-standalone: the
         // probe itself would trip the privacy prompt (#356). The repair

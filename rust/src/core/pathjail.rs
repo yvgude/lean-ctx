@@ -683,6 +683,8 @@ mod tests {
     #[cfg(not(feature = "no-jail"))]
     #[test]
     fn read_only_roots_deny_writes_but_allow_reads() {
+        // `isolated_data_dir` already holds `test_env_lock` for its lifetime —
+        // taking it again here would self-deadlock on a non-reentrant Mutex.
         let _iso = crate::core::data_dir::isolated_data_dir();
 
         let tmp = tempfile::tempdir().unwrap();

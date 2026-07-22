@@ -159,6 +159,7 @@ mod tests {
 
     #[test]
     fn inline_shell_stays_inline_under_byte_cap() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let mut cfg = Config::default();
         cfg.archive.inline_max_bytes = 1024;
         crate::test_env::remove_var("LEAN_CTX_INLINE_MAX_BYTES");
@@ -169,6 +170,8 @@ mod tests {
 
     #[test]
     fn inline_shell_over_byte_cap_uses_archive_path() {
+        // Clearing the env cap only holds if no other test sets it meanwhile.
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let mut cfg = Config::default();
         cfg.archive.inline_max_bytes = 1024;
         crate::test_env::remove_var("LEAN_CTX_INLINE_MAX_BYTES");
@@ -178,6 +181,9 @@ mod tests {
 
     #[test]
     fn inline_shell_requires_explicit_request_and_honors_env_cap() {
+        // Sets the env cap to 2048. Unlocked, that leaks into the sibling tests
+        // above, which assert the behaviour with *no* cap set.
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let mut cfg = Config::default();
         cfg.archive.inline_max_bytes = 1024;
         crate::test_env::set_var("LEAN_CTX_INLINE_MAX_BYTES", "2048");

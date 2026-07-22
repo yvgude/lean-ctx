@@ -301,6 +301,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn shell_execution_cannot_bypass_ctx_shell_allowlist() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "echo");
         let (result, outcome) = handle("shell", "definitely_not_allowed_command", None, None);
         crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
@@ -314,6 +315,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn shell_batch_is_preflighted_before_any_item_runs() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "echo");
         let items = vec![
             ("shell".to_string(), "echo safe".to_string()),
