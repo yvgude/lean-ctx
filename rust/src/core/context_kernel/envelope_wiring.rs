@@ -124,7 +124,7 @@ pub fn reset_evidence() {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Mutex, MutexGuard};
+    use std::sync::MutexGuard;
 
     use super::{
         EvidenceSummary, evidence_summary, process_mcp_evidence, process_proxy_evidence,

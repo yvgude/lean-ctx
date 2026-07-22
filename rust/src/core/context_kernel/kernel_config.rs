@@ -133,7 +133,7 @@ mod tests {
         KernelFeatures, features, from_env, is_enabled, is_feature_enabled, reset_features,
         update_features,
     };
-    use std::sync::{Mutex, MutexGuard};
+    use std::sync::MutexGuard;
 
     fn setup() -> MutexGuard<'static, ()> {
         let guard = super::KERNEL_TEST_LOCK
