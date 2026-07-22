@@ -522,6 +522,11 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[serial_test::serial]
     fn tcc_standalone_blocks_probes_under_protected_dirs() {
+        // `#[serial]` and `test_env_lock` are two different mutexes; the tests
+        // in this module need both. `LEAN_CTX_TCC_STANDALONE` is read by
+        // `is_tcc_standalone` (line ~376) on every path normalization, so
+        // setting it here reaches any test that resolves a path — most of which
+        // serialize on `test_env_lock`, not on `#[serial]`.
         let _env_lock = crate::core::data_dir::test_env_lock();
         let Some(home) = dirs::home_dir() else {
             return;

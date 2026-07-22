@@ -1065,7 +1065,6 @@ mod tests {
     #[test]
     #[serial]
     fn worker_threads_default_clamps_low() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
         assert_eq!(resolve_worker_threads(1), 1);
     }
@@ -1073,7 +1072,6 @@ mod tests {
     #[test]
     #[serial]
     fn worker_threads_default_clamps_high() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
         assert_eq!(resolve_worker_threads(32), 4);
     }
@@ -1081,7 +1079,6 @@ mod tests {
     #[test]
     #[serial]
     fn worker_threads_default_passthrough() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
         assert_eq!(resolve_worker_threads(3), 3);
     }
@@ -1089,7 +1086,6 @@ mod tests {
     #[test]
     #[serial]
     fn worker_threads_env_override() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::set_var("LEAN_CTX_WORKER_THREADS", "12");
         assert_eq!(resolve_worker_threads(2), 12);
         crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
@@ -1098,7 +1094,6 @@ mod tests {
     #[test]
     #[serial]
     fn worker_threads_env_invalid_falls_back() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::set_var("LEAN_CTX_WORKER_THREADS", "not_a_number");
         assert_eq!(resolve_worker_threads(3), 3);
         crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");

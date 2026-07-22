@@ -301,6 +301,10 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn shell_execution_cannot_bypass_ctx_shell_allowlist() {
+        // Both guards are needed: `#[serial]` and `test_env_lock` are separate
+        // mutexes. The override below replaces the allowlist wholesale, which
+        // broke `gh391_strict_mode_blocks_substitution_in_args` — a test that
+        // serializes on the lock, not on `#[serial]`.
         let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "echo");
         let (result, outcome) = handle("shell", "definitely_not_allowed_command", None, None);

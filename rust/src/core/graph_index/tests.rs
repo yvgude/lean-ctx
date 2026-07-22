@@ -483,6 +483,9 @@ fn safe_scan_root_rejects_cloud_sync_roots() {
 #[cfg(target_os = "macos")]
 #[serial_test::serial]
 fn safe_scan_root_refused_for_standalone_under_documents() {
+    // Both guards are needed: `#[serial]` and `test_env_lock` are separate
+    // mutexes, and `LEAN_CTX_TCC_STANDALONE` is read by every path
+    // normalization, including in tests that take only the lock.
     let _env_lock = crate::core::data_dir::test_env_lock();
     // #356: a launchd-standalone process (daemon/proxy, ppid 1) must refuse to
     // scan *any* path under ~/Documents — including a real nested project —
