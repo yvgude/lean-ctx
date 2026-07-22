@@ -134,11 +134,8 @@ pub fn start(
             &extra_env,
             timeout_ms,
             Some(&worker_cancel),
-            // #1113/#1173: a managed job is bounded by output, not wall clock —
-            // a monitor loop emitting a line every 45s must survive. Applies to
-            // foreground runs too: they detach at the soft cap and become
-            // exactly such a job. Runaway output still stops the clock, because
-            // the byte cap freezes the captured length.
+            // #1113/#1173: bounded by output, not wall clock — a monitor loop
+            // emitting a line every 45s must survive. See `idle_keyed`.
             true,
         );
         let mut jobs = JOBS

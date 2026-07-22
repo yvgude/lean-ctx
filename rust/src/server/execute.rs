@@ -5,6 +5,22 @@ use std::time::{Duration, Instant};
 
 const READER_RESULT_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// Prefix of the timeout notice this module appends to a killed command.
+const TIMEOUT_MARKER: &str = "ERROR: command timed out after ";
+
+/// The child's own output preceding the timeout marker, or `None` when the
+/// output carries no marker. `Some("")` means the command timed out having
+/// produced nothing recoverable.
+///
+/// Single source of truth for "was anything captured before the timeout?":
+/// `call_tool` decides `isError` with it (#1086) and `ctx_shell` decides
+/// whether the notice is worth archiving (#995). It lives beside the code that
+/// writes the marker because both callers previously re-derived it by matching
+/// the whole output, so enriching the notice broke them silently (#1173).
+pub(crate) fn output_before_timeout_marker(output: &str) -> Option<&str> {
+    output.find(TIMEOUT_MARKER).map(|idx| output[..idx].trim())
+}
+
 #[cfg(test)]
 pub(crate) fn execute_command_in(command: &str, cwd: &str) -> (String, i32) {
     execute_command_with_env(command, cwd, &std::collections::HashMap::new(), None)
@@ -27,10 +43,14 @@ pub(crate) fn execute_command_with_env(
 /// `idle_keyed` turns `timeout_ms` into an *idle* budget instead of a wall-clock
 /// one: the clock resets whenever the child produces new bytes (#1113/#1173). A
 /// poll loop emitting a few hundred bytes over ten minutes is not the runaway
-/// this watchdog protects against, so background jobs run output-keyed while
-/// foreground runs keep the strict wall-clock bound. An absolute ceiling
-/// (`LEAN_CTX_SHELL_BG_MAX_MS`, default 1h) still applies so a chatty runaway
-/// cannot live in the daemon forever.
+/// this watchdog protects against.
+///
+/// Every job managed by `background_shell` sets it, foreground runs included —
+/// those detach at the soft cap and become exactly such a job. Only the
+/// degraded no-session path runs strict wall-clock. Two bounds keep it honest:
+/// genuinely runaway output hits the byte cap, which freezes the captured
+/// length and so restarts the clock, and `LEAN_CTX_SHELL_BG_MAX_MS` (default
+/// 1h) caps lifetime absolutely.
 pub(crate) fn execute_command_with_env_cancellable(
     command: &str,
     cwd: &str,
@@ -198,7 +218,7 @@ pub(crate) fn execute_command_with_env_cancellable(
             text.push('\n');
         }
         text.push_str(&format!(
-            "ERROR: command timed out after {}ms{}",
+            "{TIMEOUT_MARKER}{}ms{}",
             timeout.as_millis(),
             if idle_keyed {
                 " without new output"

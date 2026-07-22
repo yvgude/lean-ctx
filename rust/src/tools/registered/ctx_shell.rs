@@ -472,15 +472,13 @@ fn resolve_shell_raw_flags(
 
 /// A timeout notice is framework metadata, not recoverable command output. Do
 /// not archive it as a tee artifact: expanding it cannot recover any bytes (#995).
+///
+/// Keyed on what precedes the marker rather than on the notice's exact shape,
+/// so enriching it (the idle-timeout wording, the still-running segment list)
+/// cannot silently turn every timeout back into an archived artifact (#1173).
 fn is_timeout_notice_only(output: &str, exit_code: i32) -> bool {
     exit_code == 124
-        && output
-            .trim()
-            .strip_prefix("ERROR: command timed out after ")
-            .is_some_and(|rest| {
-                rest.strip_suffix("ms")
-                    .is_some_and(|n| n.trim().parse::<u128>().is_ok())
-            })
+        && crate::server::execute::output_before_timeout_marker(output).is_some_and(str::is_empty)
 }
 
 fn search_tool_nudge(command: &str) -> &'static str {
@@ -732,5 +730,20 @@ mod tests {
             "ERROR: command timed out after 200ms",
             1
         ));
+        // #1173: the notice now carries the idle wording and the still-running
+        // segment list. It is still pure metadata — nothing to recover — so it
+        // must not become a tee artifact just because it grew.
+        assert!(is_timeout_notice_only(
+            "ERROR: command timed out after 200ms without new output\n\
+             [still running at timeout: sleep 300]",
+            124
+        ));
+        assert!(!is_timeout_notice_only(
+            "useful output\nERROR: command timed out after 200ms\n\
+             [still running at timeout: sleep 300]",
+            124
+        ));
+        // Exit 124 from something that is not our watchdog carries no marker.
+        assert!(!is_timeout_notice_only("some tool output", 124));
     }
 }

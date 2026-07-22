@@ -1252,20 +1252,10 @@ fn is_shell_error(outcome: crate::server::tool_trait::ShellOutcome, output: &str
             // Timeout with partial output: return as success so the client
             // sees the captured data. The ERROR marker in the text body still
             // signals the timeout to the agent.
-            !has_partial_output_before_timeout(output)
+            crate::server::execute::output_before_timeout_marker(output).is_none_or(str::is_empty)
         }
         crate::server::tool_trait::ShellOutcome::Exit(_)
         | crate::server::tool_trait::ShellOutcome::Blocked => true,
-    }
-}
-
-/// True when the output contains real content before the timeout marker.
-fn has_partial_output_before_timeout(output: &str) -> bool {
-    if let Some(idx) = output.find("ERROR: command timed out after") {
-        let before = output[..idx].trim();
-        !before.is_empty()
-    } else {
-        false
     }
 }
 
