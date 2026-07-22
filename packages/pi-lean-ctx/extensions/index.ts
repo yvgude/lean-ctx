@@ -851,11 +851,9 @@ export default async function (pi: ExtensionAPI) {
       }
     });
 
-    try {
-      await mcpBridge.start(pi);
-    } catch (err) {
+    void mcpBridge.start(pi).catch((err: unknown) => {
       console.error(`[pi-lean-ctx] MCP bridge startup failed: ${err}`);
-    }
+    });
   }
 
   pi.registerCommand("lean-ctx", {
