@@ -31,6 +31,9 @@ struct Job {
 
 static JOBS: LazyLock<Mutex<HashMap<String, Job>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// How often a foreground run reports progress to the MCP client (#1173).
+const TICK: Duration = Duration::from_secs(5);
+
 fn prune_finished_jobs(jobs: &mut HashMap<String, Job>, now: Instant) {
     prune_finished_jobs_with_limits(
         jobs,
@@ -131,6 +134,12 @@ pub fn start(
             &extra_env,
             timeout_ms,
             Some(&worker_cancel),
+            // #1113/#1173: a managed job is bounded by output, not wall clock —
+            // a monitor loop emitting a line every 45s must survive. Applies to
+            // foreground runs too: they detach at the soft cap and become
+            // exactly such a job. Runaway output still stops the clock, because
+            // the byte cap freezes the captured length.
+            true,
         );
         let mut jobs = JOBS
             .lock()
@@ -166,15 +175,22 @@ pub enum ForegroundResult {
 /// (~120s) and hands back a task id that `background_action=status` cannot
 /// resolve. By detaching *before* that deadline we always return a real
 /// `shell_*` job id the caller can poll or cancel (#1106).
+///
+/// `on_tick` is called roughly every `TICK` while the command is still
+/// running, so the caller can emit MCP progress notifications and a 3-minute
+/// build stops being indistinguishable from a hang (#1173).
 pub fn run_foreground_or_detach(
     command: String,
     cwd: String,
     extra_env: std::collections::HashMap<String, String>,
     timeout_ms: Option<u64>,
     soft_cap: Duration,
+    on_tick: Option<&dyn Fn(Duration)>,
 ) -> ForegroundResult {
     let id = start(command, cwd, extra_env, timeout_ms);
-    let deadline = Instant::now() + soft_cap;
+    let started = Instant::now();
+    let deadline = started + soft_cap;
+    let mut next_tick = started + TICK;
     loop {
         match status(&id) {
             Some(JobState::Completed { output, exit_code }) => {
@@ -193,8 +209,15 @@ pub fn run_foreground_or_detach(
             }
             _ => {}
         }
-        if Instant::now() >= deadline {
+        let now = Instant::now();
+        if now >= deadline {
             return ForegroundResult::Detached { job_id: id };
+        }
+        if let Some(tick) = on_tick
+            && now >= next_tick
+        {
+            tick(started.elapsed());
+            next_tick = now + TICK;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -228,7 +251,9 @@ pub fn cancel(id: &str) -> Option<JobState> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ForegroundResult, JobState, cancel, run_foreground_or_detach, start, status};
+    use super::{
+        ForegroundResult, JobState, TICK, cancel, run_foreground_or_detach, start, status,
+    };
     use std::time::Duration;
 
     #[test]
@@ -300,6 +325,7 @@ mod tests {
             std::collections::HashMap::default(),
             Some(10_000),
             Duration::from_secs(10),
+            None,
         );
         match result {
             ForegroundResult::Finished { output, exit_code } => {
@@ -319,6 +345,7 @@ mod tests {
             std::collections::HashMap::default(),
             Some(10_000),
             Duration::from_millis(100),
+            None,
         );
         let ForegroundResult::Detached { job_id } = result else {
             panic!("slow command should detach");
@@ -327,6 +354,58 @@ mod tests {
         // The returned id must resolve via status — the core #1106 guarantee.
         assert!(status(&job_id).is_some());
         cancel(&job_id);
+    }
+
+    /// #1173: a `timeout_ms` far beyond the soft cap must NOT keep the command
+    /// in the foreground. Raising the cap past the MCP host's ~120s abort is
+    /// what stranded results behind an unresolvable task id; the caller must
+    /// still get a real `shell_*` job id at the cap.
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn large_timeout_ms_still_detaches_at_the_soft_cap() {
+        let result = run_foreground_or_detach(
+            "sleep 5; printf NEVER_INLINE".to_string(),
+            ".".to_string(),
+            std::collections::HashMap::default(),
+            Some(600_000),
+            Duration::from_millis(100),
+            None,
+        );
+        let ForegroundResult::Detached { job_id } = result else {
+            panic!("timeout_ms must not extend the foreground wait");
+        };
+        assert!(status(&job_id).is_some());
+        cancel(&job_id);
+    }
+
+    /// #1173: a foreground run reports progress while it waits, so a slow
+    /// command is distinguishable from a hang. Deliberately slower than the
+    /// other tests here — it has to outlive one real [`TICK`].
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn foreground_run_reports_progress_while_waiting() {
+        let ticks = std::sync::atomic::AtomicUsize::new(0);
+        let tick = |elapsed: Duration| {
+            assert!(elapsed >= TICK, "tick must report real elapsed time");
+            ticks.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        };
+        let result = run_foreground_or_detach(
+            "sleep 30".to_string(),
+            ".".to_string(),
+            std::collections::HashMap::default(),
+            Some(60_000),
+            TICK + Duration::from_millis(500),
+            Some(&tick),
+        );
+        let ForegroundResult::Detached { job_id } = result else {
+            panic!("slow command should detach");
+        };
+        cancel(&job_id);
+        assert!(
+            ticks.load(std::sync::atomic::Ordering::Relaxed) >= 1,
+            "no progress reported during a {}s+ foreground wait",
+            TICK.as_secs()
+        );
     }
 
     #[test]

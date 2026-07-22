@@ -30,7 +30,7 @@ impl McpTool for CtxShellTool {
                     "raw": { "type": "boolean", "description": "Skip compression (verbatim)" },
                     "inline": { "type": "boolean", "description": "Return verbatim output inline up to archive.inline_max_bytes; larger output uses the archive/firewall" },
                     "cwd": { "type": "string", "description": "Working dir (persists across calls)" },
-                    "timeout_ms": { "type": "integer", "description": "Per-call timeout in ms (max 3600000). Overridden by LEAN_CTX_SHELL_TIMEOUT_MS." },
+                    "timeout_ms": { "type": "integer", "description": "Job lifetime in ms (max 3600000) — NOT the inline wait. A command still running at the ~110s foreground cap detaches to a pollable shell_* job and keeps running up to timeout_ms. Overridden by LEAN_CTX_SHELL_TIMEOUT_MS." },
                     "env": { "type": "object", "description": "Extra env vars", "additionalProperties": { "type": "string" } },
                     "run_in_background": { "type": "boolean", "description": "Detach immediately and return a job id. The command keeps timeout_ms; poll or cancel with background_action and job_id." },
                     "background_action": { "type": "string", "enum": ["status", "cancel"], "description": "Inspect or cancel a background ctx_shell job." },
@@ -303,15 +303,35 @@ impl McpTool for CtxShellTool {
             // Foreground runs still detach onto a pollable job if they outlast
             // the soft cap, so the MCP host's ~120s abort never strands the
             // result behind an unresolvable task id (#1106).
-            // #1106: honour explicit timeout_ms — if the caller requested a
-            // longer wait, raise the foreground cap so long builds (clippy, fmt)
-            // finish inline instead of being pushed to background+poll.
-            let default_cap = foreground_soft_cap_ms();
-            let effective_cap = match timeout_ms {
-                Some(t) if t > default_cap => t,
-                _ => default_cap,
+            //
+            // #1173: `timeout_ms` is the *job's* lifetime, never the foreground
+            // wait, so it must not raise this cap. Raising it bought no extra
+            // inline wait — the host aborts at ~120s regardless — it only
+            // suppressed our own detach, producing exactly the unresolvable
+            // task id the cap exists to prevent. Separate knobs, one direction:
+            // `LEAN_CTX_SHELL_FG_CAP_MS` moves the cap, `timeout_ms` does not.
+            let soft_cap = std::time::Duration::from_millis(foreground_soft_cap_ms());
+            let progress_sender = ctx.progress_sender.clone();
+            let progress_label: String = cmd_clone.chars().take(60).collect();
+            let cap_secs = soft_cap.as_secs_f64();
+            let on_tick = |elapsed: std::time::Duration| {
+                #[allow(clippy::unwrap_or_default)]
+                if let Some(ref ps) = progress_sender
+                    && let Some(sender) = ps
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .as_ref()
+                {
+                    sender.send(
+                        elapsed.as_secs_f64(),
+                        Some(cap_secs),
+                        Some(format!(
+                            "ctx_shell: {}s elapsed — {progress_label}",
+                            elapsed.as_secs()
+                        )),
+                    );
+                }
             };
-            let soft_cap = std::time::Duration::from_millis(effective_cap);
             let (raw_output, exit_code) =
                 match crate::server::background_shell::run_foreground_or_detach(
                     cmd_clone.clone(),
@@ -319,6 +339,7 @@ impl McpTool for CtxShellTool {
                     extra_env.clone(),
                     timeout_ms,
                     soft_cap,
+                    Some(&on_tick),
                 ) {
                     crate::server::background_shell::ForegroundResult::Finished {
                         output,
@@ -328,8 +349,11 @@ impl McpTool for CtxShellTool {
                         return Ok(ToolOutput {
                             shell_outcome: Some(ShellOutcome::Exit(0)),
                             content_blocks: None,
+                            // #1173: a detach is not a failure — the command is
+                            // alive and its output is recoverable, so say so
+                            // rather than leaving the caller to infer a hang.
                             ..ToolOutput::simple(format!(
-                                "[auto-background:{job_id} started — command exceeded the {}s foreground cap and keeps running; use ctx_shell(background_action=\"status\", job_id=\"{job_id}\") to poll or background_action=\"cancel\" to stop it]",
+                                "[auto-background:{job_id} still running — passed the {}s foreground cap, not an error; output is kept and delivered by ctx_shell(background_action=\"status\", job_id=\"{job_id}\"), or background_action=\"cancel\" to stop it]",
                                 soft_cap.as_secs()
                             ))
                         });

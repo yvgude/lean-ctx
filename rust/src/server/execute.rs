@@ -16,19 +16,28 @@ pub(crate) fn execute_command_with_env(
     extra_env: &std::collections::HashMap<String, String>,
     timeout_ms: Option<u64>,
 ) -> (String, i32) {
-    execute_command_with_env_cancellable(command, cwd, extra_env, timeout_ms, None)
+    execute_command_with_env_cancellable(command, cwd, extra_env, timeout_ms, None, false)
 }
 
 /// Execute a command under the normal shell policy, with an optional cooperative
 /// cancellation signal used by explicit background jobs. The signal is checked
 /// by the same watchdog that enforces `timeout_ms`, so cancellation kills the
 /// complete Unix process group rather than only the shell leader.
+///
+/// `idle_keyed` turns `timeout_ms` into an *idle* budget instead of a wall-clock
+/// one: the clock resets whenever the child produces new bytes (#1113/#1173). A
+/// poll loop emitting a few hundred bytes over ten minutes is not the runaway
+/// this watchdog protects against, so background jobs run output-keyed while
+/// foreground runs keep the strict wall-clock bound. An absolute ceiling
+/// (`LEAN_CTX_SHELL_BG_MAX_MS`, default 1h) still applies so a chatty runaway
+/// cannot live in the daemon forever.
 pub(crate) fn execute_command_with_env_cancellable(
     command: &str,
     cwd: &str,
     extra_env: &std::collections::HashMap<String, String>,
     timeout_ms: Option<u64>,
     cancel: Option<&AtomicBool>,
+    idle_keyed: bool,
 ) -> (String, i32) {
     let (shell, flag) = crate::shell::shell_and_flag();
     let normalized_cmd = crate::tools::ctx_shell::normalize_command_for_shell(command);
@@ -109,6 +118,11 @@ pub(crate) fn execute_command_with_env_cancellable(
 
     let timeout = command_timeout(command, timeout_ms);
     let start = Instant::now();
+    let hard_deadline = idle_keyed.then(|| start + streaming_max_lifetime());
+    let mut last_len = 0usize;
+    let mut last_output_at = start;
+    // Named on timeout so a multi-segment pipeline says *which* part hung (#1086).
+    let mut still_running: Vec<String> = Vec::new();
     let (code, timed_out, cancelled) = loop {
         match child.try_wait() {
             Ok(Some(status)) => break (status.code().unwrap_or(1), false, false),
@@ -118,7 +132,18 @@ pub(crate) fn execute_command_with_env_cancellable(
                     let _ = child.wait();
                     break (130, false, true);
                 }
-                if start.elapsed() >= timeout {
+                let idle_for = if idle_keyed {
+                    let len = captured_len(&out_buf) + captured_len(&err_buf);
+                    if len != last_len {
+                        last_len = len;
+                        last_output_at = Instant::now();
+                    }
+                    last_output_at.elapsed()
+                } else {
+                    start.elapsed()
+                };
+                if idle_for >= timeout || hard_deadline.is_some_and(|d| Instant::now() >= d) {
+                    still_running = running_segments(&child, &normalized_cmd);
                     kill_timed_out_child(&mut child);
                     let _ = child.wait();
                     break (124, true, false);
@@ -173,9 +198,24 @@ pub(crate) fn execute_command_with_env_cancellable(
             text.push('\n');
         }
         text.push_str(&format!(
-            "ERROR: command timed out after {}ms",
-            timeout.as_millis()
+            "ERROR: command timed out after {}ms{}",
+            timeout.as_millis(),
+            if idle_keyed {
+                " without new output"
+            } else {
+                ""
+            }
         ));
+        // #1086: for a compound command the captured output is often complete
+        // for every segment but one. Name the segment(s) still alive in the
+        // child's process group so the caller can fix that part instead of
+        // re-running the whole pipeline.
+        if !still_running.is_empty() {
+            text.push_str(&format!(
+                "\n[still running at timeout: {}]",
+                still_running.join(" | ")
+            ));
+        }
     }
     if cancelled {
         if !text.ends_with('\n') && !text.is_empty() {
@@ -262,6 +302,75 @@ fn snapshot(buf: &Arc<Mutex<CaptureBuf>>) -> (Vec<u8>, bool) {
     (s.bytes.clone(), s.truncated)
 }
 
+/// Bytes captured so far, used as the liveness signal for an idle-keyed
+/// timeout. Cheaper than [`snapshot`], which clones the whole buffer.
+fn captured_len(buf: &Arc<Mutex<CaptureBuf>>) -> usize {
+    buf.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .bytes
+        .len()
+}
+
+/// Absolute ceiling on an idle-keyed (background) job, so a command that keeps
+/// emitting output forever still cannot outlive the daemon's patience (#1173).
+fn streaming_max_lifetime() -> Duration {
+    Duration::from_millis(
+        std::env::var("LEAN_CTX_SHELL_BG_MAX_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|&ms: &u64| ms > 0)
+            .unwrap_or(3_600_000),
+    )
+}
+
+/// Command lines still alive in the timed-out child's process group, i.e. the
+/// pipeline segment(s) that did not finish (#1086). Rows still carrying the
+/// *whole* command are the un-exec'd shell wrapper and say nothing specific, so
+/// they are dropped — note the leader is not simply skipped by pid, because
+/// `sh -c 'a; b'` execs into its final segment and so *is* the leader.
+/// Best-effort: an unavailable or unparsable `ps` yields no attribution.
+#[cfg(unix)]
+fn running_segments(child: &std::process::Child, command: &str) -> Vec<String> {
+    let pgid = child.id();
+    // POSIX-portable field selection; `ps -g` differs between BSD and Linux.
+    let Ok(out) = std::process::Command::new("ps")
+        .args(["-A", "-o", "pid=,pgid=,args="])
+        .output()
+    else {
+        return Vec::new();
+    };
+    let needle = command.split_whitespace().collect::<Vec<_>>().join(" ");
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| parse_ps_row(line, pgid, &needle))
+        .collect()
+}
+
+/// One `pid pgid args` row: `Some(args)` iff it belongs to `pgid` and names a
+/// narrower command than the one we launched. `needle` is the whole command
+/// with runs of whitespace collapsed, matching how `ps` renders `args`.
+#[cfg(unix)]
+fn parse_ps_row(line: &str, pgid: u32, needle: &str) -> Option<String> {
+    let rest = line.trim_start();
+    let (_pid, rest) = rest.split_once(char::is_whitespace)?;
+    let args = rest
+        .trim_start()
+        .split_once(char::is_whitespace)
+        .and_then(|(row_pgid, args)| {
+            (row_pgid.parse::<u32>().ok()? == pgid).then_some(args.trim())
+        })?;
+    if args.is_empty() || args.contains(needle) {
+        return None;
+    }
+    Some(args.chars().take(200).collect())
+}
+
+#[cfg(not(unix))]
+fn running_segments(_child: &std::process::Child, _command: &str) -> Vec<String> {
+    // No process groups here, so a descendant cannot be attributed to this run.
+    Vec::new()
+}
+
 /// Block until the reader signals completion or `deadline` passes. Returns true
 /// iff the reader completed (reached EOF) within the deadline.
 fn wait_for_reader(done: &mpsc::Receiver<()>, deadline: Instant) -> bool {
@@ -317,6 +426,82 @@ mod tests {
         if let Some(v) = saved {
             crate::test_env::set_var("LEAN_CTX_SHELL_TIMEOUT_MS", v);
         }
+    }
+
+    /// #1113/#1173: a poll loop that emits a short line every so often must
+    /// outlive the wall-clock budget — the cap protects against runaway output,
+    /// not against a long-lived monitor. Wall-clock mode still kills it.
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn idle_keyed_timeout_survives_a_trickling_loop() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
+        let env = std::collections::HashMap::new();
+        // Emits every 100ms for ~900ms under a 400ms budget.
+        let cmd = "for i in 1 2 3 4 5 6 7 8 9; do printf T; sleep 0.1; done; printf DONE";
+
+        let (idle_out, idle_code) =
+            super::execute_command_with_env_cancellable(cmd, ".", &env, Some(400), None, true);
+        assert_eq!(
+            idle_code, 0,
+            "output kept resetting the idle clock: {idle_out}"
+        );
+        assert!(idle_out.contains("DONE"));
+
+        let (wall_out, wall_code) =
+            super::execute_command_with_env_cancellable(cmd, ".", &env, Some(400), None, false);
+        assert_eq!(wall_code, 124, "wall-clock mode must still enforce the cap");
+        assert!(wall_out.contains("timed out"));
+    }
+
+    /// #1086: a timed-out pipeline names the segment that was still running,
+    /// so the caller fixes that part instead of re-running everything.
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn timeout_names_the_still_running_segment() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_SHELL_TIMEOUT_MS");
+        let env = std::collections::HashMap::new();
+        let (out, code) = super::execute_command_with_env_cancellable(
+            "printf FIRST_OK; sleep 47",
+            ".",
+            &env,
+            Some(600),
+            None,
+            false,
+        );
+        assert_eq!(code, 124);
+        assert!(
+            out.contains("FIRST_OK"),
+            "partial output must survive: {out}"
+        );
+        assert!(
+            out.contains("still running at timeout") && out.contains("47"),
+            "the hung segment must be named: {out}"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn ps_row_names_segments_and_drops_the_whole_command() {
+        let whole = "printf hi; grep -rn needle /repo";
+        assert_eq!(
+            super::parse_ps_row(" 4242  4200 grep -rn needle /repo", 4200, whole).as_deref(),
+            Some("grep -rn needle /repo"),
+            "a segment must be named"
+        );
+        // The un-exec'd shell wrapper still carries the whole command.
+        assert_eq!(
+            super::parse_ps_row(
+                "4200 4200 /bin/sh -c printf hi; grep -rn needle /repo",
+                4200,
+                whole
+            ),
+            None
+        );
+        // Another job's process group.
+        assert_eq!(super::parse_ps_row("4242 9999 sleep 5", 4200, whole), None);
+        assert_eq!(super::parse_ps_row("garbage", 4200, whole), None);
     }
 
     #[test]
