@@ -696,6 +696,17 @@ mod tests {
         let root_str = root.to_string_lossy().to_string();
         let opts = ExploreOptions::new(Some(3), false);
 
+        // The fixture root is brand new, so the first call races index warm-up:
+        // it can answer from a partially-built symbol index and cite two spans
+        // where a warm call cites three (`lookup (fn)` arrives late). That is a
+        // cold-start difference, not the state accumulation #498 is about — so
+        // warm the index with a discarded call and compare two warm runs.
+        let _warm = handle(
+            "how does the cache lookup work",
+            &root_str,
+            CrpMode::Off,
+            &opts,
+        );
         let a = handle(
             "how does the cache lookup work",
             &root_str,
