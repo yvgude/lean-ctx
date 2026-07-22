@@ -1031,7 +1031,11 @@ COMMIT_MSG"
 
     // --- GH #1142: literal scratch paths outside project root ---
 
+    // The literal scratch roots (/tmp, /private/tmp, /var/tmp) are only in
+    // `default_shell_write_allow_paths()` on Unix, so path-shaped assertions
+    // are Unix-only; the `$VAR` escape hatch is cross-platform.
     #[test]
+    #[cfg(unix)]
     fn issue_1142_private_tmp_redirect_allowed() {
         // exact repro from the issue: capture test log under /private/tmp scratchpad
         assert!(
@@ -1042,12 +1046,13 @@ COMMIT_MSG"
         );
         assert!(validate_command("cargo test > /var/tmp/out.log 2>&1").is_none());
         assert!(validate_command("make 2>> /private/tmp/err.log").is_none());
+        // quoted targets must be judged like unquoted ones
+        assert!(validate_command("cargo test > \"/private/tmp/x/build.log\"").is_none());
     }
 
     #[test]
     fn issue_1142_quoted_scratch_target_allowed() {
         // quoted targets must be judged like unquoted ones
-        assert!(validate_command("cargo test > \"/private/tmp/x/build.log\"").is_none());
         assert!(validate_command("cargo test > \"$TMPDIR/build.log\"").is_none());
         assert!(validate_command("cargo test > '$SCRATCH/build.log'").is_none());
     }
@@ -1068,6 +1073,7 @@ COMMIT_MSG"
     }
 
     #[test]
+    #[cfg(unix)]
     fn issue_1142_noclobber_to_scratch_allowed() {
         assert!(validate_command("cargo test >|/tmp/out.log").is_none());
         assert!(validate_command("echo x >|out.txt").is_some());
