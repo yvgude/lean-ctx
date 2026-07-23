@@ -152,6 +152,10 @@ pub trait McpTool: Send + Sync {
 /// many tools need, avoiding repeated async lock acquisition inside
 /// handlers. Extended with shared server state for tools that need
 /// cache/session access.
+///
+/// `Clone` exists for per-op delegation (#1088): a batch op with its own
+/// `path` clones the ctx and swaps in that op's resolved path.
+#[derive(Clone)]
 pub struct ToolContext {
     pub project_root: String,
     /// Session-scoped trusted roots (MCP `roots/list`, config `extra_roots`),

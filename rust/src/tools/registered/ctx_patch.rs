@@ -24,7 +24,8 @@ impl McpTool for CtxPatchTool {
             "ctx_patch",
             "Safe file edit. Anchored ops use line+hash from ctx_read(mode=\"anchored\"); \
              CONFLICT means re-read. replace_unique(path,old_text,new_text) is a no-read, \
-             exact unique replacement. replace_symbol/create/replace_all and cross-file ops[] supported.",
+             exact unique replacement. replace_symbol/create/replace_all and cross-file ops[] \
+             (incl. replace_unique) supported.",
             json!({
                 "type": "object",
                 "properties": {
@@ -89,59 +90,189 @@ impl McpTool for CtxPatchTool {
             return handle_replace_all(args, ctx);
         }
 
-        if get_bool(args, "dry_run").unwrap_or(false) {
-            let path = get_str(args, "path").unwrap_or_default();
-            return Ok(ToolOutput::simple(format!(
-                "DRY RUN: ctx_patch would apply anchor-based ops to {path}"
-            )));
+        // #1088: replace_unique/replace_symbol are allowed inside ops[]. Split
+        // the batch into runs: each delegated op reuses its single-op write
+        // path; consecutive anchored ops keep shared-preimage batch semantics.
+        if let Some(arr) = args.get("ops").and_then(Value::as_array)
+            && arr.iter().any(|v| delegated_op_kind(v).is_some())
+        {
+            return handle_mixed_batch(args, arr, ctx);
         }
 
-        let expected_md5 = get_str(args, "expected_md5");
-        let backup = get_bool(args, "backup").unwrap_or(false);
-        let backup_path = get_str(args, "backup_path")
-            .map(|p| ctx.resolved_paths.get("backup_path").cloned().unwrap_or(p));
-        let evidence = get_bool(args, "evidence").unwrap_or(true);
-        let diff_max_lines = get_int(args, "diff_max_lines")
-            .and_then(|v| usize::try_from(v.max(0)).ok())
-            .unwrap_or(200);
-        let allow_lossy_utf8 = get_bool(args, "allow_lossy_utf8").unwrap_or(false);
-        let validate_syntax = get_bool(args, "validate_syntax").unwrap_or(true);
-
-        // #1005: a batch (`ops[]`) groups its ops by each op's own `path`, so a
-        // batch may span files and needs no top-level `path`. A single op still
-        // requires the top-level `path`.
-        let groups = plan_groups(args, ctx)?;
-        validate_cross_file_options(args, groups.len())?;
-        let output_path = (groups.len() == 1).then(|| groups[0].0.clone());
-
-        let mut texts = Vec::with_capacity(groups.len());
-        for (path, ops) in groups {
-            let patch_params = crate::tools::ctx_patch::PatchParams {
-                path: path.clone(),
-                ops,
-                expected_md5: expected_md5.clone(),
-                backup,
-                backup_path: backup_path.clone(),
-                evidence,
-                diff_max_lines,
-                allow_lossy_utf8,
-                validate_syntax,
-            };
-            let output = apply_one(ctx, &patch_params)?;
-            texts.push(format!("[{path}]\n{output}"));
-        }
-
-        Ok(ToolOutput {
-            text: texts.join("\n\n"),
-            original_tokens: 0,
-            saved_tokens: 0,
-            mode: None,
-            path: output_path,
-            changed: false,
-            shell_outcome: None,
-            content_blocks: None,
-        })
+        handle_anchored(args, ctx)
     }
+}
+
+/// Anchored pipeline: a single anchored op or an ops[] batch of anchored edits
+/// (grouped per file, batch-atomic per file). Split out of `handle` so the
+/// mixed-batch path (#1088) can reuse it per anchored run.
+fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
+    if get_bool(args, "dry_run").unwrap_or(false) {
+        let path = get_str(args, "path").unwrap_or_default();
+        return Ok(ToolOutput::simple(format!(
+            "DRY RUN: ctx_patch would apply anchor-based ops to {path}"
+        )));
+    }
+
+    let expected_md5 = get_str(args, "expected_md5");
+    let backup = get_bool(args, "backup").unwrap_or(false);
+    let backup_path = get_str(args, "backup_path")
+        .map(|p| ctx.resolved_paths.get("backup_path").cloned().unwrap_or(p));
+    let evidence = get_bool(args, "evidence").unwrap_or(true);
+    let diff_max_lines = get_int(args, "diff_max_lines")
+        .and_then(|v| usize::try_from(v.max(0)).ok())
+        .unwrap_or(200);
+    let allow_lossy_utf8 = get_bool(args, "allow_lossy_utf8").unwrap_or(false);
+    let validate_syntax = get_bool(args, "validate_syntax").unwrap_or(true);
+
+    // #1005: a batch (`ops[]`) groups its ops by each op's own `path`, so a
+    // batch may span files and needs no top-level `path`. A single op still
+    // requires the top-level `path`.
+    let groups = plan_groups(args, ctx)?;
+    validate_cross_file_options(args, groups.len())?;
+    let output_path = (groups.len() == 1).then(|| groups[0].0.clone());
+
+    let mut texts = Vec::with_capacity(groups.len());
+    for (path, ops) in groups {
+        let patch_params = crate::tools::ctx_patch::PatchParams {
+            path: path.clone(),
+            ops,
+            expected_md5: expected_md5.clone(),
+            backup,
+            backup_path: backup_path.clone(),
+            evidence,
+            diff_max_lines,
+            allow_lossy_utf8,
+            validate_syntax,
+        };
+        let output = apply_one(ctx, &patch_params)?;
+        texts.push(format!("[{path}]\n{output}"));
+    }
+
+    Ok(ToolOutput {
+        text: texts.join("\n\n"),
+        original_tokens: 0,
+        saved_tokens: 0,
+        mode: None,
+        path: output_path,
+        changed: false,
+        shell_outcome: None,
+        content_blocks: None,
+    })
+}
+
+/// `Some(op)` when a batch op must be dispatched through its own single-op
+/// write path rather than the anchored pipeline (#1088).
+fn delegated_op_kind(v: &Value) -> Option<&str> {
+    v.get("op")
+        .and_then(Value::as_str)
+        .filter(|k| matches!(*k, "replace_unique" | "replace_symbol"))
+}
+
+/// #1088: an ops[] batch containing replace_unique/replace_symbol. Ops apply
+/// strictly in the order given, as if issued as separate calls: consecutive
+/// anchored ops flush as one shared-preimage batch; each delegated op is
+/// dispatched through the same delegate as its top-level form, evaluated
+/// against the file state left by the preceding ops.
+fn handle_mixed_batch(
+    args: &Map<String, Value>,
+    arr: &[Value],
+    ctx: &ToolContext,
+) -> Result<ToolOutput, ErrorData> {
+    let mut texts: Vec<String> = Vec::new();
+    let mut run: Vec<Value> = Vec::new();
+    for (i, v) in arr.iter().enumerate() {
+        let obj = v.as_object().ok_or_else(|| {
+            ErrorData::invalid_params(format!("ops[{i}] must be an object"), None)
+        })?;
+        let Some(kind) = delegated_op_kind(v) else {
+            run.push(v.clone());
+            continue;
+        };
+        flush_anchored_run(args, ctx, &mut run, &mut texts)?;
+
+        let (sub_args, sub_ctx) = delegated_op_call(args, obj, ctx, i, kind)?;
+        let out = if kind == "replace_unique" {
+            delegate_replace_unique(&sub_args, &sub_ctx)
+        } else {
+            delegate_replace_symbol(&sub_args, &sub_ctx)
+        }
+        .map_err(|e| {
+            let applied = if texts.is_empty() {
+                ""
+            } else {
+                " (earlier ops in this batch were already applied)"
+            };
+            ErrorData::invalid_params(format!("ops[{i}] ({kind}): {}{applied}", e.message), None)
+        })?;
+        let label = get_str(&sub_args, "path").unwrap_or_else(|| kind.to_string());
+        texts.push(format!("[{label}]\n{}", out.text));
+    }
+    flush_anchored_run(args, ctx, &mut run, &mut texts)?;
+
+    Ok(ToolOutput::simple(texts.join("\n\n")))
+}
+
+/// Flush buffered anchored ops through the anchored pipeline as one batch.
+fn flush_anchored_run(
+    args: &Map<String, Value>,
+    ctx: &ToolContext,
+    run: &mut Vec<Value>,
+    texts: &mut Vec<String>,
+) -> Result<(), ErrorData> {
+    if run.is_empty() {
+        return Ok(());
+    }
+    let mut sub = args.clone();
+    sub.insert("ops".into(), Value::Array(std::mem::take(run)));
+    texts.push(handle_anchored(&sub, ctx)?.text);
+    Ok(())
+}
+
+/// Build the (args, ctx) for one delegated batch op: the op object inherits the
+/// batch's top-level `path`/`dry_run` when it doesn't set its own, and the op's
+/// path is resolved into a per-op ctx — the dispatch layer only pre-resolves
+/// the top-level `path`, which may differ or be absent (#1088).
+fn delegated_op_call(
+    args: &Map<String, Value>,
+    op: &Map<String, Value>,
+    ctx: &ToolContext,
+    i: usize,
+    kind: &str,
+) -> Result<(Map<String, Value>, ToolContext), ErrorData> {
+    let mut sub = op.clone();
+    for key in ["path", "dry_run"] {
+        if !sub.contains_key(key)
+            && let Some(v) = args.get(key)
+        {
+            sub.insert(key.to_string(), v.clone());
+        }
+    }
+
+    let mut sub_ctx = ctx.clone();
+    sub_ctx.resolved_paths.remove("path");
+    sub_ctx.path_errors.remove("path");
+    match get_str(&sub, "path") {
+        Some(raw) => {
+            let resolved = sub_ctx
+                .resolve_path_sync(&raw)
+                .map_err(|e| ErrorData::invalid_params(format!("ops[{i}]: path: {e}"), None))?;
+            sub_ctx
+                .ensure_writable(&resolved)
+                .map_err(|e| ErrorData::invalid_params(format!("ops[{i}]: {e}"), None))?;
+            sub_ctx.resolved_paths.insert("path".to_string(), resolved);
+        }
+        // replace_symbol's `name` route resolves its own path inside
+        // ctx_refactor; replace_unique always needs one.
+        None if kind == "replace_unique" => {
+            return Err(ErrorData::invalid_params(
+                format!("ops[{i}] needs its own 'path' (no top-level 'path' to fall back to)"),
+                None,
+            ));
+        }
+        None => {}
+    }
+    Ok((sub, sub_ctx))
 }
 
 /// One-shot content-anchored edit (#1010). Delegate to ctx_edit's audited
