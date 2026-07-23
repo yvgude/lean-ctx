@@ -630,6 +630,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn ensure_installed_runs_manager_then_verifies() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guard = ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -665,6 +666,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn ensure_installed_propagates_manager_failure() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guard = ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -703,6 +705,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn ensure_installed_preflights_a_missing_manager() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guard = ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);

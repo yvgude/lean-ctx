@@ -404,6 +404,7 @@ mod tests {
 
     #[test]
     fn disabled_via_zero_budget_is_passthrough() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _g = TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);

@@ -272,6 +272,7 @@ fn cache_budget_resolver_precedence() {
 
 #[test]
 fn evict_if_needed_removes_lowest_score() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     crate::test_env::set_var("LEAN_CTX_CACHE_MAX_TOKENS", "50");
     let mut cache = SessionCache::new();
     let big_content = "a]".repeat(30); // ~30 tokens

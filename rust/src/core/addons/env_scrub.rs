@@ -61,6 +61,7 @@ mod tests {
 
     #[test]
     fn declared_capabilities_scrub_host_secret() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::set_var("LEAN_CTX_ADDON_TEST_SECRET", "top-secret");
         let caps = AddonCapabilities::default();
         let mut cmd = Command::new("true");
@@ -75,6 +76,7 @@ mod tests {
 
     #[test]
     fn declared_env_name_passes_through() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::set_var("LEAN_CTX_ADDON_TEST_ALLOWED", "visible");
         let caps = AddonCapabilities {
             network: NetworkAccess::Full,

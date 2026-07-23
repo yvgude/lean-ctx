@@ -149,6 +149,7 @@ mod tests {
 
     #[test]
     fn compress_is_graceful_when_gateway_disabled() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::remove_var("LEAN_CTX_GATEWAY");
         // No gateway configured in the test env → input returned unchanged.
         let c = GatewayCompressor::new("nonexistent-server");

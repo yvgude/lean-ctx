@@ -376,6 +376,7 @@ mod tests {
 
     #[test]
     fn cost_cap_blocks_when_exceeded() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let t = BudgetTracker::new();
         t.record_cost_usd(6.0);
         // SAFETY: single-threaded test — no concurrent env access.

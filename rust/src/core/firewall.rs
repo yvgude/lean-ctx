@@ -144,6 +144,7 @@ mod tests {
 
     #[test]
     fn should_firewall_respects_tool_and_threshold() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let mut cfg = Config::default();
         cfg.archive.enabled = true;
         cfg.archive.ephemeral = true;

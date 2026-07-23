@@ -538,6 +538,7 @@ intent_taxonomy = ["prospect", "qualify", "enrich"]
 
     #[test]
     fn loader_reads_persona_file_and_selection_picks_it() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("research.toml"),

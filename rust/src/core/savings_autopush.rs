@@ -118,6 +118,7 @@ mod tests {
 
     #[test]
     fn enabled_when_fully_configured() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         // Guard against a CI env that sets the token override.
         let prior = std::env::var("LEAN_CTX_TEAM_TOKEN").ok();
         crate::test_env::remove_var("LEAN_CTX_TEAM_TOKEN");

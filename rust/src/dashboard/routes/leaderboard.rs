@@ -296,6 +296,7 @@ mod tests {
     /// immediately).
     #[test]
     fn board_proxy_is_wired_and_degrades_to_502() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::set_var("LEAN_CTX_API_URL", "http://127.0.0.1:1");
         let res = handle("/api/leaderboard", "", "GET", "");
         crate::test_env::remove_var("LEAN_CTX_API_URL");

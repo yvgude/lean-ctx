@@ -400,6 +400,7 @@ fn resolve_name_path_ambiguous_trait_impls() {
 /// #845: file_scope narrows ambiguous symbols to a single file.
 #[test]
 fn file_scope_disambiguates_ambiguous_symbol() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     let dir = tempfile::tempdir().unwrap();
     let proj = dir.path().join("proj845");
     std::fs::create_dir_all(proj.join("src")).unwrap();

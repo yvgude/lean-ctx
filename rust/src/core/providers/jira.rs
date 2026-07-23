@@ -477,6 +477,7 @@ mod tests {
 
     #[test]
     fn jira_provider_is_unavailable_without_env() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guard = ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -498,6 +499,7 @@ mod tests {
 
     #[test]
     fn deployment_defaults_to_cloud() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guard = ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -514,6 +516,7 @@ mod tests {
 
     #[test]
     fn deployment_server_variants() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guard = ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -532,6 +535,7 @@ mod tests {
 
     #[test]
     fn oauth_is_selected_when_forced() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guard = ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);

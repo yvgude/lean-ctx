@@ -989,6 +989,7 @@ mod tests {
     // literally and never matched.
     #[test]
     fn expand_user_path_expands_tilde_and_vars() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let home = dirs::home_dir().expect("home dir");
         let home_s = home.to_string_lossy().to_string();
 
@@ -1009,6 +1010,7 @@ mod tests {
 
     #[test]
     fn expand_user_path_leaves_unset_vars_verbatim() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::remove_var("LEAN_CTX_TEST_UNSET_VAR");
         let p = expand_user_path("$LEAN_CTX_TEST_UNSET_VAR/code");
         assert_eq!(p, PathBuf::from("$LEAN_CTX_TEST_UNSET_VAR/code"));

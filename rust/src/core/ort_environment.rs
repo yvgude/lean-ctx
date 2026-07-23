@@ -345,6 +345,7 @@ mod tests {
 
     #[test]
     fn resolve_dylib_env_var_takes_precedence() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         // Set ORT_DYLIB_PATH to a known file (/tmp is guaranteed to exist,
         // but the file itself won't — this should still error with a clear
         // message about the file not existing).
@@ -367,6 +368,7 @@ mod tests {
 
     #[test]
     fn homebrew_prefix_lib_is_searched() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         // A dylib under $HOMEBREW_PREFIX/lib is discovered (covers Homebrew on
         // any platform / custom prefix, incl. Linuxbrew). See issue #544.
         let tmp = std::env::temp_dir().join(format!("lc-ort-hb-{}", std::process::id()));
@@ -392,6 +394,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn nix_per_user_lib_discovers_file_under_base() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let tmp = std::env::temp_dir().join(format!("lc-nix-pu-{}", std::process::id()));
         let name = "libonnxruntime-test-marker.so";
         let user = "testuser";
@@ -410,6 +413,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn nix_per_user_lib_rejects_traversal_in_user() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let tmp = std::env::temp_dir().join(format!("lc-nix-trv-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
 

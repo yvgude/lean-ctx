@@ -174,6 +174,7 @@ mod tests {
 
     #[test]
     fn env_overrides_default() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guards = setup();
         crate::test_env::set_var("LEAN_CTX_KERNEL_ENABLED", "false");
         let (features, source) = effective_config();
@@ -183,6 +184,7 @@ mod tests {
 
     #[test]
     fn apply_updates_global() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guards = setup();
         crate::test_env::set_var("LEAN_CTX_KERNEL_DEDUP", "false");
         apply_config();
@@ -191,6 +193,7 @@ mod tests {
 
     #[test]
     fn report_lists_env_vars() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guards = setup();
         crate::test_env::set_var("LEAN_CTX_KERNEL_MAX_BUDGET", "42");
         assert_eq!(

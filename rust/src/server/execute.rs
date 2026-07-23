@@ -566,6 +566,7 @@ mod tests {
 
     #[test]
     fn ensure_utf8_locale_sets_fallback_when_none_inherited() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let empty: std::collections::HashMap<String, String> = std::collections::HashMap::new();
         let mut cmd = std::process::Command::new("true");
 

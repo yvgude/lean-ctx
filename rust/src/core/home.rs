@@ -148,6 +148,7 @@ mod tests {
 
     #[test]
     fn resolve_codex_dir_respects_env_var() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guard = env_lock();
         crate::test_env::set_var("CODEX_HOME", "/tmp/custom-codex");
         crate::test_env::remove_var(LEAN_CTX_CODEX_PROFILE_ENV);
@@ -159,6 +160,7 @@ mod tests {
 
     #[test]
     fn resolve_codex_dir_ignores_empty_env() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guard = env_lock();
         crate::test_env::set_var("CODEX_HOME", "  ");
         crate::test_env::remove_var(LEAN_CTX_CODEX_PROFILE_ENV);
@@ -171,6 +173,7 @@ mod tests {
 
     #[test]
     fn resolve_codex_dir_falls_back_to_home() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guard = env_lock();
         crate::test_env::remove_var("CODEX_HOME");
         crate::test_env::remove_var(LEAN_CTX_CODEX_PROFILE_ENV);
@@ -182,6 +185,7 @@ mod tests {
 
     #[test]
     fn explicit_profile_selects_overlay_for_writes_and_layers() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guard = env_lock();
         let dir = tempfile::tempdir().unwrap();
         crate::test_env::set_var("CODEX_HOME", dir.path());
@@ -200,6 +204,7 @@ mod tests {
 
     #[test]
     fn legacy_profile_env_selects_overlay() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guard = env_lock();
         let dir = tempfile::tempdir().unwrap();
         crate::test_env::set_var("CODEX_HOME", dir.path());
@@ -215,6 +220,7 @@ mod tests {
 
     #[test]
     fn sole_overlay_is_inferred_but_ambiguous_overlays_are_not() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guard = env_lock();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("cat.config.toml"), "").unwrap();
@@ -234,6 +240,7 @@ mod tests {
 
     #[test]
     fn invalid_profile_names_cannot_escape_codex_home() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _guard = env_lock();
         let dir = tempfile::tempdir().unwrap();
         crate::test_env::set_var("CODEX_HOME", dir.path());

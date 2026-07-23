@@ -172,6 +172,7 @@ mod tests {
 
     #[test]
     fn postgres_provider_unavailable_without_env() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::remove_var("DATABASE_URL");
         crate::test_env::remove_var("PGDATABASE");
 

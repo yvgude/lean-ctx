@@ -253,6 +253,7 @@ mod tests {
 
     #[test]
     fn ruleset_disabled_is_legacy() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _lock = env_lock();
         crate::test_env::remove_var("LEAN_CTX_MODEL");
         let cfg = TranslationConfig {
@@ -298,6 +299,7 @@ mod tests {
 
     #[test]
     fn translation_skips_json_outputs() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _lock = env_lock();
         crate::test_env::set_var("LEAN_CTX_MODEL", "gpt-5.4");
         let cfg = TranslationConfig {

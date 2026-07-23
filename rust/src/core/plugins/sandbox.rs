@@ -224,6 +224,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn scrubbed_env_hides_host_secret_but_keeps_path() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         use std::time::Duration;
         // A secret in the host env must NOT reach a scrubbed child.
         crate::test_env::set_var("LEAN_CTX_TEST_SECRET", "top-secret");
@@ -249,6 +250,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn passthrough_env_exposes_host_var() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         use std::time::Duration;
         crate::test_env::set_var("LEAN_CTX_TEST_PASSTHRU", "visible");
         let out = crate::core::plugins::executor::run_subprocess(

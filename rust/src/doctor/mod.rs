@@ -900,6 +900,7 @@ mod tests {
 
     #[test]
     fn bashrc_not_active_on_windows_even_with_bash_in_shell_env() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         // Issue #214: On Windows, Git Bash sets $SHELL globally to bash.exe.
         // .bashrc should NOT be flagged on Windows unless actually inside bash.
         crate::test_env::remove_var("BASH_VERSION");
@@ -934,6 +935,7 @@ mod tests {
 
     #[test]
     fn bashrc_not_active_on_windows_without_powershell_detection() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         // Windows + $SHELL=bash but NOT in actual bash session (no BASH_VERSION).
         // This is the exact scenario from issue #214: Git Bash sets $SHELL globally.
         crate::test_env::remove_var("BASH_VERSION");

@@ -123,6 +123,7 @@ mod tests {
     /// `run` resolves a runtime handle.
     #[test]
     fn disabled_gateway_returns_hint() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         // Ensure no env override flips it on.
         crate::test_env::remove_var("LEAN_CTX_GATEWAY");
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -146,6 +147,7 @@ mod tests {
     /// einen current_thread-Runtime. Erwartung: Ok | Err, aber NIEMALS Panik.
     #[test]
     fn run_without_ambient_runtime_does_not_panic() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::remove_var("LEAN_CTX_GATEWAY");
         let args = json!({ "action": "list" });
         let _ = run(args.as_object().unwrap(), ""); // Ok|Err, niemals Panic

@@ -9,6 +9,7 @@ static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[test]
 fn dashboard_project_root_honors_general_env_override() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     let _g = ENV_LOCK.lock().expect("env lock");
     let td = tempdir().expect("tempdir");
     let root = td.path().join("project");
@@ -23,6 +24,7 @@ fn dashboard_project_root_honors_general_env_override() {
 
 #[test]
 fn dashboard_project_root_ignores_broken_ancestor_gitfile() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     let _g = ENV_LOCK.lock().expect("env lock");
     let td = tempdir().expect("tempdir");
     let workspace = td.path().join("workspace");
@@ -41,6 +43,7 @@ fn dashboard_project_root_ignores_broken_ancestor_gitfile() {
 
 #[test]
 fn dashboard_project_root_honors_resolvable_ancestor_gitfile() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     let _g = ENV_LOCK.lock().expect("env lock");
     let td = tempdir().expect("tempdir");
     let checkout = td.path().join("checkout");
@@ -88,6 +91,7 @@ fn open_mode_flag_parses_all_variants() {
 
 #[test]
 fn open_mode_env_is_used_when_no_flag() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     let _guard = ENV_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -367,6 +371,7 @@ fn api_procedures_returns_json() {
 
 #[test]
 fn api_compression_demo_heals_moved_file_paths() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     let _g = ENV_LOCK.lock().expect("env lock");
     let td = tempdir().expect("tempdir");
     let root = td.path();
@@ -404,6 +409,7 @@ fn api_compression_demo_heals_moved_file_paths() {
 
 #[test]
 fn resolve_token_uses_env_var_verbatim() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::set_var(HTTP_TOKEN_ENV, "lctx_mystatic");
     let (token, src) = resolve_requested_token(None);
@@ -417,6 +423,7 @@ fn resolve_token_uses_env_var_verbatim() {
 
 #[test]
 fn resolve_token_trims_env_var() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::set_var(HTTP_TOKEN_ENV, "  lctx_padded  ");
     let (token, src) = resolve_requested_token(None);
@@ -427,6 +434,7 @@ fn resolve_token_trims_env_var() {
 
 #[test]
 fn resolve_token_falls_back_to_random_when_unset() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::remove_var(HTTP_TOKEN_ENV);
     let (token, src) = resolve_requested_token(None);
@@ -446,6 +454,7 @@ fn resolve_token_falls_back_to_random_when_unset() {
 
 #[test]
 fn resolve_token_ignores_empty_env() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::set_var(HTTP_TOKEN_ENV, "   ");
     let (token, src) = resolve_requested_token(None);
@@ -459,6 +468,7 @@ fn resolve_token_ignores_empty_env() {
 
 #[test]
 fn resolve_token_flag_overrides_env() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     // #377: --auth-token must win over LEAN_CTX_HTTP_TOKEN so it survives
     // environments that strip/fail to inherit the env var.
     let _g = ENV_LOCK.lock().expect("env lock");
@@ -471,6 +481,7 @@ fn resolve_token_flag_overrides_env() {
 
 #[test]
 fn resolve_token_uses_flag_when_env_unset() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::remove_var(HTTP_TOKEN_ENV);
     let (token, src) = resolve_requested_token(Some("  lctx_flag_padded  "));
@@ -480,6 +491,7 @@ fn resolve_token_uses_flag_when_env_unset() {
 
 #[test]
 fn resolve_token_empty_flag_falls_back_to_env() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::set_var(HTTP_TOKEN_ENV, "lctx_fromenv");
     let (token, src) = resolve_requested_token(Some("   "));
@@ -501,6 +513,7 @@ fn parse_human_bool_accepts_common_forms() {
 
 #[test]
 fn build_allowed_hosts_covers_loopback_and_bound_host() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::remove_var(ALLOWED_HOSTS_ENV);
     let allowed = build_allowed_hosts("0.0.0.0", 3333);
@@ -515,6 +528,7 @@ fn build_allowed_hosts_covers_loopback_and_bound_host() {
 
 #[test]
 fn build_allowed_hosts_honors_env_extra_hosts() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
     let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::set_var(ALLOWED_HOSTS_ENV, "box.local:3333, 10.0.0.5:3333");
     let allowed = build_allowed_hosts("127.0.0.1", 3333);

@@ -408,6 +408,7 @@ mod tests {
 
     #[test]
     fn provider_unavailable_without_token() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::remove_var("GITHUB_TOKEN");
         crate::test_env::remove_var("GH_TOKEN");
         crate::test_env::remove_var("LEAN_CTX_GITHUB_TOKEN");

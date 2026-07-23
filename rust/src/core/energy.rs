@@ -157,6 +157,7 @@ mod tests {
 
     #[test]
     fn grid_intensity_default_when_no_override() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         // The override is read from the environment; without it we use the constant.
         // (Env mutation is covered indirectly; here we assert the documented default.)
         crate::test_env::remove_var("LEAN_CTX_GRID_CO2_G_PER_KWH");

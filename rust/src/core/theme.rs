@@ -782,6 +782,7 @@ mod tests {
 
     #[test]
     fn border_line_width() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::set_var("NO_COLOR", "1");
         let theme = preset_default();
         let line = theme.border_line(10);
@@ -791,6 +792,7 @@ mod tests {
 
     #[test]
     fn box_top_bottom_symmetric() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         crate::test_env::set_var("NO_COLOR", "1");
         let theme = preset_default();
         let top = theme.box_top(20);

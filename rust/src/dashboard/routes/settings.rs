@@ -316,6 +316,7 @@ mod tests {
     /// does not snap back to "Power".
     #[test]
     fn tool_profile_value_distinguishes_lean_from_power() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         // Avoid env interference from the host running the suite.
         crate::test_env::remove_var("LEAN_CTX_TOOL_PROFILE");
 

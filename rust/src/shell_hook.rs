@@ -1205,6 +1205,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn shell_available_rejects_unknown_shell() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _g = SHELL_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -1217,6 +1218,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn shell_available_finds_installed_shells() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _g = SHELL_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -1237,6 +1239,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn shell_hook_force_overrides_detection() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let _g = SHELL_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
