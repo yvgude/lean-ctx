@@ -39,7 +39,7 @@ jobs:
     # forced `cargo test -- --test-threads=1` (a test mutating process-global
     # state — LEAN_CTX_* env, the Config cache, the graph-idx lock — could no
     # longer leak into another), so the suite runs core-parallel instead of
-    # serialized across ~70 binaries. Config lives in rust/.config/nextest.toml
+    # serialized across ~50 binaries. Config lives in rust/.config/nextest.toml
     # (test-threads=-4, retries=2, a `serial-state` group for the few binaries
     # sharing a fixed /tmp path, and a tmpdir setup-script isolating the data
     # dir for every test).
@@ -54,7 +54,7 @@ jobs:
     # rather than reintroducing global serialization.
     timeout-minutes: 180
     env:
-      # ~60 integration-test binaries each statically link the full lib
+      # ~50 integration-test binaries each statically link the full lib
       # (tree-sitter ×18, rten, aws-lc, resvg, …). With default full debug
       # info that is 25-40 GB and the ubuntu runner dies with ENOSPC / the
       # linker with SIGBUS. Line tables keep file:line in panic backtraces
