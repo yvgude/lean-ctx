@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum JobState {
-    Running,
+    Running { output: String },
     Completed { output: String, exit_code: i32 },
     Cancelled { output: String },
 }
@@ -27,6 +27,9 @@ struct Job {
     cancel: Arc<AtomicBool>,
     state: JobState,
     finished_at: Option<Instant>,
+    // #1217: shared buffer the worker streams captured output into while the
+    // job runs, so `status` can report progress before the job completes.
+    live: Arc<Mutex<String>>,
 }
 
 static JOBS: LazyLock<Mutex<HashMap<String, Job>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -60,7 +63,7 @@ fn prune_finished_jobs_with_limits(
             let finished_at = job.finished_at?;
             let output_bytes = match &job.state {
                 JobState::Completed { output, .. } | JobState::Cancelled { output } => output.len(),
-                JobState::Running => 0,
+                JobState::Running { .. } => 0,
             };
             Some((finished_at, id.clone(), output_bytes))
         })
@@ -108,20 +111,28 @@ pub fn start(
     );
     let cancel = Arc::new(AtomicBool::new(false));
     let worker_cancel = Arc::clone(&cancel);
+    let live = Arc::new(Mutex::new(String::new()));
+    let worker_live = Arc::clone(&live);
     {
         let mut jobs = JOBS
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         prune_finished_jobs(&mut jobs, Instant::now());
-        if matches!(jobs.get(&id).map(|job| &job.state), Some(JobState::Running)) {
+        if matches!(
+            jobs.get(&id).map(|job| &job.state),
+            Some(JobState::Running { .. })
+        ) {
             return id;
         }
         jobs.insert(
             id.clone(),
             Job {
                 cancel,
-                state: JobState::Running,
+                state: JobState::Running {
+                    output: String::new(),
+                },
                 finished_at: None,
+                live,
             },
         );
     }
@@ -137,6 +148,8 @@ pub fn start(
             // #1113/#1173: bounded by output, not wall clock — a monitor loop
             // emitting a line every 45s must survive. See `idle_keyed`.
             true,
+            // #1217: stream captured output into the shared buffer as it arrives.
+            Some(&worker_live),
         );
         let mut jobs = JOBS
             .lock()
@@ -229,10 +242,22 @@ fn remove(id: &str) {
 }
 
 pub fn status(id: &str) -> Option<JobState> {
-    JOBS.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .get(id)
-        .map(|job| job.state.clone())
+    let jobs = JOBS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let job = jobs.get(id)?;
+    Some(match &job.state {
+        // #1217: a running job's output lives in the shared buffer the worker
+        // streams into; surface the captured-so-far snapshot on each poll.
+        JobState::Running { .. } => JobState::Running {
+            output: job
+                .live
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone(),
+        },
+        other => other.clone(),
+    })
 }
 
 pub fn cancel(id: &str) -> Option<JobState> {
@@ -240,7 +265,7 @@ pub fn cancel(id: &str) -> Option<JobState> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let job = jobs.get_mut(id)?;
-    if matches!(job.state, JobState::Running) {
+    if matches!(job.state, JobState::Running { .. }) {
         job.cancel.store(true, Ordering::Release);
     }
     Some(job.state.clone())
@@ -267,6 +292,7 @@ mod tests {
                         exit_code: 0,
                     },
                     finished_at: Some(now - Duration::from_secs((index + 1) as u64)),
+                    live: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
                 },
             );
         }
@@ -279,6 +305,7 @@ mod tests {
                     exit_code: 0,
                 },
                 finished_at: Some(now - super::COMPLETED_JOB_TTL - Duration::from_secs(1)),
+                live: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
             },
         );
 
@@ -303,6 +330,7 @@ mod tests {
                         exit_code: 0,
                     },
                     finished_at: Some(now - Duration::from_secs((3 - index) as u64)),
+                    live: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
                 },
             );
         }
@@ -414,7 +442,7 @@ mod tests {
             std::collections::HashMap::default(),
             Some(10_000),
         );
-        assert_eq!(status(&id), Some(JobState::Running));
+        assert!(matches!(status(&id), Some(JobState::Running { .. })));
         for _ in 0..40 {
             if let Some(JobState::Completed { output, exit_code }) = status(&id) {
                 assert_eq!(exit_code, 0);
@@ -435,7 +463,7 @@ mod tests {
             std::collections::HashMap::default(),
             Some(10_000),
         );
-        assert!(matches!(cancel(&id), Some(JobState::Running)));
+        assert!(matches!(cancel(&id), Some(JobState::Running { .. })));
         for _ in 0..40 {
             if let Some(JobState::Cancelled { output }) = status(&id) {
                 assert!(output.contains("command cancelled"));
@@ -444,5 +472,33 @@ mod tests {
             std::thread::sleep(Duration::from_millis(25));
         }
         panic!("background job was not cancelled");
+    }
+
+    /// #1217: a still-running job's `status` must surface the captured-so-far
+    /// output, not a bare "running" with no signal of progress.
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn running_background_job_status_streams_partial_output() {
+        let id = start(
+            "printf EARLY_LINE; sleep 5".to_string(),
+            ".".to_string(),
+            std::collections::HashMap::default(),
+            Some(10_000),
+        );
+        let mut saw_partial = false;
+        for _ in 0..80 {
+            if let Some(JobState::Running { output }) = status(&id)
+                && output.contains("EARLY_LINE")
+            {
+                saw_partial = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        cancel(&id);
+        assert!(
+            saw_partial,
+            "status never surfaced the running job's early output"
+        );
     }
 }

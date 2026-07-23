@@ -71,8 +71,16 @@ impl McpTool for CtxShellTool {
                 });
             };
             let (text, exit_code) = match state {
-                crate::server::background_shell::JobState::Running => {
-                    (format!("[background:{id} running]"), 0)
+                crate::server::background_shell::JobState::Running { output } => {
+                    // #1217: show the captured-so-far output so a poll of a
+                    // long-running job reflects progress instead of a bare
+                    // "running" with no signal of whether it is advancing.
+                    let body = redact_shell_output_secrets(&output);
+                    if body.trim().is_empty() {
+                        (format!("[background:{id} running]"), 0)
+                    } else {
+                        (format!("[background:{id} running]\n{body}"), 0)
+                    }
                 }
                 crate::server::background_shell::JobState::Completed { output, exit_code } => (
                     format!(

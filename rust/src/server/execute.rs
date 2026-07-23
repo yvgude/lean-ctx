@@ -32,7 +32,7 @@ pub(crate) fn execute_command_with_env(
     extra_env: &std::collections::HashMap<String, String>,
     timeout_ms: Option<u64>,
 ) -> (String, i32) {
-    execute_command_with_env_cancellable(command, cwd, extra_env, timeout_ms, None, false)
+    execute_command_with_env_cancellable(command, cwd, extra_env, timeout_ms, None, false, None)
 }
 
 /// Execute a command under the normal shell policy, with an optional cooperative
@@ -58,6 +58,9 @@ pub(crate) fn execute_command_with_env_cancellable(
     timeout_ms: Option<u64>,
     cancel: Option<&AtomicBool>,
     idle_keyed: bool,
+    // #1217: while running, mirror the captured-so-far output here so a detached
+    // background job's `status` poll can show progress instead of nothing.
+    live: Option<&std::sync::Mutex<String>>,
 ) -> (String, i32) {
     let (shell, flag) = crate::shell::shell_and_flag();
     let normalized_cmd = crate::tools::ctx_shell::normalize_command_for_shell(command);
@@ -140,6 +143,7 @@ pub(crate) fn execute_command_with_env_cancellable(
     let start = Instant::now();
     let hard_deadline = idle_keyed.then(|| start + streaming_max_lifetime());
     let mut last_len = 0usize;
+    let mut live_last_len = 0usize;
     let mut last_output_at = start;
     // Named on timeout so a multi-segment pipeline says *which* part hung (#1086).
     let mut still_running: Vec<String> = Vec::new();
@@ -151,6 +155,27 @@ pub(crate) fn execute_command_with_env_cancellable(
                     kill_timed_out_child(&mut child);
                     let _ = child.wait();
                     break (130, false, true);
+                }
+                // #1217: mirror the captured-so-far output into the live buffer
+                // whenever it grows, so a background `status` poll sees progress.
+                // Gated on length change and bounded by the same cap as the final
+                // capture — the decode runs at most once per 25ms sleep tick.
+                if let Some(live) = live {
+                    let len = captured_len(&out_buf) + captured_len(&err_buf);
+                    if len != live_last_len {
+                        live_last_len = len;
+                        let (out_now, _) = snapshot(&out_buf);
+                        let (err_now, _) = snapshot(&err_buf);
+                        let so = crate::shell::resolve_carriage_returns(
+                            &crate::shell::decode_output(&out_now),
+                        );
+                        let se = crate::shell::resolve_carriage_returns(
+                            &crate::shell::decode_output(&err_now),
+                        );
+                        if let Ok(mut guard) = live.lock() {
+                            *guard = crate::shell::combine_streams(&so, &se, 0);
+                        }
+                    }
                 }
                 let idle_for = if idle_keyed {
                     let len = captured_len(&out_buf) + captured_len(&err_buf);
@@ -460,16 +485,30 @@ mod tests {
         // Emits every 100ms for ~900ms under a 400ms budget.
         let cmd = "for i in 1 2 3 4 5 6 7 8 9; do printf T; sleep 0.1; done; printf DONE";
 
-        let (idle_out, idle_code) =
-            super::execute_command_with_env_cancellable(cmd, ".", &env, Some(400), None, true);
+        let (idle_out, idle_code) = super::execute_command_with_env_cancellable(
+            cmd,
+            ".",
+            &env,
+            Some(400),
+            None,
+            true,
+            None,
+        );
         assert_eq!(
             idle_code, 0,
             "output kept resetting the idle clock: {idle_out}"
         );
         assert!(idle_out.contains("DONE"));
 
-        let (wall_out, wall_code) =
-            super::execute_command_with_env_cancellable(cmd, ".", &env, Some(400), None, false);
+        let (wall_out, wall_code) = super::execute_command_with_env_cancellable(
+            cmd,
+            ".",
+            &env,
+            Some(400),
+            None,
+            false,
+            None,
+        );
         assert_eq!(wall_code, 124, "wall-clock mode must still enforce the cap");
         assert!(wall_out.contains("timed out"));
     }
@@ -489,6 +528,7 @@ mod tests {
             Some(600),
             None,
             false,
+            None,
         );
         assert_eq!(code, 124);
         assert!(
