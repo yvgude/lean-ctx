@@ -143,9 +143,9 @@ impl ParseModeError {
             ParseModeError::Malformed(s) if s.starts_with("anchored:") => format!(
                 "invalid read mode \"{s}\": expected anchored:START-END (dash), e.g. anchored:72-92"
             ),
-            ParseModeError::Malformed(s) if s.starts_with("density:") => format!(
-                "invalid read mode \"{s}\": expected density:0.NN, e.g. density:0.40"
-            ),
+            ParseModeError::Malformed(s) if s.starts_with("density:") => {
+                format!("invalid read mode \"{s}\": expected density:0.NN, e.g. density:0.40")
+            }
             ParseModeError::Malformed(s) | ParseModeError::Unknown(s) => format!(
                 "invalid read mode \"{s}\": expected one of full, signatures, map, auto, raw, \
                  anchored, reference, diff, lines:N-M, anchored:N-M, density:0.NN"
