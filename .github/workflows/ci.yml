@@ -65,6 +65,16 @@ jobs:
       # the 180-min timeout. 64 cases keep the properties exercised on every
       # push at a quarter of the cost; local runs keep the full default.
       PROPTEST_CASES: 64
+      # sccache caches individual rustc invocations in the GitHub Actions cache
+      # (shared across runs), salvaging unchanged crates when Swatinem/rust-cache
+      # misses — a Cargo.lock or toolchain bump otherwise triggers a full
+      # recompile of the whole dep tree. Composing the two is safe: on a
+      # rust-cache HIT cargo skips compilation and never invokes sccache; on a
+      # MISS sccache backfills. Incremental must be off for sccache, which also
+      # shrinks `target/` (helps the ENOSPC pressure above).
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@v4 # v4
         with:
@@ -81,6 +91,11 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: rust -> target
+      # Installs sccache and wires the GHA cache backend (SCCACHE_GHA_ENABLED
+      # above). Tag-pinned like actions/checkout in this file; a maintainer may
+      # prefer a full-SHA pin.
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.6 # v0.0.6
 
       # ---- Windows: MSYS2 + GNU target + jemalloc -------------------------
       # The default MSVC toolchain can't build jemalloc (autotools mismatch).
