@@ -257,6 +257,10 @@ sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
     #[test]
     fn builds_a_signed_verifying_addon_pack() {
+        // Signing reads the machine key under `data_dir()` (LEAN_CTX_DATA_DIR).
+        // Isolate it — and hold test_env_lock — so a concurrent isolated_data_dir
+        // test can't delete the key dir mid-`chmod` (flaky "No such file").
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().expect("tempdir");
         let path = write_manifest(&dir, GOOD_TOML);
 
@@ -280,6 +284,9 @@ sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
     #[test]
     fn embedded_toml_is_verbatim() {
+        // See builds_a_signed_verifying_addon_pack: signing touches the shared
+        // machine-key dir, so isolate the data dir to avoid the cross-test race.
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().expect("tempdir");
         let path = write_manifest(&dir, GOOD_TOML);
 
@@ -319,6 +326,9 @@ sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
     #[test]
     fn build_addon_pack_forwards_declared_dependencies() {
+        // See builds_a_signed_verifying_addon_pack: signing touches the shared
+        // machine-key dir, so isolate the data dir to avoid the cross-test race.
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let dir = std::env::temp_dir().join(format!("lc-addon-deps-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("tmp dir");
         let path = dir.join("lean-ctx-addon.toml");
