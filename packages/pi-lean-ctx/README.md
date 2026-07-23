@@ -44,7 +44,7 @@ Adds `ctx_`-prefixed tools alongside Pi's builtins (or replaces them in `replace
 | Tool | Replaces | Compression |
 |------|----------|-------------|
 | `ctx_read` | `read` | Smart mode selection (full/map/signatures) based on file type and size |
-| `ctx_shell` | `bash` | All shell commands compressed via lean-ctx's 95+ patterns |
+| `ctx_shell` | `bash` | All shell commands compressed via lean-ctx's 95+ patterns. *(Note: for long sleep/monitoring tasks, prefer background watchers like `/monitor`)* |
 | `ctx_grep` | `grep` | Results grouped and compressed via ripgrep + lean-ctx |
 | `ctx_find` | `find` | File listings compressed and .gitignore-aware |
 | `ctx_ls` | `ls` | Directory output compressed |

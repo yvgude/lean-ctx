@@ -360,10 +360,12 @@ export default async function (pi: ExtensionAPI) {
       + "IMPORTANT: Do NOT use ctx_shell to read files (cat/head/tail) — use ctx_read instead. "
       + "Do NOT use ctx_shell for grep/find/ls — use ctx_grep, ctx_find, ctx_ls. "
       + "Set raw=true to skip compression when exact output matters. "
-      + "Use timeout (seconds) to prevent hanging commands.",
+      + "Use timeout (seconds) to prevent hanging commands. "
+      + "For extremely long sleep or monitoring commands, prefer background watcher tools (such as /monitor) instead of inline ctx_shell.",
     promptSnippet: "Run shell commands (not for file reading — use ctx_read)",
     promptGuidelines: [
       "Use ctx_shell only for commands with side effects: build, test, install, git, run scripts.",
+      "When launching extremely long sleep or monitoring commands, prefer using background watcher commands (such as /monitor) rather than inline ctx_shell scripts to keep your interactive prompt active and completely unblocked.",
     ],
     parameters: bashSchemaWithRaw,
     renderCall(args, theme, context) {
