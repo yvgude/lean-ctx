@@ -49,8 +49,8 @@
     "tests/security/test_history_policy_gate.py": "17a656995bb949854a8d88b8f9428cd61c57042132d57f9d35db60efe5e96593"
   },
   "baseline": {
-    "commit": "9a40032b448e1c58479684babfe55a6de78c2823",
+    "commit": "a4a066a66b55290f244e42933e8f4503fe8908c7",
     "report": "security/evidence/full-history-baseline-v1.json",
-    "report_sha256": "d8d6d582a150de1fae639d00b8447279e2f19165e9da1c85c97ddac425ee1e8a"
+    "report_sha256": "9f86499cd8b40d0636a617ca9994f86da9c3d8cf0e7d3bf1f81aa1348688dfc9"
   }
 }
