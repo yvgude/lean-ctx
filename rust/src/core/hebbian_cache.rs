@@ -8,7 +8,7 @@
 //!   lowest-value entries evicted), High T = stochastic (prevents thrashing).
 
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Maximum number of co-access pairs tracked (prevents unbounded growth).
 const MAX_ASSOCIATIONS: usize = 10_000;
@@ -26,6 +26,11 @@ pub struct CoAccessMatrix {
     /// Current access burst (files read in the same tool-call window)
     current_burst: Vec<u64>,
     burst_start: Instant,
+    /// How long a burst stays open. Real tool calls read their files within a
+    /// few ms, so 500ms in production. Injectable so tests can widen it and stop
+    /// depending on two `store()` calls landing in the same real-time window —
+    /// a scheduling-jitter flake under parallel test runners (nextest).
+    burst_window: Duration,
 }
 
 impl Default for CoAccessMatrix {
@@ -41,16 +46,24 @@ impl CoAccessMatrix {
             timestamps: HashMap::with_capacity(256),
             current_burst: Vec::with_capacity(8),
             burst_start: Instant::now(),
+            burst_window: Duration::from_millis(500),
         }
+    }
+
+    /// Widen (or narrow) the burst window. Test-only: production always uses the
+    /// 500ms default set in `new`.
+    #[cfg(test)]
+    pub fn set_burst_window(&mut self, window: Duration) {
+        self.burst_window = window;
+        self.burst_start = Instant::now();
     }
 
     /// Record a file access. If within the burst window (500ms), strengthens
     /// associations with other files in the same burst.
     pub fn record_access(&mut self, path_hash: u64) {
         let now = Instant::now();
-        let burst_window = std::time::Duration::from_millis(500);
 
-        if now.duration_since(self.burst_start) > burst_window {
+        if now.duration_since(self.burst_start) > self.burst_window {
             self.flush_burst();
             self.burst_start = now;
         }

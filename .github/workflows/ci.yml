@@ -34,23 +34,24 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # --test-threads=1 (env-race legacy, v3.3.5) serializes ~70 binaries that
-    # now include heavy property/fuzz/benchmark suites (#291, #493, #551) —
-    # well beyond 90 min on hosted runners. Parallelization is tracked
-    # separately; until then the gate gets the time it actually needs.
+    # Tests run under cargo-nextest, which executes each test in its OWN
+    # process. That process isolation removes the env-race that historically
+    # forced `cargo test -- --test-threads=1` (a test mutating process-global
+    # state — LEAN_CTX_* env, the Config cache, the graph-idx lock — could no
+    # longer leak into another), so the suite runs core-parallel instead of
+    # serialized across ~70 binaries. Config lives in rust/.config/nextest.toml
+    # (test-threads=-4, retries=2, a `serial-state` group for the few binaries
+    # sharing a fixed /tmp path, and a tmpdir setup-script isolating the data
+    # dir for every test).
     #
-    # Tried switching to cargo-nextest (rust/.config/nextest.toml already
-    # exists and documents the same env-race for 3 known binaries via a
-    # `serial-state` test-group). Reverted: nextest's default parallelism
-    # (test-threads = -4) surfaced several more tests with hidden wall-clock
-    # timing assumptions (e.g. core::cache::tests::hebbian_eviction_bonus_is_wired
-    # depends on two calls landing in the same real-time 500ms window) that a
-    # `max-threads=1` test-group does NOT fix — that only serializes tests
-    # *within* the group against each other, it doesn't protect them from
-    # being scheduling-delayed by the many *other* tests still running in
-    # parallel elsewhere on the same runner. Revisit once those tests are
-    # made robust to scheduling jitter (or the burst window is made
-    # injectable for tests) rather than papering over it with test-groups.
+    # An earlier flip was reverted because a handful of tests carried hidden
+    # wall-clock timing assumptions that parallelism exposed — the named one,
+    # core::cache::tests::hebbian_eviction_bonus_is_wired, needed two calls
+    # inside a real-time 500ms burst window. That is now fixed at the source:
+    # the burst window is injectable (see CoAccessMatrix::set_burst_window), so
+    # the test no longer depends on wall-clock scheduling. retries=2 is the net
+    # for any similar test not yet hardened; if one recurs, make it injectable
+    # rather than reintroducing global serialization.
     timeout-minutes: 180
     env:
       # ~60 integration-test binaries each statically link the full lib
@@ -116,7 +117,32 @@ jobs:
             /usr/local/share/boost /usr/lib/jvm /usr/local/julia* || true
           sudo docker system prune -af --volumes >/dev/null 2>&1 || true
           df -h /
-      - name: Run tests
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2 # v2
+        with:
+          tool: nextest
+      - name: Run tests (nextest)
+        working-directory: rust
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            CARGO="${CARGO_HOME}/bin/cargo"
+          else
+            CARGO="cargo"
+          fi
+          # Parallelism, retries and serial-state groups come from
+          # .config/nextest.toml; process isolation makes --test-threads=1
+          # unnecessary (see the job comment above).
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            JEMALLOC_OVERRIDE="${{ steps.jemalloc.outputs.jemalloc-override }}" \
+            CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-L ${{ steps.jemalloc.outputs.dummy-dir }}" \
+            "$CARGO" nextest run --target x86_64-pc-windows-gnu --all-features
+          else
+            "$CARGO" nextest run --all-features
+          fi
+      # nextest does not run doctests — cover them separately so the flip loses
+      # no coverage. Cheap and inherently parallel, so no --test-threads pin.
+      - name: Run doctests
         working-directory: rust
         shell: bash
         run: |
@@ -128,9 +154,9 @@ jobs:
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             JEMALLOC_OVERRIDE="${{ steps.jemalloc.outputs.jemalloc-override }}" \
             CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-L ${{ steps.jemalloc.outputs.dummy-dir }}" \
-            "$CARGO" test --target x86_64-pc-windows-gnu --all-features -- --test-threads=1
+            "$CARGO" test --target x86_64-pc-windows-gnu --all-features --doc
           else
-            "$CARGO" test --all-features -- --test-threads=1
+            "$CARGO" test --all-features --doc
           fi
 
       # #581: lock in the parallel BM25 (incremental) rebuild win against silent
