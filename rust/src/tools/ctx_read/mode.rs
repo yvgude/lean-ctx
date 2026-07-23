@@ -125,6 +125,35 @@ impl fmt::Display for ParseModeError {
     }
 }
 
+impl ParseModeError {
+    /// Actionable, caller-facing message for a rejected mode string (#1209).
+    ///
+    /// `Display` states *what* is wrong; this also says *what to type instead* —
+    /// critical for the `lines:N:M` colon-typo trap, where a second colon reads
+    /// natural (muscle memory from `file:line:col`) but is malformed. Without
+    /// this the range failed silently: a small file returned an empty window
+    /// ("No lines matched"), a large one bounced to a full-file dump.
+    #[must_use]
+    pub(crate) fn user_message(&self) -> String {
+        match self {
+            ParseModeError::Malformed(s) if s.starts_with("lines:") => format!(
+                "invalid read mode \"{s}\": expected lines:START-END (dash), e.g. lines:72-92 \
+                 (or a comma multi-select like lines:5,10-20)"
+            ),
+            ParseModeError::Malformed(s) if s.starts_with("anchored:") => format!(
+                "invalid read mode \"{s}\": expected anchored:START-END (dash), e.g. anchored:72-92"
+            ),
+            ParseModeError::Malformed(s) if s.starts_with("density:") => format!(
+                "invalid read mode \"{s}\": expected density:0.NN, e.g. density:0.40"
+            ),
+            ParseModeError::Malformed(s) | ParseModeError::Unknown(s) => format!(
+                "invalid read mode \"{s}\": expected one of full, signatures, map, auto, raw, \
+                 anchored, reference, diff, lines:N-M, anchored:N-M, density:0.NN"
+            ),
+        }
+    }
+}
+
 impl std::error::Error for ParseModeError {}
 
 /// Validate a comma multi-select payload (`"5,10-20"`) and return it verbatim
@@ -150,10 +179,12 @@ fn parse_line_multi(payload: &str) -> Result<String, ParseModeError> {
     Ok(payload.to_string())
 }
 
-/// Parse the payload of a `lines:` mode (`"5-10"`, `"5-999999"`, or a bare
-/// `"5"` meaning "from line 5 to EOF").
-fn parse_line_range(payload: &str) -> Result<LineRange, ParseModeError> {
-    let malformed = || ParseModeError::Malformed(format!("lines:{payload}"));
+/// Parse the payload of a line-range mode (`"5-10"`, `"5-999999"`, or a bare
+/// `"5"` meaning "from line N to EOF"). `whole` is the full original mode string
+/// (`"lines:…"` or `"anchored:…"`) so a rejection names the mode the caller
+/// actually typed — #1209: an `anchored:` typo must not be reported as `lines:`.
+fn parse_line_range(payload: &str, whole: &str) -> Result<LineRange, ParseModeError> {
+    let malformed = || ParseModeError::Malformed(whole.to_string());
     if let Some((a, b)) = payload.split_once('-') {
         let start = a.trim().parse::<u32>().map_err(|_| malformed())?;
         let end = b.trim().parse::<u32>().map_err(|_| malformed())?;
@@ -188,10 +219,10 @@ impl FromStr for ReadMode {
                     if payload.contains(',') {
                         ReadMode::LinesMulti(parse_line_multi(payload)?)
                     } else {
-                        ReadMode::Lines(parse_line_range(payload)?)
+                        ReadMode::Lines(parse_line_range(payload, other)?)
                     }
                 } else if let Some(payload) = other.strip_prefix("anchored:") {
-                    ReadMode::Anchored(Some(parse_line_range(payload)?))
+                    ReadMode::Anchored(Some(parse_line_range(payload, other)?))
                 } else if let Some(payload) = other.strip_prefix("density:") {
                     let target = payload
                         .trim()
@@ -419,6 +450,28 @@ mod tests {
             "density:nope".parse::<ReadMode>(),
             Err(ParseModeError::Malformed("density:nope".to_string()))
         );
+    }
+
+    #[test]
+    fn user_message_names_the_dash_form_for_colon_typo() {
+        // #1209: the `lines:44:48` colon typo must yield an actionable message
+        // naming the dash form, not a silent empty window or full-file bounce.
+        let err = "lines:44:48".parse::<ReadMode>().unwrap_err();
+        let msg = err.user_message();
+        assert!(msg.contains("lines:44:48"), "echoes the offending input");
+        assert!(msg.contains("lines:START-END"), "names the expected form");
+        assert!(
+            msg.contains("lines:72-92") || msg.contains("dash"),
+            "shows a dash example"
+        );
+
+        // The same trap on the anchored line-range mode.
+        let anchored = "anchored:44:48".parse::<ReadMode>().unwrap_err();
+        assert!(anchored.user_message().contains("anchored:START-END"));
+
+        // A wholly unknown keyword still lists the valid vocabulary.
+        let unknown = "wat".parse::<ReadMode>().unwrap_err();
+        assert!(unknown.user_message().contains("lines:N-M"));
     }
 
     #[test]

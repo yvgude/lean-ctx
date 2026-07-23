@@ -154,6 +154,19 @@ impl CtxReadTool {
         let arg_raw = get_bool(args, "raw").unwrap_or(false);
         let explicit_mode_arg = resolve_raw_alias(arg_raw, get_str(args, "mode"));
         let explicit_mode = explicit_mode_arg.is_some();
+        // #1209: a malformed line-range payload (e.g. `lines:44:48` with a colon
+        // instead of a dash) must fail loudly, not silently return an empty
+        // window on small files or bounce to a full-file dump on large ones.
+        // `lines:` and `anchored:` share `parse_line_range`, so validating both
+        // line-range modes at the boundary catches the typo for either. Other
+        // modes are left untouched: bare `density:` is a valid fallback and
+        // unknown keywords keep the historical warn-and-fall-back behaviour.
+        if let Some(ref requested) = explicit_mode_arg
+            && (requested.starts_with("lines:") || requested.starts_with("anchored:"))
+            && let Err(e) = requested.parse::<crate::tools::ctx_read::ReadMode>()
+        {
+            return Err(ErrorData::invalid_params(e.user_message(), None));
+        }
         // #673 — when the caller omits `mode`, a context policy pack's
         // `default_read_mode` (if set) takes precedence over the profile/auto
         // selection. An explicit `mode` arg always wins; line windows below may
