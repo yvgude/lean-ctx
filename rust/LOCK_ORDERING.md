@@ -94,6 +94,7 @@ All `std::sync::Mutex` unless noted otherwise.
 | L81 | `SAVINGS` | `core/context_kernel/schema_wiring.rs:47` | `OnceLock<Mutex<SavingsState>>` | Cumulative schema optimization savings tracking; independent leaf lock, never nested |
 | L82 | `NORMALIZER` | `core/context_kernel/usage_normalizer.rs:73` | `OnceLock<Mutex<SessionUsage>>` | Session-level token usage aggregation from canonical envelopes; independent leaf lock, never nested |
 | L83 | `FEATURES` | `core/context_kernel/kernel_config.rs:47` | `OnceLock<Mutex<KernelFeatures>>` | Central runtime feature toggles for all kernel modules; independent leaf lock, never nested |
+| L84 | `QUERY_TOKENS` | `tools/search_kernel.rs:10` | `LazyLock<Mutex<HashMap<u64, usize>>>` | Per-session repeated-query tracking for the search tool (r29): maps a query hash to its result-token count so repeat searches are counted; locked only to record or read a single entry, never held across another lock or an `.await`; independent leaf lock, never nested |
 
 ### Test / Environment Locks (serialise env-var mutations)
 
