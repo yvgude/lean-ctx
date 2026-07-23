@@ -743,7 +743,25 @@ args = ["/path/to/project"]
 name = "linear"
 transport = "http"                       # connect to a remote server
 url = "https://mcp.linear.app/mcp"
-headers = { Authorization = "Bearer ${LINEAR_TOKEN}" }
+secret_headers = { Authorization = { id = "mcp/linear/default", format = "Bearer {secret}" } }
+```
+
+Supply the value at runtime, preferably through your process supervisor or secret
+manager rather than a shell history entry:
+
+```bash
+export LEAN_CTX_SECRET_6D63702F6C696E6561722F64656661756C74='<token>'
+```
+
+The config stores only the opaque memento id. lean-ctx hex-encodes the id's UTF-8
+bytes after the `LEAN_CTX_SECRET_` prefix, producing a shell-safe environment name
+without aliasing distinct ids, then restores the value only when resolving the
+transport. Missing mementos fail closed. Embedders can instead seed
+`SecretMementoStore`; stdio servers use the same pattern through `secret_env`, for
+example:
+
+```toml
+secret_env = { GITLAB_TOKEN = { id = "mcp/gitlab/default" } }
 ```
 
 Then, from the agent:

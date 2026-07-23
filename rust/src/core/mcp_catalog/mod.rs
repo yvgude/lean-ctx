@@ -15,12 +15,16 @@ pub mod adapters;
 pub mod catalog;
 pub mod client;
 pub mod config;
+pub mod memento;
 pub mod pool;
 pub mod postprocess;
 pub mod router;
 
 pub use catalog::Catalog;
-pub use config::{GatewayConfig, GatewayServer, ResolvedTransport, TransportKind};
+pub use config::{
+    GatewayConfig, GatewayServer, ResolvedTransport, SecretMementoRef, TransportKind,
+};
+pub use memento::SecretMementoStore;
 pub use router::ScoredTool;
 
 use serde_json::{Map, Value};

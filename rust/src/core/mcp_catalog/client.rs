@@ -11,6 +11,7 @@
 //! The catalog-listing cost is additionally amortized by the TTL cache in
 //! [`super::catalog`].
 
+use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
 use rmcp::ServiceExt;
@@ -40,6 +41,7 @@ pub async fn open(
                 env,
                 binary_sha256,
                 capabilities,
+                ..
             } => {
                 // Binary-hash pin (#403, P3): if the addon pinned its binary's
                 // sha256, verify the file on PATH before doing anything else, so
@@ -64,18 +66,14 @@ pub async fn open(
                     .await
                     .map_err(|e| format!("MCP handshake failed (stdio): {e}"))
             }
-            ResolvedTransport::Http { url, headers } => {
+            ResolvedTransport::Http {
+                url,
+                headers,
+                secret_fingerprints,
+            } => {
                 let mut cfg = StreamableHttpClientTransportConfig::with_uri(url.clone());
                 if !headers.is_empty() {
-                    let mut custom = std::collections::HashMap::new();
-                    for (k, v) in headers {
-                        let name = http::HeaderName::from_bytes(k.as_bytes())
-                            .map_err(|e| format!("invalid header name `{k}`: {e}"))?;
-                        let val = http::HeaderValue::from_str(v)
-                            .map_err(|e| format!("invalid header value for `{k}`: {e}"))?;
-                        custom.insert(name, val);
-                    }
-                    cfg = cfg.custom_headers(custom);
+                    cfg = cfg.custom_headers(http_headers(headers, secret_fingerprints)?);
                 }
                 let t = StreamableHttpClientTransport::from_config(cfg);
                 ().serve(t)
@@ -87,6 +85,46 @@ pub async fn open(
     tokio::time::timeout(timeout, connect)
         .await
         .map_err(|_| "downstream connect timed out".to_string())?
+}
+
+fn http_headers(
+    headers: &BTreeMap<String, String>,
+    secret_fingerprints: &BTreeMap<String, String>,
+) -> Result<HashMap<http::HeaderName, http::HeaderValue>, String> {
+    headers
+        .iter()
+        .map(|(name, value)| {
+            let header_name = http::HeaderName::from_bytes(name.as_bytes())
+                .map_err(|error| format!("invalid header name `{name}`: {error}"))?;
+            let mut header_value = http::HeaderValue::from_str(value)
+                .map_err(|error| format!("invalid header value for `{name}`: {error}"))?;
+            if secret_fingerprints
+                .keys()
+                .any(|secret| secret.eq_ignore_ascii_case(name))
+            {
+                header_value.set_sensitive(true);
+            }
+            Ok((header_name, header_value))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn memento_headers_are_marked_sensitive() {
+        let headers = BTreeMap::from([
+            ("Accept".into(), "application/json".into()),
+            ("Authorization".into(), "Bearer private-token".into()),
+        ]);
+        let secrets = BTreeMap::from([("authorization".into(), "fingerprint".into())]);
+        let converted = http_headers(&headers, &secrets).expect("valid headers");
+
+        assert!(!converted[&http::header::ACCEPT].is_sensitive());
+        assert!(converted[&http::header::AUTHORIZATION].is_sensitive());
+    }
 }
 
 /// List tools on an already-connected session (bounded by `timeout`).

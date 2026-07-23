@@ -221,6 +221,8 @@ Downstream MCP servers (array of tables: `[[gateway.servers]]`)
 - `env` (table, default `{}`) — Extra environment variables for the child process (stdio transport)
 - `headers` (table, default `{}`) — Extra request headers, e.g. Authorization (http transport)
 - `name` (string, default `""`) — Stable server id; becomes the catalog namespace (`name::tool`)
+- `secret_env` (table, default `{}`) — Secret environment variables mapped to memento references (stdio transport)
+- `secret_headers` (table, default `{}`) — Secret HTTP headers mapped to memento references (http transport)
 - `transport` (string, default `stdio`) — Transport: stdio (spawn command) or http (connect to url)
 - `url` (string, default `""`) — Streamable-HTTP endpoint (http transport)
 
