@@ -180,13 +180,14 @@ fn hebbian_eviction_bonus_is_wired() {
     // #3: files read together build a Hebbian association via store()'s
     // recording, and that association must feed the eviction bonus.
     //
-    // Warm up tiktoken first: the very first count_tokens() in the process
-    // lazily loads the BPE tables (can exceed the 500ms co-access burst
-    // window). store() calls count_tokens() internally, so without warming
-    // up, the two store() calls below straddle that window and never
-    // associate — a flaky-empty bonus. Warming up keeps them in one burst.
-    let _ = count_tokens("warmup");
+    // Widen the burst window so the two store() calls below always land in
+    // one burst — independent of real time. Previously this test warmed up
+    // tiktoken and hoped the calls stayed inside the real 500ms window; that
+    // still flaked under parallel test execution when scheduling jitter
+    // delayed one store() past the window. An injected window removes the
+    // wall-clock dependency entirely.
     let mut cache = SessionCache::new();
+    cache.set_co_access_burst_window(std::time::Duration::from_secs(3600));
     cache.store("/a.rs", "fn a() {}");
     cache.store("/b.rs", "fn b() {}");
     cache.flush_co_access(); // commit the burst → association (a,b) forms

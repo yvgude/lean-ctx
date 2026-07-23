@@ -57,6 +57,15 @@ impl SessionCache {
         self.co_access.end_burst();
     }
 
+    /// Widen the co-access burst window. Test-only: lets a test keep several
+    /// `store()` calls in one burst without depending on them landing inside
+    /// the real-time 500ms window (a scheduling-jitter flake under parallel
+    /// test execution).
+    #[cfg(test)]
+    pub fn set_co_access_burst_window(&mut self, window: std::time::Duration) {
+        self.co_access.set_burst_window(window);
+    }
+
     /// Per-entry Hebbian eviction bonus (#3): each cached entry that is
     /// co-accessed with the recently-active working set earns a positive bonus
     /// that is added to its RRF score, so clustered files survive eviction
