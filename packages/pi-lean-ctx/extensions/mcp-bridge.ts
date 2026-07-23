@@ -272,7 +272,11 @@ export class McpBridge {
     args: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<McpCallResult> {
-    const call = this.client?.callTool({ name, arguments: args });
+    if (signal?.aborted) {
+      throw new Error(`lean-ctx MCP tool "${name}" interrupted by host.`);
+    }
+
+    const call = this.client?.callTool({ name, arguments: args }, undefined, { signal });
     if (!call) {
       throw new Error(`lean-ctx MCP bridge not connected. Tool "${name}" unavailable.`);
     }

@@ -1,6 +1,7 @@
 import type {
   AgentToolResult,
   BashToolDetails,
+  ExecOptions,
   ExtensionAPI,
   ReadToolDetails,
 } from "@earendil-works/pi-coding-agent";
@@ -304,9 +305,15 @@ function isMcpAdapterConfigured(): boolean {
   return false;
 }
 
-async function execLeanCtx(pi: ExtensionAPI, args: string[]) {
+async function execLeanCtx(pi: ExtensionAPI, args: string[], options?: ExecOptions) {
+  if (options?.signal?.aborted) {
+    throw new Error("lean-ctx command interrupted by host.");
+  }
   const bin = resolveBinary();
-  const result = await pi.exec(bin, args);
+  const result = await pi.exec(bin, args, options);
+  if (options?.signal?.aborted || result.killed) {
+    throw new Error("lean-ctx command interrupted by host.");
+  }
   if (result.code !== 0) {
     const msg = (result.stderr || result.stdout || `lean-ctx failed: ${args.join(" ")}`).trim();
     throw new Error(msg);
@@ -550,7 +557,7 @@ export default async function (pi: ExtensionAPI) {
         }
         const args = ["read", absolutePath, "-m", mode];
         try {
-          const output = await execLeanCtx(pi, args);
+          const output = await execLeanCtx(pi, args, { signal });
           const originalSlice = await readSlice(absolutePath, params.offset, params.limit);
           const decorated = withFooter(output, { originalText: originalSlice.text, always: true, preferEstimate: true, suppressIfNoSaving: true });
           return {
@@ -600,7 +607,7 @@ export default async function (pi: ExtensionAPI) {
       }
 
       const args = ["read", absolutePath, "-m", mode, ...(isExplicitFull ? ["--fresh"] : [])];
-      const output = await execLeanCtx(pi, args);
+      const output = await execLeanCtx(pi, args, { signal });
       const originalText = await readFile(absolutePath, "utf8");
       const decorated = withFooter(output, { originalText, always: true, preferEstimate: true, suppressIfNoSaving: true });
 
@@ -618,10 +625,10 @@ export default async function (pi: ExtensionAPI) {
     description: "List a directory. Prefer over native ls (compact, summarized). Use limit to reduce output size.",
     promptSnippet: "List directory contents",
     parameters: lsSchema,
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const requestedPath = normalizePathArg(params.path || ".");
       const absolutePath = resolve(ctx.cwd, requestedPath);
-      const output = await execLeanCtx(pi, ["ls", absolutePath]);
+      const output = await execLeanCtx(pi, ["ls", absolutePath], { signal });
       const decorated = withFooter(output, { limit: params.limit, always: true });
       return {
         content: [{ type: "text", text: decorated.text }],
@@ -637,10 +644,10 @@ export default async function (pi: ExtensionAPI) {
     description: "Find files by glob. Prefer over native find/fd (gitignore-aware). Use limit to reduce output size.",
     promptSnippet: "Find files by glob pattern",
     parameters: findSchema,
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const requestedPath = normalizePathArg(params.path || ".");
       const absolutePath = resolve(ctx.cwd, requestedPath);
-      const output = await execLeanCtx(pi, ["find", params.pattern, absolutePath]);
+      const output = await execLeanCtx(pi, ["find", params.pattern, absolutePath], { signal });
       const decorated = withFooter(output, { limit: params.limit, always: true });
       return {
         content: [{ type: "text", text: decorated.text }],
@@ -656,7 +663,10 @@ export default async function (pi: ExtensionAPI) {
     description: "Search code. Prefer over native Grep/ripgrep (compact, ranked). Use limit to cap matches, context for surrounding lines.",
     promptSnippet: "Search file contents for patterns",
     parameters: grepSchema,
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      if (signal?.aborted) {
+        throw new Error("lean-ctx grep interrupted by host.");
+      }
       const requestedPath = normalizePathArg(params.path || ".");
       const absolutePath = resolve(ctx.cwd, requestedPath);
       const searchArgs = ["rg", "--line-number", "--color=never"];
@@ -668,7 +678,10 @@ export default async function (pi: ExtensionAPI) {
       searchArgs.push(params.pattern, absolutePath);
 
       const bin = resolveBinary();
-      const result = await pi.exec(bin, ["-c", ...searchArgs]);
+      const result = await pi.exec(bin, ["-c", ...searchArgs], { signal });
+      if (signal?.aborted || result.killed) {
+        throw new Error("lean-ctx grep interrupted by host.");
+      }
       if (result.code >= 2) {
         const msg = (result.stderr || result.stdout || `lean-ctx grep failed: ${params.pattern}`).trim();
         throw new Error(msg);
@@ -691,8 +704,8 @@ export default async function (pi: ExtensionAPI) {
       + "Use this for advanced commands like session/knowledge/overview/gain/stats/index/pack.",
     promptSnippet: "Run lean-ctx CLI directly",
     parameters: leanCtxSchema,
-    async execute(_toolCallId, params) {
-      const output = await execLeanCtx(pi, params.args);
+    async execute(_toolCallId, params, signal) {
+      const output = await execLeanCtx(pi, params.args, { signal });
       return {
         content: [{ type: "text", text: output.trimEnd() }],
         details: { source: "lean-ctx", args: params.args },
