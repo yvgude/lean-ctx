@@ -154,7 +154,7 @@ mod tests {
 
     fn setup() -> (
         std::sync::MutexGuard<'static, ()>,
-        std::sync::MutexGuard<'static, ()>,
+        crate::core::data_dir::TestEnvGuard,
         EnvGuard,
     ) {
         let kernel = kernel_config::KERNEL_TEST_LOCK

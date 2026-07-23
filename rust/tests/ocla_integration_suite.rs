@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::sync::MutexGuard;
 use std::time::{Duration, Instant};
 
 use axum::body::Body;
@@ -28,7 +27,7 @@ use tower::ServiceExt;
 
 struct IsolatedDataDir {
     temp: tempfile::TempDir,
-    _lock: MutexGuard<'static, ()>,
+    _lock: lean_ctx::core::data_dir::TestEnvGuard,
     previous_data_dir: Option<String>,
     previous_ledger_setting: Option<String>,
 }
