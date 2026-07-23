@@ -241,9 +241,11 @@ impl AddonManifest {
             command: self.mcp.command.clone(),
             args: self.mcp.args.clone(),
             env: self.mcp.env.clone(),
+            secret_env: BTreeMap::new(),
             binary_sha256: self.mcp.sha256.clone(),
             url: self.mcp.url.clone(),
             headers: self.mcp.headers.clone(),
+            secret_headers: BTreeMap::new(),
             capabilities: self.capabilities.clone(),
             // L4 routing: resolved from the explicit manifest field or derived
             // from the addon's categories (#1096). Empty = generic L1-L3 only.

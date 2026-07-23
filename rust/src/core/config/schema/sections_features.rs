@@ -572,6 +572,14 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     gateway_servers.insert(
+        "secret_env".into(),
+        key(
+            "table",
+            serde_json::json!({}),
+            "Secret environment variables mapped to memento references (stdio transport)",
+        ),
+    );
+    gateway_servers.insert(
         "url".into(),
         key(
             "string",
@@ -585,6 +593,14 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "table",
             serde_json::json!({}),
             "Extra request headers, e.g. Authorization (http transport)",
+        ),
+    );
+    gateway_servers.insert(
+        "secret_headers".into(),
+        key(
+            "table",
+            serde_json::json!({}),
+            "Secret HTTP headers mapped to memento references (http transport)",
         ),
     );
     sections.insert(
