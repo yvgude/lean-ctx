@@ -29,7 +29,7 @@ pub struct CoAccessMatrix {
     /// How long a burst stays open. Real tool calls read their files within a
     /// few ms, so 500ms in production. Injectable so tests can widen it and stop
     /// depending on two `store()` calls landing in the same real-time window —
-    /// a scheduling-jitter flake under parallel test runners (nextest).
+    /// a scheduling-jitter flake once tests run in parallel.
     burst_window: Duration,
 }
 
@@ -50,8 +50,8 @@ impl CoAccessMatrix {
         }
     }
 
-    /// Widen (or narrow) the burst window. Test-only: production always uses the
-    /// 500ms default set in `new`.
+    /// Override the burst window. Test-only: production always uses the 500ms
+    /// default set in `new`.
     #[cfg(test)]
     pub fn set_burst_window(&mut self, window: Duration) {
         self.burst_window = window;
