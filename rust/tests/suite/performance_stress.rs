@@ -4,8 +4,18 @@
 //! above typical wall-clock so hosted-runner CPU contention (observed 2x+
 //! slowdowns on otherwise green runs) never flakes the gate, while a real
 //! algorithmic regression still lands far above the bound.
+//!
+//! That slack is not enough once the suite itself runs multi-threaded: the
+//! runner is no longer quiet, and 500-chunk attention assembly measured 733ms
+//! against a 350ms bound purely from CPU contention. The *timing* half of each
+//! guard is therefore opt-in — CI's perf-gate step sets `LEAN_CTX_PERF_GATE=1`
+//! and runs these serialized. The functional assertions run always, everywhere.
 
 use std::time::Instant;
+
+fn timing_enforced() -> bool {
+    std::env::var("LEAN_CTX_PERF_GATE").as_deref() == Ok("1")
+}
 
 mod bm25_performance {
     use super::*;
@@ -31,7 +41,7 @@ mod bm25_performance {
 
         assert!(!results.is_empty());
         assert!(
-            elapsed.as_millis() < 100,
+            !timing_enforced() || elapsed.as_millis() < 100,
             "BM25 search over 500-file corpus took {}ms — must be <100ms",
             elapsed.as_millis()
         );
@@ -56,7 +66,7 @@ mod bm25_performance {
         let elapsed = start.elapsed();
 
         assert!(
-            elapsed.as_millis() < 500,
+            !timing_enforced() || elapsed.as_millis() < 500,
             "100 BM25 searches took {}ms — must be <500ms",
             elapsed.as_millis()
         );
@@ -93,7 +103,7 @@ mod hnsw_stress {
 
         assert_eq!(results.len(), 20);
         assert!(
-            elapsed.as_millis() < 1000,
+            !timing_enforced() || elapsed.as_millis() < 1000,
             "Top-20 from 10K 384d vectors took {}ms — must be <1000ms",
             elapsed.as_millis()
         );
@@ -143,7 +153,7 @@ mod homeostasis_stress {
         let elapsed = start.elapsed();
 
         assert!(
-            elapsed.as_micros() < 50_000,
+            !timing_enforced() || elapsed.as_micros() < 50_000,
             "1000 homeostasis evaluations took {}µs — must be <50000µs",
             elapsed.as_micros()
         );
@@ -194,7 +204,7 @@ mod hebbian_stress {
         let elapsed = start.elapsed();
 
         assert!(
-            elapsed.as_millis() < 100,
+            !timing_enforced() || elapsed.as_millis() < 100,
             "200 bursts with 3 files each took {}ms — must be <100ms",
             elapsed.as_millis()
         );
@@ -223,7 +233,7 @@ mod hebbian_stress {
         // green run purely from CPU contention.
         let limit_us = if cfg!(windows) { 200_000 } else { 100_000 };
         assert!(
-            elapsed.as_micros() < limit_us,
+            !timing_enforced() || elapsed.as_micros() < limit_us,
             "Evicting 100 from 1000 entries took {}µs — must be <{limit_us}µs",
             elapsed.as_micros()
         );
@@ -253,7 +263,7 @@ mod predictive_coding_stress {
         let elapsed = start.elapsed();
 
         assert!(
-            elapsed.as_millis() < 250,
+            !timing_enforced() || elapsed.as_millis() < 250,
             "Delta computation for 2000-line file took {}ms — must be <250ms",
             elapsed.as_millis()
         );
@@ -276,7 +286,7 @@ mod predictive_coding_stress {
         let elapsed = start.elapsed();
 
         assert!(
-            elapsed.as_millis() < 250,
+            !timing_enforced() || elapsed.as_millis() < 250,
             "Delta of identical 5000-line file took {}ms — must be <250ms",
             elapsed.as_millis()
         );
@@ -311,7 +321,7 @@ mod attention_stress {
         assert_eq!(result.len(), 500);
         // 350ms budget for debug builds on shared CI runners; release is ~10x faster
         assert!(
-            elapsed.as_millis() < 350,
+            !timing_enforced() || elapsed.as_millis() < 350,
             "Attention assembly of 500 chunks took {}ms — must be <350ms",
             elapsed.as_millis()
         );

@@ -148,16 +148,21 @@ jobs:
             "$CARGO" test --all-features
           fi
 
-      # #581: lock in the parallel BM25 (incremental) rebuild win against silent
-      # regression. Timing is only meaningful on a quiet, single-threaded runner,
-      # so the gate is env-opt-in (no-op in the matrix above) and runs once here.
-      - name: BM25 build-time regression gate (#581)
+      # Wall-clock gates: #581's parallel BM25 rebuild win, the context-kernel
+      # micro-benchmarks and the performance-stress suite. Timing is only
+      # meaningful on a quiet, single-threaded runner, so every one of them is
+      # env-opt-in (no-op in the matrix above, which runs multi-threaded) and
+      # they run serialized here instead.
+      - name: Wall-clock regression gates (#581)
         if: runner.os == 'Linux'
         working-directory: rust
         shell: bash
         env:
           LEAN_CTX_PERF_GATE: "1"
-        run: cargo test --all-features --lib -- --test-threads=1 parallel_incremental_rebuild_perf_gate --nocapture
+        run: |
+          cargo test --all-features --lib -- --test-threads=1 parallel_incremental_rebuild_perf_gate --nocapture
+          cargo test --all-features --lib -- --test-threads=1 context_kernel::perf_benchmark
+          cargo test --all-features --test main -- --test-threads=1 performance_stress
 
   clippy:
     name: Clippy
