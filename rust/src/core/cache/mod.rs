@@ -7,8 +7,6 @@ pub use session::*;
 pub use validation::*;
 
 #[cfg(test)]
-use crate::core::tokens::count_tokens;
-#[cfg(test)]
 use entry::resolve_cache_max_tokens;
 #[cfg(test)]
 use std::time::{Instant, SystemTime};

@@ -80,17 +80,22 @@ mod tests {
     use super::*;
     use crate::core::ocla::types::OclaRequestContext;
 
-    fn req(original: u64, target: u64) -> ResponseOptimizationRequest {
+    /// `tag` keys the request to one test. The optimizer keeps a process-wide
+    /// per-session cache, so two tests sharing a session id + response ref see
+    /// each other's entries: whichever ran second got a cache hit and zero
+    /// delivered tokens, which only showed up once tests ran in parallel and
+    /// the order stopped being fixed.
+    fn req(tag: &str, original: u64, target: u64) -> ResponseOptimizationRequest {
         ResponseOptimizationRequest {
             context: OclaRequestContext {
                 request_id: "r1".into(),
-                session_id: "s1".into(),
+                session_id: format!("s1-{tag}"),
                 agent_id: "agent-test".into(),
                 content_ref: "ref:test".into(),
                 tenant_id: None,
                 trace_id: "tr-unit".into(),
             },
-            response_ref: "resp:abc".into(),
+            response_ref: format!("resp:{tag}"),
             original_tokens: original,
             target_tokens: target,
         }
@@ -105,7 +110,7 @@ mod tests {
         // a foreign event.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let opt = BuiltinResponseOptimizer::new();
-        let result = opt.optimize_response(req(1000, 400)).unwrap();
+        let result = opt.optimize_response(req("caps", 1000, 400)).unwrap();
         assert_eq!(result.delivered_tokens, 400);
     }
 
@@ -115,8 +120,8 @@ mod tests {
         // of another test's isolated data dir.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let opt = BuiltinResponseOptimizer::new();
-        let result = opt.optimize_response(req(500, 300)).unwrap();
-        assert_eq!(result.response_ref, "resp:abc");
+        let result = opt.optimize_response(req("preserves", 500, 300)).unwrap();
+        assert_eq!(result.response_ref, "resp:preserves");
     }
 
     #[test]
@@ -125,7 +130,7 @@ mod tests {
         // of another test's isolated data dir.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let registry = crate::core::ocla::registry::OclaRegistry::with_builtins();
-        let mut request = req(1000, 400);
+        let mut request = req("registry", 1000, 400);
         request.context.session_id = "registry-response-optimizer".into();
         request.response_ref = "resp:registry-response-optimizer".into();
         let first = registry
@@ -143,7 +148,7 @@ mod tests {
 
     #[test]
     fn duplicate_delivery_uses_target_ratio() {
-        let request = req(1000, 250);
+        let request = req("duplicate", 1000, 250);
         let decision = crate::proxy::response_optimizer::OptimizationDecision {
             cache_hit: false,
             is_duplicate: true,
