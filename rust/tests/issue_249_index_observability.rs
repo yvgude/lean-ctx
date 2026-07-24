@@ -89,7 +89,6 @@ fn oversized_index_records_observable_not_persisted_note() {
 
     // SAFETY: this integration-test binary contains a single `#[test]`, so no
 
-
     // other thread reads or writes the environment concurrently.
     unsafe { std::env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB") };
     // SAFETY: this integration-test binary contains a single `#[test]`, so no

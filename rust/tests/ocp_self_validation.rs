@@ -50,7 +50,6 @@ fn engine_output_validates_against_ocp_schemas() {
 
     // SAFETY: this integration-test binary contains a single `#[test]`, so no
 
-
     // other thread reads or writes the environment concurrently.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }

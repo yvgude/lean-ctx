@@ -31,7 +31,6 @@ fn manifest_tool_is_discovered_registered_and_invocable() {
 
     // SAFETY: this integration-test binary contains a single `#[test]`, so no
 
-
     // other thread reads or writes the environment concurrently.
     unsafe { std::env::set_var("LEAN_CTX_PLUGINS_DIR", root.path()) };
     PluginManager::init();

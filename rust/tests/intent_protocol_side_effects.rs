@@ -33,7 +33,6 @@ fn ctx_intent_knowledge_fact_routes_to_project_knowledge() {
 
     // SAFETY: this integration-test binary contains a single `#[test]`, so no
 
-
     // other thread reads or writes the environment concurrently.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
