@@ -329,6 +329,47 @@ mod resolve_path_tests {
     #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
+    async fn resolve_path_auto_reroots_even_when_extra_root_allows_path() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::remove_var("LEAN_CTX_ALLOW_REROOT");
+        let tmp = tempfile::tempdir().unwrap();
+        let client_cwd = tmp.path().join("Users").join("user");
+        let real = tmp.path().join("workspaces").join("lean-ctx");
+        std::fs::create_dir_all(&client_cwd).unwrap();
+        let real_root = create_git_root(&real);
+        std::fs::write(real.join("rust.rs"), "ok").unwrap();
+
+        let server = LeanCtxServer::new_with_startup(
+            None,
+            None,
+            SessionMode::Personal,
+            "default",
+            "default",
+        );
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(client_cwd.to_string_lossy().to_string());
+            session.shell_cwd = Some(client_cwd.to_string_lossy().to_string());
+            session.extra_roots.push(real_root.clone());
+        }
+
+        let out = server
+            .resolve_path(&real.join("rust.rs").to_string_lossy())
+            .await
+            .unwrap();
+        assert!(
+            out.ends_with("/rust.rs"),
+            "extra root must not suppress markerless-cwd reroot: {out}"
+        );
+
+        let session = server.session.read().await;
+        assert_eq!(session.project_root.as_deref(), Some(real_root.as_str()));
+        assert_eq!(session.shell_cwd.as_deref(), Some(real_root.as_str()));
+    }
+
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn resolve_path_markerless_root_still_blocks_markerless_escape() {
         // #649 must not weaken PathJail: from a markerless client cwd, an absolute
         // path that derives NO project marker stays blocked and the root is

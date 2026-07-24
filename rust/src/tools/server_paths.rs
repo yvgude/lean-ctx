@@ -88,7 +88,10 @@ impl LeanCtxServer {
             jail_root_path,
             &extra_roots,
         ) {
-            Ok(p) => p,
+            Ok(p) => self
+                .maybe_reroot_for_absolute_path(&resolved, jail_root_path, &extra_roots, false)
+                .await?
+                .unwrap_or(p),
             Err(e) => {
                 // #899: the rejected path is dependency source in a language
                 // cache (Go module cache, cargo registry, site-packages,
@@ -106,60 +109,11 @@ impl LeanCtxServer {
                         cache_root.display()
                     ));
                 }
-                if p.is_absolute() {
-                    if let Some(new_root) = maybe_derive_project_root_from_absolute(&resolved) {
-                        let cfg_allow = std::env::var("LEAN_CTX_ALLOW_REROOT").map_or_else(
-                            |_| crate::core::config::Config::load().allow_auto_reroot,
-                            |v| v == "1" || v == "true",
-                        );
-                        let candidate_under_jail = resolved.starts_with(jail_root_path);
-                        // #580/#649: when the MCP server was launched from an
-                        // agent/IDE config dir (e.g. ~/.copilot) or a markerless
-                        // client cwd (e.g. WSL VS Code starting in /mnt/c/Users),
-                        // that jail is not a real project boundary. The derived
-                        // root already carries a project marker, so correcting to
-                        // it is a root fix, not a jail weakening. Real project
-                        // roots and trusted startup roots still keep the
-                        // conservative gate.
-                        let allow_reroot = if candidate_under_jail {
-                            false
-                        } else if is_suspicious_root(jail_root_path)
-                            || (self.startup_project_root.is_none()
-                                && !has_project_marker(jail_root_path))
-                        {
-                            true
-                        } else if !cfg_allow {
-                            false
-                        } else if let Some(ref trusted_root) = self.startup_project_root {
-                            std::path::Path::new(trusted_root) == new_root.as_path()
-                        } else {
-                            !has_project_marker(jail_root_path)
-                        };
-
-                        if allow_reroot {
-                            let mut session = self.session.write().await;
-                            let new_root_str = new_root.to_string_lossy().to_string();
-                            session.project_root = Some(new_root_str.clone());
-                            session.shell_cwd = self
-                                .startup_shell_cwd
-                                .as_ref()
-                                .filter(|cwd| std::path::Path::new(cwd).starts_with(&new_root))
-                                .cloned()
-                                .or_else(|| Some(new_root_str.clone()));
-                            let _ = session.save();
-
-                            crate::core::pathjail::jail_path_with_roots(
-                                &resolved,
-                                &new_root,
-                                &extra_roots,
-                            )
-                            .map_err(|e| e.to_string())?
-                        } else {
-                            return Err(e.to_string());
-                        }
-                    } else {
-                        return Err(e.to_string());
-                    }
+                if let Some(jailed) = self
+                    .maybe_reroot_for_absolute_path(&resolved, jail_root_path, &extra_roots, true)
+                    .await?
+                {
+                    jailed
                 } else {
                     return Err(e.to_string());
                 }
@@ -171,6 +125,68 @@ impl LeanCtxServer {
         Ok(crate::core::pathutil::normalize_tool_path(
             &jailed.to_string_lossy().replace('\\', "/"),
         ))
+    }
+
+    async fn maybe_reroot_for_absolute_path(
+        &self,
+        resolved: &std::path::Path,
+        jail_root_path: &std::path::Path,
+        extra_roots: &[String],
+        require_opt_in_for_real_jail: bool,
+    ) -> Result<Option<std::path::PathBuf>, String> {
+        if !resolved.is_absolute() {
+            return Ok(None);
+        }
+        let Some(new_root) = maybe_derive_project_root_from_absolute(resolved) else {
+            return Ok(None);
+        };
+        let candidate_under_jail = resolved.starts_with(jail_root_path);
+        // #580/#649: when the MCP server was launched from an agent/IDE config
+        // dir (e.g. ~/.copilot) or a markerless client cwd (e.g. WSL VS Code
+        // starting in /mnt/c/Users), that jail is not a real project boundary.
+        // The derived root already carries a project marker, so correcting to it
+        // is a root fix, not a jail weakening.
+        let allow_reroot = if candidate_under_jail {
+            false
+        } else if is_suspicious_root(jail_root_path)
+            || (self.startup_project_root.is_none() && !has_project_marker(jail_root_path))
+        {
+            true
+        } else if require_opt_in_for_real_jail {
+            let cfg_allow = std::env::var("LEAN_CTX_ALLOW_REROOT").map_or_else(
+                |_| crate::core::config::Config::load().allow_auto_reroot,
+                |v| v == "1" || v == "true",
+            );
+            cfg_allow
+                && self
+                    .startup_project_root
+                    .as_ref()
+                    .is_some_and(|trusted_root| std::path::Path::new(trusted_root) == new_root)
+        } else {
+            false
+        };
+
+        if !allow_reroot {
+            return Ok(None);
+        }
+
+        self.reroot_to_project(&new_root).await;
+        crate::core::pathjail::jail_path_with_roots(resolved, &new_root, extra_roots)
+            .map(Some)
+            .map_err(|e| e.to_string())
+    }
+
+    async fn reroot_to_project(&self, new_root: &std::path::Path) {
+        let mut session = self.session.write().await;
+        let new_root_str = new_root.to_string_lossy().to_string();
+        session.project_root = Some(new_root_str.clone());
+        session.shell_cwd = self
+            .startup_shell_cwd
+            .as_ref()
+            .filter(|cwd| std::path::Path::new(cwd).starts_with(new_root))
+            .cloned()
+            .or_else(|| Some(new_root_str.clone()));
+        let _ = session.save();
     }
 
     /// Like `resolve_path`, but returns the original path on failure instead of an error.
