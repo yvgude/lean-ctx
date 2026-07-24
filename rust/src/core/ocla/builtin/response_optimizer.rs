@@ -98,6 +98,12 @@ mod tests {
 
     #[test]
     fn optimization_caps_at_target() {
+        // optimize_response appends a `proxy_response_optimizer` event to the
+        // savings ledger. Without an isolated data dir that write lands in
+        // whatever LEAN_CTX_DATA_DIR currently points at — under parallel tests
+        // that is another test's isolated dir, whose ledger assertions then see
+        // a foreign event.
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let opt = BuiltinResponseOptimizer::new();
         let result = opt.optimize_response(req(1000, 400)).unwrap();
         assert_eq!(result.delivered_tokens, 400);
@@ -105,6 +111,9 @@ mod tests {
 
     #[test]
     fn preserves_response_ref() {
+        // See `optimization_caps_at_target`: keeps this test's ledger write out
+        // of another test's isolated data dir.
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let opt = BuiltinResponseOptimizer::new();
         let result = opt.optimize_response(req(500, 300)).unwrap();
         assert_eq!(result.response_ref, "resp:abc");
@@ -112,6 +121,9 @@ mod tests {
 
     #[test]
     fn registry_path_reports_cache_as_zero_delivery() {
+        // See `optimization_caps_at_target`: keeps this test's ledger write out
+        // of another test's isolated data dir.
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let registry = crate::core::ocla::registry::OclaRegistry::with_builtins();
         let mut request = req(1000, 400);
         request.context.session_id = "registry-response-optimizer".into();

@@ -5,12 +5,9 @@ use super::routes::helpers::{detect_project_root_for_dashboard, normalize_dashbo
 use super::*;
 use tempfile::tempdir;
 
-static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 #[test]
 fn dashboard_project_root_honors_general_env_override() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _g = ENV_LOCK.lock().expect("env lock");
     let td = tempdir().expect("tempdir");
     let root = td.path().join("project");
     std::fs::create_dir_all(&root).expect("mkdir");
@@ -25,7 +22,6 @@ fn dashboard_project_root_honors_general_env_override() {
 #[test]
 fn dashboard_project_root_ignores_broken_ancestor_gitfile() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _g = ENV_LOCK.lock().expect("env lock");
     let td = tempdir().expect("tempdir");
     let workspace = td.path().join("workspace");
     let root = workspace.join("project");
@@ -44,7 +40,6 @@ fn dashboard_project_root_ignores_broken_ancestor_gitfile() {
 #[test]
 fn dashboard_project_root_honors_resolvable_ancestor_gitfile() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _g = ENV_LOCK.lock().expect("env lock");
     let td = tempdir().expect("tempdir");
     let checkout = td.path().join("checkout");
     let root = checkout.join("nested");
@@ -92,9 +87,6 @@ fn open_mode_flag_parses_all_variants() {
 #[test]
 fn open_mode_env_is_used_when_no_flag() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _guard = ENV_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     crate::test_env::set_var("LEAN_CTX_DASHBOARD_OPEN", "none");
     assert_eq!(resolve_open_mode(None), DashboardOpen::None);
     crate::test_env::set_var("LEAN_CTX_DASHBOARD_OPEN", "vscode");
@@ -137,9 +129,6 @@ fn api_path_detection() {
 
 #[test]
 fn api_session_exposes_unmodified_session_stats() {
-    let _guard = ENV_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let _iso = crate::core::data_dir::isolated_data_dir();
 
     let (status, _content_type, body) =
@@ -153,9 +142,6 @@ fn api_session_exposes_unmodified_session_stats() {
 
 #[test]
 fn context_endpoints_pair_proxy_model_with_its_window() {
-    let _guard = ENV_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let iso = crate::core::data_dir::isolated_data_dir();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -271,9 +257,6 @@ fn normalize_dashboard_demo_path_strips_dot_slash_prefix() {
 fn api_context_overlay_evict_removes_ledger_entry() {
     // #715: the dashboard Evict must remove the ledger entry (pressure
     // drops), resolving basenames against absolute canonical entries.
-    let _guard = ENV_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let _iso = crate::core::data_dir::isolated_data_dir();
 
     let mut ledger = crate::core::context_ledger::ContextLedger::with_window_size(100_000);
@@ -372,7 +355,6 @@ fn api_procedures_returns_json() {
 #[test]
 fn api_compression_demo_heals_moved_file_paths() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _g = ENV_LOCK.lock().expect("env lock");
     let td = tempdir().expect("tempdir");
     let root = td.path();
     std::fs::create_dir_all(root.join("src").join("moved")).expect("mkdir");
@@ -410,7 +392,6 @@ fn api_compression_demo_heals_moved_file_paths() {
 #[test]
 fn resolve_token_uses_env_var_verbatim() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::set_var(HTTP_TOKEN_ENV, "lctx_mystatic");
     let (token, src) = resolve_requested_token(None);
     crate::test_env::remove_var(HTTP_TOKEN_ENV);
@@ -424,7 +405,6 @@ fn resolve_token_uses_env_var_verbatim() {
 #[test]
 fn resolve_token_trims_env_var() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::set_var(HTTP_TOKEN_ENV, "  lctx_padded  ");
     let (token, src) = resolve_requested_token(None);
     crate::test_env::remove_var(HTTP_TOKEN_ENV);
@@ -435,7 +415,6 @@ fn resolve_token_trims_env_var() {
 #[test]
 fn resolve_token_falls_back_to_random_when_unset() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::remove_var(HTTP_TOKEN_ENV);
     let (token, src) = resolve_requested_token(None);
     assert!(token.is_none(), "unset env requests no fixed token");
@@ -455,7 +434,6 @@ fn resolve_token_falls_back_to_random_when_unset() {
 #[test]
 fn resolve_token_ignores_empty_env() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::set_var(HTTP_TOKEN_ENV, "   ");
     let (token, src) = resolve_requested_token(None);
     crate::test_env::remove_var(HTTP_TOKEN_ENV);
@@ -471,7 +449,6 @@ fn resolve_token_flag_overrides_env() {
     let _env_lock = crate::core::data_dir::test_env_lock();
     // #377: --auth-token must win over LEAN_CTX_HTTP_TOKEN so it survives
     // environments that strip/fail to inherit the env var.
-    let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::set_var(HTTP_TOKEN_ENV, "lctx_fromenv");
     let (token, src) = resolve_requested_token(Some("lctx_fromflag"));
     crate::test_env::remove_var(HTTP_TOKEN_ENV);
@@ -482,7 +459,6 @@ fn resolve_token_flag_overrides_env() {
 #[test]
 fn resolve_token_uses_flag_when_env_unset() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::remove_var(HTTP_TOKEN_ENV);
     let (token, src) = resolve_requested_token(Some("  lctx_flag_padded  "));
     assert_eq!(src, "--auth-token");
@@ -492,7 +468,6 @@ fn resolve_token_uses_flag_when_env_unset() {
 #[test]
 fn resolve_token_empty_flag_falls_back_to_env() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::set_var(HTTP_TOKEN_ENV, "lctx_fromenv");
     let (token, src) = resolve_requested_token(Some("   "));
     crate::test_env::remove_var(HTTP_TOKEN_ENV);
@@ -514,7 +489,6 @@ fn parse_human_bool_accepts_common_forms() {
 #[test]
 fn build_allowed_hosts_covers_loopback_and_bound_host() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::remove_var(ALLOWED_HOSTS_ENV);
     let allowed = build_allowed_hosts("0.0.0.0", 3333);
     assert!(host_allowed("127.0.0.1:3333", &allowed));
@@ -529,7 +503,6 @@ fn build_allowed_hosts_covers_loopback_and_bound_host() {
 #[test]
 fn build_allowed_hosts_honors_env_extra_hosts() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _g = ENV_LOCK.lock().expect("env lock");
     crate::test_env::set_var(ALLOWED_HOSTS_ENV, "box.local:3333, 10.0.0.5:3333");
     let allowed = build_allowed_hosts("127.0.0.1", 3333);
     crate::test_env::remove_var(ALLOWED_HOSTS_ENV);

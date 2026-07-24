@@ -101,7 +101,6 @@ All `std::sync::Mutex` unless noted otherwise.
 
 | # | Lock | File | Purpose |
 |---|------|------|---------|
-| E1 | `ENV_LOCK` | `dashboard/mod.rs:537` | Serialize env-var access in dashboard tests |
 | E2 | `ENV_LOCK` | `core/dense_backend.rs:412` | Serialize env-var access in dense-backend tests |
 | E3 | `ENV_LOCK` | `core/workspace_config.rs:101` | Serialize env-var access in workspace-config tests |
 | E4 | `LOCK` | `core/data_dir.rs:50` | Serialize data-dir creation |
