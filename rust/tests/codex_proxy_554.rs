@@ -40,9 +40,9 @@ struct CodexHome(Option<OsString>);
 impl CodexHome {
     fn set(dir: &Path) -> Self {
         let prev = std::env::var_os("CODEX_HOME");
-        // SAFETY: the project's test suite always runs with `--test-threads=1`
-        // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-        // this binary touches the environment concurrently.
+        // SAFETY: this integration-test binary contains a single `#[test]`, so no
+
+        // other thread reads or writes the environment concurrently.
         unsafe { std::env::set_var("CODEX_HOME", dir) };
         CodexHome(prev)
     }
@@ -51,13 +51,13 @@ impl CodexHome {
 impl Drop for CodexHome {
     fn drop(&mut self) {
         match &self.0 {
-            // SAFETY: the project's test suite always runs with `--test-threads=1`
-            // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-            // this binary touches the environment concurrently.
+            // SAFETY: this integration-test binary contains a single `#[test]`, so no
+
+            // other thread reads or writes the environment concurrently.
             Some(v) => unsafe { std::env::set_var("CODEX_HOME", v) },
-            // SAFETY: the project's test suite always runs with `--test-threads=1`
-            // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-            // this binary touches the environment concurrently.
+            // SAFETY: this integration-test binary contains a single `#[test]`, so no
+
+            // other thread reads or writes the environment concurrently.
             None => unsafe { std::env::remove_var("CODEX_HOME") },
         }
     }
@@ -74,18 +74,18 @@ struct EnvVar {
 impl EnvVar {
     fn set(key: &'static str, value: &str) -> Self {
         let prev = std::env::var_os(key);
-        // SAFETY: the project's test suite always runs with `--test-threads=1`
-        // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-        // this binary touches the environment concurrently.
+        // SAFETY: this integration-test binary contains a single `#[test]`, so no
+
+        // other thread reads or writes the environment concurrently.
         unsafe { std::env::set_var(key, value) };
         EnvVar { key, prev }
     }
 
     fn cleared(key: &'static str) -> Self {
         let prev = std::env::var_os(key);
-        // SAFETY: the project's test suite always runs with `--test-threads=1`
-        // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-        // this binary touches the environment concurrently.
+        // SAFETY: this integration-test binary contains a single `#[test]`, so no
+
+        // other thread reads or writes the environment concurrently.
         unsafe { std::env::remove_var(key) };
         EnvVar { key, prev }
     }
@@ -94,13 +94,13 @@ impl EnvVar {
 impl Drop for EnvVar {
     fn drop(&mut self) {
         match &self.prev {
-            // SAFETY: the project's test suite always runs with `--test-threads=1`
-            // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-            // this binary touches the environment concurrently.
+            // SAFETY: this integration-test binary contains a single `#[test]`, so no
+
+            // other thread reads or writes the environment concurrently.
             Some(v) => unsafe { std::env::set_var(self.key, v) },
-            // SAFETY: the project's test suite always runs with `--test-threads=1`
-            // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-            // this binary touches the environment concurrently.
+            // SAFETY: this integration-test binary contains a single `#[test]`, so no
+
+            // other thread reads or writes the environment concurrently.
             None => unsafe { std::env::remove_var(self.key) },
         }
     }

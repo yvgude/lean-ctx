@@ -3,9 +3,9 @@ use lean_ctx::core::intent_protocol;
 #[test]
 fn ctx_intent_knowledge_fact_routes_to_project_knowledge() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: this integration-test binary contains a single `#[test]`, so no
+
+    // other thread reads or writes the environment concurrently.
     unsafe {
         std::env::set_var(
             "LEAN_CTX_DATA_DIR",
@@ -31,8 +31,9 @@ fn ctx_intent_knowledge_fact_routes_to_project_knowledge() {
             && f.value == "v1")
     );
 
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: this integration-test binary contains a single `#[test]`, so no
+
+
+    // other thread reads or writes the environment concurrently.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }

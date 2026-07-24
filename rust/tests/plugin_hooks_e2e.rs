@@ -43,9 +43,9 @@ fn plugin_observes_real_read_event() {
     .expect("manifest");
 
     // Point the global registry at our isolated root, then activate it.
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: this integration-test binary contains a single `#[test]`, so no
+
+    // other thread reads or writes the environment concurrently.
     unsafe { std::env::set_var("LEAN_CTX_PLUGINS_DIR", root.path()) };
     PluginManager::init();
     assert!(

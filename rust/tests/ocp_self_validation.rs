@@ -37,9 +37,9 @@ fn assert_valid(v: &jsonschema::Validator, instance: &serde_json::Value, what: &
 #[test]
 fn engine_output_validates_against_ocp_schemas() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: this integration-test binary contains a single `#[test]`, so no
+
+    // other thread reads or writes the environment concurrently.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
     part1_context_ir();
@@ -48,9 +48,10 @@ fn engine_output_validates_against_ocp_schemas() {
     part4_evidence_chain();
     part5_events();
 
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: this integration-test binary contains a single `#[test]`, so no
+
+
+    // other thread reads or writes the environment concurrently.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 

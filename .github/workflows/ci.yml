@@ -39,23 +39,16 @@ jobs:
         # regressions are still caught before release, just not on every PR push.
         os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
-    # --test-threads=1 (env-race legacy, v3.3.5) serializes ~70 binaries that
-    # now include heavy property/fuzz/benchmark suites (#291, #493, #551) —
-    # well beyond 90 min on hosted runners. Parallelization is tracked
-    # separately; until then the gate gets the time it actually needs.
-    #
-    # Tried switching to cargo-nextest (rust/.config/nextest.toml already
-    # exists and documents the same env-race for 3 known binaries via a
-    # `serial-state` test-group). Reverted: nextest's default parallelism
-    # (test-threads = -4) surfaced several more tests with hidden wall-clock
-    # timing assumptions (e.g. core::cache::tests::hebbian_eviction_bonus_is_wired
-    # depends on two calls landing in the same real-time 500ms window) that a
-    # `max-threads=1` test-group does NOT fix — that only serializes tests
-    # *within* the group against each other, it doesn't protect them from
-    # being scheduling-delayed by the many *other* tests still running in
-    # parallel elsewhere on the same runner. Revisit once those tests are
-    # made robust to scheduling jitter (or the burst window is made
-    # injectable for tests) rather than papering over it with test-groups.
+    # Tests run with libtest's default thread parallelism. The old
+    # `--test-threads=1` (env-race legacy, v3.3.5) serialized ~70 binaries that
+    # now include heavy property/fuzz/benchmark suites (#291, #493, #551) and
+    # dominated the wall clock. What made the flag necessary is fixed at the
+    # source instead: every env-mutating test serializes on the reentrant
+    # `data_dir::test_env_lock()`, and the one test with a real-time window
+    # (`hebbian_eviction_bonus_is_wired`) takes an injected window rather than
+    # depending on scheduling. cargo-nextest was tried first (#1206) and
+    # reverted — 33-80% slower here, since its process-per-test model re-pays
+    # this crate's heavy static-link cost for every test.
     timeout-minutes: 180
     env:
       # ~50 integration-test binaries each statically link the full lib
@@ -145,14 +138,14 @@ jobs:
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             JEMALLOC_OVERRIDE="${{ steps.jemalloc.outputs.jemalloc-override }}" \
             CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-L ${{ steps.jemalloc.outputs.dummy-dir }}" \
-            "$CARGO" test --target x86_64-pc-windows-gnu --all-features -- --test-threads=1
+            "$CARGO" test --target x86_64-pc-windows-gnu --all-features
           elif [[ "${{ runner.os }}" == "Linux" ]]; then
             # `mold -run` redirects child linker invocations to mold without
             # touching RUSTFLAGS (which is pinned to `-Dwarnings` job-wide and
             # would override any .cargo/config.toml rustflags).
-            mold -run "$CARGO" test --all-features -- --test-threads=1
+            mold -run "$CARGO" test --all-features
           else
-            "$CARGO" test --all-features -- --test-threads=1
+            "$CARGO" test --all-features
           fi
 
       # #581: lock in the parallel BM25 (incremental) rebuild win against silent

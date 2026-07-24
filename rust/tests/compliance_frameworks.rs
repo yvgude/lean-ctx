@@ -83,10 +83,12 @@ fn eu_ai_act_reference_report_has_ten_plus_enforced_full_controls() {
 /// only requires the named `fn`s to exist.
 #[test]
 fn audit_chain_proofs_run_sequentially() {
+    // Held for the whole test: tests run multi-threaded, so the env writes
+    // below must not overlap another test's.
+    let _env_lock = lean_ctx::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().expect("tempdir");
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: `_env_lock` above serializes every env-mutating test in this
+    // binary, so no other thread touches the environment concurrently.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
     aia_12_1_logging_is_automatic_and_chained();
@@ -94,9 +96,8 @@ fn audit_chain_proofs_run_sequentially() {
     // Destroys the chain — must run last.
     aia_12_1_tampered_log_fails_verification(tmp.path());
 
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: `_env_lock` above is still held, so no other thread touches the
+    // environment concurrently.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 

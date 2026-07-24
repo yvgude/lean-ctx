@@ -287,11 +287,13 @@ mod file_locking {
 
     #[test]
     fn save_and_load_roundtrip_with_locking() {
+        // Held for the whole test: tests run multi-threaded, so the env writes
+        // below must not overlap another test's.
+        let _env_lock = lean_ctx::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join(format!("lean_ctx_test_lock_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        // SAFETY: the project's test suite always runs with `--test-threads=1`
-        // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-        // this binary touches the environment concurrently.
+        // SAFETY: `_env_lock` above serializes every env-mutating test in this
+        // binary, so no other thread touches the environment concurrently.
         unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
 
         let mut ledger = ContextLedger::with_window_size(50000);
@@ -305,9 +307,8 @@ mod file_locking {
 
         // Clean up
         let _ = std::fs::remove_dir_all(&dir);
-        // SAFETY: the project's test suite always runs with `--test-threads=1`
-        // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-        // this binary touches the environment concurrently.
+        // SAFETY: `_env_lock` above is still held, so no other thread touches
+        // the environment concurrently.
         unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
     }
 }

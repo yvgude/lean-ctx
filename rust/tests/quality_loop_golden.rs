@@ -30,9 +30,9 @@ fn params_for(path: &str, old_string: &str) -> EditParams {
 #[test]
 fn edit_fail_after_map_read_escalates_and_penalizes() {
     let tmp = tempfile::tempdir().unwrap();
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: this integration-test binary contains a single `#[test]`, so no
+
+    // other thread reads or writes the environment concurrently.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", tmp.path()) };
 
     let file = tmp.path().join("golden.rs");

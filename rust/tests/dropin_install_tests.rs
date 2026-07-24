@@ -5,10 +5,8 @@
 //! function with an explicit `home: &Path` argument, which keeps them race-
 //! free. The tests in this file cover the top-level `install_all_with_style`
 //! entry point, which resolves `$HOME` via `dirs::home_dir()`. Because that
-//! reads the live env, these tests must run single-threaded — CI already
-//! invokes `cargo test --all-features -- --test-threads=1`, and a
-//! repo-local mutex below covers the case where someone runs tests
-//! without that flag.
+//! reads the live env, these tests must not run concurrently with each other
+//! — the repo-local mutex below serializes them.
 //!
 //! The intent is to validate the cross-file behaviour:
 //!   - All four touchpoints (.zshenv, .bashenv, .zshrc, .bashrc) end up in
@@ -22,9 +20,8 @@ use std::sync::Mutex;
 use lean_ctx::shell_hook::{Style, install_all, install_all_with_style, uninstall_all};
 
 /// Serialises tests in this file so concurrent `$HOME` mutation doesn't
-/// race. Cargo runs each integration test binary's tests in parallel by
-/// default; this guard plus CI's `--test-threads=1` keeps us correct in
-/// both modes.
+/// race. Cargo runs each integration test binary's tests in parallel, so this
+/// guard is what keeps them correct.
 static HOME_LOCK: Mutex<()> = Mutex::new(());
 
 fn with_home<F: FnOnce(&Path)>(f: F) {
@@ -39,29 +36,19 @@ fn with_home<F: FnOnce(&Path)>(f: F) {
     // These tests validate the cross-file *install logic*, not host shell
     // detection (which has its own unit test). CI runners may lack zsh, so force
     // both shells "available" to keep the assertions host-independent.
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: serialised via HOME_LOCK.
     unsafe { std::env::set_var("LEAN_CTX_SHELL_HOOK_FORCE", "all") };
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(tmp.path())));
     match prev {
-        // SAFETY: the project's test suite always runs with `--test-threads=1`
-        // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-        // this binary touches the environment concurrently.
+        // SAFETY: serialised via HOME_LOCK.
         Some(v) => unsafe { std::env::set_var("HOME", v) },
-        // SAFETY: the project's test suite always runs with `--test-threads=1`
-        // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-        // this binary touches the environment concurrently.
+        // SAFETY: serialised via HOME_LOCK.
         None => unsafe { std::env::remove_var("HOME") },
     }
     match prev_force {
-        // SAFETY: the project's test suite always runs with `--test-threads=1`
-        // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-        // this binary touches the environment concurrently.
+        // SAFETY: serialised via HOME_LOCK.
         Some(v) => unsafe { std::env::set_var("LEAN_CTX_SHELL_HOOK_FORCE", v) },
-        // SAFETY: the project's test suite always runs with `--test-threads=1`
-        // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-        // this binary touches the environment concurrently.
+        // SAFETY: serialised via HOME_LOCK.
         None => unsafe { std::env::remove_var("LEAN_CTX_SHELL_HOOK_FORCE") },
     }
     if let Err(p) = result {

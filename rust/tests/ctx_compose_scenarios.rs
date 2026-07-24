@@ -36,9 +36,9 @@ fn compose_returns_all_sections_with_symbol_body() {
     let _guard = ENV_GUARD
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: serialized by this file's local `ENV_GUARD` mutex, which every
+
+    // env-mutating test here holds for its whole body.
     unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS") };
     let dir = write_corpus();
 
@@ -71,9 +71,9 @@ fn compose_degrades_under_tight_budget_without_stalling() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     // A 1 ms budget guarantees the semantic worker cannot finish in time, so the
     // call must degrade gracefully instead of blocking on the (cold) build.
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: serialized by this file's local `ENV_GUARD` mutex, which every
+
+    // env-mutating test here holds for its whole body.
     unsafe { std::env::set_var("LEAN_CTX_COMPOSE_BUDGET_MS", "1") };
     let dir = write_corpus();
 
@@ -84,9 +84,9 @@ fn compose_degrades_under_tight_budget_without_stalling() {
         CrpMode::Off,
     );
     let elapsed = start.elapsed();
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: serialized by this file's local `ENV_GUARD` mutex, which every
+
+    // env-mutating test here holds for its whole body.
     unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS") };
 
     // The exact-match + symbol stages are synchronous and index-backed, so the
@@ -120,14 +120,14 @@ fn compose_surfaces_associative_neighbours() {
     let _guard = ENV_GUARD
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: serialized by this file's local `ENV_GUARD` mutex, which every
+
+    // env-mutating test here holds for its whole body.
     unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS") };
     // Generous graph budget so the (tiny) index build never times out here.
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: serialized by this file's local `ENV_GUARD` mutex, which every
+
+    // env-mutating test here holds for its whole body.
     unsafe { std::env::set_var("LEAN_CTX_COMPOSE_GRAPH_BUDGET_MS", "8000") };
     let dir = write_corpus();
 
@@ -139,9 +139,9 @@ fn compose_surfaces_associative_neighbours() {
         &dir.path().to_string_lossy(),
         CrpMode::Off,
     );
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: serialized by this file's local `ENV_GUARD` mutex, which every
+
+    // env-mutating test here holds for its whole body.
     unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_GRAPH_BUDGET_MS") };
 
     assert!(
@@ -184,7 +184,7 @@ fn compose_disambiguates_same_named_symbol_by_task_keywords() {
     let _guard = ENV_GUARD
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // SAFETY: the suite runs with --test-threads=1 (see ci.yml).
+    // SAFETY: serialized by this file's local `ENV_GUARD` mutex.
     unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS") };
     let dir = write_ambiguous_symbol_corpus();
     // `ctx_compose` reads symbol bodies from the graph index. Build the tiny

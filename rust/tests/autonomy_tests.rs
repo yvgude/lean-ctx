@@ -11,9 +11,12 @@ use std::sync::atomic::Ordering;
 fn init_test_data_dir() {
     static DIR: OnceLock<tempfile::TempDir> = OnceLock::new();
     let dir = DIR.get_or_init(|| tempfile::tempdir().expect("tempdir"));
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // Every test in this binary points LEAN_CTX_DATA_DIR at the SAME process-wide
+    // temp dir, so the writes never disagree — the lock only has to keep two of
+    // them from running at the same instant now that tests are multi-threaded.
+    let _env_lock = lean_ctx::core::data_dir::test_env_lock();
+    // SAFETY: serialized by `test_env_lock`, which every env-mutating test in
+    // this binary takes, so no other thread writes the environment concurrently.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
 }
 
