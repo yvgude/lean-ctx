@@ -475,7 +475,7 @@ mod tests {
         assert!(matches!(cancel(&id), Some(JobState::Running { .. })));
         for _ in 0..40 {
             if let Some(JobState::Cancelled { output }) = status(&id) {
-                assert!(output.contains("command cancelled"));
+                assert!(output.contains("[cancelled: command stopped on request]"));
                 return;
             }
             std::thread::sleep(Duration::from_millis(25));

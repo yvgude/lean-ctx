@@ -266,7 +266,8 @@ pub(crate) fn execute_command_with_env_cancellable(
         if !text.ends_with('\n') && !text.is_empty() {
             text.push('\n');
         }
-        text.push_str("ERROR: command cancelled");
+        // #1246: a cancel is always caller-requested, so it is not an error.
+        text.push_str("[cancelled: command stopped on request]");
     }
 
     (text, code)
