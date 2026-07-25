@@ -185,7 +185,10 @@ mod tests {
     #[test]
     fn dataset_commands_bypass_the_firewall_but_prose_does_not() {
         let cfg = Config::default();
-        assert!(is_raw_command("sqlite3 -header backup.db \"select 1\"", &cfg));
+        assert!(is_raw_command(
+            "sqlite3 -header backup.db \"select 1\"",
+            &cfg
+        ));
         assert!(is_raw_command("/usr/bin/psql -c 'select 1'", &cfg));
         assert!(is_raw_command("cat x.json | jq '.[]'", &cfg));
         assert!(is_raw_command("gh issue list --json number,title", &cfg));
