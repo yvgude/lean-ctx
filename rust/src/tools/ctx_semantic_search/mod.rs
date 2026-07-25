@@ -84,7 +84,11 @@ pub fn handle(
             let header = if compact {
                 format!(
                     "semantic_search({},{top_k}) → {} results, {} chunks indexed\n",
-                    if degraded { "bm25,dense-not-built" } else { "bm25" },
+                    if degraded {
+                        "bm25,dense-not-built"
+                    } else {
+                        "bm25"
+                    },
                     results.len(),
                     index.doc_count
                 )
