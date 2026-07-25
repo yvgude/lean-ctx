@@ -57,6 +57,10 @@ pub(in crate::server) async fn dispatch_and_post_process(
             || std::env::var("LEAN_CTX_DISABLED").is_ok()
             || crate::core::runtime_flags::raw_enabled()
             || inline_shell
+            // #1260: dataset output (sqlite3/psql/jq/`gh --json`) is destroyed,
+            // not compressed, by middle elision — pass it through at any size.
+            || helpers::get_str(args, "command")
+                .is_some_and(|c| crate::core::firewall::is_raw_command(&c, &config))
     };
 
     let pre_terse_len = result_text.len();

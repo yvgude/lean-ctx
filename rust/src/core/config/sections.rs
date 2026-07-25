@@ -141,6 +141,11 @@ pub struct ArchiveConfig {
     /// Maximum output size that `ctx_shell(inline=true)` returns verbatim before
     /// the archive/firewall path takes over.
     pub inline_max_bytes: usize,
+    /// Programs whose stdout *is* a dataset (#1260). Head+tail elision does not
+    /// compress those — it drops the interior rows that hold the answer — so a
+    /// `ctx_shell` command running one of these passes through verbatim at any
+    /// size. Set to `[]` to disable the passthrough.
+    pub raw_commands: Vec<String>,
 }
 
 /// Opt-in conversation-history compression settings (#1123).
@@ -190,6 +195,10 @@ impl Default for ArchiveConfig {
             ephemeral: true,
             ephemeral_min_tokens: 2000,
             inline_max_bytes: 32 * 1024,
+            raw_commands: crate::core::firewall::DEFAULT_RAW_COMMANDS
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect(),
         }
     }
 }

@@ -47,6 +47,31 @@ pub fn should_firewall(tool: &str, output_tokens: usize, config: &Config) -> boo
         && output_tokens >= min_tokens(config)
 }
 
+/// Programs whose stdout *is* a dataset: rows or JSON the caller already
+/// narrowed with `where` / `limit` / `--json` / a filter expression. Head+tail
+/// elision does not compress those — it deletes the interior rows, which for
+/// sorted output is exactly where the answer lives (#1260). No size threshold
+/// makes that safe, so these bypass the firewall entirely.
+pub const DEFAULT_RAW_COMMANDS: &[&str] = &["sqlite3", "psql", "duckdb", "jq"];
+
+/// Whether `command` runs a dataset program in any of its pipeline segments.
+/// `gh` counts only with `--json`/`--jq` — plain `gh` output is prose and
+/// compresses fine.
+pub fn is_raw_command(command: &str, config: &Config) -> bool {
+    command
+        .split(['|', ';', '&', '\n'])
+        .any(|seg| match seg.split_whitespace().next() {
+            // ponytail: first word per segment, so `FOO=1 sqlite3 …` and
+            // `$(sqlite3 …)` are missed — pass raw=true for those.
+            Some(word) => {
+                let prog = word.rsplit('/').next().unwrap_or(word);
+                config.archive.raw_commands.iter().any(|r| r == prog)
+                    || (prog == "gh" && (seg.contains("--json") || seg.contains("--jq")))
+            }
+            None => false,
+        })
+}
+
 /// Whether an explicitly requested `ctx_shell(inline=true)` result fits the
 /// configured verbatim-delivery cap.
 pub fn should_inline_shell(inline_requested: bool, output_bytes: usize, config: &Config) -> bool {
@@ -155,6 +180,24 @@ mod tests {
         assert!(should_firewall("ctx_shell", 5000, &cfg));
         assert!(!should_firewall("ctx_shell", 1000, &cfg)); // below threshold
         assert!(!should_firewall("ctx_read", 5000, &cfg)); // not firewallable
+    }
+
+    #[test]
+    fn dataset_commands_bypass_the_firewall_but_prose_does_not() {
+        let cfg = Config::default();
+        assert!(is_raw_command("sqlite3 -header backup.db \"select 1\"", &cfg));
+        assert!(is_raw_command("/usr/bin/psql -c 'select 1'", &cfg));
+        assert!(is_raw_command("cat x.json | jq '.[]'", &cfg));
+        assert!(is_raw_command("gh issue list --json number,title", &cfg));
+        // Plain gh is prose; a mention of a dataset tool is not an invocation.
+        assert!(!is_raw_command("gh issue view 1260", &cfg));
+        assert!(!is_raw_command("grep -rn sqlite3 src/", &cfg));
+        assert!(!is_raw_command("cargo test", &cfg));
+
+        // Opt out.
+        let mut off = Config::default();
+        off.archive.raw_commands.clear();
+        assert!(!is_raw_command("sqlite3 backup.db 'select 1'", &off));
     }
 
     #[test]

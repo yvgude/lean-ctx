@@ -123,6 +123,7 @@ Settings for the zero-loss compression archive (large tool outputs saved to disk
 - `inline_max_bytes` (usize, default `32768`) — Maximum ctx_shell(inline=true) output size in bytes before archive/firewall handling. Env: LEAN_CTX_INLINE_MAX_BYTES
 - `max_age_hours` (u64, default `48`) — Maximum age of archived entries before cleanup
 - `max_disk_mb` (u64, default `500`) — Maximum total disk usage for the archive
+- `raw_commands` (Vec<String>, default `["sqlite3","psql","duckdb","jq"]`) — Programs whose ctx_shell output is a dataset (rows/JSON) and passes through verbatim at any size, never archived or elided. `gh` is included automatically when the command uses --json/--jq. Set to [] to disable
 - `threshold_chars` (usize, default `800`) — Minimum output size (chars) to trigger archiving
 
 ## `[autonomy]`

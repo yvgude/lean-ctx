@@ -866,6 +866,10 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         "inline_max_bytes".into(),
         key("usize", serde_json::json!(cfg.archive.inline_max_bytes), "Maximum ctx_shell(inline=true) output size in bytes before archive/firewall handling. Env: LEAN_CTX_INLINE_MAX_BYTES"),
     );
+    archive.insert(
+        "raw_commands".into(),
+        key("Vec<String>", serde_json::json!(cfg.archive.raw_commands), "Programs whose ctx_shell output is a dataset (rows/JSON) and passes through verbatim at any size, never archived or elided. `gh` is included automatically when the command uses --json/--jq. Set to [] to disable"),
+    );
     sections.insert(
         "archive".into(),
         SectionSchema {
