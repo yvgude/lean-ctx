@@ -64,6 +64,26 @@ pub(crate) fn dense_build_hint(pending: usize, compact: bool) -> String {
     }
 }
 
+/// #1259: is the default BM25 ranking running *because* the dense index was
+/// never built? Cheap enough for the hot path — a file-existence check, no
+/// engine load. Callers use it to label the degradation instead of reporting
+/// lexical hits as "semantic". False when dense is deliberately off (#686):
+/// there is nothing to build then.
+pub(crate) fn dense_index_missing(root: &Path) -> bool {
+    #[cfg(feature = "embeddings")]
+    {
+        HybridConfig::from_config().dense_enabled
+            && !crate::core::index_namespace::vectors_dir(root)
+                .join("embeddings.bin")
+                .exists()
+    }
+    #[cfg(not(feature = "embeddings"))]
+    {
+        let _ = root;
+        false
+    }
+}
+
 pub(crate) fn hybrid_search_mode(
     query: &str,
     root: &Path,

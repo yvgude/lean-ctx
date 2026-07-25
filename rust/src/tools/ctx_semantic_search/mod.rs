@@ -43,6 +43,9 @@ pub fn handle(
     };
 
     let compact = crp_mode.is_tdd();
+    // #1259: separate "caller asked for BM25" from "BM25 is what the default
+    // resolves to" — only the latter is a silent degradation worth labelling.
+    let mode_defaulted = mode.is_none();
     let mode = mode.unwrap_or("bm25").to_lowercase();
     let workspace = workspace.unwrap_or(false);
     let artifacts = artifacts.unwrap_or(false);
@@ -74,15 +77,26 @@ pub fn handle(
             }
             results.truncate(top_k);
 
+            // #1259: never call a lexical fallback "semantic". When no mode was
+            // requested and the dense index was never built, name the
+            // degradation and the one command that fixes it.
+            let degraded = mode_defaulted && dense_index_missing(root);
             let header = if compact {
                 format!(
-                    "semantic_search(bm25,{top_k}) → {} results, {} chunks indexed\n",
+                    "semantic_search({},{top_k}) → {} results, {} chunks indexed\n",
+                    if degraded { "bm25,dense-not-built" } else { "bm25" },
                     results.len(),
                     index.doc_count
                 )
             } else {
                 format!(
-                    "Semantic search (BM25): \"{}\" ({} results from {} indexed chunks)\n",
+                    "{}: \"{}\" ({} results from {} indexed chunks)\n",
+                    if degraded {
+                        "Lexical search (BM25 — dense index not built, \
+                         run: lean-ctx index build-semantic)"
+                    } else {
+                        "Semantic search (BM25)"
+                    },
                     truncate_query(query, 60),
                     results.len(),
                     index.doc_count,

@@ -21,6 +21,22 @@ mod filter_tests {
 }
 
 #[cfg(test)]
+mod dense_availability_tests {
+    #[allow(clippy::wildcard_imports)]
+    use super::super::*;
+
+    /// #1259: a project that never built embeddings must be reported as
+    /// degraded, so the default path can say so instead of calling BM25 hits
+    /// "semantic".
+    #[test]
+    fn missing_embeddings_bin_is_reported_as_degraded() {
+        let dir = std::env::temp_dir().join("lean-ctx-dense-missing-test");
+        let _ = std::fs::create_dir_all(&dir);
+        assert_eq!(dense_index_missing(&dir), cfg!(feature = "embeddings"));
+    }
+}
+
+#[cfg(test)]
 mod root_resolution_tests {
     #[allow(clippy::wildcard_imports)]
     use super::super::*;
