@@ -145,11 +145,18 @@ impl EgressConfig {
 
 /// Per-process sliding-window rate check. Records the action and returns `true`
 /// when within `max_per_min`, or `false` (without recording) when the limit is
-/// already reached in the trailing 60 s.
+/// already reached in the trailing 60 s. A poisoned state fails closed: egress
+/// remains blocked rather than panicking or bypassing the configured limit.
 #[must_use]
 pub fn check_rate(max_per_min: u32) -> bool {
-    let mut q = rate_state().lock().expect("egress rate state poisoned");
-    within_limit(&mut q, Instant::now(), max_per_min)
+    check_rate_at(rate_state(), Instant::now(), max_per_min)
+}
+
+fn check_rate_at(state: &Mutex<VecDeque<Instant>>, now: Instant, max_per_min: u32) -> bool {
+    let Ok(mut q) = state.lock() else {
+        return false;
+    };
+    within_limit(&mut q, now, max_per_min)
 }
 
 fn rate_state() -> &'static Mutex<VecDeque<Instant>> {
@@ -242,6 +249,19 @@ mod tests {
         assert!(!within_limit(&mut q, base, 1));
         // 61 s later the old entry has aged out → admitted again.
         assert!(within_limit(&mut q, base + Duration::from_secs(61), 1));
+    }
+
+    #[test]
+    fn poisoned_rate_state_fails_closed_without_panicking() {
+        let state = std::sync::Arc::new(Mutex::new(VecDeque::new()));
+        let poisoner = std::sync::Arc::clone(&state);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.lock().expect("fresh mutex");
+            panic!("poison rate state");
+        })
+        .join();
+
+        assert!(!check_rate_at(&state, Instant::now(), 1));
     }
 
     fn args(v: Value) -> Map<String, Value> {
