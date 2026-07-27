@@ -116,7 +116,10 @@ pub fn run() {
                 return;
             }
             "addon" | "addons" => {
-                crate::cli::addon_cmd::cmd_addon(&rest);
+                let code = crate::cli::addon_cmd::cmd_addon(&rest);
+                if code != 0 {
+                    std::process::exit(code);
+                }
                 return;
             }
             "embeddings" => {

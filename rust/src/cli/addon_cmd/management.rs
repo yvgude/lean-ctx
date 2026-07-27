@@ -8,7 +8,7 @@ use super::{
 /// `kind=addon` pack from a `lean-ctx-addon.toml` and upload it to the
 /// hosted ctxpkg registry (GH #726). `--check` runs every local gate
 /// (schema, audit, signing, self-verification) and stops before the network.
-pub(super) fn cmd_publish(args: &[String]) {
+pub(super) fn cmd_publish(args: &[String]) -> i32 {
     let manifest_path = args
         .iter()
         .skip(1)
@@ -29,7 +29,7 @@ pub(super) fn cmd_publish(args: &[String]) {
         eprintln!("The namespace is your ctxpkg.com account handle — the pack publishes");
         eprintln!("as @<ns>/<addon-name>. `--check` validates and signs locally without");
         eprintln!("uploading anything.");
-        std::process::exit(1);
+        return 1;
     };
 
     let plan =
@@ -38,7 +38,7 @@ pub(super) fn cmd_publish(args: &[String]) {
             Ok(p) => p,
             Err(e) => {
                 eprintln!("Error: {e}");
-                std::process::exit(1);
+                return 1;
             }
         };
 
@@ -64,7 +64,7 @@ pub(super) fn cmd_publish(args: &[String]) {
 
     if args.iter().any(|a| a == "--check") {
         println!("\n--check: all local gates passed — nothing was uploaded.");
-        return;
+        return 0;
     }
 
     use crate::core::context_package::remote;
@@ -72,13 +72,13 @@ pub(super) fn cmd_publish(args: &[String]) {
     let Some(token) = remote::publish_token(flag_value(args, "--token").as_deref()) else {
         eprintln!("ERROR: no publish token — pass --token or set CTXPKG_TOKEN");
         eprintln!("Mint one at ctxpkg.com/account (sign in, then Tokens → Mint).");
-        std::process::exit(1);
+        return 1;
     };
     if token.starts_with("ctxr_") {
         eprintln!(
             "ERROR: this is a read-only install token (ctxr_) — publishing needs a ctxp_ token"
         );
-        std::process::exit(1);
+        return 1;
     }
 
     println!(
@@ -103,26 +103,27 @@ pub(super) fn cmd_publish(args: &[String]) {
         }
         Err(e) => {
             eprintln!("ERROR: {e}");
-            std::process::exit(1);
+            return 1;
         }
     }
+    0
 }
 
 /// `addon update <name>` — re-resolve the registry entry and reinstall when it
 /// changed (GH #725). Managed binaries install side-by-side into a new version
 /// dir; only after the health probe passes is the gateway pointer flipped and
 /// the old version pruned — a failed update leaves the working install intact.
-pub(super) fn cmd_update(name: &str, args: &[String]) {
+pub(super) fn cmd_update(name: &str, args: &[String]) -> i32 {
     let Some(entry) = InstalledStore::load().get(name).cloned() else {
         eprintln!("Addon `{name}` is not installed.");
-        std::process::exit(1);
+        return 1;
     };
     if entry.source == "local" {
         eprintln!(
             "`{name}` was installed from a local manifest — update it by re-running \
              `lean-ctx addon add <path-to-lean-ctx-addon.toml>`."
         );
-        std::process::exit(1);
+        return 1;
     }
     // Re-resolve from where it came: a hosted ctxpkg pack updates against the
     // registry it was installed from (latest non-yanked version), everything
@@ -135,13 +136,13 @@ pub(super) fn cmd_update(name: &str, args: &[String]) {
                 "`{name}` has a malformed install source `{}`.",
                 entry.source
             );
-            std::process::exit(1);
+            return 1;
         };
         match fetch_addon_pack(&remote_ref, flag_value(args, "--registry").as_deref()) {
             Ok((m, s)) => (m, s),
             Err(e) => {
                 eprintln!("Error: {e}");
-                std::process::exit(1);
+                return 1;
             }
         }
     } else {
@@ -149,7 +150,7 @@ pub(super) fn cmd_update(name: &str, args: &[String]) {
             eprintln!(
                 "`{name}` is no longer in the registry — remove it or reinstall from a path."
             );
-            std::process::exit(1);
+            return 1;
         };
         (m, entry.source.clone())
     };
@@ -185,13 +186,13 @@ pub(super) fn cmd_update(name: &str, args: &[String]) {
         // A skills/context dependency may have bumped even when the addon
         // itself did not (GH #727) — refresh those without re-wiring.
         refresh_pack_dependencies(&manifest.dependencies, root_ref.as_deref(), args);
-        return;
+        return 0;
     }
 
     let cfg = crate::core::config::Config::load();
     if let Err(e) = install::preflight(&manifest, &cfg.addons, force) {
         eprintln!("Error: {e}");
-        std::process::exit(1);
+        return 1;
     }
 
     println!(
@@ -200,7 +201,7 @@ pub(super) fn cmd_update(name: &str, args: &[String]) {
     );
     if !super::prompt::confirm("Proceed with the update?", super::prompt::wants_yes(args)) {
         println!("Aborted. Nothing was changed.");
-        return;
+        return 0;
     }
 
     let preview_deps = resolve_declared_deps(&manifest.dependencies, root_ref.as_deref(), args);
@@ -238,15 +239,16 @@ pub(super) fn cmd_update(name: &str, args: &[String]) {
         }
         Err(e) => {
             eprintln!("Error: {e}\n  The previous install remains wired.");
-            std::process::exit(1);
+            return 1;
         }
     }
+    0
 }
 
-pub(super) fn cmd_remove(name: &str, args: &[String]) {
+pub(super) fn cmd_remove(name: &str, args: &[String]) -> i32 {
     let Some(entry) = InstalledStore::load().get(name).cloned() else {
         eprintln!("Addon `{name}` is not installed.");
-        std::process::exit(1);
+        return 1;
     };
 
     if !super::prompt::confirm(
@@ -254,7 +256,7 @@ pub(super) fn cmd_remove(name: &str, args: &[String]) {
         super::prompt::wants_yes(args),
     ) {
         println!("Aborted.");
-        return;
+        return 0;
     }
 
     match install::remove(name) {
@@ -292,14 +294,15 @@ pub(super) fn cmd_remove(name: &str, args: &[String]) {
         }
         Err(e) => {
             eprintln!("Error: {e}");
-            std::process::exit(1);
+            return 1;
         }
     }
+    0
 }
 
 /// `addon revoke <name>` — block an addon from running everywhere (install,
 /// catalog, every proxy call). Protective, so it does not prompt.
-pub(super) fn cmd_revoke(name: &str, args: &[String]) {
+pub(super) fn cmd_revoke(name: &str, args: &[String]) -> i32 {
     let reason = flag_value(args, "--reason").unwrap_or_else(|| "manually revoked".to_string());
     let version = flag_value(args, "--version");
 
@@ -320,24 +323,25 @@ pub(super) fn cmd_revoke(name: &str, args: &[String]) {
         }
         Err(e) => {
             eprintln!("Error: {e}");
-            std::process::exit(1);
+            return 1;
         }
     }
+    0
 }
 
 /// `addon unrevoke <name>` — lift a revocation (removes protection), so confirm.
-pub(super) fn cmd_unrevoke(name: &str, args: &[String]) {
+pub(super) fn cmd_unrevoke(name: &str, args: &[String]) -> i32 {
     let mut list = RevocationList::load();
     if !list.revocations.contains_key(name) {
         eprintln!("Addon `{name}` is not revoked.");
-        std::process::exit(1);
+        return 1;
     }
     if !super::prompt::confirm(
         &format!("Lift the revocation on `{name}` (allow it to run again)?"),
         super::prompt::wants_yes(args),
     ) {
         println!("Aborted.");
-        return;
+        return 0;
     }
     list.unrevoke(name);
     match list.save() {
@@ -347,9 +351,10 @@ pub(super) fn cmd_unrevoke(name: &str, args: &[String]) {
         }
         Err(e) => {
             eprintln!("Error: {e}");
-            std::process::exit(1);
+            return 1;
         }
     }
+    0
 }
 
 /// `addon revocations` — list the active local revocations.
@@ -372,12 +377,12 @@ pub(super) fn cmd_revocations() {
 
 /// `addon verify` — re-check each installed addon's live wiring against the
 /// integrity hash pinned at install (P2). Exits non-zero if any addon drifted.
-pub(super) fn cmd_verify() {
+pub(super) fn cmd_verify() -> i32 {
     use crate::core::addons::integrity::{self, IntegrityStatus};
     let findings = integrity::verify_all();
     if findings.is_empty() {
         println!("No addons installed.");
-        return;
+        return 0;
     }
     let mut drift = false;
     println!("Addon integrity:\n");
@@ -397,6 +402,7 @@ pub(super) fn cmd_verify() {
             "\nOne or more addons no longer match their pinned wiring. Review the \
              `[[gateway.servers]]` entries, then re-install (`addon add`) or remove them."
         );
-        std::process::exit(1);
+        return 1;
     }
+    0
 }

@@ -6,16 +6,28 @@ use super::{
     registry, resolve_declared_deps,
 };
 
-pub fn cmd_addon(args: &[String]) {
+pub fn cmd_addon(args: &[String]) -> i32 {
     let action = args.first().map_or("list", String::as_str);
 
     match action {
-        "list" | "ls" => cmd_list(),
+        "list" | "ls" => {
+            cmd_list();
+            0
+        }
         "init" | "new" => cmd_init(args),
         "registry" => cmd_registry(args),
-        "categories" | "cats" => cmd_categories(),
-        "usage" | "stats" => cmd_usage(),
-        "search" | "browse" => cmd_search(args.get(1).map_or("", String::as_str)),
+        "categories" | "cats" => {
+            cmd_categories();
+            0
+        }
+        "usage" | "stats" => {
+            cmd_usage();
+            0
+        }
+        "search" | "browse" => {
+            cmd_search(args.get(1).map_or("", String::as_str));
+            0
+        }
         "info" | "show" => match positional(args) {
             Some(name) => cmd_info(&name),
             None => usage_exit("lean-ctx addon info <name>"),
@@ -40,18 +52,24 @@ pub fn cmd_addon(args: &[String]) {
             Some(name) => cmd_unrevoke(&name, args),
             None => usage_exit("lean-ctx addon unrevoke <name>"),
         },
-        "revocations" => cmd_revocations(),
+        "revocations" => {
+            cmd_revocations();
+            0
+        }
         "verify" => cmd_verify(),
         "audit" => match positional(args) {
             Some(target) => cmd_audit(&target),
             None => usage_exit("lean-ctx addon audit <name|path-to-lean-ctx-addon.toml>"),
         },
         "publish" => cmd_publish(args),
-        "help" | "--help" | "-h" => print_help(),
+        "help" | "--help" | "-h" => {
+            print_help();
+            0
+        }
         _ => {
             eprintln!("Unknown addon action: {action}");
             print_help();
-            std::process::exit(1);
+            1
         }
     }
 }
@@ -63,9 +81,9 @@ pub(super) fn positional(args: &[String]) -> Option<String> {
         .filter(|s| !s.is_empty() && !s.starts_with('-'))
 }
 
-fn usage_exit(usage: &str) -> ! {
+fn usage_exit(usage: &str) -> i32 {
     eprintln!("Usage: {usage}");
-    std::process::exit(1);
+    1
 }
 
 fn cmd_list() {
@@ -212,7 +230,7 @@ fn cmd_usage() {
     }
 }
 
-fn cmd_info(name: &str) {
+fn cmd_info(name: &str) -> i32 {
     let store = InstalledStore::load();
     let Some(manifest) = registry::get(name).or_else(|| {
         // Allow `info` on a local manifest path too.
@@ -229,13 +247,13 @@ fn cmd_info(name: &str) {
                 "  Status:    installed (gateway server `{}`, {})",
                 installed.gateway_server, installed.source
             );
-            return;
+            return 0;
         }
         eprintln!(
             "Addon `{name}` not found. Try `lean-ctx addon search`, or pass a path to a \
              lean-ctx-addon.toml."
         );
-        std::process::exit(1);
+        return 1;
     };
 
     println!("{} ({})", manifest.display_name(), manifest.addon.name);
@@ -268,9 +286,10 @@ fn cmd_info(name: &str) {
         println!();
         print_install_preview(&manifest);
     }
+    0
 }
 
-fn cmd_add(target: &str, args: &[String]) {
+fn cmd_add(target: &str, args: &[String]) -> i32 {
     // Resolution order: local manifest file → hosted ctxpkg pack (`ns/slug`,
     // GH #726) → bundled registry slug. A bare `ns/slug` that exists on disk
     // is treated as the local path it names.
@@ -285,7 +304,7 @@ fn cmd_add(target: &str, args: &[String]) {
             Ok(m) => (m, "local".to_string()),
             Err(e) => {
                 eprintln!("Error: {e}");
-                std::process::exit(1);
+                return 1;
             }
         }
     } else if let Some(remote_ref) = crate::core::context_package::remote::parse_remote_ref(target)
@@ -294,7 +313,7 @@ fn cmd_add(target: &str, args: &[String]) {
             Ok((m, s)) => (m, s),
             Err(e) => {
                 eprintln!("Error: {e}");
-                std::process::exit(1);
+                return 1;
             }
         }
     } else {
@@ -305,14 +324,14 @@ fn cmd_add(target: &str, args: &[String]) {
                  `lean-ctx addon add <namespace>/<name>`, or pass a path to a \
                  lean-ctx-addon.toml."
             );
-            std::process::exit(1);
+            return 1;
         };
         (m, "registry".to_string())
     };
 
     if let Err(e) = manifest.validate() {
         eprintln!("Error: {e}");
-        std::process::exit(1);
+        return 1;
     }
 
     if !manifest.is_installable() {
@@ -327,7 +346,7 @@ fn cmd_add(target: &str, args: &[String]) {
                 &manifest.addon.homepage
             }
         );
-        std::process::exit(1);
+        return 1;
     }
 
     let force = args.iter().any(|a| a == "--force" || a == "-f");
@@ -341,7 +360,7 @@ fn cmd_add(target: &str, args: &[String]) {
     // this resolution, so only the verdict matters here.)
     if let Err(e) = install::preflight(&manifest, &cfg.addons, force) {
         eprintln!("Error: {e}");
-        std::process::exit(1);
+        return 1;
     }
 
     println!("About to install `{}`:\n", manifest.addon.name);
@@ -373,7 +392,7 @@ fn cmd_add(target: &str, args: &[String]) {
         super::prompt::wants_yes(args),
     ) {
         println!("Aborted. Nothing was changed.");
-        return;
+        return 0;
     }
 
     // The slice wired into `[mcp.env]` must be the versions the install step
@@ -405,9 +424,10 @@ fn cmd_add(target: &str, args: &[String]) {
         }
         Err(e) => {
             eprintln!("Error: {e}");
-            std::process::exit(1);
+            return 1;
         }
     }
+    0
 }
 
 /// The impure provisioning pipeline `add` and `update` share, run after user

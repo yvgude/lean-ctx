@@ -2,7 +2,7 @@ use super::{AddonManifest, Path, flag_value, looks_like_path, positional, regist
 
 /// `addon init [name]` — scaffold a ready-to-edit `lean-ctx-addon.toml` in the
 /// current directory. `--http` for an HTTP addon, `--force` to overwrite.
-pub(super) fn cmd_init(args: &[String]) {
+pub(super) fn cmd_init(args: &[String]) -> i32 {
     use crate::core::addons::scaffold;
     use crate::core::mcp_catalog::TransportKind;
 
@@ -29,11 +29,11 @@ pub(super) fn cmd_init(args: &[String]) {
     });
     let Some(raw) = slug else {
         eprintln!("Could not derive an addon name. Pass one: `lean-ctx addon init my-addon`.");
-        std::process::exit(1);
+        return 1;
     };
     let Some(slug) = scaffold::slugify(&raw) else {
         eprintln!("`{raw}` has no usable slug characters ([a-z0-9-]).");
-        std::process::exit(1);
+        return 1;
     };
 
     let path = Path::new(scaffold::MANIFEST_FILENAME);
@@ -42,13 +42,13 @@ pub(super) fn cmd_init(args: &[String]) {
             "{} already exists. Re-run with --force to overwrite.",
             scaffold::MANIFEST_FILENAME
         );
-        std::process::exit(1);
+        return 1;
     }
 
     let contents = scaffold::addon_manifest(&slug, transport, command.as_deref());
     if let Err(e) = std::fs::write(path, contents) {
         eprintln!("Error writing {}: {e}", scaffold::MANIFEST_FILENAME);
-        std::process::exit(1);
+        return 1;
     }
 
     println!("✓ Wrote {} (addon `{slug}`).", scaffold::MANIFEST_FILENAME);
@@ -63,17 +63,18 @@ pub(super) fn cmd_init(args: &[String]) {
         scaffold::MANIFEST_FILENAME
     );
     println!("  4. Get listed:  see docs/guides/addons.md");
+    0
 }
 
 /// `addon registry validate [path]` — run the registry security/quality bar
 /// (#864 + #403) against a registry JSON file, or the bundled + local registry
 /// if no path is given. The dry-run harness an author / CI uses before opening a
 /// merge request. Non-zero exit when problems are found.
-pub(super) fn cmd_registry(args: &[String]) {
+pub(super) fn cmd_registry(args: &[String]) -> i32 {
     let sub = args.get(1).map_or("", String::as_str);
     if sub != "validate" {
         eprintln!("Usage: lean-ctx addon registry validate [path-to-registry.json]");
-        std::process::exit(1);
+        return 1;
     }
 
     let (entries, label) = match args.get(2).map(String::as_str) {
@@ -81,7 +82,7 @@ pub(super) fn cmd_registry(args: &[String]) {
             Ok(e) => (e, path.to_string()),
             Err(e) => {
                 eprintln!("Error: {e}");
-                std::process::exit(1);
+                return 1;
             }
         },
         _ => (
@@ -97,13 +98,13 @@ pub(super) fn cmd_registry(args: &[String]) {
             entries.len(),
             if entries.len() == 1 { "y" } else { "ies" }
         );
-        return;
+        return 0;
     }
     eprintln!("✗ {label}: {} problem(s):\n", problems.len());
     for p in &problems {
         eprintln!("  • {p}");
     }
-    std::process::exit(1);
+    1
 }
 
 /// Parse a registry JSON file (`{ "addons": [ … ] }`) into manifests.
@@ -122,19 +123,19 @@ fn load_registry_file(path: &str) -> Result<Vec<AddonManifest>, String> {
 /// `addon audit <name|path>` — run the publish/list gate (#403): wiring risk +
 /// capability coherence + malware heuristics, then the verified/paid verdict.
 /// Exits non-zero on a `fail` verdict so it is usable in CI / a publish hook.
-pub(super) fn cmd_audit(target: &str) {
+pub(super) fn cmd_audit(target: &str) -> i32 {
     let manifest = if looks_like_path(target) {
         match AddonManifest::from_path(Path::new(target)) {
             Ok(m) => m,
             Err(e) => {
                 eprintln!("Error: {e}");
-                std::process::exit(1);
+                return 1;
             }
         }
     } else {
         let Some(m) = registry::get(target) else {
             eprintln!("Unknown addon `{target}`. Pass a name from the registry or a path.");
-            std::process::exit(1);
+            return 1;
         };
         m
     };
@@ -220,6 +221,7 @@ pub(super) fn cmd_audit(target: &str) {
         eprintln!(
             "\nAudit failed — this addon must not be listed until the blocking findings are resolved."
         );
-        std::process::exit(1);
+        return 1;
     }
+    0
 }
