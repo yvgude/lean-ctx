@@ -2,102 +2,136 @@ use std::path::PathBuf;
 
 use super::{format_bytes, parse_flag, parse_pkg_ref};
 
-pub(super) fn cmd_pack_create(args: &[String], project_root: &str) {
-    let mut name: Option<String> = None;
-    let mut version = "1.0.0".to_string();
-    let mut description = String::new();
-    let mut author: Option<String> = None;
-    let mut tags: Vec<String> = Vec::new();
-    let mut layers_str: Option<String> = None;
-    let mut level: u32 = 1;
-    let mut scope: Option<String> = None;
-    let mut private = false;
-    let mut kind: Option<String> = None;
-    let mut from_dir: Option<String> = None;
+#[derive(Default)]
+struct PackCreateArgs {
+    name: Option<String>,
+    version: String,
+    description: String,
+    author: Option<String>,
+    tags: Vec<String>,
+    layers_str: Option<String>,
+    level: u32,
+    scope: Option<String>,
+    private: bool,
+    kind: Option<String>,
+    from_dir: Option<String>,
+}
+
+fn parse_pack_create_args(args: &[String]) -> PackCreateArgs {
+    let mut parsed = PackCreateArgs {
+        version: "1.0.0".to_string(),
+        level: 1,
+        ..Default::default()
+    };
 
     let mut i = 0;
     while i < args.len() {
-        let a = &args[i];
-        if a == "create" {
-            i += 1;
-            continue;
-        }
-        if a == "--private" {
-            private = true;
-            i += 1;
-            continue;
-        }
-        if let Some(v) = a.strip_prefix("--kind=") {
-            kind = Some(v.to_string());
-            i += 1;
-            continue;
-        }
-        if a == "--kind" {
-            i += 1;
-            kind = args.get(i).filter(|v| !v.starts_with("--")).cloned();
-            i += 1;
-            continue;
-        }
-        if let Some(v) = a.strip_prefix("--from=") {
-            from_dir = Some(v.to_string());
-            i += 1;
-            continue;
-        }
-        if a == "--from" {
-            i += 1;
-            from_dir = args.get(i).filter(|v| !v.starts_with("--")).cloned();
-            i += 1;
-            continue;
-        }
-        if let Some(v) = a.strip_prefix("--name=") {
-            name = Some(v.to_string());
-        } else if a == "--name" {
-            i += 1;
-            if let Some(v) = args.get(i).filter(|v| !v.starts_with("--")) {
-                name = Some(v.clone());
-            }
-        } else if let Some(v) = a.strip_prefix("--version=") {
-            version = v.to_string();
-        } else if a == "--version" {
-            i += 1;
-            if let Some(v) = args.get(i).filter(|v| !v.starts_with("--")) {
-                v.clone_into(&mut version);
-            }
-        } else if let Some(v) = a.strip_prefix("--description=") {
-            description = v.to_string();
-        } else if a == "--description" {
-            i += 1;
-            if let Some(v) = args.get(i).filter(|v| !v.starts_with("--")) {
-                v.clone_into(&mut description);
-            }
-        } else if let Some(v) = a.strip_prefix("--author=") {
-            author = Some(v.to_string());
-        } else if a == "--author" {
-            i += 1;
-            if let Some(v) = args.get(i).filter(|v| !v.starts_with("--")) {
-                author = Some(v.clone());
-            }
-        } else if let Some(v) = a.strip_prefix("--tags=") {
-            tags = v.split(',').map(|s| s.trim().to_string()).collect();
-        } else if let Some(v) = a.strip_prefix("--layers=") {
-            layers_str = Some(v.to_string());
-        } else if let Some(v) = a.strip_prefix("--level=") {
-            level = v.parse::<u32>().unwrap_or(1).clamp(1, 3);
-        } else if a == "--level" {
-            i += 1;
-            if let Some(v) = args.get(i).filter(|v| !v.starts_with("--")) {
-                level = v.parse::<u32>().unwrap_or(1).clamp(1, 3);
-            }
-        } else if let Some(v) = a.strip_prefix("--scope=") {
-            scope = Some(v.to_string());
-        } else if a == "--scope" {
-            i += 1;
-            if let Some(v) = args.get(i).filter(|v| !v.starts_with("--")) {
-                scope = Some(v.clone());
-            }
-        }
-        i += 1;
+        i += parse_pack_create_option(&mut parsed, args, i);
     }
+
+    parsed
+}
+
+fn flag_value(args: &[String], index: usize) -> Option<String> {
+    args.get(index).filter(|v| !v.starts_with("--")).cloned()
+}
+
+fn parse_pack_create_option(parsed: &mut PackCreateArgs, args: &[String], index: usize) -> usize {
+    let arg = &args[index];
+    match arg.as_str() {
+        "create" => 1,
+        "--private" => {
+            parsed.private = true;
+            1
+        }
+        "--kind" => {
+            parsed.kind = flag_value(args, index + 1);
+            2
+        }
+        "--from" => {
+            parsed.from_dir = flag_value(args, index + 1);
+            2
+        }
+        "--name" => {
+            parsed.name = flag_value(args, index + 1);
+            2
+        }
+        "--version" => {
+            if let Some(value) = flag_value(args, index + 1) {
+                parsed.version = value;
+            }
+            2
+        }
+        "--description" => {
+            if let Some(value) = flag_value(args, index + 1) {
+                parsed.description = value;
+            }
+            2
+        }
+        "--author" => {
+            parsed.author = flag_value(args, index + 1);
+            2
+        }
+        "--level" => {
+            if let Some(value) = flag_value(args, index + 1) {
+                parsed.level = parse_pack_level(&value);
+            }
+            2
+        }
+        "--scope" => {
+            parsed.scope = flag_value(args, index + 1);
+            2
+        }
+        _ => {
+            parse_pack_create_inline_option(parsed, arg);
+            1
+        }
+    }
+}
+
+fn parse_pack_create_inline_option(parsed: &mut PackCreateArgs, arg: &str) {
+    if let Some(value) = arg.strip_prefix("--kind=") {
+        parsed.kind = Some(value.to_string());
+    } else if let Some(value) = arg.strip_prefix("--from=") {
+        parsed.from_dir = Some(value.to_string());
+    } else if let Some(value) = arg.strip_prefix("--name=") {
+        parsed.name = Some(value.to_string());
+    } else if let Some(value) = arg.strip_prefix("--version=") {
+        parsed.version = value.to_string();
+    } else if let Some(value) = arg.strip_prefix("--description=") {
+        parsed.description = value.to_string();
+    } else if let Some(value) = arg.strip_prefix("--author=") {
+        parsed.author = Some(value.to_string());
+    } else if let Some(value) = arg.strip_prefix("--tags=") {
+        parsed.tags = value.split(',').map(|s| s.trim().to_string()).collect();
+    } else if let Some(value) = arg.strip_prefix("--layers=") {
+        parsed.layers_str = Some(value.to_string());
+    } else if let Some(value) = arg.strip_prefix("--level=") {
+        parsed.level = parse_pack_level(value);
+    } else if let Some(value) = arg.strip_prefix("--scope=") {
+        parsed.scope = Some(value.to_string());
+    }
+}
+
+fn parse_pack_level(value: &str) -> u32 {
+    value.parse::<u32>().unwrap_or(1).clamp(1, 3)
+}
+
+pub(super) fn cmd_pack_create(args: &[String], project_root: &str) {
+    let parsed = parse_pack_create_args(args);
+    let PackCreateArgs {
+        name,
+        version,
+        description,
+        author,
+        tags,
+        layers_str,
+        level,
+        scope,
+        private,
+        kind,
+        from_dir,
+    } = parsed;
 
     let Some(pkg_name) = name else {
         eprintln!("ERROR: --name is required for pack create");

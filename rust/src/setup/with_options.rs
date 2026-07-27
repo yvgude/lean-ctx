@@ -498,81 +498,94 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     }
     steps.push(env_step);
 
-    // Project root validation: warn if no root is configured and cwd is broad
-    {
-        let has_env_root = std::env::var("LEAN_CTX_PROJECT_ROOT").is_ok_and(|v| !v.is_empty());
-        let cfg = crate::core::config::Config::load();
-        let has_cfg_root = cfg.project_root.as_ref().is_some_and(|v| !v.is_empty());
-        if !has_env_root
-            && !has_cfg_root
-            && let Ok(cwd) = std::env::current_dir()
-        {
-            let is_home = dirs::home_dir().is_some_and(|h| cwd == h);
-            if is_home {
-                let mut root_step = SetupStepReport {
-                        name: "project_root".to_string(),
-                        ok: true,
-                        items: Vec::new(),
-                        warnings: vec![
-                            "No project_root configured. Running from $HOME can cause excessive scanning. \
-                             Set via: lean-ctx config set project_root /path/to/project".to_string()
-                        ],
-                        errors: Vec::new(),
-                    };
-                root_step.items.push(SetupItem {
-                    name: "project_root".to_string(),
-                    status: "unconfigured".to_string(),
-                    path: None,
-                    note: Some(
-                        "Set LEAN_CTX_PROJECT_ROOT or add project_root to config.toml".to_string(),
-                    ),
-                });
-                steps.push(root_step);
-            }
-        }
+    maybe_add_project_root_warning(&mut steps);
+    maybe_spawn_background_index();
+    maybe_enable_ide_config_access(opts);
+
+    let report = build_setup_report(started_at, steps);
+    persist_setup_report(&report)?;
+
+    Ok(report)
+}
+
+fn maybe_add_project_root_warning(steps: &mut Vec<SetupStepReport>) {
+    let has_env_root = std::env::var("LEAN_CTX_PROJECT_ROOT").is_ok_and(|v| !v.is_empty());
+    let cfg = crate::core::config::Config::load();
+    let has_cfg_root = cfg.project_root.as_ref().is_some_and(|v| !v.is_empty());
+
+    if has_env_root || has_cfg_root {
+        return;
     }
 
-    // Auto-build property graph if inside any recognized project. The marker
-    // probe is TCC-guarded (#356): a launchd-standalone setup run never stats
-    // markers under ~/Documents — and `may_autoindex_cwd` additionally skips the
-    // probe for a non-standalone CLI refresh whose cwd is in a protected dir.
+    let Ok(cwd) = std::env::current_dir() else {
+        return;
+    };
+    let is_home = dirs::home_dir().is_some_and(|h| cwd == h);
+    if !is_home {
+        return;
+    }
+
+    let mut root_step = SetupStepReport {
+        name: "project_root".to_string(),
+        ok: true,
+        items: Vec::new(),
+        warnings: vec![
+            "No project_root configured. Running from $HOME can cause excessive scanning. \
+             Set via: lean-ctx config set project_root /path/to/project"
+                .to_string(),
+        ],
+        errors: Vec::new(),
+    };
+    root_step.items.push(SetupItem {
+        name: "project_root".to_string(),
+        status: "unconfigured".to_string(),
+        path: None,
+        note: Some("Set LEAN_CTX_PROJECT_ROOT or add project_root to config.toml".to_string()),
+    });
+    steps.push(root_step);
+}
+
+fn maybe_spawn_background_index() {
     if let Ok(cwd) = std::env::current_dir()
         && may_autoindex_cwd(&cwd)
         && crate::core::pathutil::has_project_marker(&cwd)
     {
         spawn_index_build_background(&cwd);
     }
+}
 
-    // IDE config access: the interactive `setup` prompts for informed consent
-    // (see run_setup). An explicit `--yes` is itself consent, so enable the
-    // registry-derived opt-in if the user has never decided. `--fix` repair runs
-    // must never silently widen the jail, so they are left untouched.
-    if opts.yes
-        && !opts.fix
-        && crate::core::config::Config::load()
+fn maybe_enable_ide_config_access(opts: SetupOptions) {
+    if !opts.yes
+        || opts.fix
+        || crate::core::config::Config::load()
             .allow_ide_config_dirs
-            .is_none()
+            .is_some()
     {
-        match crate::core::config::Config::update_global(|c| {
-            c.allow_ide_config_dirs = Some(true);
-        }) {
-            // --yes is consent, but say so out loud: the user should know the
-            // path jail now includes IDE config dirs, and how to revert it.
-            Ok(_) => {
-                if !opts.json {
-                    println!(
-                        "  Enabled IDE config access (allow_ide_config_dirs) — \
-                         disable: lean-ctx config set allow_ide_config_dirs false"
-                    );
-                }
-            }
-            Err(e) => tracing::warn!("could not enable IDE config access: {e}"),
-        }
+        return;
     }
 
+    match crate::core::config::Config::update_global(|c| {
+        c.allow_ide_config_dirs = Some(true);
+    }) {
+        Ok(_) => {
+            if !opts.json {
+                println!(
+                    "  Enabled IDE config access (allow_ide_config_dirs) — \
+                     disable: lean-ctx config set allow_ide_config_dirs false"
+                );
+            }
+        }
+        Err(e) => tracing::warn!("could not enable IDE config access: {e}"),
+    }
+}
+
+fn build_setup_report(
+    started_at: chrono::DateTime<Utc>,
+    steps: Vec<SetupStepReport>,
+) -> SetupReport {
     let finished_at = Utc::now();
     let success = steps.iter().all(|s| s.ok);
-    let report = SetupReport {
+    SetupReport {
         schema_version: 1,
         started_at,
         finished_at,
@@ -584,13 +597,13 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
         steps,
         warnings: Vec::new(),
         errors: Vec::new(),
-    };
+    }
+}
 
+fn persist_setup_report(report: &SetupReport) -> Result<(), String> {
     let path = SetupReport::default_path()?;
     let mut content =
-        serde_json::to_string_pretty(&report).map_err(|e| format!("serialize report: {e}"))?;
+        serde_json::to_string_pretty(report).map_err(|e| format!("serialize report: {e}"))?;
     content.push('\n');
-    crate::config_io::write_atomic(&path, &content)?;
-
-    Ok(report)
+    crate::config_io::write_atomic(&path, &content)
 }
