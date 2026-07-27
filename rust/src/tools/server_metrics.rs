@@ -465,6 +465,7 @@ impl LeanCtxServer {
         let calls = self.tool_calls.read().await;
         let stats = cache.get_stats();
         let complexity = crate::core::adaptive::classify_from_context(&cache);
+        let dedup = crate::tools::ctx_read::dedup_hook::summary();
 
         let cs = Self::compute_cep_stats(&calls, stats, &complexity);
         let started_at = calls
@@ -500,6 +501,9 @@ impl LeanCtxServer {
             "files_cached": cs.total_reads,
             "total_reads": cs.total_reads,
             "cache_hits": cs.cache_hits,
+            "dedup_reads": dedup.total_reads,
+            "dedup_hits": dedup.dedup_hits,
+            "dedup_tokens_saved": dedup.tokens_saved,
             "tokens_saved": cs.total_saved,
             "tokens_original": cs.total_original,
             "tool_calls": cs.tool_call_count,

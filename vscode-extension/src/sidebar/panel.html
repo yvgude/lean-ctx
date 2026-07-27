@@ -376,6 +376,14 @@
         <div class="stat-value" id="files-touched">—</div>
         <div class="stat-label">Files</div>
       </div>
+      <div class="stat-card">
+        <div class="stat-value" id="read-cache-rate">—</div>
+        <div class="stat-label">Read Cache</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="content-dedup-rate">—</div>
+        <div class="stat-label">Content Dedup</div>
+      </div>
     </div>
     <div class="version-badge" id="version-info">lean-ctx</div>
   </div>
@@ -458,6 +466,11 @@
       return String(n);
     }
 
+    function formatRate(hits, reads) {
+      if (!reads) return "—";
+      return Math.round((hits / reads) * 100) + "%";
+    }
+
     /* ── Render functions ── */
     function renderStats(data) {
       document.getElementById("tokens-saved").textContent = formatNumber(
@@ -475,6 +488,12 @@
       document.getElementById("files-touched").textContent = formatNumber(
         data.filesTouched
       );
+      const readCache = document.getElementById("read-cache-rate");
+      readCache.textContent = formatRate(data.cacheHits, data.cacheReads);
+      readCache.title = `${data.cacheHits} hits / ${data.cacheReads} reads`;
+      const contentDedup = document.getElementById("content-dedup-rate");
+      contentDedup.textContent = formatRate(data.dedupHits, data.dedupReads);
+      contentDedup.title = `${data.dedupHits} hits / ${data.dedupReads} reads · ${formatNumber(data.dedupTokensSaved)} tokens saved`;
     }
 
     function renderKnowledge(facts) {

@@ -40,6 +40,8 @@ export class StatusBarManager {
         `Searches: ${stats.totalSearches}`,
         `Shells: ${stats.totalShells}`,
         `Files: ${stats.filesTouched}`,
+        `Read Cache: ${stats.cacheHits}/${stats.cacheReads}`,
+        `Content Dedup: ${stats.dedupHits}/${stats.dedupReads} (${this.formatTokens(stats.dedupTokensSaved)} tokens saved)`,
         `Session: ${stats.sessionDuration}`,
       ].join("\n");
     } catch {

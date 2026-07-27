@@ -7,6 +7,19 @@ use crate::tool_defs::tool_def;
 
 pub struct CtxCacheTool;
 
+fn append_content_dedup_stats(lines: &mut Vec<String>) {
+    let dedup = crate::tools::ctx_read::dedup_hook::summary();
+    if dedup.total_reads > 0 {
+        lines.push(format!(
+            "content dedup: {} hit(s)/{} read(s) ({:.1}%), {} tokens saved",
+            dedup.dedup_hits,
+            dedup.total_reads,
+            dedup.hit_rate * 100.0,
+            dedup.tokens_saved
+        ));
+    }
+}
+
 impl McpTool for CtxCacheTool {
     fn name(&self) -> &'static str {
         "ctx_cache"
@@ -93,6 +106,7 @@ impl McpTool for CtxCacheTool {
                     }
                     lines
                 };
+                append_content_dedup_stats(&mut lines);
                 // Re-delivery telemetry: forced full re-sends grouped by cause
                 // (diagnostic only — never enters a cacheable body, #498).
                 let t = crate::core::cache_telemetry::snapshot();

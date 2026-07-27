@@ -771,6 +771,67 @@ fn parse_flag_value(args: &[String], flag: &str) -> Option<String> {
         .cloned()
 }
 
+fn load_mcp_live_stats() -> Option<serde_json::Value> {
+    let path = crate::core::paths::state_dir().ok()?.join("mcp-live.json");
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+fn stats_json_value(
+    store: &crate::core::stats::StatsStore,
+    mcp_cache: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let mut value = serde_json::to_value(store).unwrap_or_else(|_| serde_json::json!({}));
+    if let (Some(object), Some(mcp_cache)) = (value.as_object_mut(), mcp_cache) {
+        object.insert("mcp_cache".to_string(), mcp_cache);
+    }
+    value
+}
+
+fn mcp_cache_stats_lines(value: &serde_json::Value) -> Vec<String> {
+    let metric = |key| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0)
+    };
+    let mcp_reads = metric("total_reads");
+    let mcp_hits = metric("cache_hits");
+    let mcp_rate = if mcp_reads > 0 {
+        (mcp_hits as f64 / mcp_reads as f64 * 100.0).round() as u32
+    } else {
+        0
+    };
+    let updated = value
+        .get("updated_at")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown");
+    let mut lines = vec![
+        "MCP Session Cache (ctx_read via AI editor):".to_string(),
+        format!("  Reads:         {mcp_reads}"),
+        format!("  Hits:          {mcp_hits}"),
+        format!("  Hit Rate:      {mcp_rate}%"),
+        format!("  Tokens Saved:  {}", metric("tokens_saved")),
+        format!("  Last Updated:  {updated}"),
+    ];
+
+    let dedup_reads = metric("dedup_reads");
+    if dedup_reads > 0 {
+        let dedup_hits = metric("dedup_hits");
+        let dedup_rate = dedup_hits as f64 / dedup_reads as f64 * 100.0;
+        lines.extend([
+            String::new(),
+            "Content Dedup (repeated ctx_read output):".to_string(),
+            format!("  Reads Checked: {dedup_reads}"),
+            format!("  Hits:          {dedup_hits}"),
+            format!("  Hit Rate:      {dedup_rate:.1}%"),
+            format!("  Tokens Saved:  {}", metric("dedup_tokens_saved")),
+        ]);
+    }
+
+    lines
+}
+
 pub fn cmd_stats(args: &[String]) {
     match args.first().map(std::string::String::as_str) {
         Some("reset-cep") => {
@@ -779,9 +840,10 @@ pub fn cmd_stats(args: &[String]) {
         }
         Some("json") => {
             let store = crate::core::stats::load();
+            let value = stats_json_value(&store, load_mcp_live_stats());
             println!(
                 "{}",
-                serde_json::to_string_pretty(&store).unwrap_or_else(|_| "{}".to_string())
+                serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
             );
         }
         _ => {
@@ -847,45 +909,14 @@ pub fn cmd_cache(args: &[String]) {
             println!("  Hits:      {hits}");
             println!("  Hit Rate:  {rate}%");
 
-            if let Ok(dir) = crate::core::paths::state_dir() {
-                let live_path = dir.join("mcp-live.json");
-                if let Ok(content) = std::fs::read_to_string(&live_path) {
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                        let mcp_reads = val
-                            .get("total_reads")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0);
-                        let mcp_hits = val
-                            .get("cache_hits")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0);
-                        let mcp_saved = val
-                            .get("tokens_saved")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0);
-                        let mcp_rate = if mcp_reads > 0 {
-                            (mcp_hits as f64 / mcp_reads as f64 * 100.0).round() as u32
-                        } else {
-                            0
-                        };
-                        let updated = val
-                            .get("updated_at")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("unknown");
-                        println!();
-                        println!("MCP Session Cache (ctx_read via AI editor):");
-                        println!("  Reads:         {mcp_reads}");
-                        println!("  Hits:          {mcp_hits}");
-                        println!("  Hit Rate:      {mcp_rate}%");
-                        println!("  Tokens Saved:  {mcp_saved}");
-                        println!("  Last Updated:  {updated}");
-                    }
-                } else {
-                    println!();
-                    println!(
-                        "MCP Session Cache: no data yet (start a session with your AI editor)"
-                    );
+            if let Some(value) = load_mcp_live_stats() {
+                println!();
+                for line in mcp_cache_stats_lines(&value) {
+                    println!("{line}");
                 }
+            } else {
+                println!();
+                println!("MCP Session Cache: no data yet (start a session with your AI editor)");
             }
         }
         Some("invalidate") => {
@@ -1290,6 +1321,47 @@ fn dir_size(path: &std::path::Path) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mcp_cache_stats_distinguish_session_cache_and_content_dedup() {
+        let current = serde_json::json!({
+            "total_reads": 55,
+            "cache_hits": 2,
+            "tokens_saved": 178_015,
+            "dedup_reads": 10,
+            "dedup_hits": 8,
+            "dedup_tokens_saved": 12_345,
+            "updated_at": "2026-07-24T14:17:30+02:00"
+        });
+        let lines = mcp_cache_stats_lines(&current);
+        assert!(lines.iter().any(|line| line == "  Hit Rate:      4%"));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line == "Content Dedup (repeated ctx_read output):")
+        );
+        assert!(lines.iter().any(|line| line == "  Hit Rate:      80.0%"));
+        assert!(lines.iter().any(|line| line == "  Tokens Saved:  12345"));
+
+        let legacy = serde_json::json!({"total_reads": 3, "cache_hits": 1});
+        let legacy_lines = mcp_cache_stats_lines(&legacy);
+        assert!(
+            legacy_lines
+                .iter()
+                .all(|line| !line.contains("Content Dedup"))
+        );
+    }
+
+    #[test]
+    fn stats_json_embeds_mcp_cache_snapshot() {
+        let store = crate::core::stats::StatsStore::default();
+        let cache = serde_json::json!({"cache_hits": 2, "dedup_hits": 8});
+        let value = stats_json_value(&store, Some(cache));
+
+        assert_eq!(value["mcp_cache"]["cache_hits"], 2);
+        assert_eq!(value["mcp_cache"]["dedup_hits"], 8);
+        assert!(stats_json_value(&store, None).get("mcp_cache").is_none());
+    }
 
     #[test]
     fn show_box_borders_line_up() {

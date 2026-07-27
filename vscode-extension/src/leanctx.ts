@@ -14,6 +14,11 @@ export interface SessionStats {
   tokensSaved: number;
   sessionDuration: string;
   filesTouched: number;
+  cacheReads: number;
+  cacheHits: number;
+  dedupReads: number;
+  dedupHits: number;
+  dedupTokensSaved: number;
 }
 
 export interface RepoMapEntry {
@@ -192,6 +197,7 @@ export async function getSessionStats(): Promise<SessionStats> {
 
     const inputTokens: number = data.total_input_tokens ?? 0;
     const outputTokens: number = data.total_output_tokens ?? 0;
+    const mcpCache = (data.mcp_cache ?? {}) as Record<string, number>;
 
     return {
       totalReads: count("ctx_read"),
@@ -200,6 +206,11 @@ export async function getSessionStats(): Promise<SessionStats> {
       tokensSaved: Math.max(0, inputTokens - outputTokens),
       sessionDuration: formatSpan(data.first_use, data.last_use),
       filesTouched: 0,
+      cacheReads: mcpCache.total_reads ?? 0,
+      cacheHits: mcpCache.cache_hits ?? 0,
+      dedupReads: mcpCache.dedup_reads ?? 0,
+      dedupHits: mcpCache.dedup_hits ?? 0,
+      dedupTokensSaved: mcpCache.dedup_tokens_saved ?? 0,
     };
   } catch {
     return {
@@ -209,6 +220,11 @@ export async function getSessionStats(): Promise<SessionStats> {
       tokensSaved: 0,
       sessionDuration: "—",
       filesTouched: 0,
+      cacheReads: 0,
+      cacheHits: 0,
+      dedupReads: 0,
+      dedupHits: 0,
+      dedupTokensSaved: 0,
     };
   }
 }
