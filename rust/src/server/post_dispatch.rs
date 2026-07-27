@@ -100,7 +100,7 @@ impl LeanCtxServer {
             };
 
             if let Some(root) = project_root
-                && crate::tools::autonomy::should_auto_consolidate(&self.autonomy, calls)
+                && crate::core::autonomy::should_auto_consolidate(&self.autonomy, calls)
             {
                 let root_clone = root.clone();
                 tokio::task::spawn_blocking(move || {

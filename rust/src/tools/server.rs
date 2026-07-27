@@ -69,7 +69,7 @@ pub struct LeanCtxServer {
     pub agent_id: Arc<RwLock<Option<String>>>,
     pub(crate) presence_agent_id: Arc<RwLock<Option<String>>>,
     pub client_name: Arc<RwLock<String>>,
-    pub autonomy: Arc<super::autonomy::AutonomyState>,
+    pub autonomy: Arc<crate::core::autonomy::AutonomyState>,
     pub loop_detector: Arc<RwLock<crate::core::loop_detection::LoopDetector>>,
     pub workflow: Arc<RwLock<Option<crate::core::workflow::WorkflowRun>>>,
     pub ledger: Arc<RwLock<crate::core::context_ledger::ContextLedger>>,

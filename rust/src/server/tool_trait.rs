@@ -190,7 +190,7 @@ pub struct ToolContext {
     /// Global call counter for context tools.
     pub call_count: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
     /// Autonomy state for search repeat detection.
-    pub autonomy: Option<std::sync::Arc<crate::tools::autonomy::AutonomyState>>,
+    pub autonomy: Option<std::sync::Arc<crate::core::autonomy::AutonomyState>>,
     /// Pre-computed context pressure snapshot for synchronous gate decisions.
     pub pressure_snapshot: Option<crate::core::context_ledger::ContextPressure>,
     /// Errors from path resolution (PathJail rejection, secret path, etc.).

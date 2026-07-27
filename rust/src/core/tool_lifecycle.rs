@@ -473,12 +473,10 @@ pub fn flush_all() {
     crate::core::litm_calibration::flush();
 }
 
-// TODO(arch): crate::tools::autonomy is still referenced here. Move AutonomyState
-// and should_auto_consolidate to core::autonomy_drivers for a clean layer boundary.
 fn maybe_consolidate(project_root: Option<&str>, calls: u32) {
     let Some(root) = project_root else { return };
-    let autonomy = crate::tools::autonomy::AutonomyState::new();
-    if crate::tools::autonomy::should_auto_consolidate(&autonomy, calls) {
+    let autonomy = crate::core::autonomy::AutonomyState::new();
+    if crate::core::autonomy::should_auto_consolidate(&autonomy, calls) {
         let root = root.to_string();
         let _ = crate::core::consolidation_engine::consolidate_latest(
             &root,

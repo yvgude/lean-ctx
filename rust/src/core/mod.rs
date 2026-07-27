@@ -301,6 +301,7 @@ pub mod a2a_transport;
 pub mod agent_identity;
 pub mod agent_runtime_env;
 pub mod agents;
+pub mod autonomy;
 pub mod autonomy_drivers;
 
 // ---------------------------------------------------------------------------

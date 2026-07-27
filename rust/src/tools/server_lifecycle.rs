@@ -7,7 +7,6 @@ use tokio::sync::RwLock;
 use crate::core::cache::SessionCache;
 use crate::core::session::SessionState;
 
-use super::autonomy;
 use super::server::{LeanCtxServer, SessionMode};
 use super::startup::detect_startup_context;
 
@@ -164,7 +163,7 @@ impl LeanCtxServer {
             agent_id: Arc::new(RwLock::new(None)),
             presence_agent_id: Arc::new(RwLock::new(presence_agent_id)),
             client_name: Arc::new(RwLock::new(String::new())),
-            autonomy: Arc::new(autonomy::AutonomyState::new()),
+            autonomy: Arc::new(crate::core::autonomy::AutonomyState::new()),
             loop_detector: Arc::new(RwLock::new(
                 crate::core::loop_detection::LoopDetector::with_config(
                     &crate::core::config::Config::load().loop_detection,
