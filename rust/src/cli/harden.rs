@@ -60,8 +60,10 @@ fn apply_harden(level: &str) {
         applied.push("Set LEAN_CTX_HARDEN=1 in MCP configs");
     }
 
-    if cleanup_claude_stale_bash_deny() {
-        applied.push("Claude Code: removed stale Bash from permissions.deny (GH #799)");
+    match cleanup_claude_stale_bash_deny() {
+        Ok(true) => applied.push("Claude Code: removed stale Bash from permissions.deny (GH #799)"),
+        Ok(false) => {}
+        Err(error) => eprintln!("  [ERROR] {error}"),
     }
 
     if applied.is_empty() {
@@ -81,10 +83,19 @@ fn undo_harden() {
     println!("lean-ctx harden --undo");
     println!();
 
-    remove_env_from_mcp_configs();
-    remove_claude_permissions_deny();
+    let mut errors = remove_env_from_mcp_configs();
+    if let Err(error) = remove_claude_permissions_deny() {
+        errors.push(error);
+    }
 
-    println!("  [OK] Harden deactivated. Native tools allowed again.");
+    if errors.is_empty() {
+        println!("  [OK] Harden deactivated. Native tools allowed again.");
+    } else {
+        for error in &errors {
+            eprintln!("  [ERROR] {error}");
+        }
+        eprintln!("  Harden could not be fully deactivated.");
+    }
 }
 
 fn set_env_in_mcp_configs() -> bool {
@@ -115,17 +126,24 @@ fn set_env_in_mcp_configs() -> bool {
                 server_obj.insert("env".to_string(), serde_json::Value::Object(env_map));
             }
 
-            if let Ok(out) = serde_json::to_string_pretty(&json) {
-                let _ = std::fs::write(&path, out);
-                any_set = true;
-                println!("  [OK] {}", path.display());
+            match serde_json::to_string_pretty(&json)
+                .map_err(|error| format!("cannot serialize {}: {error}", path.display()))
+                .and_then(|out| write_json_config(&path, &out))
+            {
+                Ok(()) => {
+                    any_set = true;
+                    println!("  [OK] {}", path.display());
+                }
+                Err(error) => eprintln!("  [ERROR] {error}"),
             }
         }
     }
     any_set
 }
 
-fn remove_env_from_mcp_configs() {
+fn remove_env_from_mcp_configs() -> Vec<String> {
+    let mut errors = Vec::new();
+
     for path in discover_mcp_configs() {
         if let Ok(content) = std::fs::read_to_string(&path)
             && let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content)
@@ -136,11 +154,16 @@ fn remove_env_from_mcp_configs() {
                 .and_then(|e| e.as_object_mut())
         {
             env.remove("LEAN_CTX_HARDEN");
-            if let Ok(out) = serde_json::to_string_pretty(&json) {
-                let _ = std::fs::write(&path, out);
+            if let Err(error) = serde_json::to_string_pretty(&json)
+                .map_err(|error| format!("cannot serialize {}: {error}", path.display()))
+                .and_then(|out| write_json_config(&path, &out))
+            {
+                errors.push(error);
             }
         }
     }
+
+    errors
 }
 
 /// Remove stale "Bash" from Claude Code's `permissions.deny` (GH #799).
@@ -149,20 +172,20 @@ fn remove_env_from_mcp_configs() {
 /// including plugin commands (e.g. codex-companion). The PreToolUse hook
 /// (`lean-ctx hook deny`) already blocks agent-level native Bash, so the
 /// permissions.deny entry is unnecessary and harmful.
-fn cleanup_claude_stale_bash_deny() -> bool {
+fn cleanup_claude_stale_bash_deny() -> Result<bool, String> {
     let Some(home) = dirs::home_dir() else {
-        return false;
+        return Ok(false);
     };
     let settings_path = home.join(".claude").join("settings.json");
     if !settings_path.exists() {
-        return false;
+        return Ok(false);
     }
 
     let Ok(content) = std::fs::read_to_string(&settings_path) else {
-        return false;
+        return Ok(false);
     };
     let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) else {
-        return false;
+        return Ok(false);
     };
 
     let removed = if let Some(deny) = json
@@ -176,26 +199,28 @@ fn cleanup_claude_stale_bash_deny() -> bool {
         false
     };
 
-    if removed && let Ok(out) = serde_json::to_string_pretty(&json) {
-        let _ = std::fs::write(&settings_path, out);
+    if removed {
+        serde_json::to_string_pretty(&json)
+            .map_err(|error| format!("cannot serialize {}: {error}", settings_path.display()))
+            .and_then(|out| write_json_config(&settings_path, &out))?;
     }
-    removed
+    Ok(removed)
 }
 
-fn remove_claude_permissions_deny() {
+fn remove_claude_permissions_deny() -> Result<(), String> {
     let Some(home) = dirs::home_dir() else {
-        return;
+        return Ok(());
     };
     let settings_path = home.join(".claude").join("settings.json");
     if !settings_path.exists() {
-        return;
+        return Ok(());
     }
 
     let Ok(content) = std::fs::read_to_string(&settings_path) else {
-        return;
+        return Ok(());
     };
     let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) else {
-        return;
+        return Ok(());
     };
 
     if let Some(deny) = json
@@ -205,9 +230,14 @@ fn remove_claude_permissions_deny() {
         deny.retain(|v| v.as_str() != Some("Bash"));
     }
 
-    if let Ok(out) = serde_json::to_string_pretty(&json) {
-        let _ = std::fs::write(&settings_path, out);
-    }
+    serde_json::to_string_pretty(&json)
+        .map_err(|error| format!("cannot serialize {}: {error}", settings_path.display()))
+        .and_then(|out| write_json_config(&settings_path, &out))
+}
+
+fn write_json_config(path: &std::path::Path, content: &str) -> Result<(), String> {
+    crate::config_io::write_atomic(path, content)
+        .map_err(|error| format!("cannot write {}: {error}", path.display()))
 }
 
 fn discover_mcp_configs() -> Vec<PathBuf> {
