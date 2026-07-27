@@ -70,7 +70,7 @@ fn setup_step(name: &str) -> SetupStepReport {
     }
 }
 
-fn build_shell_hook_step(opts: SetupOptions, binary: &str) -> SetupStepReport {
+fn build_shell_hook_step(opts: SetupOptions, _binary: &str) -> SetupStepReport {
     let mut shell_step = setup_step("shell_hook");
     if !opts.non_interactive || opts.yes {
         if opts.json {
@@ -81,6 +81,7 @@ fn build_shell_hook_step(opts: SetupOptions, binary: &str) -> SetupStepReport {
         crate::shell_hook::install_all(opts.json);
         #[cfg(not(windows))]
         {
+            let binary = _binary;
             let hook_content = crate::cli::generate_hook_posix(binary);
             if crate::shell::is_container() {
                 crate::cli::write_env_sh_for_containers(&hook_content);
