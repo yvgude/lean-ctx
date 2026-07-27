@@ -55,10 +55,7 @@ pub(crate) fn cmd_agent(args: &[String]) {
         Some("list") => {
             let records = agent_registry::list();
             if as_json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&records).expect("serializable")
-                );
+                print_json_or_exit(&records);
                 return;
             }
             if records.is_empty() {
@@ -94,12 +91,9 @@ pub(crate) fn cmd_agent(args: &[String]) {
             match agent_registry::get(&agent_id) {
                 Some(record) => {
                     if as_json {
-                        println!(
-                            "{}",
-                            serde_json::to_string_pretty(&record).expect("serializable")
-                        );
+                        print_json_or_exit(&record);
                     } else {
-                        println!("{}", serde_json::to_string_pretty(&record).expect("ok"));
+                        print_json_or_exit(&record);
                         if let Some(domain) = flag("--trust-domain") {
                             println!("spiffe id: {}", agent_registry::spiffe_id(&record, &domain));
                         }
@@ -166,10 +160,7 @@ pub(crate) fn cmd_agent(args: &[String]) {
             };
             let result = agent_registry::check(&agent_id);
             if as_json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&result).expect("serializable")
-                );
+                print_json_or_exit(&result);
             } else {
                 println!(
                     "{}: {} — {}",
@@ -205,6 +196,13 @@ tamper-evident audit entries. Docs: docs/enterprise/agent-identity.md"
 fn exit_usage(usage: &str) -> ! {
     eprintln!("usage: lean-ctx {usage}");
     std::process::exit(2);
+}
+
+fn print_json_or_exit<T: serde::Serialize>(value: &T) {
+    match serde_json::to_string_pretty(value) {
+        Ok(json) => println!("{json}"),
+        Err(error) => exit_err(&format!("cannot serialize JSON output: {error}")),
+    }
 }
 
 fn exit_err(message: &str) -> ! {
