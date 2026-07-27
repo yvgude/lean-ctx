@@ -138,7 +138,11 @@ export async function cmdConfigureMcp(): Promise<void> {
     if (!config.servers) {
       config.servers = {};
     }
-    config.servers["lean-ctx"] = { type: "stdio", command: resolveBinaryPath() };
+    config.servers["lean-ctx"] = {
+      type: "stdio",
+      command: resolveBinaryPath(),
+      env: { LEAN_CTX_PROJECT_ROOT: "${workspaceFolder}" },
+    };
 
     fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
     vscode.window.showInformationMessage(

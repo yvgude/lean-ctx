@@ -55,15 +55,6 @@ pub fn build_claude_code_static_instructions_for_test() -> String {
     crate::instructions::claude_code_static_instructions_for_test()
 }
 
-fn is_home_or_agent_dir(dir: &std::path::Path) -> bool {
-    if let Some(home) = dirs::home_dir()
-        && dir == home
-    {
-        return true;
-    }
-    crate::core::pathutil::is_agent_config_dir(dir)
-}
-
 fn git_toplevel_from(dir: &std::path::Path) -> Option<String> {
     std::process::Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
@@ -87,7 +78,7 @@ pub fn derive_project_root_from_cwd() -> Option<String> {
     let cwd = std::env::current_dir().ok()?;
     let canonical = crate::core::pathutil::safe_canonicalize_or_self(&cwd);
 
-    if is_home_or_agent_dir(&canonical) {
+    if crate::core::pathutil::is_broad_or_unsafe_root(&canonical) {
         return git_toplevel_from(&canonical);
     }
 
@@ -125,10 +116,11 @@ use crate::core::pathutil::is_broad_or_unsafe_root;
 /// itself, but contains child directories that do. In this case, use the
 /// parent as jail root and auto-allow all child projects via LEAN_CTX_ALLOW_PATH.
 fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
-    // Never enumerate the home dir or macOS TCC-protected dirs (Documents/Desktop/
-    // Downloads): read_dir there triggers a macOS privacy prompt (#356), and a real
-    // project under them is already handled upstream via has_project_marker.
-    if crate::core::pathutil::is_tcc_sensitive_home_dir(dir) {
+    // Never enumerate broad roots or macOS TCC-protected dirs: read_dir there
+    // can scan an entire user profile or trigger a macOS privacy prompt.
+    if crate::core::pathutil::is_broad_or_unsafe_root(dir)
+        || crate::core::pathutil::is_tcc_sensitive_home_dir(dir)
+    {
         return None;
     }
     let entries = std::fs::read_dir(dir).ok()?;
@@ -245,20 +237,20 @@ mod tests {
     }
 
     #[test]
-    fn home_dir_detected_as_agent_dir() {
+    fn home_dir_detected_as_broad_root() {
         if let Some(home) = dirs::home_dir() {
-            assert!(is_home_or_agent_dir(&home));
+            assert!(is_broad_or_unsafe_root(&home));
         }
     }
 
     #[test]
     fn agent_dirs_detected() {
         let claude = std::path::PathBuf::from("/home/user/.claude");
-        assert!(is_home_or_agent_dir(&claude));
+        assert!(is_broad_or_unsafe_root(&claude));
         let codex = std::path::PathBuf::from("/home/user/.codex");
-        assert!(is_home_or_agent_dir(&codex));
+        assert!(is_broad_or_unsafe_root(&codex));
         let project = std::path::PathBuf::from("/home/user/projects/myapp");
-        assert!(!is_home_or_agent_dir(&project));
+        assert!(!is_broad_or_unsafe_root(&project));
     }
 
     #[test]

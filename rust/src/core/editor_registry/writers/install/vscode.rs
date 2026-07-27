@@ -5,12 +5,21 @@ use super::super::shared::*;
 use super::super::{WriteAction, WriteOptions, WriteResult};
 use crate::core::editor_registry::types::EditorTarget;
 
+fn vscode_mcp_entry(binary: &str) -> Value {
+    serde_json::json!({
+        "type": "stdio",
+        "command": binary,
+        "args": [],
+        "env": { "LEAN_CTX_PROJECT_ROOT": "${workspaceFolder}" }
+    })
+}
+
 pub(crate) fn write_vscode_mcp(
     target: &EditorTarget,
     binary: &str,
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
-    let desired = serde_json::json!({ "type": "stdio", "command": binary, "args": [] });
+    let desired = vscode_mcp_entry(binary);
 
     if target.config_path.exists() {
         let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
@@ -64,7 +73,7 @@ pub(crate) fn write_vscode_mcp_fresh(
     note: Option<String>,
 ) -> Result<WriteResult, String> {
     let content = serde_json::to_string_pretty(&serde_json::json!({
-        "servers": { "lean-ctx": { "type": "stdio", "command": binary, "args": [] } }
+        "servers": { "lean-ctx": vscode_mcp_entry(binary) }
     }))
     .map_err(|e| e.to_string())?;
     crate::config_io::write_atomic_with_backup(path, &content)?;
@@ -76,6 +85,18 @@ pub(crate) fn write_vscode_mcp_fresh(
         },
         note,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::vscode_mcp_entry;
+
+    #[test]
+    fn vscode_mcp_entry_scopes_server_to_workspace_folder() {
+        let entry = vscode_mcp_entry("/bin/lean-ctx");
+
+        assert_eq!(entry["env"]["LEAN_CTX_PROJECT_ROOT"], "${workspaceFolder}");
+    }
 }
 
 // ---------------------------------------------------------------------------

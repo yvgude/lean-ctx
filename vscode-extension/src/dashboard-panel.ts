@@ -111,6 +111,7 @@ export async function cmdDashboard(
       const token = randomToken();
       const bin = resolveBinaryPath();
       const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const projectArg = cwd ? [`--project=${cwd}`] : [];
 
       let spawnError: string | undefined;
       try {
@@ -122,6 +123,7 @@ export async function cmdDashboard(
             "--host=127.0.0.1",
             `--port=${port}`,
             `--auth-token=${token}`,
+            ...projectArg,
           ],
           { cwd, env: { ...process.env, NO_COLOR: "1" } }
         );

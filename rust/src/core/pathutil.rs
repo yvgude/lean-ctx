@@ -243,15 +243,44 @@ pub fn is_agent_config_dir(dir: &Path) -> bool {
         .any(|name| s.ends_with(&format!("/{name}")) || s.contains(&format!("/{name}/")))
 }
 
+fn is_wsl_windows_user_profile(dir: &Path) -> bool {
+    let normalized = dir.to_string_lossy();
+    if !normalized.starts_with("/mnt/") {
+        return false;
+    }
+
+    let mut components = normalized
+        .split('/')
+        .filter(|component| !component.is_empty());
+    let (Some(mount), Some(drive), Some(users), Some(username)) = (
+        components.next(),
+        components.next(),
+        components.next(),
+        components.next(),
+    ) else {
+        return false;
+    };
+
+    mount.eq_ignore_ascii_case("mnt")
+        && drive.len() == 1
+        && drive.as_bytes()[0].is_ascii_alphabetic()
+        && users.eq_ignore_ascii_case("users")
+        && !username.is_empty()
+        && components.next().is_none()
+}
+
 /// Returns `true` if the directory is too broad to be a valid project root.
-/// Rejects the home directory, filesystem root, `.` (bare CWD), and agent/IDE
-/// config directories ([`AGENT_CONFIG_DIRS`]). Used to prevent adopting a bogus
-/// project root and writing project-scoped data into the global `~/.lean-ctx/`
-/// data directory.
+/// Rejects home directories (including WSL-mounted Windows profiles), filesystem
+/// root, `.` (bare CWD), and agent/IDE config directories
+/// ([`AGENT_CONFIG_DIRS`]). Used to prevent adopting a bogus project root and
+/// writing project-scoped data into the global `~/.lean-ctx/` data directory.
 pub fn is_broad_or_unsafe_root(dir: &Path) -> bool {
     if let Some(home) = dirs::home_dir()
         && dir == home
     {
+        return true;
+    }
+    if is_wsl_windows_user_profile(dir) {
         return true;
     }
     let s = dir.to_string_lossy();
@@ -816,6 +845,14 @@ mod tests {
         if let Some(home) = dirs::home_dir() {
             assert!(is_broad_or_unsafe_root(&home));
         }
+    }
+
+    #[test]
+    fn broad_root_rejects_wsl_windows_user_profile() {
+        assert!(is_broad_or_unsafe_root(Path::new("/mnt/c/Users/dev")));
+        assert!(!is_broad_or_unsafe_root(Path::new(
+            "/mnt/c/Users/dev/projects/my-app"
+        )));
     }
 
     #[test]
