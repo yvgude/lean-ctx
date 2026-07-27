@@ -327,9 +327,10 @@ fn build_and_persist_fix_report(
         },
         path: None,
         note: Some(format!(
-            "scanned {}, removed {}, freed {:.1} MB",
+            "scanned {}, removed {}, failed {}, freed {:.1} MB",
             prune_result.scanned,
             prune_result.removed,
+            prune_result.failed,
             prune_result.bytes_freed as f64 / 1_048_576.0
         )),
     });

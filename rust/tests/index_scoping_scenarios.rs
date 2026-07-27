@@ -189,8 +189,39 @@ fn prune_caches_handles_empty_isolated_dir() {
 
     let result = lean_ctx::cli::prune_graph_caches();
     assert_eq!(result.removed, 0);
+    assert_eq!(result.failed, 0);
+    assert_eq!(result.bytes_freed, 0);
     let result2 = lean_ctx::cli::prune_bm25_caches();
     assert_eq!(result2.removed, 0);
+    assert_eq!(result2.failed, 0);
+    assert_eq!(result2.bytes_freed, 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn prune_bm25_counts_failed_remove_without_freed_bytes() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let _guard = EnvGuard::new("LEAN_CTX_DATA_DIR", tmp.path().to_str().unwrap());
+    let vectors_dir = tmp.path().join("vectors");
+    let cache_dir = vectors_dir.join("blocked");
+    std::fs::create_dir_all(&cache_dir).unwrap();
+    std::fs::write(
+        cache_dir.join("project_root.txt"),
+        "/definitely/missing/project/root",
+    )
+    .unwrap();
+    std::fs::write(cache_dir.join("bm25_index.bin"), b"keep").unwrap();
+    std::fs::set_permissions(&vectors_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    let result = lean_ctx::cli::prune_bm25_caches();
+
+    std::fs::set_permissions(&vectors_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(result.removed, 0);
+    assert_eq!(result.failed, 1);
+    assert_eq!(result.bytes_freed, 0);
+    assert!(cache_dir.exists());
 }
 
 /// Guards env var modifications so parallel tests don't race.

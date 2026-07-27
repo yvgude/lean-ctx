@@ -915,16 +915,18 @@ pub fn cmd_cache(args: &[String]) {
             let orphans = crate::core::knowledge::maintenance::prune_orphaned_stores();
 
             let removed = bm25.removed + graph.removed + archive_removed + orphans.removed as u32;
+            let failed = bm25.failed + graph.failed;
             let freed =
                 bm25.bytes_freed + graph.bytes_freed + archive_freed + orphans.reclaimed_bytes;
             println!(
-                "Pruned {} entries, freed {:.1} MB (BM25: {}, graphs: {}, archive: {}, orphaned stores: {})",
+                "Pruned {} entries, freed {:.1} MB (BM25: {}, graphs: {}, archive: {}, orphaned stores: {}, failed: {})",
                 removed,
                 freed as f64 / 1_048_576.0,
                 bm25.removed,
                 graph.removed,
                 archive_removed,
                 orphans.removed,
+                failed,
             );
         }
         _ => {
@@ -951,13 +953,50 @@ pub fn cmd_cache(args: &[String]) {
 pub struct PruneResult {
     pub scanned: u32,
     pub removed: u32,
+    pub failed: u32,
     pub bytes_freed: u64,
+}
+
+fn record_removed_file(result: &mut PruneResult, path: &std::path::Path, label: &str) {
+    let bytes = std::fs::metadata(path).map_or(0, |meta| meta.len());
+
+    match std::fs::remove_file(path) {
+        Ok(()) => {
+            result.bytes_freed += bytes;
+            result.removed += 1;
+            println!("  {label}: {}", path.display());
+        }
+        Err(error) => {
+            result.failed += 1;
+            eprintln!("  Failed to remove {}: {error}", path.display());
+        }
+    }
+}
+
+fn record_removed_dir(
+    result: &mut PruneResult,
+    path: &std::path::Path,
+    bytes: u64,
+    message: impl FnOnce() -> String,
+) {
+    match std::fs::remove_dir_all(path) {
+        Ok(()) => {
+            result.bytes_freed += bytes;
+            result.removed += 1;
+            println!("  {}", message());
+        }
+        Err(error) => {
+            result.failed += 1;
+            eprintln!("  Failed to remove {}: {error}", path.display());
+        }
+    }
 }
 
 pub fn prune_bm25_caches() -> PruneResult {
     let mut result = PruneResult {
         scanned: 0,
         removed: 0,
+        failed: 0,
         bytes_freed: 0,
     };
 
@@ -985,12 +1024,7 @@ pub fn prune_bm25_caches() -> PruneResult {
         ] {
             let quarantined = dir.join(q_name);
             if quarantined.exists() {
-                if let Ok(meta) = std::fs::metadata(&quarantined) {
-                    result.bytes_freed += meta.len();
-                }
-                let _ = std::fs::remove_file(&quarantined);
-                result.removed += 1;
-                println!("  Removed quarantined: {}", quarantined.display());
+                record_removed_file(&mut result, &quarantined, "Removed quarantined");
             }
         }
 
@@ -1004,14 +1038,7 @@ pub fn prune_bm25_caches() -> PruneResult {
         if let Ok(meta) = std::fs::metadata(&index_path)
             && meta.len() > max_bytes
         {
-            result.bytes_freed += meta.len();
-            let _ = std::fs::remove_file(&index_path);
-            result.removed += 1;
-            println!(
-                "  Removed oversized ({:.1} MB): {}",
-                meta.len() as f64 / 1_048_576.0,
-                index_path.display()
-            );
+            record_removed_file(&mut result, &index_path, "Removed oversized");
         }
 
         let marker = dir.join("project_root.txt");
@@ -1019,15 +1046,14 @@ pub fn prune_bm25_caches() -> PruneResult {
             let root_path = std::path::Path::new(root_str.trim());
             if !root_path.exists() {
                 let freed = dir_size(&dir);
-                result.bytes_freed += freed;
-                let _ = std::fs::remove_dir_all(&dir);
-                result.removed += 1;
-                println!(
-                    "  Removed orphaned ({:.1} MB, project gone: {}): {}",
-                    freed as f64 / 1_048_576.0,
-                    root_str.trim(),
-                    dir.display()
-                );
+                record_removed_dir(&mut result, &dir, freed, || {
+                    format!(
+                        "Removed orphaned ({:.1} MB, project gone: {}): {}",
+                        freed as f64 / 1_048_576.0,
+                        root_str.trim(),
+                        dir.display()
+                    )
+                });
             }
         }
     }
@@ -1039,6 +1065,7 @@ pub fn prune_graph_caches() -> PruneResult {
     let mut result = PruneResult {
         scanned: 0,
         removed: 0,
+        failed: 0,
         bytes_freed: 0,
     };
 
@@ -1072,15 +1099,14 @@ pub fn prune_graph_caches() -> PruneResult {
             && !std::path::Path::new(&root).exists()
         {
             let freed = dir_size(&dir);
-            result.bytes_freed += freed;
-            let _ = std::fs::remove_dir_all(&dir);
-            result.removed += 1;
-            println!(
-                "  Removed orphaned graph ({:.1} MB, project gone: {}): {}",
-                freed as f64 / 1_048_576.0,
-                root,
-                dir.display()
-            );
+            record_removed_dir(&mut result, &dir, freed, || {
+                format!(
+                    "Removed orphaned graph ({:.1} MB, project gone: {}): {}",
+                    freed as f64 / 1_048_576.0,
+                    root,
+                    dir.display()
+                )
+            });
             continue;
         }
 
@@ -1091,14 +1117,13 @@ pub fn prune_graph_caches() -> PruneResult {
             && meta.len() > 100 * 1024 * 1024
         {
             let freed = dir_size(&dir);
-            result.bytes_freed += freed;
-            let _ = std::fs::remove_dir_all(&dir);
-            result.removed += 1;
-            println!(
-                "  Removed oversized graph ({:.1} MB): {}",
-                freed as f64 / 1_048_576.0,
-                dir.display()
-            );
+            record_removed_dir(&mut result, &dir, freed, || {
+                format!(
+                    "Removed oversized graph ({:.1} MB): {}",
+                    freed as f64 / 1_048_576.0,
+                    dir.display()
+                )
+            });
         }
     }
 
