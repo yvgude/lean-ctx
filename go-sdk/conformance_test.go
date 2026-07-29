@@ -123,7 +123,7 @@ func TestConformanceLive(t *testing.T) {
 	t.Run("tool_call_error_contract", func(t *testing.T) {
 		_, err := client.CallToolResult("definitely_not_a_tool_conformance_probe")
 		apiErr, ok := err.(*APIError)
-		if !ok || apiErr.StatusCode < 400 || apiErr.StatusCode >= 500 || apiErr.Response.Code == "" {
+		if !ok || apiErr.StatusCode < 400 || apiErr.StatusCode >= 500 || (apiErr.Response.Code == "" && apiErr.Response.ErrorCode == "") {
 			t.Fatalf("error = %T %v", err, err)
 		}
 	})

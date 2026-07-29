@@ -121,8 +121,9 @@ type CapsuleData struct {
 }
 
 type ErrorResponse struct {
-	Error string `json:"error"`
-	Code  string `json:"code,omitempty"`
+	Error     string `json:"error"`
+	Code      string `json:"code,omitempty"`
+	ErrorCode string `json:"error_code,omitempty"`
 }
 
 // E12 payload types.

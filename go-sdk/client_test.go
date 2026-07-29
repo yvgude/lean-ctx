@@ -310,7 +310,7 @@ func TestClientCallsHTTPMCPConformanceEndpoints(t *testing.T) {
 		case "/v1/tools/call":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(w, `{"error":"unknown tool","code":"unknown_tool"}`)
+			_, _ = io.WriteString(w, `{"error":"unknown tool","error_code":"unknown_tool"}`)
 		case "/v1/manifest", "/v1/capabilities", "/v1/openapi.json", "/v1/context/summary", "/v1/events/search", "/v1/events/lineage", "/v1/metrics":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, `{}`)
@@ -338,6 +338,8 @@ func TestClientCallsHTTPMCPConformanceEndpoints(t *testing.T) {
 	}
 	if _, err := client.CallToolResult("missing"); err == nil {
 		t.Fatal("missing tool unexpectedly succeeded")
+	} else if apiErr, ok := err.(*APIError); !ok || apiErr.Response.ErrorCode != "unknown_tool" {
+		t.Fatalf("missing tool error = %T %#v", err, err)
 	}
 	if contentType, err := client.EventsProbe(context.Background()); err != nil || !strings.HasPrefix(contentType, "text/event-stream") {
 		t.Fatalf("events content type = %q, err = %v", contentType, err)
