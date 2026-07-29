@@ -166,6 +166,12 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         doc("degradation-policy", "degradation-policy-v1.md", 1, Stable),
         doc("extension-trust", "extension-trust-v1.md", 1, Stable),
         doc("extractors", "extractors-v1.md", 1, Stable),
+        doc("contracts-readme", "README.md", 1, Stable),
+        doc("deprecation-policy", "DEPRECATION.md", 1, Stable),
+        doc("audit-schedule", "audit-schedule-v1.md", 1, Stable),
+        doc("branch-protection", "branch-protection-v1.md", 1, Stable),
+        doc("certification-levels", "certification-levels-v1.md", 1, Stable),
+        doc("release-integrity", "release-integrity-v1.md", 1, Stable),
         doc(
             "gotchas-reminders",
             "gotchas-reminders-contract-v1.md",
