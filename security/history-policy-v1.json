@@ -45,12 +45,12 @@
   ],
   "scanner_source_sha256": {
     ".github/workflows/security-check.yml": "7d71f7d658de5d23b4e8a4922b546b952d4f2d21fff9ceade7c5da44bc75d19f",
-    "scripts/history-policy-gate.py": "757b62d53cc67cdbc90783f4c8adfde3d612555f5d5b6ed57906a61bd0fec354",
-    "tests/security/test_history_policy_gate.py": "17a656995bb949854a8d88b8f9428cd61c57042132d57f9d35db60efe5e96593"
+    "scripts/history-policy-gate.py": "5c0d820e15d60226d3ef3de35a1a2ecf93eede36f315a2fba72d1a105bba6ae1",
+    "tests/security/test_history_policy_gate.py": "7b84ba2b09517dcece43fbfd1345f3d8663090752ef84cc05423ab419b1132ea"
   },
   "baseline": {
     "commit": "fb8a2fe9cb970cc201a33433c1f766ee24a620b7",
     "report": "security/evidence/full-history-baseline-v1.json",
-    "report_sha256": "2aa9da1f2ad2ab52c008b3645f67dd2e87675e8a6be1d3283cee26ff0ebc6d3b"
+    "report_sha256": "0432c8f6e725c6144fcabffd155c7516b0cf9108c28ff9b68d3d14355fa8115f"
   }
 }

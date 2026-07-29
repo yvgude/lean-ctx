@@ -1,6 +1,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -112,6 +113,42 @@ class HistoryPolicyGateTests(unittest.TestCase):
         self.write_policy("0" * 40, hashlib.sha256(self.report_path.read_bytes()).hexdigest())
         with self.assertRaises(GATE.GateError):
             GATE.gate(self.repo, self.policy())
+
+    def test_present_non_ancestor_baseline_is_accepted(self):
+        self.git("checkout", "-b", "main")
+        self.git("checkout", "--orphan", "feature")
+        (self.repo / "README.md").write_text("public feature\n")
+        self.commit("feature root")
+        self.git("update-ref", "refs/remotes/origin/main", "main")
+        previous = os.environ.get("GITHUB_BASE_REF")
+        os.environ["GITHUB_BASE_REF"] = "main"
+        try:
+            report = GATE.gate(self.repo, self.policy())
+        finally:
+            if previous is None:
+                os.environ.pop("GITHUB_BASE_REF", None)
+            else:
+                os.environ["GITHUB_BASE_REF"] = previous
+        self.assertEqual(report["baseline_commit"], self.base)
+
+    def test_pr_base_current_findings_are_inherited(self):
+        self.git("checkout", "-b", "main")
+        (self.repo / "leak.txt").write_text("sk_" + "live_BASE_EXAMPLE\n")
+        self.commit("base branch fixture")
+        self.git("update-ref", "refs/remotes/origin/main", "main")
+        self.git("checkout", "-b", "feature")
+        (self.repo / "README.md").write_text("public feature\n")
+        self.commit("feature change")
+        previous = os.environ.get("GITHUB_BASE_REF")
+        os.environ["GITHUB_BASE_REF"] = "main"
+        try:
+            report = GATE.gate(self.repo, self.policy())
+        finally:
+            if previous is None:
+                os.environ.pop("GITHUB_BASE_REF", None)
+            else:
+                os.environ["GITHUB_BASE_REF"] = previous
+        self.assertEqual(report["findings"], [])
 
     def test_policy_rule_drift_fails(self):
         value = json.loads(self.policy_path.read_text())

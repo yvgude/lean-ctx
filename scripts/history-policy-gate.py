@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -165,7 +166,6 @@ def validate_baseline(root, policy):
     ):
         raise GateError("invalid baseline evidence contract")
     git(root, timeout, "cat-file", "-e", baseline["commit"] + "^{commit}")
-    git(root, timeout, "merge-base", "--is-ancestor", baseline["commit"], "HEAD")
     return report
 
 
@@ -192,9 +192,33 @@ def secret_match_count(root, timeout, ref, path, regex):
     return len(re.findall(regex, blob.decode(errors="surrogateescape")))
 
 
-def delta_scan(root, policy):
+def merge_base(root, timeout, left, right):
+    return git(root, timeout, "merge-base", left, right, allowed=(0, 1)).decode().strip()
+
+
+def pr_base_ref(root, timeout):
+    base_ref = os.environ.get("GITHUB_BASE_REF", "").strip()
+    if not base_ref or not re.fullmatch(r"[A-Za-z0-9._/-]+", base_ref):
+        return ""
+    for ref in (f"origin/{base_ref}", f"upstream/{base_ref}"):
+        if git(root, timeout, "rev-parse", "--verify", "--quiet", ref + "^{commit}", allowed=(0, 1)).strip():
+            return ref
+    return ""
+
+
+def delta_base(root, policy):
     timeout = policy["limits"]["command_timeout_seconds"]
     base = policy["baseline"]["commit"]
+    if ref := pr_base_ref(root, timeout):
+        if value := merge_base(root, timeout, ref, "HEAD"):
+            return value
+    if value := merge_base(root, timeout, base, "HEAD"):
+        return value
+    return base
+
+
+def delta_scan(root, policy, base):
+    timeout = policy["limits"]["command_timeout_seconds"]
     findings = []
     paths = git(root, timeout, "diff", "--name-only", "--no-renames", base + "..HEAD").decode(errors="surrogateescape").splitlines()
     for path in paths:
@@ -234,23 +258,29 @@ def gate(root, policy):
     baseline = validate_baseline(root, policy)
     inherited = set(baseline.get("current_tree_finding_ids", []))
     base = policy["baseline"]["commit"]
+    comparison_base = delta_base(root, policy)
     # Content edits change blob hashes and therefore finding IDs. Treat the same
     # (scanner, rule, path) already present at the audited baseline as inherited
     # so docs/code churn on known findings does not fail the delta gate.
-    baseline_keys = {
+    inherited_keys = {
         (item["scanner"], item["rule"], item["path"])
         for item in current_tree_scan(root, policy, ref=base)
     }
+    if comparison_base != base:
+        inherited_keys.update(
+            (item["scanner"], item["rule"], item["path"])
+            for item in current_tree_scan(root, policy, ref=comparison_base)
+        )
 
     def is_new_current(item):
         if item["id"] in inherited:
             return False
-        if (item["scanner"], item["rule"], item["path"]) in baseline_keys:
+        if (item["scanner"], item["rule"], item["path"]) in inherited_keys:
             return False
         return True
 
     current = [item for item in current_tree_scan(root, policy) if is_new_current(item)]
-    findings = bounded(current + delta_scan(root, policy), policy)
+    findings = bounded(current + delta_scan(root, policy, comparison_base), policy)
     return {
         "schema_version": "leanctx.history-delta-evidence/v1",
         "baseline_commit": policy["baseline"]["commit"],
