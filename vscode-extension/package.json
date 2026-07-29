@@ -145,18 +145,20 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts",
+    "lint": "eslint src",
     "package": "npx @vscode/vsce package --no-dependencies",
     "publish:vsce": "npx @vscode/vsce publish --no-dependencies",
     "publish:ovsx": "npx ovsx publish --no-dependencies"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.80.0",
     "@vscode/vsce": "^3.9.2",
     "eslint": "^10.7.0",
     "ovsx": "^0.10.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.65.0"
   },
   "overrides": {
     "brace-expansion": "^5.0.7",

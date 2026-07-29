@@ -12,19 +12,26 @@ measures compression savings, and validates quality preservation.
 - [ ] Gateway configured with customer's LLM providers
 - [ ] SLO targets agreed with customer
 - [ ] SDK conformance verified (`scripts/sdk-conformance.sh`)
-- [ ] Settlement evidence export tested
+- [ ] Proxy Bearer token available (`lean-ctx proxy token`)
 
 ## Phase 1: OBSERVE (Week 1-2)
 
 ### Setup
 
 ```bash
-# Deploy in shadow mode (observe only, no enforcement)
-lean-ctx proxy --mode observe --log-level info
+# Start the local proxy used for observation
+lean-ctx proxy start --port=4444
 
 # Verify health
-curl http://localhost:8080/health
+curl http://127.0.0.1:4444/health
 lean-ctx conformance --json
+```
+
+Authenticated status snapshots use the proxy Bearer token:
+
+```bash
+TOKEN="$(lean-ctx proxy token)"
+curl -H "Authorization: Bearer ${TOKEN}" http://127.0.0.1:4444/status
 ```
 
 ### Baseline Collection
@@ -37,8 +44,8 @@ lean-ctx conformance --json
 ### Daily Check
 
 ```bash
-lean-ctx gain --period 24h --json  # savings summary
-lean-ctx ledger export --period 24h  # evidence export
+scripts/pilot-baseline.sh ./pilot-baseline
+lean-ctx gain --json
 ```
 
 ## Phase 2: MEASURE (Week 3-4)
@@ -46,30 +53,27 @@ lean-ctx ledger export --period 24h  # evidence export
 ### Enable Compression
 
 ```bash
-# Switch to measure mode (compress + compare)
-lean-ctx proxy --mode measure
+# Keep the proxy running and capture an end snapshot for comparison
+PILOT_DURATION=1209600 scripts/pilot-baseline.sh --collect-end ./pilot-baseline
 ```
 
 ### SLO Validation
 
 ```bash
-# Run benchmark against SLO targets
-lean-ctx benchmark --slo-targets default --json
+# Run the supported task benchmark profiles
+lean-ctx benchmark tasks --config standard --json
 
-# Check specific coverage classes
-lean-ctx benchmark --coverage-class rust --coverage-class typescript
+# Compare conservative and aggressive profiles when tuning
+lean-ctx benchmark tasks --config stock --json
+lean-ctx benchmark tasks --config aggressive --json
 ```
 
 ### Evidence Collection
 
 ```bash
-# Export settlement evidence for the period
-lean-ctx ledger export --format settlement-evidence-v2 \
-  --period "2026-07-01..2026-07-31" \
-  --output evidence-july.json
-
-# Verify evidence integrity
-lean-ctx ledger verify evidence-july.json
+# Collect final pilot artifacts
+scripts/pilot-baseline.sh --collect-end ./pilot-baseline
+lean-ctx conformance --json > ./pilot-baseline/conformance-end.json
 ```
 
 ## Decision Points
@@ -85,13 +89,13 @@ lean-ctx ledger verify evidence-july.json
 
 If any SLO is violated for >24h:
 
-1. Switch back to observe mode.
+1. Stop compression traffic by routing clients away from the proxy.
 2. Collect a diagnostic bundle: `lean-ctx report-issue --include-evidence`.
 3. Escalate to engineering.
 
 ## Rollback
 
 ```bash
-lean-ctx proxy --mode observe  # instant rollback to shadow
-lean-ctx stop                  # full stop if needed
+lean-ctx proxy stop --port=4444  # stop local proxy
+lean-ctx stop                    # full stop if needed
 ```
