@@ -5,10 +5,10 @@ import "encoding/json"
 const OclaAPIVersion = "ocla/v1"
 
 type HealthResponse struct {
-	Overall        json.RawMessage   `json:"overall"`
-	Components     []ComponentHealth `json:"components"`
-	UptimeSeconds  uint64            `json:"uptime_seconds"`
-	Version        string            `json:"version"`
+	Overall       json.RawMessage   `json:"overall"`
+	Components    []ComponentHealth `json:"components"`
+	UptimeSeconds uint64            `json:"uptime_seconds"`
+	Version       string            `json:"version"`
 }
 
 type ComponentHealth struct {
@@ -22,6 +22,15 @@ type CapabilitiesResponse struct {
 	Capabilities []Capability `json:"capabilities"`
 }
 
+type ToolsResponse struct {
+	Tools []json.RawMessage `json:"tools"`
+	Total uint64            `json:"total"`
+}
+
+type ToolCallResponse struct {
+	Result json.RawMessage `json:"result"`
+}
+
 type Capability struct {
 	Kind       string            `json:"kind"`
 	APIVersion string            `json:"api_version"`
@@ -30,14 +39,14 @@ type Capability struct {
 }
 
 type OclaRequestContext struct {
-	RequestID  string  `json:"request_id"`
-	SessionID  string  `json:"session_id"`
-	AgentID    string  `json:"agent_id"`
-	ContentRef string  `json:"content_ref"`
+	RequestID     string  `json:"request_id"`
+	SessionID     string  `json:"session_id"`
+	AgentID       string  `json:"agent_id"`
+	ContentRef    string  `json:"content_ref"`
 	ProviderLabel *string `json:"provider_label,omitempty"`
 	ModelLabel    *string `json:"model_label,omitempty"`
-	TenantID   *string `json:"tenant_id"`
-	TraceID    string  `json:"trace_id,omitempty"`
+	TenantID      *string `json:"tenant_id"`
+	TraceID       string  `json:"trace_id,omitempty"`
 }
 
 type TokenBalance struct {
@@ -51,34 +60,34 @@ type TokenBalance struct {
 type TokenBalanceV1 = TokenBalance
 
 type EnvelopeRequest struct {
-	SchemaVersion  uint32              `json:"schema_version"`
-	Context        OclaRequestContext   `json:"context"`
-	Surface        string              `json:"surface"`
-	Direction      string              `json:"direction"`
-	Provider       string              `json:"provider"`
-	Model          string              `json:"model"`
-	TokenBalance   TokenBalance        `json:"token_balance"`
-	RouteRef       *string             `json:"route_ref"`
-	PolicyRef      *string             `json:"policy_ref"`
-	IdempotencyKey string              `json:"idempotency_key"`
-	Payload        *EnvelopePayload    `json:"payload,omitempty"`
-	PromptTokens     *uint64             `json:"prompt_tokens,omitempty"`
-	CompletionTokens *uint64             `json:"completion_tokens,omitempty"`
-	TotalTokens      *uint64             `json:"total_tokens,omitempty"`
-	Balance          *TokenBalanceV1     `json:"balance,omitempty"`
+	SchemaVersion    uint32             `json:"schema_version"`
+	Context          OclaRequestContext `json:"context"`
+	Surface          string             `json:"surface"`
+	Direction        string             `json:"direction"`
+	Provider         string             `json:"provider"`
+	Model            string             `json:"model"`
+	TokenBalance     TokenBalance       `json:"token_balance"`
+	RouteRef         *string            `json:"route_ref"`
+	PolicyRef        *string            `json:"policy_ref"`
+	IdempotencyKey   string             `json:"idempotency_key"`
+	Payload          *EnvelopePayload   `json:"payload,omitempty"`
+	PromptTokens     *uint64            `json:"prompt_tokens,omitempty"`
+	CompletionTokens *uint64            `json:"completion_tokens,omitempty"`
+	TotalTokens      *uint64            `json:"total_tokens,omitempty"`
+	Balance          *TokenBalanceV1    `json:"balance,omitempty"`
 }
 
 type EnvelopeResponse struct {
-	SchemaVersion  uint32              `json:"schema_version"`
-	Context        OclaRequestContext   `json:"context"`
-	Surface        string              `json:"surface"`
-	Direction      string              `json:"direction"`
-	Provider       string              `json:"provider"`
-	Model          string              `json:"model"`
-	TokenBalance   TokenBalance        `json:"token_balance"`
-	RouteRef       *string             `json:"route_ref"`
-	PolicyRef      *string             `json:"policy_ref"`
-	IdempotencyKey string              `json:"idempotency_key"`
+	SchemaVersion  uint32             `json:"schema_version"`
+	Context        OclaRequestContext `json:"context"`
+	Surface        string             `json:"surface"`
+	Direction      string             `json:"direction"`
+	Provider       string             `json:"provider"`
+	Model          string             `json:"model"`
+	TokenBalance   TokenBalance       `json:"token_balance"`
+	RouteRef       *string            `json:"route_ref"`
+	PolicyRef      *string            `json:"policy_ref"`
+	IdempotencyKey string             `json:"idempotency_key"`
 }
 
 type BatchEnvelopeResult struct {

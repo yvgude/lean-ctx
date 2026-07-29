@@ -2,10 +2,27 @@ package ocla
 
 import (
 	"context"
-	"encoding/json"
 	"os"
+	"sort"
+	"strings"
 	"testing"
 )
+
+const httpMCPContractVersion = float64(1)
+
+var coveredRoutes = map[string]string{
+	"GET /health":             "ServerHealth",
+	"GET /v1/manifest":        "Manifest",
+	"GET /v1/capabilities":    "HTTPCapabilities",
+	"GET /v1/openapi.json":    "OpenAPI",
+	"GET /v1/tools":           "ListTools",
+	"POST /v1/tools/call":     "CallToolResult",
+	"GET /v1/events":          "EventsProbe",
+	"GET /v1/context/summary": "ContextSummary",
+	"GET /v1/events/search":   "SearchEvents",
+	"GET /v1/events/lineage":  "EventLineage",
+	"GET /v1/metrics":         "ServerMetrics",
+}
 
 func TestConformanceLive(t *testing.T) {
 	url := os.Getenv("LEANCTX_CONFORMANCE_URL")
@@ -18,94 +35,163 @@ func TestConformanceLive(t *testing.T) {
 		opts = append(opts, WithAPIKey(token))
 	}
 	client := NewClient(url, opts...)
-	envelope := conformanceEnvelope()
 
 	t.Run("health", func(t *testing.T) {
-		h, err := client.Health()
-		if err != nil { t.Fatal(err) }
-		if len(h.Overall) == 0 { t.Fatal("health response has no overall status") }
-	})
-	t.Run("health_version", func(t *testing.T) {
-		h, err := client.Health()
-		if err != nil { t.Fatal(err) }
-		if h.Version != OclaAPIVersion { t.Fatalf("version = %q, want %q", h.Version, OclaAPIVersion) }
-	})
-	t.Run("capabilities", func(t *testing.T) {
-		c, err := client.Capabilities()
-		if err != nil { t.Fatal(err) }
-		if len(c.Capabilities) == 0 { t.Fatal("no capabilities") }
-	})
-	t.Run("capabilities_version", func(t *testing.T) {
-		c, err := client.Capabilities()
-		if err != nil { t.Fatal(err) }
-		if c.Version != OclaAPIVersion { t.Fatalf("version = %q, want %q", c.Version, OclaAPIVersion) }
-	})
-	t.Run("capability_shape", func(t *testing.T) {
-		c, err := client.Capabilities()
-		if err != nil { t.Fatal(err) }
-		for _, capability := range c.Capabilities {
-			if capability.Kind == "" || capability.APIVersion == "" || capability.Status == "" { t.Fatalf("invalid capability: %#v", capability) }
+		response, err := client.ServerHealth()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.TrimSpace(response) == "" {
+			t.Fatal("health response is empty")
 		}
 	})
-	t.Run("validate_envelope", func(t *testing.T) {
-		response, err := client.ValidateEnvelope(envelope)
-		if err != nil { t.Fatal(err) }
-		if response.SchemaVersion != envelope.SchemaVersion || response.Context.RequestID != envelope.Context.RequestID { t.Fatalf("envelope response = %#v", response) }
+	t.Run("manifest_shape", func(t *testing.T) {
+		manifest, err := client.Manifest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(manifest) == 0 {
+			t.Fatal("manifest response is empty")
+		}
 	})
-	t.Run("envelope_token_balance", func(t *testing.T) {
-		response, err := client.ValidateEnvelope(envelope)
-		if err != nil { t.Fatal(err) }
-		if response.TokenBalance != envelope.TokenBalance { t.Fatalf("token balance = %#v, want %#v", response.TokenBalance, envelope.TokenBalance) }
+	t.Run("capabilities_shape", func(t *testing.T) {
+		caps, err := client.HTTPCapabilities()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := caps["contract_version"].(float64); !ok {
+			t.Fatalf("capabilities omitted contract_version: %#v", caps)
+		}
+		if _, ok := caps["server"].(map[string]any); !ok {
+			t.Fatalf("capabilities omitted server: %#v", caps)
+		}
+		if _, ok := caps["features"].(map[string]any); !ok {
+			t.Fatalf("capabilities omitted features: %#v", caps)
+		}
 	})
-	t.Run("validate_envelope_batch", func(t *testing.T) {
-		encoded, err := json.Marshal(envelope)
-		if err != nil { t.Fatal(err) }
-		response, err := client.ValidateEnvelopeBatch([]json.RawMessage{encoded})
-		if err != nil { t.Fatal(err) }
-		if len(response) != 1 || !response[0].Valid || response[0].Envelope == nil { t.Fatalf("batch response = %#v", response) }
+	t.Run("contract_status_map", func(t *testing.T) {
+		caps, err := client.HTTPCapabilities()
+		if err != nil {
+			t.Fatal(err)
+		}
+		status, ok := caps["contract_status"].(map[string]any)
+		if !ok || (status["http-mcp"] != "frozen" && status["http-mcp"] != "stable") {
+			t.Fatalf("contract_status = %#v", caps["contract_status"])
+		}
 	})
-	t.Run("agents", func(t *testing.T) {
-		response, err := client.Agents()
-		if err != nil { t.Fatal(err) }
-		if response.Agents == nil { t.Fatal("agents is null") }
+	t.Run("engine_compat", func(t *testing.T) {
+		caps, err := client.HTTPCapabilities()
+		if err != nil {
+			t.Fatal(err)
+		}
+		contracts, ok := caps["contracts"].(map[string]any)
+		if !ok || contracts["leanctx.contract.http_mcp.contract_version"] != httpMCPContractVersion {
+			t.Fatalf("contracts = %#v", caps["contracts"])
+		}
 	})
-	t.Run("metrics", func(t *testing.T) {
-		response, err := client.Metrics()
-		if err != nil { t.Fatal(err) }
-		if response.TraitAdoptionCount == 0 { t.Fatal("metrics omitted trait adoption count") }
+	t.Run("openapi_shape", func(t *testing.T) {
+		doc, err := client.OpenAPI()
+		if err != nil {
+			t.Fatal(err)
+		}
+		version, _ := doc["openapi"].(string)
+		if !strings.HasPrefix(version, "3.") {
+			t.Fatalf("openapi version = %q", version)
+		}
+		if _, ok := doc["paths"].(map[string]any); !ok {
+			t.Fatalf("openapi omitted paths: %#v", doc)
+		}
 	})
-	t.Run("ledger", func(t *testing.T) {
-		response, err := client.LedgerSummary()
-		if err != nil { t.Fatal(err) }
-		if response.Events > 0 && response.Tokens == 0 { t.Fatalf("ledger events = %d with no tokens", response.Events) }
+	t.Run("route_coverage", func(t *testing.T) {
+		doc, err := client.OpenAPI()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if uncovered := uncoveredRoutes(doc); len(uncovered) != 0 {
+			t.Fatalf("uncovered routes: %s", strings.Join(uncovered, ", "))
+		}
 	})
-
-	var capsuleRef string
-	t.Run("capsule_register", func(t *testing.T) {
-		var err error
-		capsuleRef, err = client.RegisterCapsule(context.Background(), "go-sdk conformance capsule")
-		if err != nil { t.Fatal(err) }
-		if capsuleRef == "" { t.Fatal("empty capsule ref") }
+	t.Run("tools_list", func(t *testing.T) {
+		response, err := client.ListTools(1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(response.Tools) > 1 {
+			t.Fatalf("tools = %#v", response)
+		}
 	})
-	t.Run("capsule_resolve", func(t *testing.T) {
-		response, err := client.ResolveCapsule(context.Background(), capsuleRef)
-		if err != nil { t.Fatal(err) }
-		if response.CapsuleRef != capsuleRef || response.Data != "go-sdk conformance capsule" { t.Fatalf("capsule response = %#v", response) }
+	t.Run("tool_call_error_contract", func(t *testing.T) {
+		_, err := client.CallToolResult("definitely_not_a_tool_conformance_probe")
+		apiErr, ok := err.(*APIError)
+		if !ok || apiErr.StatusCode < 400 || apiErr.StatusCode >= 500 || apiErr.Response.Code == "" {
+			t.Fatalf("error = %T %v", err, err)
+		}
 	})
-	t.Run("capsule_fork", func(t *testing.T) {
-		forked, err := client.ForkCapsule(context.Background(), capsuleRef, 256)
-		if err != nil { t.Fatal(err) }
-		if forked == "" || forked == capsuleRef { t.Fatalf("forked capsule ref = %q", forked) }
+	t.Run("events_stream", func(t *testing.T) {
+		contentType, err := client.EventsProbe(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(contentType, "text/event-stream") {
+			t.Fatalf("content-type = %q", contentType)
+		}
+	})
+	t.Run("context_summary_shape", func(t *testing.T) {
+		response, err := client.ContextSummary(1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := response["workspaceId"].(string); !ok {
+			t.Fatalf("context summary = %#v", response)
+		}
+	})
+	t.Run("events_search_shape", func(t *testing.T) {
+		response, err := client.SearchEvents("conformance-probe", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := response["results"].([]any); !ok {
+			t.Fatalf("events search = %#v", response)
+		}
+	})
+	t.Run("event_lineage_shape", func(t *testing.T) {
+		response, err := client.EventLineage(1, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := response["chain"].([]any); !ok {
+			t.Fatalf("event lineage = %#v", response)
+		}
+	})
+	t.Run("metrics_shape", func(t *testing.T) {
+		response, err := client.ServerMetrics()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(response) == 0 {
+			t.Fatal("empty metrics")
+		}
 	})
 }
 
-func conformanceEnvelope() EnvelopeRequest {
-	routeRef := "go-sdk-conformance"
-	return EnvelopeRequest{
-		SchemaVersion: 1,
-		Context: OclaRequestContext{RequestID: "conf-1", SessionID: "conf-s", AgentID: "conf-a", ContentRef: "blake3:test"},
-		Surface: "proxy", Direction: "input", Provider: "openai", Model: "gpt-5",
-		TokenBalance: TokenBalance{OriginalTokens: 150, MaterializedTokens: 150, DeliveredTokens: 150, ProviderBilledTokens: 150},
-		RouteRef: &routeRef, IdempotencyKey: "conf-1:input",
+func uncoveredRoutes(doc map[string]any) []string {
+	paths, ok := doc["paths"].(map[string]any)
+	if !ok {
+		return []string{"<missing paths>"}
 	}
+	uncovered := make([]string, 0)
+	for path, value := range paths {
+		ops, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		for method := range ops {
+			route := strings.ToUpper(method) + " " + path
+			if _, ok := coveredRoutes[route]; !ok {
+				uncovered = append(uncovered, route)
+			}
+		}
+	}
+	sort.Strings(uncovered)
+	return uncovered
 }

@@ -291,6 +291,88 @@ func TestClientCallsCapsuleEndpoints(t *testing.T) {
 	}
 }
 
+func TestClientCallsHTTPMCPConformanceEndpoints(t *testing.T) {
+	requests := make([]string, 0, 11)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.RequestURI())
+		switch r.URL.Path {
+		case "/health":
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = io.WriteString(w, "ok")
+		case "/v1/events":
+			w.Header().Set("Content-Type", "text/event-stream")
+		case "/v1/tools":
+			if got := r.URL.Query().Get("limit"); got != "1" {
+				t.Errorf("tools limit = %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"tools":[{}],"total":1}`)
+		case "/v1/tools/call":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"error":"unknown tool","code":"unknown_tool"}`)
+		case "/v1/manifest", "/v1/capabilities", "/v1/openapi.json", "/v1/context/summary", "/v1/events/search", "/v1/events/lineage", "/v1/metrics":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, WithAPIKey("secret"))
+	if response, err := client.ServerHealth(); err != nil || response != "ok" {
+		t.Fatalf("health = %q, err = %v", response, err)
+	}
+	if _, err := client.Manifest(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.HTTPCapabilities(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.OpenAPI(); err != nil {
+		t.Fatal(err)
+	}
+	if response, err := client.ListTools(1); err != nil || response.Total != 1 {
+		t.Fatalf("tools = %#v, err = %v", response, err)
+	}
+	if _, err := client.CallToolResult("missing"); err == nil {
+		t.Fatal("missing tool unexpectedly succeeded")
+	}
+	if contentType, err := client.EventsProbe(context.Background()); err != nil || !strings.HasPrefix(contentType, "text/event-stream") {
+		t.Fatalf("events content type = %q, err = %v", contentType, err)
+	}
+	if _, err := client.ContextSummary(1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SearchEvents("probe", 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.EventLineage(1, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ServerMetrics(); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{
+		"GET /health",
+		"GET /v1/manifest",
+		"GET /v1/capabilities",
+		"GET /v1/openapi.json",
+		"GET /v1/tools?limit=1",
+		"POST /v1/tools/call",
+		"GET /v1/events",
+		"GET /v1/context/summary?limit=1",
+		"GET /v1/events/search?limit=1&q=probe",
+		"GET /v1/events/lineage?depth=1&id=1",
+		"GET /v1/metrics",
+	}
+	if !reflect.DeepEqual(requests, want) {
+		t.Fatalf("requests = %#v, want %#v", requests, want)
+	}
+}
+
 func TestClientSendsJSONAndBearerAPIKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer secret" {

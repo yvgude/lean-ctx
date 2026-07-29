@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -58,10 +59,52 @@ func (c *OclaClient) Health() (HealthResponse, error) {
 	return response, err
 }
 
+func (c *OclaClient) ServerHealth() (string, error) {
+	return c.requestText(http.MethodGet, "/health", "text/plain")
+}
+
+func (c *OclaClient) Manifest() (map[string]any, error) {
+	var response map[string]any
+	err := c.request(http.MethodGet, "/v1/manifest", nil, &response)
+	return response, err
+}
+
+func (c *OclaClient) HTTPCapabilities() (map[string]any, error) {
+	var response map[string]any
+	err := c.request(http.MethodGet, "/v1/capabilities", nil, &response)
+	return response, err
+}
+
+func (c *OclaClient) OpenAPI() (map[string]any, error) {
+	var response map[string]any
+	err := c.request(http.MethodGet, "/v1/openapi.json", nil, &response)
+	return response, err
+}
+
 func (c *OclaClient) Capabilities() (CapabilitiesResponse, error) {
 	var response CapabilitiesResponse
 	err := c.request(http.MethodGet, "/ocla/v1/capabilities", nil, &response)
 	return response, err
+}
+
+func (c *OclaClient) ListTools(limit int) (ToolsResponse, error) {
+	query := url.Values{}
+	if limit > 0 {
+		query.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	path := "/v1/tools"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var response ToolsResponse
+	err := c.request(http.MethodGet, path, nil, &response)
+	return response, err
+}
+
+func (c *OclaClient) CallToolResult(name string) (json.RawMessage, error) {
+	var response ToolCallResponse
+	err := c.request(http.MethodPost, "/v1/tools/call", map[string]string{"name": name}, &response)
+	return response.Result, err
 }
 
 func (c *OclaClient) ValidateEnvelope(envelope EnvelopeRequest) (EnvelopeResponse, error) {
@@ -138,6 +181,71 @@ func (c *OclaClient) Metrics() (MetricsResponse, error) {
 	return response, err
 }
 
+func (c *OclaClient) ContextSummary(limit int) (map[string]any, error) {
+	query := url.Values{}
+	if limit > 0 {
+		query.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	path := "/v1/context/summary"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var response map[string]any
+	err := c.request(http.MethodGet, path, nil, &response)
+	return response, err
+}
+
+func (c *OclaClient) SearchEvents(query string, limit int) (map[string]any, error) {
+	values := url.Values{"q": []string{query}}
+	if limit > 0 {
+		values.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	var response map[string]any
+	err := c.request(http.MethodGet, "/v1/events/search?"+values.Encode(), nil, &response)
+	return response, err
+}
+
+func (c *OclaClient) EventLineage(eventID, depth int) (map[string]any, error) {
+	values := url.Values{"id": []string{fmt.Sprintf("%d", eventID)}}
+	if depth > 0 {
+		values.Set("depth", fmt.Sprintf("%d", depth))
+	}
+	var response map[string]any
+	err := c.request(http.MethodGet, "/v1/events/lineage?"+values.Encode(), nil, &response)
+	return response, err
+}
+
+func (c *OclaClient) ServerMetrics() (map[string]any, error) {
+	var response map[string]any
+	err := c.request(http.MethodGet, "/v1/metrics", nil, &response)
+	return response, err
+}
+
+func (c *OclaClient) EventsProbe(ctx context.Context) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/events", nil)
+	if err != nil {
+		return "", fmt.Errorf("create OCLA request: %w", err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	response, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("send OCLA request: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		body, readErr := io.ReadAll(response.Body)
+		if readErr != nil {
+			return "", &APIError{StatusCode: response.StatusCode, ReadError: readErr}
+		}
+		return "", &APIError{StatusCode: response.StatusCode, Body: body}
+	}
+	return response.Header.Get("Content-Type"), nil
+}
+
 func (c *OclaClient) LedgerSummary() (LedgerSummaryResponse, error) {
 	var response LedgerSummaryResponse
 	err := c.request(http.MethodGet, "/ocla/v1/ledger/summary", nil, &response)
@@ -200,6 +308,36 @@ func (c *OclaClient) request(method, path string, payload any, target any) error
 	}
 
 	return c.requestContext(context.Background(), method, path, body, contentType, target)
+}
+
+func (c *OclaClient) requestText(method, path, accept string) (string, error) {
+	req, err := http.NewRequestWithContext(context.Background(), method, c.baseURL+path, nil)
+	if err != nil {
+		return "", fmt.Errorf("create OCLA request: %w", err)
+	}
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	response, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("send OCLA request: %w", err)
+	}
+	defer response.Body.Close()
+	body, readErr := io.ReadAll(response.Body)
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		if readErr != nil {
+			return "", &APIError{StatusCode: response.StatusCode, ReadError: readErr}
+		}
+		return "", &APIError{StatusCode: response.StatusCode, Body: body}
+	}
+	if readErr != nil {
+		return "", fmt.Errorf("decode OCLA response: %w", readErr)
+	}
+	return string(body), nil
 }
 
 func (c *OclaClient) requestContext(
