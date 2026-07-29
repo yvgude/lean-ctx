@@ -305,12 +305,21 @@ pub fn try_daemon_tool_call_blocking_text(
 pub fn try_delivery_check_blocking(
     blake3: &[u8; 12],
     mtime: u64,
+    path: &str,
+    requester_agent_id: Option<&str>,
+    requester_conversation_id: Option<&str>,
 ) -> Option<crate::core::ocla::types::DeliveryRecord> {
     if !daemon::is_daemon_running() {
         return None;
     }
     let rt = tokio::runtime::Runtime::new().ok()?;
-    let body = serde_json::json!({ "blake3": blake3, "mtime": mtime });
+    let body = serde_json::json!({
+        "blake3": blake3,
+        "mtime": mtime,
+        "path": path,
+        "requester_agent_id": requester_agent_id,
+        "requester_conversation_id": requester_conversation_id,
+    });
     let resp = rt.block_on(async {
         try_daemon_request("POST", "/ocla/v1/delivery/check", &body.to_string()).await
     })?;
@@ -322,6 +331,7 @@ pub fn try_delivery_check_blocking(
         blake3: *blake3,
         path: v.get("path")?.as_str()?.to_string(),
         line_count: v.get("line_count")?.as_u64()? as u32,
+        token_count: v.get("token_count").and_then(serde_json::Value::as_u64)?,
         agent_id: v.get("agent_id")?.as_str()?.to_string(),
         conversation_id: v.get("conversation_id")?.as_str()?.to_string(),
         read_at: v.get("read_at")?.as_u64()?,

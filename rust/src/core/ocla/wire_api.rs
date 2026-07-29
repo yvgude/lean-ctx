@@ -403,17 +403,27 @@ async fn capsule_fork(
 struct DeliveryCheckRequest {
     blake3: [u8; 12],
     mtime: u64,
+    path: String,
+    requester_agent_id: Option<String>,
+    requester_conversation_id: Option<String>,
 }
 
 async fn delivery_check(Json(req): Json<DeliveryCheckRequest>) -> (StatusCode, Json<Value>) {
     let reg = OclaRegistry::global();
-    match reg.delivery_registry.check_delivery(&req.blake3, req.mtime) {
+    match reg.delivery_registry.check_delivery(
+        &req.blake3,
+        req.mtime,
+        &req.path,
+        req.requester_agent_id.as_deref(),
+        req.requester_conversation_id.as_deref(),
+    ) {
         Some(record) => (
             StatusCode::OK,
             Json(json!({
                 "hit": true,
                 "path": record.path,
                 "line_count": record.line_count,
+                "token_count": record.token_count,
                 "agent_id": record.agent_id,
                 "conversation_id": record.conversation_id,
                 "read_at": record.read_at,
@@ -444,7 +454,7 @@ async fn delivery_stats() -> Json<Value> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CanonicalTokenEnvelopeV1, OCLA_API_VERSION, ocla_router};
+    use super::{CanonicalTokenEnvelopeV1, OCLA_API_VERSION, OclaCapabilityKind, ocla_router};
     use axum::body::Body;
     use axum::body::to_bytes;
     use axum::http::{Request, StatusCode, header};
@@ -531,7 +541,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn capabilities_endpoint_lists_all_fifteen_statuses() {
+    async fn capabilities_endpoint_lists_all_statuses() {
         let response = ocla_router()
             .oneshot(
                 Request::builder()
@@ -546,7 +556,10 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = json_response(response).await;
         assert_eq!(body["version"], OCLA_API_VERSION);
-        assert_eq!(body["capabilities"].as_array().expect("list").len(), 15);
+        assert_eq!(
+            body["capabilities"].as_array().expect("list").len(),
+            OclaCapabilityKind::ALL.len()
+        );
         assert!(
             body["capabilities"]
                 .as_array()
@@ -784,7 +797,8 @@ mod tests {
     #[tokio::test]
     async fn delivery_check_miss_returns_no_hit() {
         let app = ocla_router();
-        let body = json!({"blake3": [0,0,0,0,0,0,0,0,0,0,0,0], "mtime": 1000});
+        let body =
+            json!({"blake3": [0,0,0,0,0,0,0,0,0,0,0,0], "mtime": 1000, "path": "missing.rs"});
         let resp = app
             .oneshot(
                 Request::builder()
@@ -810,6 +824,7 @@ mod tests {
             "blake3": [1,2,3,4,5,6,7,8,9,10,11,12],
             "path": "src/test.rs",
             "line_count": 42,
+            "token_count": 168,
             "agent_id": "agent-x",
             "conversation_id": "conv-x",
             "mtime": 2000
@@ -828,7 +843,8 @@ mod tests {
             .expect("response");
         assert_eq!(record_resp.status(), StatusCode::NO_CONTENT);
 
-        let check_body = json!({"blake3": [1,2,3,4,5,6,7,8,9,10,11,12], "mtime": 2000});
+        let check_body =
+            json!({"blake3": [1,2,3,4,5,6,7,8,9,10,11,12], "mtime": 2000, "path": "src/test.rs"});
         let check_resp = app
             .oneshot(
                 Request::builder()

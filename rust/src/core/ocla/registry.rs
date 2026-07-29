@@ -410,11 +410,14 @@ mod tests {
                     blake3: [0u8; 12],
                     path: "test.rs".into(),
                     line_count: 42,
+                    token_count: 168,
                     agent_id: "agent-1".into(),
                     conversation_id: "conv-1".into(),
                     mtime: 1000,
                 });
-            let _ = reg.delivery_registry.check_delivery(&[0u8; 12], 1000);
+            let _ =
+                reg.delivery_registry
+                    .check_delivery(&[0u8; 12], 1000, "x", Some("agent-b"), None);
             let _ = reg.delivery_registry.delivery_stats();
         }));
 
