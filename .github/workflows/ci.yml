@@ -208,12 +208,12 @@ jobs:
           workspaces: rust -> target
       - name: Check build without ORT-backed features
         working-directory: rust
-        run: cargo check --no-default-features --features "tree-sitter,http-server,team-server,secure-update,jemalloc"
+        run: cargo check --no-default-features --features "tree-sitter,http-server,secure-update,jemalloc"
       # The no-tree-sitter combo is the slim-binary candidate (#663) and had
       # rotted silently because only the no-ORT combo was checked.
       - name: Check build without tree-sitter
         working-directory: rust
-        run: cargo check --no-default-features --features "embeddings,http-server,team-server,secure-update,jemalloc"
+        run: cargo check --no-default-features --features "embeddings,http-server,secure-update,jemalloc"
 
   fmt:
     name: Format
