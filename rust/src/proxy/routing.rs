@@ -42,6 +42,8 @@ use std::sync::Arc;
 /// re-targets the upstream and injects the registry credential if set.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RouteDecision {
+    /// Feedback correlation id unique to this routed request.
+    pub decision_id: String,
     /// Model now in the body.
     pub model: String,
     /// Originally requested model (usage record `routed_from`).
@@ -158,7 +160,9 @@ pub fn route_request(
     } else {
         "intent_tier"
     };
+    let decision_id = global_feedback().record_decision(&requested, &new_model, route_reason);
     let decision = RouteDecision {
+        decision_id,
         model: new_model,
         routed_from: requested,
         provider_id: resolved.provider_id,
@@ -167,7 +171,6 @@ pub fn route_request(
         local: resolved.local,
         xlat: resolved.xlat,
     };
-    global_feedback().record_decision(&decision.routed_from, &decision.model, route_reason);
     Some(decision)
 }
 
@@ -688,7 +691,9 @@ mod tests {
     #[test]
     fn poor_feedback_triggers_fallback() {
         let feedback = crate::proxy::routing_feedback::RoutingFeedback::new();
-        feedback.record_outcome("expensive", "fast", 0.4, 0, 0);
+        for _ in 0..20 {
+            feedback.record_outcome("expensive", "fast", Some(0.4), 0, 0);
+        }
         assert!(feedback.should_use_fallback());
     }
 }

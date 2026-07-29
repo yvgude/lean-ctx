@@ -1,12 +1,15 @@
 //! Adapter between proxy routing events and OCLA quality tracking.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::core::ocla::routing_quality::{RoutingDecision, RoutingOutcome, RoutingQualityTracker};
 
 const MAX_PENDING_DECISIONS: usize = 1_000;
-type PendingDecisions = HashMap<(String, String), VecDeque<RoutingDecision>>;
+type PendingDecisions = HashMap<String, RoutingDecision>;
+static NEXT_DECISION_ID: AtomicU64 = AtomicU64::new(1);
+const FALLBACK_PROBE_INTERVAL: u64 = 20;
 
 static GLOBAL_FEEDBACK: OnceLock<RoutingFeedback> = OnceLock::new();
 
@@ -20,6 +23,7 @@ pub fn global_feedback() -> &'static RoutingFeedback {
 pub struct RoutingFeedback {
     tracker: Arc<Mutex<RoutingQualityTracker>>,
     pending_decisions: Arc<Mutex<PendingDecisions>>,
+    fallback_checks: Arc<AtomicU64>,
 }
 
 impl RoutingFeedback {
@@ -28,38 +32,63 @@ impl RoutingFeedback {
         Self {
             tracker: Arc::new(Mutex::new(RoutingQualityTracker::new())),
             pending_decisions: Arc::new(Mutex::new(HashMap::new())),
+            fallback_checks: Arc::new(AtomicU64::new(1)),
         }
     }
 
     /// Records a route selection until its measured outcome arrives.
-    pub fn record_decision(&self, original: &str, routed: &str, reason: &str) {
+    pub fn record_decision(&self, original: &str, routed: &str, reason: &str) -> String {
+        let decision_id = format!("route-{}", NEXT_DECISION_ID.fetch_add(1, Ordering::Relaxed));
         let decision = RoutingDecision {
+            decision_id: decision_id.clone(),
             original_model: original.to_string(),
             routed_model: routed.to_string(),
             reason: reason.to_string(),
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
-        let key = (original.to_string(), routed.to_string());
         let mut pending = self
             .pending_decisions
             .lock()
             .expect("routing feedback pending decision mutex poisoned");
-        let queue = pending.entry(key).or_default();
-        queue.push_back(decision);
-        while pending.values().map(VecDeque::len).sum::<usize>() > MAX_PENDING_DECISIONS {
+        pending.insert(decision_id.clone(), decision);
+        while pending.len() > MAX_PENDING_DECISIONS {
             let Some(evicted_key) = pending
                 .iter()
-                .find(|(_, decisions)| !decisions.is_empty())
+                .min_by_key(|(_, decision)| &decision.timestamp)
                 .map(|(key, _)| key.clone())
             else {
                 break;
             };
-            if let Some(decisions) = pending.get_mut(&evicted_key) {
-                decisions.pop_front();
-                if decisions.is_empty() {
-                    pending.remove(&evicted_key);
-                }
-            }
+            pending.remove(&evicted_key);
+        }
+        decision_id
+    }
+
+    /// Records measured quality for a route and forwards it to the tracker.
+    pub fn record_outcome_for_decision(
+        &self,
+        decision_id: &str,
+        quality: Option<f64>,
+        tokens_saved: u64,
+        latency_delta_ms: i64,
+    ) {
+        let decision = {
+            let mut pending = self
+                .pending_decisions
+                .lock()
+                .expect("routing feedback pending decision mutex poisoned");
+            pending.remove(decision_id)
+        };
+        if let Some(decision) = decision {
+            self.tracker
+                .lock()
+                .expect("routing feedback tracker mutex poisoned")
+                .record(RoutingOutcome {
+                    decision,
+                    quality_score: quality,
+                    tokens_saved,
+                    latency_delta_ms,
+                });
         }
     }
 
@@ -68,35 +97,27 @@ impl RoutingFeedback {
         &self,
         original: &str,
         routed: &str,
-        quality: f64,
+        quality: Option<f64>,
         tokens_saved: u64,
         latency_delta_ms: i64,
     ) {
-        let key = (original.to_string(), routed.to_string());
-        let decision = {
-            let mut pending = self
-                .pending_decisions
-                .lock()
-                .expect("routing feedback pending decision mutex poisoned");
-            let decision = pending.get_mut(&key).and_then(VecDeque::pop_front);
-            if pending.get(&key).is_some_and(VecDeque::is_empty) {
-                pending.remove(&key);
-            }
-            decision
-        };
-        let decision = decision.unwrap_or_else(|| RoutingDecision {
+        let decision = RoutingDecision {
+            decision_id: format!(
+                "unmatched-{}",
+                NEXT_DECISION_ID.fetch_add(1, Ordering::Relaxed)
+            ),
             original_model: original.to_string(),
             routed_model: routed.to_string(),
             reason: "outcome without recorded decision".to_string(),
             timestamp: chrono::Utc::now().to_rfc3339(),
-        });
+        };
 
         self.tracker
             .lock()
             .expect("routing feedback tracker mutex poisoned")
             .record(RoutingOutcome {
                 decision,
-                quality_score: Some(quality),
+                quality_score: quality,
                 tokens_saved,
                 latency_delta_ms,
             });
@@ -104,10 +125,16 @@ impl RoutingFeedback {
 
     /// Returns whether tracked route quality warrants fallback.
     pub fn should_use_fallback(&self) -> bool {
-        self.tracker
+        let should_fallback = self
+            .tracker
             .lock()
             .expect("routing feedback tracker mutex poisoned")
-            .should_fallback()
+            .should_fallback();
+        should_fallback
+            && !self
+                .fallback_checks
+                .fetch_add(1, Ordering::Relaxed)
+                .is_multiple_of(FALLBACK_PROBE_INTERVAL)
     }
 
     /// Returns tracked success rate and average token savings.
@@ -134,7 +161,7 @@ mod tests {
     fn records_decision_until_matching_outcome() {
         let feedback = RoutingFeedback::new();
 
-        feedback.record_decision("expensive", "fast", "token budget");
+        let decision_id = feedback.record_decision("expensive", "fast", "token budget");
         assert_eq!(feedback.stats(), (0.0, 0.0));
         assert!(!feedback.should_use_fallback());
 
@@ -142,8 +169,7 @@ mod tests {
             .pending_decisions
             .lock()
             .expect("test pending decision mutex poisoned");
-        let key = (String::from("expensive"), String::from("fast"));
-        let decision = &pending[&key][0];
+        let decision = &pending[&decision_id];
         assert_eq!(decision.reason, "token budget");
     }
 
@@ -151,8 +177,8 @@ mod tests {
     fn records_successful_outcome_and_statistics() {
         let feedback = RoutingFeedback::new();
 
-        feedback.record_decision("expensive", "fast", "token budget");
-        feedback.record_outcome("expensive", "fast", 0.95, 120, -10);
+        let decision_id = feedback.record_decision("expensive", "fast", "token budget");
+        feedback.record_outcome_for_decision(&decision_id, Some(0.95), 120, -10);
 
         assert_eq!(feedback.stats(), (1.0, 120.0));
         assert!(!feedback.should_use_fallback());
@@ -162,9 +188,43 @@ mod tests {
     fn poor_outcome_triggers_fallback() {
         let feedback = RoutingFeedback::new();
 
-        feedback.record_outcome("expensive", "fast", 0.4, 20, 15);
+        for _ in 0..20 {
+            feedback.record_outcome("expensive", "fast", Some(0.4), 20, 15);
+        }
 
         assert_eq!(feedback.stats(), (0.0, 20.0));
         assert!(feedback.should_use_fallback());
+    }
+
+    #[test]
+    fn concurrent_same_pair_outcomes_match_by_decision_id() {
+        let feedback = RoutingFeedback::new();
+        let first = feedback.record_decision("expensive", "fast", "first");
+        let second = feedback.record_decision("expensive", "fast", "second");
+
+        feedback.record_outcome_for_decision(&second, Some(1.0), 20, 0);
+
+        let pending = feedback
+            .pending_decisions
+            .lock()
+            .expect("test pending decision mutex poisoned");
+        assert!(pending.contains_key(&first));
+        assert!(!pending.contains_key(&second));
+        assert_eq!(feedback.stats(), (1.0, 20.0));
+    }
+
+    #[test]
+    fn fallback_allows_periodic_recovery_probe() {
+        let feedback = RoutingFeedback::new();
+        for _ in 0..20 {
+            feedback.record_outcome("expensive", "fast", Some(0.4), 20, 15);
+        }
+
+        let mut allowed_probe = false;
+        for _ in 0..FALLBACK_PROBE_INTERVAL {
+            allowed_probe |= !feedback.should_use_fallback();
+        }
+
+        assert!(allowed_probe);
     }
 }

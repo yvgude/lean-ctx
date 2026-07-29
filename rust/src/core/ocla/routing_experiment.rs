@@ -195,6 +195,7 @@ mod tests {
     fn outcome(quality_score: Option<f64>, tokens_saved: u64) -> RoutingOutcome {
         RoutingOutcome {
             decision: RoutingDecision {
+                decision_id: "experiment-decision".into(),
                 original_model: "baseline".into(),
                 routed_model: "candidate".into(),
                 reason: "experiment".into(),
