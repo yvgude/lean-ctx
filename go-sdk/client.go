@@ -152,7 +152,7 @@ func (c *OclaClient) StreamEnvelopes(ctx context.Context) (<-chan EnvelopeReques
 		defer close(envelopes)
 		defer close(errc)
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/events", nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/ocla/v1/events", nil)
 		if err != nil {
 			errc <- err
 			return

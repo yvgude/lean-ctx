@@ -19,10 +19,16 @@ use crate::core::ocla::types::{
 };
 use crate::core::ocla_bus::{self, OclaEvent};
 
-const MAX_ENTRIES: usize = 4096;
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct DeliveryKey {
+    blake3: [u8; 12],
+    path: String,
+}
 
 pub struct BuiltinDeliveryRegistry {
-    store: DashMap<[u8; 12], DeliveryRecord>,
+    store: DashMap<DeliveryKey, DeliveryRecord>,
+    max_entries: usize,
+    ttl_seconds: u64,
     stubs_served: AtomicU64,
     tokens_saved: AtomicU64,
 }
@@ -35,8 +41,15 @@ impl Default for BuiltinDeliveryRegistry {
 
 impl BuiltinDeliveryRegistry {
     pub fn new() -> Self {
+        let delivery = crate::core::config::Config::load().ocla.delivery;
+        Self::with_config(delivery.max_entries, delivery.ttl_minutes)
+    }
+
+    pub fn with_config(max_entries: usize, ttl_minutes: u64) -> Self {
         Self {
-            store: DashMap::with_capacity(256),
+            store: DashMap::with_capacity(max_entries.clamp(1, 256)),
+            max_entries: max_entries.max(1),
+            ttl_seconds: ttl_minutes.saturating_mul(60),
             stubs_served: AtomicU64::new(0),
             tokens_saved: AtomicU64::new(0),
         }
@@ -50,17 +63,52 @@ impl BuiltinDeliveryRegistry {
     }
 
     fn evict_oldest_if_full(&self) {
-        if self.store.len() < MAX_ENTRIES {
+        while self.store.len() >= self.max_entries {
+            let oldest = self
+                .store
+                .iter()
+                .min_by_key(|r| r.read_at)
+                .map(|r| r.key().clone());
+            if let Some(key) = oldest {
+                self.store.remove(&key);
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn is_expired(&self, record: &DeliveryRecord, now: u64) -> bool {
+        if self.ttl_seconds == 0 {
+            return false;
+        }
+        now.saturating_sub(record.read_at) > self.ttl_seconds
+    }
+
+    fn purge_expired(&self) {
+        if self.ttl_seconds == 0 {
             return;
         }
-        let oldest = self
+        let now = Self::now_epoch();
+        let expired: Vec<_> = self
             .store
             .iter()
-            .min_by_key(|r| r.read_at)
-            .map(|r| *r.key());
-        if let Some(key) = oldest {
+            .filter(|entry| self.is_expired(entry.value(), now))
+            .map(|entry| entry.key().clone())
+            .collect();
+        for key in expired {
             self.store.remove(&key);
         }
+    }
+
+    fn is_valid_entry(entry: &DeliveryEntry) -> bool {
+        !entry.path.is_empty()
+            && entry.path.len() <= 4096
+            && !entry.path.contains('\0')
+            && !entry.agent_id.is_empty()
+            && entry.agent_id.len() <= 256
+            && !entry.conversation_id.is_empty()
+            && entry.conversation_id.len() <= 256
+            && entry.line_count <= 10_000_000
     }
 }
 
@@ -71,16 +119,46 @@ impl OclaService for BuiltinDeliveryRegistry {
 }
 
 impl DeliveryRegistry for BuiltinDeliveryRegistry {
-    fn check_delivery(&self, blake3: &[u8; 12], mtime: u64) -> Option<DeliveryRecord> {
-        let entry = self.store.get(blake3)?;
+    fn check_delivery(
+        &self,
+        blake3: &[u8; 12],
+        mtime: u64,
+        path: Option<&str>,
+        requester_agent_id: Option<&str>,
+        requester_conversation_id: Option<&str>,
+    ) -> Option<DeliveryRecord> {
+        let path = path?;
+        let key = DeliveryKey {
+            blake3: *blake3,
+            path: path.to_string(),
+        };
+        let entry = self.store.get(&key)?;
         if entry.mtime != mtime {
+            return None;
+        }
+        if self.is_expired(entry.value(), Self::now_epoch()) {
+            let key = entry.key().clone();
+            drop(entry);
+            self.store.remove(&key);
+            return None;
+        }
+        if requester_agent_id.is_some_and(|agent| agent == entry.agent_id) {
+            return None;
+        }
+        if requester_conversation_id
+            .is_some_and(|conversation| conversation == entry.conversation_id)
+        {
             return None;
         }
         let record = entry.value().clone();
         drop(entry);
 
+        Some(record)
+    }
+
+    fn record_stub_served(&self, record: &DeliveryRecord, stub_tokens: u64) {
         self.stubs_served.fetch_add(1, Ordering::Relaxed);
-        let estimated_tokens = u64::from(record.line_count) * 4;
+        let estimated_tokens = record.token_count.saturating_sub(stub_tokens);
         self.tokens_saved
             .fetch_add(estimated_tokens, Ordering::Relaxed);
 
@@ -90,23 +168,30 @@ impl DeliveryRegistry for BuiltinDeliveryRegistry {
             serving_agent: record.agent_id.clone(),
             original_agent: record.conversation_id.clone(),
         });
-
-        Some(record)
     }
 
     fn record_delivery(&self, entry: DeliveryEntry) {
+        if !Self::is_valid_entry(&entry) {
+            return;
+        }
+        self.purge_expired();
         self.evict_oldest_if_full();
+        let key = DeliveryKey {
+            blake3: entry.blake3,
+            path: entry.path.clone(),
+        };
         let record = DeliveryRecord {
             blake3: entry.blake3,
             path: entry.path,
             line_count: entry.line_count,
+            token_count: entry.token_count,
             agent_id: entry.agent_id,
             conversation_id: entry.conversation_id,
             read_at: Self::now_epoch(),
             mtime: entry.mtime,
             fresh: true,
         };
-        self.store.insert(entry.blake3, record);
+        self.store.insert(key, record);
     }
 
     fn delivery_stats(&self) -> DeliveryStats {
@@ -135,6 +220,7 @@ mod tests {
             blake3: hash,
             path: path.into(),
             line_count: 100,
+            token_count: 400,
             agent_id: agent.into(),
             conversation_id: format!("conv-{agent}"),
             mtime,
@@ -147,11 +233,65 @@ mod tests {
         let hash = [1u8; 12];
         reg.record_delivery(test_entry("src/main.rs", "agent-a", hash, 1000));
 
-        let result = reg.check_delivery(&hash, 1000);
+        let result = reg.check_delivery(
+            &hash,
+            1000,
+            Some("src/main.rs"),
+            Some("agent-b"),
+            Some("conv-agent-b"),
+        );
         assert!(result.is_some());
         let record = result.unwrap();
         assert_eq!(record.path, "src/main.rs");
         assert_eq!(record.agent_id, "agent-a");
+    }
+
+    #[test]
+    fn same_agent_returns_miss() {
+        let reg = BuiltinDeliveryRegistry::new();
+        let hash = [5u8; 12];
+        reg.record_delivery(test_entry("src/main.rs", "agent-a", hash, 1000));
+
+        assert!(
+            reg.check_delivery(
+                &hash,
+                1000,
+                Some("src/main.rs"),
+                Some("agent-a"),
+                Some("conv-other"),
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn same_conversation_returns_miss() {
+        let reg = BuiltinDeliveryRegistry::new();
+        let hash = [6u8; 12];
+        reg.record_delivery(test_entry("src/main.rs", "agent-a", hash, 1000));
+
+        assert!(
+            reg.check_delivery(
+                &hash,
+                1000,
+                Some("src/main.rs"),
+                Some("agent-b"),
+                Some("conv-agent-a"),
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn different_path_returns_miss() {
+        let reg = BuiltinDeliveryRegistry::new();
+        let hash = [7u8; 12];
+        reg.record_delivery(test_entry("src/main.rs", "agent-a", hash, 1000));
+
+        assert!(
+            reg.check_delivery(&hash, 1000, Some("src/lib.rs"), Some("agent-b"), None)
+                .is_none()
+        );
     }
 
     #[test]
@@ -160,14 +300,20 @@ mod tests {
         let hash = [2u8; 12];
         reg.record_delivery(test_entry("src/lib.rs", "agent-b", hash, 1000));
 
-        assert!(reg.check_delivery(&hash, 2000).is_none());
+        assert!(
+            reg.check_delivery(&hash, 2000, Some("src/lib.rs"), Some("agent-c"), None)
+                .is_none()
+        );
     }
 
     #[test]
     fn unknown_hash_returns_miss() {
         let reg = BuiltinDeliveryRegistry::new();
         let hash = [3u8; 12];
-        assert!(reg.check_delivery(&hash, 1000).is_none());
+        assert!(
+            reg.check_delivery(&hash, 1000, Some("missing.rs"), Some("agent-c"), None)
+                .is_none()
+        );
     }
 
     #[test]
@@ -185,14 +331,33 @@ mod tests {
 
     #[test]
     fn eviction_keeps_store_bounded() {
-        let reg = BuiltinDeliveryRegistry::new();
-        for i in 0..MAX_ENTRIES + 10 {
+        let reg = BuiltinDeliveryRegistry::with_config(3, 30);
+        for i in 0..10 {
             let mut hash = [0u8; 12];
             hash[0] = (i & 0xFF) as u8;
             hash[1] = ((i >> 8) & 0xFF) as u8;
             reg.record_delivery(test_entry("f.rs", "a", hash, i as u64));
         }
-        assert!(reg.store.len() <= MAX_ENTRIES);
+        assert!(reg.store.len() <= 3);
+    }
+
+    #[test]
+    fn expired_entry_returns_miss() {
+        let reg = BuiltinDeliveryRegistry::with_config(8, 1);
+        let hash = [8u8; 12];
+        reg.record_delivery(test_entry("old.rs", "agent-a", hash, 1000));
+        let key = DeliveryKey {
+            blake3: hash,
+            path: "old.rs".into(),
+        };
+        if let Some(mut record) = reg.store.get_mut(&key) {
+            record.read_at = BuiltinDeliveryRegistry::now_epoch().saturating_sub(61);
+        }
+
+        assert!(
+            reg.check_delivery(&hash, 1000, Some("old.rs"), Some("agent-b"), None)
+                .is_none()
+        );
     }
 
     #[test]
@@ -201,11 +366,17 @@ mod tests {
         let hash = [4u8; 12];
         reg.record_delivery(test_entry("x.rs", "a", hash, 500));
 
-        let _ = reg.check_delivery(&hash, 500);
-        let _ = reg.check_delivery(&hash, 500);
+        let first = reg
+            .check_delivery(&hash, 500, Some("x.rs"), Some("b"), Some("conv-b"))
+            .unwrap();
+        reg.record_stub_served(&first, 10);
+        let second = reg
+            .check_delivery(&hash, 500, Some("x.rs"), Some("b"), Some("conv-b"))
+            .unwrap();
+        reg.record_stub_served(&second, 10);
 
         let stats = reg.delivery_stats();
         assert_eq!(stats.stubs_served, 2);
-        assert!(stats.tokens_saved > 0);
+        assert_eq!(stats.tokens_saved, 780);
     }
 }

@@ -271,11 +271,9 @@ pub async fn forward_request(
         && let Some(cached) = cache.try_cache_hit(model, &cache_prompt_hash, 0.0, 0)
     {
         if let Some(route_decision) = &route {
-            let quality = if cached.status.is_success() { 1.0 } else { 0.0 };
-            crate::proxy::routing_feedback::global_feedback().record_outcome(
-                &route_decision.routed_from,
-                &route_decision.model,
-                quality,
+            crate::proxy::routing_feedback::global_feedback().record_outcome_for_decision(
+                &route_decision.decision_id,
+                None,
                 tokens_saved,
                 0,
             );
@@ -356,15 +354,9 @@ pub async fn forward_request(
     .await?;
 
     if let Some(route_decision) = &route {
-        let quality = if response.status().is_success() {
-            1.0
-        } else {
-            0.0
-        };
-        crate::proxy::routing_feedback::global_feedback().record_outcome(
-            &route_decision.routed_from,
-            &route_decision.model,
-            quality,
+        crate::proxy::routing_feedback::global_feedback().record_outcome_for_decision(
+            &route_decision.decision_id,
+            None,
             tokens_saved,
             0,
         );

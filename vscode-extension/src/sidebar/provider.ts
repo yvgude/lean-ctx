@@ -7,10 +7,6 @@ import {
   getRepoMap,
   semanticSearch,
   getVersion,
-  type SessionStats,
-  type KnowledgeFact,
-  type RepoMapEntry,
-  type SearchResult,
 } from "../leanctx";
 
 interface WebviewMessage {

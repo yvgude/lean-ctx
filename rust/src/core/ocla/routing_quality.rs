@@ -4,10 +4,12 @@ use std::collections::VecDeque;
 
 const MAX_DECISIONS: usize = 1_000;
 const QUALITY_THRESHOLD: f64 = 0.8;
+const MIN_SCORED_OUTCOMES: usize = 20;
 
 /// The model route selected for one request.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RoutingDecision {
+    pub decision_id: String,
     pub original_model: String,
     pub routed_model: String,
     pub reason: String,
@@ -40,7 +42,10 @@ impl RoutingQualityTracker {
         if self.outcomes.len() == MAX_DECISIONS {
             self.outcomes.pop_front();
         }
-        self.outcomes.push_back(outcome);
+        self.outcomes.push_back(RoutingOutcome {
+            quality_score: sanitize_quality(outcome.quality_score),
+            ..outcome
+        });
 
         if self.should_fallback() {
             tracing::warn!(
@@ -52,15 +57,20 @@ impl RoutingQualityTracker {
 
     /// Returns the fraction of recorded outcomes meeting the quality threshold.
     pub fn success_rate(&self) -> f64 {
-        if self.outcomes.is_empty() {
+        let scored = self.scored_outcomes();
+        if scored == 0 {
             return 0.0;
         }
 
         self.outcomes
             .iter()
-            .filter(|outcome| outcome.quality_score.unwrap_or(0.0) >= QUALITY_THRESHOLD)
+            .filter(|outcome| {
+                outcome
+                    .quality_score
+                    .is_some_and(|score| score >= QUALITY_THRESHOLD)
+            })
             .count() as f64
-            / self.outcomes.len() as f64
+            / scored as f64
     }
 
     /// Returns the average token savings across recorded outcomes.
@@ -78,8 +88,19 @@ impl RoutingQualityTracker {
 
     /// Returns whether recent route quality should trigger a fallback.
     pub fn should_fallback(&self) -> bool {
-        !self.outcomes.is_empty() && self.success_rate() < QUALITY_THRESHOLD
+        self.scored_outcomes() >= MIN_SCORED_OUTCOMES && self.success_rate() < QUALITY_THRESHOLD
     }
+
+    fn scored_outcomes(&self) -> usize {
+        self.outcomes
+            .iter()
+            .filter(|outcome| outcome.quality_score.is_some())
+            .count()
+    }
+}
+
+fn sanitize_quality(score: Option<f64>) -> Option<f64> {
+    score.filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
 }
 
 #[cfg(test)]
@@ -89,6 +110,7 @@ mod tests {
     fn outcome(score: Option<f64>, tokens_saved: u64) -> RoutingOutcome {
         RoutingOutcome {
             decision: RoutingDecision {
+                decision_id: "decision-test".into(),
                 original_model: "expensive".into(),
                 routed_model: "fast".into(),
                 reason: "quality test".into(),
@@ -117,9 +139,9 @@ mod tests {
         tracker.record(outcome(None, 0));
         tracker.record(outcome(Some(0.8), 40));
 
-        assert!((tracker.success_rate() - 0.5).abs() < f64::EPSILON);
+        assert!((tracker.success_rate() - (2.0 / 3.0)).abs() < f64::EPSILON);
         assert!((tracker.average_savings() - 40.0).abs() < f64::EPSILON);
-        assert!(tracker.should_fallback());
+        assert!(!tracker.should_fallback());
     }
 
     #[test]
@@ -132,6 +154,29 @@ mod tests {
 
         assert!((tracker.success_rate() - 1.0).abs() < f64::EPSILON);
         assert!((tracker.average_savings() - 100.0).abs() < f64::EPSILON);
+        assert!(!tracker.should_fallback());
+    }
+
+    #[test]
+    fn fallback_requires_minimum_scored_samples() {
+        let mut tracker = RoutingQualityTracker::new();
+        for _ in 0..(MIN_SCORED_OUTCOMES - 1) {
+            tracker.record(outcome(Some(0.0), 0));
+        }
+        assert!(!tracker.should_fallback());
+
+        tracker.record(outcome(Some(0.0), 0));
+        assert!(tracker.should_fallback());
+    }
+
+    #[test]
+    fn invalid_and_absent_quality_do_not_count_as_failure() {
+        let mut tracker = RoutingQualityTracker::new();
+        tracker.record(outcome(None, 10));
+        tracker.record(outcome(Some(f64::NAN), 10));
+        tracker.record(outcome(Some(1.5), 10));
+
+        assert_eq!(tracker.success_rate(), 0.0);
         assert!(!tracker.should_fallback());
     }
 }

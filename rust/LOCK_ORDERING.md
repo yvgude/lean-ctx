@@ -3,6 +3,12 @@
 This document catalogues every global/static lock and notable `Arc<Mutex/RwLock>` in the
 codebase, defines the intended acquisition order, and records rules for async code.
 
+`core/rule_discovery.rs` owns two independent leaf locks used by ctx_read rule
+injection: `DIR_CACHE` caches discovered rules per directory, and `INJECTED`
+deduplicates emitted rule blocks per session. Discovery takes and drops
+`DIR_CACHE` before formatting begins; formatting may then take `INJECTED`.
+Never hold either guard while acquiring the other or while doing filesystem I/O.
+
 ---
 
 ## 1. Global / Static Locks
@@ -28,6 +34,8 @@ All `std::sync::Mutex` unless noted otherwise.
 | L15 | `PROVIDER_CACHE` | `core/providers/cache.rs:5` | `LazyLock<Mutex<ProviderCache>>` | Cached provider metadata |
 | L16 | `LAST_BANDIT_ARM` | `core/adaptive_thresholds.rs:337` | `Mutex<Option<(String, String, String)>>` | Last bandit arm selection for adaptive thresholds |
 | L17 | `FILE_LOCKS` | `tools/registered/ctx_read.rs` | `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>` | Per-file read serialization for concurrent subagents |
+| L18 | `INJECTED` | `core/rule_discovery.rs:24` | `Mutex<Option<HashSet<String>>>` | Per-session rule injection dedup |
+| L19 | `DIR_CACHE` | `core/rule_discovery.rs:91` | `Mutex<Option<HashMap<String, Vec<DiscoveredRule>>>>` | Per-directory discovered rule cache |
 | L18 | `LAST_HASH` | `core/audit_trail.rs:52` | `Mutex<Option<String>>` | Dedup hash for audit trail entries |
 | L19 | `CACHE` (graph) | `core/graph_cache.rs:31` | `OnceLock<Mutex<HashMap<String, Entry>>>` | Property graph query result cache |
 | L20 | `RECENT` | `core/auto_findings.rs:15` | `Mutex<Vec<RecentEntry>>` | Recent auto-finding entries |

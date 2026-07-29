@@ -413,8 +413,15 @@ mod tests {
                     agent_id: "agent-1".into(),
                     conversation_id: "conv-1".into(),
                     mtime: 1000,
+                    token_count: 12,
                 });
-            let _ = reg.delivery_registry.check_delivery(&[0u8; 12], 1000);
+            let _ = reg.delivery_registry.check_delivery(
+                &[0u8; 12],
+                1000,
+                Some("x"),
+                Some("agent-b"),
+                None,
+            );
             let _ = reg.delivery_registry.delivery_stats();
         }));
 

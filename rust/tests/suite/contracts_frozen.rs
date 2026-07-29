@@ -16,7 +16,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use lean_ctx::core::contracts::{ContractStatus, contract_docs};
+use lean_ctx::core::contracts::{
+    CONTRACT_DOCS_EXCLUDED_FROM_STABILITY_MATRIX, ContractStatus, contract_docs,
+};
 use sha2::{Digest, Sha256};
 
 fn contracts_dir() -> PathBuf {
@@ -63,6 +65,7 @@ fn every_contract_doc_is_classified() {
                 .extension()
                 .is_some_and(|e| e.eq_ignore_ascii_case("md"))
         })
+        .filter(|n| !CONTRACT_DOCS_EXCLUDED_FROM_STABILITY_MATRIX.contains(&n.as_str()))
         .collect();
     on_disk.sort();
 

@@ -125,7 +125,7 @@ func TestStreamEnvelopes(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %q", r.Method)
 		}
-		if r.URL.Path != "/v1/events" {
+		if r.URL.Path != "/ocla/v1/events" {
 			t.Errorf("path = %q", r.URL.Path)
 		}
 		if got := r.Header.Get("Accept"); got != "text/event-stream" {

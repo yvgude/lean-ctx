@@ -544,10 +544,12 @@ pub struct ScheduledJob {
 
 /// Cross-agent delivery record: tracks that file content was read by an agent.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeliveryRecord {
     pub blake3: [u8; 12],
     pub path: String,
     pub line_count: u32,
+    pub token_count: u64,
     pub agent_id: String,
     pub conversation_id: String,
     pub read_at: u64,
@@ -557,10 +559,12 @@ pub struct DeliveryRecord {
 
 /// Entry for recording a new delivery.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeliveryEntry {
     pub blake3: [u8; 12],
     pub path: String,
     pub line_count: u32,
+    pub token_count: u64,
     pub agent_id: String,
     pub conversation_id: String,
     pub mtime: u64,

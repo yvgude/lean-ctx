@@ -355,7 +355,7 @@ impl Default for Config {
             port: 8080,
             max_connections: 100,
             timeout_ms: 30_000,
-            database_url: "postgres://localhost/app".into(),
+            database_url: "pg-local-fixture://app".into(),
             log_level: "info".into(),
         }
     }

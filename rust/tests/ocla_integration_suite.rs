@@ -164,6 +164,7 @@ fn test_full_pipeline() {
     let mut routing = RoutingQualityTracker::new();
     routing.record(RoutingOutcome {
         decision: RoutingDecision {
+            decision_id: "integration-route".into(),
             original_model: "expensive-model".into(),
             routed_model: "integration-model".into(),
             reason: "integration route".into(),

@@ -68,9 +68,13 @@ echo "==> TypeScript SDK conformance"
 echo "==> Go SDK conformance"
 (
   cd go-sdk
+  set +e
+  set -o pipefail
   LEANCTX_CONFORMANCE_URL="$URL" go test -run TestConformanceLive -v ./... 2>&1 | tee "$MATRIX_DIR/go.log"
-  echo $? > "$MATRIX_DIR/go.exit"
-)
+  GO_EXIT=$?
+  echo "$GO_EXIT" > "$MATRIX_DIR/go.exit"
+  exit "$GO_EXIT"
+) || FAIL=1
 echo "==> Rust SDK conformance"
 (cd clients/rust/lean-ctx-client && cargo test --test conformance_live) || FAIL=1
 

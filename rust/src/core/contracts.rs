@@ -81,10 +81,14 @@ pub struct ContractDoc {
     pub status: ContractStatus,
 }
 
-/// The complete classified inventory of `docs/contracts/*.md` — the single
-/// source of truth for the stability matrix. `tests/contracts_frozen.rs`
-/// asserts that every file in the directory is listed here (no contract can
-/// stay unclassified) and that frozen docs never change.
+pub const CONTRACT_DOCS_EXCLUDED_FROM_STABILITY_MATRIX: &[&str] = &["DEPRECATION.md", "README.md"];
+
+/// The complete classified inventory of normative `docs/contracts/*.md`
+/// documents — the single source of truth for the stability matrix.
+/// `tests/contracts_frozen.rs` asserts that every normative file in the
+/// directory is listed here (no contract can stay unclassified) and that
+/// frozen docs never change. Portal/process documents listed in
+/// `CONTRACT_DOCS_EXCLUDED_FROM_STABILITY_MATRIX` are explicitly non-normative.
 pub fn contract_docs() -> Vec<ContractDoc> {
     use ContractStatus::{Experimental, Frozen, Stable};
     let doc = |id, doc_file, version, status| ContractDoc {
@@ -133,10 +137,18 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         // key list to TOP_LEVEL_KEYS, so the doc grows with every new key —
         // freezing the file would contradict its own contract.
         doc("capabilities", "capabilities-contract-v1.md", 1, Stable),
+        doc("audit-schedule", "audit-schedule-v1.md", 1, Stable),
         doc("billing-plane-v2", "billing-plane-v2.md", 2, Stable),
         // v2 = v1 + storageQuotaBytes/roiWebhookUrl (GL #387/#388); v1 stays frozen.
         doc("billing-plane-v3", "billing-plane-v3.md", 3, Stable),
         // v3 = v1 + business plan + sso_oidc entitlement (GL #460/#533); additive.
+        doc("branch-protection", "branch-protection-v1.md", 1, Stable),
+        doc(
+            "certification-levels",
+            "certification-levels-v1.md",
+            1,
+            Stable,
+        ),
         doc("evidence-bundle", "evidence-bundle-v1.md", 1, Stable),
         // Offline-verifiable audit evidence ZIP (GL #425, H3 Epic A).
         doc(
@@ -220,6 +232,7 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         // Community addon manifest (#858): self-declared stable (v1); the format
         // evolves additively (new optional fields), so Stable, not Frozen.
         doc("addon-manifest", "addon-manifest-v1.md", 1, Stable),
+        doc("release-integrity", "release-integrity-v1.md", 1, Stable),
         // ── Experimental: may change without notice ─────────────────────────
         // W0/W1 token-intelligence foundations are locally verified but do not
         // yet claim complete hotpath adoption or externally consumed stability.
@@ -499,12 +512,14 @@ mod tests {
         // v1→v2 rule: every doc file carries its version suffix so a breaking
         // change lands as a NEW file instead of mutating the old one.
         for d in contract_docs() {
-            assert!(
-                d.doc_file.ends_with(&format!("-v{}.md", d.version)),
-                "{} must end in -v{}.md",
-                d.doc_file,
-                d.version
-            );
+            if d.doc_file.ends_with(".md") {
+                assert!(
+                    d.doc_file.ends_with(&format!("-v{}.md", d.version)),
+                    "{} must end in -v{}.md",
+                    d.doc_file,
+                    d.version
+                );
+            }
         }
     }
 }

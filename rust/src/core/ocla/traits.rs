@@ -84,7 +84,15 @@ pub trait AgentGateway: OclaService {
 }
 
 pub trait DeliveryRegistry: OclaService {
-    fn check_delivery(&self, blake3: &[u8; 12], mtime: u64) -> Option<DeliveryRecord>;
+    fn check_delivery(
+        &self,
+        blake3: &[u8; 12],
+        mtime: u64,
+        path: Option<&str>,
+        requester_agent_id: Option<&str>,
+        requester_conversation_id: Option<&str>,
+    ) -> Option<DeliveryRecord>;
+    fn record_stub_served(&self, record: &DeliveryRecord, stub_tokens: u64);
     fn record_delivery(&self, entry: DeliveryEntry);
     fn delivery_stats(&self) -> DeliveryStats;
 }

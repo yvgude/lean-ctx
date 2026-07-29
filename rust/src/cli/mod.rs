@@ -3,6 +3,8 @@ mod addon_deps;
 mod agent_cmd;
 mod allow_cmd;
 pub mod audit_report;
+mod benchmark_study_cmd;
+mod benchmark_tasks_cmd;
 mod call_cmd;
 mod cheatsheet_cmd;
 pub mod cloud;

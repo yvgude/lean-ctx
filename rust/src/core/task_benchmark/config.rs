@@ -19,6 +19,28 @@ pub enum ProfileMode {
     Aggressive,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileSelection {
+    All,
+    Stock,
+    Standard,
+    Aggressive,
+}
+
+impl ProfileSelection {
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "all" => Ok(Self::All),
+            "stock" => Ok(Self::Stock),
+            "standard" => Ok(Self::Standard),
+            "aggressive" => Ok(Self::Aggressive),
+            _ => Err(format!(
+                "unknown benchmark config {value:?}; expected stock, standard, aggressive, or all"
+            )),
+        }
+    }
+}
+
 impl ProfileMode {
     pub fn label(self) -> &'static str {
         match self {
@@ -63,15 +85,37 @@ impl Default for BenchConfig {
 }
 
 impl BenchConfig {
+    pub fn for_selection(selection: ProfileSelection) -> Self {
+        let mut config = Self::default();
+        config.profiles = match selection {
+            ProfileSelection::All => config.profiles,
+            ProfileSelection::Stock => vec![profile(ProfileMode::Stock)],
+            ProfileSelection::Standard => {
+                vec![profile(ProfileMode::Stock), profile(ProfileMode::Standard)]
+            }
+            ProfileSelection::Aggressive => {
+                vec![
+                    profile(ProfileMode::Stock),
+                    profile(ProfileMode::Aggressive),
+                ]
+            }
+        };
+        config
+    }
+
     pub fn single_profile(mode: ProfileMode) -> Self {
         Self {
-            profiles: vec![CompressionProfile {
-                name: mode.label().into(),
-                mode,
-            }],
+            profiles: vec![profile(mode)],
             repeats: 1,
             regression_threshold: 0.95,
         }
+    }
+}
+
+fn profile(mode: ProfileMode) -> CompressionProfile {
+    CompressionProfile {
+        name: mode.label().into(),
+        mode,
     }
 }
 
@@ -91,5 +135,18 @@ mod tests {
         assert_eq!(ProfileMode::Stock.label(), "stock");
         assert_eq!(ProfileMode::Standard.label(), "standard");
         assert_eq!(ProfileMode::Aggressive.label(), "aggressive");
+    }
+
+    #[test]
+    fn selection_preserves_stock_baseline_for_compressed_profiles() {
+        let standard = BenchConfig::for_selection(ProfileSelection::Standard);
+        assert_eq!(standard.profiles.len(), 2);
+        assert_eq!(standard.profiles[0].mode, ProfileMode::Stock);
+        assert_eq!(standard.profiles[1].mode, ProfileMode::Standard);
+
+        let aggressive = BenchConfig::for_selection(ProfileSelection::Aggressive);
+        assert_eq!(aggressive.profiles.len(), 2);
+        assert_eq!(aggressive.profiles[0].mode, ProfileMode::Stock);
+        assert_eq!(aggressive.profiles[1].mode, ProfileMode::Aggressive);
     }
 }

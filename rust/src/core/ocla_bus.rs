@@ -859,7 +859,7 @@ mod tests {
             assert!(!json.is_empty());
             let _: OclaEvent = serde_json::from_str(&json).unwrap();
         }
-        assert_eq!(events.len(), 11, "exactly 11 event types");
+        assert_eq!(events.len(), 11, "covers every OclaEvent variant");
     }
 
     #[test]

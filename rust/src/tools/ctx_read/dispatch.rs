@@ -587,15 +587,18 @@ fn try_cross_agent_stub(path: &str, mode: &str) -> Option<ReadOutput> {
         return None;
     }
     let (hash, mtime) = file_blake3_prefix(path)?;
-    let reg = crate::core::ocla::OclaRegistry::global();
-    let record = reg.delivery_registry.check_delivery(&hash, mtime)?;
-
     let current_agent = std::env::var("CURSOR_TASK_ID")
         .or_else(|_| std::env::var("CLAUDECODE"))
         .unwrap_or_else(|_| format!("proc:{}", std::process::id()));
-    if record.agent_id == current_agent {
-        return None;
-    }
+    let current_conversation = current_agent.clone();
+    let reg = crate::core::ocla::OclaRegistry::global();
+    let record = reg.delivery_registry.check_delivery(
+        &hash,
+        mtime,
+        Some(path),
+        Some(&current_agent),
+        Some(&current_conversation),
+    )?;
 
     let short = protocol::shorten_path(path);
     let stub = format!(
@@ -604,6 +607,8 @@ fn try_cross_agent_stub(path: &str, mode: &str) -> Option<ReadOutput> {
         agent = record.agent_id,
     );
     let tokens = count_tokens(&stub);
+    reg.delivery_registry
+        .record_stub_served(&record, tokens as u64);
     Some(ReadOutput {
         content: stub,
         resolved_mode: "cross-agent-stub".into(),
@@ -612,7 +617,7 @@ fn try_cross_agent_stub(path: &str, mode: &str) -> Option<ReadOutput> {
     })
 }
 
-fn record_cross_agent_delivery(path: &str, _tokens: usize) {
+fn record_cross_agent_delivery(path: &str, tokens: usize) {
     if !crate::core::config::Config::load().ocla.delivery_enabled() {
         return;
     }
@@ -628,6 +633,7 @@ fn record_cross_agent_delivery(path: &str, _tokens: usize) {
         blake3: hash,
         path: path.into(),
         line_count,
+        token_count: tokens as u64,
         agent_id,
         conversation_id,
         mtime,
