@@ -99,6 +99,8 @@ All `std::sync::Mutex` unless noted otherwise.
 | L86 | `LATENCY_SAMPLES` | `proxy/latency_guard.rs:53` | `LazyLock<Mutex<Vec<u64>>>` | Rolling latency samples for p50/p95/p99 percentile tracking (E8); locked briefly to push or read samples; independent leaf lock, never nested |
 | L87 | `PROVIDER_CACHE` | `core/providers/cache.rs:8` | `LazyLock<Mutex<ProviderCache>>` | LRU cache for provider responses (E8); locked briefly to read, insert, or evict entries; independent leaf lock, never nested |
 | L88 | `HANDLES` | `core/content_handle.rs:14` | `Mutex<Option<HandleStore>>` | Content-addressed file handle store for dedup re-reads (#1315); locked briefly to create, get, or invalidate handles; independent leaf lock, never nested |
+| L89 | `INJECTED` | `core/rule_discovery.rs:24` | `Mutex<Option<HashSet<String>>>` | Per-session rule injection deduplication for ctx_read (#1325); locked briefly to check/record a source/content key; independent leaf lock, never nested |
+| L90 | `DIR_CACHE` | `core/rule_discovery.rs:91` | `Mutex<Option<HashMap<String, Vec<DiscoveredRule>>>>` | Directory-scoped rule discovery cache for ctx_read (#1325); locked briefly to read or store discovered rules, then released before path filtering; independent leaf lock, never nested |
 
 ### Test / Environment Locks (serialise env-var mutations)
 
@@ -230,9 +232,9 @@ Override via `LEAN_CTX_WORKER_THREADS` (positive integer) for environments with 
 concurrent subagents. Example: `LEAN_CTX_WORKER_THREADS=8`. The blocking thread pool
 is always `worker_threads * 4`, clamped to `[8, 32]`.
 
-### Independent Static Locks (L3–L82)
+### Independent Static Locks (L3–L90)
 
-All other static locks (L3–L88) — **except the L22 → L4 pair documented above** — are
+All other static locks (L3–L90) — **except the L22 → L4 pair documented above** — are
 **independent singletons**: they protect isolated subsystem state and are never nested inside
 each other. Each should be acquired in isolation:
 
