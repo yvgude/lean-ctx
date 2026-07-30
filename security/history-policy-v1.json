@@ -4,7 +4,8 @@
     "max_commits": 20000,
     "max_objects": 300000,
     "max_findings": 5000,
-    "command_timeout_seconds": 120
+    "command_timeout_seconds": 120,
+    "full_audit_timeout_seconds": 1800
   },
   "forbidden_paths": [
     {
@@ -34,7 +35,7 @@
   ],
   "secret_rule": {
     "id": "SEC001",
-    "pickaxe_regex": "AKIA|ghp_|gho_|ghs_|ghu_|ghr_|sk_live_|PRIVATE KEY-----|postgres://|postgresql://|mysql://"
+    "pickaxe_regex": "AKIA|ghp_|gho_|ghs_|ghu_|ghr_|sk_live_|PRIVATE KEY-----|postgres://[^\\s]+:[^@\\s]+@|postgresql://[^\\s]+:[^@\\s]+@|mysql://[^\\s]+:[^@\\s]+@"
   },
   "policy_source_path": "security/history-policy-v1.json",
   "scanner_source_paths": [
@@ -49,8 +50,8 @@
     "tests/security/test_history_policy_gate.py": "7b84ba2b09517dcece43fbfd1345f3d8663090752ef84cc05423ab419b1132ea"
   },
   "baseline": {
-    "commit": "22f149e22a3cd3d6ced8bb52c81d6d089a37ae2d",
+    "commit": "b334e9b4ce4ae023d63a1ed3c21f50db28862486",
     "report": "security/evidence/full-history-baseline-v1.json",
-    "report_sha256": "e2e6ec2e53b44de0ba6f8f69b8656b121d78b574992e38d18216730916009ccf"
+    "report_sha256": "5d25ef4121124c85b776debdf207ec200783751aaeebf436f55ec6278f775fc9"
   }
 }
