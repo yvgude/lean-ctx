@@ -220,9 +220,11 @@ fn check_interpreter_inner(
         let rest_tokens = delegated_command_tokens(&tokens[1..]);
         if let Some(&delegated_tok) = rest_tokens.first() {
             // In restricted mode, the delegated command must be in the allowlist.
+            // #1419: use matches_allowlist_entry so multi-word entries like
+            // "terraform plan *" match the delegated base "terraform".
             if let Some(al) = allowlist {
                 let delegated = delegated_tok.rsplit('/').next().unwrap_or(delegated_tok);
-                if !delegated.is_empty() && !al.iter().any(|a| a == delegated) {
+                if !delegated.is_empty() && !matches_allowlist_entry(delegated, al) {
                     return Err(format!(
                         "[BLOCKED — DO NOT RETRY] '{base}' delegates to '{delegated}' which is not \
                          in the shell allowlist. This is a permanent restriction."

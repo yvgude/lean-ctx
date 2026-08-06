@@ -1480,3 +1480,41 @@ fn allowlist_multi_word_does_not_false_positive() {
         "unrelated base must not match 'terraform plan *'"
     );
 }
+
+// GH #1419: end-to-end integration tests via enforce_shell_allowlist.
+// These exercise the full allowlist pipeline (not just matches_allowlist_entry)
+// so a regression in check_all_segments or check_interpreter_inner is caught.
+
+#[test]
+fn issue_1419_multiword_extra_allows_direct_command() {
+    // Exact repro from the issue: "terraform plan *" in shell_allowlist_extra
+    // must allow "terraform plan -no-color -lock=false" through ctx_shell.
+    let list = allow(&["git", "ls", "terraform plan *"]);
+    assert!(
+        check_all_segments("terraform plan -no-color -lock=false", &list).is_ok(),
+        "terraform plan with multi-word allowlist entry must be allowed"
+    );
+}
+
+#[test]
+fn issue_1419_multiword_extra_blocks_unlisted_binary() {
+    // "terraform plan *" must NOT accidentally permit an unrelated binary.
+    let list = allow(&["terraform plan *"]);
+    let result = check_all_segments("kubectl get pods", &list);
+    assert!(result.is_err(), "kubectl must still be blocked");
+    assert!(result.unwrap_err().contains("kubectl"));
+}
+
+#[test]
+fn issue_1419_multiword_entry_via_delegation_wrapper() {
+    // GH #1419: timeout wrapping terraform must work when the allowlist
+    // only has a multi-word entry like "terraform plan *".
+    let list = allow(&["timeout", "terraform plan *"]);
+    // check_all_segments validates the "timeout" base against the allowlist,
+    // then check_interpreter_abuse validates the delegated "terraform" base.
+    // Both must now use matches_allowlist_entry (not exact match).
+    assert!(
+        check_all_segments("timeout 120 terraform plan -no-color -lock=false", &list).is_ok(),
+        "timeout wrapping terraform must be allowed with multi-word entry"
+    );
+}
