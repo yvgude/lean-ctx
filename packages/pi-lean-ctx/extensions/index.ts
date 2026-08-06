@@ -869,9 +869,27 @@ export default async function (pi: ExtensionAPI) {
       }
     });
 
-    void mcpBridge.start(pi).catch((err: unknown) => {
-      console.error(`[pi-lean-ctx] MCP bridge startup failed: ${err}`);
-    });
+    // Await bridge discovery so every advertised tool is registered before the
+    // extension factory returns. Without this, Pi can reach agent_start before
+    // the async registration completes, causing strict child tool validation to
+    // report MCP tools as unavailable (GH #1426).
+    //
+    // A bounded timeout prevents an unresponsive lean-ctx process from blocking
+    // Pi indefinitely. On expiry the synchronous CLI-backed tools remain
+    // available; advanced MCP tools are simply skipped for this session.
+    const BRIDGE_STARTUP_TIMEOUT_MS = 10_000;
+    await Promise.race([
+      mcpBridge.start(pi),
+      new Promise<void>((resolve) => {
+        const t = setTimeout(() => {
+          console.error(
+            `[pi-lean-ctx] MCP bridge startup timed out after ${BRIDGE_STARTUP_TIMEOUT_MS / 1000}s -- advanced tools unavailable; synchronous tools remain.`,
+          );
+          resolve();
+        }, BRIDGE_STARTUP_TIMEOUT_MS);
+        (t as { unref?: () => void }).unref?.();
+      }),
+    ]);
   }
 
   pi.registerCommand("lean-ctx", {

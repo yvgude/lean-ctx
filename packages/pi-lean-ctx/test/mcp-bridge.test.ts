@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { selectBridgeTools, type McpTool } from "../extensions/mcp-bridge.js";
+import { selectBridgeTools, McpBridge, type McpTool } from "../extensions/mcp-bridge.js";
 
 const tool = (name: string): McpTool => ({ name });
 
@@ -198,5 +198,49 @@ describe("propToTypebox", () => {
   it("handles array without items (fallback to Unknown)", () => {
     const result = propToTypebox({ type: "array" });
     expect(IsArray(result)).toBe(true);
+  });
+});
+
+// GH #1426 -- McpBridge.start() must always resolve so index.ts can safely
+// await it. A fire-and-forget void was previously used because start() was
+// believed to be able to reject; by confirming it resolves on failure, the
+// awaited call in the extension factory is safe.
+describe("McpBridge.start() awaitable invariants (GH #1426)", () => {
+  it("always resolves (never rejects) when the binary does not exist", async () => {
+    const bridge = new McpBridge("/nonexistent/lean-ctx-binary-gh1426", {}, {
+      disabledTools: new Set(),
+      localTools: new Set(),
+    });
+    // pi.registerTool is never called when the connection fails, so an empty
+    // stub is sufficient. Cast via unknown to avoid a full ExtensionAPI mock.
+    const mockPi = { registerTool: () => {} } as unknown as Parameters<typeof bridge["start"]>[0];
+    // The key invariant: start() must resolve regardless of connection errors.
+    // index.ts now awaits start() instead of using void (fire-and-forget), so
+    // a rejection here would throw in the extension factory and crash the agent.
+    await expect(bridge.start(mockPi)).resolves.toBeUndefined();
+  });
+
+  it("resolves via timeout when start() is slow (the bounded-await pattern)", async () => {
+    vi.useFakeTimers();
+    const STARTUP_TIMEOUT_MS = 10_000;
+    let raceResolved = false;
+
+    // Simulate a bridge that hangs indefinitely (e.g. lean-ctx MCP handshake stall).
+    const hangingStart = new Promise<void>(() => { /* never settles */ });
+
+    const race = Promise.race([
+      hangingStart,
+      new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, STARTUP_TIMEOUT_MS);
+        (t as unknown as { unref?: () => void }).unref?.();
+      }),
+    ]).then(() => { raceResolved = true; });
+
+    expect(raceResolved).toBe(false);
+    await vi.advanceTimersByTimeAsync(STARTUP_TIMEOUT_MS);
+    await race;
+    expect(raceResolved).toBe(true);
+
+    vi.useRealTimers();
   });
 });
