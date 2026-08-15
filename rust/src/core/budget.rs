@@ -34,16 +34,29 @@ pub(crate) fn apply_turn_budget(text: &str, fresh_limit: usize) -> (String, Budg
         return (text.to_string(), BudgetAction::PassThrough);
     }
 
-    let truncated = truncate_to_token_budget(text, fresh_limit);
-    let delivered_tokens = count_tokens(&truncated);
+    // Reserve the recovery hint before selecting content. A turn budget is a
+    // hard delivery limit, so the hint itself must not push the response over
+    // the configured cap.
+    let provisional_hint = truncation_hint(fresh_limit, token_count);
+    let first_content_limit = fresh_limit.saturating_sub(count_tokens(&provisional_hint));
+    let first_truncated = truncate_to_token_budget(text, first_content_limit);
+    let first_delivered_tokens = count_tokens(&first_truncated);
+    let hint = truncation_hint(first_delivered_tokens, token_count);
 
-    let hint = format!(
-        "\n[… truncated at ~{delivered_tokens} of {token_count} tokens — \
-         use ctx_read with lines= parameter to see specific sections]"
-    );
+    let content_limit = fresh_limit.saturating_sub(count_tokens(&hint));
+    let truncated = truncate_to_token_budget(text, content_limit);
+    let delivered_tokens = count_tokens(&truncated);
+    let hint = truncation_hint(delivered_tokens, token_count);
+
+    let result = format!("{truncated}{hint}");
+    let result = if count_tokens(&result) <= fresh_limit {
+        result
+    } else {
+        truncate_to_token_budget(&hint, fresh_limit)
+    };
 
     (
-        format!("{truncated}{hint}"),
+        result,
         BudgetAction::Truncated {
             original_tokens: token_count,
             delivered_tokens,
@@ -51,21 +64,31 @@ pub(crate) fn apply_turn_budget(text: &str, fresh_limit: usize) -> (String, Budg
     )
 }
 
+fn truncation_hint(delivered_tokens: usize, token_count: usize) -> String {
+    format!(
+        "\n[… truncated at ~{delivered_tokens} of {token_count} tokens — \
+         use ctx_read with lines= parameter to see specific sections]"
+    )
+}
+
 /// Truncate text to approximately `limit` tokens by keeping complete lines.
 fn truncate_to_token_budget(text: &str, limit: usize) -> String {
+    if limit == 0 {
+        return String::new();
+    }
+
     let mut result = String::new();
-    let mut current_tokens = 0;
 
     for line in text.lines() {
-        let line_tokens = count_tokens(line);
-        if current_tokens + line_tokens > limit && current_tokens > 0 {
-            break;
-        }
+        let previous_len = result.len();
         if !result.is_empty() {
             result.push('\n');
         }
         result.push_str(line);
-        current_tokens += line_tokens;
+        if count_tokens(&result) > limit {
+            result.truncate(previous_len);
+            break;
+        }
     }
 
     result
@@ -89,6 +112,21 @@ mod tests {
         let (result, action) = apply_turn_budget(text, 0);
         assert_eq!(result, text);
         assert_eq!(action, BudgetAction::PassThrough);
+    }
+
+    #[test]
+    fn truncation_keeps_the_complete_response_within_the_budget() {
+        let text = (0..2_000)
+            .map(|i| format!("fn output_{i}() {{ println!(\"{i}\"); }}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let limit = 256;
+
+        let (result, action) = apply_turn_budget(&text, limit);
+
+        assert!(matches!(action, BudgetAction::Truncated { .. }));
+        assert!(count_tokens(&result) <= limit);
+        assert!(result.contains("ctx_read with lines="));
     }
 
     #[test]

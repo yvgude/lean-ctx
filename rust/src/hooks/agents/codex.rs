@@ -19,7 +19,7 @@ pub fn install_codex_hook() {
     if !mcp_server_quiet_mode() {
         if hook_config_changed {
             eprintln!(
-                "Installed Codex-compatible SessionStart/PreToolUse hooks at {}",
+                "Installed Codex SessionStart/PreToolUse hooks (Bash/Read/Grep/Glob) at {}",
                 codex_dir.display()
             );
         }
@@ -302,8 +302,9 @@ fn ensure_codex_hooks_enabled(config_content: &str) -> Option<String> {
 }
 
 // Codex deny is handled mode-aware by the codex-pretooluse handler at runtime:
-// non-rewritable Bash calls are denied in Replace mode, rewritten in Hybrid.
-// A separate deny hook is not needed (Codex PreToolUse only fires for Bash).
+// Bash is rewritten when possible, and registered Read/Grep/Glob calls use the
+// safe redirect pipeline or an MCP suggestion in Replace mode. A separate deny
+// hook is not needed because PreToolUse provides the decision point for all.
 
 #[cfg(test)]
 mod tests {
@@ -385,6 +386,11 @@ mod tests {
         assert_eq!(
             pre_tool_use[1]["hooks"][0]["command"].as_str(),
             Some("lean-ctx hook codex-pretooluse")
+        );
+        assert_eq!(
+            pre_tool_use[1]["matcher"].as_str(),
+            Some("Bash|Read|Grep|Glob"),
+            "the Codex installer must register native file tool coverage"
         );
         assert_eq!(
             input["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str(),

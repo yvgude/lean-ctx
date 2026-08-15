@@ -13,9 +13,10 @@ pub(in crate::server) async fn dispatch_and_post_process(
     auto_context: Option<String>,
     throttle_warning: Option<String>,
     args_fp: String,
-    decision_context: Option<crate::core::decision_loop_runtime::TaskContext>,
+    mut decision_context: Option<crate::core::decision_loop_runtime::TaskContext>,
 ) -> Result<CallToolResult, ErrorData> {
     let tool_start = std::time::Instant::now();
+    let shadow_auto_record = config.shadow.enabled && config.shadow.auto_record;
     let (mut result_text, tool_saved_tokens, shell_outcome, content_blocks) =
         match server.dispatch_tool(name, args, minimal).await {
             Ok(tuple) => tuple,
@@ -40,14 +41,29 @@ pub(in crate::server) async fn dispatch_and_post_process(
                     );
                     let result =
                         CallToolResult::error(vec![ContentBlock::text(e.message.to_string())]);
-                    record_decision_loop_end(decision_context.as_ref(), args, &result, false);
+                    record_decision_loop_end(
+                        decision_context.as_ref(),
+                        args,
+                        &result,
+                        false,
+                        shadow_auto_record,
+                        None,
+                    );
                     return Ok(result);
                 }
 
-                record_decision_loop_end_error(decision_context.as_ref(), args);
+                record_decision_loop_end_error(decision_context.as_ref(), args, shadow_auto_record);
                 return Err(e);
             }
         };
+
+    let task_profile = {
+        let session = server.session.read().await;
+        crate::core::decision_loop_runtime::DecisionLoopRuntime::get_or_init()
+            .profile_for_session(&session.id)
+    };
+    result_text =
+        apply_task_triage_filter(result_text, task_profile.as_ref(), &mut decision_context);
 
     // Image/binary content blocks: skip all post-processing, return directly.
     if let Some(blocks) = content_blocks {
@@ -62,6 +78,8 @@ pub(in crate::server) async fn dispatch_and_post_process(
             args,
             &result,
             result.is_error != Some(true),
+            shadow_auto_record,
+            Some(shadow_tokens_for_result(&result)),
         );
         return Ok(result);
     }
@@ -232,9 +250,10 @@ pub(in crate::server) async fn dispatch_and_post_process(
     // exceeds the ephemeral threshold, the full (redacted) body is stored out-of-band
     // and the inline result is replaced by a compact digest + ctx_expand drilldown.
     let mut firewalled = false;
-    // GH #1432: raw mode still needs the firewall for genuinely oversized
-    // outputs — `raw` means "skip compression patterns", not "bypass safety".
-    // `minimal` (no-overhead mode) is the only true bypass.
+    // GH #1453: `raw`/`inline`/`bypass` explicitly request verbatim delivery —
+    // the firewall must NOT replace their content with a structural digest.
+    // The output is still *archived* (so ctx_expand works), but stays inline.
+    // `minimal` (no-overhead mode) skips even archiving.
     let archive_hint = if minimal {
         None
     } else {
@@ -257,7 +276,10 @@ pub(in crate::server) async fn dispatch_and_post_process(
             let to_store = crate::core::redaction::redact_text_if_enabled(&result_text);
             let tokens = crate::core::tokens::count_tokens(&to_store);
             match archive::store(name, &cmd, &to_store, Some(&session_id)) {
-                Some(id) if crate::core::firewall::should_firewall(name, tokens, &config) => {
+                Some(id)
+                    if !is_raw_shell
+                        && crate::core::firewall::should_firewall(name, tokens, &config) =>
+                {
                     result_text =
                         crate::core::firewall::summarize(&to_store, &id, name, tokens, &cmd);
                     firewalled = true;
@@ -365,6 +387,12 @@ pub(in crate::server) async fn dispatch_and_post_process(
         }
     }
 
+    if !is_raw_shell
+        && name != "ctx_memory"
+        && let Some(hint) = crate::core::shared_context::session_start_hint()
+    {
+        result_text = format!("{hint}\n\n{result_text}");
+    }
     if let Some(warning) = throttle_warning {
         result_text = format!("{result_text}\n\n{warning}");
     }
@@ -431,6 +459,31 @@ pub(in crate::server) async fn dispatch_and_post_process(
     }
 
     if name == "ctx_read" {
+        if let Some(read_path) = args
+            .as_ref()
+            .and_then(|args| args.get("path"))
+            .and_then(serde_json::Value::as_str)
+        {
+            let task_class = task_profile
+                .as_ref()
+                .map_or("unknown", |profile| profile.task_class.as_str());
+            let task_class = task_class.to_owned();
+            let read_path = read_path.to_owned();
+            let project_root = {
+                let session = server.session.read().await;
+                session.project_root.clone()
+            };
+            tokio::spawn(async move {
+                let predictions = crate::server::predictive_preload::record_read_and_predict(
+                    &task_class,
+                    &read_path,
+                );
+                crate::server::predictive_preload::warm_paths(
+                    project_root.as_deref().map(std::path::Path::new),
+                    &predictions,
+                );
+            });
+        }
         if minimal {
             let cache_clone = server.cache.clone();
             let autonomy_clone = server.autonomy.clone();
@@ -813,6 +866,8 @@ pub(in crate::server) async fn dispatch_and_post_process(
             args,
             &result,
             result.is_error != Some(true),
+            shadow_auto_record,
+            Some(shadow_tokens_for_result(&result)),
         );
         return Ok(result);
     }
@@ -859,16 +914,11 @@ pub(in crate::server) async fn dispatch_and_post_process(
     }
 
     // Turn-level budget enforcement (#1306): cap fresh tokens per response.
-    // Bypass for mode=full reads: the agent explicitly requested uncompressed
-    // content (typically for editing). Truncating would cause StrReplace to
-    // fail because old_string from truncated content won't match the real file.
-    let is_full_mode_read = name == "ctx_read"
-        && args
-            .and_then(|a| a.get("mode"))
-            .and_then(serde_json::Value::as_str)
-            .is_some_and(|m| m == "full");
+    // This applies uniformly to every tool, including raw shell output and
+    // explicit full reads. Oversized archivable responses retain their
+    // ctx_expand handle from the archive stage above.
     let budget_limit = crate::core::config::Config::load().turn_fresh_limit_effective();
-    if budget_limit > 0 && shell_outcome.is_none() && !is_full_mode_read {
+    if budget_limit > 0 {
         let (budgeted, action) = crate::core::budget::apply_turn_budget(&result_text, budget_limit);
         if let crate::core::budget::BudgetAction::Truncated {
             original_tokens,
@@ -882,6 +932,9 @@ pub(in crate::server) async fn dispatch_and_post_process(
         result_text = budgeted;
     }
 
+    let compressed_input_tokens = crate::core::tokens::count_tokens(&result_text) as u64;
+    let raw_input_tokens = compressed_input_tokens
+        .saturating_add(u64::try_from(tool_saved_tokens).unwrap_or(u64::MAX));
     let mut result = finalize_call_result(&result_text, shell_outcome);
     let has_dynamic = had_auto_context || had_budget_warning || had_throttle_warning;
     let mut meta = rmcp::model::Meta::new();
@@ -890,13 +943,58 @@ pub(in crate::server) async fn dispatch_and_post_process(
         serde_json::Value::String(if has_dynamic { "ephemeral" } else { "stable" }.to_owned()),
     );
     result.meta = Some(meta);
+
+    // Account only for the final emitted body so admission checks use the
+    // same token count that was delivered to the agent.
+    let agent_id = if let Some(agent_id) = server.agent_id.read().await.clone() {
+        agent_id
+    } else {
+        server
+            .presence_agent_id
+            .read()
+            .await
+            .clone()
+            .unwrap_or_else(|| "mcp-agent".to_owned())
+    };
+    crate::core::agent_budget::record_consumption(
+        &agent_id,
+        usize::try_from(compressed_input_tokens).unwrap_or(usize::MAX),
+    );
+    crate::core::agent_budget::record_turn_delivery(&agent_id, compressed_input_tokens);
     record_decision_loop_end(
         decision_context.as_ref(),
         args,
         &result,
         result.is_error != Some(true),
+        shadow_auto_record,
+        Some((raw_input_tokens, compressed_input_tokens)),
     );
     Ok(result)
+}
+
+/// Applies task triage at the native dispatch chokepoint. If no profile is
+/// available or filtering panics, preserve the raw tool response unchanged.
+fn apply_task_triage_filter(
+    result_text: String,
+    profile: Option<&crate::core::triage::profile::TaskProfileLocal>,
+    decision_context: &mut Option<crate::core::decision_loop_runtime::TaskContext>,
+) -> String {
+    let Some(profile) = profile else {
+        return result_text;
+    };
+
+    let filtered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let level = context_gate::triage_filter_level(profile);
+        (level > 0).then(|| context_gate::apply_triage_filter(&result_text, profile, level))
+    }));
+    let Ok(Some((filtered_text, filtered_lines))) = filtered else {
+        return result_text;
+    };
+
+    if let Some(context) = decision_context {
+        context.filtered_lines = filtered_lines;
+    }
+    filtered_text
 }
 
 fn record_decision_loop_end(
@@ -904,12 +1002,26 @@ fn record_decision_loop_end(
     args: Option<&serde_json::Map<String, serde_json::Value>>,
     result: &CallToolResult,
     success: bool,
+    shadow_auto_record: bool,
+    shadow_tokens: Option<(u64, u64)>,
 ) {
     let input_tokens = args
         .and_then(|args| serde_json::to_string(args).ok())
         .map_or(0, |input| (input.len() / 4) as u64);
     let output_tokens = format!("{result:?}").len() as u64 / 4;
-    record_decision_loop(context, input_tokens, output_tokens, success);
+    record_decision_loop(
+        context,
+        input_tokens,
+        output_tokens,
+        success,
+        shadow_auto_record,
+        shadow_tokens,
+    );
+}
+
+fn shadow_tokens_for_result(result: &CallToolResult) -> (u64, u64) {
+    let tokens = format!("{result:?}").len() as u64 / 4;
+    (tokens, tokens)
 }
 
 /// Record real compression savings after every response rewrite is complete.
@@ -944,11 +1056,12 @@ fn compression_tracker_tokens(
 fn record_decision_loop_end_error(
     context: Option<&crate::core::decision_loop_runtime::TaskContext>,
     args: Option<&serde_json::Map<String, serde_json::Value>>,
+    shadow_auto_record: bool,
 ) {
     let input_tokens = args
         .and_then(|args| serde_json::to_string(args).ok())
         .map_or(0, |input| (input.len() / 4) as u64);
-    record_decision_loop(context, input_tokens, 0, false);
+    record_decision_loop(context, input_tokens, 0, false, shadow_auto_record, None);
 }
 
 fn record_decision_loop(
@@ -956,18 +1069,25 @@ fn record_decision_loop(
     input_tokens: u64,
     output_tokens: u64,
     success: bool,
+    shadow_auto_record: bool,
+    shadow_tokens: Option<(u64, u64)>,
 ) {
-    if let Some(context) = context
-        && std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::core::decision_loop_runtime::DecisionLoopRuntime::get_or_init().on_tool_end(
+    let Some(context) = context else {
+        return;
+    };
+    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::core::decision_loop_runtime::DecisionLoopRuntime::get_or_init()
+            .on_tool_end_with_shadow(
                 context,
                 input_tokens,
                 output_tokens,
                 "mcp-tool",
                 success,
-            );
-        }))
-        .is_err()
+                shadow_auto_record,
+                shadow_tokens,
+            )
+    }))
+    .is_err()
     {
         tracing::warn!("decision loop end panicked");
     }
@@ -975,7 +1095,7 @@ fn record_decision_loop(
 
 #[cfg(test)]
 mod savings_tests {
-    use super::compression_tracker_tokens;
+    use super::{apply_task_triage_filter, compression_tracker_tokens};
 
     #[test]
     fn test_tracker_in_pipeline() {
@@ -991,6 +1111,41 @@ mod savings_tests {
                 after.savings_tokens
             ),
             (100, 25, 75)
+        );
+    }
+
+    #[test]
+    fn triage_filter_rewrites_raw_output_and_tracks_removed_lines() {
+        let profile = crate::core::triage::profile::TaskProfileLocal {
+            confidence_milli: 500,
+            context_need_milli: 400,
+            ..Default::default()
+        };
+        let mut context = Some(crate::core::decision_loop_runtime::TaskContext {
+            task_id: String::new(),
+            session_id: String::new(),
+            triage_class: String::new(),
+            profile_intent: String::new(),
+            profile_complexity: String::new(),
+            filtered_lines: 0,
+            start_time: std::time::Instant::now(),
+        });
+        let raw = format!("// boilerplate\n{}", "content\n".repeat(100));
+
+        let filtered = apply_task_triage_filter(raw, Some(&profile), &mut context);
+
+        assert!(!filtered.starts_with("// boilerplate"));
+        assert_eq!(context.as_ref().unwrap().filtered_lines, 1);
+    }
+
+    #[test]
+    fn triage_filter_fails_open_without_a_profile() {
+        let raw = "content\n".repeat(100);
+        let mut context = None;
+
+        assert_eq!(
+            apply_task_triage_filter(raw.clone(), None, &mut context),
+            raw
         );
     }
 }

@@ -5,6 +5,8 @@ use lean_ctx_protocol::{
     AgentId, ProjectId, SessionId, TaskComplexity, TaskEnvelopeV1, TaskId, TaskProfileV1, TraceId,
 };
 use std::cell::RefCell;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 pub type TaskProfileLocal = TaskProfileV1;
 
@@ -12,19 +14,27 @@ thread_local! {
     static CURRENT: RefCell<Option<TaskEnvelopeV1>> = const { RefCell::new(None) };
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+/// Parent task id retained for the lifetime of each active MCP session.
+static SESSION_LINEAGES: OnceLock<Arc<Mutex<HashMap<String, String>>>> = OnceLock::new();
+
+#[derive(Debug, Clone, Default)]
 /// Maintains task-envelope lineage for the current execution thread.
-pub struct TaskSpine;
+pub struct TaskSpine {
+    /// Root task of the current session, absent when creating that root task.
+    pub parent_id: Option<String>,
+}
 
 impl TaskSpine {
     pub fn create_envelope(query: &str, session_id: &str, agent_id: &str) -> TaskEnvelopeV1 {
         let project = crate::core::session::SessionState::load_latest()
             .and_then(|s| s.project_root)
             .unwrap_or_else(|| "unknown-project".to_owned());
+        let task_id = TaskId::try_from(format!("mcp-task-{}", uuid::Uuid::new_v4()))
+            .expect("generated task id is valid");
+        let spine = Self::for_session(session_id, task_id.as_str());
         let envelope = TaskEnvelopeV1 {
             schema_version: TaskEnvelopeV1::SCHEMA_VERSION,
-            task_id: TaskId::try_from(format!("mcp-task-{}", uuid::Uuid::new_v4()))
-                .expect("generated task id is valid"),
+            task_id,
             trace_id: TraceId::try_from(format!("trace-{}", uuid::Uuid::new_v4()))
                 .expect("generated trace id is valid"),
             project_id: ProjectId::try_from(project).unwrap_or_else(|_| {
@@ -35,7 +45,12 @@ impl TaskSpine {
             agent_id: AgentId::try_from(agent_id.to_owned()).expect("MCP agent id is valid"),
             complexity: TaskComplexity::Unknown,
             created_at: Utc::now().to_rfc3339(),
-            parent_task_id: None,
+            parent_task_id: spine
+                .parent_id
+                .clone()
+                .map(TaskId::try_from)
+                .transpose()
+                .expect("stored parent task id is valid"),
             tenant_id: None,
             intent: (!query.trim().is_empty()).then(|| query.to_owned()),
             task_class: None,
@@ -51,6 +66,28 @@ impl TaskSpine {
         };
         CURRENT.with(|current| *current.borrow_mut() = Some(envelope.clone()));
         envelope
+    }
+
+    fn for_session(session_id: &str, task_id: &str) -> Self {
+        if session_id.trim().is_empty() {
+            return Self::default();
+        }
+
+        let mut lineages = Self::session_lineages()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let parent_id = match lineages.entry(session_id.to_owned()) {
+            std::collections::hash_map::Entry::Occupied(parent) => Some(parent.get().clone()),
+            std::collections::hash_map::Entry::Vacant(session) => {
+                session.insert(task_id.to_owned());
+                None
+            }
+        };
+        Self { parent_id }
+    }
+
+    fn session_lineages() -> &'static Arc<Mutex<HashMap<String, String>>> {
+        SESSION_LINEAGES.get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
     }
 
     pub fn enrich_from_triage(envelope: &mut TaskEnvelopeV1, profile: &TaskProfileLocal) {
@@ -124,6 +161,25 @@ mod tests {
         assert_eq!(
             envelope.risk_class,
             Some(lean_ctx_protocol::RiskClass::High)
+        );
+    }
+
+    #[test]
+    fn first_session_task_is_parent_of_subsequent_tasks() {
+        let session_id = format!("lineage-session-{}", uuid::Uuid::new_v4());
+        let parent = TaskSpine::create_envelope("first", &session_id, "agent");
+        let child = TaskSpine::create_envelope("second", &session_id, "agent");
+
+        assert!(parent.parent_task_id.is_none());
+        assert_eq!(
+            child.parent_task_id.as_ref().map(|id| id.as_str()),
+            Some(parent.task_id.as_str())
+        );
+        assert_eq!(
+            TaskSpine::current()
+                .as_ref()
+                .map(|envelope| envelope.task_id.as_str()),
+            Some(child.task_id.as_str())
         );
     }
 }

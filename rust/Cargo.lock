@@ -2336,6 +2336,7 @@ dependencies = [
  "rmcp",
  "rpassword",
  "rusqlite",
+ "rustc-hash",
  "rustls",
  "semver",
  "serde",

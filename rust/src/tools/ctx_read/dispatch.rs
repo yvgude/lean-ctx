@@ -36,8 +36,29 @@ pub fn handle_with_task(
     crp_mode: CrpMode,
     task: Option<&str>,
 ) -> String {
-    let mut result = handle_with_options(cache, path, mode, false, crp_mode, task);
-    kernel::enrich_with_kernel(&mut result, task);
+    handle_with_task_result(cache, path, mode, crp_mode, task).content
+}
+
+/// Task-aware read with the structural cache-hit result retained for callers
+/// that need to account for each file in a batch independently.
+pub fn handle_with_task_result(
+    cache: &mut SessionCache,
+    path: &str,
+    mode: &str,
+    crp_mode: CrpMode,
+    task: Option<&str>,
+) -> ReadOutput {
+    let mut result = handle_with_options_resolved(
+        cache,
+        path,
+        mode,
+        false,
+        crp_mode,
+        task,
+        ReadTuning::resolve(None, &[]),
+    );
+    kernel::enrich_with_kernel(&mut result.content, task);
+    result.output_tokens = count_tokens(&result.content);
     result
 }
 
@@ -117,7 +138,26 @@ pub fn handle_fresh_with_task(
     crp_mode: CrpMode,
     task: Option<&str>,
 ) -> String {
-    handle_with_options(cache, path, mode, true, crp_mode, task)
+    handle_fresh_with_task_result(cache, path, mode, crp_mode, task).content
+}
+
+/// Fresh task-aware read with the structural cache-hit result retained.
+pub fn handle_fresh_with_task_result(
+    cache: &mut SessionCache,
+    path: &str,
+    mode: &str,
+    crp_mode: CrpMode,
+    task: Option<&str>,
+) -> ReadOutput {
+    handle_with_options_resolved(
+        cache,
+        path,
+        mode,
+        true,
+        crp_mode,
+        task,
+        ReadTuning::resolve(None, &[]),
+    )
 }
 
 /// Fresh read with task-aware filtering, also returns the resolved mode name and pre-counted tokens.

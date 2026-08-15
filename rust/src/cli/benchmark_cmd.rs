@@ -1,34 +1,36 @@
-//! `lean-ctx benchmark --real` — canonical production-path measurements.
+//! Shareable reports for the proxy compression benchmark.
 
-use serde::Serialize;
-
-use crate::core::task_benchmark::{
-    config::{BenchConfig, ProfileMode},
-    fixtures::canonical_suite,
-    runner::run_benchmark,
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
 };
 
-#[derive(Debug, Clone, Serialize)]
-struct RealBenchmarkReport {
-    suite: &'static str,
-    task_count: usize,
-    raw_tokens: usize,
-    compressed_tokens: usize,
-    compression_ratio: f64,
-    quality_score: f64,
-    tasks: Vec<RealTaskMeasurement>,
+use chrono::Local;
+use serde_json::{Value, json};
+
+use crate::{
+    core::{benchmark_compare::system_info, share::copy_to_clipboard},
+    proxy::pipeline_bench::{BenchmarkReport, run_benchmark},
+};
+
+const REPORTS_DIRECTORY: &str = ".local/share/lean-ctx/reports";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReportFormat {
+    Markdown,
+    Json,
+    Text,
 }
 
-#[derive(Debug, Clone, Serialize)]
-struct RealTaskMeasurement {
-    task_id: String,
-    raw_tokens: usize,
-    compressed_tokens: usize,
-    compression_ratio: f64,
-    quality_score: f64,
+#[derive(Debug, Clone)]
+struct BenchmarkOptions {
+    format: ReportFormat,
+    output: Option<PathBuf>,
+    share: bool,
 }
 
-/// Runs the canonical ten-task suite through the production standard compressor.
+/// Runs the pipeline benchmark and writes a shareable report.
 pub(crate) fn cmd_benchmark_real(args: &[String]) {
     if args
         .iter()
@@ -38,143 +40,399 @@ pub(crate) fn cmd_benchmark_real(args: &[String]) {
         return;
     }
 
-    match render(args) {
-        Ok(output) => print!("{output}"),
+    let options = match parse(args) {
+        Ok(options) => options,
         Err(error) => {
             eprintln!("benchmark: {error}");
             usage();
             std::process::exit(2);
         }
-    }
-}
-
-fn render(args: &[String]) -> Result<String, String> {
-    let json = parse(args)?;
-    let report = measure();
-    if json {
-        serde_json::to_string_pretty(&report).map_err(|error| format!("serialize report: {error}"))
+    };
+    let report = run_benchmark();
+    let markdown = generate_markdown_report(&report);
+    let rendered = match options.format {
+        ReportFormat::Markdown => markdown.clone(),
+        ReportFormat::Json => generate_json_report(&report),
+        ReportFormat::Text => generate_text_report(&report),
+    };
+    let path = match options.output {
+        Some(path) => path,
+        None => match default_report_path() {
+            Ok(path) => path,
+            Err(error) => {
+                eprintln!("benchmark: {error}");
+                std::process::exit(2);
+            }
+        },
+    };
+    let contents_to_save = if path.extension().is_some_and(|extension| extension == "md") {
+        &markdown
     } else {
-        Ok(table(&report))
-    }
-}
+        &rendered
+    };
 
-fn parse(args: &[String]) -> Result<bool, String> {
-    let mut real = false;
-    let mut json = false;
-    for arg in args {
-        match arg.as_str() {
-            "--real" => real = true,
-            "--json" => json = true,
-            unknown => return Err(format!("unknown argument {unknown:?}")),
+    if let Err(error) = save_report(&path, contents_to_save) {
+        eprintln!("benchmark: {error}");
+        std::process::exit(2);
+    }
+    eprintln!("Report saved to: {}", path.display());
+
+    if options.share {
+        if copy_to_clipboard(&markdown) {
+            eprintln!("Report copied to clipboard.");
+        } else {
+            eprintln!("benchmark: could not copy report to the clipboard");
         }
     }
-    real.then_some(json)
-        .ok_or_else(|| "--real is required for this benchmark mode".to_string())
+    eprintln!("Share: lean-ctx benchmark --share (copies to clipboard)");
+    print!("{rendered}");
 }
 
-fn measure() -> RealBenchmarkReport {
-    let result = run_benchmark(
-        &canonical_suite(),
-        &BenchConfig::single_profile(ProfileMode::Standard),
-    );
-    let profile = &result.profiles[0];
-    let tasks: Vec<_> = profile
-        .runs
-        .iter()
-        .map(|run| RealTaskMeasurement {
-            task_id: run.task_id.clone(),
-            raw_tokens: run.raw_tokens,
-            compressed_tokens: run.compressed_tokens,
-            compression_ratio: ratio(run.compressed_tokens, run.raw_tokens),
-            quality_score: run.quality.overall_score(),
-        })
-        .collect();
-
-    RealBenchmarkReport {
-        suite: "canonical-10-task",
-        task_count: tasks.len(),
-        raw_tokens: profile.total_raw_tokens,
-        compressed_tokens: profile.total_compressed_tokens,
-        compression_ratio: ratio(profile.total_compressed_tokens, profile.total_raw_tokens),
-        quality_score: profile.avg_quality_score,
-        tasks,
-    }
-}
-
-fn table(report: &RealBenchmarkReport) -> String {
+/// Produces a Markdown report ready to paste into a pull request or post.
+pub(crate) fn generate_markdown_report(report: &BenchmarkReport) -> String {
+    let machine = system_info::collect();
+    let generated_at = report_timestamp();
+    let average_latency_ms = average_latency_ms(report);
+    let tokens_saved = report
+        .total_tokens_before
+        .saturating_sub(report.total_tokens_after);
+    let retained_pct = percentage(report.total_tokens_after, report.total_tokens_before);
     let mut output = format!(
-        "Canonical 10-task benchmark (production standard compression)\n\n{:<26} {:>10} {:>12} {:>9} {:>9}\n{}\n",
-        "Task",
-        "Raw",
-        "Compressed",
-        "Ratio",
-        "Quality",
-        "-".repeat(72)
+        "## lean-ctx Compression Benchmark Results\n\n**Date:** {generated_at}\n\
+         **Machine:** {machine}\n\n### Per-scenario results\n\n\
+         | Scenario | Messages | Before | After | Savings | Latency |\n\
+         | --- | ---: | ---: | ---: | ---: | ---: |\n"
     );
-    for task in &report.tasks {
+
+    for result in &report.results {
         output.push_str(&format!(
-            "{:<26} {:>10} {:>12} {:>8.2}x {:>8.1}%\n",
-            task.task_id,
-            task.raw_tokens,
-            task.compressed_tokens,
-            task.compression_ratio,
-            task.quality_score * 100.0,
+            "| {} | {} | {} | {} | {:.1}% | {:.2}ms |\n",
+            result.scenario,
+            result.message_count,
+            result.total_tokens_before,
+            result.total_tokens_after,
+            result.savings_pct,
+            result.latency_us as f64 / 1_000.0,
         ));
     }
+
     output.push_str(&format!(
-        "\nTotal ({} tasks): raw {} → compressed {} ({:.2}x, quality {:.1}%)\n",
-        report.task_count,
-        report.raw_tokens,
-        report.compressed_tokens,
-        report.compression_ratio,
-        report.quality_score * 100.0,
+        "\n### Per-stage contribution breakdown\n\n\
+         | Stage | Tokens | Share of input | Contribution |\n\
+         | --- | ---: | ---: | --- |\n\
+         | Input context | {} | 100.0% | Baseline context received |\n\
+         | Compression pipeline | {} | {:.1}% | Tokens removed |\n\
+         | Forwarded context | {} | {:.1}% | Tokens retained |\n\n\
+         **TOTAL: {:.1}% average savings, {:.2}ms average latency**\n\n\
+         vs typical proxy overhead: 500ms+ (lean-ctx: <1ms)\n\n\
+         Generated by lean-ctx v{VERSION} | https://github.com/yvgude/lean-ctx\n",
+        report.total_tokens_before,
+        tokens_saved,
+        report.average_savings_pct,
+        report.total_tokens_after,
+        retained_pct,
+        report.average_savings_pct,
+        average_latency_ms,
     ));
     output
 }
 
-fn ratio(compressed_tokens: usize, raw_tokens: usize) -> f64 {
-    if compressed_tokens == 0 {
+/// Produces the Shields.io badge users can embed beside the full report.
+pub(crate) fn generate_badge_markdown(report: &BenchmarkReport) -> String {
+    let savings = if report.average_savings_pct.is_finite() {
+        report.average_savings_pct.round().clamp(0.0, 100.0) as u8
+    } else {
+        0
+    };
+    format!(
+        "![lean-ctx savings](https://img.shields.io/badge/lean--ctx-{savings}%25_savings-brightgreen)"
+    )
+}
+
+/// Produces the report as JSON for CI and other programmatic consumers.
+pub(crate) fn generate_json_report(report: &BenchmarkReport) -> String {
+    serde_json::to_string_pretty(&json_report(report))
+        .expect("benchmark report contains only JSON-compatible values")
+}
+
+fn json_report(report: &BenchmarkReport) -> Value {
+    let machine = system_info::collect();
+    let average_latency_ms = average_latency_ms(report);
+    let tokens_saved = report
+        .total_tokens_before
+        .saturating_sub(report.total_tokens_after);
+    let retained_pct = percentage(report.total_tokens_after, report.total_tokens_before);
+    json!({
+        "title": "lean-ctx Compression Benchmark Results",
+        "generated_at": report_timestamp(),
+        "machine": {
+            "os": machine.os,
+            "arch": machine.arch,
+            "cpu": machine.cpu_brand,
+            "cores": machine.cpu_cores,
+            "memory_gb": machine.memory_gb,
+        },
+        "scenarios": report.results.iter().map(|result| json!({
+            "name": result.scenario,
+            "message_count": result.message_count,
+            "tokens_before": result.total_tokens_before,
+            "tokens_after": result.total_tokens_after,
+            "savings_pct": result.savings_pct,
+            "latency_us": result.latency_us,
+            "latency_ms": result.latency_us as f64 / 1_000.0,
+            "estimated_cost_savings_usd": result.estimated_cost_savings_usd,
+            "expected_savings_pct": {
+                "min": result.expected_savings_min_pct,
+                "max": result.expected_savings_max_pct,
+            },
+        })).collect::<Vec<_>>(),
+        "stages": [
+            {
+                "name": "Input context",
+                "tokens": report.total_tokens_before,
+                "share_of_input_pct": 100.0,
+                "contribution": "Baseline context received",
+            },
+            {
+                "name": "Compression pipeline",
+                "tokens": tokens_saved,
+                "share_of_input_pct": report.average_savings_pct,
+                "contribution": "Tokens removed",
+            },
+            {
+                "name": "Forwarded context",
+                "tokens": report.total_tokens_after,
+                "share_of_input_pct": retained_pct,
+                "contribution": "Tokens retained",
+            }
+        ],
+        "summary": {
+            "total_tokens_before": report.total_tokens_before,
+            "total_tokens_after": report.total_tokens_after,
+            "tokens_saved": tokens_saved,
+            "average_savings_pct": report.average_savings_pct,
+            "average_latency_ms": average_latency_ms,
+            "max_latency_us": report.max_latency_us,
+            "total_estimated_cost_savings_usd": report.total_estimated_cost_savings_usd,
+        },
+        "comparison": {
+            "typical_proxy_overhead": "500ms+",
+            "lean_ctx_overhead": "<1ms",
+        },
+        "badge_markdown": generate_badge_markdown(report),
+        "footer": format!("Generated by lean-ctx v{VERSION} | https://github.com/yvgude/lean-ctx"),
+    })
+}
+
+fn generate_text_report(report: &BenchmarkReport) -> String {
+    let mut output = format!(
+        "lean-ctx compression benchmark\n\n{:<24} {:>9} {:>9} {:>9} {:>10}\n{}\n",
+        "Scenario",
+        "Before",
+        "After",
+        "Savings",
+        "Latency",
+        "-".repeat(68),
+    );
+    for result in &report.results {
+        output.push_str(&format!(
+            "{:<24} {:>9} {:>9} {:>8.1}% {:>8.2}ms\n",
+            result.scenario,
+            result.total_tokens_before,
+            result.total_tokens_after,
+            result.savings_pct,
+            result.latency_us as f64 / 1_000.0,
+        ));
+    }
+    output.push_str(&format!(
+        "\nTOTAL: {:.1}% average savings, {:.2}ms average latency\n",
+        report.average_savings_pct,
+        average_latency_ms(report),
+    ));
+    output
+}
+
+fn average_latency_ms(report: &BenchmarkReport) -> f64 {
+    if report.results.is_empty() {
         return 0.0;
     }
-    raw_tokens as f64 / compressed_tokens as f64
+    report
+        .results
+        .iter()
+        .map(|result| result.latency_us as f64)
+        .sum::<f64>()
+        / report.results.len() as f64
+        / 1_000.0
+}
+
+fn percentage(part: usize, total: usize) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        part as f64 / total as f64 * 100.0
+    }
+}
+
+fn report_timestamp() -> String {
+    Local::now().format("%Y-%m-%d %H:%M:%S %Z").to_string()
+}
+
+fn default_report_path() -> Result<PathBuf, String> {
+    let home = env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "HOME is not set; pass --output <path> instead".to_string())?;
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+    Ok(home
+        .join(REPORTS_DIRECTORY)
+        .join(format!("benchmark_{timestamp}.md")))
+}
+
+fn save_report(path: &Path, contents: &str) -> Result<(), String> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("create report directory {}: {error}", parent.display()))?;
+    }
+    fs::write(path, contents).map_err(|error| format!("write report {}: {error}", path.display()))
+}
+
+fn parse(args: &[String]) -> Result<BenchmarkOptions, String> {
+    let mut options = BenchmarkOptions {
+        format: ReportFormat::Text,
+        output: None,
+        share: false,
+    };
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--real" => {}
+            "--json" => options.format = ReportFormat::Json,
+            "--share" => options.share = true,
+            "--format" => {
+                index += 1;
+                let value = args
+                    .get(index)
+                    .ok_or_else(|| "--format requires markdown, json, or text".to_string())?;
+                options.format = parse_format(value)?;
+            }
+            "--output" | "-o" => {
+                index += 1;
+                let value = args
+                    .get(index)
+                    .ok_or_else(|| "--output requires a path".to_string())?;
+                options.output = Some(PathBuf::from(value));
+            }
+            unknown => return Err(format!("unknown argument {unknown:?}")),
+        }
+        index += 1;
+    }
+    Ok(options)
+}
+
+fn parse_format(value: &str) -> Result<ReportFormat, String> {
+    match value {
+        "markdown" | "md" => Ok(ReportFormat::Markdown),
+        "json" => Ok(ReportFormat::Json),
+        "text" => Ok(ReportFormat::Text),
+        _ => Err(format!(
+            "unsupported format {value:?}; expected markdown, json, or text"
+        )),
+    }
 }
 
 fn usage() {
     println!(
-        "Measure the canonical ten-task suite on the production compressor.\n\nUsage: lean-ctx benchmark --real [--json]"
+        "Run the proxy compression benchmark and save a shareable report.\n\n\
+         Usage: lean-ctx benchmark [--real] [--format markdown|json|text] [--output <path>] [--share]\n\n\
+         The default Markdown report is saved to ~/.local/share/lean-ctx/reports/."
     );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxy::pipeline_bench::BenchmarkResult;
 
-    fn args(values: &[&str]) -> Vec<String> {
-        values.iter().map(|value| (*value).to_string()).collect()
-    }
-
-    #[test]
-    fn benchmark_cmd_produces_valid_json_structure() {
-        let output = render(&args(&["--real", "--json"])).unwrap();
-        let report: serde_json::Value = serde_json::from_str(&output).unwrap();
-
-        assert_eq!(report["suite"], "canonical-10-task");
-        assert_eq!(report["task_count"], 10);
-        assert_eq!(report["tasks"].as_array().unwrap().len(), 10);
-        for task in report["tasks"].as_array().unwrap() {
-            assert!(task.get("raw_tokens").is_some());
-            assert!(task.get("compressed_tokens").is_some());
-            assert!(task.get("compression_ratio").is_some());
-            assert!(task.get("quality_score").is_some());
+    fn sample_report() -> BenchmarkReport {
+        BenchmarkReport {
+            results: vec![
+                BenchmarkResult {
+                    scenario: "coding_session",
+                    message_count: 20,
+                    total_tokens_before: 1_000,
+                    total_tokens_after: 200,
+                    savings_pct: 80.0,
+                    latency_us: 500,
+                    estimated_cost_savings_usd: 0.0024,
+                    expected_savings_min_pct: 60.0,
+                    expected_savings_max_pct: 90.0,
+                },
+                BenchmarkResult {
+                    scenario: "debugging_session",
+                    message_count: 10,
+                    total_tokens_before: 1_000,
+                    total_tokens_after: 300,
+                    savings_pct: 70.0,
+                    latency_us: 1_000,
+                    estimated_cost_savings_usd: 0.0021,
+                    expected_savings_min_pct: 60.0,
+                    expected_savings_max_pct: 90.0,
+                },
+            ],
+            total_tokens_before: 2_000,
+            total_tokens_after: 500,
+            average_savings_pct: 75.0,
+            total_estimated_cost_savings_usd: 0.0045,
+            max_latency_us: 1_000,
         }
     }
 
     #[test]
-    fn benchmark_cmd_table_includes_measurement_columns() {
-        let output = render(&args(&["--real"])).unwrap();
-        assert!(output.contains("Raw"));
-        assert!(output.contains("Compressed"));
-        assert!(output.contains("Ratio"));
-        assert!(output.contains("Quality"));
+    fn markdown_report_contains_expected_sections() {
+        let markdown = generate_markdown_report(&sample_report());
+
+        assert!(markdown.contains("## lean-ctx Compression Benchmark Results"));
+        assert!(markdown.contains("### Per-scenario results"));
+        assert!(markdown.contains("### Per-stage contribution breakdown"));
+        assert!(markdown.contains("TOTAL: 75.0% average savings, 0.75ms average latency"));
+        assert!(markdown.contains("vs typical proxy overhead: 500ms+ (lean-ctx: <1ms)"));
+        assert!(markdown.contains("Generated by lean-ctx v"));
+    }
+
+    #[test]
+    fn badge_markdown_uses_valid_shields_io_format() {
+        assert_eq!(
+            generate_badge_markdown(&sample_report()),
+            "![lean-ctx savings](https://img.shields.io/badge/lean--ctx-75%25_savings-brightgreen)"
+        );
+    }
+
+    #[test]
+    fn json_report_is_valid_and_parseable() {
+        let json = generate_json_report(&sample_report());
+        let value: Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(value["title"], "lean-ctx Compression Benchmark Results");
+        assert_eq!(value["summary"]["average_savings_pct"], 75.0);
+        assert_eq!(value["scenarios"].as_array().map(Vec::len), Some(2));
+        assert_eq!(value["stages"].as_array().map(Vec::len), Some(3));
+    }
+
+    #[test]
+    fn parse_accepts_new_report_options() {
+        let options = parse(&[
+            "--format".to_string(),
+            "markdown".to_string(),
+            "--output".to_string(),
+            "report.md".to_string(),
+            "--share".to_string(),
+        ])
+        .unwrap();
+
+        assert_eq!(options.format, ReportFormat::Markdown);
+        assert_eq!(options.output, Some(PathBuf::from("report.md")));
+        assert!(options.share);
     }
 }

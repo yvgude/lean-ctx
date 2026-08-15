@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
@@ -60,6 +60,105 @@ pub(crate) fn max_cache_tokens() -> usize {
     )
 }
 
+const MAX_COMPRESSED_VARIANTS: usize = 6;
+
+/// Monotonic logical clock for compressed-output LRU recency.
+///
+/// A process-local counter avoids wall-clock ties and makes eviction deterministic.
+static COMPRESSED_OUTPUT_ACCESS_CLOCK: AtomicU64 = AtomicU64::new(0);
+
+fn next_compressed_output_access() -> u64 {
+    COMPRESSED_OUTPUT_ACCESS_CLOCK.fetch_add(1, Ordering::Relaxed) + 1
+}
+
+#[derive(Debug)]
+struct CompressedOutputVariant {
+    output: String,
+    last_access: AtomicU64,
+}
+
+impl CompressedOutputVariant {
+    fn new(output: String) -> Self {
+        Self {
+            output,
+            last_access: AtomicU64::new(next_compressed_output_access()),
+        }
+    }
+
+    fn touch(&self) {
+        self.last_access
+            .store(next_compressed_output_access(), Ordering::Relaxed);
+    }
+
+    fn last_access(&self) -> u64 {
+        self.last_access.load(Ordering::Relaxed)
+    }
+}
+
+/// A fixed-size, access-ordered cache of render variants for one source file.
+#[derive(Debug, Default)]
+pub struct CompressedOutputLru {
+    entries: HashMap<String, CompressedOutputVariant>,
+}
+
+impl CompressedOutputLru {
+    fn get(&self, mode_key: &str) -> Option<&String> {
+        let variant = self.entries.get(mode_key)?;
+        variant.touch();
+        Some(&variant.output)
+    }
+
+    /// Stores a variant and returns the deterministic LRU victim, if any.
+    fn set(&mut self, mode_key: &str, output: String) -> Option<String> {
+        if let Some(variant) = self.entries.get_mut(mode_key) {
+            variant.output = output;
+            variant.touch();
+            return None;
+        }
+
+        let evicted = if self.entries.len() >= MAX_COMPRESSED_VARIANTS {
+            let key = self
+                .entries
+                .iter()
+                .min_by(|(left_key, left), (right_key, right)| {
+                    left.last_access()
+                        .cmp(&right.last_access())
+                        .then_with(|| left_key.cmp(right_key))
+                })
+                .map(|(key, _)| key.clone());
+            key.and_then(|key| self.entries.remove(&key).map(|_| key))
+        } else {
+            None
+        };
+
+        self.entries
+            .insert(mode_key.to_string(), CompressedOutputVariant::new(output));
+        evicted
+    }
+
+    pub fn contains_key(&self, mode_key: &str) -> bool {
+        self.entries.contains_key(mode_key)
+    }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub(super) fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    pub(super) fn keys(&self) -> impl Iterator<Item = &String> {
+        self.entries.keys()
+    }
+
+    pub(super) fn iter(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.entries
+            .iter()
+            .map(|(key, variant)| (key, &variant.output))
+    }
+}
+
 /// A cached file read: zstd-compressed content, hash, token count, and access metadata.
 ///
 /// `read_count` and `last_access` use interior mutability (atomics) so cache
@@ -77,7 +176,11 @@ pub struct CacheEntry {
     last_access: AtomicU64,
     pub stored_mtime: Option<SystemTime>,
     /// Mode-specific compressed outputs (e.g. "map", "signatures") cached to avoid re-parsing.
-    pub compressed_outputs: HashMap<String, String>,
+    pub compressed_outputs: CompressedOutputLru,
+    /// Render-cache keys evicted by the bounded variant cache. Retained as
+    /// lightweight metadata so reuse telemetry can distinguish a cold render
+    /// from a known variant eviction without retaining the evicted output.
+    evicted_compressed_variants: HashSet<String>,
     /// Whether full (uncompressed) content was already delivered for this hash.
     /// Prevents cache-stub loops when upgrading from compressed to full mode.
     pub full_content_delivered: bool,
@@ -123,7 +226,8 @@ impl CacheEntry {
             path,
             last_access: AtomicU64::new(encode_instant(Instant::now())),
             stored_mtime,
-            compressed_outputs: HashMap::new(),
+            compressed_outputs: CompressedOutputLru::default(),
+            evicted_compressed_variants: HashSet::new(),
             full_content_delivered: false,
             delivered_conversation: None,
             last_mode: String::new(),
@@ -219,14 +323,29 @@ impl CacheEntry {
     }
 
     pub fn set_compressed(&mut self, mode_key: &str, output: String) {
-        const MAX_COMPRESSED_VARIANTS: usize = 3;
-        if self.compressed_outputs.len() >= MAX_COMPRESSED_VARIANTS
-            && !self.compressed_outputs.contains_key(mode_key)
-            && let Some(oldest_key) = self.compressed_outputs.keys().next().cloned()
-        {
-            self.compressed_outputs.remove(&oldest_key);
+        if let Some(evicted_key) = self.compressed_outputs.set(mode_key, output) {
+            self.evicted_compressed_variants.insert(evicted_key);
         }
-        self.compressed_outputs.insert(mode_key.to_string(), output);
+        self.evicted_compressed_variants.remove(mode_key);
+    }
+
+    pub fn was_compressed_variant_evicted(&self, mode_key: &str) -> bool {
+        self.evicted_compressed_variants.contains(mode_key)
+    }
+
+    pub fn clear_compressed_outputs(&mut self) {
+        self.compressed_outputs.clear();
+        self.evicted_compressed_variants.clear();
+    }
+
+    pub fn evict_compressed_outputs(&mut self) -> bool {
+        if self.compressed_outputs.is_empty() {
+            return false;
+        }
+        self.evicted_compressed_variants
+            .extend(self.compressed_outputs.keys().cloned());
+        self.compressed_outputs.clear();
+        true
     }
 
     pub fn mark_full_delivered(&mut self, conversation: Option<String>) {

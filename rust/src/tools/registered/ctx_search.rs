@@ -116,13 +116,64 @@ impl McpTool for CtxSearchTool {
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
-        match SearchAction::resolve(args) {
+        let action = SearchAction::resolve(args);
+        let result = match action {
             SearchAction::Regex => handle_regex(args, ctx),
             SearchAction::Semantic => handle_semantic(args, ctx),
             SearchAction::Symbol => handle_symbol(args, ctx),
             SearchAction::Reindex => handle_reindex(args, ctx),
             SearchAction::FindRelated => handle_find_related(args, ctx),
+        };
+        if let Ok(output) = &result {
+            record_attribution_result(ctx, action, args, output);
         }
+        result
+    }
+}
+
+fn record_attribution_result(
+    ctx: &ToolContext,
+    action: SearchAction,
+    args: &Map<String, Value>,
+    output: &ToolOutput,
+) {
+    let session_id = crate::core::task_spine::TaskSpine::task_id()
+        .or_else(|| {
+            ctx.session
+                .as_ref()
+                .and_then(|session| session.try_read().ok().map(|state| state.id.clone()))
+        })
+        .unwrap_or_else(|| "mcp-session".to_string());
+    let action = match action {
+        SearchAction::Regex => "regex",
+        SearchAction::Semantic => "semantic",
+        SearchAction::Symbol => "symbol",
+        SearchAction::Reindex => "reindex",
+        SearchAction::FindRelated => "find_related",
+    };
+    let query = get_str(args, "pattern")
+        .or_else(|| get_str(args, "query"))
+        .or_else(|| get_str(args, "handle"))
+        .or_else(|| get_str(args, "name"))
+        .or_else(|| get_str(args, "file_path"))
+        .unwrap_or_default();
+    let source = if query.is_empty() {
+        format!("ctx_search {action}")
+    } else {
+        format!("ctx_search {action} {query}")
+    };
+    let turn_provided = ctx.call_count.as_ref().map_or(0, |count| {
+        count.load(std::sync::atomic::Ordering::Relaxed) as u64
+    });
+    let token_cost = crate::core::tokens::count_tokens(&output.text);
+    let chunk = crate::core::causal_attribution::ContextChunkRecord::new(
+        &output.text,
+        source,
+        token_cost,
+        turn_provided,
+    );
+    if let Err(error) = crate::core::causal_attribution::record_chunk(&session_id, chunk) {
+        tracing::debug!(%error, "causal attribution ctx_search recording failed");
     }
 }
 
@@ -222,15 +273,20 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     let mut combined = String::new();
     let mut total_observed: usize = 0;
     let mut total_sent: usize = 0;
+    let mut remaining_budget = max;
 
     for root in &resolved.roots {
+        if remaining_budget == 0 {
+            break;
+        }
+        let this_root_max = per_root_max.min(remaining_budget);
         let search_result = tokio::task::block_in_place(|| {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 cached_or_search(
                     &pattern,
                     root,
                     include.as_deref(),
-                    per_root_max,
+                    this_root_max,
                     crp,
                     respect,
                     allow_secret_paths,
@@ -258,6 +314,8 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
             continue;
         }
 
+        let result_matches = result.lines().filter(|l| !l.is_empty()).count();
+        remaining_budget = remaining_budget.saturating_sub(result_matches);
         total_observed += outcome.observed_tokens;
         total_sent += crate::core::tokens::count_tokens(&result);
     }
@@ -479,9 +537,10 @@ fn handle_find_related(
 /// Shared `ToolOutput` shape for the semantic-engine branches (token accounting
 /// is handled inside the core fns, mirroring the former standalone tool).
 fn semantic_output(text: String) -> ToolOutput {
+    let tokens = crate::core::tokens::count_tokens(&text);
     ToolOutput {
         text,
-        original_tokens: 0,
+        original_tokens: tokens,
         saved_tokens: 0,
         mode: Some("semantic".to_string()),
         path: None,

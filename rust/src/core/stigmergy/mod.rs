@@ -9,6 +9,6 @@ pub mod signal;
 #[cfg(test)]
 pub use pressure::PressureMap;
 pub use signal::PheromoneSignal;
-pub use signal::{SignalKind, deposit_signal};
 #[cfg(test)]
-pub use signal::{read_signals, reset_signals};
+pub use signal::reset_signals;
+pub use signal::{SignalKind, deposit_signal, read_signals};

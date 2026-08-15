@@ -15,6 +15,8 @@ pub struct RecentFile {
     pub path: String,
     pub last_access: SystemTime,
     pub read_count: u32,
+    /// Largest observed token count, used to estimate the benefit of a warm hit.
+    pub tokens: usize,
 }
 
 trait WarmCache {
@@ -83,8 +85,9 @@ where
 
 /// Collects, deduplicates, and ranks files touched by previous sessions.
 ///
-/// Read counts are summed across sessions. A session's update time is used as
-/// the recency of its file accesses because `FileTouched` has no own timestamp.
+/// Read counts are summed across sessions. The largest observed token count
+/// estimates the avoided read cost. A session's update time is used as the
+/// recency of its file accesses because `FileTouched` has no own timestamp.
 pub fn collect_recent_files(sessions: &[SessionState]) -> Vec<RecentFile> {
     let mut recent_by_path: HashMap<String, RecentFile> = HashMap::new();
 
@@ -97,16 +100,19 @@ pub fn collect_recent_files(sessions: &[SessionState]) -> Vec<RecentFile> {
                     path: file.path.clone(),
                     last_access,
                     read_count: 0,
+                    tokens: file.tokens,
                 });
             recent.read_count = recent.read_count.saturating_add(file.read_count);
+            recent.tokens = recent.tokens.max(file.tokens);
             recent.last_access = recent.last_access.max(last_access);
         }
     }
 
     let mut recent: Vec<RecentFile> = recent_by_path.into_values().collect();
     recent.sort_by(|a, b| {
-        b.read_count
-            .cmp(&a.read_count)
+        (b.read_count as usize)
+            .saturating_mul(b.tokens)
+            .cmp(&(a.read_count as usize).saturating_mul(a.tokens))
             .then_with(|| b.last_access.cmp(&a.last_access))
             .then_with(|| a.path.cmp(&b.path))
     });
@@ -150,6 +156,7 @@ mod tests {
             path: path.to_string(),
             last_access: SystemTime::UNIX_EPOCH,
             read_count: 1,
+            tokens: 1,
         }
     }
 
@@ -182,6 +189,7 @@ mod tests {
             playbook: crate::core::session::Playbook::default(),
             last_semantic_query: None,
             last_flush: None,
+            live_zone: Default::default(),
         }
     }
 
@@ -238,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn recent_files_are_deduplicated_and_ranked_by_frequency_then_recency() {
+    fn recent_files_are_deduplicated_and_ranked_by_expected_benefit() {
         let mut older = session_at(10);
         older.touch_file("frequent.rs", None, "full", 10);
         older.touch_file("frequent.rs", None, "full", 10);
@@ -264,6 +272,26 @@ mod tests {
         assert_eq!(
             result[0].last_access,
             SystemTime::UNIX_EPOCH + Duration::from_secs(20)
+        );
+        assert_eq!(result[0].tokens, 10);
+    }
+
+    #[test]
+    fn recent_files_prioritize_read_count_times_tokens() {
+        let mut session = session_at(10);
+        session.touch_file("frequent.rs", None, "full", 10);
+        session.touch_file("frequent.rs", None, "full", 10);
+        session.touch_file("small.rs", None, "full", 1);
+        session.touch_file("large.rs", None, "full", 100);
+
+        let result = collect_recent_files(&[session]);
+
+        assert_eq!(
+            result
+                .iter()
+                .map(|file| file.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["large.rs", "frequent.rs", "small.rs"]
         );
     }
 

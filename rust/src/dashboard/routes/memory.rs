@@ -106,8 +106,31 @@ fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str
                         })
                 })
                 .unwrap_or_default();
+
+            // Capture session-only stats BEFORE global enrichment.
             let session_stats =
                 serde_json::to_value(&session.stats).unwrap_or_else(|_| serde_json::json!({}));
+
+            // Today's verified savings from the savings ledger (written by all
+            // processes — MCP server, proxy, CLI). This is the source of truth.
+            let summary = crate::core::savings_ledger::summary();
+            let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+            let (today_saved, today_usd, today_baseline) = summary
+                .by_day
+                .iter()
+                .find(|(d, ..)| d == &today)
+                .map(|(_, s, u, b)| (*s, *u, *b))
+                .unwrap_or((0, 0.0, 0));
+            let compression_session = serde_json::json!({
+                "savings_tokens": today_saved,
+                "total_raw": today_baseline,
+                "total_compressed": today_baseline.saturating_sub(today_saved),
+                "savings_percent": if today_baseline > 0 {
+                    today_saved as f64 * 100.0 / today_baseline as f64
+                } else { 0.0 },
+                "savings_usd": today_usd,
+            });
+
             let global = crate::core::stats::load_for_display();
             let g_cmds = global.total_commands;
             let g_input = global.total_input_tokens;
@@ -134,6 +157,7 @@ fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str
                 serde_json::to_value(&session).unwrap_or_else(|_| serde_json::json!({}));
             if let Some(object) = payload.as_object_mut() {
                 object.insert("session_stats".to_string(), session_stats);
+                object.insert("compression_session".to_string(), compression_session);
             }
             let json = serde_json::to_string(&payload)
                 .unwrap_or_else(|_| "{\"error\":\"failed to serialize session\"}".to_string());

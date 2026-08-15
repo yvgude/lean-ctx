@@ -265,9 +265,17 @@ impl ServerHandler for LeanCtxServer {
 
         let capabilities = server_capabilities(client_caps.resources, client_caps.prompts);
 
-        Ok(InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", env!("CARGO_PKG_VERSION")))
-            .with_instructions(instructions))
+        let result = InitializeResult::new(capabilities)
+            .with_server_info(Implementation::new("lean-ctx", env!("CARGO_PKG_VERSION")));
+
+        // GH #1447: Antigravity/Gemini CLI disconnect when the initialize
+        // response contains `instructions`. The MCP spec marks it optional,
+        // but these clients fail on any unexpected field in the JSON envelope.
+        if matches!(client_caps.client_id.as_str(), "antigravity" | "gemini-cli") {
+            Ok(result)
+        } else {
+            Ok(result.with_instructions(instructions))
+        }
     }
 
     async fn list_tools(

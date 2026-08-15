@@ -79,7 +79,7 @@ fn handle_save(session: &mut SessionState) -> String {
             if !messages.is_empty() {
                 out.push_str("\n\nPro tip:");
                 for message in messages {
-                    out.push_str(&format!("\n  {} {}", message.headline, message.detail));
+                    out.push_str(&format!("\n  {}", message.message));
                 }
                 out.push_str("\n  Dismiss: lean-ctx session dismiss-pro");
             }
@@ -91,34 +91,10 @@ fn handle_save(session: &mut SessionState) -> String {
 
 fn conversion_messages_for_session(
     session: &SessionState,
-) -> Vec<crate::core::pro_triggers::ConversionMessage> {
-    let current = crate::core::pro_triggers::SessionSignal {
-        id: session.id.clone(),
-        agent_ids: session
-            .evidence
-            .iter()
-            .filter_map(|record| record.agent_id.clone())
-            .collect(),
-    };
-    let mut sessions = SessionState::all_session_signals();
-    if let Some(existing) = sessions.iter_mut().find(|signal| signal.id == current.id) {
-        existing.agent_ids.extend(current.agent_ids);
-    } else {
-        sessions.push(current);
-    }
-    sessions.sort_by(|left, right| left.id.cmp(&right.id));
-
-    let proven_savings_usd = if crate::core::savings_ledger::verify().valid {
-        crate::core::savings_ledger::summary().saved_usd
-    } else {
-        0.0
-    };
-    crate::core::pro_triggers::generate_visible_conversion_messages(
-        &sessions,
-        proven_savings_usd,
-        SessionState::decision_count_this_week(),
-        crate::core::pro_triggers::conversion_messages_dismissed(),
-    )
+) -> Vec<crate::core::pro_triggers::ProNudge> {
+    crate::core::pro_triggers::evaluate_triggers(&crate::core::pro_triggers::local_usage_signals(
+        session,
+    ))
 }
 
 fn handle_export(

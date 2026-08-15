@@ -1,5 +1,6 @@
 #[allow(dead_code)]
 pub(crate) mod conversation_tracker;
+pub(crate) mod dashboard;
 #[allow(dead_code)]
 pub(crate) mod normalize;
 #[cfg(test)]

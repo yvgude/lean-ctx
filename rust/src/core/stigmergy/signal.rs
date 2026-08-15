@@ -42,6 +42,8 @@ pub enum SignalKind {
     Completed,
     /// Agent explored/read this file without claiming active work.
     Exploration,
+    /// Agent modified this file.
+    Modification,
 }
 
 /// In-memory signal store (per-session; persisted via IPC for cross-agent).

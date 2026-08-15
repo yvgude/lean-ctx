@@ -8,6 +8,11 @@ const BINARY_EXTENSIONS: &[&str] = &[
     "mkv", "so", "dylib", "dll", "exe", "bin", "o", "a", "class", "pyc", "wasm",
 ];
 
+/// Returns `true` when the lean-ctx daemon is reachable.
+pub(super) fn is_mcp_healthy() -> bool {
+    is_mcp_server_reachable()
+}
+
 /// Handle the `lean-ctx hook deny` subcommand.
 ///
 /// Called by PreToolUse hooks in Replace mode. Denies native Read/Grep/Glob/Shell
@@ -46,6 +51,12 @@ pub fn handle_deny() {
             && has_compression_markers(&content)
         {
             print_deny_compression_markers(&tool_name, &stdin_payload);
+            return;
+        }
+        // GH #1454: In Replace mode, redirect Write/Edit to ctx_edit.
+        if should_redirect_write(file_path.as_deref()) {
+            let args = extract_tool_args(&stdin_payload);
+            print_deny_write_redirect(&tool_name, &args);
             return;
         }
         print_allow();
@@ -489,6 +500,70 @@ fn build_ctx_shell_hint(args: &serde_json::Map<String, serde_json::Value>) -> St
     )
 }
 
+/// Whether a native Write/Edit should be redirected to ctx_edit in Replace mode.
+fn should_redirect_write(file_path: Option<&str>) -> bool {
+    if super::is_disabled() {
+        return false;
+    }
+    if is_shadow_only_surface() {
+        return false;
+    }
+    if !is_mcp_server_reachable() {
+        return false;
+    }
+    if is_replace_mode_disabled() {
+        return false;
+    }
+    if file_path.is_some_and(is_binary_file) {
+        return false;
+    }
+    if file_path.is_some_and(|p| {
+        crate::core::pathjail::is_harness_auto_memory_path(std::path::Path::new(p))
+    }) {
+        return false;
+    }
+    true
+}
+
+fn print_deny_write_redirect(tool_name: &str, args: &serde_json::Map<String, serde_json::Value>) {
+    let msg = build_ctx_edit_hint(tool_name, args);
+    let output = serde_json::json!({
+        "decision": "deny",
+        "reason": msg,
+        "permission": "deny",
+        "user_message": msg
+    });
+    println!("{output}");
+    std::process::exit(2);
+}
+
+fn build_ctx_edit_hint(
+    tool_name: &str,
+    args: &serde_json::Map<String, serde_json::Value>,
+) -> String {
+    let path = args
+        .get("path")
+        .or_else(|| args.get("file_path"))
+        .or_else(|| args.get("filePath"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("<file>");
+    let is_create = tool_name == "Write" || tool_name == "write" || tool_name == "WriteFile";
+    let has_old = args.contains_key("old_string") || args.contains_key("old_text");
+    if is_create && !has_old {
+        format!(
+            "[DENIED] Native {tool_name} blocked in replace mode. \
+             Use: ctx_edit(path=\"{path}\", create=true, content=\"<content>\") — \
+             creates parent directories automatically."
+        )
+    } else {
+        format!(
+            "[DENIED] Native {tool_name} blocked in replace mode. \
+             Use: ctx_edit(path=\"{path}\", old_string=\"...\", new_string=\"...\") — \
+             lean-ctx handles path resolution and edit safety."
+        )
+    }
+}
+
 fn print_smart_deny(tool_name: &str, payload: &str) {
     let msg = smart_deny_message(tool_name, payload);
     let output = serde_json::json!({
@@ -756,5 +831,62 @@ mod tests {
             detect_marker_source(payload),
             MarkerSource::Content
         ));
+    }
+
+    #[test]
+    fn should_redirect_write_active_in_replace_mode() {
+        assert!(should_redirect_write(Some("src/main.rs")));
+        assert!(should_redirect_write(Some("temp/pinit-test.txt")));
+        assert!(should_redirect_write(None));
+    }
+
+    #[test]
+    fn should_redirect_write_exempts_binary_files() {
+        assert!(!should_redirect_write(Some("image.png")));
+        assert!(!should_redirect_write(Some("lib.so")));
+        assert!(!should_redirect_write(Some("app.wasm")));
+    }
+
+    #[test]
+    fn should_redirect_write_exempts_auto_memory() {
+        assert!(!should_redirect_write(Some(
+            "/home/user/.claude/projects/my-proj/memory/MEMORY.md"
+        )));
+    }
+
+    #[test]
+    fn build_ctx_edit_hint_for_file_create() {
+        let mut args = serde_json::Map::new();
+        args.insert(
+            "path".to_string(),
+            serde_json::Value::String("temp/test.txt".to_string()),
+        );
+        let hint = build_ctx_edit_hint("Write", &args);
+        assert!(hint.contains("ctx_edit"));
+        assert!(hint.contains("create=true"));
+        assert!(hint.contains("temp/test.txt"));
+    }
+
+    #[test]
+    fn build_ctx_edit_hint_for_str_replace() {
+        let mut args = serde_json::Map::new();
+        args.insert(
+            "path".to_string(),
+            serde_json::Value::String("src/lib.rs".to_string()),
+        );
+        args.insert(
+            "old_string".to_string(),
+            serde_json::Value::String("fn old()".to_string()),
+        );
+        let hint = build_ctx_edit_hint("StrReplace", &args);
+        assert!(hint.contains("ctx_edit"));
+        assert!(hint.contains("old_string"));
+        assert!(!hint.contains("create=true"));
+    }
+
+    #[test]
+    fn is_write_tool_does_not_match_ctx_edit() {
+        assert!(!is_write_tool("ctx_edit"));
+        assert!(!is_write_tool("ctx_patch"));
     }
 }

@@ -17,6 +17,11 @@
 //! (Local-Free Invariant).
 
 use serde_json::json;
+use std::sync::Mutex;
+use std::time::Instant;
+
+static ROI_CACHE: Mutex<Option<(Instant, String)>> = Mutex::new(None);
+const ROI_TTL_SECS: u64 = 30;
 
 pub(super) fn handle(
     path: &str,
@@ -25,9 +30,24 @@ pub(super) fn handle(
     _body: &str,
 ) -> Option<(&'static str, &'static str, String)> {
     match path {
-        "/api/roi" => Some(roi()),
+        "/api/roi" => Some(roi_cached()),
         _ => None,
     }
+}
+
+fn roi_cached() -> (&'static str, &'static str, String) {
+    if let Ok(guard) = ROI_CACHE.lock() {
+        if let Some((ts, ref body)) = *guard {
+            if ts.elapsed().as_secs() < ROI_TTL_SECS {
+                return ("200 OK", "application/json", body.clone());
+            }
+        }
+    }
+    let result = roi();
+    if let Ok(mut guard) = ROI_CACHE.lock() {
+        *guard = Some((Instant::now(), result.2.clone()));
+    }
+    result
 }
 
 fn roi() -> (&'static str, &'static str, String) {
@@ -40,13 +60,10 @@ fn roi() -> (&'static str, &'static str, String) {
     let entitlements = eff.plan.entitlements();
     let logged_in = crate::cloud_client::is_logged_in();
 
-    // #895 Track B: measured (A/B holdout) or estimated output-token reduction.
-    // Same JSON shape the `lean-ctx output-savings --json` CLI emits.
     let output = crate::proxy::output_savings::to_json(&crate::proxy::output_savings::current());
 
     let payload = json!({
         "roi": report,
-        // [[YYYY-MM-DD, saved_tokens, saved_usd], ...] ascending — drives the trend chart.
         "trend": summary.by_day,
         "output": output,
         "plan": {
@@ -58,8 +75,6 @@ fn roi() -> (&'static str, &'static str, String) {
             "entitlements": entitlements,
         },
         "usage": {
-            // Frozen v1 field retained for wire compatibility. Its exact
-            // predicate is source integrity, not settlement eligibility.
             "billable": usage.is_billable(),
             "billable_semantics": "legacy_source_integrity_compatibility_only",
             "source_integrity_verified": usage.source_integrity_verified(),
@@ -73,7 +88,6 @@ fn roi() -> (&'static str, &'static str, String) {
     ("200 OK", "application/json", body)
 }
 
-/// Stable wire label for the effective-plan provenance.
 fn plan_source_label(source: crate::cloud_client::PlanSource) -> &'static str {
     use crate::cloud_client::PlanSource;
     match source {

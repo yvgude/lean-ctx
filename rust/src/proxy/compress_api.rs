@@ -35,10 +35,11 @@ use axum::{Json, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::{adaptive_policy::select_policy, live_zone};
 use crate::core::protocol::strip_trailing_savings_footer;
 use crate::core::tokens::{TokenizerFamily, count_tokens_for, detect_tokenizer};
 
-use super::compress::compress_tool_result_gateway_for;
+use super::compress::compress_tool_result_gateway_with_policy;
 
 #[derive(Debug, Deserialize)]
 pub struct CompressRequest {
@@ -97,9 +98,19 @@ pub fn compress_messages(req: CompressRequest) -> CompressResponse {
         .unwrap_or_default();
     let mut messages = req.messages;
     let mut totals = Totals::default();
-    for msg in &mut messages {
-        compress_message(msg, &mut totals, family);
+    let last_user_content = messages
+        .iter()
+        .rev()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+        .and_then(|message| message.get("content").and_then(Value::as_str));
+    let task_class = super::pre_optimize::classify_task(last_user_content);
+
+    let policy = super::adaptive_policy::best_policy_for(task_class);
+    let live_split = live_zone::detect_live_zone(&messages);
+    for msg in &mut messages[live_split.boundary_turn..] {
+        compress_message(msg, &mut totals, family, policy);
     }
+    let _live_stats = live_zone::compress_live_only(&mut messages, family, select_policy("chat"));
 
     let saved = totals.original.saturating_sub(totals.compressed);
     let saved_pct = if totals.original > 0 {
@@ -129,12 +140,17 @@ pub fn compress_messages(req: CompressRequest) -> CompressResponse {
     }
 }
 
-fn compress_message(msg: &mut Value, totals: &mut Totals, family: TokenizerFamily) {
+fn compress_message(
+    msg: &mut Value,
+    totals: &mut Totals,
+    family: TokenizerFamily,
+    policy: super::adaptive_policy::CompressionPolicy,
+) {
     // OpenAI `tool`/`function` messages carry the tool name; pass it to the funnel
     // so it can honour the #479 pass-through for lean-ctx's own `ctx_*` results.
     let name = msg.get("name").and_then(Value::as_str).map(str::to_string);
     if let Some(content) = msg.get_mut("content") {
-        compress_content(content, name.as_deref(), totals, family);
+        compress_content(content, name.as_deref(), totals, family, policy);
     }
 }
 
@@ -143,12 +159,13 @@ fn compress_content(
     name: Option<&str>,
     totals: &mut Totals,
     family: TokenizerFamily,
+    policy: super::adaptive_policy::CompressionPolicy,
 ) {
     match content {
-        Value::String(s) => squeeze_in_place(s, name, totals, family),
+        Value::String(s) => squeeze_in_place(s, name, totals, family, policy),
         Value::Array(blocks) => {
             for block in blocks.iter_mut() {
-                compress_block(block, name, totals, family);
+                compress_block(block, name, totals, family, policy);
             }
         }
         _ => {}
@@ -160,6 +177,7 @@ fn compress_block(
     name: Option<&str>,
     totals: &mut Totals,
     family: TokenizerFamily,
+    policy: super::adaptive_policy::CompressionPolicy,
 ) {
     let Some(obj) = block.as_object_mut() else {
         return;
@@ -168,14 +186,14 @@ fn compress_block(
         // OpenAI + Anthropic text parts.
         Some("text") => {
             if let Some(Value::String(s)) = obj.get_mut("text") {
-                squeeze_in_place(s, name, totals, family);
+                squeeze_in_place(s, name, totals, family, policy);
             }
         }
         // Anthropic tool_result: nested string or array of content blocks — the
         // single biggest compressible payload in an agent transcript.
         Some("tool_result") => {
             if let Some(inner) = obj.get_mut("content") {
-                compress_content(inner, name, totals, family);
+                compress_content(inner, name, totals, family, policy);
             }
         }
         // image, tool_use, input_audio, document, … pass through untouched.
@@ -188,12 +206,13 @@ fn squeeze_in_place(
     name: Option<&str>,
     totals: &mut Totals,
     family: TokenizerFamily,
+    policy: super::adaptive_policy::CompressionPolicy,
 ) {
     let before = count_tokens_for(s, family);
     // Gateway audience (#702): a lossy rewrite carries the `hash=<24hex>`
     // retrieval marker LiteLLM's CCR loop scans for; the savings footer is
     // stripped inside the gateway funnel (stats carry the numbers instead).
-    let compressed = compress_tool_result_gateway_for(s, name, family);
+    let compressed = compress_tool_result_gateway_with_policy(s, name, family, policy);
     let clean = strip_trailing_savings_footer(&compressed);
     let after = count_tokens_for(clean, family);
     totals.original += before;

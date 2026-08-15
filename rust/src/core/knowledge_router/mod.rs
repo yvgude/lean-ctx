@@ -39,6 +39,28 @@ pub struct RoutingResult {
     pub receipt: KnowledgeReceipt,
 }
 
+/// Router-derived hints for request-local compression.
+///
+/// References selected by the router identify message content that should be
+/// preserved verbatim so a compressor does not discard the context required to
+/// resolve the referenced source.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContextAdvice {
+    protected_references: Vec<String>,
+}
+
+impl ContextAdvice {
+    pub fn is_empty(&self) -> bool {
+        self.protected_references.is_empty()
+    }
+
+    pub fn protects(&self, content: &str) -> bool {
+        self.protected_references
+            .iter()
+            .any(|reference| content.contains(reference))
+    }
+}
+
 impl KnowledgeRouter {
     pub fn route(
         &self,
@@ -102,6 +124,33 @@ impl KnowledgeRouter {
             candidates,
             bundle,
             receipt,
+        }
+    }
+
+    /// Convert routing candidates into bounded, request-local compression
+    /// hints.  This deliberately exposes no provider payload: callers only
+    /// receive the references whose surrounding message text must survive
+    /// compression.
+    pub fn context_advice(
+        &self,
+        task_id: &str,
+        query: &str,
+        profile: &TaskProfileLocal,
+        providers: &[SourceManifestEntry],
+        bridge: Option<&ProviderBridge<'_>>,
+    ) -> ContextAdvice {
+        let mut protected_references = self
+            .route(task_id, query, profile, providers, bridge)
+            .candidates
+            .into_iter()
+            .filter_map(|candidate| candidate.reference)
+            .filter(|reference| !reference.is_empty())
+            .collect::<Vec<_>>();
+        protected_references.sort();
+        protected_references.dedup();
+
+        ContextAdvice {
+            protected_references,
         }
     }
 }
@@ -184,5 +233,23 @@ mod tests {
             Some(&bridge),
         );
         assert!(!result.candidates.is_empty());
+    }
+
+    #[test]
+    fn context_advice_preserves_router_reference() {
+        let router = KnowledgeRouter {
+            manifests: builtin_manifests(),
+            resolvers: vec![Arc::new(PatternReferenceResolver)],
+        };
+        let profile = TaskProfileLocal::default();
+        let advice = router.context_advice(
+            "task",
+            "review src/core/knowledge_router/mod.rs",
+            &profile,
+            &builtin_manifests(),
+            None,
+        );
+
+        assert!(advice.protects("Please review src/core/knowledge_router/mod.rs"));
     }
 }

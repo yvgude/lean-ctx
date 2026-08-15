@@ -5,6 +5,7 @@ use rmcp::ErrorData;
 use rmcp::model::{ContentBlock, Tool};
 use serde_json::{Map, Value, json};
 
+use crate::core::cache::ReuseOutcome;
 use crate::server::tool_trait::{
     McpTool, ToolContext, ToolOutput, get_bool, get_f64, get_int, get_str, get_str_array,
     require_resolved_path,
@@ -72,7 +73,11 @@ impl McpTool for CtxReadTool {
             .and_then(|v| v.as_array())
             .is_some_and(|a| !a.is_empty())
         {
-            return super::ctx_multi_read::batch_read(args, ctx);
+            let result = super::ctx_multi_read::batch_read(args, ctx);
+            if let Ok(output) = &result {
+                record_attribution_result(ctx, "ctx_read batch".to_string(), output);
+            }
+            return result;
         }
 
         let path = if let Some(repo) = get_str(args, "repo") {
@@ -95,7 +100,7 @@ impl McpTool for CtxReadTool {
             require_resolved_path(ctx, args, "path")?
         };
 
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.handle_inner(args, ctx, &path)
         })) {
             Ok(result) => result,
@@ -105,7 +110,35 @@ impl McpTool for CtxReadTool {
                 ),
                 None,
             )),
+        };
+        if let Ok(output) = &result {
+            record_attribution_result(ctx, format!("ctx_read {path}"), output);
         }
+        result
+    }
+}
+
+fn record_attribution_result(ctx: &ToolContext, source: String, output: &ToolOutput) {
+    let session_id = crate::core::task_spine::TaskSpine::task_id()
+        .or_else(|| {
+            ctx.session
+                .as_ref()
+                .and_then(|session| session.try_read().ok().map(|state| state.id.clone()))
+        })
+        .unwrap_or_else(|| "mcp-session".to_string());
+    let turn_provided = ctx
+        .call_count
+        .as_ref()
+        .map_or(0, |count| count.load(Ordering::Relaxed) as u64);
+    let token_cost = crate::core::tokens::count_tokens(&output.text);
+    let chunk = crate::core::causal_attribution::ContextChunkRecord::new(
+        &output.text,
+        source,
+        token_cost,
+        turn_provided,
+    );
+    if let Err(error) = crate::core::causal_attribution::record_chunk(&session_id, chunk) {
+        tracing::debug!(%error, "causal attribution ctx_read recording failed");
     }
 }
 
@@ -197,7 +230,8 @@ impl CtxReadTool {
             fresh = true;
         }
         let cache_policy = crate::server::compaction_sync::effective_cache_policy();
-        if cache_policy == "off" {
+        let cache_policy_bypassed = cache_policy == "off";
+        if cache_policy_bypassed {
             fresh = true;
         }
         let aggressiveness =
@@ -352,7 +386,7 @@ impl CtxReadTool {
             .delivery_enabled()
             .then(|| crate::tools::ctx_read::file_blake3_prefix(path))
             .flatten();
-        let (output, resolved_mode, original, is_cache_hit, file_ref, cache_stats) = {
+        let (output, resolved_mode, original, is_cache_hit, file_ref, cache_stats, reuse_outcome) = {
             let crp_mode = ctx.crp_mode;
             let fast_result = 'fast: {
                 let file_lock = per_file_lock(path);
@@ -383,7 +417,15 @@ impl CtxReadTool {
                     let fref = cache.file_ref_map().get(path).cloned();
                     let stats = cache.get_stats();
                     let stats_snapshot = (stats.total_reads(), stats.cache_hits());
-                    break 'fast Some((content, rmode, orig, hit, fref, stats_snapshot));
+                    break 'fast Some((
+                        content,
+                        rmode,
+                        orig,
+                        hit,
+                        fref,
+                        stats_snapshot,
+                        ReuseOutcome::UnchangedStub,
+                    ));
                 }
 
                 // Misses use the slow path's double-check sequence: it does a
@@ -421,7 +463,7 @@ impl CtxReadTool {
                                 );
                                 let _ = tx.send((
                                     format!("per-file lock contention for {path_owned} — retry in a moment"),
-                                    "error".to_string(), 0, false, None, (0, 0),
+                                    "error".to_string(), 0, false, None, (0, 0), ReuseOutcome::Cold,
                                 ));
                                 return;
                             }
@@ -452,7 +494,15 @@ impl CtxReadTool {
                         let fref = cache.file_ref_map().get(path_owned.as_str()).cloned();
                         let stats = cache.get_stats();
                         let stats_snapshot = (stats.total_reads(), stats.cache_hits());
-                        let _ = tx.send((content, rmode, orig, hit, fref, stats_snapshot));
+                        let _ = tx.send((
+                            content,
+                            rmode,
+                            orig,
+                            hit,
+                            fref,
+                            stats_snapshot,
+                            ReuseOutcome::UnchangedStub,
+                        ));
                         return;
                     }
 
@@ -475,6 +525,7 @@ impl CtxReadTool {
                             read_output.is_cache_hit,
                             None,
                             (0, 0),
+                            ReuseOutcome::CrossFileRef,
                         ));
                         return;
                     }
@@ -531,6 +582,7 @@ impl CtxReadTool {
                                         false,
                                         None,
                                         (0, 0),
+                                        ReuseOutcome::Cold,
                                     ));
                                     return;
                                 }
@@ -544,17 +596,33 @@ impl CtxReadTool {
                     // staleness checks, raw-content storage for new files.
                     #[allow(clippy::large_enum_variant)]
                     enum PrepareOutcome {
-                        Hit(String, String, usize, bool, Option<String>, (u64, u64)),
+                        Hit(
+                            String,
+                            String,
+                            usize,
+                            bool,
+                            Option<String>,
+                            (u64, u64),
+                            ReuseOutcome,
+                        ),
                         Compute {
                             file_ref: String,
                             resolved_mode: String,
                             content: String,
                             original_tokens: usize,
+                            reuse_outcome: ReuseOutcome,
                         },
                     }
 
                     let outcome = {
                         let mut cache = acquire_write!(10, "prepare 10s");
+                        let mut reuse_outcome = if cache_policy_bypassed {
+                            ReuseOutcome::PolicyBypass
+                        } else if fresh {
+                            ReuseOutcome::FreshBypass
+                        } else {
+                            ReuseOutcome::Cold
+                        };
 
                         if crate::core::plugins::PluginManager::has_listener("pre_read") {
                             crate::core::plugins::PluginManager::fire_hook_background(
@@ -599,6 +667,7 @@ impl CtxReadTool {
                             });
                             if stale {
                                 cache.invalidate(&path_owned);
+                                reuse_outcome = ReuseOutcome::Stale;
                             }
                         }
 
@@ -637,6 +706,7 @@ impl CtxReadTool {
                                     true,
                                     fref,
                                     (s.total_reads(), s.cache_hits()),
+                                    ReuseOutcome::UnchangedStub,
                                 )
                             } else if crate::tools::ctx_read::is_cacheable_mode(&resolved) {
                                 let ck = crate::tools::ctx_read::compressed_cache_key(
@@ -663,8 +733,14 @@ impl CtxReadTool {
                                         true,
                                         fref,
                                         (s.total_reads(), s.cache_hits()),
+                                        ReuseOutcome::RenderCacheHit,
                                     )
                                 } else {
+                                    if reuse_outcome == ReuseOutcome::Cold
+                                        && cache.was_compressed_variant_evicted(&path_owned, &ck)
+                                    {
+                                        reuse_outcome = ReuseOutcome::VariantEvicted;
+                                    }
                                     let c = content_opt
                                         .or_else(|| preread.as_deref().map(String::from));
                                     PrepareOutcome::Compute {
@@ -672,6 +748,7 @@ impl CtxReadTool {
                                         resolved_mode: resolved,
                                         content: c.unwrap_or_default(),
                                         original_tokens: orig_tok,
+                                        reuse_outcome,
                                     }
                                 }
                             } else {
@@ -682,6 +759,7 @@ impl CtxReadTool {
                                     resolved_mode: resolved,
                                     content: c.unwrap_or_default(),
                                     original_tokens: orig_tok,
+                                    reuse_outcome,
                                 }
                             }
                         } else {
@@ -700,6 +778,7 @@ impl CtxReadTool {
                                             false,
                                             None,
                                             (0, 0),
+                                            ReuseOutcome::Cold,
                                         ));
                                         return;
                                     }
@@ -714,6 +793,7 @@ impl CtxReadTool {
                                             false,
                                             None,
                                             (0, 0),
+                                            ReuseOutcome::Cold,
                                         ));
                                         return;
                                     }
@@ -738,18 +818,20 @@ impl CtxReadTool {
                                 resolved_mode: resolved,
                                 content: raw,
                                 original_tokens: sr.original_tokens,
+                                reuse_outcome,
                             }
                         }
                     }; // write lock released
 
-                    if let PrepareOutcome::Hit(c, rm, orig, hit, fref, ss) = outcome {
+                    if let PrepareOutcome::Hit(c, rm, orig, hit, fref, ss, reuse_outcome) = outcome
+                    {
                         // Update last_mode for compressed-cache hits so the auto-mode
                         // resolver can reuse this mode on future re-reads (#E26).
                         let mut cache = acquire_write!(10, "hit last_mode 10s");
                         if let Some(entry) = cache.get_mut(&path_owned) {
                             entry.last_mode.clone_from(&rm);
                         }
-                        let _ = tx.send((c, rm, orig, hit, fref, ss));
+                        let _ = tx.send((c, rm, orig, hit, fref, ss, reuse_outcome));
                         return;
                     }
                     let PrepareOutcome::Compute {
@@ -757,6 +839,7 @@ impl CtxReadTool {
                         resolved_mode,
                         content: compute_content,
                         original_tokens,
+                        reuse_outcome,
                     } = outcome
                     else {
                         unreachable!()
@@ -895,10 +978,18 @@ impl CtxReadTool {
                                 false,
                                 fref,
                                 (s.total_reads(), s.cache_hits()),
+                                reuse_outcome,
                             ));
                         } else {
-                            let _ =
-                                tx.send((computed, rmode, original_tokens, false, None, (0, 0)));
+                            let _ = tx.send((
+                                computed,
+                                rmode,
+                                original_tokens,
+                                false,
+                                None,
+                                (0, 0),
+                                reuse_outcome,
+                            ));
                         }
                     }
                 });
@@ -1253,6 +1344,7 @@ impl CtxReadTool {
         // but correct the accounting.
         let final_tokens = crate::core::tokens::count_tokens(&final_output);
         let verified_saved = original.saturating_sub(final_tokens);
+        crate::core::cache::record_ctx_read_outcome(reuse_outcome);
 
         Ok(ToolOutput {
             text: final_output,

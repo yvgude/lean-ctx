@@ -51,6 +51,7 @@ fn match_component_path(path: &str) -> Option<String> {
         "/static/components/cockpit-protection.js" => super::COCKPIT_COMPONENT_PROTECTION_JS,
         "/static/components/cockpit-settings.js" => super::COCKPIT_COMPONENT_SETTINGS_JS,
         "/static/components/cockpit-telemetry.js" => super::COCKPIT_COMPONENT_TELEMETRY_JS,
+        "/static/components/cockpit-adoption.js" => super::COCKPIT_COMPONENT_ADOPTION_JS,
         _ => return None,
     };
     Some(content.to_string())

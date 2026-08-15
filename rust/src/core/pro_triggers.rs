@@ -1,375 +1,120 @@
-//! Deterministic, local-only conversion signals for the free product.
+//! Local, contextual Pro conversion nudges.
 
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use chrono::{DateTime, Duration, Utc};
+use std::{
+    collections::BTreeSet,
+    sync::{Mutex, OnceLock},
+};
 
-pub const SESSION_COUNT_THRESHOLD: usize = 5;
-pub const DECISION_SESSION_COUNT_THRESHOLD: usize = 10;
-pub const SAVINGS_USD_THRESHOLD: f64 = 10.0;
+#[rustfmt::skip]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct UsageSignals { pub session_count: u32, pub total_decisions: u32, pub context_span_sessions: u32, pub unique_devices: u32, pub total_savings_usd: f64 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ProTriggerReason {
-    SessionCount,
-    CumulativeSavings,
-    MultiDevice,
+#[rustfmt::skip]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TriggerKind { CrossDeviceSync, AdaptiveModelRouting, PersonalKnowledgeGraph, EncryptedBackup, SavingsInsight }
+
+#[rustfmt::skip]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProNudge { pub kind: TriggerKind, pub message: String, pub priority: u8, pub session_threshold: u32 }
+
+#[rustfmt::skip]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TriggerConfig { context_sessions: u32, decisions: u32, savings_usd: f64, single_device_sessions: u32 }
+
+#[rustfmt::skip]
+impl Default for TriggerConfig {
+    fn default() -> Self { Self { context_sessions: 5, decisions: 30, savings_usd: 20.0, single_device_sessions: 20 } }
 }
 
-/// The local fact that made a Pro conversion message relevant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ProTriggerKind {
-    SessionCount,
-    DecisionCount,
-    CumulativeSavings,
-    MultiDevice,
+#[rustfmt::skip]
+#[derive(Clone, Debug)]
+pub struct ProTriggerEngine { signals: UsageSignals, config: TriggerConfig, suppressed_until: Option<DateTime<Utc>> }
+
+#[rustfmt::skip]
+impl ProTriggerEngine {
+    #[must_use]
+    pub fn new(signals: UsageSignals) -> Self { Self { signals, config: TriggerConfig::default(), suppressed_until: None } }
+
+    pub fn update_signals(&mut self, signals: UsageSignals) { self.signals = signals; }
+
+    /// Suppress this engine's nudges for the requested whole-day period.
+    pub fn suppress(&mut self, days: u32) { self.suppressed_until = Some(Utc::now() + Duration::days(i64::from(days))); }
+
+    #[must_use]
+    pub fn evaluate(&self) -> Vec<ProNudge> {
+        if self.suppressed_until.is_some_and(|until| Utc::now() < until) { return Vec::new(); }
+        let s = self.signals;
+        let c = self.config;
+        let mut nudges = Vec::new();
+        if s.session_count >= c.context_sessions && s.context_span_sessions > 1 {
+            nudges.push(nudge(TriggerKind::CrossDeviceSync, format!("Your context now spans {} sessions. Pro syncs this across all your machines.", s.context_span_sessions), 9, c.context_sessions));
+        }
+        if s.session_count >= 10 && s.total_decisions > c.decisions {
+            nudges.push(nudge(TriggerKind::AdaptiveModelRouting, format!("You've made {} decisions this week. Pro learns which models work best for YOUR tasks.", s.total_decisions), 8, 10));
+        }
+        if s.session_count >= 15 && s.total_savings_usd > c.savings_usd {
+            nudges.push(nudge(TriggerKind::SavingsInsight, format!("You saved ${:.2} this month. Pro shows your full economics dashboard.", s.total_savings_usd), 7, 15));
+        }
+        if s.session_count >= c.single_device_sessions && s.unique_devices == 1 {
+            nudges.push(nudge(TriggerKind::CrossDeviceSync, "Working on multiple machines? Pro keeps your memory in sync everywhere.".into(), 6, c.single_device_sessions));
+        }
+        nudges
+    }
 }
 
-/// A concise, evidence-backed Pro message suitable for terminal or JSON output.
-#[derive(Debug, Clone, Serialize)]
-pub struct ConversionMessage {
-    pub trigger: ProTriggerKind,
-    pub headline: String,
-    pub detail: String,
-    pub session_count: u64,
-    pub evidence_value: String,
+#[rustfmt::skip]
+fn nudge(kind: TriggerKind, message: String, priority: u8, session_threshold: u32) -> ProNudge { ProNudge { kind, message, priority, session_threshold } }
+
+fn global_suppression() -> &'static Mutex<Option<DateTime<Utc>>> {
+    static SUPPRESSION: OnceLock<Mutex<Option<DateTime<Utc>>>> = OnceLock::new();
+    SUPPRESSION.get_or_init(|| Mutex::new(None))
 }
 
-/// A conversion signal with local, inspectable evidence. Nothing is sent remotely.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProTriggerEvent {
-    pub reason: ProTriggerReason,
-    pub evidence: String,
+/// Suppress process-wide free-tier nudges for `days` days.
+#[rustfmt::skip]
+pub fn suppress(days: u32) {
+    *global_suppression().lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Utc::now() + Duration::days(i64::from(days)));
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct SessionSignal {
-    pub id: String,
-    pub agent_ids: BTreeSet<String>,
-}
+/// Re-enable process-wide nudges after a user changes their mind.
+#[rustfmt::skip]
+pub fn clear_suppression() { *global_suppression().lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None; }
 
-/// Generate the vision-specified conversion messages from local facts only.
+/// Evaluate trigger conditions using the default configuration.
 #[must_use]
-pub fn generate_conversion_messages(
-    sessions: &[SessionSignal],
-    proven_savings_usd: f64,
-    decision_count: u64,
-) -> Vec<ConversionMessage> {
-    let session_count = u64::try_from(sessions.len()).unwrap_or(u64::MAX);
-    let mut messages = Vec::new();
-
-    if sessions.len() >= SESSION_COUNT_THRESHOLD {
-        messages.push(ConversionMessage {
-            trigger: ProTriggerKind::SessionCount,
-            headline: format!("Your context now spans {session_count} sessions."),
-            detail: "Pro syncs this across all your machines.".to_string(),
-            session_count,
-            evidence_value: format!("{session_count} sessions"),
-        });
-    }
-
-    if sessions.len() >= DECISION_SESSION_COUNT_THRESHOLD {
-        messages.push(ConversionMessage {
-            trigger: ProTriggerKind::DecisionCount,
-            headline: format!("You've made {decision_count} decisions this week."),
-            detail: "Pro learns which models work best for YOUR tasks.".to_string(),
-            session_count,
-            evidence_value: format!("{decision_count} decisions"),
-        });
-    }
-
-    if proven_savings_usd.is_finite() && proven_savings_usd > SAVINGS_USD_THRESHOLD {
-        messages.push(ConversionMessage {
-            trigger: ProTriggerKind::CumulativeSavings,
-            headline: format!("You've saved ${proven_savings_usd:.2} this week with LeanCTX."),
-            detail: "Pro tracks this across all devices.".to_string(),
-            session_count,
-            evidence_value: format!("${proven_savings_usd:.2}"),
-        });
-    }
-
-    let device_count = sessions
-        .iter()
-        .flat_map(|session| session.agent_ids.iter().map(String::as_str))
-        .collect::<BTreeSet<_>>()
-        .len();
-    if device_count > 1 {
-        messages.push(ConversionMessage {
-            trigger: ProTriggerKind::MultiDevice,
-            headline: format!("We noticed you on {device_count} devices."),
-            detail: "Pro keeps your context in sync.".to_string(),
-            session_count,
-            evidence_value: format!("{device_count} devices"),
-        });
-    }
-
-    messages
+#[rustfmt::skip]
+pub fn evaluate_triggers(signals: &UsageSignals) -> Vec<ProNudge> {
+    let mut engine = ProTriggerEngine::new(*signals);
+    engine.suppressed_until = *global_suppression().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    engine.evaluate()
 }
 
-/// Suppress all conversion messages after the user dismisses them.
-#[must_use]
-pub fn generate_visible_conversion_messages(
-    sessions: &[SessionSignal],
-    proven_savings_usd: f64,
-    decision_count: u64,
-    dismissed: bool,
-) -> Vec<ConversionMessage> {
-    if dismissed {
-        Vec::new()
-    } else {
-        generate_conversion_messages(sessions, proven_savings_usd, decision_count)
+/// Gather local usage facts for the session UI and server metrics paths.
+#[rustfmt::skip]
+pub(crate) fn local_usage_signals(current: &crate::core::session::SessionState) -> UsageSignals {
+    let sessions = crate::core::session::SessionState::list_sessions();
+    let saved = sessions.iter().any(|summary| summary.id == current.id);
+    let mut devices = current.evidence.iter().filter_map(|record| record.agent_id.clone()).collect::<BTreeSet<_>>();
+    for summary in &sessions {
+        if let Some(session) = crate::core::session::SessionState::load_by_id(&summary.id) {
+            devices.extend(session.evidence.into_iter().filter_map(|record| record.agent_id));
+        }
     }
-}
-
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct ConversionMessagePreferences {
-    #[serde(default)]
-    dismissed: bool,
-}
-
-fn preferences_path() -> Result<std::path::PathBuf, String> {
-    Ok(crate::core::data_dir::lean_ctx_data_dir()?.join("pro_conversion_messages.json"))
-}
-
-/// Returns whether terminal conversion messages have been dismissed locally.
-#[must_use]
-pub fn conversion_messages_dismissed() -> bool {
-    preferences_path()
-        .ok()
-        .and_then(|path| std::fs::read_to_string(path).ok())
-        .and_then(|json| serde_json::from_str::<ConversionMessagePreferences>(&json).ok())
-        .is_some_and(|preferences| preferences.dismissed)
-}
-
-/// Persist the user's local conversion-message preference.
-pub fn set_conversion_messages_dismissed(dismissed: bool) -> Result<(), String> {
-    let path = preferences_path()?;
-    let preferences = ConversionMessagePreferences { dismissed };
-    let json = serde_json::to_string(&preferences).map_err(|error| error.to_string())?;
-    std::fs::write(path, json).map_err(|error| error.to_string())
-}
-
-/// Evaluate the three Class A triggers from caller-provided local facts.
-#[must_use]
-pub fn evaluate(sessions: &[SessionSignal], proven_savings_usd: f64) -> Vec<ProTriggerEvent> {
-    let mut events = Vec::new();
-    if sessions.len() >= SESSION_COUNT_THRESHOLD {
-        events.push(ProTriggerEvent {
-            reason: ProTriggerReason::SessionCount,
-            evidence: format!("{} local sessions recorded", sessions.len()),
-        });
-    }
-    if proven_savings_usd.is_finite() && proven_savings_usd > SAVINGS_USD_THRESHOLD {
-        events.push(ProTriggerEvent {
-            reason: ProTriggerReason::CumulativeSavings,
-            evidence: format!("${proven_savings_usd:.2} proven local savings"),
-        });
-    }
-    let agent_ids: BTreeSet<&str> = sessions
-        .iter()
-        .flat_map(|session| session.agent_ids.iter().map(String::as_str))
-        .collect();
-    if agent_ids.len() > 1 {
-        events.push(ProTriggerEvent {
-            reason: ProTriggerReason::MultiDevice,
-            evidence: format!("{} distinct local agent IDs observed", agent_ids.len()),
-        });
-    }
-    events
-}
-
-/// Reads persisted sessions and evaluates local signals, including this live session.
-#[must_use]
-pub fn check_local(current: SessionSignal) -> Vec<ProTriggerEvent> {
-    let mut sessions = crate::core::session::SessionState::all_session_signals();
-    if let Some(existing) = sessions.iter_mut().find(|session| session.id == current.id) {
-        existing.agent_ids.extend(current.agent_ids);
-    } else {
-        sessions.push(current);
-    }
-    sessions.sort_by(|left, right| left.id.cmp(&right.id));
-    let proven_savings_usd = if crate::core::savings_ledger::verify().valid {
-        crate::core::savings_ledger::summary().saved_usd
-    } else {
-        0.0
-    };
-    evaluate(&sessions, proven_savings_usd)
+    let session_count = u32::try_from(sessions.len() + usize::from(!saved)).unwrap_or(u32::MAX);
+    UsageSignals { session_count, total_decisions: u32::try_from(crate::core::session::SessionState::decision_count_this_week()).unwrap_or(u32::MAX), context_span_sessions: session_count, unique_devices: u32::try_from(devices.len()).unwrap_or(u32::MAX), total_savings_usd: if crate::core::savings_ledger::verify().valid { crate::core::savings_ledger::summary().saved_usd } else { 0.0 } }
 }
 
 #[cfg(test)]
+#[rustfmt::skip]
 mod tests {
     use super::*;
-
-    fn signal(id: &str, agent: &str) -> SessionSignal {
-        SessionSignal {
-            id: id.to_string(),
-            agent_ids: BTreeSet::from([agent.to_string()]),
-        }
-    }
-
-    #[test]
-    fn pro_trigger_fires_after_five_sessions() {
-        let sessions = (0..5)
-            .map(|n| signal(&format!("session-{n}"), "agent-a"))
-            .collect::<Vec<_>>();
-        let events = evaluate(&sessions, 0.0);
-        assert!(
-            events
-                .iter()
-                .any(|event| event.reason == ProTriggerReason::SessionCount)
-        );
-    }
-
-    #[test]
-    fn pro_trigger_fires_when_proven_savings_exceed_threshold() {
-        let events = evaluate(&[], 10.01);
-        assert!(
-            events
-                .iter()
-                .any(|event| event.reason == ProTriggerReason::CumulativeSavings)
-        );
-    }
-
-    #[test]
-    fn conversion_messages_do_not_fire_before_five_sessions() {
-        let sessions = (0..4)
-            .map(|n| signal(&format!("session-{n}"), "agent-a"))
-            .collect::<Vec<_>>();
-
-        assert!(generate_conversion_messages(&sessions, 0.0, 0).is_empty());
-    }
-
-    #[test]
-    fn session_message_includes_session_count() {
-        let sessions = (0..5)
-            .map(|n| signal(&format!("session-{n}"), "agent-a"))
-            .collect::<Vec<_>>();
-        let message = generate_conversion_messages(&sessions, 0.0, 0)
-            .into_iter()
-            .find(|message| message.trigger == ProTriggerKind::SessionCount)
-            .expect("session message");
-
-        assert_eq!(message.headline, "Your context now spans 5 sessions.");
-        assert_eq!(message.detail, "Pro syncs this across all your machines.");
-        assert_eq!(message.session_count, 5);
-    }
-
-    #[test]
-    fn decision_message_includes_weekly_decision_count() {
-        let sessions = (0..10)
-            .map(|n| signal(&format!("session-{n}"), "agent-a"))
-            .collect::<Vec<_>>();
-        let message = generate_conversion_messages(&sessions, 0.0, 47)
-            .into_iter()
-            .find(|message| message.trigger == ProTriggerKind::DecisionCount)
-            .expect("decision message");
-
-        assert_eq!(message.headline, "You've made 47 decisions this week.");
-        assert_eq!(
-            message.detail,
-            "Pro learns which models work best for YOUR tasks."
-        );
-        assert_eq!(message.evidence_value, "47 decisions");
-    }
-
-    #[test]
-    fn savings_message_includes_dollar_amount() {
-        let message = generate_conversion_messages(&[], 42.5, 0)
-            .into_iter()
-            .find(|message| message.trigger == ProTriggerKind::CumulativeSavings)
-            .expect("savings message");
-
-        assert_eq!(
-            message.headline,
-            "You've saved $42.50 this week with LeanCTX."
-        );
-        assert_eq!(message.detail, "Pro tracks this across all devices.");
-        assert_eq!(message.evidence_value, "$42.50");
-    }
-
-    #[test]
-    fn savings_message_requires_more_than_ten_dollars() {
-        assert!(
-            generate_conversion_messages(&[], 10.0, 0)
-                .iter()
-                .all(|message| message.trigger != ProTriggerKind::CumulativeSavings)
-        );
-    }
-
-    #[test]
-    fn multi_device_message_includes_device_count() {
-        let sessions = vec![
-            signal("session-a", "agent-a"),
-            signal("session-b", "agent-b"),
-        ];
-        let message = generate_conversion_messages(&sessions, 0.0, 0)
-            .into_iter()
-            .find(|message| message.trigger == ProTriggerKind::MultiDevice)
-            .expect("multi-device message");
-
-        assert_eq!(message.headline, "We noticed you on 2 devices.");
-        assert_eq!(message.detail, "Pro keeps your context in sync.");
-        assert_eq!(message.evidence_value, "2 devices");
-    }
-
-    #[test]
-    fn dismissed_messages_are_not_repeated() {
-        let _data_dir = crate::core::data_dir::isolated_data_dir();
-        let sessions = (0..5)
-            .map(|n| signal(&format!("session-{n}"), "agent-a"))
-            .collect::<Vec<_>>();
-
-        set_conversion_messages_dismissed(true).expect("persist dismissal");
-        assert!(conversion_messages_dismissed());
-        assert!(
-            generate_visible_conversion_messages(
-                &sessions,
-                0.0,
-                0,
-                conversion_messages_dismissed()
-            )
-            .is_empty()
-        );
-    }
-
-    #[test]
-    fn conversion_messages_serialize_as_valid_json() {
-        let messages = generate_conversion_messages(&[], 42.5, 0);
-        let json = serde_json::to_string(&messages).expect("serialize messages");
-        let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
-
-        assert_eq!(value[0]["trigger"], "cumulative_savings");
-        assert_eq!(value[0]["evidence_value"], "$42.50");
-    }
-
-    #[test]
-    fn multiple_conversion_messages_can_fire_together() {
-        let mut sessions = (0..10)
-            .map(|n| signal(&format!("session-{n}"), "agent-a"))
-            .collect::<Vec<_>>();
-        sessions[1].agent_ids.insert("agent-b".to_string());
-
-        let messages = generate_conversion_messages(&sessions, 42.5, 47);
-        assert_eq!(messages.len(), 4);
-        assert!(
-            messages
-                .iter()
-                .any(|message| message.trigger == ProTriggerKind::SessionCount)
-        );
-        assert!(
-            messages
-                .iter()
-                .any(|message| message.trigger == ProTriggerKind::DecisionCount)
-        );
-        assert!(
-            messages
-                .iter()
-                .any(|message| message.trigger == ProTriggerKind::CumulativeSavings)
-        );
-        assert!(
-            messages
-                .iter()
-                .any(|message| message.trigger == ProTriggerKind::MultiDevice)
-        );
-    }
+    fn base() -> UsageSignals { UsageSignals { unique_devices: 2, ..UsageSignals::default() } }
+    #[test] fn below_thresholds_is_quiet() { assert!(evaluate_triggers(&base()).is_empty()); }
+    #[test] fn context_at_five_uses_span() { let mut s = base(); s.session_count = 5; s.context_span_sessions = 3; assert_eq!(evaluate_triggers(&s)[0].message, "Your context now spans 3 sessions. Pro syncs this across all your machines."); }
+    #[test] fn context_needs_multiple_sessions() { let mut s = base(); s.session_count = 5; s.context_span_sessions = 1; assert!(evaluate_triggers(&s).is_empty()); }
+    #[test] fn decisions_over_thirty_trigger_at_ten() { let mut s = base(); s.session_count = 10; s.total_decisions = 31; assert_eq!(evaluate_triggers(&s)[0].kind, TriggerKind::AdaptiveModelRouting); }
+    #[test] fn savings_over_twenty_trigger_at_fifteen() { let mut s = base(); s.session_count = 15; s.total_savings_usd = 20.01; assert!(evaluate_triggers(&s)[0].message.contains("$20.01 this month")); }
+    #[test] fn one_device_triggers_at_twenty() { let s = UsageSignals { session_count: 20, unique_devices: 1, ..UsageSignals::default() }; assert_eq!(evaluate_triggers(&s)[0].priority, 6); }
+    #[test] fn engine_suppression_hides_nudges() { let mut engine = ProTriggerEngine::new(UsageSignals { session_count: 20, context_span_sessions: 2, unique_devices: 1, ..UsageSignals::default() }); engine.suppress(1); assert!(engine.evaluate().is_empty()); }
 }

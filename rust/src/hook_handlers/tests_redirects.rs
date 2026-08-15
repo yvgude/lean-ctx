@@ -89,13 +89,78 @@ fn classify_redirect_passes_through_shell_and_unknown() {
 
 #[test]
 fn redirect_read_args_smart_mode_selection() {
-    // Both windowed and full reads serve uncompressed content ("full")
-    // to prevent StrReplace failures when agents edit compressed views.
-    let windowed = redirect_read_args("/repo/src/main.rs", true);
-    assert_eq!(windowed, ["read", "/repo/src/main.rs", "-m", "full"]);
+    // Code files now get "auto" — the auto_mode_resolver + safety chain
+    // (marker guard, snapshot store, quality escalation) handle compression.
+    let code_rs = redirect_read_args("/repo/src/main.rs", true);
+    assert_eq!(code_rs, ["read", "/repo/src/main.rs", "-m", "auto"]);
+    let code_ts = redirect_read_args("/repo/src/app.tsx", false);
+    assert_eq!(code_ts, ["read", "/repo/src/app.tsx", "-m", "auto"]);
 
-    let full = redirect_read_args("/repo/src/main.rs", false);
-    assert_eq!(full, ["read", "/repo/src/main.rs", "-m", "full"]);
+    // Terminal output and logs also get "auto".
+    let terminal = redirect_read_args("/home/user/.cursor/projects/foo/terminals/1.txt", false);
+    assert_eq!(
+        terminal,
+        [
+            "read",
+            "/home/user/.cursor/projects/foo/terminals/1.txt",
+            "-m",
+            "auto"
+        ]
+    );
+    let log = redirect_read_args("/tmp/build.log", false);
+    assert_eq!(log, ["read", "/tmp/build.log", "-m", "auto"]);
+
+    // Unknown extensions also get "auto" (safety chain handles all cases).
+    let unknown = redirect_read_args("/tmp/something.xyz", false);
+    assert_eq!(unknown, ["read", "/tmp/something.xyz", "-m", "auto"]);
+
+    // Instruction overrides stay "full" (e.g. Cargo.toml, package.json).
+    let cargo = redirect_read_args("/repo/Cargo.toml", false);
+    assert_eq!(cargo, ["read", "/repo/Cargo.toml", "-m", "full"]);
+    let pkg = redirect_read_args("/repo/package.json", false);
+    assert_eq!(pkg, ["read", "/repo/package.json", "-m", "full"]);
+}
+
+#[test]
+fn edit_risk_class_classification() {
+    use super::redirect::{EditRiskClass, edit_risk_class};
+    // Code files are now SafeToCompress (safety chain handles edits).
+    assert_eq!(
+        edit_risk_class("/src/main.rs"),
+        EditRiskClass::SafeToCompress
+    );
+    assert_eq!(
+        edit_risk_class("/src/app.tsx"),
+        EditRiskClass::SafeToCompress
+    );
+    assert_eq!(
+        edit_risk_class("/config.toml"),
+        EditRiskClass::SafeToCompress
+    );
+    assert_eq!(edit_risk_class("/data.json"), EditRiskClass::SafeToCompress);
+    assert_eq!(edit_risk_class(""), EditRiskClass::SafeToCompress);
+    // Terminal output, logs remain SafeToCompress.
+    assert_eq!(
+        edit_risk_class("/home/.cursor/projects/x/terminals/1.txt"),
+        EditRiskClass::SafeToCompress,
+    );
+    assert_eq!(
+        edit_risk_class("/var/log/app.log"),
+        EditRiskClass::SafeToCompress
+    );
+    // Instruction overrides are NeverCompress.
+    assert_eq!(
+        edit_risk_class("/repo/Cargo.toml"),
+        EditRiskClass::NeverCompress
+    );
+    assert_eq!(
+        edit_risk_class("/repo/package.json"),
+        EditRiskClass::NeverCompress
+    );
+    assert_eq!(
+        edit_risk_class("/app/Dockerfile"),
+        EditRiskClass::NeverCompress
+    );
 }
 
 #[test]

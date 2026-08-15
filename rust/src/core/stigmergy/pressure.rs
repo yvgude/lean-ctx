@@ -35,7 +35,7 @@ impl PressureMap {
     pub fn from_signals(signals: &[PheromoneSignal]) -> Self {
         let mut fields = HashMap::<String, PressureField>::new();
         let mut agents = HashMap::<String, HashSet<&str>>::new();
-        let mut strengths = HashMap::<String, [f64; 6]>::new();
+        let mut strengths = HashMap::<String, [f64; 7]>::new();
 
         for signal in signals {
             let field = fields.entry(signal.path.clone()).or_default();
@@ -79,6 +79,23 @@ impl PressureMap {
         hotspots.truncate(top_n);
         hotspots
     }
+
+    /// Owned file paths with pressure at or above `threshold`, highest first.
+    #[must_use]
+    pub fn hot_files(&self, threshold: f64) -> Vec<(String, f64)> {
+        let mut hot_files = self
+            .fields
+            .iter()
+            .filter(|(_, field)| field.total_strength >= threshold)
+            .map(|(path, field)| (path.clone(), field.total_strength))
+            .collect::<Vec<_>>();
+        hot_files.sort_by(|(path_a, strength_a), (path_b, strength_b)| {
+            strength_b
+                .total_cmp(strength_a)
+                .then_with(|| path_a.cmp(path_b))
+        });
+        hot_files
+    }
 }
 
 fn kind_index(kind: SignalKind) -> usize {
@@ -89,17 +106,19 @@ fn kind_index(kind: SignalKind) -> usize {
         SignalKind::Issue => 3,
         SignalKind::Completed => 4,
         SignalKind::Exploration => 5,
+        SignalKind::Modification => 6,
     }
 }
 
-fn dominant_kind(strengths: &[f64; 6]) -> Option<SignalKind> {
-    const KINDS: [SignalKind; 6] = [
+fn dominant_kind(strengths: &[f64; 7]) -> Option<SignalKind> {
+    const KINDS: [SignalKind; 7] = [
         SignalKind::Active,
         SignalKind::Complexity,
         SignalKind::ReviewNeeded,
         SignalKind::Issue,
         SignalKind::Completed,
         SignalKind::Exploration,
+        SignalKind::Modification,
     ];
     strengths
         .iter()
@@ -178,5 +197,20 @@ pub mod tests {
         assert_eq!(hotspots.len(), 2);
         assert_eq!(hotspots[0].0, "high.rs");
         assert_eq!(hotspots[1].0, "medium.rs");
+    }
+
+    #[test]
+    fn three_explorations_mark_file_hot() {
+        let map = PressureMap::from_signals(&[
+            signal("agent-1", "src/hot.rs", SignalKind::Exploration, 0.4),
+            signal("agent-2", "src/hot.rs", SignalKind::Exploration, 0.4),
+            signal("agent-3", "src/hot.rs", SignalKind::Exploration, 0.4),
+        ]);
+
+        let hot_files = map.hot_files(1.0);
+
+        assert_eq!(hot_files.len(), 1);
+        assert_eq!(hot_files[0].0, "src/hot.rs");
+        assert!((hot_files[0].1 - 1.2).abs() < 1e-10);
     }
 }

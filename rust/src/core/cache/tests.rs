@@ -455,6 +455,37 @@ fn compressed_outputs_cached_and_retrieved() {
 }
 
 #[test]
+fn compressed_outputs_evict_least_recently_used_variant() {
+    let mut cache = SessionCache::new();
+    cache.store("/test.rs", "fn main() {}");
+    for index in 0..6 {
+        cache.set_compressed(
+            "/test.rs",
+            &format!("variant-{index}"),
+            format!("output-{index}"),
+        );
+    }
+
+    assert!(cache.get_compressed("/test.rs", "variant-0").is_some());
+    cache.set_compressed("/test.rs", "variant-6", "output-6".to_string());
+
+    assert!(cache.get_compressed("/test.rs", "variant-0").is_some());
+    assert!(cache.get_compressed("/test.rs", "variant-1").is_none());
+    for index in 2..=6 {
+        assert!(
+            cache
+                .get_compressed("/test.rs", &format!("variant-{index}"))
+                .is_some()
+        );
+    }
+    assert!(
+        cache
+            .get("/test.rs")
+            .is_some_and(|entry| entry.was_compressed_variant_evicted("variant-1"))
+    );
+}
+
+#[test]
 fn compressed_outputs_cleared_on_content_change() {
     let mut cache = SessionCache::new();
     cache.store("/test.rs", "old content");
@@ -477,6 +508,17 @@ fn compressed_outputs_survive_same_content_store() {
         cache.get_compressed("/test.rs", "map"),
         Some(&"cached map".to_string())
     );
+}
+
+#[test]
+fn trimming_render_variants_records_a_variant_eviction() {
+    let mut cache = SessionCache::new();
+    cache.store("/test.rs", "content");
+    cache.set_compressed("/test.rs", "map", "cached map".to_string());
+
+    assert_eq!(cache.trim_compressed_outputs(), 1);
+    assert_eq!(cache.get_compressed("/test.rs", "map"), None);
+    assert!(cache.was_compressed_variant_evicted("/test.rs", "map"));
 }
 
 #[test]

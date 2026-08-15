@@ -9,7 +9,7 @@ use crate::proxy::codec::{
     RequestBodyEncoding, decode_gzip_bounded, decode_zstd_bounded, encode_gzip, encode_zstd,
     request_body_encoding,
 };
-use crate::proxy::dedup::ToolResultCache;
+use crate::proxy::dedup::{ContentAddressedDedup, ToolResultCache};
 
 use super::max_body_bytes;
 
@@ -19,6 +19,11 @@ static DEDUP_CACHE: OnceLock<Arc<ToolResultCache>> = OnceLock::new();
 
 fn dedup_cache() -> &'static Arc<ToolResultCache> {
     DEDUP_CACHE.get_or_init(|| Arc::new(ToolResultCache::new()))
+}
+
+fn content_dedup_cache() -> &'static std::sync::Mutex<ContentAddressedDedup> {
+    static CACHE: OnceLock<std::sync::Mutex<ContentAddressedDedup>> = OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(ContentAddressedDedup::new()))
 }
 
 struct ToolResultToCache {
@@ -206,6 +211,7 @@ pub(crate) struct PreparedRequestBody {
     pub(crate) compressed_size: usize,
     pub(crate) compression_candidate: bool,
     pub(crate) preserve_content_encoding: bool,
+    pub(crate) content_dedup_tokens_saved: usize,
     /// Routing decision applied to the body (enterprise#13); `None` = passthrough.
     pub(crate) route: Option<crate::proxy::routing::RouteDecision>,
 }
@@ -233,6 +239,7 @@ pub(crate) fn prepare_request_body(
                 compressed_size: body_bytes.len(),
                 compression_candidate: false,
                 preserve_content_encoding: true,
+                content_dedup_tokens_saved: 0,
                 route: None,
             });
         }
@@ -254,10 +261,23 @@ pub(crate) fn prepare_request_body(
             compressed_size: body_bytes.len(),
             compression_candidate: false,
             preserve_content_encoding: encoding != RequestBodyEncoding::Identity,
+            content_dedup_tokens_saved: 0,
             route: None,
         });
     };
     let (tool_results_to_cache, dedup_tokens_saved) = deduplicate_tool_results(&mut parsed, cache);
+    let content_dedup_tokens_saved = parsed
+        .get_mut("messages")
+        .and_then(|messages| messages.as_array_mut())
+        .map(|messages| {
+            content_dedup_cache()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .dedup_messages(messages)
+                .tokens_saved
+        })
+        .unwrap_or_default();
+
     if dedup_tokens_saved > 0 {
         tracing::debug!(dedup_tokens_saved, "deduplicated proxy tool results");
     }
@@ -315,6 +335,7 @@ pub(crate) fn prepare_request_body(
             compress_body(parsed.clone(), original_size)
         };
     cache_tool_results(cache, tool_results_to_cache);
+    let final_parsed = serde_json::from_slice(&logical_body).ok();
     let body = match encoding {
         RequestBodyEncoding::Identity => logical_body,
         RequestBodyEncoding::Gzip => encode_gzip(&logical_body)?,
@@ -324,11 +345,12 @@ pub(crate) fn prepare_request_body(
 
     Ok(PreparedRequestBody {
         body,
-        parsed: Some(parsed),
+        parsed: final_parsed,
         original_size,
         compressed_size,
         compression_candidate: true,
         preserve_content_encoding: encoding != RequestBodyEncoding::Identity,
+        content_dedup_tokens_saved,
         route,
     })
 }

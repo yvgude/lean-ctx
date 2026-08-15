@@ -119,15 +119,35 @@ class CockpitLearning extends HTMLElement {
       return;
     }
 
+    var F2 = remFmt();
+    var fmt2 = F2.fmt || function (n) { return String(n); };
+    var daily2 = data.daily || [];
+    var todayD = daily2.length > 0 ? daily2[daily2.length - 1] : null;
+    var todayIn = todayD ? Number(todayD.input_tokens || todayD.total_input || 0) : 0;
+    var todayOut = todayD ? Number(todayD.output_tokens || todayD.total_output || 0) : 0;
+    var todaySaved = todayIn - todayOut;
+    var todayCalls = todayD ? Number(todayD.count || todayD.commands || todayD.calls || 0) : 0;
+    var totalIn = data.total_input_tokens || 0;
+    var totalSaved = totalIn - (data.total_output_tokens || 0);
+
     this.innerHTML =
       '<div class="row r3">' +
-      '<div class="card"><div class="card-header"><h3>Savings Growth' + tip('savings_growth') + '</h3></div>' +
-      '<canvas id="ckle-savings" height="200"></canvas></div>' +
-      '<div class="card"><div class="card-header"><h3>Net savings rate' + tip('compression_trend') + '</h3>' +
-      '<p class="hs" style="margin:2px 0 0;font-size:12px;opacity:.6">verified savings ÷ all input tokens (incl. non-compressible)</p></div>' +
-      '<canvas id="ckle-compression" height="200"></canvas></div>' +
-      '<div class="card"><div class="card-header"><h3>Command Volume' + tip('command_volume') + '</h3></div>' +
-      '<canvas id="ckle-volume" height="200"></canvas></div>' +
+      '<div class="card card-interactive"><div class="card-header"><h3>Savings Growth' + tip('savings_growth') + '</h3>' +
+      '<span class="badge badge-accent" style="font-size:11px">' + fmt2(totalSaved) + ' total</span></div>' +
+      '<canvas id="ckle-savings" height="200"></canvas>' +
+      '<div class="chart-footer"><span>Today: ' + fmt2(todaySaved) + ' tokens saved</span>' +
+      '<span>' + fmt2(todayCalls) + ' calls</span></div></div>' +
+      '<div class="card card-interactive"><div class="card-header"><h3>Net savings rate' + tip('compression_trend') + '</h3>' +
+      '<span class="badge badge-accent" style="font-size:11px">verified · ledger-signed</span></div>' +
+      '<p class="hs" style="margin:2px 0 0;font-size:11px;opacity:.5">saved ÷ original tokens per day (only compressible tool calls)</p>' +
+      '<canvas id="ckle-compression" height="200"></canvas>' +
+      '<div class="chart-footer"><span>Hover to explore daily rates</span>' +
+      '<span>Baseline ÷ Delivered</span></div></div>' +
+      '<div class="card card-interactive"><div class="card-header"><h3>Command Volume' + tip('command_volume') + '</h3>' +
+      '<span class="badge badge-accent" style="font-size:11px">' + fmt2(data.total_commands || 0) + ' total</span></div>' +
+      '<canvas id="ckle-volume" height="200"></canvas>' +
+      '<div class="chart-footer"><span>Today: ' + todayCalls.toLocaleString() + ' calls</span>' +
+      '<span>Hover for daily breakdown</span></div></div>' +
       '</div>' +
       // Source/task split moved here from Home with the slim-Home cut (GL #486).
       '<div class="row" style="grid-template-columns:1fr 1fr;margin-top:16px">' +
@@ -340,16 +360,18 @@ class CockpitLearning extends HTMLElement {
     var roiTrend = this._roi && this._roi.trend ? this._roi.trend : [];
     if (roiTrend.length > 0) {
       var savedMap = {};
+      var rawMap = {};
       for (var j = 0; j < roiTrend.length; j++) {
         var tDay = String(roiTrend[j][0] || '');
         savedMap[tDay] = Number(roiTrend[j][1] || 0);
+        rawMap[tDay] = Number(roiTrend[j][3] || 0);
       }
       for (var k = 0; k < labels.length; k++) {
         var fullDate = (daily[k] && (daily[k].date || daily[k].day)) || '';
-        var dailyInput = Number(daily[k] && (daily[k].input_tokens || daily[k].total_input) || 0);
         var verifiedSaved = savedMap[fullDate];
-        if (verifiedSaved !== undefined && dailyInput > 0) {
-          compression[k] = Math.min(100, Math.round((verifiedSaved / dailyInput) * 100));
+        var verifiedRaw = rawMap[fullDate];
+        if (verifiedSaved !== undefined && verifiedRaw > 0) {
+          compression[k] = Math.min(100, Math.round((verifiedSaved / verifiedRaw) * 100));
         }
       }
     }
@@ -363,19 +385,59 @@ class CockpitLearning extends HTMLElement {
       return;
     }
 
+    var savingsDetail = [];
+    var compressionDetail = [];
+    var volumeDetail = [];
+    var F = remFmt();
+    var fmt = F.fmt || function (n) { return String(n); };
+    for (var di = 0; di < daily.length; di++) {
+      var dd = daily[di];
+      var dInp = Number(dd.input_tokens || dd.total_input || 0);
+      var dOut = Number(dd.output_tokens || dd.total_output || 0);
+      var dCalls = Number(dd.count || dd.commands || dd.calls || 0);
+      var fullDate2 = (dd.date || dd.day) || '';
+
+      savingsDetail.push({
+        baseline: dInp,
+        actual: dOut,
+        calls: dCalls,
+        delta: dInp > 0 ? '↓ ' + Math.round((dInp - dOut) / dInp * 100) + '% reduction' : ''
+      });
+
+      var cBase = rawMap && rawMap[fullDate2] ? rawMap[fullDate2] : dInp;
+      var cSaved = savedMap && savedMap[fullDate2] !== undefined ? savedMap[fullDate2] : (dInp - dOut);
+      compressionDetail.push({
+        baseline: cBase,
+        actual: cBase - cSaved,
+        calls: dCalls,
+      });
+
+      volumeDetail.push({
+        calls: dCalls,
+        delta: di > 0 ? (dCalls > (volumeDetail[di-1] ? volumeDetail[di-1].calls : 0)
+          ? '↑ vs prev day' : '↓ vs prev day') : ''
+      });
+    }
+
+    var savedMap2 = savedMap || {};
+    var rawMap2 = rawMap || {};
+
     var self = this;
     requestAnimationFrame(function () {
       try {
         Ch.lineChart('ckle-savings', labels, savings,
-          '#34d399', 'rgba(52,211,153,.06)');
+          '#34d399', 'rgba(52,211,153,.06)',
+          { unit: 'tokens', titlePrefix: '📊', detail: savingsDetail });
       } catch (_) {}
       try {
         Ch.lineChart('ckle-compression', labels, compression,
-          '#818cf8', 'rgba(129,140,248,.06)');
+          '#818cf8', 'rgba(129,140,248,.06)',
+          { unit: '%', titlePrefix: '🎯', detail: compressionDetail });
       } catch (_) {}
       try {
         Ch.lineChart('ckle-volume', labels, volume,
-          '#38bdf8', 'rgba(56,189,248,.06)');
+          '#38bdf8', 'rgba(56,189,248,.06)',
+          { unit: 'calls', titlePrefix: '⚡', detail: volumeDetail });
       } catch (_) {}
       try { self._chartMcpShell(); } catch (_) {}
       try { self._chartTaskBreak(); } catch (_) {}

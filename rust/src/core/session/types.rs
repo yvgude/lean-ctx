@@ -43,6 +43,10 @@ pub struct SessionState {
     /// Populated from config `extra_roots` and/or MCP `roots/list`.
     #[serde(default)]
     pub extra_roots: Vec<String>,
+    /// Explicit live-zone freeze state. This is intentionally process-local:
+    /// provider cache prefixes must be re-established after a restart.
+    #[serde(skip)]
+    pub live_zone: LiveZoneSessionState,
     /// LITM placement manifest (#539): what the last wakeup injection placed
     /// where, so explicit re-recalls can be scored as placement misses.
     #[serde(default)]
@@ -61,6 +65,17 @@ pub struct SessionState {
     /// JSONs and otherwise showed "idle" for the whole batch window.
     #[serde(skip)]
     pub(crate) last_flush: Option<std::time::Instant>,
+}
+
+/// Process-local state for an agent-controlled provider cache prefix.
+///
+/// This is skipped during session persistence so a restarted proxy never
+/// attempts to reuse a provider cache snapshot from an earlier process.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct LiveZoneSessionState {
+    pub frozen_at_turn: Option<usize>,
+    pub frozen_tokens_estimate: u64,
+    pub snapshot_hash: Option<String>,
 }
 
 /// One item placed by the wakeup/instructions builder, used for LITM

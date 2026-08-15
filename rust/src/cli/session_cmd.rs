@@ -127,18 +127,12 @@ pub fn cmd_session_action(args: &[String]) {
             println!("{out}");
         }
         Some("dismiss-pro") => {
-            match crate::core::pro_triggers::set_conversion_messages_dismissed(true) {
-                Ok(()) => println!("Pro messages dismissed."),
-                Err(error) => eprintln!("Could not dismiss Pro messages: {error}"),
-            }
+            crate::core::pro_triggers::suppress(30);
+            println!("Pro messages dismissed for 30 days.");
         }
         Some("show-pro") => {
-            if let Err(error) = crate::core::pro_triggers::set_conversion_messages_dismissed(false)
-            {
-                eprintln!("Could not restore Pro messages: {error}");
-            } else {
-                println!("Pro messages restored.");
-            }
+            crate::core::pro_triggers::clear_suppression();
+            println!("Pro messages restored.");
         }
         Some("reset" | "new") => {
             #[cfg(unix)]

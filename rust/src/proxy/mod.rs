@@ -15,6 +15,7 @@
 //! The self-hosted org gateway (lean-ctx-enterprise) extends this proxy with
 //! admin/usage-store routes. In the OSS build the proxy runs standalone.
 
+pub mod adaptive_policy;
 pub mod anthropic;
 #[cfg(test)]
 mod auth_tests;
@@ -44,6 +45,8 @@ pub mod cost;
 pub mod counterfactual;
 #[allow(dead_code)]
 pub mod dedup;
+#[allow(warnings)]
+pub mod determinism_guard;
 pub mod effort;
 pub mod effort_routing;
 pub mod eligibility;
@@ -54,9 +57,12 @@ pub mod google;
 pub mod history_prune;
 pub mod holdout;
 pub mod image_compression;
+#[cfg(test)]
+mod integration_tests;
 mod intent;
 pub mod introspect;
 pub mod latency_guard;
+pub mod leaderboard;
 mod lineage;
 pub mod metrics;
 pub mod model_router;
@@ -67,14 +73,20 @@ pub mod openai_responses;
 pub mod openai_responses_ws;
 pub mod output_savings;
 pub mod pii;
+pub mod pipeline_bench;
 #[cfg(feature = "enterprise")]
 pub mod policy_gate;
+pub mod pre_optimize;
 pub mod prefix_cache_stats;
 pub mod prefix_replay;
 pub mod prose;
+#[allow(warnings)]
+pub mod prose_compress;
+pub mod prose_patterns;
 pub mod prose_ranker;
 pub mod providers;
 pub mod quality_lab_api;
+pub mod reasoning_budget;
 pub mod response_optimizer;
 #[allow(dead_code)]
 pub(crate) mod response_shaper;
@@ -100,6 +112,7 @@ pub mod usage_azure;
 pub mod usage_meter;
 pub mod usage_parity;
 pub mod usage_sink;
+pub mod value_gate_proxy;
 pub mod verbosity;
 pub mod web_app;
 #[allow(dead_code)]
@@ -108,6 +121,8 @@ pub(crate) mod web_app_middleware;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+#[allow(warnings)]
+pub mod live_zone;
 
 use crate::core::config::Upstreams;
 
@@ -571,10 +586,14 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         )),
     };
 
+    web_app::dashboard::mark_proxy_started();
+
     let app = Router::new()
         .route("/health", get(health))
         .route("/status", get(status_handler))
         .route("/v1/messages", any(anthropic::handler))
+        .route("/dashboard", get(web_app::dashboard::page))
+        .route("/api/stats", get(web_app::dashboard::stats))
         .route("/v1/messages/{*rest}", any(anthropic::handler))
         .route("/v1/chat/completions", any(openai::handler))
         // POST → HTTP/SSE forwarder; GET → Codex/OpenAI WebSocket bridge (#440).
@@ -702,6 +721,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     // canonical `/v1/...` form so auth, routing and upstream forwarding all agree,
     // regardless of whether the client's base URL includes `/v1` (#353).
     app = app.layer(axum::middleware::from_fn(normalize_provider_path));
+    app = app.layer(axum::middleware::from_fn(determinism_response_headers));
 
     let addr = SocketAddr::from((bind_host, port));
     if loopback_open {
@@ -1259,6 +1279,17 @@ async fn normalize_provider_path(
         *req.uri_mut() = uri;
     }
     next.run(req).await
+}
+
+/// Ensures every HTTP response exposes the determinism contract, including
+/// requests that fail before they reach the shared upstream forwarder.
+async fn determinism_response_headers(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let mut response = next.run(req).await;
+    determinism_guard::ensure_response_headers(&mut response);
+    response
 }
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {

@@ -25,6 +25,8 @@ pub struct PreDispatchResult {
     pub pressure_downgraded: bool,
     pub budget_blocked: bool,
     pub budget_warning: Option<String>,
+    /// Triage-based output filter aggressiveness: 0=passthrough, 1=moderate, 2=aggressive.
+    pub triage_filter_level: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +74,7 @@ pub fn pre_dispatch_read_for_agent(
         pressure_downgraded: false,
         budget_blocked: false,
         budget_warning: None,
+        triage_filter_level: 0,
     };
 
     if let Some(aid) = agent_id {
@@ -86,6 +89,7 @@ pub fn pre_dispatch_read_for_agent(
                     budget_warning: Some(format!(
                         "Agent budget exceeded: {consumed}/{limit} tokens consumed. Reset via ctx_session or set a higher limit."
                     )),
+                    triage_filter_level: 0,
                 };
             }
             crate::core::agent_budget::BudgetCheckResult::Warning {
@@ -127,6 +131,7 @@ fn pre_dispatch_inner(
         pressure_downgraded: false,
         budget_blocked: false,
         budget_warning: None,
+        triage_filter_level: 0,
     };
 
     if is_precise_pinned_mode(requested_mode) {
@@ -159,6 +164,7 @@ fn pre_dispatch_inner(
                 pressure_downgraded: true,
                 budget_blocked: false,
                 budget_warning: None,
+                triage_filter_level: 0,
             };
         }
     }
@@ -172,6 +178,7 @@ fn pre_dispatch_inner(
             pressure_downgraded: false,
             budget_blocked: false,
             budget_warning: None,
+            triage_filter_level: 0,
         };
     }
 
@@ -189,6 +196,7 @@ fn pre_dispatch_inner(
                 pressure_downgraded: false,
                 budget_blocked: false,
                 budget_warning: None,
+                triage_filter_level: 0,
             };
         }
     }
@@ -213,6 +221,7 @@ fn pre_dispatch_inner(
                         pressure_downgraded: false,
                         budget_blocked: false,
                         budget_warning: None,
+                        triage_filter_level: 0,
                     };
                 }
             }
@@ -226,6 +235,7 @@ fn pre_dispatch_inner(
                     pressure_downgraded: false,
                     budget_blocked: false,
                     budget_warning: None,
+                    triage_filter_level: 0,
                 };
             }
         }
@@ -247,6 +257,7 @@ fn pre_dispatch_inner(
                 pressure_downgraded: false,
                 budget_blocked: false,
                 budget_warning: None,
+                triage_filter_level: 0,
             };
         }
     }
@@ -315,6 +326,7 @@ fn check_overlay_mode_override(
                         pressure_downgraded: false,
                         budget_blocked: false,
                         budget_warning: None,
+                        triage_filter_level: 0,
                     });
                 }
             }
@@ -325,6 +337,7 @@ fn check_overlay_mode_override(
                     pressure_downgraded: false,
                     budget_blocked: false,
                     budget_warning: None,
+                    triage_filter_level: 0,
                 });
             }
             OverlayOp::Exclude { .. } if requested_mode != "signatures" => {
@@ -334,6 +347,7 @@ fn check_overlay_mode_override(
                     pressure_downgraded: false,
                     budget_blocked: false,
                     budget_warning: None,
+                    triage_filter_level: 0,
                 });
             }
             _ => {}
@@ -507,9 +521,94 @@ fn try_load_graph(project_root: &str) -> Option<crate::core::graph_provider::Ope
     crate::core::graph_provider::open_best_effort(project_root)
 }
 
+/// Determines the output-filtering aggressiveness from a task profile.
+pub fn triage_filter_level(profile: &crate::core::triage::profile::TaskProfileLocal) -> u8 {
+    if profile.confidence_milli < 300 {
+        0
+    } else if profile.context_need_milli < 300 {
+        2
+    } else {
+        u8::from(profile.context_need_milli < 600)
+    }
+}
+
+/// Filters output according to the task profile and selected triage level.
+pub fn apply_triage_filter(
+    output: &str,
+    profile: &crate::core::triage::profile::TaskProfileLocal,
+    level: u8,
+) -> (String, usize) {
+    if level == 0 || output.chars().count() < 500 {
+        return (output.to_string(), 0);
+    }
+
+    let lines: Vec<&str> = output.lines().collect();
+    let filtered: Vec<&str> = match level {
+        1 => lines
+            .iter()
+            .copied()
+            .filter(|line| !is_boilerplate_line(line.trim_start()))
+            .collect(),
+        2 => {
+            let keywords = extract_task_keywords(&profile.task_class, &profile.intent);
+            lines
+                .iter()
+                .copied()
+                .filter(|line| {
+                    let trimmed = line.trim();
+                    is_structural_line(trimmed) || {
+                        let lowercase = trimmed.to_lowercase();
+                        keywords.iter().any(|keyword| lowercase.contains(keyword))
+                    }
+                })
+                .collect()
+        }
+        _ => return (output.to_string(), 0),
+    };
+
+    let removed = lines.len().saturating_sub(filtered.len());
+    let mut result = filtered.join("\n");
+    result.push_str(&format!(
+        "\n[lean-ctx: {removed} lines filtered by triage (level {level})]"
+    ));
+    (result, removed)
+}
+
+fn extract_task_keywords(task_class: &str, intent: &str) -> Vec<String> {
+    let mut keywords = task_class
+        .split(|character: char| !character.is_alphanumeric())
+        .chain(intent.split(|character: char| !character.is_alphanumeric()))
+        .filter(|keyword| !keyword.is_empty())
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>();
+    keywords.sort_unstable();
+    keywords.dedup();
+    keywords
+}
+
+fn is_boilerplate_line(line: &str) -> bool {
+    line.starts_with("//")
+        && !line.contains("TODO")
+        && !line.contains("FIXME")
+        && !line.contains("SAFETY")
+}
+
+fn is_structural_line(line: &str) -> bool {
+    line.contains('{')
+        || line.contains('}')
+        || line.starts_with("pub")
+        || line.starts_with("fn")
+        || line.starts_with("struct")
+        || line.starts_with("impl")
+        || line.starts_with("use")
+        || line.starts_with("mod")
+        || line.starts_with('#')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::triage::profile::TaskProfileLocal;
 
     #[test]
     fn eviction_target_display_emits_resolvable_targets() {
@@ -978,5 +1077,100 @@ mod tests {
         );
         assert_eq!(result.overridden_mode, Some("map".to_string()));
         assert_eq!(result.reason, Some("overlay-set-view"));
+    }
+    use crate::core::triage::profile::TaskScopeLocal;
+
+    fn test_profile(confidence: u16, context_need: u16) -> TaskProfileLocal {
+        TaskProfileLocal {
+            task_class: "bug_fix".into(),
+            intent: "fix context gate filtering".into(),
+            complexity: "low".into(),
+            scope: TaskScopeLocal::SingleFile,
+            context_need_milli: context_need,
+            reasoning_need_milli: 0,
+            risk_signal_milli: 0,
+            confidence_milli: confidence,
+        }
+    }
+
+    #[test]
+    fn triage_filter_level_selects_expected_level() {
+        for (confidence, context_need, expected) in
+            [(200, 200, 0), (500, 200, 2), (500, 450, 1), (500, 700, 0)]
+        {
+            assert_eq!(
+                triage_filter_level(&test_profile(confidence, context_need)),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn apply_triage_filter_level_zero_is_passthrough() {
+        let profile = test_profile(500, 200);
+        let output = "// boilerplate\n".repeat(40);
+        assert_eq!(apply_triage_filter(&output, &profile, 0), (output, 0));
+    }
+
+    #[test]
+    fn apply_triage_filter_short_output_is_passthrough() {
+        let profile = test_profile(500, 200);
+        let output = "fn main() {\n    println!(\"hi\");\n}";
+        assert_eq!(apply_triage_filter(output, &profile, 2), (output.into(), 0));
+    }
+
+    #[test]
+    fn apply_triage_filter_level_one_preserves_actionable_comments() {
+        let profile = test_profile(500, 450);
+        let output = "// boilerplate comment\n".repeat(30)
+            + "// TODO: keep this\n// FIXME: keep this\n// SAFETY: keep this\nfn keep_me() {}\n";
+        let (filtered, removed) = apply_triage_filter(&output, &profile, 1);
+        assert!(!filtered.contains("// boilerplate comment"));
+        assert!(filtered.contains("// TODO: keep this"));
+        assert!(filtered.contains("// FIXME: keep this"));
+        assert!(filtered.contains("// SAFETY: keep this"));
+        assert!(filtered.contains("[lean-ctx: 30 lines filtered by triage (level 1)]"));
+        assert_eq!(removed, 30);
+    }
+
+    #[test]
+    fn apply_triage_filter_level_two_keeps_keywords_and_structure() {
+        let profile = test_profile(500, 200);
+        let output = "// unrelated noise about widgets\n".repeat(20)
+            + "fix the context gate\n"
+            + "pub fn unrelated() {}\n"
+            + "#[derive(Debug)]\n"
+            + "mod inner {}\n";
+        let (filtered, removed) = apply_triage_filter(&output, &profile, 2);
+        assert!(filtered.contains("fix the context gate"));
+        assert!(filtered.contains("pub fn unrelated() {}"));
+        assert!(filtered.contains("#[derive(Debug)]"));
+        assert!(filtered.contains("mod inner {}"));
+        assert!(filtered.contains("[lean-ctx:"));
+        assert_eq!(removed, 20);
+    }
+
+    #[test]
+    fn benchmark_apply_triage_filter() {
+        use std::time::Instant;
+
+        let profile = test_profile(500, 200);
+        let output = "// unrelated noise about widgets\n".repeat(2_000);
+
+        let started = Instant::now();
+        for _ in 0..1_000 {
+            let (_, removed) = apply_triage_filter(&output, &profile, 2);
+            assert_eq!(removed, 2_000);
+        }
+        let average = started.elapsed() / 1_000;
+        println!("benchmark_apply_triage_filter: {average:?} per call");
+    }
+
+    #[test]
+    fn extract_task_keywords_normalizes_and_deduplicates() {
+        assert_eq!(
+            extract_task_keywords("bug_fix", "Fix context-gate"),
+            ["bug", "context", "fix", "gate"]
+        );
     }
 }
