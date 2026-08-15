@@ -220,7 +220,9 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
     // (e.g. "fix the version sort in versioncmp.c"), so the agent is about to
     // inspect it for the defect. Keep the full body it needs to localize and
     // edit, ahead of any task-type intent default that might compress it.
-    if task_names_file(ctx.task, ctx.path) {
+    if task_names_file(ctx.task, ctx.path)
+        && intent_recommended_mode(ctx.task).as_deref() == Some("full")
+    {
         return resolved("full", "task_suspect_file");
     }
 
@@ -482,6 +484,12 @@ fn heuristic_mode(ext: &str, token_count: usize, structure_first: bool) -> Strin
     }
     if token_count > 2000 && is_prose(ext) {
         return "aggressive".to_string();
+    }
+    if token_count > 500 && is_prose(ext) {
+        return "map".to_string();
+    }
+    if token_count > 500 && !is_code(ext) && !is_prose(ext) {
+        return "map".to_string();
     }
     // Large code files need an overview rather than an API-only surface.
     if token_count > 6000 && is_code(ext) {
@@ -912,9 +920,9 @@ mod tests {
         assert_eq!(heuristic_mode("rs", 400, true), "full");
         // Prose / markup now gets `aggressive` above 2000 tokens.
         assert_eq!(heuristic_mode("md", 4000, true), "aggressive");
-        assert_eq!(heuristic_mode("md", 1500, true), "full");
+        assert_eq!(heuristic_mode("md", 1500, true), "map");
         assert_eq!(heuristic_mode("txt", 3000, true), "aggressive");
-        assert_eq!(heuristic_mode("txt", 1000, true), "full");
+        assert_eq!(heuristic_mode("txt", 1000, true), "map");
     }
 
     #[test]

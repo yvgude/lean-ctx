@@ -198,23 +198,65 @@ fn json_structure_preview(full: &str) -> Option<String> {
     .ok()
 }
 
+/// Max chars for string value previews inside structural JSON summaries.
+const JSON_STRING_PREVIEW_CHARS: usize = 120;
+/// Max array sample elements shown in structural previews.
+const JSON_ARRAY_SAMPLE: usize = 3;
+/// Max recursion depth for nested value previews.
+const JSON_SHAPE_MAX_DEPTH: usize = 2;
+
 fn json_value_shape(value: &Value) -> Value {
+    json_value_shape_depth(value, 0)
+}
+
+fn json_value_shape_depth(value: &Value, depth: usize) -> Value {
     match value {
         Value::Null => json!({ "type": "null" }),
-        Value::Bool(_) => json!({ "type": "boolean" }),
-        Value::Number(_) => json!({ "type": "number" }),
-        Value::String(text) => json!({
-            "type": "string",
-            "chars": text.chars().count(),
-        }),
-        Value::Array(items) => json!({
-            "type": "array",
-            "items": items.len(),
-        }),
-        Value::Object(fields) => json!({
-            "type": "object",
-            "keys": fields.len(),
-        }),
+        Value::Bool(b) => json!({ "type": "boolean", "value": b }),
+        Value::Number(n) => json!({ "type": "number", "value": n }),
+        Value::String(text) => {
+            let char_count = text.chars().count();
+            if char_count <= JSON_STRING_PREVIEW_CHARS {
+                json!({ "type": "string", "value": text })
+            } else {
+                let preview: String = text.chars().take(JSON_STRING_PREVIEW_CHARS).collect();
+                json!({
+                    "type": "string",
+                    "chars": char_count,
+                    "preview": format!("{preview}…"),
+                })
+            }
+        }
+        Value::Array(items) => {
+            if depth >= JSON_SHAPE_MAX_DEPTH {
+                return json!({ "type": "array", "items": items.len() });
+            }
+            let sample: Vec<Value> = items
+                .iter()
+                .take(JSON_ARRAY_SAMPLE)
+                .map(|v| json_value_shape_depth(v, depth + 1))
+                .collect();
+            json!({
+                "type": "array",
+                "items": items.len(),
+                "sample": sample,
+            })
+        }
+        Value::Object(fields) => {
+            if depth >= JSON_SHAPE_MAX_DEPTH {
+                return json!({ "type": "object", "keys": fields.len() });
+            }
+            let preview: Map<String, Value> = fields
+                .iter()
+                .take(8)
+                .map(|(k, v)| (k.clone(), json_value_shape_depth(v, depth + 1)))
+                .collect();
+            json!({
+                "type": "object",
+                "keys": fields.len(),
+                "fields": preview,
+            })
+        }
     }
 }
 
@@ -372,8 +414,19 @@ mod tests {
             .find(|line| line.starts_with("{\"preview\":"))
             .expect("structural preview JSON");
         let parsed: Value = serde_json::from_str(preview).expect("preview remains valid JSON");
+        // #1453: string fields now include a preview/value, not just char count.
         assert_eq!(parsed["root"]["fields"]["body"]["chars"], 5000);
+        assert!(
+            parsed["root"]["fields"]["body"]["preview"]
+                .as_str()
+                .unwrap()
+                .starts_with("xxx")
+        );
+        // Short strings get their full value inline.
+        assert_eq!(parsed["root"]["fields"]["state"]["value"], "MERGED");
+        // Arrays include a sample of element shapes.
         assert_eq!(parsed["root"]["fields"]["files"]["items"], 2);
+        assert!(parsed["root"]["fields"]["files"]["sample"].is_array());
         assert_eq!(parsed["root"]["keys"], 3);
         assert!(digest.contains("original archived"));
         assert!(digest.contains("ctx_expand(id=\"json1\", json_keys=true)"));
@@ -390,5 +443,54 @@ mod tests {
 
         assert_eq!(parsed["root"]["fields"].as_object().unwrap().len(), 32);
         assert_eq!(parsed["root"]["omitted_keys"], 8);
+        // #1453: number values are now included in the preview.
+        let first_field = &parsed["root"]["fields"]["key_00"];
+        assert_eq!(first_field["type"], "number");
+        assert_eq!(first_field["value"], 0);
+    }
+
+    #[test]
+    fn json_value_shape_includes_previews_with_depth_limit() {
+        let nested = json!({
+            "name": "hello world",
+            "count": 42,
+            "active": true,
+            "tags": ["rust", "mcp", "context"],
+            "meta": {
+                "deep": {
+                    "very_deep": "should not recurse here"
+                }
+            }
+        });
+        let shape = json_value_shape(&nested);
+        // Top-level object gets field previews.
+        assert_eq!(shape["type"], "object");
+        assert!(shape["fields"].is_object());
+        // Short string → full value inline.
+        assert_eq!(shape["fields"]["name"]["value"], "hello world");
+        // Number → value inline.
+        assert_eq!(shape["fields"]["count"]["value"], 42);
+        // Boolean → value inline.
+        assert_eq!(shape["fields"]["active"]["value"], true);
+        // Array → sample with items.
+        assert_eq!(shape["fields"]["tags"]["items"], 3);
+        assert_eq!(shape["fields"]["tags"]["sample"][0]["value"], "rust");
+        // Depth 2 object → no further recursion, just keys count.
+        let deep = &shape["fields"]["meta"]["fields"]["deep"];
+        assert_eq!(deep["type"], "object");
+        assert_eq!(deep["keys"], 1);
+        assert!(deep.get("fields").is_none());
+    }
+
+    #[test]
+    fn json_value_shape_truncates_long_strings() {
+        let long_str = "a".repeat(500);
+        let val = json!(long_str);
+        let shape = json_value_shape(&val);
+        assert_eq!(shape["type"], "string");
+        assert_eq!(shape["chars"], 500);
+        let preview = shape["preview"].as_str().unwrap();
+        assert!(preview.ends_with('…'));
+        assert!(preview.len() <= JSON_STRING_PREVIEW_CHARS + 4); // +multibyte …
     }
 }

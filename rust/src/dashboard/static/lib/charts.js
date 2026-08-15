@@ -85,6 +85,31 @@ function paintCanvasNotice(canvasId, message) {
   ctx.fillText(message, w / 2, h / 2);
 }
 
+const crosshairPlugin = {
+  id: 'lctxCrosshair',
+  afterDraw(chart) {
+    if (chart.tooltip && chart.tooltip._active && chart.tooltip._active.length) {
+      const ctx = chart.ctx;
+      const x = chart.tooltip._active[0].element.x;
+      const topY = chart.scales.y.top;
+      const bottomY = chart.scales.y.bottom;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x, topY);
+      ctx.lineTo(x, bottomY);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(148,163,184,0.3)';
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+};
+
+if (typeof Chart !== 'undefined') {
+  Chart.register(crosshairPlugin);
+}
+
 function createChart(canvasId, type, data, options) {
   if (typeof Chart === 'undefined') {
     paintCanvasNotice(canvasId, 'Chart unavailable');
@@ -147,9 +172,12 @@ function topHeadroom(series) {
   return max > 0 ? { scales: { y: { suggestedMax: max * 1.12 } } } : undefined;
 }
 
-function lineChart(canvasId, labels, series, strokeColor, fillRgba) {
+function lineChart(canvasId, labels, series, strokeColor, fillRgba, meta) {
   const c = strokeColor || '#34d399';
   const f = fillRgba || 'rgba(52,211,153,.04)';
+  const Fmt = window.LctxFmt;
+  const fmt = Fmt && Fmt.fmt ? Fmt.fmt : (n) => String(n);
+  const m = meta || {};
   return createChart(
     canvasId,
     'line',
@@ -161,14 +189,69 @@ function lineChart(canvasId, labels, series, strokeColor, fillRgba) {
           fill: true,
           borderColor: c,
           backgroundColor: f,
-          borderWidth: 2,
-          pointRadius: labels.length > 24 ? 0 : 3,
+          borderWidth: 2.5,
+          pointRadius: 0,
+          pointHoverRadius: 7,
+          pointHoverBackgroundColor: c,
+          pointHoverBorderColor: '#fff',
+          pointHoverBorderWidth: 2.5,
           pointBackgroundColor: c,
-          tension: 0.4,
+          tension: 0.35,
         },
       ],
     },
-    topHeadroom(series)
+    deepMerge(topHeadroom(series), {
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        tooltip: {
+          enabled: true,
+          backgroundColor: 'rgba(15,15,25,0.95)',
+          titleColor: '#e2e8f0',
+          bodyColor: '#94a3b8',
+          borderColor: c,
+          borderWidth: 1,
+          cornerRadius: 8,
+          padding: { top: 10, bottom: 10, left: 14, right: 14 },
+          titleFont: { size: 13, weight: '600' },
+          bodyFont: { size: 12 },
+          displayColors: false,
+          callbacks: {
+            title: function(items) {
+              if (!items.length) return '';
+              var idx = items[0].dataIndex;
+              var label = labels[idx] || '';
+              return m.titlePrefix ? m.titlePrefix + ' ' + label : label;
+            },
+            label: function(item) {
+              var v = item.raw;
+              var lines = [];
+              if (m.unit === '%') {
+                lines.push(v + '%');
+              } else {
+                lines.push(fmt(v) + (m.unit ? ' ' + m.unit : ''));
+              }
+              if (m.detail && m.detail[item.dataIndex]) {
+                var d = m.detail[item.dataIndex];
+                if (d.baseline) lines.push('Baseline: ' + fmt(d.baseline) + ' tokens');
+                if (d.actual) lines.push('Delivered: ' + fmt(d.actual) + ' tokens');
+                if (d.calls) lines.push(d.calls.toLocaleString() + ' tool calls');
+              }
+              return lines;
+            },
+            afterLabel: function(item) {
+              if (!m.detail || !m.detail[item.dataIndex]) return '';
+              var d = m.detail[item.dataIndex];
+              if (d.delta) return d.delta;
+              return '';
+            }
+          }
+        },
+        crosshair: false,
+      },
+      onHover: function(event, elements, chart) {
+        chart.canvas.style.cursor = elements.length > 0 ? 'crosshair' : 'default';
+      },
+    })
   );
 }
 

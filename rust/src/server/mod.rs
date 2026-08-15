@@ -13,6 +13,7 @@ pub mod multi_path;
 pub mod notifications;
 pub mod permission_inheritance;
 pub mod policy_guard;
+pub mod predictive_preload;
 pub mod progress;
 pub mod prompts;
 pub mod reference_store;
@@ -278,7 +279,7 @@ mod tests {
     fn test_registry_tool_count_ssot() {
         assert_eq!(
             crate::server::registry::tool_count(),
-            79,
+            83,
             "Official MCP tool count drift! Update this test AND all docs when adding/removing tools."
         );
     }

@@ -1,4 +1,5 @@
 use super::ccr;
+use super::prose_compress::compress_prose;
 use crate::core::tokens::{COUNTING_FAMILY, TokenizerFamily, count_tokens_for};
 use crate::core::web::distill;
 
@@ -29,6 +30,49 @@ fn research_prose_cap() -> usize {
 ///    the pattern engine gets the same routing as the CLI and MCP paths.
 pub fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
     compress_tool_result_for(content, tool_name, COUNTING_FAMILY)
+}
+
+/// Compresses a tool result under a task-aware policy.
+pub fn compress_tool_result_with_policy(
+    content: &str,
+    tool_name: Option<&str>,
+    policy: crate::proxy::adaptive_policy::CompressionPolicy,
+) -> String {
+    if !policy.compress_tool_output || policy.log_compression_level == 0 {
+        return content.to_owned();
+    }
+    if policy.code_preserve && looks_like_code(content) {
+        return content.to_owned();
+    }
+    compress_tool_result(content, tool_name)
+}
+
+/// Gateway variant of [`compress_tool_result_with_policy`].
+pub fn compress_tool_result_gateway_with_policy(
+    content: &str,
+    tool_name: Option<&str>,
+    family: TokenizerFamily,
+    policy: crate::proxy::adaptive_policy::CompressionPolicy,
+) -> String {
+    if !policy.compress_tool_output || policy.log_compression_level == 0 {
+        return content.to_owned();
+    }
+    if policy.code_preserve && looks_like_code(content) {
+        return content.to_owned();
+    }
+    compress_tool_result_gateway_for(content, tool_name, family)
+}
+
+fn looks_like_code(content: &str) -> bool {
+    content.lines().any(|line| {
+        let line = line.trim_start();
+        ["fn ", "struct ", "class ", "function ", "def ", "impl "]
+            .iter()
+            .any(|p| line.starts_with(p))
+            || line.contains('{')
+                && line.contains('}')
+                && (line.contains(';') || line.contains("=>"))
+    })
 }
 
 pub fn compress_tool_result_for(
@@ -142,6 +186,12 @@ fn compress_inner(content: &str, tool_name: Option<&str>, family: TokenizerFamil
     }
 
     if is_cited_research_output(content) {
+        if looks_like_markdown(content) {
+            let prose = compress_prose(content, None);
+            if prose.compressed_tokens < prose.original_tokens {
+                return prose.compressed;
+            }
+        }
         return content.to_string();
     }
 
@@ -246,6 +296,18 @@ fn looks_like_prose(content: &str) -> bool {
     let avg_len =
         non_empty.iter().map(|l| l.chars().count()).sum::<usize>() as f32 / non_empty.len() as f32;
     avg_len >= 40.0
+}
+
+fn looks_like_markdown(content: &str) -> bool {
+    content.lines().any(|line| {
+        let trimmed = line.trim_start();
+        trimmed.starts_with("# ")
+            || trimmed.starts_with("## ")
+            || trimmed.starts_with("```")
+            || trimmed.starts_with("~~~")
+            || matches!(trimmed.as_bytes(), [b'-' | b'*' | b'+', b' ', ..])
+            || trimmed.matches('|').count() >= 2
+    })
 }
 
 /// Apply the prose squeeze, returning a footer-stamped result only when it

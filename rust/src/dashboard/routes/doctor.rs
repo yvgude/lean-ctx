@@ -11,6 +11,11 @@
 //! — so there is nothing to validate beyond requiring the POST method.
 
 use super::helpers::json_err;
+use std::sync::Mutex;
+use std::time::Instant;
+
+static DOCTOR_CACHE: Mutex<Option<(Instant, String)>> = Mutex::new(None);
+const DOCTOR_TTL_SECS: u64 = 60;
 
 pub(super) fn handle(
     path: &str,
@@ -19,17 +24,37 @@ pub(super) fn handle(
     _body: &str,
 ) -> Option<(&'static str, &'static str, String)> {
     match path {
-        "/api/doctor/fix" if method.eq_ignore_ascii_case("POST") => Some(post_fix()),
-        // A GET here is a client bug; say so explicitly instead of 404 so the
-        // mistake is obvious (the fix mutates state and must be POSTed).
+        "/api/doctor/fix" if method.eq_ignore_ascii_case("POST") => {
+            if let Ok(mut guard) = DOCTOR_CACHE.lock() {
+                *guard = None;
+            }
+            Some(post_fix())
+        }
         "/api/doctor/fix" => Some((
             "405 Method Not Allowed",
             "application/json",
             json_err("use POST to run doctor --fix"),
         )),
-        "/api/doctor" => Some(get_doctor()),
+        "/api/doctor" => Some(get_doctor_cached()),
         _ => None,
     }
+}
+
+fn get_doctor_cached() -> (&'static str, &'static str, String) {
+    if let Ok(guard) = DOCTOR_CACHE.lock() {
+        if let Some((ts, ref body)) = *guard {
+            if ts.elapsed().as_secs() < DOCTOR_TTL_SECS {
+                return ("200 OK", "application/json", body.clone());
+            }
+        }
+    }
+    let result = get_doctor();
+    if result.0 == "200 OK" {
+        if let Ok(mut guard) = DOCTOR_CACHE.lock() {
+            *guard = Some((Instant::now(), result.2.clone()));
+        }
+    }
+    result
 }
 
 fn get_doctor() -> (&'static str, &'static str, String) {

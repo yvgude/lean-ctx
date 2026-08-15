@@ -58,29 +58,6 @@ impl PreparedSave {
 }
 
 impl SessionState {
-    /// Returns local session facts needed by Class A conversion triggers.
-    ///
-    /// The result is sorted by session ID so trigger evidence remains stable.
-    pub fn all_session_signals() -> Vec<crate::core::pro_triggers::SessionSignal> {
-        let mut signals = Self::list_sessions()
-            .into_iter()
-            .filter_map(|summary| {
-                let session = Self::load_by_id(&summary.id)?;
-                let agent_ids = session
-                    .evidence
-                    .into_iter()
-                    .filter_map(|record| record.agent_id)
-                    .collect();
-                Some(crate::core::pro_triggers::SessionSignal {
-                    id: session.id,
-                    agent_ids,
-                })
-            })
-            .collect::<Vec<_>>();
-        signals.sort_by(|left, right| left.id.cmp(&right.id));
-        signals
-    }
-
     /// Counts locally recorded decisions from the trailing seven days.
     #[must_use]
     pub fn decision_count_this_week() -> u64 {

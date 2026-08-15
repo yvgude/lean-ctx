@@ -123,11 +123,21 @@ pub(super) fn run_mcp_server() -> Result<()> {
             Ok(s) => s,
             Err(e) => {
                 let msg = e.to_string();
-                if msg.contains("expect initialized")
-                    || msg.contains("context canceled")
-                    || msg.contains("broken pipe")
-                {
+                if msg.contains("context canceled") || msg.contains("broken pipe") {
                     tracing::debug!("Client disconnected before init: {msg}");
+                    return Ok(());
+                }
+                // GH #1454: If the client sent an unrecognized method (e.g.
+                // `server/discover` from MCP 2026-07-28), respond with a proper
+                // JSON-RPC error instead of silently closing. This lets dual-era
+                // clients detect "legacy server" and fall back to `initialize`.
+                if msg.contains("expect initialized") {
+                    tracing::info!(
+                        "Client sent non-initialize first message, \
+                        responding with JSON-RPC error: {msg}"
+                    );
+                    let request_id = extract_request_id_from_error(&msg);
+                    emit_method_not_found_error(&request_id);
                     return Ok(());
                 }
                 return Err(e.into());
@@ -343,6 +353,50 @@ pub(super) fn herd_aware_index_threads(cores: usize, concurrent: usize) -> usize
     (cores / concurrent).max(1)
 }
 
+/// GH #1454: Extract JSON-RPC request id from rmcp error message.
+/// The error format is: "expect initialized request, but received:\
+/// Some(Request(JsonRpcRequest { ... id: Number(N), ... }))"
+fn extract_request_id_from_error(msg: &str) -> serde_json::Value {
+    // Try to extract "id: Number(N)" from the error message.
+    if let Some(id_start) = msg.find("id: Number(") {
+        let after = &msg[id_start + 11..];
+        if let Some(end) = after.find(')') {
+            if let Ok(n) = after[..end].parse::<u64>() {
+                return serde_json::Value::Number(n.into());
+            }
+        }
+    }
+    // Fallback: use id=1 (most clients start with id=1).
+    serde_json::Value::Number(1.into())
+}
+
+/// GH #1454: Write a JSON-RPC -32601 (Method not found) error to stdout.
+/// This tells dual-era MCP clients that we are a legacy server, allowing
+/// them to retry with the standard `initialize` handshake.
+fn emit_method_not_found_error(request_id: &serde_json::Value) {
+    let error_response = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "error": {
+            "code": -32601,
+            "message": "Method not found. This server supports MCP protocol 2025-11-25 (legacy initialize handshake only).",
+            "data": {
+                "supportedProtocolVersions": ["2025-11-25", "2024-11-05"]
+            }
+        }
+    });
+    // Write directly to stdout — the transport is already consumed by serve().
+    if let Ok(json) = serde_json::to_string(&error_response) {
+        use std::io::Write;
+        let stdout = std::io::stdout();
+        let mut lock = stdout.lock();
+        // MCP stdio uses Content-Length framing or newline-delimited JSON.
+        // Write newline-delimited for maximum compatibility.
+        let _ = writeln!(lock, "{json}");
+        let _ = lock.flush();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -440,5 +494,20 @@ mod tests {
         assert!(!is_orphan_mcp_ps_line(
             "1 /usr/bin/sandbox-exec -f /tmp/seatbelt.sb /Users/me/.local/bin/lean-ctx proxy start --port=4444"
         ));
+    }
+
+    #[test]
+    fn extract_request_id_from_rmcp_error() {
+        let msg = r#"expect initialized request, but received: Some(Request(JsonRpcRequest { jsonrpc: JsonRpcVersion2_0, id: Number(1), request: CustomRequest(CustomRequest { method: "server/discover", params: Some(Object {}) }) }))"#;
+        let id = super::extract_request_id_from_error(msg);
+        assert_eq!(id, serde_json::json!(1));
+
+        let msg2 = r#"expect initialized request, but received: Some(Request(JsonRpcRequest { jsonrpc: JsonRpcVersion2_0, id: Number(42), request: CustomRequest(CustomRequest { method: "server/discover" }) }))"#;
+        let id2 = super::extract_request_id_from_error(msg2);
+        assert_eq!(id2, serde_json::json!(42));
+
+        // Fallback when id cant be parsed
+        let id3 = super::extract_request_id_from_error("some random error");
+        assert_eq!(id3, serde_json::json!(1));
     }
 }

@@ -162,6 +162,8 @@ pub struct ProxyConfig {
     /// would invalidate the prompt cache. Env `LEAN_CTX_PROXY_EFFORT`. See
     /// [`ProxyConfig::resolved_effort`].
     pub effort: Option<String>,
+    #[serde(default)]
+    pub reasoning_budget: ReasoningBudgetConfig,
     /// How the proxy squeezes prose it must shrink (#895): `"auto"` (default) and
     /// `"extractive"` use embedding-based extractive ranking — keeping the most
     /// central sentences instead of just the prefix — when the local embedding
@@ -214,6 +216,7 @@ pub struct ProxyConfig {
     /// Counterfactual-baseline parameters (`[proxy.baseline]`, enterprise#15/#18)
     /// for the avoided-cost evidence chain. See [`BaselineConfig`].
     pub baseline: BaselineConfig,
+    pub pipeline: PipelineConfig,
 }
 
 /// `[proxy.baseline]` — the contract-frozen counterfactual parameters that make
@@ -229,6 +232,26 @@ pub struct ProxyConfig {
 ///   hardware and power are real — so the shadow rate keeps local-model savings
 ///   honest instead of infinite. Default: `0.25` USD/MTok, a conservative
 ///   self-hosting cost estimate; calibrate per deployment.
+///
+/// Output-reasoning budget controls for triage-classified requests.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct ReasoningBudgetConfig {
+    /// Apply a reduced reasoning budget to simple, low-complexity requests.
+    pub enabled: bool,
+    /// Anthropic `thinking.budget_tokens` for qualifying requests.
+    pub simple_task_budget: u32,
+}
+
+impl Default for ReasoningBudgetConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            simple_task_budget: 1024,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct BaselineConfig {
@@ -236,6 +259,29 @@ pub struct BaselineConfig {
     pub reference_model: Option<String>,
     /// USD per 1M tokens for local/loopback inference (default 0.25, never 0).
     pub local_shadow_rate_per_mtok: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct PipelineConfig {
+    pub enable_dedup: bool,
+    pub enable_prose: bool,
+    pub enable_effort: bool,
+    /// Use KnowledgeRouter references to protect relevant request context.
+    pub enable_knowledge_routing: bool,
+    pub min_savings_pct: f32,
+}
+
+impl Default for PipelineConfig {
+    fn default() -> Self {
+        Self {
+            enable_dedup: true,
+            enable_prose: true,
+            enable_effort: true,
+            enable_knowledge_routing: true,
+            min_savings_pct: 5.0,
+        }
+    }
 }
 
 /// Default local shadow rate (USD per 1M tokens) when `[proxy.baseline]` sets

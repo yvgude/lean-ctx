@@ -248,20 +248,13 @@ impl LeanCtxServer {
 
         let pro_count = self.pro_trigger_check_count.fetch_add(1, Ordering::Relaxed) + 1;
         if pro_count.is_multiple_of(10) {
-            let current = {
+            let signals = {
                 let session = self.session.read().await;
-                let mut agent_ids = std::collections::BTreeSet::new();
-                if let Some(agent_id) = self.agent_id.read().await.clone() {
-                    agent_ids.insert(agent_id);
-                }
-                crate::core::pro_triggers::SessionSignal {
-                    id: session.id.clone(),
-                    agent_ids,
-                }
+                crate::core::pro_triggers::local_usage_signals(&session)
             };
             tokio::task::spawn_blocking(move || {
-                for event in crate::core::pro_triggers::check_local(current) {
-                    tracing::info!(reason = ?event.reason, evidence = %event.evidence, "lean-ctx Pro trigger fired");
+                for nudge in crate::core::pro_triggers::evaluate_triggers(&signals) {
+                    tracing::info!(kind = ?nudge.kind, message = %nudge.message, "lean-ctx Pro trigger fired");
                 }
             });
         }
@@ -497,6 +490,25 @@ impl LeanCtxServer {
             cache_hits: stats.cache_hits(),
             total_reads: stats.total_reads(),
             tool_call_count: calls.len() as u64,
+            adoption: Self::compute_adoption(calls),
+        }
+    }
+
+    /// Compute adoption metrics from tool call history.
+    /// ctx_* calls = lean-ctx MCP adoption; other tools = native passthrough.
+    fn compute_adoption(calls: &[ToolCallRecord]) -> super::server::AdoptionMetrics {
+        let ctx_tool_calls = calls.iter().filter(|c| c.tool.starts_with("ctx_")).count() as u64;
+        let total = calls.len() as u64;
+        let native_passthrough = total.saturating_sub(ctx_tool_calls);
+        let adoption_pct = if total > 0 {
+            ((ctx_tool_calls as f64 / total as f64) * 100.0).round() as u32
+        } else {
+            0
+        };
+        super::server::AdoptionMetrics {
+            ctx_tool_calls,
+            native_passthrough,
+            adoption_pct,
         }
     }
 
@@ -537,8 +549,12 @@ impl LeanCtxServer {
             &cs.complexity,
         );
 
-        let effective_hits = cs.cache_hits + dedup.dedup_hits as u64;
-        let effective_reads = std::cmp::max(cs.total_reads, dedup.total_reads as u64);
+        // Cache layers can both participate in one read (for example a
+        // session-cache rendering later collapsed by content dedup).  Never
+        // aggregate their independent counters into a synthetic hit rate.
+        // `reuse_snapshot` records one terminal outcome per read instead.
+        let reuse = crate::core::cache::reuse_snapshot();
+        let provider_reuse = crate::proxy::cache_attribution::snapshot();
 
         let source_snapshot = crate::core::auto_mode_resolver::source_counts();
         let compressed_cache_hits = source_snapshot
@@ -562,13 +578,42 @@ impl LeanCtxServer {
             "dedup_reads": dedup.total_reads,
             "dedup_hits": dedup.dedup_hits,
             "dedup_tokens_saved": dedup.tokens_saved,
-            "effective_cache_hits": effective_hits,
-            "effective_cache_reads": effective_reads,
+            "read_reuse_rate": reuse.read_reuse_rate(),
+            "disk_reuse_rate": reuse.disk_reuse_rate(),
+            "provider_reuse_rate": provider_reuse.provider_reuse_rate(),
+            "read_reuse": {
+                "reused_renderings": reuse.reused_renderings,
+                "eligible_ctx_reads": reuse.eligible_ctx_reads,
+            },
+            "disk_reuse": {
+                "content_cache_hits": reuse.disk_content_hits,
+                "eligible_search_reads": reuse.eligible_search_reads,
+            },
+            "provider_reuse": {
+                "warm_reuses": provider_reuse.warm_reuses,
+                "ttl_lapses": provider_reuse.ttl_lapses,
+                "prefix_changes": provider_reuse.prefix_changes,
+                "eligible_requests": provider_reuse.eligible_provider_requests(),
+            },
+            "reuse_outcomes": {
+                "cold": reuse.cold,
+                "disk_content_hit": reuse.disk_content_hits,
+                "render_cache_hit": reuse.render_cache_hits,
+                "unchanged_stub": reuse.unchanged_stubs,
+                "cross_file_ref": reuse.cross_file_refs,
+                "fresh_bypass": reuse.fresh_bypasses,
+                "stale": reuse.stale,
+                "variant_evicted": reuse.variant_evicted,
+                "policy_bypass": reuse.policy_bypasses,
+            },
             "compressed_cache_hits": compressed_cache_hits,
             "full_delivery_degraded": full_delivery_degraded,
             "tokens_saved": cs.total_saved,
             "tokens_original": cs.total_original,
             "tool_calls": cs.tool_call_count,
+            "adoption_pct": cs.adoption.adoption_pct,
+            "ctx_tool_calls": cs.adoption.ctx_tool_calls,
+            "native_passthrough": cs.adoption.native_passthrough,
             "started_at": started_at,
             "updated_at": chrono::Local::now().to_rfc3339(),
         });

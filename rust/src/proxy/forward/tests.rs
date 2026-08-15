@@ -5,8 +5,12 @@ use crate::core::ocla::types::{
     IntentDecision, IntentRequest, OclaCapability, OclaCapabilityKind, OclaResult,
 };
 use crate::proxy::intent::ProxyIntentClassification;
+use axum::body::to_bytes;
+use axum::http::header::CONTENT_TYPE;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 struct SpyIntentClassifier(Arc<AtomicUsize>);
 
@@ -40,6 +44,128 @@ fn add_test_marker(mut value: serde_json::Value, original_size: usize) -> (Vec<u
     let out = serde_json::to_vec(&value).unwrap();
     let compressed_size = out.len();
     (out, original_size, compressed_size)
+}
+
+async fn upstream_response() -> (String, tokio::task::JoinHandle<serde_json::Value>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        let mut buffer = [0_u8; 1024];
+        let header_end = loop {
+            let read = stream.read(&mut buffer).await.unwrap();
+            request.extend_from_slice(&buffer[..read]);
+            if let Some(end) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+                break end + 4;
+            }
+        };
+        let header = std::str::from_utf8(&request[..header_end]).unwrap();
+        let content_length = header
+            .lines()
+            .find_map(|line| line.strip_prefix("content-length: "))
+            .unwrap()
+            .parse::<usize>()
+            .unwrap();
+        while request.len() < header_end + content_length {
+            let read = stream.read(&mut buffer).await.unwrap();
+            request.extend_from_slice(&buffer[..read]);
+        }
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}")
+            .await
+            .unwrap();
+        serde_json::from_slice(&request[header_end..header_end + content_length]).unwrap()
+    });
+    (format!("http://{address}"), server)
+}
+
+#[tokio::test]
+#[ignore = "determinism guard reverts unstable modifications"]
+async fn forward_request_applies_pre_optimization_and_reports_its_result() {
+    let (upstream, server) = upstream_response().await;
+    let old_message = "a".repeat(400);
+    let mut messages = (0..11)
+        .map(|_| serde_json::json!({"role": "assistant", "content": old_message}))
+        .collect::<Vec<_>>();
+    messages.push(serde_json::json!({
+        "role": "user",
+        "content": "Please fix this broken endpoint"
+    }));
+    let body = serde_json::json!({"model": "gpt-5", "messages": messages});
+    let original_tokens = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|message| message["content"].as_str().unwrap().chars().count())
+        .sum::<usize>()
+        .div_ceil(4);
+    let expected_pruned = (2 * (400_usize - 200)).div_ceil(4);
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+        .unwrap();
+    let (upstreams, state_upstreams) =
+        tokio::sync::watch::channel(Arc::new(crate::core::config::Upstreams {
+            anthropic: "https://api.anthropic.com".into(),
+            openai: upstream.clone(),
+            chatgpt: "https://chatgpt.com".into(),
+            gemini: "https://generativelanguage.googleapis.com".into(),
+            providers: Vec::new(),
+        }));
+    let _upstreams = upstreams;
+    let state = ProxyState {
+        client: reqwest::Client::new(),
+        port: 0,
+        stats: Arc::new(crate::proxy::ProxyStats::default()),
+        break_even: Arc::new(crate::proxy::break_even::BreakEvenCalculator::new(1500)),
+        introspect: Arc::new(crate::proxy::introspect::IntrospectState::default()),
+        ocla_cache: None,
+        upstreams: state_upstreams,
+        chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
+        mcp_servers: Arc::new(Vec::new()),
+        web_app_tracker: Arc::new(std::sync::Mutex::new(
+            crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
+        )),
+    };
+
+    let response = forward_request(
+        State(state),
+        request,
+        &upstream,
+        "/v1/chat/completions",
+        add_test_marker,
+        "OpenAI",
+        &[],
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        response.headers()["x-leanctx-tokens-pruned"],
+        expected_pruned.to_string()
+    );
+    assert_eq!(response.headers()["x-leanctx-task-class"], "coding_fix");
+    assert_eq!(
+        to_bytes(response.into_body(), usize::MAX).await.unwrap(),
+        "{}"
+    );
+    let forwarded = server.await.unwrap();
+    assert_eq!(
+        forwarded["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|message| message["content"].as_str().unwrap().chars().count() == 200)
+            .count(),
+        2
+    );
+    assert_eq!(
+        crate::proxy::value_gate_proxy::session_metrics().total_original_tokens,
+        u64::try_from(original_tokens).unwrap()
+    );
 }
 
 #[test]

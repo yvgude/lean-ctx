@@ -104,7 +104,7 @@ pub fn handle(
         if glob_matcher.matches(&rel_str) {
             let short_path =
                 protocol::shorten_path_relative(&path.to_string_lossy(), &root.to_string_lossy());
-            matches.push(short_path);
+            matches.push((short_path, path.to_string_lossy().to_string()));
         }
     }
 
@@ -115,22 +115,52 @@ pub fn handle(
         );
     }
 
-    // Deterministic output ordering (the walk is already path-ordered; this also
-    // normalises the shortened-path representation).
-    matches.sort();
+    matches.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let output = matches.join("\n");
-    let raw_tokens = count_tokens(&output);
+    let raw_listing = matches
+        .iter()
+        .map(|(_, abs)| abs.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let raw_tokens = count_tokens(&raw_listing);
 
-    let footer = format!(
-        "\n\n{} files matched (walked {files_walked})",
-        matches.len()
-    );
+    let output = group_paths_by_directory(&matches);
+    let match_count = matches.len();
+
+    let footer = format!("\n\n{match_count} files matched (walked {files_walked})");
     let full_output = format!("{output}{footer}");
 
-    // A plain file list carries no compression overhead, so the original token
-    // budget equals what we send.
     (full_output, raw_tokens)
+}
+
+fn group_paths_by_directory(matches: &[(String, String)]) -> String {
+    use std::collections::BTreeMap;
+    let mut groups: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for (short, _) in matches {
+        if let Some(pos) = short.rfind('/') {
+            let dir = &short[..=pos];
+            let file = &short[pos + 1..];
+            groups.entry(dir).or_default().push(file);
+        } else {
+            groups.entry("").or_default().push(short);
+        }
+    }
+    let mut out = String::new();
+    for (dir, files) in &groups {
+        if dir.is_empty() {
+            for f in files {
+                out.push_str(f);
+                out.push('\n');
+            }
+        } else if files.len() == 1 {
+            out.push_str(&format!("{}{}", dir, files[0]));
+            out.push('\n');
+        } else {
+            out.push_str(&format!("{} {}", dir, files.join(", ")));
+            out.push('\n');
+        }
+    }
+    out.trim_end().to_string()
 }
 
 #[cfg(test)]

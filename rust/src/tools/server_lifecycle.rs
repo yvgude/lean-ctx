@@ -10,6 +10,43 @@ use crate::core::session::SessionState;
 use super::server::{LeanCtxServer, SessionMode};
 use super::startup::detect_startup_context;
 
+const MAX_WARM_SESSIONS: usize = 8;
+
+fn collect_warming_history(
+    project_root: Option<&str>,
+) -> Vec<crate::core::cache::warming::RecentFile> {
+    let Some(project_root) = project_root else {
+        return Vec::new();
+    };
+
+    let sessions = SessionState::list_sessions()
+        .into_iter()
+        .filter(|summary| summary.project_root.as_deref() == Some(project_root))
+        .take(MAX_WARM_SESSIONS)
+        .filter_map(|summary| SessionState::load_by_id(&summary.id))
+        .collect::<Vec<_>>();
+    crate::core::cache::warming::collect_recent_files(&sessions)
+}
+
+fn warm_cache_in_background(
+    cache: Arc<RwLock<SessionCache>>,
+    history: Vec<crate::core::cache::warming::RecentFile>,
+) {
+    if history.is_empty() {
+        return;
+    }
+
+    if let Err(error) = std::thread::Builder::new()
+        .name("lean-ctx-cache-warm".to_string())
+        .spawn(move || {
+            let mut cache = cache.blocking_write();
+            crate::core::cache::warming::warm_cache(&mut cache, &history);
+        })
+    {
+        tracing::debug!("lean-ctx: failed to start cache warming task: {error}");
+    }
+}
+
 impl Default for LeanCtxServer {
     fn default() -> Self {
         Self::new()
@@ -121,6 +158,7 @@ impl LeanCtxServer {
         // mtime/md5 so it can never serve a stale or cross-chat stub.
         crate::core::read_stub_index::load();
 
+        let warming_history = collect_warming_history(startup.project_root.as_deref());
         let cache = Arc::new(RwLock::new(SessionCache::new()));
         let bm25_cache: Arc<std::sync::Mutex<Option<crate::core::bm25_cache::Bm25CacheEntry>>> =
             Arc::new(std::sync::Mutex::new(None));
@@ -137,6 +175,7 @@ impl LeanCtxServer {
         crate::core::memory_guard::start_guard(std::sync::Arc::new(
             crate::core::eviction_orchestrator::on_memory_pressure,
         ));
+        warm_cache_in_background(cache.clone(), warming_history);
 
         let presence_root = startup
             .project_root

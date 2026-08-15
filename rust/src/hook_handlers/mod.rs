@@ -33,6 +33,7 @@ pub use vibe::handle_vibe_pre_tool;
 // Test-only re-export: only `hook_handlers::tests` (cfg(test)) reaches these
 // through this path; codex.rs's own production use of them is internal.
 #[cfg(test)]
+#[cfg(test)]
 pub(crate) use codex::{CODEX_SHELL_RECOVERY_HINT, session_start_additional_context_json};
 pub use deny::handle_deny;
 pub use observe::*;

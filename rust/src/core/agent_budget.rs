@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 static BUDGETS: Mutex<Option<HashMap<String, AgentBudget>>> = Mutex::new(None);
+static TURN_BUDGETS: Mutex<Option<HashMap<String, TurnBudget>>> = Mutex::new(None);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentBudget {
@@ -14,6 +15,21 @@ pub struct AgentBudget {
     pub last_reset: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct TurnBudget {
+    pub turn_id: u64,
+    pub tokens_delivered: u64,
+    pub limit: u64,
+    pub started_at: std::time::Instant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TurnBudgetStatus {
+    Ok,
+    Warning(u64),
+    Exceeded,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum BudgetCheckResult {
     Allowed { remaining: usize },
@@ -22,6 +38,13 @@ pub enum BudgetCheckResult {
 }
 
 const WARNING_THRESHOLD: f32 = 0.80;
+
+struct TurnBudgetAssessment {
+    status: TurnBudgetStatus,
+    consumed: u64,
+    projected: u64,
+    limit: u64,
+}
 
 fn with_budgets<F, R>(f: F) -> R
 where
@@ -48,13 +71,115 @@ fn ensure_entry<'a>(
         })
 }
 
+fn assess_turn_budget(budget: &TurnBudget, additional_tokens: u64) -> TurnBudgetAssessment {
+    let projected = budget.tokens_delivered.saturating_add(additional_tokens);
+    let status = if budget.limit > 0 && projected > budget.limit {
+        TurnBudgetStatus::Exceeded
+    } else if budget.limit > 0 && u128::from(projected) * 100 >= u128::from(budget.limit) * 80 {
+        TurnBudgetStatus::Warning(budget.limit.saturating_sub(projected))
+    } else {
+        TurnBudgetStatus::Ok
+    };
+
+    TurnBudgetAssessment {
+        status,
+        consumed: budget.tokens_delivered,
+        projected,
+        limit: budget.limit,
+    }
+}
+
+fn projected_turn_budget_status(
+    agent_id: &str,
+    tokens_to_consume: u64,
+) -> Option<TurnBudgetAssessment> {
+    let mut guard = TURN_BUDGETS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    guard
+        .get_or_insert_with(HashMap::new)
+        .get(agent_id)
+        .map(|budget| assess_turn_budget(budget, tokens_to_consume))
+}
+
+fn budget_size(value: u64) -> usize {
+    usize::try_from(value).unwrap_or(usize::MAX)
+}
+
+fn turn_budget_check_result(assessment: &TurnBudgetAssessment) -> BudgetCheckResult {
+    match assessment.status {
+        TurnBudgetStatus::Ok => BudgetCheckResult::Allowed {
+            remaining: budget_size(assessment.limit.saturating_sub(assessment.projected)),
+        },
+        TurnBudgetStatus::Warning(remaining) => BudgetCheckResult::Warning {
+            remaining: budget_size(remaining),
+            percent_used: assessment.projected as f32 / assessment.limit as f32,
+        },
+        TurnBudgetStatus::Exceeded => BudgetCheckResult::Exceeded {
+            limit: budget_size(assessment.limit),
+            consumed: budget_size(assessment.consumed),
+        },
+    }
+}
+
+pub fn start_new_turn(agent_id: &str, limit: u64) {
+    let mut guard = TURN_BUDGETS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let budgets = guard.get_or_insert_with(HashMap::new);
+    let turn_id = budgets
+        .get(agent_id)
+        .map_or(1, |budget| budget.turn_id.saturating_add(1));
+    budgets.insert(
+        agent_id.to_string(),
+        TurnBudget {
+            turn_id,
+            tokens_delivered: 0,
+            limit,
+            started_at: std::time::Instant::now(),
+        },
+    );
+}
+
+pub fn record_turn_delivery(agent_id: &str, tokens: u64) -> TurnBudgetStatus {
+    let mut guard = TURN_BUDGETS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(budget) = guard.get_or_insert_with(HashMap::new).get_mut(agent_id) else {
+        return TurnBudgetStatus::Ok;
+    };
+
+    budget.tokens_delivered = budget.tokens_delivered.saturating_add(tokens);
+    assess_turn_budget(budget, 0).status
+}
+
+pub fn turn_budget_remaining(agent_id: &str) -> Option<u64> {
+    let mut guard = TURN_BUDGETS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    guard
+        .get_or_insert_with(HashMap::new)
+        .get(agent_id)
+        .map(|budget| budget.limit.saturating_sub(budget.tokens_delivered))
+}
+
 pub fn check_budget(agent_id: &str, tokens_to_consume: usize) -> BudgetCheckResult {
+    let turn_assessment = projected_turn_budget_status(agent_id, tokens_to_consume as u64);
+    if let Some(assessment) = &turn_assessment {
+        if matches!(assessment.status, TurnBudgetStatus::Exceeded) {
+            return turn_budget_check_result(assessment);
+        }
+    }
+
     with_budgets(|map| {
         let budget = ensure_entry(map, agent_id);
         if budget.token_limit == usize::MAX || budget.token_limit == 0 {
-            return BudgetCheckResult::Allowed {
-                remaining: usize::MAX,
-            };
+            return turn_assessment.as_ref().map_or(
+                BudgetCheckResult::Allowed {
+                    remaining: usize::MAX,
+                },
+                turn_budget_check_result,
+            );
         }
 
         let projected = budget.tokens_consumed.saturating_add(tokens_to_consume);
@@ -73,6 +198,8 @@ pub fn check_budget(agent_id: &str, tokens_to_consume: usize) -> BudgetCheckResu
                 remaining,
                 percent_used,
             }
+        } else if let Some(assessment) = &turn_assessment {
+            turn_budget_check_result(assessment)
         } else {
             BudgetCheckResult::Allowed { remaining }
         }
@@ -85,6 +212,7 @@ pub fn record_consumption(agent_id: &str, tokens: usize) {
         budget.tokens_consumed = budget.tokens_consumed.saturating_add(tokens);
         budget.reads_count += 1;
     });
+    record_turn_delivery(agent_id, tokens as u64);
 }
 
 pub fn get_status(agent_id: &str) -> AgentBudget {
@@ -107,6 +235,11 @@ pub fn remove(agent_id: &str) {
     with_budgets(|map| {
         map.remove(agent_id);
     });
+    TURN_BUDGETS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get_or_insert_with(HashMap::new)
+        .remove(agent_id);
 }
 
 pub fn set_limit(agent_id: &str, limit: usize) {
@@ -204,5 +337,69 @@ pub mod tests {
         let status = get_status(&id);
         assert_eq!(status.reads_count, 2);
         assert_eq!(status.tokens_consumed, 300);
+    }
+
+    #[test]
+    fn start_new_turn_resets_delivery_and_increments_id() {
+        let id = test_agent("turn_reset");
+        start_new_turn(&id, 1_000);
+        record_turn_delivery(&id, 600);
+        start_new_turn(&id, 500);
+
+        let budget = TURN_BUDGETS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get_or_insert_with(HashMap::new)
+            .get(&id)
+            .cloned()
+            .unwrap();
+        assert_eq!(budget.turn_id, 2);
+        assert_eq!(budget.tokens_delivered, 0);
+        assert_eq!(budget.limit, 500);
+        assert!(budget.started_at.elapsed().as_secs() < 1);
+        remove(&id);
+    }
+
+    #[test]
+    fn turn_delivery_warns_at_eighty_percent() {
+        let id = test_agent("turn_warning");
+        start_new_turn(&id, 1_000);
+
+        assert_eq!(
+            record_turn_delivery(&id, 800),
+            TurnBudgetStatus::Warning(200)
+        );
+        assert_eq!(turn_budget_remaining(&id), Some(200));
+        remove(&id);
+    }
+
+    #[test]
+    fn turn_delivery_exceeds_limit() {
+        let id = test_agent("turn_exceeded");
+        start_new_turn(&id, 1_000);
+
+        assert_eq!(record_turn_delivery(&id, 1_001), TurnBudgetStatus::Exceeded);
+        assert_eq!(turn_budget_remaining(&id), Some(0));
+        remove(&id);
+    }
+
+    #[test]
+    fn check_budget_uses_active_turn_budget() {
+        let id = test_agent("turn_check");
+        start_new_turn(&id, 1_000);
+        record_turn_delivery(&id, 700);
+
+        assert!(matches!(
+            check_budget(&id, 100),
+            BudgetCheckResult::Warning { remaining: 200, .. }
+        ));
+        assert!(matches!(
+            check_budget(&id, 301),
+            BudgetCheckResult::Exceeded {
+                limit: 1_000,
+                consumed: 700
+            }
+        ));
+        remove(&id);
     }
 }

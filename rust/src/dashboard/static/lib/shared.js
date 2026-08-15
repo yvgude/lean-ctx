@@ -500,7 +500,7 @@
     health_anomaly: 'Performance anomalies detected by statistical analysis of system metrics.',
     health_gotchas: 'Known error patterns and workarounds stored in Bug Memory.',
     savings_growth: 'Chart tracking cumulative token savings growth over time.',
-    compression_trend: 'Net savings rate per day: verified savings (signed ledger) \u00f7 all daily input tokens. Lower than the tool-specific compression rate because the denominator includes non-compressible traffic (terminal polling, builds, meta-tools).',
+    compression_trend: 'Net savings rate per day: verified savings (ledger-signed) \u00f7 original baseline tokens. Measures actual compression of tool-call outputs (ctx_read, ctx_search, ctx_shell). Hover any data point for detailed breakdown.',
     command_volume: 'Chart showing command execution volume over time.',
     buddy_cache: 'Cache hit rate \u2013 share of reads served from cache instead of re-reading files.',
     buddy_mood: 'Current mood \u2013 reflects recent compression performance and activity level.',

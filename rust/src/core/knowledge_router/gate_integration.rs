@@ -2,8 +2,12 @@ use super::{
     PatternReferenceResolver, ReferenceResolver, ResolvedReference, manifest_builder::detect_config,
 };
 use crate::core::{
-    config::Config, context_kernel::ContextState, providers::registry::global_registry,
+    config::Config,
+    context_kernel::ContextState,
+    providers::registry::global_registry,
+    stigmergy::{SignalKind, read_signals},
 };
+use std::collections::HashSet;
 #[derive(Debug, Default)]
 pub struct KnowledgeGateAdvisor;
 #[derive(Debug, Clone, Default)]
@@ -64,6 +68,9 @@ impl KnowledgeGateAdvisor {
                 suggested_sources.join(", ")
             ));
         }
+        for pressure_hint in stigmergy_pressure_hints(&references) {
+            hint.push_str(&format!("\n{pressure_hint}"));
+        }
         hint.push_str("\n---");
         KnowledgeAdvice {
             budget_tokens: (references.len() as u64 * 500).min(5_000),
@@ -72,6 +79,34 @@ impl KnowledgeGateAdvisor {
             additional_context_hint: Some(hint),
         }
     }
+}
+
+fn stigmergy_pressure_hints(references: &[ResolvedReference]) -> Vec<String> {
+    let mut hints = references
+        .iter()
+        .filter(|reference| {
+            reference.ref_type == super::reference_resolver::ReferenceType::FilePath
+        })
+        .filter_map(|reference| {
+            let signals = read_signals(&reference.identifier, Some(SignalKind::Exploration));
+            let pressure = signals.iter().map(|signal| signal.strength).sum::<f64>();
+            let agents = signals
+                .iter()
+                .map(|signal| signal.agent_id.as_str())
+                .collect::<HashSet<_>>();
+            (pressure >= 1.0).then(|| {
+                format!(
+                    "File {} has high exploration pressure from {} {}",
+                    reference.identifier,
+                    agents.len(),
+                    if agents.len() == 1 { "agent" } else { "agents" }
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    hints.sort();
+    hints.dedup();
+    hints
 }
 
 fn source_available(source: &str) -> bool {

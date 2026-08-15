@@ -181,6 +181,31 @@ pub struct CacheAttribution {
     pub prefix_changes: u64,
 }
 
+impl CacheAttribution {
+    /// Provider prompt-cache reuse among turns that have a prior anchored
+    /// prefix to compare. Cold starts establish that baseline, so they are not
+    /// a hit or miss in this rate.
+    #[must_use]
+    pub fn provider_reuse_rate(&self) -> f64 {
+        let eligible = self
+            .warm_reuses
+            .saturating_add(self.ttl_lapses)
+            .saturating_add(self.prefix_changes);
+        if eligible == 0 {
+            0.0
+        } else {
+            self.warm_reuses as f64 * 100.0 / eligible as f64
+        }
+    }
+
+    #[must_use]
+    pub fn eligible_provider_requests(&self) -> u64 {
+        self.warm_reuses
+            .saturating_add(self.ttl_lapses)
+            .saturating_add(self.prefix_changes)
+    }
+}
+
 #[must_use]
 pub fn snapshot() -> CacheAttribution {
     CacheAttribution {
@@ -264,5 +289,18 @@ mod tests {
 
         assert_eq!(record_request(&v1, 2), Some(CacheOutcome::ColdStart));
         assert_eq!(record_request(&v2, 2), Some(CacheOutcome::PrefixChange));
+    }
+
+    #[test]
+    fn provider_reuse_excludes_cold_starts_from_denominator() {
+        let attribution = CacheAttribution {
+            cold_starts: 99,
+            warm_reuses: 6,
+            ttl_lapses: 2,
+            prefix_changes: 4,
+        };
+
+        assert_eq!(attribution.eligible_provider_requests(), 12);
+        assert_eq!(attribution.provider_reuse_rate(), 50.0);
     }
 }

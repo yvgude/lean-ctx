@@ -312,6 +312,12 @@ html.support-bar-off .support-bar{display:none}
   border-radius:5px;letter-spacing:.05em;font-family:var(--mono);font-weight:600;
 }
 .card canvas{max-height:220px}
+.card-interactive{transition:border-color .25s var(--ease-out),box-shadow .25s var(--ease-out)}
+.card-interactive:hover{border-color:var(--green-dim);box-shadow:0 0 24px rgba(52,211,153,.06)}
+.chart-footer{display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);font-family:var(--mono)}
+.chart-footer span{opacity:.7;transition:opacity .2s}
+.chart-footer:hover span{opacity:1}
+.badge-accent{background:rgba(129,140,248,.12);color:#818cf8}
 
 .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .card-header h3{margin-bottom:0}

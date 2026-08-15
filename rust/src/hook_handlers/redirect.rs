@@ -96,24 +96,68 @@ fn produce_redirect_output(kind: RedirectKind, tool_args: Option<&serde_json::Va
     }
 }
 
+/// Edit-risk classification for native Read redirects.
+/// Determines whether a file can be safely compressed during a native Read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EditRiskClass {
+    /// Instruction/rule files that must never be compressed.
+    NeverCompress,
+    /// All other files — compress via auto mode with full safety chain:
+    ///   1. deny.rs marker guard blocks writes with compression artifacts
+    ///   2. edit_snapshot.rs stores BLAKE3 snapshots of original bytes
+    ///   3. edit_quality.rs escalates to full after edit failures
+    ///   4. edit_health.rs auto-restores from git HEAD on corruption
+    ///   5. auto_mode_resolver returns full for small/diagnostic/suspect files
+    SafeToCompress,
+}
+
+/// Classify a file path by edit risk.
+///
+/// Default is `SafeToCompress`: the 4-layer safety net (marker guard,
+/// snapshot store, quality escalation, auto-recovery) prevents corruption.
+/// `should_passthrough()` already filters .cursorrules, .env, AGENTS.md,
+/// binaries, and Claude auto-memory paths before this function runs.
+pub(super) fn edit_risk_class(path: &str) -> EditRiskClass {
+    if is_instruction_override(path) {
+        return EditRiskClass::NeverCompress;
+    }
+    EditRiskClass::SafeToCompress
+}
+
+/// Files that must always be delivered verbatim regardless of safety guards.
+/// These are typically small, always-read instruction files whose exact
+/// content is critical for agent behavior.
+fn is_instruction_override(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    lower.ends_with("cargo.toml")
+        || lower.ends_with("package.json")
+        || lower.ends_with("pyproject.toml")
+        || lower.ends_with("go.mod")
+        || lower.ends_with("makefile")
+        || lower.ends_with("dockerfile")
+        || lower.ends_with("docker-compose.yml")
+        || lower.ends_with("docker-compose.yaml")
+        || lower.ends_with(".gitignore")
+}
+
 /// Argv for the `lean-ctx read` subprocess a redirected native Read runs.
 ///
-/// Smart mode selection: windowed reads (offset/limit) use `full-compact` to
-/// preserve line structure for correct indexing. Full reads use `auto` which
-/// selects the optimal compression mode (signatures, map, etc.) — achieving
-/// 87-97% compression vs ~5% for full-compact. Safe on Cursor because
-/// StrReplace does NOT fire a Read PreToolUse (validated by edit-probe PoC).
+/// SafeToCompress files get `-m auto` so the auto_mode_resolver picks the
+/// optimal mode (cognitive, signatures, map, or full for small/diagnostic
+/// files). NeverCompress files always get `-m full`.
+///
+/// The safety chain (marker guard → snapshot → quality escalation →
+/// auto-recovery) prevents any corruption from compressed reads.
 pub(super) fn redirect_read_args(path: &str, _is_windowed: bool) -> Vec<String> {
-    // Always serve full (uncompressed) content through the redirect hook.
-    // Compression happens only via explicit ctx_read MCP calls where the
-    // agent knows the content is compressed and won't attempt StrReplace
-    // with compressed old_string. The redirect still provides caching
-    // benefits (warm BM25/session cache for subsequent reads).
+    let mode = match edit_risk_class(path) {
+        EditRiskClass::SafeToCompress => "auto",
+        EditRiskClass::NeverCompress => "full",
+    };
     vec![
         "read".to_string(),
         path.to_string(),
         "-m".to_string(),
-        "full".to_string(),
+        mode.to_string(),
     ]
 }
 
@@ -282,6 +326,22 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
         if !final_output.is_empty() && std::fs::write(&temp_path, &final_output).is_ok() {
             let temp_str = temp_path.to_str().unwrap_or("");
 
+            // Record provenance and snapshot original bytes so the deny
+            // guard can validate edits after a compressed read.
+            let risk = edit_risk_class(&path);
+            match risk {
+                EditRiskClass::SafeToCompress => {
+                    if let Ok(orig_bytes) = std::fs::read(&path) {
+                        let digest = crate::core::edit_snapshot::store(&path, &orig_bytes);
+                        crate::core::read_provenance::record_read(&path, "auto", true, digest);
+                    }
+                }
+                EditRiskClass::NeverCompress => {
+                    crate::core::read_provenance::record_read(&path, "full", false, None);
+                    crate::core::edit_snapshot::remove(&path);
+                }
+            }
+
             // Warm daemon cache: subsequent ctx_read(mode=full) hits warm
             // BM25/session cache → instant edit-safe content. The redirect
             // gives compressed exploration view; ctx_read gives full content.
@@ -346,7 +406,7 @@ pub(super) fn grep_content_mode(tool_input: Option<&serde_json::Value>) -> bool 
     }
 }
 
-fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
+pub(super) fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
     let pattern = tool_input
         .and_then(|ti| ti.get("pattern"))
         .and_then(|p| p.as_str())
@@ -449,7 +509,7 @@ fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
 /// record the intercept in shadow.log — then allow the native call through
 /// unchanged. Outside those modes there is nothing to gain, so we pass through
 /// immediately without spawning a subprocess.
-fn redirect_glob(tool_input: Option<&serde_json::Value>) -> String {
+pub(super) fn redirect_glob(tool_input: Option<&serde_json::Value>) -> String {
     let allow = build_dual_allow_output();
     let shadow = is_shadow_mode_active();
     if !shadow && !is_harden_active() {

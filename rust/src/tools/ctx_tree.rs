@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 
 use ignore::WalkBuilder;
 
-use crate::core::protocol;
 use crate::core::tokens::count_tokens;
 
 struct Entry {
@@ -13,8 +12,7 @@ struct Entry {
     path: PathBuf,
 }
 
-/// Generates a compact directory tree listing with file counts.
-/// When `respect_gitignore` is true, entries matching .gitignore patterns are excluded.
+/// Generates a compact directory tree body with the raw tree token count.
 pub fn handle(
     path: &str,
     depth: usize,
@@ -24,10 +22,11 @@ pub fn handle(
     let requested_root = Path::new(path);
     let walk_root = crate::core::walk_filter::explicit_walk_root(requested_root);
     let root = walk_root.as_path();
+
     if root.is_file() {
         let parent = root
             .parent()
-            .map_or(path.to_string(), |p| p.display().to_string());
+            .map_or(path.to_string(), |parent| parent.display().to_string());
         return (
             format!(
                 "ERROR: '{path}' is a file, not a directory. Use path=\"{parent}\" for the containing directory."
@@ -41,39 +40,30 @@ pub fn handle(
             0,
         );
     }
-    // Broad-root guard (#356 class): with cwd == $HOME a defaulted `path`
-    // would walk the whole home dir and trip macOS TCC privacy prompts.
+
     if let Some(err) = crate::tools::walk_guard::deny_unsafe_walk_root(path) {
         return (err, 0);
     }
 
-    let raw_output = generate_raw_tree(root, depth, show_hidden, respect_gitignore);
-    let compact_output = generate_compact_tree(root, depth, show_hidden, respect_gitignore);
-
-    if compact_output.trim().is_empty() {
+    let (entries, raw_tokens) = collect_entries(root, depth, show_hidden, respect_gitignore);
+    let body = render_compact_tree(root, &entries);
+    if body.trim().is_empty() {
         return (format!("{path}/ (empty directory, depth={depth})"), 0);
     }
 
-    let _mode_guard = crate::core::savings_footer::ModeGuard::new("tree");
-    let raw_tokens = count_tokens(&raw_output);
-    let compact_tokens = count_tokens(&compact_output);
-    let savings = protocol::format_savings(raw_tokens, compact_tokens);
-
-    (format!("{compact_output}\n{savings}"), raw_tokens)
+    (body, raw_tokens)
 }
 
-fn generate_compact_tree(
+fn collect_entries(
     root: &Path,
     max_depth: usize,
     show_hidden: bool,
     respect_gitignore: bool,
-) -> String {
-    let mut lines = Vec::new();
+) -> (Vec<Entry>, usize) {
+    let mut entries = Vec::new();
+    let mut raw_tokens = 0;
+    let newline_tokens = count_tokens("\n");
 
-    let mut entries: Vec<Entry> = Vec::new();
-
-    // Vendor dirs (node_modules, …) follow the gitignore toggle: explicitly
-    // disabling gitignore is the escape hatch to look inside them (#400).
     let walker = WalkBuilder::new(root)
         .hidden(!show_hidden)
         .git_ignore(respect_gitignore)
@@ -82,11 +72,11 @@ fn generate_compact_tree(
         .require_git(false)
         .max_depth(Some(max_depth))
         .sort_by_file_name(std::cmp::Ord::cmp)
-        .filter_entry(move |e| {
+        .filter_entry(move |entry| {
             if respect_gitignore {
-                crate::core::walk_filter::keep_entry(e)
+                crate::core::walk_filter::keep_entry(entry)
             } else {
-                crate::core::cloud_files::keep_entry(e)
+                crate::core::cloud_files::keep_entry(entry)
             }
         })
         .build();
@@ -95,24 +85,47 @@ fn generate_compact_tree(
         if entry.depth() == 0 {
             continue;
         }
+
+        let depth = entry.depth();
+        let name = entry.file_name().to_string_lossy().to_string();
+        let is_dir = entry
+            .file_type()
+            .is_some_and(|file_type| file_type.is_dir());
+        let path = entry.into_path();
+        let relative_path = path
+            .strip_prefix(root)
+            .unwrap_or(path.as_path())
+            .to_string_lossy();
+
+        if !entries.is_empty() {
+            raw_tokens += newline_tokens;
+        }
+        raw_tokens += count_tokens(&relative_path);
+
         entries.push(Entry {
-            depth: entry.depth(),
-            name: entry.file_name().to_string_lossy().to_string(),
-            is_dir: entry.file_type().is_some_and(|ft| ft.is_dir()),
-            path: entry.path().to_path_buf(),
+            depth,
+            name,
+            is_dir,
+            path,
         });
     }
 
+    (entries, raw_tokens)
+}
+
+fn render_compact_tree(root: &Path, entries: &[Entry]) -> String {
+    let mut lines = Vec::new();
+
     let mut dir_file_counts: HashMap<&Path, usize> = HashMap::new();
-    for e in &entries {
-        if !e.is_dir
-            && let Some(parent) = e.path.parent()
+    for entry in entries {
+        if !entry.is_dir
+            && let Some(parent) = entry.path.parent()
         {
             *dir_file_counts.entry(parent).or_default() += 1;
         }
     }
 
-    let (hive_summaries, hive_skipped) = detect_hive_partitions(&entries, &dir_file_counts);
+    let (hive_summaries, hive_skipped) = detect_hive_partitions(entries, &dir_file_counts);
     if let Some(summary) = hive_summaries.get(root) {
         let root_name = root.file_name().map_or_else(
             || root.display().to_string(),
@@ -121,20 +134,23 @@ fn generate_compact_tree(
         lines.push(format!("{root_name}/ ({summary})"));
     }
 
-    for e in &entries {
-        if hive_skipped.contains(&e.path) {
+    for entry in entries {
+        if hive_skipped.contains(&entry.path) {
             continue;
         }
-        let indent = "  ".repeat(e.depth.saturating_sub(1));
-        if e.is_dir {
-            if let Some(summary) = hive_summaries.get(&e.path) {
-                lines.push(format!("{indent}{}/ ({summary})", e.name));
+        let indent = "  ".repeat(entry.depth.saturating_sub(1));
+        if entry.is_dir {
+            if let Some(summary) = hive_summaries.get(&entry.path) {
+                lines.push(format!("{indent}{}/ ({summary})", entry.name));
             } else {
-                let count = dir_file_counts.get(e.path.as_path()).copied().unwrap_or(0);
-                lines.push(format!("{indent}{}/ ({count})", e.name));
+                let count = dir_file_counts
+                    .get(entry.path.as_path())
+                    .copied()
+                    .unwrap_or(0);
+                lines.push(format!("{indent}{}/ ({count})", entry.name));
             }
         } else {
-            lines.push(format!("{indent}{}", e.name));
+            lines.push(format!("{indent}{}", entry.name));
         }
     }
 
@@ -215,41 +231,9 @@ fn hive_partition_key(name: &str) -> Option<&str> {
     Some(key)
 }
 
-fn generate_raw_tree(
-    root: &Path,
-    depth: usize,
-    show_hidden: bool,
-    respect_gitignore: bool,
-) -> String {
-    let mut lines = Vec::new();
-
-    let walker = WalkBuilder::new(root)
-        .hidden(!show_hidden)
-        .git_ignore(respect_gitignore)
-        .git_global(respect_gitignore)
-        .git_exclude(respect_gitignore)
-        .max_depth(Some(depth))
-        .sort_by_file_name(std::cmp::Ord::cmp)
-        .build();
-
-    for entry in walker.filter_map(std::result::Result::ok) {
-        if entry.depth() == 0 {
-            continue;
-        }
-        let rel = entry
-            .path()
-            .strip_prefix(root)
-            .unwrap_or(entry.path())
-            .to_string_lossy();
-        lines.push(rel.to_string());
-    }
-
-    lines.join("\n")
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{count_tokens, handle};
+    use super::{collect_entries, count_tokens, handle, render_compact_tree};
 
     /// Builds a deterministic source-tree fixture so the assertions do not
     /// depend on the live repository size or platform path separators (the live
@@ -277,6 +261,18 @@ mod tests {
             std::fs::write(&p, "// fixture\n").unwrap();
         }
         dir
+    }
+
+    #[test]
+    fn tree_derives_body_and_raw_tokens_from_one_entry_set() {
+        let dir = make_fixture();
+        let root = dir.path();
+        let (entries, expected_raw_tokens) = collect_entries(root, 3, false, true);
+
+        let (body, raw_tokens) = handle(&root.to_string_lossy(), 3, false, true);
+
+        assert_eq!(body, render_compact_tree(root, &entries));
+        assert_eq!(raw_tokens, expected_raw_tokens);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::core::cache::SessionCache;
+use crate::core::cache::{ReuseOutcome, SessionCache};
 use crate::core::heatmap;
 use crate::core::ocla::cache_types::{CacheKeyBuilder, FileReadKey};
 use crate::core::tokens::count_tokens;
@@ -85,17 +85,30 @@ pub fn handle_with_task_fresh_result(
                 )
             })
             .flatten();
-        let (chunk, cross_agent_original) = if let Some(entry) = cross_agent {
+        let (chunk, cross_agent_original, reuse_outcome) = if let Some(entry) = cross_agent {
             (
                 crate::core::ocla::cache_delivery::stub(&entry, "file read"),
                 Some(entry.token_count as usize),
+                ReuseOutcome::CrossFileRef,
             )
         } else {
-            let chunk = if fresh {
-                ctx_read::handle_fresh_with_task(cache, path, effective_mode, crp_mode, task)
+            let read = if fresh {
+                ctx_read::handle_fresh_with_task_result(cache, path, effective_mode, crp_mode, task)
             } else {
-                ctx_read::handle_with_task(cache, path, effective_mode, crp_mode, task)
+                ctx_read::handle_with_task_result(cache, path, effective_mode, crp_mode, task)
             };
+            let reuse_outcome = if fresh {
+                ReuseOutcome::FreshBypass
+            } else if read.is_cache_hit {
+                if matches!(read.resolved_mode.as_str(), "full" | "full-compact") {
+                    ReuseOutcome::UnchangedStub
+                } else {
+                    ReuseOutcome::RenderCacheHit
+                }
+            } else {
+                ReuseOutcome::Cold
+            };
+            let chunk = read.content;
             if !chunk.contains("[cross-agent") {
                 crate::core::ocla::cache_delivery::record(
                     cache_key.cache_key(),
@@ -106,8 +119,9 @@ pub fn handle_with_task_fresh_result(
                     "ctx_multi_read",
                 );
             }
-            (chunk, None)
+            (chunk, None, reuse_outcome)
         };
+        crate::core::cache::record_ctx_read_outcome(reuse_outcome);
         let original = cross_agent_original
             .or_else(|| cache.get(path).map(|entry| entry.original_tokens))
             .unwrap_or(0);

@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ShadowConfig {
+    #[serde(default = "serde_defaults::default_true")]
+    pub auto_record: bool,
     pub enabled: bool,
     pub report_interval: usize,
     pub baseline_model: String,
@@ -23,11 +25,27 @@ pub struct ShadowConfig {
 impl Default for ShadowConfig {
     fn default() -> Self {
         Self {
+            auto_record: true,
             enabled: false,
             report_interval: 10,
             baseline_model: "gpt-4o".into(),
             report_dir: String::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod shadow_config_tests {
+    use super::ShadowConfig;
+
+    #[test]
+    fn auto_record_defaults_to_true_and_can_be_disabled() {
+        let defaults: ShadowConfig = serde_json::from_str("{}").expect("valid config");
+        let disabled: ShadowConfig =
+            serde_json::from_str(r#"{"auto_record": false}"#).expect("valid config");
+
+        assert!(defaults.auto_record);
+        assert!(!disabled.auto_record);
     }
 }
 

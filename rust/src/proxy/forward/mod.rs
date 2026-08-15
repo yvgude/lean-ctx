@@ -3,7 +3,7 @@
 use axum::{
     body::Body,
     extract::State,
-    http::{Request, StatusCode},
+    http::{HeaderValue, Request, StatusCode},
     response::Response,
 };
 
@@ -46,6 +46,10 @@ use headers::should_forward_request_header;
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(super) use prepare::{cohort_arm, prepare_request_body, wire_context};
+
+pub(crate) mod pipeline;
+pub use crate::core::config::PipelineConfig;
+pub use pipeline::{CompressionPipeline, PipelineReport, StageReport};
 
 const HEADROOM_COMPRESSED_HEADER: &str = "x-headroom-compressed";
 const OCLA_BUDGET_SCOPE_HEADER: &str = "x-ocla-budget-scope";
@@ -94,6 +98,7 @@ fn apply_ocla_budget_admission(
         .map_err(|_| StatusCode::PAYMENT_REQUIRED)
 }
 
+#[allow(clippy::if_not_else)]
 pub async fn forward_request(
     State(state): State<ProxyState>,
     req: Request<Body>,
@@ -106,9 +111,37 @@ pub async fn forward_request(
     let (mut parts, body) = req.into_parts();
     let trace_id = trace_id::extract_or_generate_trace_id(&parts.headers);
     let body_limit = super::bedrock::request_body_limit(&parts).unwrap_or_else(max_body_bytes);
-    let body_bytes = axum::body::to_bytes(body, body_limit)
+    let raw_body_bytes = axum::body::to_bytes(body, body_limit)
         .await
         .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
+    let original_parsed =
+        super::determinism_guard::parse_request_body(&raw_body_bytes, &parts, body_limit);
+    let original_messages = original_parsed
+        .as_ref()
+        .map(super::determinism_guard::cache_relevant_messages);
+    let (mut body_bytes, mut pre_optimize_result) =
+        serde_json::from_slice::<serde_json::Value>(&raw_body_bytes)
+            .ok()
+            .and_then(|mut parsed_body| {
+                let result = crate::proxy::pre_optimize::pre_optimize(&mut parsed_body)?;
+                #[cfg(feature = "enterprise")]
+                crate::proxy::reasoning_budget::apply_reasoning_budget_with_config(
+                    &mut parsed_body,
+                    &result.task_class,
+                    &result.complexity,
+                    &crate::core::config::Config::load().proxy.reasoning_budget,
+                );
+                let serialized = serde_json::to_vec(&parsed_body).ok()?;
+                Some((serialized.into(), Some(result)))
+            })
+            .unwrap_or((raw_body_bytes.clone(), None));
+    // Determinism telemetry: report a warning score to the caller, but keep the
+    // request byte-for-byte intact. Scanning the raw body also makes this work
+    // consistently for every provider shape handled by the shared forwarder.
+    let cache_alignment_score = crate::proxy::cache_aligner::detect_volatile_content(
+        std::str::from_utf8(&body_bytes).unwrap_or_default(),
+    )
+    .alignment_score;
     let mut lineage = super::lineage::from_trusted_request(&parts, &body_bytes);
     if let Some(context) = lineage.as_mut() {
         context.trace_id.clone_from(&trace_id);
@@ -167,6 +200,57 @@ pub async fn forward_request(
             .path()
             .trim_end_matches('/')
             .ends_with("/v1/messages");
+    // Thompson sampling only selects configured model aliases. The existing
+    // rule router still resolves the alias to a provider and preserves all
+    // shape, credential, and enterprise-policy checks below.
+    let thompson_task_class = pre_optimize_result
+        .as_ref()
+        .map_or_else(|| "unknown".to_owned(), |result| result.task_class.clone());
+    let thompson_model: Option<String> = if route_upstreams
+        .as_ref()
+        .is_some_and(|upstreams| upstreams.providers.len() > 1)
+    {
+        let available_models: Vec<&str> =
+            routing_rules.aliases.keys().map(String::as_str).collect();
+        #[cfg(feature = "enterprise")]
+        {
+            if available_models.len() > 1 {
+                let selected = {
+                    let router = crate::core::model_router::global_model_router();
+                    let router = router
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    router
+                        .select_model(&thompson_task_class, &available_models)
+                        .to_owned()
+                };
+                serde_json::from_slice::<serde_json::Value>(&body_bytes)
+                    .ok()
+                    .as_mut()
+                    .and_then(serde_json::Value::as_object_mut)
+                    .map(|body| {
+                        body.insert(
+                            "model".to_owned(),
+                            serde_json::Value::String(selected.clone()),
+                        );
+                        if let Ok(rewritten) = serde_json::to_vec(body) {
+                            body_bytes = rewritten.into();
+                        }
+                        selected
+                    })
+            } else {
+                None
+            }
+        }
+        #[cfg(not(feature = "enterprise"))]
+        {
+            let _ = &available_models;
+            None::<String>
+        }
+    } else {
+        None
+    };
+
     let route_hook = |parsed: &mut serde_json::Value| {
         route_upstreams.as_ref().and_then(|up| {
             super::routing::route_request(parsed, provider_label, up, &routing_rules, xlat_ok)
@@ -176,7 +260,7 @@ pub async fn forward_request(
         super::anthropic::set_headroom_request(true);
         super::prefix_cache_stats::record_headroom_compat();
     }
-    let prepared = prepare::prepare_request_body(
+    let mut prepared = prepare::prepare_request_body(
         &parts,
         &body_bytes,
         compress_body,
@@ -184,15 +268,163 @@ pub async fn forward_request(
         upstream_base,
         provider_label == "OpenAI",
     )?;
+    let guard = super::determinism_guard::DeterminismGuard::new(&trace_id);
+    let mut determinism_proof = original_messages.as_deref().map_or_else(
+        || guard.verify(&[], &[]),
+        |before| {
+            let after = prepared
+                .parsed
+                .as_ref()
+                .map(super::determinism_guard::cache_relevant_messages)
+                .unwrap_or_default();
+            guard.verify(before, &after)
+        },
+    );
+    if !determinism_proof.is_stable {
+        tracing::warn!(
+            request_id = %determinism_proof.request_id,
+            frozen_bytes = determinism_proof.frozen_bytes,
+            modification_start_byte = determinism_proof.modification_start_byte,
+            "lean-ctx determinism violation: reverting request modifications"
+        );
+        super::determinism_guard::record_audit(&determinism_proof, true);
+        // Safe mode is deliberately fail-closed for cache safety: resend exactly
+        // what the caller supplied instead of allowing a cache-busting rewrite.
+        prepared.body = raw_body_bytes.to_vec();
+        prepared.parsed = original_parsed.clone();
+        prepared.original_size = raw_body_bytes.len();
+        prepared.compressed_size = raw_body_bytes.len();
+        prepared.compression_candidate = false;
+        prepared.content_dedup_tokens_saved = 0;
+        prepared.route = None;
+        body_bytes = raw_body_bytes.clone();
+        pre_optimize_result = None;
+        determinism_proof = original_messages.as_deref().map_or_else(
+            || guard.verify(&[], &[]),
+            |before| guard.verify(before, before),
+        );
+    } else {
+        super::determinism_guard::record_audit(&determinism_proof, false);
+    }
     apply_ocla_budget_admission(&parts, prepared.body.len())?;
     let original_size = prepared.original_size;
     let compressed_size = prepared.compressed_size;
     let compression_candidate = prepared.compression_candidate;
     let preserve_content_encoding = prepared.preserve_content_encoding;
+
+    let mut pipeline_report = None;
+    if let Some(messages) = prepared
+        .parsed
+        .as_mut()
+        .and_then(|body| body.get_mut("messages"))
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        let messages_before_pipeline = messages.clone();
+        let pipeline_config = crate::core::config::Config::load().proxy.pipeline.clone();
+        // Knowledge routing is advisory: it runs after pre-triage but before
+        // compression, has a hard latency budget, and any miss leaves the
+        // existing pipeline untouched.
+        let context_advice = if pipeline_config.enable_knowledge_routing {
+            let query = messages
+                .iter()
+                .rev()
+                .find(|message| {
+                    message.get("role").and_then(serde_json::Value::as_str) == Some("user")
+                })
+                .and_then(|message| message.get("content"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+                .unwrap_or_default();
+            let routing_task_id = trace_id.clone();
+
+            if query.is_empty() {
+                None
+            } else {
+                match tokio::time::timeout(
+                    std::time::Duration::from_millis(5),
+                    tokio::task::spawn_blocking(move || {
+                        crate::core::knowledge_router::KnowledgeRouter {
+                            manifests: Vec::new(),
+                            resolvers: vec![std::sync::Arc::new(
+                                crate::core::knowledge_router::PatternReferenceResolver,
+                            )],
+                        }
+                        .context_advice(
+                            &routing_task_id,
+                            &query,
+                            &crate::core::task_spine::TaskProfileLocal::default(),
+                            &crate::core::knowledge_router::builtin_manifests(),
+                            None,
+                        )
+                    }),
+                )
+                .await
+                {
+                    Ok(Ok(advice)) if !advice.is_empty() => Some(advice),
+                    Ok(Ok(_)) => None,
+                    Ok(Err(error)) => {
+                        tracing::debug!(%error, "knowledge routing task failed open");
+                        None
+                    }
+                    Err(_) => {
+                        tracing::debug!(
+                            "knowledge routing exceeded 5ms; continuing without advice"
+                        );
+                        None
+                    }
+                }
+            }
+        } else {
+            None
+        };
+        if let Ok(report) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            CompressionPipeline::run_with_context_advice(
+                messages,
+                &pipeline_config,
+                context_advice.as_ref(),
+            )
+        })) {
+            pipeline_report = Some(report);
+        } else {
+            *messages = messages_before_pipeline;
+            tracing::warn!("compression pipeline failed; continuing with prepared request");
+        }
+    }
+
+    if let (Some(report), Some(parsed_body)) = (pipeline_report.as_ref(), prepared.parsed.as_mut())
+    {
+        report.apply_effort_budget(parsed_body);
+        let serialized =
+            serde_json::to_vec(parsed_body).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        prepared.body = serialized;
+        prepared.compressed_size = prepared.body.len();
+        prepared.compression_candidate = true;
+    }
+
+    let _ = compression_candidate;
+
+    let compression_candidate = prepared.compression_candidate;
+    let content_dedup_tokens_saved = prepared.content_dedup_tokens_saved;
     let route = prepared.route;
     let parsed = prepared.parsed;
     let intent_classification =
         classify_and_store_proxy_intent(&mut parts, parsed.as_ref(), lineage.as_ref(), &body_bytes);
+    if let Some(request) = parsed.as_ref() {
+        let session_id = lineage
+            .as_ref()
+            .map_or(trace_id.as_str(), |context| context.session_id.as_str());
+        let turn_provided = super::value_gate_proxy::session_metrics()
+            .request_count
+            .saturating_add(1);
+        #[cfg(feature = "enterprise")]
+        if let Err(error) = crate::core::causal_attribution::record_proxy_context(
+            session_id,
+            request,
+            turn_provided,
+        ) {
+            tracing::debug!(%error, "causal attribution context recording failed");
+        }
+    }
     // Apply the routing decision to the wire: re-target the upstream and — for
     // registry providers holding their own key — swap the credential headers.
     let upstream_base = route
@@ -288,6 +520,12 @@ pub async fn forward_request(
             .status(cached.status)
             .body(Body::from(cached.body))
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        if let Ok(value) = HeaderValue::from_str(&cache_alignment_score.to_string()) {
+            response
+                .headers_mut()
+                .insert("x-leanctx-cache-alignment", value);
+        }
+        super::determinism_guard::apply_response_headers(&mut response, &determinism_proof);
         trace_id::inject_trace_id(&mut response, &trace_id);
         return Ok(response);
     }
@@ -439,6 +677,88 @@ pub async fn forward_request(
         &cache_prompt_hash,
     )
     .await?;
+    #[cfg(feature = "enterprise")]
+    if let Some(model) = thompson_model.as_deref() {
+        let router = crate::core::model_router::global_model_router();
+        let mut router = router
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        router.record_outcome(
+            model,
+            &thompson_task_class,
+            response.status().is_success(),
+            0.0,
+        );
+    }
+
+    let (tokens_pruned, original_tokens, task_class) = pre_optimize_result.as_ref().map_or_else(
+        || {
+            let task_class = intent_classification
+                .as_ref()
+                .map_or("unknown", |classification| {
+                    classification._decision.intent.as_str()
+                });
+            (tokens_saved as usize, original_size / 4, task_class)
+        },
+        |result| {
+            (
+                result.tokens_pruned,
+                result.original_token_estimate,
+                result.task_class.as_str(),
+            )
+        },
+    );
+    super::value_gate_proxy::record_completion(tokens_pruned, original_tokens, task_class);
+    let value_metrics = super::value_gate_proxy::session_metrics();
+    let compression_ratio = super::value_gate_proxy::compression_ratio();
+    let headers = response.headers_mut();
+    if let Ok(value) = HeaderValue::from_str(&tokens_pruned.to_string()) {
+        headers.insert("x-leanctx-tokens-pruned", value);
+    }
+    if let Ok(value) = HeaderValue::from_str(&content_dedup_tokens_saved.to_string()) {
+        headers.insert("x-leanctx-dedup-savings", value);
+    }
+    if let Ok(value) = HeaderValue::from_str(&format!("{compression_ratio:.4}")) {
+        headers.insert("x-leanctx-compression-ratio", value);
+    }
+    if let Ok(value) = HeaderValue::from_str(task_class) {
+        headers.insert("x-leanctx-task-class", value);
+    }
+    if let Some(rank) = super::leaderboard::rank_header_if_due() {
+        if let Ok(value) = HeaderValue::from_str(&rank) {
+            headers.insert("x-leanctx-rank", value);
+        }
+    }
+    if let Some(session_cpao_micros) = value_metrics.session_cpao_micros
+        && let Ok(value) = HeaderValue::from_str(&session_cpao_micros.to_string())
+    {
+        headers.insert("x-leanctx-cpao-micros", value);
+    }
+    if let Ok(value) = HeaderValue::from_str(&cache_alignment_score.to_string()) {
+        headers.insert("x-leanctx-cache-alignment", value);
+    }
+
+    if let Some(report) = pipeline_report.as_ref() {
+        report.apply_response_headers(headers);
+    }
+    if let Some(prepared_body) = parsed.as_ref() {
+        let messages = prepared_body
+            .get("messages")
+            .or_else(|| prepared_body.get("input"))
+            .and_then(serde_json::Value::as_array);
+        if let Some(messages) = messages {
+            let task = crate::proxy::effort_routing::TaskComplexity::from_score(
+                crate::proxy::effort_routing::score_complexity(messages),
+            );
+            if let Ok(value) = HeaderValue::from_str(&task.score.to_string()) {
+                headers.insert("x-leanctx-complexity", value);
+            }
+            if let Ok(value) = HeaderValue::from_str(&task.budget_tokens.to_string()) {
+                headers.insert("x-leanctx-effort-budget", value);
+            }
+        }
+    }
+    super::determinism_guard::apply_response_headers(&mut response, &determinism_proof);
     trace_id::inject_trace_id(&mut response, &trace_id);
     Ok(response)
 }

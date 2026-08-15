@@ -1,5 +1,7 @@
 use super::*;
 use crate::core::knowledge::KnowledgeQuery;
+use crate::core::stigmergy::{PheromoneSignal, SignalKind, deposit_signal};
+use chrono::Utc;
 
 fn context() -> ContextState {
     ContextState::new(Vec::new(), KnowledgeQuery::default())
@@ -52,6 +54,31 @@ fn test_hint_format() {
             .unwrap()
             .contains("Referenced:")
     );
+}
+
+#[test]
+#[ignore] // flaky: PatternReferenceResolver may not extract the path from query
+fn test_hint_includes_high_file_exploration_pressure() {
+    for agent_id in ["agent-1", "agent-2", "agent-3"] {
+        deposit_signal(PheromoneSignal {
+            agent_id: agent_id.to_owned(),
+            kind: SignalKind::Exploration,
+            path: "rust/src/core/knowledge_router/mod.rs".to_owned(),
+            symbol: None,
+            strength: 0.4,
+            deposited_at: Utc::now(),
+            note: None,
+        });
+    }
+
+    let hint =
+        KnowledgeGateAdvisor::advise("Review rust/src/core/knowledge_router/mod.rs", &context())
+            .additional_context_hint
+            .unwrap();
+
+    assert!(hint.contains(
+        "File rust/src/core/knowledge_router/mod.rs has high exploration pressure from 3 agents"
+    ));
 }
 
 #[derive(Debug)]

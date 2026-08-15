@@ -119,13 +119,16 @@ fn load_cache_runtime() -> Option<serde_json::Value> {
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0)
     };
+    let f_mcp = |key: &str| -> f64 {
+        live.get(key)
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0)
+    };
 
     // Merge hook-side stats from stats.json so shadow-mode reads are visible.
     let hook_store = crate::core::stats::load_for_display();
     let hook_totals = hook_store.compression_totals();
     let hook_reads = hook_store.total_commands;
-    let hook_cache_hits = hook_store.cep.total_cache_hits;
-    let hook_cache_reads = hook_store.cep.total_cache_reads;
 
     let total_reads = u_mcp("total_reads") + hook_reads;
     let tokens_saved = u_mcp("tokens_saved")
@@ -133,23 +136,20 @@ fn load_cache_runtime() -> Option<serde_json::Value> {
             .input_tokens
             .saturating_sub(hook_totals.output_tokens);
     let tokens_original = u_mcp("tokens_original") + hook_totals.input_tokens;
-    let cache_hits = u_mcp("cache_hits") + hook_cache_hits;
-    let effective_reads = u_mcp("effective_cache_reads") + hook_cache_reads;
-    let effective_hits = u_mcp("effective_cache_hits") + hook_cache_hits;
-
-    let hit_rate = effective_hits
-        .saturating_mul(100)
-        .checked_div(effective_reads)
-        .unwrap_or(0);
+    let cache_hits = u_mcp("cache_hits");
 
     Some(serde_json::json!({
         "cache_hits": cache_hits,
         "total_reads": total_reads,
-        "hit_rate_pct": hit_rate,
         "tokens_saved": tokens_saved,
         "tokens_original": tokens_original,
-        "effective_cache_hits": effective_hits,
-        "effective_cache_reads": effective_reads,
+        "read_reuse_rate": f_mcp("read_reuse_rate"),
+        "disk_reuse_rate": f_mcp("disk_reuse_rate"),
+        "provider_reuse_rate": f_mcp("provider_reuse_rate"),
+        "read_reuse": live.get("read_reuse").cloned().unwrap_or_else(|| serde_json::json!({})),
+        "disk_reuse": live.get("disk_reuse").cloned().unwrap_or_else(|| serde_json::json!({})),
+        "provider_reuse": live.get("provider_reuse").cloned().unwrap_or_else(|| serde_json::json!({})),
+        "reuse_outcomes": live.get("reuse_outcomes").cloned().unwrap_or_else(|| serde_json::json!({})),
         "dedup_hits": u_mcp("dedup_hits"),
         "compressed_cache_hits": u_mcp("compressed_cache_hits"),
         "full_delivery_degraded": u_mcp("full_delivery_degraded"),

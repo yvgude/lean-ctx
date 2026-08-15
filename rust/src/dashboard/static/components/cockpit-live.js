@@ -328,7 +328,7 @@ function buildToolDetail(kind) {
       var pct = Math.round((saved / orig) * 100);
       parts.push(fmtTokShort(orig) + ' \u2192 ' + fmtTokShort(sent) + ' tok (\u2212' + pct + '%)');
     } else {
-      parts.push(fmtTokShort(orig) + ' tok (full delivery)');
+      parts.push(fmtTokShort(orig) + ' tok (unreduced payload)');
     }
   } else if (saved != null && saved > 0) {
     parts.push('saved ' + fmtTokShort(saved) + ' tok');
@@ -642,12 +642,18 @@ class CockpitLive extends HTMLElement {
     var stats = this._data.stats;
     var windowStats = computeTokenWindow(events);
 
-    // Prefer cumulative session stats over the event-feed window (which only
-    // holds the latest ~50 events and vastly understates savings).
+    // Use compression_session (real savings_tracker data) from /api/session.
+    // Falls back to session_stats or event-window if unavailable.
     var ses = this._data.session;
-    var sesStats = ses ? (ses.session_stats || ses.stats || null) : null;
-    var sessionSaved = sesStats ? Number(sesStats.total_tokens_saved || 0) : windowStats.saved;
-    var sessionOrig = sesStats ? Number(sesStats.total_tokens_input || 0) : windowStats.original;
+    var comp = ses ? ses.compression_session : null;
+    var sessionSaved, sessionOrig;
+    if (comp) {
+      sessionSaved = Number(comp.savings_tokens || 0);
+      sessionOrig = Number(comp.total_raw || 0);
+    } else {
+      sessionSaved = windowStats.saved;
+      sessionOrig = windowStats.original;
+    }
 
     var allTimeSaved = 0;
     if (stats) {
@@ -657,17 +663,20 @@ class CockpitLive extends HTMLElement {
     }
 
     var runtimeCache = stats && stats.cache_runtime ? stats.cache_runtime : null;
-    var cep = stats && stats.cep ? stats.cep : {};
-    var cacheHits = runtimeCache
-      ? Number(runtimeCache.effective_cache_hits || runtimeCache.cache_hits || 0)
-      : Number(cep.total_cache_hits || 0);
-    var cacheReads = runtimeCache
-      ? Number(runtimeCache.effective_cache_reads || runtimeCache.total_reads || 0)
-      : Number(cep.total_cache_reads || 0);
-    var cacheRate = cacheReads > 0 ? Math.round((cacheHits / cacheReads) * 100) : 0;
+    var readReuse = runtimeCache && runtimeCache.read_reuse ? runtimeCache.read_reuse : {};
+    var diskReuse = runtimeCache && runtimeCache.disk_reuse ? runtimeCache.disk_reuse : {};
+    var providerReuse = runtimeCache && runtimeCache.provider_reuse ? runtimeCache.provider_reuse : {};
+    var readReuseRate = runtimeCache ? Math.round(Number(runtimeCache.read_reuse_rate || 0)) : 0;
+    var diskReuseRate = runtimeCache ? Math.round(Number(runtimeCache.disk_reuse_rate || 0)) : 0;
+    var providerReuseRate = runtimeCache ? Math.round(Number(runtimeCache.provider_reuse_rate || 0)) : 0;
+    var reusedRenderings = Number(readReuse.reused_renderings || 0);
+    var eligibleCtxReads = Number(readReuse.eligible_ctx_reads || 0);
+    var diskContentHits = Number(diskReuse.content_cache_hits || 0);
+    var eligibleSearchReads = Number(diskReuse.eligible_search_reads || 0);
+    var warmReuses = Number(providerReuse.warm_reuses || 0);
+    var eligibleProviderRequests = Number(providerReuse.eligible_requests || 0);
     var compressedCacheHits = runtimeCache ? Number(runtimeCache.compressed_cache_hits || 0) : 0;
     var degradationCycles = runtimeCache ? Number(runtimeCache.full_delivery_degraded || 0) : 0;
-    var dedupHits = runtimeCache ? Number(runtimeCache.dedup_hits || 0) : 0;
     var optimizedRate = windowStats.calls > 0
       ? Math.round((windowStats.optimizedCalls / windowStats.calls) * 100)
       : 0;
@@ -676,13 +685,13 @@ class CockpitLive extends HTMLElement {
     return (
       '<div class="hero" style="grid-template-columns:1fr 1fr;margin-bottom:14px">' +
       '<div class="hc">' +
-      '<span class="hl">Session Tokens Saved' + tip('session_tokens_saved') + '</span>' +
+      '<span class="hl">Today\'s Token Savings' + tip('session_tokens_saved') + '</span>' +
       '<div class="token-counter" id="ckl-session-saved" data-live="1">' +
       esc(ff(sessionSaved)) +
       '</div>' +
       (sessionOrig > 0
         ? '<p class="hs">of ' + esc(ff(sessionOrig)) + ' original tokens</p>'
-        : '<p class="hs">cumulative this session</p>') +
+        : '<p class="hs">verified savings today</p>') +
       '</div>' +
       '<div class="hc">' +
       '<span class="hl">All-Time Tokens Saved' + tip('all_time_saved') + '</span>' +
@@ -692,18 +701,32 @@ class CockpitLive extends HTMLElement {
       '<p class="hs">across all sessions</p>' +
       '</div>' +
       '<div class="hc">' +
-      '<span class="hl">Context Cache Reuse</span>' +
-      '<div class="token-counter" data-live="1">' + esc(String(cacheRate)) + '%</div>' +
-      '<p class="hs">' + esc(ff(cacheHits)) + ' hits / ' + esc(ff(cacheReads)) +
-      ' reads' + (dedupHits > 0 ? ' (dedup ' + esc(ff(dedupHits)) + ')' : '') +
-      (cacheReads > 0 && cacheReads < 20 && cacheHits === 0 ? ' · cache warming' : '') +
+      '<span class="hl">Read Rendering Reuse</span>' +
+      '<div class="token-counter" data-live="1">' + esc(String(readReuseRate)) + '%</div>' +
+      '<p class="hs">' + esc(ff(reusedRenderings)) + ' reused / ' + esc(ff(eligibleCtxReads)) +
+      ' eligible ctx_reads' +
+      (eligibleCtxReads > 0 && eligibleCtxReads < 20 && reusedRenderings === 0 ? ' · cache warming' : '') +
       '</p>' +
       '</div>' +
       '<div class="hc">' +
-      '<span class="hl">Optimization Coverage</span>' +
+      '<span class="hl">payload calls with measured reduction</span>' +
       '<div class="token-counter" data-live="1">' + esc(String(optimizedRate)) + '%</div>' +
       '<p class="hs">' + esc(String(savingsRate)) + '% token reduction · ' +
-      esc(ff(windowStats.passthroughCalls || 0)) + ' control calls · ' + esc(ff(windowStats.fullDeliveryCalls || 0)) + ' full deliveries</p>' +
+      esc(ff(windowStats.passthroughCalls || 0)) + ' passthrough calls · ' + esc(ff(windowStats.fullDeliveryCalls || 0)) + ' unreduced payloads</p>' +
+      '</div>' +
+      '</div>' +
+      '<div class="hero" style="grid-template-columns:1fr 1fr;margin-top:6px">' +
+      '<div class="hc">' +
+      '<span class="hl">Disk Content Reuse</span>' +
+      '<div class="token-counter" data-live="1">' + esc(String(diskReuseRate)) + '%</div>' +
+      '<p class="hs">' + esc(ff(diskContentHits)) + ' content-cache hits / ' +
+      esc(ff(eligibleSearchReads)) + ' eligible search reads</p>' +
+      '</div>' +
+      '<div class="hc">' +
+      '<span class="hl">Provider Prompt Reuse</span>' +
+      '<div class="token-counter" data-live="1">' + esc(String(providerReuseRate)) + '%</div>' +
+      '<p class="hs">' + esc(ff(warmReuses)) + ' warm reuses / ' +
+      esc(ff(eligibleProviderRequests)) + ' comparable requests</p>' +
       '</div>' +
       '</div>' +
       (compressedCacheHits > 0 || degradationCycles > 0
@@ -987,7 +1010,7 @@ class CockpitLive extends HTMLElement {
         ' tok</span>';
     } else if (eventFlow(flat) === 'full_delivery') {
       savedBadge =
-        '<span class="tag" style="margin-left:8px;color:var(--blue);border-color:var(--blue);opacity:.7">full delivery</span>';
+      '<span class="tag" style="margin-left:8px;color:var(--blue);border-color:var(--blue);opacity:.7">unreduced payload</span>';
     } else if (eventFlow(flat) === 'passthrough') {
       savedBadge =
         '<span class="tag" style="margin-left:8px;opacity:.45">control</span>';
@@ -1105,7 +1128,7 @@ class CockpitLive extends HTMLElement {
       'as a structured event and streamed here. Click the <strong>?</strong> icon on any event for a detailed explanation.<br><br>' +
       '<strong>Session counters</strong> use payload-bearing ToolCall events only; cache diagnostics are not double-counted. ' +
       '<strong>All-time counters</strong> accumulate across all sessions from the persistent stats store.<br><br>' +
-      '<strong>Context Cache Reuse</strong> shows current MCP-runtime hits/reads. ' +
+      '<strong>Reuse rates</strong> separate ctx_read rendering reuse, search content-cache reuse, and provider prompt reuse. ' +
       '<strong>Optimization Coverage</strong> separates optimized payload calls from passthroughs; knowledge, policy and agent events are control-plane activity, not failed compression.<br><br>' +
       'The <strong>MCP vs Hook split</strong> shows how savings distribute between MCP tool calls ' +
       '(prefixed <code>ctx_</code>) and shell hook interceptions. ' +

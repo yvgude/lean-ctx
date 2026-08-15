@@ -251,7 +251,7 @@ impl SessionCache {
                     full_content_delivered: existing.full_content_delivered,
                 };
             }
-            existing.compressed_outputs.clear();
+            existing.clear_compressed_outputs();
             existing.set_content(content);
             existing.hash = hash;
             existing.line_count = line_count;
@@ -423,6 +423,12 @@ impl SessionCache {
         Some(result)
     }
 
+    pub fn was_compressed_variant_evicted(&self, path: &str, mode_key: &str) -> bool {
+        self.entries
+            .get(&normalize_key(path))
+            .is_some_and(|entry| entry.was_compressed_variant_evicted(mode_key))
+    }
+
     /// Marks that full (uncompressed) content was delivered for this file,
     /// tagging it with the current conversation so a later re-read only serves
     /// the `[unchanged]` stub to the same conversation (see
@@ -498,8 +504,7 @@ impl SessionCache {
     pub fn trim_compressed_outputs(&mut self) -> usize {
         let mut trimmed = 0;
         for entry in self.entries.values_mut() {
-            if !entry.compressed_outputs.is_empty() {
-                entry.compressed_outputs.clear();
+            if entry.evict_compressed_outputs() {
                 trimmed += 1;
             }
         }

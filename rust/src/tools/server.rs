@@ -20,6 +20,16 @@ pub(super) struct CepComputedStats {
     pub(super) cache_hits: u64,
     pub(super) total_reads: u64,
     pub(super) tool_call_count: u64,
+    pub(super) adoption: AdoptionMetrics,
+}
+
+/// Measures lean-ctx adoption: what fraction of tool calls went through MCP
+/// rather than falling through to native/shell passthrough.
+#[derive(Default, Clone)]
+pub(super) struct AdoptionMetrics {
+    pub(super) ctx_tool_calls: u64,
+    pub(super) native_passthrough: u64,
+    pub(super) adoption_pct: u32,
 }
 
 pub use crate::core::protocol::CrpMode;

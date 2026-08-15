@@ -50,6 +50,19 @@ Verify without LeanCTX: leanctx-verify <bundle.zip> [--pubkey <hex>]"
     }
 }
 
+/// `lean-ctx audit determinism` — machine-readable prompt-cache safety audit.
+pub fn cmd_determinism(args: &[String]) {
+    if !args.is_empty() {
+        eprintln!("USAGE: lean-ctx audit determinism");
+        std::process::exit(2);
+    }
+    let report = crate::proxy::determinism_guard::audit_report();
+    println!(
+        "{}",
+        serde_json::to_string(&report).expect("determinism audit report serializes")
+    );
+}
+
 pub fn generate_report() -> String {
     let entries = crate::core::audit_trail::load_recent(10000);
     let chain = crate::core::audit_trail::verify_chain();

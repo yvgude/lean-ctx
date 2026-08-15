@@ -17,6 +17,12 @@ pub struct EvidenceEntry {
     pub action: String,
     /// Digest of the observed payload or artifact.
     pub digest: String,
+    /// MCP task that produced this evidence, if one is active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    /// Root task of the producing MCP session, if this is a child task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
     /// Self-describing Ed25519 signature:
     /// `ed25519:<public-key-hex>:<signature-hex>`.
     pub signature: String,
@@ -35,11 +41,17 @@ impl EvidenceEntry {
         signature: impl Into<String>,
         previous_hash: Option<String>,
     ) -> Self {
+        let lineage = crate::core::task_spine::TaskSpine::current();
         Self {
             timestamp,
             actor,
             action: action.into(),
             digest: digest.into(),
+            task_id: lineage
+                .as_ref()
+                .map(|task| task.task_id.as_str().to_owned()),
+            parent_id: lineage
+                .and_then(|task| task.parent_task_id.map(|parent| parent.as_str().to_owned())),
             signature: signature.into(),
             previous_hash,
         }
@@ -85,6 +97,8 @@ impl EvidenceEntry {
             actor: &self.actor,
             action: &self.action,
             digest: &self.digest,
+            task_id: &self.task_id,
+            parent_id: &self.parent_id,
             previous_hash: &self.previous_hash,
         };
         serde_json::to_vec(&payload).expect("evidence payload is serializable")
@@ -119,6 +133,10 @@ struct SignedEvidencePayload<'a> {
     actor: &'a IdentityContext,
     action: &'a str,
     digest: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    task_id: &'a Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_id: &'a Option<String>,
     previous_hash: &'a Option<String>,
 }
 

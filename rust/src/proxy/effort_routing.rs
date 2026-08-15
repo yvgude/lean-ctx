@@ -56,6 +56,15 @@ pub struct RoutingStats {
     pub full_count: u64,
 }
 
+static ESTIMATED_OUTPUT_TOKENS_WITHOUT_ROUTING: AtomicU64 = AtomicU64::new(0);
+static ACTUAL_EFFORT_BUDGET_TOKENS: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct EffortSavingsStats {
+    pub estimated_output_tokens_without_routing: u64,
+    pub actual_effort_budget_tokens: u64,
+}
+
 static ROUTINE_COUNT: AtomicU64 = AtomicU64::new(0);
 static FULL_COUNT: AtomicU64 = AtomicU64::new(0);
 
@@ -226,6 +235,218 @@ pub fn stats() -> RoutingStats {
     }
 }
 
+pub fn effort_savings_stats() -> EffortSavingsStats {
+    EffortSavingsStats {
+        estimated_output_tokens_without_routing: ESTIMATED_OUTPUT_TOKENS_WITHOUT_ROUTING
+            .load(Ordering::Relaxed),
+        actual_effort_budget_tokens: ACTUAL_EFFORT_BUDGET_TOKENS.load(Ordering::Relaxed),
+    }
+}
+
+/// Dynamic reasoning budget selected from the current request context.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TaskComplexity {
+    pub score: u8,
+    pub effort: Effort,
+    pub budget_tokens: u32,
+}
+
+impl TaskComplexity {
+    pub const fn from_score(score: u8) -> Self {
+        match score {
+            1 => Self {
+                score: 1,
+                effort: Effort::Low,
+                budget_tokens: 1_024,
+            },
+            2 => Self {
+                score: 2,
+                effort: Effort::Low,
+                budget_tokens: 2_048,
+            },
+            3 => Self {
+                score: 3,
+                effort: Effort::Medium,
+                budget_tokens: 4_096,
+            },
+            4 => Self {
+                score: 4,
+                effort: Effort::High,
+                budget_tokens: 8_192,
+            },
+            _ => Self {
+                score: 5,
+                effort: Effort::High,
+                budget_tokens: 16_384,
+            },
+        }
+    }
+}
+
+/// Scores request complexity on a stable 1–5 scale.
+pub fn score_complexity(messages: &[Value]) -> u8 {
+    let user_text = messages
+        .iter()
+        .rev()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+        .and_then(|message| {
+            extract_text_from_content(message.get("content").unwrap_or(&Value::Null))
+        })
+        .unwrap_or_default();
+    let text = user_text.to_ascii_lowercase();
+    let file_mentions = count_file_mentions(&text);
+    let has_errors = messages.iter().any(message_has_error);
+    let critical = ["security", "vulnerability", "production", "incident", "cve"]
+        .iter()
+        .any(|marker| text.contains(marker));
+    let complex = ["debug", "architecture", "refactor", "design"]
+        .iter()
+        .any(|marker| text.contains(marker));
+
+    if critical {
+        5
+    } else if has_errors || complex {
+        4
+    } else if file_mentions >= 2 || user_text.len() > 1_200 || text.contains("test") {
+        3
+    } else if file_mentions == 1 || user_text.len() > 300 {
+        2
+    } else {
+        1
+    }
+}
+
+/// Scores and mutates a provider request in one step for proxy handlers.
+pub fn route_effort_budget(body: &mut Value) -> TaskComplexity {
+    let complexity = body
+        .get("messages")
+        .or_else(|| body.get("input"))
+        .and_then(Value::as_array)
+        .map_or(1, |messages| score_complexity(messages));
+    apply_effort_budget(body, complexity)
+}
+
+/// Calculates complexity for a request and applies its provider-native effort budget.
+pub fn apply_effort_budget(body: &mut Value, complexity: u8) -> TaskComplexity {
+    let task = TaskComplexity::from_score(complexity);
+    let Some(object) = body.as_object_mut() else {
+        return task;
+    };
+
+    let model = object
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let is_anthropic = object.contains_key("messages")
+        && (object.contains_key("max_tokens") || model.contains("claude"));
+    if is_anthropic {
+        let thinking = object
+            .entry("thinking")
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        if let Some(thinking) = thinking.as_object_mut() {
+            thinking.insert("type".into(), Value::String("enabled".into()));
+            thinking.insert("budget_tokens".into(), Value::from(task.budget_tokens));
+        }
+    } else if crate::proxy::effort::openai_supports_effort(model) {
+        if object.contains_key("reasoning_effort") {
+            object.insert(
+                "reasoning_effort".into(),
+                Value::String(openai_effort_value(task.effort).into()),
+            );
+        } else {
+            let reasoning = object
+                .entry("reasoning")
+                .or_insert_with(|| Value::Object(serde_json::Map::new()));
+            if let Some(reasoning) = reasoning.as_object_mut() {
+                reasoning.insert(
+                    "effort".into(),
+                    Value::String(openai_effort_value(task.effort).into()),
+                );
+            }
+        }
+    }
+    ESTIMATED_OUTPUT_TOKENS_WITHOUT_ROUTING.fetch_add(16_384, Ordering::Relaxed);
+    ACTUAL_EFFORT_BUDGET_TOKENS.fetch_add(task.budget_tokens.into(), Ordering::Relaxed);
+    task
+}
+
+fn openai_effort_value(effort: Effort) -> &'static str {
+    match effort {
+        Effort::Minimal | Effort::Low => "low",
+        Effort::Medium => "medium",
+        Effort::High => "high",
+    }
+}
+
+#[cfg(test)]
+mod output_token_intelligence_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn trivial_task_gets_low_effort() {
+        let messages = vec![json!({"role": "user", "content": "Read src/lib.rs"})];
+        assert_eq!(score_complexity(&messages), 2);
+        assert_eq!(TaskComplexity::from_score(1).budget_tokens, 1_024);
+    }
+
+    #[test]
+    fn complex_task_gets_high_effort() {
+        let messages =
+            vec![json!({"role": "user", "content": "Design the architecture for this refactor"})];
+        let task = TaskComplexity::from_score(score_complexity(&messages));
+        assert_eq!(task.score, 4);
+        assert_eq!(task.effort, Effort::High);
+    }
+
+    #[test]
+    fn error_presence_increases_complexity() {
+        let messages = vec![
+            json!({"role": "tool", "content": "error[E0308]: mismatched types"}),
+            json!({"role": "user", "content": "fix this"}),
+        ];
+        assert_eq!(score_complexity(&messages), 4);
+    }
+
+    #[test]
+    fn applies_anthropic_thinking_budget() {
+        let mut body = json!({"model": "claude-sonnet-4", "max_tokens": 4096, "messages": []});
+        let task = apply_effort_budget(&mut body, 4);
+        assert_eq!(task.budget_tokens, 8_192);
+        assert_eq!(body["thinking"]["budget_tokens"], 8_192);
+    }
+
+    #[test]
+    fn applies_openai_reasoning_effort() {
+        let mut body = json!({"model": "gpt-5.4", "messages": []});
+        apply_effort_budget(&mut body, 3);
+        assert_eq!(body["reasoning"]["effort"], "medium");
+    }
+}
+
+fn count_file_mentions(text: &str) -> usize {
+    text.split_whitespace()
+        .filter(|word| {
+            let word = word.trim_matches(|character: char| {
+                !character.is_ascii_alphanumeric()
+                    && character != '.'
+                    && character != '_'
+                    && character != '/'
+            });
+            word.contains('/')
+                || [".rs", ".toml", ".json", ".md", ".py", ".ts", ".js"]
+                    .iter()
+                    .any(|suffix| word.ends_with(suffix))
+        })
+        .count()
+}
+
+fn message_has_error(message: &Value) -> bool {
+    message.get("is_error").and_then(Value::as_bool) == Some(true)
+        || extract_text_from_content(message.get("content").unwrap_or(&Value::Null))
+            .is_some_and(contains_error_indicators)
+}
+
 // ---------------------------------------------------------------------------
 // Internal classification helpers
 // ---------------------------------------------------------------------------
@@ -314,6 +535,9 @@ fn contains_error_indicators(content: &str) -> bool {
 
 /// Extract text from Anthropic content blocks.
 fn extract_text_from_content(content: &Value) -> Option<&str> {
+    if let Some(s) = content.as_str() {
+        return Some(s);
+    }
     if let Some(arr) = content.as_array() {
         for block in arr {
             if block.get("type").and_then(Value::as_str) == Some("text") {

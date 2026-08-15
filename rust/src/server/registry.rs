@@ -197,13 +197,17 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::ctx_checkpoint::CtxCheckpointTool));
     registry.register(Box::new(registered::ctx_compose::CtxComposeTool));
     registry.register(Box::new(registered::ctx_explore::CtxExploreTool));
+    registry.register(Box::new(registered::ctx_memory::CtxMemoryTool));
+    registry.register(Box::new(registered::ctx_live_zone::CtxLiveZoneTool));
     registry.register(Box::new(registered::ctx_execute::CtxExecuteTool));
 
     // Utility tools (migrated from dispatch/utility_tools.rs)
     registry.register(Box::new(registered::ctx_compress::CtxCompressTool));
+    registry.register(Box::new(registered::ctx_crush::CtxCrushTool));
     registry.register(Box::new(registered::ctx_compare::CtxCompareTool));
     registry.register(Box::new(crate::tools::ctx_cognitive::CtxCognitiveTool));
     registry.register(Box::new(registered::ctx_metrics::CtxMetricsTool));
+    registry.register(Box::new(registered::ctx_perf::CtxPerfTool));
     registry.register(Box::new(registered::ctx_radar::CtxRadarTool));
     registry.register(Box::new(registered::ctx_dedup::CtxDedupTool));
     registry.register(Box::new(registered::ctx_intent::CtxIntentTool));

@@ -32,6 +32,313 @@ use serde_json::{Map, Value};
 
 use crate::core::tokens::count_tokens;
 
+/// A type of text that makes an otherwise-stable provider cache prefix vary.
+///
+/// Positions in [`VolatileReport::volatile_positions`] are UTF-8 byte offsets
+/// into the scanned string. Every finding is disjoint and listed in source
+/// order, so callers can safely use the offsets for diagnostics without
+/// needing to merge overlapping date/timestamp matches themselves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VolatileKind {
+    Uuid,
+    Timestamp,
+    Jwt,
+    Hash,
+}
+
+/// Measurement-only cache-alignment report for arbitrary text.
+///
+/// `alignment_score` starts at 100 and loses ten points per finding, floored at
+/// zero because the public wire representation is an unsigned byte. Detection
+/// never alters the supplied text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VolatileReport {
+    pub uuid_count: u32,
+    pub timestamp_count: u32,
+    pub jwt_count: u32,
+    pub hash_count: u32,
+    pub total_volatile: u32,
+    pub alignment_score: u8,
+    pub volatile_positions: Vec<(usize, VolatileKind)>,
+}
+
+impl Default for VolatileReport {
+    fn default() -> Self {
+        Self {
+            uuid_count: 0,
+            timestamp_count: 0,
+            jwt_count: 0,
+            hash_count: 0,
+            total_volatile: 0,
+            alignment_score: 100,
+            volatile_positions: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct VolatileMatch {
+    start: usize,
+    end: usize,
+    kind: VolatileKind,
+}
+
+/// Detect values that are likely to change between requests and invalidate a
+/// provider's KV-cache prefix. This is deliberately regex-free: the scan works
+/// on ASCII syntax inside UTF-8 text and has no hidden regex-engine state.
+///
+/// The result is diagnostic only; this function never rewrites, redacts, or
+/// otherwise changes `text`.
+pub fn detect_volatile_content(text: &str) -> VolatileReport {
+    let bytes = text.as_bytes();
+    let mut matches = Vec::new();
+    matches.extend(uuid_matches(bytes));
+    matches.extend(timestamp_matches(bytes));
+    matches.extend(jwt_matches(bytes));
+    matches.extend(hash_matches(bytes));
+
+    // Prefer the longest match at one offset. This makes an ISO timestamp win
+    // over its date prefix, then discards every later overlap deterministically.
+    matches.sort_unstable_by(|left, right| {
+        left.start
+            .cmp(&right.start)
+            .then_with(|| right.end.cmp(&left.end))
+            .then_with(|| volatile_kind_rank(left.kind).cmp(&volatile_kind_rank(right.kind)))
+    });
+
+    let mut report = VolatileReport::default();
+    let mut last_end = 0;
+    for found in matches {
+        if found.start < last_end {
+            continue;
+        }
+        last_end = found.end;
+        match found.kind {
+            VolatileKind::Uuid => report.uuid_count += 1,
+            VolatileKind::Timestamp => report.timestamp_count += 1,
+            VolatileKind::Jwt => report.jwt_count += 1,
+            VolatileKind::Hash => report.hash_count += 1,
+        }
+        report.volatile_positions.push((found.start, found.kind));
+    }
+    report.total_volatile = report
+        .uuid_count
+        .saturating_add(report.timestamp_count)
+        .saturating_add(report.jwt_count)
+        .saturating_add(report.hash_count);
+    report.alignment_score = 100u8
+        .saturating_sub(u8::try_from(report.total_volatile.saturating_mul(10)).unwrap_or(u8::MAX));
+    report
+}
+
+fn volatile_kind_rank(kind: VolatileKind) -> u8 {
+    match kind {
+        VolatileKind::Uuid => 0,
+        VolatileKind::Timestamp => 1,
+        VolatileKind::Jwt => 2,
+        VolatileKind::Hash => 3,
+    }
+}
+
+fn is_hex(byte: u8) -> bool {
+    byte.is_ascii_hexdigit()
+}
+
+fn is_token_char(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+fn bounded_by_non_tokens(bytes: &[u8], start: usize, end: usize) -> bool {
+    (start == 0 || !is_token_char(bytes[start - 1]))
+        && (end == bytes.len() || !is_token_char(bytes[end]))
+}
+
+fn uuid_matches(bytes: &[u8]) -> Vec<VolatileMatch> {
+    let mut matches = Vec::new();
+    if bytes.len() < 36 {
+        return matches;
+    }
+    for start in 0..=bytes.len().saturating_sub(36) {
+        let end = start + 36;
+        let valid = bytes[start..end].iter().enumerate().all(|(offset, byte)| {
+            matches!(offset, 8 | 13 | 18 | 23) && *byte == b'-'
+                || !matches!(offset, 8 | 13 | 18 | 23) && is_hex(*byte)
+        });
+        if valid && bounded_by_non_tokens(bytes, start, end) {
+            matches.push(VolatileMatch {
+                start,
+                end,
+                kind: VolatileKind::Uuid,
+            });
+        }
+    }
+    matches
+}
+
+fn timestamp_matches(bytes: &[u8]) -> Vec<VolatileMatch> {
+    let mut matches = Vec::new();
+    if bytes.len() < 10 {
+        return matches;
+    }
+    for start in 0..=bytes.len().saturating_sub(10) {
+        let Some(date_end) = date_end(bytes, start) else {
+            continue;
+        };
+        let end = datetime_end(bytes, start).unwrap_or(date_end);
+        if bounded_by_non_tokens(bytes, start, end) {
+            matches.push(VolatileMatch {
+                start,
+                end,
+                kind: VolatileKind::Timestamp,
+            });
+        }
+    }
+    matches
+}
+
+fn date_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let end = start.checked_add(10)?;
+    let slice = bytes.get(start..end)?;
+    if !slice[0..4].iter().all(u8::is_ascii_digit)
+        || slice[4] != b'-'
+        || !slice[5..7].iter().all(u8::is_ascii_digit)
+        || slice[7] != b'-'
+        || !slice[8..10].iter().all(u8::is_ascii_digit)
+    {
+        return None;
+    }
+    let month = two_digits(slice[5], slice[6]);
+    let day = two_digits(slice[8], slice[9]);
+    ((1..=12).contains(&month) && (1..=31).contains(&day)).then_some(end)
+}
+
+fn datetime_end(bytes: &[u8], start: usize) -> Option<usize> {
+    date_end(bytes, start)?;
+    let time_start = start.checked_add(11)?;
+    if !matches!(bytes.get(start + 10), Some(b'T' | b' ')) {
+        return None;
+    }
+    let mut end = time_start.checked_add(5)?;
+    let time = bytes.get(time_start..end)?;
+    if !time[0..2].iter().all(u8::is_ascii_digit)
+        || time[2] != b':'
+        || !time[3..5].iter().all(u8::is_ascii_digit)
+        || two_digits(time[0], time[1]) > 23
+        || two_digits(time[3], time[4]) > 59
+    {
+        return None;
+    }
+    if bytes.get(end) == Some(&b':') {
+        let seconds_end = end.checked_add(3)?;
+        let seconds = bytes.get(end + 1..seconds_end)?;
+        if !seconds.iter().all(u8::is_ascii_digit) || two_digits(seconds[0], seconds[1]) > 59 {
+            return None;
+        }
+        end = seconds_end;
+    }
+    if bytes.get(end) == Some(&b'.') {
+        let fraction_start = end + 1;
+        end = fraction_start;
+        while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+            end += 1;
+        }
+        if end == fraction_start {
+            return None;
+        }
+    }
+    match bytes.get(end) {
+        Some(b'Z') => end += 1,
+        Some(b'+' | b'-') => {
+            let zone_start = end + 1;
+            let zone_end = zone_start.checked_add(5)?;
+            let zone = bytes.get(zone_start..zone_end)?;
+            if !zone[0..2].iter().all(u8::is_ascii_digit)
+                || zone[2] != b':'
+                || !zone[3..5].iter().all(u8::is_ascii_digit)
+                || two_digits(zone[0], zone[1]) > 23
+                || two_digits(zone[3], zone[4]) > 59
+            {
+                return None;
+            }
+            end = zone_end;
+        }
+        _ => {}
+    }
+    Some(end)
+}
+
+fn two_digits(tens: u8, units: u8) -> u8 {
+    (tens - b'0') * 10 + (units - b'0')
+}
+
+fn is_base64url(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')
+}
+
+fn jwt_matches(bytes: &[u8]) -> Vec<VolatileMatch> {
+    let mut matches = Vec::new();
+    for start in 0..bytes.len() {
+        if start > 0 && (is_base64url(bytes[start - 1]) || bytes[start - 1] == b'.') {
+            continue;
+        }
+        let Some(end) = jwt_end(bytes, start) else {
+            continue;
+        };
+        if end == bytes.len() || (!is_base64url(bytes[end]) && bytes[end] != b'.') {
+            matches.push(VolatileMatch {
+                start,
+                end,
+                kind: VolatileKind::Jwt,
+            });
+        }
+    }
+    matches
+}
+
+fn jwt_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut cursor = start;
+    for segment in 0..3 {
+        let segment_start = cursor;
+        while bytes.get(cursor).is_some_and(|byte| is_base64url(*byte)) {
+            cursor += 1;
+        }
+        if cursor == segment_start {
+            return None;
+        }
+        if segment < 2 {
+            if bytes.get(cursor) != Some(&b'.') {
+                return None;
+            }
+            cursor += 1;
+        }
+    }
+    Some(cursor)
+}
+
+fn hash_matches(bytes: &[u8]) -> Vec<VolatileMatch> {
+    let mut matches = Vec::new();
+    let mut start = 0;
+    while start < bytes.len() {
+        if !is_hex(bytes[start]) {
+            start += 1;
+            continue;
+        }
+        let end = bytes[start..]
+            .iter()
+            .position(|byte| !is_hex(*byte))
+            .map_or(bytes.len(), |offset| start + offset);
+        if matches!(end - start, 32 | 40 | 64) && bounded_by_non_tokens(bytes, start, end) {
+            matches.push(VolatileMatch {
+                start,
+                end,
+                kind: VolatileKind::Hash,
+            });
+        }
+        start = end;
+    }
+    matches
+}
+
 /// Volatile substrings that change turn-to-turn and so bust an otherwise-stable
 /// system-prompt prefix. Deliberately precise (ISO dates/datetimes, UUIDs, full
 /// git SHAs) rather than broad, so a stable identifier is never miscounted as
@@ -270,6 +577,77 @@ mod tests {
     fn scan_is_deterministic() {
         let text = "v1 2026-06-22 id 550e8400-e29b-41d4-a716-446655440000 and 2025-01-01";
         assert_eq!(scan_volatile(text), scan_volatile(text));
+    }
+
+    #[test]
+    fn report_detects_uuid_at_its_byte_position() {
+        let text = "run 550e8400-e29b-41d4-a716-446655440000 now";
+        assert_eq!(
+            detect_volatile_content(text),
+            VolatileReport {
+                uuid_count: 1,
+                total_volatile: 1,
+                alignment_score: 90,
+                volatile_positions: vec![(4, VolatileKind::Uuid)],
+                ..VolatileReport::default()
+            }
+        );
+    }
+
+    #[test]
+    fn report_detects_iso_timestamp_once() {
+        let text = "built 2026-06-22T15:04:05Z";
+        assert_eq!(
+            detect_volatile_content(text),
+            VolatileReport {
+                timestamp_count: 1,
+                total_volatile: 1,
+                alignment_score: 90,
+                volatile_positions: vec![(6, VolatileKind::Timestamp)],
+                ..VolatileReport::default()
+            }
+        );
+    }
+
+    #[test]
+    fn report_detects_timestamp_fraction_and_zone() {
+        let text = "built 2026-06-22T15:04:05.123+02:00";
+        let report = detect_volatile_content(text);
+        assert_eq!(report.timestamp_count, 1);
+        assert_eq!(report.alignment_score, 90);
+    }
+
+    #[test]
+    fn report_detects_jwt() {
+        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl";
+        assert_eq!(
+            detect_volatile_content(jwt),
+            VolatileReport {
+                jwt_count: 1,
+                total_volatile: 1,
+                alignment_score: 90,
+                volatile_positions: vec![(0, VolatileKind::Jwt)],
+                ..VolatileReport::default()
+            }
+        );
+    }
+
+    #[test]
+    fn report_scores_mixed_volatile_content() {
+        let text = concat!(
+            "2026-06-22 ",
+            "550e8400-e29b-41d4-a716-446655440000 ",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl ",
+            "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+        );
+        let report = detect_volatile_content(text);
+        assert_eq!(report.timestamp_count, 1);
+        assert_eq!(report.uuid_count, 1);
+        assert_eq!(report.jwt_count, 1);
+        assert_eq!(report.hash_count, 1);
+        assert_eq!(report.total_volatile, 4);
+        assert_eq!(report.alignment_score, 60);
+        assert_eq!(report.volatile_positions.len(), 4);
     }
 
     #[test]

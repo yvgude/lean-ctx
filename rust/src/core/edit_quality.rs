@@ -400,7 +400,7 @@ pub(crate) fn has_any_penalty(path: &str) -> bool {
     global().lock().is_ok_and(|s| {
         s.pairs
             .iter()
-            .any(|(k, v)| k.starts_with(&format!("{ext}:")) && v.risky)
+            .any(|(k, v)| k.starts_with(&format!("{ext}|")) && v.risky)
     })
 }
 

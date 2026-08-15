@@ -45,6 +45,10 @@ pub fn run() {
         match args[1].as_str() {
             "-c" | "exec" => handle_exec(&args, &rest),
             "-t" | "--track" => handle_track(&args),
+            "badge" => {
+                crate::cli::badge_cmd::cmd_badge(&rest);
+                return;
+            }
             "shell" | "--shell" => {
                 shell::interactive();
                 return;
@@ -204,10 +208,10 @@ pub fn run() {
                 return;
             }
             "audit" => {
-                if rest.first().map(String::as_str) == Some("evidence") {
-                    crate::cli::audit_report::cmd_evidence(&rest[1..]);
-                } else {
-                    println!("{}", crate::cli::audit_report::generate_report());
+                match rest.first().map(String::as_str) {
+                    Some("evidence") => crate::cli::audit_report::cmd_evidence(&rest[1..]),
+                    Some("determinism") => crate::cli::audit_report::cmd_determinism(&rest[1..]),
+                    _ => println!("{}", crate::cli::audit_report::generate_report()),
                 }
                 return;
             }
@@ -299,11 +303,11 @@ pub fn run() {
                 return;
             }
             "wrap" => {
-                crate::wrap::run_wrap(&rest);
+                crate::cli::wrap_cmd::cmd_wrap(&rest);
                 return;
             }
             "unwrap" => {
-                crate::wrap::run_unwrap(&rest);
+                crate::cli::wrap_cmd::cmd_unwrap(&rest);
                 return;
             }
             "status" => {
@@ -433,7 +437,21 @@ pub fn run() {
                 return;
             }
             "benchmark" => {
-                if rest.iter().any(|arg| arg == "--real") {
+                if rest.is_empty()
+                    || rest.first().is_some_and(|arg| {
+                        matches!(
+                            arg.as_str(),
+                            "--real"
+                                | "--format"
+                                | "--json"
+                                | "--output"
+                                | "-o"
+                                | "--share"
+                                | "--help"
+                                | "-h"
+                        )
+                    })
+                {
                     super::cmd_benchmark_real(&rest);
                 } else {
                     super::cmd_benchmark(&rest);

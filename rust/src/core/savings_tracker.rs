@@ -1,11 +1,19 @@
 //! Per-session compression accounting, persisted when the tracker is dropped.
+//!
+//! A debounced snapshot file (`compression_session.json`) is written every
+//! 5 seconds so separate processes (e.g. the dashboard server) can read the
+//! current session's compression state without sharing memory.
 
 use std::{
     collections::BTreeMap,
     fs::OpenOptions,
     io::Write,
     panic::{AssertUnwindSafe, catch_unwind},
+    path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
 };
+
+const SNAPSHOT_DEBOUNCE_MS: u64 = 5_000;
 
 fn tracker() -> &'static std::sync::Mutex<SessionSavingsTracker> {
     static TRACKER: std::sync::OnceLock<std::sync::Mutex<SessionSavingsTracker>> =
@@ -13,8 +21,11 @@ fn tracker() -> &'static std::sync::Mutex<SessionSavingsTracker> {
     TRACKER.get_or_init(|| std::sync::Mutex::new(SessionSavingsTracker::default()))
 }
 
+static LAST_SNAPSHOT_MS: AtomicU64 = AtomicU64::new(0);
+
 pub fn record_compression(raw_tokens: u64, compressed_tokens: u64, tool: &str) {
     record_best_effort(tracker(), raw_tokens, compressed_tokens, tool);
+    write_snapshot_debounced();
 }
 
 pub fn session_summary() -> SessionSavings {
@@ -24,13 +35,68 @@ pub fn session_summary() -> SessionSavings {
     )
 }
 
+/// Write a snapshot of current session savings to a well-known file so the
+/// dashboard (separate process) can read it. Debounced to avoid excessive I/O.
+fn write_snapshot_debounced() {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64);
+    let prev = LAST_SNAPSHOT_MS.load(Ordering::Relaxed);
+    if now_ms.saturating_sub(prev) < SNAPSHOT_DEBOUNCE_MS {
+        return;
+    }
+    if LAST_SNAPSHOT_MS
+        .compare_exchange(prev, now_ms, Ordering::Relaxed, Ordering::Relaxed)
+        .is_err()
+    {
+        return;
+    }
+    if let Ok(tracker) = tracker().try_lock() {
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            write_snapshot_file(&tracker.session_summary());
+        }));
+    }
+}
+
+fn snapshot_path() -> Option<PathBuf> {
+    crate::core::paths::state_dir()
+        .ok()
+        .map(|d| d.join("compression_session.json"))
+}
+
+fn write_snapshot_file(summary: &SessionSavings) {
+    let Some(path) = snapshot_path() else { return };
+    let Ok(json) = serde_json::to_string(summary) else {
+        return;
+    };
+    let tmp = path.with_extension("tmp");
+    if std::fs::write(&tmp, json.as_bytes()).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
+}
+
+/// Load the latest compression session snapshot written by the MCP server.
+/// Used by the dashboard (separate process) to display session savings.
+pub fn load_snapshot() -> SessionSavings {
+    let Some(path) = snapshot_path() else {
+        return SessionSavings::default();
+    };
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
 /// Persist the process-global tracker at a known session boundary.
 ///
 /// Accounting is best-effort: lock, serialization, and filesystem errors must
 /// never delay or prevent the server from shutting down.
 pub fn persist_session_summary() {
     if let Ok(tracker) = tracker().try_lock() {
-        let _ = catch_unwind(AssertUnwindSafe(|| tracker.persist()));
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            tracker.persist();
+            write_snapshot_file(&tracker.session_summary());
+        }));
     }
 }
 
