@@ -1110,10 +1110,8 @@ COMMIT_MSG"
         assert!(validate_command("printf x > /tmp/out.log && wc -l /tmp/out.log").is_none());
         // exact command from the report (screenshot)
         assert!(
-            validate_command(
-                "grep -n SyncToCoordinates file.txt > /tmp/s1.txt; wc -l /tmp/s1.txt"
-            )
-            .is_none()
+            validate_command("grep -n SyncToCoordinates file.txt > /tmp/s1.txt; wc -l /tmp/s1.txt")
+                .is_none()
         );
     }
 
