@@ -79,7 +79,7 @@ pub(crate) fn validate_command_with_write_allow_paths(
 
 /// Detects download/copy tools writing directly to files via their own flags
 /// Returns true when a path targets a scratch/temp location outside the
-/// project, where file downloads are safe (#1021).
+/// project, where file downloads and shell redirects are safe (#1021, #1467).
 fn is_scratch_path(path: &str) -> bool {
     let p = std::path::Path::new(path);
     if p.starts_with("/tmp")
@@ -222,6 +222,15 @@ fn is_write_allowed_redirect_target(
     let t = t.trim_matches(['"', '\'']);
     if t.starts_with('$') || t.starts_with("${") {
         // Preserve #989's escape hatch for harness-provided scratch paths.
+        return true;
+    }
+    // #1467: POSIX temp roots (/tmp, /var/tmp, /private/tmp) are output
+    // capture, not file authoring, on every platform. On Windows/MSYS these
+    // are real temp paths but NOT absolute per Windows path rules (no drive
+    // prefix), so the is_absolute() gate below must not reject them. Reuse
+    // is_scratch_path so redirect and download targets share one definition
+    // of "scratch" (component-based, so /tmpfoo never matches).
+    if is_scratch_path(t) {
         return true;
     }
 
@@ -1086,5 +1095,42 @@ COMMIT_MSG"
             validate_command(cmd).is_some(),
             "redirect OUTSIDE heredoc body must still block"
         );
+    }
+
+    // --- GH #1467: POSIX temp redirects must work on Windows too ---
+    // On Windows/MSYS `/tmp/...` is a real temp path but NOT absolute per
+    // Windows path rules (no drive prefix), so it used to be blocked as a
+    // file-write even though the error message promises temp capture is
+    // allowed. Deliberately NOT #[cfg(unix)]-gated: the behavior must be
+    // identical on every platform.
+
+    #[test]
+    fn issue_1467_tmp_redirect_allowed_on_all_platforms() {
+        // exact reproduction from the issue
+        assert!(validate_command("printf x > /tmp/out.log && wc -l /tmp/out.log").is_none());
+        // exact command from the report (screenshot)
+        assert!(
+            validate_command(
+                "grep -n SyncToCoordinates file.txt > /tmp/s1.txt; wc -l /tmp/s1.txt"
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn issue_1467_other_posix_temp_roots_allowed() {
+        assert!(validate_command("echo x > /var/tmp/out.log").is_none());
+        assert!(validate_command("echo x > /private/tmp/out.log").is_none());
+        assert!(validate_command("cargo test >|/tmp/out.log").is_none());
+    }
+
+    #[test]
+    fn issue_1467_temp_prefix_must_be_component_based() {
+        // `/tmpfoo` is not a temp dir; the prefix match must not leak past the
+        // separator (component-based starts_with keeps this blocked).
+        assert!(validate_command("echo x > /tmpfoo/out.txt").is_some());
+        assert!(validate_command("echo x > /var/tmpbackup/out.txt").is_some());
+        // `/private/tmpfoo` blocked is already pinned by
+        // issue_1142_project_writes_still_blocked (cross-platform).
     }
 }
