@@ -258,6 +258,12 @@ pub(crate) fn agent_mcp_targets(
             crate::core::editor_registry::cline_mcp_path(),
             ConfigType::McpJson,
         ),
+        "cline-cli" => push(
+            &mut targets,
+            "Cline CLI",
+            crate::core::editor_registry::cline_cli_mcp_settings_path(),
+            ConfigType::ClineCli,
+        ),
         "roo" => push(
             &mut targets,
             "Roo Code",
@@ -531,6 +537,12 @@ pub fn disable_agent_mcp(agent: &str, overwrite_invalid: bool) -> Result<(), Str
             crate::core::editor_registry::cline_mcp_path(),
             ConfigType::McpJson,
         ),
+        "cline-cli" => push(
+            &mut targets,
+            "Cline CLI",
+            crate::core::editor_registry::cline_cli_mcp_settings_path(),
+            ConfigType::ClineCli,
+        ),
         "roo" => push(
             &mut targets,
             "Roo Code",
@@ -670,6 +682,16 @@ mod qodercli_tests {
         assert_eq!(targets[0].name, "Command Code");
         assert_eq!(targets[0].config_path, home.join(".commandcode/mcp.json"));
         assert_eq!(targets[0].config_type, ConfigType::CommandCode);
+    }
+
+    #[test]
+    fn cline_cli_agent_target_uses_cline_cli_schema() {
+        let home = std::path::Path::new("/home/tester");
+        let targets = agent_mcp_targets("cline-cli", home).unwrap();
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].name, "Cline CLI");
+        assert_eq!(targets[0].config_type, ConfigType::ClineCli);
     }
 
     #[test]

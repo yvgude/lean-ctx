@@ -117,6 +117,40 @@ fn commandcode_config_uses_command_code_schema() {
     assert_eq!(res.action, WriteAction::Already);
 }
 
+/// Cline CLI nests `command`/`args`/`env` under a `transport` object —
+/// verified against a live `cline mcp install --yes --json` (see
+/// `write_cline_cli_config`'s doc comment) — unlike every other
+/// `mcpServers`-keyed agent, which keeps them flat.
+#[test]
+fn cline_cli_config_nests_command_under_transport() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cline_mcp_settings.json");
+    std::fs::write(
+        &path,
+        r#"{ "mcpServers": { "other": { "transport": { "type": "stdio", "command": "other-bin" } } } }"#,
+    )
+    .unwrap();
+
+    let t = target("test", path.clone(), ConfigType::ClineCli);
+    let res = write_cline_cli_config(&t, "/new/path/lean-ctx", WriteOptions::default()).unwrap();
+    assert_eq!(res.action, WriteAction::Updated);
+
+    let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(
+        json["mcpServers"]["other"]["transport"]["command"],
+        "other-bin"
+    );
+    let transport = &json["mcpServers"]["lean-ctx"]["transport"];
+    assert_eq!(transport["type"], "stdio");
+    assert_eq!(transport["command"], "/new/path/lean-ctx");
+    assert_eq!(transport["args"], serde_json::json!([]));
+    assert!(json["mcpServers"]["lean-ctx"]["command"].is_null());
+
+    // Idempotent: second write reports Already.
+    let res = write_cline_cli_config(&t, "/new/path/lean-ctx", WriteOptions::default()).unwrap();
+    assert_eq!(res.action, WriteAction::Already);
+}
+
 #[test]
 fn codex_toml_upserts_existing_section() {
     let dir = tempfile::tempdir().unwrap();

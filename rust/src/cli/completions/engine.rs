@@ -144,6 +144,7 @@ const AGENT_KEYS: &[&str] = &[
     "claude",
     "claude-code",
     "cline",
+    "cline-cli",
     "codebuddy",
     "codex",
     "commandcode",

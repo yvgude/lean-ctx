@@ -37,4 +37,12 @@ pub enum ConfigType {
     /// Command Code (`~/.commandcode/mcp.json`): `mcpServers` root with a
     /// custom entry schema (`transport`/`enabled`/`command`/`instructions`).
     CommandCode,
+    /// Cline CLI (`~/.cline/data/settings/cline_mcp_settings.json`, unified
+    /// across the Cline IDE extension/CLI/SDK since 2026.7): `mcpServers`
+    /// root where each entry nests `command`/`args`/`env` under a
+    /// `transport` object (`{"type": "stdio", ...}`), unlike the flat
+    /// `command`/`args`/`env` shape the VS Code extension's own
+    /// `cline_mcp_settings.json` (under globalStorage, see `ConfigType::McpJson`
+    /// via `cline_mcp_path`) and most other MCP-JSON agents use.
+    ClineCli,
 }

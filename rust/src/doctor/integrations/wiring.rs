@@ -79,6 +79,65 @@ pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str, data_dir: &st
     }
 }
 
+/// Cline CLI nests `command`/`env` under a `transport` object instead of at
+/// the top level of the server entry (see `ConfigType::ClineCli`'s doc
+/// comment) — `check_mcp_json` can't be reused as-is since it reads those
+/// fields flat.
+pub(crate) fn check_cline_cli_config(
+    path: &std::path::Path,
+    binary: &str,
+    data_dir: &str,
+) -> NamedCheck {
+    if !path.exists() {
+        return NamedCheck {
+            name: "MCP config".to_string(),
+            ok: false,
+            detail: format!("missing ({})", path.display()),
+        };
+    }
+    let content = std::fs::read_to_string(path).unwrap_or_default();
+    let parsed = crate::core::jsonc::parse_jsonc(&content).ok();
+
+    let Some(v) = parsed else {
+        return NamedCheck {
+            name: "MCP config".to_string(),
+            ok: false,
+            detail: format!("invalid JSON ({})", path.display()),
+        };
+    };
+
+    let transport = v
+        .get("mcpServers")
+        .and_then(|m| m.get("lean-ctx"))
+        .and_then(|e| e.get("transport"));
+
+    let Some(t) = transport else {
+        return NamedCheck {
+            name: "MCP config".to_string(),
+            ok: false,
+            detail: format!("lean-ctx missing ({})", path.display()),
+        };
+    };
+
+    let cmd_ok = t
+        .get("command")
+        .and_then(|c| c.as_str())
+        .is_some_and(|c| cmd_matches_expected(c, binary));
+    let env_ok = pinned_data_dir_ok(t.get("env"), data_dir);
+
+    let ok = cmd_ok && env_ok;
+    let detail = if ok {
+        format!("ok ({})", path.display())
+    } else {
+        format!("drift ({})", path.display())
+    };
+    NamedCheck {
+        name: "MCP config".to_string(),
+        ok,
+        detail,
+    }
+}
+
 /// JetBrains AI Assistant has no auto-wiring: lean-ctx writes a ready-to-paste
 /// snippet to `~/.jb-mcp.json`, which the user imports once via the IDE. The
 /// `doctor` verdict therefore verifies the snippet exists and is current, while
@@ -258,7 +317,7 @@ pub(crate) fn humanize_ago(d: chrono::Duration) -> String {
 pub(crate) fn rules_path_for(name: &str, home: &std::path::Path) -> Option<std::path::PathBuf> {
     match name {
         "Windsurf" => Some(home.join(".codeium/windsurf/rules/lean-ctx.md")),
-        "Cline" => Some(home.join(".cline/rules/lean-ctx.md")),
+        "Cline" | "Cline CLI" => Some(home.join(".cline/rules/lean-ctx.md")),
         "Roo Code" => Some(home.join(".roo/rules/lean-ctx.md")),
         "OpenCode" => Some(home.join(".config/opencode/AGENTS.md")),
         "AWS Kiro" => Some(home.join(".kiro/steering/lean-ctx.md")),

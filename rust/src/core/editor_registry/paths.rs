@@ -94,6 +94,28 @@ pub fn qoder_mcp_paths(home: &Path) -> Vec<PathBuf> {
     vec![qoder_mcp_path(home)]
 }
 
+/// Cline CLI's MCP settings file. Unified across the Cline IDE extension,
+/// CLI, and SDK since 2026.7 (`~/.cline/data/settings/cline_mcp_settings.json`),
+/// separate from the VS Code extension's own globalStorage copy
+/// (`cline_mcp_path`, below) that predates the unification. Honors the same
+/// overrides as Cline's own `resolveMcpSettingsPath()`: `CLINE_MCP_SETTINGS_PATH`
+/// wins outright, otherwise `CLINE_DATA_DIR` replaces the `~/.cline` root.
+pub fn cline_cli_mcp_settings_path() -> PathBuf {
+    if let Ok(explicit) = std::env::var("CLINE_MCP_SETTINGS_PATH") {
+        let trimmed = explicit.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+    let data_dir = std::env::var("CLINE_DATA_DIR")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|home| home.join(".cline")))
+        .unwrap_or_else(|| PathBuf::from("/nonexistent"));
+    data_dir.join("data/settings/cline_mcp_settings.json")
+}
+
 #[allow(unreachable_code)]
 pub fn cline_mcp_path() -> PathBuf {
     #[cfg(target_os = "windows")]

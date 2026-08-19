@@ -34,6 +34,13 @@ pub(crate) fn integration_generic(
                 checks.push(antigravity_cli_hooks_note());
             }
         }
+        crate::core::editor_registry::types::ConfigType::ClineCli => {
+            checks.push(check_cline_cli_config(
+                &target.config_path,
+                binary,
+                data_dir,
+            ));
+        }
         crate::core::editor_registry::types::ConfigType::JetBrains => {
             checks.push(check_jetbrains_snippet(
                 &target.config_path,
