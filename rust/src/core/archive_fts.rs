@@ -4,8 +4,30 @@ use std::sync::Mutex;
 
 use super::data_dir::lean_ctx_data_dir;
 
-static DB: std::sync::LazyLock<Mutex<Option<Connection>>> =
-    std::sync::LazyLock::new(|| Mutex::new(open_db()));
+struct CachedConnection {
+    path: PathBuf,
+    connection: Option<Connection>,
+}
+
+impl CachedConnection {
+    fn new() -> Self {
+        let path = db_path();
+        let connection = open_db_at(&path);
+        Self { path, connection }
+    }
+
+    fn current(&mut self) -> Option<&Connection> {
+        let path = db_path();
+        if path != self.path {
+            self.connection = open_db_at(&path);
+            self.path = path;
+        }
+        self.connection.as_ref()
+    }
+}
+
+static DB: std::sync::LazyLock<Mutex<CachedConnection>> =
+    std::sync::LazyLock::new(|| Mutex::new(CachedConnection::new()));
 
 /// Default maximum on-disk size for the archive FTS database. Overridable via
 /// `LEAN_CTX_ARCHIVE_DB_MAX_MB`. Without enforcement this DB grew unbounded
@@ -65,8 +87,13 @@ fn wal_bytes() -> u64 {
 /// Mirrors the retry strategy in `property_graph::CodeGraph::open` (#1409).
 const DB_OPEN_MAX_ATTEMPTS: u32 = 8;
 
+#[cfg(test)]
 fn open_db() -> Option<Connection> {
     let path = db_path();
+    open_db_at(&path)
+}
+
+fn open_db_at(path: &std::path::Path) -> Option<Connection> {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -135,8 +162,10 @@ fn is_transient_sqlite_error(e: &rusqlite::Error) -> bool {
 }
 
 pub fn index_entry(archive_id: &str, tool: &str, command: &str, content: &str) {
-    let guard = DB.lock().ok();
-    let Some(conn) = guard.as_ref().and_then(|g| g.as_ref()) else {
+    let Some(mut guard) = DB.lock().ok() else {
+        return;
+    };
+    let Some(conn) = guard.current() else {
         return;
     };
 
@@ -234,8 +263,8 @@ fn enforce_cap_locked(conn: &Connection) {
 /// Public entry point to enforce the archive DB size cap on demand (e.g. from
 /// idle maintenance or `doctor`). Returns the resulting size in bytes.
 pub fn enforce_cap() -> u64 {
-    if let Ok(guard) = DB.lock()
-        && let Some(conn) = guard.as_ref()
+    if let Ok(mut guard) = DB.lock()
+        && let Some(conn) = guard.current()
     {
         enforce_cap_locked(conn);
     }
@@ -243,8 +272,10 @@ pub fn enforce_cap() -> u64 {
 }
 
 pub fn remove_entry(archive_id: &str) {
-    let guard = DB.lock().ok();
-    let Some(conn) = guard.as_ref().and_then(|g| g.as_ref()) else {
+    let Some(mut guard) = DB.lock().ok() else {
+        return;
+    };
+    let Some(conn) = guard.current() else {
         return;
     };
     let _ = conn.execute(
@@ -267,8 +298,10 @@ pub struct FtsResult {
 }
 
 pub fn search(query: &str, limit: usize) -> Vec<FtsResult> {
-    let guard = DB.lock().ok();
-    let Some(conn) = guard.as_ref().and_then(|g| g.as_ref()) else {
+    let Some(mut guard) = DB.lock().ok() else {
+        return Vec::new();
+    };
+    let Some(conn) = guard.current() else {
         return Vec::new();
     };
 
@@ -297,8 +330,10 @@ pub fn search(query: &str, limit: usize) -> Vec<FtsResult> {
 }
 
 pub fn entry_count() -> usize {
-    let guard = DB.lock().ok();
-    let Some(conn) = guard.as_ref().and_then(|g| g.as_ref()) else {
+    let Some(mut guard) = DB.lock().ok() else {
+        return 0;
+    };
+    let Some(conn) = guard.current() else {
         return 0;
     };
     conn.query_row("SELECT COUNT(*) FROM archive_meta", [], |row| {
@@ -311,10 +346,23 @@ pub fn entry_count() -> usize {
 pub mod tests {
     use super::*;
 
+    struct EnvGuard(Option<std::ffi::OsString>);
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = &self.0 {
+                crate::test_env::set_var("LEAN_CTX_DATA_DIR", previous);
+            } else {
+                crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+            }
+        }
+    }
+
     #[test]
     fn fts_roundtrip() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
+        let _env = EnvGuard(std::env::var_os("LEAN_CTX_DATA_DIR"));
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
 
         // Force re-open by directly testing open_db
@@ -343,6 +391,7 @@ pub mod tests {
     fn open_db_bounds_the_wal() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
+        let _env = EnvGuard(std::env::var_os("LEAN_CTX_DATA_DIR"));
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
 
         let conn = open_db().expect("should open");
@@ -359,5 +408,46 @@ pub mod tests {
             .query_row("PRAGMA wal_autocheckpoint;", [], |row| row.get(0))
             .unwrap();
         assert_eq!(autocheckpoint, 1000);
+    }
+
+    #[test]
+    fn cached_connection_tracks_the_active_data_dir() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let original_path = db_path();
+        let _env = EnvGuard(std::env::var_os("LEAN_CTX_DATA_DIR"));
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", first.path());
+        index_entry(
+            "mes1609_first",
+            "ctx_shell",
+            "first",
+            "mes1609_fts_first_only",
+        );
+        assert_eq!(
+            search("mes1609_fts_first_only", 10)[0].archive_id,
+            "mes1609_first"
+        );
+
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", second.path());
+        index_entry(
+            "mes1609_second",
+            "ctx_shell",
+            "second",
+            "mes1609_fts_second_only",
+        );
+        assert_eq!(
+            search("mes1609_fts_second_only", 10)[0].archive_id,
+            "mes1609_second"
+        );
+        assert!(search("mes1609_fts_first_only", 10).is_empty());
+
+        crate::test_env::set_var(
+            "LEAN_CTX_DATA_DIR",
+            original_path.parent().unwrap().parent().unwrap(),
+        );
+        assert!(search("mes1609_fts_first_only", 10).is_empty());
+        assert!(search("mes1609_fts_second_only", 10).is_empty());
     }
 }

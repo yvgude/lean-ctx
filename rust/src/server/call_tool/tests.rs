@@ -35,6 +35,48 @@ mod shell_outcome_tests {
     }
 
     #[cfg(not(windows))]
+    struct ScopedPolicy(Option<crate::core::policy::ResolvedPolicy>);
+
+    #[cfg(not(windows))]
+    impl ScopedPolicy {
+        fn redacting(label: &str, pattern: &str) -> Self {
+            let previous =
+                crate::core::policy::runtime::active().map(|active| active.resolved.clone());
+            let mut redaction = std::collections::BTreeMap::new();
+            redaction.insert(label.to_string(), pattern.to_string());
+            crate::core::policy::runtime::set_active_for_test(Some(
+                crate::core::policy::ResolvedPolicy {
+                    name: "mes1609-test-policy".into(),
+                    version: "1.0.0".into(),
+                    description: "MES-1609 archive chokepoint regression".into(),
+                    chain: vec![],
+                    default_read_mode: None,
+                    allow_tools: None,
+                    deny_tools: vec![],
+                    max_context_tokens: None,
+                    audit_retention_days: None,
+                    redaction,
+                    filters: crate::core::policy::FilterRules {
+                        pii: Some("redact".into()),
+                        ..crate::core::policy::FilterRules::default()
+                    },
+                    egress: crate::core::policy::EgressRules::default(),
+                    routing: crate::core::policy::RoutingPolicyRules::default(),
+                    budgets: crate::core::policy::BudgetRules::default(),
+                },
+            ));
+            Self(previous)
+        }
+    }
+
+    #[cfg(not(windows))]
+    impl Drop for ScopedPolicy {
+        fn drop(&mut self) {
+            crate::core::policy::runtime::set_active_for_test(self.0.take());
+        }
+    }
+
+    #[cfg(not(windows))]
     struct BackgroundJobGuard {
         job_id: String,
     }
@@ -136,6 +178,40 @@ mod shell_outcome_tests {
     }
 
     #[cfg(not(windows))]
+    async fn auto_detached_pipeline_result(command: &str) -> (CallToolResult, BackgroundJobGuard) {
+        let detached = crate::server::background_shell::run_foreground_or_detach(
+            command.to_string(),
+            ".".to_string(),
+            std::collections::HashMap::default(),
+            Some(30_000),
+            std::time::Duration::from_millis(10),
+            None,
+        );
+        let crate::server::background_shell::ForegroundResult::Detached { job_id } = detached
+        else {
+            panic!("the reproduction must exercise the auto-detached path");
+        };
+        let job = BackgroundJobGuard::new(job_id.clone());
+        for _ in 0..400 {
+            if matches!(
+                crate::server::background_shell::status(&job_id),
+                Some(crate::server::background_shell::JobState::Completed { .. })
+            ) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        assert!(matches!(
+            crate::server::background_shell::status(&job_id),
+            Some(crate::server::background_shell::JobState::Completed { .. })
+        ));
+        (
+            pipeline_background_status(&job_id, false, false, false).await,
+            job,
+        )
+    }
+
+    #[cfg(not(windows))]
     fn structured_of(result: &CallToolResult) -> &serde_json::Value {
         result
             .structured_content
@@ -182,6 +258,71 @@ mod shell_outcome_tests {
             session: Some(std::sync::Arc::new(tokio::sync::RwLock::new(session))),
             ..ToolContext::default()
         }
+    }
+
+    #[cfg(not(windows))]
+    fn completed_background_job(command: &str) -> (String, BackgroundJobGuard) {
+        let job_id = crate::server::background_shell::start(
+            command.to_string(),
+            ".".to_string(),
+            std::collections::HashMap::default(),
+            Some(30_000),
+        );
+        let job = BackgroundJobGuard::new(job_id.clone());
+        for _ in 0..400 {
+            if matches!(
+                crate::server::background_shell::status(&job_id),
+                Some(
+                    crate::server::background_shell::JobState::Completed { .. }
+                        | crate::server::background_shell::JobState::Cancelled { .. }
+                )
+            ) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        assert!(matches!(
+            crate::server::background_shell::status(&job_id),
+            Some(crate::server::background_shell::JobState::Completed { .. })
+        ));
+        (job_id, job)
+    }
+
+    #[cfg(not(windows))]
+    async fn pipeline_background_status(
+        job_id: &str,
+        minimal: bool,
+        raw: bool,
+        inline: bool,
+    ) -> CallToolResult {
+        let root = std::env::current_dir()
+            .expect("current directory")
+            .to_string_lossy()
+            .into_owned();
+        let server = crate::tools::LeanCtxServer::new_with_project_root(Some(&root));
+        let mut args = serde_json::Map::new();
+        args.insert("background_action".to_string(), serde_json::json!("status"));
+        args.insert("job_id".to_string(), serde_json::json!(job_id));
+        if raw {
+            args.insert("raw".to_string(), serde_json::json!(true));
+        }
+        if inline {
+            args.insert("inline".to_string(), serde_json::json!(true));
+        }
+        dispatch_and_post_process(
+            &server,
+            "ctx_shell",
+            Some(&args),
+            minimal,
+            crate::core::config::Config::load_arc(),
+            false,
+            None,
+            None,
+            format!("mes1609_pipeline_{job_id}"),
+            None,
+        )
+        .await
+        .expect("background status pipeline must succeed")
     }
 
     fn call_shell(
@@ -466,12 +607,12 @@ mod shell_outcome_tests {
 
     /// MES-1609: terminal output too large for an inline response is archived
     /// before generic filtering can erase both the verdict and retrieval id.
-    #[test]
+    #[tokio::test(flavor = "multi_thread")]
     #[cfg(not(windows))]
-    fn auto_detached_large_output_keeps_summary_and_archive_id_inline() {
+    async fn auto_detached_large_output_keeps_summary_and_archive_id_inline() {
         let _data_dir = crate::core::data_dir::isolated_data_dir();
         let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
-        let result = auto_detached_result("sleep 0.1; seq 1 50000");
+        let (result, _job) = auto_detached_pipeline_result("sleep 0.1; seq 1 50000").await;
 
         assert_ne!(result.is_error, Some(true));
         let structured = structured_of(&result);
@@ -494,17 +635,18 @@ mod shell_outcome_tests {
         assert!(archived.ends_with("49999\n50000\n"));
     }
 
-    #[test]
+    #[tokio::test(flavor = "multi_thread")]
     #[cfg(not(windows))]
-    fn auto_detached_private_key_block_is_fully_redacted_before_archive() {
+    async fn auto_detached_private_key_block_is_fully_redacted_before_archive() {
         let _data_dir = crate::core::data_dir::isolated_data_dir();
         let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
-        let result = auto_detached_result(
+        let (result, _job) = auto_detached_pipeline_result(
             "sleep 0.1; printf '%s\\n' '-----BEGIN PRIVATE KEY-----'; \
              yes MES1609_FAKE_KEY_BODY_0123456789 | head -n 2000; \
              printf '%s\\n' '-----END PRIVATE KEY-----'; \
              yes MES1609_SAFE_OUTPUT | head -n 2000",
-        );
+        )
+        .await;
 
         let archive_id = structured_of(&result)["archiveId"]
             .as_str()
@@ -517,17 +659,18 @@ mod shell_outcome_tests {
         assert!(archived.contains("[REDACTED:Private key block]"));
     }
 
-    #[test]
+    #[tokio::test(flavor = "multi_thread")]
     #[cfg(not(windows))]
-    fn oversized_background_archive_reports_truncation_and_exact_sizes() {
+    async fn oversized_background_archive_reports_truncation_and_exact_sizes() {
         const ARCHIVE_LIMIT: usize = 10 * 1024 * 1024;
         const CAPTURED: usize = ARCHIVE_LIMIT + 4096;
         let _data_dir = crate::core::data_dir::isolated_data_dir();
         let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
         let _shell_cap = ScopedEnvVar::set("LCTX_MAX_SHELL_BYTES", (CAPTURED + 1024).to_string());
-        let result = auto_detached_result(&format!(
+        let (result, _job) = auto_detached_pipeline_result(&format!(
             "sleep 0.1; head -c {CAPTURED} /dev/zero | tr '\\0' X"
-        ));
+        ))
+        .await;
 
         let structured = structured_of(&result);
         assert_eq!(structured["state"], serde_json::json!("completed"));
@@ -610,6 +753,148 @@ mod shell_outcome_tests {
                 .matches(&format!("ctx_expand(id=\"{archive_id}\")"))
                 .count(),
             1
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(not(windows))]
+    async fn background_archive_is_created_after_policy_and_input_filters() {
+        const POLICY_PATTERN: &str = "MES1609_POLICY_PII_7F3A9C2E";
+        const TEST_CARD: &str = "4111111111111111";
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let _threshold = ScopedEnvVar::set("LEAN_CTX_ARCHIVE_THRESHOLD", "1");
+        let _policy = ScopedPolicy::redacting("mes1609_policy", POLICY_PATTERN);
+        let (job_id, _job) = completed_background_job(&format!(
+            "printf '%s\\n%s\\n' '{POLICY_PATTERN}' '{TEST_CARD}'; \
+             yes MES1609_POLICY_SAFE | head -n 3000"
+        ));
+
+        let result = pipeline_background_status(&job_id, false, false, false).await;
+
+        let structured = structured_of(&result);
+        let archive_id = structured["archiveId"]
+            .as_str()
+            .expect("secured background output must be archived");
+        assert_eq!(crate::core::archive::list_entries(None).len(), 1);
+        assert_eq!(structured["archiveTruncated"], serde_json::json!(false));
+        let archived = crate::core::archive::retrieve(archive_id)
+            .expect("structured archiveId must remain retrievable");
+        assert!(!archived.contains(POLICY_PATTERN));
+        assert!(!archived.contains(TEST_CARD));
+        assert!(archived.contains("[REDACTED:mes1609_policy]"));
+        assert!(archived.contains("[REDACTED:card]"));
+        assert!(!text_of(&result).contains(POLICY_PATTERN));
+        assert!(
+            crate::core::audit_trail::load_recent(10)
+                .iter()
+                .any(|entry| {
+                    entry.tool == "ctx_shell"
+                        && entry.role == "mes1609-test-policy"
+                        && matches!(
+                            entry.event_type,
+                            crate::core::audit_trail::AuditEventType::SecretDetected
+                        )
+                })
+        );
+        assert!(
+            result.meta.is_some(),
+            "finalize metadata must still be present"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(not(windows))]
+    async fn raw_background_status_keeps_secured_output_inline_without_digest() {
+        const RAW_SIZE: usize = 50_000;
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let _threshold = ScopedEnvVar::set("LEAN_CTX_ARCHIVE_THRESHOLD", "1");
+        let _turn_limit = ScopedEnvVar::set("LEAN_CTX_TURN_FRESH_LIMIT", "0");
+        let (job_id, _job) = completed_background_job(&format!(
+            "printf MES1609_RAW_HEAD; head -c {RAW_SIZE} /dev/zero | tr '\\000' R; printf MES1609_RAW_TAIL"
+        ));
+
+        let result = pipeline_background_status(&job_id, false, true, false).await;
+
+        let text = text_of(&result);
+        assert!(text.len() >= RAW_SIZE);
+        assert!(text.contains("MES1609_RAW_HEAD"));
+        assert!(text.contains("MES1609_RAW_TAIL"));
+        assert!(!text.contains("ctx_expand"));
+        assert!(!text.contains("[Archived:"));
+        assert!(structured_of(&result)["archiveId"].as_str().is_some());
+        assert_eq!(crate::core::archive::list_entries(None).len(), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(not(windows))]
+    async fn minimal_background_status_does_not_archive_or_digest() {
+        const MINIMAL_SIZE: usize = 50_000;
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let _threshold = ScopedEnvVar::set("LEAN_CTX_ARCHIVE_THRESHOLD", "1");
+        let (job_id, _job) = completed_background_job(&format!(
+            "printf MES1609_MINIMAL_HEAD; head -c {MINIMAL_SIZE} /dev/zero | tr '\\000' M; printf MES1609_MINIMAL_TAIL"
+        ));
+
+        let result = pipeline_background_status(&job_id, true, false, false).await;
+
+        let structured = structured_of(&result);
+        assert!(structured.get("archiveId").is_none());
+        assert_eq!(crate::core::archive::list_entries(None).len(), 0);
+        let text = text_of(&result);
+        assert!(!text.contains("ctx_expand"));
+        assert!(!text.contains("[Archived:"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(not(windows))]
+    async fn inline_background_status_under_limit_stays_inline_without_digest() {
+        const INLINE_SIZE: usize = 5_000;
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let _threshold = ScopedEnvVar::set("LEAN_CTX_ARCHIVE_THRESHOLD", "1");
+        let _turn_limit = ScopedEnvVar::set("LEAN_CTX_TURN_FRESH_LIMIT", "0");
+        let (job_id, _job) = completed_background_job(&format!(
+            "printf MES1609_INLINE_HEAD; head -c {INLINE_SIZE} /dev/zero | tr '\\000' I; printf MES1609_INLINE_TAIL"
+        ));
+
+        let result = pipeline_background_status(&job_id, false, false, true).await;
+
+        let text = text_of(&result);
+        assert!(text.len() >= INLINE_SIZE);
+        assert!(text.contains("MES1609_INLINE_HEAD"));
+        assert!(text.contains("MES1609_INLINE_TAIL"));
+        assert!(!text.contains("ctx_expand"));
+        assert!(!text.contains("[Archived:"));
+        assert!(structured_of(&result)["archiveId"].as_str().is_some());
+        assert_eq!(crate::core::archive::list_entries(None).len(), 1);
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn background_status_handler_does_not_write_archives_before_pipeline() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let _threshold = ScopedEnvVar::set("LEAN_CTX_ARCHIVE_THRESHOLD", "1");
+        let (job_id, _job) = completed_background_job(
+            "printf MES1609_HANDLER_ONLY; head -c 50000 /dev/zero | tr '\\000' H",
+        );
+        let mut args = serde_json::Map::new();
+        args.insert("background_action".to_string(), serde_json::json!("status"));
+        args.insert("job_id".to_string(), serde_json::json!(job_id));
+
+        let output = crate::tools::registered::ctx_shell::CtxShellTool
+            .handle(&args, &ToolContext::default())
+            .expect("status handler must succeed without pipeline I/O");
+
+        assert_eq!(crate::core::archive::list_entries(None).len(), 0);
+        assert!(
+            output
+                .shell_outcome
+                .and_then(|outcome| outcome.structured())
+                .is_some_and(|structured| structured.get("archiveId").is_none())
         );
     }
 

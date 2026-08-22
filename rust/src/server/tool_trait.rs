@@ -22,6 +22,12 @@ impl BackgroundJobState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackgroundDisplay {
+    pub header: String,
+    pub footer: Option<String>,
+}
+
 /// Protocol metadata that must survive output compression and archiving.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackgroundShellOutcome {
@@ -34,7 +40,7 @@ pub struct BackgroundShellOutcome {
     pub archived_chars: Option<usize>,
     pub summary: String,
     pub is_error: bool,
-    pub display_prepared: bool,
+    pub display: Option<BackgroundDisplay>,
 }
 
 /// A background job lookup failed without evidence of a lifecycle state.
@@ -124,12 +130,13 @@ impl ShellOutcome {
         }
     }
 
-    /// Whether this background text was already redacted, archived, and summarized.
-    pub fn display_prepared(&self) -> bool {
+    /// Whether this is a status body that the common pipeline must secure,
+    /// archive and render before delivery.
+    pub fn is_background_status(&self) -> bool {
         matches!(
             self,
             ShellOutcome::Background(BackgroundShellOutcome {
-                display_prepared: true,
+                display: Some(_),
                 ..
             })
         )
