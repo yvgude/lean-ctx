@@ -4,7 +4,64 @@ use super::{finalize_call_result, roots_list_failure_is_permanent};
 
 mod shell_outcome_tests {
     use super::*;
+    #[cfg(not(windows))]
+    use crate::server::call_tool::dispatch_and_post_process;
     use crate::server::tool_trait::{McpTool, ShellOutcome, ToolContext};
+
+    #[cfg(not(windows))]
+    struct ScopedEnvVar {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    #[cfg(not(windows))]
+    impl ScopedEnvVar {
+        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let previous = std::env::var_os(key);
+            crate::test_env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    #[cfg(not(windows))]
+    impl Drop for ScopedEnvVar {
+        fn drop(&mut self) {
+            if let Some(previous) = &self.previous {
+                crate::test_env::set_var(self.key, previous);
+            } else {
+                crate::test_env::remove_var(self.key);
+            }
+        }
+    }
+
+    #[cfg(not(windows))]
+    struct BackgroundJobGuard {
+        job_id: String,
+    }
+
+    #[cfg(not(windows))]
+    impl BackgroundJobGuard {
+        fn new(job_id: String) -> Self {
+            Self { job_id }
+        }
+    }
+
+    #[cfg(not(windows))]
+    impl Drop for BackgroundJobGuard {
+        fn drop(&mut self) {
+            let _ = crate::server::background_shell::cancel(&self.job_id);
+            for _ in 0..120 {
+                if !matches!(
+                    crate::server::background_shell::status(&self.job_id),
+                    Some(crate::server::background_shell::JobState::Running { .. })
+                ) {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            crate::server::background_shell::remove_for_test(&self.job_id);
+        }
+    }
 
     fn text_of(result: &CallToolResult) -> String {
         result
@@ -13,6 +70,25 @@ mod shell_outcome_tests {
             .and_then(|c| c.as_text())
             .map(|t| t.text.clone())
             .unwrap_or_default()
+    }
+
+    #[cfg(not(windows))]
+    fn launched_job_guard(result: &CallToolResult) -> BackgroundJobGuard {
+        let structured_id = result
+            .structured_content
+            .as_ref()
+            .and_then(|value| value["jobId"].as_str());
+        let text = text_of(result);
+        let text_id = text
+            .strip_prefix('[')
+            .and_then(|value| value.split_once(':'))
+            .and_then(|(_, value)| value.split_whitespace().next());
+        BackgroundJobGuard::new(
+            structured_id
+                .or(text_id)
+                .expect("background launch must expose a job id")
+                .to_string(),
+        )
     }
 
     #[cfg(not(windows))]
@@ -29,9 +105,10 @@ mod shell_outcome_tests {
         else {
             panic!("the reproduction must exercise the auto-detached path");
         };
+        let _job = BackgroundJobGuard::new(job_id.clone());
 
         let mut terminal = false;
-        for _ in 0..80 {
+        for _ in 0..240 {
             if matches!(
                 crate::server::background_shell::status(&job_id),
                 Some(
@@ -58,6 +135,7 @@ mod shell_outcome_tests {
         finalize_call_result(&output.text, output.shell_outcome)
     }
 
+    #[cfg(not(windows))]
     fn structured_of(result: &CallToolResult) -> &serde_json::Value {
         result
             .structured_content
@@ -68,7 +146,7 @@ mod shell_outcome_tests {
     #[cfg(not(windows))]
     fn auto_detached_running_result() -> CallToolResult {
         let detached = crate::server::background_shell::run_foreground_or_detach(
-            "sleep 2".to_string(),
+            "sleep 2 # MES1609_RUNNING_STATUS".to_string(),
             ".".to_string(),
             std::collections::HashMap::default(),
             Some(10_000),
@@ -79,6 +157,7 @@ mod shell_outcome_tests {
         else {
             panic!("the reproduction must exercise the auto-detached path");
         };
+        let _job = BackgroundJobGuard::new(job_id.clone());
 
         let mut args = serde_json::Map::new();
         args.insert("background_action".to_string(), serde_json::json!("status"));
@@ -86,6 +165,32 @@ mod shell_outcome_tests {
         let output = crate::tools::registered::ctx_shell::CtxShellTool
             .handle(&args, &ToolContext::default())
             .expect("status must return a tool result");
+        finalize_call_result(&output.text, output.shell_outcome)
+    }
+
+    #[cfg(not(windows))]
+    fn shell_context() -> ToolContext {
+        let cwd = std::env::current_dir()
+            .expect("current directory")
+            .to_string_lossy()
+            .into_owned();
+        let mut session = crate::core::session::SessionState::new();
+        session.project_root = Some(cwd.clone());
+        session.shell_cwd = Some(cwd.clone());
+        ToolContext {
+            project_root: cwd,
+            session: Some(std::sync::Arc::new(tokio::sync::RwLock::new(session))),
+            ..ToolContext::default()
+        }
+    }
+
+    fn call_shell(
+        args: serde_json::Map<String, serde_json::Value>,
+        ctx: &ToolContext,
+    ) -> CallToolResult {
+        let output = crate::tools::registered::ctx_shell::CtxShellTool
+            .handle(&args, ctx)
+            .expect("ctx_shell must return a tool result");
         finalize_call_result(&output.text, output.shell_outcome)
     }
 
@@ -156,7 +261,7 @@ mod shell_outcome_tests {
     /// failure is a job verdict, not grep-like output that may use exit 1 as
     /// data. The MCP result must therefore keep both state and exit code.
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg(not(windows))]
     fn auto_detached_exit_1_is_a_structured_failed_job() {
         let result = auto_detached_result("sleep 0.1; printf TAP_FAILURE; exit 1");
 
@@ -174,7 +279,7 @@ mod shell_outcome_tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg(not(windows))]
     fn auto_detached_exit_7_is_a_structured_failed_job() {
         let result = auto_detached_result("sleep 0.1; exit 7");
 
@@ -185,7 +290,7 @@ mod shell_outcome_tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg(not(windows))]
     fn auto_detached_running_job_has_no_exit_code() {
         let result = auto_detached_running_result();
 
@@ -197,10 +302,10 @@ mod shell_outcome_tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg(not(windows))]
     fn auto_detached_cancel_returns_cancelled_exit_130_without_error() {
         let detached = crate::server::background_shell::run_foreground_or_detach(
-            "sleep 2".to_string(),
+            "sleep 2 # MES1609_CANCEL_STATUS".to_string(),
             ".".to_string(),
             std::collections::HashMap::default(),
             Some(10_000),
@@ -211,6 +316,7 @@ mod shell_outcome_tests {
         else {
             panic!("the reproduction must exercise the auto-detached path");
         };
+        let _job = BackgroundJobGuard::new(job_id.clone());
 
         let mut args = serde_json::Map::new();
         args.insert("background_action".to_string(), serde_json::json!("cancel"));
@@ -246,10 +352,102 @@ mod shell_outcome_tests {
         assert_eq!(structured["exitCode"], serde_json::json!(130));
     }
 
+    #[test]
+    fn missing_cancel_is_a_success_ack_without_a_fabricated_terminal_state() {
+        let mut args = serde_json::Map::new();
+        args.insert("background_action".to_string(), serde_json::json!("cancel"));
+        args.insert(
+            "job_id".to_string(),
+            serde_json::json!("shell_mes1609_missing_cancel"),
+        );
+
+        let result = call_shell(args, &ToolContext::default());
+
+        assert_ne!(result.is_error, Some(true));
+        assert!(
+            result.structured_content.is_none(),
+            "an unknown terminal must not be fabricated: {:?}",
+            result.structured_content
+        );
+        assert!(text_of(&result).contains("already finished or cancelled"));
+    }
+
+    #[test]
+    fn missing_status_is_a_lookup_error_without_a_fabricated_lifecycle_state() {
+        let mut args = serde_json::Map::new();
+        args.insert("background_action".to_string(), serde_json::json!("status"));
+        args.insert(
+            "job_id".to_string(),
+            serde_json::json!("shell_mes1609_missing_status"),
+        );
+
+        let result = call_shell(args, &ToolContext::default());
+
+        assert_eq!(result.is_error, Some(true));
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("missing status must expose a structured lookup error");
+        assert_eq!(
+            structured["jobId"],
+            serde_json::json!("shell_mes1609_missing_status")
+        );
+        assert_eq!(
+            structured["errorCode"],
+            serde_json::json!("background_job_not_found_or_expired")
+        );
+        assert!(structured["reason"].as_str().is_some());
+        assert!(structured.get("state").is_none());
+        assert!(structured.get("exitCode").is_none());
+        assert!(text_of(&result).contains("not found or expired"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(not(windows))]
+    async fn explicit_background_launch_ack_is_structured_running() {
+        let mut args = serde_json::Map::new();
+        args.insert(
+            "command".to_string(),
+            serde_json::json!("sleep 2 # MES1609_EXPLICIT_LAUNCH"),
+        );
+        args.insert("run_in_background".to_string(), serde_json::json!(true));
+
+        let result = call_shell(args, &shell_context());
+
+        let _job = launched_job_guard(&result);
+        assert_ne!(result.is_error, Some(true));
+        let structured = structured_of(&result);
+        assert_eq!(structured["state"], serde_json::json!("running"));
+        assert!(structured["jobId"].as_str().is_some());
+        assert!(structured.get("exitCode").is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(not(windows))]
+    async fn soft_cap_auto_detach_ack_is_structured_running() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let _soft_cap = ScopedEnvVar::set("LEAN_CTX_SHELL_FG_CAP_MS", "10");
+        let mut args = serde_json::Map::new();
+        args.insert(
+            "command".to_string(),
+            serde_json::json!("sleep 2 # MES1609_SOFT_CAP_LAUNCH"),
+        );
+
+        let result = call_shell(args, &shell_context());
+
+        let _job = launched_job_guard(&result);
+        assert_ne!(result.is_error, Some(true));
+        let structured = structured_of(&result);
+        assert_eq!(structured["state"], serde_json::json!("running"));
+        assert!(structured["jobId"].as_str().is_some());
+        assert!(structured.get("exitCode").is_none());
+    }
+
     /// MES-1609: a successful auto-detached child remains queryable after
     /// the OS process exits and exposes an explicit terminal code 0.
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg(not(windows))]
     fn auto_detached_exit_0_remains_queryable_as_completed() {
         let result = auto_detached_result("sleep 0.1; printf LONG_OK");
 
@@ -269,8 +467,10 @@ mod shell_outcome_tests {
     /// MES-1609: terminal output too large for an inline response is archived
     /// before generic filtering can erase both the verdict and retrieval id.
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg(not(windows))]
     fn auto_detached_large_output_keeps_summary_and_archive_id_inline() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
         let result = auto_detached_result("sleep 0.1; seq 1 50000");
 
         assert_ne!(result.is_error, Some(true));
@@ -292,7 +492,125 @@ mod shell_outcome_tests {
             .expect("archive id must resolve to the terminal output");
         assert!(archived.starts_with("1\n2\n"));
         assert!(archived.ends_with("49999\n50000\n"));
-        crate::core::archive::remove_files(archive_id);
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn auto_detached_private_key_block_is_fully_redacted_before_archive() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let result = auto_detached_result(
+            "sleep 0.1; printf '%s\\n' '-----BEGIN PRIVATE KEY-----'; \
+             yes MES1609_FAKE_KEY_BODY_0123456789 | head -n 2000; \
+             printf '%s\\n' '-----END PRIVATE KEY-----'; \
+             yes MES1609_SAFE_OUTPUT | head -n 2000",
+        );
+
+        let archive_id = structured_of(&result)["archiveId"]
+            .as_str()
+            .expect("large redacted output must be archived");
+        let archived = crate::core::archive::retrieve(archive_id)
+            .expect("archive id must resolve to redacted output");
+        assert!(!archived.contains("BEGIN PRIVATE KEY"));
+        assert!(!archived.contains("END PRIVATE KEY"));
+        assert!(!archived.contains("MES1609_FAKE_KEY_BODY_0123456789"));
+        assert!(archived.contains("[REDACTED:Private key block]"));
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn oversized_background_archive_reports_truncation_and_exact_sizes() {
+        const ARCHIVE_LIMIT: usize = 10 * 1024 * 1024;
+        const CAPTURED: usize = ARCHIVE_LIMIT + 4096;
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let _shell_cap = ScopedEnvVar::set("LCTX_MAX_SHELL_BYTES", (CAPTURED + 1024).to_string());
+        let result = auto_detached_result(&format!(
+            "sleep 0.1; head -c {CAPTURED} /dev/zero | tr '\\0' X"
+        ));
+
+        let structured = structured_of(&result);
+        assert_eq!(structured["state"], serde_json::json!("completed"));
+        assert_eq!(structured["exitCode"], serde_json::json!(0));
+        assert_eq!(structured["archiveTruncated"], serde_json::json!(true));
+        assert_eq!(structured["capturedChars"], serde_json::json!(CAPTURED));
+        assert_eq!(
+            structured["archivedChars"],
+            serde_json::json!(ARCHIVE_LIMIT)
+        );
+        let archive_id = structured["archiveId"]
+            .as_str()
+            .expect("oversized output must expose archiveId");
+        let archived = crate::core::archive::retrieve(archive_id)
+            .expect("truncated archive must remain retrievable");
+        assert_eq!(archived.len(), ARCHIVE_LIMIT);
+        assert!(text_of(&result).contains("archive truncated"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(not(windows))]
+    async fn background_status_pipeline_keeps_single_archive_and_structured_metadata() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let _threshold = ScopedEnvVar::set("LEAN_CTX_ARCHIVE_THRESHOLD", "1");
+        let job_id = crate::server::background_shell::start(
+            "sleep 0.1; printf MES1609_PIPELINE; head -c 50000 /dev/zero | tr '\\000' P"
+                .to_string(),
+            ".".to_string(),
+            std::collections::HashMap::default(),
+            Some(10_000),
+        );
+        let _job = BackgroundJobGuard::new(job_id.clone());
+        for _ in 0..240 {
+            if matches!(
+                crate::server::background_shell::status(&job_id),
+                Some(crate::server::background_shell::JobState::Completed { .. })
+            ) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        assert!(matches!(
+            crate::server::background_shell::status(&job_id),
+            Some(crate::server::background_shell::JobState::Completed { .. })
+        ));
+
+        let root = std::env::current_dir()
+            .expect("current directory")
+            .to_string_lossy()
+            .into_owned();
+        let server = crate::tools::LeanCtxServer::new_with_project_root(Some(&root));
+        let mut args = serde_json::Map::new();
+        args.insert("background_action".to_string(), serde_json::json!("status"));
+        args.insert("job_id".to_string(), serde_json::json!(job_id));
+        let result = dispatch_and_post_process(
+            &server,
+            "ctx_shell",
+            Some(&args),
+            false,
+            crate::core::config::Config::load_arc(),
+            false,
+            None,
+            None,
+            "mes1609_pipeline".to_string(),
+            None,
+        )
+        .await
+        .expect("background status pipeline must succeed");
+
+        let structured = structured_of(&result);
+        assert_eq!(structured["state"], serde_json::json!("completed"));
+        assert_eq!(structured["exitCode"], serde_json::json!(0));
+        let archive_id = structured["archiveId"]
+            .as_str()
+            .expect("pipeline must retain archiveId");
+        assert_eq!(crate::core::archive::list_entries(None).len(), 1);
+        assert_eq!(
+            text_of(&result)
+                .matches(&format!("ctx_expand(id=\"{archive_id}\")"))
+                .count(),
+            1
+        );
     }
 
     #[test]

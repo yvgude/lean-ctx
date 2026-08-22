@@ -29,8 +29,20 @@ pub struct BackgroundShellOutcome {
     pub exit_code: Option<i32>,
     pub job_id: String,
     pub archive_id: Option<String>,
+    pub archive_truncated: Option<bool>,
+    pub captured_chars: Option<usize>,
+    pub archived_chars: Option<usize>,
     pub summary: String,
     pub is_error: bool,
+    pub display_prepared: bool,
+}
+
+/// A background job lookup failed without evidence of a lifecycle state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackgroundLookupError {
+    pub job_id: String,
+    pub code: String,
+    pub reason: String,
 }
 
 /// Outcome of a shell execution, carried alongside the rendered text so the
@@ -47,6 +59,8 @@ pub enum ShellOutcome {
     /// A managed background job status. Unlike a foreground `Exit(1)`, a
     /// terminal failed job is never reclassified as grep-like result data.
     Background(BackgroundShellOutcome),
+    /// The requested background job is unknown or its retained verdict expired.
+    BackgroundLookupError(BackgroundLookupError),
 }
 
 impl ShellOutcome {
@@ -54,7 +68,7 @@ impl ShellOutcome {
     pub fn is_error(&self) -> bool {
         match self {
             ShellOutcome::Exit(code) => *code != 0,
-            ShellOutcome::Blocked => true,
+            ShellOutcome::Blocked | ShellOutcome::BackgroundLookupError(_) => true,
             ShellOutcome::Background(outcome) => outcome.is_error,
         }
     }
@@ -82,9 +96,43 @@ impl ShellOutcome {
                 if let Some(archive_id) = &outcome.archive_id {
                     fields.insert("archiveId".to_string(), serde_json::json!(archive_id));
                 }
+                if let Some(archive_truncated) = outcome.archive_truncated {
+                    fields.insert(
+                        "archiveTruncated".to_string(),
+                        serde_json::json!(archive_truncated),
+                    );
+                }
+                if let Some(captured_chars) = outcome.captured_chars {
+                    fields.insert(
+                        "capturedChars".to_string(),
+                        serde_json::json!(captured_chars),
+                    );
+                }
+                if let Some(archived_chars) = outcome.archived_chars {
+                    fields.insert(
+                        "archivedChars".to_string(),
+                        serde_json::json!(archived_chars),
+                    );
+                }
                 Some(serde_json::Value::Object(fields))
             }
+            ShellOutcome::BackgroundLookupError(error) => Some(serde_json::json!({
+                "jobId": error.job_id,
+                "errorCode": error.code,
+                "reason": error.reason,
+            })),
         }
+    }
+
+    /// Whether this background text was already redacted, archived, and summarized.
+    pub fn display_prepared(&self) -> bool {
+        matches!(
+            self,
+            ShellOutcome::Background(BackgroundShellOutcome {
+                display_prepared: true,
+                ..
+            })
+        )
     }
 }
 

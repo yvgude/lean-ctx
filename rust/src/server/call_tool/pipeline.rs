@@ -62,6 +62,9 @@ pub(in crate::server) async fn dispatch_and_post_process(
         crate::core::decision_loop_runtime::DecisionLoopRuntime::get_or_init()
             .profile_for_session(&session.id)
     };
+    let display_prepared = shell_outcome
+        .as_ref()
+        .is_some_and(crate::server::tool_trait::ShellOutcome::display_prepared);
     // #1484: respect lossless escape hatches — never triage when the caller
     // explicitly requested unfiltered output (raw, aggressiveness=0, fresh=true).
     // #1490: an explicit lines:N-M / anchored:N-M window is already an
@@ -87,6 +90,7 @@ pub(in crate::server) async fn dispatch_and_post_process(
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false)
     });
+    let triage_bypass = display_prepared || triage_bypass;
     if !triage_bypass {
         result_text =
             apply_task_triage_filter(result_text, task_profile.as_ref(), &mut decision_context);
@@ -291,7 +295,7 @@ pub(in crate::server) async fn dispatch_and_post_process(
     // the firewall must NOT replace their content with a structural digest.
     // The output is still *archived* (so ctx_expand works), but stays inline.
     // `minimal` (no-overhead mode) skips even archiving.
-    let archive_hint = if minimal {
+    let archive_hint = if minimal || display_prepared {
         None
     } else {
         use crate::core::archive;
@@ -333,7 +337,7 @@ pub(in crate::server) async fn dispatch_and_post_process(
     let pre_compression = result_text.clone();
     // A firewalled result is already a compact digest — re-compressing it would mangle
     // the retrieval instructions for no benefit.
-    if !firewalled {
+    if !firewalled && !display_prepared {
         result_text = post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
     }
     // Snapshot BEFORE any decoration (auto-context prefix, throttle/budget

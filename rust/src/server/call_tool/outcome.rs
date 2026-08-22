@@ -32,6 +32,7 @@ pub(in crate::server) fn finalize_call_result(
         if matches!(
             outcome,
             crate::server::tool_trait::ShellOutcome::Background(_)
+                | crate::server::tool_trait::ShellOutcome::BackgroundLookupError(_)
         ) {
             result.structured_content = outcome.structured();
             if outcome.is_error() {
@@ -69,7 +70,8 @@ fn is_shell_error(outcome: &crate::server::tool_trait::ShellOutcome, output: &st
             crate::server::execute::output_before_timeout_marker(output).is_none_or(str::is_empty)
         }
         crate::server::tool_trait::ShellOutcome::Exit(_)
-        | crate::server::tool_trait::ShellOutcome::Blocked => true,
+        | crate::server::tool_trait::ShellOutcome::Blocked
+        | crate::server::tool_trait::ShellOutcome::BackgroundLookupError(_) => true,
         crate::server::tool_trait::ShellOutcome::Background(outcome) => outcome.is_error,
     }
 }

@@ -5,8 +5,8 @@ use serde_json::{Map, Value, json};
 use crate::core::ocla::cache_types::{CacheKeyBuilder, ShellCommandKey};
 
 use crate::server::tool_trait::{
-    BackgroundJobState, BackgroundShellOutcome, McpTool, ShellOutcome, ToolContext, ToolOutput,
-    get_bool, get_int, get_str,
+    BackgroundJobState, BackgroundLookupError, BackgroundShellOutcome, McpTool, ShellOutcome,
+    ToolContext, ToolOutput, get_bool, get_int, get_str,
 };
 use crate::tool_defs::tool_def;
 
@@ -36,7 +36,7 @@ impl McpTool for CtxShellTool {
                     "timeout_ms": { "type": "integer", "description": "Job lifetime in ms (max 3600000) — NOT the inline wait. A command still running at the ~110s foreground cap detaches to a pollable shell_* job and keeps running up to timeout_ms. Overridden by LEAN_CTX_SHELL_TIMEOUT_MS." },
                     "env": { "type": "object", "description": "Extra env vars", "additionalProperties": { "type": "string" } },
                     "run_in_background": { "type": "boolean", "description": "Detach immediately and return a job id. The command keeps timeout_ms; poll or cancel with background_action and job_id." },
-                    "background_action": { "type": "string", "enum": ["status", "cancel"], "description": "Inspect or cancel a background ctx_shell job. Terminal verdicts remain pollable for 5 minutes; bounded retention may evict older jobs under pressure." },
+                    "background_action": { "type": "string", "enum": ["status", "cancel"], "description": "Inspect or cancel a background ctx_shell job. During the documented 5-minute retention window, status exposes the real terminal state and exit code; bounded retention may evict older jobs under pressure, after which status returns a structured lookup error." },
                     "job_id": { "type": "string", "description": "Job id returned by run_in_background." }
                 }
             }),
@@ -73,7 +73,7 @@ impl McpTool for CtxShellTool {
             };
             let (text, outcome) = format_background_state(&id, is_cancel, state);
             return Ok(ToolOutput {
-                shell_outcome: Some(ShellOutcome::Background(outcome)),
+                shell_outcome: Some(outcome),
                 content_blocks: None,
                 ..ToolOutput::simple(text)
             });
@@ -326,7 +326,18 @@ impl McpTool for CtxShellTool {
                     "background"
                 };
                 return Ok(ToolOutput {
-                    shell_outcome: Some(ShellOutcome::Exit(0)),
+                    shell_outcome: Some(ShellOutcome::Background(BackgroundShellOutcome {
+                        state: BackgroundJobState::Running,
+                        exit_code: None,
+                        job_id: job_id.clone(),
+                        archive_id: None,
+                        archive_truncated: None,
+                        captured_chars: None,
+                        archived_chars: None,
+                        summary: format!("{mode} job started"),
+                        is_error: false,
+                        display_prepared: false,
+                    })),
                     content_blocks: None,
                     ..ToolOutput::simple(format!(
                         "[{mode}:{job_id} started — use ctx_shell(background_action=\"status\", job_id=\"{job_id}\") to poll or background_action=\"cancel\" to stop it]"
@@ -381,7 +392,18 @@ impl McpTool for CtxShellTool {
                     } => (output, exit_code),
                     crate::server::background_shell::ForegroundResult::Detached { job_id } => {
                         return Ok(ToolOutput {
-                            shell_outcome: Some(ShellOutcome::Exit(0)),
+                            shell_outcome: Some(ShellOutcome::Background(BackgroundShellOutcome {
+                                state: BackgroundJobState::Running,
+                                exit_code: None,
+                                job_id: job_id.clone(),
+                                archive_id: None,
+                                archive_truncated: None,
+                                captured_chars: None,
+                                archived_chars: None,
+                                summary: "auto-detached job is still running".to_string(),
+                                is_error: false,
+                                display_prepared: false,
+                            })),
                             content_blocks: None,
                             // #1173: a detach is not a failure — the command is
                             // alive and its output is recoverable, so say so
@@ -759,44 +781,31 @@ fn format_background_state(
     id: &str,
     is_cancel: bool,
     state: Option<crate::server::background_shell::JobState>,
-) -> (String, BackgroundShellOutcome) {
+) -> (String, ShellOutcome) {
     use crate::server::background_shell::JobState;
     let Some(state) = state else {
-        let (text, state, exit_code, summary, is_error) = if is_cancel {
+        return if is_cancel {
             (
                 format!("[background:{id} not found — already finished or cancelled]"),
-                BackgroundJobState::Cancelled,
-                None,
-                "job already finished, cancelled or expired".to_string(),
-                false,
+                ShellOutcome::Exit(0),
             )
         } else {
             (
-                format!("[background:{id} failed, exit 1 — not found]"),
-                BackgroundJobState::Failed,
-                Some(1),
-                "job not found or terminal verdict expired".to_string(),
-                true,
+                format!("[background:{id} not found or expired]"),
+                ShellOutcome::BackgroundLookupError(BackgroundLookupError {
+                    job_id: id.to_string(),
+                    code: "background_job_not_found_or_expired".to_string(),
+                    reason: "job not found or retained terminal verdict expired".to_string(),
+                }),
             )
         };
-        return (
-            text,
-            BackgroundShellOutcome {
-                state,
-                exit_code,
-                job_id: id.to_string(),
-                archive_id: None,
-                summary,
-                is_error,
-            },
-        );
     };
     match state {
         JobState::Running { output } => {
             // #1217: show the captured-so-far output so a poll of a
             // long-running job reflects progress instead of a bare
             // "running" with no signal of whether it is advancing.
-            let (body, archive_id, summary) = prepare_background_output(id, &output);
+            let prepared = prepare_background_output(id, &output);
             let head = if is_cancel {
                 format!(
                     "[background:{id} cancel requested — job is stopping; poll status for the final output]"
@@ -805,19 +814,23 @@ fn format_background_state(
                 format!("[background:{id} running]")
             };
             (
-                compose_background_text(head, &body, None),
-                BackgroundShellOutcome {
+                compose_background_text(head, &prepared.body, None),
+                ShellOutcome::Background(BackgroundShellOutcome {
                     state: BackgroundJobState::Running,
                     exit_code: None,
                     job_id: id.to_string(),
-                    archive_id,
-                    summary,
+                    archive_id: prepared.archive_id,
+                    archive_truncated: prepared.archive_truncated,
+                    captured_chars: prepared.captured_chars,
+                    archived_chars: prepared.archived_chars,
+                    summary: prepared.summary,
                     is_error: false,
-                },
+                    display_prepared: prepared.display_prepared,
+                }),
             )
         }
         JobState::Completed { output, exit_code } => {
-            let (body, archive_id, summary) = prepare_background_output(id, &output);
+            let prepared = prepare_background_output(id, &output);
             let state = if exit_code == 0 {
                 BackgroundJobState::Completed
             } else {
@@ -826,33 +839,41 @@ fn format_background_state(
             let head = format!("[background:{id} {}, exit {exit_code}]", state.as_str());
             let footer = (exit_code != 0).then(|| format!("[exit:{exit_code}]"));
             (
-                compose_background_text(head, &body, footer.as_deref()),
-                BackgroundShellOutcome {
+                compose_background_text(head, &prepared.body, footer.as_deref()),
+                ShellOutcome::Background(BackgroundShellOutcome {
                     state,
                     exit_code: Some(exit_code),
                     job_id: id.to_string(),
-                    archive_id,
-                    summary,
+                    archive_id: prepared.archive_id,
+                    archive_truncated: prepared.archive_truncated,
+                    captured_chars: prepared.captured_chars,
+                    archived_chars: prepared.archived_chars,
+                    summary: prepared.summary,
                     is_error: !is_cancel && exit_code != 0,
-                },
+                    display_prepared: prepared.display_prepared,
+                }),
             )
         }
         JobState::Cancelled { output } => {
-            let (body, archive_id, summary) = prepare_background_output(id, &output);
+            let prepared = prepare_background_output(id, &output);
             (
                 compose_background_text(
                     format!("[background:{id} cancelled, exit 130]"),
-                    &body,
+                    &prepared.body,
                     Some(&format!("[cancelled: {id}, exit 130]")),
                 ),
-                BackgroundShellOutcome {
+                ShellOutcome::Background(BackgroundShellOutcome {
                     state: BackgroundJobState::Cancelled,
                     exit_code: Some(130),
                     job_id: id.to_string(),
-                    archive_id,
-                    summary,
+                    archive_id: prepared.archive_id,
+                    archive_truncated: prepared.archive_truncated,
+                    captured_chars: prepared.captured_chars,
+                    archived_chars: prepared.archived_chars,
+                    summary: prepared.summary,
                     is_error: false,
-                },
+                    display_prepared: prepared.display_prepared,
+                }),
             )
         }
     }
@@ -870,18 +891,54 @@ fn compose_background_text(mut head: String, body: &str, footer: Option<&str>) -
     head
 }
 
-fn prepare_background_output(id: &str, output: &str) -> (String, Option<String>, String) {
+struct PreparedBackgroundOutput {
+    body: String,
+    archive_id: Option<String>,
+    archive_truncated: Option<bool>,
+    captured_chars: Option<usize>,
+    archived_chars: Option<usize>,
+    summary: String,
+    display_prepared: bool,
+}
+
+fn prepare_background_output(id: &str, output: &str) -> PreparedBackgroundOutput {
     let redacted = redact_shell_output_secrets(output);
     let chars = redacted.chars().count();
     let lines = redacted.lines().count();
     if crate::core::archive::should_archive(&redacted)
-        && let Some(archive_id) = crate::core::archive::store("ctx_shell", id, &redacted, None)
+        && let Some(stored) =
+            crate::core::archive::store_with_result("ctx_shell", id, &redacted, None)
     {
-        let tokens = crate::core::tokens::count_tokens(&redacted);
-        let summary = format!("{chars} chars, {lines} lines archived");
-        let body =
-            crate::core::firewall::summarize(&redacted, &archive_id, "ctx_shell", tokens, id);
-        return (body, Some(archive_id), summary);
+        let archived = stored
+            .truncated
+            .then(|| crate::core::archive::retrieve(&stored.id).unwrap_or_default());
+        let archived = archived.as_deref().unwrap_or(&redacted);
+        let tokens = crate::core::tokens::count_tokens(archived);
+        let digest =
+            crate::core::firewall::summarize(archived, &stored.id, "ctx_shell", tokens, id);
+        let (body, summary) = if stored.truncated {
+            (
+                format!(
+                    "[archive truncated: {} captured chars, {} archived chars; remainder unavailable]\n{digest}",
+                    stored.captured_chars, stored.archived_chars
+                ),
+                format!(
+                    "{} captured chars, {} archived chars (archive truncated)",
+                    stored.captured_chars, stored.archived_chars
+                ),
+            )
+        } else {
+            (digest, format!("{chars} chars, {lines} lines archived"))
+        };
+        return PreparedBackgroundOutput {
+            body,
+            archive_id: Some(stored.id),
+            archive_truncated: Some(stored.truncated),
+            captured_chars: Some(stored.captured_chars),
+            archived_chars: Some(stored.archived_chars),
+            summary,
+            display_prepared: true,
+        };
     }
 
     let trimmed = redacted.trim();
@@ -892,16 +949,25 @@ fn prepare_background_output(id: &str, output: &str) -> (String, Option<String>,
     } else {
         format!("{chars} chars, {lines} lines")
     };
-    (redacted, None, summary)
+    PreparedBackgroundOutput {
+        body: redacted,
+        archive_id: None,
+        archive_truncated: None,
+        captured_chars: None,
+        archived_chars: None,
+        summary,
+        display_prepared: false,
+    }
 }
 
 fn redact_shell_output_secrets(output: &str) -> String {
+    let output = crate::core::redaction::redact_text_if_enabled(output);
     let cfg = crate::core::config::Config::load();
     if !cfg.secret_detection.enabled {
-        return output.to_string();
+        return output;
     }
     let (redacted, matches) =
-        crate::core::secret_detection::scan_and_redact(output, &cfg.secret_detection);
+        crate::core::secret_detection::scan_and_redact(&output, &cfg.secret_detection);
     if !matches.is_empty() {
         let names: Vec<&str> = matches.iter().map(|m| m.pattern_name).collect();
         tracing::warn!(
@@ -1282,7 +1348,16 @@ mod tests {
         resolve_effective_cwd, shell_access_denial, should_auto_background,
     };
     use crate::server::background_shell::JobState;
-    use crate::server::tool_trait::{BackgroundJobState, McpTool, ShellOutcome, ToolContext};
+    use crate::server::tool_trait::{
+        BackgroundJobState, BackgroundShellOutcome, McpTool, ShellOutcome, ToolContext,
+    };
+
+    fn background(outcome: ShellOutcome) -> BackgroundShellOutcome {
+        let ShellOutcome::Background(outcome) = outcome else {
+            panic!("expected a background outcome");
+        };
+        outcome
+    }
 
     /// #1246: a cancel must never come back as a tool error, and must not read
     /// like a status poll that did nothing.
@@ -1292,6 +1367,7 @@ mod tests {
             output: String::new(),
         };
         let (text, outcome) = format_background_state("shell_x", true, Some(running.clone()));
+        let outcome = background(outcome);
         assert!(!outcome.is_error);
         assert_eq!(outcome.state, BackgroundJobState::Running);
         assert_eq!(outcome.exit_code, None);
@@ -1299,6 +1375,7 @@ mod tests {
 
         // A status poll of the same state keeps the old wording.
         let (text, outcome) = format_background_state("shell_x", false, Some(running));
+        let outcome = background(outcome);
         assert!(!outcome.is_error);
         assert_eq!(outcome.state, BackgroundJobState::Running);
         assert!(text.contains("[background:shell_x running]"), "{text}");
@@ -1312,6 +1389,7 @@ mod tests {
                 output: "[cancelled: command stopped on request]".to_string(),
             }),
         );
+        let outcome = background(outcome);
         assert!(!outcome.is_error);
         assert_eq!(outcome.state, BackgroundJobState::Cancelled);
         assert_eq!(outcome.exit_code, Some(130));
@@ -1322,23 +1400,28 @@ mod tests {
             output: "boom".to_string(),
             exit_code: 1,
         };
-        let cancelled_finished = format_background_state("shell_x", true, Some(finished.clone())).1;
+        let cancelled_finished =
+            background(format_background_state("shell_x", true, Some(finished.clone())).1);
         assert!(!cancelled_finished.is_error);
         assert_eq!(cancelled_finished.state, BackgroundJobState::Failed);
         assert_eq!(cancelled_finished.exit_code, Some(1));
 
-        let polled_finished = format_background_state("shell_x", false, Some(finished)).1;
+        let polled_finished =
+            background(format_background_state("shell_x", false, Some(finished)).1);
         assert!(polled_finished.is_error);
         assert_eq!(polled_finished.state, BackgroundJobState::Failed);
         assert_eq!(polled_finished.exit_code, Some(1));
 
         let missing_cancel = format_background_state("shell_x", true, None).1;
-        assert!(!missing_cancel.is_error);
-        assert_eq!(missing_cancel.state, BackgroundJobState::Cancelled);
+        assert!(!missing_cancel.is_error());
+        assert_eq!(missing_cancel, ShellOutcome::Exit(0));
 
         let missing_status = format_background_state("shell_x", false, None).1;
-        assert!(missing_status.is_error);
-        assert_eq!(missing_status.state, BackgroundJobState::Failed);
+        assert!(missing_status.is_error());
+        assert!(matches!(
+            missing_status,
+            ShellOutcome::BackgroundLookupError(_)
+        ));
     }
 
     #[test]

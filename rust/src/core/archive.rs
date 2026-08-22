@@ -91,10 +91,29 @@ pub fn should_archive(content: &str) -> bool {
 const MAX_ARCHIVE_SIZE: usize = 10 * 1024 * 1024; // 10 MB
 
 pub fn store(tool: &str, command: &str, content: &str, session_id: Option<&str>) -> Option<String> {
+    store_with_result(tool, command, content, session_id).map(|result| result.id)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArchiveStoreResult {
+    pub id: String,
+    pub captured_chars: usize,
+    pub archived_chars: usize,
+    pub truncated: bool,
+}
+
+pub fn store_with_result(
+    tool: &str,
+    command: &str,
+    content: &str,
+    session_id: Option<&str>,
+) -> Option<ArchiveStoreResult> {
     if !is_enabled() || content.is_empty() {
         return None;
     }
 
+    let captured_chars = content.chars().count();
+    let truncated = content.len() > MAX_ARCHIVE_SIZE;
     let content = if content.len() > MAX_ARCHIVE_SIZE {
         &content[..content.floor_char_boundary(MAX_ARCHIVE_SIZE)]
     } else {
@@ -102,11 +121,17 @@ pub fn store(tool: &str, command: &str, content: &str, session_id: Option<&str>)
     };
 
     let id = compute_id(content);
+    let result = ArchiveStoreResult {
+        id: id.clone(),
+        captured_chars,
+        archived_chars: content.chars().count(),
+        truncated,
+    };
     let c_path = content_path(&id);
 
     // Fast path: content already archived (idempotent, no race)
     if c_path.exists() {
-        return Some(id);
+        return Some(result);
     }
 
     let dir = entry_dir(&id);
@@ -128,7 +153,7 @@ pub fn store(tool: &str, command: &str, content: &str, session_id: Option<&str>)
         let _ = std::fs::remove_file(&tmp_path);
         // Another process may have won the race — check if content is there now
         if c_path.exists() {
-            return Some(id);
+            return Some(result);
         }
         return None;
     }
@@ -158,7 +183,7 @@ pub fn store(tool: &str, command: &str, content: &str, session_id: Option<&str>)
 
     super::archive_fts::index_entry(&id, tool, command, content);
 
-    Some(id)
+    Some(result)
 }
 
 pub fn retrieve(id: &str) -> Option<String> {
