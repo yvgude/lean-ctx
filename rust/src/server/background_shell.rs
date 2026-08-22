@@ -241,7 +241,7 @@ fn remove(id: &str) {
         .remove(id);
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 pub(crate) fn remove_for_test(id: &str) {
     remove(id);
 }
