@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   loadPiConfig,
+  piConfigPath,
   REPLACEABLE_BUILTIN_TOOLS,
   resolveRouteShell,
   resolveSuppressedBuiltins,
@@ -125,5 +126,23 @@ describe("loadPiConfig tool-profile mapping", () => {
     expect(cfg.toolProfile).toBe("power");
     // …but the pre-existing engine env var is left untouched.
     expect(cfg.forwardedEnv.LEAN_CTX_TOOL_PROFILE).toBeUndefined();
+  });
+});
+
+describe("piConfigPath", () => {
+  const AGENT_DIR_KEY = "PI_CODING_AGENT_DIR";
+
+  afterEach(() => {
+    delete process.env[AGENT_DIR_KEY];
+  });
+
+  it("resolves under ~/.pi/agent/extensions when PI_CODING_AGENT_DIR is unset", () => {
+    delete process.env[AGENT_DIR_KEY];
+    expect(piConfigPath()).toContain(".pi/agent/extensions/pi-lean-ctx/config.json");
+  });
+
+  it("resolves directly under PI_CODING_AGENT_DIR/extensions when set", () => {
+    process.env[AGENT_DIR_KEY] = "/tmp/custom-pi-agent";
+    expect(piConfigPath()).toBe("/tmp/custom-pi-agent/extensions/pi-lean-ctx/config.json");
   });
 });
