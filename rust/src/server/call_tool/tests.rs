@@ -35,44 +35,38 @@ mod shell_outcome_tests {
     }
 
     #[cfg(not(windows))]
-    struct ScopedPolicy(Option<crate::core::policy::ResolvedPolicy>);
+    struct ScopedPolicy {
+        _override: crate::core::policy::runtime::TestPolicyOverride,
+    }
 
     #[cfg(not(windows))]
     impl ScopedPolicy {
         fn redacting(label: &str, pattern: &str) -> Self {
-            let previous =
-                crate::core::policy::runtime::active().map(|active| active.resolved.clone());
             let mut redaction = std::collections::BTreeMap::new();
             redaction.insert(label.to_string(), pattern.to_string());
-            crate::core::policy::runtime::set_active_for_test(Some(
-                crate::core::policy::ResolvedPolicy {
-                    name: "mes1609-test-policy".into(),
-                    version: "1.0.0".into(),
-                    description: "MES-1609 archive chokepoint regression".into(),
-                    chain: vec![],
-                    default_read_mode: None,
-                    allow_tools: None,
-                    deny_tools: vec![],
-                    max_context_tokens: None,
-                    audit_retention_days: None,
-                    redaction,
-                    filters: crate::core::policy::FilterRules {
-                        pii: Some("redact".into()),
-                        ..crate::core::policy::FilterRules::default()
+            Self {
+                _override: crate::core::policy::runtime::TestPolicyOverride::set(Some(
+                    crate::core::policy::ResolvedPolicy {
+                        name: "mes1609-test-policy".into(),
+                        version: "1.0.0".into(),
+                        description: "MES-1609 archive chokepoint regression".into(),
+                        chain: vec![],
+                        default_read_mode: None,
+                        allow_tools: None,
+                        deny_tools: vec![],
+                        max_context_tokens: None,
+                        audit_retention_days: None,
+                        redaction,
+                        filters: crate::core::policy::FilterRules {
+                            pii: Some("redact".into()),
+                            ..crate::core::policy::FilterRules::default()
+                        },
+                        egress: crate::core::policy::EgressRules::default(),
+                        routing: crate::core::policy::RoutingPolicyRules::default(),
+                        budgets: crate::core::policy::BudgetRules::default(),
                     },
-                    egress: crate::core::policy::EgressRules::default(),
-                    routing: crate::core::policy::RoutingPolicyRules::default(),
-                    budgets: crate::core::policy::BudgetRules::default(),
-                },
-            ));
-            Self(previous)
-        }
-    }
-
-    #[cfg(not(windows))]
-    impl Drop for ScopedPolicy {
-        fn drop(&mut self) {
-            crate::core::policy::runtime::set_active_for_test(self.0.take());
+                )),
+            }
         }
     }
 
@@ -758,6 +752,69 @@ mod shell_outcome_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(not(windows))]
+    async fn background_status_triage_filters_display_after_preserving_complete_archive() {
+        const KEEP: &str = "MES1609_TRIAGE_KEEP";
+        const DROP: &str = "MES1609_TRIAGE_DROP";
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let _archive_threshold = ScopedEnvVar::set("LEAN_CTX_ARCHIVE_THRESHOLD", "1");
+        let _firewall_threshold = ScopedEnvVar::set("LEAN_CTX_EPHEMERAL_MIN_TOKENS", "100000");
+        let (job_id, _job) = completed_background_job(&format!(
+            "printf 'coding coding_fix {KEEP}\\n'; yes '// unrelated {DROP}' | head -n 80"
+        ));
+
+        let root = std::env::current_dir()
+            .expect("current directory")
+            .to_string_lossy()
+            .into_owned();
+        let server = crate::tools::LeanCtxServer::new_with_project_root(Some(&root));
+        let session_id = server.session.read().await.id.clone();
+        let context = crate::core::decision_loop_runtime::DecisionLoopRuntime::get_or_init()
+            .on_tool_start(
+                "ctx_shell",
+                "fix a coding bug in one file",
+                &session_id,
+                "mes1609-triage-test",
+            );
+        let profile = crate::core::decision_loop_runtime::DecisionLoopRuntime::get_or_init()
+            .profile_for_session(&session_id)
+            .expect("task profile must be remembered for the pipeline session");
+        assert!(crate::server::context_gate::triage_filter_level(&profile) > 0);
+
+        let mut args = serde_json::Map::new();
+        args.insert("background_action".to_string(), serde_json::json!("status"));
+        args.insert("job_id".to_string(), serde_json::json!(job_id));
+        let result = dispatch_and_post_process(
+            &server,
+            "ctx_shell",
+            Some(&args),
+            false,
+            crate::core::config::Config::load_arc(),
+            false,
+            None,
+            None,
+            "mes1609_triage_pipeline".to_string(),
+            Some(context),
+        )
+        .await
+        .expect("background status pipeline must succeed");
+
+        let structured = structured_of(&result);
+        let archive_id = structured["archiveId"]
+            .as_str()
+            .expect("normal background status must retain its complete archive");
+        let archived = crate::core::archive::retrieve(archive_id)
+            .expect("structured archiveId must remain retrievable");
+        assert!(archived.contains(KEEP));
+        assert!(archived.contains(DROP));
+        let displayed = text_of(&result);
+        assert!(displayed.contains(KEEP));
+        assert!(!displayed.contains(DROP));
+        assert!(!displayed.contains("ctx_expand"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(not(windows))]
     async fn background_archive_is_created_after_policy_and_input_filters() {
         const POLICY_PATTERN: &str = "MES1609_POLICY_PII_7F3A9C2E";
         const TEST_CARD: &str = "4111111111111111";
@@ -801,6 +858,49 @@ mod shell_outcome_tests {
             result.meta.is_some(),
             "finalize metadata must still be present"
         );
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn scoped_policy_overrides_serialize_parallel_mutation() {
+        let (first_ready_tx, first_ready_rx) = std::sync::mpsc::channel();
+        let (release_first_tx, release_first_rx) = std::sync::mpsc::channel();
+        let first = std::thread::spawn(move || {
+            let _policy = ScopedPolicy::redacting("mes1609_first", "MES1609_FIRST");
+            first_ready_tx.send(()).expect("signal first override");
+            release_first_rx.recv().expect("release first override");
+        });
+        first_ready_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("first override must become active");
+
+        let (second_started_tx, second_started_rx) = std::sync::mpsc::channel();
+        let (second_acquired_tx, second_acquired_rx) = std::sync::mpsc::channel();
+        let (release_second_tx, release_second_rx) = std::sync::mpsc::channel();
+        let second = std::thread::spawn(move || {
+            second_started_tx.send(()).expect("signal second thread");
+            let _policy = ScopedPolicy::redacting("mes1609_second", "MES1609_SECOND");
+            second_acquired_tx.send(()).expect("signal second override");
+            release_second_rx.recv().expect("release second override");
+        });
+        second_started_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("second thread must start");
+        let overlapped = second_acquired_rx
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .is_ok();
+
+        release_first_tx.send(()).expect("release first thread");
+        first.join().expect("first policy thread");
+        if !overlapped {
+            second_acquired_rx
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .expect("second override must acquire after first drops");
+        }
+        release_second_tx.send(()).expect("release second thread");
+        second.join().expect("second policy thread");
+
+        assert!(!overlapped, "policy test overrides must not overlap");
     }
 
     #[tokio::test(flavor = "multi_thread")]

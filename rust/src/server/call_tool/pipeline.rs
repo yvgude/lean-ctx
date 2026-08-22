@@ -90,8 +90,7 @@ pub(in crate::server) async fn dispatch_and_post_process(
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false)
     });
-    let triage_bypass = background_status || triage_bypass;
-    if !triage_bypass {
+    if !background_status && !triage_bypass {
         result_text =
             apply_task_triage_filter(result_text, task_profile.as_ref(), &mut decision_context);
     }
@@ -335,18 +334,20 @@ pub(in crate::server) async fn dispatch_and_post_process(
                         to_store.clone()
                     };
                     let tokens = crate::core::tokens::count_tokens(&archived);
-                    let digest = crate::core::firewall::summarize(
-                        &archived, &stored.id, name, tokens, &job_id,
-                    );
-                    result_text = if stored.truncated {
-                        format!(
-                            "[archive truncated: {} captured chars, {} archived chars; remainder unavailable]\n{digest}",
-                            stored.captured_chars, stored.archived_chars
-                        )
-                    } else {
-                        digest
-                    };
-                    firewalled = true;
+                    if crate::core::firewall::should_firewall(name, tokens, &config) {
+                        let digest = crate::core::firewall::summarize(
+                            &archived, &stored.id, name, tokens, &job_id,
+                        );
+                        result_text = if stored.truncated {
+                            format!(
+                                "[archive truncated: {} captured chars, {} archived chars; remainder unavailable]\n{digest}",
+                                stored.captured_chars, stored.archived_chars
+                            )
+                        } else {
+                            digest
+                        };
+                        firewalled = true;
+                    }
                 }
                 stored_result = Some(stored);
             }
@@ -401,6 +402,11 @@ pub(in crate::server) async fn dispatch_and_post_process(
             None
         }
     };
+
+    if background_status && !triage_bypass && !is_raw_shell && !firewalled {
+        result_text =
+            apply_task_triage_filter(result_text, task_profile.as_ref(), &mut decision_context);
+    }
 
     let pre_compression = result_text.clone();
     // A firewalled result is already a compact digest — re-compressing it would mangle

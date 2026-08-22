@@ -196,12 +196,42 @@ pub fn reload() {
     w.active = loaded;
 }
 
-/// Test hook: force the active policy without touching disk.
 #[cfg(test)]
-pub fn set_active_for_test(resolved: Option<ResolvedPolicy>) {
+fn set_active_for_test(resolved: Option<ResolvedPolicy>) {
     let mut w = cache().write().expect("policy cache poisoned");
     w.loaded = true;
     w.active = resolved.map(|r| Arc::new(ActivePolicy::from_resolved(r)));
+}
+
+/// Process-wide test override held under a shared lock for its whole lifetime.
+#[cfg(test)]
+pub struct TestPolicyOverride {
+    previous: Option<ResolvedPolicy>,
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl TestPolicyOverride {
+    pub fn set(resolved: Option<ResolvedPolicy>) -> Self {
+        static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
+        let lock = LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let previous = active().map(|active| active.resolved.clone());
+        set_active_for_test(resolved);
+        Self {
+            previous,
+            _lock: lock,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestPolicyOverride {
+    fn drop(&mut self) {
+        set_active_for_test(self.previous.take());
+    }
 }
 
 #[cfg(test)]

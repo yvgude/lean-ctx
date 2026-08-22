@@ -243,30 +243,30 @@ mod tests {
     fn global_active_drives_allow_and_redaction() {
         let mut redaction = BTreeMap::new();
         redaction.insert("employee_id".to_string(), r"EMP-\d{4}".to_string());
-        runtime::set_active_for_test(Some(ResolvedPolicy {
-            name: "itest".into(),
-            version: "1.0.0".into(),
-            description: "t".into(),
-            chain: vec![],
-            default_read_mode: Some("map".into()),
-            allow_tools: None,
-            deny_tools: vec!["ctx_url_read".into()],
-            max_context_tokens: Some(5_000),
-            audit_retention_days: None,
-            redaction,
-            filters: crate::core::policy::FilterRules::default(),
-            egress: crate::core::policy::EgressRules::default(),
-            routing: crate::core::policy::RoutingPolicyRules::default(),
-            budgets: crate::core::policy::BudgetRules::default(),
-        }));
+        {
+            let _policy = runtime::TestPolicyOverride::set(Some(ResolvedPolicy {
+                name: "itest".into(),
+                version: "1.0.0".into(),
+                description: "t".into(),
+                chain: vec![],
+                default_read_mode: Some("map".into()),
+                allow_tools: None,
+                deny_tools: vec!["ctx_url_read".into()],
+                max_context_tokens: Some(5_000),
+                audit_retention_days: None,
+                redaction,
+                filters: crate::core::policy::FilterRules::default(),
+                egress: crate::core::policy::EgressRules::default(),
+                routing: crate::core::policy::RoutingPolicyRules::default(),
+                budgets: crate::core::policy::BudgetRules::default(),
+            }));
 
-        assert!(!check_tool_access("ctx_read").blocked);
-        assert!(!check_tool_access("ctx_session").blocked, "exempt tool");
-        let (out, hits) = redact_result("contact EMP-1234 today");
-        assert_eq!(hits, 1);
-        assert!(out.contains("[REDACTED:employee_id]"));
-
-        runtime::set_active_for_test(None);
+            assert!(!check_tool_access("ctx_read").blocked);
+            assert!(!check_tool_access("ctx_session").blocked, "exempt tool");
+            let (out, hits) = redact_result("contact EMP-1234 today");
+            assert_eq!(hits, 1);
+            assert!(out.contains("[REDACTED:employee_id]"));
+        }
         assert!(
             !check_tool_access("ctx_url_read").blocked,
             "no pack → allow"
