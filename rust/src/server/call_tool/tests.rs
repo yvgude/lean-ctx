@@ -4,7 +4,7 @@ use super::{finalize_call_result, roots_list_failure_is_permanent};
 
 mod shell_outcome_tests {
     use super::*;
-    use crate::server::tool_trait::ShellOutcome;
+    use crate::server::tool_trait::{McpTool, ShellOutcome, ToolContext};
 
     fn text_of(result: &CallToolResult) -> String {
         result
@@ -13,6 +13,80 @@ mod shell_outcome_tests {
             .and_then(|c| c.as_text())
             .map(|t| t.text.clone())
             .unwrap_or_default()
+    }
+
+    #[cfg(not(windows))]
+    fn auto_detached_result(command: &str) -> CallToolResult {
+        let detached = crate::server::background_shell::run_foreground_or_detach(
+            command.to_string(),
+            ".".to_string(),
+            std::collections::HashMap::default(),
+            Some(10_000),
+            std::time::Duration::from_millis(10),
+            None,
+        );
+        let crate::server::background_shell::ForegroundResult::Detached { job_id } = detached
+        else {
+            panic!("the reproduction must exercise the auto-detached path");
+        };
+
+        let mut terminal = false;
+        for _ in 0..80 {
+            if matches!(
+                crate::server::background_shell::status(&job_id),
+                Some(
+                    crate::server::background_shell::JobState::Completed { .. }
+                        | crate::server::background_shell::JobState::Cancelled { .. }
+                )
+            ) {
+                terminal = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        assert!(
+            terminal,
+            "auto-detached child did not reach a terminal state"
+        );
+
+        let mut args = serde_json::Map::new();
+        args.insert("background_action".to_string(), serde_json::json!("status"));
+        args.insert("job_id".to_string(), serde_json::json!(job_id));
+        let output = crate::tools::registered::ctx_shell::CtxShellTool
+            .handle(&args, &ToolContext::default())
+            .expect("status must return a tool result");
+        finalize_call_result(&output.text, output.shell_outcome)
+    }
+
+    fn structured_of(result: &CallToolResult) -> &serde_json::Value {
+        result
+            .structured_content
+            .as_ref()
+            .expect("background status must expose structuredContent")
+    }
+
+    #[cfg(not(windows))]
+    fn auto_detached_running_result() -> CallToolResult {
+        let detached = crate::server::background_shell::run_foreground_or_detach(
+            "sleep 2".to_string(),
+            ".".to_string(),
+            std::collections::HashMap::default(),
+            Some(10_000),
+            std::time::Duration::from_millis(10),
+            None,
+        );
+        let crate::server::background_shell::ForegroundResult::Detached { job_id } = detached
+        else {
+            panic!("the reproduction must exercise the auto-detached path");
+        };
+
+        let mut args = serde_json::Map::new();
+        args.insert("background_action".to_string(), serde_json::json!("status"));
+        args.insert("job_id".to_string(), serde_json::json!(job_id));
+        let output = crate::tools::registered::ctx_shell::CtxShellTool
+            .handle(&args, &ToolContext::default())
+            .expect("status must return a tool result");
+        finalize_call_result(&output.text, output.shell_outcome)
     }
 
     #[test]
@@ -76,6 +150,149 @@ mod shell_outcome_tests {
             Some(true),
             "exit 1 with no command output must set isError"
         );
+    }
+
+    /// MES-1609: once a foreground command auto-detaches, its terminal
+    /// failure is a job verdict, not grep-like output that may use exit 1 as
+    /// data. The MCP result must therefore keep both state and exit code.
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn auto_detached_exit_1_is_a_structured_failed_job() {
+        let result = auto_detached_result("sleep 0.1; printf TAP_FAILURE; exit 1");
+
+        assert_eq!(result.is_error, Some(true));
+        let structured = structured_of(&result);
+        assert_eq!(structured["state"], serde_json::json!("failed"));
+        assert_eq!(structured["exitCode"], serde_json::json!(1));
+        assert!(structured["jobId"].as_str().is_some());
+        assert!(
+            structured["summary"]
+                .as_str()
+                .is_some_and(|s| s.contains("TAP_FAILURE"))
+        );
+        assert!(text_of(&result).contains("TAP_FAILURE"));
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn auto_detached_exit_7_is_a_structured_failed_job() {
+        let result = auto_detached_result("sleep 0.1; exit 7");
+
+        assert_eq!(result.is_error, Some(true));
+        let structured = structured_of(&result);
+        assert_eq!(structured["state"], serde_json::json!("failed"));
+        assert_eq!(structured["exitCode"], serde_json::json!(7));
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn auto_detached_running_job_has_no_exit_code() {
+        let result = auto_detached_running_result();
+
+        assert_ne!(result.is_error, Some(true));
+        let structured = structured_of(&result);
+        assert_eq!(structured["state"], serde_json::json!("running"));
+        assert!(structured["jobId"].as_str().is_some());
+        assert!(structured.get("exitCode").is_none());
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn auto_detached_cancel_returns_cancelled_exit_130_without_error() {
+        let detached = crate::server::background_shell::run_foreground_or_detach(
+            "sleep 2".to_string(),
+            ".".to_string(),
+            std::collections::HashMap::default(),
+            Some(10_000),
+            std::time::Duration::from_millis(10),
+            None,
+        );
+        let crate::server::background_shell::ForegroundResult::Detached { job_id } = detached
+        else {
+            panic!("the reproduction must exercise the auto-detached path");
+        };
+
+        let mut args = serde_json::Map::new();
+        args.insert("background_action".to_string(), serde_json::json!("cancel"));
+        args.insert("job_id".to_string(), serde_json::json!(job_id));
+        let output = crate::tools::registered::ctx_shell::CtxShellTool
+            .handle(&args, &ToolContext::default())
+            .expect("cancel must return a tool result");
+        let cancel_result = finalize_call_result(&output.text, output.shell_outcome);
+
+        assert_ne!(cancel_result.is_error, Some(true));
+        let mut cancelled = false;
+        for _ in 0..80 {
+            if matches!(
+                crate::server::background_shell::status(&job_id),
+                Some(crate::server::background_shell::JobState::Cancelled { .. })
+            ) {
+                cancelled = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        assert!(cancelled, "cancelled job did not reach a terminal state");
+
+        args.insert("background_action".to_string(), serde_json::json!("status"));
+        let output = crate::tools::registered::ctx_shell::CtxShellTool
+            .handle(&args, &ToolContext::default())
+            .expect("status must return a tool result");
+        let result = finalize_call_result(&output.text, output.shell_outcome);
+
+        assert_ne!(result.is_error, Some(true));
+        let structured = structured_of(&result);
+        assert_eq!(structured["state"], serde_json::json!("cancelled"));
+        assert_eq!(structured["exitCode"], serde_json::json!(130));
+    }
+
+    /// MES-1609: a successful auto-detached child remains queryable after
+    /// the OS process exits and exposes an explicit terminal code 0.
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn auto_detached_exit_0_remains_queryable_as_completed() {
+        let result = auto_detached_result("sleep 0.1; printf LONG_OK");
+
+        assert_ne!(result.is_error, Some(true));
+        let structured = structured_of(&result);
+        assert_eq!(structured["state"], serde_json::json!("completed"));
+        assert_eq!(structured["exitCode"], serde_json::json!(0));
+        assert!(structured["jobId"].as_str().is_some());
+        assert!(
+            structured["summary"]
+                .as_str()
+                .is_some_and(|s| s.contains("LONG_OK"))
+        );
+        assert!(text_of(&result).contains("LONG_OK"));
+    }
+
+    /// MES-1609: terminal output too large for an inline response is archived
+    /// before generic filtering can erase both the verdict and retrieval id.
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn auto_detached_large_output_keeps_summary_and_archive_id_inline() {
+        let result = auto_detached_result("sleep 0.1; seq 1 50000");
+
+        assert_ne!(result.is_error, Some(true));
+        let structured = structured_of(&result);
+        assert_eq!(structured["state"], serde_json::json!("completed"));
+        assert_eq!(structured["exitCode"], serde_json::json!(0));
+        let archive_id = structured["archiveId"]
+            .as_str()
+            .expect("large terminal output must expose its archive id");
+        assert!(
+            structured["summary"]
+                .as_str()
+                .is_some_and(|s| s.contains("50000 lines"))
+        );
+        let text = text_of(&result);
+        assert!(text.contains(&format!("ctx_expand(id=\"{archive_id}\")")));
+        assert!(text.len() < 20_000, "large output was returned inline");
+        let archived = crate::core::archive::retrieve(archive_id)
+            .expect("archive id must resolve to the terminal output");
+        assert!(archived.starts_with("1\n2\n"));
+        assert!(archived.ends_with("49999\n50000\n"));
+        crate::core::archive::remove_files(archive_id);
     }
 
     #[test]

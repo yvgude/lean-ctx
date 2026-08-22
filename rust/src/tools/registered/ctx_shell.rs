@@ -5,7 +5,8 @@ use serde_json::{Map, Value, json};
 use crate::core::ocla::cache_types::{CacheKeyBuilder, ShellCommandKey};
 
 use crate::server::tool_trait::{
-    McpTool, ShellOutcome, ToolContext, ToolOutput, get_bool, get_int, get_str,
+    BackgroundJobState, BackgroundShellOutcome, McpTool, ShellOutcome, ToolContext, ToolOutput,
+    get_bool, get_int, get_str,
 };
 use crate::tool_defs::tool_def;
 
@@ -35,7 +36,7 @@ impl McpTool for CtxShellTool {
                     "timeout_ms": { "type": "integer", "description": "Job lifetime in ms (max 3600000) — NOT the inline wait. A command still running at the ~110s foreground cap detaches to a pollable shell_* job and keeps running up to timeout_ms. Overridden by LEAN_CTX_SHELL_TIMEOUT_MS." },
                     "env": { "type": "object", "description": "Extra env vars", "additionalProperties": { "type": "string" } },
                     "run_in_background": { "type": "boolean", "description": "Detach immediately and return a job id. The command keeps timeout_ms; poll or cancel with background_action and job_id." },
-                    "background_action": { "type": "string", "enum": ["status", "cancel"], "description": "Inspect or cancel a background ctx_shell job." },
+                    "background_action": { "type": "string", "enum": ["status", "cancel"], "description": "Inspect or cancel a background ctx_shell job. Terminal verdicts remain pollable for 5 minutes; bounded retention may evict older jobs under pressure." },
                     "job_id": { "type": "string", "description": "Job id returned by run_in_background." }
                 }
             }),
@@ -70,9 +71,9 @@ impl McpTool for CtxShellTool {
                     ));
                 }
             };
-            let (text, exit_code) = format_background_state(&id, is_cancel, state);
+            let (text, outcome) = format_background_state(&id, is_cancel, state);
             return Ok(ToolOutput {
-                shell_outcome: Some(ShellOutcome::Exit(exit_code)),
+                shell_outcome: Some(ShellOutcome::Background(outcome)),
                 content_blocks: None,
                 ..ToolOutput::simple(text)
             });
@@ -758,24 +759,44 @@ fn format_background_state(
     id: &str,
     is_cancel: bool,
     state: Option<crate::server::background_shell::JobState>,
-) -> (String, i32) {
+) -> (String, BackgroundShellOutcome) {
     use crate::server::background_shell::JobState;
     let Some(state) = state else {
-        return if is_cancel {
+        let (text, state, exit_code, summary, is_error) = if is_cancel {
             (
                 format!("[background:{id} not found — already finished or cancelled]"),
-                0,
+                BackgroundJobState::Cancelled,
+                None,
+                "job already finished, cancelled or expired".to_string(),
+                false,
             )
         } else {
-            (format!("[background:{id} not found]"), 1)
+            (
+                format!("[background:{id} failed, exit 1 — not found]"),
+                BackgroundJobState::Failed,
+                Some(1),
+                "job not found or terminal verdict expired".to_string(),
+                true,
+            )
         };
+        return (
+            text,
+            BackgroundShellOutcome {
+                state,
+                exit_code,
+                job_id: id.to_string(),
+                archive_id: None,
+                summary,
+                is_error,
+            },
+        );
     };
     match state {
         JobState::Running { output } => {
             // #1217: show the captured-so-far output so a poll of a
             // long-running job reflects progress instead of a bare
             // "running" with no signal of whether it is advancing.
-            let body = redact_shell_output_secrets(&output);
+            let (body, archive_id, summary) = prepare_background_output(id, &output);
             let head = if is_cancel {
                 format!(
                     "[background:{id} cancel requested — job is stopping; poll status for the final output]"
@@ -783,32 +804,95 @@ fn format_background_state(
             } else {
                 format!("[background:{id} running]")
             };
-            if body.trim().is_empty() {
-                (head, 0)
-            } else {
-                (format!("{head}\n{body}"), 0)
-            }
+            (
+                compose_background_text(head, &body, None),
+                BackgroundShellOutcome {
+                    state: BackgroundJobState::Running,
+                    exit_code: None,
+                    job_id: id.to_string(),
+                    archive_id,
+                    summary,
+                    is_error: false,
+                },
+            )
         }
-        JobState::Completed { output, exit_code } => (
-            format!(
-                "[background:{id} completed]\n{}{}",
-                redact_shell_output_secrets(&output),
-                if exit_code == 0 {
-                    String::new()
-                } else {
-                    format!("\n[exit:{exit_code}]")
-                }
-            ),
-            if is_cancel { 0 } else { exit_code },
-        ),
-        JobState::Cancelled { output } => (
-            format!(
-                "[background:{id} cancelled]\n{}\n[cancelled: {id}, exit 130]",
-                redact_shell_output_secrets(&output)
-            ),
-            0,
-        ),
+        JobState::Completed { output, exit_code } => {
+            let (body, archive_id, summary) = prepare_background_output(id, &output);
+            let state = if exit_code == 0 {
+                BackgroundJobState::Completed
+            } else {
+                BackgroundJobState::Failed
+            };
+            let head = format!("[background:{id} {}, exit {exit_code}]", state.as_str());
+            let footer = (exit_code != 0).then(|| format!("[exit:{exit_code}]"));
+            (
+                compose_background_text(head, &body, footer.as_deref()),
+                BackgroundShellOutcome {
+                    state,
+                    exit_code: Some(exit_code),
+                    job_id: id.to_string(),
+                    archive_id,
+                    summary,
+                    is_error: !is_cancel && exit_code != 0,
+                },
+            )
+        }
+        JobState::Cancelled { output } => {
+            let (body, archive_id, summary) = prepare_background_output(id, &output);
+            (
+                compose_background_text(
+                    format!("[background:{id} cancelled, exit 130]"),
+                    &body,
+                    Some(&format!("[cancelled: {id}, exit 130]")),
+                ),
+                BackgroundShellOutcome {
+                    state: BackgroundJobState::Cancelled,
+                    exit_code: Some(130),
+                    job_id: id.to_string(),
+                    archive_id,
+                    summary,
+                    is_error: false,
+                },
+            )
+        }
     }
+}
+
+fn compose_background_text(mut head: String, body: &str, footer: Option<&str>) -> String {
+    if !body.trim().is_empty() {
+        head.push('\n');
+        head.push_str(body);
+    }
+    if let Some(footer) = footer {
+        head.push('\n');
+        head.push_str(footer);
+    }
+    head
+}
+
+fn prepare_background_output(id: &str, output: &str) -> (String, Option<String>, String) {
+    let redacted = redact_shell_output_secrets(output);
+    let chars = redacted.chars().count();
+    let lines = redacted.lines().count();
+    if crate::core::archive::should_archive(&redacted)
+        && let Some(archive_id) = crate::core::archive::store("ctx_shell", id, &redacted, None)
+    {
+        let tokens = crate::core::tokens::count_tokens(&redacted);
+        let summary = format!("{chars} chars, {lines} lines archived");
+        let body =
+            crate::core::firewall::summarize(&redacted, &archive_id, "ctx_shell", tokens, id);
+        return (body, Some(archive_id), summary);
+    }
+
+    let trimmed = redacted.trim();
+    let summary = if trimmed.is_empty() {
+        "no output".to_string()
+    } else if chars <= 512 {
+        trimmed.to_string()
+    } else {
+        format!("{chars} chars, {lines} lines")
+    };
+    (redacted, None, summary)
 }
 
 fn redact_shell_output_secrets(output: &str) -> String {
@@ -1198,7 +1282,7 @@ mod tests {
         resolve_effective_cwd, shell_access_denial, should_auto_background,
     };
     use crate::server::background_shell::JobState;
-    use crate::server::tool_trait::{McpTool, ShellOutcome, ToolContext};
+    use crate::server::tool_trait::{BackgroundJobState, McpTool, ShellOutcome, ToolContext};
 
     /// #1246: a cancel must never come back as a tool error, and must not read
     /// like a status poll that did nothing.
@@ -1207,24 +1291,30 @@ mod tests {
         let running = JobState::Running {
             output: String::new(),
         };
-        let (text, exit) = format_background_state("shell_x", true, Some(running.clone()));
-        assert_eq!(exit, 0);
+        let (text, outcome) = format_background_state("shell_x", true, Some(running.clone()));
+        assert!(!outcome.is_error);
+        assert_eq!(outcome.state, BackgroundJobState::Running);
+        assert_eq!(outcome.exit_code, None);
         assert!(text.contains("cancel requested"), "{text}");
 
         // A status poll of the same state keeps the old wording.
-        let (text, exit) = format_background_state("shell_x", false, Some(running));
-        assert_eq!(exit, 0);
+        let (text, outcome) = format_background_state("shell_x", false, Some(running));
+        assert!(!outcome.is_error);
+        assert_eq!(outcome.state, BackgroundJobState::Running);
         assert!(text.contains("[background:shell_x running]"), "{text}");
 
-        // The terminal state is data, not an error — no exit 130 leaks out.
-        let (text, exit) = format_background_state(
+        // The terminal child code is data; the requested cancel remains a
+        // successful tool action even though structuredContent keeps 130.
+        let (text, outcome) = format_background_state(
             "shell_x",
             true,
             Some(JobState::Cancelled {
                 output: "[cancelled: command stopped on request]".to_string(),
             }),
         );
-        assert_eq!(exit, 0);
+        assert!(!outcome.is_error);
+        assert_eq!(outcome.state, BackgroundJobState::Cancelled);
+        assert_eq!(outcome.exit_code, Some(130));
         assert!(text.contains("[cancelled: shell_x, exit 130]"), "{text}");
 
         // Idempotent: already finished, or finished and pruned.
@@ -1232,16 +1322,23 @@ mod tests {
             output: "boom".to_string(),
             exit_code: 1,
         };
-        assert_eq!(
-            format_background_state("shell_x", true, Some(finished.clone())).1,
-            0
-        );
-        assert_eq!(
-            format_background_state("shell_x", false, Some(finished)).1,
-            1
-        );
-        assert_eq!(format_background_state("shell_x", true, None).1, 0);
-        assert_eq!(format_background_state("shell_x", false, None).1, 1);
+        let cancelled_finished = format_background_state("shell_x", true, Some(finished.clone())).1;
+        assert!(!cancelled_finished.is_error);
+        assert_eq!(cancelled_finished.state, BackgroundJobState::Failed);
+        assert_eq!(cancelled_finished.exit_code, Some(1));
+
+        let polled_finished = format_background_state("shell_x", false, Some(finished)).1;
+        assert!(polled_finished.is_error);
+        assert_eq!(polled_finished.state, BackgroundJobState::Failed);
+        assert_eq!(polled_finished.exit_code, Some(1));
+
+        let missing_cancel = format_background_state("shell_x", true, None).1;
+        assert!(!missing_cancel.is_error);
+        assert_eq!(missing_cancel.state, BackgroundJobState::Cancelled);
+
+        let missing_status = format_background_state("shell_x", false, None).1;
+        assert!(missing_status.is_error);
+        assert_eq!(missing_status.state, BackgroundJobState::Failed);
     }
 
     #[test]

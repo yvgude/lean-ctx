@@ -2,37 +2,88 @@ use rmcp::ErrorData;
 use rmcp::model::{ContentBlock, Tool};
 use serde_json::{Map, Value};
 
+/// Stable states exposed by `ctx_shell(background_action="status")`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackgroundJobState {
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+impl BackgroundJobState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+/// Protocol metadata that must survive output compression and archiving.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackgroundShellOutcome {
+    pub state: BackgroundJobState,
+    pub exit_code: Option<i32>,
+    pub job_id: String,
+    pub archive_id: Option<String>,
+    pub summary: String,
+    pub is_error: bool,
+}
+
 /// Outcome of a shell execution, carried alongside the rendered text so the
 /// MCP dispatch layer can surface failures in protocol metadata instead of
 /// only as an `[exit:N]` text footer (GitHub #389: clients had no programmatic
 /// way to detect ctx_shell failures and resorted to fragile regex matching).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShellOutcome {
     /// The command ran; carries its real exit code (0 = success).
     Exit(i32),
     /// The command never ran (allowlist/validation rejection, or a
     /// precondition failure such as an unreadable/oversized input file).
     Blocked,
+    /// A managed background job status. Unlike a foreground `Exit(1)`, a
+    /// terminal failed job is never reclassified as grep-like result data.
+    Background(BackgroundShellOutcome),
 }
 
 impl ShellOutcome {
     /// Whether this outcome must be reported as a tool error (`isError: true`).
-    pub fn is_error(self) -> bool {
+    pub fn is_error(&self) -> bool {
         match self {
-            ShellOutcome::Exit(code) => code != 0,
+            ShellOutcome::Exit(code) => *code != 0,
             ShellOutcome::Blocked => true,
+            ShellOutcome::Background(outcome) => outcome.is_error,
         }
     }
 
     /// Structured payload for `CallToolResult.structuredContent`, so guards
-    /// can read `exitCode`/`blocked` instead of parsing output text. Success
-    /// (exit 0) intentionally returns `None` — the happy path stays
-    /// token-neutral for clients that render structured content.
-    pub fn structured(self) -> Option<serde_json::Value> {
+    /// can read state/exit/archive data instead of parsing output text.
+    /// Ordinary foreground success (exit 0) stays token-neutral; background
+    /// status always remains structured because clients may filter its text.
+    pub fn structured(&self) -> Option<serde_json::Value> {
         match self {
             ShellOutcome::Exit(0) => None,
             ShellOutcome::Exit(code) => Some(serde_json::json!({ "exitCode": code })),
             ShellOutcome::Blocked => Some(serde_json::json!({ "blocked": true })),
+            ShellOutcome::Background(outcome) => {
+                let mut fields = serde_json::Map::new();
+                fields.insert(
+                    "state".to_string(),
+                    serde_json::json!(outcome.state.as_str()),
+                );
+                fields.insert("jobId".to_string(), serde_json::json!(outcome.job_id));
+                fields.insert("summary".to_string(), serde_json::json!(outcome.summary));
+                if let Some(exit_code) = outcome.exit_code {
+                    fields.insert("exitCode".to_string(), serde_json::json!(exit_code));
+                }
+                if let Some(archive_id) = &outcome.archive_id {
+                    fields.insert("archiveId".to_string(), serde_json::json!(archive_id));
+                }
+                Some(serde_json::Value::Object(fields))
+            }
         }
     }
 }

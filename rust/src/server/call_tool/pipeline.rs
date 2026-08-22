@@ -105,7 +105,7 @@ pub(in crate::server) async fn dispatch_and_post_process(
     // Image/binary content blocks: skip all post-processing, return directly.
     if let Some(blocks) = content_blocks {
         let mut result = CallToolResult::success(blocks);
-        if let Some(outcome) = shell_outcome
+        if let Some(outcome) = shell_outcome.as_ref()
             && outcome.is_error()
         {
             result.is_error = Some(true);
