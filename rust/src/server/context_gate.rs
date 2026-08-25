@@ -451,41 +451,12 @@ pub fn post_dispatch_record_with_task(
     let prefetch_hint =
         project_root.and_then(|root| crate::core::fep_prefetch::prefetch_hint(root, path, ledger));
 
-    // Context Kernel: generate receipt for delivered context
-    {
-        if let (Some(task_str), Some(root)) = (task, project_root) {
-            let kernel =
-                crate::core::context_kernel::orchestrator::ContextKernel::for_project(root);
-            let ctx = crate::core::context_kernel::types::RetrievalContext {
-                query: task_str.to_owned(),
-                task: Some(task_str.to_owned()),
-                project_root: root.to_owned(),
-                budget: crate::core::context_field::TokenBudget {
-                    total: original_tokens,
-                    used: 0,
-                },
-                max_candidates: 10,
-            };
-            let plan = kernel.plan(&ctx);
-            let receipt = kernel.record_receipt(&plan, sent_tokens, delivery_receipt_outcome());
-            let logger =
-                crate::core::context_kernel::shadow::ShadowLogger::default_for_project(root);
-            logger.log_receipt(&receipt);
-        }
-    }
-
     PostDispatchResult {
         eviction_hint: None,
         elicitation_hint: elicitation,
         resource_changed,
         prefetch_hint,
     }
-}
-
-fn delivery_receipt_outcome() -> crate::core::context_kernel::types::ReceiptOutcome {
-    // Delivery is an Engine fact. Task-quality acceptance requires a separate,
-    // explicit evaluator/host/customer outcome.
-    crate::core::context_kernel::types::ReceiptOutcome::Unknown
 }
 
 /// #715: a resolvable evict target for hint output — project-root-relative
@@ -679,14 +650,6 @@ fn is_boilerplate_line(line: &str) -> bool {
 mod tests {
     use super::*;
     use crate::core::triage::profile::TaskProfileLocal;
-
-    #[test]
-    fn successful_delivery_does_not_imply_task_acceptance() {
-        assert_eq!(
-            delivery_receipt_outcome(),
-            crate::core::context_kernel::types::ReceiptOutcome::Unknown
-        );
-    }
 
     #[test]
     fn eviction_target_display_emits_resolvable_targets() {
