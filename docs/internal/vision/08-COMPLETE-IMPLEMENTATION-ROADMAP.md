@@ -183,11 +183,12 @@ the host agent loop.
 ### P4 — Separate BSL 1.1 Production SDK repository
 
 **Status (2026-08-25): P4 ACTIVE / V4 dual-track.** The persistent separate-SDK
-candidate is `2bafc965d3c599bf568c1070e5e5810ffc0f6ebf`; it is private, has no
-remote, and has passed focused technical and offline-packaging review. It is the
-`CLEAN_REIMPLEMENT` provenance candidate for the five Product primitives.
-Source tests pass `10/10`; real Engine `context-view`/recover, clean wheel
-installation and exact host-exception identity are verified. Historical SDK
+candidate is `62400bfb74`; it is private and has no remote. It extends the
+focused-review-passing `2bafc965d3` five-primitive, offline-packaging and exact
+host-exception baseline with R2 observable-parity evidence. Its baseline
+correction is pinned; final R2 review remains open. Baseline source tests pass
+`10/10`; real Engine `context-view`/recover and clean wheel installation are
+verified. Historical SDK
 evidence and the old `fbfec0b` identity, including associated provider
 assertions, are quarantined. No live-provider or production-support claim is
 made; live-provider smoke remains `UNVERIFIED`.
@@ -247,7 +248,7 @@ dependency value. Cloud remains absent.
 
 | Surface | Current owner | Target owner | SDK successor | Engine extraction status | OSS impact | Transition/removal gate |
 | --- | --- | --- | --- | --- | --- | --- |
-| Product primitives and lifecycle | P3 Python Preview plus private SDK staging | Production SDK, BSL 1.1 family | `2bafc965d3c599bf568c1070e5e5810ffc0f6ebf` (technical review passed) | Product lifecycle extraction from Engine remains open | Preserve P3 Preview; no new canonical Apache lifecycle | Contract/compatibility fixtures, license/release approval and rollback |
+| Product primitives and lifecycle | P3 Python Preview plus private SDK staging | Production SDK, BSL 1.1 family | `62400bfb74` (R2 final review pending; reviewed baseline `2bafc965d3`) | Product lifecycle extraction from Engine remains open | Preserve P3 Preview; no new canonical Apache lifecycle | R2 review, contract/compatibility fixtures, license/release approval and rollback |
 | Python package lifecycle | `packages/python-lean-ctx/**` Apache Preview | `OSS_TRANSITION_COMPAT` during migration | Same private SDK candidate | Frozen transition candidate; no new lifecycle semantics | Retain security, correctness and migration path | Released successor, migration window, rollback and named removal decision |
 | Engine session | Apache Engine session state | Bounded Attach continuity mechanism | SDK `ContextSession` | Bounded journal in `eb8db0ca23`; focused review passed | Preserve supported local Attach and persisted state | Consolidated gate, serial merge and revert path |
 | Engine Kits/formats | Apache Engine parser/Kits | Open parser, validation and integrity in Engine | SDK `ContextSource` / `ContextPlan` | Validated parser in `eb8db0ca23`; focused review passed | Preserve format interoperability and safe admission | Compatibility fixture, consolidated gate and migration |

@@ -33,7 +33,7 @@ both places.
 | --- | --- | --- |
 | Engine integration baseline | `github/main@49a6b2053c` | Current local integration base; not a P4 completion SHA |
 | Engine integration candidate | `eb8db0ca23` | R4A–R4E and D1 focused reviews passed; local/unmerged; no final Engine SHA |
-| Persistent SDK candidate | `2bafc965d3c599bf568c1070e5e5810ffc0f6ebf` | Private staging, no remote; technical and offline-packaging review passed |
+| Persistent SDK candidate | `62400bfb74` | Private staging, no remote; R2 final review open; reviewed baseline `2bafc965d3` and baseline correction pinned |
 | SDK distribution | `PRIVATE_NOT_RELEASED` | No public package, release or production-support claim |
 | License family | `BSL_1_1_DECIDED` | Exact parameters pending; no terms invented |
 | SDK provenance | `CLEAN_REIMPLEMENT` | Historical Apache evidence is not an approval to reuse |
@@ -49,11 +49,12 @@ scoped to that private candidate; live-provider smoke is `UNVERIFIED`.
 
 The candidate contains the five intended Product primitives:
 `ContextSession`, `ContextSource`, `ContextView`, `ContextPlan` and
-`ContextReceipt`. Recorded candidate evidence is: source tests `10/10`, clean
-wheel/install pass, real Engine `context-view`/`recover` pass, exact host
-exception identity, and provider-free `openai-agents==0.19.4` pass. Focused
-technical and packaging review passed; this is not an accepted release or a
-live-provider result.
+`ContextReceipt`. Reviewed baseline `2bafc965d3` evidence is: source tests
+`10/10`, clean wheel/install pass, real Engine `context-view`/`recover`
+pass, exact host exception identity and provider-free
+`openai-agents==0.19.4` pass. Candidate `62400bfb74` adds R2 observable
+parity evidence and pins its baseline correction; final R2 review remains open.
+This is not an accepted release or a live-provider result.
 
 The SDK is a clean reimplementation candidate. No historical Apache module is
 approved for BSL reuse. Any future reuse requires one explicit provenance
@@ -62,7 +63,7 @@ disposition (`APPROVED_REUSE`, `KEEP_APACHE_COMPAT`, `DEPRECATE_APACHE`, or
 
 | Surface | Current owner | Target owner | SDK successor | Engine extraction status | OSS impact | Transition/removal gate |
 | --- | --- | --- | --- | --- | --- | --- |
-| Product lifecycle primitives | P3 Python Preview plus private SDK staging | Production SDK, BSL 1.1 family | `2bafc965d3c599bf568c1070e5e5810ffc0f6ebf` (technical review passed) | Canonical lifecycle extraction remains open | Preserve integrated Preview behavior; no new Apache lifecycle | API/compatibility fixtures, release/legal approval and rollback |
+| Product lifecycle primitives | P3 Python Preview plus private SDK staging | Production SDK, BSL 1.1 family | `62400bfb74` (R2 review pending; reviewed baseline `2bafc965d3`) | Canonical lifecycle extraction remains open | Preserve integrated Preview behavior; no new Apache lifecycle | R2 review, API/compatibility fixtures, release/legal approval and rollback |
 | Python Product lifecycle | `packages/python-lean-ctx/**` | `OSS_TRANSITION_COMPAT` until successor release | Same private candidate | Freeze; no new lifecycle or adapter breadth | Security, correctness and migration path remain supported | Released successor, migration window, support owner, rollback and named removal decision |
 | Framework reference path | Preview OpenAI Agents wrapper | SDK reference integration after acceptance | Candidate's maintained reference path | Engine remains provider-neutral | Keep host agent/model/provider ownership explicit | Clean-machine compatibility, provider-free fixture and separate live-provider approval |
 | SDK evidence projection | P3 receipt seam plus candidate receipt | SDK `ContextReceipt` over factual Engine evidence | Candidate receipt model | Engine remains factual; no task-quality inference | Preserve truthful degradation and offline verification | Evidence/receipt compatibility, independent review and migration tests |
@@ -173,7 +174,7 @@ requires a recorded provenance disposition and legal gate before merge.
 - If consolidated review fails, retain P3's integrated seam and revert or repair
   one owned Engine candidate at a time; do not merge a stacked alternative
   blindly.
-- Keep the SDK staging candidate private and recoverable at `2bafc965…`; no
+- Keep the SDK staging candidate private and recoverable at `62400bfb…`; no
   remote publication or destructive migration is authorized.
 - Keep `packages/python-lean-ctx` as the transition path until a released
   successor, migration fixtures, support owner and bounded rollback exist.

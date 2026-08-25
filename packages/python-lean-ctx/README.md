@@ -15,10 +15,12 @@ namespace, license and release gates are approved. Until then this package
 remains the supported transition path.
 
 The persistent successor candidate is SDK staging commit
-`2bafc965d3c599bf568c1070e5e5810ffc0f6ebf`: private, with no remote.
-Focused technical and offline-packaging review passed, including source tests
-`10/10`, real Engine recovery, clean wheel installation and exact host
-exception identity. BSL 1.1 is the decided license family, while exact
+`62400bfb74`: private, with no remote. It extends the focused-review-passing
+`2bafc965d3` five-primitive, offline-packaging and exact host-exception
+baseline with R2 observable-parity evidence. Its baseline correction is pinned;
+final R2 review remains open. Baseline source tests pass `10/10`; real Engine
+recovery and clean wheel installation are verified. BSL 1.1 is the decided
+license family, while exact
 publication and license parameters remain pending. The integrated P3 Preview
 seam remains the compatibility baseline. Historical `fbfec0b` references and
 associated provider assertions are quarantined; no provider-backed
