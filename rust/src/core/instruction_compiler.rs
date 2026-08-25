@@ -51,10 +51,11 @@ pub(crate) fn compile(
 
     let profile = profiles::load_profile(profile_name)
         .ok_or_else(|| format!("unknown profile '{profile_name}'"))?;
+    let engine = profile.engine_config();
 
     let crp_mode = opts
         .crp_mode_override
-        .or_else(|| CrpMode::parse(profile.compression.crp_mode_effective()))
+        .or_else(|| CrpMode::parse(engine.compression.crp_mode))
         .unwrap_or(CrpMode::Tdd);
 
     let mcp_instructions = crate::instructions::build_instructions_with_client_for_compiler(

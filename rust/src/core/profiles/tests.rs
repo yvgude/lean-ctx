@@ -42,6 +42,32 @@ fn profile_roundtrip_toml() {
 }
 
 #[test]
+fn engine_config_projects_consumed_mechanisms_without_changing_legacy_toml() {
+    let profile = builtin_exploration();
+    let before = format_as_toml(&profile);
+    let engine = profile.engine_config();
+
+    assert_eq!(engine.read.default_mode, "map");
+    assert_eq!(engine.compression.crp_mode, "tdd");
+    assert_eq!(format_as_toml(&profile), before);
+}
+
+#[test]
+fn engine_config_excludes_product_policy() {
+    let mut profile = builtin_exploration();
+    profile.read.prefer_cache = Some(false);
+    profile.routing.max_model_tier = Some("fast".into());
+    profile.budget.max_context_tokens = Some(1);
+    profile.constraints.quality_floor = Some(0.1);
+    profile.autonomy.auto_prefetch = Some(true);
+    profile.degradation.enforce = Some(true);
+
+    let engine = profile.engine_config();
+    assert_eq!(engine.read.default_mode, "map");
+    assert_eq!(engine.compression.crp_mode, "tdd");
+}
+
+#[test]
 fn merge_child_overrides_parent() {
     let parent = builtin_exploration();
     let child = Profile {
