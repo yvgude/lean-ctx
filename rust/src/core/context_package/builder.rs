@@ -131,40 +131,42 @@ impl PackageBuilder {
     }
 
     pub(crate) fn add_session(mut self, session: &crate::core::session::SessionState) -> Self {
-        let has_content = session.task.is_some()
-            || !session.findings.is_empty()
-            || !session.decisions.is_empty()
-            || !session.next_steps.is_empty()
-            || !session.files_touched.is_empty();
+        let journal: crate::core::session::AttachSessionJournalV1 =
+            session.attach_session_journal_v1();
+        let has_content = journal.task.is_some()
+            || !journal.findings.is_empty()
+            || !journal.decisions.is_empty()
+            || !journal.next_steps.is_empty()
+            || !journal.files_touched.is_empty();
 
         if !has_content {
             return self;
         }
 
         let layer = SessionLayer {
-            task_description: session.task.as_ref().map(|t| t.description.clone()),
-            findings: session
+            task_description: journal.task.map(|task| task.description),
+            findings: journal
                 .findings
-                .iter()
-                .map(|f| SessionFinding {
-                    summary: f.summary.clone(),
-                    file: f.file.clone(),
-                    line: f.line,
+                .into_iter()
+                .map(|finding| SessionFinding {
+                    summary: finding.summary,
+                    file: finding.file,
+                    line: finding.line,
                 })
                 .collect(),
-            decisions: session
+            decisions: journal
                 .decisions
-                .iter()
-                .map(|d| SessionDecision {
-                    summary: d.summary.clone(),
-                    rationale: d.rationale.clone(),
+                .into_iter()
+                .map(|decision| SessionDecision {
+                    summary: decision.summary,
+                    rationale: decision.rationale,
                 })
                 .collect(),
-            next_steps: session.next_steps.clone(),
-            files_touched: session
+            next_steps: journal.next_steps,
+            files_touched: journal
                 .files_touched
-                .iter()
-                .map(|f| f.path.clone())
+                .into_iter()
+                .map(|file| file.path)
                 .collect(),
             exported_at: Utc::now(),
         };
