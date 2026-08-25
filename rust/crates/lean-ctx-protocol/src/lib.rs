@@ -22,6 +22,7 @@ mod identity;
 mod invocation_context_binding;
 mod invocation_evidence;
 pub mod knowledge;
+#[doc(hidden)]
 pub mod knowledge_routing;
 pub mod outcome;
 pub mod outcome_engine;
@@ -59,6 +60,7 @@ pub use invocation_evidence::{
     InvocationSourceRoleV1, MAX_INVOCATION_EVIDENCE_ITEMS,
 };
 pub use knowledge::{ClassificationLevel, KnowledgeObjectV1, ValidityWindow};
+#[doc(hidden)]
 pub use knowledge_routing::{
     ContextBundleV1, ContextCandidateV1, ContextReceiptV1, CostClass, KnowledgeSourceManifestV1,
     SourceCapabilities,

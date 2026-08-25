@@ -1,4 +1,7 @@
 //! Model and context-selection control-plane contracts.
+//!
+//! `ContextBundleV1` is retained only for historical wire compatibility. It
+//! does not grant the Engine Product context-selection authority.
 
 use crate::{CapabilityManifestV1, ContextBundleV1, TaskComplexity, TaskEnvelopeV1};
 use serde::{Deserialize, Serialize};
@@ -8,6 +11,7 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct ControlPlaneRequest {
     pub task_envelope: TaskEnvelopeV1,
+    /// Frozen legacy Product bundle; removal follows the knowledge-routing gate.
     pub context_bundle: ContextBundleV1,
     pub available_capabilities: Vec<CapabilityManifestV1>,
 }
