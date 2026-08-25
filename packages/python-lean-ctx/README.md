@@ -6,6 +6,24 @@
 > product scope and status are governed by
 > [`docs/internal/README.md`](../../docs/internal/README.md).
 
+Security and correctness fixes continue here. Compatibility fixtures and the
+documented Engine path remain maintained. Removal or deprecation requires a
+released successor, migration window, rollback path, and the applicable
+release-policy decision; none is implied by this classification. Future
+production users should move to the separate Production SDK only after its
+namespace, license and release gates are approved. Until then this package
+remains the supported transition path.
+
+The persistent successor candidate is SDK staging commit
+`2bafc965d3c599bf568c1070e5e5810ffc0f6ebf`: private, with no remote.
+Focused technical and offline-packaging review passed, including source tests
+`10/10`, real Engine recovery, clean wheel installation and exact host
+exception identity. BSL 1.1 is the decided license family, while exact
+publication and license parameters remain pending. The integrated P3 Preview
+seam remains the compatibility baseline. Historical `fbfec0b` references and
+associated provider assertions are quarantined; no provider-backed
+production-support claim is made here. Live-provider smoke is unverified.
+
 LeanCTX is **The Context SDK for AI Agents**. The reference wrapper connects an
 existing OpenAI Agents SDK agent to a local LeanCTX Runtime. It does not replace
 the agent, model, provider, or task logic.

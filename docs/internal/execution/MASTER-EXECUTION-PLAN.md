@@ -40,7 +40,7 @@ This file schedules approved work; it does not supersede those authorities.
 | **P1 — Engine runtime spine** | **Exit complete (2026-08-23):** PRs `#1515` and `#1516` merged; latest merge commit `dd55473302`. Explicit `ctx_read` `engine_interface="v1"` dispatch, legacy omission compatibility, policy/rejection receipts, deadline behavior, descriptor/handle-rooted source and artifact containment, failure-atomic publication and adversarial swap/relocation coverage passed final CI run `32662146660`, including native Ubuntu and Windows tests. | Preserve the accepted v1/legacy behavior and feed its invocation, observation and receipt link into the single P2 evidence chain. |
 | **P2 — canonical evidence** | **Exit complete (2026-08-24):** PR `#1522` merged to `github/main@8ebf61a21c063a1d0a86be33511588d27d7ca71e`; exact-SHA CI `32758619963`, Security Check `32758619955`, and CodeQL `32758619966` passed. The chain keeps delivery factual and host/evaluator outcome explicit. | Preserve the accepted Task → Plan → Invocation → Observation → Receipt → explicit Outcome/Quality → independently verified Evidence Bundle chain. |
 | **P3 — Python Preview** | **P3 COMPLETE/INTEGRATED (2026-08-25):** merge `e47cb432f2e9e2d7ecf13e3c85a0d1cc4fa68f96`; exact-baseline CI `32778481164`, Security `32778481373`, and CodeQL `32778481121` passed. Candidate `79e3888862659e5ac0623a8fa00e16155aa144da` runs the Python-owned Session/Plan/View/Receipt lifecycle through the real local Engine operation transport, actual OpenAI Agents SDK `0.19.4`, native Embed, exact recovery and truthful degradation. `LIVE PROVIDER SMOKE: UNVERIFIED`. | Preserve the integrated P3 seam and evidence; P4 governance is active. |
-| **P4 — production SDK repo** | **P4 ACTIVE:** governance and contract preparation proceed from the integrated P3 seam; repository, license, release and security approvals remain pending. | Approved decision record plus P3 evidence, then separate SDK repo and five-primitive contract. |
+| **P4 — production SDK + Engine extraction** | **P4 ACTIVE / V4 dual-track:** private SDK staging candidate `2bafc965d3c599bf568c1070e5e5810ffc0f6ebf` has five primitives, offline packaging, exact host-exception identity and focused tests `10/10`; technical review passed, but no remote or release exists. BSL 1.1 is the decided license family; exact parameters remain pending; provenance is `CLEAN_REIMPLEMENT`. Engine integration candidate `eb8db0ca23`, based on `github/main@49a6b2053c`, serializes reviewed R4A–R4E seams plus reviewed D1 orphan deletion; extraction closure remains open. The Apache Python Product lifecycle remains `OSS_TRANSITION_COMPAT`. | Run one integration gate after the remaining bounded slices, close ownership/extraction and legal/release gates, then integrate; do not begin P5/Cloud. |
 | **P5–P7 — Workspace, package, handoff** | **NOT BEGUN:** research queue and target architecture only. | Start only after P4; never promote legacy stores/artifacts as the new truth. |
 | **P8–P9 — Cloud/optimization** | **NOT BEGUN:** private work remains unopened. | Separate private repository only after local proof, trusted evidence and designated owners. |
 
@@ -50,6 +50,30 @@ This file schedules approved work; it does not supersede those authorities.
 (**met**) → P2 canonical evidence (**met**) → P3 real Python Preview (**COMPLETE/INTEGRATED**) → P4 SDK repository (**ACTIVE**).
 P5/Cloud not begun: Workspace, package, handoff and Cloud/optimization work remain unopened.
 No later workstream may bypass an earlier exit.
+
+## P4 V4 dual-track execution ledger
+
+P4 has two mandatory tracks: construct the canonical Production SDK and
+extract non-preserved Product implementation from the future Apache Engine.
+Neither track is complete. The SDK candidate is private and technically
+reviewed but unreleased; the Engine candidate is unmerged and has no final SHA.
+
+| Surface | Current owner | Target owner | SDK successor | Engine extraction status | OSS impact | Transition/removal gate |
+| --- | --- | --- | --- | --- | --- | --- |
+| `ContextSession`, `ContextSource`, `ContextView`, `ContextPlan`, `ContextReceipt` | P3 Python Preview plus private SDK staging | Production SDK, BSL 1.1 family | `2bafc965d3c599bf568c1070e5e5810ffc0f6ebf` (technical review passed) | Canonical Product lifecycle not closed in Engine; historical `fbfec0b` evidence quarantined | Preserve the integrated Preview path; add no new Apache Product semantics | Contract/compatibility fixtures, publication/legal approval and rollback path |
+| `packages/python-lean-ctx/**` Product lifecycle | Apache Preview package | `OSS_TRANSITION_COMPAT` only until successor release | Same private SDK candidate | Freeze candidate; no new lifecycle or adapter breadth | Security, correctness and migration compatibility remain supported | Released successor, migration window, rollback, support owner and named removal decision |
+| `rust/src/core/session/**` | Apache Engine session state | Bounded Engine Attach continuity | SDK `ContextSession` | Bounded journal integrated in candidate `eb8db0ca23`; focused review passed | Retain required local Attach continuity and persisted user state | Integration gate, serial merge and revertable migration |
+| Engine Kits and document formats | Apache Engine Kits | Open parser/validation/integrity in Engine; lifecycle activation in SDK | `ContextSource` / `ContextPlan` | Validated parser integrated in candidate `eb8db0ca23`; focused review passed | Preserve `.ctxpkg`/format interoperability and safe admission | Compatibility fixture, integration gate and migration |
+| Engine request/path transport | Apache Engine public boundary | Bounded public Engine contract | SDK consumes public `context-view` / `recover` path | Bounds candidates `a20b98c2e0` and `57bcb8db58` are REVIEW/unmerged | Preserve PathJail, bounded IO, failure atomicity and recovery | v1 compatibility, adversarial checks, independent review and serial integration |
+| Profiles, policy, context field/compiler and kernel seams | Mixed Engine mechanisms and Product policy | Engine facts/mechanisms; SDK intent and Product policy | SDK `ContextPlan` and policy layer | R4A, R4D and R4E integrated in candidate `eb8db0ca23`; focused reviews passed; closure remains open | Keep deterministic optimization, security and OSS Attach behavior | Remaining ownership slices, no duplicate canonical lifecycle, integration gate and rollback |
+| Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | D1 deletion integrated in `eb8db0ca23`; independent reachability/rollback review passed | No public, persistence, security or OSS Core reachability | Consolidated gate and exact commit revert |
+| Workspace/Cloud coordination | Not begun | Later private work only | None in P4 | Not started | No OSS impact; local Engine/SDK must remain complete without Cloud | P4 exit plus separately authorized P5/P8 work; no scaffolding now |
+
+**Current integration candidate:** `eb8db0ca23`, based on
+`github/main@49a6b2053c`, serializes reviewed R4A–R4E seams. It is local and
+unmerged; one consolidated Engine gate is intentionally deferred until the
+remaining bounded slices are ready. D1 removes the independently confirmed
+unreachable `memory_branch` module with an exact revert path.
 
 ---
 
