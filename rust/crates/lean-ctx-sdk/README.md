@@ -3,6 +3,8 @@
 > **Status: Preview substrate — not a supported stable public Rust SDK.** Embed
 > work is Preview; external addon authoring is Research. The only declared
 > public SDK reference path is the **Preview** Python v1/OpenAI Agents wrapper.
+> The separately governed Production SDK remains private/non-published staging;
+> it is not this Apache crate.
 > Current product scope and status are governed by
 > [`docs/internal/README.md`](../../../docs/internal/README.md).
 
