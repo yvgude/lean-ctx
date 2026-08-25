@@ -10,6 +10,7 @@
 //! parent fields; unset fields inherit.
 
 mod builtins;
+mod engine_config;
 mod loading;
 pub mod types;
 

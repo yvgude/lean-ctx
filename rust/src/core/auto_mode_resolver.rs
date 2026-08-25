@@ -122,7 +122,8 @@ pub fn configured_default_mode() -> Option<String> {
         .or_else(|| crate::core::persona::active().read_mode_override())
         .or_else(|| {
             let profile = crate::core::profiles::active_profile();
-            let mode = profile.read.default_mode_effective();
+            let engine = profile.engine_config();
+            let mode = engine.read.default_mode;
             (mode != "auto").then(|| mode.to_string())
         })
 }
