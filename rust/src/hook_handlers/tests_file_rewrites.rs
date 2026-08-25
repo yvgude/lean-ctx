@@ -39,9 +39,16 @@ fn file_read_head_tail_byte_count_passes_through() {
     for cmd in [
         "head -c 40 src/main.rs",
         "head -c40 src/main.rs",
+        "head -c+40 src/main.rs",
+        "head -c-40 src/main.rs",
+        "head -c40K src/main.rs",
+        "head -qc40 src/main.rs",
         "head --bytes=40 src/main.rs",
         "head --bytes 40 src/main.rs",
         "tail -c 100 src/main.rs",
+        "tail -c+100 src/main.rs",
+        "tail -c-100 src/main.rs",
+        "tail -vc100K src/main.rs",
     ] {
         assert_eq!(
             rewrite_file_read_command(cmd, "lean-ctx"),

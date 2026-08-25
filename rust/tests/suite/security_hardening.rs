@@ -320,8 +320,9 @@ fn add_nonce_skips_external_scripts() {
 fn raw_shell_skips_all_postprocessing() {
     let src = crate::suite::security_hardening::server_dispatch_src().replace("\r\n", "\n");
     assert!(
-        src.contains("let is_raw_shell = name == \"ctx_shell\""),
-        "call_tool must compute is_raw_shell flag"
+        src.contains("let is_raw_shell = explicit_verbatim_shell")
+            && src.contains("name == \"ctx_shell\""),
+        "call_tool must compute is_raw_shell from explicit and implicit verbatim modes"
     );
     // #1432/#1540: raw=true no longer bypasses archive/firewall — only the
     // LEAN_CTX_MINIMAL escape hatch does. The gate moved from the pipeline's

@@ -544,14 +544,16 @@ pub(super) fn is_outside_project_path(path: &str) -> bool {
 }
 
 /// #1537: whether a head/tail invocation uses byte-count semantics (`-c N`,
-/// `-cN`, `--bytes N`, `--bytes=N`) — those must never be rewritten to a
-/// line-based read.
+/// attached/clustered `-cN`, `--bytes N`, `--bytes=N`) — those must never be
+/// rewritten to a line-based read. Conservatively preserve any short-option
+/// cluster containing `c`; passing an invalid invocation through is safer than
+/// widening a byte read into a line read.
 pub(super) fn has_byte_count_flag(args: &[&str]) -> bool {
     args.iter().any(|a| {
         *a == "-c"
             || *a == "--bytes"
             || a.starts_with("--bytes=")
-            || (a.starts_with("-c") && a[2..].chars().all(|c| c.is_ascii_digit()) && a.len() > 2)
+            || (a.starts_with('-') && !a.starts_with("--") && a[1..].contains('c'))
     })
 }
 
