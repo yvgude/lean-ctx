@@ -135,7 +135,7 @@ mod tests {
         }
 
         let snapshot = live_dashboard::snapshot();
-        assert!(snapshot.proxy_etpao > 0.0);
+        assert_eq!(snapshot.proxy_etpao, 0.0);
         assert_eq!(snapshot.usage.total_requests, 5);
         assert_eq!(snapshot.chain.total_entries, 5);
     }
@@ -191,7 +191,7 @@ mod tests {
         assert_eq!(snapshot.usage.total_tokens, envelope.total_tokens());
         assert_eq!(snapshot.chain.total_entries, 1);
         assert_eq!(snapshot.chain.accepted, 1);
-        assert!(snapshot.proxy_etpao > 0.0);
+        assert_eq!(snapshot.proxy_etpao, 0.0);
     }
 
     #[test]

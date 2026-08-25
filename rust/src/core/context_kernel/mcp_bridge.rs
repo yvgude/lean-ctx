@@ -5,10 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::client_wiring::OptimizationLevel;
 use super::coverage_class::{self, CoverageClass};
-use super::etpao_live::{EtpaoLive, OutcomeMetrics, RequestMetrics};
+use super::etpao_live::{EtpaoLive, RequestMetrics};
 use super::identity::{CallerIdentity, CallerRole, IdentityLedger};
-use super::outcome_signal::{self, OutcomeSignal};
-use super::types::ReceiptOutcome;
 
 static MCP_ETPAO: OnceLock<Mutex<EtpaoLive>> = OnceLock::new();
 static MCP_IDENTITY: OnceLock<Mutex<IdentityLedger>> = OnceLock::new();
@@ -28,7 +26,7 @@ pub struct McpClientInfo {
     pub tool_count: usize,
 }
 
-/// Data for a single MCP tool call, used to record ETPAO metrics.
+/// Data for a single MCP tool call, used to record factual request metrics.
 #[derive(Debug, Clone, Default)]
 pub struct McpCallData {
     /// Name of the tool called.
@@ -67,7 +65,7 @@ pub struct McpSummary {
     pub total_input_tokens: usize,
     /// Output tokens across all calls.
     pub total_output_tokens: usize,
-    /// Calls inferred to have been accepted.
+    /// Calls with an explicit evaluated acceptance outcome.
     pub accepted_calls: usize,
     /// Effective tokens consumed per accepted outcome.
     pub etpao: f64,
@@ -94,16 +92,8 @@ pub fn process_mcp_context(info: &McpClientInfo) -> McpKernelResult {
     }
 }
 
-/// Records token usage, inferred outcome, and session identity for an MCP call.
+/// Records factual token usage and session identity for an MCP call.
 pub fn record_mcp_call(data: &McpCallData) {
-    let call_number = if data.is_retry {
-        data.call_number.max(2)
-    } else {
-        data.call_number
-    };
-    let inferred = outcome_signal::infer_outcome(call_number, data.is_retry, data.output_tokens);
-    let accepted = inferred.outcome == ReceiptOutcome::Accepted;
-
     lock_etpao().record_request(RequestMetrics {
         input_tokens: data.input_tokens,
         output_tokens: data.output_tokens,
@@ -114,18 +104,11 @@ pub fn record_mcp_call(data: &McpCallData) {
         client_id: MCP_SESSION_ID.to_owned(),
         coverage_class: CoverageClass::ContextControlled,
     });
-    lock_etpao().record_outcome(OutcomeMetrics {
-        accepted,
-        quality_score: inferred.confidence,
-        first_pass: inferred.signal == OutcomeSignal::FirstPass,
-        client_id: MCP_SESSION_ID.to_owned(),
-    });
 
-    lock_identity().record(
+    lock_identity().record_usage(
         &mcp_identity(),
-        data.input_tokens,
-        data.output_tokens,
-        accepted,
+        data.input_tokens.saturating_add(data.output_tokens),
+        0,
     );
 }
 
@@ -169,13 +152,12 @@ pub fn mcp_summary() -> McpSummary {
     let etpao = lock_etpao();
     let etpao_summary = etpao.summary();
     let total_calls = etpao.request_count();
-    drop(etpao);
+    let (total_input_tokens, total_output_tokens) = etpao.request_token_totals();
 
-    let identity_summary = lock_identity().summary();
     McpSummary {
         total_calls,
-        total_input_tokens: identity_summary.total_tokens,
-        total_output_tokens: identity_summary.total_savings,
+        total_input_tokens,
+        total_output_tokens,
         accepted_calls: etpao_summary.accepted_outcomes,
         etpao: etpao_summary.etpao,
         coverage_label: coverage_class::coverage_label(CoverageClass::ContextControlled).to_owned(),
@@ -288,15 +270,19 @@ pub mod tests {
     }
 
     #[test]
-    fn record_call_updates_etpao() {
+    fn record_call_preserves_usage_without_inventing_outcome() {
         let _guard = test_guard();
         reset_mcp_state();
         record_mcp_call(&call(1, false));
-        assert!(mcp_etpao() > 0.0);
+        let summary = mcp_summary();
+        assert_eq!(mcp_etpao(), 0.0);
+        assert_eq!(summary.accepted_calls, 0);
+        assert_eq!(summary.total_input_tokens, 100);
+        assert_eq!(summary.total_output_tokens, 20);
     }
 
     #[test]
-    fn record_retry_is_rejected() {
+    fn record_retry_does_not_invent_rejection_or_acceptance() {
         let _guard = test_guard();
         reset_mcp_state();
         record_mcp_call(&call(2, true));

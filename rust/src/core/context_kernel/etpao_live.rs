@@ -82,12 +82,16 @@ impl EtpaoLive {
 
     /// Returns aggregate tokens per accepted outcome.
     pub fn current_etpao(&self) -> f64 {
+        let accepted = self.accepted_outcomes();
+        if accepted == 0 {
+            return 0.0;
+        }
         let tokens = self
             .requests
             .iter()
             .map(total_request_tokens)
             .sum::<usize>();
-        tokens as f64 / self.accepted_outcomes().max(1) as f64
+        tokens as f64 / accepted as f64
     }
 
     /// Returns tokens per accepted outcome for a client with recorded requests.
@@ -105,7 +109,11 @@ impl EtpaoLive {
             .iter()
             .filter(|outcome| outcome.client_id == client_id && outcome.accepted)
             .count();
-        Some(tokens as f64 / accepted.max(1) as f64)
+        Some(if accepted == 0 {
+            0.0
+        } else {
+            tokens as f64 / accepted as f64
+        })
     }
 
     /// Returns the fraction of tokens consumed by requests with retries.
@@ -155,6 +163,16 @@ impl EtpaoLive {
         self.requests.len()
     }
 
+    /// Returns factual input and output token totals across recorded requests.
+    pub fn request_token_totals(&self) -> (usize, usize) {
+        self.requests.iter().fold((0, 0), |totals, request| {
+            (
+                totals.0.saturating_add(request.input_tokens),
+                totals.1.saturating_add(request.output_tokens),
+            )
+        })
+    }
+
     /// Returns the number of recorded outcomes.
     pub fn outcome_count(&self) -> usize {
         self.outcomes.len()
@@ -187,7 +205,12 @@ impl EtpaoLive {
                             })
                     })
                     .count();
-                (format!("{class:?}"), tokens as f64 / accepted.max(1) as f64)
+                let etpao = if accepted == 0 {
+                    0.0
+                } else {
+                    tokens as f64 / accepted as f64
+                };
+                (format!("{class:?}"), etpao)
             })
             .collect()
     }
@@ -221,6 +244,9 @@ pub mod tests {
 
     #[test]
     fn empty_etpao_is_zero() { assert_eq!(EtpaoLive::new().current_etpao(), 0.0); }
+
+    #[test]
+    fn request_without_evaluated_outcome_is_zero() { let mut live = EtpaoLive::new(); live.record_request(request("a", 100, CoverageClass::FullInline)); assert_eq!(live.current_etpao(), 0.0); assert_eq!(live.etpao_for_client("a"), Some(0.0)); assert_eq!(live.summary().by_coverage_class.get("FullInline"), Some(&0.0)); }
 
     #[test]
     fn single_request_single_outcome() { let mut live = EtpaoLive::new(); live.record_request(request("a", 1_000, CoverageClass::FullInline)); live.record_outcome(outcome("a", true, true)); assert_eq!(live.current_etpao(), 1_000.0); }

@@ -63,7 +63,7 @@ mod tests {
             mcp_receipt::record_receipt(receipt("ctx_read"));
         }
 
-        assert!(mcp_bridge::mcp_etpao() > 0.0);
+        assert_eq!(mcp_bridge::mcp_etpao(), 0.0);
         let accounting = mcp_receipt::mcp_accounting();
         assert!(accounting.delivered_tokens > 0);
     }
@@ -145,14 +145,16 @@ mod tests {
     }
 
     #[test]
-    fn etpao_tracks_mcp_calls() {
+    fn request_metrics_track_mcp_calls_without_inventing_etpao() {
         let _guard = isolated_test();
         for index in 0..10 {
             mcp_bridge::record_mcp_call(&call("ctx_read", 50 + index));
         }
 
-        assert!(mcp_bridge::mcp_etpao() > 0.0);
-        assert_eq!(mcp_bridge::mcp_summary().total_calls, 10);
+        let summary = mcp_bridge::mcp_summary();
+        assert_eq!(mcp_bridge::mcp_etpao(), 0.0);
+        assert_eq!(summary.accepted_calls, 0);
+        assert_eq!(summary.total_calls, 10);
     }
 
     #[test]

@@ -5,9 +5,9 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use super::client_wiring::{self, OptimizationLevel};
 use super::context_broker::BrokerBudget;
 use super::coverage_class::{self, CoverageClass};
-use super::etpao_live::{EtpaoLive, EtpaoSummary, OutcomeMetrics, RequestMetrics};
+use super::etpao_live::{EtpaoLive, EtpaoSummary, RequestMetrics};
 use super::identity::{CallerIdentity, IdentityLedger, IdentityLedgerSummary};
-use super::outcome_signal::{self, InferredOutcome, OutcomeSignal};
+use super::outcome_signal::{InferredOutcome, OutcomeSignal};
 use super::types::ReceiptOutcome;
 
 static IDENTITY_LEDGER: OnceLock<Mutex<IdentityLedger>> = OnceLock::new();
@@ -32,7 +32,7 @@ pub struct ProxyRequestData {
     pub provider: Option<String>,
     /// Whether this request retries an earlier attempt.
     pub is_retry: bool,
-    /// Attempt number used to infer the request outcome.
+    /// Attempt number retained for factual retry accounting.
     pub request_count: usize,
 }
 
@@ -51,7 +51,7 @@ pub struct ProxyKernelResult {
     pub optimization_level: OptimizationLevel,
     /// Broker-computed token allocation.
     pub kernel_budget: BrokerBudget,
-    /// Outcome inferred from observable proxy behavior.
+    /// Compatibility outcome; unknown until an explicit evaluator reports one.
     pub outcome_signal: InferredOutcome,
 }
 
@@ -77,15 +77,15 @@ fn lock_etpao_tracker() -> MutexGuard<'static, EtpaoLive> {
     }
 }
 
-/// Resolves kernel context and records identity and ETPAO metrics for one request.
+/// Resolves kernel context and records factual identity and request metrics.
 #[must_use]
 pub fn process_proxy_request(data: &ProxyRequestData) -> ProxyKernelResult {
     let context = client_wiring::build_request_context(&data.headers, true, false, false);
-    let outcome =
-        outcome_signal::infer_outcome(data.request_count, data.is_retry, data.output_tokens);
-    let accepted = outcome.outcome == ReceiptOutcome::Accepted;
-    let client_id = context.profile.client_id.clone();
-
+    let outcome = InferredOutcome {
+        outcome: ReceiptOutcome::Unknown,
+        confidence: 0.0,
+        signal: OutcomeSignal::Ambiguous,
+    };
     {
         let mut tracker = lock_etpao_tracker();
         tracker.record_request(RequestMetrics {
@@ -95,14 +95,8 @@ pub fn process_proxy_request(data: &ProxyRequestData) -> ProxyKernelResult {
             schema_tokens: 0,
             cache_write_tokens: 0,
             retry_count: usize::from(data.is_retry),
-            client_id: client_id.clone(),
+            client_id: context.profile.client_id.clone(),
             coverage_class: context.coverage,
-        });
-        tracker.record_outcome(OutcomeMetrics {
-            accepted,
-            quality_score: outcome.confidence,
-            first_pass: outcome.signal == OutcomeSignal::FirstPass,
-            client_id,
         });
     }
 
@@ -110,7 +104,7 @@ pub fn process_proxy_request(data: &ProxyRequestData) -> ProxyKernelResult {
         .input_tokens
         .saturating_add(data.output_tokens)
         .saturating_add(data.reasoning_tokens);
-    lock_identity_ledger().record(&context.identity, consumed, data.tokens_saved, accepted);
+    lock_identity_ledger().record_usage(&context.identity, consumed, data.tokens_saved);
 
     let coverage = context.coverage;
     let optimization_level = client_wiring::optimization_level(&context);
@@ -204,12 +198,14 @@ pub mod tests {
     }
 
     #[test]
-    fn process_records_etpao() {
+    fn process_records_usage_without_inventing_outcome() {
         let _guard = isolated_test();
         let _ = process_proxy_request(&request());
 
-        assert!(current_etpao() > 0.0);
-        assert_eq!(etpao_summary().accepted_outcomes, 1);
+        let summary = etpao_summary();
+        assert_eq!(current_etpao(), 0.0);
+        assert_eq!(summary.total_tokens, 120);
+        assert_eq!(summary.accepted_outcomes, 0);
     }
 
     #[test]
@@ -224,22 +220,24 @@ pub mod tests {
     }
 
     #[test]
-    fn outcome_first_pass() {
+    fn first_pass_outcome_remains_unknown() {
         let _guard = isolated_test();
         let result = process_proxy_request(&request());
 
-        assert_eq!(result.outcome_signal.outcome, ReceiptOutcome::Accepted);
+        assert_eq!(result.outcome_signal.outcome, ReceiptOutcome::Unknown);
+        assert_eq!(result.outcome_signal.confidence, 0.0);
     }
 
     #[test]
-    fn outcome_retry() {
+    fn retry_outcome_remains_unknown() {
         let _guard = isolated_test();
         let mut data = request();
         data.is_retry = true;
         data.request_count = 2;
 
         let result = process_proxy_request(&data);
-        assert_eq!(result.outcome_signal.outcome, ReceiptOutcome::Rejected);
+        assert_eq!(result.outcome_signal.outcome, ReceiptOutcome::Unknown);
+        assert_eq!(result.outcome_signal.confidence, 0.0);
     }
 
     #[test]

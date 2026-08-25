@@ -54,13 +54,16 @@ mod tests {
     }
 
     #[test]
-    fn proxy_records_etpao() {
+    fn proxy_records_request_without_inventing_etpao() {
         let _guard = isolated();
         for _ in 0..5 {
             let _ = proxy_bridge::process_proxy_request(&request_for("alice"));
         }
 
-        assert!(proxy_bridge::current_etpao() > 0.0);
+        let summary = proxy_bridge::etpao_summary();
+        assert_eq!(proxy_bridge::current_etpao(), 0.0);
+        assert!(summary.total_tokens > 0);
+        assert_eq!(summary.accepted_outcomes, 0);
     }
 
     #[test]
@@ -114,7 +117,7 @@ mod tests {
     }
 
     #[test]
-    fn end_to_end_identity_to_etpao() {
+    fn end_to_end_identity_to_request_metrics() {
         let _guard = isolated();
         for index in 0..10 {
             let user = format!("user-{}", index % 3);
@@ -124,11 +127,12 @@ mod tests {
         assert!(proxy_bridge::identity_summary().total_users >= 3);
         let summary = proxy_bridge::etpao_summary();
         assert!(summary.total_tokens > 0);
-        assert!(summary.accepted_outcomes > 0);
+        assert_eq!(summary.accepted_outcomes, 0);
+        assert_eq!(summary.etpao, 0.0);
     }
 
     #[test]
-    fn outcome_signal_integrated() {
+    fn unevaluated_outcome_remains_unknown() {
         let _guard = isolated();
         let request = ProxyRequestData {
             is_retry: true,
@@ -140,7 +144,7 @@ mod tests {
 
         assert_eq!(
             result.outcome_signal.outcome,
-            super::super::types::ReceiptOutcome::Rejected
+            super::super::types::ReceiptOutcome::Unknown
         );
     }
 }
