@@ -168,6 +168,15 @@ impl Config {
         std::env::var("LEAN_CTX_MINIMAL").is_ok() || self.minimal_overhead
     }
 
+    /// The `LEAN_CTX_MINIMAL` env var is the documented do-not-touch-anything
+    /// escape hatch (3.9.19 triage incident): only IT may skip the pipeline's
+    /// archive + ephemeral-firewall safety net. The `minimal_overhead` config
+    /// key (default `true`) trims MCP instruction overhead only and must never
+    /// disable archiving (#1540).
+    pub fn minimal_escape_hatch() -> bool {
+        std::env::var("LEAN_CTX_MINIMAL").is_ok()
+    }
+
     /// Returns `true` if structure-first auto reads are enabled.
     ///
     /// The `LEAN_CTX_STRUCTURE_FIRST` env var wins over the config field, and

@@ -338,6 +338,14 @@ pub struct ArchiveConfig {
     /// `ctx_shell` command running one of these passes through verbatim at any
     /// size. Set to `[]` to disable the passthrough.
     pub raw_commands: Vec<String>,
+    /// Context-window guard for *implicitly* verbatim `ctx_shell` deliveries
+    /// (dataset passthrough #1260, `inline=true`): above this many output
+    /// tokens the content is archived losslessly and delivered as a head+tail
+    /// digest with `ctx_expand` drilldown instead of flooding the calling
+    /// agent's context window. Explicit `raw=true`/`bypass=true` and the
+    /// `LEAN_CTX_MINIMAL` escape hatch are never capped. `0` disables the
+    /// cap. Env: LEAN_CTX_VERBATIM_MAX_TOKENS (#1541).
+    pub verbatim_max_tokens: usize,
 }
 
 /// Opt-in conversation-history compression settings (#1123).
@@ -391,6 +399,7 @@ impl Default for ArchiveConfig {
                 .iter()
                 .map(|s| (*s).to_string())
                 .collect(),
+            verbatim_max_tokens: 100_000,
         }
     }
 }
@@ -410,6 +419,16 @@ impl ArchiveConfig {
             return n;
         }
         self.ephemeral_min_tokens
+    }
+
+    /// Effective context-window cap for implicitly verbatim deliveries (#1541).
+    pub fn verbatim_max_tokens_effective(&self) -> usize {
+        if let Ok(v) = std::env::var("LEAN_CTX_VERBATIM_MAX_TOKENS")
+            && let Ok(n) = v.trim().parse::<usize>()
+        {
+            return n;
+        }
+        self.verbatim_max_tokens
     }
 
     pub fn inline_max_bytes_effective(&self) -> usize {

@@ -270,17 +270,7 @@ pub(crate) fn prepare_request_body(
         });
     };
     let (tool_results_to_cache, dedup_tokens_saved) = deduplicate_tool_results(&mut parsed, cache);
-    let content_dedup_tokens_saved = parsed
-        .get_mut("messages")
-        .and_then(|messages| messages.as_array_mut())
-        .map(|messages| {
-            content_dedup_cache()
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .dedup_messages(messages)
-                .tokens_saved
-        })
-        .unwrap_or_default();
+    let content_dedup_tokens_saved = content_dedup_live_suffix(&mut parsed);
 
     if dedup_tokens_saved > 0 {
         tracing::debug!(dedup_tokens_saved, "deduplicated proxy tool results");
@@ -367,9 +357,34 @@ pub(crate) fn translated_openai_body(
     None
 }
 
+/// #1545: the content-addressed dedup cache persists across requests, so
+/// without prefix protection it rewrites tool results that now live inside
+/// the client's cache_control'd prefix — the determinism guard then reverts
+/// the whole request and compression stays at 0%. Mirror the
+/// deduplicate_tool_results fix (3aae8096): only the live suffix is deduped.
+pub(super) fn content_dedup_live_suffix(parsed: &mut serde_json::Value) -> usize {
+    parsed
+        .get_mut("messages")
+        .and_then(|messages| messages.as_array_mut())
+        .map(|messages| {
+            let cached_prefix = crate::proxy::history_prune::cached_prefix_len(messages);
+            let mut live_messages = messages.split_off(cached_prefix);
+            let tokens_saved = content_dedup_cache()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .dedup_messages(&mut live_messages)
+                .tokens_saved;
+            messages.append(&mut live_messages);
+            tokens_saved
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ToolResultCache, cache_tool_results, deduplicate_tool_results};
+    use super::{
+        ToolResultCache, cache_tool_results, content_dedup_live_suffix, deduplicate_tool_results,
+    };
     use serde_json::json;
 
     fn tool_result_body(content: &str) -> serde_json::Value {
@@ -394,6 +409,33 @@ mod tests {
                 }
             ]
         })
+    }
+
+    // #1545: the cross-request content-dedup cache must never rewrite a
+    // message inside the client's cache_control'd prefix — that invalidates
+    // the provider prompt cache and the determinism guard reverts everything.
+    #[test]
+    fn content_dedup_skips_cache_controlled_prefix() {
+        let unique = "unique-1545-prefix-payload ".repeat(40);
+        // Request 1: the payload arrives as a live message and seeds the cache.
+        let mut first = json!({"messages": [
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": unique}]}
+        ]});
+        let _ = content_dedup_live_suffix(&mut first);
+        // Request 2: the same payload now sits inside the cached prefix.
+        let mut second = json!({"messages": [
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "t1", "cache_control": {"type": "ephemeral"}, "content": unique}
+            ]},
+            {"role": "user", "content": "continue"}
+        ]});
+        let before = second["messages"][0].to_string();
+        let _ = content_dedup_live_suffix(&mut second);
+        assert_eq!(
+            second["messages"][0].to_string(),
+            before,
+            "cache_control'd prefix must stay byte-identical"
+        );
     }
 
     #[test]

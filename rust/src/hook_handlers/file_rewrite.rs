@@ -342,6 +342,13 @@ pub(super) fn rewrite_file_read_command(cmd: &str, binary: &str) -> Option<Strin
         "awk" => rewrite_awk_line_range(&parts, binary),
         "head" => {
             let refs: Vec<&str> = parts[1..].iter().map(String::as_str).collect();
+            // #1537: `head -c N` / `--bytes=N` is a BYTE-precise read (often a
+            // deliberate tiny probe of a sensitive file). A line-based rewrite
+            // discards that precision and can print far more than asked — a
+            // real secret-exposure incident. Byte-mode passes through untouched.
+            if has_byte_count_flag(&refs) {
+                return None;
+            }
             let (n, path) = parse_head_tail_args(&refs);
             let path = path?;
             if is_outside_project_path(path) {
@@ -355,6 +362,11 @@ pub(super) fn rewrite_file_read_command(cmd: &str, binary: &str) -> Option<Strin
         }
         "tail" => {
             let refs: Vec<&str> = parts[1..].iter().map(String::as_str).collect();
+            // #1537: byte-precise `tail -c N` passes through untouched, same
+            // as head — line-based rewrites must not widen a byte-count read.
+            if has_byte_count_flag(&refs) {
+                return None;
+            }
             let (n, path) = parse_head_tail_args(&refs);
             let path = path?;
             if is_outside_project_path(path) {
@@ -529,6 +541,20 @@ pub(super) fn is_outside_project_path(path: &str) -> bool {
     }
 
     false
+}
+
+/// #1537: whether a head/tail invocation uses byte-count semantics (`-c N`,
+/// attached/clustered `-cN`, `--bytes N`, `--bytes=N`) — those must never be
+/// rewritten to a line-based read. Conservatively preserve any short-option
+/// cluster containing `c`; passing an invalid invocation through is safer than
+/// widening a byte read into a line read.
+pub(super) fn has_byte_count_flag(args: &[&str]) -> bool {
+    args.iter().any(|a| {
+        *a == "-c"
+            || *a == "--bytes"
+            || a.starts_with("--bytes=")
+            || (a.starts_with('-') && !a.starts_with("--") && a[1..].contains('c'))
+    })
 }
 
 pub(super) fn parse_head_tail_args<'a>(args: &[&'a str]) -> (Option<usize>, Option<&'a str>) {

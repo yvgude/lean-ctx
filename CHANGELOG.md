@@ -62,6 +62,44 @@ documented lossless escape hatch, and corrupting the read-dedup contract.
 - `lean-ctx wrap <agent>` points supported-but-not-wrappable agents (e.g.
   opencode) at `lean-ctx init --agent <name>` instead of claiming
   "unsupported" (#1520).
+- **Byte-precise reads pass through the Bash rewrite hook untouched** —
+  `head -c N` / `--bytes=N` was silently rewritten to a line-based read,
+  printing far more than asked (a real secret-exposure incident with a
+  40-byte probe of a private key). Byte-count semantics are never widened
+  now (thanks @robinef, #1537).
+
+### Fixed — firewall & verbatim delivery
+
+- **The ephemeral firewall works again on default installs** — the
+  `minimal_overhead` config key (default `true`, meant only to keep MCP
+  instructions byte-stable for prompt caching) also disabled the pipeline's
+  archive + firewall safety net; archive stores had been empty since June.
+  Only the documented `LEAN_CTX_MINIMAL` env escape hatch skips it now
+  (#1540).
+- **Implicitly verbatim deliveries are capped at the context window** — new
+  `archive.verbatim_max_tokens` (default 100000, env
+  `LEAN_CTX_VERBATIM_MAX_TOKENS`, `0` disables): dataset passthrough and
+  `inline=true` outputs above the cap are archived losslessly and delivered
+  as a head+tail digest with `ctx_expand` drilldown instead of flooding the
+  caller's context (observed live: single 752k-token deliveries). Explicit
+  `raw`/`bypass` is never capped (#1541).
+- **Firewall savings are credited honestly** — a corrective metering entry,
+  live event and savings-ledger record for the delta between archived body
+  and delivered digest (#1542).
+- **`doctor` states that budget SLOs are advisory** — lean-ctx never blocks
+  or throttles a tool call; the board now says so explicitly (#1542).
+
+### Fixed — proxy cache safety
+
+- **Content-addressed dedup no longer rewrites the client's `cache_control`'d
+  prefix** — the cross-request dedup cache replaced tool results that had
+  moved into the provider-cached prefix, the determinism guard reverted every
+  request, and proxy compression sat at 0%. Only the live suffix is deduped
+  now (thanks @hbohlen, #1545).
+- **The pipeline's determinism proof is enforcement, not telemetry** — an
+  unstable proof now reverts all compression stages instead of shipping a
+  mutated body unchecked (observed as upstream 400s and silent cache busts)
+  (#1545).
 
 ### Fixed — metrics honesty & dashboard
 

@@ -76,6 +76,18 @@ pub(super) fn output_triage_outcome_for(max_filter_level: u8) -> Outcome {
         ),
     }
 }
+/// Budget SLOs are observability, not enforcement (#1542): lean-ctx never
+/// blocks or throttles a user's or agent's tool call. Saying so on the board
+/// keeps a dashboard "Throttle" action readable as the advisory it is.
+pub(crate) fn slo_budgets_outcome() -> Outcome {
+    Outcome {
+        ok: true,
+        line: format!(
+            "{BOLD}Budget SLOs{RST}  {GREEN}advisory{RST}  {DIM}(warnings + dashboard signals only — tool calls are never blocked or throttled){RST}"
+        ),
+    }
+}
+
 pub(crate) fn shell_aliases_outcome() -> Outcome {
     let Some(home) = dirs::home_dir() else {
         return Outcome {

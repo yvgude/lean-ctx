@@ -120,18 +120,21 @@ pub(in crate::server) async fn dispatch_and_post_process(
             result_text.len(),
             &config,
         );
-    let is_raw_shell = name == "ctx_shell" && {
+    // Explicit verbatim (raw/bypass): the caller took responsibility for the
+    // exact bytes — never digested, never capped (#1453, #1541).
+    let explicit_verbatim_shell = name == "ctx_shell" && {
         let arg_raw = helpers::get_bool(args, "raw").unwrap_or(false);
         let arg_bypass = helpers::get_bool(args, "bypass").unwrap_or(false);
-        arg_raw
-            || arg_bypass
-            || crate::core::runtime_flags::raw_enabled()
-            || inline_shell
-            // #1260: dataset output (sqlite3/psql/jq/`gh --json`) is destroyed,
-            // not compressed, by middle elision — pass it through at any size.
-            || helpers::get_str(args, "command")
-                .is_some_and(|c| crate::core::firewall::is_raw_command(&c, &config))
+        arg_raw || arg_bypass || crate::core::runtime_flags::raw_enabled()
     };
+    let is_raw_shell = explicit_verbatim_shell
+        || (name == "ctx_shell"
+            && (inline_shell
+                // #1260: dataset output (sqlite3/psql/jq/`gh --json`) is destroyed,
+                // not compressed, by middle elision — pass it through at any size
+                // up to the context-window cap (#1541).
+                || helpers::get_str(args, "command")
+                    .is_some_and(|c| crate::core::firewall::is_raw_command(&c, &config))));
 
     let pre_terse_len = result_text.len();
     let output_tokens = {
@@ -280,11 +283,14 @@ pub(in crate::server) async fn dispatch_and_post_process(
     // exceeds the ephemeral threshold, the full (redacted) body is stored out-of-band
     // and the inline result is replaced by a compact digest + ctx_expand drilldown.
     let mut firewalled = false;
+    let mut firewall_saved_tokens: usize = 0;
     // GH #1453: `raw`/`inline`/`bypass` explicitly request verbatim delivery —
     // the firewall must NOT replace their content with a structural digest.
     // The output is still *archived* (so ctx_expand works), but stays inline.
-    // `minimal` (no-overhead mode) skips even archiving.
-    let archive_hint = if minimal {
+    // #1540: only the LEAN_CTX_MINIMAL env escape hatch skips archiving — the
+    // `minimal_overhead` config key (default true) trims instruction overhead
+    // and must never disable the archive/firewall safety net.
+    let archive_hint = if crate::core::config::Config::minimal_escape_hatch() {
         None
     } else if background_status {
         use crate::core::archive;
@@ -319,14 +325,22 @@ pub(in crate::server) async fn dispatch_and_post_process(
                 } else {
                     format!("{chars} chars, {lines} lines archived")
                 };
-                if !is_raw_shell {
+                if !explicit_verbatim_shell {
                     let archived = if stored.truncated {
                         archive::retrieve(&stored.id).unwrap_or_default()
                     } else {
                         to_store.clone()
                     };
                     let tokens = crate::core::tokens::count_tokens(&archived);
-                    if crate::core::firewall::should_firewall(name, tokens, &config) {
+                    // #1541: implicit verbatim (inline/dataset) is judged
+                    // against the context-window cap instead of the ephemeral
+                    // threshold.
+                    let fires = if is_raw_shell {
+                        crate::core::firewall::verbatim_cap_exceeded(name, tokens, &config)
+                    } else {
+                        crate::core::firewall::should_firewall(name, tokens, &config)
+                    };
+                    if fires {
                         let digest = crate::core::firewall::summarize(
                             &archived, &stored.id, name, tokens, &job_id,
                         );
@@ -339,6 +353,8 @@ pub(in crate::server) async fn dispatch_and_post_process(
                             digest
                         };
                         firewalled = true;
+                        firewall_saved_tokens =
+                            tokens.saturating_sub(crate::core::tokens::count_tokens(&result_text));
                     }
                 }
                 stored_result = Some(stored);
@@ -383,6 +399,25 @@ pub(in crate::server) async fn dispatch_and_post_process(
                     result_text =
                         crate::core::firewall::summarize(&to_store, &id, name, tokens, &cmd);
                     firewalled = true;
+                    firewall_saved_tokens =
+                        tokens.saturating_sub(crate::core::tokens::count_tokens(&result_text));
+                    None
+                }
+                // #1541: implicitly verbatim output (dataset passthrough,
+                // inline=true) keeps its row integrity up to the context-window
+                // cap; above it a single delivery floods the caller's context,
+                // so it becomes the same lossless digest + ctx_expand ref.
+                // Explicit raw/bypass is never capped.
+                Some(id)
+                    if is_raw_shell
+                        && !explicit_verbatim_shell
+                        && crate::core::firewall::verbatim_cap_exceeded(name, tokens, &config) =>
+                {
+                    result_text =
+                        crate::core::firewall::summarize(&to_store, &id, name, tokens, &cmd);
+                    firewalled = true;
+                    firewall_saved_tokens =
+                        tokens.saturating_sub(crate::core::tokens::count_tokens(&result_text));
                     None
                 }
                 Some(id) => Some(archive::format_hint(&id, to_store.len(), tokens)),
@@ -399,6 +434,32 @@ pub(in crate::server) async fn dispatch_and_post_process(
             task_profile.as_ref(),
             &mut decision_context,
             config.decision_loop.max_filter_level.min(2),
+        );
+    }
+
+    // #1542: the dispatcher already recorded this call's event/metering with
+    // pre-firewall numbers (saved=0). Credit the firewall reduction as its own
+    // zero-original correction so the live view, metering.jsonl and the
+    // savings ledger reflect what the model actually receives — lossless,
+    // since the full body is in the archive. Persistent stats are corrected
+    // by `finalize_token_count_and_adjust` below.
+    if firewalled && firewall_saved_tokens > 0 {
+        crate::core::events::emit_tool_call(
+            name,
+            0,
+            firewall_saved_tokens as u64,
+            Some("firewall".to_string()),
+            0,
+            None,
+        );
+        crate::core::metering::MeterStore::append_best_effort(
+            crate::core::metering::MeterEntry::new(name, 0, 0, firewall_saved_tokens as u64),
+        );
+        let digest_tokens = crate::core::tokens::count_tokens(&result_text) as u64;
+        crate::core::savings_tracker::record_compression(
+            digest_tokens.saturating_add(firewall_saved_tokens as u64),
+            digest_tokens,
+            name,
         );
     }
 
@@ -458,7 +519,10 @@ pub(in crate::server) async fn dispatch_and_post_process(
         }
     }
 
-    if !firewalled
+    // Raw output stays byte-pure: the body is archived (ctx_expand works),
+    // but the hint decoration is only appended to non-raw deliveries.
+    if !is_raw_shell
+        && !firewalled
         && profile_hints.archive_hint()
         && let Some(hint) = archive_hint
     {
