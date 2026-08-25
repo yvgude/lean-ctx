@@ -243,7 +243,8 @@ COMMANDS:
                                    Code smell detection (Property Graph, 8 rules)
     control <action> [--target=<t>] Context field manipulation (exclude/pin/priority)
     plan <task> [--budget=N]       Context planning (optimal Phi-scored context plan)
-    compile [--mode=<m>] [--budget=N] Context compilation (knapsack + Boltzmann)
+    compile [--mode=<m>] [--budget=N] [--run-id-version=2]
+                                   Context compilation (knapsack + Boltzmann)
     visualize [--output F] [--open] Generate interactive HTML report (D3.js graph)
     plugin list|enable|disable|info|init|hooks
                                    Manage lean-ctx plugins

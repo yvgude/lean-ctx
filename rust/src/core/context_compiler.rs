@@ -175,7 +175,7 @@ pub(crate) fn compile_with_run_id_version(
 
     let run_id = match run_id_version {
         RunIdVersion::LegacyV1 => legacy_run_id.expect("legacy run ID initialized above"),
-        RunIdVersion::DeterministicV2 => deterministic_run_id(mode, &selection),
+        RunIdVersion::DeterministicV2 => deterministic_run_id(mode, budget, &selection),
     };
 
     CompileResult {
@@ -194,22 +194,33 @@ pub(crate) fn compile_with_run_id_version(
 }
 
 /// Derive a stable V2 run identifier from canonical mode and selection data.
-fn deterministic_run_id(mode: CompileMode, selection: &CompileSelection) -> String {
+fn deterministic_run_id(
+    mode: CompileMode,
+    budget: TokenBudget,
+    selection: &CompileSelection,
+) -> String {
     // Struct serialization fixes field order; selection itself is ordered by the
     // pure selector, so identical inputs produce identical bytes across runs.
     #[derive(Serialize)]
     struct CanonicalRunInputs<'a> {
         mode: &'static str,
+        budget_total: usize,
+        budget_used: usize,
         selection: &'a CompileSelection,
     }
 
     let canonical = CanonicalRunInputs {
         mode: mode.as_str(),
+        budget_total: budget.total,
+        budget_used: budget.used,
         selection,
     };
-    let bytes = serde_json::to_vec(&canonical).expect("compile selection must be JSON-safe");
-    let digest = blake3::hash(&bytes).to_hex().to_string();
-    format!("run_v2_{}", &digest[..16])
+    let payload = serde_json::to_vec(&canonical).expect("compile selection must be JSON-safe");
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"lean-ctx:context-compile:run-id:v2\0");
+    hasher.update(&payload);
+    let digest = hasher.finalize().to_hex().to_string();
+    format!("run_v2_{}", &digest[..32])
 }
 
 /// Select a bounded context package from fully explicit inputs.
@@ -828,7 +839,12 @@ mod tests {
 
         assert_eq!(first.run_id, second.run_id);
         assert!(first.run_id.starts_with("run_v2_"));
-        assert_eq!(first.run_id.len(), "run_v2_".len() + 16);
+        assert_eq!(first.run_id.len(), "run_v2_".len() + 32);
+        assert!(
+            first.run_id[7..]
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        );
     }
 
     #[test]
@@ -857,9 +873,19 @@ mod tests {
             CompileMode::Compressed,
             RunIdVersion::DeterministicV2,
         );
+        let changed_used_budget = compile_with_run_id_version(
+            &candidates,
+            TokenBudget {
+                total: 5000,
+                used: 1,
+            },
+            CompileMode::Compressed,
+            RunIdVersion::DeterministicV2,
+        );
 
         assert_ne!(compressed.run_id, full.run_id);
         assert_ne!(compressed.run_id, changed_selection.run_id);
+        assert_ne!(compressed.run_id, changed_used_budget.run_id);
     }
 
     #[test]
