@@ -14,11 +14,12 @@ production users should move to the separate Production SDK only after its
 namespace, license and release gates are approved. Until then this package
 remains the supported transition path.
 
-The persistent successor candidate is private SDK staging commit `dbfe753`,
-with immutable implementation `176c2aa2ab` and no public remote or release.
-Independent internal-RC review passed Python 3.9/3.14 (`14/14` each), clean
-wheel/install, real Engine recovery, sealed receipts and provider-free OpenAI
-Agents 0.8.4 success/abort. BSL 1.1 is the decided license family; exact
+The persistent successor ledger is private SDK staging commit `a7afd1f`, with
+immutable implementation `11f77debc2`, wheel `b54ac013…`, and no public remote
+or release. Independent internal-RC evidence passed Python 3.9/3.14 (`19/19`
+each), exact offline closure (`25/25`), clean wheel/install, real Engine
+recovery, sealed receipts and provider-free OpenAI Agents 0.8.4 actual Runner
+success/abort. BSL 1.1 is the decided license family; exact
 publication, namespace and license parameters remain pending. The integrated
 P3 Preview seam remains the compatibility baseline. Historical `fbfec0b`
 references remain quarantined. No provider-backed production-support claim is
