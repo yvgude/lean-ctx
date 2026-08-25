@@ -4,6 +4,9 @@ use serde::Serialize;
 use super::SessionState;
 
 const ATTACH_SESSION_JOURNAL_SCHEMA_VERSION: u32 = 1;
+const MAX_ATTACH_SESSION_JOURNAL_BYTES: usize = 64 * 1024;
+const MAX_ATTACH_SESSION_JOURNAL_ITEMS: usize = 64;
+const MAX_ATTACH_SESSION_JOURNAL_STRING_BYTES: usize = 4 * 1024;
 
 /// Minimal, versioned projection of OSS coding-agent continuity.
 ///
@@ -58,51 +61,109 @@ pub(crate) struct AttachSessionFileV1 {
 
 impl SessionState {
     pub(crate) fn attach_session_journal_v1(&self) -> AttachSessionJournalV1 {
-        AttachSessionJournalV1 {
+        let mut journal = AttachSessionJournalV1 {
             schema_version: ATTACH_SESSION_JOURNAL_SCHEMA_VERSION,
-            id: self.id.clone(),
+            id: bounded_journal_text(&self.id),
             version: self.version,
             started_at: self.started_at,
             updated_at: self.updated_at,
-            project_root: self.project_root.clone(),
-            shell_cwd: self.shell_cwd.clone(),
+            project_root: bounded_optional_journal_text(self.project_root.as_deref()),
+            shell_cwd: bounded_optional_journal_text(self.shell_cwd.as_deref()),
             task: self.task.as_ref().map(|task| AttachSessionTaskV1 {
-                description: task.description.clone(),
+                description: bounded_journal_text(&task.description),
                 progress_pct: task.progress_pct,
             }),
             findings: self
                 .findings
                 .iter()
+                .take(MAX_ATTACH_SESSION_JOURNAL_ITEMS)
                 .map(|finding| AttachSessionFindingV1 {
-                    file: finding.file.clone(),
+                    file: bounded_optional_journal_text(finding.file.as_deref()),
                     line: finding.line,
-                    summary: finding.summary.clone(),
+                    summary: bounded_journal_text(&finding.summary),
                     timestamp: finding.timestamp,
                 })
                 .collect(),
             decisions: self
                 .decisions
                 .iter()
+                .take(MAX_ATTACH_SESSION_JOURNAL_ITEMS)
                 .map(|decision| AttachSessionDecisionV1 {
-                    summary: decision.summary.clone(),
-                    rationale: decision.rationale.clone(),
+                    summary: bounded_journal_text(&decision.summary),
+                    rationale: bounded_optional_journal_text(decision.rationale.as_deref()),
                     timestamp: decision.timestamp,
                 })
                 .collect(),
             files_touched: self
                 .files_touched
                 .iter()
+                .take(MAX_ATTACH_SESSION_JOURNAL_ITEMS)
                 .map(|file| AttachSessionFileV1 {
-                    path: file.path.clone(),
-                    file_ref: file.file_ref.clone(),
+                    path: bounded_journal_text(&file.path),
+                    file_ref: bounded_optional_journal_text(file.file_ref.as_deref()),
                     modified: file.modified,
-                    last_mode: file.last_mode.clone(),
-                    summary: file.summary.clone(),
+                    last_mode: bounded_journal_text(&file.last_mode),
+                    summary: bounded_optional_journal_text(file.summary.as_deref()),
                 })
                 .collect(),
-            next_steps: self.next_steps.clone(),
-        }
+            next_steps: self
+                .next_steps
+                .iter()
+                .take(MAX_ATTACH_SESSION_JOURNAL_ITEMS)
+                .map(|step| bounded_journal_text(step))
+                .collect(),
+        };
+        bound_serialized_journal(&mut journal);
+        journal
     }
+}
+
+fn bounded_optional_journal_text(value: Option<&str>) -> Option<String> {
+    value.map(bounded_journal_text)
+}
+
+fn bounded_journal_text(value: &str) -> String {
+    let mut bounded =
+        String::with_capacity(value.len().min(MAX_ATTACH_SESSION_JOURNAL_STRING_BYTES));
+    for character in value.chars() {
+        let character = if character.is_control() {
+            ' '
+        } else {
+            character
+        };
+        if bounded.len() + character.len_utf8() > MAX_ATTACH_SESSION_JOURNAL_STRING_BYTES {
+            break;
+        }
+        bounded.push(character);
+    }
+    bounded
+}
+
+fn bound_serialized_journal(journal: &mut AttachSessionJournalV1) {
+    while serde_json::to_vec(journal)
+        .map(|serialized| serialized.len() > MAX_ATTACH_SESSION_JOURNAL_BYTES)
+        .unwrap_or(true)
+    {
+        if journal.next_steps.pop().is_some()
+            || journal.findings.pop().is_some()
+            || journal.decisions.pop().is_some()
+            || journal.files_touched.pop().is_some()
+        {
+            continue;
+        }
+        if journal.task.take().is_some()
+            || journal.shell_cwd.take().is_some()
+            || journal.project_root.take().is_some()
+        {
+            continue;
+        }
+        break;
+    }
+    debug_assert!(
+        serde_json::to_vec(journal)
+            .map(|serialized| serialized.len() <= MAX_ATTACH_SESSION_JOURNAL_BYTES)
+            .unwrap_or(false)
+    );
 }
 
 #[cfg(test)]
@@ -224,6 +285,39 @@ mod tests {
     }
 
     #[test]
+    fn projection_bounds_legacy_cardinality_strings_and_serialized_bytes() {
+        let mut session = fixture();
+        let oversized = format!("{}{}", "\\\"".repeat(4_096), "界".repeat(4_096));
+        session.id = oversized.clone();
+        session.project_root = Some(oversized.clone());
+        session.shell_cwd = Some(oversized.clone());
+        session.next_steps = vec![oversized.clone(); MAX_ATTACH_SESSION_JOURNAL_ITEMS * 2];
+        session.findings = vec![
+            Finding {
+                file: Some(oversized.clone()),
+                line: Some(1),
+                summary: oversized.clone(),
+                timestamp: fixed_time(),
+            };
+            MAX_ATTACH_SESSION_JOURNAL_ITEMS * 2
+        ];
+
+        let journal = session.attach_session_journal_v1();
+        let serialized = serde_json::to_vec(&journal).unwrap();
+
+        assert!(serialized.len() <= MAX_ATTACH_SESSION_JOURNAL_BYTES);
+        assert!(journal.id.len() <= MAX_ATTACH_SESSION_JOURNAL_STRING_BYTES);
+        assert!(journal.findings.len() <= MAX_ATTACH_SESSION_JOURNAL_ITEMS);
+        assert!(journal.next_steps.len() <= MAX_ATTACH_SESSION_JOURNAL_ITEMS);
+        assert!(
+            journal
+                .findings
+                .iter()
+                .all(|finding| finding.summary.len() <= MAX_ATTACH_SESSION_JOURNAL_STRING_BYTES)
+        );
+    }
+
+    #[test]
     fn legacy_session_roundtrip_keeps_deferred_fields() {
         let session = fixture();
         let decoded: SessionState =
@@ -246,9 +340,11 @@ mod tests {
         session.id = "compat".into();
         session.prepare_save().unwrap().write_to_disk().unwrap();
 
+        let expected_journal = session.attach_session_journal_v1();
         let loaded = SessionState::load_by_id("compat").unwrap();
         assert_eq!(loaded.evidence.len(), 1);
         assert_eq!(loaded.files_touched[0].tokens, 1234);
+        assert_eq!(loaded.attach_session_journal_v1(), expected_journal);
         let dir = super::super::paths::sessions_dir().unwrap();
         let names: Vec<String> = std::fs::read_dir(dir)
             .unwrap()
