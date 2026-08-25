@@ -56,6 +56,18 @@ pub(crate) fn should_firewall(tool: &str, output_tokens: usize, config: &Config)
 /// makes that safe, so these bypass the firewall entirely.
 pub(crate) const DEFAULT_RAW_COMMANDS: &[&str] = &["sqlite3", "psql", "duckdb", "jq"];
 
+/// Context-window guard for *implicitly* verbatim deliveries (#1541): dataset
+/// passthrough (#1260) and `inline=true` stay verbatim at any reasonable size,
+/// but above `archive.verbatim_max_tokens` a single delivery would flood the
+/// calling agent's entire context window. The content is archived losslessly
+/// first, so the digest is a compression, never a loss. Explicit `raw`/`bypass`
+/// and the `LEAN_CTX_MINIMAL` escape hatch are never capped — callers gate on
+/// those before asking. `0` disables the cap.
+pub(crate) fn verbatim_cap_exceeded(tool: &str, output_tokens: usize, config: &Config) -> bool {
+    let cap = config.archive.verbatim_max_tokens_effective();
+    cap > 0 && is_firewallable_tool(tool) && output_tokens >= cap
+}
+
 /// Whether `command` runs a dataset program in any of its pipeline segments.
 /// `gh` counts only with `--json`/`--jq` — plain `gh` output is prose and
 /// compresses fine.
@@ -325,6 +337,21 @@ mod tests {
         let mut off = Config::default();
         off.archive.raw_commands.clear();
         assert!(!is_raw_command("sqlite3 backup.db 'select 1'", &off));
+    }
+
+    #[test]
+    fn verbatim_cap_fires_only_above_threshold_and_only_for_firewallable_tools() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_VERBATIM_MAX_TOKENS");
+        let mut cfg = Config::default();
+        cfg.archive.verbatim_max_tokens = 10_000;
+        assert!(verbatim_cap_exceeded("ctx_shell", 10_000, &cfg));
+        assert!(!verbatim_cap_exceeded("ctx_shell", 9_999, &cfg));
+        assert!(!verbatim_cap_exceeded("ctx_read", 50_000, &cfg));
+
+        // 0 disables the cap entirely — nothing is ever blocked.
+        cfg.archive.verbatim_max_tokens = 0;
+        assert!(!verbatim_cap_exceeded("ctx_shell", 1_000_000, &cfg));
     }
 
     #[test]

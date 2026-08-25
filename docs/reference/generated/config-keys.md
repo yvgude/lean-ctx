@@ -115,6 +115,7 @@ Settings for the zero-loss compression archive (large tool outputs saved to disk
 - `max_disk_mb` (u64, default `500`) — Maximum total disk usage for the archive
 - `raw_commands` (Vec<String>, default `["sqlite3","psql","duckdb","jq"]`) — Programs whose ctx_shell output is a dataset (rows/JSON) and passes through verbatim at any size, never archived or elided. `gh` is included automatically when the command uses --json/--jq. Set to [] to disable
 - `threshold_chars` (usize, default `800`) — Minimum output size (chars) to trigger archiving
+- `verbatim_max_tokens` (usize, default `100000`) — Context-window cap for implicitly verbatim ctx_shell deliveries (dataset passthrough, inline=true): above this many tokens the delivery becomes a lossless head+tail digest + ctx_expand ref. Explicit raw/bypass is never capped; 0 disables. Env: LEAN_CTX_VERBATIM_MAX_TOKENS
 
 ## `[autonomy]`
 

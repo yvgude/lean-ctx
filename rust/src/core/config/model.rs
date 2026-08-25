@@ -327,6 +327,8 @@ pub struct Config {
     /// `--- AUTO CONTEXT ---` block instead, which only bills when the agent
     /// actually works. Set to `false` to additionally inject the ACTIVE SESSION
     /// / PROJECT MEMORY blocks directly into the MCP `initialize` instructions.
+    /// #1540: this key never disables the archive/ephemeral firewall — only
+    /// the `LEAN_CTX_MINIMAL` env escape hatch skips that safety net.
     #[serde(default)]
     pub minimal_overhead: bool,
     /// Opt-in: substitute long identifiers with short α-codes (+ a `§MAP` table)

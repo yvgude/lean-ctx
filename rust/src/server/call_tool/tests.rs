@@ -991,15 +991,44 @@ mod shell_outcome_tests {
         assert_eq!(crate::core::archive::list_entries(None).len(), 1);
     }
 
+    // #1540: the `minimal_overhead` CONFIG key (default true) must not disable
+    // the archive/firewall safety net — a large background delivery still
+    // becomes a lossless digest with drilldown.
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(not(windows))]
-    async fn minimal_background_status_does_not_archive_or_digest() {
+    async fn config_minimal_still_archives_and_firewalls_background_status() {
         const MINIMAL_SIZE: usize = 50_000;
         let _data_dir = crate::core::data_dir::isolated_data_dir();
         let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
         let _threshold = ScopedEnvVar::set("LEAN_CTX_ARCHIVE_THRESHOLD", "1");
         let (job_id, _job) = completed_background_job(&format!(
             "printf MES1609_MINIMAL_HEAD; head -c {MINIMAL_SIZE} /dev/zero | tr '\\000' M; printf MES1609_MINIMAL_TAIL"
+        ));
+
+        let result = pipeline_background_status(&job_id, true, false, false).await;
+
+        assert_eq!(crate::core::archive::list_entries(None).len(), 1);
+        let text = text_of(&result);
+        assert!(text.contains("ctx_expand"), "digest must offer drilldown");
+        assert!(
+            text.len() < MINIMAL_SIZE,
+            "delivery must be the digest, not the body"
+        );
+    }
+
+    // #1540: only the LEAN_CTX_MINIMAL env escape hatch (the documented
+    // do-not-touch-anything switch since the 3.9.19 incident) skips the
+    // archive/firewall entirely.
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(not(windows))]
+    async fn env_minimal_escape_hatch_skips_archive_and_digest() {
+        const MINIMAL_SIZE: usize = 50_000;
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let _threshold = ScopedEnvVar::set("LEAN_CTX_ARCHIVE_THRESHOLD", "1");
+        let _hatch = ScopedEnvVar::set("LEAN_CTX_MINIMAL", "1");
+        let (job_id, _job) = completed_background_job(&format!(
+            "printf MES1609_HATCH_HEAD; head -c {MINIMAL_SIZE} /dev/zero | tr '\\000' M; printf MES1609_HATCH_TAIL"
         ));
 
         let result = pipeline_background_status(&job_id, true, false, false).await;
@@ -1033,6 +1062,34 @@ mod shell_outcome_tests {
         assert!(!text.contains("ctx_expand"));
         assert!(!text.contains("[Archived:"));
         assert!(structured_of(&result)["archiveId"].as_str().is_some());
+        assert_eq!(crate::core::archive::list_entries(None).len(), 1);
+    }
+
+    // #1541: inline=true is honored up to the context-window cap; above it the
+    // delivery becomes a lossless digest with drilldown instead of flooding
+    // the caller's context. Explicit raw stays verbatim at any size.
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(not(windows))]
+    async fn inline_background_status_above_verbatim_cap_is_digested() {
+        const CAP_SIZE: usize = 20_000;
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let _threshold = ScopedEnvVar::set("LEAN_CTX_ARCHIVE_THRESHOLD", "1");
+        let _cap = ScopedEnvVar::set("LEAN_CTX_VERBATIM_MAX_TOKENS", "1000");
+        let _turn_limit = ScopedEnvVar::set("LEAN_CTX_TURN_FRESH_LIMIT", "0");
+        let (job_id, _job) = completed_background_job(&format!(
+            "printf MES1609_CAP_HEAD; head -c {CAP_SIZE} /dev/zero | tr '\\000' C; printf MES1609_CAP_TAIL"
+        ));
+
+        let result = pipeline_background_status(&job_id, false, false, true).await;
+
+        let text = text_of(&result);
+        assert!(
+            text.len() < CAP_SIZE,
+            "above the cap the delivery is a digest, got {} bytes",
+            text.len()
+        );
+        assert!(text.contains("ctx_expand"), "digest must offer drilldown");
         assert_eq!(crate::core::archive::list_entries(None).len(), 1);
     }
 

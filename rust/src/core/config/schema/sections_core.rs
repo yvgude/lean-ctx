@@ -907,6 +907,10 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key("usize", serde_json::json!(cfg.archive.ephemeral_min_tokens), "Minimum output tokens before the ephemeral firewall replaces inline body with summary+ref. Env: LEAN_CTX_EPHEMERAL_MIN_TOKENS"),
     );
     archive.insert(
+        "verbatim_max_tokens".into(),
+        key("usize", serde_json::json!(cfg.archive.verbatim_max_tokens), "Context-window cap for implicitly verbatim ctx_shell deliveries (dataset passthrough, inline=true): above this many tokens the delivery becomes a lossless head+tail digest + ctx_expand ref. Explicit raw/bypass is never capped; 0 disables. Env: LEAN_CTX_VERBATIM_MAX_TOKENS"),
+    );
+    archive.insert(
         "inline_max_bytes".into(),
         key("usize", serde_json::json!(cfg.archive.inline_max_bytes), "Maximum ctx_shell(inline=true) output size in bytes before archive/firewall handling. Env: LEAN_CTX_INLINE_MAX_BYTES"),
     );

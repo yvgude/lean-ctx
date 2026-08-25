@@ -63,6 +63,27 @@ documented lossless escape hatch, and corrupting the read-dedup contract.
   opencode) at `lean-ctx init --agent <name>` instead of claiming
   "unsupported" (#1520).
 
+### Fixed — firewall & verbatim delivery
+
+- **The ephemeral firewall works again on default installs** — the
+  `minimal_overhead` config key (default `true`, meant only to keep MCP
+  instructions byte-stable for prompt caching) also disabled the pipeline's
+  archive + firewall safety net; archive stores had been empty since June.
+  Only the documented `LEAN_CTX_MINIMAL` env escape hatch skips it now
+  (#1540).
+- **Implicitly verbatim deliveries are capped at the context window** — new
+  `archive.verbatim_max_tokens` (default 100000, env
+  `LEAN_CTX_VERBATIM_MAX_TOKENS`, `0` disables): dataset passthrough and
+  `inline=true` outputs above the cap are archived losslessly and delivered
+  as a head+tail digest with `ctx_expand` drilldown instead of flooding the
+  caller's context (observed live: single 752k-token deliveries). Explicit
+  `raw`/`bypass` is never capped (#1541).
+- **Firewall savings are credited honestly** — a corrective metering entry,
+  live event and savings-ledger record for the delta between archived body
+  and delivered digest (#1542).
+- **`doctor` states that budget SLOs are advisory** — lean-ctx never blocks
+  or throttles a tool call; the board now says so explicitly (#1542).
+
 ### Fixed — metrics honesty & dashboard
 
 - `reread_tokens_saved` no longer extrapolates from turn arithmetic (values

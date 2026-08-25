@@ -430,6 +430,10 @@ fn run_inner(json: bool) -> u32 {
     let output_triage = output_triage_outcome();
     board.check(&output_triage);
 
+    // 9c) Budget SLOs (#1542): observability only — never enforcement.
+    let slo_budgets = slo_budgets_outcome();
+    board.check(&slo_budgets);
+
     // 10) Port
     let port = port_3333_outcome();
     board.check(&port);
