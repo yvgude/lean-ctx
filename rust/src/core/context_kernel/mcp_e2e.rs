@@ -8,7 +8,6 @@ mod tests {
     use super::super::coverage_class::CoverageClass;
     use super::super::mcp_bridge::{self, McpCallData, McpClientInfo};
     use super::super::mcp_coverage;
-    use super::super::mcp_receipt::{self, McpReceipt};
     use super::super::mcp_schema_opt::{self, SchemaBudget, SchemaEntry};
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -19,7 +18,6 @@ mod tests {
             Err(poisoned) => poisoned.into_inner(),
         };
         mcp_bridge::reset_mcp_state();
-        mcp_receipt::reset_receipts();
         guard
     }
 
@@ -42,16 +40,6 @@ mod tests {
         }
     }
 
-    fn receipt(tool: &str) -> McpReceipt {
-        McpReceipt {
-            tool: tool.to_owned(),
-            tokens_in: 1_000,
-            tokens_out: 400,
-            kernel_overhead: 50,
-            accepted: true,
-        }
-    }
-
     #[test]
     fn full_mcp_lifecycle() {
         let _guard = isolated_test();
@@ -60,12 +48,12 @@ mod tests {
 
         for output_tokens in [100, 125, 150] {
             mcp_bridge::record_mcp_call(&call("ctx_read", output_tokens));
-            mcp_receipt::record_receipt(receipt("ctx_read"));
         }
 
         assert_eq!(mcp_bridge::mcp_etpao(), 0.0);
-        let accounting = mcp_receipt::mcp_accounting();
-        assert!(accounting.delivered_tokens > 0);
+        let summary = mcp_bridge::mcp_summary();
+        assert_eq!(summary.total_calls, 3);
+        assert_eq!(summary.total_output_tokens, 375);
     }
 
     #[test]
@@ -126,25 +114,6 @@ mod tests {
     }
 
     #[test]
-    fn receipt_per_tool_tracking() {
-        let _guard = isolated_test();
-        for _ in 0..5 {
-            mcp_receipt::record_receipt(receipt("ctx_read"));
-        }
-        for _ in 0..3 {
-            mcp_receipt::record_receipt(receipt("ctx_search"));
-        }
-
-        let savings = mcp_receipt::per_tool_savings();
-        assert_eq!(savings.len(), 2);
-        let read = savings
-            .iter()
-            .find(|entry| entry.tool == "ctx_read")
-            .expect("ctx_read savings must be present");
-        assert_eq!(read.calls, 5);
-    }
-
-    #[test]
     fn request_metrics_track_mcp_calls_without_inventing_etpao() {
         let _guard = isolated_test();
         for index in 0..10 {
@@ -171,17 +140,17 @@ mod tests {
     }
 
     #[test]
-    fn end_to_end_identity_to_receipt() {
+    fn end_to_end_identity_to_request_metrics() {
         let _guard = isolated_test();
         let _context = mcp_bridge::process_mcp_context(&cursor());
 
         for index in 0..5 {
             mcp_bridge::record_mcp_call(&call("ctx_read", 100 + index));
-            mcp_receipt::record_receipt(receipt("ctx_read"));
         }
 
-        assert_eq!(mcp_bridge::mcp_summary().total_calls, 5);
-        assert!(!mcp_receipt::per_tool_savings().is_empty());
-        assert!(mcp_receipt::total_kernel_overhead() > 0);
+        let summary = mcp_bridge::mcp_summary();
+        assert_eq!(summary.total_calls, 5);
+        assert_eq!(summary.total_input_tokens, 5_000);
+        assert_eq!(summary.total_output_tokens, 510);
     }
 }

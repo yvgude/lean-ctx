@@ -242,10 +242,6 @@ impl ReceiptBuilder {
             _ => None,
         };
 
-        // Child MCP receipts are exposed by `mcp_receipt::child_tool_evidence_refs`;
-        // callers join only the task-scoped refs they own.  The global MCP store
-        // has no task key, so implicitly copying every process receipt here would
-        // make unrelated tasks appear in this receipt.
         let mut evidence_refs = self.evidence_refs;
         evidence_refs.sort_unstable_by(|left, right| {
             (left.digest.as_str(), left.uri.as_str())

@@ -91,7 +91,6 @@ All `std::sync::Mutex` unless noted otherwise.
 | L72 | `IDENTITY_LEDGER` | `core/context_kernel/proxy_bridge.rs:13` | `OnceLock<Mutex<IdentityLedger>>` | Per-user identity tracking in the proxy-to-kernel bridge; updated after proxy ETPAO tracking, independent leaf lock |
 | L73 | `ETPAO_TRACKER` | `core/context_kernel/proxy_bridge.rs:14` | `OnceLock<Mutex<EtpaoLive>>` | ETPAO efficiency tracking for proxy requests; locked and released before `IDENTITY_LEDGER` |
 | L74 | `CHAIN` | `core/context_kernel/receipt_chain.rs:37` | `OnceLock<Mutex<ReceiptChain>>` | Evidence chain for context delivery lifecycles and monotonic ids; independent leaf lock, never nested |
-| L75 | `RECEIPTS` | `core/context_kernel/mcp_receipt.rs:46` | `OnceLock<Mutex<McpReceiptStore>>` | Receipt recording and honest accounting for MCP tool calls; independent leaf lock, never nested |
 | L76 | `DEDUP` | `core/context_kernel/dedup_wiring.rs:8` | `OnceLock<Mutex<ContextDedup>>` | Global content-deduplication cache for context delivery hot paths; acquired before `SEEN_PATHS`/`STATS` in reset paths |
 | L77 | `SEEN_PATHS` | `core/context_kernel/dedup_wiring.rs:9` | `OnceLock<Mutex<HashSet<String>>>` | Tracks previously seen file paths for dedup modified-vs-fresh distinction; may be touched after `DEDUP` |
 | L78 | `STATS` | `core/context_kernel/dedup_wiring.rs:10` | `OnceLock<Mutex<DedupStats>>` | Cumulative content-deduplication counters; may be reset after `DEDUP` and `SEEN_PATHS` |
@@ -324,5 +323,4 @@ across any other lock acquisition.
 3. Assign a lock number (append to Section 1) and document the acquisition order here.
 4. If nesting is required, document the outer → inner relationship in Section 3.
 5. Run `cargo check --all-features` to verify `Send`/`Sync` bounds.
-
 
