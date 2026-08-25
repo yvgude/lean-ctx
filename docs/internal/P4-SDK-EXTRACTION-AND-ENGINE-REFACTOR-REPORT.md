@@ -31,9 +31,9 @@ or infer task acceptance from delivery, retries or response length.
 | Engine code candidate | e495b61f24a50012e90f419577d3cabda57fc50a | R4A–R6 integrated locally |
 | Engine report candidate | Integration branch after this report commit | Final SHA assigned by serial Layer-4 merge |
 | Production SDK repository | /Users/yvesgugger/Documents/Privat/Projects/leanctx-product-sdk-staging | Separate private staging |
-| Production SDK candidate | dbfe753 | Clean, reviewed internal RC |
-| SDK implementation baseline | 176c2aa2abb0b94bc393f208daa16b8c636fe618 | Immutable reviewed code |
-| SDK wheel SHA-256 | b268e88a4c661609f97d7441a739162d419a2f8a02b5c3948b704bbb1ee690fa | Reviewed artifact |
+| Production SDK ledger | a7afd1f | Clean, reviewed internal RC record |
+| SDK implementation baseline | 11f77debc2811dfd6569ba3a30bb674ae5e8b5d1 | Immutable reviewed code |
+| SDK wheel SHA-256 | b54ac013af1494c00a64feac8ce3eb1910fc32baa3ba9a6d4b52d565942ff141 | Reviewed artifact |
 | SDK distribution | PRIVATE_NOT_RELEASED | No public release or namespace claim |
 | License family | BSL_1_1_DECIDED | Exact publication parameters remain pending |
 | SDK provenance | CLEAN_REIMPLEMENT | No Apache source copied into BSL staging |
@@ -56,10 +56,13 @@ migration/rollback support, safe defaults and embedded/OEM-oriented integration.
 
 Independent release review passed:
 
-- Python 3.9 and 3.14: 14/14 tests on both interpreters
+- Python 3.9 and 3.14: 19/19 tests on both interpreters
+- certified offline dependency closure: 25/25 exact wheel hashes
 - real Engine 3.9.20 context-view and recover
 - exact recovery and sealed receipt evidence
-- provider-free OpenAI Agents 0.8.4 Runner success and abort paths
+- fresh Python 3.9 offline install and `pip check`
+- provider-free OpenAI Agents 0.8.4 actual Runner success and abort paths,
+  exact host object identity and secret-redacted receipts
 - no credentials, provider call, Cloud dependency or live-provider claim
 - clean wheel/install and immutable artifact digest
 
@@ -133,8 +136,8 @@ No transition surface may receive new Product semantics.
 | --- | --- | --- |
 | Native Engine embed | PASS | Real context-view/recover, exact recovery and receipt lineage |
 | OpenAI Agents | PASS, provider-free | Version 0.8.4 Runner success/abort |
-| Python 3.9 | PASS | 14/14 |
-| Python 3.14 | PASS | 14/14 |
+| Python 3.9 | PASS | 19/19; clean offline wheel/Agents gate |
+| Python 3.14 | PASS | 19/19 source suite |
 | P3 Python Preview | PRESERVED/FROZEN | Existing seam and migration/rollback documentation |
 | Engine CLI/MCP/proxy/Attach | PRESERVED | Focused Engine tests plus PR CI evidence |
 | Rust Engine embedding | PRESERVED | engine::ContextEngine remains public; experimental crate remains opt-in |
@@ -165,11 +168,15 @@ LEGAL_REVIEW_REQUIRED.
   /private/tmp/leanctx-p4-v4-next/r5-d2-review.md
 - R6 review:
   /tmp/r6-review.md
+- Final architecture/security review:
+  /tmp/p4-final-review.md — PASS, no P0–P3 blocker
 - R4F focused kernel gate: 510/510
 - R5 D1 focused kernel gate: 499/499
 - R5 D2 focused gate: 3/3
 - Protocol narrowing gate: 4/4
 - R6: cargo fmt --check, git diff --check and cargo metadata passed
+- Final Layer-3 gate: cargo test --lib passed 10,473/10,473; cargo clippy
+  --all-features -- -D warnings passed; cargo fmt --check passed
 
 D1 review found no P0/P1 and correctly recorded a potential source-compatibility
 risk because the deleted paths were syntactically public. The integrated
@@ -193,8 +200,8 @@ rollback remain explicit.
 | 9 | Major ownership seams separated or bounded | PASS |
 | 10 | Safe decommission candidates removed meaningfully | PASS |
 | 10a | No duplicate canonical Product lifecycle | PASS |
-| 11 | OSS Coding-Agent core remains strong | PASS candidate; final Layer-4 CI pending |
-| 12 | Engine security remains strong | PASS candidate; final Layer-4 CI pending |
+| 11 | OSS Coding-Agent core remains strong | PASS locally; final Layer-4 CI pending |
+| 12 | Engine security remains strong | PASS locally; final Layer-4 CI pending |
 | 13 | SDK is materially more than a thin wrapper | PASS |
 | 14 | No Cloud required | PASS |
 | 15 | P5+ did not begin | PASS |
@@ -202,16 +209,16 @@ rollback remain explicit.
 | 17 | Provenance disposition exists | PASS |
 | 18 | Clean-machine SDK integration passes | PASS |
 | 19 | Preview-to-SDK migration/rollback documented | PASS |
-| 20 | Independent architecture/security review has no blocker | PASS candidate; final integrated/PR review pending |
+| 20 | Independent architecture/security review has no blocker | PASS; final PR review/CI pending |
 
-The local candidate satisfies the architecture and SDK gates. Formal P4 status
-remains ACTIVE until one final integrated Layer-3 gate and the serial Layer-4
-PR CI/merge sequence close rows 11, 12 and 20 on authoritative main.
+The local candidate satisfies the architecture, SDK and Layer-3 gates. Formal
+P4 status remains ACTIVE until the serial Layer-4 PR CI/merge sequence records
+the final authoritative main SHA.
 
 ## Rollback
 
-- SDK: keep dbfe753 private; rollback to immutable implementation baseline
-  176c2aa2abb0b94bc393f208daa16b8c636fe618 or retain P3 Preview.
+- SDK: keep the `a7afd1f` ledger private; rollback to immutable implementation
+  baseline `11f77debc2811dfd6569ba3a30bb674ae5e8b5d1` or retain P3 Preview.
 - Engine: each wave is a separate commit; revert one owned slice at a time.
 - R5 D1 recovery: revert d83ef94882 to restore both detached stores and the
   legacy generator.
