@@ -183,9 +183,10 @@ the host agent loop.
 ### P4 — Separate BSL 1.1 Production SDK repository
 
 **Status (2026-08-26): P4 ACTIVE / final V4 candidate.** The separate private SDK
-ledger is `a7afd1f` with immutable implementation `11f77debc2` and wheel
-`b54ac013…`. Independent internal-RC evidence passes Python 3.9/3.14 (`19/19`
-each), the exact offline wheel closure (`25/25`), fresh Python 3.9 install and
+head is `8c84e224`; ledger `a7afd1f` binds immutable implementation
+`11f77debc2` and wheel `b54ac013…`. Independent internal-RC evidence passes
+Python 3.9/3.14 (`19/19` each), the exact CPython 3.9 macOS-arm64 offline wheel
+closure (`25/25`), fresh Python 3.9 install and
 `pip check`, real Engine `context-view`/`recover`, exact recovery, sealed
 receipts and provider-free OpenAI Agents 0.8.4 actual Runner success/abort.
 Historical `fbfec0b` evidence remains quarantined. No live-provider or public-

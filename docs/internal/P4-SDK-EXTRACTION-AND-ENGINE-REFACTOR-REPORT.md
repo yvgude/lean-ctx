@@ -31,6 +31,7 @@ or infer task acceptance from delivery, retries or response length.
 | Engine code candidate | e495b61f24a50012e90f419577d3cabda57fc50a | R4A–R6 integrated locally |
 | Engine report candidate | Integration branch after this report commit | Final SHA assigned by serial Layer-4 merge |
 | Production SDK repository | /Users/yvesgugger/Documents/Privat/Projects/leanctx-product-sdk-staging | Separate private staging |
+| Production SDK repository head | 8c84e2246bff0f2681dc69ea08d4322519f88050 | Current private docs/governance head |
 | Production SDK ledger | a7afd1f | Clean, reviewed internal RC record |
 | SDK implementation baseline | 11f77debc2811dfd6569ba3a30bb674ae5e8b5d1 | Immutable reviewed code |
 | SDK wheel SHA-256 | b54ac013af1494c00a64feac8ce3eb1910fc32baa3ba9a6d4b52d565942ff141 | Reviewed artifact |
@@ -57,7 +58,8 @@ migration/rollback support, safe defaults and embedded/OEM-oriented integration.
 Independent release review passed:
 
 - Python 3.9 and 3.14: 19/19 tests on both interpreters
-- certified offline dependency closure: 25/25 exact wheel hashes
+- certified offline dependency closure: 25/25 exact wheel hashes for CPython
+  3.9 on macOS 11+ arm64; other platforms require separate reviewed manifests
 - real Engine 3.9.20 context-view and recover
 - exact recovery and sealed receipt evidence
 - fresh Python 3.9 offline install and `pip check`
