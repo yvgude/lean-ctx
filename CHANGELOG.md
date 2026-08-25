@@ -3,6 +3,98 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.9.20] — 2026-08-25
+
+### Fixed — triage (community incident, 3.9.19)
+
+Community forensics (Discord, GL #1290) showed the 3.9.19 output-triage filter
+silently abridging source files into code that still parsed, ignoring every
+documented lossless escape hatch, and corrupting the read-dedup contract.
+3.9.20 closes the incident end to end:
+
+- **Output filtering is now opt-in** — `decision_loop.max_filter_level`
+  defaults to `0`; classification and accounting stay active, nothing is
+  removed from tool output unless explicitly enabled.
+- **A rules-derived profile can no longer select the lossy level 2** —
+  classification confidence measures intent certainty, not information-loss
+  tolerance; `context_need == 0` now means "unknown", never "needs no
+  context", and the empty-query fallback reports a below-floor confidence
+  (thanks @dasTholo, #1495).
+- **The tool name is no longer classified as the user's task** — profiles
+  were built from `"{tool}: {args}"`, so `ctx_read: ctx_read` classified as a
+  mechanical single-file task on nearly every call (#1495).
+- **Line-level lossy deletion is markdown-only** — source code and logs get
+  at most the boilerplate-comment strip; plain `let` bindings can no longer
+  vanish while the survivors still parse (#1527).
+- **Every lossless escape hatch bypasses triage** — `raw`,
+  `mode=raw/full/full-compact/lines:/anchored:/diff`, `aggressiveness=0`,
+  `fresh`; `ctx_read` is exempt entirely, and the bypass contract is pinned
+  by tests (#1484, #1490, #1492).
+- **Elision is visible and recoverable** — inline `[... N lines omitted ...]`
+  markers plus a footer naming the escape hatch (`rerun with raw=true`);
+  100%-deletion and heading-only-markdown collapses pass through unfiltered
+  (#1493); filtered deliveries invalidate the read-dedup cache so re-reads
+  serve full content.
+
+### Fixed — hooks & shell
+
+- **zsh pattern-classification bug**: every command was prefixed with the zsh
+  spawn preamble *before* output classification, so no `starts_with` pattern
+  compressor ever fired on macOS/zsh — `ls -la` went from 6% to 71% savings;
+  `git log --oneline` is now correctly preserved verbatim by its VCS owner.
+- The terse stage can only replace a pattern-compressor result when it is
+  actually smaller.
+- `hook deny` speaks all three host hook dialects (Claude Code, Cursor,
+  Copilot) with the reason on stderr — no more "hook error: No stderr output".
+- New `shell_hook_mode = auto|rewrite|deny` config (+
+  `LEAN_CTX_SHELL_HOOK_MODE`): `deny` routes every native shell call through
+  `ctx_shell` with the deny hook's fail-opens.
+- Rewrite gaps closed: `sed -n 'N,Mp'` and `awk 'NR<=N'` map to
+  `read -m lines:`, multi-file/flagged `cat` no longer collapses into one
+  bogus quoted path, and `&&`/`;` chains get segment-wise rewrites.
+- `rules_injection = off` is honored on the Codex setup path — no more
+  steering files (instructions.md/AGENTS.md/LEAN-CTX.md/SKILL.md) written
+  while injection is disabled; stale artifacts are removed (#1526).
+- `lean-ctx wrap <agent>` points supported-but-not-wrappable agents (e.g.
+  opencode) at `lean-ctx init --agent <name>` instead of claiming
+  "unsupported" (#1520).
+
+### Fixed — metrics honesty & dashboard
+
+- `reread_tokens_saved` no longer extrapolates from turn arithmetic (values
+  had reached ~119 trillion); re-read savings come only from measured cache
+  hits, with one-time sanitation of implausible persisted values.
+- The session panel shows the ledger rate ("compression events") next to the
+  metered rate (every ctx_* call, zero-saving ones included) and a
+  native-passthrough counter; `lean-ctx stats` scopes its headline.
+- Dashboard bearer token persists across restarts — open tabs no longer
+  silently 401.
+- BudgetWarning events are rate-limited per (role, dimension, 10%-bucket,
+  5 min) — they no longer drown the Live Activity feed.
+- Compressed render variants (map/signatures) collapse same-conversation
+  re-reads of unchanged files to a ~15-token stub, conversation-gated
+  stricter than the full-content stub.
+- `gain --deep` dashboard columns align (thanks @andig, #1513).
+
+### Added
+
+- Structured verdicts for auto-detached background shell jobs: typed
+  running/completed/failed/cancelled states with real exit codes at the MCP
+  boundary; caller-requested cancels are successes and idempotent (thanks
+  @JulienJBO, #1510).
+- Per-turn tool-precedence reinjection via UserPromptSubmit
+  (`prompt_reinject = auto|on|off`) so session-level harness instructions
+  cannot override the ctx_* mandate.
+- `make dev` survives Apple Silicon: rm+cp+ad-hoc re-sign instead of
+  overwriting the installed Mach-O in place (SIGKILL/exit 137).
+
+### Release integrity (#1508)
+
+- `cargo install lean-ctx` works again: `lean-ctx-protocol 0.1.1` and
+  `lean-ctx-ocla 1.0.1` are published in order before the binary crate, all
+  `include_str!` assets ship inside the package, and package-content gates in
+  CI prevent regressions.
+
 ## [3.9.19] — 2026-08-18
 
 ### Added
