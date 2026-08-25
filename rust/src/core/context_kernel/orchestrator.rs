@@ -22,12 +22,17 @@ pub struct ContextKernel {
 }
 
 impl ContextKernel {
+    /// Create a kernel with an explicit field policy.
+    pub(crate) fn with_field(
+        providers: Vec<Box<dyn CandidateProvider>>,
+        field: ContextField,
+    ) -> Self {
+        Self { providers, field }
+    }
+
     /// Create a new kernel with the given providers.
     pub fn new(providers: Vec<Box<dyn CandidateProvider>>) -> Self {
-        Self {
-            providers,
-            field: ContextField::active(),
-        }
+        Self::with_field(providers, ContextField::active())
     }
 
     /// Create a kernel with default providers for a project.
@@ -348,7 +353,9 @@ pub mod tests {
     use super::super::types::{Freshness, SensitivityLevel, SideEffectPolicy};
     use std::collections::HashMap;
 
-    use crate::core::context_field::{ContextItemId, Provenance, TokenBudget, ViewCosts};
+    use crate::core::context_field::{
+        ContextItemId, FieldWeights, Provenance, TokenBudget, ViewCosts,
+    };
 
     use super::*;
 
@@ -472,6 +479,35 @@ pub mod tests {
                 .iter()
                 .any(|entry| entry.object_id == high.id.to_string())
         );
+    }
+
+    #[test]
+    fn explicit_field_controls_scoring_without_global_strategy() {
+        let providers = || -> Vec<Box<dyn CandidateProvider>> {
+            vec![Box::new(MockProvider {
+                items: vec![object("one", "reference", 0.8)],
+            })]
+        };
+        let weights = |w_relevance| FieldWeights {
+            w_relevance,
+            w_surprise: 0.0,
+            w_graph: 0.0,
+            w_history: 0.0,
+            w_cost: 0.0,
+            w_redundancy: 0.0,
+        };
+
+        let relevance_plan =
+            ContextKernel::with_field(providers(), ContextField::with_weights(weights(1.0)))
+                .plan(&context());
+        let zero_plan =
+            ContextKernel::with_field(providers(), ContextField::with_weights(weights(0.0)))
+                .plan(&context());
+
+        assert_eq!(relevance_plan.selected.len(), 1);
+        assert_eq!(zero_plan.selected.len(), 1);
+        assert_eq!(relevance_plan.selected[0].phi, 1.0);
+        assert_eq!(zero_plan.selected[0].phi, 0.0);
     }
 
     #[test]
