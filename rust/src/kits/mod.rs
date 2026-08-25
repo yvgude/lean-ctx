@@ -237,10 +237,16 @@ fn load_from_path(path: &Path, source: KitSource) -> Result<LoadedKit, KitError>
     parse(&content, source)
 }
 
-fn parse(content: &str, source: KitSource) -> Result<LoadedKit, KitError> {
+/// Parses and validates a Context Kit document without loading or activating it.
+pub fn parse_document(content: &str) -> Result<ContextKit, KitError> {
     let kit = toml::from_str::<ContextKit>(content)
         .map_err(|error| KitError::new(format!("invalid kit TOML: {error}")))?;
     validate(&kit)?;
+    Ok(kit)
+}
+
+fn parse(content: &str, source: KitSource) -> Result<LoadedKit, KitError> {
+    let kit = parse_document(content)?;
     Ok(LoadedKit { kit, source })
 }
 
@@ -400,6 +406,87 @@ mod tests {
         let invalid = CODE_REVIEW_KIT.replacen("modes = [\"full\"]", "modes = [\"outline\"]", 1);
         let error = parse(&invalid, KitSource::Builtin).expect_err("mode must be valid");
         assert!(error.to_string().contains("unsupported mode 'outline'"));
+    }
+
+    #[test]
+    fn document_parser_preserves_builtin_contract_and_first_match() {
+        let kit = parse_document(CODE_REVIEW_KIT).expect("built-in document parses");
+
+        assert_eq!(kit.kit.name, "code-review");
+        assert_eq!(kit.modes_for_path("src/tests/review.rs"), ["signatures"]);
+        assert_eq!(kit.modes_for_path("src/lib.rs"), ["map", "signatures"]);
+    }
+
+    #[test]
+    fn document_parser_rejects_unknown_fields_and_invalid_values_deterministically() {
+        let cases = [
+            (
+                format!("{CODE_REVIEW_KIT}\nunexpected = true\n"),
+                "unknown field",
+            ),
+            (
+                CODE_REVIEW_KIT.replacen("format_version = 1", "format_version = 2", 1),
+                "unsupported kit format version 2",
+            ),
+            (
+                CODE_REVIEW_KIT.replacen("name = \"code-review\"", "name = \"../code-review\"", 1),
+                "kit name must contain only ASCII",
+            ),
+            (
+                CODE_REVIEW_KIT.replacen(
+                    "default_modes = [\"map\", \"signatures\"]",
+                    "default_modes = []",
+                    1,
+                ),
+                "read.default_modes must not be empty",
+            ),
+            (
+                CODE_REVIEW_KIT.replacen("command = \"cargo test\"", "command = \" \"", 1),
+                "shell command must not be empty",
+            ),
+            (
+                CODE_REVIEW_KIT.replacen(
+                    "\"Report only actionable defects introduced or exposed by the change.\"",
+                    "\"\"",
+                    1,
+                ),
+                "quality.criteria must contain non-empty criteria",
+            ),
+        ];
+
+        for (document, expected) in cases {
+            let first = parse_document(&document).expect_err("document must be rejected");
+            let second = parse_document(&document).expect_err("repeated parse must be rejected");
+            assert_eq!(first, second);
+            assert!(first.to_string().contains(expected), "{first}");
+        }
+
+        let mut empty_template = CODE_REVIEW_KIT.to_string();
+        let prefix = "template = '''";
+        let start = empty_template.find(prefix).expect("template starts") + prefix.len();
+        let end = start + empty_template[start..].find("'''").expect("template ends");
+        empty_template.replace_range(start..end, "   ");
+        let error = parse_document(&empty_template).expect_err("template must not be empty");
+        assert_eq!(
+            error.to_string(),
+            "system_prompt.template must not be empty"
+        );
+    }
+
+    #[test]
+    fn document_parser_never_executes_declared_commands() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let marker = directory.path().join("executed");
+        let marker_toml = marker
+            .to_string_lossy()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"");
+        let command = format!("command = \"touch {marker_toml}\"");
+        let document = CODE_REVIEW_KIT.replacen("command = \"cargo test\"", &command, 1);
+
+        parse_document(&document).expect("command remains inert data");
+
+        assert!(!marker.exists());
     }
 
     #[test]
