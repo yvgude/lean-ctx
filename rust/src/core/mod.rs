@@ -542,7 +542,6 @@ pub mod deep_queries;
 pub(crate) mod deps;
 pub mod editor_registry;
 pub(crate) mod firewall;
-pub(crate) mod memory_branch;
 pub mod pathjail;
 pub(crate) mod relevance_gate;
 pub mod signatures;
