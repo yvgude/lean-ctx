@@ -101,6 +101,22 @@ commits plus one reviewed deletion from `github/main@49a6b2053c`:
 No refactor PR or final Engine SHA is claimed. One consolidated Engine gate is
 intentionally deferred until the remaining bounded slices are ready.
 
+### R4F protocol stop decision
+
+Direct adapter exposure is **BLOCKED** at `eb8db0ca23`. The existing
+`knowledge_routing::ContextCandidateV1` cannot faithfully carry the factual
+compiler tuple: it has no selected path/reference, view or state fields, while
+its task identifier is an untyped string. Its validator checks only the three
+milliunit values, and `KnowledgeSourceManifestV1::validate()` is currently a
+no-op. Coupling `context_kernel::to_compile_candidate()` to that schema would
+therefore create an under-validated public boundary and erase lineage facts.
+
+No adapter or duplicate Product policy is added. The next bounded R4F slice is
+an additive, explicitly versioned Engine-facts contract with bounded typed
+identity/task lineage, reference/path, selected view/state and token accounting;
+it must reject unknown or oversized input and gain focused round-trip, negative
+and compatibility fixtures before kernel projection is exposed.
+
 ## Extraction closure status
 
 **OPEN — P4 cannot complete yet.** The V4 closure gate audits every
