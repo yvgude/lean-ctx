@@ -30,6 +30,10 @@ documented lossless escape hatch, and corrupting the read-dedup contract.
   `mode=raw/full/full-compact/lines:/anchored:/diff`, `aggressiveness=0`,
   `fresh`; `ctx_read` is exempt entirely, and the bypass contract is pinned
   by tests (#1484, #1490, #1492).
+- **`doctor` shows the filter state** — a new "Output triage" board line
+  reads `off` at the default and `active (max level N)` with the exact
+  disable command when enabled; no more 43/43-green while output is being
+  dropped (thanks @wschanze-le, #1534).
 - **Elision is visible and recoverable** — inline `[... N lines omitted ...]`
   markers plus a footer naming the escape hatch (`rerun with raw=true`);
   100%-deletion and heading-only-markdown collapses pass through unfiltered
