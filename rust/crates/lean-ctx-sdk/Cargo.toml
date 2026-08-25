@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
-description = "In-process embedding SDK for lean-ctx — a stable Rust façade over the context engine (Engine handle with a shared session cache, read/search/symbol surface, compression, tokenization, addon authoring/audit)."
+description = "Experimental Apache Rust façade for embedding the local lean-ctx Engine in-process."
 repository = "https://github.com/yvgude/lean-ctx"
 keywords = ["mcp", "llm", "tokens", "context", "embedding"]
 categories = ["development-tools", "api-bindings"]
@@ -16,15 +16,14 @@ name = "lean_ctx_sdk"
 path = "src/lib.rs"
 
 [dependencies]
-# Path dependency on the engine. The SDK is a *thin façade*: it re-exposes a
-# curated, stable subset behind its own types so consumers are insulated from
-# internal churn. (Surface map + workspace-split rationale: docs/rfcs/sdk-embedding-v1.md.)
+# Path dependency on the Engine. This unpublished Preview crate exposes a
+# curated low-level embedding surface; it is not the Production Product SDK.
+# (Surface map + rationale: docs/rfcs/sdk-embedding-v1.md.)
 #
 # `default-features = false` drops the engine's `jemalloc` feature so embedding
 # the SDK does NOT force a `#[global_allocator]` onto the host binary — the one
-# real embedder landmine. Every other default feature is kept verbatim because
-# the engine currently references `proxy`/`http_server`/`ort` unconditionally;
-# `tree-sitter` in particular powers the AST read modes (signatures/map).
+# real embedder landmine. The listed Engine features support the current
+# low-level read/search/symbol surface; `tree-sitter` powers AST read modes.
 lean-ctx = { path = "../..", default-features = false, features = [
   "tree-sitter",
   "embeddings",

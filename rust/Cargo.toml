@@ -1,7 +1,6 @@
-# Workspace root. The SDK (Track A) is an opt-in member; `default-members` keeps
-# every existing `cargo build`/`test`/`clippy`/`publish` scoped to the engine
-# crate exactly as before — build the SDK explicitly with `-p lean-ctx-sdk` or
-# the whole workspace with `--workspace`.
+# Workspace root. The Apache Rust embedding research crate is opt-in; it is not
+# the separately governed Production SDK. `default-members` keeps ordinary
+# build/test/clippy/publish commands scoped to the Engine crate.
 [workspace]
 members = [
   ".",
@@ -25,7 +24,7 @@ name = "lean-ctx"
 version = "3.9.20"
 edition = "2024"
 autobins = false
-description = "Local Context SDK for AI agents. Select, shape, reuse, recover, and measure context before inference."
+description = "Local context engine, CLI, MCP server, and proxy for AI agents."
 license = "Apache-2.0"
 repository = "https://github.com/yvgude/lean-ctx"
 homepage = "https://leanctx.com"
@@ -104,7 +103,6 @@ default = [
   # LEANCTX_PGVECTOR_URL work out of the box (both are env-gated at runtime).
   "qdrant",
   "pgvector",
-  "context_kernel",
 ]
 jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
 dev-tools = []
@@ -132,6 +130,7 @@ pgvector = ["embeddings"]
 shape-xlat = ["http-server"]
 secure-update = []
 experimental = []
+# Compatibility feature name for existing builds; Engine internals are always compiled.
 context_kernel = []
 tree-sitter = [
   "dep:tree-sitter",
