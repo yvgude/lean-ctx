@@ -182,16 +182,12 @@ the host agent loop.
 
 ### P4 — Separate BSL 1.1 Production SDK repository
 
-**Status (2026-08-25): P4 ACTIVE / V4 dual-track.** The persistent separate-SDK
-candidate is `62400bfb74`; it is private and has no remote. It extends the
-focused-review-passing `2bafc965d3` five-primitive, offline-packaging and exact
-host-exception baseline with R2 observable-parity evidence. Its baseline
-correction is pinned; final R2 review remains open. Baseline source tests pass
-`10/10`; real Engine `context-view`/recover and clean wheel installation are
-verified. Historical SDK
-evidence and the old `fbfec0b` identity, including associated provider
-assertions, are quarantined. No live-provider or production-support claim is
-made; live-provider smoke remains `UNVERIFIED`.
+**Status (2026-08-26): P4 ACTIVE / final V4 candidate.** The separate private SDK
+candidate is `dbfe753` with immutable implementation `176c2aa2ab`. Independent
+internal-RC review passed Python 3.9/3.14 (`14/14` each), clean wheel/install,
+real Engine `context-view`/`recover`, exact recovery, sealed receipts and
+provider-free OpenAI Agents 0.8.4 success/abort. Historical `fbfec0b` evidence
+remains quarantined. No live-provider or public-release claim is made.
 
 BSL 1.1 is the decided license family. Exact Change Date, Change License,
 Additional Use Grant, publication, namespace, OEM/pricing, contributor,
@@ -200,14 +196,13 @@ lifecycle remains `OSS_TRANSITION_COMPAT`: security/correctness and migration
 fixtures continue, but no new canonical lifecycle or framework breadth is
 added there.
 
-The Engine integration candidate is `eb8db0ca23`, based on
-`github/main@49a6b2053c`. It serializes focused-review-passing R4A–R4E seams:
-narrow Engine configuration, validated Kits parsing, bounded Attach journal,
-policy separation and explicit ContextField/compiler selection, plus
-independently reviewed removal of the unreachable private `memory_branch`
-module. It remains local/unmerged; extraction closure and one consolidated
-integration gate remain open. P3 remains `COMPLETE/INTEGRATED`; P5 and Cloud
-have not begun.
+The Engine integration candidate is `e495b61f24`, based on
+`github/main@9aba08d407`. It serializes reviewed R4A–R6 work: profiles, parser,
+bounded Attach journal, policy separation, explicit field/compiler inputs,
+factual kernel evidence, protocol freeze/narrowing, two R5 decommission batches
+and source-compatible public-boundary cleanup. It remains local/unmerged pending
+one final integrated gate and serial PR CI. P3 remains `COMPLETE/INTEGRATED`;
+P5 and Cloud have not begun.
 
 **Objective:** create the premium SDK product around the small proven contract;
 remove lifecycle, integration, compatibility and maintenance burden from the
@@ -216,9 +211,10 @@ customer without weakening the Engine.
 P4 does not exit when a second repository exists. It exits only after the SDK
 successor is accepted and the non-preserved Product implementation has been
 removed, reduced to an Engine mechanism, frozen as bounded transition
-compatibility, deprecated with a named removal gate, or quarantined. No final
-Engine SHA, SDK release, live-provider support claim or P4 completion is
-recorded here.
+compatibility, deprecated with a named removal gate, or quarantined. The local
+architecture candidate meets that closure gate; final authoritative Engine SHA
+and P4 completion await serial PR CI/merge. No public SDK release or
+live-provider support claim is recorded.
 
 **Deliverables**
 
@@ -248,17 +244,18 @@ dependency value. Cloud remains absent.
 
 | Surface | Current owner | Target owner | SDK successor | Engine extraction status | OSS impact | Transition/removal gate |
 | --- | --- | --- | --- | --- | --- | --- |
-| Product primitives and lifecycle | P3 Python Preview plus private SDK staging | Production SDK, BSL 1.1 family | `62400bfb74` (R2 final review pending; reviewed baseline `2bafc965d3`) | Product lifecycle extraction from Engine remains open | Preserve P3 Preview; no new canonical Apache lifecycle | R2 review, contract/compatibility fixtures, license/release approval and rollback |
+| Product primitives and lifecycle | P3 Python Preview plus private SDK staging | Production SDK, BSL 1.1 family | `dbfe753`; implementation `176c2aa2ab`; internal-RC PASS | Engine lifecycle ownership closed by removal/reduction/freeze | Preserve P3 Preview; no new canonical Apache lifecycle | Public license/namespace/support approval and rollback |
 | Python package lifecycle | `packages/python-lean-ctx/**` Apache Preview | `OSS_TRANSITION_COMPAT` during migration | Same private SDK candidate | Frozen transition candidate; no new lifecycle semantics | Retain security, correctness and migration path | Released successor, migration window, rollback and named removal decision |
-| Engine session | Apache Engine session state | Bounded Attach continuity mechanism | SDK `ContextSession` | Bounded journal in `eb8db0ca23`; focused review passed | Preserve supported local Attach and persisted state | Consolidated gate, serial merge and revert path |
-| Engine Kits/formats | Apache Engine parser/Kits | Open parser, validation and integrity in Engine | SDK `ContextSource` / `ContextPlan` | Validated parser in `eb8db0ca23`; focused review passed | Preserve format interoperability and safe admission | Compatibility fixture, consolidated gate and migration |
-| Engine transport/protocol | Apache Engine public boundary | Versioned bounded Engine contract | SDK public `context-view` / `recover` client | `a20b98c2e0` + `57bcb8db58` bounds candidates are REVIEW/unmerged | Preserve security, PathJail, bounded IO and recovery | v1 compatibility, adversarial review and serial integration |
-| Profiles/policy/compiler/kernel | Mixed Engine mechanisms and Product policy | Engine mechanisms; SDK intent/policy | SDK `ContextPlan` | R4A/R4D/R4E in `eb8db0ca23`; focused reviews passed; closure open | Preserve deterministic OSS mechanisms and security | Remaining ownership, no duplicate canonical semantics, consolidated gate and rollback |
-| Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | D1 deletion in `eb8db0ca23`; independent reachability/rollback review passed | No public, persistence, security or OSS Core reachability | Consolidated gate and exact commit revert |
+| Engine session | Apache Engine session state | Bounded Attach continuity mechanism | SDK `ContextSession` | Bounded journal and limits integrated | Preserve supported local Attach and persisted state | Serial PR CI and revert path |
+| Engine Kits/formats | Apache Engine parser/Kits | Open parser, validation and integrity in Engine | SDK `ContextSource` / `ContextPlan` | Validated parser integrated | Preserve format interoperability and safe admission | Serial PR CI and migration |
+| Engine transport/protocol | Apache Engine public boundary | Versioned bounded Engine contract | SDK public `context-view` / `recover` client | Bounds accepted upstream; Product-shaped protocol schema frozen with named gate | Preserve security, PathJail, bounded IO and recovery | v1 compatibility and authoritative CI |
+| Profiles/policy/compiler/kernel | Mixed Engine mechanisms and Product policy | Engine mechanisms; SDK intent/policy | SDK `ContextPlan` | R4A–R4G integrated; Product delivery/inference removed | Preserve deterministic OSS mechanisms and security | Serial PR CI and named public-major compatibility gates |
+| R5 decommission | Detached receipt/shadow stores and behavioral outcome research | Removed/frozen compatibility | Explicit SDK/evaluator outcomes | 703 lines removed in two reviewed batches | Factual request/evidence accounting remains | One-commit rollback; next-major DTO removal gate |
+| Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | Merged in PR 1544 | No public, persistence, security or OSS Core reachability | Exact commit revert |
 | Workspace/Cloud | Not begun | Later private repositories/services | None in P4 | Not started | No OSS impact; no Cloud dependency | P4 exit and separately authorized P5/P8 work |
 
-Current Engine integration candidate: `eb8db0ca23`, based on
-`github/main@49a6b2053c`; local/unmerged, with consolidated gate deferred.
+Current Engine integration candidate: `e495b61f24`, based on
+`github/main@9aba08d407`; local/unmerged, with final gate and serial PR CI pending.
 
 ### P5 — Local Workspace contract
 

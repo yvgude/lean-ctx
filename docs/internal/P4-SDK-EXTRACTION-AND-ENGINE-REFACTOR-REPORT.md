@@ -1,193 +1,227 @@
 # P4 SDK Extraction and Engine Refactor Report
 
-**Status:** ACTIVE — V4 dual-track ledger
-**Mode:** `EXECUTION`
-**Date:** 2026-08-25
-**Scope:** P4 SDK construction and Apache Engine extraction only
+**Status:** ACTIVE — final integration candidate; Layer-4 PR CI pending
+**Date:** 2026-08-26
+**Scope:** P4 Production SDK extraction and Apache Engine refactor only
 
-This is a live review ledger, not a completion report. P3 remains
-`COMPLETE/INTEGRATED`; P4 remains active. P5 Workspace/package/handoff work and
-Cloud work have not begun.
+P3 is COMPLETE/INTEGRATED. P5 Workspace/package/handoff and Cloud work are
+NOT BEGUN. This report records the completed local P4 candidate and remains
+ACTIVE until the serial Engine PR stack passes authoritative CI and lands.
 
-## Authority and current truth
+## Final architecture
 
-The V4 architecture is:
+The ownership direction is:
 
-```text
-optional private Cloud
-        ↓
-Production SDK — BSL 1.1 family
-        ↓
-public versioned Engine contract
-        ↓
-Engine — Apache-2.0
-```
-
-Engine owns factual mechanisms, deterministic execution, security, bounded
-IO, Attach, protocol, recovery and OSS Coding-Agent paths. The SDK owns Product
-intent, lifecycle, policy, reuse/freshness, integrations, compatibility and
-evidence projection. Product lifecycle semantics must not remain canonical in
-both places.
-
-| Item | Recorded state | Claim boundary |
+| Layer | License/state | Owns |
 | --- | --- | --- |
-| Engine integration baseline | `github/main@49a6b2053c` | Current local integration base; not a P4 completion SHA |
-| Engine integration candidate | `eb8db0ca23` | R4A–R4E and D1 focused reviews passed; local/unmerged; no final Engine SHA |
-| Persistent SDK candidate | `62400bfb74` | Private staging, no remote; R2 final review open; reviewed baseline `2bafc965d3` and baseline correction pinned |
-| SDK distribution | `PRIVATE_NOT_RELEASED` | No public package, release or production-support claim |
-| License family | `BSL_1_1_DECIDED` | Exact parameters pending; no terms invented |
-| SDK provenance | `CLEAN_REIMPLEMENT` | Historical Apache evidence is not an approval to reuse |
-| P3 Python Preview | `COMPLETE/INTEGRATED` | Preserve seam; package lifecycle remains `OSS_TRANSITION_COMPAT` |
-| P5 / Cloud | `NOT BEGUN` | No Workspace, package, handoff or Cloud implementation started |
+| Optional private Cloud | Not part of P4 | Hosted services only |
+| Production SDK | BSL 1.1 family; private/non-published staging | Product intent, lifecycle, policy, reuse/freshness, adapters, compatibility and evidence projection |
+| Public Engine contract | Versioned and factual | Identity, source/view/shape, search, recovery, capability execution and evidence references |
+| Engine | Apache-2.0 | Deterministic mechanisms, bounded execution, Attach, MCP/proxy/CLI, security and OSS Coding-Agent paths |
 
-Historical SDK identity `fbfec0b` and associated provider assertions are
-quarantined. They are not the persistent SDK candidate and must not be used as
-the current evidence base. The candidate's recorded provider-free checks are
-scoped to that private candidate; live-provider smoke is `UNVERIFIED`.
+The Engine may optimize explicit inputs. It does not own Product context intent
+or infer task acceptance from delivery, retries or response length.
 
-## Track A — SDK construction
+## Identities and release state
 
-The candidate contains the five intended Product primitives:
-`ContextSession`, `ContextSource`, `ContextView`, `ContextPlan` and
-`ContextReceipt`. Reviewed baseline `2bafc965d3` evidence is: source tests
-`10/10`, clean wheel/install pass, real Engine `context-view`/`recover`
-pass, exact host exception identity and provider-free
-`openai-agents==0.19.4` pass. Candidate `62400bfb74` adds R2 observable
-parity evidence and pins its baseline correction; final R2 review remains open.
-This is not an accepted release or a live-provider result.
-
-The SDK is a clean reimplementation candidate. No historical Apache module is
-approved for BSL reuse. Any future reuse requires one explicit provenance
-disposition (`APPROVED_REUSE`, `KEEP_APACHE_COMPAT`, `DEPRECATE_APACHE`, or
-`LEGAL_REVIEW_REQUIRED`) before entering a BSL source tree.
-
-| Surface | Current owner | Target owner | SDK successor | Engine extraction status | OSS impact | Transition/removal gate |
-| --- | --- | --- | --- | --- | --- | --- |
-| Product lifecycle primitives | P3 Python Preview plus private SDK staging | Production SDK, BSL 1.1 family | `62400bfb74` (R2 review pending; reviewed baseline `2bafc965d3`) | Canonical lifecycle extraction remains open | Preserve integrated Preview behavior; no new Apache lifecycle | R2 review, API/compatibility fixtures, release/legal approval and rollback |
-| Python Product lifecycle | `packages/python-lean-ctx/**` | `OSS_TRANSITION_COMPAT` until successor release | Same private candidate | Freeze; no new lifecycle or adapter breadth | Security, correctness and migration path remain supported | Released successor, migration window, support owner, rollback and named removal decision |
-| Framework reference path | Preview OpenAI Agents wrapper | SDK reference integration after acceptance | Candidate's maintained reference path | Engine remains provider-neutral | Keep host agent/model/provider ownership explicit | Clean-machine compatibility, provider-free fixture and separate live-provider approval |
-| SDK evidence projection | P3 receipt seam plus candidate receipt | SDK `ContextReceipt` over factual Engine evidence | Candidate receipt model | Engine remains factual; no task-quality inference | Preserve truthful degradation and offline verification | Evidence/receipt compatibility, independent review and migration tests |
-
-## Track B — Engine extraction and refactor
-
-The Engine integration candidate `eb8db0ca23` starts from
-`github/main@49a6b2053c` and is not closed or merged.
-
-| Surface | Current owner | Target owner | SDK successor | Engine extraction status | OSS impact | Transition/removal gate |
-| --- | --- | --- | --- | --- | --- | --- |
-| `rust/src/core/session/**` | Apache Engine session state | Bounded Engine Attach continuity | SDK `ContextSession` | Bounded journal in `eb8db0ca23`; focused review passed | Retain required local Attach continuity and persisted user state | Consolidated gate, serial merge and revertable migration |
-| Engine Kits/document parser | Apache Engine Kits | Open parser, validation and integrity mechanisms | SDK `ContextSource` / `ContextPlan` | Validated parser in `eb8db0ca23`; focused review passed | Preserve `.ctxpkg`/format interoperability and safe admission | Compatibility fixture, consolidated gate and rollback |
-| Request/path boundary | Apache Engine transport | Bounded public Engine contract | SDK public `context-view` / `recover` client | `a20b98c2e0` request/path bounds, `57bcb8db58` shared-seam bounds; both review candidates | Preserve PathJail, bounded IO, failure atomicity and recovery | v1/legacy compatibility, adversarial checks, independent review and serial integration |
-| Profiles, policy, context field/compiler and kernel | Mixed Engine mechanisms and Product policy | Engine mechanisms; SDK intent and Product policy | SDK `ContextPlan` | R4A/R4D/R4E in `eb8db0ca23`; focused reviews passed; closure remains open | Preserve deterministic optimization, security and OSS Attach behavior | Remaining ownership, no duplicate canonical lifecycle, consolidated gate and rollback |
-| Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | D1 deletion in `eb8db0ca23`; independent reachability/rollback review passed | No public, persistence, security or OSS Core reachability | Consolidated gate and exact commit revert |
-| Public protocol and evidence links | Apache Engine public boundary | Versioned factual Engine contract | SDK public client and receipt projection | Keep open; narrow Product semantics, no removal claim | Preserve Invocation, Observation, Measurement, Failure, Artifact and recovery | Contract fixtures, compatibility matrix and independent security review |
-| Workspace/Cloud coordination | Not begun | Later private repositories/services | None in P4 | Not started | No OSS impact and no Cloud dependency | P4 exit plus separately authorized P5/P8 work |
-
-### Current Engine integration stack
-
-The current integration candidate serializes seven focused-review-passing
-commits plus one reviewed deletion from `github/main@49a6b2053c`:
-
-| Commit | Purpose | Status |
+| Item | Final candidate | State |
 | --- | --- | --- |
-| `3fd4a62d02` | Expose narrow Engine-consumed profile configuration | Focused review passed |
-| `bd33dc4b07` | Expose validated document parser | Focused review passed |
-| `e66570f3d9` | Add minimal Attach journal | Focused review passed |
-| `3c36aa2215` | Bound Attach journal input and serialization | Focused review passed |
-| `c7b3418f01` | Separate security and transition policy defaults | Focused review passed |
-| `89cadca80e` | Inject explicit ContextField while preserving compatibility | Focused review passed |
-| `25f0091698` | Add pure explicit compiler selection | Focused review passed |
-| `eb8db0ca23` | Remove unreachable private `memory_branch` module | Independent reachability/rollback review passed |
+| Original V4 Engine baseline | 49a6b2053c08c4d831916f03e01c7b5e6079a372 | Historical start |
+| Accepted upstream baseline | github/main at 9aba08d40796c15de6775ae0161176e2b9b13ef6 | PR 1544 merged |
+| Engine code candidate | e495b61f24a50012e90f419577d3cabda57fc50a | R4A–R6 integrated locally |
+| Engine report candidate | Integration branch after this report commit | Final SHA assigned by serial Layer-4 merge |
+| Production SDK repository | /Users/yvesgugger/Documents/Privat/Projects/leanctx-product-sdk-staging | Separate private staging |
+| Production SDK candidate | dbfe753 | Clean, reviewed internal RC |
+| SDK implementation baseline | 176c2aa2abb0b94bc393f208daa16b8c636fe618 | Immutable reviewed code |
+| SDK wheel SHA-256 | b268e88a4c661609f97d7441a739162d419a2f8a02b5c3948b704bbb1ee690fa | Reviewed artifact |
+| SDK distribution | PRIVATE_NOT_RELEASED | No public release or namespace claim |
+| License family | BSL_1_1_DECIDED | Exact publication parameters remain pending |
+| SDK provenance | CLEAN_REIMPLEMENT | No Apache source copied into BSL staging |
 
-No refactor PR or final Engine SHA is claimed. One consolidated Engine gate is
-intentionally deferred until the remaining bounded slices are ready.
+Historical SDK identity fbfec0b is quarantined and is not release evidence.
 
-### R4F protocol stop decision
+## Track A — Production SDK
 
-Direct adapter exposure is **BLOCKED** at `eb8db0ca23`. The existing
-`knowledge_routing::ContextCandidateV1` cannot faithfully carry the factual
-compiler tuple: it has no selected path/reference, view or state fields, while
-its task identifier is an untyped string. Its validator checks only the three
-milliunit values, and `KnowledgeSourceManifestV1::validate()` is currently a
-no-op. Coupling `context_kernel::to_compile_candidate()` to that schema would
-therefore create an under-validated public boundary and erase lineage facts.
+The private staging candidate implements the five Product primitives:
 
-No adapter or duplicate Product policy is added. The next bounded R4F slice is
-an additive, explicitly versioned Engine-facts contract with bounded typed
-identity/task lineage, reference/path, selected view/state and token accounting;
-it must reject unknown or oversized input and gain focused round-trip, negative
-and compatibility fixtures before kernel projection is exposed.
+- ContextSession
+- ContextSource
+- ContextView
+- ContextPlan
+- ContextReceipt
 
-## Extraction closure status
+It is materially more than a transport wrapper: it owns lifecycle, bounded
+reuse/freshness, policy, framework mapping, evidence projection, compatibility,
+migration/rollback support, safe defaults and embedded/OEM-oriented integration.
 
-**OPEN — P4 cannot complete yet.** The V4 closure gate audits every
-`SDK_BSL_TARGET`, `SDK_MIGRATION_INPUT`, `SPLIT_REQUIRED` and
-`OSS_NOT_PRESERVED` source group. Each Product-semantic implementation must
-end as one of `REMOVED_FROM_ENGINE`, `REDUCED_TO_ENGINE_MECHANISM`,
-`FROZEN_TRANSITION_COMPAT`, `DEPRECATED_WITH_NAMED_REMOVAL_GATE`, or
-`RESEARCH_QUARANTINED`.
+Independent release review passed:
 
-Current dispositions:
+- Python 3.9 and 3.14: 14/14 tests on both interpreters
+- real Engine 3.9.20 context-view and recover
+- exact recovery and sealed receipt evidence
+- provider-free OpenAI Agents 0.8.4 Runner success and abort paths
+- no credentials, provider call, Cloud dependency or live-provider claim
+- clean wheel/install and immutable artifact digest
 
-- `packages/python-lean-ctx/**`: intended `FROZEN_TRANSITION_COMPAT`; removal
-  gate is not yet satisfied.
-- `rust/src/core/session/**`: candidate `REDUCED_TO_ENGINE_MECHANISM`;
-  focused review passed; consolidated integration gate remains.
-- Kits/parser: integrated candidate Engine mechanism; compatibility gate remains.
-- Profiles/policy/compiler seams: focused reviews passed; remaining ownership
-  and closure work stays open.
-- No source has been declared removed, no BSL reuse has been approved, and no
-  duplicate-canonical-logic gate has passed.
+Public publication remains intentionally blocked by unresolved BSL parameters,
+public namespace, support/release process, pricing/OEM decisions and legal
+approval. Those are explicit business/legal gates, not hidden engineering work.
 
-OSS parity remains a preservation requirement: install/uninstall, doctor and
-status, Claude/Codex/Cursor Attach, MCP startup, read/search/shell compression,
-public Engine recovery, local evidence/offline verification, PathJail,
-redaction and bounded execution must remain available through the extraction.
+## Track B — Engine refactor
 
-## Compatibility and release matrix
+| Wave | Candidate commit(s) | Disposition |
+| --- | --- | --- |
+| R4A Profiles | 21451c3ce9 | Narrow Engine-consumed profile configuration |
+| R4B Kits/parser | 8af44ff21c | Validated open parser/integrity mechanism |
+| R4C Session | dee0c24b86, 2dfdd0f3f0 | Bounded Attach continuity journal |
+| R4D Policy | f3d75a915c | Security defaults separated from Product policy |
+| R4E Field/compiler | b3eda793a0, 785817defa | Explicit field input and deterministic bounded compiler |
+| R4F Kernel | 15f12e05d5, 8df206c820 | Product delivery semantics detached; factual measurements retained |
+| R4G Protocol | 618cc2d2cc | Historical Product-shaped types frozen with a named major-version gate |
+| R5 D1 | d83ef94882 | Detached MCP receipt/shadow stores removed |
+| R5 D2 | 581d488477 | Behavioral outcome inference/learning retired; DTO compatibility retained |
+| R6 | e495b61f24 | Engine/package/embed boundaries clarified without install breakage |
 
-| Consumer/path | Current state | Successor/target | Gate |
+R4A is represented by PR 1547. At the last recorded check every job passed
+except the Windows rerun, which remained pending. Remaining commits stay local
+until branch hygiene permits serial PR delivery.
+
+## Ownership before and after
+
+| Surface | Before P4 | Final P4 owner/disposition |
+| --- | --- | --- |
+| Product lifecycle primitives | Mixed Preview/Engine experiments | Production SDK canonical; Python Preview frozen transition compatibility |
+| Session continuity | Mixed lifecycle/session semantics | Engine keeps bounded Attach journal; SDK owns Product session lifecycle |
+| Sources and plans | Parser plus Product-shaped planning | Engine keeps validated formats/mechanisms; SDK owns source and plan intent |
+| Context selection | Engine candidate creation and learned policy | Engine keeps explicit deterministic bounded optimization; SDK owns construction, weights and Product feedback strategy |
+| Receipts/outcomes | Delivery facts mixed with inferred quality | Engine records factual observations; SDK/evaluator owns accepted outcomes |
+| Protocol | Product-shaped candidates could expand | Legacy schema frozen; no new Product semantics; named public-major removal gate |
+| Rust lean-ctx-sdk crate | Misleading stable-SDK wording | Experimental Apache in-process Engine façade, not Production SDK |
+| context_kernel export | Accidental broad documented surface | Public path retained for source compatibility but hidden from generated docs |
+
+## Decommission and transition ledger
+
+### Removed from Engine
+
+- Detached context_kernel shadow event store
+- Detached MCP receipt/accounting store
+- Orphan MCP ContextReceipt generator and timestamp identifier
+- Behavioral infer_outcome acceptance/rejection heuristics
+- Inferred-outcome provider learning hook
+- Inferred OutcomeTracker quality/degradation model
+- Duplicate post-dispatch Product receipt construction
+- Context-gate Product plan/receipt/shadow delivery logging
+- Earlier unreachable memory_branch module from PR 1544
+
+R5 removed 703 lines in two coherent batches: 459 lines in D1 and 244 lines in
+D2. R4F removed the active duplicate delivery path before those deletions.
+
+### Frozen transition compatibility
+
+| Surface | Why retained | Successor | Exact removal gate |
 | --- | --- | --- | --- |
-| P3 Python Preview | Integrated; Preview only | SDK candidate after review | Preserve exact recovery, receipt truth and degradation |
-| `packages/python-lean-ctx` | `OSS_TRANSITION_COMPAT` | Private SDK candidate | Successor release, migration window and rollback |
-| Engine `context-view` / `recover` | Public local boundary | Versioned Engine contract | Compatibility fixtures and bounded transport review |
-| OpenAI Agents `0.19.4` | Provider-free candidate check recorded | SDK reference integration | No live-provider or broad adapter claim; smoke remains unverified |
-| Other providers/frameworks | Not supported by this README | Demand-gated SDK work later | Separate contract, support and provider review |
-| Cloud/Workspace | Not begun | Later private work | P4 exit; no dependency in local path |
+| packages/python-lean-ctx | Integrated P3 Preview users need migration/rollback | Production SDK | Released successor, migration window, support owner and rollback decision |
+| OutcomeSignal/InferredOutcome DTOs | ProxyKernelResult exposed serialized/source fields | Explicit evaluator observations | Next public API major after consumers migrate |
+| protocol knowledge_routing Product-shaped DTOs | Historical published compatibility | Narrow factual Engine contracts | Protocol major after ControlPlaneRequest migration and full compatibility window |
+| context_kernel public path | External Rust source compatibility | engine::ContextEngine and experimental lean-ctx-sdk façade | Separately approved public-major change |
 
-## Licensing, distribution and provenance
+No transition surface may receive new Product semantics.
 
-BSL 1.1 is the selected license family for the Production SDK. Change Date,
-Change License, Additional Use Grant, namespace, publication/distribution,
-OEM/pricing, contributor, security and release parameters are pending. The
-candidate remains private and unreleased with no remote.
+## Compatibility matrix
 
-The SDK candidate is `CLEAN_REIMPLEMENT`. Historical evidence is retained only
-as quarantined review material; `fbfec0b` is not a current identity. The Apache
-Engine refactor remains Apache-side work. Any code crossing into the BSL SDK
-requires a recorded provenance disposition and legal gate before merge.
+| Consumer/path | P4 status | Compatibility proof |
+| --- | --- | --- |
+| Native Engine embed | PASS | Real context-view/recover, exact recovery and receipt lineage |
+| OpenAI Agents | PASS, provider-free | Version 0.8.4 Runner success/abort |
+| Python 3.9 | PASS | 14/14 |
+| Python 3.14 | PASS | 14/14 |
+| P3 Python Preview | PRESERVED/FROZEN | Existing seam and migration/rollback documentation |
+| Engine CLI/MCP/proxy/Attach | PRESERVED | Focused Engine tests plus PR CI evidence |
+| Rust Engine embedding | PRESERVED | engine::ContextEngine remains public; experimental crate remains opt-in |
+| Cloud | NOT REQUIRED | All proof is local/provider-free |
+| Live provider | NOT CLAIMED | Separate future approval and credentials required |
 
-## Rollback and recovery
+## Provenance
 
-- Keep `github/main@49a6b2053c` as the integration baseline; do not treat
-  `eb8db0ca23` as merged or final.
-- If consolidated review fails, retain P3's integrated seam and revert or repair
-  one owned Engine candidate at a time; do not merge a stacked alternative
-  blindly.
-- Keep the SDK staging candidate private and recoverable at `62400bfb…`; no
-  remote publication or destructive migration is authorized.
-- Keep `packages/python-lean-ctx` as the transition path until a released
-  successor, migration fixtures, support owner and bounded rollback exist.
-- Preserve exact Engine recovery and receipt truth during every migration;
-  fail closed on compatibility, identity, digest, policy or transport errors.
+Production SDK source disposition is CLEAN_REIMPLEMENT. The reviewed SDK does
+not reuse Apache implementation source. Engine changes remain Apache-side.
+Therefore no APPROVED_REUSE or legal exception is claimed.
 
-## P4 exit blockers and stop line
+Any future source entering the BSL tree still requires one recorded disposition:
+CLEAN_REIMPLEMENT, APPROVED_REUSE, KEEP_APACHE_COMPAT, DEPRECATE_APACHE or
+LEGAL_REVIEW_REQUIRED.
 
-P4 remains blocked from completion by exact BSL parameters,
-publication/release/security decisions, remaining Engine ownership slices, the
-consolidated Engine gate, compatibility fixtures and extraction closure.
-Live-provider smoke is unverified. No final SHA is recorded for either product.
+## Validation and review evidence
 
-P5 Workspace/package/handoff, P8 Cloud Receipt Board and later Cloud/optimization
-work are explicitly **NOT BEGUN**. Stop at P4; do not scaffold or infer those
-tracks from this report.
+- SDK independent release report:
+  /private/tmp/leanctx-p4-v4-current/sdk-release-review/RESULT.md
+- R4F factual-evidence review:
+  /private/tmp/leanctx-p4-v4-next/r4f-factual-review.md
+- R4G protocol review:
+  /private/tmp/leanctx-p4-v4-next/r4g-protocol-review.md
+- R5 D1 review:
+  /private/tmp/leanctx-p4-v4-next/r5-d1-review.md
+- R5 D2 review:
+  /private/tmp/leanctx-p4-v4-next/r5-d2-review.md
+- R6 review:
+  /tmp/r6-review.md
+- R4F focused kernel gate: 510/510
+- R5 D1 focused kernel gate: 499/499
+- R5 D2 focused gate: 3/3
+- Protocol narrowing gate: 4/4
+- R6: cargo fmt --check, git diff --check and cargo metadata passed
+
+D1 review found no P0/P1 and correctly recorded a potential source-compatibility
+risk because the deleted paths were syntactically public. The integrated
+decision accepts the removal as D1: there are no in-repository or supported
+runtime/embed consumers, the public OSS contract does not name those stores,
+and R6 preserves the supported embedding façade. This decision and one-commit
+rollback remain explicit.
+
+## P4 exit criteria
+
+| # | Criterion | Candidate status |
+| --- | --- | --- |
+| 1 | P3 recorded integrated COMPLETE | PASS |
+| 2 | Separate Production SDK staging exists | PASS |
+| 3 | Five Product primitives exist | PASS |
+| 4 | SDK uses public Engine contracts only | PASS |
+| 5 | Native Embed works | PASS |
+| 6 | OpenAI Agents reference integration works | PASS |
+| 7 | Compatibility matrix exists | PASS |
+| 8 | Apache Python Preview is transition compatibility | PASS |
+| 9 | Major ownership seams separated or bounded | PASS |
+| 10 | Safe decommission candidates removed meaningfully | PASS |
+| 10a | No duplicate canonical Product lifecycle | PASS |
+| 11 | OSS Coding-Agent core remains strong | PASS candidate; final Layer-4 CI pending |
+| 12 | Engine security remains strong | PASS candidate; final Layer-4 CI pending |
+| 13 | SDK is materially more than a thin wrapper | PASS |
+| 14 | No Cloud required | PASS |
+| 15 | P5+ did not begin | PASS |
+| 16 | Unresolved BSL parameters explicit | PASS |
+| 17 | Provenance disposition exists | PASS |
+| 18 | Clean-machine SDK integration passes | PASS |
+| 19 | Preview-to-SDK migration/rollback documented | PASS |
+| 20 | Independent architecture/security review has no blocker | PASS candidate; final integrated/PR review pending |
+
+The local candidate satisfies the architecture and SDK gates. Formal P4 status
+remains ACTIVE until one final integrated Layer-3 gate and the serial Layer-4
+PR CI/merge sequence close rows 11, 12 and 20 on authoritative main.
+
+## Rollback
+
+- SDK: keep dbfe753 private; rollback to immutable implementation baseline
+  176c2aa2abb0b94bc393f208daa16b8c636fe618 or retain P3 Preview.
+- Engine: each wave is a separate commit; revert one owned slice at a time.
+- R5 D1 recovery: revert d83ef94882 to restore both detached stores and the
+  legacy generator.
+- R5 D2 recovery: revert 581d488477 to restore heuristic research code.
+- R6 recovery: revert e495b61f24; no binary or install path changed.
+- Never replace accepted main with the entire local stack at once; deliver and
+  validate serially.
+
+## Stop line
+
+Do not begin P5 Workspace/package/handoff, Cloud, Continuous Optimization,
+Selection Intelligence, Fleet, marketplace or A2A expansion from this work.
+After authoritative P4 merge evidence is recorded, stop.

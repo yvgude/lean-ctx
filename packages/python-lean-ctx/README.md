@@ -14,17 +14,15 @@ production users should move to the separate Production SDK only after its
 namespace, license and release gates are approved. Until then this package
 remains the supported transition path.
 
-The persistent successor candidate is SDK staging commit
-`62400bfb74`: private, with no remote. It extends the focused-review-passing
-`2bafc965d3` five-primitive, offline-packaging and exact host-exception
-baseline with R2 observable-parity evidence. Its baseline correction is pinned;
-final R2 review remains open. Baseline source tests pass `10/10`; real Engine
-recovery and clean wheel installation are verified. BSL 1.1 is the decided
-license family, while exact
-publication and license parameters remain pending. The integrated P3 Preview
-seam remains the compatibility baseline. Historical `fbfec0b` references and
-associated provider assertions are quarantined; no provider-backed
-production-support claim is made here. Live-provider smoke is unverified.
+The persistent successor candidate is private SDK staging commit `dbfe753`,
+with immutable implementation `176c2aa2ab` and no public remote or release.
+Independent internal-RC review passed Python 3.9/3.14 (`14/14` each), clean
+wheel/install, real Engine recovery, sealed receipts and provider-free OpenAI
+Agents 0.8.4 success/abort. BSL 1.1 is the decided license family; exact
+publication, namespace and license parameters remain pending. The integrated
+P3 Preview seam remains the compatibility baseline. Historical `fbfec0b`
+references remain quarantined. No provider-backed production-support claim is
+made here; live-provider smoke is unverified.
 
 LeanCTX is **The Context SDK for AI Agents**. The reference wrapper connects an
 existing OpenAI Agents SDK agent to a local LeanCTX Runtime. It does not replace
