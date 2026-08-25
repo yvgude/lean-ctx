@@ -45,6 +45,30 @@ impl CompileMode {
     }
 }
 
+/// Version of the compilation run identifier emitted in a result.
+///
+/// Legacy V1 remains the default so existing callers retain the timestamp/PID
+/// identifier. Deterministic V2 is opt-in and derives its identifier only from
+/// the selected result and output mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum RunIdVersion {
+    #[default]
+    LegacyV1,
+    DeterministicV2,
+}
+
+impl RunIdVersion {
+    pub(crate) fn from_u64(value: u64) -> Result<Self, String> {
+        match value {
+            1 => Ok(Self::LegacyV1),
+            2 => Ok(Self::DeterministicV2),
+            other => Err(format!(
+                "invalid run_id_version {other}; expected 1 (legacy) or 2 (deterministic)"
+            )),
+        }
+    }
+}
+
 /// A candidate item ready for selection.
 #[derive(Debug, Clone)]
 pub struct CompileCandidate {
@@ -102,7 +126,7 @@ pub(crate) struct ExcludedItem {
 /// This boundary intentionally excludes clocks, process identity, providers,
 /// persistence, global policy state, and instrumentation. Callers supply all
 /// selection inputs through `candidates` and `budget`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct CompileSelection {
     pub budget_total: usize,
     pub budget_used: usize,
@@ -125,15 +149,34 @@ pub(crate) fn compile(
     budget: TokenBudget,
     mode: CompileMode,
 ) -> CompileResult {
-    let run_id = format!(
-        "run_{}_{}",
-        chrono::Utc::now().format("%Y%m%d_%H%M%S"),
-        std::process::id() % 1000
-    );
+    compile_with_run_id_version(candidates, budget, mode, RunIdVersion::LegacyV1)
+}
+
+/// Compile a context package with an explicit run identifier version.
+pub(crate) fn compile_with_run_id_version(
+    candidates: &[CompileCandidate],
+    budget: TokenBudget,
+    mode: CompileMode,
+    run_id_version: RunIdVersion,
+) -> CompileResult {
+    // Keep the legacy clock/process evaluation before selection, matching the
+    // historical compile path exactly. V2 deliberately does not read either.
+    let legacy_run_id = (run_id_version == RunIdVersion::LegacyV1).then(|| {
+        format!(
+            "run_{}_{}",
+            chrono::Utc::now().format("%Y%m%d_%H%M%S"),
+            std::process::id() % 1000
+        )
+    });
     let selection = select_explicit(candidates, budget);
     if selection.redundancy_applied {
         crate::core::introspect::tick("integration_phi");
     }
+
+    let run_id = match run_id_version {
+        RunIdVersion::LegacyV1 => legacy_run_id.expect("legacy run ID initialized above"),
+        RunIdVersion::DeterministicV2 => deterministic_run_id(mode, &selection),
+    };
 
     CompileResult {
         run_id,
@@ -148,6 +191,25 @@ pub(crate) fn compile(
         excluded_reasons: selection.excluded_reasons,
         warnings: selection.warnings,
     }
+}
+
+/// Derive a stable V2 run identifier from canonical mode and selection data.
+fn deterministic_run_id(mode: CompileMode, selection: &CompileSelection) -> String {
+    // Struct serialization fixes field order; selection itself is ordered by the
+    // pure selector, so identical inputs produce identical bytes across runs.
+    #[derive(Serialize)]
+    struct CanonicalRunInputs<'a> {
+        mode: &'static str,
+        selection: &'a CompileSelection,
+    }
+
+    let canonical = CanonicalRunInputs {
+        mode: mode.as_str(),
+        selection,
+    };
+    let bytes = serde_json::to_vec(&canonical).expect("compile selection must be JSON-safe");
+    let digest = blake3::hash(&bytes).to_hex().to_string();
+    format!("run_v2_{}", &digest[..16])
 }
 
 /// Select a bounded context package from fully explicit inputs.
@@ -737,6 +799,90 @@ mod tests {
             parts[1..]
                 .iter()
                 .all(|part| part.bytes().all(|byte| byte.is_ascii_digit()))
+        );
+    }
+
+    #[test]
+    fn deterministic_v2_run_id_is_repeatable_and_versioned() {
+        let candidates = vec![
+            make_candidate("a.rs", 0.7, 400, false),
+            make_candidate("b.rs", 0.6, 300, true),
+        ];
+        let budget = TokenBudget {
+            total: 5000,
+            used: 0,
+        };
+
+        let first = compile_with_run_id_version(
+            &candidates,
+            budget,
+            CompileMode::Compressed,
+            RunIdVersion::DeterministicV2,
+        );
+        let second = compile_with_run_id_version(
+            &candidates,
+            budget,
+            CompileMode::Compressed,
+            RunIdVersion::DeterministicV2,
+        );
+
+        assert_eq!(first.run_id, second.run_id);
+        assert!(first.run_id.starts_with("run_v2_"));
+        assert_eq!(first.run_id.len(), "run_v2_".len() + 16);
+    }
+
+    #[test]
+    fn deterministic_v2_run_id_changes_with_mode_or_selection() {
+        let candidates = vec![make_candidate("a.rs", 0.7, 400, false)];
+        let budget = TokenBudget {
+            total: 5000,
+            used: 0,
+        };
+
+        let compressed = compile_with_run_id_version(
+            &candidates,
+            budget,
+            CompileMode::Compressed,
+            RunIdVersion::DeterministicV2,
+        );
+        let full = compile_with_run_id_version(
+            &candidates,
+            budget,
+            CompileMode::FullPrompt,
+            RunIdVersion::DeterministicV2,
+        );
+        let changed_selection = compile_with_run_id_version(
+            &[make_candidate("different.rs", 0.7, 400, false)],
+            budget,
+            CompileMode::Compressed,
+            RunIdVersion::DeterministicV2,
+        );
+
+        assert_ne!(compressed.run_id, full.run_id);
+        assert_ne!(compressed.run_id, changed_selection.run_id);
+    }
+
+    #[test]
+    fn explicit_legacy_v1_preserves_timestamp_pid_run_id_shape() {
+        let result = compile_with_run_id_version(
+            &[make_candidate("a.rs", 0.7, 400, false)],
+            TokenBudget {
+                total: 5000,
+                used: 0,
+            },
+            CompileMode::HandleManifest,
+            RunIdVersion::LegacyV1,
+        );
+        let parts: Vec<&str> = result.run_id.split('_').collect();
+
+        assert_eq!(parts[0], "run");
+        assert_eq!(parts[1].len(), 8);
+        assert_eq!(parts[2].len(), 6);
+        assert!((1..=3).contains(&parts[3].len()));
+        assert!(
+            parts[1..]
+                .iter()
+                .all(|part| { part.bytes().all(|byte| byte.is_ascii_digit()) })
         );
     }
 

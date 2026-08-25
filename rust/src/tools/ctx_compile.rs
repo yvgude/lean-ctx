@@ -6,7 +6,9 @@
 
 use serde_json::Value;
 
-use crate::core::context_compiler::{CompileMode, CompileResult, compile, format_compile_result};
+use crate::core::context_compiler::{
+    CompileMode, CompileResult, RunIdVersion, compile_with_run_id_version, format_compile_result,
+};
 use crate::core::context_field::TokenBudget;
 use crate::core::context_handles::HandleRegistry;
 use crate::core::context_ledger::ContextLedger;
@@ -21,6 +23,10 @@ pub fn handle(
 ) -> String {
     let mode_str = get_str(args, "mode").unwrap_or_else(|| "handles".to_string());
     let mode = CompileMode::parse(&mode_str);
+    let run_id_version = match parse_run_id_version(args) {
+        Ok(version) => version,
+        Err(message) => return format!("[ctx_compile] {message}"),
+    };
     let budget_tokens: usize = args
         .and_then(|a| a.get("budget"))
         .and_then(serde_json::Value::as_u64)
@@ -36,7 +42,7 @@ pub fn handle(
         return "[ctx_compile] no context items in ledger — nothing to compile".to_string();
     }
 
-    let result = compile(&candidates, budget, mode);
+    let result = compile_with_run_id_version(&candidates, budget, mode, run_id_version);
 
     match mode {
         CompileMode::HandleManifest => {
@@ -86,6 +92,22 @@ fn get_str(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Option<S
         .map(std::string::ToString::to_string)
 }
 
+fn parse_run_id_version(
+    args: Option<&serde_json::Map<String, Value>>,
+) -> Result<RunIdVersion, String> {
+    let Some(value) = args.and_then(|a| a.get("run_id_version")) else {
+        return Ok(RunIdVersion::default());
+    };
+
+    let parsed = value
+        .as_u64()
+        .or_else(|| value.as_str().and_then(|s| s.trim().parse::<u64>().ok()));
+    parsed.map_or_else(
+        || Err("invalid run_id_version; expected integer 1 (legacy) or 2 (deterministic)".into()),
+        RunIdVersion::from_u64,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,5 +133,15 @@ mod tests {
 
         assert!(output.contains("Run ID: run_20260825_120000_7"));
         assert!(output.contains("Items: 2 selected, 1 excluded"));
+    }
+
+    #[test]
+    fn invalid_run_id_version_is_rejected_before_compilation() {
+        let args = serde_json::json!({"run_id_version": 7});
+        let result = parse_run_id_version(args.as_object());
+        assert_eq!(
+            result.unwrap_err(),
+            "invalid run_id_version 7; expected 1 (legacy) or 2 (deterministic)"
+        );
     }
 }
