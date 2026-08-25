@@ -1,137 +1,225 @@
-# LeanCTX
+<div align="center">
 
-> **The Context SDK for AI Agents. Give every agent a context system.**
+<pre>
+██╗     ███████╗ █████╗ ███╗   ██╗     ██████╗████████╗██╗  ██╗
+██║     ██╔════╝██╔══██╗████╗  ██║    ██╔════╝╚══██╔══╝╚██╗██╔╝
+██║     █████╗  ███████║██╔██╗ ██║    ██║        ██║    ╚███╔╝
+██║     ██╔══╝  ██╔══██║██║╚██╗██║    ██║        ██║    ██╔██╗
+███████╗███████╗██║  ██║██║ ╚████║    ╚██████╗   ██║   ██╔╝ ██╗
+╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝     ╚═════╝   ╚═╝   ╚═╝  ╚═╝
+</pre>
 
-LeanCTX is a local context layer for existing AI agents. It selects, shapes,
-reuses, and recovers the project context an agent needs inside the agent loop
-you own. Your agent, model, tools, and task logic remain yours.
+### **Control what your AI can see.**
 
-Your framework runs the agent. LeanCTX manages the context path routed through
-it.
+**LeanCTX — an open-source context engineering layer for coding agents**
 
-LeanCTX supports three ways to integrate:
+LeanCTX runs locally alongside your coding agent. It selects relevant project
+context, shapes noisy tool output, preserves recoverable source references, and
+records factual local evidence without taking ownership of your agent loop.
 
-- **Attach — Available** — add LeanCTX around a supported coding agent through
-  CLI, MCP, or a local proxy.
-- **Wrap — Preview** — use the declared Python SDK v1 reference-wrapper path
-  with an explicit lifecycle and evidence boundary.
-- **Embed — Preview** — integrate the Context Engine inside a custom host; the
-  host keeps ownership of its full agent loop.
+Your agent. Your model. Your tools. Your context.
 
-It is not an agent platform, a generic agent builder, a hosted execution
-service, or a marketplace.
+<p>
+  <a href="https://github.com/yvgude/lean-ctx/stargazers"><img src="https://img.shields.io/github/stars/yvgude/lean-ctx?style=social" alt="GitHub Stars"></a>&nbsp;&nbsp;
+  <a href="https://github.com/yvgude/lean-ctx/actions/workflows/ci.yml"><img src="https://github.com/yvgude/lean-ctx/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/yvgude/lean-ctx/actions/workflows/security-check.yml"><img src="https://github.com/yvgude/lean-ctx/actions/workflows/security-check.yml/badge.svg" alt="Security"></a>
+  <a href="https://crates.io/crates/lean-ctx"><img src="https://img.shields.io/crates/v/lean-ctx?color=%23e6522c" alt="crates.io"></a>
+  <a href="https://www.npmjs.com/package/lean-ctx-bin"><img src="https://img.shields.io/npm/v/lean-ctx-bin?label=npm&color=%23cb3837" alt="npm"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
+  <img src="https://img.shields.io/badge/Telemetry-Opt--in%20Only-brightgreen?logo=shield&logoColor=white" alt="Opt-in Telemetry">
+</p>
 
-## What is available now
+<p>
+  <a href="https://leanctx.com">Website</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://leanctx.com/docs/getting-started">Docs</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="#install">Install</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="#how-it-works">How it works</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="#proof-not-promises">Proof</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="cookbook/README.md">Cookbook</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="SECURITY.md">Security</a>
+</p>
 
-- Local Runtime, CLI, MCP, and local proxy paths.
-- Context selection, structural views, compression, reuse, and recovery.
-- Supported local setup paths for Codex, Claude Code, and Cursor.
-- Local Receipt/evidence primitives and offline verification.
+</div>
 
-The **Python SDK v1** and its declared OpenAI Agents reference-wrapper are
-**Preview**. Performance Profiles, first-class Context Kits, the Performance
-Benchmark product flow, AutoTune, public rankings, and organization-scale
-operation are **Research**. An implementation directory is not a product claim.
-Local agent-presence, handoff, and related coordination substrate are also
-**Research**; LeanCTX does not currently provide a public multi-agent
-orchestration contract.
+---
 
-## The context lifecycle
+## What LeanCTX is
 
-```text
-Select → Shape → Reuse → Recover
-```
-
-Evidence is a separate proof discipline: a gain is valid only with a comparable
-baseline and treatment, a declared quality threshold, and visible methodology.
-A lower token count or calculated cost is not a successful outcome on its own.
-
-## Install
-
-```bash
-# Pick one installation method.
-curl -fsSL https://leanctx.com/install.sh | sh
-brew tap yvgude/lean-ctx && brew install lean-ctx
-npm install -g lean-ctx-bin
-cargo install lean-ctx
-
-# Connect one supported agent, then verify the local installation.
-lean-ctx wrap codex
-lean-ctx doctor
-```
-
-Use `lean-ctx unwrap codex` to remove that integration, or `lean-ctx uninstall
---dry-run` to review a full removal before it changes anything.
-
-## The context path
-
-An agent does not always need the same representation of a project. LeanCTX
-provides local tools to inspect structure, public interfaces, relevant excerpts,
-exact lines, diffs, and full source. It also compresses eligible shell output,
-keeps recoverable references to source, and exposes local context state for the
-current task.
+LeanCTX is the open-source context engineering layer between an AI coding agent
+and the local project or tools it needs to understand.
 
 ```text
 agent → LeanCTX context tools / shell hook → project and local tools
 agent → optional local proxy                 → model provider
 ```
 
-The proxy only records and transforms traffic it can observe. Its data must not
-be used to infer hidden prompts, retries, task quality, provider bills, or
-accepted business savings.
+It helps an agent:
 
-## Use LeanCTX in your own agent
+- **Select** the files, symbols, search results, and source regions relevant to
+  the current task.
+- **Shape** large reads and noisy command output into bounded, useful context.
+- **Reuse** cached context instead of rediscovering the same source every turn.
+- **Recover** exact source and archived output through content-addressed
+  references.
+- **Prove** local observations with receipts and independently checkable
+  evidence primitives.
 
-The current programmatic path is **Python SDK v1 (Preview)** through its
-declared **OpenAI Agents reference-wrapper**. It wraps that one declared agent
-lifecycle around the local Runtime; it does not choose a model, replace task
-logic, or turn an unobserved run into verified evidence.
+LeanCTX does not run or orchestrate agents, choose their models, own their task
+logic, or turn a local observation into a business outcome claim.
+
+## What is available now
+
+- Local Runtime, CLI, MCP server, shell integration, and optional local proxy.
+- Context-aware file reads, search, structural views, and shell-output shaping.
+- Recoverable references for compressed or archived source and command output.
+- Local receipt generation and offline-verification primitives.
+- Supported setup paths for Codex, Claude Code, and Cursor.
+- Local-first operation with opt-in telemetry.
+
+## See it in action
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <img src="assets/leanctx-demo.gif" width="320" alt="Map-mode file read and compressed git output">
+      <br/>
+      <strong>Read + Shell</strong>
+      <br/>
+      Focused reads and bounded command output
+    </td>
+    <td align="center" width="33%">
+      <img src="assets/leanctx-gain.gif" width="320" alt="LeanCTX local gain dashboard">
+      <br/>
+      <strong>Local observability</strong>
+      <br/>
+      Inspect measured context movement
+    </td>
+    <td align="center" width="33%">
+      <img src="assets/leanctx-benchmark.gif" width="320" alt="LeanCTX benchmark report">
+      <br/>
+      <strong>Reproducible comparison</strong>
+      <br/>
+      Evaluate a declared local workload
+    </td>
+  </tr>
+</table>
+
+<p align="center"><sub>Demo assets are generated from reproducible VHS tapes in <code>demo/</code>.</sub></p>
+
+## Why developers use LeanCTX
+
+- **More useful context** — show the agent the representation required by the
+  task instead of forwarding every available byte.
+- **Less repeated discovery** — reuse cached reads and durable task findings.
+- **Exact recovery** — compressed output remains connected to retrievable
+  source.
+- **Existing workflow preserved** — attach to supported coding agents without
+  replacing their loop.
+- **Local visibility** — inspect context usage, provenance, and factual
+  measurements on your machine.
+- **Model independence** — keep the context layer on your side of the provider
+  boundary.
+
+## Core capabilities
+
+### Context reads
+
+Choose the smallest useful representation: full source, exact line ranges,
+public signatures, structural maps, diffs, or task-focused excerpts.
+
+### Search and navigation
+
+Use lexical, semantic, and symbol-aware paths to find relevant code while
+keeping returned context bounded.
+
+### Shell-output shaping
+
+Common development commands are recognized and condensed through deterministic
+patterns. Raw output remains available when exact bytes matter.
+
+### Recovery
+
+Archived output receives stable references so exact source remains retrievable
+when a compact representation is not enough.
+
+### Local evidence
+
+Receipts and verification tools record what the Runtime observed. Quality and
+accepted outcomes remain explicit inputs rather than inferred savings claims.
+
+## Install
+
+Pick one installation method:
 
 ```bash
-pip install lean-ctx-python
+curl -fsSL https://leanctx.com/install.sh | sh
+brew tap yvgude/lean-ctx && brew install lean-ctx
+npm install -g lean-ctx-bin
+cargo install lean-ctx
 ```
 
-```python
-from agents import Agent
-from lean_ctx import LeanCTX
+Connect one supported coding agent and verify the installation:
 
-ctx = LeanCTX()
-openai_agent = Agent(name="reviewer")
-run = ctx.wrap(openai_agent).run("Review the payments module")
-print(run.output)
-print(run.receipt.verify())  # True only when Runtime evidence is sealed
+```bash
+lean-ctx wrap codex       # or: claude / cursor
+lean-ctx doctor
 ```
 
-See the [Python SDK README](packages/python-lean-ctx/README.md) for its declared
-adapter scope, compatibility, degradation behaviour, and evidence boundary.
+Use `lean-ctx unwrap codex` to remove that integration.
 
-## Proof, not a percentage badge
+## How it works
 
-Local observability can show context movement and compression deltas. A public
-performance or savings claim needs a matched workload, baseline, treatment,
-quality gate, methodology, and inspectable evidence. Until that path is complete,
-token changes remain diagnostic signals rather than outcome claims.
+LeanCTX has two optional local paths:
+
+```text
+read path: AI tool → MCP tools / shell hook → LeanCTX → project + local tools
+wire path: AI tool → optional local proxy   → model provider
+```
+
+- The **MCP server** exposes focused context, search, recovery, knowledge, and
+  verification tools.
+- The **shell hook** shapes eligible command output before it enters the agent
+  context.
+- The **local proxy** can observe and transform only the traffic routed through
+  it.
+- The **local stores** retain recoverable artifacts and factual evidence under
+  explicit path and policy boundaries.
+
+The proxy cannot observe hidden provider prompts, retries, bills, or task
+quality. LeanCTX therefore does not infer them.
 
 ## Supported setup paths
 
 Codex, Claude Code, and Cursor are the current first-class local setup paths.
-Other clients must expose their actual capability and degradation state; MCP
-compatibility alone is not a support or evidence guarantee.
+Other clients may work through compatible interfaces, but compatibility alone
+is not a support or evidence guarantee.
+
+## Proof, not promises
+
+Compression is useful only when the resulting work remains correct and
+recoverable. A public performance or savings claim requires:
+
+- a named and reproducible workload;
+- comparable baseline and treatment;
+- a declared quality threshold;
+- transparent measurement and methodology;
+- inspectable evidence and an independent verification path.
+
+Without those conditions, token and cost changes are diagnostic signals, not
+accepted outcomes.
+
+## Privacy and safety
+
+- Local-first by default.
+- Telemetry is opt-in.
+- Secret scrubbing and path boundaries protect local tool flows.
+- Security-sensitive operations use explicit allowlists and bounded inputs.
+- Recovery references are scoped; they are not an authorization bypass.
+
+Review [SECURITY.md](SECURITY.md) and run `lean-ctx doctor` before enabling a
+new integration.
 
 ## Documentation
 
 - [Developer documentation](docs/README.md)
-- [Context SDK product architecture](docs/internal/vision/PRODUCT-ARCHITECTURE.md)
-- [Current status and claim discipline](docs/internal/README.md)
-- [Python SDK v1 Preview](packages/python-lean-ctx/README.md)
+- [Getting started](https://leanctx.com/docs/getting-started)
+- [Cookbook](cookbook/README.md)
 - [Security](SECURITY.md)
 - [Changelog](CHANGELOG.md)
-
-## Privacy and safety
-
-LeanCTX is local-first. Telemetry is opt-in. Review the current configuration
-and path boundaries before enabling any integration, and use `lean-ctx doctor`
-to inspect local setup state.
 
 ## Uninstall
 
@@ -140,8 +228,12 @@ lean-ctx uninstall --dry-run
 lean-ctx uninstall
 ```
 
-If you installed through a package manager, use its uninstall command for the
-binary after LeanCTX has removed its own local integration files.
+If LeanCTX was installed through a package manager, use that package manager to
+remove the binary after LeanCTX has removed its own local integration files.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

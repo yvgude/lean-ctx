@@ -15,10 +15,10 @@ claims, availability labels, and documents that need an explicit status.
   "schema_version": 1,
   "required_text": {
     "README.md": [
-      "The Context SDK for AI Agents.",
-      "Select → Shape → Reuse → Recover",
-      "It is not an agent platform, a generic agent builder, a hosted execution",
-      "Performance Profiles, first-class Context Kits, the Performance"
+      "Control what your AI can see.",
+      "an open-source context engineering layer for coding agents",
+      "LeanCTX does not run or orchestrate agents",
+      "Local Runtime, CLI, MCP server, shell integration, and optional local proxy."
     ],
     "VISION.md": [
       "docs/internal/README.md",
