@@ -32,6 +32,30 @@ fn file_read_cat_declines_multi_file_and_flags() {
     );
 }
 
+// #1537: byte-count reads must pass through untouched — a line-based
+// rewrite of `head -c 40 secret.key` printed most of a private key.
+#[test]
+fn file_read_head_tail_byte_count_passes_through() {
+    for cmd in [
+        "head -c 40 src/main.rs",
+        "head -c40 src/main.rs",
+        "head --bytes=40 src/main.rs",
+        "head --bytes 40 src/main.rs",
+        "tail -c 100 src/main.rs",
+    ] {
+        assert_eq!(
+            rewrite_file_read_command(cmd, "lean-ctx"),
+            None,
+            "byte-count read must not be rewritten: {cmd}"
+        );
+    }
+    // Line-count reads still rewrite faithfully.
+    assert_eq!(
+        rewrite_file_read_command("head -n 5 src/main.rs", "lean-ctx"),
+        Some("lean-ctx read src/main.rs -m lines:1-5".to_string())
+    );
+}
+
 /// #1279: sed -n range prints are line-range reads — the exact form agent
 /// auto-modes recommend, previously a silent passthrough.
 #[test]

@@ -178,7 +178,16 @@ impl CompressionPipeline {
         messages.append(&mut live_messages);
 
         let determinism_started = Instant::now();
-        let _proof = determinism_guard::verify_determinism(&original_messages, messages);
+        // #1545: this proof used to be bound to `_proof` and dropped — a
+        // live-zone disagreement with the forwarder's guard then shipped a
+        // mutated body over the wire unchecked (observed as upstream 400s and
+        // silent cache busts). Fail closed like the forwarder: an unstable
+        // proof reverts every compression stage below.
+        let proof = determinism_guard::verify_determinism(&original_messages, messages);
+        let determinism_unstable = !proof.is_stable;
+        if determinism_unstable {
+            tracing::warn!("lean-ctx pipeline determinism violation: reverting compression stages");
+        }
         stages_run.push(stage_report(
             "determinism_guard",
             true,
@@ -188,7 +197,8 @@ impl CompressionPipeline {
 
         let mut total_tokens_after = messages_tokens(messages);
         let mut total_savings_pct = savings_pct(total_tokens_before, total_tokens_after);
-        let should_revert = total_tokens_before > 0 && total_savings_pct < config.min_savings_pct;
+        let should_revert = determinism_unstable
+            || (total_tokens_before > 0 && total_savings_pct < config.min_savings_pct);
         if should_revert {
             *messages = original_messages;
             total_tokens_after = total_tokens_before;
@@ -368,6 +378,32 @@ mod tests {
             .expect("dedup stage report");
         assert!(dedup.skipped);
         assert!(!dedup.ran);
+    }
+
+    // #1545: the determinism proof is enforcement now, not telemetry — a
+    // stage that rewrites content inside the client's cache_control'd prefix
+    // is reverted, so the wire body keeps the prefix byte-identical.
+    #[test]
+    fn cache_controlled_prefix_survives_pipeline_byte_identical() {
+        let repeated = verbose_text();
+        let mut messages = vec![
+            json!({"role": "user", "cache_control": {"type": "ephemeral"}, "content": &repeated}),
+            json!({"role": "assistant", "content": &repeated}),
+            json!({"role": "user", "content": "Try again"}),
+        ];
+        let before_prefix = messages[0].to_string();
+        let config = PipelineConfig {
+            min_savings_pct: 0.0,
+            ..PipelineConfig::default()
+        };
+
+        let _ = CompressionPipeline::run(&mut messages, &config);
+
+        assert_eq!(
+            messages[0].to_string(),
+            before_prefix,
+            "cache_control'd prefix must never ship mutated"
+        );
     }
 
     #[test]

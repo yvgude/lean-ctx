@@ -323,10 +323,13 @@ fn raw_shell_skips_all_postprocessing() {
         src.contains("let is_raw_shell = name == \"ctx_shell\""),
         "call_tool must compute is_raw_shell flag"
     );
-    // #1432: raw=true no longer bypasses archive/firewall — only minimal does.
+    // #1432/#1540: raw=true no longer bypasses archive/firewall — only the
+    // LEAN_CTX_MINIMAL escape hatch does. The gate moved from the pipeline's
+    // `minimal` parameter (which the default config set to true, silently
+    // killing the safety net) to the explicit env escape hatch.
     assert!(
-        src.contains("let archive_hint = if minimal {"),
-        "archive_hint bypass must be gated on minimal only (not raw shell)"
+        src.contains("let archive_hint = if crate::core::config::Config::minimal_escape_hatch() {"),
+        "archive_hint bypass must be gated on the LEAN_CTX_MINIMAL escape hatch only (not raw shell, not config minimal_overhead)"
     );
     assert!(
         src.contains("is_raw_shell")

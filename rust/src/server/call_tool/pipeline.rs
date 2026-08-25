@@ -519,7 +519,10 @@ pub(in crate::server) async fn dispatch_and_post_process(
         }
     }
 
-    if !firewalled
+    // Raw output stays byte-pure: the body is archived (ctx_expand works),
+    // but the hint decoration is only appended to non-raw deliveries.
+    if !is_raw_shell
+        && !firewalled
         && profile_hints.archive_hint()
         && let Some(hint) = archive_hint
     {
