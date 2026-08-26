@@ -133,6 +133,12 @@ R5 D2 removed 244 lines of behavioral inference research. R4F first removed the
 active duplicate delivery path. The proposed 459-line D1 deletion was withheld
 because its detached stores and generator remain syntactically public.
 
+The final direct-caller audit found no production inbound caller for the public
+`context_kernel::feedback`, `context_kernel::learning`, or activation outcome
+helpers. Production activation uses only `load_config` and `supplement_budget`.
+These dormant Product-shaped helpers are `RESEARCH_QUARANTINED`, non-canonical
+compatibility surface and may receive no new Product semantics.
+
 ### Frozen transition compatibility
 
 | Surface | Why retained | Successor | Exact removal gate |
@@ -142,6 +148,7 @@ because its detached stores and generator remain syntactically public.
 | protocol knowledge_routing Product-shaped DTOs | Historical published compatibility | Narrow factual Engine contracts | Protocol major after ControlPlaneRequest migration and full compatibility window |
 | context_kernel public path | External Rust source compatibility | engine::ContextEngine and experimental lean-ctx-sdk façade | Separately approved public-major change |
 | Detached context_kernel and MCP receipt/shadow stores | Public Rust source compatibility despite no active supported consumer | Factual Engine evidence contracts | Explicit public-major/deprecation decision or compatibility shim |
+| Dormant context_kernel feedback/learning and activation outcome helpers | Accidental public source compatibility; no production inbound caller | Explicit SDK/evaluator outcomes and Product feedback strategy | Named public-major removal after consumer audit, migration and compatibility window |
 
 No transition surface may receive new Product semantics.
 
@@ -193,6 +200,9 @@ LEGAL_REVIEW_REQUIRED.
 - Final technical/internal closeout review:
   /private/tmp/leanctx-p4-v4-current/final-docs-review/RESULT.md — PASS on all
   20 technical V4 criteria; public/commercial release remains gated
+- Final bounded architecture/security review:
+  /Users/yvesgugger/.leanctx-p4-orchestration/agents/P4-FINAL-REVIEW-V10.md —
+  PASS with no P0-P3 findings; direct-caller evidence independently confirmed
 - R4F focused kernel gate: 510/510
 - R5 D1 focused kernel gate: 499/499
 - R5 D2 focused gate: 3/3
