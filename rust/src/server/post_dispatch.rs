@@ -144,7 +144,6 @@ impl LeanCtxServer {
         let input_token_count = crate::core::tokens::count_tokens(&input) as u64;
         let output_token_count_u64 = output_token_count as u64;
         let name_owned = name.to_string();
-        let task_id_for_receipt = task_id.clone();
         tokio::task::spawn_blocking(move || {
             let pricing = crate::core::gain::model_pricing::ModelPricing::load();
             // Honors a declared model for MCP-only IDEs (`[cost.models]`/default).
@@ -173,47 +172,6 @@ impl LeanCtxServer {
                 input_token_count as usize,
                 output_token_count_u64 as usize,
                 0, // savings tracked separately per-tool
-            );
-
-            // Context Kernel: record MCP tool call for ETPAO and receipt tracking.
-            crate::core::context_kernel::mcp_bridge::record_mcp_call(
-                &crate::core::context_kernel::mcp_bridge::McpCallData {
-                    tool_name: name_owned.clone(),
-                    input_tokens: input_token_count as usize,
-                    output_tokens: output_token_count_u64 as usize,
-                    is_retry: false,
-                    call_number: 1,
-                },
-            );
-
-            // Emit canonical ContextReceiptV1 on OclaBus.
-            let mut receipt = crate::core::context_kernel::mcp_bridge::generate_mcp_receipt(
-                "mcp-dispatch",
-                &name_owned,
-                input_token_count as usize,
-                output_token_count_u64 as usize,
-                false,
-            );
-            receipt.task_id = task_id_for_receipt;
-            crate::core::context_kernel::bridge::emit_receipt_event(&receipt);
-
-            // Evidence pipeline: MCP data → envelope → normalizer → receipt chain.
-            let mcp_call_data = crate::core::context_kernel::mcp_bridge::McpCallData {
-                tool_name: name_owned.clone(),
-                input_tokens: input_token_count as usize,
-                output_tokens: output_token_count_u64 as usize,
-                is_retry: false,
-                call_number: 1,
-            };
-            crate::core::context_kernel::envelope_wiring::process_mcp_evidence(&mcp_call_data);
-            crate::core::context_kernel::mcp_receipt::record_receipt(
-                crate::core::context_kernel::mcp_receipt::McpReceipt {
-                    tool: name_owned.clone(),
-                    tokens_in: input_token_count as usize,
-                    tokens_out: output_token_count_u64 as usize,
-                    kernel_overhead: 0,
-                    accepted: true,
-                },
             );
 
             // R30: Response evidence — output token tracking.

@@ -228,8 +228,8 @@ pub mod tests {
         });
 
         let value = snapshot();
-        assert!(value.proxy_etpao > 0.0);
-        assert!(value.mcp_etpao > 0.0);
+        assert_eq!(value.proxy_etpao, 0.0);
+        assert_eq!(value.mcp_etpao, 0.0);
         assert!(value.identity.total_tokens > 0);
     }
 }

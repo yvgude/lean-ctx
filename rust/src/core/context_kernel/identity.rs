@@ -66,14 +66,8 @@ impl IdentityLedger {
         Self::default()
     }
 
-    /// Records token usage, savings, and outcome acceptance for a caller.
-    pub fn record(
-        &mut self,
-        identity: &CallerIdentity,
-        consumed: usize,
-        saved: usize,
-        accepted: bool,
-    ) {
+    /// Records factual token usage and savings for a caller without asserting an outcome.
+    pub fn record_usage(&mut self, identity: &CallerIdentity, consumed: usize, saved: usize) {
         let key = Self::ledger_key(identity);
         let attribution = self
             .entries
@@ -88,8 +82,22 @@ impl IdentityLedger {
         attribution.tokens_consumed = attribution.tokens_consumed.saturating_add(consumed);
         attribution.tokens_saved = attribution.tokens_saved.saturating_add(saved);
         attribution.request_count = attribution.request_count.saturating_add(1);
+    }
+
+    /// Records token usage, savings, and an explicit outcome acceptance for a caller.
+    pub fn record(
+        &mut self,
+        identity: &CallerIdentity,
+        consumed: usize,
+        saved: usize,
+        accepted: bool,
+    ) {
+        self.record_usage(identity, consumed, saved);
         if accepted {
-            attribution.accepted_outcomes = attribution.accepted_outcomes.saturating_add(1);
+            let key = Self::ledger_key(identity);
+            if let Some(attribution) = self.entries.get_mut(&key) {
+                attribution.accepted_outcomes = attribution.accepted_outcomes.saturating_add(1);
+            }
         }
     }
 
@@ -229,6 +237,18 @@ pub mod tests {
         assert_eq!(entry.tokens_saved, 20);
         assert_eq!(entry.request_count, 1);
         assert_eq!(entry.accepted_outcomes, 1);
+    }
+
+    #[test]
+    fn ledger_usage_does_not_invent_an_outcome() {
+        let mut ledger = IdentityLedger::new();
+        ledger.record_usage(&identity("alice", "platform"), 80, 20);
+
+        let entry = ledger
+            .attribution_for("alice")
+            .expect("alice must have attribution");
+        assert_eq!(entry.request_count, 1);
+        assert_eq!(entry.accepted_outcomes, 0);
     }
 
     #[test]

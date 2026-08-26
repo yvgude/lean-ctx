@@ -1,7 +1,8 @@
 //! Activation wiring for the kernel evidence pipeline.
 
 use super::{
-    accounting_fix, kernel_config, outcome_signal, receipt_chain, token_envelope, usage_normalizer,
+    accounting_fix, kernel_config, receipt_chain, token_envelope, types::ReceiptOutcome,
+    usage_normalizer,
 };
 
 const PROXY_SOURCE: &str = "proxy";
@@ -72,17 +73,11 @@ pub(crate) fn process_mcp_evidence(data: &super::mcp_bridge::McpCallData) {
     let accounting =
         accounting_fix::compute_honest_accounting(data.input_tokens, data.output_tokens, 0, 0);
     if kernel_config::is_feature_enabled("receipt_chain") {
-        let call_number = if data.is_retry {
-            data.call_number.max(2)
-        } else {
-            data.call_number
-        };
-        let outcome = outcome_signal::infer_outcome(call_number, data.is_retry, data.output_tokens);
         receipt_chain::record_chain_entry(
             MCP_SOURCE,
             envelope,
             accounting,
-            outcome.outcome,
+            ReceiptOutcome::Unknown,
             false,
             0,
         );
@@ -127,8 +122,8 @@ mod tests {
     use std::sync::MutexGuard;
 
     use super::{
-        EvidenceSummary, evidence_summary, process_mcp_evidence, process_proxy_evidence,
-        reset_evidence,
+        EvidenceSummary, ReceiptOutcome, evidence_summary, process_mcp_evidence,
+        process_proxy_evidence, reset_evidence,
     };
     use crate::core::context_kernel::kernel_config::{self, KernelFeatures};
     use crate::core::context_kernel::mcp_bridge::McpCallData;
@@ -182,7 +177,9 @@ mod tests {
     fn proxy_evidence_records_chain() {
         let _guard = isolated();
         process_proxy();
-        assert!(receipt_chain::chain_length() > 0);
+        let entries = receipt_chain::chain_entries();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].outcome, ReceiptOutcome::Unknown);
     }
 
     #[test]
@@ -190,6 +187,10 @@ mod tests {
         let _guard = isolated();
         process_mcp_evidence(&mcp_data(1));
         assert_eq!(usage_normalizer::session_usage().total_requests, 1);
+        assert_eq!(
+            receipt_chain::chain_entries()[0].outcome,
+            ReceiptOutcome::Unknown
+        );
     }
 
     #[test]
