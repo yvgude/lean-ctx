@@ -101,13 +101,13 @@ pub(crate) fn cmd_plan(args: &[String]) {
 }
 
 pub(crate) fn cmd_compile(args: &[String]) {
-    let (json, args_map) = build_compile_request(args);
+    let (_json, args_map) = build_compile_request(args);
 
     #[cfg(unix)]
     {
         if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
             "ctx_compile",
-            Some(json.clone()),
+            Some(_json.clone()),
         ) {
             println!("{out}");
             return;
