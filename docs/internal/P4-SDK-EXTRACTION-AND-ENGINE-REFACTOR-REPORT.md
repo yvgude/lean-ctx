@@ -35,11 +35,14 @@ or infer task acceptance from delivery, retries or response length.
 | Production SDK ledger | a7afd1f | Clean, reviewed internal RC record |
 | SDK implementation baseline | 11f77debc2811dfd6569ba3a30bb674ae5e8b5d1 | Immutable reviewed code |
 | SDK wheel SHA-256 | b54ac013af1494c00a64feac8ce3eb1910fc32baa3ba9a6d4b52d565942ff141 | Reviewed artifact |
+| SDK wheel path | /Users/yvesgugger/Documents/Privat/Projects/leanctx-product-sdk-artifacts/11f77debc2811dfd6569ba3a30bb674ae5e8b5d1/leanctx_product_sdk_local-0.1.0.dev0-py3-none-any.whl | Canonical content-addressed private artifact |
 | SDK distribution | PRIVATE_NOT_RELEASED | No public release or namespace claim |
 | License family | BSL_1_1_DECIDED | Exact publication parameters remain pending |
 | SDK provenance | CLEAN_REIMPLEMENT | No Apache source copied into BSL staging |
 
 Historical SDK identity fbfec0b is quarantined and is not release evidence.
+An ignored `dist/` rebuild with SHA-256 `3889f83c…` was also quarantined as
+unreviewed; it is not a release artifact and cannot be confused with `b54ac013…`.
 
 ## Track A — Production SDK
 
