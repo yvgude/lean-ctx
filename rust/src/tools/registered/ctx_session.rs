@@ -6,6 +6,61 @@ use std::time::Duration;
 use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_bool, get_str};
 use crate::tool_defs::tool_def;
 
+/// #1570 P1: `compact` records a directive (summary in `value`); the proxy
+/// replaces the pre-cut span on every request until `restore` clears it —
+/// lossless by construction since the client resends full history each turn.
+fn handle_compact_action(
+    action: &str,
+    value: Option<&str>,
+    args: &Map<String, Value>,
+) -> ToolOutput {
+    let text = if action == "restore" {
+        if crate::core::compact_directive::clear() {
+            "Compaction cleared — the next request carries the full original history again."
+                .to_string()
+        } else {
+            "No active compaction to restore.".to_string()
+        }
+    } else {
+        let keep = args
+            .get("keep_recent_turns")
+            .and_then(serde_json::Value::as_u64)
+            .map_or(6, |n| n as usize)
+            .max(4);
+        match value {
+            None | Some("") => "compact requires value = the summary that replaces the \
+                 compacted span. Write it exhaustive-but-lean: every file path, decision, \
+                 constraint and finding that keeps context integrity; quote short user \
+                 requests verbatim; drop dead-end exploration."
+                .to_string(),
+            Some(summary) => {
+                match crate::core::compact_directive::create(keep, summary.to_string()) {
+                    Ok(()) => {
+                        crate::core::nudge::record_recovery();
+                        format!(
+                            "Compaction armed (keeps last {keep} user turns verbatim). It applies \
+                         to your NEXT request onward, only outside the provider-cached \
+                         prefix, at tool-pair-safe boundaries. Undo any time: \
+                         ctx_session action=\"restore\"."
+                        )
+                    }
+                    Err(reason) => reason,
+                }
+            }
+        }
+    };
+    ToolOutput {
+        text,
+        original_tokens: 0,
+        saved_tokens: 0,
+        mode: Some(action.to_string()),
+        path: None,
+        changed: false,
+        shell_outcome: None,
+        content_blocks: None,
+    }
+}
+
 pub struct CtxSessionTool;
 
 /// Session management is useful, but it must never make the entire MCP server
@@ -28,9 +83,10 @@ impl McpTool for CtxSessionTool {
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "status|handoff|load|save|task|finding|decision|list|… (invalid action lists all)"
+                        "description": "status|handoff|load|save|task|finding|decision|compact|restore|list|… (invalid action lists all)"
                     },
                     "value": { "type": "string" },
+                    "keep_recent_turns": { "type": "integer", "description": "compact: trailing user turns kept verbatim (default 6)" },
                     "session_id": { "type": "string", "description": "Omit for latest" }
                 },
                 "required": ["action"]
@@ -52,6 +108,13 @@ impl McpTool for CtxSessionTool {
         let write = get_bool(args, "write").unwrap_or(false);
         let privacy = get_str(args, "privacy");
         let terse = get_bool(args, "terse");
+
+        // #1570 P1: agent-driven reversible compaction. Handled here for
+        // direct args access; independent of the session store. The proxy
+        // applies the directive cache-safely on every subsequent request.
+        if action == "compact" || action == "restore" {
+            return Ok(handle_compact_action(&action, value.as_deref(), args));
+        }
 
         let tool_calls_handle = ctx
             .tool_calls

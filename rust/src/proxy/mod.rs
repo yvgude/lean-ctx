@@ -16,6 +16,7 @@
 //! admin/usage-store routes. In the OSS build the proxy runs standalone.
 
 pub mod adaptive_policy;
+pub(crate) mod agent_compact;
 pub mod anthropic;
 #[cfg(test)]
 mod auth_tests;

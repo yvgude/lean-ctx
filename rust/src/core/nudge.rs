@@ -55,6 +55,12 @@ pub fn record_recovery_action(tool: &str) {
     if !RECOVERY_TOOLS.contains(&tool) {
         return;
     }
+    record_recovery();
+}
+
+/// Unconditional recovery mark — for recovery paths that are not their own
+/// tool (e.g. `ctx_session action="compact"`, #1570 P1).
+pub fn record_recovery() {
     let mut guard = state()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);

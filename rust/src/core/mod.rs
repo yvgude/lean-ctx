@@ -335,6 +335,7 @@ pub(crate) mod cli_cache;
 pub(crate) mod client_capabilities;
 pub(crate) mod client_constraints;
 pub(crate) mod cloud_files;
+pub mod compact_directive;
 pub mod config;
 pub(crate) mod config_heal;
 pub mod consolidation;

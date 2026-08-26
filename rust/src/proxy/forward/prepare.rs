@@ -269,8 +269,15 @@ pub(crate) fn prepare_request_body(
             route: None,
         });
     };
+    // #1570 P1: agent-requested compaction runs FIRST, on the raw client
+    // bytes — later mutations (dedup) must never shift its fingerprint-pinned
+    // boundary. The determinism guard reverts it wholesale like every other
+    // mutation; its savings ride the content-level counter below (zeroed on
+    // revert together with it).
+    let agent_compact_tokens_saved = crate::proxy::agent_compact::apply(&mut parsed);
     let (tool_results_to_cache, dedup_tokens_saved) = deduplicate_tool_results(&mut parsed, cache);
-    let content_dedup_tokens_saved = content_dedup_live_suffix(&mut parsed);
+    let content_dedup_tokens_saved =
+        agent_compact_tokens_saved + content_dedup_live_suffix(&mut parsed);
 
     if dedup_tokens_saved > 0 {
         tracing::debug!(dedup_tokens_saved, "deduplicated proxy tool results");
