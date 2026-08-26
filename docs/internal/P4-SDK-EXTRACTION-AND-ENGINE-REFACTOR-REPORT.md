@@ -38,6 +38,7 @@ or infer task acceptance from delivery, retries or response length.
 | R6 upstream baseline | 0135ef25bd186ac95a1c0423a12cc6ae1479b946 | Main at PR 1573 creation |
 | R6 reviewed candidate | b1d530718a7f8285cf726979ca41db30c7817a43 | PR 1573; reviewed patch ID 65f0a36e… |
 | Final accepted Engine SHA | 5220ad11191e9de012dfedc97479dae6d28d1111 | PR 1573 squash merge; authoritative CI passed |
+| Installed final Engine binary SHA-256 | 9cc619e11965c0f0505b638bc6d5825607f5fb204b72d2d7917e9ed7a2848ded | Atomically installed from the final accepted Engine SHA; final offline SDK rebind passed |
 | Production SDK repository | /Users/yvesgugger/Documents/Privat/Projects/leanctx-product-sdk-staging | Separate private staging |
 | Production SDK repository head | 8c84e2246bff0f2681dc69ea08d4322519f88050 | Current private docs/governance head |
 | Production SDK ledger | a7afd1f | Clean, reviewed internal RC record |
@@ -82,6 +83,8 @@ Independent release review passed:
   exact host object identity and secret-redacted receipts
 - no credentials, provider call, Cloud dependency or live-provider claim
 - clean wheel/install and immutable artifact digest
+- final offline rebind against the installed Engine binary: Engine interface
+  1.0.0, sealed integrity, exact recovery and succeeded status
 
 Public publication remains intentionally blocked by unresolved BSL parameters,
 public namespace, support/release process, pricing/OEM decisions and legal
@@ -194,6 +197,9 @@ LEGAL_REVIEW_REQUIRED.
 - Final accepted-Engine/SDK integration gate:
   /private/tmp/leanctx-p4-v4-current/final-engine-sdk-gate/RESULT.md — PASS on
   Engine 5220ad1119 and canonical wheel b54ac013…
+- Final installed-Engine/SDK rebind:
+  /private/tmp/leanctx-p4-v4-current/final-installed-engine-sdk-gate/RESULT.md —
+  PASS on installed binary SHA-256 9cc619e1… and canonical wheel b54ac013…
 - Pre-R6 architecture/security review:
   /tmp/p4-final-review.md — historical PASS on its examined scope; it explicitly
   left final CI/Windows/merge pending and is not the final closeout evidence
