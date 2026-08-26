@@ -49,15 +49,15 @@
   ],
   "scanner_source_sha256": {
     ".github/workflows/security-check.yml": "1d396fccd6cd6d099f8faae64573b5d82df5e4e5c6ca92c1991c2c88dabcb70c",
-    "scripts/history-policy-gate.py": "5c0d820e15d60226d3ef3de35a1a2ecf93eede36f315a2fba72d1a105bba6ae1",
-    "tests/security/test_history_policy_gate.py": "62b7b4990b9ea188e359bd1d9d6af881358bb5961cbc2962c64cf6e8c32c851c",
+    "scripts/history-policy-gate.py": "6191eb7e86b7253aef09c9ef9bb5167ba599f91f9e23d43be61452d039511ba8",
+    "tests/security/test_history_policy_gate.py": "f1f9620532147fc6ff6071f563a0c1b86ded450ce555d180209c532d3e237036",
     "tests/security/test_security_check_workflow.py": "2d0c9b9a6ceb61c97379290d549bbdcf7812ce17db9794b5d1b067e2202c2844",
     "rust/src/proxy/anthropic.rs": "3e363471975e122afaa10206a6cca9c854e04086827ac92b28fb5bf9eab0b38a",
     "rust/src/proxy/anthropic_tests.rs": "dfcdf6880d7c4cdea2fc111f71ae29bc95a431e7161e702e435e67e730ab5b69"
   },
   "baseline": {
-    "commit": "b334e9b4ce4ae023d63a1ed3c21f50db28862486",
+    "commit": "bff280bfc8eba6959854fafcbf104b5745d794c3",
     "report": "security/evidence/full-history-baseline-v1.json",
-    "report_sha256": "33dc11db653657cc5fbb68e15ec25bb7080ec55df6f7e70b9783a210e3a5e140"
+    "report_sha256": "cec69b3ba654fe10203c4ebca11e8978905f2cae1582ca8ce689f27017c56cdd"
   }
 }

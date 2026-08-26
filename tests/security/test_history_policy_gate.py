@@ -83,6 +83,9 @@ class HistoryPolicyGateTests(unittest.TestCase):
         self.assertGreaterEqual(len(report["findings"]), 2)
         self.assertNotIn(secret.encode(), encoded)
         self.assertTrue(all(set(item) == {"id", "scanner", "rule", "path", "object"} for item in report["findings"]))
+        self.assertEqual(report["scanner_versions"], GATE.BASELINE_SCANNER_VERSIONS)
+        self.assertEqual(report["finding_set_sha256"], hashlib.sha256(GATE.canonical(report["findings"])).hexdigest())
+        self.assertEqual(report["current_tree_finding_ids"], sorted(item["id"] for item in GATE.current_tree_scan(self.repo, self.policy())))
 
     def test_clean_current_and_delta_pass(self):
         report = GATE.gate(self.repo, self.policy())

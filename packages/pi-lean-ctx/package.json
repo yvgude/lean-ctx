@@ -43,7 +43,7 @@
     "README.md"
   ],
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.83.0",
+    "@earendil-works/pi-coding-agent": "^0.84.3",
     "@earendil-works/pi-tui": "^0.79.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "esbuild": "^0.28.1",
@@ -61,6 +61,7 @@
     "fast-uri": "^3.1.5",
     "hono": "^4.12.34",
     "ip-address": "^10.3.1",
+    "nanoid": "^3.3.18",
     "postcss": "^8.5.23",
     "protobufjs": "^7.6.5"
   }

@@ -227,10 +227,19 @@ mod shell_outcome_tests {
 
     #[cfg(not(windows))]
     async fn auto_detached_pipeline_result(command: &str) -> (CallToolResult, BackgroundJobGuard) {
+        let release_dir = tempfile::tempdir().expect("create auto-detach barrier directory");
+        let release_path = release_dir.path().join("release");
+        let mut extra_env = std::collections::HashMap::new();
+        extra_env.insert(
+            "LCTX_TEST_RELEASE_PATH".to_string(),
+            release_path.to_string_lossy().into_owned(),
+        );
+        let guarded_command =
+            format!("while [ ! -e \"$LCTX_TEST_RELEASE_PATH\" ]; do sleep 0.01; done; {command}");
         let detached = crate::server::background_shell::run_foreground_or_detach(
-            command.to_string(),
+            guarded_command,
             ".".to_string(),
-            std::collections::HashMap::default(),
+            extra_env,
             Some(30_000),
             std::time::Duration::from_millis(10),
             None,
@@ -240,6 +249,7 @@ mod shell_outcome_tests {
             panic!("the reproduction must exercise the auto-detached path");
         };
         let job = BackgroundJobGuard::new(job_id.clone());
+        std::fs::write(release_path, b"release").expect("release auto-detached child");
         for _ in 0..400 {
             if matches!(
                 crate::server::background_shell::status(&job_id),

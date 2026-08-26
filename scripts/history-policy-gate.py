@@ -15,8 +15,8 @@ class GateError(RuntimeError):
     pass
 
 
-BASELINE_SCANNER_VERSIONS = ["commit-path/v1", "reachable-blob/v1", "public-tree/v1"]
 FULL_AUDIT_SCANNER_VERSIONS = ["commit-path/v2", "diff-pickaxe/v2", "public-tree/v2"]
+BASELINE_SCANNER_VERSIONS = FULL_AUDIT_SCANNER_VERSIONS
 
 
 def canonical(value):
@@ -314,7 +314,18 @@ def full_audit(root, policy):
                 if not scanner_source(path, policy):
                     findings.append(finding("full-secret", policy["secret_rule"]["id"], path, lines[0]))
     findings = bounded(findings, policy)
-    return {"schema_version": "leanctx.full-history-evidence/v1", "audited_commit": git(root, timeout, "rev-parse", "HEAD").decode().strip(), "policy_sha256": policy_fingerprint(policy), "scanner_versions": FULL_AUDIT_SCANNER_VERSIONS, "counts": {"commits": len(commits), "objects": len(objects), "findings": len(findings)}, "findings": findings}
+    current_ids = sorted(item["id"] for item in current_tree_scan(root, policy))
+    return {
+        "schema_version": "leanctx.full-history-evidence/v1",
+        "audited_commit": git(root, timeout, "rev-parse", "HEAD").decode().strip(),
+        "policy_sha256": policy_fingerprint(policy),
+        "scanner_versions": FULL_AUDIT_SCANNER_VERSIONS,
+        "counts": {"commits": len(commits), "objects": len(objects), "findings": len(findings)},
+        "findings": findings,
+        "current_tree_finding_ids": current_ids,
+        "finding_set_sha256": hashlib.sha256(canonical(findings)).hexdigest(),
+        "audit_status": "rotation-and-rewrite-decision-pending",
+    }
 
 
 def main():
