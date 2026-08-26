@@ -149,6 +149,81 @@ pub fn prune_history_range(
             _ => {}
         }
     }
+    modified |= purge_errored_tool_inputs(&mut messages[prune_start..prune_end]);
+    modified
+}
+
+/// Marker key for a purged tool-call input; also the idempotence guard.
+const PURGED_INPUT_KEY: &str = "lean_ctx_purged";
+const PURGED_INPUT_NOTE: &str = "input removed after failed tool call — the error text in the matching tool_result is preserved";
+
+/// Only inputs at least this large (serialized) are purged — below it the
+/// marker object would not save anything.
+const PURGED_INPUT_MIN_BYTES: usize = 160;
+
+/// DCP-inspired error purge (#1570 P5): the *input* of a tool call whose
+/// matching tool_result carries `is_error: true` is dead weight once the
+/// call has scrolled into the frozen old region — what the model may still
+/// need is the error text, which stays untouched. Content-local and
+/// idempotent: the rewrite depends only on the window's own blocks, so a
+/// purged form is byte-identical on every later turn (#448 cache safety).
+/// Anthropic shape only — the OpenAI tool-message shape carries no error
+/// marker to key off.
+fn purge_errored_tool_inputs(window: &mut [Value]) -> bool {
+    let mut errored: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for msg in window.iter() {
+        let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else {
+            continue;
+        };
+        for block in blocks {
+            if block.get("type").and_then(|t| t.as_str()) == Some("tool_result")
+                && block.get("is_error").and_then(Value::as_bool) == Some(true)
+                && let Some(id) = block.get("tool_use_id").and_then(|v| v.as_str())
+            {
+                errored.insert(id.to_string());
+            }
+        }
+    }
+    if errored.is_empty() {
+        return false;
+    }
+
+    let mut modified = false;
+    for msg in window.iter_mut() {
+        if msg.get("role").and_then(|r| r.as_str()) != Some("assistant") {
+            continue;
+        }
+        let Some(blocks) = msg.get_mut("content").and_then(|c| c.as_array_mut()) else {
+            continue;
+        };
+        for block in blocks {
+            if block.get("type").and_then(|t| t.as_str()) != Some("tool_use") {
+                continue;
+            }
+            if !block
+                .get("id")
+                .and_then(|v| v.as_str())
+                .is_some_and(|id| errored.contains(id))
+            {
+                continue;
+            }
+            let Some(input) = block.get("input") else {
+                continue;
+            };
+            // Idempotence: already purged inputs are left byte-identical.
+            if input
+                .as_object()
+                .is_some_and(|o| o.contains_key(PURGED_INPUT_KEY))
+            {
+                continue;
+            }
+            if serde_json::to_string(input).map(|s| s.len()).unwrap_or(0) < PURGED_INPUT_MIN_BYTES {
+                continue;
+            }
+            block["input"] = serde_json::json!({ PURGED_INPUT_KEY: PURGED_INPUT_NOTE });
+            modified = true;
+        }
+    }
     modified
 }
 
@@ -567,6 +642,73 @@ mod tests {
             messages.push(serde_json::json!({"role": "user", "content": [block]}));
         }
         messages
+    }
+
+    // --- #1570 P5: errored tool-input purge ---
+
+    fn errored_pair(input_size: usize, is_error: bool) -> Vec<Value> {
+        let big_input: String = "x".repeat(input_size);
+        vec![
+            serde_json::json!({"role": "assistant", "content": [
+                {"type": "tool_use", "id": "tc1", "name": "ctx_shell", "input": {"command": big_input}}
+            ]}),
+            serde_json::json!({"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "tc1", "is_error": is_error, "content": "boom: exit 1"}
+            ]}),
+        ]
+    }
+
+    #[test]
+    fn errored_tool_input_is_purged_and_error_text_preserved() {
+        let mut messages = errored_pair(500, true);
+        assert!(prune_history(&mut messages, 2, &no_names()));
+        let input = &messages[0]["content"][0]["input"];
+        assert!(
+            input.get("lean_ctx_purged").is_some(),
+            "input must be purged: {input}"
+        );
+        assert_eq!(
+            messages[1]["content"][0]["content"], "boom: exit 1",
+            "the error text is what the model may still need"
+        );
+        assert_eq!(messages[1]["content"][0]["is_error"], true);
+    }
+
+    #[test]
+    fn successful_tool_input_is_never_purged() {
+        let mut messages = errored_pair(500, false);
+        prune_history(&mut messages, 2, &no_names());
+        assert!(
+            messages[0]["content"][0]["input"].get("command").is_some(),
+            "successful calls keep their input"
+        );
+    }
+
+    #[test]
+    fn error_purge_is_idempotent_and_byte_stable() {
+        let mut messages = errored_pair(500, true);
+        prune_history(&mut messages, 2, &no_names());
+        let first = serde_json::to_string(&messages).unwrap();
+        prune_history(&mut messages, 2, &no_names());
+        assert_eq!(serde_json::to_string(&messages).unwrap(), first);
+    }
+
+    #[test]
+    fn tiny_errored_inputs_stay_inline() {
+        let mut messages = errored_pair(20, true);
+        prune_history(&mut messages, 2, &no_names());
+        assert!(
+            messages[0]["content"][0]["input"].get("command").is_some(),
+            "purging a tiny input saves nothing"
+        );
+    }
+
+    #[test]
+    fn error_purge_respects_the_prune_window() {
+        let mut messages = errored_pair(500, true);
+        // Window excludes both messages -> nothing may change.
+        assert!(!prune_history_range(&mut messages, 2, 2, &no_names()));
+        assert!(messages[0]["content"][0]["input"].get("command").is_some());
     }
 
     #[test]
