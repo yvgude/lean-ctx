@@ -55,6 +55,10 @@ pub struct Config {
     pub cost: CostConfig,
     #[serde(default)]
     pub decision_loop: DecisionLoopConfig,
+    /// User-controlled never-lossy zones (#1570 P4): protected file globs
+    /// and `<protect>` span handling.
+    #[serde(default)]
+    pub protection: ProtectionConfig,
     /// Code-health engine: cognitive complexity, naming, coupling, edit-gate.
     #[serde(default)]
     pub code_health: CodeHealthConfig,

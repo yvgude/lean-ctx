@@ -140,6 +140,7 @@ pub fn prune_history_range(
                     .map_or(ToolResultKind::Other, |n| classify_tool_name(n));
                 if let Some(content) = msg.get("content").and_then(|c| c.as_str())
                     && content.len() > 200
+                    && !content.contains("<protect>")
                 {
                     let summary = summarize_or_stub(content, kind);
                     msg["content"] = Value::String(summary);
@@ -235,7 +236,7 @@ fn summarize_anthropic_tool_result(block: &mut Value, kind: ToolResultKind) -> b
     let mut modified = false;
     if let Some(inner) = block.get_mut("content") {
         match inner {
-            Value::String(s) if s.len() > 200 => {
+            Value::String(s) if s.len() > 200 && !s.contains("<protect>") => {
                 *s = summarize_or_stub(s, kind);
                 modified = true;
             }
@@ -244,6 +245,7 @@ fn summarize_anthropic_tool_result(block: &mut Value, kind: ToolResultKind) -> b
                     if item.get("type").and_then(|t| t.as_str()) == Some("text")
                         && let Some(Value::String(s)) = item.get_mut("text")
                         && s.len() > 200
+                        && !s.contains("<protect>")
                     {
                         *s = summarize_or_stub(s, kind);
                         modified = true;
@@ -269,7 +271,8 @@ fn summarize_anthropic_tool_result(block: &mut Value, kind: ToolResultKind) -> b
 /// collapse to an honest re-read stub, everything else head/tail summarizes)
 /// without ever touching the conversation structure.
 pub fn prune_output_text(text: &str, kind: ToolResultKind) -> Option<String> {
-    if text.len() <= 200 {
+    // #1570 P4: a <protect> span is a user contract — leave the result verbatim.
+    if text.len() <= 200 || text.contains("<protect>") {
         return None;
     }
     let pruned = summarize_or_stub(text, kind);
@@ -709,6 +712,19 @@ mod tests {
         // Window excludes both messages -> nothing may change.
         assert!(!prune_history_range(&mut messages, 2, 2, &no_names()));
         assert!(messages[0]["content"][0]["input"].get("command").is_some());
+    }
+
+    // --- #1570 P4: <protect> spans ---
+
+    #[test]
+    fn protected_span_survives_history_pruning_verbatim() {
+        let body = format!("<protect>{}</protect>", "wichtig ".repeat(60));
+        let mut messages = vec![serde_json::json!({"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "t1", "content": body}
+        ]})];
+        let before = serde_json::to_string(&messages).unwrap();
+        assert!(!prune_history(&mut messages, 1, &no_names()));
+        assert_eq!(serde_json::to_string(&messages).unwrap(), before);
     }
 
     #[test]

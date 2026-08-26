@@ -359,6 +359,13 @@ Per-model context-window overrides in tokens. Keys are model names (case-insensi
 
 _No sub-keys (presence of the section toggles the feature)._
 
+## `[protection]`
+
+User-controlled never-lossy zones (#1570 P4)
+
+- `file_patterns` (list<string>, default `[]`) — Glob patterns for path-like tool arguments; a hit exempts the call's output from every lossy filter (same standard as raw=true)
+- `tags` (bool, default `true`) — Honor inline <protect> spans: matching output bypasses lossy line filtering and history pruning
+
 ## `[provenance]`
 
 Edit provenance capture and retention

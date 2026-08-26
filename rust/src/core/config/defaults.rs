@@ -68,6 +68,7 @@ impl Default for Config {
             gain: GainConfig::default(),
             cost: CostConfig::default(),
             decision_loop: DecisionLoopConfig::default(),
+            protection: ProtectionConfig::default(),
             code_health: CodeHealthConfig::default(),
             autonomy: AutonomyConfig::default(),
             providers: ProvidersConfig::default(),

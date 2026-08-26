@@ -598,6 +598,13 @@ pub fn apply_triage_filter(
             return (output.to_string(), 0);
         }
     }
+    // #1570 P4: an explicit <protect> span is a user contract — the whole
+    // output bypasses lossy line filtering (gated on [protection].tags).
+    // Lossless compression (archive digest + ctx_expand) is unaffected:
+    // protection means "never lossy", not "never compressed".
+    if output.contains("<protect>") && crate::core::config::Config::load().protection.tags {
+        return (output.to_string(), 0);
+    }
     // Build a set of kept lines for O(1) lookup.
     let keep: std::collections::HashSet<usize> = match level {
         1 => lines
@@ -1313,6 +1320,18 @@ mod tests {
         let profile = test_profile(500, 200);
         let output = "fn main() {\n    println!(\"hi\");\n}";
         assert_eq!(apply_triage_filter(output, &profile, 2), (output.into(), 0));
+    }
+
+    // #1570 P4: a <protect> span is a user contract — the whole output is
+    // exempt from lossy filtering at every level.
+    #[test]
+    fn protect_span_bypasses_lossy_filtering_entirely() {
+        let profile = test_profile(700, 200);
+        let output = "// boilerplate noise\n".repeat(30)
+            + "<protect>operational checklist — must stay verbatim</protect>\n";
+        let (filtered, removed) = apply_triage_filter(&output, &profile, 2);
+        assert_eq!(removed, 0, "protected output must lose nothing");
+        assert_eq!(filtered, output);
     }
 
     #[test]

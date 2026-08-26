@@ -704,4 +704,29 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             keys: decision_loop,
         },
     );
+
+    let mut protection = BTreeMap::new();
+    protection.insert(
+        "file_patterns".into(),
+        key(
+            "list<string>",
+            serde_json::json!(cfg.protection.file_patterns),
+            "Glob patterns for path-like tool arguments; a hit exempts the call's output from every lossy filter (same standard as raw=true)",
+        ),
+    );
+    protection.insert(
+        "tags".into(),
+        key(
+            "bool",
+            serde_json::json!(cfg.protection.tags),
+            "Honor inline <protect> spans: matching output bypasses lossy line filtering and history pruning",
+        ),
+    );
+    sections.insert(
+        "protection".into(),
+        SectionSchema {
+            description: "User-controlled never-lossy zones (#1570 P4)".into(),
+            keys: protection,
+        },
+    );
 }
