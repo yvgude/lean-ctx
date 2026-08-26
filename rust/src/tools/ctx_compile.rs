@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 
-use crate::core::context_compiler::{CompileMode, compile, format_compile_result};
+use crate::core::context_compiler::{CompileMode, CompileResult, compile, format_compile_result};
 use crate::core::context_field::TokenBudget;
 use crate::core::context_handles::HandleRegistry;
 use crate::core::context_ledger::ContextLedger;
@@ -65,14 +65,18 @@ pub fn handle(
                 );
             }
             let mut out = registry.format_manifest(budget_tokens, result.budget_used);
-            out.push_str(&format!(
-                "\n\nRun ID: {} | Items: {} selected, {} excluded\n",
-                result.run_id, result.items_selected, result.items_excluded
-            ));
+            append_handle_summary(&mut out, &result);
             out
         }
         CompileMode::Compressed | CompileMode::FullPrompt => format_compile_result(&result),
     }
+}
+
+fn append_handle_summary(out: &mut String, result: &CompileResult) {
+    out.push_str(&format!(
+        "\n\nRun ID: {} | Items: {} selected, {} excluded\n",
+        result.run_id, result.items_selected, result.items_excluded
+    ));
 }
 
 fn get_str(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Option<String> {
@@ -80,4 +84,32 @@ fn get_str(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Option<S
         .get(key)?
         .as_str()
         .map(std::string::ToString::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn handle_manifest_preserves_run_id_label_and_counts() {
+        let result = CompileResult {
+            run_id: "run_20260825_120000_7".into(),
+            mode: "handles".into(),
+            budget_total: 100,
+            budget_used: 10,
+            items_considered: 3,
+            items_selected: 2,
+            items_excluded: 1,
+            items_pinned: 0,
+            selected: Vec::new(),
+            excluded_reasons: Vec::new(),
+            warnings: Vec::new(),
+        };
+        let mut output = "manifest".to_string();
+
+        append_handle_summary(&mut output, &result);
+
+        assert!(output.contains("Run ID: run_20260825_120000_7"));
+        assert!(output.contains("Items: 2 selected, 1 excluded"));
+    }
 }

@@ -80,7 +80,7 @@ pub(crate) struct CompileResult {
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct SelectedItem {
     pub id: String,
     pub path: String,
@@ -90,11 +90,30 @@ pub(crate) struct SelectedItem {
     pub pinned: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct ExcludedItem {
     pub id: String,
     pub path: String,
     pub reason: String,
+}
+
+/// Pure output of explicit candidate selection.
+///
+/// This boundary intentionally excludes clocks, process identity, providers,
+/// persistence, global policy state, and instrumentation. Callers supply all
+/// selection inputs through `candidates` and `budget`.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CompileSelection {
+    pub budget_total: usize,
+    pub budget_used: usize,
+    pub items_considered: usize,
+    pub items_selected: usize,
+    pub items_excluded: usize,
+    pub items_pinned: usize,
+    pub selected: Vec<SelectedItem>,
+    pub excluded_reasons: Vec<ExcludedItem>,
+    pub warnings: Vec<String>,
+    redundancy_applied: bool,
 }
 
 /// Compile a minimal context package from candidates under budget constraints.
@@ -111,7 +130,31 @@ pub(crate) fn compile(
         chrono::Utc::now().format("%Y%m%d_%H%M%S"),
         std::process::id() % 1000
     );
+    let selection = select_explicit(candidates, budget);
+    if selection.redundancy_applied {
+        crate::core::introspect::tick("integration_phi");
+    }
 
+    CompileResult {
+        run_id,
+        mode: mode.as_str().to_string(),
+        budget_total: selection.budget_total,
+        budget_used: selection.budget_used,
+        items_considered: selection.items_considered,
+        items_selected: selection.items_selected,
+        items_excluded: selection.items_excluded,
+        items_pinned: selection.items_pinned,
+        selected: selection.selected,
+        excluded_reasons: selection.excluded_reasons,
+        warnings: selection.warnings,
+    }
+}
+
+/// Select a bounded context package from fully explicit inputs.
+pub(crate) fn select_explicit(
+    candidates: &[CompileCandidate],
+    budget: TokenBudget,
+) -> CompileSelection {
     let mut selected: Vec<SelectedItem> = Vec::new();
     let mut excluded: Vec<ExcludedItem> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
@@ -250,10 +293,6 @@ pub(crate) fn compile(
             reason: "budget exhausted".to_string(),
         });
     }
-    if redundancy_applied {
-        crate::core::introspect::tick("integration_phi");
-    }
-
     for c in candidates
         .iter()
         .filter(|c| c.state == ContextState::Excluded)
@@ -333,9 +372,7 @@ pub(crate) fn compile(
         ));
     }
 
-    CompileResult {
-        run_id,
-        mode: mode.as_str().to_string(),
+    CompileSelection {
         budget_total: budget.total,
         budget_used: tokens_used,
         items_considered: candidates.len(),
@@ -345,6 +382,7 @@ pub(crate) fn compile(
         selected,
         excluded_reasons: excluded,
         warnings,
+        redundancy_applied,
     }
 }
 
@@ -610,6 +648,96 @@ mod tests {
         let paths1: Vec<&str> = r1.selected.iter().map(|s| s.path.as_str()).collect();
         let paths2: Vec<&str> = r2.selected.iter().map(|s| s.path.as_str()).collect();
         assert_eq!(paths1, paths2, "selection order must be deterministic");
+    }
+
+    #[test]
+    fn select_explicit_golden_selection() {
+        let candidates = vec![
+            make_candidate("a.rs", 0.7, 400, false),
+            make_candidate("b.rs", 0.6, 300, true),
+            make_candidate("c.rs", 0.8, 500, false),
+        ];
+        let budget = TokenBudget {
+            total: 5000,
+            used: 250,
+        };
+
+        let result = select_explicit(&candidates, budget);
+
+        assert_eq!(
+            result
+                .selected
+                .iter()
+                .map(|item| {
+                    (
+                        item.path.as_str(),
+                        item.view.as_str(),
+                        item.tokens,
+                        item.phi,
+                        item.pinned,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                ("c.rs", "full", 500, 0.8, false),
+                ("b.rs", "full", 300, 0.6, true),
+                ("a.rs", "full", 400, 0.7, false),
+            ]
+        );
+        assert_eq!(result.budget_total, 5000);
+        assert_eq!(result.budget_used, 1200);
+        assert_eq!(result.items_considered, 3);
+        assert_eq!(result.items_selected, 3);
+        assert_eq!(result.items_excluded, 0);
+        assert_eq!(result.items_pinned, 1);
+        assert!(result.excluded_reasons.is_empty());
+        assert!(result.warnings.is_empty());
+        assert!(!result.redundancy_applied);
+    }
+
+    #[test]
+    fn select_explicit_is_pure_and_repeatable() {
+        let candidates = vec![
+            make_candidate("a.rs", 0.7, 400, false),
+            make_candidate("b.rs", 0.6, 300, true),
+            make_candidate("c.rs", 0.8, 500, false),
+        ];
+        let budget = TokenBudget {
+            total: 5000,
+            used: 250,
+        };
+
+        let expected = select_explicit(&candidates, budget);
+        for _mode in [
+            CompileMode::HandleManifest,
+            CompileMode::Compressed,
+            CompileMode::FullPrompt,
+        ] {
+            assert_eq!(select_explicit(&candidates, budget), expected);
+        }
+    }
+
+    #[test]
+    fn compile_preserves_legacy_run_id_shape() {
+        let result = compile(
+            &[make_candidate("a.rs", 0.7, 400, false)],
+            TokenBudget {
+                total: 5000,
+                used: 0,
+            },
+            CompileMode::HandleManifest,
+        );
+        let parts: Vec<&str> = result.run_id.split('_').collect();
+        assert_eq!(parts.len(), 4);
+        assert_eq!(parts[0], "run");
+        assert_eq!(parts[1].len(), 8);
+        assert_eq!(parts[2].len(), 6);
+        assert!((1..=3).contains(&parts[3].len()));
+        assert!(
+            parts[1..]
+                .iter()
+                .all(|part| part.bytes().all(|byte| byte.is_ascii_digit()))
+        );
     }
 
     #[test]
