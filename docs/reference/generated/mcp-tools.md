@@ -101,8 +101,9 @@ Parameters: `command`, `content`, `ext`, `output`, `path`
 Build minimal context package within token budget. Modes: handles (references), compressed (content), full (all cached).
 WORKFLOW: after ctx_read/ctx_compose, package focused context for handoff/subagent.
 ANTIPATTERN: not for exploration — use ctx_compose/ctx_read first.
+run_id_version=1 preserves legacy timestamp/PID IDs; run_id_version=2 opts into deterministic IDs.
 
-Parameters: `budget`, `mode`
+Parameters: `budget`, `mode`, `run_id_version`
 
 ## `ctx_compose`
 
