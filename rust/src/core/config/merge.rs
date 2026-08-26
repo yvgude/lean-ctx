@@ -209,6 +209,7 @@ impl Config {
         override_if_key_present!("compression_level", compression_level);
         override_if_key_present!("compression_aggressiveness", compression_aggressiveness);
         override_if_key_present!("terse_agent", terse_agent);
+        override_if_key_present!("behavior_nudges", behavior_nudges);
         override_if_false!(archive.enabled);
         override_if_ne!(default.archive.threshold_chars, archive.threshold_chars);
         override_if_ne!(default.archive.max_age_hours, archive.max_age_hours);

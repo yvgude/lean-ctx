@@ -280,6 +280,7 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
     } else {
         println!("{}", core::stats::format_gain_hero());
         print_solution_intelligence();
+        print_output_shaping();
         // Surface available updates where users actually look (#563) — the
         // banner functions existed but had no caller, so terminals never
         // showed update hints at all.
@@ -353,6 +354,35 @@ fn print_solution_intelligence() {
         "Combined: {} total tokens saved ({combined_reduction:.1}% total reduction)",
         format_thousands(combined_saved),
     );
+}
+
+/// Measured output-shaping savings from the proxy holdout (#895 Track B):
+/// a real A/B number when enough paired turns exist, honest status otherwise
+/// — never an invented estimate presented as measurement.
+fn print_output_shaping() {
+    use crate::proxy::output_savings::{self, Savings};
+    match output_savings::current() {
+        Savings::Measured(m) => {
+            println!(
+                "\nOutput shaping (measured, holdout A/B): {:.1}% fewer output tokens/turn (95% CI {:.1}–{:.1}%, control n={}, treatment n={})",
+                m.reduction_pct, m.ci95_low_pct, m.ci95_high_pct, m.control_n, m.treatment_n
+            );
+        }
+        Savings::Pending {
+            control_n,
+            treatment_n,
+            needed,
+        } => {
+            println!(
+                "\nOutput shaping: measuring — holdout active, {control_n}/{needed} control and {treatment_n}/{needed} treatment turns collected"
+            );
+        }
+        Savings::Estimated { .. } => {
+            println!(
+                "\nOutput shaping: not measured — set `proxy.output_holdout` (e.g. 0.1) to A/B-measure output-token reduction"
+            );
+        }
+    }
 }
 
 fn format_thousands(value: u64) -> String {

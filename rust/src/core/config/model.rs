@@ -566,6 +566,11 @@ pub struct Config {
     /// Default: 5 (suppress annotations for savings below 5%).
     #[serde(default = "serde_defaults::default_annotation_threshold_pct")]
     pub annotation_threshold_pct: u8,
+    /// In-band behavior hints (heavy full/raw reads, search→read→search
+    /// chains): "auto" (default, one hint per pattern per session) or "off".
+    /// Detections are always counted for `tools health`, hints or not.
+    #[serde(default = "serde_defaults::default_behavior_nudges")]
+    pub behavior_nudges: String,
     /// Maximum fresh tokens per single tool response (turn budget).
     /// 0 = unlimited. Default: 4096. Prevents context bloat from oversized responses.
     /// Override via LEAN_CTX_TURN_FRESH_LIMIT env var.

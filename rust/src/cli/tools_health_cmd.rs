@@ -197,6 +197,26 @@ fn print_report(r: &ToolHealthReport, show_all: bool) {
         }
     }
 
+    // ── Behavior (turn economy) ───────────────────────────────────────
+    let b = &r.behavior;
+    if b.total_mode_reads > 0 || b.chains_detected > 0 {
+        println!("\n{BOLD}Behavior{RST}");
+        if let Some(pct) = b.heavy_read_share_pct {
+            let color = if pct >= 40 { YELLOW } else { GREEN };
+            println!(
+                "  explicit full/raw reads  {color}{pct}%{RST} of {} recorded read modes",
+                b.total_mode_reads
+            );
+        }
+        println!(
+            "  chains vs compose        {} search→read→search chain(s) · {} ctx_compose call(s) · {} hint(s) shown",
+            b.chains_detected, b.compose_calls, b.hints_shown
+        );
+        if !b.action.is_empty() {
+            println!("  {YELLOW}→ {}{RST}", b.action);
+        }
+    }
+
     // ── Knowledge ─────────────────────────────────────────────────────
     if r.knowledge.total_facts > 0 {
         println!(

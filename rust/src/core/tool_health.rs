@@ -97,6 +97,86 @@ pub(crate) struct KnowledgeHealth {
     pub action: String,
 }
 
+/// Measured agent-behavior signals (turn economy): how reads and tool chains
+/// actually happen, from local telemetry only.
+#[derive(Debug, Clone, Serialize, Default)]
+pub(crate) struct BehaviorHealth {
+    /// Explicit full/raw share of recorded `ctx_read` mode invocations (%),
+    /// `None` until mode telemetry exists.
+    pub heavy_read_share_pct: Option<u8>,
+    pub heavy_mode_reads: u64,
+    pub total_mode_reads: u64,
+    /// search→read→search/graph sequences one `ctx_compose` call would bundle.
+    pub chains_detected: u64,
+    pub compose_calls: u64,
+    pub hints_shown: u64,
+    pub action: String,
+}
+
+/// Share of recorded read modes above which explicit full/raw reads count as
+/// a steering problem rather than deliberate edit prep.
+const HEAVY_READ_SHARE_WARN_PCT: u8 = 40;
+
+/// Read-mode keys that participate in the heavy-read share. The CEP mode map
+/// also carries non-read instrumentation keys (register/compose/…) that must
+/// not dilute the denominator.
+fn is_read_mode(key: &str) -> bool {
+    matches!(
+        key,
+        "full"
+            | "raw"
+            | "auto"
+            | "map"
+            | "signatures"
+            | "task"
+            | "reference"
+            | "aggressive"
+            | "entropy"
+            | "diff"
+            | "delta"
+            | "fresh"
+            | "anchored"
+    ) || key.starts_with("lines:")
+        || key.starts_with("anchored:")
+        || key.starts_with("budget:")
+}
+
+/// Pure builder for the behavior section: read-mode skew from the CEP mode
+/// counters plus the nudge store's chain/heavy-read detections.
+fn behavior_health(
+    modes: &std::collections::HashMap<String, u64>,
+    nudges: &crate::core::behavior_nudge::BehaviorStore,
+    compose_calls: u64,
+) -> BehaviorHealth {
+    let total_mode_reads: u64 = modes
+        .iter()
+        .filter(|(k, _)| is_read_mode(k))
+        .map(|(_, v)| *v)
+        .sum();
+    let heavy_mode_reads: u64 = modes
+        .iter()
+        .filter(|(k, _)| matches!(k.as_str(), "full" | "raw"))
+        .map(|(_, v)| *v)
+        .sum();
+    let heavy_read_share_pct = (total_mode_reads > 0)
+        .then(|| u8::try_from(heavy_mode_reads * 100 / total_mode_reads).unwrap_or(100));
+    let action = match heavy_read_share_pct {
+        Some(pct) if pct >= HEAVY_READ_SHARE_WARN_PCT => format!(
+            "explicit full/raw dominates recorded reads ({pct}%) — signatures/map cover orientation at a fraction of the tokens; in-band nudges are counting (see behavior_nudges)"
+        ),
+        _ => String::new(),
+    };
+    BehaviorHealth {
+        heavy_read_share_pct,
+        heavy_mode_reads,
+        total_mode_reads,
+        chains_detected: nudges.chains_detected,
+        compose_calls,
+        hints_shown: nudges.hints_shown,
+        action,
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ToolHealthReport {
     pub tool_profile: String,
@@ -127,6 +207,8 @@ pub(crate) struct ToolHealthReport {
     /// Non-lean-ctx MCP servers the client loads every session, with measured
     /// transcript usage — unused ones are pure fixed cost lean-ctx cannot see.
     pub foreign_servers: Vec<crate::core::foreign_mcp::ForeignServerEntry>,
+    /// Measured behavior signals: read-mode skew, chains vs compose, hints.
+    pub behavior: BehaviorHealth,
 }
 
 fn classify(has_usage: bool, calls: u64, schema_tokens: usize, total_calls: u64) -> ToolStatus {
@@ -306,6 +388,7 @@ pub(crate) fn build_report(
         duplicate_clients: duplicates,
         knowledge,
         foreign_servers: Vec::new(),
+        behavior: BehaviorHealth::default(),
     }
 }
 
@@ -415,6 +498,11 @@ pub(crate) fn compute(home: &Path, project: &Path) -> ToolHealthReport {
     );
     report.footprint_note = latest_footprint_note();
     report.foreign_servers = crate::core::foreign_mcp::audit(home, project);
+    report.behavior = behavior_health(
+        &crate::core::stats::load_for_display().cep.modes,
+        &crate::core::behavior_nudge::BehaviorStore::load(),
+        usage.tools.get("ctx_compose").map_or(0, |t| t.total_calls),
+    );
     report
 }
 
@@ -682,6 +770,52 @@ mod tests {
             report.foreign_servers.is_empty(),
             "pure builder adds no foreign servers"
         );
+    }
+
+    /// Behavior section: the share only counts read modes — instrumentation
+    /// keys in the CEP map (register/compose/…) must not dilute it — and the
+    /// warn threshold gates the action text.
+    #[test]
+    fn behavior_health_computes_share_from_read_modes_only() {
+        let mut modes = std::collections::HashMap::new();
+        modes.insert("full".to_string(), 50u64);
+        modes.insert("raw".to_string(), 10);
+        modes.insert("signatures".to_string(), 30);
+        modes.insert("lines:1-20".to_string(), 10);
+        modes.insert("register".to_string(), 500);
+        modes.insert("compose".to_string(), 130);
+        let store = crate::core::behavior_nudge::BehaviorStore {
+            chains_detected: 7,
+            hints_shown: 2,
+            ..Default::default()
+        };
+        let b = behavior_health(&modes, &store, 130);
+        assert_eq!(b.total_mode_reads, 100, "register/compose are not reads");
+        assert_eq!(b.heavy_mode_reads, 60);
+        assert_eq!(b.heavy_read_share_pct, Some(60));
+        assert!(b.action.contains("full/raw dominates"));
+        assert_eq!(b.chains_detected, 7);
+        assert_eq!(b.compose_calls, 130);
+    }
+
+    #[test]
+    fn behavior_health_stays_quiet_below_threshold_and_without_data() {
+        let mut modes = std::collections::HashMap::new();
+        modes.insert("full".to_string(), 10u64);
+        modes.insert("signatures".to_string(), 90);
+        let b = behavior_health(&modes, &Default::default(), 0);
+        assert_eq!(b.heavy_read_share_pct, Some(10));
+        assert!(
+            b.action.is_empty(),
+            "10% heavy reads is deliberate edit prep"
+        );
+
+        let empty = behavior_health(&std::collections::HashMap::new(), &Default::default(), 0);
+        assert_eq!(
+            empty.heavy_read_share_pct, None,
+            "no telemetry → no verdict"
+        );
+        assert!(empty.action.is_empty());
     }
 
     #[test]

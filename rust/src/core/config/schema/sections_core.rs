@@ -576,6 +576,14 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             ),
         );
     root.insert(
+        "behavior_nudges".into(),
+        key(
+            "String",
+            serde_json::json!("auto"),
+            "In-band behavior hints (heavy full/raw reads, search→read→search chains): auto (default, one hint per pattern per session) or off. Detections are always counted for `tools health`.",
+        ),
+    );
+    root.insert(
         "max_ram_percent".into(),
         key_with_env(
             "u8",

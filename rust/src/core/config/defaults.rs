@@ -164,6 +164,7 @@ impl Default for Config {
             savings_footer: SavingsFooter::default(),
             compression_annotation: CompressionAnnotation::default(),
             annotation_threshold_pct: serde_defaults::default_annotation_threshold_pct(),
+            behavior_nudges: serde_defaults::default_behavior_nudges(),
             turn_fresh_limit: serde_defaults::default_turn_fresh_limit(),
             session_token_limit: serde_defaults::default_session_token_limit(),
             project_root: None,

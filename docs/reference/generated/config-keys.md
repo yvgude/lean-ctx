@@ -17,6 +17,7 @@ Top-level configuration keys
 - `allow_symlink_roots` (string[], default `[]` — env `LEAN_CTX_ALLOW_SYMLINK_ROOTS`) — Trusted roots OUTSIDE $HOME lean-ctx may follow when an agent config is symlinked there (#596). Empty = strict $HOME-only
 - `auto_capture` (bool, default `true`) — Automatic knowledge capture from tool findings
 - `auto_mode_learning` (bool, default `false` — env `LEAN_CTX_AUTO_MODE_LEARNING`) — Opt-in: let adaptive learning signals (predictor, bandit, heatmap, adaptive policy, bounce/path memory) influence `auto` mode. Off by default for a deterministic, I/O-light cascade (capability guards + size/task heuristic only) that keeps output byte-stable for prompt caching. Override via LEAN_CTX_AUTO_MODE_LEARNING
+- `behavior_nudges` (String, default `auto`) — In-band behavior hints (heavy full/raw reads, search→read→search chains): auto (default, one hint per pattern per session) or off. Detections are always counted for `tools health`.
 - `bm25_max_cache_mb` (u64, default `128` — env `LEAN_CTX_BM25_MAX_CACHE_MB`) — Maximum BM25 cache file size in MB
 - `buddy_enabled` (bool, default `true`) — Enable the experimental local buddy helper. It does not enable a public multi-agent product or MCP surface.
 - `bypass_hints` (enum: on | off | aggressive, default `on` — env `LEAN_CTX_BYPASS_HINTS`) — Bypass-hint mode: when agents use native Read/Grep instead of lean-ctx tools, a hint is appended to the next tool response. on (default), off, aggressive (hint on every call, no cooldown). Override via LEAN_CTX_BYPASS_HINTS

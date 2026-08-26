@@ -84,3 +84,7 @@ pub(super) fn default_progressive_threshold_lines() -> u32 {
 pub(super) fn default_progressive_signatures_max() -> u32 {
     500
 }
+
+pub(super) fn default_behavior_nudges() -> String {
+    "auto".to_string()
+}

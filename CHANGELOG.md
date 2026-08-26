@@ -19,6 +19,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   the MCP `instructions` already deliver every session; `tools health` now
   flags it with the reclaimable size. `.claude/rules/*.md` project files are
   now included in the fixed-cost scan.
+- **Behavior telemetry + in-band nudges** — a new `tools health` Behavior
+  section reports the explicit full/raw read share (from recorded CEP modes)
+  and search→read→search chains vs `ctx_compose` adoption; the server appends
+  at most one ~30-token hint per pattern per session at the moment of waste
+  (new `behavior_nudges` config key, `auto`/`off`; detections are counted
+  either way).
+- **Measured output shaping in `gain`** — surfaces the #895 holdout A/B
+  (`proxy.output_holdout`): measured output-token reduction with 95% CI when
+  enough paired turns exist, honest "measuring"/"not measured" status
+  otherwise.
 
 ## [3.9.20] — 2026-08-25
 

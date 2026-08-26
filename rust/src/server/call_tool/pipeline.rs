@@ -476,6 +476,19 @@ pub(in crate::server) async fn dispatch_and_post_process(
     // and every subsequent wakeup briefing (#658).
     let findings_source = result_text.clone();
 
+    // Behavior nudge (turn economy / heavy reads, #848 follow-up): observe
+    // every call so chain detection stays complete; append the budgeted
+    // one-line hint only to plain, non-firewalled results.
+    if let Some(hint) = crate::core::behavior_nudge::observe(
+        name,
+        args,
+        crate::core::tokens::count_tokens(&result_text),
+        !machine_readable && !firewalled,
+    ) {
+        result_text.push_str("\n\n");
+        result_text.push_str(&hint);
+    }
+
     // Echo-ratio nudge (#science): when output largely repeats the task
     // description, surface a deterministic hint before footer markers (#498).
     if !machine_readable

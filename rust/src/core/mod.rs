@@ -7,6 +7,7 @@ pub(crate) mod aggressiveness;
 pub mod attention_context;
 pub(crate) mod auto_capture;
 pub(crate) mod auto_findings;
+pub(crate) mod behavior_nudge;
 pub mod codebook;
 #[cfg(target_os = "macos")]
 pub(crate) mod codesign;
