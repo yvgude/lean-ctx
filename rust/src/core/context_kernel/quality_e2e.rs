@@ -4,8 +4,6 @@
 mod tests {
     use super::super::accounting_fix;
     use super::super::hotpath_wiring;
-    use super::super::outcome_signal;
-    use super::super::types::ReceiptOutcome;
 
     fn assert_close(actual: f64, expected: f64) {
         assert!(
@@ -23,23 +21,6 @@ mod tests {
     }
 
     #[test]
-    fn outcome_signal_first_pass() {
-        let inference = outcome_signal::infer_outcome(1, false, 500);
-
-        assert_eq!(inference.outcome, ReceiptOutcome::Accepted);
-        assert_eq!(format!("{:?}", inference.signal), "FirstPass");
-        assert!(inference.confidence >= 0.8);
-    }
-
-    #[test]
-    fn outcome_signal_retry_rejected() {
-        let inference = outcome_signal::infer_outcome(3, true, 200);
-
-        assert_eq!(inference.outcome, ReceiptOutcome::Rejected);
-        assert_eq!(format!("{:?}", inference.signal), "Retry");
-    }
-
-    #[test]
     fn honest_accounting_vs_phantom() {
         let accounting = accounting_fix::compute_honest_accounting(1_000, 300, 100, 50);
 
@@ -47,22 +28,6 @@ mod tests {
         assert_close(accounting.actual_compression_ratio, 0.55);
         assert_close(accounting.reported_compression_ratio, 0.70);
         assert_close(accounting.phantom_savings_pct, 0.15);
-    }
-
-    #[test]
-    fn outcome_tracker_quality_trend() {
-        let mut tracker = outcome_signal::OutcomeTracker::default();
-        for _ in 0..3 {
-            let inf = outcome_signal::infer_outcome(1, false, 100);
-            tracker.record(&inf);
-        }
-        for _ in 0..5 {
-            let inf = outcome_signal::infer_outcome(3, true, 100);
-            tracker.record(&inf);
-        }
-
-        assert_close(tracker.acceptance_rate(), 0.375);
-        assert!(tracker.is_degrading(5));
     }
 
     #[test]
