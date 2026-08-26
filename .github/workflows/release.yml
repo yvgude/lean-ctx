@@ -448,22 +448,27 @@ jobs:
     name: Publish to npm
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4 # v4
         with:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
-      # Fail-hard on publish errors; idempotent on an already-published version
-      # (npm view exits non-zero when the exact version is absent). The version is
-      # read from package.json so the guard always matches what npm will publish.
+      # npm Trusted Publishing (OIDC): authenticates via short-lived OIDC token
+      # from GitHub Actions. No NPM_TOKEN secret needed. Requires per-package
+      # trusted publisher config on npmjs.com (org=yvgude, repo=lean-ctx,
+      # workflow=release.yml). NODE_AUTH_TOKEN must NOT be set or npm falls back
+      # to the legacy token path. See: https://docs.npmjs.com/trusted-publishers/
+      #
+      # Idempotent: an already-published version is a no-op, not a failure.
       - name: Publish lean-ctx-bin
         working-directory: packages/lean-ctx-bin
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           PKG_VERSION="$(node -p "require('./package.json').version")"
@@ -475,8 +480,6 @@ jobs:
 
       - name: Publish pi-lean-ctx
         working-directory: packages/pi-lean-ctx
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           PKG_VERSION="$(node -p "require('./package.json').version")"
@@ -613,3 +616,4 @@ jobs:
           curl -fsSL -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -d "{\"action\":\"published\",\"release\":{\"tag_name\":\"${RELEASE_TAG}\",\"html_url\":\"https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG}\"}}"
+
