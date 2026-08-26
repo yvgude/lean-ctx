@@ -181,7 +181,7 @@ the host agent loop.
 
 ### P4 — Separate BSL 1.1 Production SDK repository
 
-**Status (2026-08-26): P4 COMPLETE/INTEGRATED.** The separate private SDK
+**Status (2026-08-26): P4 V4 TECHNICAL/INTERNAL EXIT COMPLETE.** The separate private SDK
 head is `8c84e224`; ledger `a7afd1f` binds immutable implementation
 `11f77debc2` and wheel `b54ac013…`. Independent internal-RC evidence passes
 Python 3.9/3.14 (`19/19` each), the exact CPython 3.9 macOS-arm64 offline wheel
@@ -238,11 +238,12 @@ or live-provider support claim is recorded.
 - Dual-track ownership ledger covering SDK construction, Engine extraction,
   OSS impact, provenance, migration and removal gates.
 
-**Exit:** documented API, compatibility matrix, fixture suite, migration window,
-support owner and clean-machine path justify a stable SDK release; Engine
-ownership seams are independently reviewed and no duplicate canonical Product
-lifecycle remains. At least one real customer/design-partner path validates
-dependency value. Cloud remains absent.
+**Technical/internal exit:** documented API, compatibility matrix, fixture
+suite, migration/rollback and clean-machine path pass; Engine ownership seams
+are independently reviewed and no duplicate canonical Product lifecycle
+remains. **Public/commercial exit remains open:** approved support/release terms,
+a stable public release and at least one real customer/design-partner validation
+are not evidenced or claimed. Cloud remains absent.
 
 ### P4 V4 dual-track ledger
 

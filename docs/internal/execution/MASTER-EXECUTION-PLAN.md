@@ -38,15 +38,16 @@ This file schedules approved work; it does not supersede those authorities.
 | **P1 — Engine runtime spine** | **Exit complete (2026-08-23):** PRs `#1515` and `#1516` merged; latest merge commit `dd55473302`. Explicit `ctx_read` `engine_interface="v1"` dispatch, legacy omission compatibility, policy/rejection receipts, deadline behavior, descriptor/handle-rooted source and artifact containment, failure-atomic publication and adversarial swap/relocation coverage passed final CI run `32662146660`, including native Ubuntu and Windows tests. | Preserve the accepted v1/legacy behavior and feed its invocation, observation and receipt link into the single P2 evidence chain. |
 | **P2 — canonical evidence** | **Exit complete (2026-08-24):** PR `#1522` merged to `github/main@8ebf61a21c063a1d0a86be33511588d27d7ca71e`; exact-SHA CI `32758619963`, Security Check `32758619955`, and CodeQL `32758619966` passed. The chain keeps delivery factual and host/evaluator outcome explicit. | Preserve the accepted Task → Plan → Invocation → Observation → Receipt → explicit Outcome/Quality → independently verified Evidence Bundle chain. |
 | **P3 — Python Preview** | **P3 COMPLETE/INTEGRATED (2026-08-25):** merge `e47cb432f2e9e2d7ecf13e3c85a0d1cc4fa68f96`; exact-baseline CI `32778481164`, Security `32778481373`, and CodeQL `32778481121` passed. Candidate `79e3888862659e5ac0623a8fa00e16155aa144da` runs the Python-owned Session/Plan/View/Receipt lifecycle through the real local Engine operation transport, actual OpenAI Agents SDK `0.19.4`, native Embed, exact recovery and truthful degradation. `LIVE PROVIDER SMOKE: UNVERIFIED`. | Preserve the integrated P3 seam as transition compatibility under the completed P4 boundary. |
-| **P4 — production SDK + Engine extraction** | **COMPLETE/INTEGRATED (2026-08-26):** final Engine `5220ad1119` merged through PR `#1573`; CI `32936915240`, Security `32936915221` and CodeQL `32936915253` passed. Private SDK head `8c84e224` and ledger `a7afd1f` bind implementation `11f77debc2` and wheel `b54ac013…`; the exact accepted-Engine clean-install gate passed. BSL publication parameters remain explicit and pending; provenance is `CLEAN_REIMPLEMENT`. D1 detached-store deletion remains withheld as D4; Apache Python remains `OSS_TRANSITION_COMPAT`. | STOP; preserve the boundary and do not automatically begin P5/Cloud. |
+| **P4 — production SDK + Engine extraction** | **TECHNICAL/INTERNAL EXIT COMPLETE (2026-08-26):** final Engine `5220ad1119` merged through PR `#1573`; CI `32936915240`, Security `32936915221` and CodeQL `32936915253` passed. Private SDK head `8c84e224` and ledger `a7afd1f` bind implementation `11f77debc2` and wheel `b54ac013…`; the exact accepted-Engine clean-install gate passed. BSL/publication/support and customer-validation gates remain open; provenance is `CLEAN_REIMPLEMENT`. D1 detached-store deletion remains withheld as D4; Apache Python remains `OSS_TRANSITION_COMPAT`. | STOP; preserve the boundary and do not automatically begin P5/Cloud. |
 | **P5–P7 — Workspace, package, handoff** | **NOT INTEGRATED:** out-of-sequence PR `#1571` was closed and its remote branch deleted; the local candidate remains quarantined. | Start only through separate authorization after P4; never promote quarantined work or legacy stores/artifacts as the new truth. |
 | **P8–P9 — Cloud/optimization** | **NOT BEGUN:** private work remains unopened. | Separate private repository only after local proof, trusted evidence and designated owners. |
 
-**Governance state:** P3 and P4 COMPLETE/INTEGRATED; P5 not integrated and
-quarantined; Cloud not begun.
+**Governance state:** P3 and P4 V4 technical/internal scope
+COMPLETE/INTEGRATED; P4 public/commercial release remains gated; P5 not
+integrated and quarantined; Cloud not begun.
 
 **Execution order:** P0 operational CI/branch-protection verification (**met**) → P1 runtime Engine caller
-(**met**) → P2 canonical evidence (**met**) → P3 real Python Preview (**COMPLETE/INTEGRATED**) → P4 SDK repository (**COMPLETE/INTEGRATED**).
+(**met**) → P2 canonical evidence (**met**) → P3 real Python Preview (**COMPLETE/INTEGRATED**) → P4 SDK repository (**TECHNICAL/INTERNAL EXIT COMPLETE**).
 P5 is not integrated; its out-of-sequence candidate is quarantined. Cloud and
 other later work remain unopened.
 No later workstream may bypass an earlier exit.
@@ -127,7 +128,7 @@ contract, compatibility and support gates are explicitly promoted.
 | 2.6 | Implement Quality Gate (automated assertions + human gate) | **done** (--quality-gate flag) |
 | 2.7 | Implement offline Receipt verification | **done** (verify() local+Ed25519) |
 | 2.8 | Write Quickstart documentation | **done** (README 342 LOC) |
-| 2.9 | Publish v1.0 on PyPI | **done** (lean-ctx-python 1.0.0) |
+| 2.9 | Publish Apache Preview v1.0 on PyPI | **done** (`lean-ctx-python` 1.0.0; not the private Production SDK) |
 | 2.10 | Run first Thinkery Agent Tuning Sprint (CHF 7,500) | **ON HOLD** (commercial track; #1254; does not block vision engineering or public Research releases) |
 | 2.11 | Freeze Workspace, checkpoint and `.ctxpkg` target architecture | **done** (internal plan; remains Research—no Workspace API or Cloud claim promoted) |
 
@@ -286,7 +287,7 @@ private infrastructure. It must not be scaffolded as a hidden feature in LeanCTX
 | Milestone | Issues | State |
 |---|---|---|
 | WS-1 Codebase Cleanup | #1242–#1244 | **closed** + milestone closed |
-| WS-2 SDK v1 + Evidence | #1245–#1253 | **closed** (code + PyPI 1.0.0) |
+| WS-2 SDK v1 + Evidence | #1245–#1253 | **closed** (historical Apache Preview code + PyPI 1.0.0; not Production SDK publication) |
 | WS-2 | #1254 first paid pilot | **open — ON HOLD** (sales/pilot) |
 | WS-3 Website Rebuild | #1255–#1259 | **closed** (v2 pages on `deploy`) |
 | WS-3 | #1260 old pages / nav / footer / SEO | **open** |
@@ -311,13 +312,16 @@ private infrastructure. It must not be scaffolded as a hidden feature in LeanCTX
 
 ---
 
-## Success Definition
+## Historical success sketch (not the P4 Production SDK exit)
+
+This 2026-08-21 sketch describes the Apache Preview/website program. It does
+not assert Production SDK publication or paid-customer validation.
 
 ```text
 ✓ Repo is clean (one Python SDK, no dead dirs)
 ✓ Website reflects the new narrative
-✓ SDK v1 on PyPI with ctx.wrap() + Receipt
-✓ One paid customer has a verified Receipt
+✓ Apache Preview v1 on PyPI with ctx.wrap() + Receipt
+✗ Paid-customer Receipt validation remains unverified and on hold
 ✓ CompressionProvider runs through OCLA v0 contract
 ✗ WS-5 cancelled — monopoly strategy, no external partnerships
 ```

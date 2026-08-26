@@ -1,13 +1,19 @@
 # P4 SDK Extraction and Engine Refactor Report
 
-**Status:** COMPLETE/INTEGRATED — R4A–R6 merged; final Engine/SDK gate passed
+**Status:** TECHNICAL/INTERNAL EXIT COMPLETE — R4A–R6 merged; final Engine/SDK
+gate passed; public/commercial release remains gated
 **Date:** 2026-08-26
 **Scope:** P4 Production SDK extraction and Apache Engine refactor only
 
-P3 and P4 are COMPLETE/INTEGRATED. P5 is not integrated; the out-of-sequence
-`#1571` candidate is quarantined. Cloud is NOT BEGUN. R4A–R6 passed
+P3 and the P4 V4 technical/internal scope are COMPLETE/INTEGRATED. P5 is not
+integrated; the out-of-sequence `#1571` candidate is quarantined. Cloud is NOT
+BEGUN. R4A–R6 passed
 authoritative CI and landed; the accepted Engine and canonical private SDK also
 passed the exact final clean-install integration gate.
+
+This is not a public SDK release or commercial-readiness claim. Namespace,
+publication/legal terms, support ownership and real customer/design-partner
+validation remain explicit later gates.
 
 ## Final architecture
 
@@ -45,6 +51,10 @@ or infer task acceptance from delivery, retries or response length.
 Historical SDK identity fbfec0b is quarantined and is not release evidence.
 An ignored `dist/` rebuild with SHA-256 `3889f83c…` was also quarantined as
 unreviewed; it is not a release artifact and cannot be confused with `b54ac013…`.
+The immutable SDK `P4-RELEASE-CANDIDATE.md` ledger's pre-R6 Engine source
+`8fc5cfaf13` is historical and superseded for accepted-Engine compatibility by
+the exact final gate against `5220ad1119`; SDK implementation and wheel
+identities remain unchanged.
 
 ## Track A — Production SDK
 
@@ -177,8 +187,12 @@ LEGAL_REVIEW_REQUIRED.
 - Final accepted-Engine/SDK integration gate:
   /private/tmp/leanctx-p4-v4-current/final-engine-sdk-gate/RESULT.md — PASS on
   Engine 5220ad1119 and canonical wheel b54ac013…
-- Final architecture/security review:
-  /tmp/p4-final-review.md — PASS, no P0–P3 blocker
+- Pre-R6 architecture/security review:
+  /tmp/p4-final-review.md — historical PASS on its examined scope; it explicitly
+  left final CI/Windows/merge pending and is not the final closeout evidence
+- Final technical/internal closeout review:
+  /private/tmp/leanctx-p4-v4-current/final-docs-review/RESULT.md — PASS on all
+  20 technical V4 criteria; public/commercial release remains gated
 - R4F focused kernel gate: 510/510
 - R5 D1 focused kernel gate: 499/499
 - R5 D2 focused gate: 3/3
@@ -217,14 +231,16 @@ shim authorizes removal.
 | 17 | Provenance disposition exists | PASS |
 | 18 | Clean-machine SDK integration passes | PASS — accepted Engine 5220ad1119, CPython 3.9.6, canonical wheel b54ac013…, sealed exact recovery |
 | 19 | Preview-to-SDK migration/rollback documented | PASS |
-| 20 | Independent architecture/security review has no blocker | PASS — independent reviews plus PR 1573 CI/security/CodeQL found no blocker |
+| 20 | Independent architecture/security review has no blocker | PASS — final closeout review plus PR 1573 CI/security/CodeQL found no blocker |
 
 Criterion 15 is evaluated against the accepted delivery state: the
 out-of-sequence local draft never became an integrated P5 workstream and remains
 quarantined pending separate authorization.
 
-P4 satisfies the architecture, SDK, Layer-3 and authoritative Layer-4 gates.
+P4's technical/internal V4 scope satisfies the architecture, SDK, Layer-3 and
+authoritative Layer-4 gates.
 Final accepted Engine SHA is 5220ad11191e9de012dfedc97479dae6d28d1111.
+Public/commercial release remains open and is not claimed by this exit.
 
 ## Rollback
 
