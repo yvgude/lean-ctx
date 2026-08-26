@@ -22,6 +22,7 @@ pub mod daemon_autostart;
 pub mod daemon_client;
 pub mod dashboard;
 pub mod dropin;
+/// Low-level Apache in-process tool-execution façade for Engine embedders.
 pub mod engine;
 pub mod heatmap;
 pub mod hook_handlers;

@@ -128,6 +128,9 @@ pub mod context_deficit;
 pub mod context_field;
 pub mod context_handles;
 pub mod context_ir;
+// Accidental historical surface retained for source compatibility. Public
+// embedders should use `crate::engine::ContextEngine` or `lean-ctx-sdk`.
+#[doc(hidden)]
 pub mod context_kernel;
 pub mod context_ledger;
 pub(crate) mod context_lint;
