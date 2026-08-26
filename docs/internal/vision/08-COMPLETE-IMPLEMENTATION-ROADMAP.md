@@ -199,13 +199,13 @@ lifecycle remains `OSS_TRANSITION_COMPAT`: security/correctness and migration
 fixtures continue, but no new canonical lifecycle or framework breadth is
 added there.
 
-The Engine integration candidate is `e495b61f24`, based on
-`github/main@9aba08d407`. It serializes reviewed R4A–R6 work: profiles, parser,
-bounded Attach journal, policy separation, explicit field/compiler inputs,
-factual kernel evidence, protocol freeze/narrowing, two R5 decommission batches
-and source-compatible public-boundary cleanup. It remains local/unmerged pending
-one final integrated gate and serial PR CI. P3 remains `COMPLETE/INTEGRATED`;
-P5 and Cloud have not begun.
+The Engine integration serially delivers reviewed R4A–R4G work: profiles,
+parser, bounded Attach journal, policy separation, explicit field/compiler
+inputs, factual kernel evidence and protocol freeze/narrowing. R5-D2 retires
+behavioral outcome inference. The proposed detached-store deletion was withheld
+and reclassified D4 because those Rust paths remain publicly reachable. R6
+clarifies package/embed boundaries without an install break. P3 remains
+`COMPLETE/INTEGRATED`; P5 and Cloud have not begun.
 
 **Objective:** create the premium SDK product around the small proven contract;
 remove lifecycle, integration, compatibility and maintenance burden from the
@@ -253,7 +253,7 @@ dependency value. Cloud remains absent.
 | Engine Kits/formats | Apache Engine parser/Kits | Open parser, validation and integrity in Engine | SDK `ContextSource` / `ContextPlan` | Validated parser integrated | Preserve format interoperability and safe admission | Serial PR CI and migration |
 | Engine transport/protocol | Apache Engine public boundary | Versioned bounded Engine contract | SDK public `context-view` / `recover` client | Bounds accepted upstream; Product-shaped protocol schema frozen with named gate | Preserve security, PathJail, bounded IO and recovery | v1 compatibility and authoritative CI |
 | Profiles/policy/compiler/kernel | Mixed Engine mechanisms and Product policy | Engine mechanisms; SDK intent/policy | SDK `ContextPlan` | R4A–R4G integrated; Product delivery/inference removed | Preserve deterministic OSS mechanisms and security | Serial PR CI and named public-major compatibility gates |
-| R5 decommission | Detached receipt/shadow stores and behavioral outcome research | Removed/frozen compatibility | Explicit SDK/evaluator outcomes | 703 lines removed in two reviewed batches | Factual request/evidence accounting remains | One-commit rollback; next-major DTO removal gate |
+| R5 decommission | Detached receipt/shadow stores and behavioral outcome research | Behavioral inference removed; public stores frozen | Explicit SDK/evaluator outcomes | D2 removes 244 lines; D1 withheld and reclassified D4 | Factual accounting and Rust source compatibility remain | D2 revert; public-major/deprecation gate or shim for D4 |
 | Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | Merged in PR 1544 | No public, persistence, security or OSS Core reachability | Exact commit revert |
 | Workspace/Cloud | Not begun | Later private repositories/services | None in P4 | Not started | No OSS impact; no Cloud dependency | P4 exit and separately authorized P5/P8 work |
 

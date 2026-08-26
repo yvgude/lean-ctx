@@ -76,20 +76,19 @@ approval. Those are explicit business/legal gates, not hidden engineering work.
 
 | Wave | Candidate commit(s) | Disposition |
 | --- | --- | --- |
-| R4A Profiles | 21451c3ce9 | Narrow Engine-consumed profile configuration |
-| R4B Kits/parser | 8af44ff21c | Validated open parser/integrity mechanism |
-| R4C Session | dee0c24b86, 2dfdd0f3f0 | Bounded Attach continuity journal |
-| R4D Policy | f3d75a915c | Security defaults separated from Product policy |
-| R4E Field/compiler | b3eda793a0, 785817defa | Explicit field input and deterministic bounded compiler |
-| R4F Kernel | 15f12e05d5, 8df206c820 | Product delivery semantics detached; factual measurements retained |
-| R4G Protocol | 618cc2d2cc | Historical Product-shaped types frozen with a named major-version gate |
-| R5 D1 | d83ef94882 | Detached MCP receipt/shadow stores removed |
-| R5 D2 | 581d488477 | Behavioral outcome inference/learning retired; DTO compatibility retained |
-| R6 | e495b61f24 | Engine/package/embed boundaries clarified without install breakage |
+| R4A Profiles | PR 1547 / bf9ae4be05 | Narrow Engine-consumed profile configuration |
+| R4B Kits/parser | PR 1550 / 6fb8acb907 | Validated open parser/integrity mechanism |
+| R4C Session | PR 1553 / 77aff10c3f | Bounded Attach continuity journal |
+| R4D Policy | PR 1556 / 1c1f433532 | Security defaults separated from Product policy |
+| R4E Field/compiler | PRs 1559, 1561 / 336fc8d237, d8137af554 | Explicit field input and deterministic bounded compiler |
+| R4F Kernel | PR 1563 / 5cedbda3f3 | Product delivery semantics detached; factual measurements retained |
+| R4G Protocol | PR 1564 / 73bca34676 | Historical Product-shaped types frozen with a named major-version gate |
+| R5 D1 | Withheld; reclassified D4 | Detached public receipt/shadow stores retained pending a compatibility gate |
+| R5 D2 | PR 1566 | Behavioral outcome inference/learning retired; DTO compatibility retained |
+| R6 | Final boundary PR | Engine/package/embed boundaries clarified without install breakage |
 
-R4A is represented by PR 1547. At the last recorded check every job passed
-except the Windows rerun, which remained pending. Remaining commits stay local
-until branch hygiene permits serial PR delivery.
+The Engine changes were delivered serially through independent review and
+authoritative GitHub CI. PR 1546 removed the earlier unreachable memory branch.
 
 ## Ownership before and after
 
@@ -108,9 +107,6 @@ until branch hygiene permits serial PR delivery.
 
 ### Removed from Engine
 
-- Detached context_kernel shadow event store
-- Detached MCP receipt/accounting store
-- Orphan MCP ContextReceipt generator and timestamp identifier
 - Behavioral infer_outcome acceptance/rejection heuristics
 - Inferred-outcome provider learning hook
 - Inferred OutcomeTracker quality/degradation model
@@ -118,8 +114,9 @@ until branch hygiene permits serial PR delivery.
 - Context-gate Product plan/receipt/shadow delivery logging
 - Earlier unreachable memory_branch module from PR 1544
 
-R5 removed 703 lines in two coherent batches: 459 lines in D1 and 244 lines in
-D2. R4F removed the active duplicate delivery path before those deletions.
+R5 D2 removed 244 lines of behavioral inference research. R4F first removed the
+active duplicate delivery path. The proposed 459-line D1 deletion was withheld
+because its detached stores and generator remain syntactically public.
 
 ### Frozen transition compatibility
 
@@ -129,6 +126,7 @@ D2. R4F removed the active duplicate delivery path before those deletions.
 | OutcomeSignal/InferredOutcome DTOs | ProxyKernelResult exposed serialized/source fields | Explicit evaluator observations | Next public API major after consumers migrate |
 | protocol knowledge_routing Product-shaped DTOs | Historical published compatibility | Narrow factual Engine contracts | Protocol major after ControlPlaneRequest migration and full compatibility window |
 | context_kernel public path | External Rust source compatibility | engine::ContextEngine and experimental lean-ctx-sdk façade | Separately approved public-major change |
+| Detached context_kernel and MCP receipt/shadow stores | Public Rust source compatibility despite no active supported consumer | Factual Engine evidence contracts | Explicit public-major/deprecation decision or compatibility shim |
 
 No transition surface may receive new Product semantics.
 
@@ -159,9 +157,9 @@ LEGAL_REVIEW_REQUIRED.
 ## Validation and review evidence
 
 - SDK independent release report:
-  /private/tmp/leanctx-p4-v4-current/sdk-release-review/RESULT.md
+  /private/tmp/leanctx-p4-v4-current/sdk-final-8c84/RESULT.md
 - R4F factual-evidence review:
-  /private/tmp/leanctx-p4-v4-next/r4f-factual-review.md
+  /private/tmp/leanctx-p4-v4-current/r4f-factual-review/RESULT.md
 - R4G protocol review:
   /private/tmp/leanctx-p4-v4-next/r4g-protocol-review.md
 - R5 D1 review:
@@ -180,12 +178,10 @@ LEGAL_REVIEW_REQUIRED.
 - Final Layer-3 gate: cargo test --lib passed 10,473/10,473; cargo clippy
   --all-features -- -D warnings passed; cargo fmt --check passed
 
-D1 review found no P0/P1 and correctly recorded a potential source-compatibility
-risk because the deleted paths were syntactically public. The integrated
-decision accepts the removal as D1: there are no in-repository or supported
-runtime/embed consumers, the public OSS contract does not name those stores,
-and R6 preserves the supported embedding façade. This decision and one-commit
-rollback remain explicit.
+D1 review found no P0/P1 but identified public Rust source-compatibility risk.
+The deletion was therefore withheld and reclassified as D4: the detached stores
+remain frozen until an explicit public-major/deprecation gate or compatibility
+shim authorizes removal.
 
 ## P4 exit criteria
 
@@ -222,9 +218,9 @@ the final authoritative main SHA.
 - SDK: keep the `a7afd1f` ledger private; rollback to immutable implementation
   baseline `11f77debc2811dfd6569ba3a30bb674ae5e8b5d1` or retain P3 Preview.
 - Engine: each wave is a separate commit; revert one owned slice at a time.
-- R5 D1 recovery: revert d83ef94882 to restore both detached stores and the
-  legacy generator.
-- R5 D2 recovery: revert 581d488477 to restore heuristic research code.
+- R5 D1: no rollback is needed because the deletion was not merged.
+- R5 D2 recovery: revert PR 1566's squash merge to restore heuristic research
+  code while retaining factual Engine evidence.
 - R6 recovery: revert e495b61f24; no binary or install path changed.
 - Never replace accepted main with the entire local stack at once; deliver and
   validate serially.
