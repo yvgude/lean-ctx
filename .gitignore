@@ -82,11 +82,14 @@ markdownai/
 *.kt
 
 # ── Internal strategy docs (confidential) ──
-docs/internal/
+# Internal strategy docs and packaged copies — never public
+/docs/internal/
+/docs/internal.zip
+/docs/internal*.zip
 .codex/vision-input/
 .codex/vision-output/
 .cursor/skills/focus-contract/
-docs/archive/
+/docs/archive/
 
 # ── Compiled binaries / build artifacts ──
 packages/lean-ctx-bin/bin/

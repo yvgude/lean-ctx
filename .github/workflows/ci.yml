@@ -36,6 +36,8 @@ jobs:
           persist-credentials: false
       - name: Enforce internal product authority
         run: python3 scripts/check-narrative-governance.py
+      - name: Reject tracked internal artifacts
+        run: python3 scripts/check-no-internal-artifacts.py
 
   package-assets:
     name: Published crate assets
