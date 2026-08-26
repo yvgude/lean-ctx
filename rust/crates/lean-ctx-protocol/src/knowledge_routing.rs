@@ -1,4 +1,12 @@
-//! Knowledge-source discovery and context-routing contracts.
+//! Frozen compatibility contracts for historical knowledge routing.
+//!
+//! These Product-shaped selection types remain wire-compatible for existing
+//! control-plane consumers, but they are not Engine mechanism authority. New
+//! Engine integrations must use factual source/view/search/recovery/capability
+//! contracts instead of extending this module.
+//!
+//! Removal gate: a protocol-major release after `ControlPlaneRequest` no longer
+//! embeds `ContextBundleV1` and one complete compatibility window has elapsed.
 
 use crate::common::{ValidationError, deserialize_milliunit, validate_milliunit};
 use serde::{Deserialize, Serialize};
@@ -125,6 +133,8 @@ impl ContextReceiptV1 {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
 
     fn manifest() -> KnowledgeSourceManifestV1 {
@@ -257,5 +267,31 @@ mod tests {
             .validate()
             .expect("default receipt should be valid");
         assert_eq!(CostClass::default(), CostClass::Negligible);
+    }
+
+    #[test]
+    fn frozen_candidate_schema_has_no_product_expansion() {
+        let value = serde_json::to_value(candidate()).expect("candidate should serialize");
+        let keys = value
+            .as_object()
+            .expect("candidate should be an object")
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        let expected = [
+            "candidate_id",
+            "confidence_milli",
+            "content_hash",
+            "estimated_tokens",
+            "freshness_milli",
+            "kind",
+            "relevance_milli",
+            "source_id",
+            "task_id",
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+
+        assert_eq!(keys, expected);
     }
 }
