@@ -20,6 +20,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   flags it with the reclaimable size. `.claude/rules/*.md` project files are
   now included in the fixed-cost scan.
 
+### Fixed
+
+- **pi-lean-ctx footer no longer fabricates "N → N (0%)"** (#1578) — the
+  extension now parses the CLI's real marker formats (savings banner incl.
+  abbreviated counts and mode/detail parts, reason bracket, saved brackets)
+  and renders one honest footer; when nothing was measured it emits no footer
+  instead of measuring the compressed text against itself.
+- **Flaky CI hardening** (#1536) — `health_latency` runs best-of-3 with a
+  doubled budget under the perf gate; the Windows descendant-pipe formatter
+  test waits up to 30 s for PowerShell cold-start on loaded runners.
+
 ## [3.9.20] — 2026-08-25
 
 ### Fixed — triage (community incident, 3.9.19)

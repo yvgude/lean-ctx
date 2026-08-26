@@ -26,7 +26,7 @@ import { extname, resolve } from "node:path";
 import { homedir, platform } from "node:os";
 import { McpBridge } from "./mcp-bridge.js";
 import { loadPiConfig, resolvePiShellPath, resolveSuppressedBuiltins } from "./config.js";
-import type { CompressionStats } from "./types.js";
+import { withFooter } from "./footer.js";
 
 const BRIDGE_STARTUP_TIMEOUT_MS = 10_000;
 
@@ -193,103 +193,6 @@ async function readSlice(path: string, offset?: number, limit?: number) {
     maxBytes: DEFAULT_MAX_BYTES,
   });
   return { text: truncation.content, lines: lines.length, truncated: truncation.truncated };
-}
-
-function estimateTokens(text: string) {
-  return Math.ceil(text.length / 4);
-}
-
-function clampStats(original: number, compressed: number): CompressionStats {
-  const orig = Math.max(0, original);
-  const comp = Math.max(0, Math.min(orig, compressed));
-  const saved = Math.max(0, orig - comp);
-  const percentSaved = orig > 0 ? Math.round((saved / orig) * 100) : 0;
-  return { originalTokens: orig, compressedTokens: comp, percentSaved };
-}
-
-function parseLeanCtxOutput(text: string) {
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
-  let stats: CompressionStats | undefined;
-  const kept: string[] = [];
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-
-    const shellMatch = trimmed.match(/^\[lean-ctx:\s*(\d+)\s*→\s*(\d+)\s*tok,\s*-?(\d+)%\]$/);
-    if (shellMatch) {
-      stats = clampStats(Number(shellMatch[1]), Number(shellMatch[2]));
-      continue;
-    }
-
-    const savedMatch = trimmed.match(/^\[(\d+)\s+tok saved(?:\s+\((\d+)%\))?\]$/);
-    if (savedMatch) {
-      const saved = Number(savedMatch[1]);
-      const pct = savedMatch[2] ? Number(savedMatch[2]) : 0;
-      if (pct > 0) {
-        const original = Math.round((saved * 100) / pct);
-        stats = clampStats(original, Math.max(0, original - saved));
-      } else {
-        stats = clampStats(saved, saved);
-      }
-      continue;
-    }
-
-    kept.push(line);
-  }
-
-  return { text: kept.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd(), stats };
-}
-
-function formatFooter(stats: CompressionStats) {
-  const pct = stats.percentSaved > 0 ? `-${stats.percentSaved}%` : "0%";
-  return `Compressed ${stats.originalTokens} → ${stats.compressedTokens} tokens (${pct})`;
-}
-
-function withFooter(text: string, opts?: {
-  originalText?: string;
-  limit?: number;
-  always?: boolean;
-  preferEstimate?: boolean;
-  suppressIfNoSaving?: boolean;
-}) {
-  const parsed = parseLeanCtxOutput(text);
-  const limited = limitLines(parsed.text, opts?.limit);
-
-  let stats = parsed.stats;
-  if (opts?.originalText !== undefined && (opts.preferEstimate || !stats)) {
-    stats = clampStats(estimateTokens(opts.originalText), estimateTokens(limited.text));
-  }
-  if (!stats && opts?.always) {
-    const tokens = estimateTokens(limited.text);
-    stats = clampStats(tokens, tokens);
-  }
-  if (!stats) return { text: limited.text, stats: undefined, truncated: limited.truncated };
-
-  // On tiny files compression cannot beat the envelope, so a "0%" footer would
-  // be pure overhead — larger payload than the source for no gain (#361). Keep
-  // the computed stats for telemetry (`details.compression`) but drop the
-  // visible footer when nothing was actually saved.
-  if (opts?.suppressIfNoSaving && stats.percentSaved <= 0) {
-    return { text: limited.text, stats, truncated: limited.truncated };
-  }
-
-  const footer = formatFooter(stats);
-  const base = limited.text.trimEnd();
-  return {
-    text: base ? `${base}\n\n${footer}` : footer,
-    stats,
-    truncated: limited.truncated,
-  };
-}
-
-function limitLines(text: string, limit?: number) {
-  if (!limit || limit <= 0) return { text, truncated: false };
-  const lines = text.split("\n");
-  if (lines.length <= limit) return { text, truncated: false };
-  return {
-    text: lines.slice(0, limit).join("\n") + `\n\n[Output truncated to ${limit} lines]`,
-    truncated: true,
-  };
 }
 
 function replaceTabs(text: string) {

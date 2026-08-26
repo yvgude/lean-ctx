@@ -653,8 +653,11 @@ mod tests {
             dir.path().to_str().unwrap(),
         )
         .expect("formatter process must spawn");
+        // #1536: PowerShell cold-start on a loaded Windows runner can exceed
+        // 5 s. The poll is bounded either way, so the generous ceiling only
+        // costs wall-clock time in the case where the test is about to fail.
         assert!(
-            wait_for_path(&ready, Duration::from_secs(5)),
+            wait_for_path(&ready, Duration::from_secs(30)),
             "formatter descendant must start"
         );
         let error = wait_for_command_formatter(process, Duration::from_millis(250))
