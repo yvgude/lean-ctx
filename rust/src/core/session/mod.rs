@@ -1,9 +1,11 @@
 mod compaction;
 mod heuristics;
+mod journal;
 mod paths;
 mod persistence;
 pub mod playbook;
 mod state;
+pub(crate) use journal::AttachSessionJournalV1;
 pub(crate) use state::extract_session_facts;
 mod types;
 
