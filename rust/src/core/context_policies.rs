@@ -63,6 +63,13 @@ impl PolicySet {
 
     /// Built-in default policies that align with existing LeanCTX behavior.
     pub fn defaults() -> Self {
+        let mut policies = Self::security_defaults().policies;
+        policies.extend(Self::attach_compat_defaults().policies);
+        Self { policies }
+    }
+
+    /// Open Engine safety defaults. These remain mechanism-level security policy.
+    pub fn security_defaults() -> Self {
         Self {
             policies: vec![
                 ContextPolicy {
@@ -86,6 +93,17 @@ impl PolicySet {
                     condition: None,
                     reason: Some("credentials".to_string()),
                 },
+            ],
+        }
+    }
+
+    /// Frozen OSS Attach compatibility heuristics.
+    ///
+    /// These preserve the supported Coding-Agent experience but are not the
+    /// canonical Product policy surface and must not gain new lifecycle rules.
+    pub fn attach_compat_defaults() -> Self {
+        Self {
+            policies: vec![
                 ContextPolicy {
                     name: "delta_after_first_read".to_string(),
                     match_pattern: "src/**".to_string(),
@@ -306,6 +324,61 @@ mod tests {
                 .iter()
                 .any(|r| matches!(r.action, PolicyAction::Exclude)),
             "should exclude .env files"
+        );
+    }
+
+    #[test]
+    fn default_policy_partitions_preserve_order_and_ownership() {
+        let security = PolicySet::security_defaults();
+        let attach = PolicySet::attach_compat_defaults();
+        let defaults = PolicySet::defaults();
+
+        let security_names: Vec<_> = security
+            .policies
+            .iter()
+            .map(|policy| policy.name.as_str())
+            .collect();
+        let attach_names: Vec<_> = attach
+            .policies
+            .iter()
+            .map(|policy| policy.name.as_str())
+            .collect();
+        let default_names: Vec<_> = defaults
+            .policies
+            .iter()
+            .map(|policy| policy.name.as_str())
+            .collect();
+
+        assert_eq!(
+            security_names,
+            [
+                "never_include_secrets",
+                "exclude_private_keys",
+                "exclude_credentials",
+            ]
+        );
+        assert_eq!(
+            attach_names,
+            ["delta_after_first_read", "compress_large_files"]
+        );
+        assert_eq!(
+            default_names,
+            security_names
+                .into_iter()
+                .chain(attach_names)
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            security
+                .policies
+                .iter()
+                .all(|policy| matches!(policy.action, PolicyAction::Exclude))
+        );
+        assert!(
+            attach
+                .policies
+                .iter()
+                .all(|policy| matches!(policy.action, PolicyAction::SetView { .. }))
         );
     }
 
