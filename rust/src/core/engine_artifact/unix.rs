@@ -316,6 +316,31 @@ fn open_or_create_directory_at(parent_fd: RawFd, name: &CString) -> Result<std::
     Ok(unsafe { std::fs::File::from_raw_fd(child_fd) })
 }
 
+/// musl does not export a `renameat2` wrapper (the symbol is glibc-only, so
+/// `*-musl` release builds failed at link time with "undefined reference to
+/// renameat2"). The raw syscall is identical on every Linux libc.
+#[cfg(target_os = "linux")]
+unsafe fn renameat2_compat(
+    old_dirfd: RawFd,
+    old_name: *const libc::c_char,
+    new_dirfd: RawFd,
+    new_name: *const libc::c_char,
+    flags: libc::c_uint,
+) -> libc::c_int {
+    // SAFETY: forwarded verbatim to the renameat2 syscall; the caller upholds
+    // the descriptor and NUL-termination invariants.
+    unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            old_dirfd,
+            old_name,
+            new_dirfd,
+            new_name,
+            flags,
+        ) as libc::c_int
+    }
+}
+
 fn preflight_publication(directory_fd: RawFd) -> Result<(), String> {
     if super::test_capability_preflight_failure() {
         return Err(ARTIFACT_PUBLISH_UNSUPPORTED.to_owned());
@@ -348,7 +373,7 @@ fn preflight_publication(directory_fd: RawFd) -> Result<(), String> {
     // and probe_name is a NUL-terminated name valid for this call. Both
     // directory operands refer to that held descriptor.
     let result = unsafe {
-        libc::renameat2(
+        renameat2_compat(
             directory_fd,
             probe_name.as_ptr(),
             directory_fd,
@@ -442,7 +467,7 @@ fn publish_temp_artifact(
     // and both names are NUL-terminated and valid for this call. The
     // rename is descriptor-relative and RENAME_NOREPLACE preserves collisions.
     let published = unsafe {
-        libc::renameat2(
+        renameat2_compat(
             directory_fd,
             temp.name.as_ptr(),
             directory_fd,
