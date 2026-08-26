@@ -3,8 +3,8 @@
 > **Status: Preview.** This package documents one declared reference path:
 > Python v1 with the OpenAI Agents SDK. It is not a general agent SDK, an
 > automatic adapter layer, or evidence of support for every framework. Current
-> product scope and status are governed by
-> [`docs/internal/README.md`](../../docs/internal/README.md).
+> product scope and transition status are governed by the
+> [P4 extraction report](../../docs/internal/P4-SDK-EXTRACTION-AND-ENGINE-REFACTOR-REPORT.md).
 
 Security and correctness fixes continue here. Compatibility fixtures and the
 documented Engine path remain maintained. Removal or deprecation requires a
@@ -32,7 +32,7 @@ the agent, model, provider, or task logic.
 
 ## Reference path: OpenAI Agents SDK
 
-Install the Preview package in a clean Python 3.10+ environment with the named
+Install the Preview package in a clean Python 3.9+ environment with the named
 OpenAI Agents extra. The Engine proof is credential-free; live provider calls
 remain a separate concern.
 
@@ -124,7 +124,7 @@ evidence bundle remain Research; do not build a production integration against
 those interfaces from this README.
 
 For the Available, Preview, and Research boundary, see the internal
-[Product Architecture](../../docs/internal/vision/PRODUCT-ARCHITECTURE.md).
+[implementation roadmap](../../docs/internal/vision/08-COMPLETE-IMPLEMENTATION-ROADMAP.md).
 
 ## License
 

@@ -4,17 +4,14 @@
 > SDK-first program for turning the Engine substrate into a premium Production
 > SDK, proving adoption, and only then considering Workspace or Cloud expansion.
 >
-> **Classification:** Canonical support. The
-> [canonical architecture](00-CANONICAL-PRODUCT-AND-REPOSITORY-ARCHITECTURE.md)
-> controls product and repository boundaries.
+> **Classification:** Canonical internal delivery sequence for the Engine,
+> Production SDK, later Workspace work, and optional Cloud research.
 >
-> **Authority:** [Internal README](../README.md) controls product status and
-> vocabulary; [Engine, SDK & Cloud Plan](06-ENGINE-SDK-CLOUD-PLAN.md) controls
-> product boundaries; [Context Workspace & `.ctxpkg` Plan](07-CONTEXT-WORKSPACE-CTXPKG-PLAN.md)
-> controls Workspace/package target semantics. The
-> [Master Execution Plan](../execution/MASTER-EXECUTION-PLAN.md) is the live
-> tracker for scheduled work. Code, tests and released artifacts override every
-> plan.
+> **Authority:** The [public README](../../../README.md) controls public claims;
+> the [Master Execution Plan](../execution/MASTER-EXECUTION-PLAN.md) schedules
+> approved work; the [P4 extraction report](../P4-SDK-EXTRACTION-AND-ENGINE-REFACTOR-REPORT.md)
+> records the current Engine/SDK boundary. Code, tests and released artifacts
+> override every plan.
 
 ## 1. Outcome and product boundary
 
@@ -92,11 +89,12 @@ promote a surface to Available.
   package namespace/license and support owner are approved.
 - A ledger that classifies legacy Cloud/registry, Agent Bus, OCLA and package
   surfaces as Available, Preview, Research, legacy or retired.
-- Corrected internal skills: no absent `docs/internal/roadmap/` or
-  `docs/internal/strategy/` references; all point to the active authority.
+- Active internal authorities link only to files that exist in this reduced
+  documentation set; removed roadmap/strategy paths are not normative.
 
-**Exit:** no active document can override README/06/07; every planned public
-object has an owner, status, repository class and evidence gate.
+**Exit:** no active document can override the public README and the named
+authorities above; every planned public object has an owner, status, repository
+class and evidence gate.
 
 ### P1 — Engine invocation spine
 
@@ -254,11 +252,12 @@ dependency value. Cloud remains absent.
 | Engine transport/protocol | Apache Engine public boundary | Versioned bounded Engine contract | SDK public `context-view` / `recover` client | Bounds accepted upstream; Product-shaped protocol schema frozen with named gate | Preserve security, PathJail, bounded IO and recovery | v1 compatibility and authoritative CI |
 | Profiles/policy/compiler/kernel | Mixed Engine mechanisms and Product policy | Engine mechanisms; SDK intent/policy | SDK `ContextPlan` | R4A–R4G integrated; Product delivery/inference removed | Preserve deterministic OSS mechanisms and security | Serial PR CI and named public-major compatibility gates |
 | R5 decommission | Detached receipt/shadow stores and behavioral outcome research | Behavioral inference removed; public stores frozen | Explicit SDK/evaluator outcomes | D2 removes 244 lines; D1 withheld and reclassified D4 | Factual accounting and Rust source compatibility remain | D2 revert; public-major/deprecation gate or shim for D4 |
-| Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | Merged in PR 1544 | No public, persistence, security or OSS Core reachability | Exact commit revert |
+| Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | Merged in PR 1546 | No public, persistence, security or OSS Core reachability | Exact commit revert |
 | Workspace/Cloud | Not begun | Later private repositories/services | None in P4 | Not started | No OSS impact; no Cloud dependency | P4 exit and separately authorized P5/P8 work |
 
-Current Engine integration state: R4A–R5 are merged through
-`github/main@efbdb796b9`; R6 candidate `547bf1f313` awaits its final PR gate.
+Current Engine integration state: R4A–R5 have accepted baseline
+`efbdb796b9`; R6 candidate `b1d530718a` is under PR `#1573` on
+upstream baseline `0135ef25bd`.
 
 ### P5 — Local Workspace contract
 

@@ -3,7 +3,7 @@
 **Status:** Active — single source of truth for all execution  
 **Owner:** Yves Gugger  
 **Created:** 2026-08-20  
-**Updated:** 2026-08-25
+**Updated:** 2026-08-26
 **Tracking:** GitLab issues on `origin` (project ID 5, `gitlab.pounce.ch/root/lean-ctx`)
 
 ---
@@ -23,13 +23,11 @@ WS-9: THINKERY CONTROL PLANE(E) ░░░░░░░░░░  Private commerci
 ```
 
 **Status rule:** A completed implementation task or published package does not
-promote a product surface to Available. The canonical status map and the
-Engine/SDK/Cloud dependency order are in
-[`../vision/06-ENGINE-SDK-CLOUD-PLAN.md`](../vision/06-ENGINE-SDK-CLOUD-PLAN.md);
-the ContextWorkspace, checkpoint and `.ctxpkg` target gates are in
-[`../vision/07-CONTEXT-WORKSPACE-CTXPKG-PLAN.md`](../vision/07-CONTEXT-WORKSPACE-CTXPKG-PLAN.md).
-The cross-product implementation sequence, RFC backlog and stop conditions are
-in [`../vision/08-COMPLETE-IMPLEMENTATION-ROADMAP.md`](../vision/08-COMPLETE-IMPLEMENTATION-ROADMAP.md).
+promote a product surface to Available. The cross-product dependency order,
+target gates and stop conditions are in the
+[`Complete Implementation Roadmap`](../vision/08-COMPLETE-IMPLEMENTATION-ROADMAP.md);
+the P4 boundary and evidence are in the
+[`P4 extraction report`](../P4-SDK-EXTRACTION-AND-ENGINE-REFACTOR-REPORT.md).
 This file schedules approved work; it does not supersede those authorities.
 
 ## Cross-product execution state
@@ -68,12 +66,12 @@ compatibility where removal lacks an approved gate.
 | Engine request/path transport | Apache Engine public boundary | Bounded public Engine contract | SDK consumes public `context-view` / `recover` path | Request/path bounds are integrated in accepted upstream baseline | Preserve PathJail, bounded IO, failure atomicity and recovery | v1 compatibility and authoritative CI |
 | Profiles, policy, compiler and kernel | Mixed mechanisms and Product policy | Engine facts/mechanisms; SDK Product intent/policy | SDK `ContextPlan` and policy layer | R4A–R4G integrated; Product delivery semantics detached; protocol narrowed/frozen | Keep deterministic optimization, security and OSS Attach behavior | Serial PR CI; named public-major gates for retained DTOs |
 | R5 decommission | Detached stores and heuristic Product outcome research | Behavioral inference removed; public detached stores frozen | Explicit SDK/evaluator outcomes | D2 removes 244 lines; D1 withheld and reclassified D4 | Factual Engine measurements and public Rust source compatibility retained | D2 revert; explicit public-major/deprecation gate or shim for D4 |
-| Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | D1 deletion merged in PR 1544 | No public, persistence, security or OSS Core reachability | Exact commit revert |
+| Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | D1 deletion merged in PR 1546 | No public, persistence, security or OSS Core reachability | Exact commit revert |
 | Workspace/Cloud coordination | Not begun | Later private work only | None in P4 | Not started | No OSS impact; local Engine/SDK must remain complete without Cloud | P4 exit plus separately authorized P5/P8 work; no scaffolding now |
 
-**Current integration candidate:** R4A–R5 are merged through
-`github/main@efbdb796b9`; R6 candidate `547bf1f313` contains the final reviewed
-boundary clarification. The required
+**Current integration candidate:** R4A–R5 have accepted baseline
+`efbdb796b9`; R6 candidate `b1d530718a` is under PR `#1573` on
+upstream baseline `0135ef25bd`. The required
 evidence and exit matrix are in
 `docs/internal/P4-SDK-EXTRACTION-AND-ENGINE-REFACTOR-REPORT.md`.
 

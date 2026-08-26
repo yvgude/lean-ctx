@@ -27,8 +27,9 @@ or infer task acceptance from delivery, retries or response length.
 | Item | Final candidate | State |
 | --- | --- | --- |
 | Original V4 Engine baseline | 49a6b2053c08c4d831916f03e01c7b5e6079a372 | Historical start |
-| Accepted Engine baseline | github/main at efbdb796b9b361a1778545e29e8ec7a96f20bbd5 | R4A–R5 merged through PR 1566 |
-| R6 boundary candidate | 547bf1f313ef6057ca01be012f1f5b60abd16718 | Rebased on accepted Engine baseline |
+| Accepted R5 Engine baseline | efbdb796b9b361a1778545e29e8ec7a96f20bbd5 | R4A–R5 merged through PR 1566 |
+| R6 upstream baseline | 0135ef25bd186ac95a1c0423a12cc6ae1479b946 | Current main at PR 1573 creation |
+| R6 boundary candidate | b1d530718a7f8285cf726979ca41db30c7817a43 | PR 1573; reviewed patch ID 65f0a36e… |
 | Engine report candidate | Integration branch after this report commit | Final SHA assigned by serial Layer-4 merge |
 | Production SDK repository | /Users/yvesgugger/Documents/Privat/Projects/leanctx-product-sdk-staging | Separate private staging |
 | Production SDK repository head | 8c84e2246bff0f2681dc69ea08d4322519f88050 | Current private docs/governance head |
@@ -88,7 +89,7 @@ approval. Those are explicit business/legal gates, not hidden engineering work.
 | R4G Protocol | PR 1564 / 73bca34676 | Historical Product-shaped types frozen with a named major-version gate |
 | R5 D1 | Withheld; reclassified D4 | Detached public receipt/shadow stores retained pending a compatibility gate |
 | R5 D2 | PR 1566 / efbdb796b9 | Behavioral outcome inference/learning retired; DTO compatibility retained |
-| R6 | 547bf1f313 | Engine/package/embed boundaries clarified without install breakage |
+| R6 | PR 1573 / b1d530718a | Engine/package/embed boundaries clarified without install breakage |
 
 The Engine changes were delivered serially through independent review and
 authoritative GitHub CI. PR 1546 removed the earlier unreachable memory branch.
@@ -115,7 +116,7 @@ authoritative GitHub CI. PR 1546 removed the earlier unreachable memory branch.
 - Inferred OutcomeTracker quality/degradation model
 - Duplicate post-dispatch Product receipt construction
 - Context-gate Product plan/receipt/shadow delivery logging
-- Earlier unreachable memory_branch module from PR 1544
+- Earlier unreachable memory_branch module from PR 1546
 
 R5 D2 removed 244 lines of behavioral inference research. R4F first removed the
 active duplicate delivery path. The proposed 459-line D1 deletion was withheld
