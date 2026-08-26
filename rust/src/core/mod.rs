@@ -30,6 +30,7 @@ pub mod eval_harness;
 pub(crate) mod extractive;
 pub mod finops_export;
 pub mod fleet_analytics;
+pub(crate) mod foreign_mcp;
 pub mod html_crush;
 #[allow(unused_imports)]
 pub mod ib;

@@ -30,6 +30,16 @@ const LOW_USE_TOKEN_FLOOR: usize = 150;
 const LOW_USE_CALL_SHARE: f64 = 0.01;
 /// A fact older than this (days) that was never retrieved is a prune candidate.
 const STALE_FACT_DAYS: i64 = 30;
+/// A rules carrier larger than this is more than a pointer (#684). On hosts
+/// whose MCP instructions already deliver the full mapping, anything beyond a
+/// pointer duplicates guidance that is billed once per session anyway.
+const CROSS_LAYER_POINTER_MAX: usize = 120;
+/// Approximate size of a pointer-only lean-ctx block.
+const POINTER_TOKENS: usize = 40;
+/// Clients that receive the full lean-ctx mapping via MCP `instructions` +
+/// SessionStart context (dedicated hosts) — their static rules files only
+/// need a pointer.
+const DEDICATED_INSTRUCTION_CLIENTS: &[&str] = &["claude", "codex", "codebuddy"];
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -114,6 +124,9 @@ pub(crate) struct ToolHealthReport {
     pub rules: Vec<RuleEntry>,
     pub duplicate_clients: Vec<(String, usize)>,
     pub knowledge: KnowledgeHealth,
+    /// Non-lean-ctx MCP servers the client loads every session, with measured
+    /// transcript usage — unused ones are pure fixed cost lean-ctx cannot see.
+    pub foreign_servers: Vec<crate::core::foreign_mcp::ForeignServerEntry>,
 }
 
 fn classify(has_usage: bool, calls: u64, schema_tokens: usize, total_calls: u64) -> ToolStatus {
@@ -243,8 +256,19 @@ pub(crate) fn build_report(
         .iter()
         .map(|r| {
             let is_dup = r.carries_full && r.clients.iter().any(|c| dup_clients.contains(c));
+            let cross_layer = !is_dup
+                && r.lean_ctx_tokens > CROSS_LAYER_POINTER_MAX
+                && r.clients
+                    .iter()
+                    .any(|c| DEDICATED_INSTRUCTION_CLIENTS.contains(c));
             let action = if is_dup {
                 "duplicate full lean-ctx source — run `lean-ctx rules dedup --apply`".to_string()
+            } else if cross_layer {
+                format!(
+                    "carries {} lean-ctx tokens although MCP instructions already deliver the full mapping on dedicated hosts — thin to a pointer to reclaim ~{} tok/session",
+                    r.lean_ctx_tokens,
+                    r.lean_ctx_tokens.saturating_sub(POINTER_TOKENS)
+                )
             } else {
                 String::new()
             };
@@ -281,6 +305,7 @@ pub(crate) fn build_report(
         rules: rules_out,
         duplicate_clients: duplicates,
         knowledge,
+        foreign_servers: Vec::new(),
     }
 }
 
@@ -389,6 +414,7 @@ pub(crate) fn compute(home: &Path, project: &Path) -> ToolHealthReport {
         knowledge,
     );
     report.footprint_note = latest_footprint_note();
+    report.foreign_servers = crate::core::foreign_mcp::audit(home, project);
     report
 }
 
@@ -573,6 +599,89 @@ mod tests {
             "both cursor full sources flagged as duplicates"
         );
         assert_eq!(report.rules_tokens, 350);
+    }
+
+    /// Cross-layer dedup: a dedicated-host carrier (claude) holding more than a
+    /// pointer duplicates what MCP instructions already deliver — flagged with
+    /// the reclaimable size. Non-dedicated clients (gemini) are left alone.
+    #[test]
+    fn build_report_flags_dedicated_carrier_exceeding_pointer() {
+        let rules = vec![
+            RulesFileCost {
+                path: "/home/u/.claude/CLAUDE.md".into(),
+                file_tokens: 700,
+                lean_ctx_tokens: 384,
+                carries_full: false,
+                clients: vec!["claude"],
+            },
+            RulesFileCost {
+                path: "/home/u/.gemini/GEMINI.md".into(),
+                file_tokens: 800,
+                lean_ctx_tokens: 800,
+                carries_full: true,
+                clients: vec!["gemini"],
+            },
+        ];
+        let report = build_report(
+            &[tool("ctx_read")],
+            &usage_with(&[("ctx_read", 5)]),
+            &rules,
+            Vec::new(),
+            0,
+            "lean (default)".to_string(),
+            KnowledgeHealth::default(),
+        );
+        let claude = report
+            .rules
+            .iter()
+            .find(|r| r.path.contains("CLAUDE"))
+            .unwrap();
+        assert!(
+            claude.action.contains("thin to a pointer"),
+            "dedicated carrier above pointer size must be flagged: {}",
+            claude.action
+        );
+        assert!(
+            claude.action.contains("~344 tok"),
+            "reclaimable size = lean tokens minus pointer: {}",
+            claude.action
+        );
+        let gemini = report
+            .rules
+            .iter()
+            .find(|r| r.path.contains("GEMINI"))
+            .unwrap();
+        assert!(
+            gemini.action.is_empty(),
+            "non-dedicated client without duplication stays unflagged"
+        );
+    }
+
+    /// A pointer-only carrier on a dedicated host is exactly the desired end
+    /// state — it must never be flagged.
+    #[test]
+    fn build_report_leaves_pointer_only_dedicated_carrier_alone() {
+        let rules = vec![RulesFileCost {
+            path: "/home/u/.claude/CLAUDE.md".into(),
+            file_tokens: 100,
+            lean_ctx_tokens: 40,
+            carries_full: false,
+            clients: vec!["claude"],
+        }];
+        let report = build_report(
+            &[tool("ctx_read")],
+            &usage_with(&[("ctx_read", 5)]),
+            &rules,
+            Vec::new(),
+            0,
+            "lean (default)".to_string(),
+            KnowledgeHealth::default(),
+        );
+        assert!(report.rules[0].action.is_empty());
+        assert!(
+            report.foreign_servers.is_empty(),
+            "pure builder adds no foreign servers"
+        );
     }
 
     #[test]

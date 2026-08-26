@@ -157,16 +157,44 @@ fn print_report(r: &ToolHealthReport, show_all: bool) {
     }
 
     // ── Rules ─────────────────────────────────────────────────────────
-    if !r.duplicate_clients.is_empty() {
+    let cross_layer_rules: Vec<_> = r
+        .rules
+        .iter()
+        .filter(|e| !e.action.is_empty() && !e.action.starts_with("duplicate"))
+        .collect();
+    if !r.duplicate_clients.is_empty() || !cross_layer_rules.is_empty() {
         println!("\n{BOLD}Rules{RST}");
         for (client, n) in &r.duplicate_clients {
             println!(
                 "  {YELLOW}⚠ {client}: {n} files carry full lean-ctx rules — billed {n}× per session{RST}"
             );
         }
+        for e in &cross_layer_rules {
+            println!("  {YELLOW}⚠ {}{RST}\n    {DIM}{}{RST}", e.path, e.action);
+        }
         println!(
             "  {DIM}→ `lean-ctx rules dedup --apply` keeps one canonical source per client.{RST}"
         );
+    }
+
+    // ── Foreign MCP servers ───────────────────────────────────────────
+    if !r.foreign_servers.is_empty() {
+        println!(
+            "\n{BOLD}Foreign MCP servers{RST}  {DIM}(their schemas load every session; size not measurable locally){RST}"
+        );
+        for s in &r.foreign_servers {
+            if s.action.is_empty() {
+                println!(
+                    "  {GREEN}✓{RST} {:<24} {:>5} calls in {} session(s)  {DIM}{}{RST}",
+                    s.name, s.calls, s.sessions_with_use, s.source
+                );
+            } else {
+                println!(
+                    "  {YELLOW}⚠ {:<24}{RST} {}  {DIM}{}{RST}",
+                    s.name, s.action, s.source
+                );
+            }
+        }
     }
 
     // ── Knowledge ─────────────────────────────────────────────────────

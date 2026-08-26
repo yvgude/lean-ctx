@@ -91,6 +91,20 @@ fn scan_mdc_dir(out: &mut Vec<RulesFileCost>, dir: &Path, clients: &[&'static st
     }
 }
 
+/// Claude Code auto-loads every `.md` under a project's `.claude/rules/`
+/// directory — same fixed-cost semantics as `.cursor/rules/*.mdc` (#684).
+fn scan_claude_rules_dir(out: &mut Vec<RulesFileCost>, dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("md") {
+            push_rules_file(out, &path, vec!["claude"]);
+        }
+    }
+}
+
 /// Collects every rules file that an agent auto-loads for work in `project`:
 /// global per-client files, the project root, and the parent chain up to
 /// `home` (Cursor merges parent `.cursor/rules/` and AGENTS.md in monorepos).
@@ -121,6 +135,7 @@ pub(crate) fn collect_rules_files(home: &Path, project: &Path) -> Vec<RulesFileC
     while let Some(d) = dir {
         push_rules_file(out.as_mut(), &d.join(".cursorrules"), vec!["cursor"]);
         scan_mdc_dir(out.as_mut(), &d.join(".cursor/rules"), &["cursor"]);
+        scan_claude_rules_dir(out.as_mut(), &d.join(".claude/rules"));
         // AGENTS.md is the shared instruction file: Cursor, Codex and several
         // other agents auto-load it.
         push_rules_file(out.as_mut(), &d.join("AGENTS.md"), vec!["cursor", "codex"]);
@@ -335,6 +350,28 @@ more user stuff that is not ours
             dups.iter().any(|(c, n)| c == "cursor" && *n == 2),
             "cursor loads 2 full lean-ctx sources (pointer AGENTS.md excluded): {dups:?}"
         );
+    }
+
+    /// Claude Code auto-loads `.claude/rules/*.md` — the scan must attribute
+    /// those files to the claude client (fixed cost billed every session).
+    #[test]
+    fn collect_includes_project_claude_rules_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let project = home.join("projects/app");
+        std::fs::create_dir_all(project.join(".claude/rules")).unwrap();
+        std::fs::write(
+            project.join(".claude/rules/lean-ctx.md"),
+            format!("{START_MARK}\n<!-- version: 1 -->\n\nbody\n"),
+        )
+        .unwrap();
+        std::fs::write(project.join(".claude/rules/notes.txt"), "not a rules file").unwrap();
+
+        let files = collect_rules_files(home, &project);
+        assert_eq!(files.len(), 1, "only the .md rules file counts: {files:?}");
+        assert!(files[0].path.ends_with("lean-ctx.md"));
+        assert_eq!(files[0].clients, vec!["claude"]);
+        assert!(files[0].lean_ctx_tokens > 0);
     }
 
     #[test]
