@@ -39,14 +39,16 @@ This file schedules approved work; it does not supersede those authorities.
 | **P2 — canonical evidence** | **Exit complete (2026-08-24):** PR `#1522` merged to `github/main@8ebf61a21c063a1d0a86be33511588d27d7ca71e`; exact-SHA CI `32758619963`, Security Check `32758619955`, and CodeQL `32758619966` passed. The chain keeps delivery factual and host/evaluator outcome explicit. | Preserve the accepted Task → Plan → Invocation → Observation → Receipt → explicit Outcome/Quality → independently verified Evidence Bundle chain. |
 | **P3 — Python Preview** | **P3 COMPLETE/INTEGRATED (2026-08-25):** merge `e47cb432f2e9e2d7ecf13e3c85a0d1cc4fa68f96`; exact-baseline CI `32778481164`, Security `32778481373`, and CodeQL `32778481121` passed. Candidate `79e3888862659e5ac0623a8fa00e16155aa144da` runs the Python-owned Session/Plan/View/Receipt lifecycle through the real local Engine operation transport, actual OpenAI Agents SDK `0.19.4`, native Embed, exact recovery and truthful degradation. `LIVE PROVIDER SMOKE: UNVERIFIED`. | Preserve the integrated P3 seam and evidence; P4 governance is active. |
 | **P4 — production SDK + Engine extraction** | **P4 final integration:** private SDK head `8c84e224` and ledger `a7afd1f` record immutable implementation `11f77debc2` and wheel `b54ac013…`; Python 3.9/3.14 pass 19/19, the CPython 3.9 macOS-arm64 offline closure passes 25/25, and real Engine plus provider-free OpenAI Agents gates pass. BSL 1.1 parameters/publication remain explicit and pending; provenance is `CLEAN_REIMPLEMENT`. Engine R4A–R4G and R5-D2 are integrated through serial PR CI; the proposed detached-store deletion was withheld as D4 to preserve public Rust source compatibility. The Apache Python lifecycle remains `OSS_TRANSITION_COMPAT`. | Record the final boundary/docs merge and stop; do not begin P5/Cloud. |
-| **P5–P7 — Workspace, package, handoff** | **NOT BEGUN:** research queue and target architecture only. | Start only after P4; never promote legacy stores/artifacts as the new truth. |
+| **P5–P7 — Workspace, package, handoff** | **NOT INTEGRATED:** out-of-sequence PR `#1571` was closed and its remote branch deleted; the local candidate is quarantined until P4 exits. | Start only after P4; never promote quarantined work or legacy stores/artifacts as the new truth. |
 | **P8–P9 — Cloud/optimization** | **NOT BEGUN:** private work remains unopened. | Separate private repository only after local proof, trusted evidence and designated owners. |
 
-**Governance state:** P3 COMPLETE/INTEGRATED; P4 ACTIVE; P5/Cloud not begun.
+**Governance state:** P3 COMPLETE/INTEGRATED; P4 ACTIVE; P5 not integrated and
+quarantined; Cloud not begun.
 
 **Execution order:** P0 operational CI/branch-protection verification (**met**) → P1 runtime Engine caller
 (**met**) → P2 canonical evidence (**met**) → P3 real Python Preview (**COMPLETE/INTEGRATED**) → P4 SDK repository (**ACTIVE**).
-P5/Cloud not begun: Workspace, package, handoff and Cloud/optimization work remain unopened.
+P5 is not integrated; its out-of-sequence candidate is quarantined. Cloud and
+other later work remain unopened.
 No later workstream may bypass an earlier exit.
 
 ## P4 V4 dual-track execution ledger
@@ -67,7 +69,7 @@ compatibility where removal lacks an approved gate.
 | Profiles, policy, compiler and kernel | Mixed mechanisms and Product policy | Engine facts/mechanisms; SDK Product intent/policy | SDK `ContextPlan` and policy layer | R4A–R4G integrated; Product delivery semantics detached; protocol narrowed/frozen | Keep deterministic optimization, security and OSS Attach behavior | Serial PR CI; named public-major gates for retained DTOs |
 | R5 decommission | Detached stores and heuristic Product outcome research | Behavioral inference removed; public detached stores frozen | Explicit SDK/evaluator outcomes | D2 removes 244 lines; D1 withheld and reclassified D4 | Factual Engine measurements and public Rust source compatibility retained | D2 revert; explicit public-major/deprecation gate or shim for D4 |
 | Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | D1 deletion merged in PR 1546 | No public, persistence, security or OSS Core reachability | Exact commit revert |
-| Workspace/Cloud coordination | Not begun | Later private work only | None in P4 | Not started | No OSS impact; local Engine/SDK must remain complete without Cloud | P4 exit plus separately authorized P5/P8 work; no scaffolding now |
+| Workspace/Cloud coordination | P5 candidate quarantined; Cloud not begun | Later private work only | None in P4 | Not integrated | No OSS impact; local Engine/SDK must remain complete without Cloud | P4 exit plus separately authorized P5/P8 work; no scaffolding now |
 
 **Current integration candidate:** R4A–R5 have accepted baseline
 `efbdb796b9`; R6 candidate `b1d530718a` is under PR `#1573` on

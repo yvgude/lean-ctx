@@ -4,8 +4,9 @@
 **Date:** 2026-08-26
 **Scope:** P4 Production SDK extraction and Apache Engine refactor only
 
-P3 is COMPLETE/INTEGRATED. P5 Workspace/package/handoff and Cloud work are
-NOT BEGUN. R4A–R5 passed authoritative CI and landed; P4 remains ACTIVE until
+P3 is COMPLETE/INTEGRATED. P5 is not integrated; the out-of-sequence `#1571`
+candidate is quarantined. Cloud is NOT BEGUN. R4A–R5 passed authoritative CI
+and landed; P4 remains ACTIVE until
 the final R6 boundary and this report land.
 
 ## Final architecture
@@ -171,7 +172,8 @@ LEGAL_REVIEW_REQUIRED.
 - R5 D2 review:
   /private/tmp/leanctx-p4-v4-next/r5-d2-review.md
 - R6 review:
-  /tmp/r6-review.md
+  /tmp/r6-review.md — PASS on patch-equivalent commit 0787066753; stable
+  patch ID 65f0a36ec60599c435c221c78021245cc512988b
 - Final architecture/security review:
   /tmp/p4-final-review.md — PASS, no P0–P3 blocker
 - R4F focused kernel gate: 510/510
@@ -206,10 +208,10 @@ shim authorizes removal.
 | 12 | Engine security remains strong | PASS locally; final Layer-4 CI pending |
 | 13 | SDK is materially more than a thin wrapper | PASS |
 | 14 | No Cloud required | PASS |
-| 15 | P5+ did not begin | PASS |
+| 15 | P5+ did not begin | PASS — no P5 merged; out-of-sequence PR 1571 was closed, remote branch deleted and local work quarantined |
 | 16 | Unresolved BSL parameters explicit | PASS |
 | 17 | Provenance disposition exists | PASS |
-| 18 | Clean-machine SDK integration passes | PASS |
+| 18 | Clean-machine SDK integration passes | PASS for Engine 3.9.20; exact final Engine rerun pending |
 | 19 | Preview-to-SDK migration/rollback documented | PASS |
 | 20 | Independent architecture/security review has no blocker | PASS; final PR review/CI pending |
 

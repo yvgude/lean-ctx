@@ -203,7 +203,8 @@ inputs, factual kernel evidence and protocol freeze/narrowing. R5-D2 retires
 behavioral outcome inference. The proposed detached-store deletion was withheld
 and reclassified D4 because those Rust paths remain publicly reachable. R6
 clarifies package/embed boundaries without an install break. P3 remains
-`COMPLETE/INTEGRATED`; P5 and Cloud have not begun.
+`COMPLETE/INTEGRATED`; P5 is not integrated and remains quarantined; Cloud has
+not begun.
 
 **Objective:** create the premium SDK product around the small proven contract;
 remove lifecycle, integration, compatibility and maintenance burden from the
@@ -253,7 +254,7 @@ dependency value. Cloud remains absent.
 | Profiles/policy/compiler/kernel | Mixed Engine mechanisms and Product policy | Engine mechanisms; SDK intent/policy | SDK `ContextPlan` | R4A–R4G integrated; Product delivery/inference removed | Preserve deterministic OSS mechanisms and security | Serial PR CI and named public-major compatibility gates |
 | R5 decommission | Detached receipt/shadow stores and behavioral outcome research | Behavioral inference removed; public stores frozen | Explicit SDK/evaluator outcomes | D2 removes 244 lines; D1 withheld and reclassified D4 | Factual accounting and Rust source compatibility remain | D2 revert; public-major/deprecation gate or shim for D4 |
 | Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | Merged in PR 1546 | No public, persistence, security or OSS Core reachability | Exact commit revert |
-| Workspace/Cloud | Not begun | Later private repositories/services | None in P4 | Not started | No OSS impact; no Cloud dependency | P4 exit and separately authorized P5/P8 work |
+| Workspace/Cloud | P5 candidate quarantined; Cloud not begun | Later private repositories/services | None in P4 | Not integrated | No OSS impact; no Cloud dependency | P4 exit and separately authorized P5/P8 work |
 
 Current Engine integration state: R4A–R5 have accepted baseline
 `efbdb796b9`; R6 candidate `b1d530718a` is under PR `#1573` on
@@ -261,8 +262,9 @@ upstream baseline `0135ef25bd`.
 
 ### P5 — Local Workspace contract
 
-**Status: NOT BEGUN.** P5 remains gated on the P4 exit and has no implementation
-or promoted Workspace contract.
+**Status: NOT INTEGRATED.** Out-of-sequence PR `#1571` was closed and its remote
+branch deleted; the local candidate is quarantined until P4 exits. No promoted
+Workspace contract exists.
 
 **Objective:** introduce `ContextWorkspace` only after the session/evidence
 path has earned P4.
