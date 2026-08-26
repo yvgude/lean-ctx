@@ -101,6 +101,7 @@ mod tests {
 
     #[test]
     fn durable_receipt_precedes_idempotent_ledger_projection() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
         let directory = tempfile::tempdir().unwrap();
         let ledger = ExecutionLedgerStore::new(directory.path().join("ledger.jsonl"));
         let timestamp = UtcTimestamp::new("2026-08-23T12:00:00Z").unwrap();
