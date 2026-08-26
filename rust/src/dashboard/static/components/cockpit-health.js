@@ -525,6 +525,55 @@ class CockpitHealth extends HTMLElement {
         '<tbody>' + dupRows + '</tbody></table></div></div>';
     }
 
+    var rules = Array.isArray(d.rules) ? d.rules : [];
+    var crossRules = rules.filter(function (e) {
+      return e.action && e.action.indexOf('duplicate') !== 0;
+    });
+    var crossCard = '';
+    if (crossRules.length > 0) {
+      var crossRows = '';
+      for (var c = 0; c < crossRules.length; c++) {
+        crossRows +=
+          '<tr><td>' + esc(crossRules[c].path || '—') + '</td>' +
+          '<td class="r">' + esc(ff(crossRules[c].lean_ctx_tokens || 0)) + '</td>' +
+          '<td>' + esc(crossRules[c].action || '—') + '</td></tr>';
+      }
+      crossCard =
+        '<div class="card" style="margin-top:14px">' +
+        '<div class="card-header"><h3>Cross-layer rules overlap</h3></div>' +
+        '<p class="hs" style="padding:0 4px 8px">Carriers on dedicated hosts duplicating what ' +
+        'MCP instructions already deliver — thin them to a pointer.</p>' +
+        '<div class="table-scroll"><table>' +
+        '<thead><tr><th>File</th><th class="r">lean-ctx tok</th><th>Suggested action</th></tr></thead>' +
+        '<tbody>' + crossRows + '</tbody></table></div></div>';
+    }
+
+    var foreign = Array.isArray(d.foreign_servers) ? d.foreign_servers : [];
+    var foreignCard = '';
+    if (foreign.length > 0) {
+      var fRows = '';
+      for (var f = 0; f < foreign.length; f++) {
+        var s = foreign[f];
+        var unusedSrv = !s.calls;
+        fRows +=
+          '<tr><td>' + esc(s.name || '—') + '</td>' +
+          '<td><span class="tag ' + (unusedSrv ? 'td' : 'tg') + '">' +
+          (unusedSrv ? 'never called' : 'active') + '</span></td>' +
+          '<td class="r">' + esc(ff(s.calls || 0)) + '</td>' +
+          '<td class="r">' + esc(ff(s.sessions_with_use || 0)) + '/' + esc(ff(s.transcripts_scanned || 0)) + '</td>' +
+          '<td>' + esc(s.source || '—') + '</td></tr>';
+      }
+      foreignCard =
+        '<div class="card" style="margin-top:14px">' +
+        '<div class="card-header"><h3>Foreign MCP servers</h3></div>' +
+        '<p class="hs" style="padding:0 4px 8px">Non-lean-ctx servers load their schemas into every ' +
+        'session; usage below is measured from local transcripts — disable unused servers via <code>/mcp</code>.</p>' +
+        '<div class="table-scroll"><table>' +
+        '<thead><tr><th>Server</th><th>Status</th><th class="r">Calls</th>' +
+        '<th class="r">Sessions</th><th>Source</th></tr></thead>' +
+        '<tbody>' + fRows + '</tbody></table></div></div>';
+    }
+
     var k = d.knowledge || {};
     var knowCard = '';
     if ((k.total_facts || 0) > 0) {
@@ -540,7 +589,7 @@ class CockpitHealth extends HTMLElement {
         '</div>';
     }
 
-    return summary + rotCard + rulesCard + knowCard;
+    return summary + rotCard + rulesCard + crossCard + foreignCard + knowCard;
   }
 
   _renderKernel(esc) {

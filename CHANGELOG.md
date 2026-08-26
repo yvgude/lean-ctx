@@ -3,6 +3,23 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added — context-budget transparency (`tools health`)
+
+- **Foreign MCP server audit** — `tools health` now cross-references every
+  non-lean-ctx MCP server the client loads (local config, project `.mcp.json`,
+  and observed connections incl. claude.ai connectors) with recorded
+  `tool_use` calls from local Claude Code transcripts, and flags servers that
+  were never called — their schemas are pure fixed cost lean-ctx cannot
+  compress. Honest by design: usage is measured, schema size is never
+  estimated.
+- **Cross-layer rules dedup detection** — a rules carrier on a dedicated host
+  (claude/codex/codebuddy) holding more than a pointer duplicates the mapping
+  the MCP `instructions` already deliver every session; `tools health` now
+  flags it with the reclaimable size. `.claude/rules/*.md` project files are
+  now included in the fixed-cost scan.
+
 ## [3.9.20] — 2026-08-25
 
 ### Fixed — triage (community incident, 3.9.19)
