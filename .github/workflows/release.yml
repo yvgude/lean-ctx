@@ -37,14 +37,17 @@ jobs:
         working-directory: rust
         run: |
           set -euo pipefail
-          cargo package --locked --no-verify --list -p lean-ctx > package-files.txt
+          # The listing must live OUTSIDE the crate directory: the shell
+          # creates the redirect target before cargo runs, and cargo package
+          # (even --list) fails the VCS dirty-check on the just-created file.
+          cargo package --locked --no-verify --list -p lean-ctx > "$RUNNER_TEMP/package-files.txt"
           for asset in \
             assets/ocla/capability-manifests/leanctx/context-optimization-v1.json \
             assets/ocla/capability-manifests/leanctx/passthrough-v1.json \
             assets/ocla/capability-manifests/example/word-count-optimizer-v1.json \
             assets/ocla/capability-manifests/rtk/rtk-shell-v1.json \
             assets/kits/code-review/kit.toml; do
-            grep -Fx "$asset" package-files.txt
+            grep -Fx "$asset" "$RUNNER_TEMP/package-files.txt"
           done
 
   delivery-gate:
@@ -186,7 +189,10 @@ jobs:
         if: matrix.zig == true
         uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95 # v2
         with:
-          tool: cargo-zigbuild
+          # Pinned: rustc 1.98 injects --fix-cortex-a53-843419 for aarch64,
+          # which zig's lld rejects; cargo-zigbuild 0.23.x filters it. The
+          # action's manifest at the pinned commit resolves to 0.21.4 otherwise.
+          tool: cargo-zigbuild@0.23.2
 
       # Ship the production feature set (Cargo default features incl. secure-update),
       # NOT --all-features — the latter would pull dev-only tooling (dev-tools:
