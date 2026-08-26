@@ -37,14 +37,17 @@ jobs:
         working-directory: rust
         run: |
           set -euo pipefail
-          cargo package --locked --no-verify --list -p lean-ctx > package-files.txt
+          # The listing must live OUTSIDE the crate directory: the shell
+          # creates the redirect target before cargo runs, and cargo package
+          # (even --list) fails the VCS dirty-check on the just-created file.
+          cargo package --locked --no-verify --list -p lean-ctx > "$RUNNER_TEMP/package-files.txt"
           for asset in \
             assets/ocla/capability-manifests/leanctx/context-optimization-v1.json \
             assets/ocla/capability-manifests/leanctx/passthrough-v1.json \
             assets/ocla/capability-manifests/example/word-count-optimizer-v1.json \
             assets/ocla/capability-manifests/rtk/rtk-shell-v1.json \
             assets/kits/code-review/kit.toml; do
-            grep -Fx "$asset" package-files.txt
+            grep -Fx "$asset" "$RUNNER_TEMP/package-files.txt"
           done
 
   delivery-gate:
