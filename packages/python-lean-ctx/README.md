@@ -3,8 +3,28 @@
 > **Status: Preview.** This package documents one declared reference path:
 > Python v1 with the OpenAI Agents SDK. It is not a general agent SDK, an
 > automatic adapter layer, or evidence of support for every framework. Current
-> product scope and status are governed by
-> [`docs/internal/README.md`](../../docs/internal/README.md).
+> product scope and transition status are governed by the
+> [P4 extraction report](../../docs/internal/P4-SDK-EXTRACTION-AND-ENGINE-REFACTOR-REPORT.md).
+
+Security and correctness fixes continue here. Compatibility fixtures and the
+documented Engine path remain maintained. Removal or deprecation requires a
+released successor, migration window, rollback path, and the applicable
+release-policy decision; none is implied by this classification. Future
+production users should move to the separate Production SDK only after its
+namespace, license and release gates are approved. Until then this package
+remains the supported transition path.
+
+The persistent successor head is private SDK staging commit `8c84e224`; ledger
+`a7afd1f` binds immutable implementation `11f77debc2`, wheel `b54ac013…`, and
+no public remote or release. Independent internal-RC evidence passed Python
+3.9/3.14 (`19/19` each), exact CPython 3.9 macOS-arm64 offline closure
+(`25/25`), clean wheel/install, real Engine
+recovery, sealed receipts and provider-free OpenAI Agents 0.8.4 actual Runner
+success/abort. BSL 1.1 is the decided license family; exact
+publication, namespace and license parameters remain pending. The integrated
+P3 Preview seam remains the compatibility baseline. Historical `fbfec0b`
+references remain quarantined. No provider-backed production-support claim is
+made here; live-provider smoke is unverified.
 
 LeanCTX is **The Context SDK for AI Agents**. The reference wrapper connects an
 existing OpenAI Agents SDK agent to a local LeanCTX Runtime. It does not replace
@@ -12,7 +32,7 @@ the agent, model, provider, or task logic.
 
 ## Reference path: OpenAI Agents SDK
 
-Install the Preview package in a clean Python 3.10+ environment with the named
+Install the Preview package in a clean Python 3.9+ environment with the named
 OpenAI Agents extra. The Engine proof is credential-free; live provider calls
 remain a separate concern.
 
@@ -104,7 +124,7 @@ evidence bundle remain Research; do not build a production integration against
 those interfaces from this README.
 
 For the Available, Preview, and Research boundary, see the internal
-[Product Architecture](../../docs/internal/vision/PRODUCT-ARCHITECTURE.md).
+[implementation roadmap](../../docs/internal/vision/08-COMPLETE-IMPLEMENTATION-ROADMAP.md).
 
 ## License
 

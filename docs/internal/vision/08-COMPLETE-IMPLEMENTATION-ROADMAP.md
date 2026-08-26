@@ -4,17 +4,14 @@
 > SDK-first program for turning the Engine substrate into a premium Production
 > SDK, proving adoption, and only then considering Workspace or Cloud expansion.
 >
-> **Classification:** Canonical support. The
-> [canonical architecture](00-CANONICAL-PRODUCT-AND-REPOSITORY-ARCHITECTURE.md)
-> controls product and repository boundaries.
+> **Classification:** Canonical internal delivery sequence for the Engine,
+> Production SDK, later Workspace work, and optional Cloud research.
 >
-> **Authority:** [Internal README](../README.md) controls product status and
-> vocabulary; [Engine, SDK & Cloud Plan](06-ENGINE-SDK-CLOUD-PLAN.md) controls
-> product boundaries; [Context Workspace & `.ctxpkg` Plan](07-CONTEXT-WORKSPACE-CTXPKG-PLAN.md)
-> controls Workspace/package target semantics. The
-> [Master Execution Plan](../execution/MASTER-EXECUTION-PLAN.md) is the live
-> tracker for scheduled work. Code, tests and released artifacts override every
-> plan.
+> **Authority:** The [public README](../../../README.md) controls public claims;
+> the [Master Execution Plan](../execution/MASTER-EXECUTION-PLAN.md) schedules
+> approved work; the [P4 extraction report](../P4-SDK-EXTRACTION-AND-ENGINE-REFACTOR-REPORT.md)
+> records the current Engine/SDK boundary. Code, tests and released artifacts
+> override every plan.
 
 ## 1. Outcome and product boundary
 
@@ -92,11 +89,12 @@ promote a surface to Available.
   package namespace/license and support owner are approved.
 - A ledger that classifies legacy Cloud/registry, Agent Bus, OCLA and package
   surfaces as Available, Preview, Research, legacy or retired.
-- Corrected internal skills: no absent `docs/internal/roadmap/` or
-  `docs/internal/strategy/` references; all point to the active authority.
+- Active internal authorities link only to files that exist in this reduced
+  documentation set; removed roadmap/strategy paths are not normative.
 
-**Exit:** no active document can override README/06/07; every planned public
-object has an owner, status, repository class and evidence gate.
+**Exit:** no active document can override the public README and the named
+authorities above; every planned public object has an owner, status, repository
+class and evidence gate.
 
 ### P1 — Engine invocation spine
 
@@ -159,7 +157,8 @@ trusting the producer; no universal performance or savings claim is needed.
 lifecycle through a strict local Engine-operation transport, native Embed, the
 actual OpenAI Agents SDK, exact recovery, factual receipts and explicit
 degradation. `LIVE PROVIDER SMOKE: UNVERIFIED`.
-P4 ACTIVE governance follows the integrated seam; P5/Cloud not begun.
+P4 subsequently completed through the integrated seam; no P5 delivery or Cloud
+work was integrated.
 
 **Objective:** make the existing Python reference path function end-to-end.
 
@@ -182,14 +181,44 @@ the host agent loop.
 
 ### P4 — Separate BSL 1.1 Production SDK repository
 
-**Status (2026-08-25): P4 ACTIVE.** Separate repository, primary-product
-priority and BSL 1.1 are DECIDED. Repository access, namespace, exact BSL
-parameters, OEM/pricing, contributor, security and release policy remain
-pending; production SDK implementation has not started.
+**Status (2026-08-26): P4 V4 TECHNICAL/INTERNAL EXIT COMPLETE.** The separate private SDK
+head is `8c84e224`; ledger `a7afd1f` binds immutable implementation
+`11f77debc2` and wheel `b54ac013…`. Independent internal-RC evidence passes
+Python 3.9/3.14 (`19/19` each), the exact CPython 3.9 macOS-arm64 offline wheel
+closure (`25/25`), fresh Python 3.9 install and
+`pip check`, real Engine `context-view`/`recover`, exact recovery, sealed
+receipts and provider-free OpenAI Agents 0.8.4 actual Runner success/abort.
+Historical `fbfec0b` evidence remains quarantined. No live-provider or public-
+release claim is made.
+
+BSL 1.1 is the decided license family. Exact Change Date, Change License,
+Additional Use Grant, publication, namespace, OEM/pricing, contributor,
+security and release parameters remain pending. The Apache Python Product
+lifecycle remains `OSS_TRANSITION_COMPAT`: security/correctness and migration
+fixtures continue, but no new canonical lifecycle or framework breadth is
+added there.
+
+The Engine integration serially delivers reviewed R4A–R4G work: profiles,
+parser, bounded Attach journal, policy separation, explicit field/compiler
+inputs, factual kernel evidence and protocol freeze/narrowing. R5-D2 retires
+behavioral outcome inference. The proposed detached-store deletion was withheld
+and reclassified D4 because those Rust paths remain publicly reachable. R6
+clarifies package/embed boundaries without an install break. P3 remains
+`COMPLETE/INTEGRATED`; P5 is not integrated and remains quarantined; Cloud has
+not begun.
 
 **Objective:** create the premium SDK product around the small proven contract;
 remove lifecycle, integration, compatibility and maintenance burden from the
 customer without weakening the Engine.
+
+P4 does not exit when a second repository exists. It exits only after the SDK
+successor is accepted and the non-preserved Product implementation has been
+removed, reduced to an Engine mechanism, frozen as bounded transition
+compatibility, deprecated with a named removal gate, or quarantined. The local
+architecture meets that closure gate. Final Engine
+`5220ad11191e9de012dfedc97479dae6d28d1111` passed authoritative CI, Security,
+CodeQL and the exact canonical-wheel clean-install gate. No public SDK release
+or live-provider support claim is recorded.
 
 **Deliverables**
 
@@ -206,16 +235,39 @@ customer without weakening the Engine.
 - Product metrics: install-to-first-Receipt, integration time/LOC, founder
   assistance, reuse/recovery/evidence coverage, clean upgrade, explicit
   buy-vs-build win, retention, second workflow and embedded deployment.
+- Dual-track ownership ledger covering SDK construction, Engine extraction,
+  OSS impact, provenance, migration and removal gates.
 
-**Exit:** documented API, compatibility matrix, fixture suite, migration window,
-support owner and clean-machine path justify a stable SDK release; at least one
-real customer/design-partner path validates dependency value. Cloud remains
-absent.
+**Technical/internal exit:** documented API, compatibility matrix, fixture
+suite, migration/rollback and clean-machine path pass; Engine ownership seams
+are independently reviewed and no duplicate canonical Product lifecycle
+remains. **Public/commercial exit remains open:** approved support/release terms,
+a stable public release and at least one real customer/design-partner validation
+are not evidenced or claimed. Cloud remains absent.
+
+### P4 V4 dual-track ledger
+
+| Surface | Current owner | Target owner | SDK successor | Engine extraction status | OSS impact | Transition/removal gate |
+| --- | --- | --- | --- | --- | --- | --- |
+| Product primitives and lifecycle | P3 Python Preview plus private SDK staging | Production SDK, BSL 1.1 family | ledger `a7afd1f`; implementation `11f77debc2`; internal-RC PASS | Engine lifecycle ownership closed by removal/reduction/freeze | Preserve P3 Preview; no new canonical Apache lifecycle | Public license/namespace/support approval and rollback |
+| Python package lifecycle | `packages/python-lean-ctx/**` Apache Preview | `OSS_TRANSITION_COMPAT` during migration | Same private SDK candidate | Frozen transition candidate; no new lifecycle semantics | Retain security, correctness and migration path | Released successor, migration window, rollback and named removal decision |
+| Engine session | Apache Engine session state | Bounded Attach continuity mechanism | SDK `ContextSession` | Bounded journal and limits integrated | Preserve supported local Attach and persisted state | Serial PR CI and revert path |
+| Engine Kits/formats | Apache Engine parser/Kits | Open parser, validation and integrity in Engine | SDK `ContextSource` / `ContextPlan` | Validated parser integrated | Preserve format interoperability and safe admission | Serial PR CI and migration |
+| Engine transport/protocol | Apache Engine public boundary | Versioned bounded Engine contract | SDK public `context-view` / `recover` client | Bounds accepted upstream; Product-shaped protocol schema frozen with named gate | Preserve security, PathJail, bounded IO and recovery | v1 compatibility and authoritative CI |
+| Profiles/policy/compiler/kernel | Mixed Engine mechanisms and Product policy | Engine mechanisms; SDK intent/policy | SDK `ContextPlan` | R4A–R4G integrated; Product delivery/inference removed | Preserve deterministic OSS mechanisms and security | Serial PR CI and named public-major compatibility gates |
+| R5 decommission | Detached receipt/shadow stores and behavioral outcome research | Behavioral inference removed; public stores frozen | Explicit SDK/evaluator outcomes | D2 removes 244 lines; D1 PR 1565 closed unmerged and reclassified D4 | Factual accounting and Rust source compatibility remain | D2 revert; public-major/deprecation gate or shim for D4 |
+| Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | Merged in PR 1546 | No public, persistence, security or OSS Core reachability | Exact commit revert |
+| Workspace/Cloud | P5 candidate quarantined; Cloud not begun | Later private repositories/services | None in P4 | Not integrated | No OSS impact; no Cloud dependency | P4 exit and separately authorized P5/P8 work |
+
+Final Engine integration state: R4A–R5 accepted baseline `efbdb796b9`; R6
+candidate `b1d530718a` merged through PR `#1573` as
+`5220ad11191e9de012dfedc97479dae6d28d1111`.
 
 ### P5 — Local Workspace contract
 
-**Status: NOT BEGUN.** P5 remains gated on the P4 exit and has no implementation
-or promoted Workspace contract.
+**Status: NOT INTEGRATED.** Out-of-sequence PR `#1571` was closed and its remote
+branch deleted; the local candidate remains quarantined pending separate
+authorization. No promoted Workspace contract exists.
 
 **Objective:** introduce `ContextWorkspace` only after the session/evidence
 path has earned P4.
