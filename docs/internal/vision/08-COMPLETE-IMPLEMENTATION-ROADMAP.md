@@ -157,7 +157,8 @@ trusting the producer; no universal performance or savings claim is needed.
 lifecycle through a strict local Engine-operation transport, native Embed, the
 actual OpenAI Agents SDK, exact recovery, factual receipts and explicit
 degradation. `LIVE PROVIDER SMOKE: UNVERIFIED`.
-P4 ACTIVE governance follows the integrated seam; P5/Cloud not begun.
+P4 subsequently completed through the integrated seam; no P5 delivery or Cloud
+work was integrated.
 
 **Objective:** make the existing Python reference path function end-to-end.
 
@@ -180,7 +181,7 @@ the host agent loop.
 
 ### P4 — Separate BSL 1.1 Production SDK repository
 
-**Status (2026-08-26): P4 ACTIVE / final V4 candidate.** The separate private SDK
+**Status (2026-08-26): P4 COMPLETE/INTEGRATED.** The separate private SDK
 head is `8c84e224`; ledger `a7afd1f` binds immutable implementation
 `11f77debc2` and wheel `b54ac013…`. Independent internal-RC evidence passes
 Python 3.9/3.14 (`19/19` each), the exact CPython 3.9 macOS-arm64 offline wheel
@@ -214,9 +215,10 @@ P4 does not exit when a second repository exists. It exits only after the SDK
 successor is accepted and the non-preserved Product implementation has been
 removed, reduced to an Engine mechanism, frozen as bounded transition
 compatibility, deprecated with a named removal gate, or quarantined. The local
-architecture candidate meets that closure gate; final authoritative Engine SHA
-and P4 completion await serial PR CI/merge. No public SDK release or
-live-provider support claim is recorded.
+architecture meets that closure gate. Final Engine
+`5220ad11191e9de012dfedc97479dae6d28d1111` passed authoritative CI, Security,
+CodeQL and the exact canonical-wheel clean-install gate. No public SDK release
+or live-provider support claim is recorded.
 
 **Deliverables**
 
@@ -252,19 +254,19 @@ dependency value. Cloud remains absent.
 | Engine Kits/formats | Apache Engine parser/Kits | Open parser, validation and integrity in Engine | SDK `ContextSource` / `ContextPlan` | Validated parser integrated | Preserve format interoperability and safe admission | Serial PR CI and migration |
 | Engine transport/protocol | Apache Engine public boundary | Versioned bounded Engine contract | SDK public `context-view` / `recover` client | Bounds accepted upstream; Product-shaped protocol schema frozen with named gate | Preserve security, PathJail, bounded IO and recovery | v1 compatibility and authoritative CI |
 | Profiles/policy/compiler/kernel | Mixed Engine mechanisms and Product policy | Engine mechanisms; SDK intent/policy | SDK `ContextPlan` | R4A–R4G integrated; Product delivery/inference removed | Preserve deterministic OSS mechanisms and security | Serial PR CI and named public-major compatibility gates |
-| R5 decommission | Detached receipt/shadow stores and behavioral outcome research | Behavioral inference removed; public stores frozen | Explicit SDK/evaluator outcomes | D2 removes 244 lines; D1 withheld and reclassified D4 | Factual accounting and Rust source compatibility remain | D2 revert; public-major/deprecation gate or shim for D4 |
+| R5 decommission | Detached receipt/shadow stores and behavioral outcome research | Behavioral inference removed; public stores frozen | Explicit SDK/evaluator outcomes | D2 removes 244 lines; D1 PR 1565 closed unmerged and reclassified D4 | Factual accounting and Rust source compatibility remain | D2 revert; public-major/deprecation gate or shim for D4 |
 | Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | Merged in PR 1546 | No public, persistence, security or OSS Core reachability | Exact commit revert |
 | Workspace/Cloud | P5 candidate quarantined; Cloud not begun | Later private repositories/services | None in P4 | Not integrated | No OSS impact; no Cloud dependency | P4 exit and separately authorized P5/P8 work |
 
-Current Engine integration state: R4A–R5 have accepted baseline
-`efbdb796b9`; R6 candidate `b1d530718a` is under PR `#1573` on
-upstream baseline `0135ef25bd`.
+Final Engine integration state: R4A–R5 accepted baseline `efbdb796b9`; R6
+candidate `b1d530718a` merged through PR `#1573` as
+`5220ad11191e9de012dfedc97479dae6d28d1111`.
 
 ### P5 — Local Workspace contract
 
 **Status: NOT INTEGRATED.** Out-of-sequence PR `#1571` was closed and its remote
-branch deleted; the local candidate is quarantined until P4 exits. No promoted
-Workspace contract exists.
+branch deleted; the local candidate remains quarantined pending separate
+authorization. No promoted Workspace contract exists.
 
 **Objective:** introduce `ContextWorkspace` only after the session/evidence
 path has earned P4.

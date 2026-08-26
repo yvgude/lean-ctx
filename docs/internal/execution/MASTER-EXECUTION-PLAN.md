@@ -37,26 +37,26 @@ This file schedules approved work; it does not supersede those authorities.
 | **P0 — delivery/security** | **Operational exit complete (2026-08-23):** regular `main` CI run `32639983816`, Security Check `32639983788`, and CodeQL `32639983823` passed; declared GitHub `main` protection was applied and independently verified drift-free with required `CI Green` and `Security Scan`, admin enforcement, and force-push/deletion disabled. | Keep the declarative policy and drift verification green; release/publishing remains transitively gated by these checks. |
 | **P1 — Engine runtime spine** | **Exit complete (2026-08-23):** PRs `#1515` and `#1516` merged; latest merge commit `dd55473302`. Explicit `ctx_read` `engine_interface="v1"` dispatch, legacy omission compatibility, policy/rejection receipts, deadline behavior, descriptor/handle-rooted source and artifact containment, failure-atomic publication and adversarial swap/relocation coverage passed final CI run `32662146660`, including native Ubuntu and Windows tests. | Preserve the accepted v1/legacy behavior and feed its invocation, observation and receipt link into the single P2 evidence chain. |
 | **P2 — canonical evidence** | **Exit complete (2026-08-24):** PR `#1522` merged to `github/main@8ebf61a21c063a1d0a86be33511588d27d7ca71e`; exact-SHA CI `32758619963`, Security Check `32758619955`, and CodeQL `32758619966` passed. The chain keeps delivery factual and host/evaluator outcome explicit. | Preserve the accepted Task → Plan → Invocation → Observation → Receipt → explicit Outcome/Quality → independently verified Evidence Bundle chain. |
-| **P3 — Python Preview** | **P3 COMPLETE/INTEGRATED (2026-08-25):** merge `e47cb432f2e9e2d7ecf13e3c85a0d1cc4fa68f96`; exact-baseline CI `32778481164`, Security `32778481373`, and CodeQL `32778481121` passed. Candidate `79e3888862659e5ac0623a8fa00e16155aa144da` runs the Python-owned Session/Plan/View/Receipt lifecycle through the real local Engine operation transport, actual OpenAI Agents SDK `0.19.4`, native Embed, exact recovery and truthful degradation. `LIVE PROVIDER SMOKE: UNVERIFIED`. | Preserve the integrated P3 seam and evidence; P4 governance is active. |
-| **P4 — production SDK + Engine extraction** | **P4 final integration:** private SDK head `8c84e224` and ledger `a7afd1f` record immutable implementation `11f77debc2` and wheel `b54ac013…`; Python 3.9/3.14 pass 19/19, the CPython 3.9 macOS-arm64 offline closure passes 25/25, and real Engine plus provider-free OpenAI Agents gates pass. BSL 1.1 parameters/publication remain explicit and pending; provenance is `CLEAN_REIMPLEMENT`. Engine R4A–R4G and R5-D2 are integrated through serial PR CI; the proposed detached-store deletion was withheld as D4 to preserve public Rust source compatibility. The Apache Python lifecycle remains `OSS_TRANSITION_COMPAT`. | Record the final boundary/docs merge and stop; do not begin P5/Cloud. |
-| **P5–P7 — Workspace, package, handoff** | **NOT INTEGRATED:** out-of-sequence PR `#1571` was closed and its remote branch deleted; the local candidate is quarantined until P4 exits. | Start only after P4; never promote quarantined work or legacy stores/artifacts as the new truth. |
+| **P3 — Python Preview** | **P3 COMPLETE/INTEGRATED (2026-08-25):** merge `e47cb432f2e9e2d7ecf13e3c85a0d1cc4fa68f96`; exact-baseline CI `32778481164`, Security `32778481373`, and CodeQL `32778481121` passed. Candidate `79e3888862659e5ac0623a8fa00e16155aa144da` runs the Python-owned Session/Plan/View/Receipt lifecycle through the real local Engine operation transport, actual OpenAI Agents SDK `0.19.4`, native Embed, exact recovery and truthful degradation. `LIVE PROVIDER SMOKE: UNVERIFIED`. | Preserve the integrated P3 seam as transition compatibility under the completed P4 boundary. |
+| **P4 — production SDK + Engine extraction** | **COMPLETE/INTEGRATED (2026-08-26):** final Engine `5220ad1119` merged through PR `#1573`; CI `32936915240`, Security `32936915221` and CodeQL `32936915253` passed. Private SDK head `8c84e224` and ledger `a7afd1f` bind implementation `11f77debc2` and wheel `b54ac013…`; the exact accepted-Engine clean-install gate passed. BSL publication parameters remain explicit and pending; provenance is `CLEAN_REIMPLEMENT`. D1 detached-store deletion remains withheld as D4; Apache Python remains `OSS_TRANSITION_COMPAT`. | STOP; preserve the boundary and do not automatically begin P5/Cloud. |
+| **P5–P7 — Workspace, package, handoff** | **NOT INTEGRATED:** out-of-sequence PR `#1571` was closed and its remote branch deleted; the local candidate remains quarantined. | Start only through separate authorization after P4; never promote quarantined work or legacy stores/artifacts as the new truth. |
 | **P8–P9 — Cloud/optimization** | **NOT BEGUN:** private work remains unopened. | Separate private repository only after local proof, trusted evidence and designated owners. |
 
-**Governance state:** P3 COMPLETE/INTEGRATED; P4 ACTIVE; P5 not integrated and
+**Governance state:** P3 and P4 COMPLETE/INTEGRATED; P5 not integrated and
 quarantined; Cloud not begun.
 
 **Execution order:** P0 operational CI/branch-protection verification (**met**) → P1 runtime Engine caller
-(**met**) → P2 canonical evidence (**met**) → P3 real Python Preview (**COMPLETE/INTEGRATED**) → P4 SDK repository (**ACTIVE**).
+(**met**) → P2 canonical evidence (**met**) → P3 real Python Preview (**COMPLETE/INTEGRATED**) → P4 SDK repository (**COMPLETE/INTEGRATED**).
 P5 is not integrated; its out-of-sequence candidate is quarantined. Cloud and
 other later work remain unopened.
 No later workstream may bypass an earlier exit.
 
 ## P4 V4 dual-track execution ledger
 
-P4 has two mandatory tracks: construct the canonical Production SDK and
-extract non-preserved Product implementation from the Apache Engine. Both
-tracks are independently reviewed. The SDK remains deliberately
-private/unreleased; Engine delivery uses serial PR CI and retains public
+P4 delivered two mandatory tracks: the canonical Production SDK and extraction
+of non-preserved Product implementation from the Apache Engine. Both tracks
+were independently reviewed. The SDK remains deliberately private/unreleased;
+Engine delivery used serial PR CI and retains public
 compatibility where removal lacks an approved gate.
 
 | Surface | Current owner | Target owner | SDK successor | Engine extraction status | OSS impact | Transition/removal gate |
@@ -67,14 +67,14 @@ compatibility where removal lacks an approved gate.
 | Engine Kits and document formats | Apache Engine Kits | Open parser/validation/integrity in Engine; lifecycle activation in SDK | `ContextSource` / `ContextPlan` | Validated parser integrated; focused review passed | Preserve `.ctxpkg`/format interoperability and safe admission | Serial PR CI and migration fixtures |
 | Engine request/path transport | Apache Engine public boundary | Bounded public Engine contract | SDK consumes public `context-view` / `recover` path | Request/path bounds are integrated in accepted upstream baseline | Preserve PathJail, bounded IO, failure atomicity and recovery | v1 compatibility and authoritative CI |
 | Profiles, policy, compiler and kernel | Mixed mechanisms and Product policy | Engine facts/mechanisms; SDK Product intent/policy | SDK `ContextPlan` and policy layer | R4A–R4G integrated; Product delivery semantics detached; protocol narrowed/frozen | Keep deterministic optimization, security and OSS Attach behavior | Serial PR CI; named public-major gates for retained DTOs |
-| R5 decommission | Detached stores and heuristic Product outcome research | Behavioral inference removed; public detached stores frozen | Explicit SDK/evaluator outcomes | D2 removes 244 lines; D1 withheld and reclassified D4 | Factual Engine measurements and public Rust source compatibility retained | D2 revert; explicit public-major/deprecation gate or shim for D4 |
+| R5 decommission | Detached stores and heuristic Product outcome research | Behavioral inference removed; public detached stores frozen | Explicit SDK/evaluator outcomes | D2 removes 244 lines; D1 PR 1565 closed unmerged and reclassified D4 | Factual Engine measurements and public Rust source compatibility retained | D2 revert; explicit public-major/deprecation gate or shim for D4 |
 | Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | D1 deletion merged in PR 1546 | No public, persistence, security or OSS Core reachability | Exact commit revert |
 | Workspace/Cloud coordination | P5 candidate quarantined; Cloud not begun | Later private work only | None in P4 | Not integrated | No OSS impact; local Engine/SDK must remain complete without Cloud | P4 exit plus separately authorized P5/P8 work; no scaffolding now |
 
-**Current integration candidate:** R4A–R5 have accepted baseline
-`efbdb796b9`; R6 candidate `b1d530718a` is under PR `#1573` on
-upstream baseline `0135ef25bd`. The required
-evidence and exit matrix are in
+**Final P4 Engine integration:** R4A–R5 accepted baseline `efbdb796b9`; R6
+candidate `b1d530718a` merged through PR `#1573` as final Engine
+`5220ad11191e9de012dfedc97479dae6d28d1111`. The required evidence and exit
+matrix are in
 `docs/internal/P4-SDK-EXTRACTION-AND-ENGINE-REFACTOR-REPORT.md`.
 
 ---

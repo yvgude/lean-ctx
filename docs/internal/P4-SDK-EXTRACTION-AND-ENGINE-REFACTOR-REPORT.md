@@ -1,13 +1,13 @@
 # P4 SDK Extraction and Engine Refactor Report
 
-**Status:** ACTIVE — R4A–R5 integrated; final R6 boundary PR pending
+**Status:** COMPLETE/INTEGRATED — R4A–R6 merged; final Engine/SDK gate passed
 **Date:** 2026-08-26
 **Scope:** P4 Production SDK extraction and Apache Engine refactor only
 
-P3 is COMPLETE/INTEGRATED. P5 is not integrated; the out-of-sequence `#1571`
-candidate is quarantined. Cloud is NOT BEGUN. R4A–R5 passed authoritative CI
-and landed; P4 remains ACTIVE until
-the final R6 boundary and this report land.
+P3 and P4 are COMPLETE/INTEGRATED. P5 is not integrated; the out-of-sequence
+`#1571` candidate is quarantined. Cloud is NOT BEGUN. R4A–R6 passed
+authoritative CI and landed; the accepted Engine and canonical private SDK also
+passed the exact final clean-install integration gate.
 
 ## Final architecture
 
@@ -25,13 +25,13 @@ or infer task acceptance from delivery, retries or response length.
 
 ## Identities and release state
 
-| Item | Final candidate | State |
+| Item | Final identity | State |
 | --- | --- | --- |
 | Original V4 Engine baseline | 49a6b2053c08c4d831916f03e01c7b5e6079a372 | Historical start |
 | Accepted R5 Engine baseline | efbdb796b9b361a1778545e29e8ec7a96f20bbd5 | R4A–R5 merged through PR 1566 |
-| R6 upstream baseline | 0135ef25bd186ac95a1c0423a12cc6ae1479b946 | Current main at PR 1573 creation |
-| R6 boundary candidate | b1d530718a7f8285cf726979ca41db30c7817a43 | PR 1573; reviewed patch ID 65f0a36e… |
-| Engine report candidate | Integration branch after this report commit | Final SHA assigned by serial Layer-4 merge |
+| R6 upstream baseline | 0135ef25bd186ac95a1c0423a12cc6ae1479b946 | Main at PR 1573 creation |
+| R6 reviewed candidate | b1d530718a7f8285cf726979ca41db30c7817a43 | PR 1573; reviewed patch ID 65f0a36e… |
+| Final accepted Engine SHA | 5220ad11191e9de012dfedc97479dae6d28d1111 | PR 1573 squash merge; authoritative CI passed |
 | Production SDK repository | /Users/yvesgugger/Documents/Privat/Projects/leanctx-product-sdk-staging | Separate private staging |
 | Production SDK repository head | 8c84e2246bff0f2681dc69ea08d4322519f88050 | Current private docs/governance head |
 | Production SDK ledger | a7afd1f | Clean, reviewed internal RC record |
@@ -88,9 +88,9 @@ approval. Those are explicit business/legal gates, not hidden engineering work.
 | R4E Field/compiler | PRs 1559, 1561 / 336fc8d237, d8137af554 | Explicit field input and deterministic bounded compiler |
 | R4F Kernel | PR 1563 / 5cedbda3f3 | Product delivery semantics detached; factual measurements retained |
 | R4G Protocol | PR 1564 / 73bca34676 | Historical Product-shaped types frozen with a named major-version gate |
-| R5 D1 | Withheld; reclassified D4 | Detached public receipt/shadow stores retained pending a compatibility gate |
+| R5 D1 | PR 1565 closed unmerged; reclassified D4 | Detached public receipt/shadow stores retained pending a compatibility gate |
 | R5 D2 | PR 1566 / efbdb796b9 | Behavioral outcome inference/learning retired; DTO compatibility retained |
-| R6 | PR 1573 / b1d530718a | Engine/package/embed boundaries clarified without install breakage |
+| R6 | PR 1573 / 5220ad1119 (candidate b1d530718a) | Engine/package/embed boundaries clarified without install breakage |
 
 The Engine changes were delivered serially through independent review and
 authoritative GitHub CI. PR 1546 removed the earlier unreachable memory branch.
@@ -174,13 +174,17 @@ LEGAL_REVIEW_REQUIRED.
 - R6 review:
   /tmp/r6-review.md — PASS on patch-equivalent commit 0787066753; stable
   patch ID 65f0a36ec60599c435c221c78021245cc512988b
+- Final accepted-Engine/SDK integration gate:
+  /private/tmp/leanctx-p4-v4-current/final-engine-sdk-gate/RESULT.md — PASS on
+  Engine 5220ad1119 and canonical wheel b54ac013…
 - Final architecture/security review:
   /tmp/p4-final-review.md — PASS, no P0–P3 blocker
 - R4F focused kernel gate: 510/510
 - R5 D1 focused kernel gate: 499/499
 - R5 D2 focused gate: 3/3
 - Protocol narrowing gate: 4/4
-- R6: cargo fmt --check, git diff --check and cargo metadata passed
+- R6 authoritative gates: CI 32936915240, Security 32936915221 and CodeQL
+  32936915253 passed before PR 1573 merged
 - Final Layer-3 gate: cargo test --lib passed 10,473/10,473; cargo clippy
   --all-features -- -D warnings passed; cargo fmt --check passed
 
@@ -191,7 +195,7 @@ shim authorizes removal.
 
 ## P4 exit criteria
 
-| # | Criterion | Candidate status |
+| # | Criterion | Final status |
 | --- | --- | --- |
 | 1 | P3 recorded integrated COMPLETE | PASS |
 | 2 | Separate Production SDK staging exists | PASS |
@@ -204,35 +208,40 @@ shim authorizes removal.
 | 9 | Major ownership seams separated or bounded | PASS |
 | 10 | Safe decommission candidates removed meaningfully | PASS |
 | 10a | No duplicate canonical Product lifecycle | PASS |
-| 11 | OSS Coding-Agent core remains strong | PASS locally; final Layer-4 CI pending |
-| 12 | Engine security remains strong | PASS locally; final Layer-4 CI pending |
+| 11 | OSS Coding-Agent core remains strong | PASS — authoritative CI 32936915240, including Ubuntu and Windows |
+| 12 | Engine security remains strong | PASS — Security 32936915221 and CodeQL 32936915253 |
 | 13 | SDK is materially more than a thin wrapper | PASS |
 | 14 | No Cloud required | PASS |
-| 15 | P5+ did not begin | PASS — no P5 merged; out-of-sequence PR 1571 was closed, remote branch deleted and local work quarantined |
+| 15 | P5+ did not begin | PASS on governed delivery — no P5 merged; out-of-sequence PR 1571 was closed, remote branch deleted and local work quarantined |
 | 16 | Unresolved BSL parameters explicit | PASS |
 | 17 | Provenance disposition exists | PASS |
-| 18 | Clean-machine SDK integration passes | PASS for Engine 3.9.20; exact final Engine rerun pending |
+| 18 | Clean-machine SDK integration passes | PASS — accepted Engine 5220ad1119, CPython 3.9.6, canonical wheel b54ac013…, sealed exact recovery |
 | 19 | Preview-to-SDK migration/rollback documented | PASS |
-| 20 | Independent architecture/security review has no blocker | PASS; final PR review/CI pending |
+| 20 | Independent architecture/security review has no blocker | PASS — independent reviews plus PR 1573 CI/security/CodeQL found no blocker |
 
-The local candidate satisfies the architecture, SDK and Layer-3 gates. Formal
-P4 status remains ACTIVE until the serial Layer-4 PR CI/merge sequence records
-the final authoritative main SHA.
+Criterion 15 is evaluated against the accepted delivery state: the
+out-of-sequence local draft never became an integrated P5 workstream and remains
+quarantined pending separate authorization.
+
+P4 satisfies the architecture, SDK, Layer-3 and authoritative Layer-4 gates.
+Final accepted Engine SHA is 5220ad11191e9de012dfedc97479dae6d28d1111.
 
 ## Rollback
 
 - SDK: keep the `a7afd1f` ledger private; rollback to immutable implementation
   baseline `11f77debc2811dfd6569ba3a30bb674ae5e8b5d1` or retain P3 Preview.
 - Engine: each wave is a separate commit; revert one owned slice at a time.
-- R5 D1: no rollback is needed because the deletion was not merged.
+- R5 D1: no rollback is needed because PR 1565 closed without merging.
 - R5 D2 recovery: revert PR 1566's squash merge to restore heuristic research
   code while retaining factual Engine evidence.
-- R6 recovery: revert its final squash merge; no binary or install path changes.
+- R6 recovery: revert squash merge 5220ad11191e9de012dfedc97479dae6d28d1111;
+  no binary or install path changes.
 - Never replace accepted main with the entire local stack at once; deliver and
   validate serially.
 
 ## Stop line
 
-Do not begin P5 Workspace/package/handoff, Cloud, Continuous Optimization,
-Selection Intelligence, Fleet, marketplace or A2A expansion from this work.
-After authoritative P4 merge evidence is recorded, stop.
+P4 exit is complete. Do not automatically begin P5 Workspace/package/handoff,
+Cloud, Continuous Optimization, Selection Intelligence, Fleet, marketplace or
+A2A expansion from this work.
+Stop after this closeout.
