@@ -257,8 +257,8 @@ dependency value. Cloud remains absent.
 | Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | Merged in PR 1544 | No public, persistence, security or OSS Core reachability | Exact commit revert |
 | Workspace/Cloud | Not begun | Later private repositories/services | None in P4 | Not started | No OSS impact; no Cloud dependency | P4 exit and separately authorized P5/P8 work |
 
-Current Engine integration candidate: `e495b61f24`, based on
-`github/main@9aba08d407`; local/unmerged, with final gate and serial PR CI pending.
+Current Engine integration state: R4A–R5 are merged through
+`github/main@efbdb796b9`; R6 candidate `547bf1f313` awaits its final PR gate.
 
 ### P5 — Local Workspace contract
 

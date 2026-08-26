@@ -71,9 +71,9 @@ compatibility where removal lacks an approved gate.
 | Orphan `memory_branch` module | Unreachable private Engine code | Removed | None | D1 deletion merged in PR 1544 | No public, persistence, security or OSS Core reachability | Exact commit revert |
 | Workspace/Cloud coordination | Not begun | Later private work only | None in P4 | Not started | No OSS impact; local Engine/SDK must remain complete without Cloud | P4 exit plus separately authorized P5/P8 work; no scaffolding now |
 
-**Current integration candidate:** `e495b61f24`, based on
-`github/main@9aba08d407`, serializes reviewed R4A–R6 seams. It is local and
-unmerged pending one final integrated gate and serial PR CI. The required
+**Current integration candidate:** R4A–R5 are merged through
+`github/main@efbdb796b9`; R6 candidate `547bf1f313` contains the final reviewed
+boundary clarification. The required
 evidence and exit matrix are in
 `docs/internal/P4-SDK-EXTRACTION-AND-ENGINE-REFACTOR-REPORT.md`.
 

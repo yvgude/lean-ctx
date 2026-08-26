@@ -1,12 +1,12 @@
 # P4 SDK Extraction and Engine Refactor Report
 
-**Status:** ACTIVE — final integration candidate; Layer-4 PR CI pending
+**Status:** ACTIVE — R4A–R5 integrated; final R6 boundary PR pending
 **Date:** 2026-08-26
 **Scope:** P4 Production SDK extraction and Apache Engine refactor only
 
 P3 is COMPLETE/INTEGRATED. P5 Workspace/package/handoff and Cloud work are
-NOT BEGUN. This report records the completed local P4 candidate and remains
-ACTIVE until the serial Engine PR stack passes authoritative CI and lands.
+NOT BEGUN. R4A–R5 passed authoritative CI and landed; P4 remains ACTIVE until
+the final R6 boundary and this report land.
 
 ## Final architecture
 
@@ -27,8 +27,8 @@ or infer task acceptance from delivery, retries or response length.
 | Item | Final candidate | State |
 | --- | --- | --- |
 | Original V4 Engine baseline | 49a6b2053c08c4d831916f03e01c7b5e6079a372 | Historical start |
-| Accepted upstream baseline | github/main at 9aba08d40796c15de6775ae0161176e2b9b13ef6 | PR 1544 merged |
-| Engine code candidate | e495b61f24a50012e90f419577d3cabda57fc50a | R4A–R6 integrated locally |
+| Accepted Engine baseline | github/main at efbdb796b9b361a1778545e29e8ec7a96f20bbd5 | R4A–R5 merged through PR 1566 |
+| R6 boundary candidate | 547bf1f313ef6057ca01be012f1f5b60abd16718 | Rebased on accepted Engine baseline |
 | Engine report candidate | Integration branch after this report commit | Final SHA assigned by serial Layer-4 merge |
 | Production SDK repository | /Users/yvesgugger/Documents/Privat/Projects/leanctx-product-sdk-staging | Separate private staging |
 | Production SDK repository head | 8c84e2246bff0f2681dc69ea08d4322519f88050 | Current private docs/governance head |
@@ -84,8 +84,8 @@ approval. Those are explicit business/legal gates, not hidden engineering work.
 | R4F Kernel | PR 1563 / 5cedbda3f3 | Product delivery semantics detached; factual measurements retained |
 | R4G Protocol | PR 1564 / 73bca34676 | Historical Product-shaped types frozen with a named major-version gate |
 | R5 D1 | Withheld; reclassified D4 | Detached public receipt/shadow stores retained pending a compatibility gate |
-| R5 D2 | PR 1566 | Behavioral outcome inference/learning retired; DTO compatibility retained |
-| R6 | Final boundary PR | Engine/package/embed boundaries clarified without install breakage |
+| R5 D2 | PR 1566 / efbdb796b9 | Behavioral outcome inference/learning retired; DTO compatibility retained |
+| R6 | 547bf1f313 | Engine/package/embed boundaries clarified without install breakage |
 
 The Engine changes were delivered serially through independent review and
 authoritative GitHub CI. PR 1546 removed the earlier unreachable memory branch.
@@ -221,7 +221,7 @@ the final authoritative main SHA.
 - R5 D1: no rollback is needed because the deletion was not merged.
 - R5 D2 recovery: revert PR 1566's squash merge to restore heuristic research
   code while retaining factual Engine evidence.
-- R6 recovery: revert e495b61f24; no binary or install path changed.
+- R6 recovery: revert its final squash merge; no binary or install path changes.
 - Never replace accepted main with the entire local stack at once; deliver and
   validate serially.
 
