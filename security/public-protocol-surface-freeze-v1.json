@@ -67,7 +67,7 @@
       "review_release": "v1",
       "removal_not_before_release": "v2",
       "module_path": "rust/crates/lean-ctx-protocol/src/control_plane.rs",
-      "module_sha256": "bec68f5d55e9a3b07fbbba269ed4b36db0d89f252013b9009d60e73a98119ea3",
+      "module_sha256": "e6f77f2876421aa9264d726186bce70fb622a467b67e014fc1f8c4f4e0431b33",
       "module_roots": [
         {
           "path": "rust/crates/lean-ctx-protocol/src/lib.rs",
