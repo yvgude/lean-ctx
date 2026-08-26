@@ -103,6 +103,9 @@ impl LeanCtxServer {
         {
             tracing::warn!("lean-ctx: failed to update MCP agent heartbeat: {error}");
         }
+        // #1570 P2/P6: a successful recovery tool clears budget-nudge anchors
+        // and starts the anti-obsession cooldown.
+        crate::core::nudge::record_recovery_action(tool);
         let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let mut calls = self.tool_calls.write().await;
         calls.push(ToolCallRecord {

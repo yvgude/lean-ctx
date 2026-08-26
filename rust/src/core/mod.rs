@@ -380,6 +380,7 @@ pub mod marginal_gate;
 pub mod mcp_catalog;
 pub mod metering;
 pub mod negative_knowledge;
+pub mod nudge;
 pub mod ocla;
 pub mod ocla_bus;
 pub(crate) mod quality_benchmark;

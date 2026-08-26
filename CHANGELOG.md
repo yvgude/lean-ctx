@@ -3,6 +3,20 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added — Conversation Layer (#1570, DCP-inspired, cache-safe by construction)
+
+- **Errored tool-input purge** (proxy, deterministic): once a failed tool
+  call scrolls into the frozen old region, its bulky *input* is replaced by
+  a small marker — the error text stays. Content-local and idempotent, so
+  pruned forms are byte-identical across turns (#448 cache safety).
+- **Budget-nudge economy**: the `[BUDGET WARNING]` footer is replaced by a
+  stepped ladder (75% soft / 100% strong / 150% strong) with anchor dedup
+  (each step fires once), 5-point hysteresis re-arm, reset-on-action and a
+  cooldown after `ctx_compress`/`ctx_dedup` — advisories that land instead
+  of spam agents learn to ignore. Still purely advisory: nothing blocks.
+
 ## [3.9.20] — 2026-08-25
 
 ### Fixed — triage (community incident, 3.9.19)

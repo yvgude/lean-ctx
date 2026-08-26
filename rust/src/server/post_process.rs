@@ -57,13 +57,15 @@ pub(super) fn budget_exhausted_message(name: &str) -> Option<String> {
     ))
 }
 
-/// Post-dispatch budget guard. Returns `Some(message)` to append a
-/// `[BUDGET WARNING]` footer (emitting the matching `budget_warning` events), or
-/// `None`. Suppressed when meta output is not visible.
+/// Post-dispatch budget guard. Delegates to the nudge economy (#1570 P2):
+/// stepped thresholds with anchor dedup, hysteresis, and reset-on-action
+/// replace the old fire-on-every-call `[BUDGET WARNING]` footer that agents
+/// learned to ignore (#1542). Events still fire (rate-limited upstream) so
+/// the dashboard keeps its signal; the in-band footer is now economical.
 pub(super) fn budget_warning_message() -> Option<String> {
     use crate::core::budget_tracker::{BudgetLevel, BudgetTracker};
     let snap = BudgetTracker::global().check();
-    if *snap.worst_level() != BudgetLevel::Warning {
+    if *snap.worst_level() == BudgetLevel::Ok {
         return None;
     }
     for (dim, lvl, used, limit, pct) in [
@@ -94,7 +96,7 @@ pub(super) fn budget_warning_message() -> Option<String> {
         }
     }
     if crate::core::protocol::meta_visible() {
-        Some(format!("[BUDGET WARNING] {}", snap.format_compact()))
+        crate::core::nudge::budget_nudge(&snap)
     } else {
         None
     }
