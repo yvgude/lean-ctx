@@ -827,18 +827,55 @@ fn validate_engine_binding(
     ];
     if object.keys().any(|key| !allowed.contains(&key.as_str()))
         || required.iter().any(|key| !object.contains_key(*key))
-        || bounded_string(object.get("path"), 4096).is_none()
-        || bounded_string(object.get("project_root"), 4096).is_none()
+        || !object
+            .get("path")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(valid_relative_source_path)
+        || !object
+            .get("project_root")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(valid_normalized_project_root)
         || bounded_string(object.get("media_type"), 512).is_none()
-        || object.get("source_ref").is_some_and(|value| {
-            !value.is_null() && !value.as_str().is_some_and(|raw| valid_ref(raw, 512))
-        })
+        || object
+            .get("source_ref")
+            .is_some_and(|value| !value.as_str().is_some_and(|raw| valid_ref(raw, 512)))
         || object
             .get("source_digest")
-            .is_some_and(|value| !value.is_null() && !valid_prefixed_digest(value))
+            .is_some_and(|value| !valid_prefixed_digest(value))
     {
         errors.push("checkpoint engine binding is invalid".into());
     }
+}
+
+fn valid_relative_source_path(raw: &str) -> bool {
+    valid_text(raw, 4096)
+        && !is_absolute_path(raw)
+        && !raw.contains('\\')
+        && raw
+            .split('/')
+            .all(|component| !component.is_empty() && !matches!(component, "." | ".."))
+}
+
+fn valid_normalized_project_root(raw: &str) -> bool {
+    if !valid_text(raw, 4096) || !is_absolute_path(raw) {
+        return false;
+    }
+    let tail = if let Some(tail) = raw.strip_prefix("\\\\") {
+        tail
+    } else if let Some(tail) = raw.strip_prefix('/') {
+        tail
+    } else if raw.len() >= 3
+        && raw.as_bytes()[1] == b':'
+        && matches!(raw.as_bytes()[2], b'/' | b'\\')
+    {
+        &raw[3..]
+    } else {
+        return false;
+    };
+    tail.is_empty()
+        || tail
+            .split(['/', '\\'])
+            .all(|component| !component.is_empty() && !matches!(component, "." | ".."))
 }
 
 fn validate_context_entries(
@@ -1889,6 +1926,32 @@ mod tests {
                 "missing error for {expected}: {errors:?}"
             );
         }
+    }
+
+    #[test]
+    fn checkpoint_engine_binding_requires_sdk_canonical_projection() {
+        let canonical = serde_json::json!({
+            "path": "dir/source.txt",
+            "project_root": "/project",
+            "media_type": "text/plain"
+        });
+        let mut errors = Vec::new();
+        validate_engine_binding(Some(&canonical), Some("filesystem"), &mut errors);
+        assert!(errors.is_empty(), "canonical binding rejected: {errors:?}");
+
+        let invalid = serde_json::json!({
+            "path": "../escape.txt",
+            "project_root": "/project/../other",
+            "media_type": "text/plain",
+            "source_ref": null,
+            "source_digest": null
+        });
+        validate_engine_binding(Some(&invalid), Some("filesystem"), &mut errors);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("engine binding is invalid"))
+        );
     }
 
     #[test]
