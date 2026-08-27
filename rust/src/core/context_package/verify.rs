@@ -232,10 +232,10 @@ fn validate_checkpoint_content(portable: &CheckpointPackageContentV1, errors: &m
     declared.sort();
     declared.dedup();
     if declared != portable.non_portable_fields
-        || declared.len() > MAX_CHECKPOINT_REFS
+        || declared.len() > 256
         || declared
             .iter()
-            .any(|item| item.is_empty() || item.len() > 2048 || item.chars().any(char::is_control))
+            .any(|item| item.is_empty() || item.len() > 1024 || item.chars().any(char::is_control))
         || declared != absolute_paths
     {
         errors.push(
@@ -428,7 +428,8 @@ fn validate_checkpoint_object(value: &serde_json::Value, errors: &mut Vec<String
         validate_string_array(
             refs,
             MAX_CHECKPOINT_REFS,
-            2048,
+            512,
+            true,
             "checkpoint recovery refs",
             errors,
         );
@@ -643,7 +644,6 @@ fn validate_source_anchors(sources: &[serde_json::Value], errors: &mut Vec<Strin
         );
         validate_engine_binding(object.get("engine_binding"), kind, errors);
     }
-    source_ids.sort_unstable();
     if !source_ids.windows(2).all(|pair| pair[0] < pair[1]) {
         errors.push("checkpoint source ids must be unique and sorted".into());
     }
@@ -687,23 +687,21 @@ fn validate_freshness(value: Option<&serde_json::Value>, errors: &mut Vec<String
         &["observed_at", "status"][..]
     };
     validate_exact_keys(object, keys, "checkpoint source freshness", errors);
-    let observed = object
+    let observed_raw = object
         .get("observed_at")
-        .and_then(serde_json::Value::as_str)
-        .and_then(|raw| chrono::DateTime::parse_from_rfc3339(raw).ok());
-    let valid_until = object
+        .and_then(serde_json::Value::as_str);
+    let observed = observed_raw.and_then(|raw| chrono::DateTime::parse_from_rfc3339(raw).ok());
+    let valid_until_raw = object
         .get("valid_until")
-        .filter(|value| !value.is_null())
-        .and_then(|value| value.as_str())
-        .and_then(|raw| chrono::DateTime::parse_from_rfc3339(raw).ok());
-    if observed.is_none()
+        .and_then(serde_json::Value::as_str);
+    let valid_until =
+        valid_until_raw.and_then(|raw| chrono::DateTime::parse_from_rfc3339(raw).ok());
+    if observed_raw.is_none_or(|raw| !canonical_utc_timestamp(raw))
         || !object
             .get("status")
             .is_some_and(|value| matches!(value.as_str(), Some("current" | "stale" | "unknown")))
-        || (object
-            .get("valid_until")
-            .is_some_and(|value| !value.is_null())
-            && valid_until.is_none())
+        || (object.contains_key("valid_until")
+            && valid_until_raw.is_none_or(|raw| !canonical_utc_timestamp(raw)))
         || valid_until
             .zip(observed)
             .is_some_and(|(valid, observed)| valid < observed)
@@ -728,7 +726,10 @@ fn validate_recovery(value: Option<&serde_json::Value>, errors: &mut Vec<String>
     };
     validate_exact_keys(object, keys, "checkpoint source recovery", errors);
     if bounded_string(object.get("kind"), 64).is_none()
-        || bounded_string(object.get("immutable_ref"), 2048).is_none()
+        || !object
+            .get("immutable_ref")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|raw| valid_ref(raw, 2048))
         || object
             .get("digest")
             .is_some_and(|value| !valid_prefixed_digest(value))
@@ -756,7 +757,14 @@ fn validate_trust(value: Option<&serde_json::Value>, errors: &mut Vec<String>) {
         errors.push("checkpoint source trust evidence must be an array".into());
         return;
     };
-    validate_string_array(refs, 32, 2048, "checkpoint source trust evidence", errors);
+    validate_string_array(
+        refs,
+        32,
+        512,
+        true,
+        "checkpoint source trust evidence",
+        errors,
+    );
     if !matches!(level, Some("unverified" | "local" | "verified"))
         || (level == Some("verified")
             && (refs.is_empty()
@@ -821,12 +829,13 @@ fn validate_engine_binding(
         || required.iter().any(|key| !object.contains_key(*key))
         || bounded_string(object.get("path"), 4096).is_none()
         || bounded_string(object.get("project_root"), 4096).is_none()
-        || bounded_string(object.get("media_type"), 256).is_none()
-        || ["source_ref", "source_digest"].iter().any(|key| {
-            object.get(*key).is_some_and(|value| {
-                !value.is_null() && bounded_string(Some(value), 2048).is_none()
-            })
+        || bounded_string(object.get("media_type"), 512).is_none()
+        || object.get("source_ref").is_some_and(|value| {
+            !value.is_null() && !value.as_str().is_some_and(|raw| valid_ref(raw, 512))
         })
+        || object
+            .get("source_digest")
+            .is_some_and(|value| !value.is_null() && !valid_prefixed_digest(value))
     {
         errors.push("checkpoint engine binding is invalid".into());
     }
@@ -877,7 +886,7 @@ fn validate_context_entries(
                     )
                 )
             })
-            || bounded_string(object.get("value"), 65_536).is_none()
+            || bounded_string(object.get("value"), 4096).is_none()
             || object
                 .get("session_id")
                 .is_some_and(|value| !value.is_null() && bounded_string(Some(value), 512).is_none())
@@ -887,16 +896,23 @@ fn validate_context_entries(
         if let Some(entry_id) = object.get("entry_id").and_then(serde_json::Value::as_str) {
             entry_ids.push(entry_id);
         }
-        for (field, cap) in [
-            ("source_ids", 64),
-            ("receipt_refs", 64),
-            ("recovery_refs", 64),
+        for (field, cap, item_cap, printable) in [
+            ("source_ids", 16, 128, false),
+            ("receipt_refs", 16, 512, true),
+            ("recovery_refs", 16, 512, true),
         ] {
             let Some(items) = object.get(field).and_then(serde_json::Value::as_array) else {
                 errors.push(format!("checkpoint context entry {field} must be an array"));
                 continue;
             };
-            validate_string_array(items, cap, 2048, "checkpoint context entry refs", errors);
+            validate_string_array(
+                items,
+                cap,
+                item_cap,
+                printable,
+                "checkpoint context entry refs",
+                errors,
+            );
             if field == "source_ids"
                 && items
                     .iter()
@@ -907,9 +923,8 @@ fn validate_context_entries(
             }
         }
     }
-    entry_ids.sort_unstable();
-    if entry_ids.windows(2).any(|pair| pair[0] == pair[1]) {
-        errors.push("checkpoint context entry ids must be unique".into());
+    if !entry_ids.windows(2).all(|pair| pair[0] < pair[1]) {
+        errors.push("checkpoint context entry ids must be unique and sorted".into());
     }
 }
 
@@ -917,22 +932,45 @@ fn validate_string_array(
     values: &[serde_json::Value],
     cap: usize,
     item_cap: usize,
+    printable_ascii: bool,
     label: &str,
     errors: &mut Vec<String>,
 ) {
     if values.len() > cap
-        || values
-            .iter()
-            .any(|value| bounded_string(Some(value), item_cap).is_none())
+        || values.iter().any(|value| {
+            bounded_string(Some(value), item_cap).is_none()
+                || (printable_ascii
+                    && !value
+                        .as_str()
+                        .is_some_and(|raw| raw.bytes().all(|byte| (0x20..=0x7e).contains(&byte))))
+        })
+        || !values
+            .windows(2)
+            .all(|pair| pair[0].as_str() < pair[1].as_str())
     {
         errors.push(format!("{label} is invalid or exceeds its bound"));
     }
 }
 
+fn valid_ref(raw: &str, cap: usize) -> bool {
+    !raw.is_empty() && raw.len() <= cap && raw.bytes().all(|byte| (0x20..=0x7e).contains(&byte))
+}
+
+fn canonical_utc_timestamp(raw: &str) -> bool {
+    (raw.len() == 20 || raw.len() == 27)
+        && raw.ends_with('Z')
+        && (raw.len() == 20 || raw.as_bytes().get(19) == Some(&b'.'))
+        && chrono::DateTime::parse_from_rfc3339(raw).is_ok()
+}
+
 fn bounded_string(value: Option<&serde_json::Value>, cap: usize) -> Option<&str> {
     value
         .and_then(serde_json::Value::as_str)
-        .filter(|raw| !raw.is_empty() && raw.len() <= cap && !raw.chars().any(char::is_control))
+        .filter(|raw| valid_text(raw, cap))
+}
+
+fn valid_text(raw: &str, cap: usize) -> bool {
+    !raw.is_empty() && raw.len() <= cap && !raw.chars().any(char::is_control)
 }
 
 fn validate_package_pins(
@@ -1006,7 +1044,7 @@ fn validate_package_pins(
             errors.push("checkpoint package pin version is invalid".into());
             continue;
         };
-        if name.is_empty() || name.len() > 128 || version.is_empty() || version.len() > 64 {
+        if !valid_text(name, 128) || !valid_text(version, 64) {
             errors.push("checkpoint package pin name/version exceeds bounds".into());
         }
         identities.push((name, version));
@@ -1141,9 +1179,9 @@ fn collect_non_portable_paths(value: &serde_json::Value, pointer: &str, out: &mu
                     out.push(child.clone());
                 }
                 if matches!(key.as_str(), "canonical_id" | "immutable_ref")
-                    && item
-                        .as_str()
-                        .is_some_and(|value| value.starts_with("file:///"))
+                    && item.as_str().is_some_and(|value| {
+                        value.starts_with("file:///") || is_absolute_path(value)
+                    })
                 {
                     out.push(child.clone());
                 }
@@ -1807,6 +1845,50 @@ mod tests {
                 .iter()
                 .any(|error| error.contains("lineage is invalid"))
         );
+    }
+
+    #[test]
+    fn checkpoint_nested_contract_matches_sdk_bounds_and_ordering() {
+        let bundle = signed_checkpoint_bundle();
+        let manifest: PackageManifest = serde_json::from_value(bundle["manifest"].clone()).unwrap();
+        let mut content: PackageContent =
+            serde_json::from_value(bundle["content"].clone()).unwrap();
+        let portable = content.checkpoint.as_mut().unwrap();
+        let checkpoint = &mut portable.checkpoint;
+        let mut first = checkpoint["logical_state"]["sources"][0].clone();
+        first["source_id"] = "source-b".into();
+        first["freshness"]["observed_at"] = "2026-08-27T00:00:00+00:00".into();
+        first["trust"]["evidence_refs"] = serde_json::json!(["z", "a"]);
+        first["recovery"] = serde_json::json!({
+            "kind": "archive",
+            "immutable_ref": "/machine/recovery"
+        });
+        first["engine_binding"]["source_ref"] = "bad\nref".into();
+        first["engine_binding"]["source_digest"] = format!("sha256:{}", "A".repeat(64)).into();
+        let mut second = first.clone();
+        second["source_id"] = "source-a".into();
+        checkpoint["logical_state"]["sources"] = serde_json::json!([first, second]);
+        checkpoint["source_anchors"] = checkpoint["logical_state"]["sources"].clone();
+        checkpoint["logical_state"]["entries"][0]["source_ids"] = serde_json::json!(["source-b"]);
+        checkpoint["logical_state"]["entries"][0]["value"] = "x".repeat(4097).into();
+        checkpoint["logical_state"]["package_pins"][0]["name"] = "bad\nname".into();
+        checkpoint["package_pins"] = checkpoint["logical_state"]["package_pins"].clone();
+
+        let errors = validate_kind_coherence(&manifest, &content).unwrap_err();
+        for expected in [
+            "source ids must be unique and sorted",
+            "source freshness is invalid",
+            "source trust evidence is invalid",
+            "engine binding is invalid",
+            "context entry identity/value is invalid",
+            "name/version exceeds bounds",
+            "non_portable_fields",
+        ] {
+            assert!(
+                errors.iter().any(|error| error.contains(expected)),
+                "missing error for {expected}: {errors:?}"
+            );
+        }
     }
 
     #[test]

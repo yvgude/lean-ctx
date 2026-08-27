@@ -4,6 +4,9 @@ use crate::core::context_package::PackageLayer;
 use crate::core::context_package::content::CheckpointPackageContentV1;
 use sha2::{Digest, Sha256};
 
+const MAX_CHECKPOINT_INPUT_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_CHECKPOINT_PACKAGE_BYTES: u64 = 16 * 1024 * 1024;
+
 pub(super) fn cmd_pack_checkpoint_seal(args: &[String]) {
     let input = flag(args, "--checkpoint");
     let output = flag(args, "--output");
@@ -16,6 +19,11 @@ pub(super) fn cmd_pack_checkpoint_seal(args: &[String]) {
         );
     };
 
+    require_bounded_regular_file(
+        Path::new(&input),
+        MAX_CHECKPOINT_INPUT_BYTES,
+        "checkpoint payload",
+    );
     let raw = std::fs::read_to_string(&input)
         .unwrap_or_else(|error| fail(&format!("read checkpoint payload: {error}")));
     let checkpoint: CheckpointPackageContentV1 = serde_json::from_str(&raw)
@@ -62,6 +70,11 @@ pub(super) fn cmd_pack_checkpoint_inspect(args: &[String]) {
         .iter()
         .find(|arg| !arg.starts_with("--") && arg.as_str() != "checkpoint-inspect")
         .unwrap_or_else(|| fail("Usage: lean-ctx pack checkpoint-inspect <file.ctxpkg>"));
+    require_bounded_regular_file(
+        Path::new(file),
+        MAX_CHECKPOINT_PACKAGE_BYTES,
+        "checkpoint package",
+    );
     let (manifest, checkpoint) =
         crate::core::context_package::registry::read_checkpoint_bundle(Path::new(file))
             .unwrap_or_else(|error| fail(&format!("inspect checkpoint package: {error}")));
@@ -89,6 +102,16 @@ pub(super) fn cmd_pack_checkpoint_inspect(args: &[String]) {
         }))
         .expect("inspect result serializes")
     );
+}
+
+fn require_bounded_regular_file(path: &Path, max_bytes: u64, label: &str) {
+    let metadata = std::fs::symlink_metadata(path)
+        .unwrap_or_else(|error| fail(&format!("stat {label}: {error}")));
+    if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > max_bytes {
+        fail(&format!(
+            "{label} must be a bounded regular non-symlink file"
+        ));
+    }
 }
 
 pub(super) fn cmd_pack_snapshot_v1_inspect(args: &[String]) {

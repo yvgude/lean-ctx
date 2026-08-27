@@ -52,7 +52,6 @@ pub(crate) struct CheckpointPackageContentV1 {
     pub checkpoint: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub migration_provenance: Option<serde_json::Value>,
-    #[serde(default)]
     pub non_portable_fields: Vec<String>,
 }
 
