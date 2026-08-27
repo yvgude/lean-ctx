@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
-use super::content::PackageContent;
+use super::content::{CheckpointPackageContentV1, PackageContent};
 use super::manifest::PackageManifest;
 
 const INDEX_FILE: &str = "package-index.json";
@@ -357,6 +357,67 @@ impl LocalRegistry {
 struct ExportBundle {
     manifest: PackageManifest,
     content: PackageContent,
+}
+
+pub(crate) fn write_checkpoint_bundle(
+    mut manifest: PackageManifest,
+    content: PackageContent,
+    output: &Path,
+    signing_key: Option<&ed25519_dalek::SigningKey>,
+) -> Result<PackageManifest, String> {
+    super::verify::validate_kind_coherence(&manifest, &content)
+        .map_err(|errors| errors.join("; "))?;
+    let checkpoint = content
+        .checkpoint
+        .as_ref()
+        .ok_or("checkpoint bundle has no content.checkpoint payload")?;
+    if !manifest.has_layer(super::manifest::PackageLayer::Checkpoint) {
+        return Err("checkpoint bundle has no checkpoint manifest layer".into());
+    }
+    if !crate::core::secret_detection::detect_secrets(
+        &serde_json::to_string(checkpoint).map_err(|error| error.to_string())?,
+    )
+    .is_empty()
+    {
+        return Err("checkpoint bundle contains credential-shaped material".into());
+    }
+    if let Some(key) = signing_key {
+        super::signing::sign_package(&mut manifest, &content, key);
+    }
+    let bundle = ExportBundle {
+        manifest: manifest.clone(),
+        content,
+    };
+    let json = serde_json::to_string_pretty(&bundle).map_err(|error| error.to_string())?;
+    if let Some(parent) = output.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| format!("create output dir: {error}"))?;
+    }
+    atomic_write(output, json.as_bytes())?;
+    let report = super::verify::verify_package_file(output)?;
+    if !report.valid() {
+        return Err(format!(
+            "written checkpoint package failed verification: {}",
+            report.errors.join("; ")
+        ));
+    }
+    Ok(manifest)
+}
+
+pub(crate) fn read_checkpoint_bundle(
+    path: &Path,
+) -> Result<(PackageManifest, CheckpointPackageContentV1), String> {
+    let report = super::verify::verify_package_file(path)?;
+    if !report.valid() {
+        return Err(report.errors.join("; "));
+    }
+    let json = std::fs::read_to_string(path).map_err(|error| format!("read package: {error}"))?;
+    let bundle: ExportBundle =
+        serde_json::from_str(&json).map_err(|error| format!("parse package: {error}"))?;
+    let checkpoint = bundle
+        .content
+        .checkpoint
+        .ok_or("package has no checkpoint content")?;
+    Ok((bundle.manifest, checkpoint))
 }
 
 use super::verify::{compact_json_text, extract_top_level_value_text};

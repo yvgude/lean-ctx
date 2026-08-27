@@ -93,6 +93,7 @@ pub(crate) enum PackageLayer {
     Session,
     Patterns,
     Gotchas,
+    Checkpoint,
 }
 
 impl PackageLayer {
@@ -103,6 +104,7 @@ impl PackageLayer {
             Self::Session => "session",
             Self::Patterns => "patterns",
             Self::Gotchas => "gotchas",
+            Self::Checkpoint => "checkpoint",
         }
     }
 
@@ -113,6 +115,7 @@ impl PackageLayer {
             Self::Session => "session.json",
             Self::Patterns => "patterns.json",
             Self::Gotchas => "gotchas.json",
+            Self::Checkpoint => "checkpoint.json",
         }
     }
 }
@@ -216,6 +219,11 @@ impl PackageManifest {
                 self.kind.as_str(),
                 crate::core::contracts::CONTEXT_PACKAGE_V2_SCHEMA_VERSION,
             ));
+        }
+        if self.layers.contains(&PackageLayer::Checkpoint)
+            && (!self.is_v2() || !self.kind.is_context())
+        {
+            errors.push("checkpoint layer requires schema_version 2 and kind=context".into());
         }
         let mut seen_layers = std::collections::HashSet::new();
         for layer in &self.layers {

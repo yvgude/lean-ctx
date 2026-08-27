@@ -2,8 +2,9 @@ use chrono::Utc;
 use sha2::{Digest, Sha256};
 
 use super::content::{
-    GotchaExport, GotchasLayer, GraphEdgeExport, GraphLayer, GraphNodeExport, KnowledgeLayer,
-    PackageContent, PatternsLayer, SessionDecision, SessionFinding, SessionLayer,
+    CheckpointPackageContentV1, GotchaExport, GotchasLayer, GraphEdgeExport, GraphLayer,
+    GraphNodeExport, KnowledgeLayer, PackageContent, PatternsLayer, SessionDecision,
+    SessionFinding, SessionLayer,
 };
 use super::manifest::{
     CompatibilitySpec, PackageIntegrity, PackageLayer, PackageManifest, PackageProvenance,
@@ -65,6 +66,11 @@ impl PackageBuilder {
 
     pub(crate) fn project_hash(mut self, hash: &str) -> Self {
         self.project_hash = Some(hash.to_string());
+        self
+    }
+
+    pub(crate) fn checkpoint(mut self, checkpoint: CheckpointPackageContentV1) -> Self {
+        self.content.checkpoint = Some(checkpoint);
         self
     }
 
@@ -364,7 +370,7 @@ impl PackageBuilder {
             return Err("package has no content — add at least one layer".into());
         }
 
-        let is_v2 = self.content.context_graph.is_some();
+        let is_v2 = self.content.context_graph.is_some() || self.content.checkpoint.is_some();
 
         let mut layers = Vec::new();
         if self.content.knowledge.is_some() {
@@ -381,6 +387,9 @@ impl PackageBuilder {
         }
         if self.content.gotchas.is_some() {
             layers.push(PackageLayer::Gotchas);
+        }
+        if self.content.checkpoint.is_some() {
+            layers.push(PackageLayer::Checkpoint);
         }
 
         let content_json = serde_json::to_string(&self.content).map_err(|e| e.to_string())?;

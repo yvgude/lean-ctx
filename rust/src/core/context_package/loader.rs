@@ -5,7 +5,7 @@ use crate::core::property_graph::{CodeGraph, Edge, EdgeKind, Node, NodeKind};
 use super::composition;
 use super::content::{GraphLayer, KnowledgeLayer, PackageContent, PatternsLayer, SessionLayer};
 use super::graph_model::ContextGraph;
-use super::manifest::PackageManifest;
+use super::manifest::{PackageLayer, PackageManifest};
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct LoadReport {
@@ -106,6 +106,12 @@ pub(crate) fn load_package(
     content: &PackageContent,
     project_root: &str,
 ) -> Result<LoadReport, String> {
+    if manifest.has_layer(PackageLayer::Checkpoint) || content.checkpoint.is_some() {
+        return Err(
+            "checkpoint packages require the explicit checkpoint-aware SDK seed path; generic load is unsupported"
+                .into(),
+        );
+    }
     let mut report = LoadReport {
         package_name: manifest.name.clone(),
         package_version: manifest.version.clone(),
