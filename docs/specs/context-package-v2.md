@@ -17,6 +17,24 @@ package substrate remain distinct until a versioned composition/migration
 contract exists. See the internal
 [Context Workspace & `.ctxpkg` Plan](../internal/vision/07-CONTEXT-WORKSPACE-CTXPKG-PLAN.md).
 
+## Additive checkpoint layer
+
+Research v2 reserves the explicit manifest layer `checkpoint` together with
+`content.checkpoint` using envelope contract
+`leanctx.ctxpkg-checkpoint/v1`. Both must be present together. The package kind
+remains `context` and `manifest.schema_version` remains `2`.
+
+Checkpoint-critical semantics live only inside authenticated `content` bytes:
+the raw canonical content hash feeds package integrity, which is bound by the
+existing Ed25519 signature message. Checkpoint ID, logical-state digest,
+content hash, package digest and signature remain distinct identities.
+
+Pre-extension typed readers reject the unknown `checkpoint` layer. Generic
+package loading also rejects checkpoint packages; a checkpoint-aware Product
+admission path must explicitly separate verification, signer trust, install,
+seed and restore. Existing v1/v2 packages omit the new optional member and keep
+their prior bytes and behavior.
+
 ## Research direction
 
 Earlier work explored a richer package shape for reusable context assets,

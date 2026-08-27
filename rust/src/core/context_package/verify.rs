@@ -8,8 +8,12 @@
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
-use super::content::PackageContent;
-use super::manifest::{PackageKind, PackageManifest};
+use super::content::{
+    CHECKPOINT_PACKAGE_SCHEMA_V1, CheckpointPackageContentV1, MAX_CHECKPOINT_ENTRIES,
+    MAX_CHECKPOINT_PACKAGE_BYTES, MAX_CHECKPOINT_PACKAGE_PINS, MAX_CHECKPOINT_REFS,
+    MAX_CHECKPOINT_SOURCES, PackageContent,
+};
+use super::manifest::{PackageKind, PackageLayer, PackageManifest};
 
 /// Strip insignificant whitespace outside string literals (spec §8).
 pub(crate) fn compact_json_text(text: &str) -> String {
@@ -174,11 +178,993 @@ pub(crate) fn validate_kind_coherence(
             }
         }
     }
+    let has_checkpoint_layer = manifest.has_layer(PackageLayer::Checkpoint);
+    if has_checkpoint_layer != content.checkpoint.is_some() {
+        errors.push(
+            "manifest checkpoint layer and content.checkpoint must be present together".into(),
+        );
+    }
+    if let Some(checkpoint) = &content.checkpoint {
+        if manifest.schema_version != crate::core::contracts::CONTEXT_PACKAGE_V2_SCHEMA_VERSION
+            || manifest.kind != PackageKind::Context
+        {
+            errors.push("checkpoint content requires schema_version 2 and kind=context".into());
+        }
+        validate_checkpoint_content(checkpoint, &mut errors);
+    }
     if errors.is_empty() {
         Ok(())
     } else {
         Err(errors)
     }
+}
+
+fn validate_checkpoint_content(portable: &CheckpointPackageContentV1, errors: &mut Vec<String>) {
+    if portable.schema_version != CHECKPOINT_PACKAGE_SCHEMA_V1 {
+        errors.push(format!(
+            "unsupported checkpoint package schema `{}`",
+            portable.schema_version
+        ));
+        return;
+    }
+    let Ok(encoded) = serde_json::to_vec(portable) else {
+        errors.push("checkpoint content is not canonical JSON".into());
+        return;
+    };
+    if encoded.len() > MAX_CHECKPOINT_PACKAGE_BYTES {
+        errors.push(format!(
+            "checkpoint content exceeds {MAX_CHECKPOINT_PACKAGE_BYTES} byte cap"
+        ));
+        return;
+    }
+    validate_checkpoint_object(&portable.checkpoint, errors);
+    validate_migration_provenance(
+        portable.migration_provenance.as_ref(),
+        &portable.checkpoint,
+        errors,
+    );
+
+    let mut absolute_paths = Vec::new();
+    collect_non_portable_paths(&portable.checkpoint, "$.checkpoint", &mut absolute_paths);
+    absolute_paths.sort();
+    absolute_paths.dedup();
+    let mut declared = portable.non_portable_fields.clone();
+    declared.sort();
+    declared.dedup();
+    if declared != portable.non_portable_fields
+        || declared.len() > MAX_CHECKPOINT_REFS
+        || declared
+            .iter()
+            .any(|item| item.is_empty() || item.len() > 2048 || item.chars().any(char::is_control))
+        || declared != absolute_paths
+    {
+        errors.push(
+            "non_portable_fields must exactly classify every machine-local absolute path".into(),
+        );
+    }
+
+    let portable_text = serde_json::to_string(portable).unwrap_or_default();
+    if !crate::core::secret_detection::detect_secrets(&portable_text).is_empty() {
+        errors.push("checkpoint content contains credential-shaped material".into());
+    }
+}
+
+fn validate_checkpoint_object(value: &serde_json::Value, errors: &mut Vec<String>) {
+    const KEYS: &[&str] = &[
+        "schema_version",
+        "checkpoint_id",
+        "workspace_id",
+        "state_digest",
+        "state_schema_version",
+        "workspace_state_ref",
+        "logical_state",
+        "source_anchors",
+        "recovery_refs",
+        "package_pins",
+        "package_lock_digest",
+        "policy_digest",
+        "project_context_digest",
+        "lineage",
+        "engine_identity",
+        "sdk_contract",
+        "envelope_digest",
+    ];
+    let Some(object) = value.as_object() else {
+        errors.push("checkpoint envelope must be an object".into());
+        return;
+    };
+    validate_exact_keys(object, KEYS, "checkpoint", errors);
+    if object
+        .get("schema_version")
+        .and_then(serde_json::Value::as_str)
+        != Some("leanctx.context-checkpoint/v2")
+        || object
+            .get("state_schema_version")
+            .and_then(serde_json::Value::as_str)
+            != Some("leanctx.workspace.state/v1")
+        || object
+            .get("sdk_contract")
+            .and_then(serde_json::Value::as_str)
+            != Some("leanctx-product-sdk-research/p6")
+    {
+        errors.push("checkpoint contract identity is unsupported".into());
+    }
+    for name in ["checkpoint_id", "workspace_id"] {
+        let valid = object
+            .get(name)
+            .and_then(serde_json::Value::as_str)
+            .and_then(|raw| uuid::Uuid::parse_str(raw).ok().map(|parsed| (raw, parsed)))
+            .is_some_and(|(raw, parsed)| parsed.hyphenated().to_string() == raw);
+        if !valid {
+            errors.push(format!("checkpoint.{name} must be a canonical UUID"));
+        }
+    }
+    for name in [
+        "state_digest",
+        "policy_digest",
+        "project_context_digest",
+        "envelope_digest",
+    ] {
+        if !object.get(name).is_some_and(valid_prefixed_digest) {
+            errors.push(format!("checkpoint.{name} must be a sha256 digest"));
+        }
+    }
+    if !object.get("workspace_state_ref").is_some_and(|item| {
+        item.as_str().is_some_and(|raw| {
+            raw.starts_with("event:sha256:")
+                && raw.len() == 77
+                && raw[13..]
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+    }) {
+        errors.push("checkpoint.workspace_state_ref must bind an event digest".into());
+    }
+    if !object
+        .get("package_lock_digest")
+        .is_some_and(|item| item.is_null() || valid_prefixed_digest(item))
+    {
+        errors.push("checkpoint.package_lock_digest is invalid".into());
+    }
+
+    let arrays = [
+        ("source_anchors", MAX_CHECKPOINT_SOURCES),
+        ("recovery_refs", MAX_CHECKPOINT_REFS),
+        ("package_pins", MAX_CHECKPOINT_PACKAGE_PINS),
+    ];
+    for (name, cap) in arrays {
+        if object
+            .get(name)
+            .and_then(serde_json::Value::as_array)
+            .is_none_or(|items| items.len() > cap)
+        {
+            errors.push(format!("checkpoint.{name} is missing or exceeds cap {cap}"));
+        }
+    }
+    let Some(logical) = object
+        .get("logical_state")
+        .and_then(serde_json::Value::as_object)
+    else {
+        errors.push("checkpoint.logical_state must be an object".into());
+        return;
+    };
+    const LOGICAL_KEYS: &[&str] = &[
+        "schema_version",
+        "workspace_id",
+        "policy",
+        "sources",
+        "entries",
+        "package_pins",
+        "package_lock_digest",
+    ];
+    validate_exact_keys(logical, LOGICAL_KEYS, "checkpoint.logical_state", errors);
+    if logical
+        .get("schema_version")
+        .and_then(serde_json::Value::as_str)
+        != Some("leanctx.workspace.state/v1")
+    {
+        errors.push("checkpoint logical-state schema is unsupported".into());
+    }
+    validate_workspace_policy(logical.get("policy"), errors);
+    validate_lineage(object.get("lineage"), object.get("workspace_id"), errors);
+    validate_engine_identity(object.get("engine_identity"), errors);
+    if logical.get("workspace_id") != object.get("workspace_id")
+        || logical.get("sources") != object.get("source_anchors")
+        || logical.get("package_pins") != object.get("package_pins")
+        || logical.get("package_lock_digest") != object.get("package_lock_digest")
+    {
+        errors.push("checkpoint cross-field projections disagree".into());
+    }
+    if logical
+        .get("sources")
+        .and_then(serde_json::Value::as_array)
+        .is_none_or(|items| items.len() > MAX_CHECKPOINT_SOURCES)
+        || logical
+            .get("entries")
+            .and_then(serde_json::Value::as_array)
+            .is_none_or(|items| items.len() > MAX_CHECKPOINT_ENTRIES)
+    {
+        errors.push("checkpoint logical-state arrays exceed bounds".into());
+    }
+    let source_ids = logical
+        .get("sources")
+        .and_then(serde_json::Value::as_array)
+        .map(|sources| {
+            sources
+                .iter()
+                .filter_map(|source| source.get("source_id").and_then(serde_json::Value::as_str))
+                .collect::<std::collections::HashSet<_>>()
+        })
+        .unwrap_or_default();
+    if let Some(sources) = logical.get("sources").and_then(serde_json::Value::as_array) {
+        validate_source_anchors(sources, errors);
+    }
+    if let Some(entries) = logical.get("entries").and_then(serde_json::Value::as_array) {
+        validate_context_entries(entries, &source_ids, errors);
+        let mut expected_refs = entries
+            .iter()
+            .filter_map(|entry| {
+                entry
+                    .get("recovery_refs")
+                    .and_then(serde_json::Value::as_array)
+            })
+            .flatten()
+            .cloned()
+            .collect::<Vec<_>>();
+        expected_refs.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+        expected_refs.dedup();
+        if object
+            .get("recovery_refs")
+            .and_then(serde_json::Value::as_array)
+            != Some(&expected_refs)
+        {
+            errors.push("checkpoint recovery refs disagree with context entries".into());
+        }
+    }
+    if let Some(refs) = object
+        .get("recovery_refs")
+        .and_then(serde_json::Value::as_array)
+    {
+        validate_string_array(
+            refs,
+            MAX_CHECKPOINT_REFS,
+            2048,
+            "checkpoint recovery refs",
+            errors,
+        );
+    }
+    if let Some(pins) = logical
+        .get("package_pins")
+        .and_then(serde_json::Value::as_array)
+    {
+        validate_package_pins(pins, logical.get("package_lock_digest"), errors);
+    }
+    validate_domain_digest(
+        "leanctx.workspace.state.v1",
+        &serde_json::Value::Object(logical.clone()),
+        object.get("state_digest"),
+        "checkpoint.state_digest",
+        errors,
+    );
+    if let Some(policy) = logical.get("policy") {
+        validate_domain_digest(
+            "leanctx.workspace.policy.v1",
+            policy,
+            object.get("policy_digest"),
+            "checkpoint.policy_digest",
+            errors,
+        );
+    }
+    if let Some(entries) = logical.get("entries") {
+        validate_domain_digest(
+            "leanctx.project-context.state.v1",
+            entries,
+            object.get("project_context_digest"),
+            "checkpoint.project_context_digest",
+            errors,
+        );
+    }
+    let mut unsigned = object.clone();
+    unsigned.remove("envelope_digest");
+    validate_domain_digest(
+        "leanctx.checkpoint.envelope.v2",
+        &serde_json::Value::Object(unsigned),
+        object.get("envelope_digest"),
+        "checkpoint.envelope_digest",
+        errors,
+    );
+}
+
+fn validate_workspace_policy(value: Option<&serde_json::Value>, errors: &mut Vec<String>) {
+    const KEYS: &[&str] = &[
+        "schema_version",
+        "allowed_categories",
+        "max_events",
+        "max_context_entries",
+        "max_entry_bytes",
+        "max_context_bytes",
+        "max_sources",
+        "max_sessions",
+        "allow_external_sources",
+    ];
+    let Some(object) = value.and_then(serde_json::Value::as_object) else {
+        errors.push("checkpoint workspace policy must be an object".into());
+        return;
+    };
+    validate_exact_keys(object, KEYS, "checkpoint workspace policy", errors);
+    let Some(categories) = object
+        .get("allowed_categories")
+        .and_then(serde_json::Value::as_array)
+    else {
+        errors.push("checkpoint workspace policy categories must be an array".into());
+        return;
+    };
+    let category_values = categories
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect::<Vec<_>>();
+    if object
+        .get("schema_version")
+        .and_then(serde_json::Value::as_str)
+        != Some("leanctx.workspace-policy/v1")
+        || category_values.len() != categories.len()
+        || !category_values.windows(2).all(|pair| pair[0] < pair[1])
+        || category_values.iter().any(|category| {
+            !matches!(
+                *category,
+                "facts" | "decisions" | "constraints" | "unresolved_questions" | "source_refs"
+            )
+        })
+        || [
+            "max_events",
+            "max_context_entries",
+            "max_entry_bytes",
+            "max_context_bytes",
+            "max_sources",
+            "max_sessions",
+        ]
+        .iter()
+        .any(|name| {
+            object
+                .get(*name)
+                .and_then(serde_json::Value::as_u64)
+                .is_none_or(|n| n == 0)
+        })
+        || !object
+            .get("allow_external_sources")
+            .is_some_and(serde_json::Value::is_boolean)
+    {
+        errors.push("checkpoint workspace policy is invalid".into());
+    }
+}
+
+fn validate_lineage(
+    value: Option<&serde_json::Value>,
+    workspace_id: Option<&serde_json::Value>,
+    errors: &mut Vec<String>,
+) {
+    let Some(object) = value.and_then(serde_json::Value::as_object) else {
+        errors.push("checkpoint lineage must be an object".into());
+        return;
+    };
+    validate_exact_keys(
+        object,
+        &["kind", "workspace_id", "state_id"],
+        "checkpoint lineage",
+        errors,
+    );
+    if object.get("kind").and_then(serde_json::Value::as_str) != Some("workspace")
+        || object.get("workspace_id") != workspace_id
+        || !object.get("state_id").is_some_and(valid_prefixed_digest)
+    {
+        errors.push("checkpoint lineage is invalid".into());
+    }
+}
+
+fn validate_engine_identity(value: Option<&serde_json::Value>, errors: &mut Vec<String>) {
+    let Some(object) = value.and_then(serde_json::Value::as_object) else {
+        errors.push("checkpoint engine identity must be an object".into());
+        return;
+    };
+    validate_exact_keys(
+        object,
+        &["interface_version", "schema_version", "transport_version"],
+        "checkpoint engine identity",
+        errors,
+    );
+    if object
+        .get("interface_version")
+        .and_then(serde_json::Value::as_str)
+        != Some("1.0.0")
+        || object
+            .get("schema_version")
+            .and_then(serde_json::Value::as_u64)
+            != Some(1)
+        || object
+            .get("transport_version")
+            .and_then(serde_json::Value::as_u64)
+            != Some(1)
+    {
+        errors.push("checkpoint engine identity is unsupported".into());
+    }
+}
+
+fn validate_source_anchors(sources: &[serde_json::Value], errors: &mut Vec<String>) {
+    const KEYS: &[&str] = &[
+        "schema_version",
+        "source_id",
+        "kind",
+        "canonical_id",
+        "revision",
+        "freshness",
+        "recovery",
+        "trust",
+        "scope",
+        "engine_binding",
+    ];
+    let mut source_ids = Vec::new();
+    for source in sources {
+        let Some(object) = source.as_object() else {
+            errors.push("checkpoint source anchor must be an object".into());
+            continue;
+        };
+        validate_exact_keys(object, KEYS, "checkpoint source anchor", errors);
+        if object
+            .get("schema_version")
+            .and_then(serde_json::Value::as_str)
+            != Some("leanctx.source-anchor/v1")
+        {
+            errors.push("checkpoint source anchor schema is unsupported".into());
+        }
+        let source_id = bounded_string(object.get("source_id"), 128);
+        let kind = object.get("kind").and_then(serde_json::Value::as_str);
+        if source_id.is_none()
+            || !matches!(
+                kind,
+                Some("filesystem" | "git" | "archive" | "api" | "custom")
+            )
+            || bounded_string(object.get("canonical_id"), 2048).is_none()
+        {
+            errors.push("checkpoint source anchor identity is invalid".into());
+        }
+        if let Some(source_id) = source_id {
+            source_ids.push(source_id);
+        }
+        validate_revision(object.get("revision"), kind, errors);
+        validate_freshness(object.get("freshness"), errors);
+        validate_recovery(object.get("recovery"), errors);
+        validate_trust(object.get("trust"), errors);
+        validate_pair_object(
+            object.get("scope"),
+            "checkpoint source scope",
+            64,
+            2048,
+            errors,
+        );
+        validate_engine_binding(object.get("engine_binding"), kind, errors);
+    }
+    source_ids.sort_unstable();
+    if !source_ids.windows(2).all(|pair| pair[0] < pair[1]) {
+        errors.push("checkpoint source ids must be unique and sorted".into());
+    }
+}
+
+fn validate_revision(
+    value: Option<&serde_json::Value>,
+    source_kind: Option<&str>,
+    errors: &mut Vec<String>,
+) {
+    let Some(value) = value else { return };
+    if value.is_null() {
+        return;
+    }
+    let Some(object) = value.as_object() else {
+        errors.push("checkpoint source revision must be null or an object".into());
+        return;
+    };
+    validate_exact_keys(
+        object,
+        &["kind", "value"],
+        "checkpoint source revision",
+        errors,
+    );
+    if bounded_string(object.get("kind"), 64).is_none()
+        || bounded_string(object.get("value"), 2048).is_none()
+        || object.get("kind").and_then(serde_json::Value::as_str) != source_kind
+    {
+        errors.push("checkpoint source revision is invalid".into());
+    }
+}
+
+fn validate_freshness(value: Option<&serde_json::Value>, errors: &mut Vec<String>) {
+    let Some(object) = value.and_then(serde_json::Value::as_object) else {
+        errors.push("checkpoint source freshness must be an object".into());
+        return;
+    };
+    let keys = if object.contains_key("valid_until") {
+        &["observed_at", "status", "valid_until"][..]
+    } else {
+        &["observed_at", "status"][..]
+    };
+    validate_exact_keys(object, keys, "checkpoint source freshness", errors);
+    let observed = object
+        .get("observed_at")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|raw| chrono::DateTime::parse_from_rfc3339(raw).ok());
+    let valid_until = object
+        .get("valid_until")
+        .filter(|value| !value.is_null())
+        .and_then(|value| value.as_str())
+        .and_then(|raw| chrono::DateTime::parse_from_rfc3339(raw).ok());
+    if observed.is_none()
+        || !object
+            .get("status")
+            .is_some_and(|value| matches!(value.as_str(), Some("current" | "stale" | "unknown")))
+        || (object
+            .get("valid_until")
+            .is_some_and(|value| !value.is_null())
+            && valid_until.is_none())
+        || valid_until
+            .zip(observed)
+            .is_some_and(|(valid, observed)| valid < observed)
+    {
+        errors.push("checkpoint source freshness is invalid".into());
+    }
+}
+
+fn validate_recovery(value: Option<&serde_json::Value>, errors: &mut Vec<String>) {
+    let Some(value) = value else { return };
+    if value.is_null() {
+        return;
+    }
+    let Some(object) = value.as_object() else {
+        errors.push("checkpoint source recovery must be null or an object".into());
+        return;
+    };
+    let keys = if object.contains_key("digest") {
+        &["kind", "immutable_ref", "digest"][..]
+    } else {
+        &["kind", "immutable_ref"][..]
+    };
+    validate_exact_keys(object, keys, "checkpoint source recovery", errors);
+    if bounded_string(object.get("kind"), 64).is_none()
+        || bounded_string(object.get("immutable_ref"), 2048).is_none()
+        || object
+            .get("digest")
+            .is_some_and(|value| !valid_prefixed_digest(value))
+    {
+        errors.push("checkpoint source recovery is invalid".into());
+    }
+}
+
+fn validate_trust(value: Option<&serde_json::Value>, errors: &mut Vec<String>) {
+    let Some(object) = value.and_then(serde_json::Value::as_object) else {
+        errors.push("checkpoint source trust must be an object".into());
+        return;
+    };
+    validate_exact_keys(
+        object,
+        &["level", "evidence_refs"],
+        "checkpoint source trust",
+        errors,
+    );
+    let level = object.get("level").and_then(serde_json::Value::as_str);
+    let Some(refs) = object
+        .get("evidence_refs")
+        .and_then(serde_json::Value::as_array)
+    else {
+        errors.push("checkpoint source trust evidence must be an array".into());
+        return;
+    };
+    validate_string_array(refs, 32, 2048, "checkpoint source trust evidence", errors);
+    if !matches!(level, Some("unverified" | "local" | "verified"))
+        || (level == Some("verified")
+            && (refs.is_empty()
+                || refs.iter().any(|value| {
+                    !value.as_str().is_some_and(|raw| {
+                        raw.len() == 79
+                            && raw.starts_with("receipt:sha256:")
+                            && raw[15..]
+                                .bytes()
+                                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                    })
+                })))
+    {
+        errors.push("checkpoint source trust is invalid".into());
+    }
+}
+
+fn validate_pair_object(
+    value: Option<&serde_json::Value>,
+    label: &str,
+    first_cap: usize,
+    second_cap: usize,
+    errors: &mut Vec<String>,
+) {
+    let Some(object) = value.and_then(serde_json::Value::as_object) else {
+        errors.push(format!("{label} must be an object"));
+        return;
+    };
+    validate_exact_keys(object, &["kind", "value"], label, errors);
+    if bounded_string(object.get("kind"), first_cap).is_none()
+        || bounded_string(object.get("value"), second_cap).is_none()
+    {
+        errors.push(format!("{label} is invalid"));
+    }
+}
+
+fn validate_engine_binding(
+    value: Option<&serde_json::Value>,
+    source_kind: Option<&str>,
+    errors: &mut Vec<String>,
+) {
+    let Some(value) = value else { return };
+    if value.is_null() {
+        return;
+    }
+    let Some(object) = value.as_object() else {
+        errors.push("checkpoint engine binding must be null or an object".into());
+        return;
+    };
+    if source_kind != Some("filesystem") {
+        errors.push("checkpoint engine binding requires a filesystem source".into());
+    }
+    let required = ["path", "project_root", "media_type"];
+    let allowed = [
+        "path",
+        "project_root",
+        "media_type",
+        "source_ref",
+        "source_digest",
+    ];
+    if object.keys().any(|key| !allowed.contains(&key.as_str()))
+        || required.iter().any(|key| !object.contains_key(*key))
+        || bounded_string(object.get("path"), 4096).is_none()
+        || bounded_string(object.get("project_root"), 4096).is_none()
+        || bounded_string(object.get("media_type"), 256).is_none()
+        || ["source_ref", "source_digest"].iter().any(|key| {
+            object.get(*key).is_some_and(|value| {
+                !value.is_null() && bounded_string(Some(value), 2048).is_none()
+            })
+        })
+    {
+        errors.push("checkpoint engine binding is invalid".into());
+    }
+}
+
+fn validate_context_entries(
+    entries: &[serde_json::Value],
+    source_ids: &std::collections::HashSet<&str>,
+    errors: &mut Vec<String>,
+) {
+    const KEYS: &[&str] = &[
+        "schema_version",
+        "entry_id",
+        "category",
+        "value",
+        "source_ids",
+        "session_id",
+        "receipt_refs",
+        "recovery_refs",
+    ];
+    let mut entry_ids = Vec::new();
+    for entry in entries {
+        let Some(object) = entry.as_object() else {
+            errors.push("checkpoint context entry must be an object".into());
+            continue;
+        };
+        validate_exact_keys(object, KEYS, "checkpoint context entry", errors);
+        if object
+            .get("schema_version")
+            .and_then(serde_json::Value::as_str)
+            != Some("leanctx.project-context-entry/v1")
+            || !object
+                .get("entry_id")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|raw| {
+                    uuid::Uuid::parse_str(raw)
+                        .is_ok_and(|parsed| parsed.hyphenated().to_string() == raw)
+                })
+            || !object.get("category").is_some_and(|value| {
+                matches!(
+                    value.as_str(),
+                    Some(
+                        "facts"
+                            | "decisions"
+                            | "constraints"
+                            | "unresolved_questions"
+                            | "source_refs"
+                    )
+                )
+            })
+            || bounded_string(object.get("value"), 65_536).is_none()
+            || object
+                .get("session_id")
+                .is_some_and(|value| !value.is_null() && bounded_string(Some(value), 512).is_none())
+        {
+            errors.push("checkpoint context entry identity/value is invalid".into());
+        }
+        if let Some(entry_id) = object.get("entry_id").and_then(serde_json::Value::as_str) {
+            entry_ids.push(entry_id);
+        }
+        for (field, cap) in [
+            ("source_ids", 64),
+            ("receipt_refs", 64),
+            ("recovery_refs", 64),
+        ] {
+            let Some(items) = object.get(field).and_then(serde_json::Value::as_array) else {
+                errors.push(format!("checkpoint context entry {field} must be an array"));
+                continue;
+            };
+            validate_string_array(items, cap, 2048, "checkpoint context entry refs", errors);
+            if field == "source_ids"
+                && items
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .any(|source_id| !source_ids.contains(source_id))
+            {
+                errors.push("checkpoint context entry references an unknown source".into());
+            }
+        }
+    }
+    entry_ids.sort_unstable();
+    if entry_ids.windows(2).any(|pair| pair[0] == pair[1]) {
+        errors.push("checkpoint context entry ids must be unique".into());
+    }
+}
+
+fn validate_string_array(
+    values: &[serde_json::Value],
+    cap: usize,
+    item_cap: usize,
+    label: &str,
+    errors: &mut Vec<String>,
+) {
+    if values.len() > cap
+        || values
+            .iter()
+            .any(|value| bounded_string(Some(value), item_cap).is_none())
+    {
+        errors.push(format!("{label} is invalid or exceeds its bound"));
+    }
+}
+
+fn bounded_string(value: Option<&serde_json::Value>, cap: usize) -> Option<&str> {
+    value
+        .and_then(serde_json::Value::as_str)
+        .filter(|raw| !raw.is_empty() && raw.len() <= cap && !raw.chars().any(char::is_control))
+}
+
+fn validate_package_pins(
+    pins: &[serde_json::Value],
+    lock_digest: Option<&serde_json::Value>,
+    errors: &mut Vec<String>,
+) {
+    const KEYS: &[&str] = &[
+        "schema_version",
+        "name",
+        "version",
+        "artifact_digest",
+        "manifest_digest",
+        "content_hash",
+        "signature_state",
+        "signer_public_key",
+        "trust_state",
+        "policy_decision",
+    ];
+    let mut identities = Vec::new();
+    for pin in pins {
+        let Some(object) = pin.as_object() else {
+            errors.push("checkpoint package pin must be an object".into());
+            continue;
+        };
+        validate_exact_keys(object, KEYS, "checkpoint package pin", errors);
+        if object
+            .get("schema_version")
+            .and_then(serde_json::Value::as_str)
+            != Some("leanctx.package-pin/v1")
+            || object
+                .get("policy_decision")
+                .and_then(serde_json::Value::as_str)
+                != Some("admitted")
+        {
+            errors.push("checkpoint package pin contract is unsupported".into());
+        }
+        for name in ["artifact_digest", "manifest_digest", "content_hash"] {
+            if !object.get(name).is_some_and(valid_prefixed_digest) {
+                errors.push(format!("checkpoint package pin {name} is invalid"));
+            }
+        }
+        let signature = object
+            .get("signature_state")
+            .and_then(serde_json::Value::as_str);
+        let signer = object.get("signer_public_key");
+        if !matches!(signature, Some("signed_valid" | "unsigned"))
+            || (signature == Some("signed_valid")
+                && !signer.is_some_and(|value| {
+                    value.as_str().is_some_and(|raw| {
+                        raw.len() == 64
+                            && raw
+                                .bytes()
+                                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                    })
+                }))
+            || (signature == Some("unsigned") && !signer.is_some_and(serde_json::Value::is_null))
+        {
+            errors.push("checkpoint package pin signature identity is invalid".into());
+        }
+        if !object.get("trust_state").is_some_and(|value| {
+            matches!(value.as_str(), Some("trusted" | "untrusted" | "unknown"))
+        }) {
+            errors.push("checkpoint package pin trust state is invalid".into());
+        }
+        let Some(name) = object.get("name").and_then(serde_json::Value::as_str) else {
+            errors.push("checkpoint package pin name is invalid".into());
+            continue;
+        };
+        let Some(version) = object.get("version").and_then(serde_json::Value::as_str) else {
+            errors.push("checkpoint package pin version is invalid".into());
+            continue;
+        };
+        if name.is_empty() || name.len() > 128 || version.is_empty() || version.len() > 64 {
+            errors.push("checkpoint package pin name/version exceeds bounds".into());
+        }
+        identities.push((name, version));
+    }
+    if !identities.windows(2).all(|pair| pair[0] < pair[1]) {
+        errors.push("checkpoint package pins must be unique and sorted".into());
+    }
+    if pins.is_empty() {
+        if !lock_digest.is_some_and(serde_json::Value::is_null) {
+            errors.push("empty checkpoint package pins require a null lock digest".into());
+        }
+    } else {
+        validate_domain_digest(
+            "leanctx.package.lock.v1",
+            &serde_json::Value::Array(pins.to_vec()),
+            lock_digest,
+            "checkpoint.package_lock_digest",
+            errors,
+        );
+    }
+}
+
+fn validate_migration_provenance(
+    value: Option<&serde_json::Value>,
+    checkpoint: &serde_json::Value,
+    errors: &mut Vec<String>,
+) {
+    let Some(value) = value else { return };
+    const KEYS: &[&str] = &[
+        "origin",
+        "legacy_snapshot_id",
+        "legacy_snapshot_digest",
+        "migration_contract",
+        "checkpoint_id",
+        "state_digest",
+        "limitations",
+    ];
+    let Some(object) = value.as_object() else {
+        errors.push("migration_provenance must be an object".into());
+        return;
+    };
+    validate_exact_keys(object, KEYS, "migration_provenance", errors);
+    if object.get("origin").and_then(serde_json::Value::as_str) != Some("SnapshotV1")
+        || object
+            .get("migration_contract")
+            .and_then(serde_json::Value::as_str)
+            != Some("leanctx.snapshot-v1-migration/v1")
+    {
+        errors.push("SnapshotV1 migration provenance is unsupported".into());
+    }
+    for name in ["legacy_snapshot_digest", "state_digest"] {
+        if !object.get(name).is_some_and(valid_prefixed_digest) {
+            errors.push(format!("migration_provenance.{name} is invalid"));
+        }
+    }
+    if bounded_string(object.get("legacy_snapshot_id"), 512).is_none()
+        || !object
+            .get("limitations")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|items| {
+                items.len() <= 64
+                    && items
+                        .iter()
+                        .all(|item| bounded_string(Some(item), 2048).is_some())
+            })
+    {
+        errors.push("migration_provenance.limitations exceeds its bound".into());
+    }
+    if object.get("checkpoint_id") != checkpoint.get("checkpoint_id")
+        || object.get("state_digest") != checkpoint.get("state_digest")
+    {
+        errors.push("migration provenance is not bound to the carried checkpoint".into());
+    }
+}
+
+fn validate_exact_keys(
+    object: &serde_json::Map<String, serde_json::Value>,
+    expected: &[&str],
+    label: &str,
+    errors: &mut Vec<String>,
+) {
+    if object.len() != expected.len()
+        || object.keys().any(|key| !expected.contains(&key.as_str()))
+        || expected.iter().any(|key| !object.contains_key(*key))
+    {
+        errors.push(format!("{label} fields do not match the open contract"));
+    }
+}
+
+fn valid_prefixed_digest(value: &serde_json::Value) -> bool {
+    value.as_str().is_some_and(|raw| {
+        raw.len() == 71
+            && raw.starts_with("sha256:")
+            && raw[7..]
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
+}
+
+fn validate_domain_digest(
+    domain: &str,
+    value: &serde_json::Value,
+    claimed: Option<&serde_json::Value>,
+    label: &str,
+    errors: &mut Vec<String>,
+) {
+    let Ok(canonical) = serde_json::to_vec(value) else {
+        errors.push(format!("{label} input is not canonical JSON"));
+        return;
+    };
+    let mut hasher = Sha256::new();
+    hasher.update(domain.as_bytes());
+    hasher.update(b"\n");
+    hasher.update(canonical);
+    let expected = format!(
+        "sha256:{}",
+        crate::core::agent_identity::hex_encode(&hasher.finalize())
+    );
+    if claimed.and_then(serde_json::Value::as_str) != Some(expected.as_str()) {
+        errors.push(format!("{label} does not match canonical content"));
+    }
+}
+
+fn collect_non_portable_paths(value: &serde_json::Value, pointer: &str, out: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(object) => {
+            for (key, item) in object {
+                let child = format!("{pointer}.{key}");
+                if matches!(key.as_str(), "path" | "project_root")
+                    && item.as_str().is_some_and(is_absolute_path)
+                {
+                    out.push(child.clone());
+                }
+                if matches!(key.as_str(), "canonical_id" | "immutable_ref")
+                    && item
+                        .as_str()
+                        .is_some_and(|value| value.starts_with("file:///"))
+                {
+                    out.push(child.clone());
+                }
+                collect_non_portable_paths(item, &child, out);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                collect_non_portable_paths(item, &format!("{pointer}[{index}]"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn is_absolute_path(value: &str) -> bool {
+    value.starts_with('/')
+        || value.starts_with("\\\\")
+        || (value.len() > 2
+            && value.as_bytes()[1] == b':'
+            && matches!(value.as_bytes()[2], b'/' | b'\\'))
 }
 
 /// Structural + integrity validation of a `kind=skills` payload (GH #727).
@@ -343,10 +1329,19 @@ pub(crate) fn verify_package_text(doc: &str) -> VerifyReport {
 
     // Kind ↔ payload coherence (GH #726) — a structural property: the
     // declared kind must match the payload the document actually carries.
-    if let Ok(content) =
-        serde_json::from_value::<PackageContent>(value.get("content").cloned().unwrap_or_default())
-        && let Err(errs) = validate_kind_coherence(&manifest, &content)
-    {
+    let content = match serde_json::from_value::<PackageContent>(
+        value.get("content").cloned().unwrap_or_default(),
+    ) {
+        Ok(content) => content,
+        Err(error) => {
+            report.structure = CheckOutcome::Fail;
+            report
+                .errors
+                .push(format!("content does not parse: {error}"));
+            return report;
+        }
+    };
+    if let Err(errs) = validate_kind_coherence(&manifest, &content) {
         report.structure = CheckOutcome::Fail;
         report.errors.extend(errs);
         return report;
@@ -510,6 +1505,314 @@ mod tests {
         assert_eq!(report.content_hash, CheckOutcome::Pass);
         assert_eq!(report.package_hash, CheckOutcome::Pass);
         assert_eq!(report.signature, CheckOutcome::Pass);
+    }
+
+    fn test_domain_digest(domain: &str, value: &serde_json::Value) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(domain.as_bytes());
+        hasher.update(b"\n");
+        hasher.update(serde_json::to_vec(value).unwrap());
+        format!(
+            "sha256:{}",
+            crate::core::agent_identity::hex_encode(&hasher.finalize())
+        )
+    }
+
+    fn signed_checkpoint_bundle() -> serde_json::Value {
+        use crate::core::context_package::content::{
+            CHECKPOINT_PACKAGE_SCHEMA_V1, CheckpointPackageContentV1,
+        };
+
+        let workspace_id = "123e4567-e89b-42d3-a456-426614174000";
+        let checkpoint_id = "123e4567-e89b-42d3-a456-426614174001";
+        let source = serde_json::json!({
+            "schema_version": "leanctx.source-anchor/v1",
+            "source_id": "source-1",
+            "kind": "filesystem",
+            "canonical_id": "file://source.txt",
+            "revision": {"kind": "filesystem", "value": format!("sha256:{}", "1".repeat(64))},
+            "freshness": {"observed_at": "2026-08-27T00:00:00Z", "status": "current"},
+            "recovery": null,
+            "trust": {"level": "local", "evidence_refs": []},
+            "scope": {"kind": "project", "value": "project"},
+            "engine_binding": null
+        });
+        let entry = serde_json::json!({
+            "schema_version": "leanctx.project-context-entry/v1",
+            "entry_id": "123e4567-e89b-42d3-a456-426614174002",
+            "category": "facts",
+            "value": "portable fact",
+            "source_ids": ["source-1"],
+            "session_id": null,
+            "receipt_refs": [],
+            "recovery_refs": [format!("recovery:sha256:{}", "2".repeat(64))]
+        });
+        let policy = serde_json::json!({
+            "schema_version": "leanctx.workspace-policy/v1",
+            "allowed_categories": ["constraints", "decisions", "facts", "source_refs", "unresolved_questions"],
+            "max_events": 4096,
+            "max_context_entries": 256,
+            "max_entry_bytes": 65536,
+            "max_context_bytes": 1048576,
+            "max_sources": 128,
+            "max_sessions": 128,
+            "allow_external_sources": false
+        });
+        let package_pin = serde_json::json!({
+            "schema_version": "leanctx.package-pin/v1",
+            "name": "dependency",
+            "version": "1.0.0",
+            "artifact_digest": format!("sha256:{}", "3".repeat(64)),
+            "manifest_digest": format!("sha256:{}", "4".repeat(64)),
+            "content_hash": format!("sha256:{}", "5".repeat(64)),
+            "signature_state": "signed_valid",
+            "signer_public_key": "6".repeat(64),
+            "trust_state": "trusted",
+            "policy_decision": "admitted"
+        });
+        let package_pins = serde_json::json!([package_pin]);
+        let lock_digest = test_domain_digest("leanctx.package.lock.v1", &package_pins);
+        let logical = serde_json::json!({
+            "schema_version": "leanctx.workspace.state/v1",
+            "workspace_id": workspace_id,
+            "policy": policy,
+            "sources": [source],
+            "entries": [entry],
+            "package_pins": package_pins,
+            "package_lock_digest": lock_digest
+        });
+        let state_digest = test_domain_digest("leanctx.workspace.state.v1", &logical);
+        let policy_digest = test_domain_digest("leanctx.workspace.policy.v1", &logical["policy"]);
+        let project_context_digest =
+            test_domain_digest("leanctx.project-context.state.v1", &logical["entries"]);
+        let mut checkpoint = serde_json::json!({
+            "schema_version": "leanctx.context-checkpoint/v2",
+            "checkpoint_id": checkpoint_id,
+            "workspace_id": workspace_id,
+            "state_digest": state_digest,
+            "state_schema_version": "leanctx.workspace.state/v1",
+            "workspace_state_ref": format!("event:sha256:{}", "5".repeat(64)),
+            "logical_state": logical,
+            "source_anchors": logical["sources"],
+            "recovery_refs": [format!("recovery:sha256:{}", "2".repeat(64))],
+            "package_pins": logical["package_pins"],
+            "package_lock_digest": lock_digest,
+            "policy_digest": policy_digest,
+            "project_context_digest": project_context_digest,
+            "lineage": {"kind": "workspace", "workspace_id": workspace_id, "state_id": format!("sha256:{}", "6".repeat(64))},
+            "engine_identity": {"interface_version": "1.0.0", "schema_version": 1, "transport_version": 1},
+            "sdk_contract": "leanctx-product-sdk-research/p6"
+        });
+        let envelope_digest = test_domain_digest("leanctx.checkpoint.envelope.v2", &checkpoint);
+        checkpoint["envelope_digest"] = envelope_digest.into();
+        let portable = CheckpointPackageContentV1 {
+            schema_version: CHECKPOINT_PACKAGE_SCHEMA_V1.into(),
+            migration_provenance: Some(serde_json::json!({
+                "origin": "SnapshotV1",
+                "legacy_snapshot_id": "snapshot-1",
+                "legacy_snapshot_digest": format!("sha256:{}", "7".repeat(64)),
+                "migration_contract": "leanctx.snapshot-v1-migration/v1",
+                "checkpoint_id": checkpoint_id,
+                "state_digest": state_digest,
+                "limitations": ["local recovery requires explicit rebinding"]
+            })),
+            checkpoint,
+            non_portable_fields: vec![],
+        };
+        let (mut manifest, content) =
+            crate::core::context_package::PackageBuilder::new("checkpoint-fixture", "1.0.0")
+                .description("checkpoint fixture")
+                .checkpoint(portable)
+                .build()
+                .unwrap();
+        let content_value = serde_json::to_value(&content).unwrap();
+        let content_json = serde_json::to_string(&content_value).unwrap();
+        let content_hash = sha256_hex(content_json.as_bytes());
+        manifest.integrity.content_hash.clone_from(&content_hash);
+        manifest.integrity.sha256 =
+            sha256_hex(format!("{}:{}:{content_hash}", manifest.name, manifest.version).as_bytes());
+        manifest.integrity.byte_size = content_json.len() as u64;
+        let key = ed25519_dalek::SigningKey::from_bytes(&[11u8; 32]);
+        super::super::signing::sign_package(&mut manifest, &content, &key);
+        serde_json::json!({"manifest": manifest, "content": content_value})
+    }
+
+    fn rehash_package_without_resigning(bundle: &mut serde_json::Value) {
+        let content = serde_json::to_string(&bundle["content"]).unwrap();
+        let content_hash = sha256_hex(content.as_bytes());
+        let name = bundle["manifest"]["name"].as_str().unwrap();
+        let version = bundle["manifest"]["version"].as_str().unwrap();
+        let package_hash = sha256_hex(format!("{name}:{version}:{content_hash}").as_bytes());
+        bundle["manifest"]["integrity"]["content_hash"] = content_hash.into();
+        bundle["manifest"]["integrity"]["sha256"] = package_hash.into();
+        bundle["manifest"]["integrity"]["byte_size"] = content.len().into();
+    }
+
+    #[test]
+    fn checkpoint_package_is_additive_signed_v2_and_generic_load_rejects() {
+        let bundle = signed_checkpoint_bundle();
+        let report = verify_package_text(&serde_json::to_string(&bundle).unwrap());
+        assert!(report.valid(), "errors: {:?}", report.errors);
+        assert_eq!(report.signature, CheckOutcome::Pass);
+        let manifest: PackageManifest = serde_json::from_value(bundle["manifest"].clone()).unwrap();
+        let content: PackageContent = serde_json::from_value(bundle["content"].clone()).unwrap();
+        assert_eq!(manifest.schema_version, 2);
+        assert_eq!(manifest.kind, PackageKind::Context);
+        assert!(manifest.has_layer(PackageLayer::Checkpoint));
+        assert!(super::super::loader::load_package(&manifest, &content, ".").is_err());
+    }
+
+    #[test]
+    fn pre_extension_reader_fails_closed_on_checkpoint_layer() {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        enum LegacyLayer {
+            Knowledge,
+            Graph,
+            Session,
+            Patterns,
+            Gotchas,
+        }
+        #[derive(serde::Deserialize)]
+        struct LegacyManifest {
+            layers: Vec<LegacyLayer>,
+        }
+        let bundle = signed_checkpoint_bundle();
+        let old = serde_json::from_value::<LegacyManifest>(bundle["manifest"].clone());
+        assert!(old.is_err());
+    }
+
+    #[test]
+    fn every_checkpoint_critical_field_is_signature_bound() {
+        let mutations: &[(&str, fn(&mut serde_json::Value))] = &[
+            ("checkpoint_id", |value| {
+                value["content"]["checkpoint"]["checkpoint"]["checkpoint_id"] =
+                    "123e4567-e89b-42d3-a456-426614174099".into();
+            }),
+            ("state_digest", |value| {
+                value["content"]["checkpoint"]["checkpoint"]["state_digest"] =
+                    format!("sha256:{}", "0".repeat(64)).into();
+            }),
+            ("workspace_id", |value| {
+                value["content"]["checkpoint"]["checkpoint"]["workspace_id"] =
+                    "123e4567-e89b-42d3-a456-426614174098".into();
+            }),
+            ("source_revision", |value| {
+                value["content"]["checkpoint"]["checkpoint"]["source_anchors"][0]["revision"]["value"] =
+                    format!("sha256:{}", "8".repeat(64)).into();
+            }),
+            ("recovery_ref", |value| {
+                value["content"]["checkpoint"]["checkpoint"]["recovery_refs"][0] =
+                    format!("recovery:sha256:{}", "8".repeat(64)).into();
+            }),
+            ("project_context", |value| {
+                value["content"]["checkpoint"]["checkpoint"]["logical_state"]["entries"][0]["value"] =
+                    "tampered".into();
+            }),
+            ("policy_digest", |value| {
+                value["content"]["checkpoint"]["checkpoint"]["policy_digest"] =
+                    format!("sha256:{}", "8".repeat(64)).into();
+            }),
+            ("package_pin", |value| {
+                value["content"]["checkpoint"]["checkpoint"]["package_pins"][0]["artifact_digest"] =
+                    format!("sha256:{}", "8".repeat(64)).into();
+            }),
+            ("migration", |value| {
+                value["content"]["checkpoint"]["migration_provenance"]["legacy_snapshot_id"] =
+                    "tampered".into();
+            }),
+            ("logical_state", |value| {
+                value["content"]["checkpoint"]["checkpoint"]["logical_state"]["workspace_id"] =
+                    "123e4567-e89b-42d3-a456-426614174097".into();
+            }),
+        ];
+        for (name, mutate) in mutations {
+            let mut bundle = signed_checkpoint_bundle();
+            mutate(&mut bundle);
+            rehash_package_without_resigning(&mut bundle);
+            let report = verify_package_text(&serde_json::to_string(&bundle).unwrap());
+            assert!(!report.valid(), "{name} tamper unexpectedly passed");
+        }
+    }
+
+    #[test]
+    fn checkpoint_layer_content_secret_and_path_rules_fail_closed() {
+        let bundle = signed_checkpoint_bundle();
+        let mut manifest: PackageManifest =
+            serde_json::from_value(bundle["manifest"].clone()).unwrap();
+        let mut content: PackageContent =
+            serde_json::from_value(bundle["content"].clone()).unwrap();
+
+        manifest.layers.clear();
+        let errors = validate_kind_coherence(&manifest, &content).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("present together"))
+        );
+
+        manifest.layers.push(PackageLayer::Checkpoint);
+        content.checkpoint.as_mut().unwrap().checkpoint["logical_state"]["entries"][0]["value"] =
+            ("AK".to_owned() + "IAABCDEFGHIJKLMNOP").into();
+        content.checkpoint.as_mut().unwrap().checkpoint["source_anchors"][0]["engine_binding"] = serde_json::json!({
+            "path": "source.txt",
+            "project_root": "/machine/one/project",
+            "media_type": "text/plain",
+            "source_ref": null,
+            "source_digest": null
+        });
+        let errors = validate_kind_coherence(&manifest, &content).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("credential-shaped"))
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("non_portable_fields"))
+        );
+    }
+
+    #[test]
+    fn checkpoint_nested_contract_rejects_invalid_structure() {
+        let bundle = signed_checkpoint_bundle();
+        let manifest: PackageManifest = serde_json::from_value(bundle["manifest"].clone()).unwrap();
+        let mut content: PackageContent =
+            serde_json::from_value(bundle["content"].clone()).unwrap();
+        let checkpoint = &mut content.checkpoint.as_mut().unwrap().checkpoint;
+        checkpoint["logical_state"]["sources"][0]["trust"]["level"] = "verified".into();
+        checkpoint["logical_state"]["sources"][0]["trust"]["evidence_refs"] =
+            serde_json::json!(["forged"]);
+        checkpoint["logical_state"]["entries"][0]["source_ids"] =
+            serde_json::json!(["missing-source"]);
+        checkpoint["logical_state"]["policy"]["allow_external_sources"] = "false".into();
+        checkpoint["lineage"]["state_id"] = "not-a-digest".into();
+        checkpoint["source_anchors"] = checkpoint["logical_state"]["sources"].clone();
+
+        let errors = validate_kind_coherence(&manifest, &content).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("source trust is invalid"))
+        );
+        assert!(errors.iter().any(|error| error.contains("unknown source")));
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("workspace policy is invalid"))
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("lineage is invalid"))
+        );
+    }
+
+    #[test]
+    fn default_package_content_serialization_is_byte_compatible() {
+        let json = serde_json::to_string(&PackageContent::default()).unwrap();
+        assert!(!json.contains("checkpoint"));
     }
 
     #[test]

@@ -66,7 +66,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["knowledge", "graph", "session", "patterns", "gotchas"]
+            "enum": ["knowledge", "graph", "session", "patterns", "gotchas", "checkpoint"]
           },
           "uniqueItems": true,
           "description": "Legacy v1 layer indicators"
@@ -96,8 +96,85 @@
         "session": { "$ref": "#/$defs/SessionLayer" },
         "patterns": { "$ref": "#/$defs/PatternsLayer" },
         "gotchas": { "$ref": "#/$defs/GotchasLayer" },
-        "context_graph": { "$ref": "#/$defs/ContextGraph" }
+        "context_graph": { "$ref": "#/$defs/ContextGraph" },
+        "checkpoint": { "$ref": "#/$defs/CheckpointPackageContentV1" }
       }
+    },
+    "CheckpointPackageContentV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "checkpoint", "non_portable_fields"],
+      "properties": {
+        "schema_version": { "const": "leanctx.ctxpkg-checkpoint/v1" },
+        "checkpoint": { "$ref": "#/$defs/ContextCheckpointV2" },
+        "migration_provenance": { "$ref": "#/$defs/SnapshotV1MigrationProvenance" },
+        "non_portable_fields": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 1024 },
+          "uniqueItems": true,
+          "maxItems": 256
+        }
+      }
+    },
+    "ContextCheckpointV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "checkpoint_id", "workspace_id", "state_digest",
+        "state_schema_version", "workspace_state_ref", "logical_state",
+        "source_anchors", "recovery_refs", "package_pins",
+        "package_lock_digest", "policy_digest", "project_context_digest",
+        "lineage", "engine_identity", "sdk_contract", "envelope_digest"
+      ],
+      "properties": {
+        "schema_version": { "const": "leanctx.context-checkpoint/v2" },
+        "checkpoint_id": { "type": "string", "format": "uuid" },
+        "workspace_id": { "type": "string", "format": "uuid" },
+        "state_digest": { "$ref": "#/$defs/PrefixedSha256" },
+        "state_schema_version": { "const": "leanctx.workspace.state/v1" },
+        "workspace_state_ref": {
+          "type": "string",
+          "pattern": "^event:sha256:[0-9a-f]{64}$"
+        },
+        "logical_state": { "type": "object", "maxProperties": 7 },
+        "source_anchors": { "type": "array", "maxItems": 128 },
+        "recovery_refs": { "type": "array", "maxItems": 4096 },
+        "package_pins": { "type": "array", "maxItems": 128 },
+        "package_lock_digest": {
+          "oneOf": [{ "$ref": "#/$defs/PrefixedSha256" }, { "type": "null" }]
+        },
+        "policy_digest": { "$ref": "#/$defs/PrefixedSha256" },
+        "project_context_digest": { "$ref": "#/$defs/PrefixedSha256" },
+        "lineage": { "type": "object", "maxProperties": 3 },
+        "engine_identity": { "type": "object", "maxProperties": 3 },
+        "sdk_contract": { "const": "leanctx-product-sdk-research/p6" },
+        "envelope_digest": { "$ref": "#/$defs/PrefixedSha256" }
+      }
+    },
+    "SnapshotV1MigrationProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin", "legacy_snapshot_id", "legacy_snapshot_digest",
+        "migration_contract", "checkpoint_id", "state_digest", "limitations"
+      ],
+      "properties": {
+        "origin": { "const": "SnapshotV1" },
+        "legacy_snapshot_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "legacy_snapshot_digest": { "$ref": "#/$defs/PrefixedSha256" },
+        "migration_contract": { "const": "leanctx.snapshot-v1-migration/v1" },
+        "checkpoint_id": { "type": "string", "format": "uuid" },
+        "state_digest": { "$ref": "#/$defs/PrefixedSha256" },
+        "limitations": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 2048 },
+          "maxItems": 64
+        }
+      }
+    },
+    "PrefixedSha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "ContextGraph": {
       "type": "object",

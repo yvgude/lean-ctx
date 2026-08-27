@@ -29,6 +29,31 @@ pub(crate) struct PackageContent {
     /// [`super::verify::validate_kind_coherence`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub documents: Option<DocumentsContent>,
+    /// Portable P6 checkpoint envelope. Presence is coherent IFF the manifest
+    /// declares the explicit `checkpoint` layer, making pre-extension readers
+    /// reject the package at their closed enum parse boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<CheckpointPackageContentV1>,
+}
+
+pub(crate) const CHECKPOINT_PACKAGE_SCHEMA_V1: &str = "leanctx.ctxpkg-checkpoint/v1";
+pub(crate) const MAX_CHECKPOINT_PACKAGE_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const MAX_CHECKPOINT_SOURCES: usize = 128;
+pub(crate) const MAX_CHECKPOINT_ENTRIES: usize = 256;
+pub(crate) const MAX_CHECKPOINT_REFS: usize = 4096;
+pub(crate) const MAX_CHECKPOINT_PACKAGE_PINS: usize = 128;
+
+/// Open mechanism-level carrier. Product lifecycle meaning remains in the
+/// private SDK; Engine validates structure, bounds and cryptographic identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CheckpointPackageContentV1 {
+    pub schema_version: String,
+    pub checkpoint: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub migration_provenance: Option<serde_json::Value>,
+    #[serde(default)]
+    pub non_portable_fields: Vec<String>,
 }
 
 /// Distribution view of an addon (unified distribution, GH #726): the
@@ -258,6 +283,9 @@ impl PackageContent {
             n += 1;
         }
         if self.documents.is_some() {
+            n += 1;
+        }
+        if self.checkpoint.is_some() {
             n += 1;
         }
         n
