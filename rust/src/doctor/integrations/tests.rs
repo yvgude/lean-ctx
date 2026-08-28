@@ -349,3 +349,50 @@ fn check_cursor_hooks_ok_for_bare_command() {
         "bare lean-ctx command is PATH-resolved and current"
     );
 }
+
+#[test]
+fn check_codex_toml_detects_missing_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("config.toml");
+    let check = check_codex_toml(&path, "lean-ctx");
+    assert!(!check.ok);
+    assert!(check.detail.contains("missing"));
+}
+
+#[test]
+fn check_codex_toml_detects_legacy_empty_args_drift() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "[mcp_servers.lean-ctx]\ncommand = \"lean-ctx\"\nargs = []\n",
+    )
+    .unwrap();
+    let check = check_codex_toml(&path, "lean-ctx");
+    assert!(!check.ok);
+    assert!(check.detail.contains("drift"));
+}
+
+#[test]
+fn check_codex_toml_detects_missing_args_drift() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[mcp_servers.lean-ctx]\ncommand = \"lean-ctx\"\n").unwrap();
+    let check = check_codex_toml(&path, "lean-ctx");
+    assert!(!check.ok);
+    assert!(check.detail.contains("drift"));
+}
+
+#[test]
+fn check_codex_toml_ok_with_mcp_arg() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "[mcp_servers.lean-ctx]\ncommand = \"lean-ctx\"\nargs = [\"mcp\"]\n",
+    )
+    .unwrap();
+    let check = check_codex_toml(&path, "lean-ctx");
+    assert!(check.ok);
+    assert!(check.detail.contains("ok"));
+}

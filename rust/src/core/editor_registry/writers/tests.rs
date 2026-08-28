@@ -178,7 +178,7 @@ fn upsert_codex_toml_inserts_new_section_when_missing() {
     let updated = upsert_codex_toml("[other]\nx=1\n", "lean-ctx");
     assert!(updated.contains("[mcp_servers.lean-ctx]"));
     assert!(updated.contains("command = \"lean-ctx\""));
-    assert!(updated.contains("args = []"));
+    assert!(updated.contains("args = [\"mcp\"]"));
 }
 
 #[test]
@@ -222,7 +222,7 @@ approval_mode = \"approve\"
         "parent must come before tool sub-tables:\n{updated}"
     );
     assert!(updated.contains("command = \"lean-ctx\""));
-    assert!(updated.contains("args = []"));
+    assert!(updated.contains("args = [\"mcp\"]"));
     assert!(updated.contains("approval_mode = \"approve\""));
 }
 
@@ -274,8 +274,21 @@ approval_mode = \"approve\"
         "must not duplicate parent section"
     );
     assert!(updated.contains("command = \"new\""));
-    assert!(updated.contains("args = []"));
+    assert!(updated.contains("args = [\"mcp\"]"));
     assert!(updated.contains("approval_mode = \"approve\""));
+}
+
+#[test]
+fn upsert_codex_toml_upgrades_legacy_empty_args_to_mcp() {
+    let input = "\
+[mcp_servers.lean-ctx]
+command = \"/opt/homebrew/bin/lean-ctx\"
+args = []
+startup_timeout_sec = 30
+";
+    let updated = upsert_codex_toml(input, "/opt/homebrew/bin/lean-ctx");
+    assert!(updated.contains("args = [\"mcp\"]"));
+    assert!(updated.contains("startup_timeout_sec = 30"));
 }
 
 #[test]

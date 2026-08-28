@@ -411,7 +411,13 @@ fn ensure_codex_mcp_server(
         lean_tbl["command"] = toml_edit::value(binary);
     }
     if !lean_tbl.contains_key("args") {
-        lean_tbl["args"] = toml_edit::value(toml_edit::Array::new());
+        let mut arr = toml_edit::Array::new();
+        arr.push("mcp");
+        lean_tbl["args"] = toml_edit::value(arr);
+    } else if let Some(arr) = lean_tbl.get_mut("args").and_then(|a| a.as_array_mut()) {
+        if arr.is_empty() {
+            arr.push("mcp");
+        }
     }
 
     // Ensure adequate timeouts: lean-ctx tools like ctx_compose can take
@@ -819,7 +825,7 @@ command = \"lean-ctx\"
             .expect("should add MCP section");
         assert!(result.contains("[mcp_servers.lean-ctx]"));
         assert!(result.contains("command = \"lean-ctx\""));
-        assert!(result.contains("args = []"));
+        assert!(result.contains("args = [\"mcp\"]"));
         assert!(result.contains("[features]\ncodex_hooks = true\n"));
     }
 
@@ -827,7 +833,7 @@ command = \"lean-ctx\"
     fn ensure_mcp_server_noop_when_already_complete() {
         // Parent + args + timeouts + an env block already carrying every desired
         // key: the upsert must be a true no-op (no churn on every session start).
-        let input = "[mcp_servers.lean-ctx]\ncommand = \"lean-ctx\"\nargs = []\n\
+        let input = "[mcp_servers.lean-ctx]\ncommand = \"lean-ctx\"\nargs = [\"mcp\"]\n\
                      startup_timeout_sec = 30\ntool_timeout_sec = 120\n\n\
                      [mcp_servers.lean-ctx.env]\nLEAN_CTX_DATA_DIR = \"/Users/user/.lean-ctx\"\n";
         assert!(
@@ -837,8 +843,18 @@ command = \"lean-ctx\"
     }
 
     #[test]
+    fn ensure_mcp_server_upgrades_empty_args_to_mcp() {
+        let input = "[mcp_servers.lean-ctx]\ncommand = \"lean-ctx\"\nargs = []\n\
+                     startup_timeout_sec = 30\ntool_timeout_sec = 120\n\n\
+                     [mcp_servers.lean-ctx.env]\nLEAN_CTX_DATA_DIR = \"/Users/user/.lean-ctx\"\n";
+        let result = ensure_codex_mcp_server(input, "lean-ctx", &data_dir_pairs())
+            .expect("should upgrade empty args to ['mcp']");
+        assert!(result.contains("args = [\"mcp\"]"));
+    }
+
+    #[test]
     fn ensure_mcp_server_adds_timeouts() {
-        let input = "[mcp_servers.lean-ctx]\ncommand = \"lean-ctx\"\nargs = []\n";
+        let input = "[mcp_servers.lean-ctx]\ncommand = \"lean-ctx\"\nargs = [\"mcp\"]\n";
         let result = ensure_codex_mcp_server(input, "lean-ctx", &data_dir_pairs())
             .expect("should add timeouts");
         assert!(

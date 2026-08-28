@@ -26,7 +26,14 @@ pub(crate) fn check_codex_toml(path: &std::path::Path, binary: &str) -> NamedChe
         .and_then(|t| t.get("lean-ctx"))
         .and_then(|t| t.get("command"))
         .and_then(|c| c.as_str());
-    let ok = cmd.is_some_and(|c| cmd_matches_expected(c, binary));
+    let cmd_ok = cmd.is_some_and(|c| cmd_matches_expected(c, binary));
+    let args_ok = v
+        .get("mcp_servers")
+        .and_then(|t| t.get("lean-ctx"))
+        .and_then(|t| t.get("args"))
+        .and_then(|a| a.as_array())
+        .is_some_and(|arr| arr.iter().any(|arg| arg.as_str() == Some("mcp")));
+    let ok = cmd_ok && args_ok;
     NamedCheck {
         name: "Codex MCP".to_string(),
         ok,
