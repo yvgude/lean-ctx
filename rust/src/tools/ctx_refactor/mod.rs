@@ -335,7 +335,10 @@ pub(crate) fn resolve_name_path_scoped(
 
     match leaves.len() {
         0 => Err(format!(
-            "NO_SYMBOL: '{name_path}' did not resolve to any indexed symbol"
+            "NO_SYMBOL: '{name_path}' did not resolve to any indexed symbol. \
+             A file created since the index was built is not in it yet — run \
+             ctx_search(action=reindex), pass 'path' so the file can be parsed \
+             directly, or target the span with 'path'+'line'."
         )),
         1 => Ok(Resolved {
             rel_path: leaves[0].file.clone(),
@@ -356,6 +359,55 @@ pub(crate) fn resolve_name_path_scoped(
             Err(msg)
         }
     }
+}
+
+/// Resolve a `name_path` by parsing the file the caller named, instead of
+/// consulting the symbol index (#1593).
+///
+/// The index is a repo scan; a file created during the session is not in it, so
+/// `replace_symbol` on a just-written file failed with `NO_SYMBOL` even though
+/// `ctx_read(mode=signatures)` had listed the symbol seconds earlier. When the
+/// caller names the file, the file itself is authority enough — same tree-sitter
+/// extractor the signature view uses, so the two can no longer disagree.
+pub(crate) fn resolve_name_path_in_file(
+    name_path: &str,
+    project_root: &str,
+    path: &str,
+) -> Result<Resolved, String> {
+    let abs = crate::core::path_resolve::resolve_tool_path(Some(project_root), None, path)
+        .map_err(|e| format!("NO_SYMBOL: path blocked by jail: {e}"))?;
+    let content = std::fs::read_to_string(&abs)
+        .map_err(|e| format!("NO_SYMBOL: cannot read '{path}': {e}"))?;
+    let ext = std::path::Path::new(&abs)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    let leaf = name_path
+        .split(['/', ':'])
+        .rfind(|s| !s.is_empty())
+        .ok_or_else(|| "NO_SYMBOL: empty name_path".to_string())?;
+
+    let mut hits = crate::core::signatures::extract_signatures(&content, ext)
+        .into_iter()
+        .filter(|s| s.name == leaf)
+        .filter_map(|s| Some((s.start_line?, s.end_line?)));
+    let (start_line, end_line) = hits.next().ok_or_else(|| {
+        format!(
+            "NO_SYMBOL: '{name_path}' not found in '{path}' \
+             (parsed the file directly; the symbol index did not have it either)"
+        )
+    })?;
+    if hits.next().is_some() {
+        return Err(format!(
+            "AMBIGUOUS_SYMBOL: '{leaf}' appears more than once in '{path}'; \
+             target the one you mean with 'line'"
+        ));
+    }
+    Ok(Resolved {
+        rel_path: path.to_string(),
+        start_line,
+        end_line,
+    })
 }
 
 /// Read the current on-disk text covered by a usage's range, jail-checking its
@@ -464,7 +516,15 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
     let (rel_path, start_line, end_line) = if let Some(np) =
         args.get("name_path").and_then(Value::as_str)
     {
-        match resolve_name_path(np, project_root) {
+        // #1593: the index is a repo scan and misses files created this session.
+        // When the caller named the file, fall back to parsing it directly.
+        let resolved = match (resolve_name_path(np, project_root), explicit_path) {
+            (Err(e), Some(p)) if e.starts_with("NO_SYMBOL") => {
+                resolve_name_path_in_file(np, project_root, p)
+            }
+            (other, _) => other,
+        };
+        match resolved {
             Ok(r) => {
                 // #803 WORKTREE SAFETY: when the caller also provided `path`,
                 // verify the index-resolved file matches the caller's target.

@@ -254,8 +254,36 @@ fn resolve_name_path_unknown_is_no_symbol() {
 
     let err = super::resolve_name_path("ZzzNoSuchSymbol123", &root).unwrap_err();
     assert!(err.starts_with("NO_SYMBOL"), "got: {err}");
+    assert!(
+        err.contains("reindex"),
+        "NO_SYMBOL must name a way forward: {err}"
+    );
 
     crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+}
+
+/// #1593: a file written after the index was built still resolves, because the
+/// caller named it and the file is parsed directly.
+#[test]
+fn resolve_name_path_in_file_finds_unindexed_symbol() {
+    let tmp = tempfile::tempdir().unwrap();
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(proj.join("src")).unwrap();
+    std::fs::write(
+        proj.join("src/fresh.rs"),
+        "pub fn brand_new_fn(a: u8) -> u8 {\n    a + 1\n}\n",
+    )
+    .unwrap();
+    let root = proj.to_string_lossy().to_string();
+
+    let r = super::resolve_name_path_in_file("brand_new_fn", &root, "src/fresh.rs")
+        .expect("file parse resolves what the index has never seen");
+    assert_eq!(r.rel_path, "src/fresh.rs");
+    assert_eq!(r.start_line, 1);
+    assert!(r.end_line >= 3, "span must cover the body: {r:?}");
+
+    let err = super::resolve_name_path_in_file("no_such_thing", &root, "src/fresh.rs").unwrap_err();
+    assert!(err.starts_with("NO_SYMBOL"), "got: {err}");
 }
 
 #[test]

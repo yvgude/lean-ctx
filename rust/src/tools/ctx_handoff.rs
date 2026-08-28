@@ -8,7 +8,9 @@ pub fn format_created(path: &Path, ledger: &HandoffLedgerV1) -> String {
         |w| format!("{}@{}", w.spec.name, w.current),
     );
     format!(
-        "ctx_handoff create\n path: {}\n md5: {}\n manifest_md5: {}\n workflow: {}\n evidence_keys: {}\n curated_refs: {}\n knowledge_facts: {}",
+        // #1592: both digests are BLAKE3. The on-disk ledger keeps its historical
+        // `*_md5` field names; what a reader sees is labelled for what it is.
+        "ctx_handoff create\n path: {}\n blake3: {}\n manifest_blake3: {}\n workflow: {}\n evidence_keys: {}\n curated_refs: {}\n knowledge_facts: {}",
         path.display(),
         ledger.content_md5,
         ledger.manifest_md5,

@@ -447,7 +447,14 @@ pub fn handle_filtered(
             .collect()
     };
 
-    let mut result = format!("{} matches in {} files", matches.len(), files_searched);
+    // #1591: "N matches in M files" read as "M files matched" — but `M` was the
+    // number of files *searched*. Report what matched; keep the scanned count as
+    // a clearly-labelled secondary number so scope is still visible.
+    let mut result = format!(
+        "{} matches in {} files (scanned {files_searched})",
+        matches.len(),
+        matched_files.len()
+    );
     if matched_files.len() > 1 {
         if matched_files.len() <= 10 {
             result.push_str(" [");

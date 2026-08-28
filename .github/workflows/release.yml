@@ -616,4 +616,3 @@ jobs:
           curl -fsSL -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -d "{\"action\":\"published\",\"release\":{\"tag_name\":\"${RELEASE_TAG}\",\"html_url\":\"https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG}\"}}"
-

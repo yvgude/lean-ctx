@@ -170,7 +170,10 @@ impl CtxReadTool {
                 // #1018: use try_read_owned instead of Handle::block_on to avoid
                 // the async-runtime-saturation anti-pattern on Windows.
                 if let Ok(guard) = session_lock.clone().try_read_owned() {
-                    break guard.task.as_ref().map(|t| t.description.clone());
+                    break guard
+                        .task
+                        .as_ref()
+                        .map(|t| (t.description.clone(), t.intent.clone()));
                 }
                 attempt += 1;
                 if std::time::Instant::now() >= deadline {
@@ -182,7 +185,22 @@ impl CtxReadTool {
                 std::thread::sleep(std::time::Duration::from_millis(25));
             }
         };
-        let task_ref = current_task.as_deref();
+        // #1590: `auto_infer_task` fabricates descriptions like
+        // "Working on /repo/src/printer (explore)" from touched-file patterns.
+        // That is fine as a telemetry hint, but its "keywords" (Working,
+        // explore, a directory path) carry no signal about a file's contents —
+        // filtering a file down to a quarter of its lines on that basis, or
+        // pinning it to `full` as an intent target, invents a task the caller
+        // never stated. Only an explicitly set task steers a read.
+        let task_is_inferred = current_task
+            .as_ref()
+            .is_some_and(|(_, intent)| !task_intent_steers_read(intent.as_deref()));
+        let current_task = current_task.map(|(description, _)| description);
+        let task_ref = if task_is_inferred {
+            None
+        } else {
+            current_task.as_deref()
+        };
         // #513: `raw=true` is the intuitive "give me the exact bytes" escape an
         // agent reaches for. Alias it to mode="raw" (verbatim, unframed) and
         // force a fresh disk read below so a re-read never collapses to an
@@ -277,6 +295,7 @@ impl CtxReadTool {
             Some(&ctx.project_root),
             pressure_action,
             resolved_agent_id.as_deref(),
+            fresh,
         );
         let mut engine_policy_admission = engine::admission_or_reject(
             engine_interface_v1,
@@ -294,8 +313,15 @@ impl CtxReadTool {
         {
             if explicit_mode {
                 let reason = gate_result.reason.unwrap_or("context-gate");
+                // #1588: an override the caller cannot escape is a dead end.
+                // Name the escape hatch for the two heuristics that honour it.
+                let escape = if matches!(reason, "bounce-prevention" | "intent-target") {
+                    ", pass fresh=true to keep the requested mode"
+                } else {
+                    ""
+                };
                 mode_override_note = Some(format!(
-                    "[mode overridden: {mode} -> {overridden}, reason={reason}]"
+                    "[mode overridden: {mode} -> {overridden}, reason={reason}{escape}]"
                 ));
             }
             mode = overridden;
@@ -589,7 +615,12 @@ impl CtxReadTool {
                     //
                     // New: prepare (brief lock) → compute (no lock) → store (brief lock).
 
-                    let task_ref = task_owned.as_deref();
+                    // #1590: an inferred task never steers a lossy view.
+                    let task_ref = if task_is_inferred {
+                        None
+                    } else {
+                        task_owned.as_deref()
+                    };
                     let tuning =
                         crate::tools::ctx_read::ReadTuning::resolve(aggressiveness, &protect_owned);
 
@@ -705,7 +736,41 @@ impl CtxReadTool {
                             .get(&path_owned)
                             .map(|e| (e.original_tokens, e.content()));
 
-                        if let Some((orig_tok, content_opt)) = snap {
+                        // #1584: `diff` is a delta view, not a whole-file
+                        // render. It needs the cached baseline and has no arm in
+                        // `process_mode_tuned`, so letting it fall through to the
+                        // generic compute path made the MCP handler answer
+                        // "[WARNING: unknown mode 'diff']" and return the entire
+                        // file — while the CLI path handled it correctly. Both
+                        // paths now share `handle_diff`.
+                        if mode_eff == "diff" {
+                            let (out, _sent) = if fresh {
+                                let warning = "[warning] fresh+diff is redundant — fresh invalidates the cache, so no baseline is left to diff against. Use mode=full with fresh=true instead.";
+                                (
+                                    warning.to_string(),
+                                    crate::core::tokens::count_tokens(warning),
+                                )
+                            } else {
+                                crate::tools::ctx_read::handle_diff(
+                                    &mut cache,
+                                    &path_owned,
+                                    &file_ref,
+                                )
+                            };
+                            let out = crate::core::redaction::redact_text_if_enabled(&out);
+                            let orig = cache.get(&path_owned).map_or(0, |e| e.original_tokens);
+                            let fref = cache.file_ref_map().get(path_owned.as_str()).cloned();
+                            let s = cache.get_stats();
+                            PrepareOutcome::Hit(
+                                out,
+                                "diff".to_string(),
+                                orig,
+                                false,
+                                fref,
+                                (s.total_reads(), s.cache_hits()),
+                                reuse_outcome,
+                            )
+                        } else if let Some((orig_tok, content_opt)) = snap {
                             let resolved = if mode_eff == "auto" {
                                 tuning.auto_density_mode().unwrap_or_else(|| {
                                     crate::tools::ctx_read::resolve_auto_mode(
@@ -914,6 +979,7 @@ impl CtxReadTool {
                                 ft,
                                 &compute_content,
                                 original_tokens,
+                                "full",
                             );
                             (out, "full".to_string())
                         }
@@ -937,6 +1003,7 @@ impl CtxReadTool {
                                 ft,
                                 &compute_content,
                                 original_tokens,
+                                &resolved_mode,
                             )
                         } else {
                             out
@@ -1481,6 +1548,18 @@ fn extract_file_summary(output: &str, path: &str) -> String {
     } else {
         String::new()
     }
+}
+
+/// May a session task with this `intent` steer how a file is read?
+///
+/// Only a task the caller actually stated may. `auto_infer_task` marks the
+/// descriptions it fabricates from touched-file patterns — "Working on
+/// /repo/src/printer (explore)" — with `intent = "inferred"`. Those words are a
+/// telemetry label, not a statement about any file's contents, and letting them
+/// drive the information-bottleneck filter or the intent-target override
+/// silently answered a question the caller never asked (#1590).
+pub(crate) fn task_intent_steers_read(intent: Option<&str>) -> bool {
+    intent != Some("inferred")
 }
 
 // #660 LOC gate: inline tests split out to keep this file under the line cap.

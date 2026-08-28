@@ -41,8 +41,13 @@ pub(super) fn anchored_lines_mode(start: i64, limit: Option<i64>) -> String {
     }
 }
 pub(super) fn resolve_instruction_file_mode(path: &str, mode: &str) -> (String, Option<String>) {
+    // #1584: `diff` is preserved alongside the other lossless views. A delta
+    // against the cached baseline never *withholds* content the agent has not
+    // already been given, so the "instruction files need complete content"
+    // rule does not apply — overriding it to `full` re-sent the whole file and
+    // silently discarded the delta the caller asked for.
     if !crate::tools::ctx_read::is_instruction_file(path)
-        || matches!(mode, "full" | "raw" | "anchored")
+        || matches!(mode, "full" | "raw" | "anchored" | "diff")
         || mode.starts_with("anchored:")
         || mode.starts_with("lines:")
     {
@@ -204,5 +209,25 @@ mod tests {
             resolve_raw_alias(false, Some("lines:5-10".into())),
             Some("lines:5-10".into()),
         );
+    }
+
+    /// #1584: `mode=diff` was advertised in the schema and then rejected at
+    /// runtime. One of the two paths that silently rewrote it was the
+    /// instruction-file rule, which forced every "lossy-looking" mode to
+    /// `full`. A delta withholds nothing the caller has not already been
+    /// given, so it belongs with the lossless views.
+    #[test]
+    fn instruction_file_rule_preserves_diff_mode() {
+        let (mode, note) = resolve_instruction_file_mode("AGENTS.md", "diff");
+        assert_eq!(mode, "diff", "diff must survive the instruction-file rule");
+        assert!(
+            note.is_none(),
+            "no override note when nothing was overridden"
+        );
+
+        // The rule itself is intact for genuinely lossy views.
+        let (mode, note) = resolve_instruction_file_mode("AGENTS.md", "signatures");
+        assert_eq!(mode, "full");
+        assert!(note.is_some());
     }
 }

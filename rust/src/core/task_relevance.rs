@@ -543,9 +543,44 @@ pub fn information_bottleneck_filter_typed(
     task_type: Option<super::intent_engine::TaskType>,
     force_keep: &[String],
 ) -> String {
+    let selected = ib_select(content, task_keywords, budget_ratio, task_type, force_keep);
+    if selected.is_empty() {
+        return String::new();
+    }
+    let body: Vec<&str> = selected.iter().map(|(_, line)| *line).collect();
+    let body = body.join("\n");
+    if task_keywords.is_empty() {
+        body
+    } else {
+        format!("[task: {}]\n{body}", task_keywords.join(", "))
+    }
+}
+
+/// Ranked line selection behind every task-mode view: scores each line, applies
+/// the MMR redundancy penalty, and hands back the winners **in source order**
+/// as `(line_index, line)` pairs.
+///
+/// Two properties matter to callers and were both missing before (#1589):
+///
+/// * **Blank lines are never candidates.** A blank line scored 0.05 — above the
+///   tail of a real ranking — and then bypassed the MMR similarity penalty
+///   entirely, because an empty token set has no overlap to punish. Once the
+///   ranked candidates fell below that floor, blanks won every remaining slot;
+///   a field report saw ~35 consecutive blank lines where the body should have
+///   been.
+/// * **The result is ordered by line number, not by score.** A task view that
+///   reorders a file's fragments is not a compressed file, it is a different
+///   file — it reads as though the code executes in that order.
+pub fn ib_select<'a>(
+    content: &'a str,
+    task_keywords: &[String],
+    budget_ratio: f64,
+    task_type: Option<super::intent_engine::TaskType>,
+    force_keep: &[String],
+) -> Vec<(usize, &'a str)> {
     let lines: Vec<&str> = content.lines().collect();
     if lines.is_empty() {
-        return String::new();
+        return Vec::new();
     }
 
     let n = lines.len();
@@ -577,10 +612,16 @@ pub fn information_bottleneck_filter_typed(
     let mut scored_lines: Vec<(usize, &str, f64)> = lines
         .iter()
         .enumerate()
-        .map(|(i, line)| {
+        .filter_map(|(i, line)| {
             let trimmed = line.trim();
             if trimmed.is_empty() {
-                return (i, *line, 0.05);
+                // #1589: a blank line carries no information to select *for*.
+                // Only an explicit protect token can pull one into the view.
+                return super::protect::line_is_protected(line, force_keep).then_some((
+                    i,
+                    *line,
+                    f64::INFINITY,
+                ));
             }
 
             let line_lower = trimmed.to_lowercase();
@@ -653,7 +694,7 @@ pub fn information_bottleneck_filter_typed(
                 score
             };
 
-            (i, *line, score)
+            Some((i, *line, score))
         })
         .collect();
 
@@ -668,27 +709,10 @@ pub fn information_bottleneck_filter_typed(
 
     scored_lines.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
 
-    let selected = mmr_select(&scored_lines, budget, 0.3);
-
-    let mut output_lines: Vec<&str> = Vec::with_capacity(budget + 1);
-
-    if !kw_lower.is_empty() {
-        output_lines.push("");
-    }
-
-    for (_, line, _) in &selected {
-        output_lines.push(line);
-    }
-
-    if !kw_lower.is_empty() {
-        let summary = format!("[task: {}]", task_keywords.join(", "));
-        let mut result = summary;
-        result.push('\n');
-        result.push_str(&output_lines[1..].to_vec().join("\n"));
-        return result;
-    }
-
-    output_lines.join("\n")
+    let mut selected = mmr_select(&scored_lines, budget, 0.3);
+    // Rank decided *what* survives; the file decides in which order it is read.
+    selected.sort_by_key(|(i, _, _)| *i);
+    selected.into_iter().map(|(i, line, _)| (i, line)).collect()
 }
 
 /// Maximum Marginal Relevance selection — greedy selection that penalizes
@@ -923,18 +947,60 @@ mod tests {
     }
 
     #[test]
-    fn info_bottleneck_score_sorted() {
+    fn info_bottleneck_preserves_source_order() {
+        // #1589: selection is ranked, output is not. A task view that reorders
+        // fragments reads as if the code ran in that order.
         let content = "fn important() {\n    let x = 1;\n    let y = 2;\n    let z = 3;\n}\n}\n";
         let result = information_bottleneck_filter(content, &[], 0.6, &[]);
         let lines: Vec<&str> = result.lines().collect();
         let def_pos = lines.iter().position(|l| l.contains("fn important"));
         let brace_pos = lines.iter().position(|l| l.trim() == "}");
         if let (Some(d), Some(b)) = (def_pos, brace_pos) {
+            assert!(d < b, "the definition precedes its closing brace in source");
+        }
+
+        let numbered = "alpha_one\nbeta_two\ngamma_three\ndelta_four\nepsilon_five\nzeta_six\n";
+        let selected = ib_select(numbered, &["gamma".to_string()], 0.6, None, &[]);
+        let indices: Vec<usize> = selected.iter().map(|(i, _)| *i).collect();
+        let mut sorted = indices.clone();
+        sorted.sort_unstable();
+        assert_eq!(
+            indices, sorted,
+            "selection must be returned in source order"
+        );
+    }
+
+    #[test]
+    fn info_bottleneck_never_selects_blank_lines() {
+        // #1589: blanks scored 0.05 and skipped the MMR similarity penalty, so
+        // they out-competed real content once the ranking tail fell below that
+        // floor — a field report saw ~35 consecutive blank lines.
+        let mut content = String::new();
+        for i in 0..40 {
+            content.push_str(&format!("fn handler_{i}(input: &str) -> usize {{\n"));
+            content.push_str("\n\n\n");
+            content.push_str("    input.len()\n}\n\n\n");
+        }
+        let result = information_bottleneck_filter(&content, &["handler".to_string()], 0.3, &[]);
+        for line in result.lines().skip(1) {
             assert!(
-                d < b,
-                "definitions should appear before closing braces in score-sorted output"
+                !line.trim().is_empty(),
+                "no blank line may consume a slot in the task budget"
             );
         }
+        assert!(result.contains("handler_"), "real content must survive");
+    }
+
+    #[test]
+    fn protected_blank_line_still_survives() {
+        // The blank-line ban is a ranking rule, not a censor: an explicit
+        // protect token still pulls its line through (#709).
+        let content = "fn a() {}\n   \nfn b() {}\n";
+        let kept = ib_select(content, &["a".to_string()], 0.1, None, &["   ".to_string()]);
+        assert!(
+            kept.iter().any(|(_, l)| l.trim().is_empty()),
+            "an explicitly protected line is kept even when blank"
+        );
     }
 
     #[test]

@@ -12,6 +12,27 @@ fn monotonic_check(original: usize, compressed: usize) -> bool {
     compressed < original
 }
 
+/// Below this many raw tokens a silent full-content fallback is not worth a
+/// banner: the file is small enough that the framing itself was the expensive
+/// part (which is exactly what the #361 cap exists to strip), and a banner
+/// would push the read back above the raw file it just protected. Above it, the
+/// caller is being handed a whole file they did not order and must be told.
+pub(crate) const NO_COMPRESSION_BANNER_MIN_TOKENS: usize = 400;
+
+/// One-line notice that a compression path gave up and returned the untouched
+/// file. Without it the caller pays full-file tokens believing a summary was
+/// delivered — the failure is invisible in the output and surfaces only on the
+/// bill. `None` for files below [`NO_COMPRESSION_BANNER_MIN_TOKENS`], where the
+/// fallback is the cap working as designed rather than a degradation.
+pub(crate) fn no_compression_banner(requested_mode: &str, raw_tokens: usize) -> Option<String> {
+    (raw_tokens >= NO_COMPRESSION_BANNER_MIN_TOKENS).then(|| {
+        format!(
+            "[lean-ctx] no compression applied (mode={requested_mode}): \
+             output was not smaller than the file — returning full content ({raw_tokens} tok)"
+        )
+    })
+}
+
 fn raw_fallback(
     path: &str,
     content: &str,
@@ -21,7 +42,15 @@ fn raw_fallback(
     tracing::debug!(
         "monotonic guard: {path} compressed {compressed} >= original {original_tokens}, using raw"
     );
-    (content.to_string(), original_tokens)
+    let mode = crate::core::savings_footer::current_mode().unwrap_or_else(|| "compressed".into());
+    match no_compression_banner(&mode, original_tokens) {
+        Some(banner) => {
+            let out = format!("{banner}\n{content}");
+            let sent = count_tokens(&out);
+            (out, sent)
+        }
+        None => (content.to_string(), original_tokens),
+    }
 }
 
 /// Per-read tuning threaded into the per-mode renderers. `Default` reproduces
@@ -394,10 +423,25 @@ pub(crate) fn process_mode_tuned(
                 sent,
             )
         }
+        // `diff` is a delta view rendered against the session cache by
+        // `core_logic::handle_diff`, not a whole-file render — there is no
+        // content-only way to produce it. Reaching the generic renderer means a
+        // caller bypassed the cache-aware path; answer in one bounded line
+        // instead of falling through to `unknown` and dumping the whole file
+        // under a warning the caller pays full tokens for (#1584).
+        "diff" => {
+            let msg = format!(
+                "{short}: mode=diff renders against the session cache and cannot be produced here. \
+                 Read the file once with mode=full, then request mode=diff on the re-read."
+            );
+            let sent = count_tokens(&msg);
+            (msg, sent)
+        }
         unknown => {
             let header = build_header(file_ref, short, ext, content, line_count, true);
             let out = format!(
-                "[WARNING: unknown mode '{unknown}', falling back to full]\n{header}\n{content}"
+                "[WARNING: unknown mode '{unknown}', falling back to full — valid modes: {}]\n{header}\n{content}",
+                crate::core::mcp_manifest::READ_MODES.join(", ")
             );
             let sent = count_tokens(&out);
             (out, sent)
@@ -588,6 +632,84 @@ mod render_tests {
             techniques_tag(&["density target=0.40".to_string()]),
             " [density target=0.40]"
         );
+    }
+
+    /// #1584: `diff` reaching the whole-file dispatcher used to be reported as
+    /// an *unknown* mode and answered with the entire file under a warning —
+    /// the caller paid full tokens for a delta they never got. It now answers
+    /// in one bounded line that names the way to get a real delta.
+    #[test]
+    fn diff_mode_never_falls_through_to_the_unknown_mode_dump() {
+        let content = "fn a() {}\nfn b() {}\nfn c() {}\n";
+        let (out, _) = super::process_mode_tuned(
+            content,
+            "diff",
+            "",
+            "sample.rs",
+            "rs",
+            32,
+            crate::tools::CrpMode::Off,
+            "sample.rs",
+            None,
+            super::ReadTuning {
+                aggressiveness: None,
+                protect: &[],
+            },
+        );
+        assert!(
+            !out.contains("unknown mode"),
+            "diff is a documented mode, not an unknown one: {out}"
+        );
+        assert!(
+            !out.contains("fn b()"),
+            "the fallback must not dump the file the caller did not ask for: {out}"
+        );
+        assert!(
+            out.contains("mode=full"),
+            "it must name the way forward: {out}"
+        );
+    }
+
+    /// #1584: when a mode really is unknown, the warning names what is valid
+    /// instead of leaving the caller to guess — the schema list and the runtime
+    /// now come from one constant, which is what let `diff` drift apart.
+    #[test]
+    fn unknown_mode_warning_names_the_valid_modes() {
+        let (out, _) = super::process_mode_tuned(
+            "fn a() {}\n",
+            "definitely-not-a-mode",
+            "",
+            "sample.rs",
+            "rs",
+            8,
+            crate::tools::CrpMode::Off,
+            "sample.rs",
+            None,
+            super::ReadTuning {
+                aggressiveness: None,
+                protect: &[],
+            },
+        );
+        assert!(
+            out.contains("unknown mode 'definitely-not-a-mode'"),
+            "{out}"
+        );
+        for mode in crate::core::mcp_manifest::READ_MODES {
+            assert!(out.contains(mode), "warning must list `{mode}`: {out}");
+        }
+    }
+
+    /// #1587: a compression request that degrades to the whole file says so.
+    /// Below the threshold it stays silent, so the #361 cap still guarantees a
+    /// read never costs more than the raw file.
+    #[test]
+    fn no_compression_banner_only_above_threshold() {
+        assert!(super::no_compression_banner("signatures", 10).is_none());
+        let banner =
+            super::no_compression_banner("signatures", super::NO_COMPRESSION_BANNER_MIN_TOKENS)
+                .expect("a whole file handed back instead of a summary must be announced");
+        assert!(banner.contains("no compression applied"), "{banner}");
+        assert!(banner.contains("mode=signatures"), "{banner}");
     }
 }
 
@@ -1166,6 +1288,30 @@ fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) ->
     )
 }
 
+/// Renders a task-mode selection as numbered lines with explicit gap markers.
+///
+/// Task mode returns *fragments*. Delivered bare they read like a small,
+/// complete file: nothing says where a fragment sits or that anything was
+/// dropped between two adjacent lines, so the view gives a false picture of the
+/// source (#1589). `N|` matches the numbering `lines:N-M` and `anchored` use,
+/// so the numbers double as coordinates for the follow-up read or patch.
+fn render_task_selection(keywords: &[String], selected: &[(usize, &str)]) -> String {
+    let mut out = format!("[task: {}]", keywords.join(", "));
+    let mut prev_line: Option<usize> = None;
+    for (idx, line) in selected {
+        let lineno = idx + 1;
+        if let Some(prev) = prev_line
+            && lineno > prev + 1
+        {
+            let skipped = lineno - prev - 1;
+            out.push_str(&format!("\n… {skipped}L"));
+        }
+        out.push_str(&format!("\n{lineno}|{line}"));
+        prev_line = Some(lineno);
+    }
+    out
+}
+
 fn render_task_mode(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) -> (String, usize) {
     let RenderCtx {
         file_ref,
@@ -1211,13 +1357,26 @@ fn render_task_mode(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) 
         AggressivenessProfile::from_level(a).ib_budget_ratio
     });
     let is_markdown = matches!(ext, "md" | "markdown" | "mdx" | "rst");
-    let filtered = crate::core::task_relevance::information_bottleneck_filter_with_headers(
-        content,
-        &keywords,
-        ib_budget,
-        tuning.protect,
-        is_markdown,
-    );
+    let filtered = if is_markdown {
+        crate::core::task_relevance::information_bottleneck_filter_with_headers(
+            content,
+            &keywords,
+            ib_budget,
+            tuning.protect,
+            true,
+        )
+    } else {
+        // #1589: code fragments need coordinates. Prose does not — markdown
+        // keeps its section-header reconstruction instead.
+        let selected = crate::core::task_relevance::ib_select(
+            content,
+            &keywords,
+            ib_budget,
+            None,
+            tuning.protect,
+        );
+        render_task_selection(&keywords, &selected)
+    };
     let filtered_lines = filtered.lines().count();
     let header = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
         format!("{file_ref}={short} {line_count}L [task-filtered: {line_count}→{filtered_lines}]")
