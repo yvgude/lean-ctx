@@ -1,6 +1,6 @@
 {
   "name": "lean-ctx-bin",
-  "version": "3.9.20",
+  "version": "3.10.0",
   "description": "LeanCTX \u2014 a local Context SDK for AI agents. Select, shape, reuse, recover, and measure context before inference. No Rust required.",
   "keywords": [
     "lean-ctx",

@@ -9,7 +9,7 @@
 > them. See [`docs/internal/README.md`](../internal/README.md).
 
 > Single entry point for all OCLA wire contracts, schemas, and specifications.  
-> Version: aligned with lean-ctx v3.9.20
+> Version: aligned with lean-ctx v3.10.0
 
 This portal is the navigable index for the contracts in this directory. The
 Rust OCLA types, JSON Schema, and Protobuf definitions remain the authoritative
