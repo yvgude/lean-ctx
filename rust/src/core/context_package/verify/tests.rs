@@ -492,13 +492,13 @@ fn missing_manifest_fails_structure() {
 
 const COHERENT_ADDON_TOML: &str = r#"
 [addon]
-name = "lean-md"
+name = "sample-addon"
 version = "1.2.0"
 description = "Markdown skills runtime"
 
 [mcp]
 transport = "stdio"
-command = "lean-md"
+command = "sample-addon"
 args = ["serve"]
 "#;
 
