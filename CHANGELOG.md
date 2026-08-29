@@ -3,9 +3,14 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [3.10.0] — 2026-08-29
 
 ### Added — context-budget transparency (`tools health`)
+
+- **Portable P6 checkpoint packages** — `ctxpkg` v2 can carry bounded,
+  canonical checkpoint state with explicit manifest-layer coherence,
+  credential and non-portable-path rejection, cross-field digest binding, and
+  an opt-in SDK seed path; generic loaders continue to fail closed.
 
 - **Foreign MCP server audit** — `tools health` now cross-references every
   non-lean-ctx MCP server the client loads (local config, project `.mcp.json`,

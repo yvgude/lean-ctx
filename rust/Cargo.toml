@@ -21,7 +21,7 @@ default-members = ["."]
 
 [package]
 name = "lean-ctx"
-version = "3.9.20"
+version = "3.10.0"
 edition = "2024"
 autobins = false
 description = "Local context engine, CLI, MCP server, and proxy for AI agents."
