@@ -51,7 +51,10 @@ impl McpTool for CtxEditTool {
             .ok_or_else(|| ErrorData::invalid_params("new_string is required", None))?;
         let replace_all = get_bool(args, "replace_all").unwrap_or(false);
         let create = get_bool(args, "create").unwrap_or(false);
-        let expected_md5 = get_str(args, "expected_md5");
+        // #1592: the guard is a BLAKE3 digest; `expected_md5` was a misnomer and
+        // stays accepted so existing callers keep working.
+        let expected_blake3 =
+            get_str(args, "expected_blake3").or_else(|| get_str(args, "expected_md5"));
         let expected_size = get_int(args, "expected_size").and_then(|v| u64::try_from(v).ok());
         let expected_mtime_ms =
             get_int(args, "expected_mtime_ms").and_then(|v| u64::try_from(v).ok());
@@ -70,7 +73,7 @@ impl McpTool for CtxEditTool {
             new_string,
             replace_all,
             create,
-            expected_md5,
+            expected_blake3,
             expected_size,
             expected_mtime_ms,
             backup,

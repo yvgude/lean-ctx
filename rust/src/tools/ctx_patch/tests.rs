@@ -25,7 +25,7 @@ fn params(path: &std::path::Path, ops: Vec<AnchorOp>) -> PatchParams {
     PatchParams {
         path: path.to_string_lossy().to_string(),
         ops,
-        expected_md5: None,
+        expected_blake3: None,
         backup: false,
         backup_path: None,
         evidence: false,
@@ -300,7 +300,7 @@ fn overlapping_batch_is_rejected() {
 }
 
 #[test]
-fn expected_md5_guard_blocks_mismatch() {
+fn expected_blake3_guard_blocks_mismatch() {
     let f = make_temp("aaa\n");
     let mut p = params(
         f.path(),
@@ -310,7 +310,7 @@ fn expected_md5_guard_blocks_mismatch() {
             new_text: "bbb".to_string(),
         }],
     );
-    p.expected_md5 = Some("deadbeef".to_string());
+    p.expected_blake3 = Some("deadbeef".to_string());
     let (text, effect) = run_io(&p, "");
     assert!(text.contains("preimage mismatch"), "{text}");
     assert!(matches!(effect, CacheEffect::None));

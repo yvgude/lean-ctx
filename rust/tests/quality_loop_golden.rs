@@ -16,7 +16,7 @@ fn params_for(path: &str, old_string: &str) -> EditParams {
         new_string: "fn replaced() {}".to_string(),
         replace_all: false,
         create: false,
-        expected_md5: None,
+        expected_blake3: None,
         expected_size: None,
         expected_mtime_ms: None,
         backup: false,

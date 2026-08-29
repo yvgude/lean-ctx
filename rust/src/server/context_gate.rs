@@ -57,9 +57,23 @@ pub fn pre_dispatch_read(
     project_root: Option<&str>,
     pressure: Option<&PressureAction>,
 ) -> PreDispatchResult {
-    pre_dispatch_read_for_agent(path, requested_mode, task, project_root, pressure, None)
+    pre_dispatch_read_for_agent(
+        path,
+        requested_mode,
+        task,
+        project_root,
+        pressure,
+        None,
+        false,
+    )
 }
 
+/// `fresh` is the caller's explicit escape hatch (#1588). Bounce-prevention and
+/// intent-target exist to stop an agent from *drifting* into a compressed view
+/// it will immediately re-read in full; neither should be able to pin a file to
+/// `full` forever. A caller who passes `fresh=true` has said, in the request
+/// itself, that they want this view recomputed — honour it, or those modes are
+/// simply unreachable for the rest of the session.
 pub fn pre_dispatch_read_for_agent(
     path: &str,
     requested_mode: &str,
@@ -67,6 +81,7 @@ pub fn pre_dispatch_read_for_agent(
     project_root: Option<&str>,
     pressure: Option<&PressureAction>,
     agent_id: Option<&str>,
+    fresh: bool,
 ) -> PreDispatchResult {
     let no_change = PreDispatchResult {
         overridden_mode: None,
@@ -105,7 +120,8 @@ pub fn pre_dispatch_read_for_agent(
                 if is_precise_pinned_mode(requested_mode) {
                     return result;
                 }
-                let rest = pre_dispatch_inner(path, requested_mode, task, project_root, pressure);
+                let rest =
+                    pre_dispatch_inner(path, requested_mode, task, project_root, pressure, fresh);
                 return PreDispatchResult {
                     budget_warning: result.budget_warning,
                     ..rest
@@ -115,7 +131,34 @@ pub fn pre_dispatch_read_for_agent(
         }
     }
 
-    pre_dispatch_inner(path, requested_mode, task, project_root, pressure)
+    pre_dispatch_inner(path, requested_mode, task, project_root, pressure, fresh)
+}
+
+/// Does `norm` (a normalized path) actually name the intent target `target`?
+///
+/// The old rule was `norm.ends_with(t) || norm.contains(t)`, which matched on
+/// any substring: a task mentioning `src` or `read` pinned every path
+/// containing those letters to `full` (#1588), including matches that land in
+/// the middle of a longer component (`print` inside `printer.rs`). A target now
+/// has to line up with a whole path component or the file stem, and be long
+/// enough to be a name rather than noise.
+fn path_matches_target(norm: &str, target: &str) -> bool {
+    const MIN_TARGET_LEN: usize = 4;
+    let target = target.trim().trim_matches('/');
+    if target.len() < MIN_TARGET_LEN {
+        return false;
+    }
+    // A target that is itself a path suffix (`src/server/context_gate.rs`).
+    if norm == target || norm.ends_with(&format!("/{target}")) {
+        return true;
+    }
+    // Otherwise: a whole path component, with or without its extension.
+    norm.split('/').any(|component| {
+        component == target
+            || component
+                .rsplit_once('.')
+                .is_some_and(|(stem, _)| stem == target)
+    })
 }
 
 fn pre_dispatch_inner(
@@ -124,6 +167,7 @@ fn pre_dispatch_inner(
     task: Option<&str>,
     project_root: Option<&str>,
     pressure: Option<&PressureAction>,
+    fresh: bool,
 ) -> PreDispatchResult {
     let no_change = PreDispatchResult {
         overridden_mode: None,
@@ -169,7 +213,11 @@ fn pre_dispatch_inner(
         }
     }
 
-    if let Ok(bt) = crate::core::bounce_tracker::global().lock()
+    // `fresh` is the documented way out (#1588): the caller re-requested this
+    // view deliberately, so the "you keep bouncing back to full" heuristic has
+    // nothing left to prevent.
+    if !fresh
+        && let Ok(bt) = crate::core::bounce_tracker::global().lock()
         && bt.should_force_full(path)
     {
         return PreDispatchResult {
@@ -182,13 +230,12 @@ fn pre_dispatch_inner(
         };
     }
 
-    if let Some(task_str) = task {
+    if let Some(task_str) = task
+        && !fresh
+    {
         let intent = crate::core::intent_engine::StructuredIntent::from_query(task_str);
         let norm = crate::core::pathutil::normalize_tool_path(path);
-        let is_target = intent
-            .targets
-            .iter()
-            .any(|t| norm.ends_with(t) || norm.contains(t));
+        let is_target = intent.targets.iter().any(|t| path_matches_target(&norm, t));
         if is_target {
             return PreDispatchResult {
                 overridden_mode: Some("full".to_string()),
@@ -755,6 +802,89 @@ mod tests {
         assert!(
             single.overridden_mode.is_none(),
             "lines:A-B must not be overridden by bounce-prevention"
+        );
+    }
+
+    #[test]
+    fn fresh_escapes_bounce_prevention() {
+        // #1588: after an edit the gate pins the file to `full`. Without an
+        // escape hatch, signatures/map/reference stay unreachable for the rest
+        // of the session — `fresh=true` is that hatch.
+        {
+            let mut bt = crate::core::bounce_tracker::global()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            bt.set_seq(301);
+            bt.record_edit("fresh-escape-1586.rs");
+            bt.set_seq(302);
+        }
+
+        let pinned = pre_dispatch_read("fresh-escape-1586.rs", "signatures", None, None, None);
+        assert_eq!(
+            pinned.overridden_mode.as_deref(),
+            Some("full"),
+            "precondition: the tracker must actually be armed for this path"
+        );
+
+        let escaped = pre_dispatch_read_for_agent(
+            "fresh-escape-1586.rs",
+            "signatures",
+            None,
+            None,
+            None,
+            None,
+            true,
+        );
+        assert!(
+            escaped.overridden_mode.is_none(),
+            "fresh=true must keep the requested mode reachable"
+        );
+    }
+
+    #[test]
+    fn intent_target_matches_whole_components_only() {
+        // #1588: substring matching pinned unrelated files to `full`.
+        assert!(path_matches_target(
+            "/repo/src/server/context_gate.rs",
+            "context_gate"
+        ));
+        assert!(path_matches_target(
+            "/repo/src/server/context_gate.rs",
+            "context_gate.rs"
+        ));
+        assert!(path_matches_target(
+            "/repo/src/server/context_gate.rs",
+            "src/server/context_gate.rs"
+        ));
+
+        assert!(
+            !path_matches_target("/repo/src/printer/link_gate.rs", "print"),
+            "a target must not match the middle of a longer component"
+        );
+        assert!(
+            !path_matches_target("/repo/src/server/context_gate.rs", "src"),
+            "targets below the minimum length are noise, not names"
+        );
+        assert!(!path_matches_target(
+            "/repo/src/server/context_gate.rs",
+            "gate"
+        ));
+    }
+
+    #[test]
+    fn fresh_escapes_intent_target() {
+        let result = pre_dispatch_read_for_agent(
+            "/repo/src/server/context_gate.rs",
+            "reference",
+            Some("fix context_gate overrides"),
+            None,
+            None,
+            None,
+            true,
+        );
+        assert!(
+            result.overridden_mode.is_none(),
+            "fresh=true must also escape the intent-target override"
         );
     }
 

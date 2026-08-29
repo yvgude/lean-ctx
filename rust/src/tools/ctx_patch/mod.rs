@@ -43,7 +43,10 @@ pub struct PatchParams {
     pub ops: Vec<AnchorOp>,
     /// Optional whole-file preimage guard (BLAKE3 hex, as printed by ctx_edit's
     /// `postimage:` line). When set, the edit fails if the file's hash differs.
-    pub expected_md5: Option<String>,
+    ///
+    /// Named for the algorithm it actually uses (#1592); the wire parameter
+    /// `expected_md5` stays accepted as an alias for existing callers.
+    pub expected_blake3: Option<String>,
     pub backup: bool,
     pub backup_path: Option<String>,
     pub evidence: bool,
@@ -117,13 +120,13 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         }
     };
 
-    if let Some(expected) = params.expected_md5.as_deref()
-        && expected != pre.fp.md5
+    if let Some(expected) = params.expected_blake3.as_deref()
+        && expected != pre.fp.blake3
     {
         return (
             format!(
-                "ERROR: preimage mismatch for {file_path}: expected_md5={expected}, actual_md5={}",
-                pre.fp.md5
+                "ERROR: preimage mismatch for {file_path}: expected_blake3={expected}, actual_blake3={}",
+                pre.fp.blake3
             ),
             CacheEffect::None,
         );
@@ -244,7 +247,7 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         &new_content,
         pre.fp.size,
         pre.fp.mtime_ms,
-        &pre.fp.md5,
+        &pre.fp.blake3,
         lines_before,
         new_lines.len(),
         n_edits,

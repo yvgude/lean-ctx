@@ -50,7 +50,10 @@ impl Drop for ModeGuard {
     }
 }
 
-fn current_mode() -> Option<String> {
+/// The mode the innermost live `ModeGuard` was created with, if any. Lets a
+/// deep renderer name the mode the caller actually asked for without threading
+/// it through every signature (used by the no-compression banner).
+pub(crate) fn current_mode() -> Option<String> {
     CURRENT_MODE.with(|m| m.borrow().clone())
 }
 

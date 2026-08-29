@@ -225,7 +225,13 @@ pub(super) fn handle_with_options_inner(
             // same capped, byte-stable body.
             let out = if mode_allows_raw_cap(&resolved_mode) {
                 let framed_tokens = count_tokens(&out);
-                cap_to_raw(out, framed_tokens, &content, original_tokens)
+                cap_to_raw(
+                    out,
+                    framed_tokens,
+                    &content,
+                    original_tokens,
+                    &resolved_mode,
+                )
             } else {
                 out
             };
@@ -323,11 +329,14 @@ pub(super) fn handle_with_options_inner(
             output.push_str(&format!("\n{hint}"));
         }
         let framed_tokens = count_tokens(&output);
+        // Verbatim `full` — the cap only strips framing, never a summary, so no
+        // no-compression banner is warranted here.
         let output = cap_to_raw(
             output,
             framed_tokens,
             &content,
             store_result.original_tokens,
+            "full",
         );
         let output = crate::core::redaction::redact_text_if_enabled(&output);
         let sent = count_tokens(&output);
@@ -377,6 +386,7 @@ pub(super) fn handle_with_options_inner(
             framed_tokens,
             &content,
             store_result.original_tokens,
+            &resolved_mode,
         )
     } else {
         output
@@ -421,15 +431,40 @@ pub(super) fn handle_with_options_inner(
 /// is roughly token-neutral and applied to whichever string wins), so the
 /// comparison is apples-to-apples with `original_tokens`. Empty files
 /// (`raw_tokens == 0`) keep their framing so the reader still gets a signal.
+/// #361 anti-inflation cap: when framing a whole-file view costs more tokens
+/// than the file itself, return the bare file instead.
+///
+/// `requested_mode` names the view the caller asked for. If that view was a
+/// *compressed* one, the bare file is prefixed with a one-line banner: the
+/// caller ordered a summary and is getting the whole file, and without the
+/// banner that failure is invisible — indistinguishable from a summary that
+/// happened to need every line, at full-file cost. Verbatim views (`full`,
+/// `anchored`, …) are returned byte-identical, so callers that demand exact
+/// bytes (compress-protected paths, #1150) are never given a prefix.
 pub(crate) fn cap_to_raw(
     framed: String,
     framed_tokens: usize,
     raw_content: &str,
     raw_tokens: usize,
+    requested_mode: &str,
 ) -> String {
     if raw_tokens > 0 && framed_tokens > raw_tokens {
         let prevented = (framed_tokens - raw_tokens) as u64;
         crate::core::cache_telemetry::record_raw_cap(prevented);
+        // #1587: a caller who asked for a *summary* and silently receives the
+        // whole file pays full-file tokens believing they compressed. Say so —
+        // but only above the banner threshold, so the cap keeps its #361
+        // guarantee (a read never costs more than the raw file) on the small
+        // files where framing alone was the inflation.
+        let compressed_request = requested_mode
+            .parse::<crate::tools::ctx_read::ReadMode>()
+            .is_ok_and(|m| m.counts_as_compressed());
+        if compressed_request
+            && let Some(banner) =
+                crate::tools::ctx_read::render::no_compression_banner(requested_mode, raw_tokens)
+        {
+            return format!("{banner}\n{raw_content}");
+        }
         raw_content.to_string()
     } else {
         framed
@@ -572,7 +607,13 @@ pub(super) fn handle_full_with_auto_delta(
     )
 }
 
-fn handle_diff(cache: &mut SessionCache, path: &str, file_ref: &str) -> (String, usize) {
+/// Render the delta between the cached baseline of `path` and its current disk
+/// content, refreshing the baseline. Used by both read paths: the CLI/in-process
+/// path (`handle_with_options_inner`) and the MCP tool handler — `diff` is a
+/// delta view with no whole-file renderer, so it must never reach
+/// `process_mode_tuned` (which would report it as an unknown mode and fall back
+/// to dumping the entire file, #1584).
+pub(crate) fn handle_diff(cache: &mut SessionCache, path: &str, file_ref: &str) -> (String, usize) {
     let _mode_guard = crate::core::savings_footer::ModeGuard::new("diff");
     let short = protocol::shorten_path(path);
     let old_content = cache

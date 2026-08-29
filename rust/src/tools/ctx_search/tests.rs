@@ -633,3 +633,40 @@ fn search_refuses_home_directory_root() {
         "home root must be refused: {out}"
     );
 }
+
+/// #1591: "13 matches in 40 files" reported the number of files *scanned* as
+/// the number that matched. The two counts are now separate and labelled.
+#[test]
+fn match_count_reports_matched_files_not_scanned_files() {
+    let dir = tempfile::tempdir().unwrap();
+    for i in 0..8 {
+        std::fs::write(dir.path().join(format!("quiet{i}.rs")), "fn nothing() {}\n").unwrap();
+    }
+    std::fs::write(
+        dir.path().join("hit_a.rs"),
+        "let needle = 1;\nlet needle = 2;\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("hit_b.rs"), "let needle = 3;\n").unwrap();
+
+    let out = handle(
+        "needle",
+        &dir.path().to_string_lossy(),
+        Some("*.rs"),
+        50,
+        CrpMode::Off,
+        true,
+        true,
+        false,
+    )
+    .text;
+
+    assert!(
+        out.starts_with("3 matches in 2 files"),
+        "the headline count must be files that matched, not files walked: {out}"
+    );
+    assert!(
+        out.contains("scanned 10"),
+        "the scanned count stays visible, explicitly labelled: {out}"
+    );
+}

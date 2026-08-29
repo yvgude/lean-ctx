@@ -1310,3 +1310,41 @@ async fn mcp_ctx_read_serves_relay_content_from_another_agent() {
         "relay must NOT mark full_content_delivered in session cache"
     );
 }
+
+/// #1590: only a task the caller stated may steer a read. `auto_infer_task`
+/// fabricates "Working on /repo/src/printer (explore)" from touched-file
+/// patterns and tags it `intent="inferred"`; its keywords ("Working",
+/// "explore", a directory) say nothing about any file's contents, so letting
+/// them drive the IB filter or the intent-target override answered a question
+/// nobody asked.
+#[test]
+fn inferred_session_task_does_not_steer_a_read() {
+    assert!(
+        !task_intent_steers_read(Some("inferred")),
+        "a fabricated task must not filter or pin a file"
+    );
+
+    // Every intent that reflects a real signal still steers.
+    for stated in ["explicit", "plan", "git", "user"] {
+        assert!(
+            task_intent_steers_read(Some(stated)),
+            "`{stated}` is grounded in something the caller or repo actually said"
+        );
+    }
+    assert!(
+        task_intent_steers_read(None),
+        "an untagged task predates the intent field; keep the old behaviour"
+    );
+}
+
+/// Guards the coupling the test above depends on: the marker asserted here is
+/// the one `auto_infer_task` actually writes. If that string ever changes,
+/// this fails loudly instead of silently re-enabling the bug (#1590).
+#[test]
+fn auto_inferred_tasks_are_tagged_with_the_marker_we_filter_on() {
+    let mut state = crate::core::session::SessionState::default();
+    state.set_task("Working on /repo/src/printer (explore)", Some("inferred"));
+    let intent = state.task.as_ref().and_then(|t| t.intent.clone());
+    assert_eq!(intent.as_deref(), Some("inferred"));
+    assert!(!task_intent_steers_read(intent.as_deref()));
+}

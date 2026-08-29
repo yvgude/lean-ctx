@@ -138,7 +138,7 @@ fn edit_params(path: &Path, old: &str, new: &str) -> EditParams {
         new_string: new.to_string(),
         replace_all: false,
         create: false,
-        expected_md5: None,
+        expected_blake3: None,
         expected_size: None,
         expected_mtime_ms: None,
         backup: false,
@@ -153,7 +153,7 @@ fn patch_params(path: &Path, ops: Vec<AnchorOp>) -> PatchParams {
     PatchParams {
         path: path.to_string_lossy().into_owned(),
         ops,
-        expected_md5: None,
+        expected_blake3: None,
         backup: false,
         backup_path: None,
         evidence: false,

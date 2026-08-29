@@ -20,9 +20,9 @@ fn cap_to_raw_falls_back_when_framing_inflates() {
         "fixture must inflate to exercise the guard"
     );
     assert_eq!(
-        cap_to_raw(framed, framed_tokens, raw, raw_tokens),
+        cap_to_raw(framed, framed_tokens, raw, raw_tokens, "signatures"),
         raw,
-        "framing larger than raw must fall back to bare content"
+        "framing larger than raw must fall back to bare content — and on a file\n         this small the notice is suppressed so the #361 cap still holds"
     );
 }
 
@@ -32,7 +32,7 @@ fn cap_to_raw_keeps_framing_when_not_larger() {
     let framed = "sig summary".to_string();
     let framed_tokens = count_tokens(&framed);
     assert_eq!(
-        cap_to_raw(framed.clone(), framed_tokens, raw, 100),
+        cap_to_raw(framed.clone(), framed_tokens, raw, 100, "signatures"),
         framed,
         "output at or below raw must be returned untouched"
     );
@@ -45,10 +45,70 @@ fn cap_to_raw_keeps_framing_for_empty_file() {
     let framed = "F1=empty.rs 0L".to_string();
     let framed_tokens = count_tokens(&framed);
     assert_eq!(
-        cap_to_raw(framed.clone(), framed_tokens, "", 0),
+        cap_to_raw(framed.clone(), framed_tokens, "", 0, "signatures"),
         framed,
         "empty files keep their framing signal"
     );
+}
+
+// ---------------------------------------------------------------------------
+// #1587: the cap must not degrade *silently*. When a compressed view collapses
+// to full content on a file large enough for that to cost real tokens, the
+// caller is told; a verbatim `full` request is never labelled (nothing was
+// withheld), and small files stay bare so #361 above is not undone.
+// ---------------------------------------------------------------------------
+
+/// Raw body comfortably above `NO_COMPRESSION_BANNER_MIN_TOKENS`.
+fn big_raw() -> String {
+    "pub fn item(value: u32) -> u32 { value.saturating_add(1) }\n".repeat(120)
+}
+
+#[test]
+fn cap_to_raw_labels_silent_fallback_for_compressed_request() {
+    let raw = big_raw();
+    let raw_tokens = count_tokens(&raw);
+    assert!(
+        raw_tokens >= crate::tools::ctx_read::render::NO_COMPRESSION_BANNER_MIN_TOKENS,
+        "fixture must exceed the banner threshold"
+    );
+    let framed = format!("F1=big.rs 120L\n{raw}");
+    let framed_tokens = count_tokens(&framed);
+    let out = cap_to_raw(framed, framed_tokens, &raw, raw_tokens, "signatures");
+    assert!(
+        out.starts_with("[lean-ctx] no compression applied (mode=signatures)"),
+        "a summary request answered with the whole file must say so: {}",
+        out.lines().next().unwrap_or_default()
+    );
+    assert!(
+        out.ends_with(&raw),
+        "the full content still follows the notice"
+    );
+}
+
+#[test]
+fn cap_to_raw_stays_silent_for_verbatim_full_request() {
+    let raw = big_raw();
+    let raw_tokens = count_tokens(&raw);
+    let framed = format!("F1=big.rs 120L\n{raw}");
+    let framed_tokens = count_tokens(&framed);
+    assert_eq!(
+        cap_to_raw(framed, framed_tokens, &raw, raw_tokens, "full"),
+        raw,
+        "`full` asked for the whole file — stripping framing is not a degradation"
+    );
+}
+
+#[test]
+fn cap_to_raw_notice_never_breaks_the_361_cap() {
+    // Small file: the notice would push the read above the raw cost it just
+    // protected, so it is suppressed.
+    let raw = "pub fn a() {}\n";
+    let raw_tokens = count_tokens(raw);
+    let framed = format!("F1=x.rs 1L\n deps foo,bar\n{raw}");
+    let framed_tokens = count_tokens(&framed);
+    let out = cap_to_raw(framed, framed_tokens, raw, raw_tokens, "map");
+    assert_eq!(out, raw);
+    assert!(count_tokens(&out) <= raw_tokens);
 }
 
 #[test]

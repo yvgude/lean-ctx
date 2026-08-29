@@ -16,7 +16,8 @@ impl McpTool for CtxPatchTool {
 
     // Schema diet (#576 pattern): the advertised surface carries only the
     // functional teaching (anchor source, op routing, batch atomicity).
-    // Handler-only params stay supported but unadvertised: expected_md5,
+    // Handler-only params stay supported but unadvertised: expected_blake3 (alias
+    // expected_md5),
     // backup, backup_path, validate_syntax, evidence, diff_max_lines,
     // allow_lossy_utf8 — same hidden-params contract as ctx_edit.
     fn tool_def(&self) -> Tool {
@@ -127,7 +128,10 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
         )));
     }
 
-    let expected_md5 = get_str(args, "expected_md5");
+    // #1592: the guard is a BLAKE3 digest; `expected_md5` was a misnomer and
+    // stays accepted so existing callers keep working.
+    let expected_blake3 =
+        get_str(args, "expected_blake3").or_else(|| get_str(args, "expected_md5"));
     let backup = get_bool(args, "backup").unwrap_or(false);
     let backup_path = get_str(args, "backup_path")
         .map(|p| ctx.resolved_paths.get("backup_path").cloned().unwrap_or(p));
@@ -150,7 +154,7 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
         let patch_params = crate::tools::ctx_patch::PatchParams {
             path: path.clone(),
             ops,
-            expected_md5: expected_md5.clone(),
+            expected_blake3: expected_blake3.clone(),
             backup,
             backup_path: backup_path.clone(),
             evidence,
@@ -371,7 +375,7 @@ fn validate_cross_file_options(
     if file_count <= 1 {
         return Ok(());
     }
-    for key in ["expected_md5", "backup_path"] {
+    for key in ["expected_blake3", "expected_md5", "backup_path"] {
         if args.contains_key(key) {
             return Err(ErrorData::invalid_params(
                 format!("cross-file ctx_patch batches do not support top-level '{key}'"),
@@ -766,7 +770,7 @@ mod batch_grouping_tests {
 
     #[test]
     fn cross_file_rejects_single_value_preimage_and_backup_options() {
-        for key in ["expected_md5", "backup_path"] {
+        for key in ["expected_blake3", "expected_md5", "backup_path"] {
             let args = Map::from_iter([(key.to_string(), json!("one-value"))]);
             assert!(validate_cross_file_options(&args, 2).is_err());
             assert!(validate_cross_file_options(&args, 1).is_ok());

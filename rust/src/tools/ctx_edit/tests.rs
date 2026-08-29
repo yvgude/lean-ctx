@@ -17,7 +17,7 @@ mod tests {
             new_string: new.to_string(),
             replace_all,
             create,
-            expected_md5: None,
+            expected_blake3: None,
             expected_size: None,
             expected_mtime_ms: None,
             backup: false,
@@ -417,11 +417,11 @@ mod tests {
     }
 
     #[test]
-    fn expected_md5_mismatch_fails_without_writing() {
+    fn expected_blake3_mismatch_fails_without_writing() {
         let f = make_temp("aaa\n");
         let mut cache = SessionCache::new();
         let mut p = mk_params(f.path(), "aaa", "bbb", false, false);
-        p.expected_md5 = Some("deadbeef".to_string());
+        p.expected_blake3 = Some("deadbeef".to_string());
         let result = handle(&mut cache, &p);
         assert!(
             result.contains("preimage mismatch"),
@@ -429,6 +429,42 @@ mod tests {
         );
         let content = std::fs::read_to_string(f.path()).unwrap();
         assert_eq!(content, "aaa\n");
+    }
+
+    /// #1592: the receipt used to label its 64-hex digest `md5=`, sending a
+    /// user off to verify a hash against three algorithms none of which could
+    /// ever match. The digest is BLAKE3; the receipt now says so, and the
+    /// mismatch error names the same algorithm.
+    #[test]
+    fn receipt_labels_the_digest_by_its_actual_algorithm() {
+        let f = make_temp("aaa\n");
+        let mut cache = SessionCache::new();
+        let out = handle(&mut cache, &mk_params(f.path(), "aaa", "bbb", false, false));
+
+        assert!(out.contains("blake3="), "receipt must name BLAKE3: {out}");
+        assert!(
+            !out.contains("md5="),
+            "no `md5=` label may survive on a BLAKE3 digest: {out}"
+        );
+
+        let digest = out
+            .lines()
+            .find(|l| l.starts_with("postimage:"))
+            .and_then(|l| l.split("blake3=").nth(1))
+            .expect("receipt carries a postimage blake3 field");
+        assert_eq!(digest.len(), 64, "BLAKE3 is 64 hex chars, got {digest:?}");
+        assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(
+            digest,
+            crate::core::hasher::hash_hex(b"bbb\n"),
+            "the postimage digest must be BLAKE3 of the bytes on disk"
+        );
+
+        let mut p = mk_params(f.path(), "bbb", "ccc", false, false);
+        p.expected_blake3 = Some("deadbeef".to_string());
+        let err = handle(&mut cache, &p);
+        assert!(err.contains("expected_blake3="), "{err}");
+        assert!(err.contains("actual_blake3="), "{err}");
     }
 
     #[test]
