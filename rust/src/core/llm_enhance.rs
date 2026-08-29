@@ -3,7 +3,7 @@
 //! Deterministic by default — LLM calls are opt-in and always fall back to
 //! the deterministic pipeline on failure, timeout, or when disabled.
 //!
-//! Supported backends: Ollama (local), OpenRouter, Claude (Anthropic).
+//! Supported backends: Ollama (local), OpenRouter, OrcaRouter, Claude (Anthropic).
 
 use std::time::Duration;
 
@@ -39,6 +39,7 @@ pub enum LlmBackend {
     #[default]
     Ollama,
     OpenRouter,
+    OrcaRouter,
     Anthropic,
 }
 
@@ -50,6 +51,7 @@ impl LlmConfig {
         match self.backend {
             LlmBackend::Ollama => "http://localhost:11434".to_string(),
             LlmBackend::OpenRouter => "https://openrouter.ai/api".to_string(),
+            LlmBackend::OrcaRouter => "https://api.orcarouter.ai".to_string(),
             LlmBackend::Anthropic => "https://api.anthropic.com".to_string(),
         }
     }
@@ -58,6 +60,7 @@ impl LlmConfig {
         match self.backend {
             LlmBackend::Ollama => None,
             LlmBackend::OpenRouter => std::env::var("OPENROUTER_API_KEY").ok(),
+            LlmBackend::OrcaRouter => std::env::var("ORCAROUTER_API_KEY").ok(),
             LlmBackend::Anthropic => std::env::var("ANTHROPIC_API_KEY").ok(),
         }
     }
@@ -67,6 +70,26 @@ impl LlmConfig {
             Duration::from_secs(self.timeout_secs)
         } else {
             DEFAULT_TIMEOUT
+        }
+    }
+
+    /// Env var holding the backend's API key, used in error messages.
+    fn api_key_env_name(&self) -> &'static str {
+        match self.backend {
+            LlmBackend::Ollama => "OLLAMA_API_KEY",
+            LlmBackend::OpenRouter => "OPENROUTER_API_KEY",
+            LlmBackend::OrcaRouter => "ORCAROUTER_API_KEY",
+            LlmBackend::Anthropic => "ANTHROPIC_API_KEY",
+        }
+    }
+
+    /// Lowercase backend name for error context.
+    fn backend_name(&self) -> &'static str {
+        match self.backend {
+            LlmBackend::Ollama => "ollama",
+            LlmBackend::OpenRouter => "openrouter",
+            LlmBackend::OrcaRouter => "orcarouter",
+            LlmBackend::Anthropic => "anthropic",
         }
     }
 }
@@ -152,7 +175,7 @@ pub fn enhance_observation(entity: &str, deterministic: &str) -> String {
     }
 }
 
-/// Low-level LLM call. Supports Ollama, OpenRouter, and Anthropic.
+/// Low-level LLM call. Supports Ollama, OpenRouter, OrcaRouter, and Anthropic.
 fn call_llm(cfg: &LlmConfig, prompt: &str) -> Result<String, String> {
     let truncated = if prompt.len() > MAX_PROMPT_CHARS {
         &prompt[..prompt.floor_char_boundary(MAX_PROMPT_CHARS)]
@@ -162,7 +185,7 @@ fn call_llm(cfg: &LlmConfig, prompt: &str) -> Result<String, String> {
 
     match cfg.backend {
         LlmBackend::Ollama => call_ollama(cfg, truncated),
-        LlmBackend::OpenRouter => call_openai_compatible(cfg, truncated),
+        LlmBackend::OpenRouter | LlmBackend::OrcaRouter => call_openai_compatible(cfg, truncated),
         LlmBackend::Anthropic => call_anthropic(cfg, truncated),
     }
 }
@@ -205,7 +228,9 @@ fn call_ollama(cfg: &LlmConfig, prompt: &str) -> Result<String, String> {
 }
 
 fn call_openai_compatible(cfg: &LlmConfig, prompt: &str) -> Result<String, String> {
-    let key = cfg.api_key().ok_or("OPENROUTER_API_KEY not set")?;
+    let key = cfg
+        .api_key()
+        .ok_or_else(|| format!("{} not set", cfg.api_key_env_name()))?;
     let url = format!("{}/v1/chat/completions", cfg.effective_base_url());
     let body = serde_json::json!({
         "model": cfg.model,
@@ -220,7 +245,7 @@ fn call_openai_compatible(cfg: &LlmConfig, prompt: &str) -> Result<String, Strin
         .header("Authorization", &format!("Bearer {key}"))
         .header("Content-Type", "application/json")
         .send(payload.as_slice())
-        .map_err(|e| format!("openrouter: {e}"))?;
+        .map_err(|e| format!("{}: {e}", cfg.backend_name()))?;
 
     let text = resp
         .into_body()
@@ -297,5 +322,12 @@ pub mod tests {
             ..Default::default()
         };
         assert!(cfg.effective_base_url().contains("openrouter"));
+
+        let cfg = LlmConfig {
+            backend: LlmBackend::OrcaRouter,
+            ..Default::default()
+        };
+        assert!(cfg.effective_base_url().contains("orcarouter"));
+        assert_eq!(cfg.api_key_env_name(), "ORCAROUTER_API_KEY");
     }
 }

@@ -13,6 +13,8 @@ pub enum ProviderKind {
     Gemini,
     /// OpenRouter gateway.
     OpenRouter,
+    /// OrcaRouter gateway.
+    OrcaRouter,
     /// Amazon Bedrock.
     Bedrock,
     /// Azure OpenAI Service.
@@ -87,6 +89,7 @@ pub(crate) fn parse_provider(label: &str) -> ProviderKind {
         "anthropic" => ProviderKind::Anthropic,
         "gemini" | "google" => ProviderKind::Gemini,
         "openrouter" => ProviderKind::OpenRouter,
+        "orcarouter" => ProviderKind::OrcaRouter,
         "bedrock" => ProviderKind::Bedrock,
         "azure" | "azure_openai" => ProviderKind::Azure,
         "local" => ProviderKind::Local,
@@ -300,6 +303,7 @@ mod tests {
     fn parse_provider_aliases_and_unknown() {
         assert_eq!(parse_provider("google"), ProviderKind::Gemini);
         assert_eq!(parse_provider("openrouter"), ProviderKind::OpenRouter);
+        assert_eq!(parse_provider("orcarouter"), ProviderKind::OrcaRouter);
         assert_eq!(parse_provider("local"), ProviderKind::Local);
         assert_eq!(parse_provider("other"), ProviderKind::Unknown);
     }

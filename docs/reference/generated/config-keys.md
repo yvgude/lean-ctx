@@ -268,8 +268,8 @@ Index-time file filters: declare the retrieval corpus explicitly (BM25 + graph +
 
 Optional LLM enhancement settings (query expansion, contradiction explanation). Deterministic fallback when disabled or unreachable.
 
-- `api_key` (string, default `""`) — API key for OpenRouter or Anthropic backends
-- `backend` (enum: ollama | openrouter | anthropic, default `ollama`) — LLM backend provider
+- `api_key` (string, default `""`) — API key for OpenRouter, OrcaRouter or Anthropic backends
+- `backend` (enum: ollama | openrouter | orcarouter | anthropic, default `ollama`) — LLM backend provider
 - `enabled` (bool, default `false`) — Enable optional LLM enhancements (query expansion, contradiction explanation)
 - `model` (string, default `llama3.2`) — Model name for the selected backend
 - `timeout_secs` (u64, default `10`) — HTTP timeout for LLM requests

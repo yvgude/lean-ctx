@@ -12,6 +12,7 @@ pub fn provider_kind_from_label(label: &str) -> ProviderKind {
         "Bedrock" => ProviderKind::Bedrock,
         "Azure" => ProviderKind::Azure,
         _ if label.to_ascii_lowercase().contains("openrouter") => ProviderKind::OpenRouter,
+        _ if label.to_ascii_lowercase().contains("orcarouter") => ProviderKind::OrcaRouter,
         _ => ProviderKind::Unknown,
     }
 }
@@ -79,6 +80,18 @@ mod tests {
     #[test]
     fn kind_from_unknown() {
         assert_eq!(provider_kind_from_label("Other"), ProviderKind::Unknown);
+    }
+
+    #[test]
+    fn kind_from_orcarouter_label() {
+        assert_eq!(
+            provider_kind_from_label("OrcaRouter"),
+            ProviderKind::OrcaRouter
+        );
+        assert_eq!(
+            provider_kind_from_label("orcarouter"),
+            ProviderKind::OrcaRouter
+        );
     }
 
     #[test]

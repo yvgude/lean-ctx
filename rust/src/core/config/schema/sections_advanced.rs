@@ -635,7 +635,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     llm_keys.insert(
         "backend".into(),
         key_enum(
-            &["ollama", "openrouter", "anthropic"],
+            &["ollama", "openrouter", "orcarouter", "anthropic"],
             "ollama",
             "LLM backend provider",
         ),
@@ -653,7 +653,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "string",
             serde_json::json!(""),
-            "API key for OpenRouter or Anthropic backends",
+            "API key for OpenRouter, OrcaRouter or Anthropic backends",
         ),
     );
     llm_keys.insert(

@@ -177,6 +177,7 @@ fn canonical_provider(provider: &str) -> String {
         "anthropic" | "claude" | "bedrock" => "anthropic".to_owned(),
         "gemini" | "google" | "google_ai" => "gemini".to_owned(),
         "openrouter" => "openrouter".to_owned(),
+        "orcarouter" => "orcarouter".to_owned(),
         other => other.to_owned(),
     }
 }
@@ -342,6 +343,11 @@ pub fn normalize_provider(
             usage.provider = String::from("openrouter");
             usage
         }
+        "orcarouter" => {
+            let mut usage = normalize_openai(value, requested_model, retries);
+            usage.provider = String::from("orcarouter");
+            usage
+        }
         "anthropic" => normalize_anthropic(value, requested_model, retries),
         "gemini" => normalize_gemini(value, requested_model, retries),
         _ => {
@@ -486,7 +492,7 @@ mod tests {
 
     use super::{
         NormalizedUsage, decimal_to_micros, normalize_anthropic, normalize_gemini,
-        normalize_openai, normalize_stream,
+        normalize_openai, normalize_provider, normalize_stream,
     };
 
     #[test]
@@ -536,6 +542,26 @@ mod tests {
         assert_eq!(gemini.fresh_input_tokens, Some(90));
         assert_eq!(gemini.output_tokens, Some(25));
         assert_eq!(gemini.reasoning_tokens, Some(5));
+    }
+
+    #[test]
+    fn orcarouter_uses_openai_shape_and_keeps_provider() {
+        let usage = normalize_provider(
+            "orcarouter",
+            &json!({
+                "model": "openai/gpt-oss-120b",
+                "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 20,
+                    "cost": 0.00000392
+                }
+            }),
+            None,
+            0,
+        );
+        assert_eq!(usage.provider, "orcarouter");
+        assert_eq!(usage.fresh_input_tokens, Some(100));
+        assert_eq!(usage.output_tokens, Some(20));
     }
 
     #[test]

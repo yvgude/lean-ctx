@@ -4,11 +4,12 @@ use serde_json::Value;
 
 use super::token_envelope::{ProviderKind, TokenEnvelope};
 
-const SUPPORTED: [ProviderKind; 7] = [
+const SUPPORTED: [ProviderKind; 8] = [
     ProviderKind::OpenAi,
     ProviderKind::Anthropic,
     ProviderKind::Gemini,
     ProviderKind::OpenRouter,
+    ProviderKind::OrcaRouter,
     ProviderKind::Bedrock,
     ProviderKind::Azure,
     ProviderKind::Local,
@@ -34,6 +35,8 @@ pub fn detect_provider(base_url: &str) -> ProviderKind {
         ProviderKind::Azure
     } else if url.contains("openrouter.ai") {
         ProviderKind::OpenRouter
+    } else if url.contains("orcarouter.ai") {
+        ProviderKind::OrcaRouter
     } else if url.contains("localhost") || url.contains("127.0.0.1") || url.contains("0.0.0.0") {
         ProviderKind::Local
     } else {
@@ -77,6 +80,7 @@ pub fn envelope_from_usage(provider: ProviderKind, model: &str, usage: &Value) -
             ProviderKind::OpenAi
             | ProviderKind::Azure
             | ProviderKind::OpenRouter
+            | ProviderKind::OrcaRouter
             | ProviderKind::Local
             | ProviderKind::Unknown => (
                 token(usage, &["prompt_tokens"]),
@@ -110,6 +114,7 @@ pub const fn provider_display_name(kind: ProviderKind) -> &'static str {
         ProviderKind::Bedrock => "Bedrock",
         ProviderKind::Azure => "Azure",
         ProviderKind::OpenRouter => "OpenRouter",
+        ProviderKind::OrcaRouter => "OrcaRouter",
         ProviderKind::Local => "Local",
         ProviderKind::Unknown => "Unknown",
     }
@@ -170,6 +175,11 @@ pub mod tests {
         detect_localhost,
         "http://localhost:11434",
         ProviderKind::Local
+    );
+    detect_test!(
+        detect_orcarouter,
+        "https://api.orcarouter.ai/v1",
+        ProviderKind::OrcaRouter
     );
     detect_test!(detect_unknown, "https://example.com", ProviderKind::Unknown);
 
