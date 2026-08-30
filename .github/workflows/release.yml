@@ -165,13 +165,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
           if [[ "${{ matrix.target }}" == aarch64-* ]]; then
-            TOOLCHAIN_ROOT="${RUNNER_TEMP}/aarch64-linux-musl-cross"
-            curl -sL "https://musl.cc/aarch64-linux-musl-cross.tgz" | tar xz -C "${RUNNER_TEMP}"
-            echo "${TOOLCHAIN_ROOT}/bin" >> $GITHUB_PATH
-            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-gcc" >> $GITHUB_ENV
-            echo "CC_aarch64_unknown_linux_musl=aarch64-linux-musl-gcc" >> $GITHUB_ENV
-            echo "AR_aarch64_unknown_linux_musl=aarch64-linux-musl-ar" >> $GITHUB_ENV
-            echo "RANLIB_aarch64_unknown_linux_musl=aarch64-linux-musl-ranlib" >> $GITHUB_ENV
+            test "$(uname -m)" = "aarch64"
+            command -v musl-gcc
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+            echo "CC_aarch64_unknown_linux_musl=musl-gcc" >> "$GITHUB_ENV"
+            echo "AR_aarch64_unknown_linux_musl=ar" >> "$GITHUB_ENV"
+            echo "RANLIB_aarch64_unknown_linux_musl=ranlib" >> "$GITHUB_ENV"
           fi
 
       - name: Install cross-compilation tools
@@ -295,7 +294,18 @@ jobs:
             wheel_python="wheel-smoke/bin/python"
             wheel_engine="wheel-smoke/bin/lean-ctx"
           fi
-          "$wheel_python" -m pip install --no-deps "$wheel"
+          if [[ "${{ matrix.musl }}" == "true" ]]; then
+            "$wheel_python" -m pip install --no-deps \
+              --target wheel-smoke/site \
+              --platform "${{ matrix.wheel_platform }}" \
+              --python-version 3 --implementation py --abi none \
+              --only-binary=:all: "$wheel"
+            wheel_engine=$(find wheel-smoke/site -mindepth 3 -maxdepth 3 \
+              -path '*/bin/lean-ctx' -type f -print -quit)
+            test -n "$wheel_engine"
+          else
+            "$wheel_python" -m pip install --no-deps "$wheel"
+          fi
           "$wheel_python" -m pip install --quiet 'twine==7.0.0'
           "$wheel_python" -m twine check --strict "$wheel"
           test "$("$wheel_engine" --version | awk '{print $2}')" = "${GITHUB_REF_NAME#v}"

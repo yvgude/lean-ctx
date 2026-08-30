@@ -124,6 +124,22 @@ class PythonEngineWheelTests(unittest.TestCase):
                 license_file=self.license,
             )
 
+    def test_release_smoke_handles_foreign_musllinux_tags(self):
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("musl.cc", workflow)
+        for expected in (
+            'test "$(uname -m)" = "aarch64"',
+            "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc",
+            'if [[ "${{ matrix.musl }}" == "true" ]]',
+            '--platform "${{ matrix.wheel_platform }}"',
+            "--python-version 3 --implementation py --abi none",
+            "-path '*/bin/lean-ctx' -type f -print -quit",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
