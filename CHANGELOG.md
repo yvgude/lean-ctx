@@ -17,15 +17,24 @@ present in the 3.10.0 artifacts.
   the existing Engine registry, cache, path jail, and compression pipeline.
 - Each result includes deterministic original, output, and saved-token counts.
 - Non-text MCP content blocks, including image reads, survive the SDK transport.
+- Release builds produce deterministic, integrity-checking Python companion
+  wheels for macOS, Linux (glibc and musl), Windows, CUDA, and Windows GNU.
+- Every native release target installs its wheel, passes strict package-metadata
+  validation, and runs the SDK's real AgentContext lifecycle before publication.
 
 ### Security
 
 - Sessions are project-rooted and read-only by default. Write and execution
   require an owner-only immutable policy file and are enforced by the Engine.
-- Execution accepts structured argv only; the Engine revalidates executable,
-  environment names, timeout, workdir jail, and its shell allowlist.
+- Execution accepts structured argv only. The Engine revalidates policy, env,
+  timeout, and workdir jail; resolves a bare allowlisted name to an absolute
+  executable outside the project; and launches argv without shell interpolation.
+- Shell output is bounded, timeouts terminate Unix process groups and Windows
+  process trees, and repository-local executable shadowing is rejected.
 - The protocol rejects oversized frames, malformed requests, unknown tools,
   incompatible versions, unsafe roots, and permission escalation attempts.
+- SDK shell responses always include an explicit foreground exit code, so
+  custom agents never need to infer success from terminal text.
 
 ### Compatibility
 

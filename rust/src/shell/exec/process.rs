@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// the join below blocks forever, wedging the caller *despite* the timeout
 /// having fired (GH #720: an orphaned `rg` kept a Cursor shell session dead
 /// for hours).
-pub(in crate::shell) fn wait_with_limits(
+pub(crate) fn wait_with_limits(
     mut child: Child,
     max_bytes: usize,
     timeout: std::time::Duration,
@@ -90,7 +90,16 @@ pub(in crate::shell) fn wait_with_limits(
             break;
         }
         match child.try_wait() {
-            Ok(Some(_)) | Err(_) => break,
+            Ok(Some(_)) => {
+                if kill_group && (!stdout_handle.is_finished() || !stderr_handle.is_finished()) {
+                    kill_child(&mut child, true);
+                }
+                break;
+            }
+            Err(_) => {
+                kill_child(&mut child, kill_group);
+                break;
+            }
             Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
         }
     }
@@ -137,6 +146,14 @@ fn kill_child(child: &mut Child, kill_group: bool) {
     }
     #[cfg(not(unix))]
     let _ = kill_group;
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &child.id().to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
     let _ = child.kill();
 }
 

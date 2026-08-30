@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 use crate::core::cache::SessionCache;
 use crate::core::session::SessionState;
 use crate::server::registry::{ToolRegistry, build_registry};
-use crate::server::tool_trait::{ToolContext, ToolOutput};
+use crate::server::tool_trait::{ShellOutcome, ToolContext, ToolOutput};
 
 const SCHEMA_VERSION: u32 = 1;
 const TRANSPORT_VERSION: u32 = 1;
@@ -146,18 +146,13 @@ impl Session {
                 message: format!("tool is not permitted: {tool}"),
             });
         }
+        if tool == "ctx_shell" {
+            return self.call_shell(arguments);
+        }
         let handler = self.registry.get(tool).ok_or_else(|| ErrorV1 {
             code: "unsupported_capability",
             message: format!("tool is unavailable: {tool}"),
         })?;
-        let prepared_arguments;
-        let arguments = if tool == "ctx_shell" {
-            prepared_arguments = self.prepare_shell(arguments)?;
-            &prepared_arguments
-        } else {
-            arguments
-        };
-
         let mut resolved_paths = HashMap::new();
         if let Some(path) = arguments.get("path").and_then(Value::as_str) {
             let resolved =
@@ -192,6 +187,88 @@ impl Session {
             })
     }
 
+    fn call_shell(&self, arguments: &Map<String, Value>) -> Result<ToolOutput, ErrorV1> {
+        let prepared = self.prepare_shell(arguments)?;
+        let argv = arguments["argv"]
+            .as_array()
+            .expect("validated argv")
+            .iter()
+            .map(|value| value.as_str().expect("validated argv item"))
+            .collect::<Vec<_>>();
+        let cwd = arguments["cwd"].as_str().expect("validated cwd");
+        let resolved_cwd =
+            crate::core::path_resolve::resolve_tool_path(Some(&self.root), None, cwd).map_err(
+                |message| ErrorV1 {
+                    code: "path_rejected",
+                    message,
+                },
+            )?;
+        let resolved_cwd = if resolved_cwd.is_empty() || resolved_cwd == "." {
+            self.root.as_str()
+        } else {
+            resolved_cwd.as_str()
+        };
+        let environment = arguments["env"].as_object().expect("validated env");
+        let timeout_ms = prepared["timeout_ms"].as_u64().expect("validated timeout");
+        let display = prepared["command"].as_str().expect("prepared command");
+        let executable = resolve_allowed_executable(argv[0], &self.root)?;
+        let mut command = std::process::Command::new(executable);
+        command
+            .args(&argv[1..])
+            .current_dir(resolved_cwd)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .env_clear();
+        for name in ["PATH", "SYSTEMROOT", "TEMP", "TMP"] {
+            if let Some(value) = std::env::var_os(name) {
+                command.env(name, value);
+            }
+        }
+        command.env("LANG", "C").env("LC_ALL", "C").env("TZ", "UTC");
+        command.envs(
+            environment
+                .iter()
+                .map(|(name, value)| (name, value.as_str().expect("validated env value"))),
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+        let child = command.spawn().map_err(|_| ErrorV1 {
+            code: "tool_error",
+            message: "shell process could not be executed".to_string(),
+        })?;
+        let output = crate::shell::exec::wait_with_limits(
+            child,
+            MAX_RESPONSE_BYTES / 2,
+            std::time::Duration::from_millis(timeout_ms),
+            true,
+        );
+        let exit_code = output.status.code().unwrap_or(1);
+        let mut raw_output = String::from_utf8_lossy(&output.stdout).into_owned();
+        raw_output.push_str(&String::from_utf8_lossy(&output.stderr));
+        let original_tokens = crate::core::tokens::count_tokens(&raw_output);
+        let text = crate::tools::ctx_shell::handle(
+            display,
+            &raw_output,
+            exit_code,
+            crate::core::protocol::CrpMode::Compact,
+        );
+        let output_tokens = crate::core::tokens::count_tokens(&text);
+        Ok(ToolOutput {
+            text,
+            original_tokens,
+            saved_tokens: original_tokens.saturating_sub(output_tokens),
+            mode: Some("shell".to_string()),
+            path: None,
+            changed: false,
+            shell_outcome: Some(ShellOutcome::Exit(exit_code)),
+            content_blocks: None,
+        })
+    }
+
     fn prepare_shell(&self, arguments: &Map<String, Value>) -> Result<Map<String, Value>, ErrorV1> {
         const KEYS: &[&str] = &["argv", "cwd", "env", "timeout_ms"];
         if arguments.keys().any(|key| !KEYS.contains(&key.as_str())) {
@@ -214,10 +291,13 @@ impl Session {
             })
             .collect();
         let argv = argv?;
-        let executable = Path::new(argv[0])
-            .file_name()
-            .and_then(|value| value.to_str())
-            .ok_or_else(|| invalid_request("executable is invalid"))?;
+        if argv[0].contains('/') || argv[0].contains('\\') {
+            return Err(ErrorV1 {
+                code: "permission_denied",
+                message: "executable must be a bare allowlisted name".to_string(),
+            });
+        }
+        let executable = argv[0];
         if !self
             .policy
             .allowed_executables
@@ -258,7 +338,15 @@ impl Session {
 
         let mut prepared = arguments.clone();
         prepared.remove("argv");
-        prepared.insert("command".to_string(), Value::String(join_argv(&argv)));
+        prepared.insert(
+            "command".to_string(),
+            Value::String(crate::shell::platform::join_command(
+                &argv
+                    .iter()
+                    .map(|item| (*item).to_string())
+                    .collect::<Vec<_>>(),
+            )),
+        );
         prepared.insert("timeout_ms".to_string(), Value::from(timeout_ms));
         Ok(prepared)
     }
@@ -271,28 +359,50 @@ fn invalid_request(message: &str) -> ErrorV1 {
     }
 }
 
-#[cfg(not(windows))]
-fn join_argv(argv: &[&str]) -> String {
-    argv.iter()
-        .map(|item| {
-            if item.chars().all(|character| {
-                character.is_ascii_alphanumeric() || "_@%+=:,./-".contains(character)
-            }) {
-                (*item).to_string()
-            } else {
-                format!("'{}'", item.replace('\'', "'\"'\"'"))
+fn resolve_allowed_executable(name: &str, root: &str) -> Result<PathBuf, ErrorV1> {
+    let path = std::env::var_os("PATH").ok_or_else(|| ErrorV1 {
+        code: "permission_denied",
+        message: "trusted executable search path is unavailable".to_string(),
+    })?;
+    for directory in std::env::split_paths(&path).filter(|path| path.is_absolute()) {
+        if directory.starts_with(root) {
+            continue;
+        }
+        #[cfg(windows)]
+        let candidates = if Path::new(name).extension().is_some() {
+            vec![directory.join(name)]
+        } else {
+            vec![
+                directory.join(format!("{name}.exe")),
+                directory.join(format!("{name}.com")),
+            ]
+        };
+        #[cfg(not(windows))]
+        let candidates = vec![directory.join(name)];
+        for candidate in candidates {
+            let Ok(canonical) = candidate.canonicalize() else {
+                continue;
+            };
+            if candidate.starts_with(root) || !canonical.is_file() || canonical.starts_with(root) {
+                continue;
             }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-#[cfg(windows)]
-fn join_argv(argv: &[&str]) -> String {
-    argv.iter()
-        .map(|item| format!("'{}'", item.replace('\'', "''")))
-        .collect::<Vec<_>>()
-        .join(" ")
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if canonical
+                    .metadata()
+                    .map_or(true, |metadata| metadata.permissions().mode() & 0o111 == 0)
+                {
+                    continue;
+                }
+            }
+            return Ok(canonical);
+        }
+    }
+    Err(ErrorV1 {
+        code: "permission_denied",
+        message: format!("allowed executable was not found on trusted PATH: {name}"),
+    })
 }
 
 pub(super) fn cmd_agent_tools(args: &[String]) {
@@ -469,10 +579,7 @@ fn handle_request(session: &Session, request: RequestV1, hello: &mut bool) -> Re
                         saved_tokens: output.saved_tokens,
                         mode: output.mode,
                         changed: output.changed,
-                        shell: output
-                            .shell_outcome
-                            .as_ref()
-                            .and_then(crate::server::tool_trait::ShellOutcome::structured),
+                        shell: agent_shell_outcome(output.shell_outcome.as_ref()),
                         content_blocks: serde_json::to_value(
                             output.content_blocks.unwrap_or_default(),
                         )
@@ -515,6 +622,14 @@ fn success_response(id: &str, result: Value) -> ResponseV1<Value> {
         ok: true,
         result: Some(result),
         error: None,
+    }
+}
+
+fn agent_shell_outcome(outcome: Option<&ShellOutcome>) -> Option<Value> {
+    match outcome {
+        Some(ShellOutcome::Exit(code)) => Some(serde_json::json!({ "exitCode": code })),
+        Some(other) => other.structured(),
+        None => None,
     }
 }
 
@@ -779,7 +894,14 @@ mod tests {
             ("timeout_ms".into(), Value::from(1_000)),
         ]);
         let prepared = session.prepare_shell(&arguments).unwrap();
-        assert_eq!(prepared["command"], "git status --short");
+        assert_eq!(
+            prepared["command"],
+            crate::shell::platform::join_command(&[
+                "git".to_string(),
+                "status".to_string(),
+                "--short".to_string(),
+            ])
+        );
         assert!(prepared.get("argv").is_none());
 
         let mut denied = arguments;
@@ -787,6 +909,58 @@ mod tests {
         assert_eq!(
             session.prepare_shell(&denied).unwrap_err().code,
             "permission_denied"
+        );
+        for executable in ["/tmp/git", r"C:\tools\git"] {
+            denied.insert("argv".into(), serde_json::json!([executable, "status"]));
+            assert_eq!(
+                session.prepare_shell(&denied).unwrap_err().code,
+                "permission_denied"
+            );
+        }
+    }
+
+    #[test]
+    fn allowed_executable_resolves_to_absolute_path_outside_project() {
+        let root = tempfile::tempdir().unwrap();
+        let executable = resolve_allowed_executable("git", root.path().to_str().unwrap()).unwrap();
+        assert!(executable.is_absolute());
+        assert!(executable.is_file());
+        assert!(!executable.starts_with(root.path()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shell_child_cannot_consume_protocol_stdin() {
+        let root = tempfile::tempdir().unwrap();
+        let mut session = session(root.path(), false, true);
+        session.policy.allowed_executables = vec!["sh".to_string()];
+        let arguments = Map::from_iter([
+            (
+                "argv".into(),
+                serde_json::json!([
+                    "sh",
+                    "-c",
+                    "if read value; then exit 9; else printf closed; fi"
+                ]),
+            ),
+            ("cwd".into(), Value::String(".".into())),
+            ("env".into(), serde_json::json!({})),
+            ("timeout_ms".into(), Value::from(1_000)),
+        ]);
+        let result = session.call_shell(&arguments).unwrap();
+        assert_eq!(result.shell_outcome, Some(ShellOutcome::Exit(0)));
+        assert!(result.text.contains("closed"));
+    }
+
+    #[test]
+    fn foreground_shell_exit_is_explicit_for_sdk_clients() {
+        assert_eq!(
+            agent_shell_outcome(Some(&ShellOutcome::Exit(0))),
+            Some(serde_json::json!({ "exitCode": 0 }))
+        );
+        assert_eq!(
+            agent_shell_outcome(Some(&ShellOutcome::Exit(7))),
+            Some(serde_json::json!({ "exitCode": 7 }))
         );
     }
 }
