@@ -33,8 +33,8 @@ fn openpty_pair() -> (OwnedFd, OwnedFd) {
     termios.c_lflag = libc::ICANON;
     let rc = unsafe {
         libc::openpty(
-            &mut master,
-            &mut slave,
+            &raw mut master,
+            &raw mut slave,
             std::ptr::null_mut(),
             &raw mut termios,
             std::ptr::null_mut(),
