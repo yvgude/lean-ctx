@@ -231,11 +231,6 @@ impl Session {
                 .iter()
                 .map(|(name, value)| (name, value.as_str().expect("validated env value"))),
         );
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.process_group(0);
-        }
         let child = command.spawn().map_err(|_| ErrorV1 {
             code: "tool_error",
             message: "shell process could not be executed".to_string(),

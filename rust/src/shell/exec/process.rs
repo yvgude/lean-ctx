@@ -138,7 +138,11 @@ pub(crate) fn wait_with_limits(
 fn kill_child(child: &mut Child, kill_group: bool) {
     #[cfg(unix)]
     if kill_group {
-        let pgid = child.id() as libc::pid_t;
+        // Agent Tools children inherit the Engine's dedicated process group;
+        // ordinary ctx_shell children create their own. Resolve the actual
+        // group so either topology terminates atomically.
+        // SAFETY: getpgid only reads kernel process metadata for this live PID.
+        let pgid = unsafe { libc::getpgid(child.id() as libc::pid_t) };
         if pgid > 0 {
             // SAFETY: plain syscall; a stale pgid at worst returns ESRCH.
             unsafe { libc::killpg(pgid, libc::SIGKILL) };
