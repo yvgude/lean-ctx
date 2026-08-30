@@ -460,6 +460,68 @@ fn init_claude_installs_dedicated_rules_file_without_claude_md() {
     );
 }
 
+#[test]
+fn rules_sync_claude_repairs_compact_pointer_block() {
+    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let claude_dir = home.join(".claude");
+    let project = tmp.path().join("project");
+    let config_dir = tmp.path().join("config");
+    let data_dir = tmp.path().join("data");
+    let state_dir = tmp.path().join("state");
+    let cache_dir = tmp.path().join("cache");
+    for dir in [
+        &claude_dir,
+        &project,
+        &config_dir,
+        &data_dir,
+        &state_dir,
+        &cache_dir,
+    ] {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    std::fs::write(
+        claude_dir.join(".claude.json"),
+        r#"{"mcpServers":{"lean-ctx":{"command":"lean-ctx"}}}"#,
+    )
+    .unwrap();
+    let claude_md = claude_dir.join("CLAUDE.md");
+    std::fs::write(&claude_md, "# user notes\n").unwrap();
+
+    let mut command = Command::new(bin);
+    command
+        .args(["rules", "sync", "claude"])
+        .current_dir(&project)
+        .env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .env("CLAUDE_CONFIG_DIR", &claude_dir)
+        .env("LEAN_CTX_CONFIG_DIR", &config_dir)
+        .env("LEAN_CTX_DATA_DIR", &data_dir)
+        .env("LEAN_CTX_STATE_DIR", &state_dir)
+        .env("LEAN_CTX_CACHE_DIR", &cache_dir)
+        .env("LEAN_CTX_RULES_INJECTION", "shared")
+        .env("LEAN_CTX_RULES_SCOPE", "global")
+        .env("LEAN_CTX_DISABLED", "1");
+    let output = command.output().expect("rules sync claude");
+    assert!(
+        output.status.success(),
+        "rules sync claude failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let content = std::fs::read_to_string(&claude_md).unwrap();
+    assert!(content.contains("# user notes"));
+    assert_eq!(content.matches("<!-- lean-ctx -->").count(), 1);
+    assert!(content.contains("lean-ctx-claude-v9"));
+    assert!(!content.contains("<!-- lean-ctx-rules -->"));
+
+    let second = command.output().expect("second rules sync claude");
+    assert!(second.status.success());
+    let content = std::fs::read_to_string(&claude_md).unwrap();
+    assert_eq!(content.matches("<!-- lean-ctx -->").count(), 1);
+}
+
 // End-to-end: `lean-ctx init --agent augment` must drive setup.rs's
 // `"augment" =>` match arm through configure_agent_mcp → the McpJson writer,
 // landing at ~/.augment/settings.json with the standard mcpServers shape.

@@ -36,7 +36,7 @@ pub fn run_setup() {
         return;
     }
 
-    let Some(home) = dirs::home_dir() else {
+    let Some(home) = crate::core::home::resolve_home_dir() else {
         tracing::error!("Cannot determine home directory");
         std::process::exit(1);
     };

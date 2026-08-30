@@ -109,6 +109,13 @@ present in the 3.10.0 artifacts.
   the completion spec and `watch --help` all described a command that had been
   removed in 3.9.20. All surfaces now name the replacements (`lean-ctx
   dashboard`, `lean-ctx cep`, `lean-ctx index watch`).
+- **Claude Code stayed “not detected” after setup on Windows (#1621)** —
+  `where claude` can return several CRLF-separated executable paths; setup
+  previously treated the entire output as one nonexistent path and skipped the
+  compact `~/.claude/CLAUDE.md` block. Detection now selects the first usable
+  path. `lean-ctx rules sync` and `rules sync claude` also repair this compact,
+  idempotent pointer block directly without restoring the retired full rules
+  file or duplicating its token cost.
 - **Dependency** — `chacha20` 0.10.1 → 0.10.2 (0.10.1 was yanked upstream).
 
 ### Internal

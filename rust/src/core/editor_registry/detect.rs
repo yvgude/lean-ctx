@@ -405,8 +405,9 @@ pub fn detect_claude_path() -> PathBuf {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
     if let Ok(output) = std::process::Command::new(which_cmd).arg("claude").output()
         && output.status.success()
+        && let Some(path) = first_existing_command_path(&output.stdout)
     {
-        return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+        return path;
     }
     if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
         let dir = dir.trim();
@@ -417,7 +418,7 @@ pub fn detect_claude_path() -> PathBuf {
             }
         }
     }
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = crate::core::home::resolve_home_dir() {
         let claude_json = claude_mcp_json_path(&home);
         if claude_json.exists() {
             return claude_json;
@@ -433,6 +434,15 @@ pub fn detect_claude_path() -> PathBuf {
         }
     }
     PathBuf::from("/nonexistent")
+}
+
+fn first_existing_command_path(stdout: &[u8]) -> Option<PathBuf> {
+    String::from_utf8_lossy(stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(PathBuf::from)
+        .find(|path| path.exists())
 }
 
 pub fn detect_codebuddy_path() -> PathBuf {
@@ -890,6 +900,35 @@ mod augment_tests {
             serde_json::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
         assert!(json["mcpServers"].get("lean-ctx").is_none());
         assert_eq!(json["mcpServers"]["other"]["command"], "other-bin");
+    }
+
+    #[test]
+    fn command_locator_uses_first_existing_crlf_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let first = tmp.path().join("Claude Code").join("claude.cmd");
+        let second = tmp.path().join("claude.exe");
+        std::fs::create_dir_all(first.parent().unwrap()).unwrap();
+        std::fs::write(&first, "").unwrap();
+        std::fs::write(&second, "").unwrap();
+        let output = format!("\r\n{}\r\n{}\r\n", first.display(), second.display());
+
+        assert_eq!(
+            first_existing_command_path(output.as_bytes()),
+            Some(first),
+            "Windows 'where' output must be parsed one path per line"
+        );
+    }
+
+    #[test]
+    fn command_locator_skips_unusable_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let missing = tmp.path().join("missing.cmd");
+        let valid = tmp.path().join("claude.cmd");
+        std::fs::write(&valid, "").unwrap();
+        let output = format!("{}\n{}\n", missing.display(), valid.display());
+
+        assert_eq!(first_existing_command_path(output.as_bytes()), Some(valid));
+        assert_eq!(first_existing_command_path(b"\r\n  \r\n"), None);
     }
 }
 

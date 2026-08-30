@@ -188,3 +188,17 @@ pub(super) fn is_mcp_configured(target: &RulesTarget, home: &std::path::Path) ->
         Err(_) => true,
     }
 }
+
+pub(super) fn is_named_agent_ready(name: &str, home: &std::path::Path) -> bool {
+    let targets = crate::core::editor_registry::build_targets(home);
+    let Some(target) = targets.iter().find(|target| target.name == name) else {
+        return false;
+    };
+    if !target.detect_path.exists() || !target.config_path.exists() {
+        return false;
+    }
+    match std::fs::read_to_string(&target.config_path) {
+        Ok(content) => content.contains("lean-ctx"),
+        Err(_) => true,
+    }
+}

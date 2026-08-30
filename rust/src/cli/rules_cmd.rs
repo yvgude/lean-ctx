@@ -3,7 +3,7 @@ use crate::core::contextops::{self, ContextOps};
 pub fn cmd_rules(args: &[String]) {
     let action = args.first().map_or("help", String::as_str);
 
-    let Some(home) = dirs::home_dir() else {
+    let Some(home) = crate::core::home::resolve_home_dir() else {
         eprintln!("Error: could not determine home directory");
         std::process::exit(1);
     };

@@ -13,7 +13,8 @@ use super::options::SetupOptions;
 pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String> {
     let _quiet_guard = opts.json.then(crate::core::runtime_flags::scoped_quiet);
     let started_at = Utc::now();
-    let home = dirs::home_dir().ok_or_else(|| "Cannot determine home directory".to_string())?;
+    let home = crate::core::home::resolve_home_dir()
+        .ok_or_else(|| "Cannot determine home directory".to_string())?;
     let binary = resolve_portable_binary();
     let home_str = home.to_string_lossy().to_string();
 

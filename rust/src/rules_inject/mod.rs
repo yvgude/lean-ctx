@@ -166,6 +166,12 @@ pub fn inject_all_rules(home: &std::path::Path) -> InjectResult {
 
     let mut result = InjectResult::default();
 
+    if cfg.rules_injection_effective() == crate::core::config::RulesInjection::Shared
+        && detect::is_named_agent_ready("Claude Code", home)
+    {
+        sync_claude_pointer_block(home, &mut result);
+    }
+
     for target in &targets {
         if !is_tool_detected(target, home) {
             continue;
@@ -232,6 +238,13 @@ pub fn inject_rules_for_agent(home: &std::path::Path, agent_key: &str) -> Inject
     let targets = build_rules_targets(home, cfg.rules_injection_effective());
     let mut result = InjectResult::default();
 
+    if cfg.rules_injection_effective() == crate::core::config::RulesInjection::Shared
+        && is_claude_agent_key(agent_key)
+    {
+        sync_claude_pointer_block(home, &mut result);
+        return result;
+    }
+
     for target in &targets {
         if !match_agent_name(agent_key, target.name) {
             continue;
@@ -262,6 +275,22 @@ pub fn inject_rules_for_agent(home: &std::path::Path, agent_key: &str) -> Inject
     }
 
     result
+}
+
+fn is_claude_agent_key(agent_key: &str) -> bool {
+    matches!(
+        agent_key.trim().to_ascii_lowercase().as_str(),
+        "claude" | "claude-code" | "claude_code" | "claude code"
+    )
+}
+
+fn sync_claude_pointer_block(home: &std::path::Path, result: &mut InjectResult) {
+    let mode = crate::hooks::recommend_hook_mode("claude");
+    match crate::hooks::agents::sync_claude_global_rules_block(home, mode) {
+        Ok(true) => result.updated.push("Claude Code".to_string()),
+        Ok(false) => result.already.push("Claude Code".to_string()),
+        Err(error) => result.errors.push(format!("Claude Code: {error}")),
+    }
 }
 
 /// Returns `true` if a lean-ctx rules marker is present in *any* supported

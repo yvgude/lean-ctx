@@ -399,6 +399,27 @@ fn install_claude_global_claude_md_for_mode(home: &std::path::Path, mode: HookMo
     write_file(&claude_md_path, &updated);
 }
 
+/// Repair Claude's compact global pointer without installing hooks or a full
+/// rules target. Returns whether the file changed.
+pub(crate) fn sync_claude_global_rules_block(
+    home: &std::path::Path,
+    mode: HookMode,
+) -> Result<bool, String> {
+    let path = crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md");
+    let before = std::fs::read_to_string(&path).unwrap_or_default();
+    let removed_legacy = remove_claude_rules_file(home);
+    install_claude_global_claude_md_for_mode(home, mode);
+    let after = std::fs::read_to_string(&path)
+        .map_err(|e| format!("failed to read {} after sync: {e}", path.display()))?;
+    if !after.contains(CLAUDE_MD_BLOCK_START) {
+        return Err(format!(
+            "{} is missing the canonical lean-ctx pointer block after sync",
+            path.display()
+        ));
+    }
+    Ok(removed_legacy || before != after)
+}
+
 /// Remove the lean-ctx block from `CLAUDE.md` (dedicated mode). Deletes the file
 /// entirely if it becomes empty (i.e. lean-ctx was its only content).
 fn strip_claude_md_block(claude_md_path: &std::path::Path) {
@@ -467,20 +488,23 @@ fn remove_claude_skill(home: &std::path::Path) {
 /// 12k+ tokens of memory files from stacked lean-ctx instructions. The
 /// CLAUDE.md block is self-contained and detail docs live in the on-demand
 /// skill; only files carrying our rules marker are touched.
-fn remove_claude_rules_file(home: &std::path::Path) {
+fn remove_claude_rules_file(home: &std::path::Path) -> bool {
     let rules_path = crate::core::editor_registry::claude_rules_dir(home).join("lean-ctx.md");
     let Ok(existing) = std::fs::read_to_string(&rules_path) else {
-        return;
+        return false;
     };
-    if existing.contains(crate::core::rules_canonical::RULES_MARKER_PREFIX)
-        && std::fs::remove_file(&rules_path).is_ok()
-        && !super::super::mcp_server_quiet_mode()
+    if !existing.contains(crate::core::rules_canonical::RULES_MARKER_PREFIX)
+        || std::fs::remove_file(&rules_path).is_err()
     {
+        return false;
+    }
+    if !super::super::mcp_server_quiet_mode() {
         eprintln!(
             "Removed {} (always-loaded duplicate; the CLAUDE.md block + on-demand skill replace it)",
             rules_path.display()
         );
     }
+    true
 }
 
 pub(crate) fn install_claude_hook_scripts(home: &std::path::Path) {

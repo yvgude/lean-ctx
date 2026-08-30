@@ -155,6 +155,114 @@ mod tests {
 
     #[test]
     #[serial_test::serial(claude_config_dir)]
+    fn sync_all_repairs_claude_pointer_and_is_idempotent() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let home = TempHome::new("claude_all");
+        let _claude = scope_claude_into(&home.path);
+        let _rules = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let _scope = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
+        let claude_dir = home.path.join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(
+            claude_dir.join(".claude.json"),
+            r#"{"mcpServers":{"lean-ctx":{"command":"lean-ctx"}}}"#,
+        )
+        .unwrap();
+        let md = claude_dir.join("CLAUDE.md");
+        std::fs::write(&md, "# user notes\n").unwrap();
+
+        let first = sync_all(&home.path);
+        assert!(first.errors.is_empty(), "{:?}", first.errors);
+        assert!(first.synced.iter().any(|name| name == "Claude Code"));
+        let content = std::fs::read_to_string(&md).unwrap();
+        assert!(content.contains("# user notes"));
+        assert_eq!(content.matches("<!-- lean-ctx -->").count(), 1);
+        assert!(!content.contains("<!-- lean-ctx-rules -->"));
+        let second = sync_all(&home.path);
+        assert!(second.errors.is_empty(), "{:?}", second.errors);
+        assert!(second.skipped.iter().any(|name| name == "Claude Code"));
+        let content = std::fs::read_to_string(&md).unwrap();
+        assert_eq!(content.matches("<!-- lean-ctx -->").count(), 1);
+    }
+
+    #[test]
+    #[serial_test::serial(claude_config_dir)]
+    fn sync_agent_supports_claude_aliases_but_not_codex() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let home = TempHome::new("claude_agent");
+        let _claude = scope_claude_into(&home.path);
+        let _rules = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let _scope = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
+        let md = home.path.join(".claude/CLAUDE.md");
+        let legacy = home.path.join(".claude/rules/lean-ctx.md");
+        std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        std::fs::write(&legacy, "<!-- lean-ctx-rules -->\nlegacy\n").unwrap();
+
+        for non_alias in ["codex", "claudex", "unknown"] {
+            let report = sync_agent(&home.path, non_alias);
+            assert!(report.errors.is_empty(), "{:?}", report.errors);
+            assert!(
+                !md.exists(),
+                "rules sync {non_alias} must not touch CLAUDE.md"
+            );
+        }
+
+        for alias in ["claude", "claude-code", "claude_code", "claude code"] {
+            let report = sync_agent(&home.path, alias);
+            assert!(report.errors.is_empty(), "{:?}", report.errors);
+        }
+        let content = std::fs::read_to_string(&md).unwrap();
+        assert_eq!(content.matches("<!-- lean-ctx -->").count(), 1);
+        assert!(!content.contains("<!-- lean-ctx-rules -->"));
+        assert!(
+            !legacy.exists(),
+            "lean-ctx-owned legacy rules must be removed"
+        );
+
+        std::fs::write(&legacy, "<!-- lean-ctx-rules -->\nlegacy\n").unwrap();
+        let report = sync_agent(&home.path, "claude");
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        assert!(report.synced.iter().any(|name| name == "Claude Code"));
+        assert!(
+            !legacy.exists(),
+            "legacy-only repair must be reported as a sync"
+        );
+
+        std::fs::write(&legacy, "# user-owned rules\n").unwrap();
+        let report = sync_agent(&home.path, "claude");
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        assert_eq!(
+            std::fs::read_to_string(&legacy).unwrap(),
+            "# user-owned rules\n",
+            "unmarked user rules must be preserved"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial(claude_config_dir)]
+    fn sync_agent_claude_respects_rules_policy() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        for (scope, injection) in [
+            ("project", "shared"),
+            ("global", "off"),
+            ("global", "dedicated"),
+        ] {
+            let home = TempHome::new(&format!("claude_policy_{scope}_{injection}"));
+            let _claude = scope_claude_into(&home.path);
+            let _scope = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", scope);
+            let _rules = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", injection);
+            let report = sync_agent(&home.path, "claude");
+            assert!(report.errors.is_empty(), "{:?}", report.errors);
+            assert!(report.synced.is_empty());
+            assert!(
+                !home.path.join(".claude/CLAUDE.md").exists(),
+                "{scope}/{injection} must not create a shared Claude pointer"
+            );
+        }
+    }
+
+    #[test]
+    #[serial_test::serial(claude_config_dir)]
     fn sync_agent_unknown_is_a_noop() {
         let home = TempHome::new("agent");
         let _claude = scope_claude_into(&home.path);
