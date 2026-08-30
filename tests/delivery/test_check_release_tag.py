@@ -37,7 +37,7 @@ class ReleaseTagGateTests(unittest.TestCase):
                 GATE.verify_tag(tag, root)
 
     def test_current_repository_tag_matches_all_release_versions(self):
-        self.assertEqual(GATE.verify_tag("v3.10.1", ROOT), "3.10.1")
+        self.assertEqual(GATE.verify_tag("v3.11.0", ROOT), "3.11.0")
 
     def test_accepts_strict_prerelease_when_every_manifest_matches(self):
         temporary, root = self.fixture_root("3.9.11-rc.1")

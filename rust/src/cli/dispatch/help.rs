@@ -191,6 +191,7 @@ COMMANDS:
     read <file> [-m mode]          Read file with compression
     engine context-view ...        Versioned local Engine context transport
     engine recover ...             Exact source recovery for a prior Engine view
+    engine tool-session ...        Persistent SDK Agent Tools transport
     diff <file1> <file2>           Compressed file diff
     grep <pattern> [path]          Search with compressed output
     find <pattern> [path]          Find files with compressed output

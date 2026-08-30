@@ -99,6 +99,10 @@ struct EngineWireResponseV1 {
 }
 
 pub(crate) fn cmd_engine(args: &[String]) {
+    if args.first().map(String::as_str) == Some("tool-session") {
+        super::agent_tools_cmd::cmd_agent_tools(&args[1..]);
+        return;
+    }
     match run_engine(args) {
         Ok(output) => println!("{output}"),
         Err(error) => {

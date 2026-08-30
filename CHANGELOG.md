@@ -3,6 +3,32 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.11.0] — 2026-08-30
+
+### Added — SDK Agent Tools Interface
+
+- `lean-ctx engine tool-session` provides a persistent, version-negotiated
+  NDJSON session for the Python SDK's `AgentContext`.
+- Read, search, tree, compose, symbol, glob, patch, and shell capabilities use
+  the existing Engine registry, cache, path jail, and compression pipeline.
+- Each result includes deterministic original, output, and saved-token counts.
+- Non-text MCP content blocks, including image reads, survive the SDK transport.
+
+### Security
+
+- Sessions are project-rooted and read-only by default. Write and execution
+  require an owner-only immutable policy file and are enforced by the Engine.
+- Execution accepts structured argv only; the Engine revalidates executable,
+  environment names, timeout, workdir jail, and its shell allowlist.
+- The protocol rejects oversized frames, malformed requests, unknown tools,
+  incompatible versions, unsafe roots, and permission escalation attempts.
+
+### Compatibility
+
+- Agent Tools Interface `1.0.0`, schema `1`, transport `1` is additive. The
+  existing Engine Interface v1 context-view and recovery commands are
+  unchanged.
+
 ## [3.10.1] — 2026-08-30
 
 Patch release: the defect fixes below merged after the `v3.10.0` tag

@@ -1,5 +1,6 @@
 mod addon_deps;
 mod agent_cmd;
+mod agent_tools_cmd;
 mod allow_cmd;
 pub mod audit_report;
 #[allow(warnings)]
