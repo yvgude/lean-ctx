@@ -3,7 +3,11 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [3.11.0] — 2026-08-30
+## [3.10.1] — 2026-08-30
+
+This release includes the defect fixes merged after the `v3.10.0` tag
+(`5b69202`) and the additive SDK Agent Tools interface below. Neither is
+present in the 3.10.0 artifacts.
 
 ### Added — SDK Agent Tools Interface
 
@@ -28,13 +32,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - Agent Tools Interface `1.0.0`, schema `1`, transport `1` is additive. The
   existing Engine Interface v1 context-view and recovery commands are
   unchanged.
-
-## [3.10.1] — 2026-08-30
-
-Patch release: the defect fixes below merged after the `v3.10.0` tag
-(`5b69202`) and are therefore **absent from the 3.10.0 artifacts**. 3.10.1
-carries them, plus a CI-only test fix. No new features, no behavior change
-beyond the fixes themselves.
 
 ### Fixed
 
