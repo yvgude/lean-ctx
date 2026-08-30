@@ -237,9 +237,11 @@ Task(subagent_type="explore", ...)  # explore is always readonly
 Task(subagent_type="generalPurpose", readonly=false, prompt="Use ctx_compose to...")
 ```
 
-lean-ctx tools declare `readOnlyHint: true` in MCP annotations. When Cursor
-starts respecting this hint (per MCP spec), readonly subagents will gain access
-to read-only lean-ctx tools (ctx_read, ctx_compose, ctx_search, etc.).
+lean-ctx's read-only tools declare `readOnlyHint: true` in MCP annotations —
+`ctx_read`, `ctx_search`, `ctx_glob`, `ctx_tree` and the rest of the inspection
+surface. When Cursor starts respecting this hint (per MCP spec), readonly
+subagents will gain access to them. `ctx_compose` is deliberately *not* in that
+set: it records co-access for the session, so it mutates state and says so.
 
 Within subagents that have MCP access:
 

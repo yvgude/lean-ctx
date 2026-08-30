@@ -46,11 +46,15 @@ fn sanitize_schema(schema: Value) -> Value {
 ///
 /// Excluded from this list (despite mostly-read paths):
 /// - `ctx_compose` — calls `record_access()` (co-access / session state mutation)
-/// - `ctx_search` — `action=reindex` rebuilds persistent BM25 indexes
 pub const READONLY_TOOL_NAMES: &[&str] = &[
     "ctx_read",
     "ctx_tree",
     "ctx_glob",
+    // #1624: `ctx_search` belongs here. Its one mutating action, `reindex`,
+    // moved to `ctx_index` — annotations are per tool, so that single action
+    // was withholding the hint from every search call and locking the tool out
+    // of read-only client modes (Devin Plan mode, Cursor's restricted context).
+    "ctx_search",
     "ctx_callgraph",
     "ctx_overview",
     "ctx_expand",

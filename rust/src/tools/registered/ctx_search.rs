@@ -13,12 +13,17 @@ pub struct CtxSearchTool;
 /// Which search engine a `ctx_search` call routes to (#509). One tool, many
 /// engines — replacing the former `ctx_search`/`ctx_semantic_search`/`ctx_symbol`
 /// trio with a single, less ambiguous entry point.
+///
+/// Every variant is read-only (#1624). `reindex` used to live here and was the
+/// single reason `ctx_search` could not carry `readOnlyHint`, which locked the
+/// whole tool out of read-only client modes; it now belongs to `ctx_index`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SearchAction {
     Regex,
     Semantic,
     Symbol,
-    Reindex,
+    /// Accepted only to answer with the replacement call — never executed.
+    MovedReindex,
     FindRelated,
 }
 
@@ -32,7 +37,7 @@ impl SearchAction {
                 "regex" | "grep" | "pattern" => return Self::Regex,
                 "semantic" | "search" => return Self::Semantic,
                 "symbol" => return Self::Symbol,
-                "reindex" => return Self::Reindex,
+                "reindex" => return Self::MovedReindex,
                 "find_related" | "related" => return Self::FindRelated,
                 _ => {}
             }
@@ -62,14 +67,14 @@ impl McpTool for CtxSearchTool {
         tool_def(
             "ctx_search",
             "Search code: regex(pattern, default) | semantic(query) | symbol(name|handle) | \
-             reindex | find_related(file_path,line). anchored=true enables ctx_patch refs; \
+             find_related(file_path,line). Read-only. anchored=true enables ctx_patch refs; \
              queries batches regex searches. Run ctx_compose FIRST.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["regex", "semantic", "symbol", "reindex", "find_related"]
+                        "enum": ["regex", "semantic", "symbol", "find_related"]
                     },
                     "pattern": { "type": "string" },
                     "query": { "type": "string" },
@@ -124,7 +129,7 @@ impl McpTool for CtxSearchTool {
             SearchAction::Regex => handle_regex(args, ctx),
             SearchAction::Semantic => handle_semantic(args, ctx),
             SearchAction::Symbol => handle_symbol(args, ctx),
-            SearchAction::Reindex => handle_reindex(args, ctx),
+            SearchAction::MovedReindex => Err(moved_reindex_error()),
             SearchAction::FindRelated => handle_find_related(args, ctx),
         };
         if let Ok(output) = &result {
@@ -151,7 +156,7 @@ fn record_attribution_result(
         SearchAction::Regex => "regex",
         SearchAction::Semantic => "semantic",
         SearchAction::Symbol => "symbol",
-        SearchAction::Reindex => "reindex",
+        SearchAction::MovedReindex => "reindex",
         SearchAction::FindRelated => "find_related",
     };
     let query = get_str(args, "pattern")
@@ -489,22 +494,25 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
     })
 }
 
-/// `action=reindex` — rebuild the BM25 (or artifacts) index, routed to core.
-fn handle_reindex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
-    let path = resolve_path_or_root(ctx)?;
-    let workspace = get_bool(args, "workspace").unwrap_or(false);
-    let artifacts = get_bool(args, "artifacts").unwrap_or(false);
-    prime_bm25_cache(ctx);
-
-    let result = tokio::task::block_in_place(|| {
-        if artifacts {
-            crate::tools::ctx_semantic_search::handle_reindex_artifacts(&path, workspace)
-        } else {
-            crate::tools::ctx_semantic_search::handle_reindex(&path)
-        }
-    });
-
-    Ok(semantic_output(result))
+/// `action=reindex` was removed from `ctx_search` (#1624).
+///
+/// It was the one mutating path in an otherwise read-only tool, and MCP
+/// annotations are per *tool*, not per action — so its presence stripped
+/// `readOnlyHint` from `ctx_search` and made the whole tool unavailable in
+/// every read-only client mode (Devin Plan mode, Cursor's restricted contexts).
+/// Search was collateral damage for a rebuild action that `ctx_index` already
+/// owns and correctly advertises as mutating.
+///
+/// The call is answered rather than silently dropped: an agent that learned
+/// `action="reindex"` gets the exact replacement line, not "unknown action".
+fn moved_reindex_error() -> ErrorData {
+    ErrorData::invalid_params(
+        "ctx_search no longer performs reindex — it is read-only so it stays available \
+         in read-only/plan modes (#1624). Rebuild the index with \
+         ctx_index(action=\"build-full\"), or ctx_index(action=\"build\") for an \
+         incremental pass.",
+        None,
+    )
 }
 
 /// `action=find_related` — context neighbors for a source location, via core.
@@ -1019,7 +1027,82 @@ mod tests {
         );
         assert_eq!(
             SearchAction::resolve(&args(&[("action", json!("reindex"))])),
-            SearchAction::Reindex
+            SearchAction::MovedReindex
+        );
+    }
+
+    /// #1624: `ctx_search` was unusable in read-only client modes (Devin Plan
+    /// mode, Cursor's restricted contexts) because MCP annotations are per
+    /// *tool*, and the single mutating action `reindex` withheld
+    /// `readOnlyHint` from every search call. The rebuild belongs to
+    /// `ctx_index`, which already owns it and advertises itself as mutating.
+    #[test]
+    fn search_is_annotated_read_only_so_plan_mode_can_call_it() {
+        use crate::server::tool_trait::McpTool;
+        let defs = crate::tool_defs::apply_tool_annotations(vec![super::CtxSearchTool.tool_def()]);
+        let annotations = defs[0]
+            .annotations
+            .as_ref()
+            .expect("ctx_search must carry annotations at all");
+        assert_eq!(
+            annotations.read_only_hint,
+            Some(true),
+            "without readOnlyHint a read-only client mode refuses the call before dispatch"
+        );
+        assert_ne!(
+            annotations.destructive_hint,
+            Some(true),
+            "search destroys nothing"
+        );
+    }
+
+    /// The published action list must not advertise what the tool no longer
+    /// does — an enum still naming `reindex` would send agents into an error.
+    #[test]
+    fn reindex_is_gone_from_the_published_action_list() {
+        use crate::server::tool_trait::McpTool;
+        let def = super::CtxSearchTool.tool_def();
+        let schema = serde_json::to_value(&*def.input_schema).expect("schema");
+        let actions = schema["properties"]["action"]["enum"]
+            .as_array()
+            .expect("action enum")
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>();
+        assert!(
+            !actions.contains(&"reindex"),
+            "reindex must not be offered by a read-only tool: {actions:?}"
+        );
+        assert!(
+            !def.description
+                .as_deref()
+                .unwrap_or_default()
+                .contains("reindex"),
+            "the description must not advertise it either"
+        );
+        for kept in ["regex", "semantic", "symbol", "find_related"] {
+            assert!(
+                actions.contains(&kept),
+                "the read-only actions must all survive: {actions:?}"
+            );
+        }
+    }
+
+    /// A call that still asks for `reindex` gets the replacement, not a bare
+    /// rejection: agents that learned the old spelling must be able to recover
+    /// from the error text alone.
+    #[test]
+    fn a_reindex_call_is_answered_with_the_replacement_command() {
+        let error = super::moved_reindex_error();
+        assert!(
+            error.message.contains("ctx_index(action=\"build-full\")"),
+            "the error must carry the exact replacement call: {}",
+            error.message
+        );
+        assert!(
+            error.message.contains("read-only"),
+            "and say why it moved, so the change does not look arbitrary: {}",
+            error.message
         );
     }
 
