@@ -52,6 +52,13 @@ present in the 3.10.0 artifacts.
 
 ### Fixed
 
+- **One-shot CLI tool calls could abort before dispatch** — `lean-ctx call`
+  created an incomplete tool context, so read, shell, session, knowledge,
+  handoff, ledger, fill, metrics, workflow, and multi-read calls could fail
+  with a missing-handle error even though the same tools worked over MCP. The
+  CLI now loads the bounded project session and persisted context ledger and
+  supplies empty per-process call history, enabling custom agents to use the
+  registered tools safely without running a long-lived MCP connection.
 - **Claude Code lost its plan-usage windows and near-limit warnings behind the
   proxy (#1638, thanks @online)** — Claude Code derives both from the
   `anthropic-ratelimit-unified-*` response headers, and the proxy's response

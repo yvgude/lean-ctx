@@ -343,6 +343,7 @@ mod tests {
 
     #[test]
     fn oneshot_ctx_supplies_session_tool_calls_and_ledger() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let data = tempfile::tempdir().expect("data dir");
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
         let project = tempfile::tempdir().expect("project dir");
@@ -356,6 +357,7 @@ mod tests {
 
     #[test]
     fn oneshot_session_without_an_index_returns_a_default() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let data = tempfile::tempdir().expect("data dir");
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
         let project = tempfile::tempdir().expect("project dir");
@@ -370,6 +372,7 @@ mod tests {
 
     #[test]
     fn ctx_read_via_call_no_longer_aborts_on_a_missing_session() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let data = tempfile::tempdir().expect("data dir");
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
         let project = tempfile::tempdir().expect("project dir");
@@ -406,6 +409,7 @@ mod tests {
 
     #[test]
     fn an_indexed_session_loads_and_a_one_shot_call_never_writes_it_back() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let data = tempfile::tempdir().expect("data dir");
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
         let project = tempfile::tempdir().expect("project dir");
@@ -483,6 +487,7 @@ mod tests {
     /// what keeps this test off the developer's real `~/.local/state/lean-ctx`.
     #[test]
     fn a_one_shot_call_never_truncates_the_global_ledger() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let state = tempfile::tempdir().expect("state dir");
         crate::test_env::set_var("LEAN_CTX_STATE_DIR", state.path());
         let data = tempfile::tempdir().expect("data dir");
