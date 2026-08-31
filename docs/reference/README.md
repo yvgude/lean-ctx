@@ -39,7 +39,7 @@ navigation to an additional public product.
 - [MCP tools](generated/mcp-tools.md)
 - [Configuration keys](generated/config-keys.md)
 - [CLI command map](appendix-cli-map.md)
-- [SDK conformance matrix](sdk-conformance-matrix.md)
+- [SDK surface](../internal/SDK-SURFACE.md) — what each published artifact is
 
 Generated inventories enumerate implementation surfaces; they do not promote a
 surface to a stable public API. Check the status map before depending on one.

@@ -1,9 +1,9 @@
 name: Historical /v1 client publishing
 
 # This workflow preserves publication mechanics for archived thin-client
-# prototypes. It is not the current SDK release path: canonical Python SDK v1
-# is packages/python-lean-ctx (lean-ctx-python, Preview), and TypeScript/Go are
-# not current supported product surfaces.
+# prototypes. It is not an SDK release path at all: the one LeanCTX SDK is
+# `thinkery-leanctx-sdk`, developed and released in Thinkery-AG/leanctx-sdk.
+# See docs/internal/SDK-SURFACE.md.
 
 on:
   workflow_dispatch:
@@ -51,8 +51,9 @@ jobs:
 
   publish-pypi:
     name: Historical Python client (disabled)
-    # clients/python is archived; canonical lean-ctx-python publication is
-    # intentionally not delegated to this legacy thin-client workflow.
+    # clients/python is archived. PyPI still carries `lean-ctx-client` 0.1.0
+    # published from that source; it needs a registry-side deprecation, not a
+    # re-publish from here.
     if: false
     runs-on: ubuntu-latest
     steps:

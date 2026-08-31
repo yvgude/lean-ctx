@@ -47,7 +47,7 @@ client = LeanCtxClient("http://127.0.0.1:8080")
 4. **Historical adapter experiment.** The generic `leanctx.adapters` helper
    formerly shown here is not part of the canonical Python SDK v1 and is not a
    supported integration path. Use only the declared Preview reference-wrapper
-   contract in `packages/python-lean-ctx/README.md`.
+   contract in the SDK's README (Thinkery-AG/leanctx-sdk).
 
 Why it works: the `prose` compressor strips scraped-page boilerplate; the
 `confidential` floor keeps lead data from leaking into shareable artifacts.

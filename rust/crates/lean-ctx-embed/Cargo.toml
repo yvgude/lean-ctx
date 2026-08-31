@@ -1,10 +1,10 @@
 [package]
-name = "lean-ctx-sdk"
+name = "lean-ctx-embed"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
-description = "Experimental Apache Rust façade for embedding the local lean-ctx Engine in-process."
+description = "Experimental Apache Rust facade for embedding the local lean-ctx Engine in-process. Not an SDK: the LeanCTX SDK is thinkery-leanctx-sdk (Python)."
 repository = "https://github.com/yvgude/lean-ctx"
 keywords = ["mcp", "llm", "tokens", "context", "embedding"]
 categories = ["development-tools", "api-bindings"]
@@ -12,7 +12,7 @@ readme = "README.md"
 publish = false
 
 [lib]
-name = "lean_ctx_sdk"
+name = "lean_ctx_embed"
 path = "src/lib.rs"
 
 [dependencies]

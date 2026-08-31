@@ -134,7 +134,7 @@ particular tool profile or compiled feature set.
 
 The TypeScript SDK exports canonical envelope and capability types. The Python
 client offers discovery, tool calls, SSE events, and `run_conformance`. Consult
-the [SDK conformance matrix](../reference/sdk-conformance-matrix.md) for the
+the [SDK surface](../internal/SDK-SURFACE.md) for the
 release-specific result rather than treating package names or certification
 levels as permanent.
 

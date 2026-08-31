@@ -10,9 +10,9 @@
 //! needs and the headline acceptance test for this SDK.
 //!
 //! ```no_run
-//! let engine = lean_ctx_sdk::Engine::builder(".").build().unwrap();
-//! let first = engine.read("src/main.rs", lean_ctx_sdk::ReadMode::Full).unwrap();
-//! let again = engine.read("src/main.rs", lean_ctx_sdk::ReadMode::Full).unwrap();
+//! let engine = lean_ctx_embed::Engine::builder(".").build().unwrap();
+//! let first = engine.read("src/main.rs", lean_ctx_embed::ReadMode::Full).unwrap();
+//! let again = engine.read("src/main.rs", lean_ctx_embed::ReadMode::Full).unwrap();
 //! assert!(again.saved_tokens >= first.saved_tokens); // re-read is cheaper
 //! ```
 //!
@@ -128,7 +128,7 @@ impl EngineBuilder {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(self.worker_threads)
             .enable_all()
-            .thread_name("lean-ctx-sdk")
+            .thread_name("lean-ctx-embed")
             .build()
             .map_err(|e| Error::Init(format!("tokio runtime: {e}")))?;
 
@@ -340,7 +340,7 @@ fn configure_process_env(data_dir: Option<&Path>) {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         let dir = data_dir.map_or_else(
-            || std::env::temp_dir().join("lean-ctx-sdk"),
+            || std::env::temp_dir().join("lean-ctx-embed"),
             Path::to_path_buf,
         );
         let _ = std::fs::create_dir_all(&dir);

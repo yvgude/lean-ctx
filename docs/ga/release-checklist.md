@@ -65,11 +65,13 @@ release assets, and verification commands.
     --artifact-root <proof-directory> --json
   ```
 
-- [ ] Python remains labelled **Preview** and passes its package test suite;
-  it must not be released as a broad framework or agent-runtime guarantee.
+- [ ] The single-SDK surface still holds: no package in this repository claims
+  an SDK name, and the surface document names the one SDK. The SDK itself
+  (`thinkery-leanctx-sdk`) releases from its own repository on its own cadence
+  and is not gated here.
 
   ```bash
-  cd packages/python-lean-ctx && python3 -m pytest
+  python3 scripts/check-sdk-surface.py
   ```
 
 - [ ] The committed provider-free fixture boundary remains reproducible and

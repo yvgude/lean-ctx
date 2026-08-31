@@ -1,4 +1,4 @@
-# lean-ctx-sdk — in-process embedding research (Rust)
+# lean-ctx-embed — in-process embedding research (Rust)
 
 > **Status: Preview substrate — not a supported stable public Rust SDK.** Embed
 > work is Preview; external addon authoring is Research. The only declared
@@ -15,7 +15,7 @@ experiments (e.g. Lean-md) that want to
 and symbol lookup — instead of going through the MCP server or CLI.
 
 > **Not the `compress()` client.** The pip/npm packages also named
-> `lean-ctx-sdk` are thin HTTP clients for the daemon's `/v1/compress` endpoint.
+> `lean-ctx-embed` are thin HTTP clients for the daemon's `/v1/compress` endpoint.
 > *This* crate is the Rust **in-process** engine façade — different artifact,
 > different job. See [`docs/guides/compress-sdk.md`](../../../docs/guides/compress-sdk.md)
 > for the client SDKs.
@@ -23,14 +23,14 @@ and symbol lookup — instead of going through the MCP server or CLI.
 ## Experimental `Engine`
 
 ```rust
-use lean_ctx_sdk::{Engine, ReadMode};
+use lean_ctx_embed::{Engine, ReadMode};
 
 let engine = Engine::builder(".").build()?;
 
 let first = engine.read("src/main.rs", ReadMode::Full)?;
 let again = engine.read("src/main.rs", ReadMode::Full)?; // re-read collapses to a delta
 assert!(again.saved_tokens >= first.saved_tokens);
-# Ok::<(), lean_ctx_sdk::Error>(())
+# Ok::<(), lean_ctx_embed::Error>(())
 ```
 
 Because the `Engine` owns a **shared** `SessionCache`, an unchanged re-read can
@@ -81,14 +81,14 @@ async code, wrap calls in `tokio::task::spawn_blocking`.
 
 ```bash
 # from rust/
-cargo test  -p lean-ctx-sdk
-cargo run   -p lean-ctx-sdk --example embed
-cargo clippy -p lean-ctx-sdk --all-targets -- -D warnings
+cargo test  -p lean-ctx-embed
+cargo run   -p lean-ctx-embed --example embed
+cargo clippy -p lean-ctx-embed --all-targets -- -D warnings
 ```
 
 The crate is a workspace member but excluded from `default-members`, so the
 engine's own `cargo build`/`test`/`clippy` are unchanged — build it explicitly
-with `-p lean-ctx-sdk`.
+with `-p lean-ctx-embed`.
 
 ## License
 
