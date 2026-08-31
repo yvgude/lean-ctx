@@ -661,3 +661,43 @@ fn pulse_refresh_targets_only_the_active_view() {
     assert!(coordinator.contains("hasPendingUpdate"));
     assert!(!coordinator.contains("CustomEvent('lctx:refresh')"));
 }
+
+#[test]
+fn partner_promo_is_accessible_versioned_and_served() {
+    let (status, content_type, source) = super::routes::route_response(
+        "/static/components/cockpit-partner-promo.js",
+        "",
+        None,
+        None,
+        true,
+        "GET",
+        "",
+    );
+
+    assert_eq!(status, "200 OK");
+    assert_eq!(content_type, "application/javascript; charset=utf-8");
+    assert!(COCKPIT_INDEX_HTML.contains("/static/components/cockpit-partner-promo.js"));
+    assert!(source.contains("leanctx_partner_sdk_promo_v1"));
+    assert!(source.contains("aria-modal=\"true\""));
+    assert!(source.contains("aria-labelledby=\"partnerPromoTitle\""));
+    assert!(source.contains("event.key === 'Escape'"));
+    assert!(source.contains("event.key !== 'Tab'"));
+    assert!(source.contains("setBackgroundInert(overlay)"));
+    assert!(source.contains("document.addEventListener('focusin', keepFocusInDialog, true)"));
+    assert!(source.contains("new MutationObserver"));
+    assert!(source.contains("close(false)"));
+    assert!(source.contains("cancelAnimationFrame(openFrame)"));
+    assert!(source.contains("document.getElementById(OVERLAY_ID) !== overlay"));
+    assert!(source.contains("opens in a new tab"));
+    assert!(source.contains("target=\"_blank\" rel=\"noopener noreferrer\""));
+    assert!(source.contains("Thinkery-AG/leanctx-sdk#readme"));
+    assert!(
+        source.contains("mailto:yves@thinkery.ch?subject=LeanCTX%20design%20partner%20inquiry")
+    );
+    assert!(source.contains("local LeanCTX Engine"));
+
+    let rewritten = super::base_path::rewrite_asset_urls(COCKPIT_INDEX_HTML, "/dashboard");
+    assert!(rewritten.contains("src=\"/dashboard/static/components/cockpit-partner-promo.js\""));
+    assert!(super::COCKPIT_STYLE_CSS.contains("max-height:calc(100dvh - 48px)"));
+    assert!(super::COCKPIT_STYLE_CSS.contains("env(safe-area-inset-bottom)"));
+}

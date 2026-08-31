@@ -1358,6 +1358,82 @@ tr:hover td{background:var(--surface-2)}
 }
 .onboard-btn:hover{filter:brightness(1.08)}
 
+/* ---- One-time design-partner + SDK invitation ---- */
+.partner-promo-open{overflow:hidden}
+.partner-promo-overlay{
+  position:fixed;inset:0;z-index:var(--z-modal,1000);
+  display:flex;align-items:center;justify-content:center;padding:24px;
+  background:rgba(8,12,16,.76);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+  opacity:0;transition:opacity .18s var(--ease-out);
+}
+[data-theme="light"] .partner-promo-overlay{background:rgba(245,245,240,.78)}
+.partner-promo-overlay.show{opacity:1}
+.partner-promo{
+  position:relative;width:min(680px,100%);max-height:calc(100vh - 48px);
+  max-height:calc(100dvh - 48px);overflow:auto;
+  padding:34px;background:var(--surface);border:1px solid var(--border-light);
+  border-radius:14px;box-shadow:var(--shadow-lg,0 24px 60px rgba(0,0,0,.4));
+  transform:translateY(10px) scale(.985);transition:transform .18s var(--ease-out);
+}
+.partner-promo-overlay.show .partner-promo{transform:translateY(0) scale(1)}
+.partner-promo-close{
+  position:sticky;top:0;z-index:1;float:right;width:34px;height:34px;margin:-20px -20px 0 12px;
+  border:1px solid var(--border);border-radius:50%;background:var(--bg);
+  color:var(--muted);font-size:22px;line-height:1;cursor:pointer;
+}
+.partner-promo-close:hover{border-color:var(--border-light);color:var(--text-bright)}
+.partner-promo-close:focus-visible,.partner-promo-cta:focus-visible,.partner-promo-later:focus-visible{
+  outline:2px solid var(--accent);outline-offset:3px;
+}
+.partner-promo-kicker{
+  margin-bottom:10px;color:var(--accent);font:700 10px/1 var(--mono);
+  letter-spacing:.14em;
+}
+.partner-promo h2{
+  margin:0 44px 8px 0;color:var(--text-bright);font:500 28px/1.15 var(--font-display);
+  letter-spacing:-.025em;
+}
+.partner-promo-intro{max-width:580px;margin:0 0 24px;color:var(--muted);font-size:14px;line-height:1.55}
+.partner-promo-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.partner-promo-option{
+  display:flex;flex-direction:column;min-height:220px;padding:20px;
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--r);
+}
+.partner-promo-index{color:var(--accent);font:700 10px/1 var(--mono);letter-spacing:.08em}
+.partner-promo-option h3{margin:18px 0 8px;color:var(--text-bright);font-size:16px;font-weight:600}
+.partner-promo-option p{margin:0 0 20px;color:var(--muted);font-size:12.5px;line-height:1.55}
+.partner-promo-cta{
+  display:inline-flex;align-items:center;justify-content:space-between;gap:12px;
+  margin-top:auto;padding:10px 12px;border:1px solid var(--border-light);border-radius:7px;
+  color:var(--text-bright);font-size:12px;font-weight:600;text-decoration:none;
+  transition:border-color .15s,background .15s,color .15s;
+}
+.partner-promo-cta:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.partner-promo-cta-primary{border-color:var(--accent);background:var(--accent-dim);color:var(--accent)}
+.partner-promo-later{
+  display:block;margin:18px auto 0;padding:6px 10px;border:0;background:transparent;
+  color:var(--muted);font-size:11.5px;cursor:pointer;
+}
+.partner-promo-later:hover{color:var(--text-bright)}
+.partner-promo-sr-only{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0;
+}
+@media(max-width:620px){
+  .partner-promo-overlay{
+    padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right))
+      max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
+  }
+  .partner-promo{padding:26px 18px 22px}
+  .partner-promo-close{margin:-14px -6px 0 10px}
+  .partner-promo h2{font-size:23px}
+  .partner-promo-options{grid-template-columns:1fr}
+  .partner-promo-option{min-height:auto}
+}
+@media(prefers-reduced-motion:reduce){
+  .partner-promo-overlay,.partner-promo{transition:none}
+}
+
 /* Background ASCII art was visual noise behind the data — keep it off. */
 .ascii-global-bg{display:none}
 

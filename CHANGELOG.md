@@ -22,6 +22,14 @@ present in the 3.10.0 artifacts.
 - Every native release target installs its wheel, passes strict package-metadata
   validation, and runs the SDK's real AgentContext lifecycle before publication.
 
+### Added — Dashboard
+
+- The local dashboard now presents a one-time, dismissible invitation for
+  companies interested in a LeanCTX design partnership or organization-wide
+  rollout, plus a direct path to the public Python SDK. It stays out of the way
+  of onboarding, authentication, and product tours; supports keyboard dismissal
+  and focus trapping; and remembers the user's choice locally.
+
 ### Security
 
 - Sessions are project-rooted and read-only by default. Write and execution
