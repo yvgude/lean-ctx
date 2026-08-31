@@ -105,19 +105,27 @@ release assets, and verification commands.
 - [ ] The history policy gate passes.
 
   ```bash
-  python scripts/history-policy-gate.py
+  python3 scripts/history-policy-gate.py gate --root . \
+    --policy security/history-policy-v1.json \
+    --output /tmp/leanctx-history-delta-evidence.json
   ```
 
 - [ ] Branch protection is verified.
 
+  Export a GitHub token with repository-administration read access as
+  `GITHUB_TOKEN` before running this check and the secret-expiry check below.
+
   ```bash
-  python scripts/verify-branch-protection.py
+  python3 scripts/verify-branch-protection.py verify
   ```
 
 - [ ] Secret expiry is checked.
 
   ```bash
-  python scripts/check-secret-expiry.py
+  python3 scripts/check-secret-expiry.py check \
+    --policy security/secret-rotation-policy-v1.json \
+    --repo yvgude/lean-ctx \
+    --output /tmp/leanctx-secret-rotation-report.json
   ```
 
 - [ ] The working tree contains only intentional release changes.
