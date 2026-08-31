@@ -586,8 +586,11 @@ jobs:
     name: Publish Python Engine wheels
     needs: release
     runs-on: ubuntu-latest
+    # PyPI Trusted Publishing authorizes this workflow for all three Engine
+    # distribution names; no long-lived API token is accepted.
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Download signed-release companion wheels
         env:
@@ -600,8 +603,6 @@ jobs:
       - name: Publish exact Engine companions to PyPI
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
-          user: __token__
-          password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: dist/
           skip-existing: true
 
