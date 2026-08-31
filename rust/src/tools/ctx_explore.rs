@@ -705,17 +705,40 @@ mod tests {
             )
         };
 
-        // The fixture root is brand new, so the first call races index warm-up:
-        // it can answer from a partially-built symbol index and cite two spans
-        // where a warm call cites three (`lookup (fn)` arrives late). That is a
-        // cold-start difference, not the state accumulation #498 is about — so
-        // warm the index with a discarded call and compare two warm runs.
-        let _warm = run();
+        // #498 is about state accumulation between runs, so the index must be
+        // settled *before* the two runs being compared — otherwise the test
+        // measures index warm-up instead.
+        //
+        // The symbol half of the answer (`lookup (fn)`) comes from
+        // `graph_provider::open_or_build`, which returns `None` when the build
+        // gate is already held (another test in this binary) or when the 30s
+        // build times out under parallel load. So one run cites two spans and
+        // the next cites three — a red build about scheduling, not about
+        // determinism.
+        //
+        // A discarded warm-up call does not fix that: it enters the same racy
+        // path and offers no guarantee about the call after it. Building the
+        // graph index synchronously does — `scan` persists it, so both runs
+        // below take the `open_existing` fast path and never touch the gate.
+        let prebuilt = crate::core::graph_index::load_or_build(&root_str);
+        assert!(
+            !prebuilt.files.is_empty(),
+            "the fixture must yield a graph index; without one both runs would \
+             degrade to the same symbol-less output and the comparison would pass \
+             while proving nothing"
+        );
+
         let a = run();
         let b = run();
 
         assert_eq!(a.text, b.text, "explore output must be byte-stable");
         assert_eq!(a.tokens, b.tokens);
+        assert!(
+            a.text.contains("lookup (fn)"),
+            "the symbol citation must be present — its absence is exactly the \
+             degraded state this test used to compare against itself: {}",
+            a.text
+        );
         let locs = |o: &ExploreOutcome| -> Vec<(String, usize, usize)> {
             o.citations
                 .iter()
