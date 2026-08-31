@@ -1,10 +1,15 @@
 # Addon Manifest — v1
 
-> **Status: Research contract — not a supported public product surface.** This
-> document records an experimental implementation and proposed format. LeanCTX
-> does not currently offer a hosted registry, marketplace, paid-addon flow, or
-> verified public catalog. Current product scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md).
+> **Status: Preview.** `lean-ctx-addon.toml` is the authoring manifest for a
+> WASM addon, embedded verbatim in a `kind=addon` package and shown by
+> `lean-ctx addon info`. LeanCTX still does **not** offer a hosted registry,
+> marketplace, paid-addon flow, or verified public catalog — a package is a file
+> you install, or one you fetch from a registry you name. Product scope is
+> governed by [`docs/internal/README.md`](../internal/README.md).
+>
+> Sections describing per-platform `[artifacts]` downloads are **historical**:
+> modules now travel inside the signed package, which is what removes the
+> checksum-and-hosting step from publishing.
 
 Historical implementation status: `core::addons` · `lean-ctx addon`
 

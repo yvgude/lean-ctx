@@ -165,8 +165,18 @@ pub fn run() {
                 crate::cli::cmd_policy(&rest);
                 return;
             }
-            "plugin" | "plugins" | "addon" | "addons" => {
-                eprintln!("Addon and plugin commands have been removed.");
+            "addon" | "addons" => {
+                crate::cli::cmd_addon(&rest);
+                return;
+            }
+            // Subprocess plugins are not coming back: an addon is a sandboxed
+            // WASM module (`lean-ctx addon`), which bounds what an extension
+            // can do instead of asking the user to trust that it behaves.
+            "plugin" | "plugins" => {
+                eprintln!(
+                    "Plugin commands have been removed. Extensions are WASM addons now — \
+                     see `lean-ctx addon help`."
+                );
                 std::process::exit(1);
             }
             "embeddings" => {

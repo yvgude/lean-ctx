@@ -7,7 +7,7 @@ use super::content::{CheckpointPackageContentV1, PackageContent};
 use super::manifest::PackageManifest;
 
 const INDEX_FILE: &str = "package-index.json";
-const PACKAGES_DIR: &str = "packages";
+pub(crate) const PACKAGES_DIR: &str = "packages";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct PackageIndex {
@@ -85,6 +85,25 @@ impl LocalRegistry {
                 manifest.name,
                 manifest.version,
                 root.display()
+            );
+        }
+
+        // kind=addon: same pattern, executable payload. The modules are
+        // written before the index entry for the same reason — a tampered
+        // module aborts the install instead of leaving a half-registered
+        // package whose code is already on disk.
+        if manifest.kind == super::manifest::PackageKind::Addon {
+            let addon = content
+                .addon
+                .as_ref()
+                .ok_or("kind=addon package has no addon payload")?;
+            let root = super::addons::materialize_modules(&self.root, manifest, addon)?;
+            tracing::info!(
+                "addon pack {}@{} materialized at {} ({} module(s))",
+                manifest.name,
+                manifest.version,
+                root.display(),
+                addon.modules.len()
             );
         }
 
@@ -272,7 +291,11 @@ impl LocalRegistry {
         Ok(bytes.len() as u64)
     }
 
-    pub(crate) fn import_from_file(&self, path: &Path) -> Result<PackageManifest, String> {
+    /// Read a package file into a bundle: extension, size cap, parse.
+    ///
+    /// Shared by both install doors so a `.ctxpkg` is admitted on exactly the
+    /// same terms whether it carries knowledge or code.
+    fn read_bundle(path: &Path) -> Result<(ExportBundle, String), String> {
         if !crate::core::contracts::is_package_file(path) {
             let ext = path
                 .extension()
@@ -297,25 +320,70 @@ impl LocalRegistry {
         let json = std::fs::read_to_string(path).map_err(|e| format!("read package file: {e}"))?;
         let bundle: ExportBundle =
             serde_json::from_str(&json).map_err(|e| format!("parse package: {e}"))?;
+        Ok((bundle, json))
+    }
+
+    pub(crate) fn import_from_file(&self, path: &Path) -> Result<PackageManifest, String> {
+        let (bundle, json) = Self::read_bundle(path)?;
 
         bundle.manifest.validate().map_err(|errs| errs.join("; "))?;
 
         // Kind gate (GH #726): the local context registry stores knowledge,
-        // not capabilities. A kind=addon pack routes through the addon trust
-        // chain (consent, sandbox, binhash) — importing it here would sidestep
-        // every one of those gates.
+        // not capabilities. `import` reads a file the caller already has, so
+        // it is the wrong door for executable content — an addon must arrive
+        // through `addon add`, which is where consent is asked for.
         super::verify::validate_kind_coherence(&bundle.manifest, &bundle.content)
             .map_err(|errs| errs.join("; "))?;
         if bundle.manifest.kind == super::manifest::PackageKind::Addon {
             return Err(format!(
                 "`{}` is a kind=addon package — install it with `lean-ctx addon add {}` \
-                 (addon installs need capability consent + the addon trust chain)",
+                 (addon installs ask for consent before storing executable modules)",
                 bundle.manifest.name,
                 bundle.manifest.name.trim_start_matches('@'),
             ));
         }
 
-        let content_text = extract_top_level_value_text(&json, "content")
+        Self::verify_bundle_integrity(&bundle, &json)?;
+        self.install(&bundle.manifest, &bundle.content)?;
+        Ok(bundle.manifest)
+    }
+
+    /// Install a `kind=addon` package.
+    ///
+    /// Deliberately a separate entry point from [`Self::import_from_file`]
+    /// rather than a flag on it: the two differ only in which kind they accept,
+    /// but they differ completely in consequence. Importing knowledge is
+    /// reversible and inert; installing an addon puts code where the extension
+    /// registry will load it. A caller has to name that intent, and the CLI
+    /// asks the user before calling this.
+    ///
+    /// Every other check is identical, and shared through
+    /// [`Self::verify_bundle_integrity`] — integrity digest, then signature —
+    /// so the executable path can never end up with *weaker* verification than
+    /// the inert one.
+    pub(crate) fn install_addon_from_file(&self, path: &Path) -> Result<PackageManifest, String> {
+        let (bundle, json) = Self::read_bundle(path)?;
+        bundle.manifest.validate().map_err(|errs| errs.join("; "))?;
+        super::verify::validate_kind_coherence(&bundle.manifest, &bundle.content)
+            .map_err(|errs| errs.join("; "))?;
+
+        if bundle.manifest.kind != super::manifest::PackageKind::Addon {
+            return Err(format!(
+                "`{}` is a kind={} package, not an addon — install it with `lean-ctx pack import`",
+                bundle.manifest.name,
+                bundle.manifest.kind.as_str(),
+            ));
+        }
+
+        Self::verify_bundle_integrity(&bundle, &json)?;
+        self.install(&bundle.manifest, &bundle.content)?;
+        Ok(bundle.manifest)
+    }
+
+    /// Content digest, then signature. Shared by both install doors so neither
+    /// can drift into accepting what the other rejects.
+    fn verify_bundle_integrity(bundle: &ExportBundle, json: &str) -> Result<(), String> {
+        let content_text = extract_top_level_value_text(json, "content")
             .ok_or_else(|| "package has no top-level content member".to_string())?;
         verify_integrity(&bundle.manifest, content_text)?;
 
@@ -329,9 +397,7 @@ impl LocalRegistry {
                 "signature verification failed — the package was modified after signing".into(),
             );
         }
-
-        self.install(&bundle.manifest, &bundle.content)?;
-        Ok(bundle.manifest)
+        Ok(())
     }
 
     fn package_dir(&self, name: &str, version: &str) -> PathBuf {

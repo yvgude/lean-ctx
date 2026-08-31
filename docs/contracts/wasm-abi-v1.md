@@ -1,11 +1,20 @@
 # Contract: WASM Extension ABI v1 (`wasm-abi-v1`)
 
-> **Status: Research contract — external extension authoring is not a supported
-> public LeanCTX surface.** This document records an opt-in local implementation
-> and proposed ABI. Current product scope and status are governed by
+> **Status: Preview.** Building, installing and running a WASM addon locally is
+> a supported path (`lean-ctx addon`, see
+> [the guide](../guides/addons.md)). The **ABI below is versioned but not yet
+> frozen**: v1 may gain entrypoints, and a breaking change would ship as
+> `wasm-abi-v2` with both accepted during a deprecation window rather than as a
+> silent change to v1. LeanCTX does not offer a marketplace or a curated
+> registry; product scope is governed by
 > [`docs/internal/README.md`](../internal/README.md).
 
-Historical implementation status: stable · Feature: `wasm` (off by default) · Source: `rust/src/core/wasm_ext.rs`
+Implementation: shipped in the default build (feature `wasm`, on by default since 3.10.1) · Source: `rust/src/core/wasm_ext.rs`
+
+Today the ABI reaches **compressors** and **context providers**. The other
+extension points in `core::extension_registry` (chunkers, read modes, render
+transforms) exist as Rust traits and are deliberately not exposed here yet —
+naming them would promise an authoring surface that does not exist.
 
 A sandboxed, language-independent way to contribute extensions —
 **compressors** (EPIC 12.8) and **context providers** (EPIC 12.10) — without

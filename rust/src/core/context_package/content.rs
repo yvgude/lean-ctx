@@ -65,7 +65,29 @@ pub(crate) struct AddonContent {
     /// Verbatim `lean-ctx-addon.toml` text (authoring contract
     /// `docs/contracts/addon-manifest-v1.md`).
     pub manifest_toml: String,
+    /// WASM modules carried **inside** the pack, hash-pinned exactly like
+    /// `kind=skills` documents.
+    ///
+    /// Embedding rather than referencing external artifacts is the whole point:
+    /// the pack's own signature covers the executable bytes, so an author needs
+    /// no artifact host, no checksum files and no CI to publish one — the
+    /// friction the previous addon channel was reported for. It also removes a
+    /// download step from install, and with it a class of TOCTOU between
+    /// "verified the manifest" and "fetched the binary".
+    ///
+    /// Empty on a pre-extension pack; `validate_kind_coherence` requires at
+    /// least one module for `kind=addon`, so an empty list can only appear on a
+    /// package that predates this field and is rejected there.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modules: Vec<DocumentBlob>,
 }
+
+/// Caps for `kind=addon` module payloads. A WASM module is larger than a
+/// markdown file but still small: `wasmi` instantiates per call, so a
+/// multi-megabyte guest is a design smell, not a use case.
+pub(crate) const MAX_ADDON_MODULES: usize = 8;
+pub(crate) const MAX_ADDON_MODULE_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const MAX_ADDON_TOTAL_BYTES: usize = 16 * 1024 * 1024;
 
 /// `kind=skills` payload (GH #727): a set of named, verified content blobs
 /// (markdown/scripts). **No execution semantics in lean-ctx** — skills are

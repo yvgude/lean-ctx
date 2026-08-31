@@ -6,8 +6,46 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [3.10.1] — 2026-08-31
 
 This release includes the defect fixes merged after the `v3.10.0` tag
-(`5b69202`) and the additive SDK Agent Tools interface below. Neither is
-present in the 3.10.0 artifacts.
+(`5b69202`), the addon channel, and the additive SDK Agent Tools interface
+below. None of it is present in the 3.10.0 artifacts.
+
+### Added — Addons: WASM extensions you can publish yourself
+
+- **`lean-ctx addon`** — `list`, `info`, `add`, `remove`, `release`. An addon is
+  a sandboxed WebAssembly module that runs inside the context pipeline and
+  registers as a compressor. There is deliberately no `search`: that would be a
+  marketplace, and lean-ctx does not curate, rank or host one.
+- **The module travels inside the signed package.** `lean-ctx addon release
+  ./my-addon` reads the `.wasm` files next to `lean-ctx-addon.toml`, hashes and
+  embeds them, and signs the result. No artifact host, no checksum files, no CI
+  — the reported friction of the previous addon channel was that authors had to
+  run their own pipeline just to produce SHA files for externally hosted
+  binaries. It also removes a download from install, and with it the window
+  between "verified the manifest" and "fetched the binary".
+- **Install asks, and verifies first.** `addon add` re-verifies the signature
+  locally (registry compromise ≠ client compromise), checks each module against
+  its pinned SHA-256 and its WebAssembly magic bytes, shows the publisher key
+  and module digests, then asks. It refuses to proceed non-interactively unless
+  given `--yes`. `pack import` still declines executable content and points at
+  the right door.
+- **Sandbox, stated honestly.** Enforced: no ambient environment, a fresh WASM
+  store per call, the output budget applied by the host *after* decoding, and
+  modules stored read-only and never marked executable. Not claimed: a module
+  can compute whatever it likes within those bounds — the sandbox limits reach,
+  not intent.
+- The `wasm` feature is **on by default** (measured cost: 83_065_536 →
+  83_815_584 bytes, +750 KB, +0.90%). Without it the shipped binary could not
+  load an extension at all, which would leave authors with a channel nobody
+  could install from.
+- Today the ABI reaches compressors and context providers. Chunkers, read modes
+  and render transforms exist as Rust traits and are **not** exposed over it —
+  documented as such rather than implied.
+- `LEAN_CTX_WASM_DIR` remains an unsigned developer override for authoring a
+  module before packaging it, with none of the verification above.
+
+See [the addon guide](docs/guides/addons.md) and
+[`wasm-abi-v1`](docs/contracts/wasm-abi-v1.md), both moved from Research to
+Preview for this release.
 
 ### Added — SDK Agent Tools Interface
 

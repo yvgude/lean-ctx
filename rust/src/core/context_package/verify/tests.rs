@@ -541,6 +541,13 @@ fn addon_content(toml: &str) -> PackageContent {
     PackageContent {
         addon: Some(crate::core::context_package::content::AddonContent {
             manifest_toml: toml.to_string(),
+            modules: vec![
+                crate::core::context_package::content::DocumentBlob::from_plaintext(
+                    "demo.wasm",
+                    &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00],
+                )
+                .expect("blob"),
+            ],
         }),
         ..PackageContent::default()
     }

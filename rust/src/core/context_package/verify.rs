@@ -15,6 +15,7 @@ use super::content::{
 };
 use super::manifest::{PackageKind, PackageLayer, PackageManifest};
 
+mod addon;
 mod text;
 pub(crate) use text::compact_json_text;
 
@@ -123,9 +124,14 @@ pub(crate) fn validate_kind_coherence(
     let mut errors = Vec::new();
     match manifest.kind {
         PackageKind::Addon => {
-            errors.push("kind=addon packages are no longer supported".into());
+            match &content.addon {
+                None => errors.push("kind=addon requires a content.addon payload".into()),
+                Some(addon) => addon::validate_addon(addon, &mut errors),
+            }
+            if content.documents.is_some() {
+                errors.push("content.documents payload requires kind=skills".into());
+            }
         }
-
         PackageKind::Skills => {
             if content.addon.is_some() {
                 errors.push("content.addon payload requires kind=addon".into());
