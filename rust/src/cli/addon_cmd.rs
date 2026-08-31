@@ -503,6 +503,21 @@ fn cmd_remove(args: &[String]) {
         std::process::exit(1);
     }
 
+    // Read the wired name BEFORE deleting anything. The gateway server name is
+    // the manifest's own `[addon] name`, which is not always the package name —
+    // and the manifest lives inside the directory that is about to go. Reading
+    // it afterwards silently falls back to a guess, the guess misses, and the
+    // gateway keeps an entry for an addon the user believes is gone.
+    let wired_names: Vec<String> = matches
+        .iter()
+        .map(|a| {
+            std::fs::read_to_string(a.dir.join("lean-ctx-addon.toml"))
+                .ok()
+                .and_then(|t| addon_manifest::parse(&t).ok())
+                .map_or_else(|| a.name.clone(), |m| m.addon.name)
+        })
+        .collect();
+
     let mut removed = 0;
     for a in &matches {
         match std::fs::remove_dir_all(&a.dir) {
@@ -519,16 +534,8 @@ fn cmd_remove(args: &[String]) {
         let _ = registry.remove(&matches[0].name, None);
     }
 
-    // And the gateway entry, by the manifest's own addon name — which is the
-    // gateway server name, and is not always the package name.
-    for a in &matches {
-        let manifest_path = a.dir.join("lean-ctx-addon.toml");
-        let wired_name = std::fs::read_to_string(&manifest_path)
-            .ok()
-            .and_then(|t| addon_manifest::parse(&t).ok())
-            .map(|m| m.addon.name)
-            .unwrap_or_else(|| a.name.trim_start_matches('@').to_string());
-        match addon_wiring::unregister(&wired_name) {
+    for wired_name in &wired_names {
+        match addon_wiring::unregister(wired_name) {
             Ok(true) => println!("Unwired `{wired_name}` from the MCP gateway."),
             Ok(false) => {}
             Err(e) => eprintln!("WARNING: could not update the gateway config: {e}"),
@@ -597,11 +604,21 @@ fn build_release(dir: &Path, output: Option<&str>) -> Result<PathBuf, String> {
         .collect();
     wasm_files.sort();
 
+    // An addon must *do* something, but a module is only one of the two ways.
+    // The installer accepts modules or an `[mcp]` server; if the builder
+    // insisted on a module, an MCP-only addon could be installed and never
+    // built — the author would have no way to produce the package at all.
     if wasm_files.is_empty() {
-        return Err(format!(
-            "no .wasm module in {} — an addon without a module would install nothing",
-            dir.display()
-        ));
+        let declares_server = addon_manifest::parse(&manifest_toml)
+            .map(|m| m.mcp.is_some())
+            .unwrap_or(false);
+        if !declares_server {
+            return Err(format!(
+                "{} declares neither a .wasm module nor an [mcp] server — \
+                 installing this addon would have no effect",
+                dir.display()
+            ));
+        }
     }
 
     let mut modules = Vec::new();
@@ -704,8 +721,9 @@ mod tests {
         assert_eq!(flag_value(&joined, "--output"), Some("out.ctxpkg".into()));
     }
 
-    /// A directory with a manifest but no module would install an addon that
-    /// does nothing — say so at build time, not after publishing.
+    /// A directory with a manifest but neither a module nor an `[mcp]` server
+    /// would install an addon that does nothing — say so at build time, not
+    /// after publishing.
     #[test]
     fn release_refuses_a_directory_without_a_module() {
         let dir = tempfile::tempdir().unwrap();
@@ -715,7 +733,28 @@ mod tests {
         )
         .unwrap();
         let err = build_release(dir.path(), None).expect_err("must refuse");
-        assert!(err.contains("no .wasm module"), "{err}");
+        assert!(
+            err.contains("neither a .wasm module nor an [mcp] server"),
+            "{err}"
+        );
+    }
+
+    /// The counterpart: an MCP-only addon is legitimate and must build. The
+    /// installer accepts it, so a builder that demanded a module would leave
+    /// authors unable to produce the very package the installer takes.
+    #[test]
+    fn release_accepts_an_mcp_only_addon() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("lean-ctx-addon.toml"),
+            "[addon]\nname = \"@ns/demo\"\nversion = \"1.0.0\"\n\
+             [mcp]\ncommand = \"demo-server\"\nargs = [\"serve\"]\n",
+        )
+        .unwrap();
+
+        let out = dir.path().join("demo.ctxpkg");
+        build_release(dir.path(), Some(out.to_str().unwrap())).expect("must build");
+        assert!(out.is_file(), "a package was written");
     }
 
     /// A `.wasm` that is not WebAssembly is caught before it is packed, with a
@@ -782,5 +821,33 @@ mod tests {
             assert!(path.is_file(), "available while the guard lives");
         }
         assert!(!path.exists(), "removed when the guard drops");
+    }
+
+    /// `remove` unwires by the manifest's `[addon] name`, and the manifest
+    /// lives in the directory being deleted. Reading it after the delete
+    /// silently falls back to a guess; the guess dropped the leading `@`, so
+    /// `unregister` matched nothing and the gateway kept an entry for an addon
+    /// the user had just removed. Order is the fix, so order is the test.
+    #[test]
+    fn the_wired_name_is_read_before_the_directory_is_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = dir.path().join("lean-ctx-addon.toml");
+        std::fs::write(
+            &manifest,
+            "[addon]\nname = \"@ns/demo\"\n[mcp]\ncommand = \"c\"\n",
+        )
+        .unwrap();
+
+        // What cmd_remove does first: resolve the name from the manifest.
+        let wired = std::fs::read_to_string(&manifest)
+            .ok()
+            .and_then(|t| addon_manifest::parse(&t).ok())
+            .map(|m| m.addon.name);
+        assert_eq!(wired.as_deref(), Some("@ns/demo"));
+
+        // Once the directory is gone the name is unrecoverable — which is why
+        // it must not be read at that point.
+        std::fs::remove_dir_all(dir.path()).unwrap();
+        assert!(std::fs::read_to_string(&manifest).is_err());
     }
 }

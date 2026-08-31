@@ -58,6 +58,12 @@ pub(crate) fn materialize_modules(
     if version_root.exists() {
         std::fs::remove_dir_all(&version_root).map_err(|e| e.to_string())?;
     }
+    // Create the version directory up front rather than as a side effect of
+    // writing the first module: an addon may legitimately carry no module at
+    // all (it declares an `[mcp]` server instead), and the manifest below still
+    // has to land somewhere.
+    std::fs::create_dir_all(&version_root)
+        .map_err(|e| format!("create {}: {e}", version_root.display()))?;
 
     for blob in &addon.modules {
         verify::validate_document_path(&blob.path)?;
@@ -197,6 +203,28 @@ mod tests {
         assert!(
             root.to_string_lossy().contains("@ns__demo"),
             "scoped names are flattened like every other pack kind: {root:?}"
+        );
+    }
+
+    /// An MCP-only addon carries no module, and its manifest still has to land
+    /// on disk. Creating the version directory as a side effect of writing the
+    /// first module left this case with nowhere to write — install failed with
+    /// a raw ENOENT after the user had already consented.
+    #[test]
+    fn an_addon_without_modules_still_materializes_its_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let addon = AddonContent {
+            manifest_toml: "[addon]\nname = \"@ns/server-only\"\n[mcp]\ncommand = \"srv\"\n"
+                .to_string(),
+            modules: Vec::new(),
+        };
+
+        let root =
+            materialize_modules(tmp.path(), &manifest("@ns/server-only", "1.0.0"), &addon).unwrap();
+        assert!(root.is_dir(), "the version directory exists");
+        assert!(
+            root.join("lean-ctx-addon.toml").is_file(),
+            "the authoring manifest was written"
         );
     }
 
