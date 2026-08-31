@@ -51,10 +51,14 @@ below. None of it is present in the 3.10.0 artifacts.
   where your own package manager's trust model applies.
 - That server runs as a **normal process with your privileges** — it is not
   sandboxed, and the WASM guarantees do not extend to it. So `addon add` prints
-  the exact argv and says so before asking. Adding a server does not enable the
-  gateway: `[gateway]` stays global-only and opt-in, and `addon list` reports an
-  addon that is wired while the gateway is off rather than letting you assume it
-  is running. `addon remove` unwires as well as uninstalls.
+  the exact argv and says so before asking. An `http` endpoint gets the
+  disclosure that is true for *it* instead: nothing runs locally, but lean-ctx
+  sends it requests and treats its replies as untrusted input — and the pin line
+  is omitted, since a SHA-256 of a local binary means nothing for a URL. Adding
+  a server does not enable the gateway: `[gateway]` stays global-only and
+  opt-in, and `addon list` reports an addon that is wired while the gateway is
+  off rather than letting you assume it is running. `addon remove` unwires as
+  well as uninstalls.
 - **`integration` reaches the L4 typed adapters from a manifest.** Setting it
   routes the server's output into the matching lean-ctx surface —
   `codebase-pack` → `ctx_expand`, `code-graph`/`code-symbols` → `ctx_callgraph`,

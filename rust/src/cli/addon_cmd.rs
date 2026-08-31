@@ -313,31 +313,46 @@ fn cmd_add(args: &[String]) {
             }
             if let Some(w) = &p.wiring {
                 println!("  MCP server  {w}");
-                println!(
-                    "  pin         {}",
-                    if p.pinned {
-                        "sha256 pinned — the gateway refuses to spawn a changed binary"
-                    } else {
-                        "none — whatever `command` resolves to at spawn time"
-                    }
-                );
+                if let Some(pinned) = p.pinned {
+                    println!(
+                        "  pin         {}",
+                        if pinned {
+                            "sha256 pinned — the gateway refuses to spawn a changed binary"
+                        } else {
+                            "none — whatever `command` resolves to at spawn time"
+                        }
+                    );
+                }
             }
             println!();
             if !p.modules.is_empty() {
                 println!("Modules run inside lean-ctx as WASM: sandboxed, no ambient");
                 println!("environment, output budget enforced by the host.");
             }
+            // A WASM module is bounded; a declared server is not — but the two
+            // kinds of server are not the same risk either, and telling an
+            // http user that something will run on their machine would be
+            // simply false. Each gets the disclosure that is true for it.
             if p.wiring.is_some() {
-                // The honest part. A WASM module is bounded; an MCP server is
-                // an ordinary process with the user's own privileges. Saying so
-                // plainly is the difference between consent and a click-through.
-                println!(
-                    "The MCP server above runs as a NORMAL PROCESS with your privileges — it is"
-                );
-                println!(
-                    "not sandboxed. lean-ctx will not install it: it records how to run it, and"
-                );
-                println!("only spawns it while `gateway.enabled = true`.");
+                if p.spawns_locally {
+                    println!(
+                        "The MCP server above runs as a NORMAL PROCESS with your privileges — it is"
+                    );
+                    println!(
+                        "not sandboxed. lean-ctx will not install it: it records how to run it, and"
+                    );
+                    println!("only spawns it while `gateway.enabled = true`.");
+                } else {
+                    println!(
+                        "The endpoint above is REMOTE. Nothing runs on your machine, but lean-ctx"
+                    );
+                    println!(
+                        "will send it requests — including file contents your agent asks about —"
+                    );
+                    println!(
+                        "and treat its replies as untrusted input. Only while `gateway.enabled = true`."
+                    );
+                }
             }
             println!();
         }
@@ -414,8 +429,12 @@ struct Preview {
     /// Whether that command carries a SHA-256 pin. Material to the decision:
     /// pinned means the gateway refuses to spawn a binary that has changed
     /// underneath it, unpinned means it spawns whatever `command` resolves to
-    /// on the day.
-    pinned: bool,
+    /// on the day. Meaningless for `http`, hence the `Option`.
+    pinned: Option<bool>,
+    /// `true` when the declared server is a local process rather than a remote
+    /// endpoint. The two deserve different disclosures: one spawns something
+    /// with the user's privileges, the other sends their data somewhere.
+    spawns_locally: bool,
 }
 
 /// Read a pack for display only. Verification happens in the install path;
@@ -466,7 +485,13 @@ fn preview(path: &Path) -> Result<Preview, String> {
         .and_then(|v| v.as_str())
         .and_then(|toml| addon_manifest::parse(toml).ok())
         .and_then(|m| m.mcp);
-    let pinned = declared.as_ref().is_some_and(|w| !w.sha256.is_empty());
+    let pinned = declared
+        .as_ref()
+        .filter(|w| w.transport == crate::core::mcp_catalog::config::TransportKind::Stdio)
+        .map(|w| !w.sha256.is_empty());
+    let spawns_locally = declared
+        .as_ref()
+        .is_some_and(|w| w.transport == crate::core::mcp_catalog::config::TransportKind::Stdio);
     let wiring = declared.map(|w| w.describe());
 
     Ok(Preview {
@@ -481,6 +506,7 @@ fn preview(path: &Path) -> Result<Preview, String> {
         modules,
         wiring,
         pinned,
+        spawns_locally,
     })
 }
 
@@ -696,6 +722,7 @@ fn sha256_hex(data: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::mcp_catalog::config::TransportKind;
 
     #[test]
     fn positional_skips_flags_and_the_verb() {
@@ -806,6 +833,33 @@ mod tests {
         // … and yet the path on disk is what cmd_add resolves, because
         // `is_file()` is checked first.
         assert!(file.is_file());
+    }
+
+    /// The disclosure must match the risk. A pin is a statement about a local
+    /// binary, so it is meaningless for an http endpoint — printing "none —
+    /// whatever `command` resolves to" for a URL describes a `command` that
+    /// does not exist, and telling that user a process will run with their
+    /// privileges is simply false.
+    #[test]
+    fn the_pin_line_applies_to_stdio_only() {
+        let stdio = addon_manifest::parse("[addon]\nname = \"x\"\n[mcp]\ncommand = \"c\"\n")
+            .unwrap()
+            .mcp
+            .unwrap();
+        assert_eq!(stdio.transport, TransportKind::Stdio);
+
+        let http = addon_manifest::parse(
+            "[addon]\nname = \"x\"\n[mcp]\ntransport = \"http\"\nurl = \"https://e.test/mcp\"\n",
+        )
+        .unwrap()
+        .mcp
+        .unwrap();
+        assert_eq!(http.transport, TransportKind::Http);
+        assert_eq!(
+            http.describe(),
+            "https://e.test/mcp",
+            "an http addon is described by its endpoint, not a command line"
+        );
     }
 
     /// The staging guard exists so the downloaded bytes survive the consent

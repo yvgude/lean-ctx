@@ -117,9 +117,13 @@ them deliberate, and all of them things the pre-3.9.20 channel did differently:
 - **lean-ctx never installs the server.** No `uv tool install`, no `npx`, no
   download. Putting `lean-md` on your machine stays your step, where your own
   package manager's trust model applies. The manifest only says how to run it.
-- **The exact command is shown before you consent**, not summarised. That
-  server will run as a **normal process with your privileges** — it is not
-  sandboxed, and the WASM guarantees above do not apply to it. Read the argv.
+- **The exact command is shown before you consent** — printed in full, not
+  summarised, together with whether it is pinned. A `stdio` server runs as a
+  **normal process with your privileges**: it is not sandboxed, the WASM
+  guarantees above do not apply to it, and the prompt says so. An `http` server
+  gets the disclosure that fits it instead — nothing runs on your machine, but
+  lean-ctx sends that endpoint requests and treats its replies as untrusted
+  input. Read the argv, or the URL.
 - **Adding a server does not switch the gateway on.** `[gateway]` stays
   global-only and opt-in; `lean-ctx addon list` tells you when an addon is
   wired but the gateway is off, rather than letting you assume it is running.
