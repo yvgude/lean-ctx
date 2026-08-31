@@ -42,10 +42,49 @@ below. None of it is present in the 3.10.0 artifacts.
   documented as such rather than implied.
 - `LEAN_CTX_WASM_DIR` remains an unsigned developer override for authoring a
   module before packaging it, with none of the verification above.
+- **An addon may instead declare an MCP server** under `[mcp]`, which `addon
+  add` translates into a `[[gateway.servers]]` entry. A compressor has to run
+  inside the pipeline, so it is WASM; a tool that already speaks MCP has a
+  process model of its own, so it is declared rather than embedded. What does
+  **not** come back from the pre-3.9.20 channel is `[install]`: lean-ctx never
+  runs `uv tool install` or `npx` for you. Fetching the server stays your step,
+  where your own package manager's trust model applies.
+- That server runs as a **normal process with your privileges** — it is not
+  sandboxed, and the WASM guarantees do not extend to it. So `addon add` prints
+  the exact argv and says so before asking. Adding a server does not enable the
+  gateway: `[gateway]` stays global-only and opt-in, and `addon list` reports an
+  addon that is wired while the gateway is off rather than letting you assume it
+  is running. `addon remove` unwires as well as uninstalls.
 
-See [the addon guide](docs/guides/addons.md) and
-[`wasm-abi-v1`](docs/contracts/wasm-abi-v1.md), both moved from Research to
-Preview for this release.
+### Fixed — `binary_sha256` was a pin that never fired
+
+`[[gateway.servers]] binary_sha256` (and the `sha256` field of an addon's
+`[mcp]` table, which becomes it) was parsed, stored, shown, included in the
+connection-pool identity — and then discarded at the spawn point with
+`let _ = binary_sha256`. `addon-manifest-v1` promised the gateway "hashes the
+resolved binary before spawn and refuses a mismatch (fail-closed)". It did not.
+A pin that is displayed but never checked is worse than no pin, because it reads
+as a guarantee.
+
+It is now enforced. Two details matter as much as the hashing: the binary is
+resolved against the `PATH` the **child** will see, since a server's own `env`
+may override it — otherwise we would hash one file and spawn another; and once a
+pin is set, the resolved path is what gets spawned, so name resolution cannot
+land elsewhere between check and spawn. An empty pin stays a documented no-op; a
+pin that cannot be checked (missing or unreadable binary) is an error, not a
+skip.
+
+`addon-manifest-v1` also gained a "What 3.10.1 implements" section drawing the
+line between what the current parser reads and what the document records from
+the removed system (`[install]`, `[capabilities]`, `[[dependencies]]`,
+`{pack_dir:}` expansion, `min_lean_ctx` enforcement, the `verified` tier).
+
+See [the addon guide](docs/guides/addons.md), moved from Research to Preview for
+this release. [`wasm-abi-v1`](docs/contracts/wasm-abi-v1.md) is a frozen
+artifact and is deliberately **not** edited: its status now lives in the
+CONTRACTS.md stability matrix, per that document's own contract file rule. The
+ABI is unchanged — a breaking change would ship as `wasm-abi-v2` with an
+overlap window.
 
 ### Added — SDK Agent Tools Interface
 

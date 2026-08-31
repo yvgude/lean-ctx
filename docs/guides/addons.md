@@ -1,21 +1,25 @@
-# Addons — WASM extensions
+# Addons — extending lean-ctx
 
-> **Status: Preview — local addon channel.** Installing, building and running a
-> WASM addon on your own machine is a supported path. LeanCTX does **not** offer
+> **Status: Preview — local addon channel.** Building, installing and running an
+> addon on your own machine is a supported path. LeanCTX does **not** offer
 > a marketplace, a curated registry, ranking or recommendation, managed binary
 > distribution, or a commercial catalog, and this document is not a promise of
 > one.
 
-An addon is a sandboxed WebAssembly module that runs *inside* the context
-pipeline. Today that means one thing: a **compressor**. Context providers use
-the same ABI and are wired the same way; every other extension point
-(chunkers, read modes, render transforms) exists as a Rust trait and is not
-reachable over the WASM ABI yet.
+An addon is a package you install with one command. It carries one or both of:
 
-If your extension only calls an API or runs on its own, **write an MCP server
-instead**. It needs nothing from this repository, you publish it yourself, and
-lean-ctx already audits foreign MCP servers in `tools health`. The addon
-channel is reserved for code that has to run inside the pipeline.
+- **a sandboxed WebAssembly module** that runs *inside* the context pipeline —
+  today that means a **compressor**; context providers use the same ABI and are
+  wired the same way. Every other extension point (chunkers, read modes, render
+  transforms) exists as a Rust trait and is not reachable over the WASM ABI yet.
+- **an MCP server declaration**, wired into lean-ctx's gateway so a third-party
+  tool plugs in with no fork and no recompile.
+
+Which one you write follows from where your code has to run. A compressor has
+to run inside the pipeline, so it is WASM. A tool that speaks MCP already has a
+process model of its own, so it is declared rather than embedded — and it stays
+yours: you publish it, and lean-ctx audits foreign MCP servers in `tools health`
+either way. The two halves are described separately below.
 
 ## Using an addon
 
@@ -29,7 +33,7 @@ lean-ctx addon remove @ns/my-addon
 `add` is the only verb that stores executable code, so it is the only one that
 asks — and it refuses to proceed non-interactively unless you pass `--yes`.
 
-## Writing one
+## Writing one: a WASM module
 
 A directory with a manifest and at least one module:
 
@@ -48,7 +52,11 @@ description = "What it does, in one line"
 
 The module exports the ABI v1 entrypoints — see
 [`wasm-abi-v1`](../contracts/wasm-abi-v1.md) for the exact signatures. Any
-language that compiles to `wasm32-unknown-unknown` works.
+language that compiles to `wasm32-unknown-unknown` works. That file is a frozen
+artifact: its own header predates this channel reopening and still says
+"Research contract", which is why the status lives here and in the stability
+matrix instead. The signatures in it are current and will not move — a breaking
+ABI change would ship as `wasm-abi-v2`, with both accepted during an overlap.
 
 ```bash
 lean-ctx addon release ./my-addon
@@ -62,7 +70,50 @@ like, or with `lean-ctx pack publish` to a registry you name.
 The first `release` creates an ed25519 signing key under your data directory.
 It identifies you as the publisher across releases — back it up.
 
+## Writing one: an MCP server
+
+Not every extension belongs inside the pipeline. A tool that already speaks MCP
+has a process model of its own, and wrapping it in WASM would buy nothing. Such
+an addon carries no module — it declares the server instead:
+
+```toml
+[addon]
+name = "lean-md"
+version = "2.0.0"
+description = "Macro/directive markdown renderer"
+
+[mcp]
+transport = "stdio"
+command = "lean-md"
+args = ["mcp", "serve"]
+sha256 = "…"          # optional; when set it is checked before every spawn
+```
+
+`addon add` turns that into a `[[gateway.servers]]` entry. Three limits, all of
+them deliberate, and all of them things the pre-3.9.20 channel did differently:
+
+- **lean-ctx never installs the server.** No `uv tool install`, no `npx`, no
+  download. Putting `lean-md` on your machine stays your step, where your own
+  package manager's trust model applies. The manifest only says how to run it.
+- **The exact command is shown before you consent**, not summarised. That
+  server will run as a **normal process with your privileges** — it is not
+  sandboxed, and the WASM guarantees above do not apply to it. Read the argv.
+- **Adding a server does not switch the gateway on.** `[gateway]` stays
+  global-only and opt-in; `lean-ctx addon list` tells you when an addon is
+  wired but the gateway is off, rather than letting you assume it is running.
+
+When `sha256` is set, the gateway resolves `command` against the `PATH` the
+child will see, hashes it, and refuses to spawn on a mismatch. An unset pin is
+a documented no-op, not a silent pass.
+
+Nothing stops one addon from being both: modules run in the pipeline, `[mcp]`
+wires the server, and `addon remove` undoes both.
+
 ## What the sandbox does and does not do
+
+This section is about **WASM modules**. A declared `[mcp]` server is an ordinary
+process with your privileges and none of it applies to one — that is why its
+command is printed in full before you consent.
 
 **Enforced**, on every call:
 

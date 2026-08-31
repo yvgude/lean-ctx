@@ -13,7 +13,9 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::core::context_package::{LocalRegistry, addons, content::DocumentBlob};
+use crate::core::context_package::{
+    LocalRegistry, addon_manifest, addon_wiring, addons, content::DocumentBlob,
+};
 
 pub(crate) fn cmd_addon(args: &[String]) {
     let sub = args
@@ -68,6 +70,8 @@ struct Installed {
     version: String,
     dir: PathBuf,
     modules: Vec<PathBuf>,
+    /// The `[mcp]` command line, when the addon declares one.
+    wiring: Option<String>,
 }
 
 /// Read the store rather than the package index.
@@ -100,11 +104,16 @@ fn installed_addons() -> Vec<Installed> {
                 .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("wasm"))
                 .collect();
             modules.sort();
+            let wiring = std::fs::read_to_string(dir.join("lean-ctx-addon.toml"))
+                .ok()
+                .and_then(|t| addon_manifest::parse(&t).ok())
+                .and_then(|m| m.mcp.map(|w| w.describe()));
             out.push(Installed {
                 name: display_name.clone(),
                 version: version_entry.file_name().to_string_lossy().into_owned(),
                 dir,
                 modules,
+                wiring,
             });
         }
     }
@@ -131,14 +140,21 @@ fn cmd_list() {
             .filter_map(|m| m.file_stem().map(|s| s.to_string_lossy().into_owned()))
             .collect();
         println!("  {}@{}", a.name, a.version);
-        if names.is_empty() {
-            println!("    (no modules — nothing is loaded from this addon)");
-        } else {
+        if !names.is_empty() {
             println!("    compressors: {}", names.join(", "));
+        }
+        if let Some(w) = a.wiring.as_deref() {
+            println!("    MCP server:  {w}");
+        }
+        if names.is_empty() && a.wiring.is_none() {
+            println!("    (nothing is loaded from this addon)");
         }
     }
     println!();
     println!("Modules register as compressors and are visible in `lean-ctx doctor`.");
+    if !addon_wiring::gateway_enabled() {
+        println!("The MCP gateway is OFF — declared servers are recorded but not spawned.");
+    }
 }
 
 fn cmd_info(args: &[String]) {
@@ -219,9 +235,34 @@ fn cmd_add(args: &[String]) {
                     &digest[..16]
                 );
             }
+            if let Some(w) = &p.wiring {
+                println!("  MCP server  {w}");
+                println!(
+                    "  pin         {}",
+                    if p.pinned {
+                        "sha256 pinned — the gateway refuses to spawn a changed binary"
+                    } else {
+                        "none — whatever `command` resolves to at spawn time"
+                    }
+                );
+            }
             println!();
-            println!("Addon modules run inside lean-ctx as WASM: sandboxed, no ambient");
-            println!("environment, output budget enforced by the host.");
+            if !p.modules.is_empty() {
+                println!("Modules run inside lean-ctx as WASM: sandboxed, no ambient");
+                println!("environment, output budget enforced by the host.");
+            }
+            if p.wiring.is_some() {
+                // The honest part. A WASM module is bounded; an MCP server is
+                // an ordinary process with the user's own privileges. Saying so
+                // plainly is the difference between consent and a click-through.
+                println!(
+                    "The MCP server above runs as a NORMAL PROCESS with your privileges — it is"
+                );
+                println!(
+                    "not sandboxed. lean-ctx will not install it: it records how to run it, and"
+                );
+                println!("only spawns it while `gateway.enabled = true`.");
+            }
             println!();
         }
         Err(e) => {
@@ -238,7 +279,28 @@ fn cmd_add(args: &[String]) {
     match registry.install_addon_from_file(path) {
         Ok(manifest) => {
             println!("Installed {}@{}", manifest.name, manifest.version);
-            println!("Its modules load on the next lean-ctx start.");
+
+            // Wiring happens after the package is stored: if the store write
+            // fails there must be no gateway entry pointing at an addon that
+            // was never installed.
+            match wire_after_install(path) {
+                Ok(addon_wiring::Wired::NothingToWire) => {}
+                Ok(addon_wiring::Wired::Added(name) | addon_wiring::Wired::Replaced(name)) => {
+                    println!("Wired `{name}` into the MCP gateway.");
+                    if !addon_wiring::gateway_enabled() {
+                        println!();
+                        println!("The gateway is currently OFF, so nothing spawns yet.");
+                        println!("Turn it on with:  lean-ctx config set gateway.enabled true");
+                    }
+                }
+                Err(e) => {
+                    // The package is installed; only the wiring failed. Say
+                    // exactly that rather than implying the whole install broke.
+                    eprintln!("WARNING: installed, but could not wire the MCP server: {e}");
+                    eprintln!("         Re-run `lean-ctx addon add` after fixing it.");
+                }
+            }
+            println!("Modules load on the next lean-ctx start.");
         }
         Err(e) => {
             eprintln!("ERROR: install failed: {e}");
@@ -247,12 +309,37 @@ fn cmd_add(args: &[String]) {
     }
 }
 
+/// Parse the just-installed package's manifest and apply its `[mcp]` wiring.
+///
+/// Reads the package file again rather than threading the manifest out of the
+/// installer: the file is the same one that was verified moments ago, and this
+/// keeps the wiring step independent of the storage path's signature.
+fn wire_after_install(path: &Path) -> Result<addon_wiring::Wired, String> {
+    let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let value: serde_json::Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    let toml_text = value
+        .get("content")
+        .and_then(|c| c.get("addon"))
+        .and_then(|a| a.get("manifest_toml"))
+        .and_then(|v| v.as_str())
+        .ok_or("package has no addon manifest")?;
+    let manifest = addon_manifest::parse(toml_text)?;
+    addon_wiring::register(&manifest)
+}
+
 struct Preview {
     name: String,
     version: String,
     description: String,
     signed: Option<String>,
     modules: Vec<(String, String, usize)>,
+    /// The command or URL the addon asks lean-ctx to run, if any.
+    wiring: Option<String>,
+    /// Whether that command carries a SHA-256 pin. Material to the decision:
+    /// pinned means the gateway refuses to spawn a binary that has changed
+    /// underneath it, unpinned means it spawns whatever `command` resolves to
+    /// on the day.
+    pinned: bool,
 }
 
 /// Read a pack for display only. Verification happens in the install path;
@@ -296,6 +383,16 @@ fn preview(path: &Path) -> Result<Preview, String> {
         })
         .unwrap_or_default();
 
+    let declared = value
+        .get("content")
+        .and_then(|c| c.get("addon"))
+        .and_then(|a| a.get("manifest_toml"))
+        .and_then(|v| v.as_str())
+        .and_then(|toml| addon_manifest::parse(toml).ok())
+        .and_then(|m| m.mcp);
+    let pinned = declared.as_ref().is_some_and(|w| !w.sha256.is_empty());
+    let wiring = declared.map(|w| w.describe());
+
     Ok(Preview {
         name: str_at("name"),
         version: str_at("version"),
@@ -306,6 +403,8 @@ fn preview(path: &Path) -> Result<Preview, String> {
             .and_then(|v| v.as_str())
             .map(|k| format!("signed by {}…", &k[..k.len().min(16)])),
         modules,
+        wiring,
+        pinned,
     })
 }
 
@@ -342,6 +441,22 @@ fn cmd_remove(args: &[String]) {
     // Also drop the index row so `pack list` does not keep advertising it.
     if let Ok(registry) = LocalRegistry::open() {
         let _ = registry.remove(&matches[0].name, None);
+    }
+
+    // And the gateway entry, by the manifest's own addon name — which is the
+    // gateway server name, and is not always the package name.
+    for a in &matches {
+        let manifest_path = a.dir.join("lean-ctx-addon.toml");
+        let wired_name = std::fs::read_to_string(&manifest_path)
+            .ok()
+            .and_then(|t| addon_manifest::parse(&t).ok())
+            .map(|m| m.addon.name)
+            .unwrap_or_else(|| a.name.trim_start_matches('@').to_string());
+        match addon_wiring::unregister(&wired_name) {
+            Ok(true) => println!("Unwired `{wired_name}` from the MCP gateway."),
+            Ok(false) => {}
+            Err(e) => eprintln!("WARNING: could not update the gateway config: {e}"),
+        }
     }
 
     if removed > 0 {

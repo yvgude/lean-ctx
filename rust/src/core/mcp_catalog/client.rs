@@ -41,8 +41,14 @@ pub async fn open(
                 env,
                 binary_sha256,
             } => {
-                let _ = binary_sha256;
-                let mut cmd = tokio::process::Command::new(command);
+                // A pin that is parsed, stored and shown but never checked is
+                // worse than no pin: it reads as a guarantee. Verified here,
+                // and the resolved path is what gets spawned.
+                let resolved = super::binary_pin::verify(command, env, binary_sha256).await?;
+                let mut cmd = match resolved {
+                    Some(path) => tokio::process::Command::new(path),
+                    None => tokio::process::Command::new(command),
+                };
                 cmd.args(args);
                 if !env.is_empty() {
                     cmd.envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));

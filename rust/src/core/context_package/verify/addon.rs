@@ -22,11 +22,27 @@ pub(super) fn validate_addon(
 
     if addon.manifest_toml.trim().is_empty() {
         errors.push("kind=addon payload has an empty manifest_toml".into());
+        return;
     }
-    if addon.modules.is_empty() {
+
+    // The manifest is the contract between author and host, so it is parsed
+    // here rather than at install: a package that cannot be understood must not
+    // be storable, let alone installable.
+    let manifest = match crate::core::context_package::addon_manifest::parse(&addon.manifest_toml) {
+        Ok(m) => m,
+        Err(e) => {
+            errors.push(e);
+            return;
+        }
+    };
+
+    // An addon declares WASM modules, an MCP server, or both. Neither means
+    // installing it would have no effect — a defect in the package, not a state
+    // worth storing.
+    if addon.modules.is_empty() && manifest.mcp.is_none() {
         errors.push(
-            "kind=addon payload carries no modules — a pack that predates embedded \
-             modules cannot be installed by this version"
+            "kind=addon payload declares neither a WASM module nor an [mcp] server — \
+             installing it would have no effect"
                 .into(),
         );
         return;

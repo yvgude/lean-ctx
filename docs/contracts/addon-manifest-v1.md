@@ -11,6 +11,41 @@
 > modules now travel inside the signed package, which is what removes the
 > checksum-and-hosting step from publishing.
 
+## What 3.10.1 implements
+
+This document predates the 3.9.20 cleanup and describes more than the current
+parser reads. Stating the boundary here beats leaving an author to discover it
+from a field that is silently ignored.
+
+**Read and acted on** (`core::context_package::addon_manifest`):
+
+- `[addon]` — `name`, `version`, `description`, `homepage`. The remaining
+  metadata fields parse without error and are not used.
+- `[mcp]` — `transport`, `command`, `args`, `env`, `url`, `headers`, `sha256`.
+  Translated directly into a `[[gateway.servers]]` entry. Half-configured
+  wiring (stdio without `command`, http without `url`, a non-`http(s)` URL, an
+  unknown transport) is refused at parse.
+- `sha256` is **enforced** as of 3.10.1: the gateway resolves `command` against
+  the `PATH` the child will see, hashes it, refuses a mismatch, and spawns the
+  resolved path. Before 3.10.1 the value was stored and shown but never checked.
+
+**Not implemented** — treat these sections as a record of the previous system,
+not as a surface to write against:
+
+- `[install]`. lean-ctx no longer runs `uv tool install` or `npx` on the user's
+  behalf. Putting the server on the machine is the user's step, where their own
+  package manager's trust model applies; the manifest only says how to run it.
+- `[capabilities]`. The per-addon OS sandbox was removed with the rest of the
+  addon stack. An `[mcp]` server runs as a **normal process with the user's
+  privileges**, which is why `addon add` prints the exact command and asks.
+- `[[dependencies]]` and `{pack_dir:@ns/name}` env expansion.
+- `min_lean_ctx` enforcement, and the registry-conferred `verified` tier —
+  there is no hosted registry to confer it.
+
+WASM modules, the other half of an addon, are covered by
+[`wasm-abi-v1`](wasm-abi-v1.md); the how-to for both is
+[`docs/guides/addons.md`](../guides/addons.md).
+
 Historical implementation status: `core::addons` · `lean-ctx addon`
 
 An experimental **addon** format packages an external MCP server (plus metadata) behind a small

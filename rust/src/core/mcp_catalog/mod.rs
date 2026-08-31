@@ -12,6 +12,7 @@
 //! Fully no-op until `[mcp_catalog] enabled = true` in config.
 
 pub mod adapters;
+mod binary_pin;
 pub mod catalog;
 pub mod client;
 pub mod config;
