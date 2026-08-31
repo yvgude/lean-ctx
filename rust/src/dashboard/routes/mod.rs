@@ -41,6 +41,7 @@ fn match_component_path(path: &str) -> Option<String> {
         "/static/components/cockpit-search.js" => super::COCKPIT_COMPONENT_SEARCH_JS,
         "/static/components/cockpit-compression.js" => super::COCKPIT_COMPONENT_COMPRESSION_JS,
         "/static/components/cockpit-tour.js" => super::COCKPIT_COMPONENT_TOUR_JS,
+        "/static/components/cockpit-partner-promo.js" => super::COCKPIT_COMPONENT_PARTNER_PROMO_JS,
         "/static/components/cockpit-graph.js" => super::COCKPIT_COMPONENT_GRAPH_JS,
         "/static/components/cockpit-architecture.js" => super::COCKPIT_COMPONENT_ARCHITECTURE_JS,
         "/static/components/cockpit-explorer.js" => super::COCKPIT_COMPONENT_EXPLORER_JS,
