@@ -344,7 +344,15 @@ fn cmd_add(args: &[String]) {
             );
             for (module, digest, bytes) in &p.modules {
                 println!(
-                    "  module      {module}  ({bytes} bytes, sha256 {})",
+                    "  module      {module}  ({}, sha256 {})",
+                    // No size rather than a wrong one: if the blob will not
+                    // decode, the install is about to refuse it anyway, and
+                    // inventing a number here would be the only place that
+                    // pretended otherwise.
+                    bytes.map_or_else(
+                        || "size unavailable — payload does not decode".to_string(),
+                        |n| format!("{n} bytes")
+                    ),
                     &digest[..16]
                 );
             }
@@ -472,7 +480,7 @@ struct Preview {
     version: String,
     description: String,
     signed: Option<String>,
-    modules: Vec<(String, String, usize)>,
+    modules: Vec<(String, String, Option<usize>)>,
     /// The command or URL the addon asks lean-ctx to run, if any.
     wiring: Option<String>,
     /// Whether that command carries a SHA-256 pin. Material to the decision:
@@ -511,6 +519,18 @@ fn preview(path: &Path) -> Result<Preview, String> {
         .map(|arr| {
             arr.iter()
                 .map(|m| {
+                    // The size must be the size of the *module*, not of its
+                    // zstd+base64 body. A reader checking the prompt against
+                    // their own file — the whole point of showing a size next
+                    // to a digest — would otherwise see a number that matches
+                    // nothing, and one that disagrees with `addon info`.
+                    // Decoding also verifies the blob against its digest, so a
+                    // corrupt payload is caught before the question is asked
+                    // rather than after the answer.
+                    let decoded = serde_json::from_value::<DocumentBlob>(m.clone())
+                        .ok()
+                        .and_then(|b| b.decode_verified().ok())
+                        .map(|plain| plain.len());
                     (
                         m.get("path")
                             .and_then(|v| v.as_str())
@@ -520,7 +540,7 @@ fn preview(path: &Path) -> Result<Preview, String> {
                             .and_then(|v| v.as_str())
                             .unwrap_or(&"?".repeat(64))
                             .to_string(),
-                        m.get("body").and_then(|v| v.as_str()).map_or(0, str::len),
+                        decoded,
                     )
                 })
                 .collect()
