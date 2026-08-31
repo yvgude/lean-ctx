@@ -583,24 +583,50 @@ jobs:
           npm publish --access public
 
   publish-python-engine:
-    name: Publish Python Engine wheels
+    name: Publish Python Engine wheels (${{ matrix.project }})
     needs: release
     runs-on: ubuntu-latest
-    # PyPI Trusted Publishing authorizes this workflow for all three Engine
-    # distribution names; no long-lived API token is accepted.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: thinkery-leanctx-engine
+            environment: pypi-engine
+            wheel_prefix: thinkery_leanctx_engine
+            expected_wheels: 7
+          - project: thinkery-leanctx-engine-cuda
+            environment: pypi-engine-cuda
+            wheel_prefix: thinkery_leanctx_engine_cuda
+            expected_wheels: 1
+          - project: thinkery-leanctx-engine-windows-gnu
+            environment: pypi-engine-windows-gnu
+            wheel_prefix: thinkery_leanctx_engine_windows_gnu
+            expected_wheels: 1
+    # Each project has a distinct GitHub environment and therefore a distinct
+    # PyPI Trusted Publisher identity. No long-lived API token is accepted.
+    environment:
+      name: ${{ matrix.environment }}
+      url: https://pypi.org/project/${{ matrix.project }}/
     permissions:
       contents: read
       id-token: write
     steps:
-      - name: Download signed-release companion wheels
+      - name: Download exact signed-release companion wheels
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release download "${GITHUB_REF_NAME}"
-          --repo "${GITHUB_REPOSITORY}"
-          --pattern 'thinkery_leanctx_engine*.whl'
-          --dir dist
-      - name: Publish exact Engine companions to PyPI
+          WHEEL_PREFIX: ${{ matrix.wheel_prefix }}
+          EXPECTED_WHEELS: ${{ matrix.expected_wheels }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "${WHEEL_PREFIX}-*.whl" \
+            --dir dist
+          wheel_count=$(find dist -maxdepth 1 -type f \
+            -name "${WHEEL_PREFIX}-*.whl" | wc -l | tr -d ' ')
+          test "${wheel_count}" -eq "${EXPECTED_WHEELS}"
+      - name: Publish exact ${{ matrix.project }} wheels to PyPI
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/

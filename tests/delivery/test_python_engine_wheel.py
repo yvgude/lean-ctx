@@ -1,5 +1,6 @@
 import base64
 import csv
+from fnmatch import fnmatch
 import hashlib
 import importlib.util
 import io
@@ -139,6 +140,74 @@ class PythonEngineWheelTests(unittest.TestCase):
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, workflow)
+
+    def test_release_uses_one_trusted_publisher_per_distribution(self):
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+        publish_job = workflow.split("  publish-python-engine:\n", 1)[1].split(
+            "\n  update-homebrew:", 1
+        )[0]
+        publishers = (
+            (
+                "thinkery-leanctx-engine",
+                "pypi-engine",
+                "thinkery_leanctx_engine",
+                7,
+            ),
+            (
+                "thinkery-leanctx-engine-cuda",
+                "pypi-engine-cuda",
+                "thinkery_leanctx_engine_cuda",
+                1,
+            ),
+            (
+                "thinkery-leanctx-engine-windows-gnu",
+                "pypi-engine-windows-gnu",
+                "thinkery_leanctx_engine_windows_gnu",
+                1,
+            ),
+        )
+        wheel_names = {
+            "thinkery_leanctx_engine-3.10.1-py3-none-win_amd64.whl",
+            "thinkery_leanctx_engine_cuda-3.10.1-py3-none-manylinux.whl",
+            "thinkery_leanctx_engine_windows_gnu-3.10.1-py3-none-win_amd64.whl",
+        }
+        for project, environment, prefix, expected_count in publishers:
+            with self.subTest(project=project):
+                contract = (
+                    f"- project: {project}\n"
+                    f"            environment: {environment}\n"
+                    f"            wheel_prefix: {prefix}\n"
+                    f"            expected_wheels: {expected_count}"
+                )
+                self.assertEqual(publish_job.count(contract), 1)
+                matches = {
+                    name for name in wheel_names if fnmatch(name, f"{prefix}-*.whl")
+                }
+                expected = {
+                    name for name in wheel_names if name.startswith(f"{prefix}-")
+                }
+                self.assertEqual(matches, expected)
+
+        self.assertEqual(publish_job.count("name: ${{ matrix.environment }}"), 1)
+        self.assertEqual(publish_job.count('--pattern "${WHEEL_PREFIX}-*.whl"'), 1)
+        self.assertEqual(publish_job.count("contents: read"), 1)
+        self.assertEqual(publish_job.count("id-token: write"), 1)
+        self.assertEqual(
+            publish_job.count(
+                "pypa/gh-action-pypi-publish@"
+                "dc37677b2e1c63e2034f94d8a5b11f265b73ba33"
+            ),
+            1,
+        )
+        self.assertNotIn("PYPI_TOKEN", publish_job)
+        self.assertNotIn("thinkery_leanctx_engine*.whl", publish_job)
+        announce_needs = (
+            "needs: [release, publish-crates, publish-npm, "
+            "publish-python-engine, update-homebrew]"
+        )
+        self.assertEqual(workflow.count(announce_needs), 2)
 
 
 if __name__ == "__main__":
