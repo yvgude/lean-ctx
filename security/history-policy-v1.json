@@ -50,7 +50,7 @@
   "scanner_source_sha256": {
     ".github/workflows/security-check.yml": "1d396fccd6cd6d099f8faae64573b5d82df5e4e5c6ca92c1991c2c88dabcb70c",
     "scripts/history-policy-gate.py": "6191eb7e86b7253aef09c9ef9bb5167ba599f91f9e23d43be61452d039511ba8",
-    "tests/security/test_history_policy_gate.py": "f1f9620532147fc6ff6071f563a0c1b86ded450ce555d180209c532d3e237036",
+    "tests/security/test_history_policy_gate.py": "ad6c71cadb5e5896ba926f9633249c571c9449af63605cc0d91c27ccbabfd108",
     "tests/security/test_security_check_workflow.py": "2d0c9b9a6ceb61c97379290d549bbdcf7812ce17db9794b5d1b067e2202c2844",
     "rust/src/proxy/anthropic.rs": "3e363471975e122afaa10206a6cca9c854e04086827ac92b28fb5bf9eab0b38a",
     "rust/src/proxy/anthropic_tests.rs": "dfcdf6880d7c4cdea2fc111f71ae29bc95a431e7161e702e435e67e730ab5b69"
@@ -58,6 +58,6 @@
   "baseline": {
     "commit": "bff280bfc8eba6959854fafcbf104b5745d794c3",
     "report": "security/evidence/full-history-baseline-v1.json",
-    "report_sha256": "cec69b3ba654fe10203c4ebca11e8978905f2cae1582ca8ce689f27017c56cdd"
+    "report_sha256": "99aaf4c3f9a0882bf4d7e1103012b87db7838a3df9c43cf62164bef04778b8c5"
   }
 }
