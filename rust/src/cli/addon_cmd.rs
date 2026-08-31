@@ -452,25 +452,22 @@ fn cmd_add(args: &[String]) {
             // was never installed.
             match wire_after_install(path) {
                 Ok(addon_wiring::Wired::NothingToWire) => {}
-                Ok(wired) => {
-                    match &wired {
-                        addon_wiring::Wired::Replaced(name) => {
-                            // Say that the entry was *updated*, not created —
-                            // and that their own settings were left alone, so
-                            // nobody has to re-check the config to find out.
-                            println!("Updated the gateway entry for `{name}`.");
-                            println!("Your credentials and per-server on/off setting were kept.");
-                        }
-                        addon_wiring::Wired::Added(name) => {
-                            println!("Wired `{name}` into the MCP gateway.");
-                        }
-                        addon_wiring::Wired::NothingToWire => unreachable!(),
-                    }
-                    if !addon_wiring::gateway_enabled() {
-                        println!();
-                        println!("The gateway is currently OFF, so nothing spawns yet.");
-                        println!("Turn it on with:  lean-ctx config set gateway.enabled true");
-                    }
+                // Matched by variant rather than nested, so the compiler owns
+                // exhaustiveness. A nested match needed an `unreachable!()` arm
+                // for the case handled above — a panic in an install path, put
+                // there to satisfy a shape I had chosen, which is the wrong
+                // trade whichever way the enum grows later.
+                Ok(addon_wiring::Wired::Replaced(name)) => {
+                    // Say that the entry was *updated*, not created — and that
+                    // their own settings were left alone, so nobody has to
+                    // re-check the config to find out.
+                    println!("Updated the gateway entry for `{name}`.");
+                    println!("Your credentials and per-server on/off setting were kept.");
+                    report_gateway_state();
+                }
+                Ok(addon_wiring::Wired::Added(name)) => {
+                    println!("Wired `{name}` into the MCP gateway.");
+                    report_gateway_state();
                 }
                 Err(e) => {
                     // The package is installed; only the wiring failed. Say
@@ -485,6 +482,18 @@ fn cmd_add(args: &[String]) {
             eprintln!("ERROR: install failed: {e}");
             std::process::exit(1);
         }
+    }
+}
+
+/// Say whether anything will actually spawn, after either wiring outcome.
+///
+/// A user who just consented to a server should not have to infer from silence
+/// that the gateway is off and nothing runs.
+fn report_gateway_state() {
+    if !addon_wiring::gateway_enabled() {
+        println!();
+        println!("The gateway is currently OFF, so nothing spawns yet.");
+        println!("Turn it on with:  lean-ctx config set gateway.enabled true");
     }
 }
 
