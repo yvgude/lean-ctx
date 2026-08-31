@@ -382,4 +382,80 @@ mod tests {
             "ctx_read output missing the file's symbol:\n{out}"
         );
     }
+
+    fn session_file_names(dir: &std::path::Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .expect("sessions dir")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn an_indexed_session_loads_and_a_one_shot_call_never_writes_it_back() {
+        let data = tempfile::tempdir().expect("data dir");
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+        let project = tempfile::tempdir().expect("project dir");
+        let root = project.path().to_string_lossy().to_string();
+
+        // Seed one session through the public API. `write_to_disk` is what
+        // populates the project index that `oneshot_session` reads back.
+        // Struct-update syntax, not `default()` + field assignment: the latter
+        // trips `clippy::field_reassign_with_default` and the gate is `-D warnings`.
+        let mut seeded = crate::core::session::SessionState {
+            project_root: Some(root.clone()),
+            task: Some(crate::core::session::TaskInfo {
+                description: "seeded task description".to_string(),
+                intent: None,
+                progress_pct: None,
+            }),
+            ..Default::default()
+        };
+        let seeded_id = seeded.id.clone();
+        seeded
+            .prepare_save()
+            .expect("prepare_save")
+            .write_to_disk()
+            .expect("write_to_disk");
+
+        // Half 1 — the index lookup resolves that session, not a default.
+        let loaded = oneshot_session(&root);
+        assert_eq!(
+            loaded.task.as_ref().map(|task| task.description.as_str()),
+            Some("seeded task description"),
+            "oneshot_session did not resolve the seeded session through the index"
+        );
+
+        // Half 2 — a one-shot call that mutates the session writes nothing back.
+        let sessions = data.path().join("sessions");
+        let seeded_path = sessions.join(format!("{seeded_id}.json"));
+        let before = std::fs::read(&seeded_path).expect("seeded session file");
+        let files_before = session_file_names(&sessions);
+
+        let args = vec![
+            "ctx_session".to_string(),
+            "--project-root".to_string(),
+            root,
+            "--json".to_string(),
+            r#"{"action": "task", "value": "a different task"}"#.to_string(),
+        ];
+        let out = run_call(&args).expect("ctx_session action=task should run to completion");
+        assert!(
+            out.contains("Task set"),
+            "ctx_session did not report success:\n{out}"
+        );
+
+        assert_eq!(
+            before,
+            std::fs::read(&seeded_path).expect("seeded session file"),
+            "a one-shot call rewrote the seeded session file"
+        );
+        assert_eq!(
+            files_before,
+            session_file_names(&sessions),
+            "a one-shot call created or removed a session file"
+        );
+    }
 }
