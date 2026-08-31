@@ -25,6 +25,7 @@ either way. The two halves are described separately below.
 
 ```bash
 lean-ctx addon add ./my-addon-1.0.0.ctxpkg   # verifies, shows what it is, asks
+lean-ctx addon add @ns/my-addon              # same, from a registry you name
 lean-ctx addon list                          # what is installed and what it loads
 lean-ctx addon info @ns/my-addon             # the author's manifest, module digests
 lean-ctx addon remove @ns/my-addon
@@ -32,6 +33,13 @@ lean-ctx addon remove @ns/my-addon
 
 `add` is the only verb that stores executable code, so it is the only one that
 asks — and it refuses to proceed non-interactively unless you pass `--yes`.
+
+A registry reference is downloaded to a temp file and then goes through exactly
+the same preview, prompt and verification as a file you already had: there is
+one consent path, not a shorter one for remote installs. An argument that names
+something on disk always wins over a registry lookup, so `acme/widget` cannot
+quietly fetch from the network when a file by that name is sitting there.
+`--registry <url>` selects where to look.
 
 ## Writing one: a WASM module
 
@@ -87,7 +95,17 @@ transport = "stdio"
 command = "lean-md"
 args = ["mcp", "serve"]
 sha256 = "…"          # optional; when set it is checked before every spawn
+integration = "memory"  # optional; fold results into a lean-ctx surface
 ```
+
+`integration` picks a **typed adapter** so the server's output lands in the
+`ctx_*` tool your agent already uses instead of arriving as opaque text:
+`codebase-pack` → `ctx_expand`, `code-graph` / `code-symbols` → `ctx_callgraph`,
+`memory` → `ctx_knowledge`, `compression` → the compressor pipeline, `none` for
+passthrough. Common aliases (`repomix`, `callgraph`, `compressor`) are accepted
+and stored canonically. A slug that is not recognised is an error rather than a
+silent fallback — a typo that installed cleanly and quietly did less would look
+exactly like working software.
 
 `addon add` turns that into a `[[gateway.servers]]` entry. Three limits, all of
 them deliberate, and all of them things the pre-3.9.20 channel did differently:

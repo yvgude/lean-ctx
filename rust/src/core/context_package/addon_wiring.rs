@@ -30,7 +30,7 @@ pub(crate) enum Wired {
     Added(String),
     /// An entry with this name already existed and was replaced (re-install or
     /// upgrade). Replacing rather than duplicating keeps the catalog namespace
-    /// unambiguous — two servers named `lean-md` would make `lean-md::tool`
+    /// unambiguous — two servers named `mdcast` would make `mdcast::tool`
     /// mean two things.
     Replaced(String),
 }
@@ -85,9 +85,9 @@ mod tests {
 
     const STDIO: &str = r#"
 [addon]
-name = "lean-md"
+name = "mdcast"
 [mcp]
-command = "lean-md"
+command = "mdcast"
 args = ["mcp", "serve"]
 "#;
 
@@ -102,25 +102,25 @@ args = ["mcp", "serve"]
         let _iso = crate::core::data_dir::isolated_data_dir();
         let m = addon_manifest::parse(STDIO).unwrap();
 
-        assert_eq!(register(&m).unwrap(), Wired::Added("lean-md".into()));
+        assert_eq!(register(&m).unwrap(), Wired::Added("mdcast".into()));
         let cfg = Config::load();
         let entry = cfg
             .gateway
             .servers
             .iter()
-            .find(|s| s.name == "lean-md")
+            .find(|s| s.name == "mdcast")
             .expect("wired");
-        assert_eq!(entry.command, "lean-md");
+        assert_eq!(entry.command, "mdcast");
         assert_eq!(entry.args, vec!["mcp", "serve"]);
 
         // Re-install must not leave two servers claiming the same namespace.
-        assert_eq!(register(&m).unwrap(), Wired::Replaced("lean-md".into()));
+        assert_eq!(register(&m).unwrap(), Wired::Replaced("mdcast".into()));
         assert_eq!(
             Config::load()
                 .gateway
                 .servers
                 .iter()
-                .filter(|s| s.name == "lean-md")
+                .filter(|s| s.name == "mdcast")
                 .count(),
             1
         );
@@ -132,16 +132,16 @@ args = ["mcp", "serve"]
         let m = addon_manifest::parse(STDIO).unwrap();
         register(&m).unwrap();
 
-        assert!(unregister("lean-md").unwrap(), "it was wired");
+        assert!(unregister("mdcast").unwrap(), "it was wired");
         assert!(
             !Config::load()
                 .gateway
                 .servers
                 .iter()
-                .any(|s| s.name == "lean-md"),
+                .any(|s| s.name == "mdcast"),
             "a removed addon must not keep spawning a process"
         );
-        assert!(!unregister("lean-md").unwrap(), "second call is a no-op");
+        assert!(!unregister("mdcast").unwrap(), "second call is a no-op");
     }
 
     /// Wiring a server must not silently switch the gateway on — that is a

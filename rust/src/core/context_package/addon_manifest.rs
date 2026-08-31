@@ -42,6 +42,8 @@ pub(crate) struct McpWiring {
     pub url: String,
     pub headers: BTreeMap<String, String>,
     pub sha256: String,
+    /// Typed-integration adapter slug (L4), or empty for a passthrough server.
+    pub integration: String,
 }
 
 impl McpWiring {
@@ -76,6 +78,7 @@ impl McpWiring {
             binary_sha256: self.sha256.clone(),
             url: self.url.clone(),
             headers: self.headers.clone(),
+            integration: self.integration.clone(),
             ..GatewayServer::default()
         }
     }
@@ -118,6 +121,27 @@ fn string_map(table: &toml::Value, key: &str) -> BTreeMap<String, String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Validate the L4 adapter slug, canonicalising it on the way through.
+///
+/// `IntegrationKind::parse` maps anything it does not recognise to `None`, so a
+/// typo (`code_grah`) would install cleanly and route through the generic path
+/// forever — working software that silently does less than the author asked
+/// for. Rejecting it here costs one line and names the manifest.
+fn parse_integration(raw: &str) -> Result<String, String> {
+    let slug = raw.trim();
+    if slug.is_empty() {
+        return Ok(String::new());
+    }
+    let kind = crate::core::mcp_catalog::adapters::IntegrationKind::parse(slug);
+    if kind.is_none() && !slug.eq_ignore_ascii_case("none") {
+        return Err(format!(
+            "lean-ctx-addon.toml: [mcp] unknown integration `{slug}` \
+             (codebase-pack | code-graph | code-symbols | memory | compression | none)"
+        ));
+    }
+    Ok(kind.as_str().to_string())
 }
 
 /// Parse `lean-ctx-addon.toml`.
@@ -186,6 +210,7 @@ pub(crate) fn parse(text: &str) -> Result<AddonManifest, String> {
                 url,
                 headers: string_map(t, "headers"),
                 sha256: string_at(t, "sha256"),
+                integration: parse_integration(&string_at(t, "integration"))?,
             })
         }
     };
@@ -202,29 +227,29 @@ mod tests {
         let m = parse(
             r#"
 [addon]
-name = "lean-md"
+name = "mdcast"
 version = "2.0.0"
 description = "Macro/directive markdown renderer"
 
 [mcp]
 transport = "stdio"
-command = "lean-md"
+command = "mdcast"
 args = ["mcp", "serve"]
 env = { LEAN_MD_MODE = "strict" }
 "#,
         )
         .expect("parse");
 
-        assert_eq!(m.addon.name, "lean-md");
+        assert_eq!(m.addon.name, "mdcast");
         let mcp = m.mcp.expect("wiring");
-        assert_eq!(mcp.describe(), "lean-md mcp serve");
+        assert_eq!(mcp.describe(), "mdcast mcp serve");
         assert_eq!(
             mcp.env.get("LEAN_MD_MODE").map(String::as_str),
             Some("strict")
         );
 
-        let server = mcp.to_gateway_server("lean-md");
-        assert_eq!(server.command, "lean-md");
+        let server = mcp.to_gateway_server("mdcast");
+        assert_eq!(server.command, "mdcast");
         assert_eq!(server.args, vec!["mcp", "serve"]);
         assert!(server.enabled, "a just-consented addon should work");
     }
@@ -253,6 +278,35 @@ headers = { Authorization = "Bearer x" }
     fn a_manifest_without_mcp_is_valid() {
         let m = parse("[addon]\nname = \"squeeze\"\n").expect("parse");
         assert!(m.mcp.is_none());
+    }
+
+    /// A typo in `integration` would otherwise install cleanly and route
+    /// through the generic path forever, which looks like working software.
+    #[test]
+    fn an_unknown_integration_is_refused_and_a_known_one_canonicalises() {
+        let err =
+            parse("[addon]\nname = \"x\"\n[mcp]\ncommand = \"c\"\nintegration = \"code_grah\"\n")
+                .expect_err("must refuse");
+        assert!(err.contains("unknown integration"), "{err}");
+
+        // Aliases are accepted and stored canonically, so the gateway entry
+        // and `addon info` agree on one spelling.
+        for (written, canonical) in [
+            ("repomix", "codebase-pack"),
+            ("callgraph", "code-graph"),
+            ("compressor", "compression"),
+            ("none", "none"),
+        ] {
+            let m = parse(&format!(
+                "[addon]\nname = \"x\"\n[mcp]\ncommand = \"c\"\nintegration = \"{written}\"\n"
+            ))
+            .expect("parse");
+            assert_eq!(m.mcp.expect("wiring").integration, canonical);
+        }
+
+        // Absent stays absent — an empty slug is the documented default.
+        let m = parse("[addon]\nname = \"x\"\n[mcp]\ncommand = \"c\"\n").expect("parse");
+        assert_eq!(m.mcp.expect("wiring").integration, "");
     }
 
     /// Each of these would produce a gateway entry that cannot work. Failing at

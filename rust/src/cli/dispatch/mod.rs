@@ -169,9 +169,10 @@ pub fn run() {
                 crate::cli::cmd_addon(&rest);
                 return;
             }
-            // Subprocess plugins are not coming back: an addon is a sandboxed
-            // WASM module (`lean-ctx addon`), which bounds what an extension
-            // can do instead of asking the user to trust that it behaves.
+            // Subprocess plugins are not coming back. An addon is a signed
+            // package: a sandboxed WASM module, or a declared MCP server the
+            // user consents to by reading its argv — either way the trust
+            // decision is bounded and visible (`lean-ctx addon`).
             "plugin" | "plugins" => {
                 eprintln!(
                     "Plugin commands have been removed. Extensions are WASM addons now — \

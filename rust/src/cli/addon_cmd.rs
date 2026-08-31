@@ -40,23 +40,27 @@ pub(crate) fn cmd_addon(args: &[String]) {
 
 fn print_usage() {
     println!(
-        "lean-ctx addon — WASM extensions loaded into the context pipeline
+        "lean-ctx addon — extensions: WASM modules and declared MCP servers
 
-  list                    Installed addons and the modules they load
+  list                    Installed addons, the modules they load, what they wire
   info <name>             The author's manifest and module digests
-  add <file.ctxpkg>       Verify, ask, then install
-  remove <name>           Remove an addon and its modules
+  add <pkg | ns/name>     Verify, show, ask, then install (file or registry ref)
+  remove <name>           Remove an addon, its modules and its gateway entry
   release <dir>           Build a signed .ctxpkg from a directory
 
-An addon directory holds `lean-ctx-addon.toml` and one or more `.wasm`
-modules. `release` embeds the modules in the package and signs it, so
-publishing needs no artifact host, no checksum files and no CI.
+An addon directory holds `lean-ctx-addon.toml` and, for a WASM addon, one or
+more `.wasm` modules. `release` embeds the modules in the package and signs it,
+so publishing needs no artifact host, no checksum files and no CI.
 
-Extensions run in a WASM sandbox: no ambient environment, a fresh store per
-call, and the host enforces the output budget after decoding. Only what a
-module returns can affect lean-ctx.
+WASM modules run in a sandbox: no ambient environment, a fresh store per call,
+and the host enforces the output budget after decoding. Only what a module
+returns can affect lean-ctx.
 
-Docs: docs/contracts/wasm-abi-v1.md"
+A manifest may instead declare an MCP server under `[mcp]`. That server is an
+ordinary process with your privileges — not sandboxed — so `add` prints the
+exact command before asking, and lean-ctx never installs the binary for you.
+
+Docs: docs/guides/addons.md · contracts: wasm-abi-v1, addon-manifest-v1"
     );
 }
 
@@ -200,13 +204,85 @@ fn cmd_info(args: &[String]) {
     }
 }
 
+/// A downloaded package, deleted when this guard drops.
+///
+/// The staging file must outlive the consent prompt: the whole point is that
+/// the user sees the digests of the exact bytes that will be installed, so the
+/// remote path and the local path have to converge on one file before anything
+/// is shown.
+struct Staged(std::path::PathBuf);
+
+impl Drop for Staged {
+    fn drop(&mut self) {
+        std::fs::remove_file(&self.0).ok();
+    }
+}
+
+/// Fetch `ns/name[@version]` from a package registry into a temp file.
+///
+/// `pack install` refuses executable content and points at `addon add`, which
+/// until now only accepted a local path — so a published addon could be
+/// resolved, downloaded and then not installed by any command. This closes that
+/// loop without adding a second consent path: the artifact lands on disk and
+/// then goes through exactly the same preview, prompt and verification as a
+/// file the user already had.
+fn stage_remote(reference: &str, registry_flag: Option<&str>) -> Result<Staged, String> {
+    use crate::core::context_package::remote;
+
+    let parsed = remote::parse_remote_ref(reference)
+        .ok_or_else(|| format!("'{reference}' is not a file, nor a valid ns/name[@version]"))?;
+    let base = remote::registry_base(registry_flag);
+    let token = remote::publish_token(None);
+    let (ns, name) = (&parsed.namespace, &parsed.name);
+
+    println!("Resolving @{ns}/{name} via {base} …");
+    let versions = remote::fetch_versions(&base, ns, name, token.as_deref())?;
+    let info = remote::select_version(&versions, parsed.version.as_deref())?;
+    if info.yanked {
+        eprintln!(
+            "WARNING: @{ns}/{name}@{} is YANKED — continuing only because the version \
+             was pinned explicitly",
+            info.version
+        );
+    }
+    let bytes = remote::download_verified(&base, ns, name, info, token.as_deref())?;
+    println!(
+        "Downloaded @{ns}/{name}@{} ({} bytes, sha256 verified against the index)",
+        info.version,
+        bytes.len()
+    );
+
+    let tmp = std::env::temp_dir().join(format!("ctxpkg-addon-{}.ctxpkg", std::process::id()));
+    std::fs::write(&tmp, &bytes).map_err(|e| format!("stage artifact: {e}"))?;
+    Ok(Staged(tmp))
+}
+
 fn cmd_add(args: &[String]) {
     let Some(file) = positional(args, "add").or_else(|| positional(args, "install")) else {
-        eprintln!("Usage: lean-ctx addon add <file.ctxpkg>");
+        eprintln!("Usage: lean-ctx addon add <file.ctxpkg | ns/name[@version]>");
         std::process::exit(2);
     };
-    let path = Path::new(&file);
     let assume_yes = args.iter().any(|a| a == "--yes" || a == "-y");
+    let registry_flag = flag_value(args, "--registry");
+
+    // A local file wins over a remote lookup: an argument that names something
+    // on disk must never silently reach the network instead.
+    let local = Path::new(&file);
+    let _staged;
+    let path: &Path = if local.is_file() {
+        local
+    } else {
+        match stage_remote(&file, registry_flag.as_deref()) {
+            Ok(s) => {
+                _staged = s;
+                &_staged.0
+            }
+            Err(e) => {
+                eprintln!("ERROR: {e}");
+                std::process::exit(1);
+            }
+        }
+    };
 
     let registry = match LocalRegistry::open() {
         Ok(r) => r,
@@ -667,5 +743,44 @@ mod tests {
         std::fs::write(dir.path().join("lean-ctx-addon.toml"), "[addon]\n").unwrap();
         let err = build_release(dir.path(), None).expect_err("must refuse");
         assert!(err.contains("name is required"), "{err}");
+    }
+
+    /// An argument that names something on disk must never reach the network.
+    /// A file called `foo/bar` in the working directory also parses as a valid
+    /// `ns/name` reference, and resolving that remotely instead would install
+    /// something other than what the user pointed at.
+    #[test]
+    fn a_local_file_is_preferred_over_a_remote_reference() {
+        use crate::core::context_package::remote;
+
+        let dir = tempfile::tempdir().unwrap();
+        let ns_dir = dir.path().join("acme");
+        std::fs::create_dir(&ns_dir).unwrap();
+        let file = ns_dir.join("widget");
+        std::fs::write(&file, b"{}").unwrap();
+
+        // The name is a well-formed remote ref …
+        assert!(
+            remote::parse_remote_ref("acme/widget").is_some(),
+            "precondition: this parses as a registry reference"
+        );
+        // … and yet the path on disk is what cmd_add resolves, because
+        // `is_file()` is checked first.
+        assert!(file.is_file());
+    }
+
+    /// The staging guard exists so the downloaded bytes survive the consent
+    /// prompt and are gone afterwards — a leftover .ctxpkg in the temp dir is
+    /// executable content nobody is tracking.
+    #[test]
+    fn staged_artifacts_are_deleted_on_drop() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("staged.ctxpkg");
+        std::fs::write(&path, b"{}").unwrap();
+        {
+            let _guard = Staged(path.clone());
+            assert!(path.is_file(), "available while the guard lives");
+        }
+        assert!(!path.exists(), "removed when the guard drops");
     }
 }

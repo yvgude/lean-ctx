@@ -55,6 +55,22 @@ below. None of it is present in the 3.10.0 artifacts.
   gateway: `[gateway]` stays global-only and opt-in, and `addon list` reports an
   addon that is wired while the gateway is off rather than letting you assume it
   is running. `addon remove` unwires as well as uninstalls.
+- **`integration` reaches the L4 typed adapters from a manifest.** Setting it in
+  `[mcp]` routes the server's output into the matching lean-ctx surface —
+  `codebase-pack` → `ctx_expand`, `code-graph`/`code-symbols` → `ctx_callgraph`,
+  `memory` → `ctx_knowledge`, `compression` → the compressor pipeline — instead
+  of arriving as opaque text. Aliases are canonicalised; an **unrecognised slug
+  is refused at parse**. `IntegrationKind::parse` maps anything it does not know
+  to `None`, so a typo would otherwise have installed cleanly and quietly done
+  less, which is indistinguishable from working software.
+- **`addon add` accepts a registry reference**, not only a local file. `pack
+  install` refuses executable content and points at `addon add`, which until now
+  took a path only — so a published addon could be resolved, downloaded, and
+  then installed by no command at all. The remote artifact is staged to a temp
+  file and goes through the *same* preview, prompt and verification as a local
+  one: one consent path, not a shorter one for downloads. A path that exists on
+  disk always wins over a registry lookup, so `acme/widget` cannot quietly reach
+  the network when a file by that name is present.
 
 ### Fixed — `binary_sha256` was a pin that never fired
 
