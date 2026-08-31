@@ -78,6 +78,15 @@ fn should_allow(tool_name: &str, file_path: Option<&str>) -> bool {
         return true;
     }
 
+    // Replace mode can only redirect what it can replace. A tool from another
+    // MCP server (`jira_get_issue`, `github_create_pull_request`, …) has no
+    // `ctx_*` equivalent, and hosts that route MCP calls through PreToolUse
+    // deliver those here alongside the native ones. Denying them breaks the
+    // user's other servers for no compression benefit whatsoever.
+    if !is_replaceable_native_tool(tool_name) {
+        return true;
+    }
+
     // Shadow-only surface: hooks compress native tools transparently,
     // so the deny guard must not block them.
     if is_shadow_only_surface() {
@@ -109,6 +118,49 @@ fn should_allow(tool_name: &str, file_path: Option<&str>) -> bool {
 
 fn is_lean_ctx_tool(tool_name: &str) -> bool {
     tool_name.starts_with("ctx_") || tool_name == "shell"
+}
+
+/// Native tools replace mode can actually redirect to a `ctx_*` equivalent.
+///
+/// The deny guard used to be "allow `ctx_*`, deny everything else", which is
+/// only correct on a host that filters by matcher before invoking the hook.
+/// Devin routes *every* MCP call through the same PreToolUse pipeline (#1329),
+/// so tools from OTHER MCP servers arrived here too — and were rejected with
+/// "Use the equivalent ctx_* tool", naming an equivalent that does not exist:
+///
+///     Calling jira_get_issue from atlassian-mcp-server
+///     Output: Tool rejected: Use the equivalent ctx_* tool — replace mode is active.
+///
+/// lean-ctx has nothing to offer instead of a Jira read, so denying it removes
+/// a capability from the user's stack and gives back nothing. Replace mode's
+/// scope is the native read/search/shell surface it can genuinely replace;
+/// everything else passes through.
+///
+/// The read names mirror Claude's `REDIRECT_MATCHER`; the shell names come from
+/// `hook_handlers::is_shell_tool`, the same list the rewrite hook uses, so the
+/// two guards cannot drift apart.
+fn is_replaceable_native_tool(tool_name: &str) -> bool {
+    super::is_shell_tool(tool_name)
+        || matches!(
+            tool_name,
+            "Read"
+                | "read"
+                | "ReadFile"
+                | "read_file"
+                | "View"
+                | "view"
+                | "Grep"
+                | "grep"
+                | "Search"
+                | "search"
+                | "Glob"
+                | "glob"
+                | "ListFiles"
+                | "list_files"
+                | "ListDirectory"
+                | "list_directory"
+                | "list_dir"
+        )
 }
 
 fn is_mcp_server_reachable() -> bool {
@@ -557,6 +609,72 @@ fn read_stdin_with_timeout() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A user with the Atlassian MCP server got every Jira call rejected:
+    ///
+    ///     Calling jira_get_issue from atlassian-mcp-server
+    ///     Tool rejected: Use the equivalent ctx_* tool — replace mode is active.
+    ///
+    /// There is no equivalent — lean-ctx does not read Jira. The guard was
+    /// "deny everything that is not ctx_*", which is safe only on a host that
+    /// filters by matcher first; Devin routes all MCP traffic through the same
+    /// PreToolUse pipeline, so foreign servers were caught in it.
+    #[test]
+    fn foreign_mcp_tools_are_not_replaceable() {
+        for tool in [
+            "jira_get_issue",
+            "jira_search",
+            "confluence_get_page",
+            "github_create_pull_request",
+            "mcp__atlassian__jira_get_issue",
+            "atlassian-mcp-server:jira_get_issue",
+            "browser_navigate",
+            "slack_post_message",
+        ] {
+            assert!(
+                !is_replaceable_native_tool(tool),
+                "{tool} has no ctx_* equivalent; denying it removes a capability \
+                 and gives nothing back"
+            );
+        }
+    }
+
+    /// The other half of the contract: narrowing the guard must not let the
+    /// native surface through, or replace mode silently stops replacing.
+    #[test]
+    fn the_native_read_and_shell_surface_stays_replaceable() {
+        for tool in [
+            "Read",
+            "read",
+            "ReadFile",
+            "read_file",
+            "View",
+            "Grep",
+            "grep",
+            "Search",
+            "Glob",
+            "glob",
+            "list_dir",
+            "ListDirectory",
+        ] {
+            assert!(
+                is_replaceable_native_tool(tool),
+                "{tool} is the native read surface replace mode exists for"
+            );
+        }
+        for shell in [
+            "Bash",
+            "bash",
+            "Shell",
+            "run_terminal_command",
+            "powershell",
+        ] {
+            assert!(
+                is_replaceable_native_tool(shell),
+                "{shell} must stay covered — the list is shared with the rewrite hook"
+            );
+        }
+    }
 
     #[test]
     fn is_write_tool_recognizes_all_variants() {
