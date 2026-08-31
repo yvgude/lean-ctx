@@ -91,6 +91,12 @@ pub(crate) fn materialize_modules(
 /// Sorting is not cosmetic: registration order decides which compressor wins a
 /// name collision, and #498 requires the same corpus to produce the same
 /// answer on every run.
+///
+/// Gated on `wasm`: this exists to feed the module loader, and a build without
+/// that feature (the `lean-ctx-embed` facade, for one) has nothing to feed.
+/// `addon list` deliberately does not use it — the CLI groups by name and
+/// version, which this flat list cannot express.
+#[cfg(any(feature = "wasm", test))]
 pub(crate) fn installed_modules(store_root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     collect_modules(&addons_root(store_root), &mut out, 0);
@@ -101,6 +107,7 @@ pub(crate) fn installed_modules(store_root: &Path) -> Vec<PathBuf> {
 /// Bounded recursive walk. The depth cap is a belt-and-braces stop: paths are
 /// already validated on the way in, so a deep tree here would mean the store
 /// was edited by hand.
+#[cfg(any(feature = "wasm", test))]
 fn collect_modules(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
     if depth > 6 {
         return;
