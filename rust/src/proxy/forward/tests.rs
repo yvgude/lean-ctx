@@ -738,6 +738,86 @@ fn forwards_codex_state_response_headers() {
     }
 }
 
+/// #1638: Claude Code fills its plan-usage windows *only* from the
+/// `anthropic-ratelimit-unified-*` response headers. The allowlist enumerated
+/// the four legacy `requests-`/`tokens-` names, so when the `unified-*` family
+/// arrived upstream the proxy silently dropped all of it: `rate_limits`
+/// disappeared from the statusline payload, and — the part that actually
+/// matters — the near-limit warning machinery reads the same state, so a user
+/// behind the proxy was never warned before hitting a limit.
+///
+/// The names below are the full family as parsed by Claude Code 2.1.236,
+/// quoted from the report. They are asserted individually rather than through
+/// the prefix, so narrowing the rule back to an enumeration fails here.
+#[test]
+fn forwards_the_whole_anthropic_ratelimit_family() {
+    for required in [
+        "anthropic-ratelimit-unified-status",
+        "anthropic-ratelimit-unified-reset",
+        "anthropic-ratelimit-unified-5h-utilization",
+        "anthropic-ratelimit-unified-5h-reset",
+        "anthropic-ratelimit-unified-5h-surpassed-threshold",
+        "anthropic-ratelimit-unified-7d-utilization",
+        "anthropic-ratelimit-unified-7d-reset",
+        "anthropic-ratelimit-unified-7d-surpassed-threshold",
+        "anthropic-ratelimit-unified-grace-status",
+        "anthropic-ratelimit-unified-grace-5h-utilization",
+        "anthropic-ratelimit-unified-grace-7d-utilization",
+        "anthropic-ratelimit-unified-overage-status",
+        "anthropic-ratelimit-unified-overage-utilization",
+        "anthropic-ratelimit-unified-overage-reset",
+        "anthropic-ratelimit-unified-overage-period",
+        "anthropic-ratelimit-unified-representative-claim",
+        "anthropic-ratelimit-unified-fallback",
+        "anthropic-ratelimit-unified-upgrade-paths",
+        // The legacy names the allowlist used to carry explicitly must keep
+        // working — the prefix replaced the enumeration, not the coverage.
+        "anthropic-ratelimit-requests-limit",
+        "anthropic-ratelimit-requests-remaining",
+        "anthropic-ratelimit-tokens-limit",
+        "anthropic-ratelimit-tokens-remaining",
+    ] {
+        assert!(
+            is_forwarded_response_header(required),
+            "response header `{required}` carries the client's own quota state \
+             and must reach it"
+        );
+    }
+}
+
+/// Also reported in #1638: without `request-id` a user cannot correlate a
+/// failed request with Anthropic support, and `x-should-retry` is what tells
+/// an SDK whether a failure is worth retrying at all.
+#[test]
+fn forwards_request_correlation_and_retry_headers() {
+    for required in ["request-id", "x-should-retry", "retry-after"] {
+        assert!(
+            is_forwarded_response_header(required),
+            "response header `{required}` must reach the client"
+        );
+    }
+}
+
+/// The fix widens one family; it must not turn the allowlist into a
+/// pass-through. Hop-by-hop and framing headers stay out — the proxy rewrites
+/// the body (decompression, SSE re-framing), so relaying the upstream's
+/// framing would describe a response that no longer exists.
+#[test]
+fn the_allowlist_stays_an_allowlist() {
+    for denied in [
+        "transfer-encoding",
+        "connection",
+        "content-length",
+        "server",
+        "set-cookie",
+    ] {
+        assert!(
+            !is_forwarded_response_header(denied),
+            "`{denied}` must not be relayed"
+        );
+    }
+}
+
 #[test]
 fn chatgpt_responses_use_openai_responses_holdout_key() {
     let _iso = crate::core::data_dir::isolated_data_dir();
