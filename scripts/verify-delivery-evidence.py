@@ -83,12 +83,11 @@ TARGETS = (
 )
 PUBLISH_CHANNELS = (
     ("engine-release", ".github/workflows/release.yml", "v[0-9]*"),
-    ("sdk-release", ".github/workflows/publish-sdk.yml", "sdk-v[0-9]*"),
     ("client-release", ".github/workflows/publish-clients.yml", "client-v[0-9]*"),
 )
 VERSION_GATES = (
     ("release-tag", "scripts/check-release-tag.py", "def verify_tag(tag: str, root: Path) -> str:", "python3 scripts/check-release-tag.py \"${GITHUB_REF_NAME}\""),
-    ("sdk-contract-version", "scripts/check-sdk-versions.py", "def main() -> int:", "python3 scripts/check-sdk-versions.py"),
+    ("sdk-surface", "scripts/check-sdk-surface.py", "def main() -> int:", "python3 scripts/check-sdk-surface.py"),
     ("package-version", "scripts/check-package-versions.py", "def main() -> int:", "python3 scripts/check-package-versions.py"),
 )
 
