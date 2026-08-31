@@ -59,14 +59,14 @@ pub fn handle_deny() {
         return;
     }
 
-    if should_allow(&tool_name, file_path.as_deref()) {
+    if should_allow(&tool_name, file_path.as_deref(), &stdin_payload) {
         print_allow();
     } else {
         print_smart_deny(&tool_name, &stdin_payload);
     }
 }
 
-fn should_allow(tool_name: &str, file_path: Option<&str>) -> bool {
+fn should_allow(tool_name: &str, file_path: Option<&str>, payload: &str) -> bool {
     if super::is_disabled() {
         return true;
     }
@@ -75,6 +75,19 @@ fn should_allow(tool_name: &str, file_path: Option<&str>) -> bool {
     // Devin (ex-Windsurf) routes MCP calls through its own PreToolUse
     // pipeline, so ctx_* tool invocations hit the deny hook. Allow them.
     if is_lean_ctx_tool(tool_name) {
+        return true;
+    }
+
+    // #1631: the same pipeline delivers every OTHER MCP server's tools too, and
+    // replace mode has no `ctx_*` equivalent to offer for a Jira read or a Slack
+    // post. Denying them removed capabilities from the user's stack and gave
+    // nothing back. Provenance decides first, because the native names below are
+    // ordinary words a foreign server may legitimately use.
+    if is_mcp_call(tool_name, payload) {
+        return true;
+    }
+
+    if !is_replaceable_native_tool(tool_name) {
         return true;
     }
 
@@ -108,7 +121,80 @@ fn should_allow(tool_name: &str, file_path: Option<&str>) -> bool {
 }
 
 fn is_lean_ctx_tool(tool_name: &str) -> bool {
-    tool_name.starts_with("ctx_") || tool_name == "shell"
+    tool_name.starts_with("ctx_")
+        || tool_name.starts_with("mcp__lean-ctx__")
+        || tool_name == "shell"
+}
+
+/// Whether this payload describes a call to *some* MCP server rather than one
+/// of the host's own native tools.
+///
+/// Two signals, both structural rather than name-based:
+/// - Windsurf/Devin `pre_mcp_tool_use` nests the name under
+///   `tool_info.mcp_tool_name` (#1407) and names the server beside it;
+/// - Claude Code spells MCP tools `mcp__<server>__<tool>`, the convention
+///   `edit_health` and `observe` already key off.
+///
+/// This matters beyond tidiness: a name allowlist alone would still reject a
+/// foreign server that happens to expose a tool called `search`, `read` or
+/// `view` — common words that collide with the native surface. Provenance does
+/// not collide.
+fn is_mcp_call(tool_name: &str, payload: &str) -> bool {
+    if tool_name.starts_with("mcp__") {
+        return true;
+    }
+    serde_json::from_str::<serde_json::Value>(payload).is_ok_and(|json| {
+        json.get("tool_info")
+            .and_then(|ti| ti.get("mcp_tool_name"))
+            .is_some()
+    })
+}
+
+/// Native tools replace mode can actually redirect to a `ctx_*` equivalent.
+///
+/// The deny guard used to be "allow `ctx_*`, deny everything else", which is
+/// only correct on a host that filters by matcher before invoking the hook.
+/// Devin routes *every* MCP call through the same PreToolUse pipeline (#1329),
+/// so tools from OTHER MCP servers arrived here too — and were rejected with
+/// "Use the equivalent ctx_* tool", naming an equivalent that does not exist:
+///
+/// ```text
+/// Calling jira_get_issue from atlassian-mcp-server
+/// Output: Tool rejected: Use the equivalent ctx_* tool — replace mode is active.
+/// ```
+///
+/// lean-ctx has nothing to offer instead of a Jira read, so denying it removes
+/// a capability from the user's stack and gives back nothing. Replace mode's
+/// scope is the native read/search/shell surface it can genuinely replace;
+/// everything else passes through.
+///
+/// The read names mirror Claude's `REDIRECT_MATCHER`; the shell names come from
+/// `hook_handlers::is_shell_tool`, the same list the rewrite hook uses, so the
+/// two guards cannot drift apart. This is the *second* line of defence —
+/// `is_mcp_call` settles provenance first, because these names are ordinary
+/// words another server may well use.
+fn is_replaceable_native_tool(tool_name: &str) -> bool {
+    super::is_shell_tool(tool_name)
+        || matches!(
+            tool_name,
+            "Read"
+                | "read"
+                | "ReadFile"
+                | "read_file"
+                | "View"
+                | "view"
+                | "Grep"
+                | "grep"
+                | "Search"
+                | "search"
+                | "Glob"
+                | "glob"
+                | "ListFiles"
+                | "list_files"
+                | "ListDirectory"
+                | "list_directory"
+                | "list_dir"
+        )
 }
 
 fn is_mcp_server_reachable() -> bool {
@@ -558,6 +644,74 @@ fn read_stdin_with_timeout() -> String {
 mod tests {
     use super::*;
 
+    /// A user with the Atlassian MCP server got every Jira call rejected:
+    ///
+    /// ```text
+    /// Calling jira_get_issue from atlassian-mcp-server
+    /// Tool rejected: Use the equivalent ctx_* tool — replace mode is active.
+    /// ```
+    ///
+    /// There is no equivalent — lean-ctx does not read Jira. The guard was
+    /// "deny everything that is not ctx_*", which is safe only on a host that
+    /// filters by matcher first; Devin routes all MCP traffic through the same
+    /// PreToolUse pipeline, so foreign servers were caught in it.
+    #[test]
+    fn foreign_mcp_tools_are_not_replaceable() {
+        for tool in [
+            "jira_get_issue",
+            "jira_search",
+            "confluence_get_page",
+            "github_create_pull_request",
+            "mcp__atlassian__jira_get_issue",
+            "atlassian-mcp-server:jira_get_issue",
+            "browser_navigate",
+            "slack_post_message",
+        ] {
+            assert!(
+                !is_replaceable_native_tool(tool),
+                "{tool} has no ctx_* equivalent; denying it removes a capability \
+                 and gives nothing back"
+            );
+        }
+    }
+
+    /// The other half of the contract: narrowing the guard must not let the
+    /// native surface through, or replace mode silently stops replacing.
+    #[test]
+    fn the_native_read_and_shell_surface_stays_replaceable() {
+        for tool in [
+            "Read",
+            "read",
+            "ReadFile",
+            "read_file",
+            "View",
+            "Grep",
+            "grep",
+            "Search",
+            "Glob",
+            "glob",
+            "list_dir",
+            "ListDirectory",
+        ] {
+            assert!(
+                is_replaceable_native_tool(tool),
+                "{tool} is the native read surface replace mode exists for"
+            );
+        }
+        for shell in [
+            "Bash",
+            "bash",
+            "Shell",
+            "run_terminal_command",
+            "powershell",
+        ] {
+            assert!(
+                is_replaceable_native_tool(shell),
+                "{shell} must stay covered — the list is shared with the rewrite hook"
+            );
+        }
+    }
+
     #[test]
     fn is_write_tool_recognizes_all_variants() {
         assert!(is_write_tool("Write"));
@@ -706,14 +860,53 @@ mod tests {
         );
     }
 
+    /// The hole a name-based allowlist leaves open: a foreign MCP server whose
+    /// tool is called `search`, `read` or `view` collides with the native
+    /// surface, so the name alone cannot decide. Provenance can — and both
+    /// hosts that route MCP through this hook announce it.
+    #[test]
+    fn foreign_mcp_calls_are_allowed_even_when_the_name_collides() {
+        let devin = r#"{"tool_info":{"mcp_tool_name":"search","server":"atlassian-mcp-server"}}"#;
+        assert!(
+            is_mcp_call("search", devin),
+            "tool_info.mcp_tool_name marks the call as MCP whatever the tool is called"
+        );
+        assert!(
+            should_allow("search", None, devin),
+            "another server's `search` must not be answered with 'use ctx_search'"
+        );
+        assert!(
+            should_allow("read", None, r#"{"tool_info":{"mcp_tool_name":"read"}}"#),
+            "same for a foreign `read`"
+        );
+
+        // Claude Code's spelling for the identical situation.
+        assert!(is_mcp_call("mcp__atlassian__jira_get_issue", "{}"));
+        assert!(should_allow("mcp__atlassian__jira_get_issue", None, "{}"));
+
+        // A native call carries neither marker and stays in scope.
+        assert!(!is_mcp_call("Read", r#"{"tool_name":"Read"}"#));
+        assert!(!is_mcp_call("Grep", "{}"));
+    }
+
+    /// lean-ctx's own tools reach this hook under both spellings — bare
+    /// `ctx_read` from Devin, `mcp__lean-ctx__ctx_read` from Claude Code, the
+    /// form `edit_health` and `observe` already recognise.
+    #[test]
+    fn lean_ctx_tools_are_recognised_under_both_spellings() {
+        assert!(is_lean_ctx_tool("ctx_read"));
+        assert!(is_lean_ctx_tool("mcp__lean-ctx__ctx_read"));
+        assert!(!is_lean_ctx_tool("mcp__atlassian__jira_get_issue"));
+    }
+
     #[test]
     fn should_allow_lean_ctx_tools() {
-        assert!(should_allow("ctx_tree", None));
-        assert!(should_allow("ctx_read", Some("/tmp/test.rs")));
-        assert!(should_allow("ctx_search", None));
-        assert!(should_allow("ctx_shell", None));
-        assert!(should_allow("ctx_compose", None));
-        assert!(should_allow("shell", None));
+        assert!(should_allow("ctx_tree", None, "{}"));
+        assert!(should_allow("ctx_read", Some("/tmp/test.rs"), "{}"));
+        assert!(should_allow("ctx_search", None, "{}"));
+        assert!(should_allow("ctx_shell", None, "{}"));
+        assert!(should_allow("ctx_compose", None, "{}"));
+        assert!(should_allow("shell", None, "{}"));
     }
 
     #[test]
@@ -730,10 +923,11 @@ mod tests {
     fn should_allow_claude_auto_memory_paths() {
         assert!(should_allow(
             "Read",
-            Some("/home/jules/.claude/projects/-slug/memory/MEMORY.md")
+            Some("/home/jules/.claude/projects/-slug/memory/MEMORY.md"),
+            "{}"
         ));
         assert!(
-            !should_allow("Read", Some("/home/jules/project/src/main.rs")),
+            !should_allow("Read", Some("/home/jules/project/src/main.rs"), "{}"),
             "ordinary project files stay denied under replace deny hooks"
         );
     }
