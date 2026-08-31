@@ -183,5 +183,5 @@ reason to trust, and read `addon info` before you do.
 directory, for authoring a module before packaging it. It is a developer
 convenience with none of the verification above — not an install path.
 
-See [Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md) for the
+See [`local-free-invariant-v1`](../contracts/local-free-invariant-v1.md) for the
 local-first guardrails this channel sits inside.

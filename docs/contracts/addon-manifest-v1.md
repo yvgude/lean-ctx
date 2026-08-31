@@ -482,6 +482,15 @@ published endpoint, advise affected users to `lean-ctx addon remove <name>`.
 
 ## CLI surface
 
+> **Historical.** The table below is the pre-3.9.20 command set. 3.10.1 ships
+> five verbs: `list`, `info`, `add`, `remove`, `release` — see
+> [the addon guide](../guides/addons.md). There is deliberately no `search`
+> (that implies a curated index), no `init` (a manifest plus the `.wasm` beside
+> it is short enough to write by hand), and no `audit` / `registry validate` /
+> `revoke` — those belonged to the registry and policy stack removed with the
+> rest of it. `release` performs the build-time validation those commands used
+> to, and `add` re-verifies the signature locally.
+
 | Command | Effect |
 |---------|--------|
 | `lean-ctx addon list` | Installed addons + the registry. |

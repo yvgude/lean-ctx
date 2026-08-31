@@ -21,12 +21,17 @@ Engine, full directive catalog, and spec: **https://github.com/dasTholo/lean-md*
 
 ```bash
 lean-ctx addon add @dasTholo/lean-md        # hosted pack (ctxpkg.com)
-lean-ctx addon add ./lean-ctx-addon.toml    # local manifest (dev/test)
+lean-ctx addon add ./lean-md-2.0.0.ctxpkg   # a signed package you already have
 ```
 
-`addon add` resolves a local manifest first, then a hosted `ns/slug` pack, then the
-bundled registry slug. The bundled `lean-md` entry is **listed** — it makes the addon
-discoverable through `lean-ctx addon search`, it is not an install path.
+`addon add` prefers a path that exists on disk and otherwise resolves
+`ns/name[@version]` against a registry. Either way the package is verified
+locally and its `[mcp]` command shown before you are asked. There is no
+`addon search`, and no install-by-name from the bundled list — that list is a
+directory, not a package source.
+
+lean-ctx does **not** install the `lean-md` binary for you; the manifest records
+how to run it once you have it.
 
 After install, restart the MCP client so the gateway catalog is re-read. The addon
 is spawned as a stdio gateway child; its tools (`ctx_md_render`, `ctx_md_check`)

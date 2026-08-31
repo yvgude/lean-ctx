@@ -208,27 +208,37 @@ lean-ctx shadow --latest
 
 </details>
 
-## Addons — run the ecosystem through one gateway
+## Addons — extend the engine, or run the ecosystem through one gateway
 
 You don't have to choose between LeanCTX and the other context tools you already
-like. An **addon** wraps any MCP server in a tiny `lean-ctx-addon.toml` manifest;
-LeanCTX runs it behind its gateway with one command, then treats what it returns
+like. An **addon** is a signed package carrying either a sandboxed WASM module
+that runs *inside* the context pipeline, or an `[mcp]` declaration that wires an
+external MCP server into the gateway — after which LeanCTX treats what it returns
 like your own reads instead of just proxying it.
 
 ```bash
-lean-ctx addon search memory   # browse the registry by category
-lean-ctx addon add headroom    # installs the upstream package + wires the MCP server, on add
-lean-ctx addon list            # what's wired into your gateway
+lean-ctx addon release ./my-addon   # build a signed .ctxpkg — no artifact host, no CI
+lean-ctx addon add ./my-addon-1.0.0.ctxpkg   # verify, disclose, ask, install
+lean-ctx addon list                 # what's installed, what loads, what's wired
 ```
 
-- **One command to add** — `addon add <name>` installs the upstream package via its native manager (uv, pip, cargo, npm, brew, dotnet) and wires the MCP server into your gateway. No fork, no recompile.
-- **Folded in, not just proxied** — opt-in post-processing runs addon output through the same pipeline as your code: compress to a budget, spill oversized blobs to a `ctx_expand` handle, index into BM25 / graph / knowledge. Typed adapters route specific tools straight into `ctx_expand`, `ctx_callgraph` and `ctx_knowledge`.
+- **Publish it yourself** — the module travels *inside* the signed package, so
+  the signature covers the executable bytes. Nothing external to host, hash or
+  serve, and no pipeline of your own.
+- **Verified locally, then asked** — `add` re-checks the signature on your
+  machine rather than trusting its source, checks every module against its
+  pinned SHA-256, prints the publisher key and the exact command any declared
+  server would run, and only then prompts.
+- **LeanCTX never installs the server for you** — no `uv tool install`, no
+  `npx`. Fetching a declared tool stays your step, where your own package
+  manager's trust model applies. The manifest says how to *run* it.
+- **Folded in, not just proxied** — opt-in post-processing runs addon output through the same pipeline as your code: compress to a budget, spill oversized blobs to a `ctx_expand` handle, index into BM25 / graph / knowledge. A typed `integration` routes specific tools straight into `ctx_expand`, `ctx_callgraph` and `ctx_knowledge`.
 - **Untrusted by default** — every addon's output is scrubbed for secrets and tagged untrusted before it reaches the model. Always on, not a flag.
-- **You stay in control** — pin a machine or fleet to verified-only, an allowlist, or off entirely via one `[addons]` policy a single repo can't override.
 
-The registry spans compression (Headroom, Sophon), code intelligence (Repomix,
-Serena), memory (Mem0, Cognee, Letta) and reasoning (Sequential Thinking). See the
-**[addon guide](docs/guides/addons.md)** or [browse them all](https://leanctx.com/addons/).
+There is deliberately **no marketplace** and no `addon search`: LeanCTX does not
+host, curate or rank addons. A package is a file you install, or one you fetch
+from a registry you name. See the
+**[addon guide](docs/guides/addons.md)** for the full walkthrough.
 
 ## Where it's going
 

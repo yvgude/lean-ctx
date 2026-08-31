@@ -1,18 +1,29 @@
-# Addon Bootstrap Engine — Phase 2 (implemented)
+# Addon Bootstrap Engine — Phase 2 (removed in 3.9.20)
 
-> Status: **implemented** in `rust/src/core/addons/bootstrap.rs` (+ manifest,
-> policy, store, CLI wiring). This document is the design of record for the
-> GitLab epic *Addon Bootstrap Engine* (`root/lean-ctx#1105`, subtasks
-> `#1106`–`#1110`). Where the shipped behaviour refines the original plan it is
-> noted inline.
+> Status: **removed**. `rust/src/core/addons/bootstrap.rs` and the rest of the
+> stack this document describes were deleted in the 3.9.20 cleanup and did not
+> come back when the addon channel reopened in 3.10.1. Nothing below is
+> implemented: there is no `[install]` block, no package-manager bootstrap, no
+> `addons.allow_bootstrap`, and no install receipts.
+>
+> **lean-ctx no longer installs anything on your behalf.** A manifest declares
+> how to *run* a tool; fetching it stays the user's step, where their own package
+> manager's trust model applies. That was the point of removing this — "add an
+> addon" had become "execute a fetch-and-install pipeline you did not read".
+>
+> Kept as the design of record for the decision, not as documentation of a
+> feature. For what 3.10.1 actually does, see
+> [the addon guide](../guides/addons.md) and
+> [`addon-manifest-v1`](../contracts/addon-manifest-v1.md) § What 3.10.1
+> implements.
 
-## Problem
+## Problem (as it stood before 3.9.20)
 
-Today `lean-ctx addon add` is **declarative**: it appends a
-`[[gateway.servers]]` entry to the global config and records the install — it
-never fetches or installs a package. That is sufficient for **ephemeral
+`lean-ctx addon add` was **declarative**: it appended a
+`[[gateway.servers]]` entry to the global config and recorded the install — it
+never fetched or installed a package. That was sufficient for **ephemeral
 runners** (`npx`, `uvx`), which download and execute their package lazily on the
-first tool call. So `repomix` and `serena` already install on add.
+first tool call. So `repomix` and `serena` already installed on add.
 
 It is **not** sufficient for tools that need a real, one-time bootstrap before a
 runnable command exists:
