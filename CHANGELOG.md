@@ -59,6 +59,13 @@ below. None of it is present in the 3.10.0 artifacts.
   opt-in, and `addon list` reports an addon that is wired while the gateway is
   off rather than letting you assume it is running. `addon remove` unwires as
   well as uninstalls.
+- **An upgrade keeps what you configured.** Re-installing replaces the fields
+  the author owns (transport, command, args, url, pin, integration) and
+  preserves the ones you do: `secret_env` / `secret_headers`, which a manifest
+  cannot carry by design — so a wholesale replace would have silently dropped
+  your token and left the server failing to authenticate with nothing saying
+  why — and the per-server `enabled` switch, so an addon you deliberately turned
+  off is not turned back on behind an upgrade.
 - **`integration` reaches the L4 typed adapters from a manifest.** Setting it
   routes the server's output into the matching lean-ctx surface —
   `codebase-pack` → `ctx_expand`, `code-graph`/`code-symbols` → `ctx_callgraph`,

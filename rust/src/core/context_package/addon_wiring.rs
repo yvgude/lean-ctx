@@ -15,6 +15,10 @@
 //!    is about to let a process spawn should read its argv.
 //! 3. **`[gateway]` stays global-only and opt-in.** Adding a server does not
 //!    enable the gateway; an addon cannot switch it on for you.
+//!
+//! And one rule that only shows up on the second install: an upgrade replaces
+//! what the *author* declares and keeps what the *user* configured — their
+//! credentials and their per-server off switch. See [`register`].
 
 use crate::core::config::Config;
 use crate::core::mcp_catalog::config::GatewayServer;
@@ -36,20 +40,40 @@ pub(crate) enum Wired {
 }
 
 /// Add (or replace) the addon's gateway entry in the **global** config.
+///
+/// A replace is an upgrade, not a fresh install, so it must not clobber the
+/// parts of the entry the *user* owns rather than the author:
+///
+/// - `secret_env` / `secret_headers` are memento references to credentials. A
+///   manifest cannot carry them by design, so a wholesale replace would silently
+///   drop the token the user configured and the server would simply stop
+///   authenticating, with nothing saying why.
+/// - `enabled = false` is a deliberate decision to keep an addon installed but
+///   idle. Re-enabling it on upgrade would override that silently, which is the
+///   one thing a per-server switch exists to prevent.
+///
+/// Everything else — transport, command, args, url, pin, integration — is the
+/// author's to change between versions, and is taken from the new manifest.
 pub(crate) fn register(manifest: &AddonManifest) -> Result<Wired, String> {
     let Some(wiring) = manifest.mcp.as_ref() else {
         return Ok(Wired::NothingToWire);
     };
     let name = manifest.addon.name.clone();
-    let server: GatewayServer = wiring.to_gateway_server(&name);
+    let mut server: GatewayServer = wiring.to_gateway_server(&name);
 
     let mut cfg = Config::load();
-    let existed = cfg.gateway.servers.iter().any(|s| s.name == name);
+    let previous = cfg.gateway.servers.iter().find(|s| s.name == name).cloned();
+    if let Some(prev) = &previous {
+        server.secret_env = prev.secret_env.clone();
+        server.secret_headers = prev.secret_headers.clone();
+        server.enabled = prev.enabled;
+    }
+
     cfg.gateway.servers.retain(|s| s.name != name);
     cfg.gateway.servers.push(server);
     cfg.save().map_err(|e| format!("save config: {e}"))?;
 
-    Ok(if existed {
+    Ok(if previous.is_some() {
         Wired::Replaced(name)
     } else {
         Wired::Added(name)
@@ -123,6 +147,64 @@ args = ["mcp", "serve"]
                 .filter(|s| s.name == "mdcast")
                 .count(),
             1
+        );
+    }
+
+    /// An upgrade must not silently undo the user's own configuration. The
+    /// credential is the sharp case: a manifest cannot carry `secret_headers`
+    /// by design, so replacing the entry wholesale would drop the token the
+    /// user configured and the server would just stop authenticating, with
+    /// nothing in the output explaining why.
+    #[test]
+    fn an_upgrade_keeps_the_users_secrets_and_their_off_switch() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let m = addon_manifest::parse(STDIO).unwrap();
+        register(&m).unwrap();
+
+        // The user configures a credential and turns the server off.
+        let mut cfg = Config::load();
+        {
+            let entry = cfg
+                .gateway
+                .servers
+                .iter_mut()
+                .find(|s| s.name == "mdcast")
+                .expect("wired");
+            entry.secret_env.insert(
+                "API_TOKEN".to_string(),
+                crate::core::mcp_catalog::config::SecretMementoRef {
+                    id: "memento-1".to_string(),
+                    format: String::new(),
+                },
+            );
+            entry.enabled = false;
+        }
+        cfg.save().unwrap();
+
+        // A newer version of the same addon is installed over it.
+        let upgraded = addon_manifest::parse(
+            "[addon]\nname = \"mdcast\"\n[mcp]\ncommand = \"mdcast\"\nargs = [\"mcp\", \"v2\"]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            register(&upgraded).unwrap(),
+            Wired::Replaced("mdcast".into())
+        );
+
+        let entry = Config::load()
+            .gateway
+            .servers
+            .into_iter()
+            .find(|s| s.name == "mdcast")
+            .expect("still wired");
+        assert_eq!(entry.args, vec!["mcp", "v2"], "the author's change applies");
+        assert!(
+            entry.secret_env.contains_key("API_TOKEN"),
+            "the user's credential survived the upgrade"
+        );
+        assert!(
+            !entry.enabled,
+            "a deliberate off switch is not flipped back on by an upgrade"
         );
     }
 

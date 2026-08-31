@@ -128,6 +128,12 @@ them deliberate, and all of them things the pre-3.9.20 channel did differently:
   global-only and opt-in; `lean-ctx addon list` tells you when an addon is
   wired but the gateway is off, rather than letting you assume it is running.
 
+Installing a newer version replaces what the *author* declares — transport,
+command, args, URL, pin, integration — and keeps what *you* configured: the
+credentials in `secret_env` / `secret_headers`, which a manifest cannot carry by
+design, and the per-server `enabled` switch, so an addon you deliberately turned
+off does not come back on behind an upgrade.
+
 When `sha256` is set, the gateway resolves `command` against the `PATH` the
 child will see, hashes it, and refuses to spawn on a mismatch. An unset pin is
 a documented no-op, not a silent pass.
