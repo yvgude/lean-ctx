@@ -5,9 +5,9 @@
 > managed-service, control-plane, or Research capability deployment. Delivery
 > order and capability status are governed by the
 > [OSS Vision Delivery Plan](../internal/execution/OSS-VISION-DELIVERY-PLAN.md)
-> and the [internal canonical entry point](../internal/README.md). Use the root
-> [`DEPLOY_CHECKLIST.md`](../../DEPLOY_CHECKLIST.md) for the local Runtime release
-> boundary.
+> and the [internal canonical entry point](../internal/README.md). This document
+> is the public local Runtime release boundary; maintainer-only operator notes do
+> not replace or weaken any gate below.
 
 ## Overview
 
