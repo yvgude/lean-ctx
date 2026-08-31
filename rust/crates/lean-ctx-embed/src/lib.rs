@@ -1,4 +1,4 @@
-//! # lean-ctx-sdk — in-process embedding façade (Track A)
+//! # lean-ctx-embed — in-process embedding façade (Track A)
 //!
 //! A **stable Rust façade** over the lean-ctx context engine for power
 //! developers who want to embed lean-ctx in-process (the Lean-md use case)
@@ -13,13 +13,13 @@
 //! in-process — the property Lean-md depends on.
 //!
 //! ```no_run
-//! use lean_ctx_sdk::{Engine, ReadMode};
+//! use lean_ctx_embed::{Engine, ReadMode};
 //!
 //! let engine = Engine::builder(".").build()?;
 //! let first = engine.read("src/main.rs", ReadMode::Full)?;
 //! let again = engine.read("src/main.rs", ReadMode::Full)?; // cheap re-read
 //! assert!(again.saved_tokens >= first.saved_tokens);
-//! # Ok::<(), lean_ctx_sdk::Error>(())
+//! # Ok::<(), lean_ctx_embed::Error>(())
 //! ```
 //!
 //! The engine is **safe by default**: `PathJail` on, state scoped to a throwaway

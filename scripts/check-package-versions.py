@@ -20,8 +20,7 @@ Coupled packages (must equal the engine version):
 
 Deliberately excluded:
   * vscode-extension          — decoupled cadence (vscode-v* tags, own workflow)
-  * packages/node-lean-ctx and the cookbook SDKs — own semver, guarded by
-    scripts/check-sdk-versions.py
+  * the cookbook example client — not a product surface (private: true)
 
 No third-party dependencies — standard library only.
 """

@@ -379,12 +379,15 @@ jobs:
         working-directory: packages/leanctx-verify
         run: cargo build --release
 
-  embed-sdk:
-    # Track A — the in-process embedding SDK (rust/crates/lean-ctx-sdk). It is a
+  embed-facade:
+    # The in-process embedding facade (rust/crates/lean-ctx-embed). It is a
     # workspace member but excluded from `default-members`, so the engine's own
     # test/clippy/doc jobs never see it; this job is its dedicated gate
     # (pedantic clippy, doctests, the engine-integration tests, example build).
-    name: Embed SDK (lean-ctx-sdk)
+    #
+    # Deliberately NOT called an SDK: the LeanCTX SDK is thinkery-leanctx-sdk
+    # (Thinkery-AG/leanctx-sdk). See docs/internal/SDK-SURFACE.md.
+    name: Embed facade (lean-ctx-embed)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4 # v4
@@ -399,38 +402,21 @@ jobs:
           workspaces: rust -> target
       - name: Format
         working-directory: rust
-        run: cargo fmt -p lean-ctx-sdk --check
+        run: cargo fmt -p lean-ctx-embed --check
       - name: Clippy (pedantic, 0 warnings)
         working-directory: rust
-        run: cargo clippy -p lean-ctx-sdk --all-targets -- -D warnings -A clippy::too_many_lines
+        run: cargo clippy -p lean-ctx-embed --all-targets -- -D warnings -A clippy::too_many_lines
       - name: Test (doctests + engine integration)
         working-directory: rust
-        run: cargo test -p lean-ctx-sdk
+        run: cargo test -p lean-ctx-embed
       - name: Example builds
         working-directory: rust
-        run: cargo build -p lean-ctx-sdk --example embed
+        run: cargo build -p lean-ctx-embed --example embed
       - name: Docs
         working-directory: rust
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc -p lean-ctx-sdk --no-deps
-
-  python-sdk:
-    name: Python SDK v1 (Preview)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4 # v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v5 # v5
-        with:
-          python-version: "3.11"
-      - name: Install
-        working-directory: packages/python-lean-ctx
-        run: pip install -e ".[test]"
-      - name: Test
-        working-directory: packages/python-lean-ctx
-        run: python -m pytest -q
+        run: cargo doc -p lean-ctx-embed --no-deps
 
   hermes-plugin:
     # The Hermes context-engine plugin (integrations/hermes-lean-ctx) replaces
@@ -459,34 +445,6 @@ jobs:
         # Discard port → daemon unreachable → exercises deterministic local
         # compaction end-to-end. Competitors are auto-skipped when absent.
         run: python benchmarks/run.py --turns 40 --needles 6 --context-length 2000 --base-url http://127.0.0.1:9 --no-write
-
-  sdk-conformance:
-    # Canonical Python SDK v1 is the sole current SDK release surface. Archived
-    # TypeScript/Go/Python prototypes are deliberately outside this gate.
-    name: Python SDK v1
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4 # v4
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-          workspaces: |
-            rust -> target
-      - uses: actions/setup-python@v5 # v5
-        with:
-          python-version: "3.11"
-      - name: Install Python SDK
-        working-directory: packages/python-lean-ctx
-        # langchain-core gives the adapter smoke a real framework round trip;
-        # LlamaIndex/CrewAI skip cleanly (heavy dep trees, covered by the
-        # framework-agnostic OpenAI adapter path).
-        run: pip install -e ".[test]" langchain-core
-      - name: Verify canonical Python SDK v1
-        run: ./scripts/sdk-conformance.sh
 
   coverage:
     name: Coverage
@@ -774,10 +732,8 @@ jobs:
       - cookbook
       - pi-extension
       - rust-sdk
-      - embed-sdk
-      - python-sdk
+      - embed-facade
       - hermes-plugin
-      - sdk-conformance
       - coverage
       - deny
       - adversarial

@@ -68,7 +68,7 @@ claims, availability labels, and documents that need an explicit status.
     "docs/ga/release-checklist.md": [
       "Status: active OSS release gate, not a completion record.",
       "standalone W1 customer-proof verifier",
-      "Python remains labelled **Preview**",
+      "The single-SDK surface still holds",
       "Claim promotion gate"
     ],
     "packages/pi-lean-ctx/README.md": [

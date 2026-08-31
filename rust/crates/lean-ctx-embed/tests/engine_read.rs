@@ -5,12 +5,12 @@
 use std::fs;
 use std::path::PathBuf;
 
-use lean_ctx_sdk::{Engine, ReadMode};
+use lean_ctx_embed::{Engine, ReadMode};
 
 /// Create a unique temp project dir with a couple of source files.
 fn temp_project() -> PathBuf {
     let unique = format!(
-        "lean-ctx-sdk-it-{}-{}",
+        "lean-ctx-embed-it-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -64,7 +64,7 @@ fn pathjail_rejects_escape() {
         .read("../../../etc/passwd", ReadMode::Full)
         .expect_err("escape must be rejected");
     assert!(
-        matches!(err, lean_ctx_sdk::Error::Path(_)),
+        matches!(err, lean_ctx_embed::Error::Path(_)),
         "expected Path error, got {err:?}"
     );
 
@@ -99,7 +99,7 @@ fn exec_tool_requires_optin() {
         .call("ctx_shell", args)
         .expect_err("shell must be gated");
     assert!(
-        matches!(err, lean_ctx_sdk::Error::NotPermitted(_)),
+        matches!(err, lean_ctx_embed::Error::NotPermitted(_)),
         "expected NotPermitted, got {err:?}"
     );
 
@@ -114,7 +114,7 @@ fn unknown_tool_errors() {
     let err = engine
         .call("ctx_nonexistent", serde_json::Map::new())
         .expect_err("unknown tool");
-    assert!(matches!(err, lean_ctx_sdk::Error::UnknownTool(_)));
+    assert!(matches!(err, lean_ctx_embed::Error::UnknownTool(_)));
 
     fs::remove_dir_all(&dir).ok();
 }

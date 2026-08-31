@@ -30,8 +30,8 @@ jobs:
           persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Check SDK ↔ engine coupling
-        run: python3 scripts/check-sdk-versions.py
+      - name: Guard the single-SDK surface
+        run: python3 scripts/check-sdk-surface.py
       - name: Check npm package ↔ engine version coupling
         run: python3 scripts/check-package-versions.py
       - name: Verify published crate assets

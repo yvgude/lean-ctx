@@ -288,7 +288,7 @@ curl -s --oauth2-bearer "$TOKEN" http://127.0.0.1:8080/v1/capabilities
    historical same-wire-contract SDK set:
 
 ```python
-# pip install lean-ctx-python
+# pip install thinkery-leanctx-sdk
 from lean_ctx import LeanCTX
 
 ctx = LeanCTX()
@@ -297,16 +297,17 @@ run = ctx.wrap(my_agent).run("Review the notes")
 
 4. Generic tool adapters are not a supported current Python SDK v1 surface.
    The declared reference-wrapper and its evidence/degradation limits are in
-   `packages/python-lean-ctx/README.md`.
+   the SDK's own README (Thinkery-AG/leanctx-sdk).
 
 **Under the hood:**
 - **Stable `/v1` contract** (`rust/src/http_server/`): `GET /v1/capabilities`
   ([`capabilities-contract-v1`](contracts/capabilities-contract-v1.md)) and
   `GET /v1/openapi.json` are the SSOT, generated from code and drift-tested —
   generate a typed client in any language.
-- **Canonical current SDK:** Python v1 Preview in
-  [`packages/python-lean-ctx`](../packages/python-lean-ctx). TypeScript and Go
-  prototypes are archived; the Rust client remains technical substrate.
+- **The one SDK:** [`thinkery-leanctx-sdk`](https://github.com/Thinkery-AG/leanctx-sdk),
+  developed and released outside this repository against the public CLI wire
+  boundary. The Rust client remains technical substrate; see
+  [SDK surface](internal/SDK-SURFACE.md).
 - **Declared adapter scope:** the Python reference-wrapper is explicit about
   supported agent versions, observability, degradations, and evidence; it is not
   a generic framework-adapter promise.

@@ -6,7 +6,7 @@ members = [
   ".",
   "crates/lean-ctx-ocla",
   "crates/lean-ctx-protocol",
-  "crates/lean-ctx-sdk",
+  "crates/lean-ctx-embed",
   # Grammar-addon cdylibs (#690, Phase 1c) — one crate per long-tail
   # tree-sitter grammar, built per-platform by grammar-addons.yml and
   # dlopen'd at runtime by core::signatures_ts::grammar_loader. Add a new

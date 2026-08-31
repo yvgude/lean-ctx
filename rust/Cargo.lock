@@ -2158,6 +2158,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lean-ctx-embed"
+version = "0.1.0"
+dependencies = [
+ "lean-ctx",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "lean-ctx-ocla"
 version = "1.0.1"
 dependencies = [
@@ -2178,16 +2188,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
-]
-
-[[package]]
-name = "lean-ctx-sdk"
-version = "0.1.0"
-dependencies = [
- "lean-ctx",
- "serde_json",
- "thiserror",
- "tokio",
 ]
 
 [[package]]

@@ -1,19 +1,19 @@
-//! In-process embedding demo for `lean-ctx-sdk`.
+//! In-process embedding demo for `lean-ctx-embed`.
 //!
-//! Run from the repo root:  cargo run -p lean-ctx-sdk --example embed
+//! Run from the repo root:  cargo run -p lean-ctx-embed --example embed
 //!
 //! It builds an [`Engine`] rooted at the current directory and shows the
 //! read → re-read token delta, plus the stateless helpers.
 
-use lean_ctx_sdk::{Engine, ReadMode};
+use lean_ctx_embed::{Engine, ReadMode};
 
-fn main() -> Result<(), lean_ctx_sdk::Error> {
-    println!("lean-ctx-sdk v{}\n", lean_ctx_sdk::VERSION);
+fn main() -> Result<(), lean_ctx_embed::Error> {
+    println!("lean-ctx-embed v{}\n", lean_ctx_embed::VERSION);
 
     // ── Stateless helpers (no project root needed) ──
     let text = "The quick brown fox jumps over the lazy dog.";
-    println!("tokens = {}", lean_ctx_sdk::tokens::count(text));
-    println!("blake3 = {}\n", lean_ctx_sdk::hash::blake3_str(text));
+    println!("tokens = {}", lean_ctx_embed::tokens::count(text));
+    println!("blake3 = {}\n", lean_ctx_embed::hash::blake3_str(text));
 
     // ── The Engine: shared-cache reads against this repo ──
     let engine = Engine::builder(".").build()?;
