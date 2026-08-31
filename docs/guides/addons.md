@@ -39,6 +39,11 @@ loads. `addon list` marks the others `(superseded)` and says their modules are
 on disk but not running, rather than listing code that never executes;
 `addon remove <name>` clears every version.
 
+`lean-ctx doctor` reports what the engine actually loaded, which is a different
+question: install checks a module's four magic bytes, not a full parse, so a
+truncated or corrupt module installs cleanly and is then refused by the loader.
+`addon list` would still show it. Doctor names it.
+
 A registry reference is downloaded to a temp file and then goes through exactly
 the same preview, prompt and verification as a file you already had: there is
 one consent path, not a shorter one for remote installs. An argument that names

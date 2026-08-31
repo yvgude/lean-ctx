@@ -59,6 +59,17 @@ below. None of it is present in the 3.10.0 artifacts.
   opt-in, and `addon list` reports an addon that is wired while the gateway is
   off rather than letting you assume it is running. `addon remove` unwires as
   well as uninstalls.
+- **`lean-ctx doctor` now reports what actually loaded.** `addon list` already
+  claimed modules were "visible in `lean-ctx doctor`" — they were not; no such
+  check existed. It does now, and it answers a question the store cannot:
+  `addon add` verifies a module's four magic bytes, which is a prefix and not a
+  parse, so a truncated or corrupt module installs cleanly, matches its pinned
+  digest, and is then refused by the loader. `addon list` would still show it as
+  a compressor. Doctor compares the store against the extension registry and
+  names the modules that did not make it, alongside how many MCP servers are
+  wired and whether the gateway is on.
+- `addon list` was making that claim before it was true; the fix was to build
+  the check rather than delete the sentence.
 - **Only one version of an addon loads.** The store keeps versions side by side
   like every other pack kind, and module discovery walked the whole tree — so
   after an upgrade the registry received two modules with the same file stem and
