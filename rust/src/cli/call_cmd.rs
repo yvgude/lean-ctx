@@ -127,7 +127,38 @@ fn parse_args(args: &[String]) -> Result<CallArgs, CallError> {
     })
 }
 
+/// Load the project's most recent session for a one-shot `lean-ctx call`.
+///
+/// Index-based, never a full scan: `load_latest_for_project_root` parses
+/// every file in the session store (measured: 160 files / 14.2 MB on one
+/// developer machine) before filtering on project root, and `lean-ctx call`
+/// is a short-lived subprocess that consumers spawn in loops.
+///
+/// This function only READS — it never writes the session back, and there is
+/// no implicit post-dispatch save (that belongs to the MCP server,
+/// `server/post_dispatch.rs`). It is NOT an invariant that a one-shot call
+/// leaves the session untouched: five actions reachable via `lean-ctx call`
+/// persist it on purpose — `ctx_session` `save`/`reset`/`import` and
+/// `ctx_handoff` `pull`/`import`. `write_to_disk`
+/// (`core/session/persistence.rs`) skips a write when the on-disk version is
+/// strictly newer, but an equal-version write still lands, so such a call
+/// racing a live server on the same session can still clobber it.
+///
+/// Every failure degrades silently to an empty default session — no sessions
+/// directory (the first-run case, not an error), no index for this root, an
+/// id the store no longer has, malformed JSON, or a broad/unsafe root
+/// rejected by `normalized_safe_project_root`. An empty session is a fully
+/// valid context; it costs the task focus that steers `ctx_read` filtering,
+/// nothing else.
+fn oneshot_session(project_root: &str) -> crate::core::session::SessionState {
+    crate::core::session::SessionState::load_recent_for_project_root(project_root, 1)
+        .into_iter()
+        .next()
+        .unwrap_or_default()
+}
+
 fn oneshot_ctx(project_root: String, resolved_paths: HashMap<String, String>) -> ToolContext {
+    let session = oneshot_session(&project_root);
     ToolContext {
         project_root,
         resolved_paths,
@@ -138,6 +169,24 @@ fn oneshot_ctx(project_root: String, resolved_paths: HashMap<String, String>) ->
             crate::core::cache::SessionCache::default(),
         ))),
         bm25_cache: Some(std::sync::Arc::new(std::sync::Mutex::new(None))),
+        // Same class of omission as `cache` above: without these three,
+        // ten registered tools abort with "<handle> not available".
+        // `tool_calls` genuinely starts empty — it is in-process turn history
+        // a fresh subprocess cannot have. The ledger is the opposite: it is
+        // persisted state, so it is loaded from disk exactly as the MCP server
+        // does (`tools/server_lifecycle.rs`). An empty ledger here would not be
+        // a clean slate but data loss — tools that hold this handle write it
+        // straight back (`ctx_control` saves unconditionally, `ctx_ledger`
+        // reset/evict likewise), truncating the user's real, global
+        // `state_dir()/context_ledger.json` while every action silently no-ops.
+        session: Some(std::sync::Arc::new(tokio::sync::RwLock::new(session))),
+        tool_calls: Some(std::sync::Arc::new(tokio::sync::RwLock::new(Vec::new()))),
+        ledger: Some(std::sync::Arc::new(tokio::sync::RwLock::new(
+            crate::core::context_ledger::ContextLedger::load(),
+        ))),
+        // Every remaining handle stays None deliberately: no registered tool
+        // aborts on their absence, and each would pull in server state a
+        // one-shot process has no basis to fabricate.
         ..Default::default()
     }
 }
@@ -290,5 +339,195 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn oneshot_ctx_supplies_session_tool_calls_and_ledger() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().expect("data dir");
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+        let project = tempfile::tempdir().expect("project dir");
+
+        let ctx = oneshot_ctx(project.path().to_string_lossy().to_string(), HashMap::new());
+
+        assert!(ctx.session.is_some(), "session handle missing");
+        assert!(ctx.tool_calls.is_some(), "tool_calls handle missing");
+        assert!(ctx.ledger.is_some(), "ledger handle missing");
+    }
+
+    #[test]
+    fn oneshot_session_without_an_index_returns_a_default() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().expect("data dir");
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+        let project = tempfile::tempdir().expect("project dir");
+
+        let session = oneshot_session(&project.path().to_string_lossy());
+
+        assert!(
+            session.task.is_none(),
+            "expected a default session for a root with no index"
+        );
+    }
+
+    #[test]
+    fn ctx_read_via_call_no_longer_aborts_on_a_missing_session() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().expect("data dir");
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+        let project = tempfile::tempdir().expect("project dir");
+        let file = project.path().join("sample.rs");
+        std::fs::write(&file, b"pub fn sample() -> u32 { 7 }\n").expect("write sample");
+
+        let args = vec![
+            "ctx_read".to_string(),
+            "--project-root".to_string(),
+            project.path().to_string_lossy().to_string(),
+            "--json".to_string(),
+            format!(
+                r#"{{"path": {}, "mode": "signatures"}}"#,
+                serde_json::to_string(file.to_string_lossy().as_ref()).expect("encode path")
+            ),
+        ];
+
+        let out = run_call(&args).expect("ctx_read should dispatch, not abort");
+        assert!(
+            out.contains("sample"),
+            "ctx_read output missing the file's symbol:\n{out}"
+        );
+    }
+
+    fn session_file_names(dir: &std::path::Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .expect("sessions dir")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn an_indexed_session_loads_and_a_one_shot_call_never_writes_it_back() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().expect("data dir");
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+        let project = tempfile::tempdir().expect("project dir");
+        let root = project.path().to_string_lossy().to_string();
+
+        // Seed one session through the public API. `write_to_disk` is what
+        // populates the project index that `oneshot_session` reads back.
+        // Struct-update syntax, not `default()` + field assignment: the latter
+        // trips `clippy::field_reassign_with_default` and the gate is `-D warnings`.
+        let mut seeded = crate::core::session::SessionState {
+            project_root: Some(root.clone()),
+            task: Some(crate::core::session::TaskInfo {
+                description: "seeded task description".to_string(),
+                intent: None,
+                progress_pct: None,
+            }),
+            ..Default::default()
+        };
+        let seeded_id = seeded.id.clone();
+        seeded
+            .prepare_save()
+            .expect("prepare_save")
+            .write_to_disk()
+            .expect("write_to_disk");
+
+        // Half 1 — the index lookup resolves that session, not a default.
+        let loaded = oneshot_session(&root);
+        assert_eq!(
+            loaded.task.as_ref().map(|task| task.description.as_str()),
+            Some("seeded task description"),
+            "oneshot_session did not resolve the seeded session through the index"
+        );
+
+        // Half 2 — a one-shot call that mutates the session writes nothing back.
+        let sessions = data.path().join("sessions");
+        let seeded_path = sessions.join(format!("{seeded_id}.json"));
+        let before = std::fs::read(&seeded_path).expect("seeded session file");
+        let files_before = session_file_names(&sessions);
+
+        let args = vec![
+            "ctx_session".to_string(),
+            "--project-root".to_string(),
+            root,
+            "--json".to_string(),
+            r#"{"action": "task", "value": "a different task"}"#.to_string(),
+        ];
+        let out = run_call(&args).expect("ctx_session action=task should run to completion");
+        assert!(
+            out.contains("Task set"),
+            "ctx_session did not report success:\n{out}"
+        );
+
+        assert_eq!(
+            before,
+            std::fs::read(&seeded_path).expect("seeded session file"),
+            "a one-shot call rewrote the seeded session file"
+        );
+        assert_eq!(
+            files_before,
+            session_file_names(&sessions),
+            "a one-shot call created or removed a session file"
+        );
+    }
+
+    /// Regression: a one-shot call must never truncate the user's global
+    /// context ledger (`state_dir()/context_ledger.json`, ONE non-project-scoped
+    /// file rewritten wholesale). `oneshot_ctx` briefly handed tools a
+    /// `ContextLedger::default()`; every ledger-holding tool writes that handle
+    /// straight back — `ctx_control` saves unconditionally — so a single
+    /// `lean-ctx call ctx_control` erased the real ledger.
+    ///
+    /// Isolation: `state_dir()` resolves through `paths::category_dir`, whose
+    /// explicit `LEAN_CTX_STATE_DIR` override wins even under `#[cfg(test)]`
+    /// (`LEAN_CTX_DATA_DIR` does NOT govern it). Pointing it at a tempdir is
+    /// what keeps this test off the developer's real `~/.local/state/lean-ctx`.
+    #[test]
+    fn a_one_shot_call_never_truncates_the_global_ledger() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
+        let state = tempfile::tempdir().expect("state dir");
+        crate::test_env::set_var("LEAN_CTX_STATE_DIR", state.path());
+        let data = tempfile::tempdir().expect("data dir");
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+        let project = tempfile::tempdir().expect("project dir");
+        let marker_file = project.path().join("LEDGER_SEED_MARKER.rs");
+        std::fs::write(&marker_file, b"pub fn seeded() -> u32 { 1 }\n").expect("write marker");
+
+        // Seed an entry a `ContextLedger::default()` could never carry.
+        let mut seeded = crate::core::context_ledger::ContextLedger::new();
+        seeded.record(&marker_file.to_string_lossy(), "full", 4_000, 1_000);
+        seeded.save();
+
+        let ledger_file = state.path().join("context_ledger.json");
+        let before = std::fs::read_to_string(&ledger_file).expect("seeded ledger file");
+        assert!(
+            before.contains("LEDGER_SEED_MARKER"),
+            "precondition: the seed never reached {}",
+            ledger_file.display()
+        );
+
+        // ctx_control writes back whatever ledger `oneshot_ctx` gave it.
+        let args = vec![
+            "ctx_control".to_string(),
+            "--project-root".to_string(),
+            project.path().to_string_lossy().to_string(),
+            "--json".to_string(),
+            r#"{"action": "list"}"#.to_string(),
+        ];
+        run_call(&args).expect("ctx_control should dispatch");
+
+        let after = crate::core::context_ledger::ContextLedger::load();
+        assert!(
+            after
+                .entries
+                .iter()
+                .any(|entry| entry.path.contains("LEDGER_SEED_MARKER")),
+            "a one-shot call truncated the global ledger — {} entries survived; file now:\n{}",
+            after.entries.len(),
+            std::fs::read_to_string(&ledger_file).unwrap_or_default()
+        );
     }
 }

@@ -3,14 +3,14 @@ use std::process::Command;
 
 /// Describes which filesystem paths the Landlock sandbox should allow.
 /// Deny-all by default; explicitly listed paths get read or read+write access.
-pub struct LandlockRuleset {
+pub(crate) struct LandlockRuleset {
     pub read_paths: Vec<String>,
     pub read_write_paths: Vec<String>,
     pub interpreter: String,
 }
 
 impl LandlockRuleset {
-    pub fn new(allowed_read_paths: &[&Path], interpreter_path: &str) -> Self {
+    pub(crate) fn new(allowed_read_paths: &[&Path], interpreter_path: &str) -> Self {
         let mut read_paths = vec![
             "/usr".to_string(),
             "/lib".to_string(),
@@ -37,12 +37,12 @@ impl LandlockRuleset {
     }
 
     #[cfg(test)]
-    pub fn contains_read_path(&self, path: &str) -> bool {
+    pub(crate) fn contains_read_path(&self, path: &str) -> bool {
         self.read_paths.iter().any(|p| p == path)
     }
 
     #[cfg(test)]
-    pub fn contains_rw_path(&self, path: &str) -> bool {
+    pub(crate) fn contains_rw_path(&self, path: &str) -> bool {
         self.read_write_paths.iter().any(|p| p == path)
     }
 }
@@ -245,7 +245,7 @@ mod landlock_sys {
 // Public API
 // ---------------------------------------------------------------------------
 
-pub fn execute_sandboxed(
+pub(crate) fn execute_sandboxed(
     interpreter: &str,
     args: &[&str],
     allowed_read_paths: &[&Path],
