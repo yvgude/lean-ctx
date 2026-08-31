@@ -19,12 +19,18 @@ from a field that is silently ignored.
 
 **Read and acted on** (`core::context_package::addon_manifest`):
 
-- `[addon]` — `name`, `version`, `description`, `homepage`. The remaining
+- `[addon]` — `name`, `version`, `description`, `homepage`, plus `integration`
+  and `categories` where they feed the adapter choice below. The remaining
   metadata fields parse without error and are not used.
-- `[mcp]` — `transport`, `command`, `args`, `env`, `url`, `headers`, `sha256`.
-  Translated directly into a `[[gateway.servers]]` entry. Half-configured
-  wiring (stdio without `command`, http without `url`, a non-`http(s)` URL, an
-  unknown transport) is refused at parse.
+- `[mcp]` — `transport`, `command`, `args`, `env`, `url`, `headers`, `sha256`,
+  `integration`. Translated directly into a `[[gateway.servers]]` entry.
+  Half-configured wiring (stdio without `command`, http without `url`, a
+  non-`http(s)` URL, an unknown transport, an unrecognised `integration`) is
+  refused at parse.
+- `integration` is read from `[mcp]` first, then `[addon]`, then derived from a
+  recognised `[addon] categories` entry. Explicit slugs are held to the
+  vocabulary; category derivation is lenient, since categories are free-form
+  browsing labels.
 - `sha256` is **enforced** as of 3.10.1: the gateway resolves `command` against
   the `PATH` the child will see, hashes it, refuses a mismatch, and spawns the
   resolved path. Before 3.10.1 the value was stored and shown but never checked.

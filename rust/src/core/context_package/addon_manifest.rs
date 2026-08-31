@@ -129,7 +129,7 @@ fn string_map(table: &toml::Value, key: &str) -> BTreeMap<String, String> {
 /// typo (`code_grah`) would install cleanly and route through the generic path
 /// forever — working software that silently does less than the author asked
 /// for. Rejecting it here costs one line and names the manifest.
-fn parse_integration(raw: &str) -> Result<String, String> {
+fn parse_integration(raw: &str, table: &str) -> Result<String, String> {
     let slug = raw.trim();
     if slug.is_empty() {
         return Ok(String::new());
@@ -137,11 +137,49 @@ fn parse_integration(raw: &str) -> Result<String, String> {
     let kind = crate::core::mcp_catalog::adapters::IntegrationKind::parse(slug);
     if kind.is_none() && !slug.eq_ignore_ascii_case("none") {
         return Err(format!(
-            "lean-ctx-addon.toml: [mcp] unknown integration `{slug}` \
+            "lean-ctx-addon.toml: [{table}] unknown integration `{slug}` \
              (codebase-pack | code-graph | code-symbols | memory | compression | none)"
         ));
     }
     Ok(kind.as_str().to_string())
+}
+
+/// Resolve the adapter slug from the three places it may come from.
+///
+/// `[addon] integration` is where the field has always been documented and
+/// where every manifest in the wild puts it (see GH #1391). `[mcp] integration`
+/// mirrors the gateway server entry the table translates into, so it is
+/// accepted too and wins when both are present, being the more specific of the
+/// two. Reading only `[mcp]` — as this parser first did — would have silently
+/// ignored the field in every existing manifest, which is the precise failure
+/// the strict validation below exists to prevent.
+///
+/// Falling back to `[addon] categories` restores the documented "empty derives
+/// from categories" behaviour, which used to happen at install time against a
+/// store that no longer exists. Derivation is deliberately **lenient**:
+/// categories are free-form browsing labels (`plans`, `workflow`), so an
+/// unrecognised one means "no adapter", never an error. Only a slug the author
+/// wrote *as* an integration is held to the vocabulary.
+fn resolve_integration(
+    addon_table: &toml::Value,
+    mcp_table: &toml::Value,
+) -> Result<String, String> {
+    let explicit = parse_integration(&string_at(mcp_table, "integration"), "mcp")?;
+    if !explicit.is_empty() {
+        return Ok(explicit);
+    }
+    let from_addon = parse_integration(&string_at(addon_table, "integration"), "addon")?;
+    if !from_addon.is_empty() {
+        return Ok(from_addon);
+    }
+
+    let categories = string_list(addon_table, "categories");
+    let derived = crate::core::mcp_catalog::adapters::IntegrationKind::from_categories(&categories);
+    Ok(if derived.is_none() {
+        String::new()
+    } else {
+        derived.as_str().to_string()
+    })
 }
 
 /// Parse `lean-ctx-addon.toml`.
@@ -210,7 +248,7 @@ pub(crate) fn parse(text: &str) -> Result<AddonManifest, String> {
                 url,
                 headers: string_map(t, "headers"),
                 sha256: string_at(t, "sha256"),
-                integration: parse_integration(&string_at(t, "integration"))?,
+                integration: resolve_integration(addon_table, t)?,
             })
         }
     };
@@ -278,6 +316,59 @@ headers = { Authorization = "Bearer x" }
     fn a_manifest_without_mcp_is_valid() {
         let m = parse("[addon]\nname = \"squeeze\"\n").expect("parse");
         assert!(m.mcp.is_none());
+    }
+
+    /// The manifest from GH #1391, verbatim. `integration` sits under
+    /// `[addon]` there — the documented location, and the one every manifest in
+    /// the wild uses. Reading only `[mcp]` would have ignored it silently.
+    #[test]
+    fn integration_is_read_from_the_addon_table_as_documented() {
+        let m = parse(
+            r#"
+[addon]
+name = "twinmind"
+display_name = "TwinMind MCP"
+version = "0.1.0"
+description = "TwinMind MCP memories, prompts, and tasks over HTTP."
+categories = ["memory"]
+integration = "memory"
+
+[mcp]
+transport = "http"
+url = "https://api.twinmind.com/mcp"
+"#,
+        )
+        .expect("parse");
+        assert_eq!(m.mcp.expect("wiring").integration, "memory");
+    }
+
+    /// `[mcp]` is the more specific of the two and wins when both are set.
+    #[test]
+    fn the_mcp_table_overrides_the_addon_table() {
+        let m = parse(
+            "[addon]\nname = \"x\"\nintegration = \"memory\"\n\
+             [mcp]\ncommand = \"c\"\nintegration = \"compression\"\n",
+        )
+        .expect("parse");
+        assert_eq!(m.mcp.expect("wiring").integration, "compression");
+    }
+
+    /// The documented "empty derives from categories" fallback. Categories are
+    /// free-form browsing labels, so an unrecognised one means "no adapter" —
+    /// erroring there would reject perfectly good manifests.
+    #[test]
+    fn categories_derive_an_adapter_leniently() {
+        let derived = parse(
+            "[addon]\nname = \"x\"\ncategories = [\"workflow\", \"memory\"]\n[mcp]\ncommand = \"c\"\n",
+        )
+        .expect("parse");
+        assert_eq!(derived.mcp.expect("wiring").integration, "memory");
+
+        let none = parse(
+            "[addon]\nname = \"x\"\ncategories = [\"plans\", \"workflow\"]\n[mcp]\ncommand = \"c\"\n",
+        )
+        .expect("unknown categories are not an error");
+        assert_eq!(none.mcp.expect("wiring").integration, "");
     }
 
     /// A typo in `integration` would otherwise install cleanly and route

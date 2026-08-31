@@ -102,10 +102,14 @@ integration = "memory"  # optional; fold results into a lean-ctx surface
 `ctx_*` tool your agent already uses instead of arriving as opaque text:
 `codebase-pack` → `ctx_expand`, `code-graph` / `code-symbols` → `ctx_callgraph`,
 `memory` → `ctx_knowledge`, `compression` → the compressor pipeline, `none` for
-passthrough. Common aliases (`repomix`, `callgraph`, `compressor`) are accepted
-and stored canonically. A slug that is not recognised is an error rather than a
-silent fallback — a typo that installed cleanly and quietly did less would look
-exactly like working software.
+passthrough. It may sit in `[addon]` (where it has always been documented) or in
+`[mcp]`, which mirrors the gateway entry and wins if both are set; with neither,
+a recognised `[addon] categories` entry derives one. Common aliases (`repomix`,
+`callgraph`, `compressor`) are accepted and stored canonically. A slug written
+as an integration but not recognised is an error rather than a silent fallback —
+a typo that installed cleanly and quietly did less would look exactly like
+working software. Categories stay lenient, because they are free-form browsing
+labels rather than a vocabulary.
 
 `addon add` turns that into a `[[gateway.servers]]` entry. Three limits, all of
 them deliberate, and all of them things the pre-3.9.20 channel did differently:
