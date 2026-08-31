@@ -44,6 +44,35 @@ present in the 3.10.0 artifacts.
 
 ### Fixed
 
+- **`ctx_search` was unusable in read-only client modes (#1624, thanks @jh061084)** —
+  MCP annotates tools, but `ctx_search` multiplexes five actions and only four
+  of them read. The fifth, `reindex`, wrote persistent BM25 indexes, and that
+  single action withheld `readOnlyHint` from every regex, semantic and symbol
+  lookup — so Devin Plan mode and Cursor's restricted contexts refused the tool
+  before dispatch. Search was collateral damage for a rebuild that `ctx_index`
+  already owns and correctly advertises as mutating. `reindex` is gone from
+  `ctx_search`; a call that still asks for it is answered with the exact
+  replacement (`ctx_index(action="build-full")`) rather than a bare rejection.
+- **`ctx_search` reported partial results as if they were complete (#1625,
+  thanks @jh061084)** — the file walk stops once `max_results` is reached, and
+  the scanned-file counter stops with it, so an audit that quit after the first
+  of 32 files answered "10 matches in 1 files (scanned 1)". Nothing said the
+  scan had been cut short. Hitting the cap is now announced the way the
+  wall-clock deadline has been since #336, and the counts are labelled a floor
+  rather than a total. Separately, a `max_results` written inside a `queries[]`
+  entry was read by nothing: the top-level budget is shared and split across
+  the queries, and the nested value was silently dropped. A per-query value now
+  wins over its share, and an unrecognised key is rejected by name.
+- **Replace mode rejected other MCP servers' tools (#1631)** — the deny guard
+  was "allow `ctx_*`, deny everything else", which is safe only on a host that
+  filters by matcher first. Devin routes every MCP call through the same
+  PreToolUse pipeline, so a user running lean-ctx alongside the Atlassian
+  server had every Jira call answered with "use the equivalent ctx_* tool" —
+  naming an equivalent that does not exist. Replace mode now decides by
+  provenance (`tool_info.mcp_tool_name`, `mcp__<server>__<tool>`) before
+  falling back to the native-name list, so a foreign server exposing a tool
+  called `search` or `read` is not caught either. `is_lean_ctx_tool` also
+  learned the `mcp__lean-ctx__…` spelling the rest of the codebase already used.
 - **Agent-bus registration errors named no path (#1619, thanks @GrimmiMeloni)** —
   a sandbox or filesystem policy denies exactly one directory, and the failure
   arrived as `agent bus registration is required before tool execution: File
@@ -130,6 +159,30 @@ present in the 3.10.0 artifacts.
 
 ### Internal
 
+- **Deterministic `ctx_explore` stability test (#1635)** — the byte-stability
+  guard failed under parallel load because `graph_provider::open_or_build`
+  returns `None` when the build gate is held by another test in the same binary
+  or the build times out, so one run cited a symbol the next did not. The index
+  is now built synchronously before the comparison, and the test additionally
+  requires the symbol citation to be present — without that, a degraded run
+  would have agreed with itself and passed while proving nothing.
+- **History-policy gate no longer fails on a tempdir race (#1634)** — the
+  fixture's teardown raced git's own file handles and reported
+  `Directory not empty: '.git'` as a policy-gate failure. `gc.auto=0` removes
+  the usual cause and teardown tolerates the residue. Because the test file is
+  a pinned scanner source, the attestation chain (scanner digest → policy
+  fingerprint → evidence `policy_sha256` → report digest) was re-signed
+  deliberately in the same change; the audited history, its 558 findings and
+  `audited_commit` are untouched.
+- **CodeQL alert list made meaningful again (#1636)** — the Rust analysis
+  carried 142 open alerts, every one traced to a false positive: `session_id`
+  is a timestamp-plus-PID filename that authenticates nothing, the flagged
+  paths compose a startup argument with constants, and the caller-controlled
+  surface is jailed by `pathjail`, which CodeQL cannot model. The risk was not
+  a vulnerability but a broken smoke detector — a real finding arriving in that
+  list would have been invisible. Tests and fixtures are excluded from
+  analysis, those three rules are filtered with the reasoning recorded beside
+  each exclusion, and `security-extended` stays on so new rules still report.
 - **Deterministic auto-detach test (#1611)** — the `auto_detached_result`
   harness helper raced its own premise (a 10 ms soft cap against a `sleep 0.1`
   child) and turned `main` red on macOS after a green PR run. The child now
