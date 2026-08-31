@@ -76,6 +76,11 @@ struct Installed {
     modules: Vec<PathBuf>,
     /// The `[mcp]` command line, when the addon declares one.
     wiring: Option<String>,
+    /// Whether this is the version whose modules actually load. The store keeps
+    /// versions side by side, so after an upgrade two rows share a name and
+    /// only one of them is live — printing both as if they both ran would be a
+    /// listing that disagrees with the running system.
+    active: bool,
 }
 
 /// Read the store rather than the package index.
@@ -98,6 +103,20 @@ fn installed_addons() -> Vec<Installed> {
         let Ok(versions) = std::fs::read_dir(name_entry.path()) else {
             continue;
         };
+        // Which version is live is decided by the loader, not restated here —
+        // the same mtime rule, read from the same directories, so the listing
+        // and the running system cannot drift apart.
+        let active_dir = std::fs::read_dir(name_entry.path()).ok().and_then(|v| {
+            v.flatten()
+                .filter(|e| e.path().is_dir())
+                .max_by_key(|e| {
+                    e.metadata()
+                        .and_then(|m| m.modified())
+                        .unwrap_or(std::time::UNIX_EPOCH)
+                })
+                .map(|e| e.path())
+        });
+
         for version_entry in versions.flatten().filter(|e| e.path().is_dir()) {
             let dir = version_entry.path();
             let mut modules: Vec<PathBuf> = std::fs::read_dir(&dir)
@@ -112,12 +131,14 @@ fn installed_addons() -> Vec<Installed> {
                 .ok()
                 .and_then(|t| addon_manifest::parse(&t).ok())
                 .and_then(|m| m.mcp.map(|w| w.describe()));
+            let active = active_dir.as_ref().is_some_and(|a| *a == dir);
             out.push(Installed {
                 name: display_name.clone(),
                 version: version_entry.file_name().to_string_lossy().into_owned(),
                 dir,
                 modules,
                 wiring,
+                active,
             });
         }
     }
@@ -137,15 +158,28 @@ fn cmd_list() {
 
     println!("Installed addons ({}):", installed.len());
     println!();
+    let superseded = installed.iter().any(|a| !a.active);
     for a in &installed {
         let names: Vec<String> = a
             .modules
             .iter()
             .filter_map(|m| m.file_stem().map(|s| s.to_string_lossy().into_owned()))
             .collect();
-        println!("  {}@{}", a.name, a.version);
+        println!(
+            "  {}@{}{}",
+            a.name,
+            a.version,
+            if a.active { "" } else { "   (superseded)" }
+        );
         if !names.is_empty() {
-            println!("    compressors: {}", names.join(", "));
+            // Only the active version's modules reach the registry, so saying
+            // "compressors:" for a superseded row would name code that never
+            // runs.
+            if a.active {
+                println!("    compressors: {}", names.join(", "));
+            } else {
+                println!("    modules on disk, not loaded: {}", names.join(", "));
+            }
         }
         if let Some(w) = a.wiring.as_deref() {
             println!("    MCP server:  {w}");
@@ -156,6 +190,9 @@ fn cmd_list() {
     }
     println!();
     println!("Modules register as compressors and are visible in `lean-ctx doctor`.");
+    if superseded {
+        println!("Superseded versions stay on disk; `addon remove <name>` clears them all.");
+    }
     if !addon_wiring::gateway_enabled() {
         println!("The MCP gateway is OFF — declared servers are recorded but not spawned.");
     }

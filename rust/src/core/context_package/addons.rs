@@ -103,9 +103,43 @@ pub(crate) fn materialize_modules(
 /// `addon list` deliberately does not use it — the CLI groups by name and
 /// version, which this flat list cannot express.
 #[cfg(any(feature = "wasm", test))]
+/// Every module the extension registry should load: one version per addon.
+///
+/// The store keeps versions side by side, like every other pack kind, so after
+/// an upgrade `@ns/demo/1.0.0` and `@ns/demo/1.1.0` both exist on disk. Walking
+/// the whole tree would hand the registry two modules with the same file stem
+/// and let load order decide which one wins — and load order was sorted paths,
+/// where `"10.0.0" < "9.0.0"`, so upgrading 9 to 10 would silently keep running
+/// version 9. Old code that keeps running is the failure this whole channel is
+/// careful about elsewhere; it should not arrive through the back door.
+///
+/// One version is chosen per addon by directory mtime — "the one you installed
+/// last". Not by parsing the version: the manifest contract calls `version`
+/// author-declared and free-form, so it is not reliably orderable, whereas the
+/// install that wrote the directory is a fact.
 pub(crate) fn installed_modules(store_root: &Path) -> Vec<PathBuf> {
+    let root = addons_root(store_root);
+    let Ok(addon_dirs) = std::fs::read_dir(&root) else {
+        return Vec::new();
+    };
+
     let mut out = Vec::new();
-    collect_modules(&addons_root(store_root), &mut out, 0);
+    for addon_dir in addon_dirs.flatten().filter(|e| e.path().is_dir()) {
+        let Ok(versions) = std::fs::read_dir(addon_dir.path()) else {
+            continue;
+        };
+        let newest = versions
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .max_by_key(|e| {
+                e.metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::UNIX_EPOCH)
+            });
+        if let Some(version_dir) = newest {
+            collect_modules(&version_dir.path(), &mut out, 0);
+        }
+    }
     out.sort();
     out
 }
@@ -276,6 +310,41 @@ mod tests {
             names,
             vec!["a.wasm", "z.wasm"],
             "registration order must be deterministic (#498)"
+        );
+    }
+
+    /// After an upgrade both versions sit in the store. Loading both would give
+    /// the registry two modules with the same stem and let load order pick a
+    /// winner — and sorted paths put `"10.0.0"` before `"9.0.0"`, so the *old*
+    /// version would win exactly when the version number crosses ten. Only the
+    /// most recently installed version is loaded.
+    #[test]
+    fn only_the_most_recently_installed_version_is_loaded() {
+        let tmp = tempfile::tempdir().unwrap();
+        let addon = |body: &[u8]| AddonContent {
+            manifest_toml: "[addon]\nname = \"@ns/demo\"\n".into(),
+            modules: vec![DocumentBlob::from_plaintext("demo.wasm", body).unwrap()],
+        };
+
+        // The lexicographic trap: 10.0.0 sorts before 9.0.0.
+        let old = empty_wasm();
+        let mut new = empty_wasm();
+        new.extend_from_slice(&[0x00; 4]);
+        materialize_modules(tmp.path(), &manifest("@ns/demo", "9.0.0"), &addon(&old)).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        materialize_modules(tmp.path(), &manifest("@ns/demo", "10.0.0"), &addon(&new)).unwrap();
+
+        let found = installed_modules(tmp.path());
+        assert_eq!(found.len(), 1, "one version's modules, not both: {found:?}");
+        assert_eq!(
+            std::fs::read(&found[0]).unwrap(),
+            new,
+            "the upgrade must win, not the version that sorts first"
+        );
+        assert!(
+            found[0].to_string_lossy().contains("10.0.0"),
+            "{:?}",
+            found[0]
         );
     }
 

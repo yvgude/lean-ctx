@@ -34,6 +34,11 @@ lean-ctx addon remove @ns/my-addon
 `add` is the only verb that stores executable code, so it is the only one that
 asks — and it refuses to proceed non-interactively unless you pass `--yes`.
 
+Versions sit side by side in the store, and only the most recently installed one
+loads. `addon list` marks the others `(superseded)` and says their modules are
+on disk but not running, rather than listing code that never executes;
+`addon remove <name>` clears every version.
+
 A registry reference is downloaded to a temp file and then goes through exactly
 the same preview, prompt and verification as a file you already had: there is
 one consent path, not a shorter one for remote installs. An argument that names

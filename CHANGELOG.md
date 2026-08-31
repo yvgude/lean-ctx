@@ -59,6 +59,16 @@ below. None of it is present in the 3.10.0 artifacts.
   opt-in, and `addon list` reports an addon that is wired while the gateway is
   off rather than letting you assume it is running. `addon remove` unwires as
   well as uninstalls.
+- **Only one version of an addon loads.** The store keeps versions side by side
+  like every other pack kind, and module discovery walked the whole tree — so
+  after an upgrade the registry received two modules with the same file stem and
+  load order decided the winner. Load order was sorted paths, where
+  `"10.0.0" < "9.0.0"`, so upgrading 9 to 10 would have quietly kept running
+  version 9. Discovery now picks one version per addon by install time (the
+  manifest contract calls `version` author-declared and free-form, so it is not
+  reliably orderable; the install that wrote the directory is a fact).
+  `addon list` marks the rest `(superseded)` and reports their modules as on
+  disk but not loaded, instead of listing code that never runs.
 - **An upgrade keeps what you configured.** Re-installing replaces the fields
   the author owns (transport, command, args, url, pin, integration) and
   preserves the ones you do: `secret_env` / `secret_headers`, which a manifest
