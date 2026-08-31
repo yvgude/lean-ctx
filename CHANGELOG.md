@@ -22,6 +22,14 @@ present in the 3.10.0 artifacts.
 - Every native release target installs its wheel, passes strict package-metadata
   validation, and runs the SDK's real AgentContext lifecycle before publication.
 
+### Added — Dashboard
+
+- The local dashboard now presents a one-time, dismissible invitation for
+  companies interested in a LeanCTX design partnership or organization-wide
+  rollout, plus a direct path to the public Python SDK. It stays out of the way
+  of onboarding, authentication, and product tours; supports keyboard dismissal
+  and focus trapping; and remembers the user's choice locally.
+
 ### Security
 
 - Sessions are project-rooted and read-only by default. Write and execution
@@ -44,6 +52,19 @@ present in the 3.10.0 artifacts.
 
 ### Fixed
 
+- **Claude Code lost its plan-usage windows and near-limit warnings behind the
+  proxy (#1638, thanks @online)** — Claude Code derives both from the
+  `anthropic-ratelimit-unified-*` response headers, and the proxy's response
+  allowlist enumerated only the four legacy `requests-`/`tokens-` names. When
+  the `unified-*` family arrived upstream the allowlist stayed correct about
+  what it listed and silently dropped the rest, so `rate_limits` vanished from
+  the statusline payload and — the costlier half — the warning that a usage
+  limit is approaching could never fire. The whole `anthropic-ratelimit-*`
+  family is now relayed by prefix rather than by enumeration, which is what
+  aged badly in the first place; `request-id` and `x-should-retry` are relayed
+  too. The allowlist stays an allowlist: the proxy rewrites the body
+  (decompression, SSE re-framing), so upstream framing headers are still not
+  passed through.
 - **`ctx_search` was unusable in read-only client modes (#1624, thanks @jh061084)** —
   MCP annotates tools, but `ctx_search` multiplexes five actions and only four
   of them read. The fifth, `reindex`, wrote persistent BM25 indexes, and that
