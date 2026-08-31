@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -15,9 +16,15 @@ SPEC.loader.exec_module(GATE)
 
 class HistoryPolicyGateTests(unittest.TestCase):
     def setUp(self):
+        # `gc.auto=0`: the fixture's commits can otherwise spawn a background
+        # `git gc --auto` that still holds a handle inside `.git` when the
+        # directory is torn down, and CI then fails with
+        # "Directory not empty: '.git'" — a red build that says nothing about
+        # the gate under test. `tearDown` tolerates whatever residue remains.
         self.temp = tempfile.TemporaryDirectory()
         self.repo = Path(self.temp.name)
         self.git("init", "-q")
+        self.git("config", "gc.auto", "0")
         self.git("config", "user.email", "test@leanctx.invalid")
         self.git("config", "user.name", "LeanCTX Test")
         (self.repo / "README.md").write_text("public\n")
@@ -46,7 +53,13 @@ class HistoryPolicyGateTests(unittest.TestCase):
         self.write_policy(self.base, hashlib.sha256(self.report_path.read_bytes()).hexdigest())
 
     def tearDown(self):
-        self.temp.cleanup()
+        # The fixture is a temp directory: if the platform still holds a handle
+        # inside `.git`, the OS reclaims the leftovers. Failing the test over it
+        # would report a filesystem race as a policy-gate defect.
+        try:
+            self.temp.cleanup()
+        except OSError:
+            shutil.rmtree(self.temp.name, ignore_errors=True)
 
     def git(self, *args):
         result = subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=True)
