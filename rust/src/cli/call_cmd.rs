@@ -134,10 +134,15 @@ fn parse_args(args: &[String]) -> Result<CallArgs, CallError> {
 /// developer machine) before filtering on project root, and `lean-ctx call`
 /// is a short-lived subprocess that consumers spawn in loops.
 ///
-/// Read-only. Nothing writes this session back. Persistence belongs to the
-/// MCP server (`server/post_dispatch.rs`, `prepare_save` -> `write_to_disk`);
-/// a write from a one-shot subprocess would be last-writer-wins against a
-/// live server holding the same session file.
+/// This function only READS — it never writes the session back, and there is
+/// no implicit post-dispatch save (that belongs to the MCP server,
+/// `server/post_dispatch.rs`). It is NOT an invariant that a one-shot call
+/// leaves the session untouched: five actions reachable via `lean-ctx call`
+/// persist it on purpose — `ctx_session` `save`/`reset`/`import` and
+/// `ctx_handoff` `pull`/`import`. `write_to_disk`
+/// (`core/session/persistence.rs`) skips a write when the on-disk version is
+/// strictly newer, but an equal-version write still lands, so such a call
+/// racing a live server on the same session can still clobber it.
 ///
 /// Every failure degrades silently to an empty default session — no sessions
 /// directory (the first-run case, not an error), no index for this root, an
@@ -166,12 +171,18 @@ fn oneshot_ctx(project_root: String, resolved_paths: HashMap<String, String>) ->
         bm25_cache: Some(std::sync::Arc::new(std::sync::Mutex::new(None))),
         // Same class of omission as `cache` above: without these three,
         // ten registered tools abort with "<handle> not available".
-        // `session` is read-only (see `oneshot_session`); `tool_calls` and
-        // `ledger` start empty because a one-shot process has no history.
+        // `tool_calls` genuinely starts empty — it is in-process turn history
+        // a fresh subprocess cannot have. The ledger is the opposite: it is
+        // persisted state, so it is loaded from disk exactly as the MCP server
+        // does (`tools/server_lifecycle.rs`). An empty ledger here would not be
+        // a clean slate but data loss — tools that hold this handle write it
+        // straight back (`ctx_control` saves unconditionally, `ctx_ledger`
+        // reset/evict likewise), truncating the user's real, global
+        // `state_dir()/context_ledger.json` while every action silently no-ops.
         session: Some(std::sync::Arc::new(tokio::sync::RwLock::new(session))),
         tool_calls: Some(std::sync::Arc::new(tokio::sync::RwLock::new(Vec::new()))),
         ledger: Some(std::sync::Arc::new(tokio::sync::RwLock::new(
-            crate::core::context_ledger::ContextLedger::default(),
+            crate::core::context_ledger::ContextLedger::load(),
         ))),
         // Every remaining handle stays None deliberately: no registered tool
         // aborts on their absence, and each would pull in server state a
@@ -456,6 +467,62 @@ mod tests {
             files_before,
             session_file_names(&sessions),
             "a one-shot call created or removed a session file"
+        );
+    }
+
+    /// Regression: a one-shot call must never truncate the user's global
+    /// context ledger (`state_dir()/context_ledger.json`, ONE non-project-scoped
+    /// file rewritten wholesale). `oneshot_ctx` briefly handed tools a
+    /// `ContextLedger::default()`; every ledger-holding tool writes that handle
+    /// straight back — `ctx_control` saves unconditionally — so a single
+    /// `lean-ctx call ctx_control` erased the real ledger.
+    ///
+    /// Isolation: `state_dir()` resolves through `paths::category_dir`, whose
+    /// explicit `LEAN_CTX_STATE_DIR` override wins even under `#[cfg(test)]`
+    /// (`LEAN_CTX_DATA_DIR` does NOT govern it). Pointing it at a tempdir is
+    /// what keeps this test off the developer's real `~/.local/state/lean-ctx`.
+    #[test]
+    fn a_one_shot_call_never_truncates_the_global_ledger() {
+        let state = tempfile::tempdir().expect("state dir");
+        crate::test_env::set_var("LEAN_CTX_STATE_DIR", state.path());
+        let data = tempfile::tempdir().expect("data dir");
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+        let project = tempfile::tempdir().expect("project dir");
+        let marker_file = project.path().join("LEDGER_SEED_MARKER.rs");
+        std::fs::write(&marker_file, b"pub fn seeded() -> u32 { 1 }\n").expect("write marker");
+
+        // Seed an entry a `ContextLedger::default()` could never carry.
+        let mut seeded = crate::core::context_ledger::ContextLedger::new();
+        seeded.record(&marker_file.to_string_lossy(), "full", 4_000, 1_000);
+        seeded.save();
+
+        let ledger_file = state.path().join("context_ledger.json");
+        let before = std::fs::read_to_string(&ledger_file).expect("seeded ledger file");
+        assert!(
+            before.contains("LEDGER_SEED_MARKER"),
+            "precondition: the seed never reached {}",
+            ledger_file.display()
+        );
+
+        // ctx_control writes back whatever ledger `oneshot_ctx` gave it.
+        let args = vec![
+            "ctx_control".to_string(),
+            "--project-root".to_string(),
+            project.path().to_string_lossy().to_string(),
+            "--json".to_string(),
+            r#"{"action": "list"}"#.to_string(),
+        ];
+        run_call(&args).expect("ctx_control should dispatch");
+
+        let after = crate::core::context_ledger::ContextLedger::load();
+        assert!(
+            after
+                .entries
+                .iter()
+                .any(|entry| entry.path.contains("LEDGER_SEED_MARKER")),
+            "a one-shot call truncated the global ledger — {} entries survived; file now:\n{}",
+            after.entries.len(),
+            std::fs::read_to_string(&ledger_file).unwrap_or_default()
         );
     }
 }
