@@ -34,7 +34,7 @@ Read the status boundary before relying on a document:
 - Integration setup: [guides](guides/README.md)
 - Local Runtime reference: [reference](reference/README.md)
 - Local contracts and schemas: [contracts](contracts/README.md)
-- The SDK: [`thinkery-leanctx-sdk`](https://github.com/Thinkery-AG/leanctx-sdk) (external repo — see [SDK surface](internal/SDK-SURFACE.md))
+- The SDK: [`thinkery-leanctx-sdk`](https://github.com/Thinkery-AG/leanctx-sdk) (external repo — see [SDK surface](reference/sdk-surface.md))
 
 ## Context Kits and package material
 

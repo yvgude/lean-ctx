@@ -2,7 +2,7 @@
   "name": "lean-ctx-client",
   "version": "0.1.0",
   "private": true,
-  "//private": "Cookbook example, not a product surface. npm lean-ctx-client 0.1.0 was published from here by hand; see docs/internal/SDK-SURFACE.md.",
+  "//private": "Cookbook example, not a product surface. npm lean-ctx-client 0.1.0 was published from here by hand; see docs/reference/sdk-surface.md.",
   "description": "Thin, dependency-free TypeScript client for the lean-ctx HTTP /v1 contract.",
   "license": "MIT",
   "homepage": "https://leanctx.com",

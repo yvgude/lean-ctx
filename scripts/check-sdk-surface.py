@@ -18,7 +18,7 @@ Two checks, both cheap and both about names rather than behaviour:
 
 1. No packaging manifest in this repository may declare one of the reserved SDK
    names, or describe itself as *the* SDK.
-2. `docs/internal/SDK-SURFACE.md` must exist and must name the external SDK, so
+2. `docs/reference/sdk-surface.md` must exist and must name the external SDK, so
    the answer to "which SDK do I use?" has exactly one written home.
 
 No third-party dependencies — standard library only.
@@ -45,7 +45,7 @@ RESERVED_SDK_NAMES = {
     "lean-ctx-python",
 }
 
-SURFACE_DOC = pathlib.Path("docs/internal/SDK-SURFACE.md")
+SURFACE_DOC = pathlib.Path("docs/reference/sdk-surface.md")
 SDK_PACKAGE = "thinkery-leanctx-sdk"
 
 # Vendored, archived and example trees are not product surface.
