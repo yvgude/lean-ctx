@@ -3,7 +3,7 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [3.10.1] — 2026-08-30
+## [3.10.1] — 2026-08-31
 
 This release includes the defect fixes merged after the `v3.10.0` tag
 (`5b69202`) and the additive SDK Agent Tools interface below. Neither is
@@ -116,6 +116,16 @@ present in the 3.10.0 artifacts.
   path. `lean-ctx rules sync` and `rules sync claude` also repair this compact,
   idempotent pointer block directly without restoring the retired full rules
   file or duplicating its token cost.
+- **Multi-query search could look complete after silently hitting its result
+  budget (#1625)** — `ctx_search` now accepts `max_results` inside each query,
+  states the effective shared and per-query limits, and reports when results
+  were capped. Audits no longer have to infer completeness from a partial file
+  count or discover that a nested limit was ignored.
+- **Read-only clients could not call `ctx_search` (#1624)** — Plan and other
+  restricted modes rejected the whole tool because its MCP declaration lacked
+  `readOnlyHint`. Reindexing now uses the existing mutating `ctx_index`
+  operation, while `ctx_search` is explicitly read-only and available without
+  write access.
 - **Dependency** — `chacha20` 0.10.1 → 0.10.2 (0.10.1 was yanked upstream).
 
 ### Internal

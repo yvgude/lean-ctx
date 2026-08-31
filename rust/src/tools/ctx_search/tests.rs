@@ -678,14 +678,17 @@ fn match_count_reports_matched_files_not_scanned_files() {
 /// not completeness evidence when the budget ran out, and now says so.
 #[test]
 fn result_cap_is_announced_instead_of_looking_exhaustive() {
+    use std::fmt::Write as _;
+
     // Distinct literal per case: a repeated pattern in one process renders as
     // a *delta* against the previous result, which would compare the two runs
     // against each other rather than against the corpus.
     let fixture = |token: &str| {
         let dir = tempfile::tempdir().unwrap();
-        let many: String = (0..12)
-            .map(|i| format!("const {token}_{i} = \"/api/v{i}\";\n"))
-            .collect();
+        let mut many = String::new();
+        for i in 0..12 {
+            writeln!(&mut many, "const {token}_{i} = \"/api/v{i}\";").unwrap();
+        }
         std::fs::write(dir.path().join("a.ts"), many).unwrap();
         std::fs::write(
             dir.path().join("b.ts"),
