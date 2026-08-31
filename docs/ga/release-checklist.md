@@ -65,8 +65,9 @@ release assets, and verification commands.
     --artifact-root <proof-directory> --json
   ```
 
-- [ ] The single-SDK surface still holds: no package in this repository claims
-  an SDK name, and the surface document names the one SDK. The SDK itself
+- [ ] The single-SDK surface still holds (see the
+  [public boundary](../reference/sdk-surface.md)): no package in this repository
+  claims an SDK name, and the surface document names the one SDK. The SDK itself
   (`thinkery-leanctx-sdk`) releases from its own repository on its own cadence
   and is not gated here.
 

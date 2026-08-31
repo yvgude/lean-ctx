@@ -112,10 +112,12 @@ organization-specific CLIs. Do not place compression rules in an undocumented
 directory above. The [customization guide](../reference/10-customization-and-governance.md)
 has the command reference.
 
-## SDK integration
+## SDK and protocol-client integration
 
-SDKs consume the versioned HTTP and OCLA contracts; they do not embed or
-reimplement the compression engine. First discover the running server:
+Starting with SDK 1.1.0, the supported Python Agent SDK consumes the versioned
+Engine tool-session protocol; it does not embed or reimplement the compression
+engine. Lower-level HTTP and OCLA consumers should first discover the running
+server:
 
 ```text
 GET /v1/capabilities
@@ -125,18 +127,14 @@ GET /v1/openapi.json
 Then use the returned capabilities and tool schemas instead of assuming a
 particular tool profile or compiled feature set.
 
-| SDK | Current package | Integration role |
+| Surface | Current package | Integration role |
 |---|---|---|
-| TypeScript | `@lean-ctx/ocla-sdk` | OCLA client, envelope types, and wire API access. |
-| Python | `lean-ctx-client` / `lean-ctx-ocla` | Dependency-free `/v1` client and offline OCLA verification. |
-| Go | `lean-ctx-ocla` | OCLA wire types and conformance coverage. |
-| Rust | `lean-ctx-client` | HTTP client plus envelope validation. |
+| Python Agent SDK | `thinkery-leanctx-sdk` (external repository) | `AgentContext`, Engine lifecycle, context tools, and receipts. |
+| Rust protocol client | `lean-ctx-client` | HTTP client, OCLA envelope validation, and verification tooling. |
+| Rust embedding facade | `lean-ctx-embed` | In-process compression integration; not an Agent SDK. |
 
-The TypeScript SDK exports canonical envelope and capability types. The Python
-client offers discovery, tool calls, SSE events, and `run_conformance`. Consult
-the [SDK surface](../internal/SDK-SURFACE.md) for the
-release-specific result rather than treating package names or certification
-levels as permanent.
+Consult the [SDK surface](../reference/sdk-surface.md) before selecting a
+package; a protocol client or embedding facade is not a second SDK.
 
 The canonical wire schema is [OCLA Wire v1](../contracts/ocla-wire-v1.schema.json).
 Validate envelopes before sending or accepting them; unknown fields are rejected

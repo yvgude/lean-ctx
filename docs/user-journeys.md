@@ -307,7 +307,7 @@ run = ctx.wrap(my_agent).run("Review the notes")
 - **The one SDK:** [`thinkery-leanctx-sdk`](https://github.com/Thinkery-AG/leanctx-sdk),
   developed and released outside this repository against the public CLI wire
   boundary. The Rust client remains technical substrate; see
-  [SDK surface](internal/SDK-SURFACE.md).
+  [SDK surface](reference/sdk-surface.md).
 - **Declared adapter scope:** the Python reference-wrapper is explicit about
   supported agent versions, observability, degradations, and evidence; it is not
   a generic framework-adapter promise.

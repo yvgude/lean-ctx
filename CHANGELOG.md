@@ -11,6 +11,9 @@ present in the 3.10.0 artifacts.
 
 ### Added — SDK Agent Tools Interface
 
+- Publication is deliberately sequenced: Engine 3.10.1 ships and is verified
+  first; the `AgentContext` interface becomes available with the separate SDK
+  1.1.0 release. The currently published SDK 1.0.0 does not include these tools.
 - `lean-ctx engine tool-session` provides a persistent, version-negotiated
   NDJSON session for the Python SDK's `AgentContext`.
 - Read, search, tree, compose, symbol, glob, patch, and shell capabilities use
@@ -29,6 +32,20 @@ present in the 3.10.0 artifacts.
   rollout, plus a direct path to the public Python SDK. It stays out of the way
   of onboarding, authentication, and product tours; supports keyboard dismissal
   and focus trapping; and remembers the user's choice locally.
+
+### Changed — One Supported SDK
+
+- `thinkery-leanctx-sdk`, developed in the public
+  [`Thinkery-AG/leanctx-sdk`](https://github.com/Thinkery-AG/leanctx-sdk)
+  repository, is now the single supported Agent SDK. The duplicate in-repo
+  Python and Node SDK sources and their publication workflow were retired.
+- The unpublished Rust `lean-ctx-sdk` crate was renamed `lean-ctx-embed` to
+  describe its actual role as an in-process embedding facade. It is not a
+  second Agent SDK.
+- Previously published `lean-ctx-python` and npm `lean-ctx-sdk` artifacts may
+  remain installable for compatibility, but new integrations should use
+  `thinkery-leanctx-sdk`. The release gate now rejects future package-name or
+  documentation drift back to multiple SDK surfaces.
 
 ### Security
 

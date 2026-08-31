@@ -3,7 +3,7 @@ name: Historical /v1 client publishing
 # This workflow preserves publication mechanics for archived thin-client
 # prototypes. It is not an SDK release path at all: the one LeanCTX SDK is
 # `thinkery-leanctx-sdk`, developed and released in Thinkery-AG/leanctx-sdk.
-# See docs/internal/SDK-SURFACE.md.
+# See docs/reference/sdk-surface.md.
 
 on:
   workflow_dispatch:
