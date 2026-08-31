@@ -106,10 +106,17 @@ pub(crate) const FORWARDED_HEADERS: &[&str] = &[
     "openai-version",
     "x-models-etag",
     "x-reasoning-included",
-    "anthropic-ratelimit-requests-limit",
-    "anthropic-ratelimit-requests-remaining",
-    "anthropic-ratelimit-tokens-limit",
-    "anthropic-ratelimit-tokens-remaining",
+    // #1638: `anthropic-ratelimit-*` is covered by the prefix rule in
+    // `is_forwarded_response_header` rather than enumerated here. Enumeration
+    // is what broke: the four legacy `requests-`/`tokens-` names were listed,
+    // and when Anthropic introduced the `unified-*` family the allowlist
+    // silently kept dropping them.
+    //
+    // `request-id` and `x-should-retry` are client-side state too — the first
+    // is what a user quotes to Anthropic support, the second tells the SDK
+    // whether a failure is worth retrying.
+    "request-id",
+    "x-should-retry",
     "retry-after",
     "x-ratelimit-limit-requests",
     "x-ratelimit-remaining-requests",
@@ -122,5 +129,19 @@ pub(crate) fn is_forwarded_response_header(name: &str) -> bool {
     FORWARDED_HEADERS.contains(&name)
         || name.starts_with("x-codex-")
         || name.starts_with("x-ratelimit-")
+        // #1638: the whole `anthropic-ratelimit-*` family, by prefix.
+        //
+        // Claude Code derives its plan-usage windows *only* from
+        // `anthropic-ratelimit-unified-5h-utilization` and its siblings. With
+        // them dropped, `rate_limits` vanishes from the statusline payload —
+        // and, less visibly but far worse, the near-limit warning machinery
+        // reads the same state, so a user behind the proxy is never told they
+        // are approaching a limit.
+        //
+        // A prefix rather than eighteen more literals: these headers carry
+        // client-side state, and the family grows upstream on Anthropic's
+        // schedule, not ours. Enumerating it means going quiet again the next
+        // time it grows.
+        || name.starts_with("anthropic-ratelimit-")
         || crate::proxy::bedrock::is_bedrock_response_header(name)
 }
