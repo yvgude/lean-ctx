@@ -335,11 +335,17 @@ impl LocalRegistry {
         super::verify::validate_kind_coherence(&bundle.manifest, &bundle.content)
             .map_err(|errs| errs.join("; "))?;
         if bundle.manifest.kind == super::manifest::PackageKind::Addon {
+            // Point at the file the caller already has, not at a registry
+            // reference reconstructed from the package name: `addon add` now
+            // resolves a bare `ns/name` over the network, so suggesting that
+            // form would send someone holding a local file to fetch a possibly
+            // different copy of it — or to fail against a registry they never
+            // meant to use.
             return Err(format!(
                 "`{}` is a kind=addon package — install it with `lean-ctx addon add {}` \
                  (addon installs ask for consent before storing executable modules)",
                 bundle.manifest.name,
-                bundle.manifest.name.trim_start_matches('@'),
+                path.display(),
             ));
         }
 

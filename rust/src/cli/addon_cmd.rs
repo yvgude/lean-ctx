@@ -11,6 +11,7 @@
 //! read from the pack the user is about to install, after its signature and
 //! content digest have already been verified.
 
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use crate::core::context_package::{
@@ -294,6 +295,25 @@ fn stage_remote(reference: &str, registry_flag: Option<&str>) -> Result<Staged, 
     Ok(Staged(tmp))
 }
 
+/// Does this argument name a file, rather than a registry package?
+///
+/// Decided by shape, not by what happens to exist. `parse_remote_ref` accepts
+/// `./typo.ctxpkg` as a perfectly good `ns/name`, so a mistyped filename used to
+/// be resolved over the network and fail with "package not found in the
+/// registry — private packages need CTXPKG_TOKEN". That answer is wrong twice:
+/// it blames the registry for a local typo, and it tells the user to go find a
+/// token they do not need.
+///
+/// Anything that looks like a path — a `.ctxpkg` name, or a leading `.`, `/` or
+/// `~` — is a file, and a missing one is reported as a missing file.
+fn looks_like_a_path(arg: &str) -> bool {
+    arg.ends_with(".ctxpkg")
+        || arg.starts_with('.')
+        || arg.starts_with('/')
+        || arg.starts_with('~')
+        || arg.starts_with("file:")
+}
+
 fn cmd_add(args: &[String]) {
     let Some(file) = positional(args, "add").or_else(|| positional(args, "install")) else {
         eprintln!("Usage: lean-ctx addon add <file.ctxpkg | ns/name[@version]>");
@@ -308,6 +328,10 @@ fn cmd_add(args: &[String]) {
     let _staged;
     let path: &Path = if local.is_file() {
         local
+    } else if looks_like_a_path(&file) {
+        eprintln!("ERROR: no such file: {file}");
+        eprintln!("       To install from a registry instead, drop the path and pass ns/name.");
+        std::process::exit(1);
     } else {
         match stage_remote(&file, registry_flag.as_deref()) {
             Ok(s) => {
@@ -409,6 +433,13 @@ fn cmd_add(args: &[String]) {
 
     if !crate::cli::prompt::confirm("Install this addon?", assume_yes) {
         println!("Aborted. Nothing was installed.");
+        // A person answering "no" got what they asked for; a script that hit
+        // the non-interactive refusal did not. Exiting 0 in the second case
+        // would let a pipeline record an install that never happened and carry
+        // on as if the addon were there.
+        if !std::io::stdin().is_terminal() {
+            std::process::exit(1);
+        }
         return;
     }
 
@@ -929,6 +960,26 @@ mod tests {
             "https://e.test/mcp",
             "an http addon is described by its endpoint, not a command line"
         );
+    }
+
+    /// A mistyped filename must not be resolved over the network. `./typo.ctxpkg`
+    /// parses as a valid `ns/name`, so without a shape check the user gets
+    /// "package not found in the registry — private packages need CTXPKG_TOKEN"
+    /// for a local typo: the wrong culprit and a pointless instruction.
+    #[test]
+    fn path_shaped_arguments_are_never_treated_as_registry_refs() {
+        for arg in [
+            "./missing.ctxpkg",
+            "../build/x.ctxpkg",
+            "/abs/path/x.ctxpkg",
+            "~/downloads/x.ctxpkg",
+            "demo__squeeze-1.0.0.ctxpkg",
+        ] {
+            assert!(looks_like_a_path(arg), "should be a path: {arg}");
+        }
+        for arg in ["acme/widget", "acme/widget@1.2.0", "widget"] {
+            assert!(!looks_like_a_path(arg), "should be a registry ref: {arg}");
+        }
     }
 
     /// The staging guard exists so the downloaded bytes survive the consent
