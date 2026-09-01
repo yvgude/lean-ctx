@@ -82,12 +82,27 @@ impl ExtensionRegistry {
         // Format-aware chunkers (csv/json/eml/html) register through the same
         // public path so they are first-class + conformance-checked (EPIC 12.13).
         crate::core::extractors::register_into(&mut reg);
-        // Opt-in WASM compressors discovered from `LEAN_CTX_WASM_DIR` (EPIC 12.8).
+        // Extensions from installed `kind=addon` packs — signed, hash-pinned
+        // and locally re-verified on install. This is the supported channel;
+        // `LEAN_CTX_WASM_DIR` below stays as an unsigned developer override for
+        // authoring a module before it is packaged.
+        //
         // First-class once registered: discoverable via `/v1/capabilities` and
         // checked by the conformance scorecard like any other compressor.
         #[cfg(feature = "wasm")]
-        if let Ok(dir) = std::env::var("LEAN_CTX_WASM_DIR") {
-            crate::core::wasm_ext::register_compressors_from_dir(&mut reg, dir);
+        {
+            if let Ok(store) = crate::core::context_package::addons::store_root() {
+                for module in crate::core::context_package::addons::installed_modules(&store) {
+                    if let Some(stem) = module.file_stem().and_then(|s| s.to_str())
+                        && let Ok(c) = crate::core::wasm_ext::WasmCompressor::load(&module, stem)
+                    {
+                        reg.register_compressor(std::sync::Arc::new(c));
+                    }
+                }
+            }
+            if let Ok(dir) = std::env::var("LEAN_CTX_WASM_DIR") {
+                crate::core::wasm_ext::register_compressors_from_dir(&mut reg, dir);
+            }
         }
         reg
     }

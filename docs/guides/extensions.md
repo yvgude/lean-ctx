@@ -1,11 +1,11 @@
 # Extending lean-ctx — one decision, one trust model
 
-> **Status: historical/research extension design — not an available marketplace
-> or public builder surface.** LeanCTX is **The Context SDK for AI Agents**. The
-> available product is the local Runtime, CLI, MCP server, proxy, and context
-> primitives; broad third-party distribution, registries, and generic agent
-> building are deferred. Current scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md).
+> **Status: Preview for the local addon channel; the rest is design.** Building,
+> installing and running an addon on your own machine is supported as of 3.10.1
+> (see [addons](addons.md)). LeanCTX still does **not** offer a marketplace, a
+> curated registry, ranking, or managed binary distribution, and this document is
+> not a promise of one. Current scope and status are governed by
+> [`public-product-claims-v1`](../contracts/public-product-claims-v1.md).
 
 lean-ctx can be extended in several ways. They look similar from the outside
 (they all "add capabilities"), but each targets a different job and a different
@@ -26,7 +26,6 @@ flowchart TD
   Q0 -->|In-process compression / compute| WASM[WASM Extension]
   Q0 -->|Deep in-process build on the engine, in Rust| SDK[Embedding SDK]
   Q0 -->|A reusable config bundle| PERSONA[Persona / Policy Pack]
-  Q0 -->|Local hooks on agent lifecycle events| PLUGIN[Plugin]
 ```
 
 - **Share or sell *data*** (knowledge, graph edges, session, patterns, gotchas)
@@ -42,16 +41,13 @@ flowchart TD
   [**Embedding SDK**](embed-sdk.md) (`lean-ctx-sdk`)
 - **A reusable configuration bundle** → [**Persona**](../contracts/persona-spec-v1.md)
   / [**Policy Pack**](policy-packs.md)
-- **Local hooks on agent lifecycle events** (pre/post tool, plus local tools)
-  → **Plugin** ([extension trust](../contracts/extension-trust-v1.md))
 
 ## The mechanisms at a glance
 
 | Mechanism | Job | Lives where | Distribution | Trust model |
 |---|---|---|---|---|
-| **Addon** | Expose **tools** to the agent | External MCP server (stdio/http) | Registry (`lean-ctx addon`) | Declared `[capabilities]` → per-addon OS sandbox + env scrub + install consent |
+| **Addon** | Expose **tools**, or a WASM compressor | Declared MCP server (stdio/http), and/or a WASM module in the pack | Signed `.ctxpkg` (`lean-ctx addon`) | Signature re-verified locally + module digests + install consent; a declared server is an ordinary process, disclosed as such |
 | **Context Provider** | Feed an external **data source** into the pipeline | `[providers.*]` / `~/.config/lean-ctx/providers/` | Config (+ tokens) | Token-scoped; data redacted on ingest |
-| **Plugin** | **Hooks** on lifecycle events + local tools | Local subprocess | Local install | `[trust]` permissions → env scrub + cwd jail + timeout |
 | **WASM Extension** | In-process **compressor/provider** | Sandboxed WASM in the engine | Extension registry | WASM sandbox (no ambient host access) |
 | **ctxpkg Pack** | Ship/sell **data** | Signed archive | Hosted registry (`lean-ctx pack`) | Ed25519 signing + publisher identity |
 | **Persona / Policy Pack** | Reusable **config** | TOML bundle | File / registry | Inherits engine config trust (global-only floors) |
@@ -59,18 +55,22 @@ flowchart TD
 
 ## Resolving the common overlaps
 
-Four mechanisms can all involve "an external MCP server" or "extra tools", which
-is the usual source of confusion. Disambiguation:
+Several mechanisms can all involve "an external MCP server" or "extra tools",
+which is the usual source of confusion. Disambiguation:
 
 ### Addon vs `[[gateway.servers]]`
 
 Same runtime, two layers. `[[gateway.servers]]` is the **raw config primitive**:
 a downstream MCP server the gateway aggregates. An **Addon** is the
-**packaged, distributable, capability-governed** form of exactly that — a
-`lean-ctx-addon.toml` manifest + registry entry + install consent + per-addon
-sandbox. `lean-ctx addon add` *writes* a `[[gateway.servers]]` entry for you and
-records the granted capabilities. Hand-editing `[[gateway.servers]]` is the
+**packaged, distributable, signed** form of exactly that — a
+`lean-ctx-addon.toml` manifest inside a signed `.ctxpkg`, whose signature is
+re-verified on your machine before you are shown the exact command and asked.
+`lean-ctx addon add` *writes* the `[[gateway.servers]]` entry for you and
+`addon remove` takes it away again. Hand-editing `[[gateway.servers]]` is the
 escape hatch; an Addon is the supported, shareable artifact.
+
+lean-ctx does **not** install the server itself — no `uv tool install`, no
+`npx`. The manifest records how to run a tool you already have.
 
 ### Addon vs `[providers.mcp_bridges.<name>]`
 
@@ -93,14 +93,15 @@ If you want the agent to *do something*, build an Addon. If you want lean-ctx to
 > standing *data source*), not capability — see
 > [Why an addon goes deeper](addons.md#why-an-addon-goes-deeper-than-a-passthrough).
 
-### Addon vs Plugin
+### Whatever happened to Plugins
 
-- **Addon** = an MCP server whose **tools** plug into the gateway. Cross-language
-  (anything that speaks MCP), distributed via the registry. This is the path for
-  third-party tools/integrations.
-- **Plugin** = a local subprocess that runs on **lifecycle hooks** (pre/post
-  tool call, etc.) and may register a few local manifest tools. Use it to *react
-  to* agent activity locally, not to ship a distributable tool.
+Removed in 3.9.20 and not coming back. `lean-ctx plugin` exits with a pointer to
+`lean-ctx addon help`. Subprocess plugins asked users to trust that an arbitrary
+local binary behaved; an addon either runs bounded inside the engine as WASM, or
+is a server whose exact command you read before consenting. The lifecycle hook
+events (`pre_read`, `post_compress`, `on_session_*`) went with them — the hooks
+lean-ctx has today are the agent-tool hooks in `lean-ctx hooks`, a different
+mechanism.
 
 ## Naming: `@ns/name`
 
@@ -116,48 +117,53 @@ short name from two authors never collides:
 - The bare `<name>` (no `@ns/`) refers to a built-in/first-party entry.
 
 Examples: `@dastholo/lean-md`, `@acme/jira-tools`, `@acme/payments-knowledge`.
-Local-only mechanisms (Plugins, Providers, Personas) are addressed by their local
+Local-only mechanisms (Providers, Personas) are addressed by their local
 id and are not namespaced.
 
-## Start building (scaffolds)
+## Start building
 
-Each executable mechanism has a one-command scaffold so you start from a valid,
-secure-by-default artifact:
+There is no `addon init` scaffold: an addon directory is a manifest and,
+optionally, the `.wasm` files beside it, which is little enough to write by
+hand and one less thing to keep in sync with the format.
 
 | You want | Command | Then |
 |----------|---------|------|
-| An addon (tool/integration) | `lean-ctx addon init [name] [--http]` | `lean-ctx addon audit ./lean-ctx-addon.toml` → `addon add ./…` |
+| An addon (WASM module and/or MCP server) | write `lean-ctx-addon.toml` next to your `.wasm`, if any | `lean-ctx addon release ./my-addon` → `lean-ctx addon add ./my-addon-1.0.0.ctxpkg` |
 | A config provider (REST source) | `lean-ctx provider init <id>` | edit `.lean-ctx/providers/<id>.toml`; auto-discovered |
 
-Validate before you publish: `lean-ctx addon audit` runs the capability +
-malware gate on a single manifest, and `lean-ctx addon registry validate [path]`
-runs the full security + quality bar over a registry file (the dry-run CI uses).
+`release` validates as it builds — a manifest that declares neither a module nor
+an `[mcp]` server is refused, as is half-configured wiring or a `.wasm` that is
+not WebAssembly — and then self-checks the package it just signed before writing
+it. `add` re-verifies that signature on the installing machine.
 
 ## One trust model
 
-All executable extensions converge on **declared, least-privilege capabilities**
-rather than ambient trust:
+Executable extensions differ in how much can be *enforced*, and the guide says
+which is which rather than implying one level everywhere:
 
-- **Addons** declare `[capabilities]` (`network`, `filesystem`, `env`, `exec`).
-  The declaration drives a **per-addon OS sandbox** (`sandbox-exec` on macOS,
-  `bwrap` on Linux) for `network` + `filesystem` — inherited by any child process
-  — plus an **environment allowlist** at the single gateway spawn point, so host
-  secrets never reach a child unless the addon lists the variable name. `exec` is
-  a **declared + audited** capability (disclosure, not OS-enforced — child
-  processes are already bound by the inherited net/fs sandbox). You see exactly
-  what you grant at install. See
-  [`addon-manifest-v1`](../contracts/addon-manifest-v1.md).
-- **Plugins** declare `[trust]` permissions (`network`, `fs_write`,
-  `env_passthrough`) and share the same environment allowlist; subprocesses get a
-  scrubbed env + cwd jail + per-call timeout.
-- **WASM Extensions** run in a WASM sandbox with no ambient host access.
+- **WASM addons** are bounded by the engine: no ambient environment, a fresh
+  store per call, and the host applies the output budget after decoding. The
+  package signature is re-verified on the installing machine, and every module
+  is checked against its pinned SHA-256 and its WebAssembly magic bytes before
+  anything is written. Modules are stored read-only and never marked executable.
+- **A declared `[mcp]` server is not sandboxed.** The per-addon OS sandbox
+  (`sandbox-exec` / `bwrap`) and the `[capabilities]` table were removed with
+  the rest of the pre-3.9.20 addon stack. Such a server is an ordinary process
+  with your privileges, so `addon add` prints its exact argv and says so before
+  asking, and lean-ctx never fetches or installs the binary for you. An `http`
+  endpoint gets the disclosure that fits it instead. When `[mcp] sha256` is set,
+  the gateway hashes the resolved binary and refuses to spawn a mismatch. See
+  [`addon-manifest-v1`](../contracts/addon-manifest-v1.md) § What 3.10.1
+  implements.
+- **Plugins** are gone: `lean-ctx plugin` exits with a pointer to
+  `lean-ctx addon help`.
 - **Packs** carry no executable code; they are Ed25519-signed and bound to a
   publisher identity.
 
-Secure-by-default: an Addon that declares a `[capabilities]` block but omits a
-field gets the most restrictive value (no network, read-only filesystem,
-scrubbed env). An Addon with no block keeps the legacy global `addons.sandbox`
-behaviour.
+What is *not* enforced is stated rather than implied: `[capabilities]`,
+`addons.sandbox` and the per-addon OS sandbox are gone. A declared server's
+bound is the user reading its command before saying yes, plus an optional
+`sha256` pin the gateway checks on every spawn.
 
 ## See also
 

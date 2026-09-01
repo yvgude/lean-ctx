@@ -1,3 +1,4 @@
+mod addon_cmd;
 mod addon_deps;
 mod agent_cmd;
 mod agent_tools_cmd;
@@ -112,6 +113,7 @@ pub(crate) use index_cmd::cmd_index;
 pub(crate) use init_cmd::quiet_enabled;
 pub use init_cmd::{cmd_init, cmd_init_quiet};
 pub mod import_cmd;
+pub(crate) use addon_cmd::cmd_addon;
 pub(crate) use instructions_cmd::cmd_instructions;
 pub(crate) use introspect_cmd::cmd_introspect;
 pub(crate) use kit_cmd::cmd_kit;

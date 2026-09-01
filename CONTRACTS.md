@@ -67,7 +67,7 @@ Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_d
 | Local-Free Invariant | `docs/contracts/local-free-invariant-v1.md` | 1 | frozen |
 | OSS Plane Separation | `docs/contracts/oss-plane-separation-v1.md` | 1 | frozen |
 | Billing Plane | `docs/contracts/billing-plane-v1.md` | 1 | frozen |
-| WASM ABI | `docs/contracts/wasm-abi-v1.md` | 1 | frozen |
+| WASM ABI | `docs/contracts/wasm-abi-v1.md` | 1 | frozen² |
 | Delivery Manifest | `docs/contracts/delivery-manifest-v1.md` | 1 | frozen |
 | Deployment Rehearsal | `docs/contracts/deployment-rehearsal-v1.md` | 1 | frozen |
 | Release Key Rotation | `docs/contracts/release-key-rotation-v1.md` | 1 | frozen |
@@ -103,6 +103,17 @@ Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_d
 | OCLA Config Tuning | `docs/contracts/ocla-config-tuning-v2.md` | 2 | experimental |
 
 ¹ The capabilities document is additive **by design**: its drift test binds the doc's key list to `server_capabilities::TOP_LEVEL_KEYS`, so the doc must grow whenever a key is added. Freezing the file would contradict its own contract; removal or mutation of existing keys remains a breaking change.
+
+² The ABI itself is unchanged and stays frozen at v1 — that is the promise to
+extension authors. What changed in 3.10.1 is its surroundings: the `wasm`
+feature is on in the default build, and `lean-ctx addon` makes building and
+installing a module locally a supported path. The frozen file's own header
+predates that and still reads "Research contract"; per the *Contract file rule*
+above, status notes about a frozen artifact belong here rather than inside it.
+The current status of the addon channel is
+[`docs/guides/addons.md`](docs/guides/addons.md). The ABI is versioned but not
+final: a breaking change ships as `wasm-abi-v2.md` with an overlap window, never
+as an edit to v1.
 
 Clients can read this matrix at runtime: `GET /v1/capabilities` returns a `contract_status` map (contract-id → status) next to the existing `contracts` version map.
 

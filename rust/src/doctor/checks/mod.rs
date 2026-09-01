@@ -4,6 +4,7 @@
 //! re-exported flat so `doctor/mod.rs` and `doctor/report.rs` keep addressing
 //! `checks::foo()` — the split is purely structural.
 
+mod addons;
 mod clients;
 mod environment;
 mod providers;
@@ -11,6 +12,7 @@ mod proxy;
 mod security;
 mod storage;
 
+pub(crate) use addons::*;
 pub(crate) use clients::*;
 pub(crate) use environment::*;
 pub(crate) use providers::*;

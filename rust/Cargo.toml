@@ -103,6 +103,11 @@ default = [
   # LEANCTX_PGVECTOR_URL work out of the box (both are env-gated at runtime).
   "qdrant",
   "pgvector",
+  # Extensions must load from the shipped binary or the channel does not exist:
+  # an author who packages a WASM addon cannot ask every user for a custom
+  # build. Measured cost of enabling it on aarch64-apple-darwin, release
+  # profile: 83_065_536 -> 83_815_584 bytes, +750 KB (+0.90%).
+  "wasm",
 ]
 jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
 dev-tools = []

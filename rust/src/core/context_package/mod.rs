@@ -1,3 +1,7 @@
+pub(crate) mod addon_manifest;
+pub(crate) mod addon_wiring;
+pub(crate) mod addons;
+pub(crate) mod addons_build;
 pub(crate) mod auto_load;
 #[allow(dead_code)]
 pub(crate) mod builder;

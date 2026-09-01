@@ -60,9 +60,9 @@ failure) and chunked like any Markdown file.
 
 The built-in corpus indexing is lexical (BM25) and tuned for repo-adjacent
 docs. If your notes are the *primary* corpus and you want embeddings + LLM
-reranking over them, wire [`qmd`](addons.md) (`lean-ctx addon add qmd`) — an
-on-device Markdown search engine — into the gateway, and keep lean-ctx as the
-layer that fuses everything.
+reranking over them, wire [`qmd`](addons.md) — an on-device Markdown search
+engine — into the gateway with an addon that declares it under `[mcp]`, and keep
+lean-ctx as the layer that fuses everything.
 
 *See also: [Context Infrastructure](context-infrastructure.md),
 [Addons](addons.md), [Monorepo & linked projects](monorepo.md).*

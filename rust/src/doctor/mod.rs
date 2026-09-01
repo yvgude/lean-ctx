@@ -599,6 +599,13 @@ fn run_inner(json: bool) -> u32 {
         board.check(cbt);
     }
 
+    // 14b) Installed addons: what the registry actually holds, which is not
+    // the same question as what the store contains — `addon list` reads disk,
+    // this reads the running engine.
+    if let Some(ref addons) = addons_loaded_outcome() {
+        board.check(addons);
+    }
+
     // 15) BM25 cache health
     let bm25_health = bm25_cache_health_outcome();
     board.check(&bm25_health);

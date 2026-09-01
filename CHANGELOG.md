@@ -3,11 +3,140 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [3.10.1] — 2026-08-31
+## [3.10.1] — 2026-09-01
 
 This release includes the defect fixes merged after the `v3.10.0` tag
-(`5b69202`) and the additive SDK Agent Tools interface below. Neither is
-present in the 3.10.0 artifacts.
+(`5b69202`), the addon channel, and the additive SDK Agent Tools interface
+below. None of it is present in the 3.10.0 artifacts.
+
+### Added — Addons: WASM extensions you can publish yourself
+
+- **`lean-ctx addon`** — `list`, `info`, `add`, `remove`, `release`. An addon is
+  a sandboxed WebAssembly module that runs inside the context pipeline and
+  registers as a compressor. There is deliberately no `search`: that would be a
+  marketplace, and lean-ctx does not curate, rank or host one.
+- **The module travels inside the signed package.** `lean-ctx addon release
+  ./my-addon` reads the `.wasm` files next to `lean-ctx-addon.toml`, hashes and
+  embeds them, and signs the result. No artifact host, no checksum files, no CI
+  — the reported friction of the previous addon channel was that authors had to
+  run their own pipeline just to produce SHA files for externally hosted
+  binaries. It also removes a download from install, and with it the window
+  between "verified the manifest" and "fetched the binary".
+- **Install asks, and verifies first.** `addon add` re-verifies the signature
+  locally (registry compromise ≠ client compromise), checks each module against
+  its pinned SHA-256 and its WebAssembly magic bytes, shows the publisher key
+  and module digests, then asks. It refuses to proceed non-interactively unless
+  given `--yes`. `pack import` still declines executable content and points at
+  the right door.
+- **Sandbox, stated honestly.** Enforced: no ambient environment, a fresh WASM
+  store per call, the output budget applied by the host *after* decoding, and
+  modules stored read-only and never marked executable. Not claimed: a module
+  can compute whatever it likes within those bounds — the sandbox limits reach,
+  not intent.
+- The `wasm` feature is **on by default** (measured cost: 83_065_536 →
+  83_815_584 bytes, +750 KB, +0.90%). Without it the shipped binary could not
+  load an extension at all, which would leave authors with a channel nobody
+  could install from.
+- Today the ABI reaches compressors and context providers. Chunkers, read modes
+  and render transforms exist as Rust traits and are **not** exposed over it —
+  documented as such rather than implied.
+- `LEAN_CTX_WASM_DIR` remains an unsigned developer override for authoring a
+  module before packaging it, with none of the verification above.
+- **An addon may instead declare an MCP server** under `[mcp]`, which `addon
+  add` translates into a `[[gateway.servers]]` entry. A compressor has to run
+  inside the pipeline, so it is WASM; a tool that already speaks MCP has a
+  process model of its own, so it is declared rather than embedded. What does
+  **not** come back from the pre-3.9.20 channel is `[install]`: lean-ctx never
+  runs `uv tool install` or `npx` for you. Fetching the server stays your step,
+  where your own package manager's trust model applies.
+- That server runs as a **normal process with your privileges** — it is not
+  sandboxed, and the WASM guarantees do not extend to it. So `addon add` prints
+  the exact argv and says so before asking. An `http` endpoint gets the
+  disclosure that is true for *it* instead: nothing runs locally, but lean-ctx
+  sends it requests and treats its replies as untrusted input — and the pin line
+  is omitted, since a SHA-256 of a local binary means nothing for a URL. Adding
+  a server does not enable the gateway: `[gateway]` stays global-only and
+  opt-in, and `addon list` reports an addon that is wired while the gateway is
+  off rather than letting you assume it is running. `addon remove` unwires as
+  well as uninstalls.
+- **`lean-ctx doctor` now reports what actually loaded.** `addon list` already
+  claimed modules were "visible in `lean-ctx doctor`" — they were not; no such
+  check existed. It does now, and it answers a question the store cannot:
+  `addon add` verifies a module's four magic bytes, which is a prefix and not a
+  parse, so a truncated or corrupt module installs cleanly, matches its pinned
+  digest, and is then refused by the loader. `addon list` would still show it as
+  a compressor. Doctor compares the store against the extension registry and
+  names the modules that did not make it, alongside how many MCP servers are
+  wired and whether the gateway is on.
+- `addon list` was making that claim before it was true; the fix was to build
+  the check rather than delete the sentence.
+- **Only one version of an addon loads.** The store keeps versions side by side
+  like every other pack kind, and module discovery walked the whole tree — so
+  after an upgrade the registry received two modules with the same file stem and
+  load order decided the winner. Load order was sorted paths, where
+  `"10.0.0" < "9.0.0"`, so upgrading 9 to 10 would have quietly kept running
+  version 9. Discovery now picks one version per addon by install time (the
+  manifest contract calls `version` author-declared and free-form, so it is not
+  reliably orderable; the install that wrote the directory is a fact).
+  `addon list` marks the rest `(superseded)` and reports their modules as on
+  disk but not loaded, instead of listing code that never runs.
+- **An upgrade keeps what you configured.** Re-installing replaces the fields
+  the author owns (transport, command, args, url, pin, integration) and
+  preserves the ones you do: `secret_env` / `secret_headers`, which a manifest
+  cannot carry by design — so a wholesale replace would have silently dropped
+  your token and left the server failing to authenticate with nothing saying
+  why — and the per-server `enabled` switch, so an addon you deliberately turned
+  off is not turned back on behind an upgrade.
+- **`integration` reaches the L4 typed adapters from a manifest.** Setting it
+  routes the server's output into the matching lean-ctx surface —
+  `codebase-pack` → `ctx_expand`, `code-graph`/`code-symbols` → `ctx_callgraph`,
+  `memory` → `ctx_knowledge`, `compression` → the compressor pipeline — instead
+  of arriving as opaque text. It is read from `[mcp]` first, then `[addon]`
+  (its documented home, and where every manifest in the wild puts it — see
+  #1391), then derived from a recognised `[addon] categories` entry. An
+  **unrecognised slug is refused at parse**: `IntegrationKind::parse` maps
+  anything it does not know to `None`, so a typo would otherwise have installed
+  cleanly and quietly done less, which is indistinguishable from working
+  software. Category derivation stays lenient, because categories are free-form
+  browsing labels rather than a vocabulary.
+- **`addon add` accepts a registry reference**, not only a local file. `pack
+  install` refuses executable content and points at `addon add`, which until now
+  took a path only — so a published addon could be resolved, downloaded, and
+  then installed by no command at all. The remote artifact is staged to a temp
+  file and goes through the *same* preview, prompt and verification as a local
+  one: one consent path, not a shorter one for downloads. A path that exists on
+  disk always wins over a registry lookup, so `acme/widget` cannot quietly reach
+  the network when a file by that name is present.
+
+### Fixed — `binary_sha256` was a pin that never fired
+
+`[[gateway.servers]] binary_sha256` (and the `sha256` field of an addon's
+`[mcp]` table, which becomes it) was parsed, stored, shown, included in the
+connection-pool identity — and then discarded at the spawn point with
+`let _ = binary_sha256`. `addon-manifest-v1` promised the gateway "hashes the
+resolved binary before spawn and refuses a mismatch (fail-closed)". It did not.
+A pin that is displayed but never checked is worse than no pin, because it reads
+as a guarantee.
+
+It is now enforced. Two details matter as much as the hashing: the binary is
+resolved against the `PATH` the **child** will see, since a server's own `env`
+may override it — otherwise we would hash one file and spawn another; and once a
+pin is set, the resolved path is what gets spawned, so name resolution cannot
+land elsewhere between check and spawn. An empty pin stays a documented no-op; a
+pin that cannot be checked (missing or unreadable binary) is an error, not a
+skip.
+
+`addon-manifest-v1` also gained a "What 3.10.1 implements" section drawing the
+line between what the current parser reads and what the document records from
+the removed system (`[install]`, `[capabilities]`, `[[dependencies]]`,
+`{pack_dir:}` expansion, `min_lean_ctx` enforcement, the `verified` tier).
+
+See [the addon guide](docs/guides/addons.md), moved from Research to Preview for
+this release. [`wasm-abi-v1`](docs/contracts/wasm-abi-v1.md) is a frozen
+artifact and is deliberately **not** edited: its status now lives in the
+CONTRACTS.md stability matrix, per that document's own contract file rule. The
+ABI is unchanged — a breaking change would ship as `wasm-abi-v2` with an
+overlap window.
 
 ### Added — SDK Agent Tools Interface
 

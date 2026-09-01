@@ -1,10 +1,56 @@
 # Addon Manifest — v1
 
-> **Status: Research contract — not a supported public product surface.** This
-> document records an experimental implementation and proposed format. LeanCTX
-> does not currently offer a hosted registry, marketplace, paid-addon flow, or
-> verified public catalog. Current product scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md).
+> **Status: Preview.** `lean-ctx-addon.toml` is the authoring manifest for a
+> WASM addon, embedded verbatim in a `kind=addon` package and shown by
+> `lean-ctx addon info`. LeanCTX still does **not** offer a hosted registry,
+> marketplace, paid-addon flow, or verified public catalog — a package is a file
+> you install, or one you fetch from a registry you name. Product scope is
+> governed by [`docs/internal/README.md`](../internal/README.md).
+>
+> Sections describing per-platform `[artifacts]` downloads are **historical**:
+> modules now travel inside the signed package, which is what removes the
+> checksum-and-hosting step from publishing.
+
+## What 3.10.1 implements
+
+This document predates the 3.9.20 cleanup and describes more than the current
+parser reads. Stating the boundary here beats leaving an author to discover it
+from a field that is silently ignored.
+
+**Read and acted on** (`core::context_package::addon_manifest`):
+
+- `[addon]` — `name`, `version`, `description`, `homepage`, plus `integration`
+  and `categories` where they feed the adapter choice below. The remaining
+  metadata fields parse without error and are not used.
+- `[mcp]` — `transport`, `command`, `args`, `env`, `url`, `headers`, `sha256`,
+  `integration`. Translated directly into a `[[gateway.servers]]` entry.
+  Half-configured wiring (stdio without `command`, http without `url`, a
+  non-`http(s)` URL, an unknown transport, an unrecognised `integration`) is
+  refused at parse.
+- `integration` is read from `[mcp]` first, then `[addon]`, then derived from a
+  recognised `[addon] categories` entry. Explicit slugs are held to the
+  vocabulary; category derivation is lenient, since categories are free-form
+  browsing labels.
+- `sha256` is **enforced** as of 3.10.1: the gateway resolves `command` against
+  the `PATH` the child will see, hashes it, refuses a mismatch, and spawns the
+  resolved path. Before 3.10.1 the value was stored and shown but never checked.
+
+**Not implemented** — treat these sections as a record of the previous system,
+not as a surface to write against:
+
+- `[install]`. lean-ctx no longer runs `uv tool install` or `npx` on the user's
+  behalf. Putting the server on the machine is the user's step, where their own
+  package manager's trust model applies; the manifest only says how to run it.
+- `[capabilities]`. The per-addon OS sandbox was removed with the rest of the
+  addon stack. An `[mcp]` server runs as a **normal process with the user's
+  privileges**, which is why `addon add` prints the exact command and asks.
+- `[[dependencies]]` and `{pack_dir:@ns/name}` env expansion.
+- `min_lean_ctx` enforcement, and the registry-conferred `verified` tier —
+  there is no hosted registry to confer it.
+
+WASM modules, the other half of an addon, are covered by
+[`wasm-abi-v1`](wasm-abi-v1.md); the how-to for both is
+[`docs/guides/addons.md`](../guides/addons.md).
 
 Historical implementation status: `core::addons` · `lean-ctx addon`
 
@@ -435,6 +481,15 @@ entry from the registry (a release ships the curated catalog) and, for a
 published endpoint, advise affected users to `lean-ctx addon remove <name>`.
 
 ## CLI surface
+
+> **Historical.** The table below is the pre-3.9.20 command set. 3.10.1 ships
+> five verbs: `list`, `info`, `add`, `remove`, `release` — see
+> [the addon guide](../guides/addons.md). There is deliberately no `search`
+> (that implies a curated index), no `init` (a manifest plus the `.wasm` beside
+> it is short enough to write by hand), and no `audit` / `registry validate` /
+> `revoke` — those belonged to the registry and policy stack removed with the
+> rest of it. `release` performs the build-time validation those commands used
+> to, and `add` re-verifies the signature locally.
 
 | Command | Effect |
 |---------|--------|
