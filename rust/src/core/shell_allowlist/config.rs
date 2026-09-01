@@ -33,6 +33,21 @@ pub(super) fn effective_allowlist() -> Vec<String> {
     list
 }
 
+/// Could this token plausibly be an executable name?
+///
+/// Deliberately permissive — the point is to catch obvious scanner debris
+/// (unbalanced parens, quotes, `$`, `&`, embedded spaces), not to validate
+/// against the filesystem. A name that would need quoting to type is not a name
+/// the user should be told to allowlist.
+pub(super) fn is_plausible_command_name(base: &str) -> bool {
+    if base.is_empty() {
+        return false;
+    }
+    !base.chars().any(|c| {
+        c.is_whitespace() || matches!(c, '(' | ')' | '"' | '\'' | '$' | '&' | '|' | ';' | '`')
+    })
+}
+
 /// Builds the actionable, self-diagnosing message shown when a command's base binary
 /// is not in the allowlist. Unlike a bare "not allowed" string, it tells the user
 /// (1) the exact additive fix, (2) the real config path the MCP server reads, and
@@ -44,6 +59,23 @@ pub(super) fn allowlist_block_message(base: &str) -> String {
         || "~/.lean-ctx/config.toml".to_string(),
         |p| p.display().to_string(),
     );
+
+    // A base that cannot be a command name means the scanner mis-split the line,
+    // not that the user needs to allow something. Printing
+    // `lean-ctx allow print(urllib.parse.quote(sys.argv[1],safe=))` — a real
+    // example from GH #1646 — invites the reader to copy a command that cannot
+    // work and hides the actual fault. Say which it is.
+    if !is_plausible_command_name(base) {
+        return format!(
+            "[BLOCKED] '{base}' is not in the shell allowlist — but it does not look like a \
+             command name, which means lean-ctx split your command line wrongly rather than \
+             finding a command to gate.\n\
+             Do NOT run `lean-ctx allow` on it; that would allowlist a fragment.\n\
+             Quote the fragment differently if you can, and please report the original command \
+             at https://github.com/yvgude/lean-ctx/issues — a mis-split is a bug in lean-ctx.\n\
+             Config in effect: {cfg_path}"
+        );
+    }
 
     let mut msg = format!(
         "[BLOCKED — DO NOT RETRY] '{base}' is not in the shell allowlist. \

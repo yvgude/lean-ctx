@@ -102,3 +102,13 @@ fn substitution_scanner_respects_quoted_parens_and_checks_every_inner_segment() 
         "nested substitutions must be validated recursively"
     );
 }
+
+#[test]
+fn assignment_with_command_substitution_in_quoted_jq_filter_not_split() {
+    // Regression for the root cause: the `|` characters inside the
+    // single-quoted jq filter must not be treated as pipe operators, and the
+    // whitespace inside the unclosed `$(...)` must not end the token early.
+    let list = allow(&["gh"]);
+    let cmd = r"s=$(gh api foo --jq '.a | .b | .c')";
+    assert!(check_all_segments(cmd, &list).is_ok());
+}

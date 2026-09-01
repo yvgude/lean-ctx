@@ -493,3 +493,79 @@ fn gh760_pipeline_with_all_allowed_passes() {
         "pipeline with all-allowlisted commands must pass enforced"
     );
 }
+
+// --- GH #1646: quoting restarts inside $( … ) ---
+//
+// POSIX: a command substitution begins a fresh quoting context, so the inner
+// `"…"` of `echo "$(python3 -c "a;b")"` is its own string and its `;` separates
+// nothing. The scanner used to miss `$(` while inside double quotes: the inner
+// opening quote then *closed* the outer one, leaving `a;b` apparently unquoted,
+// and the `;` split a bogus second command out of a Python source line.
+//
+// The substitution's real contents are still checked — `extract_substitution_commands`
+// re-splits them — so treating it as one word here loses no enforcement.
+
+#[test]
+fn semicolon_inside_a_quoted_substitution_argument_is_not_a_separator() {
+    assert_eq!(
+        extract_all_commands(r#"echo "$(python3 -c "import sys;print(1)")""#),
+        vec![r#"echo "$(python3 -c "import sys;print(1)")""#],
+        "the ; belongs to the Python source, not the shell"
+    );
+}
+
+/// Every row of the reporter's narrowing table, including the two that worked
+/// before — a fix that broke those would be a different bug.
+#[test]
+fn reported_substitution_cases_are_each_one_command() {
+    for cmd in [
+        r#"echo "$(python3 -c "print(1)")""#,
+        r#"echo "a=$(python3 -c "print('x')")&b=2""#,
+        r#"echo "$(python3 -c "import sys;print(1)")""#,
+        r#"echo "u=$(python3 -c "import sys;print(sys.argv[1])" "x")""#,
+    ] {
+        assert_eq!(
+            extract_all_commands(cmd).len(),
+            1,
+            "should be one command: {cmd}"
+        );
+    }
+}
+
+/// The security-relevant half: a substitution really does run the commands
+/// inside it, so they must still be found — just by the substitution scanner
+/// rather than by splitting the outer line at a quote-protected `;`.
+#[test]
+fn commands_inside_a_substitution_are_still_extracted() {
+    let inner = extract_all_commands("id; whoami");
+    assert_eq!(inner, vec!["id", "whoami"], "inner text splits normally");
+}
+
+#[test]
+fn nested_and_arithmetic_substitutions_stay_balanced() {
+    assert_eq!(
+        extract_all_commands(r#"echo "$(echo "$(date)")""#).len(),
+        1,
+        "nested $( ) must not leak a separator"
+    );
+    assert_eq!(
+        extract_all_commands(r#"echo "$((1+2))""#).len(),
+        1,
+        "arithmetic expansion is balanced too"
+    );
+    // A real top-level separator after a substitution must still split.
+    assert_eq!(
+        extract_all_commands(r#"echo "$(date)"; id"#),
+        vec![r#"echo "$(date)""#, "id"],
+        "a ; outside the substitution still separates"
+    );
+}
+
+#[test]
+fn backtick_substitution_restarts_quoting_too() {
+    assert_eq!(
+        extract_all_commands("echo \"`python3 -c \"import sys;print(1)\"`\"").len(),
+        1,
+        "the older backtick form has the same restart rule"
+    );
+}

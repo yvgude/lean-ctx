@@ -110,6 +110,60 @@ pub(super) fn extract_all_commands(command: &str) -> Vec<String> {
         .collect()
 }
 
+/// One lexical context.
+///
+/// A command substitution starts a **fresh** one. POSIX says quoting restarts
+/// inside `$( … )`, so in `echo "$(python3 -c "a;b")"` the inner `"…"` is its
+/// own string and its `;` separates nothing (GH #1646). Tracking quotes as two
+/// flat booleans could not express that: the scanner never noticed `$(` while
+/// inside double quotes, so the inner opening quote *closed* the outer one,
+/// `a;b` looked unquoted, and the `;` split a bogus command out of a Python
+/// source line — which the allowlist then rejected with an unusable suggestion.
+///
+/// Treating the substitution as one word here loses no enforcement: its real
+/// contents are re-split and checked by `substitution::extract_substitution_commands`,
+/// which is where commands that a substitution genuinely *runs* are caught.
+#[derive(Clone, Copy)]
+struct Frame {
+    in_single_quote: bool,
+    in_double_quote: bool,
+    paren_depth: u32,
+    /// #939: brace groups (`{ cmd; }`) need the same operator-shielding as
+    /// `( cmd )` subshells — otherwise a `}` that closes a `{` opened on an
+    /// earlier physical line (e.g. after heredoc-body stripping collapses the
+    /// body between them) is misread as its own bare command segment.
+    brace_depth: u32,
+    kind: FrameKind,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FrameKind {
+    /// The command line itself. Separators split only at this level.
+    Base,
+    /// Opened by `$(`, closed by the matching `)`.
+    DollarParen,
+    /// Opened and closed by a backtick — the older substitution form, same
+    /// quoting-restart rule.
+    Backtick,
+}
+
+impl Frame {
+    const fn new(kind: FrameKind) -> Self {
+        Self {
+            in_single_quote: false,
+            in_double_quote: false,
+            paren_depth: 0,
+            brace_depth: 0,
+            kind,
+        }
+    }
+
+    /// Inside quotes, or inside a group whose closing delimiter is still open.
+    const fn shields_operators(&self) -> bool {
+        self.in_single_quote || self.in_double_quote || self.paren_depth > 0 || self.brace_depth > 0
+    }
+}
+
 /// Split command string on shell operators: ;, &&, ||, |
 /// Respects single/double quotes, parentheses nesting, and backslash escapes
 /// outside single quotes (GL #1160): `rg split\.label\|quantityLabel` is ONE
@@ -122,38 +176,67 @@ pub(super) fn split_on_operators(command: &str) -> Vec<&str> {
     let bytes = command.as_bytes();
     let len = bytes.len();
     let mut i = 0;
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-    let mut paren_depth: u32 = 0;
-    // #939: brace groups (`{ cmd; }`) need the same operator-shielding as
-    // `( cmd )` subshells — otherwise a `}` that closes a `{` opened on an
-    // earlier physical line (e.g. after heredoc-body stripping collapses the
-    // body between them) is misread as its own bare command segment.
-    let mut brace_depth: u32 = 0;
+    // Stack, not booleans: see [`Frame`]. Index 0 is always the command line.
+    let mut stack: Vec<Frame> = vec![Frame::new(FrameKind::Base)];
 
     while i < len {
         let ch = bytes[i];
+        // `$(` and a backtick open a substitution wherever the shell would
+        // expand one: unquoted, or inside double quotes. Single quotes inhibit
+        // it entirely, which the single-quote arm below handles by consuming
+        // everything to the closing quote.
+        let opens_substitution = |i: usize| -> Option<(FrameKind, usize)> {
+            match bytes[i] {
+                b'$' if i + 1 < len && bytes[i + 1] == b'(' => Some((FrameKind::DollarParen, 2)),
+                b'`' => Some((FrameKind::Backtick, 1)),
+                _ => None,
+            }
+        };
 
-        if in_single_quote {
+        let frame = *stack.last().expect("base frame is never popped");
+
+        if frame.in_single_quote {
             if ch == b'\'' {
-                in_single_quote = false;
+                stack.last_mut().expect("frame").in_single_quote = false;
             }
             i += 1;
             continue;
         }
 
-        if in_double_quote {
+        if frame.in_double_quote {
             match ch {
                 // \" stays inside the string; \\ consumes both so `"x\\"` closes.
                 b'\\' => i = (i + 2).min(len),
                 b'"' => {
-                    in_double_quote = false;
+                    stack.last_mut().expect("frame").in_double_quote = false;
                     i += 1;
                 }
-                _ => i += 1,
+                _ => {
+                    if let Some((kind, width)) = opens_substitution(i) {
+                        stack.push(Frame::new(kind));
+                        i += width;
+                    } else {
+                        i += 1;
+                    }
+                }
             }
             continue;
         }
+
+        // Unquoted within the current frame.
+        if let Some((kind, width)) = opens_substitution(i) {
+            if kind == FrameKind::Backtick && frame.kind == FrameKind::Backtick {
+                // The same character closes a backtick substitution.
+                stack.pop();
+            } else {
+                stack.push(Frame::new(kind));
+            }
+            i += width;
+            continue;
+        }
+
+        let at_top = stack.len() == 1;
+        let unshielded = at_top && !frame.shields_operators();
 
         match ch {
             b'\\' => {
@@ -162,35 +245,43 @@ pub(super) fn split_on_operators(command: &str) -> Vec<&str> {
                 i = (i + 2).min(len);
             }
             b'\'' => {
-                in_single_quote = true;
+                stack.last_mut().expect("frame").in_single_quote = true;
                 i += 1;
             }
             b'"' => {
-                in_double_quote = true;
+                stack.last_mut().expect("frame").in_double_quote = true;
                 i += 1;
             }
             b'(' => {
-                paren_depth += 1;
+                stack.last_mut().expect("frame").paren_depth += 1;
                 i += 1;
             }
             b')' => {
-                paren_depth = paren_depth.saturating_sub(1);
+                let top = stack.last_mut().expect("frame");
+                if top.kind == FrameKind::DollarParen && top.paren_depth == 0 {
+                    // Matching close of `$(` — back to the enclosing context,
+                    // whose quoting resumes exactly where it left off.
+                    stack.pop();
+                } else {
+                    top.paren_depth = top.paren_depth.saturating_sub(1);
+                }
                 i += 1;
             }
             b'{' => {
-                brace_depth += 1;
+                stack.last_mut().expect("frame").brace_depth += 1;
                 i += 1;
             }
             b'}' => {
-                brace_depth = brace_depth.saturating_sub(1);
+                let top = stack.last_mut().expect("frame");
+                top.brace_depth = top.brace_depth.saturating_sub(1);
                 i += 1;
             }
-            b'\n' | b'\r' | b';' if paren_depth == 0 && brace_depth == 0 => {
+            b'\n' | b'\r' | b';' if unshielded => {
                 segments.push(&command[start..i]);
                 i += 1;
                 start = i;
             }
-            b'&' if paren_depth == 0 && brace_depth == 0 => {
+            b'&' if unshielded => {
                 if i + 1 < len && bytes[i + 1] == b'&' {
                     // &&
                     segments.push(&command[start..i]);
@@ -209,7 +300,7 @@ pub(super) fn split_on_operators(command: &str) -> Vec<&str> {
                     start = i;
                 }
             }
-            b'|' if paren_depth == 0 && brace_depth == 0 => {
+            b'|' if unshielded => {
                 if i + 1 < len && bytes[i + 1] == b'|' {
                     // ||
                     segments.push(&command[start..i]);
