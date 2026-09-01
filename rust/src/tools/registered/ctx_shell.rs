@@ -31,8 +31,8 @@ impl McpTool for CtxShellTool {
               raw=true for verbatim output; inline=true for moderately-sized verbatim output.\n\
              [exit:N] on errors (lossless).\n\
              POLICY: allowlisted read-only path.\n\
-             A [BLOCKED] command is permanent; ctx_execute shares this allowlist, not a way \
-             around it — fix with `lean-ctx allow <cmd>` or shell_allowlist/shell_security.\n\
+             A [BLOCKED] command is permanent; ctx_execute shares the same allowlist — fix with \
+             `lean-ctx allow <cmd>`.\n\
              ANTIPATTERN: multi-line scripts, sh/bash script.sh, $var-as-command → ctx_execute \
              (when exposed).",
             json!({
