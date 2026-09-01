@@ -5,6 +5,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [3.10.1] — 2026-09-01
 
+### Fixed — `ctx_grep` turned context lines into files and inflated the count (#1648)
+
+- **A context line is no longer parsed as a file header.** GNU grep separates a
+  match with `path:line:content` and context with `path-line-content`; the
+  compressor split at the *first colon anywhere on the line*. So
+  `…/mod_1.py-2-    try:` split at the colon inside the Python source, becoming
+  a file named after the whole fragment with empty content — counted as both a
+  file and a match. The reporter's 40 matches in 40 files rendered as
+  `160 matches in 160F`, with every context line gone.
+- The delimiter is now the first colon *followed by a line number and another
+  colon*, and context is resolved against paths a match line already proved
+  exist. Anchoring on known paths is what makes it unambiguous: in
+  `src/v-1-x/mod.py-10-ctx` there are three candidate `-` delimiters and one
+  correct answer, and grep only emits context for a file it also matched in.
+- Context now renders under its real file, in grep's own convention (`3:` for a
+  match, `2-` for context), and the per-file cap counts **matches** — capping
+  raw lines would have silently dropped matches as soon as context was asked
+  for. Line content is trimmed, as it already was for matches.
+- Unparseable lines, including grep's `--` group separators, are dropped instead
+  of becoming synthetic files.
+- The failure was silent and read as absence: a caller could not tell the
+  context had been dropped rather than being absent from the file. It only
+  triggered when a context line contained a colon — common in Python, YAML, Go
+  struct tags and prose — which is why the single-file, uncompressed path looked
+  correct.
+
 ### Fixed — `ctx_shell` split inline scripts at a quoted `;` (#1646)
 
 - **Quoting now restarts inside `$( … )`, as POSIX specifies.** The command
