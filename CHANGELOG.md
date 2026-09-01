@@ -3,7 +3,7 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [3.10.1] — 2026-08-31
+## [3.10.1] — 2026-09-01
 
 This release includes the defect fixes merged after the `v3.10.0` tag
 (`5b69202`), the addon channel, and the additive SDK Agent Tools interface
