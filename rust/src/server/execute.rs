@@ -253,13 +253,18 @@ pub(crate) fn execute_command_with_env_cancellable(
             }
         ));
         // #1086: for a compound command the captured output is often complete
-        // for every segment but one. Name the segment(s) still alive in the
-        // child's process group so the caller can fix that part instead of
-        // re-running the whole pipeline.
+        // for every segment but one. Name what is still alive in the child's
+        // process group so the caller can fix that part instead of re-running
+        // the whole pipeline.
+        //
+        // Joined with "; " rather than " | " (#1654): these are processes, not
+        // stages, and a pipe character asserted a relationship the process
+        // table never established — rendering a line that was not runnable and
+        // named a stage the caller never wrote.
         if !still_running.is_empty() {
             text.push_str(&format!(
                 "\n[still running at timeout: {}]",
-                still_running.join(" | ")
+                still_running.join("; ")
             ));
         }
     }
@@ -370,36 +375,83 @@ fn streaming_max_lifetime() -> Duration {
     )
 }
 
-/// Command lines still alive in the timed-out child's process group, i.e. the
-/// pipeline segment(s) that did not finish (#1086). Rows still carrying the
-/// *whole* command are the un-exec'd shell wrapper and say nothing specific, so
-/// they are dropped — note the leader is not simply skipped by pid, because
-/// `sh -c 'a; b'` execs into its final segment and so *is* the leader.
+/// One live process in the timed-out child's group.
+#[cfg(unix)]
+struct LiveProc {
+    pid: u32,
+    ppid: u32,
+    args: String,
+}
+
+/// Command lines still alive in the timed-out child's process group (#1086).
+///
+/// These are **processes**, not pipeline segments. The distinction matters
+/// because a segment can spawn its own children into the same group: `go run x`
+/// execs a compiled binary under `$TMPDIR`, which then shows up here alongside
+/// its parent. Rendering the set as `a | b` claimed a pipeline the process
+/// table never established, and pointed the caller at a stage they never wrote
+/// (#1654).
+///
+/// Rows still carrying the *whole* command are the un-exec'd shell wrapper and
+/// say nothing specific, so they are dropped — note the leader is not simply
+/// skipped by pid, because `sh -c 'a; b'` execs into its final segment and so
+/// *is* the leader.
+///
 /// Best-effort: an unavailable or unparsable `ps` yields no attribution.
 #[cfg(unix)]
 fn running_segments(child: &std::process::Child, command: &str) -> Vec<String> {
     let pgid = child.id();
     // POSIX-portable field selection; `ps -g` differs between BSD and Linux.
+    // `ppid` is read so a descendant can be labelled as one rather than
+    // presented as a sibling stage.
     let Ok(out) = std::process::Command::new("ps")
-        .args(["-A", "-o", "pid=,pgid=,args="])
+        .args(["-A", "-o", "pid=,ppid=,pgid=,args="])
         .output()
     else {
         return Vec::new();
     };
     let needle = command.split_whitespace().collect::<Vec<_>>().join(" ");
-    String::from_utf8_lossy(&out.stdout)
+    let live: Vec<LiveProc> = String::from_utf8_lossy(&out.stdout)
         .lines()
         .filter_map(|line| parse_ps_row(line, pgid, &needle))
+        .collect();
+
+    describe_live(&live)
+}
+
+/// Render the live set, marking any process whose parent is also in the set.
+///
+/// A descendant is shown under its parent rather than as a peer, so the caller
+/// can tell "the stage I wrote" from "something that stage started".
+#[cfg(unix)]
+fn describe_live(live: &[LiveProc]) -> Vec<String> {
+    let pids: std::collections::HashSet<u32> = live.iter().map(|p| p.pid).collect();
+    live.iter()
+        .filter(|p| !pids.contains(&p.ppid))
+        .map(|parent| {
+            let kids: Vec<&str> = live
+                .iter()
+                .filter(|c| c.ppid == parent.pid)
+                .map(|c| c.args.as_str())
+                .collect();
+            if kids.is_empty() {
+                parent.args.clone()
+            } else {
+                format!("{} (spawned: {})", parent.args, kids.join(", "))
+            }
+        })
         .collect()
 }
 
-/// One `pid pgid args` row: `Some(args)` iff it belongs to `pgid` and names a
-/// narrower command than the one we launched. `needle` is the whole command
+/// One `pid ppid pgid args` row: `Some(..)` iff it belongs to `pgid` and names
+/// a narrower command than the one we launched. `needle` is the whole command
 /// with runs of whitespace collapsed, matching how `ps` renders `args`.
 #[cfg(unix)]
-fn parse_ps_row(line: &str, pgid: u32, needle: &str) -> Option<String> {
+fn parse_ps_row(line: &str, pgid: u32, needle: &str) -> Option<LiveProc> {
     let rest = line.trim_start();
-    let (_pid, rest) = rest.split_once(char::is_whitespace)?;
+    let (pid, rest) = rest.split_once(char::is_whitespace)?;
+    let rest = rest.trim_start();
+    let (ppid, rest) = rest.split_once(char::is_whitespace)?;
     let args = rest
         .trim_start()
         .split_once(char::is_whitespace)
@@ -409,7 +461,11 @@ fn parse_ps_row(line: &str, pgid: u32, needle: &str) -> Option<String> {
     if args.is_empty() || args.contains(needle) {
         return None;
     }
-    Some(args.chars().take(200).collect())
+    Some(LiveProc {
+        pid: pid.parse().ok()?,
+        ppid: ppid.parse().ok()?,
+        args: args.chars().take(200).collect(),
+    })
 }
 
 #[cfg(not(unix))]
@@ -546,24 +602,88 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn ps_row_names_segments_and_drops_the_whole_command() {
+        // Rows are `pid ppid pgid args`.
         let whole = "printf hi; grep -rn needle /repo";
         assert_eq!(
-            super::parse_ps_row(" 4242  4200 grep -rn needle /repo", 4200, whole).as_deref(),
-            Some("grep -rn needle /repo"),
+            super::parse_ps_row(" 4242 4200 4200 grep -rn needle /repo", 4200, whole)
+                .map(|p| p.args),
+            Some("grep -rn needle /repo".to_string()),
             "a segment must be named"
         );
         // The un-exec'd shell wrapper still carries the whole command.
-        assert_eq!(
+        assert!(
             super::parse_ps_row(
-                "4200 4200 /bin/sh -c printf hi; grep -rn needle /repo",
+                "4200 1 4200 /bin/sh -c printf hi; grep -rn needle /repo",
                 4200,
                 whole
-            ),
-            None
+            )
+            .is_none()
         );
         // Another job's process group.
-        assert_eq!(super::parse_ps_row("4242 9999 sleep 5", 4200, whole), None);
-        assert_eq!(super::parse_ps_row("garbage", 4200, whole), None);
+        assert!(super::parse_ps_row("4242 4200 9999 sleep 5", 4200, whole).is_none());
+        assert!(super::parse_ps_row("garbage", 4200, whole).is_none());
+    }
+
+    // --- GH #1654: descendants are not pipeline stages ---
+
+    /// The reporter's case. `go run ./x` execs the binary it just compiled,
+    /// which joins the same process group. Rendering the set as `a | b` claimed
+    /// a pipeline the process table never established, producing a line that
+    /// is not runnable and naming a stage the caller never wrote.
+    #[test]
+    #[cfg(unix)]
+    fn a_spawned_child_is_labelled_not_presented_as_a_stage() {
+        let live = vec![
+            super::LiveProc {
+                pid: 100,
+                ppid: 1,
+                args: "go run ./ --template x".into(),
+            },
+            super::LiveProc {
+                pid: 101,
+                ppid: 100,
+                args: "/var/folders/T/go-build/b001/exe/evcc --template x".into(),
+            },
+        ];
+        let out = super::describe_live(&live);
+        assert_eq!(out.len(), 1, "the child is not a peer entry: {out:?}");
+        assert!(out[0].starts_with("go run ./"), "{out:?}");
+        assert!(
+            out[0].contains("(spawned: /var/folders/T/go-build/b001/exe/evcc"),
+            "the descendant is named as one: {out:?}"
+        );
+    }
+
+    /// Real pipeline siblings share a parent that is *not* in the set (the
+    /// shell wrapper was dropped for carrying the whole command), so both stay
+    /// top-level.
+    #[test]
+    #[cfg(unix)]
+    fn genuine_pipeline_siblings_both_stay_top_level() {
+        let live = vec![
+            super::LiveProc {
+                pid: 200,
+                ppid: 50,
+                args: "grep -rn needle /repo".into(),
+            },
+            super::LiveProc {
+                pid: 201,
+                ppid: 50,
+                args: "head -30".into(),
+            },
+        ];
+        let mut out = super::describe_live(&live);
+        out.sort();
+        assert_eq!(out, vec!["grep -rn needle /repo", "head -30"]);
+    }
+
+    /// The rendered separator must not be shell syntax — that was the whole
+    /// defect. `;` reads as a list; `|` read as a pipeline that did not exist.
+    #[test]
+    #[cfg(unix)]
+    fn the_timeout_line_does_not_imply_a_pipeline() {
+        let joined = vec!["a".to_string(), "b".to_string()].join("; ");
+        assert!(!joined.contains('|'), "no pipe may be invented: {joined}");
     }
 
     #[test]
