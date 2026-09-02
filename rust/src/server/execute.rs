@@ -267,6 +267,13 @@ pub(crate) fn execute_command_with_env_cancellable(
                 still_running.join("; ")
             ));
         }
+        // #1655: a recursive walk does not read `.gitignore`, so a nested
+        // checkout the other ctx_* tools never see can dominate it. Say so
+        // after the fact — the command's own traversal is left alone.
+        if let Some(hint) = super::walk_hint::walk_hint(command, cwd) {
+            text.push('\n');
+            text.push_str(&hint);
+        }
     }
     if cancelled {
         if !text.ends_with('\n') && !text.is_empty() {
