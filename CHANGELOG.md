@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [3.10.1] — 2026-09-01
 
+### Fixed — a single-line payload over budget delivered nothing (#1665)
+
+- `ctx_read` on a one-line file above the turn budget returned
+  `[… truncated at ~0 of 6800 tokens]` and **no content at all**. The budget
+  truncator keeps whole lines, which is the right shape for source and logs; a
+  single-line payload — minified JSON, a `--jq` result, a one-line CSV — made
+  the loop discard the only line it had.
+- A character-bounded prefix now takes over when not even the first line fits.
+  A cut line is worse than a clean line boundary and far better than silently
+  delivering zero. Multi-line text still breaks on line boundaries, pinned by
+  its own test.
+- The recovery hint named `lines=`, which cannot narrow a payload that has one
+  line. For that case it now names `mode="raw"`, which returns the full content.
+- Reported as a regression of the #1453 class. Note the reproduction is through
+  the **MCP tool**: `apply_turn_budget` is reached only from the tool pipeline,
+  so probing it through the `lean-ctx read` CLI shows a similar-looking notice
+  from a different code path and will mislead.
+
 ### Fixed — `VAR=$((arith))` was read as a command (#1664)
 
 - `x=$((1+2))` was blocked with `'1+2' is not in the shell allowlist`, and the
