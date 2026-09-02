@@ -19,33 +19,53 @@ and the link goes:
 Run with --apply; default is a dry run.
 """
 
+import json
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
 DRY = "--apply" not in sys.argv
 NOTE = " (internal, not in this repository)"
 
-# Left alone on purpose: these are artifacts of `docs/contracts/ocla-contract-pack-v1.json`,
-# which records a SHA-256 per file under a fixed pack `version`. Editing their
-# text — even to unlink a reference — invalidates a digest that consumers verify,
-# and rewriting the digests without bumping the version would let two different
-# contents claim the same pack version. That is the drift the pack exists to
-# prevent, and a non-clickable link is not worth it. Same call as leaving the
-# frozen `wasm-abi-v1.md` untouched and putting its status note in CONTRACTS.md.
+# Left alone on purpose, and derived rather than hand-listed — a copied list
+# drifts, and this script has already been wrong twice by guessing what it was
+# safe to touch:
 #
-# Sourced from CONTRACT_PACK_ARTIFACTS in scripts/verify-ocla-contract-suite.py.
-PACK_ARTIFACTS = frozenset(
-    {
-        "docs/contracts/README.md",
-        "docs/contracts/DEPRECATION.md",
-        "docs/contracts/capabilities-contract-v1.md",
-        "docs/contracts/conformance-v1.md",
-        "docs/contracts/certification-levels-v1.md",
-        "docs/contracts/ocla-verifier-conformance-v1.md",
-    }
-)
+#  1. OCLA contract-pack artifacts. `docs/contracts/ocla-contract-pack-v1.json`
+#     records a SHA-256 per file under a fixed pack `version`. Editing the text
+#     invalidates a digest consumers verify; rewriting the digests would let two
+#     different contents claim the same version, which is the drift the pack
+#     exists to prevent.
+#  2. Frozen contracts. `rust/tests/suite/contracts_frozen.rs` hashes every
+#     contract classified `Frozen` against `docs/contracts/frozen-hashes.json`
+#     and fails on any edit; CONTRACTS.md § Contract file rule says a change
+#     lands as a new `-v2.md` file, never as an edit.
+#
+# In both cases a dead link inside the document is the smaller problem than an
+# attestation that no longer means anything.
+def _excluded() -> frozenset[str]:
+    out: set[str] = set()
+
+    frozen = ROOT / "docs/contracts/frozen-hashes.json"
+    if frozen.exists():
+        out |= {f"docs/contracts/{name}" for name in json.loads(frozen.read_text())}
+
+    suite = ROOT / "scripts/verify-ocla-contract-suite.py"
+    if suite.exists():
+        block = re.search(
+            r"CONTRACT_PACK_ARTIFACTS\s*=\s*frozenset\(\s*\{(.*?)\}\s*\)",
+            suite.read_text(),
+            re.S,
+        )
+        if block:
+            out |= set(re.findall(r'"([^"]+\.md)"', block.group(1)))
+
+    return frozenset(out)
+
+
+EXCLUDED = _excluded()
 
 # [anything](…internal/whatever.md) — any depth of ../ and an optional docs/ prefix.
 LINK = re.compile(r"\[([^\]]*)\]\((?:\.\./)*(?:docs/)?internal/([A-Za-z0-9/_.-]+\.md)\)")
@@ -60,7 +80,7 @@ for path in sorted(ROOT.rglob("*.md")):
         continue
     if any(p in rel.parts for p in (".worktrees", "node_modules", "target")):
         continue
-    if str(rel) in PACK_ARTIFACTS:
+    if str(rel) in EXCLUDED:
         skipped.append(str(rel))
         continue
 
@@ -92,7 +112,7 @@ for path in sorted(ROOT.rglob("*.md")):
 
 print(f"{'DRY RUN — ' if DRY else ''}{len(touched)} files, {changed} links de-linked")
 if skipped:
-    print(f"  skipped {len(skipped)} contract-pack artifact(s) — digests are attested:")
+    print(f"  skipped {len(skipped)} attested file(s) — frozen or digest-pinned:")
     for s_ in skipped:
         print(f"    {s_}")
 for t in touched[:5]:

@@ -3,7 +3,7 @@
 > **Status: Research contract — external extension authoring is not a supported
 > public LeanCTX surface.** This document records an opt-in local implementation
 > and proposed ABI. Current product scope and status are governed by
-> `docs/internal/README.md` (internal, not in this repository).
+> [`docs/internal/README.md`](../internal/README.md).
 
 Historical implementation status: stable · Feature: `wasm` (off by default) · Source: `rust/src/core/wasm_ext.rs`
 
