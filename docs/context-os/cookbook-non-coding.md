@@ -4,7 +4,7 @@
 > predate the current SDK boundary and may reference archived SDKs, adapters, or
 > product surfaces. They must not be used as installation instructions or proof
 > of availability. Current scope is governed by
-> [`docs/internal/README.md`](../internal/README.md): Python SDK v1 is Preview
+> `docs/internal/README.md` (internal, not in this repository): Python SDK v1 is Preview
 > with a narrow declared reference-wrapper scope; non-coding personas, TypeScript
 > parity, and generic adapter claims are not current public commitments.
 

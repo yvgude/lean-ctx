@@ -2,7 +2,7 @@
 
 > **Status: historical comparison note — not canonical product copy.** Current
 > LeanCTX scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md). This note does not claim
+> `docs/internal/README.md` (internal, not in this repository). This note does not claim
 > universal compression, privacy, determinism, prompt-cache, or savings results.
 
 The products can be evaluated for different context-processing paths. LeanCTX's
@@ -18,5 +18,5 @@ A smaller payload that harms the task is not a successful outcome. Earlier
 competitive figures, guarantees, and public-arena claims are historical and are
 not reproduced as current LeanCTX messaging.
 
-See the internal [Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md)
+See the internal Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository)
 for the Available, Preview, and Research boundary.

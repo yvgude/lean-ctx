@@ -2,7 +2,7 @@
 
 > **Status: historical comparison note — not canonical product copy.** Current
 > LeanCTX scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md). This note makes no
+> `docs/internal/README.md` (internal, not in this repository). This note makes no
 > claim that either repo-map produces a particular quality or agent outcome.
 
 Aider's repo-map is part of its coding assistant. LeanCTX can expose local
@@ -19,4 +19,4 @@ notes rather than current LeanCTX promises.
 
 LeanCTX is **The Context SDK for AI Agents**. It is not an AI coding assistant
 or a generic multi-agent platform. Current Runtime status is in the internal
-[Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md).
+Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository).

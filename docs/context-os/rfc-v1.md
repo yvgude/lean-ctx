@@ -16,7 +16,7 @@
 > Team/Cloud, extension marketplaces, or any hosted capability available.
 > LeanCTX is **The Context SDK for AI Agents**: a local context-performance layer
 > for existing agents. Current scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md); Python SDK v1 and its
+> `docs/internal/README.md` (internal, not in this repository); Python SDK v1 and its
 > declared OpenAI Agents wrapper are **Preview**, while the broader surfaces in
 > this RFC are **Research** or deferred.
 

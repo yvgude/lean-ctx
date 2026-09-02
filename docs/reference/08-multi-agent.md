@@ -35,7 +35,7 @@ name or implementation directory.
 
 A future coordination capability needs an explicit product decision, a bounded
 contract, security and privacy ownership, observable evidence limits, and the
-status gate in [Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md).
+status gate in Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository).
 Until then, agents integrate LeanCTX for their own context path; they do not
 depend on LeanCTX to coordinate the work itself. The Research direction may be
 described internally as **shared, scoped project context**, never as an agent

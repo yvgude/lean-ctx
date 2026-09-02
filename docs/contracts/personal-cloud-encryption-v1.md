@@ -4,7 +4,7 @@
 > Cloud/account synchronization service is not a current LeanCTX product or
 > endpoint. LeanCTX is **The Context SDK for AI Agents**; available evidence and
 > verification paths are local. Current scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 Status: historical research · Engine: `core/knowledge_vault.rs` ·
 Server: `lean-ctx-enterprise: cloud_server/knowledge.rs` (`knowledge_blobs`),

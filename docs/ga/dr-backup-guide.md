@@ -3,7 +3,7 @@
 > **Status: historical operations guide.** It does not establish an available
 > hosted, organization, or managed-data service. Confirm any command against the
 > installed local Runtime; canonical product scope is in
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 ## Overview
 

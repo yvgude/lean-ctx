@@ -17,8 +17,8 @@ orchestrate a fleet, choose a model, or host an agent platform.
 | **Research** | Performance Benchmark; Performance Profiles; first-class Context Kits; canonical evidence bundle; automated tuning; managed/cloud operation; marketplaces; organization controls; public rankings; and external-capability composition. |
 
 Read the status boundary before relying on a document:
-[internal product authority](internal/README.md) and the
-[Product Architecture](internal/vision/PRODUCT-ARCHITECTURE.md).
+internal product authority (`docs/internal/README.md`, internal — not in this repository) and the
+Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository).
 
 ## Start here
 

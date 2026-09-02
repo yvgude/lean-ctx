@@ -4,7 +4,7 @@
 > availability claim.** Use current local Runtime documentation and `lean-ctx
 > doctor` to establish behavior. LeanCTX is **The Context SDK for AI Agents**;
 > canonical product scope and status are in
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 ## Overview
 

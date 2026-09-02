@@ -4,7 +4,7 @@
 > documentation.** This guide describes a broader Context OS direction, including
 > multi-language SDKs, plugins, hosted operation, and extension contracts that
 > are not current LeanCTX availability claims. Current scope and status are
-> governed by [`docs/internal/README.md`](../internal/README.md): local Runtime
+> governed by `docs/internal/README.md` (internal, not in this repository): local Runtime
 > is available; Python SDK v1/reference-wrapper work is Preview; Cloud,
 > marketplace, broad extension, and autonomous-tuning surfaces are Research or
 > deferred. Do not use recipes in this document as installation instructions.

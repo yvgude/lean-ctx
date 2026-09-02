@@ -2,7 +2,7 @@
 
 > **Status: historical comparison note — not canonical product copy.** Current
 > LeanCTX scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md). This note does not make
+> `docs/internal/README.md` (internal, not in this repository). This note does not make
 > feature-count, percentage-reduction, compatibility, or outcome claims.
 
 Repomix creates a shareable snapshot of a repository. LeanCTX is a local context
@@ -29,4 +29,4 @@ support a gain claim.
 LeanCTX is **The Context SDK for AI Agents**. It is not a repository-packing
 replacement claim, agent platform, hosted service, or generic agent builder.
 Available local primitives and their exact status are listed in the internal
-[Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md).
+Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository).

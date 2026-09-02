@@ -52,7 +52,7 @@ create a public product promise.
 
 Context Plans are **Preview**. Performance Profiles, Context Kits, broad
 provider composition, and organization-scale operation are **Research** according to the
-[Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md). They must
+Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository). They must
 be status-labelled where they appear.
 
 ## Evidence

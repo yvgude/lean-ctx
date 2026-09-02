@@ -6,7 +6,7 @@
 > public sharing, or universal performance proof. LeanCTX is **The Context SDK
 > for AI Agents**: an available local context system for existing agents that
 > selects, shapes, reuses, and recovers task-fit context. Current scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 ## TL;DR
 

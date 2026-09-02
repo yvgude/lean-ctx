@@ -3,7 +3,7 @@
 > **Status: historical research contract — unavailable.** This describes a
 > proposed hosted team, dashboard, and account flow. It is not a current LeanCTX
 > product surface. LeanCTX is **The Context SDK for AI Agents**; current scope
-> and status are governed by [`docs/internal/README.md`](../internal/README.md).
+> and status are governed by `docs/internal/README.md` (internal, not in this repository).
 
 One-time links replace manual token copy-paste when onboarding teammates onto
 a hosted team server. The owner mints a link on the dashboard; the teammate

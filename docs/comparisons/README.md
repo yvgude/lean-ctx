@@ -2,7 +2,7 @@
 
 > **Status: historical comparison notes — not canonical product or performance
 > claims.** LeanCTX is **The Context SDK for AI Agents**. Current scope and
-> status are governed by [`docs/internal/README.md`](../internal/README.md).
+> status are governed by `docs/internal/README.md` (internal, not in this repository).
 
 These notes preserve the decision questions behind earlier comparisons. They do
 not assert current feature counts, percentage reductions, provider coverage,
@@ -28,4 +28,4 @@ quality threshold, visible methodology, and inspectable evidence. A smaller
 payload or lower calculated cost is not a successful result if the task fails.
 
 For the Available, Preview, and Research boundary, use the internal
-[Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md).
+Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository).

@@ -2,8 +2,8 @@
 
 > **Status: orientation index, not a product-status or release record.** The
 > authoritative product narrative, availability labels, and execution priority
-> are [`docs/internal/README.md`](internal/README.md) and its
-> [Product Architecture](internal/vision/PRODUCT-ARCHITECTURE.md). Historical
+> are `docs/internal/README.md` (internal, not in this repository) and its
+> Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository). Historical
 > implementation snapshots live in [`docs/archive/`](archive/).
 
 ## Current product boundary

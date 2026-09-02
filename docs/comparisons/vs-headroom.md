@@ -2,7 +2,7 @@
 
 > **Status: historical comparison note — not canonical product copy.** Current
 > LeanCTX scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md). This note does not claim
+> `docs/internal/README.md` (internal, not in this repository). This note does not claim
 > savings, quality preservation, provider compatibility, or business outcomes.
 
 Both products can be considered when inspecting or reducing model-context
@@ -18,4 +18,4 @@ are historical and are intentionally not reproduced here.
 
 LeanCTX is **The Context SDK for AI Agents**; it is not a hosted cost-management
 or analytics platform. See the internal
-[Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md).
+Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository).

@@ -4,7 +4,7 @@
 > evidence product.** The local Runtime has receipt and offline-verification
 > primitives; a workflow system and canonical evidence bundle remain Research.
 > Current product scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 GitLab: `#2315`
 

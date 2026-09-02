@@ -3,7 +3,7 @@
 > **Status: local Runtime upgrade reference.** It does not authorize website,
 > Cloud, or managed-service changes. Confirm the installed Runtime with
 > `lean-ctx doctor`; canonical scope is in
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 ## Overview
 

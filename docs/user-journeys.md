@@ -3,7 +3,7 @@
 > **Status: historical product research — not current website or installation
 > copy.** This document includes proposed Context OS, plugin, multi-SDK, Cloud,
 > and commercial-plane journeys that are not active LeanCTX commitments. Current
-> truth is [`docs/internal/README.md`](internal/README.md): LeanCTX is **The
+> truth is `docs/internal/README.md` (internal, not in this repository): LeanCTX is **The
 > Context SDK for AI Agents**, a local context system for existing agents;
 > the local Runtime is available and Python
 > SDK v1/reference-wrapper work is Preview. Do not treat commands or claims below

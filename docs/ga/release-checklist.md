@@ -4,8 +4,8 @@
 > item remains pending; this checklist does not authorize website, Cloud,
 > managed-service, control-plane, or Research capability deployment. Delivery
 > order and capability status are governed by the
-> [OSS Vision Delivery Plan](../internal/execution/OSS-VISION-DELIVERY-PLAN.md)
-> and the [internal canonical entry point](../internal/README.md). This document
+> OSS Vision Delivery Plan (`docs/internal/execution/OSS-VISION-DELIVERY-PLAN.md`, internal — not in this repository)
+> and the internal canonical entry point (`docs/internal/README.md`, internal — not in this repository). This document
 > is the public local Runtime release boundary; maintainer-only operator notes do
 > not replace or weaken any gate below.
 

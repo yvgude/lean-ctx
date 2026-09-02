@@ -4,7 +4,7 @@
 > This document records an experimental local format and implementation notes.
 > It does not announce organization policy distribution, compliance coverage,
 > hosted retention, or CISO workflow availability. Current product scope and
-> status are governed by [`docs/internal/README.md`](../internal/README.md).
+> status are governed by `docs/internal/README.md` (internal, not in this repository).
 
 Declarative, versioned governance presets — "Context-Policies as Code". A pack
 pins a team's context-governance expectations in reviewable TOML: default read

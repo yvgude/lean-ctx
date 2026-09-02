@@ -2,7 +2,7 @@
 
 > **Status: historical operations index.** It is not an availability commitment
 > for a hosted, team, or organization service. LeanCTX's current product scope is
-> governed by [`docs/internal/README.md`](../internal/README.md).
+> governed by `docs/internal/README.md` (internal, not in this repository).
 
 ## Overview
 

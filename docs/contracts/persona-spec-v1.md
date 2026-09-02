@@ -4,7 +4,7 @@
 > document records experimental non-coding persona work. LeanCTX currently
 > positions its local Runtime around existing coding agents; personas do not
 > announce a general workflow platform. Current product scope and status are
-> governed by [`docs/internal/README.md`](../internal/README.md).
+> governed by `docs/internal/README.md` (internal, not in this repository).
 
 Historical implementation status: stable · Module: `core::persona` · EPIC 12.15
 
