@@ -5,6 +5,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [3.10.1] — 2026-09-01
 
+### Added — a timed-out recursive walk says what probably ate it (#1655)
+
+- **The `.gitignore` asymmetry is now visible.** `ctx_glob` and `ctx_tree`
+  honour `.gitignore`; `ctx_shell` runs the user's own `grep`/`find`, which does
+  not. A repo with nested checkouts under `.claude/worktrees/` therefore
+  searches a multiple of the intended tree, and nothing said so — the reporter
+  hit this twice and diagnosed it both times from memory of his own earlier
+  issue (#1089) rather than from the tool.
+- On a timed-out recursive walk, the notice now names the bulk directories that
+  actually exist under the search root, with real file counts, and points at
+  `ctx_search`:
+
+  ```
+  [hint: rust/target/ (5000+ files), cookbook/node_modules/ (5000+ files) under
+   this path — walked by grep/find, but ignored by ctx_search and ctx_glob,
+   which honour .gitignore. Scope the path, add --exclude-dir, or use ctx_search.]
+  ```
+
+- **Nothing about the command's traversal changes.** Silently rewriting a user's
+  `grep` would be worse than the timeout; the report says so and is right. This
+  is an explanation after the fact.
+- Three honesty constraints, because a hint that guesses is worse than none:
+  only directories that exist are named; counts come from a bounded walk and a
+  capped count renders as `N+` rather than being passed off as a total; and no
+  percentage of the walk is claimed, because we know what is on disk, not what
+  the command traversed.
+- `rg` is deliberately excluded — it already honours `.gitignore`, so an ignored
+  directory does not explain a slow `rg`, and saying otherwise would send the
+  reader after the wrong cause. A command that already excludes the directory
+  gets no hint either.
+
 ### Fixed — `ctx_grep` turned context lines into files and inflated the count (#1648)
 
 - **A context line is no longer parsed as a file header.** GNU grep separates a
