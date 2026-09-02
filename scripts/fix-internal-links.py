@@ -27,17 +27,41 @@ ROOT = Path(__file__).resolve().parents[1]
 DRY = "--apply" not in sys.argv
 NOTE = " (internal, not in this repository)"
 
+# Left alone on purpose: these are artifacts of `docs/contracts/ocla-contract-pack-v1.json`,
+# which records a SHA-256 per file under a fixed pack `version`. Editing their
+# text — even to unlink a reference — invalidates a digest that consumers verify,
+# and rewriting the digests without bumping the version would let two different
+# contents claim the same pack version. That is the drift the pack exists to
+# prevent, and a non-clickable link is not worth it. Same call as leaving the
+# frozen `wasm-abi-v1.md` untouched and putting its status note in CONTRACTS.md.
+#
+# Sourced from CONTRACT_PACK_ARTIFACTS in scripts/verify-ocla-contract-suite.py.
+PACK_ARTIFACTS = frozenset(
+    {
+        "docs/contracts/README.md",
+        "docs/contracts/DEPRECATION.md",
+        "docs/contracts/capabilities-contract-v1.md",
+        "docs/contracts/conformance-v1.md",
+        "docs/contracts/certification-levels-v1.md",
+        "docs/contracts/ocla-verifier-conformance-v1.md",
+    }
+)
+
 # [anything](…internal/whatever.md) — any depth of ../ and an optional docs/ prefix.
 LINK = re.compile(r"\[([^\]]*)\]\((?:\.\./)*(?:docs/)?internal/([A-Za-z0-9/_.-]+\.md)\)")
 
 changed = 0
 touched = []
+skipped = []
 
 for path in sorted(ROOT.rglob("*.md")):
     rel = path.relative_to(ROOT)
     if rel.parts[0] not in ("docs", "README.md", "CONTRACTS.md"):
         continue
     if any(p in rel.parts for p in (".worktrees", "node_modules", "target")):
+        continue
+    if str(rel) in PACK_ARTIFACTS:
+        skipped.append(str(rel))
         continue
 
     text = original = path.read_text(encoding="utf-8")
@@ -67,6 +91,10 @@ for path in sorted(ROOT.rglob("*.md")):
             path.write_text(text, encoding="utf-8")
 
 print(f"{'DRY RUN — ' if DRY else ''}{len(touched)} files, {changed} links de-linked")
+if skipped:
+    print(f"  skipped {len(skipped)} contract-pack artifact(s) — digests are attested:")
+    for s_ in skipped:
+        print(f"    {s_}")
 for t in touched[:5]:
     print(f"  {t}")
 if len(touched) > 5:
