@@ -356,6 +356,17 @@ pub mod tests {
 
     #[test]
     fn session_accumulator_tracks() {
+        // The accumulator is process-global, and `session_counter_removed_from_footer`
+        // records `record_savings(100, 50)` twenty times under this lock. Without
+        // taking it here, one of those lands between this test's `reset_session()`
+        // and its `session_totals()`, and the assertion reads 400 instead of 300 —
+        // which is exactly how it failed on Windows in CI on main (02e49e7c), where
+        // thread scheduling differs enough to make the race visible.
+        //
+        // Same class as the GL #556 leak noted above: shared state, some tests
+        // serialised and some not.
+        let _lock = crate::core::data_dir::test_env_lock();
+
         reset_session();
         record_savings(100, 50);
         record_savings(200, 80);
