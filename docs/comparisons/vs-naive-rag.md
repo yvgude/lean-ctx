@@ -2,7 +2,7 @@
 
 > **Status: historical comparison note — not canonical product copy.** Current
 > LeanCTX scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md). This note makes no
+> `docs/internal/README.md` (internal, not in this repository). This note makes no
 > blanket retrieval-quality, locality, or cost claim.
 
 Retrieval and context shaping solve different constraints. A retrieval system
@@ -19,4 +19,4 @@ floors, or local behavior are historical design material, not availability or
 performance promises.
 
 LeanCTX is **The Context SDK for AI Agents**, not a hosted RAG platform. See the
-internal [Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md).
+internal Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository).

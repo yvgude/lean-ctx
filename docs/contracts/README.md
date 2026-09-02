@@ -6,7 +6,7 @@
 > Context SDK for AI Agents**. Cloud, organization, marketplace, hosted-index,
 > public-ranking, agent-building, and broader OCLA capability surfaces remain
 > Research or unavailable unless the canonical status map explicitly promotes
-> them. See [`docs/internal/README.md`](../internal/README.md).
+> them. See `docs/internal/README.md` (internal, not in this repository).
 
 > Single entry point for all OCLA wire contracts, schemas, and specifications.  
 > Version: aligned with lean-ctx v3.9.20

@@ -5,7 +5,7 @@
 > first-class local setup paths. Verify this generic Attach wiring against the
 > installed OpenCode version; compatibility alone is not a performance or
 > evidence guarantee. Product scope is governed by
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 Complete guide to setting up and optimally using lean-ctx with OpenCode (open-source AI coding agent).
 

@@ -64,4 +64,4 @@ not turn a local counter or a mode description into a universal savings claim.
 - [Hosted index runbook](hosted-index-slo.md) and [organization SSO](org-sso-setup.md) — historical, unshipped service concepts.
 
 For the governing status and product boundary, see
-[docs/internal/README.md](../internal/README.md).
+`docs/internal/README.md` (internal, not in this repository).

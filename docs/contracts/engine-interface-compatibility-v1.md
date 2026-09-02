@@ -6,9 +6,9 @@
 > types to stable public interfaces.
 >
 > **Authority:**
-> [Engine, SDK & Cloud Plan](../internal/vision/06-ENGINE-SDK-CLOUD-PLAN.md)
+> Engine, SDK & Cloud Plan (`docs/internal/vision/06-ENGINE-SDK-CLOUD-PLAN.md`, internal — not in this repository)
 > defines the delivery boundary; the
-> [internal README](../internal/README.md) defines status and claims. When
+> internal README (`docs/internal/README.md`, internal — not in this repository) defines status and claims. When
 > source-level truth disagrees, source wins.
 
 ## 1. Scope and decision

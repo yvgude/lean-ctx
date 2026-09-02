@@ -33,5 +33,5 @@ compatibility and revocation policy, support ownership, and evidence that it
 does not move marketplace, cloud, or agent-building concerns into the current
 OSS product.
 
-Until then, use the [internal Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md)
+Until then, use the internal Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository)
 as the only product authority.

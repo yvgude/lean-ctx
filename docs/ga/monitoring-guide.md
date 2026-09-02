@@ -3,7 +3,7 @@
 > **Status: historical operations guide.** This is not a dashboard, Cloud, or
 > organization-monitoring product promise. Confirm behavior against the local
 > Runtime; canonical scope is in
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 ## Overview
 

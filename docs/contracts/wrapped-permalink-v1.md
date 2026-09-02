@@ -6,7 +6,7 @@
 > publishing endpoint, managed data path, or savings claim. LeanCTX is **The
 > Context SDK for AI Agents**; the available product is local Runtime/CLI/MCP/
 > proxy capability with local evidence and offline verification. Product scope
-> and status are governed by [`docs/internal/README.md`](../internal/README.md).
+> and status are governed by `docs/internal/README.md` (internal, not in this repository).
 > Do not implement or advertise these endpoints without a new explicit product
 > decision and the required privacy, security, and evidence gates.
 

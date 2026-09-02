@@ -5,7 +5,7 @@
 > `lean-ctx addon info`. LeanCTX still does **not** offer a hosted registry,
 > marketplace, paid-addon flow, or verified public catalog — a package is a file
 > you install, or one you fetch from a registry you name. Product scope is
-> governed by [`docs/internal/README.md`](../internal/README.md).
+> governed by `docs/internal/README.md` (internal, not in this repository).
 >
 > Sections describing per-platform `[artifacts]` downloads are **historical**:
 > modules now travel inside the signed package, which is what removes the

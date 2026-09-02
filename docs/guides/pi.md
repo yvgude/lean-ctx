@@ -5,7 +5,7 @@
 > first-class local setup paths. This guide covers the Pi extension's local
 > wiring; verify compatibility and observability against the installed version
 > before making a performance claim. Product scope is governed by
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 Complete guide to setting up and optimally using lean-ctx with [Pi Coding Agent](https://github.com/badlogic/pi-mono).
 

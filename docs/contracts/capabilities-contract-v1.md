@@ -4,7 +4,7 @@
 > discovery payload reports what a local Runtime build exposes. Values for
 > experimental planes, personas, extensions, or services do not make them public
 > LeanCTX offerings. Current product scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 `GET /v1/capabilities` returns a discovery document so any client — in any
 language — can learn at runtime what a lean-ctx instance supports, and branch on

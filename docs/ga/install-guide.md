@@ -3,7 +3,7 @@
 > **Status: local Runtime setup reference.** Installation applies to the local
 > Context SDK for existing agents, not a hosted service or general agent platform.
 > Confirm current behavior with `lean-ctx doctor`; product scope and status are in
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 ## Overview
 

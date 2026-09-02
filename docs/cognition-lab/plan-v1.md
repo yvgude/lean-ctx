@@ -2,7 +2,7 @@
 
 > **Status: research plan — not a current LeanCTX product or capability
 > commitment.** LeanCTX is **The Context SDK for AI Agents**; current scope and
-> status are governed by [`docs/internal/README.md`](../internal/README.md).
+> status are governed by `docs/internal/README.md` (internal, not in this repository).
 
 Tracked in GitLab: `#2344`.
 

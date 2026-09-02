@@ -3,7 +3,7 @@
 > **Status: implementation contract, not canonical product copy.** Conformance
 > checks describe local implementation behavior; they do not announce a
 > platform, extension ecosystem, or performance outcome. Current product scope
-> and status are governed by [`docs/internal/README.md`](../internal/README.md).
+> and status are governed by `docs/internal/README.md` (internal, not in this repository).
 
 Historical implementation status: stable · EPIC 12.17 · Code: [`rust/src/core/conformance.rs`](../../rust/src/core/conformance.rs)
 

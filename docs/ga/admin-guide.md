@@ -4,7 +4,7 @@
 > Follow only behavior supported by the installed local Runtime. LeanCTX is **The
 > Context SDK for AI Agents**; Cloud, managed/team, SSO, and control-plane
 > surfaces are not current availability. See
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 ## Overview
 

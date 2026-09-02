@@ -2,7 +2,7 @@
 
 > **Status: historical comparison note — not canonical product copy.** Current
 > LeanCTX scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md). This note makes no
+> `docs/internal/README.md` (internal, not in this repository). This note makes no
 > performance, coverage, feature-count, or compatibility promise.
 
 codebase-memory-mcp and LeanCTX may both be evaluated for codebase-oriented
@@ -26,5 +26,5 @@ product guarantees. A result applies only to the measured configuration.
 
 LeanCTX is **The Context SDK for AI Agents**, not a generic agent platform,
 team service, or hosted graph product. See the internal
-[Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md) for the
+Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository) for the
 Available, Preview, and Research boundary.

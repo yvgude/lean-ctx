@@ -1,8 +1,8 @@
 # LeanCTX local Runtime reference
 
 This reference describes the local Runtime. Its public boundary is governed by
-[the internal canonical entry point](../internal/README.md) and
-[Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md).
+the internal canonical entry point (`docs/internal/README.md`, internal — not in this repository) and
+Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository).
 
 LeanCTX is the Context SDK for existing agents. The agent, model, task logic,
 and retry policy remain the integrator's responsibility.

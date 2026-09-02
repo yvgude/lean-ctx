@@ -2,7 +2,7 @@
 
 > **Status: historical comparison note — not canonical product copy.** Current
 > LeanCTX scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md). This note makes no
+> `docs/internal/README.md` (internal, not in this repository). This note makes no
 > universal privacy, latency, retrieval-quality, or feature-coverage claim.
 
 The tools can be assessed as different ways to help an agent find project
@@ -19,4 +19,4 @@ read as product guarantees.
 
 The public boundary is deliberately narrow: LeanCTX is **The Context SDK for AI
 Agents**, not a hosted semantic-search product or general agent platform. See
-the internal [Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md).
+the internal Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository).

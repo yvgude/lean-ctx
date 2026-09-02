@@ -3,7 +3,7 @@
 > **Status: historical implementation guide.** It must not be read as a public
 > builder, extension-marketplace, or multi-agent product promise. LeanCTX is
 > **The Context SDK for AI Agents**; current scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 This guide explains how to integrate with and extend lean-ctx. For installation
 and daily operation, start with the [reference guides](../reference/README.md).

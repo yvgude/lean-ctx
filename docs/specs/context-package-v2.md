@@ -15,7 +15,7 @@ A `.ctxpkg` is not a live ContextWorkspace, a receipt, an evidence bundle, or
 a Cloud account. Existing Kit TOML, legacy `.ctx.json` export, snapshots and
 package substrate remain distinct until a versioned composition/migration
 contract exists. See the internal
-[Context Workspace & `.ctxpkg` Plan](../internal/vision/07-CONTEXT-WORKSPACE-CTXPKG-PLAN.md).
+Context Workspace & `.ctxpkg` Plan (`docs/internal/vision/07-CONTEXT-WORKSPACE-CTXPKG-PLAN.md`, internal — not in this repository).
 
 ## Additive checkpoint layer
 
@@ -57,4 +57,4 @@ publisher accounts, package billing, marketplace rankings, social discovery,
 cross-vendor capability distribution, autonomous graph learning, or automatic
 installation of third-party agent capabilities.
 
-The canonical status map is [Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md).
+The canonical status map is Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository).

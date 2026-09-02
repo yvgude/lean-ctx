@@ -2,7 +2,7 @@
 
 > **Status: historical research — not an available LeanCTX Cloud/FinOps product
 > or savings claim.** LeanCTX is **The Context SDK for AI Agents**; current scope
-> and status are governed by [`docs/internal/README.md`](../internal/README.md).
+> and status are governed by `docs/internal/README.md` (internal, not in this repository).
 
 `lean-ctx finops export` turns the tamper-evident savings ledger into daily
 cost rows your FinOps platform ingests for showback/chargeback. Unlike

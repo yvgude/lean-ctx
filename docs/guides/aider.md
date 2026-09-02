@@ -5,7 +5,7 @@
 > first-class local setup paths. This generic MCP/CLI wiring must be verified
 > against the installed Aider version and observes only the context behavior it
 > can see. Product scope is governed by
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 Complete guide to setting up and optimally using lean-ctx with Aider (AI pair programming in your terminal).
 

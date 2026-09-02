@@ -31,4 +31,4 @@ Local Receipts and offline-verification primitives are **Available** as
 implementation substrate. The common benchmark, quality, comparison, and
 evidence flow is **Research**; a universal verified-savings claim is not
 available. See [Proof & audit](16-signed-savings-ledger.md) and the canonical
-[Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md).
+Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository).

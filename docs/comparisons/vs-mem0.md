@@ -2,7 +2,7 @@
 
 > **Status: historical comparison note — not canonical product copy.** Current
 > LeanCTX scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md). This note makes no
+> `docs/internal/README.md` (internal, not in this repository). This note makes no
 > statement that either memory approach benefits every agent or workload.
 
 Mem0 and LeanCTX serve different design questions. LeanCTX's current local
@@ -18,4 +18,4 @@ historical implementation observations, not product guarantees.
 
 LeanCTX is **The Context SDK for AI Agents**. Its Available, Preview, and
 Research boundaries are defined in the internal
-[Product Architecture](../internal/vision/PRODUCT-ARCHITECTURE.md).
+Product Architecture (`docs/internal/vision/PRODUCT-ARCHITECTURE.md`, internal — not in this repository).

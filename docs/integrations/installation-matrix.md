@@ -4,7 +4,7 @@
 > existing agents; it does not establish a LeanCTX Cloud, generic agent platform,
 > hosted execution, or performance guarantee. LeanCTX is **The Context SDK for
 > AI Agents**. Current product scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 This document records the **current local wiring** implemented by `setup` and
 `init`. A row proves neither first-class support nor a performance result:

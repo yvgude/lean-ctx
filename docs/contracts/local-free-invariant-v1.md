@@ -5,7 +5,7 @@
 > account, organization, or commercialization material below is an archived
 > design boundary, not a roadmap commitment or available service. Current
 > product scope and status are governed by
-> [`docs/internal/README.md`](../internal/README.md).
+> `docs/internal/README.md` (internal, not in this repository).
 
 Historical implementation status: stable · EPIC 12.19 · RFC §4, §6
 
