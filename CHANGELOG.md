@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [3.10.1] — 2026-09-01
 
+### Fixed — the timeout notice invented a pipeline stage (#1654)
+
+- **Descendants are labelled, not presented as stages.** `[still running at
+  timeout: …]` collects every live process in the timed-out child's process
+  group, then joined them with `" | "`. A segment's own children join that
+  group — `go run ./x` execs the binary it just compiled under `$TMPDIR` — so
+  the notice rendered `… | head -30 | /var/folders/…/exe/evcc …`, a line that is
+  not runnable and names a stage the caller never wrote. The whole point of the
+  notice (#1086) is to say *which part* to fix.
+- `ps` now also reads `ppid`, so a process whose parent is in the same set is
+  shown as `parent (spawned: child)` rather than as a peer. Genuine pipeline
+  siblings share a parent that is *not* in the set — the shell wrapper is
+  dropped for carrying the whole command — so they stay top-level.
+- The separator is `; `, which reads as a list. The set was never a pipeline;
+  the pipe character asserted a relationship the process table had not
+  established.
+
 ### Added — a timed-out recursive walk says what probably ate it (#1655)
 
 - **The `.gitignore` asymmetry is now visible.** `ctx_glob` and `ctx_tree`
