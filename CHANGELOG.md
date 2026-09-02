@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [3.10.1] — 2026-09-01
 
+### Fixed — `VAR=$((arith))` was read as a command (#1664)
+
+- `x=$((1+2))` was blocked with `'1+2' is not in the shell allowlist`, and the
+  suggested fix, `lean-ctx allow 1+2`, could never work. `$(( … ))` is
+  arithmetic expansion over the shell's own variables — it executes nothing —
+  but the `(expr)` inside looked like a subshell to the assignment scanner
+  (#855), which yielded `1+2` as a leaf command.
+- The scanner now skips the whole expansion. Nothing is given up: there is no
+  command in there to gate. A real substitution in an assignment is still
+  checked, and arithmetic *inside* one does not shield it — both pinned by
+  tests.
+- What this unblocks is counters, and with them the ordinary way to write a
+  bounded wait or poll loop:
+  `i=0; while [ $i -lt 40 ]; do sleep 15; i=$((i+1)); done`.
+- The tokenizer was never at fault — it resolves `x=$((1+2))` to an empty base
+  correctly. Measuring that first is what located the real path.
+
 ### Fixed — the timeout notice invented a pipeline stage (#1654)
 
 - **Descendants are labelled, not presented as stages.** `[still running at

