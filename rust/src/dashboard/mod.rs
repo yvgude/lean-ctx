@@ -45,6 +45,7 @@ const COCKPIT_COMPONENT_LEADERBOARD_JS: &str =
 const COCKPIT_COMPONENT_AREA_TABS_JS: &str = include_str!("static/components/cockpit-area-tabs.js");
 const COCKPIT_COMPONENT_PROTECTION_JS: &str =
     include_str!("static/components/cockpit-protection.js");
+const COCKPIT_COMPONENT_FEEDBACK_JS: &str = include_str!("static/components/cockpit-feedback.js");
 const COCKPIT_COMPONENT_SETTINGS_JS: &str = include_str!("static/components/cockpit-settings.js");
 const COCKPIT_COMPONENT_TELEMETRY_JS: &str = include_str!("static/components/cockpit-telemetry.js");
 const COCKPIT_COMPONENT_ADOPTION_JS: &str = include_str!("static/components/cockpit-adoption.js");

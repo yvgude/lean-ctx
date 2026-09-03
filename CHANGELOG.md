@@ -5,6 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added — the dashboard asks how you use lean-ctx
+
+- A form in the dashboard's Settings view asks four questions: what you use
+  lean-ctx for, what you like most about it, what is missing, and how often you
+  use it. Three are free text on purpose — a fixed list of features can only
+  ever return the answers it already contains, and the point is to learn which
+  use cases exist. Frequency is the one multiple choice, and it is what makes
+  the free text groupable: "what's missing" from a daily user and from someone
+  who installed it yesterday are usually different wishes.
+- Nothing is sent unless the button is pressed. `POST /api/feedback` has no
+  background caller, the form starts empty on every load, and the notice sits
+  **above** the button rather than in a changelog: pressing send transmits the
+  answers, the lean-ctx version and the anonymous installation id to
+  leanctx.com — nothing else, and nothing at all until then.
+- Answers are validated before they leave the machine: a submission that answers
+  nothing is refused, and an over-long answer is refused with the field named
+  rather than travelling to be silently truncated at the other end. A failed
+  send keeps what you typed.
+- Routed through the dashboard's own backend, like the leaderboard board (#466):
+  the CSP pins `connect-src` to `'self'`, so the browser never reaches
+  `api.leanctx.com` — and the one place that decides what leaves the machine is
+  a single file.
+- An optional contact field exists for people who want an answer back. Empty
+  means anonymous, and empty is the default.
+
 ### Fixed — the token-budget gate measured one platform and enforced all (#1651)
 
 - `minimal_arm_per_turn_prefix_stays_within_budget` caps the per-turn prefix at

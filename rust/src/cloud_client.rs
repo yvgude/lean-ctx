@@ -424,6 +424,36 @@ pub fn heartbeat(payload: &serde_json::Value) -> Result<String, String> {
     Ok(json["message"].as_str().unwrap_or("OK").to_string())
 }
 
+/// Send one volunteered product-feedback submission. No authentication.
+///
+/// Anonymous like [`heartbeat`], and for the same reason: there is no account to
+/// attach this to, and requiring one would silence exactly the users worth
+/// hearing from. The payload carries only what the person typed into the form,
+/// plus the installation id and version so answers can be read in context —
+/// never anything derived from their code, paths or usage.
+///
+/// The server may answer 429 when one installation has already sent several
+/// today; that is surfaced to the caller rather than swallowed, so the UI can
+/// say what happened instead of reporting a send that was dropped.
+pub fn submit_product_feedback(payload: &serde_json::Value) -> Result<String, String> {
+    let url = format!("{}/api/feedback/product", api_url());
+
+    let resp = ureq::post(&url)
+        .header("Content-Type", "application/json")
+        .send(&serde_json::to_vec(payload).map_err(|e| format!("JSON error: {e}"))?)
+        .map_err(|e| format!("Could not send feedback: {e}"))?;
+
+    let body = resp
+        .into_body()
+        .read_to_string()
+        .map_err(|e| format!("Failed to read response: {e}"))?;
+
+    let json: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {e}"))?;
+
+    Ok(json["message"].as_str().unwrap_or("Thanks").to_string())
+}
+
 /// Result of a successful Wrapped publish (`POST /api/wrapped`). The `edit_token` is returned
 /// (and must be stored to delete/claim later) only on a *fresh* insert; on a signed re-publish
 /// the server updates the existing card in place and omits it (the client keeps the stored one).
