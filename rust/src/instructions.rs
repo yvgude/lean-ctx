@@ -595,8 +595,19 @@ fn build_shell_hint() -> String {
     if !cfg!(windows) {
         return String::new();
     }
-    let name = crate::shell::shell_name();
-    let is_posix = matches!(name.as_str(), "bash" | "sh" | "zsh" | "fish");
+    shell_hint_text(&crate::shell::shell_name())
+}
+
+/// The Windows shell hint for `name`, independent of the running platform.
+///
+/// Split out for the per-turn token budget (#1651). The hint is empty on POSIX
+/// and not on Windows, so the prefix is not the same size everywhere — and a
+/// budget measured where the developer happens to sit answers a different
+/// question than the one CI enforces. The guard prices this branch on every
+/// platform, and calls the same function the runtime does so the two cannot
+/// drift apart.
+pub(crate) fn shell_hint_text(name: &str) -> String {
+    let is_posix = matches!(name, "bash" | "sh" | "zsh" | "fish");
     if is_posix {
         format!("\nSHELL: {name} (POSIX) — no PowerShell cmdlets.\n")
     } else if name.contains("powershell") || name.contains("pwsh") {
@@ -604,6 +615,31 @@ fn build_shell_hint() -> String {
     } else {
         format!("\nSHELL: {name}.\n")
     }
+}
+
+/// The largest number of tokens [`build_shell_hint`] can add on Windows (#1651).
+///
+/// The candidate list is not closed — `shell_name()` returns whatever basename
+/// it finds — but it covers every branch of [`shell_hint_text`] with the longest
+/// realistic name, which is what the budget needs. An exotic long shell name
+/// would cost a token or two more; the budget carries margin for exactly that.
+#[cfg(test)]
+pub(crate) fn max_shell_hint_tokens() -> usize {
+    const BUDGETED_SHELL_NAMES: &[&str] = &[
+        "powershell",
+        "pwsh",
+        "cmd",
+        "bash",
+        "sh",
+        "zsh",
+        "fish",
+        "git-bash",
+    ];
+    BUDGETED_SHELL_NAMES
+        .iter()
+        .map(|name| crate::core::tokens::count_tokens(&shell_hint_text(name)))
+        .max()
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
