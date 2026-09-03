@@ -953,12 +953,92 @@ fn truncate_verbatim(output: &str, original_tokens: usize, family: TokenizerFami
     result
 }
 
+/// Does this line have the `path:line:` shape every `grep -n` / `rg` match has?
+///
+/// The prefix must not be all digits, which is what separates a path from a
+/// `12:34:56` timestamp in a log — the one common shape that would otherwise
+/// read as a match.
+fn looks_like_match_line(line: &str) -> bool {
+    let Some(first) = line.find(':') else {
+        return false;
+    };
+    let path = &line[..first];
+    if path.is_empty()
+        || path.bytes().all(|b| b.is_ascii_digit())
+        || path.chars().any(char::is_whitespace)
+    {
+        return false;
+    }
+    let rest = &line[first + 1..];
+    let Some(second) = rest.find(':') else {
+        return false;
+    };
+    second > 0 && rest[..second].bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Is this output a search result rather than a log?
+fn is_match_shaped(lines: &[&str]) -> bool {
+    let considered: Vec<&&str> = lines.iter().filter(|l| !l.trim().is_empty()).collect();
+    if considered.len() < 20 {
+        return false;
+    }
+    let matched = considered
+        .iter()
+        .filter(|l| looks_like_match_line(l))
+        .count();
+    matched * 10 >= considered.len() * 9
+}
+
+/// GH #1663: search results are not logs, and must never be sampled.
+///
+/// Head+tail sampling assumes the interesting content sits at the edges. For a
+/// search result every line is a discrete answer and the decisive one is at an
+/// arbitrary position — usually the *unusual* one, the single reader among two
+/// hundred writers. Sampling is biased against exactly the line that matters,
+/// and `[222 lines omitted]` reads as "more of the same" rather than "the
+/// answer may be in here". A reporter concluded a struct field was dead code on
+/// a sampled result whose dropped middle held the line proving it was read.
+///
+/// So: keep a contiguous prefix, in order, and say plainly that this is a
+/// sample and how many matches were not shown. The full set stays reachable
+/// through the archive reference the caller already gets.
+fn truncate_match_lines(
+    lines: &[&str],
+    original_tokens: usize,
+    family: TokenizerFamily,
+) -> Option<String> {
+    const SHOWN: usize = 40;
+    if lines.len() <= SHOWN {
+        return None;
+    }
+    let total = lines.len();
+    let hidden = total - SHOWN;
+
+    let mut compressed = lines[..SHOWN].join("\n");
+    compressed.push_str(&format!(
+        "\n[⚠ SAMPLE — showing the first {SHOWN} of {total} matching lines, in order; \
+         {hidden} not shown. This is NOT a complete result set: nothing here rules \
+         out a match further down. Narrow the pattern or use ctx_search before \
+         concluding anything from absence.]"
+    ));
+
+    let ct = count_tokens_for(&compressed, family);
+    if ct >= original_tokens {
+        return None;
+    }
+    Some(shell_savings_footer(&compressed, original_tokens, ct))
+}
+
 fn truncate_with_safety_scan(
     lines: &[&str],
     original_tokens: usize,
     family: TokenizerFamily,
 ) -> Option<String> {
     use crate::core::safety_needles;
+
+    if is_match_shaped(lines) {
+        return truncate_match_lines(lines, original_tokens, family);
+    }
 
     let first = &lines[..5];
     let last = &lines[lines.len() - 5..];
@@ -1200,5 +1280,80 @@ mod tests {
             classify_build_output("RUST_LOG=debug cargo build", "warning: unused variable", 0),
             BuildOutputKind::WarningsOnly
         );
+    }
+}
+
+#[cfg(test)]
+mod gh1663 {
+    use super::*;
+
+    /// 236 grep matches, the decisive one at 205 — the reporter's real case.
+    fn grep_output() -> Vec<String> {
+        let mut v: Vec<String> = (0..236)
+            .map(|i| format!("./interp/typecheck.go:{}:\t\t\tc0 = c0.child[0]", 90 + i))
+            .collect();
+        v[204] = "./interp/debugger.go:720:\tfor _, ch := range sc.child {".to_string();
+        v
+    }
+
+    #[test]
+    fn grep_shaped_output_is_never_sampled_head_and_tail() {
+        let owned = grep_output();
+        let lines: Vec<&str> = owned.iter().map(String::as_str).collect();
+        assert!(is_match_shaped(&lines), "precondition: reads as matches");
+
+        let out = truncate_with_safety_scan(&lines, 10_000, TokenizerFamily::Cl100k)
+            .expect("output is long enough to compress");
+
+        assert!(
+            !out.contains("safety-relevant lines preserved"),
+            "the head+tail sampler must not run on search results: {out}"
+        );
+        assert!(
+            out.contains("SAMPLE"),
+            "the sample must announce itself: {out}"
+        );
+        assert!(
+            out.contains("of 236 matching lines"),
+            "and name the true match count: {out}"
+        );
+    }
+
+    /// What is shown is a contiguous, ordered prefix — so "not in the output"
+    /// can never be mistaken for "not in the results".
+    #[test]
+    fn the_shown_matches_are_a_contiguous_prefix() {
+        let owned = grep_output();
+        let lines: Vec<&str> = owned.iter().map(String::as_str).collect();
+        let out = truncate_with_safety_scan(&lines, 10_000, TokenizerFamily::Cl100k).unwrap();
+
+        let body: Vec<&str> = out
+            .lines()
+            .take_while(|l| !l.starts_with("[⚠ SAMPLE"))
+            .collect();
+        for (i, line) in body.iter().enumerate() {
+            assert_eq!(*line, lines[i], "line {i} is out of order or substituted");
+        }
+    }
+
+    /// A log with timestamps must keep the sampler: `12:34:56` is not a path.
+    #[test]
+    fn timestamped_logs_are_not_mistaken_for_matches() {
+        let owned: Vec<String> = (0..120)
+            .map(|i| format!("12:34:{:02} INFO worker {i} still running", i % 60))
+            .collect();
+        let lines: Vec<&str> = owned.iter().map(String::as_str).collect();
+        assert!(!is_match_shaped(&lines), "a timestamp is not a path");
+    }
+
+    /// A short result set is delivered whole — no notice, no sampling.
+    #[test]
+    fn a_small_match_set_is_not_truncated_at_all() {
+        let owned: Vec<String> = (0..25)
+            .map(|i| format!("src/main.rs:{i}:    let x = {i};"))
+            .collect();
+        let lines: Vec<&str> = owned.iter().map(String::as_str).collect();
+        assert!(is_match_shaped(&lines));
+        assert!(truncate_match_lines(&lines, 10_000, TokenizerFamily::Cl100k).is_none());
     }
 }

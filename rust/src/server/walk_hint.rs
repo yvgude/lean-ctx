@@ -59,7 +59,17 @@ pub(crate) fn walk_hint(command: &str, cwd: &str) -> Option<String> {
         return None;
     }
 
-    let root = Path::new(cwd);
+    // #1662: `cd repo && grep -rn … .` walks a tree the call's own cwd never
+    // named. Scanning the call directory would then look at the wrong place and
+    // report nothing, which is indistinguishable from "this walk is fine".
+    let moved = crate::core::command_cwd::final_cwd(command, Some(Path::new(cwd)));
+    let root: &Path = match moved.as_deref() {
+        Some(dir) => dir,
+        // A `cd` this cannot resolve means the directory walked is unknown;
+        // naming directories from somewhere else would be a guess.
+        None if command.split_whitespace().any(|w| w == "cd") => return None,
+        None => Path::new(cwd),
+    };
     let mut found: Vec<(String, usize, bool)> = Vec::new();
     collect_bulk_dirs(root, root, 0, &mut found);
 
@@ -246,5 +256,74 @@ mod tests {
         let (n, capped) = (COUNT_CAP, true);
         let rendered = format!("{n}{} files", if capped { "+" } else { "" });
         assert!(rendered.starts_with("5000+"), "{rendered}");
+    }
+}
+
+#[cfg(test)]
+mod gh1662 {
+    use super::*;
+
+    /// A repo with the two directories that dominate a `grep -r`.
+    fn repo_with_bulk() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        for bulk in ["node_modules", ".git"] {
+            let sub = dir.path().join(bulk);
+            std::fs::create_dir_all(&sub).expect("mkdir");
+            for i in 0..40 {
+                std::fs::write(sub.join(format!("f{i}.js")), "x").expect("write");
+            }
+        }
+        std::fs::write(dir.path().join("main.go"), "package main").expect("write");
+        dir
+    }
+
+    /// The reported shape: a recursive grep piped into `head`. `head` closes
+    /// early, so the visible output arrives fast while the walk runs on.
+    #[test]
+    fn a_piped_recursive_grep_is_still_a_recursive_walk() {
+        assert!(is_recursive_walk(
+            "grep -rn \"spine-go/mocks\" --include=*.go . | head"
+        ));
+    }
+
+    #[test]
+    fn a_piped_recursive_grep_gets_the_hint() {
+        let repo = repo_with_bulk();
+        let hint = walk_hint(
+            "grep -rn \"mocks\" --include=*.go . | head",
+            &repo.path().to_string_lossy(),
+        );
+        let hint = hint.expect("bulk directories under the walked path must be named");
+        assert!(hint.contains("node_modules/"), "{hint}");
+        assert!(hint.contains("ctx_search"), "{hint}");
+    }
+
+    /// The walked tree is the one the command `cd`s into, not the call's own.
+    #[test]
+    fn the_hint_follows_a_leading_cd() {
+        let repo = repo_with_bulk();
+        let elsewhere = tempfile::tempdir().expect("tempdir");
+
+        let command = format!(
+            "cd {} && grep -rn \"mocks\" --include=*.go . | head",
+            repo.path().display()
+        );
+        let hint = walk_hint(&command, &elsewhere.path().to_string_lossy());
+        assert!(
+            hint.is_some_and(|h| h.contains("node_modules/")),
+            "the scan must follow the cd, not the call directory"
+        );
+    }
+
+    /// A `cd` into a directory this cannot resolve leaves the walked tree
+    /// unknown — better silent than naming directories from somewhere else.
+    #[test]
+    fn an_unresolvable_cd_stays_silent() {
+        let repo = repo_with_bulk();
+        let hint = walk_hint(
+            "cd \"$REPO\" && grep -rn x . | head",
+            &repo.path().to_string_lossy(),
+        );
+        assert!(hint.is_none(), "must not guess: {hint:?}");
     }
 }

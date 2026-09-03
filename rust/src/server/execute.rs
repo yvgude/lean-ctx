@@ -267,13 +267,23 @@ pub(crate) fn execute_command_with_env_cancellable(
                 still_running.join("; ")
             ));
         }
-        // #1655: a recursive walk does not read `.gitignore`, so a nested
-        // checkout the other ctx_* tools never see can dominate it. Say so
-        // after the fact — the command's own traversal is left alone.
-        if let Some(hint) = super::walk_hint::walk_hint(command, cwd) {
+    }
+    // #1655/#1662: a recursive walk does not read `.gitignore`, so a nested
+    // checkout the other ctx_* tools never see can dominate it. Say so after
+    // the fact — the command's own traversal is left alone.
+    //
+    // Not only on timeout (#1662): `grep -r … | head` is the shape agents
+    // actually type, and it is the shape where the cost hides best. `head`
+    // closes early, the ten visible lines arrive at once, and the walk keeps
+    // running for two more minutes behind a result that already looked
+    // finished. Reported as "no redirect, no hint" — because the only place
+    // this was emitted was a timeout that a fast-looking command never
+    // reached.
+    if let Some(hint) = super::walk_hint::walk_hint(command, cwd) {
+        if !text.is_empty() && !text.ends_with('\n') {
             text.push('\n');
-            text.push_str(&hint);
         }
+        text.push_str(&hint);
     }
     if cancelled {
         if !text.ends_with('\n') && !text.is_empty() {
