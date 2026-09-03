@@ -607,6 +607,58 @@ fn descriptor_relative_parent_swap_never_writes_replacement_or_outside() {
     }
 }
 
+/// Entries in a replacement data root that mean the bound write was re-resolved
+/// by path — the breach the relocation guard exists to catch (#1658).
+///
+/// Directories are bound before the root is renamed away, so nothing can reach
+/// the replacement except through a fresh path resolution, which would recreate
+/// the artifact tree, publish the final name, or leave its temporary. Anything
+/// else in there came from a different writer and is not this guard's subject;
+/// failing on it is what made the guard flaky without ever naming a cause.
+fn boundary_breach<'a>(entries: &'a [String], final_name: &str) -> Vec<&'a String> {
+    let artifact_tree = OUTPUT_DIRECTORY
+        .split('/')
+        .next()
+        .expect("output directory has a first component");
+    entries
+        .iter()
+        .filter(|name| {
+            name.as_str() == artifact_tree || name.as_str() == final_name || name.contains(".tmp")
+        })
+        .collect()
+}
+
+/// The relaxed guard must still catch what it was written for. Both directions
+/// are pinned here so a later relaxation cannot quietly mute the invariant.
+#[test]
+fn the_relocation_guard_catches_a_breach_and_ignores_a_foreign_writer() {
+    let final_name = "f00d.txt".to_string();
+
+    for breach in [
+        "engine-interface".to_string(),
+        final_name.clone(),
+        "f00d.txt.tmp91237".to_string(),
+    ] {
+        let entries = vec![breach.clone()];
+        assert_eq!(
+            boundary_breach(&entries, &final_name).len(),
+            1,
+            "must still be caught: {breach}"
+        );
+    }
+
+    let foreign = vec![
+        "archives".to_string(),
+        "sessions".to_string(),
+        "cloud".to_string(),
+        "knowledge.db".to_string(),
+    ];
+    assert!(
+        boundary_breach(&foreign, &final_name).is_empty(),
+        "an unrelated writer is not a descriptor-binding breach"
+    );
+}
+
 #[cfg(any(unix, windows))]
 #[test]
 fn descriptor_bound_root_relocation_never_retargets_a_replacement_root() {
@@ -650,12 +702,30 @@ fn descriptor_bound_root_relocation_never_retargets_a_replacement_root() {
 
     let did_relocate = relocated.load(std::sync::atomic::Ordering::SeqCst);
     let bound_root = if did_relocate {
-        assert_eq!(
-            std::fs::read_dir(&data_root)
-                .expect("replacement data root")
-                .count(),
-            0,
-            "replacement root received no artifact or temporary leaf"
+        // #1658: assert the invariant, not emptiness. This used to require the
+        // replacement root to have *no entries at all*, while its own message
+        // claimed the narrower "no artifact or temporary leaf" — so any
+        // unrelated writer touching the data directory failed a test about
+        // descriptor binding, intermittently and only on Linux. `left: 1,
+        // right: 0` named nothing, which is why the first failure could not be
+        // told apart from a real boundary breach.
+        //
+        // What a real breach looks like is specific: the directories are bound
+        // *before* the barrier renames the root, so anything landing in the
+        // replacement can only have got there by re-resolving the path
+        // afterwards — which would recreate the artifact tree
+        // (`engine-interface/…`), the published name, or its temporary leaf.
+        // Those still fail, and now they say what was found.
+        let entries: Vec<String> = std::fs::read_dir(&data_root)
+            .expect("replacement data root")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        let breach = boundary_breach(&entries, &final_name);
+        assert!(
+            breach.is_empty(),
+            "replacement root received an artifact or temporary leaf: {breach:?} \
+             (all entries: {entries:?})"
         );
         &opened_root
     } else {

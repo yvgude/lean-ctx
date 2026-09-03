@@ -264,9 +264,28 @@ pub mod tests {
             o.tool_count,
             crate::core::tool_profiles::ToolProfile::Minimal.tool_count() + 1,
         );
+        // #1651: enforce the largest platform, not the running one. The shell
+        // hint is empty on POSIX and not on Windows, so measuring only where
+        // you happen to sit answers a different question than CI asks. #1646
+        // spent three CI round-trips on an edit that measured 1953 on macOS and
+        // failed at 1968 on Windows; the CHANGELOG records the same trap in
+        // #1625. A local run now reports the number CI will enforce.
+        let windows_only = if cfg!(windows) {
+            0
+        } else {
+            crate::instructions::max_shell_hint_tokens()
+        };
+        let worst_case = o.total_tokens() + windows_only;
+
         assert!(
-            o.total_tokens() <= MINIMAL_ARM_PREFIX_BUDGET_TOKENS,
-            "minimal-arm per-turn prefix = {} tok (schemas {} + instr {} + rules {}), budget {}",
+            worst_case <= MINIMAL_ARM_PREFIX_BUDGET_TOKENS,
+            "minimal-arm per-turn prefix = {worst_case} tok on the largest platform \
+             (here {} = schemas {} + instr {} + rules {}, plus {windows_only} for the \
+             Windows-only shell hint), budget {}.\n\
+             Editing a `tool_def` description also changes \
+             docs/reference/generated/mcp-tools.md — re-run \
+             `cargo run --example gen_docs --features dev-tools` or the Documentation \
+             job fails too. Neither consequence is visible from the diff.",
             o.total_tokens(),
             o.tool_schema_tokens,
             o.instruction_tokens,
