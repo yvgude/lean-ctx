@@ -41,17 +41,22 @@ pub(crate) fn validate_command_with_write_allow_paths(
 
     // #989: tee detection must run on heredoc-stripped text to avoid false
     // positives when the word "tee" appears in heredoc/quoted payloads.
-    // `cmd | tee file` (piped) is output capture, not file authoring — the
-    // primary output still goes to stdout for the agent. Only bare `tee file`
-    // (not piped) is blocked as it is equivalent to `cat > file`.
-    if has_disallowed_tee_target(&cmd_no_heredoc, write_allow_paths, project_root) {
-        return Some(
-            "ERROR: ctx_shell detected a file-write command (tee without pipe). \
-             Use the native Write tool to create/modify files. \
-             ctx_shell is ONLY for reading command output. \
-             Piped tee (cmd | tee file) is allowed for output capture."
-                .to_string(),
-        );
+    //
+    // #1671: the rule is the destination, not the pipe. The message used to say
+    // "tee without pipe" and then state that piped tee is allowed — so it
+    // rejected a command and, in the next sentence, described that exact
+    // command as permitted. A reviewer read it, concluded the block was correct
+    // because an alternative was offered, and closed a review with no findings.
+    // Naming the pipe also sent callers off to restructure their pipeline,
+    // which cannot help: `… | tee FILE | wc -l` is judged identically.
+    if let Some(target) = disallowed_tee_target(&cmd_no_heredoc, write_allow_paths, project_root) {
+        return Some(format!(
+            "ERROR: ctx_shell refuses `tee {target}` — the destination is inside the \
+             project, and ctx_shell is ONLY for reading command output. \
+             Piping makes no difference: the destination decides. \
+             Use the native Write tool to create/modify project files, or tee to a \
+             scratch path (/tmp, /var/tmp, $TMPDIR), which is allowed."
+        ));
     }
 
     if is_heredoc_file_write(command, write_allow_paths, project_root) {
@@ -352,14 +357,20 @@ fn tee_targets(command: &str) -> Vec<String> {
         .collect()
 }
 
-fn has_disallowed_tee_target(
+/// The first `tee` destination that is not a permitted write target.
+///
+/// Returns the path so the refusal can name it (#1671). The rule is entirely
+/// about the destination — whether the `tee` is piped makes no difference — and
+/// a message that cannot name the destination ends up describing some other
+/// rule instead.
+fn disallowed_tee_target(
     command: &str,
     write_allow_paths: &[String],
     project_root: Option<&str>,
-) -> bool {
-    tee_targets(command).into_iter().any(|target| {
+) -> Option<String> {
+    tee_targets(command).into_iter().find(|target| {
         !target.is_empty()
-            && !is_write_allowed_redirect_target(&target, write_allow_paths, project_root)
+            && !is_write_allowed_redirect_target(target, write_allow_paths, project_root)
     })
 }
 
@@ -1186,6 +1197,60 @@ COMMIT_MSG"
             validate_command("echo secret > /tmpfoo/leak.txt").is_some(),
             "/tmpfoo is not /tmp — must be blocked"
         );
+    }
+
+    // --- GH #1671: the tee refusal names the rule that produced it ---
+
+    /// The message said "tee without pipe" and then, one sentence later, that
+    /// piped tee is allowed — rejecting a command while describing it as
+    /// permitted. The rule is the destination.
+    #[test]
+    fn the_tee_refusal_does_not_contradict_itself() {
+        let msg = validate_command_with_write_allow_paths(
+            "echo hi | tee /Users/me/proj/dist/index.html",
+            &[],
+            Some("/Users/me/proj"),
+        )
+        .expect("a project destination is refused");
+
+        assert!(
+            !msg.contains("without pipe"),
+            "the command is piped; naming the pipe is the wrong reason: {msg}"
+        );
+        assert!(
+            !msg.contains("Piped tee (cmd | tee file) is allowed"),
+            "must not call the rejected form permitted: {msg}"
+        );
+        assert!(
+            msg.contains("/Users/me/proj/dist/index.html"),
+            "name the destination that caused it: {msg}"
+        );
+        assert!(
+            msg.contains("destination"),
+            "state the rule that produced the verdict: {msg}"
+        );
+    }
+
+    /// Every form the reporter tried is judged the same way, so the message
+    /// must not send the caller off to restructure the pipeline.
+    #[test]
+    fn the_pipe_position_never_changes_the_tee_verdict() {
+        for cmd in [
+            "tee /Users/me/proj/out.txt",
+            "echo hi | tee /Users/me/proj/out.txt",
+            "echo hi | tee /Users/me/proj/out.txt | wc -l",
+        ] {
+            let msg = validate_command_with_write_allow_paths(cmd, &[], Some("/Users/me/proj"))
+                .unwrap_or_else(|| panic!("must be refused: {cmd}"));
+            assert!(msg.contains("Piping makes no difference"), "{cmd}: {msg}");
+        }
+        // A scratch destination stays allowed, piped or not.
+        for cmd in ["tee /tmp/probe.txt", "echo hi | tee /tmp/probe.txt"] {
+            assert!(
+                validate_command_with_write_allow_paths(cmd, &[], Some("/Users/me/proj")).is_none(),
+                "{cmd}"
+            );
+        }
     }
 
     // --- GH #1672: a heredoc body is data, not a command ---

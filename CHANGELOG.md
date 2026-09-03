@@ -5,6 +5,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [3.10.1] — 2026-09-01
 
+### Fixed — the tee refusal contradicted itself (#1671)
+
+- `echo hi | tee <project>/dist/index.html` was refused with "tee without pipe",
+  in a message whose next sentence stated that `cmd | tee file` is allowed. The
+  command *is* piped, so the stated reason was wrong and the message described
+  the very form it had just rejected as permitted.
+- The rule was always the destination: a `tee` target outside the permitted
+  write paths is refused whether it is piped, mid-pipeline, or bare. Naming the
+  pipe also sent callers off to restructure their pipeline, which cannot help —
+  `… | tee FILE | wc -l` is judged identically.
+- The refusal now names the destination and the rule, and says plainly that
+  piping makes no difference. The verdict itself is unchanged.
+- Reported by a reviewer who read the message, concluded the block was correct
+  because an alternative was offered, and closed a session review with no
+  findings. The self-contradiction is what made the verdict look settled.
+
+### Fixed — a cancelled background job still reported "running" (#1674)
+
+- `background_action: "cancel"` killed the job but replied `state: "running"` —
+  byte-indistinguishable from a status poll, while the very next `status` call
+  on the same job returned `cancelled` with exit 130.
+- The header already said "cancel requested"; the structured `state` field,
+  which is what the caller actually reads, did not. `cancel` returns the job's
+  state as it was *before* the worker noticed the flag.
+- A cancel accepted on a running job now reports `cancelled`, and its summary
+  acknowledges the cancel instead of saying `no output` — previously the cancel
+  reply was strictly less informative than the poll it was mistaken for.
+- Cancelling a job that had already finished still reports what actually
+  happened; `cancel` only sets its flag on a running job.
+- This is problem 1 of #1246, which was closed with only problem 2 fixed.
+
 ### Fixed — the redirect verdict depended on where the redirect sat (#1659)
 
 - `echo hi 1>/dev/null` was allowed; `echo hi 1>/dev/null; echo ok` was blocked

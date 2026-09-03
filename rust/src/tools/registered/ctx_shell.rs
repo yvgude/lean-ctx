@@ -1204,6 +1204,12 @@ mod tests {
 
     /// #1246: a cancel must never come back as a tool error, and must not read
     /// like a status poll that did nothing.
+    ///
+    /// #1674: the second half of that only became true here. This asserted
+    /// `Running` — the very value that made a cancel indistinguishable from a
+    /// poll, against the intent stated one line above. #1246 fixed the
+    /// error-reporting half and left the state; the state is the half the
+    /// caller reads.
     #[test]
     fn cancel_is_acknowledged_and_never_reports_a_failure() {
         let running = JobState::Running {
@@ -1212,7 +1218,7 @@ mod tests {
         let (text, outcome) = format_background_state("shell_x", true, Some(running.clone()));
         let outcome = background(outcome);
         assert!(!outcome.is_error);
-        assert_eq!(outcome.state, BackgroundJobState::Running);
+        assert_eq!(outcome.state, BackgroundJobState::Cancelled);
         assert_eq!(outcome.exit_code, None);
         assert!(text.is_empty());
         assert!(
