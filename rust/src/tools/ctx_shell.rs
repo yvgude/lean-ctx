@@ -69,8 +69,10 @@ pub(crate) fn validate_command_with_write_allow_paths(
             "ERROR: ctx_shell detected a file download/write ({reason}). \
              ctx_shell is ONLY for reading command output — redirect-free flags bypass \
              this doctrine, so they are blocked too (GH #391). \
-             Fetch to stdout instead (curl <url>, wget -qO- <url>) or use the editor's \
-             native tools to create files."
+             For text, fetch to stdout: curl <url> / wget -qO- <url>. \
+             For a binary (image, PDF, archive) neither stdout nor the editor's Write \
+             tool can carry the bytes — download to an absolute scratch path instead, \
+             e.g. curl -sL -o /tmp/shot.png <url>, which is permitted (GH #1661)."
         ));
     }
 
@@ -113,7 +115,28 @@ fn is_scratch_path(path: &str) -> bool {
 /// (`curl -o`, `wget` default mode, `dd of=`) — the redirect-free equivalent of
 /// `> file`, reported as a `validate_command` bypass in GH #391.
 fn download_to_file_reason(command: &str) -> Option<String> {
-    for seg in crate::core::shell_allowlist::extract_all_commands_pub(command) {
+    // #1661: the scratch carve-out is written in absolute paths, but agents
+    // reach a scratch directory the way a person would — `cd <scratchpad> &&
+    // curl -o shot.png …`. Judged as the bare string `shot.png`, a target that
+    // lands squarely inside the sanctioned directory looked like a project
+    // write and was blocked, leaving no in-tool way to fetch a binary at all.
+    // Segments are paired with the directory they actually run in so a relative
+    // target is judged where it lands.
+    for seg_cwd in crate::core::command_cwd::segments_with_cwd(command, None) {
+        let seg = seg_cwd.segment;
+        let here = seg_cwd.cwd;
+        let resolve = |path: &str| -> String {
+            let p = std::path::Path::new(path);
+            if p.is_absolute() || is_unix_scratch_prefix(path) {
+                return path.to_string();
+            }
+            // Without a known directory the target stays unresolved, which the
+            // scratch check then rejects — the guard errs closed.
+            match here.as_deref() {
+                Some(dir) => dir.join(p).to_string_lossy().into_owned(),
+                None => path.to_string(),
+            }
+        };
         let tokens = crate::core::shell_allowlist::shell_tokenize(seg.trim());
         let Some(first) = tokens.first() else {
             continue;
@@ -148,7 +171,7 @@ fn download_to_file_reason(command: &str) -> Option<String> {
                         None
                     };
                     if let Some(path) = target {
-                        if is_scratch_path(path) {
+                        if is_scratch_path(&resolve(path)) {
                             continue;
                         }
                         return Some(format!("curl {tok}"));
@@ -367,11 +390,35 @@ fn has_file_write_redirect(
             } else {
                 i + 1
             };
-            let target: String = command[target_start..]
-                .trim_start()
+            // The redirect *operator* can carry one more character: `>|`
+            // overrides noclobber and `>&` duplicates a descriptor. Neither
+            // belongs to the target word, so strip it before reading the word
+            // and re-attach `&` for the fd check below.
+            let rest = command[target_start..].trim_start();
+            let (rest, fd_dup) = match rest.strip_prefix('|') {
+                Some(r) => (r, false),
+                None => match rest.strip_prefix('&') {
+                    Some(r) => (r, true),
+                    None => (rest, false),
+                },
+            };
+            // The word ends at whitespace *or* at a shell metacharacter
+            // (#1659). Stopping only at whitespace made the verdict depend on
+            // where the redirect sat: `echo a 1>/dev/null` read the target as
+            // `/dev/null` and was allowed, while `echo a 1>/dev/null; echo b`
+            // read `/dev/null;` — semicolon included, since it is not
+            // whitespace — missed the /dev/null exemption, and was blocked as a
+            // file write. `&&` happened to work only because a space precedes
+            // it. Same redirect, same shell semantics, opposite verdicts.
+            //
+            // `(` is deliberately not a terminator: it would reduce the
+            // process-substitution target `>(cmd)` to an empty word, and an
+            // empty word falls through unblocked.
+            let word: String = rest
                 .chars()
-                .take_while(|c| !c.is_whitespace())
+                .take_while(|c| !c.is_whitespace() && !matches!(c, ';' | '&' | '|' | ')' | '<'))
                 .collect();
+            let target = if fd_dup { format!("&{word}") } else { word };
             if target == "/dev/null" || target == "/dev/stdout" || target == "/dev/stderr" {
                 i += 1;
                 continue;
@@ -1130,5 +1177,132 @@ COMMIT_MSG"
             validate_command("echo secret > /tmpfoo/leak.txt").is_some(),
             "/tmpfoo is not /tmp — must be blocked"
         );
+    }
+
+    // --- GH #1661: a relative download target is judged where it lands ---
+
+    /// The reported case: `cd <scratchpad> && curl -o shot.png <url>`. The
+    /// destination is inside the sanctioned scratch directory, but as the bare
+    /// string `shot.png` it read as a project write — so fetching a binary had
+    /// no in-tool route at all and pushed the agent to native shell.
+    #[test]
+    fn a_relative_download_into_a_scratch_directory_is_allowed() {
+        for cmd in [
+            "cd /tmp && curl -sL -o shot.png https://example.com/a.png",
+            "cd /private/tmp/claude-501/session && curl -sL -o shot.png https://e/x",
+            "cd /tmp/work && curl -sL -o sub/shot.png https://e/x",
+        ] {
+            assert!(
+                download_to_file_reason(cmd).is_none(),
+                "scratch destination must stay reachable: {cmd}"
+            );
+        }
+    }
+
+    /// The #391 boundary is untouched: a relative target outside a scratch
+    /// directory — or one this cannot resolve — is still a file write.
+    #[test]
+    fn a_download_into_the_project_is_still_blocked() {
+        for cmd in [
+            "curl -sL -o shot.png https://example.com/a.png",
+            "cd /Users/me/project && curl -sL -o shot.png https://e/x",
+            "cd \"$SCRATCH\" && curl -sL -o shot.png https://e/x",
+            "cd /tmp && curl -sL -o /Users/me/project/shot.png https://e/x",
+            "wget https://example.com/a.tar.gz",
+            "dd if=/dev/zero of=/Users/me/project/block.bin",
+            // wget/dd keep no scratch carve-out at all — a documented,
+            // separately tested decision this fix deliberately leaves alone.
+            "cd /tmp && wget -O page.html https://e/x",
+            "cd /tmp && dd if=/dev/zero of=block.bin bs=1 count=1",
+        ] {
+            assert!(
+                download_to_file_reason(cmd).is_some(),
+                "must stay blocked: {cmd}"
+            );
+        }
+    }
+
+    /// The refusal has to name a route that works for the payload at hand.
+    /// Both suggested fallbacks were text-only, so for an image the message
+    /// left native Bash as the only way forward.
+    #[test]
+    fn the_refusal_names_a_route_that_works_for_binaries() {
+        let msg =
+            validate_command("curl -sL -o shot.png https://example.com/a.png").expect("blocked");
+        assert!(msg.contains("scratch"), "{msg}");
+        assert!(msg.contains("/tmp/"), "{msg}");
+    }
+
+    // --- GH #1659: the redirect verdict must not depend on position ---
+
+    /// The reporter's table, verbatim. The target was read up to whitespace, so
+    /// a trailing `;` became part of it (`/dev/null;`), the exemption missed,
+    /// and the identical redirect was blocked in a non-final segment.
+    #[test]
+    fn dev_null_is_exempt_in_every_position() {
+        for cmd in [
+            "echo hi 1>/dev/null",
+            "echo a; echo b 1>/dev/null",
+            "echo hi 1>/dev/null; echo ok",
+            "echo a 1>/dev/null; echo b; echo c",
+            "diff -q /etc/hosts /etc/hosts 1>/dev/null && echo SAME",
+            "echo hi 1>/dev/null && echo ok",
+            "echo hi >/dev/null; echo ok",
+            "echo hi >/dev/null | cat",
+            "(echo hi >/dev/null); echo ok",
+        ] {
+            assert!(
+                !has_file_write_redirect(cmd, &[], None),
+                "/dev/null is never a file write: {cmd}"
+            );
+        }
+    }
+
+    /// A redirect operator can carry one more character (`>|` noclobber
+    /// override, `>&` fd duplication). Terminating the word at metacharacters
+    /// must not swallow those — nor may it empty out a process-substitution
+    /// target, since an empty target falls through unblocked.
+    #[test]
+    fn redirect_operator_suffixes_keep_their_meaning() {
+        for allowed in [
+            "echo x >&1",
+            "echo x >&2; echo ok",
+            "echo x >&-",
+            "echo x 1>&2 | cat",
+        ] {
+            assert!(
+                !has_file_write_redirect(allowed, &[], None),
+                "fd duplication is not a file write: {allowed}"
+            );
+        }
+        for blocked in [
+            "echo x >|out.txt",
+            "echo x >|out.txt; echo ok",
+            "echo x > >(tee out.txt)",
+            "echo x > >(tee out.txt); echo ok",
+        ] {
+            assert!(
+                has_file_write_redirect(blocked, &[], None),
+                "still a file write: {blocked}"
+            );
+        }
+    }
+
+    /// The guard itself must not weaken: a real file target is still a write,
+    /// including in a non-final segment, which is the position the bug made
+    /// *over*-strict rather than under.
+    #[test]
+    fn a_real_file_target_is_still_a_write_in_any_position() {
+        for cmd in [
+            "echo hi > out.txt",
+            "echo hi > out.txt; echo ok",
+            "echo a; echo hi >> out.txt; echo b",
+            "echo hi > out.txt && echo ok",
+        ] {
+            assert!(
+                has_file_write_redirect(cmd, &[], None),
+                "a file write must still be caught: {cmd}"
+            );
+        }
     }
 }

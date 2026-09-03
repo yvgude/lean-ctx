@@ -12,6 +12,7 @@ pub mod codebook;
 #[cfg(target_os = "macos")]
 pub(crate) mod codesign;
 pub mod cognitive;
+pub mod command_cwd;
 pub(crate) mod compress_preview;
 pub(crate) mod compression_safety;
 pub mod compressor;
