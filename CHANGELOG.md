@@ -69,6 +69,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   which is indistinguishable from "this walk is fine". A `cd` that cannot be
   resolved statically stays silent rather than naming directories from
   somewhere else.
+- Because it now runs on the fast path, it scans what the command was actually
+  pointed at: `grep -r pattern src/` is no longer blamed on a `node_modules/`
+  it never enters.
 
 ### Fixed — grep output was sampled head+tail, dropping the line that mattered (#1663)
 

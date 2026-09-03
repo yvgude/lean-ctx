@@ -63,15 +63,25 @@ pub(crate) fn walk_hint(command: &str, cwd: &str) -> Option<String> {
     // named. Scanning the call directory would then look at the wrong place and
     // report nothing, which is indistinguishable from "this walk is fine".
     let moved = crate::core::command_cwd::final_cwd(command, Some(Path::new(cwd)));
-    let root: &Path = match moved.as_deref() {
+    let base: &Path = match moved.as_deref() {
         Some(dir) => dir,
         // A `cd` this cannot resolve means the directory walked is unknown;
         // naming directories from somewhere else would be a guess.
         None if command.split_whitespace().any(|w| w == "cd") => return None,
         None => Path::new(cwd),
     };
+
+    // Scan what the command actually walks. Now that this runs for every
+    // recursive walk rather than only on timeout (#1662), scanning the starting
+    // directory regardless of scope would announce `node_modules/` for a
+    // `grep -r pattern src/` that never goes near it — a confident hint about a
+    // directory the command never entered.
     let mut found: Vec<(String, usize, bool)> = Vec::new();
-    collect_bulk_dirs(root, root, 0, &mut found);
+    for root in walk_roots(command, base) {
+        collect_bulk_dirs(&root, &root, 0, &mut found);
+    }
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    found.dedup_by(|a, b| a.0 == b.0);
 
     // A directory the command already excludes is not the explanation.
     found.retain(|(rel, _, _)| !command.contains(rel.as_str()));
@@ -94,6 +104,61 @@ pub(crate) fn walk_hint(command: &str, cwd: &str) -> Option<String> {
          --exclude-dir, or use ctx_search.]",
         named.join(", ")
     ))
+}
+
+/// The directories a recursive command was pointed at.
+///
+/// For a grep-like the first non-flag word is the pattern and the rest are
+/// paths; `find` takes its paths first, before any predicate. When no path is
+/// given, the walk starts where the command runs.
+fn walk_roots(command: &str, base: &Path) -> Vec<std::path::PathBuf> {
+    let mut roots = Vec::new();
+    for segment in command.split(|c| matches!(c, '|' | ';' | '&')) {
+        let mut words = segment.split_whitespace().skip_while(|w| w.contains('='));
+        let Some(tool) = words.next() else { continue };
+        let tool = tool.rsplit('/').next().unwrap_or(tool);
+        if !RECURSIVE_TOOLS.contains(&tool) {
+            continue;
+        }
+        let is_find = tool == "find";
+        let mut operands: Vec<&str> = Vec::new();
+        for word in words {
+            if word.starts_with('-') {
+                // A `find` predicate takes arguments (`-name '*.go'`), and its
+                // paths are already behind us, so stop at the first one.
+                if is_find {
+                    break;
+                }
+                continue;
+            }
+            operands.push(word);
+        }
+        let paths = if is_find || operands.is_empty() {
+            operands.as_slice()
+        } else {
+            &operands[1..]
+        };
+        for path in paths {
+            let trimmed = path.trim_matches(['"', '\'']);
+            // A path the shell would have to expand is not one to scan.
+            if trimmed.is_empty() || trimmed.contains('$') {
+                continue;
+            }
+            let candidate = Path::new(trimmed);
+            roots.push(if candidate.is_absolute() {
+                candidate.to_path_buf()
+            } else {
+                base.join(candidate)
+            });
+        }
+        if paths.is_empty() {
+            roots.push(base.to_path_buf());
+        }
+    }
+    if roots.is_empty() {
+        roots.push(base.to_path_buf());
+    }
+    roots
 }
 
 /// Does this command walk a tree without reading `.gitignore`?
@@ -325,5 +390,67 @@ mod gh1662 {
             &repo.path().to_string_lossy(),
         );
         assert!(hint.is_none(), "must not guess: {hint:?}");
+    }
+}
+
+#[cfg(test)]
+mod gh1662_scope {
+    use super::*;
+
+    fn repo_with_bulk() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let nm = dir.path().join("node_modules");
+        std::fs::create_dir_all(&nm).expect("mkdir");
+        for i in 0..40 {
+            std::fs::write(nm.join(format!("f{i}.js")), "x").expect("write");
+        }
+        std::fs::create_dir_all(dir.path().join("src")).expect("mkdir");
+        std::fs::write(dir.path().join("src/main.go"), "package main").expect("write");
+        dir
+    }
+
+    /// Now that the hint fires for every recursive walk and not only on
+    /// timeout, it must not announce a directory the command never enters.
+    #[test]
+    fn a_scoped_walk_is_not_blamed_on_a_directory_outside_its_scope() {
+        let repo = repo_with_bulk();
+        let cwd = repo.path().to_string_lossy();
+
+        assert!(
+            walk_hint("grep -rn pattern src/", &cwd).is_none(),
+            "src/ holds no bulk directory"
+        );
+        assert!(
+            walk_hint("grep -rn pattern .", &cwd).is_some(),
+            "a walk rooted at the repo does hit node_modules"
+        );
+    }
+
+    #[test]
+    fn find_takes_its_paths_before_the_predicates() {
+        let repo = repo_with_bulk();
+        let cwd = repo.path().to_string_lossy();
+
+        assert!(walk_hint("find src -name '*.go'", &cwd).is_none());
+        assert!(walk_hint("find . -name '*.go'", &cwd).is_some());
+    }
+
+    /// An absolute path argument is scanned as given, not joined onto the cwd.
+    #[test]
+    fn an_absolute_path_argument_is_used_as_is() {
+        let repo = repo_with_bulk();
+        let elsewhere = tempfile::tempdir().expect("tempdir");
+        let command = format!("grep -rn pattern {}", repo.path().display());
+
+        assert!(walk_hint(&command, &elsewhere.path().to_string_lossy()).is_some());
+    }
+
+    /// A path the shell would expand is not something to scan; the command's
+    /// own directory remains the honest fallback.
+    #[test]
+    fn an_unexpandable_path_falls_back_to_the_command_directory() {
+        let repo = repo_with_bulk();
+        let cwd = repo.path().to_string_lossy();
+        assert!(walk_hint("grep -rn pattern \"$DIR\"", &cwd).is_some());
     }
 }
