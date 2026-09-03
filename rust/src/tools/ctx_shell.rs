@@ -127,13 +127,17 @@ fn download_to_file_reason(command: &str) -> Option<String> {
         let here = seg_cwd.cwd;
         let resolve = |path: &str| -> String {
             let p = std::path::Path::new(path);
-            if p.is_absolute() || is_unix_scratch_prefix(path) {
+            // `starts_with('/')`: shell text, so a Unix-absolute target is
+            // absolute on Windows too, where `is_absolute` disagrees (#1467).
+            if p.is_absolute() || path.starts_with('/') {
                 return path.to_string();
             }
             // Without a known directory the target stays unresolved, which the
             // scratch check then rejects — the guard errs closed.
             match here.as_deref() {
-                Some(dir) => dir.join(p).to_string_lossy().into_owned(),
+                Some(dir) => crate::core::command_cwd::join_in(dir, path)
+                    .to_string_lossy()
+                    .into_owned(),
                 None => path.to_string(),
             }
         };

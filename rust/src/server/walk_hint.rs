@@ -145,10 +145,10 @@ fn walk_roots(command: &str, base: &Path) -> Vec<std::path::PathBuf> {
                 continue;
             }
             let candidate = Path::new(trimmed);
-            roots.push(if candidate.is_absolute() {
+            roots.push(if candidate.is_absolute() || trimmed.starts_with('/') {
                 candidate.to_path_buf()
             } else {
-                base.join(candidate)
+                crate::core::command_cwd::join_in(base, trimmed)
             });
         }
         if paths.is_empty() {
