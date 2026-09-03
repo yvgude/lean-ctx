@@ -11,12 +11,27 @@ pub fn handle(
     intent: Option<&str>,
     timeout: Option<u64>,
 ) -> (String, ShellOutcome) {
+    handle_in(language, code, intent, timeout, None)
+}
+
+/// Same as [`handle`], but runs the snippet in `cwd` (GH #1666).
+///
+/// `ctx_shell` reroutes an interpreter heredoc here and has already resolved a
+/// working directory for the rest of the same call; passing it on is what keeps
+/// both halves of that call in one directory.
+pub fn handle_in(
+    language: &str,
+    code: &str,
+    intent: Option<&str>,
+    timeout: Option<u64>,
+    cwd: Option<&std::path::Path>,
+) -> (String, ShellOutcome) {
     if language.eq_ignore_ascii_case("shell")
         && let Err(message) = crate::core::shell_allowlist::check_shell_allowlist(code)
     {
         return (message.to_string(), ShellOutcome::Blocked);
     }
-    let result = sandbox::execute(language, code, timeout);
+    let result = sandbox::execute_in(language, code, timeout, cwd);
     (
         format_result(&result, intent),
         ShellOutcome::Exit(result.exit_code),

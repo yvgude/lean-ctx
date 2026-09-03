@@ -1018,6 +1018,35 @@ fn parse_interpreter_heredoc_prelude(prelude: &str) -> Option<&'static str> {
     }
 }
 
+/// The one working directory both halves of a rerouted heredoc call run in.
+///
+/// Resolution goes through the session so an explicit `cwd` is validated
+/// against the configured roots, exactly as the non-rerouted path does. A `cwd`
+/// the caller named that cannot be validated is an error, never a silent
+/// substitution (#1666).
+///
+/// `Ok(None)` means only that no directory could be established without a
+/// session. The heredoc-only path never needed one and must keep working; the
+/// shell remainder always required a session and keeps requiring it.
+fn resolve_reroute_cwd(
+    ctx: &ToolContext,
+    explicit_cwd: Option<&str>,
+) -> Result<Option<String>, ErrorData> {
+    let Some(session_lock) = ctx.session.as_ref() else {
+        if explicit_cwd.is_some() {
+            return Err(ErrorData::internal_error(
+                "session not available — cannot validate the requested working directory",
+                None,
+            ));
+        }
+        return Ok(None);
+    };
+    let guard =
+        crate::server::bounded_lock::read_for(session_lock, "ctx_shell_cwd", SESSION_LOCK_BUDGET);
+    let (cwd, _) = resolve_effective_cwd(guard, explicit_cwd)?;
+    Ok(Some(cwd))
+}
+
 fn handle_interpreter_heredoc_reroute(
     args: &Map<String, Value>,
     ctx: &ToolContext,
@@ -1028,8 +1057,21 @@ fn handle_interpreter_heredoc_reroute(
     let timeout_ms = get_int(args, "timeout_ms").and_then(|n| u64::try_from(n).ok());
     let timeout_secs = timeout_ms.map(|ms| ms.div_ceil(1000).max(1));
 
-    let (exec_text, exec_outcome) =
-        crate::tools::ctx_execute::handle(language, code, None, timeout_secs);
+    // #1666: resolve the working directory *before* the interpreter runs. The
+    // shell remainder below always ran in the call's `cwd`; the rerouted
+    // interpreter ran wherever the server process happened to sit. One tool
+    // call, two directories — and a script using relative paths silently read
+    // and wrote the wrong tree while reporting success.
+    let explicit_cwd = get_str(args, "cwd");
+    let exec_cwd = resolve_reroute_cwd(ctx, explicit_cwd.as_deref())?;
+
+    let (exec_text, exec_outcome) = crate::tools::ctx_execute::handle_in(
+        language,
+        code,
+        None,
+        timeout_secs,
+        exec_cwd.as_deref().map(std::path::Path::new),
+    );
     let reroute_note = format!(
         "\n[ctx_shell: interpreter heredoc auto-rerouted to ctx_execute(language=\"{language}\")]"
     );
@@ -1058,14 +1100,10 @@ fn handle_interpreter_heredoc_reroute(
         });
     }
 
-    let session_lock = ctx
-        .session
-        .as_ref()
-        .ok_or_else(|| ErrorData::internal_error("session not available", None))?;
-    let explicit_cwd = get_str(args, "cwd");
-    let guard =
-        crate::server::bounded_lock::read_for(session_lock, "ctx_shell_cwd", SESSION_LOCK_BUDGET);
-    let (effective_cwd, _) = resolve_effective_cwd(guard, explicit_cwd.as_deref())?;
+    // Unchanged from before #1666: running the shell remainder requires a
+    // validated working directory.
+    let effective_cwd =
+        exec_cwd.ok_or_else(|| ErrorData::internal_error("session not available", None))?;
 
     let extra_env: std::collections::HashMap<String, String> = args
         .get("env")

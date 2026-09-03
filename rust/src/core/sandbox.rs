@@ -19,6 +19,22 @@ const MAX_OUTPUT_BYTES: usize = 32_768;
 const MAX_CODE_BYTES: usize = 256 * 1024;
 
 pub fn execute(language: &str, code: &str, timeout_secs: Option<u64>) -> SandboxResult {
+    execute_in(language, code, timeout_secs, None)
+}
+
+/// Same as [`execute`], but runs the snippet in `cwd` (GH #1666).
+///
+/// A caller that already resolved a working directory — `ctx_shell` rerouting
+/// an interpreter heredoc, for one — must be able to hand it over. Without
+/// this, the snippet inherited the server process's directory while the rest
+/// of the same tool call ran in `cwd`, so relative paths in the snippet
+/// resolved against a different tree and quietly hit the wrong files.
+pub fn execute_in(
+    language: &str,
+    code: &str,
+    timeout_secs: Option<u64>,
+    cwd: Option<&std::path::Path>,
+) -> SandboxResult {
     if code.len() > MAX_CODE_BYTES {
         return SandboxResult {
             stdout: String::new(),
@@ -53,7 +69,7 @@ pub fn execute(language: &str, code: &str, timeout_secs: Option<u64>) -> Sandbox
         .unwrap_or_else(|| crate::core::config::Config::load().sandbox_level);
 
     if sandbox_level >= 1 && cfg!(target_os = "macos") {
-        let result = seatbelt_execute(&runtime, code, timeout);
+        let result = seatbelt_execute(&runtime, code, timeout, cwd);
         let duration_ms = start.elapsed().as_millis() as u64;
         return match result {
             Ok((stdout, stderr, exit_code)) => SandboxResult {
@@ -74,7 +90,7 @@ pub fn execute(language: &str, code: &str, timeout_secs: Option<u64>) -> Sandbox
     } else if sandbox_level >= 1 {
         #[cfg(target_os = "linux")]
         {
-            let result = landlock_execute(&runtime, code, timeout);
+            let result = landlock_execute(&runtime, code, timeout, cwd);
             let duration_ms = start.elapsed().as_millis() as u64;
             return match result {
                 Ok((stdout, stderr, exit_code)) => SandboxResult {
@@ -101,9 +117,9 @@ pub fn execute(language: &str, code: &str, timeout_secs: Option<u64>) -> Sandbox
     }
 
     let result = if runtime.needs_temp_file {
-        execute_with_file(&runtime, code, timeout)
+        execute_with_file(&runtime, code, timeout, cwd)
     } else {
-        execute_with_stdin(&runtime, code, timeout)
+        execute_with_stdin(&runtime, code, timeout, cwd)
     };
 
     let duration_ms = start.elapsed().as_millis() as u64;
@@ -250,6 +266,7 @@ fn seatbelt_execute(
     runtime: &RuntimeConfig,
     code: &str,
     timeout: u64,
+    cwd: Option<&std::path::Path>,
 ) -> Result<(String, String, i32), String> {
     let tmp_dir = std::env::temp_dir().join("lean-ctx-sandbox");
     let _ = std::fs::create_dir_all(&tmp_dir);
@@ -270,7 +287,14 @@ fn seatbelt_execute(
         let file_path = tmp.into_temp_path();
         std::fs::write(&file_path, code).map_err(|e| format!("Failed to write temp file: {e}"))?;
 
-        let allowed = [file_path.to_path_buf()];
+        let mut allowed = vec![file_path.to_path_buf()];
+        // The profile denies by default, so a working directory the caller
+        // chose has to be granted explicitly — otherwise the snippet starts
+        // there and cannot read a thing (#1666). Write permission is
+        // deliberately not granted: that boundary belongs to sandbox_level.
+        if let Some(dir) = cwd {
+            allowed.push(dir.to_path_buf());
+        }
         let allowed_refs: Vec<&std::path::Path> =
             allowed.iter().map(std::path::PathBuf::as_path).collect();
         let file_str = file_path.to_string_lossy().to_string();
@@ -288,6 +312,7 @@ fn seatbelt_execute(
             &allowed_refs,
             &env_pairs,
             timeout,
+            cwd,
         );
         let _ = std::fs::remove_file(&file_path);
         result
@@ -298,12 +323,17 @@ fn seatbelt_execute(
             .map(std::string::String::as_str)
             .collect();
         args.push(code);
+        let allowed: Vec<std::path::PathBuf> =
+            cwd.map(|d| vec![d.to_path_buf()]).unwrap_or_default();
+        let allowed_refs: Vec<&std::path::Path> =
+            allowed.iter().map(std::path::PathBuf::as_path).collect();
         super::sandbox_seatbelt::execute_sandboxed(
             &runtime.command,
             &args,
-            &[],
+            &allowed_refs,
             &env_pairs,
             timeout,
+            cwd,
         )
     }
 }
@@ -313,6 +343,7 @@ fn landlock_execute(
     runtime: &RuntimeConfig,
     code: &str,
     timeout: u64,
+    cwd: Option<&std::path::Path>,
 ) -> Result<(String, String, i32), String> {
     let tmp_dir = std::env::temp_dir().join("lean-ctx-sandbox");
     let _ = std::fs::create_dir_all(&tmp_dir);
@@ -333,7 +364,10 @@ fn landlock_execute(
         let file_path = tmp.into_temp_path();
         std::fs::write(&file_path, code).map_err(|e| format!("Failed to write temp file: {e}"))?;
 
-        let allowed = [file_path.to_path_buf()];
+        let mut allowed = vec![file_path.to_path_buf()];
+        if let Some(dir) = cwd {
+            allowed.push(dir.to_path_buf());
+        }
         let allowed_refs: Vec<&std::path::Path> =
             allowed.iter().map(std::path::PathBuf::as_path).collect();
         let file_str = file_path.to_string_lossy().to_string();
@@ -351,6 +385,7 @@ fn landlock_execute(
             &allowed_refs,
             &env_pairs,
             timeout,
+            cwd,
         );
         let _ = std::fs::remove_file(&file_path);
         result
@@ -361,12 +396,17 @@ fn landlock_execute(
             .map(std::string::String::as_str)
             .collect();
         args.push(code);
+        let allowed: Vec<std::path::PathBuf> =
+            cwd.map(|d| vec![d.to_path_buf()]).unwrap_or_default();
+        let allowed_refs: Vec<&std::path::Path> =
+            allowed.iter().map(std::path::PathBuf::as_path).collect();
         super::sandbox_landlock::execute_sandboxed(
             &runtime.command,
             &args,
-            &[],
+            &allowed_refs,
             &env_pairs,
             timeout,
+            cwd,
         )
     }
 }
@@ -398,12 +438,33 @@ fn apply_sandbox_env(cmd: &mut Command, runtime: &RuntimeConfig) {
     cmd.env("LEAN_CTX_SANDBOX", "1");
 }
 
+/// Run the child in `cwd` when the caller resolved one (GH #1666).
+///
+/// A directory that no longer exists would make `spawn` fail with a message
+/// about the *command*, which reads as a missing interpreter. Falling back to
+/// the inherited directory is not an option either — running somewhere other
+/// than the caller asked, without saying so, is the bug this exists to fix —
+/// so an unusable directory is reported as itself.
+fn apply_cwd(cmd: &mut Command, cwd: Option<&std::path::Path>) -> Result<(), String> {
+    let Some(dir) = cwd else { return Ok(()) };
+    if !dir.is_dir() {
+        return Err(format!(
+            "working directory does not exist: {}",
+            dir.display()
+        ));
+    }
+    cmd.current_dir(dir);
+    Ok(())
+}
+
 fn execute_with_stdin(
     runtime: &RuntimeConfig,
     code: &str,
     timeout: u64,
+    cwd: Option<&std::path::Path>,
 ) -> Result<(String, String, i32), String> {
     let mut cmd = Command::new(&runtime.command);
+    apply_cwd(&mut cmd, cwd)?;
     for arg in &runtime.args {
         cmd.arg(arg);
     }
@@ -434,6 +495,7 @@ fn execute_with_file(
     runtime: &RuntimeConfig,
     code: &str,
     timeout: u64,
+    cwd: Option<&std::path::Path>,
 ) -> Result<(String, String, i32), String> {
     let tmp_dir = std::env::temp_dir().join("lean-ctx-sandbox");
     let _ = std::fs::create_dir_all(&tmp_dir);
@@ -449,9 +511,10 @@ fn execute_with_file(
     std::fs::write(&file_path, code).map_err(|e| format!("Failed to write temp file: {e}"))?;
 
     let result = if runtime.command == "rustc_script" {
-        execute_rust(&file_path, timeout)
+        execute_rust(&file_path, timeout, cwd)
     } else {
         let mut cmd = Command::new(&runtime.command);
+        apply_cwd(&mut cmd, cwd)?;
         for arg in &runtime.args {
             cmd.arg(arg);
         }
@@ -481,6 +544,7 @@ fn execute_with_file(
 fn execute_rust(
     source_path: &std::path::Path,
     timeout: u64,
+    cwd: Option<&std::path::Path>,
 ) -> Result<(String, String, i32), String> {
     let binary_path = source_path.with_extension("");
 
@@ -505,6 +569,7 @@ fn execute_rust(
     }
 
     let mut run_cmd = Command::new(&binary_path);
+    apply_cwd(&mut run_cmd, cwd)?;
     run_cmd.env_clear();
     for key in SANDBOX_ENV_ALLOWLIST {
         if let Ok(val) = std::env::var(key) {
@@ -683,6 +748,45 @@ pub mod tests {
         let result = execute("python", "print('hello sandbox')", None);
         assert_eq!(result.exit_code, 0);
         assert!(result.stdout.contains("hello sandbox"));
+    }
+
+    /// GH #1666: a snippet must run where the caller said, because relative
+    /// paths inside it are resolved there. The `cwd: None` half of this test is
+    /// the pre-fix behaviour — it is what made a script edit the project root
+    /// while the caller was working in a worktree, and report success.
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn execute_in_resolves_relative_paths_against_the_given_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("only-here.txt"), "x").expect("write marker");
+
+        let scoped = execute_in("shell", "cat only-here.txt", None, Some(dir.path()));
+        assert_eq!(scoped.exit_code, 0, "stderr: {}", scoped.stderr);
+        assert!(scoped.stdout.contains('x'), "{scoped:?}");
+
+        // Without a cwd the same relative path resolves somewhere else, which
+        // is exactly what the reported bug did silently.
+        let unscoped = execute_in("shell", "cat only-here.txt", None, None);
+        assert_ne!(
+            unscoped.exit_code, 0,
+            "precondition: the marker is only reachable from the given directory"
+        );
+    }
+
+    /// A directory that cannot be entered is reported as itself. Falling back
+    /// to the inherited directory would reinstate the silent wrong-tree run.
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn execute_in_reports_a_missing_directory_instead_of_falling_back() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing = dir.path().join("does-not-exist");
+
+        let result = execute_in("shell", "pwd", None, Some(&missing));
+        assert_ne!(result.exit_code, 0, "{result:?}");
+        assert!(
+            result.stderr.contains("working directory does not exist"),
+            "{result:?}"
+        );
     }
 
     #[test]

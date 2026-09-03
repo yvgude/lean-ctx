@@ -5,6 +5,119 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [3.10.1] — 2026-09-01
 
+### Fixed — the redirect verdict depended on where the redirect sat (#1659)
+
+- `echo hi 1>/dev/null` was allowed; `echo hi 1>/dev/null; echo ok` was blocked
+  as a file write. Same redirect, same shell semantics, opposite verdicts — the
+  only difference was a following `;`.
+- The scanner read the redirect target up to the next **whitespace**, so a
+  trailing `;` became part of it. The target was `/dev/null;`, which is not
+  `/dev/null`, so the exemption never applied. `&&` happened to work only
+  because a space precedes it.
+- The target now ends at a shell metacharacter as well. The same bug silently
+  hit file-descriptor duplication: `cmd >&2; echo ok` was blocked too.
+- `>|` (noclobber override) and `>&` (fd duplication) are parsed as part of the
+  operator rather than as the first character of the target, and `(` is
+  deliberately **not** a terminator — it would reduce the process-substitution
+  target `>(tee out.txt)` to an empty word, which falls through unblocked. Both
+  are pinned by tests.
+
+### Fixed — a truncated response cut off the line naming the way back (#1660)
+
+- When a `ctx_shell` result exceeded the turn budget, it reported
+  `[… truncated at ~4062 of 4432 tokens — use ctx_read with lines= …]`. There
+  is no file: the bytes came from a subprocess. `ctx_read` needs a `path`, so
+  the suggested recovery could not be carried out at all.
+- The cause is mechanical. The archive reference — the one line that names the
+  stored copy and how to read it — is appended to the **end** of the response,
+  and truncation keeps a **prefix**. The recovery line was therefore always the
+  first thing discarded, and the response advertised a route it had just
+  removed.
+- The budget now reserves room for that line and re-attaches it after the cut,
+  and the notice points at it instead of naming a file tool that cannot accept
+  stream output. If the budget is too small for both, the recovery line wins:
+  it is what makes everything else retrievable.
+
+### Fixed — no in-tool way to download a binary (#1661)
+
+- `cd <scratchpad> && curl -sL -o shot.png <url>` was blocked, and both
+  suggested fallbacks were text-only: piping a PNG to stdout floods the context
+  with bytes, and `Write` takes a string. Fetching an attachment for triage had
+  no sanctioned route, which trained agents to fall back to native shell.
+- Downloads into a scratch directory were already permitted (#1021) — but only
+  when written as an absolute path. Judged as the bare string `shot.png`, a
+  target that lands squarely inside the sanctioned directory read as a project
+  write. Command segments are now paired with the directory they actually run
+  in, so a relative target is judged where it lands.
+- The #391 boundary is unchanged: a relative target outside a scratch directory,
+  or one behind a `cd "$VAR"` that cannot be resolved, is still a file write.
+  `wget` and `dd` keep no scratch carve-out at all — a separate, separately
+  tested decision this fix leaves alone.
+- The refusal now names a route that works for the payload at hand.
+
+### Fixed — a heredoc body mentioning a download was refused (#1672)
+
+- `git commit -F - <<'MSG' … curl -sL -o shot.png … MSG` was blocked as a file
+  download. Nothing runs inside a heredoc body — the text was a commit message.
+- The redirect guard (#931) and the `tee` guard (#989) already run on
+  heredoc-stripped text; the download guard was simply never switched over and
+  still read the raw command. It now uses the same stripped form.
+- Found while writing the commit message for #1661, which quoted the guard's own
+  advice back at it. Any heredoc payload naming `curl -o`, `wget` or `dd of=`
+  was affected: commit messages, PR bodies, docs, fixtures.
+
+### Fixed — a piped recursive grep ran for two minutes with no warning (#1662)
+
+- `grep -rn … --include=*.go . | head` produced its ten lines almost
+  immediately, then kept walking `node_modules` and `.git` for another two
+  minutes and auto-detached past the foreground cap. No redirect, no hint.
+- The hint added in #1655 was only ever emitted on **timeout** — the one thing a
+  command that already looked finished never reaches. It now runs for any
+  recursive walk, which is where it was needed: `head` closes early, the output
+  arrives at once, and nothing signals the walk is still going.
+- It also follows a leading `cd`: `cd repo && grep -r … .` walks a tree the
+  call's own `cwd` never named, and scanning the wrong directory found nothing,
+  which is indistinguishable from "this walk is fine". A `cd` that cannot be
+  resolved statically stays silent rather than naming directories from
+  somewhere else.
+- Because it now runs on the fast path, it scans what the command was actually
+  pointed at: `grep -r pattern src/` is no longer blamed on a `node_modules/`
+  it never enters.
+
+### Fixed — grep output was sampled head+tail, dropping the line that mattered (#1663)
+
+- A recursive grep returned 236 matches; the compressor showed 14 and omitted
+  222. The single line proving a struct field was read sat at position 205,
+  inside the dropped middle. The reporter concluded the field was dead code and
+  only found out otherwise when the build failed.
+- Head+tail sampling assumes the interesting content is at the edges. For a
+  search result every line is a discrete answer and the decisive one is at an
+  arbitrary position — usually the *unusual* one. Sampling is biased against
+  exactly the line that matters, and `[222 lines omitted]` reads as "more of the
+  same" rather than "the answer may be in here".
+- Output with the `path:line:` shape is now never sampled. It is delivered as a
+  contiguous, ordered prefix with an unmissable notice naming the true match
+  count, so absence in the output can never be mistaken for absence in the
+  results. A `12:34:56` log timestamp is not a path and keeps the old sampler,
+  pinned by a test.
+
+### Fixed — a rerouted heredoc ignored the call's cwd (#1666)
+
+- `ctx_shell(cwd=<worktree>, command="python3 - <<EOF … EOF\necho $(pwd)")` ran
+  its two halves in two different directories: the shell remainder honoured
+  `cwd`, the interpreter rerouted to `ctx_execute` (#1403) inherited the server
+  process's directory. Both reported success.
+- A script doing `open("api/api.go")` then resolved against the project root
+  instead of the worktree, found no match, rewrote that file byte-identically,
+  and returned no error. With a replacement that *does* match, this is a silent
+  write to the wrong file.
+- The working directory is now resolved once, before the interpreter runs, and
+  both halves use it. A directory that cannot be entered is reported as itself:
+  falling back to the inherited one is the bug this exists to fix. Under
+  `sandbox_level >= 1` the directory is also granted read access in the seatbelt
+  and Landlock profiles, which otherwise deny by default; write permission is
+  deliberately not granted, since that boundary belongs to the sandbox level.
+
 ### Fixed — a single-line payload over budget delivered nothing (#1665)
 
 - `ctx_read` on a one-line file above the turn budget returned

@@ -56,11 +56,23 @@ pub(crate) fn execute_sandboxed(
     allowed_read_paths: &[&Path],
     env: &[(String, String)],
     timeout_secs: u64,
+    cwd: Option<&Path>,
 ) -> Result<(String, String, i32), String> {
     let profile = seatbelt_profile(allowed_read_paths, interpreter);
     let profile_path = wrap_with_seatbelt(&profile)?;
 
     let mut cmd = Command::new("sandbox-exec");
+    // #1666: the caller's working directory, when it named one. The profile
+    // above already grants read access to it.
+    if let Some(dir) = cwd {
+        if !dir.is_dir() {
+            return Err(format!(
+                "working directory does not exist: {}",
+                dir.display()
+            ));
+        }
+        cmd.current_dir(dir);
+    }
     cmd.args(["-f", &profile_path.to_string_lossy()]);
     cmd.arg(interpreter);
     cmd.args(args);
@@ -169,7 +181,7 @@ mod tests {
     #[test]
     #[ignore = "sandbox-exec behavior varies by macOS version; run manually"]
     fn seatbelt_exec_echo() {
-        let result = execute_sandboxed("/bin/echo", &["hello"], &[], &[], 5);
+        let result = execute_sandboxed("/bin/echo", &["hello"], &[], &[], 5, None);
         assert!(result.is_ok());
         let (stdout, _, code) = result.unwrap();
         assert_eq!(code, 0);
@@ -185,6 +197,7 @@ mod tests {
             &[],
             &[],
             5,
+            None,
         );
         if let Ok((_, stderr, code)) = result {
             assert_ne!(code, 0, "curl should fail under sandbox: {stderr}");
