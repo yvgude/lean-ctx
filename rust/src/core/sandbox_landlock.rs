@@ -251,9 +251,10 @@ pub(crate) fn execute_sandboxed(
     allowed_read_paths: &[&Path],
     env: &[(String, String)],
     timeout_secs: u64,
+    cwd: Option<&Path>,
 ) -> Result<(String, String, i32), String> {
     let ruleset = LandlockRuleset::new(allowed_read_paths, interpreter);
-    execute_with_landlock(&ruleset, interpreter, args, env, timeout_secs)
+    execute_with_landlock(&ruleset, interpreter, args, env, timeout_secs, cwd)
 }
 
 #[cfg(target_os = "linux")]
@@ -263,11 +264,22 @@ fn execute_with_landlock(
     args: &[&str],
     env: &[(String, String)],
     timeout_secs: u64,
+    cwd: Option<&Path>,
 ) -> Result<(String, String, i32), String> {
     use std::os::unix::process::CommandExt;
 
     let mut cmd = Command::new(interpreter);
     cmd.args(args);
+    // #1666: run where the caller asked, not where the server happens to sit.
+    if let Some(dir) = cwd {
+        if !dir.is_dir() {
+            return Err(format!(
+                "working directory does not exist: {}",
+                dir.display()
+            ));
+        }
+        cmd.current_dir(dir);
+    }
 
     cmd.env_clear();
     cmd.env("PATH", "/usr/bin:/bin:/usr/local/bin");
@@ -327,6 +339,7 @@ fn execute_with_landlock(
     _args: &[&str],
     _env: &[(String, String)],
     _timeout_secs: u64,
+    _cwd: Option<&Path>,
 ) -> Result<(String, String, i32), String> {
     unreachable!("sandbox_landlock module should only be called on Linux")
 }
@@ -412,7 +425,7 @@ mod tests {
     #[test]
     #[ignore = "requires Linux 5.13+ with Landlock; run manually"]
     fn landlock_exec_echo() {
-        let result = execute_sandboxed("/bin/echo", &["hello"], &[], &[], 5);
+        let result = execute_sandboxed("/bin/echo", &["hello"], &[], &[], 5, None);
         assert!(result.is_ok());
         let (stdout, _, code) = result.unwrap();
         assert_eq!(code, 0);
@@ -423,7 +436,7 @@ mod tests {
     #[test]
     #[ignore = "requires Linux 5.13+ with Landlock; run manually"]
     fn landlock_denies_read_outside_allowed() {
-        let result = execute_sandboxed("/bin/cat", &["/root/.bashrc"], &[], &[], 5);
+        let result = execute_sandboxed("/bin/cat", &["/root/.bashrc"], &[], &[], 5, None);
         if let Ok((_, _, code)) = result {
             assert_ne!(code, 0, "cat should fail reading outside allowed paths");
         }

@@ -534,12 +534,18 @@ pub(in crate::server) async fn dispatch_and_post_process(
 
     // Raw output stays byte-pure: the body is archived (ctx_expand works),
     // but the hint decoration is only appended to non-raw deliveries.
+    // #1660: remembered, not just appended. Truncation below keeps a prefix,
+    // so a hint pinned to the end of the body was the first thing cut — the
+    // response then said it was truncated while the line naming the archived
+    // copy had already been removed.
+    let mut recovery_line: Option<String> = None;
     if !is_raw_shell
         && !firewalled
         && profile_hints.archive_hint()
         && let Some(hint) = archive_hint
     {
         result_text = format!("{result_text}\n{hint}");
+        recovery_line = Some(hint);
     }
 
     let had_auto_context = auto_context.is_some();
@@ -1132,7 +1138,14 @@ pub(in crate::server) async fn dispatch_and_post_process(
         cfg.turn_fresh_limit_effective()
     };
     if budget_limit > 0 {
-        let (budgeted, action) = crate::core::budget::apply_turn_budget(&result_text, budget_limit);
+        // The recovery line is already part of `result_text`; handing it over
+        // separately lets the budget re-attach it after the cut instead of
+        // discarding it with the rest of the tail.
+        let (budgeted, action) = crate::core::budget::apply_turn_budget(
+            &result_text,
+            budget_limit,
+            recovery_line.as_deref(),
+        );
         if let crate::core::budget::BudgetAction::Truncated {
             original_tokens,
             delivered_tokens,
