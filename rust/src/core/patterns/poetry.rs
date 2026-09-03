@@ -346,8 +346,8 @@ fn fallback_compact(output: &str) -> String {
         return lines.join("\n");
     }
     format!(
-        "{}\n... ({} more lines)",
+        "{}\n{}",
         lines[..max].join("\n"),
-        lines.len() - max
+        super::elision_marker(lines.len() - max)
     )
 }

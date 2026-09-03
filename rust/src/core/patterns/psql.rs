@@ -75,9 +75,9 @@ fn compress_describe(output: &str) -> String {
         return lines.join("\n");
     }
     format!(
-        "{}\n... ({} more lines)",
+        "{}\n{}",
         lines[..20].join("\n"),
-        lines.len() - 20
+        super::elision_marker(lines.len() - 20)
     )
 }
 
@@ -87,8 +87,8 @@ fn compact_lines(text: &str, max: usize) -> String {
         return lines.join("\n");
     }
     format!(
-        "{}\n... ({} more lines)",
+        "{}\n{}",
         lines[..max].join("\n"),
-        lines.len() - max
+        super::elision_marker(lines.len() - max)
     )
 }

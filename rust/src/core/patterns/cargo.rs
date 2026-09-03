@@ -456,9 +456,9 @@ fn compress_tree(output: &str) -> String {
     if direct.is_empty() {
         let shown = &lines[..20.min(lines.len())];
         return format!(
-            "{}\n... ({} more lines)",
+            "{}\n{}",
             shown.join("\n"),
-            lines.len() - 20
+            super::elision_marker(lines.len() - 20)
         );
     }
 
@@ -490,9 +490,9 @@ fn compress_fmt(output: &str) -> String {
         lines.join("\n")
     } else {
         format!(
-            "{}\n... ({} more lines)",
+            "{}\n{}",
             lines[..5].join("\n"),
-            lines.len() - 5
+            super::elision_marker(lines.len() - 5)
         )
     }
 }
@@ -519,9 +519,9 @@ fn compress_update(output: &str) -> String {
             return lines.join("\n");
         }
         return format!(
-            "{}\n... ({} more lines)",
+            "{}\n{}",
             lines[..5].join("\n"),
-            lines.len() - 5
+            super::elision_marker(lines.len() - 5)
         );
     }
 

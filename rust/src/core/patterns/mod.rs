@@ -198,6 +198,24 @@ fn shorter_only(compressed: String, original: &str) -> Option<String> {
     }
 }
 
+/// How an elided block announces itself (GH #1679).
+///
+/// The old marker was `... (N more lines)`, which reads as content: a caller
+/// could not tell it from a line the command actually printed. Worse, it was the
+/// *only* trace of the cut — the savings footer that would have announced it is
+/// hidden on the MCP path by default (`SavingsFooter::Auto` → invisible in an
+/// MCP context), which is the primary path. So a lossy result was
+/// indistinguishable from a complete one, with nothing to recover from.
+///
+/// This marker is unmistakably ours, and names the way back. `raw=true` is what
+/// the server instructions and every other compression annotation already point
+/// at, and unlike an archive handle it is always available — it does not depend
+/// on the response having been archived or on a hint tier being enabled.
+pub(crate) fn elision_marker(omitted: usize) -> String {
+    let plural = if omitted == 1 { "line" } else { "lines" };
+    format!("[lean-ctx: {omitted} {plural} elided — re-run with raw=true for the full output]")
+}
+
 type PatternMatcher = fn(&str) -> bool;
 type PatternHandler = fn(&str, &str) -> Option<String>;
 
@@ -944,5 +962,90 @@ mod tests {
         let output = "On branch main\nnothing to commit";
         assert!(try_specific_pattern("gh pr list", output).is_some());
         assert!(try_specific_pattern("gh run list", output).is_some());
+    }
+}
+
+#[cfg(test)]
+mod gh1679 {
+    use super::*;
+
+    /// The reported failure: a `gh issue view --comments` result had 34 lines
+    /// removed from the middle, marked only by `... (34 more lines)`. That
+    /// string is shaped like content — the caller could not tell it from a line
+    /// the command printed — and it was the only trace, because the savings
+    /// footer that would have announced the cut is hidden on the MCP path by
+    /// default. A lossy result was indistinguishable from a complete one.
+    #[test]
+    fn an_elision_announces_itself_as_ours() {
+        let marker = elision_marker(34);
+
+        assert!(
+            marker.starts_with("[lean-ctx:"),
+            "must be unmistakably ours, not content-shaped: {marker}"
+        );
+        assert!(
+            !marker.contains("more lines)"),
+            "the old content-shaped wording must be gone: {marker}"
+        );
+        assert!(marker.contains("34"), "{marker}");
+    }
+
+    /// The marker is the only thing guaranteed to survive, so the way back has
+    /// to be in it. `raw=true` always works — unlike an archive handle, it does
+    /// not depend on the response having been archived or on a hint tier.
+    #[test]
+    fn the_marker_names_a_recovery_that_always_exists() {
+        assert!(
+            elision_marker(1).contains("raw=true"),
+            "{}",
+            elision_marker(1)
+        );
+    }
+
+    #[test]
+    fn one_line_is_not_called_lines() {
+        assert!(
+            elision_marker(1).contains("1 line elided"),
+            "{}",
+            elision_marker(1)
+        );
+        assert!(
+            elision_marker(2).contains("2 lines elided"),
+            "{}",
+            elision_marker(2)
+        );
+    }
+
+    /// Every compressor that elides must use the shared marker. A new one that
+    /// hand-rolls `... (N more lines)` would reintroduce exactly this bug, so
+    /// the source tree is the assertion.
+    #[test]
+    fn no_compressor_hand_rolls_the_old_marker() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/core/patterns");
+        let mut offenders = Vec::new();
+
+        for entry in std::fs::read_dir(&dir).expect("patterns dir") {
+            let path = entry.expect("dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).expect("read pattern source");
+            // Only the production half: tests legitimately name the old string
+            // to assert it is gone, and this module documents it.
+            let production = source
+                .split_once("#[cfg(test)]")
+                .map_or(source.as_str(), |(head, _)| head);
+            if production.contains("more lines)")
+                && path.file_name().and_then(|n| n.to_str()) != Some("mod.rs")
+            {
+                offenders.push(path.display().to_string());
+            }
+        }
+
+        assert!(
+            offenders.is_empty(),
+            "these compressors elide with the old content-shaped marker; \
+             use super::elision_marker() instead: {offenders:?}"
+        );
     }
 }

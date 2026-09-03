@@ -42,8 +42,8 @@ pub fn compress(output: &str) -> Option<String> {
 
     let lines: Vec<&str> = trimmed.lines().collect();
     Some(format!(
-        "{}\n... ({} more lines)",
+        "{}\n{}",
         lines[..5].join("\n"),
-        lines.len() - 5
+        super::elision_marker(lines.len() - 5)
     ))
 }

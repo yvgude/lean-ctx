@@ -243,9 +243,9 @@ fn compress_tinker(output: &str) -> String {
         return lines.join("\n");
     }
     format!(
-        "{}\n... ({} more lines)",
+        "{}\n{}",
         lines[..8].join("\n"),
-        lines.len() - 8
+        super::elision_marker(lines.len() - 8)
     )
 }
 
@@ -255,9 +255,9 @@ fn compact_lines(text: &str, max: usize) -> String {
         return lines.join("\n");
     }
     format!(
-        "{}\n... ({} more lines)",
+        "{}\n{}",
         lines[..max].join("\n"),
-        lines.len() - max
+        super::elision_marker(lines.len() - max)
     )
 }
 

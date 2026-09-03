@@ -101,9 +101,9 @@ pub fn compress(_command: &str, output: &str) -> Option<String> {
         Some(trimmed.to_string())
     } else {
         Some(format!(
-            "{}\n... ({} more lines)",
+            "{}\n{}",
             lines[..8].join("\n"),
-            lines.len() - 8
+            super::elision_marker(lines.len() - 8)
         ))
     }
 }
