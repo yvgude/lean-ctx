@@ -1121,42 +1121,14 @@ pub(in crate::server) async fn dispatch_and_post_process(
         result_text = pre_compression;
     }
 
-    // Turn-level budget enforcement (#1306): cap fresh tokens per response.
-    // This applies uniformly to every tool, including raw shell output and
-    // explicit full reads. Oversized archivable responses retain their
-    // ctx_expand handle from the archive stage above.
-    //
-    // #1582: a read the caller explicitly asked to be verbatim gets the larger
-    // verbatim budget. `raw=true` is what every compression annotation and the
-    // server instructions name as the way back to the original bytes; holding
-    // it to the same 4096-token backstop as an unrequested response made that
-    // documented recovery path silently unreachable above ~16 KB.
-    let cfg = crate::core::config::Config::load();
-    let budget_limit = if verbatim_requested(name, args) {
-        cfg.turn_fresh_limit_verbatim_effective()
-    } else {
-        cfg.turn_fresh_limit_effective()
-    };
-    if budget_limit > 0 {
-        // The recovery line is already part of `result_text`; handing it over
-        // separately lets the budget re-attach it after the cut instead of
-        // discarding it with the rest of the tail.
-        let (budgeted, action) = crate::core::budget::apply_turn_budget(
-            &result_text,
-            budget_limit,
-            recovery_line.as_deref(),
-        );
-        if let crate::core::budget::BudgetAction::Truncated {
-            original_tokens,
-            delivered_tokens,
-        } = action
-        {
-            tracing::debug!(
-                "budget: truncated {original_tokens} → {delivered_tokens} tokens (limit {budget_limit})"
-            );
-        }
-        result_text = budgeted;
-    }
+    // Turn-level budget enforcement (#1306), including the limit choice and the
+    // recovery line that has to survive the cut. It lives in `core::budget`
+    // because it is budget policy, not pipeline sequencing.
+    result_text = crate::core::budget::enforce_turn_budget(
+        &result_text,
+        verbatim_requested(name, args),
+        recovery_line.as_deref(),
+    );
 
     let compressed_input_tokens = crate::core::tokens::count_tokens(&result_text) as u64;
     let raw_input_tokens = compressed_input_tokens

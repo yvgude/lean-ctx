@@ -24,6 +24,44 @@ pub(crate) enum BudgetAction {
 /// an expand hint so the agent can retrieve the remainder.
 ///
 /// Returns `(possibly_truncated_text, action)`.
+/// Cap a finished response body at the configured per-turn fresh-token limit.
+///
+/// Applies uniformly to every tool, including raw shell output and explicit
+/// full reads; oversized archivable responses keep the `ctx_expand` handle
+/// their archive stage produced.
+///
+/// `verbatim` selects the larger budget (#1582): `raw=true` is what every
+/// compression annotation and the server instructions name as the way back to
+/// the original bytes, and holding it to the same 4096-token backstop as an
+/// unrequested response made that documented recovery path silently
+/// unreachable above ~16 KB.
+///
+/// `recovery` is the line naming where the full output is retrievable. It is
+/// already part of `text`; passing it separately is what lets the cut re-attach
+/// it instead of discarding it with the rest of the tail (#1660).
+pub(crate) fn enforce_turn_budget(text: &str, verbatim: bool, recovery: Option<&str>) -> String {
+    let cfg = crate::core::config::Config::load();
+    let limit = if verbatim {
+        cfg.turn_fresh_limit_verbatim_effective()
+    } else {
+        cfg.turn_fresh_limit_effective()
+    };
+    if limit == 0 {
+        return text.to_string();
+    }
+    let (budgeted, action) = apply_turn_budget(text, limit, recovery);
+    if let BudgetAction::Truncated {
+        original_tokens,
+        delivered_tokens,
+    } = action
+    {
+        tracing::debug!(
+            "budget: truncated {original_tokens} → {delivered_tokens} tokens (limit {limit})"
+        );
+    }
+    budgeted
+}
+
 /// `recovery`, when given, is a line that must survive the cut (GH #1660).
 ///
 /// Truncation keeps a prefix, and the line naming the way back to the full
