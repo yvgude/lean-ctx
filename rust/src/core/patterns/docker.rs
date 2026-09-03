@@ -378,9 +378,9 @@ fn compress_inspect(output: &str) -> String {
     if trimmed.lines().count() > 20 {
         let lines: Vec<&str> = trimmed.lines().collect();
         return format!(
-            "{}\n... ({} more lines)",
+            "{}\n{}",
             lines[..10].join("\n"),
-            lines.len() - 10
+            super::elision_marker(lines.len() - 10)
         );
     }
     trimmed.to_string()
@@ -510,9 +510,9 @@ fn compact_output(text: &str, max: usize) -> String {
         return lines.join("\n");
     }
     format!(
-        "{}\n... ({} more lines)",
+        "{}\n{}",
         lines[..max].join("\n"),
-        lines.len() - max
+        super::elision_marker(lines.len() - max)
     )
 }
 

@@ -261,9 +261,9 @@ fn compact_output(text: &str, max: usize) -> String {
         return lines.join("\n");
     }
     format!(
-        "{}\n... ({} more lines)",
+        "{}\n{}",
         lines[..max].join("\n"),
-        lines.len() - max
+        super::elision_marker(lines.len() - max)
     )
 }
 
@@ -278,8 +278,9 @@ fn compact_head_tail(text: &str, head: usize, tail: usize) -> String {
     }
     let omitted = lines.len() - head - tail;
     format!(
-        "{}\n... ({omitted} more lines)\n{}",
+        "{}\n{}\n{}",
         lines[..head].join("\n"),
+        super::elision_marker(omitted),
         lines[lines.len() - tail..].join("\n"),
     )
 }
@@ -337,7 +338,15 @@ mod tests {
         let out = compact_head_tail(&lines, 5, 5);
         assert!(out.contains("L0") && out.contains("L4"));
         assert!(out.contains("L195") && out.contains("L199"));
-        assert!(out.contains("... (190 more lines)"));
+        // #1679: the marker is unmistakably lean-ctx's, not content-shaped,
+        // and names the way back — it is the only trace of the cut once the
+        // savings footer is hidden, which is the default on the MCP path.
+        assert!(out.contains("[lean-ctx: 190 lines elided"), "{out}");
+        assert!(out.contains("raw=true"), "{out}");
+        assert!(
+            !out.contains("... (190 more lines)"),
+            "the content-shaped marker must be gone: {out}"
+        );
         assert!(!out.contains("L100"));
     }
 }

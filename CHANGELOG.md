@@ -5,6 +5,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — lines vanished mid-result behind a content-shaped marker (#1679)
+
+- `gh issue view … --comments` came back with 34 lines removed from the middle,
+  marked only by `... (34 more lines)` — a string shaped like output, which the
+  caller could not tell from a line the command printed.
+- It was the *only* trace. The `[lean-ctx: …→… tok]` footer that announces a
+  compression is hidden on the MCP path by default (`SavingsFooter::Auto` is
+  invisible in an MCP context), and that is the primary path. So a lossy result
+  was indistinguishable from a complete one, with nothing to recover from.
+- Elisions now announce themselves:
+  `[lean-ctx: 34 lines elided — re-run with raw=true for the full output]`. It
+  is unmistakably ours and names a route that always works — unlike an archive
+  handle, `raw=true` does not depend on the response having been archived or on
+  a hint tier being enabled.
+- Applied at all 41 elision sites across 34 compressors through one shared
+  helper, and a test walks the source tree so a new compressor cannot hand-roll
+  the old marker back in.
+- The reporter suspected a dedup/repeat-collapse path because the elided block
+  was a near-duplicate of the preceding comment. It was not: `gh issue view`
+  runs `compact_head_tail(output, 40, 40)`, so with 114 non-blank lines exactly
+  34 fall in the middle. The duplicate comment was a coincidence of where the
+  cut landed.
+
+### Fixed — the walk hint blamed directories that were never walked (#1680)
+
+- `grep -rn PATTERN /absolute/path/outside/the/root/file.go`, run from a project
+  root, produced a hint naming `.claude/worktrees/`, `node_modules/` and
+  `.venv/` "walked by grep/find". grep read exactly one file, and none of those
+  directories are under it — the list tracked the shell's cwd, not the path the
+  command was given.
+- Already fixed on main by the #1662 follow-up, which scans the command's own
+  path operands instead of its starting directory; this adds the reporter's
+  exact scenario as a regression test, including that a single file operand
+  never produces a hint at all.
+
+
 ### Added — the dashboard asks how you use lean-ctx
 
 - A form in the dashboard's Settings view asks four questions: what you use

@@ -54,9 +54,9 @@ fn compress_evaluate(output: &str) -> String {
         return lines.join("\n");
     }
     format!(
-        "{}\n... ({} more lines)",
+        "{}\n{}",
         lines[..10].join("\n"),
-        lines.len() - 10
+        super::elision_marker(lines.len() - 10)
     )
 }
 
@@ -109,7 +109,7 @@ fn compress_run(output: &str) -> String {
             .collect::<Vec<_>>()
             .join("\n");
         if total_lines > 15 {
-            return format!("{shown}\n... ({} more lines)", total_lines - 15);
+            return format!("{shown}\n{}", super::elision_marker(total_lines - 15));
         }
         return shown;
     }

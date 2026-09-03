@@ -50,8 +50,8 @@ pub fn compress(output: &str) -> Option<String> {
         return Some(useful.join("\n"));
     }
     Some(format!(
-        "{}\n... ({} more lines)",
+        "{}\n{}",
         useful[..3].join("\n"),
-        useful.len() - 3
+        super::elision_marker(useful.len() - 3)
     ))
 }

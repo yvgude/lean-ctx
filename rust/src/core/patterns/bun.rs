@@ -142,8 +142,8 @@ fn compact_lines(text: &str, max: usize) -> String {
         return lines.join("\n");
     }
     format!(
-        "{}\n... ({} more lines)",
+        "{}\n{}",
         lines[..max].join("\n"),
-        lines.len() - max
+        super::elision_marker(lines.len() - max)
     )
 }
