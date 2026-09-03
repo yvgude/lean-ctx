@@ -3,6 +3,41 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed — the token-budget gate measured one platform and enforced all (#1651)
+
+- `minimal_arm_per_turn_prefix_stays_within_budget` caps the per-turn prefix at
+  1965 tokens, but the prefix is not the same size everywhere: the Windows shell
+  hint is empty on POSIX. A developer measured 1941 on macOS, read 24 tokens of
+  headroom, and CI enforced a number ~15 higher. #1646 spent three CI
+  round-trips on it; the CHANGELOG records the same trap in #1625.
+- The guard now prices the Windows-only hint on every platform and asserts the
+  worst case, so a local run reports the number CI will enforce — 1958 instead
+  of 1941, and 7 tokens of real headroom instead of an imagined 24.
+- The hint's formatting moved into one function the runtime and the guard share,
+  so the two cannot drift apart.
+- The failure message now also names the second invisible consequence of editing
+  a `tool_def`: `docs/reference/generated/mcp-tools.md` embeds the description
+  verbatim, so `gen_docs --check` fails too. Neither is visible from the diff.
+
+### Fixed — a relocation guard failed on writers it was not about (#1658)
+
+- `descriptor_bound_root_relocation_never_retargets_a_replacement_root` failed
+  intermittently on Linux with `left: 1, right: 0`, which named nothing — a real
+  boundary breach and an unrelated writer were indistinguishable.
+- The assertion was stricter than the invariant its own message stated: it
+  required the replacement root to be *entirely empty* while claiming to check
+  "no artifact or temporary leaf".
+- Directories are bound *before* the root is renamed away, so anything reaching
+  the replacement can only have got there by re-resolving the path — which
+  recreates the artifact tree, the published name, or its temporary. Those three
+  still fail, and the message now lists what was found. Anything else came from
+  a different writer and is not this guard's subject.
+- A sibling test pins both directions, so the relaxation cannot quietly mute the
+  invariant. Whether an unrelated writer touches the data directory without
+  `test_env_lock()` remains open and is unaffected by this.
+
 ## [3.10.1] — 2026-09-01
 
 ### Fixed — the tee refusal contradicted itself (#1671)
