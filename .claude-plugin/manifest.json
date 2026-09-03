@@ -18,7 +18,7 @@
     "args": ["--mcp"],
     "env": {}
   },
-  "skills": ["skills/lean-ctx"],
+  "skills": ["skills/lean-ctx", "skills/lean-ctx-review"],
   "capabilities": [
     "file-read",
     "file-edit",
