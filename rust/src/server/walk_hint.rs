@@ -454,3 +454,76 @@ mod gh1662_scope {
         assert!(walk_hint("grep -rn pattern \"$DIR\"", &cwd).is_some());
     }
 }
+
+#[cfg(test)]
+mod gh1680 {
+    use super::*;
+
+    /// The reporter's case: `grep -rn PATTERN /abs/path/outside/file.go` run
+    /// from a project root that contains `node_modules/`. The hint named three
+    /// directories under the cwd and asserted they were "walked by grep/find" —
+    /// grep read exactly one file, and none of them are under it.
+    #[test]
+    fn an_explicit_path_outside_the_root_is_not_blamed_on_the_cwd() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let bulk = repo.path().join("node_modules");
+        std::fs::create_dir_all(&bulk).expect("mkdir");
+        for i in 0..40 {
+            std::fs::write(bulk.join(format!("f{i}.js")), "x").expect("write");
+        }
+
+        let elsewhere = tempfile::tempdir().expect("tempdir");
+        let target = elsewhere.path().join("types.go");
+        std::fs::write(&target, "package main").expect("write");
+
+        let command = format!("grep -rn \"EvConnected\" {}", target.display());
+        let hint = walk_hint(&command, &repo.path().to_string_lossy());
+
+        assert!(
+            hint.is_none(),
+            "grep read one file outside the root; nothing under the cwd was walked: {hint:?}"
+        );
+    }
+
+    /// The same command rooted at the cwd still gets the hint — the fix must
+    /// not silence the case the hint exists for.
+    #[test]
+    fn the_intended_case_still_fires() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let bulk = repo.path().join("node_modules");
+        std::fs::create_dir_all(&bulk).expect("mkdir");
+        for i in 0..40 {
+            std::fs::write(bulk.join(format!("f{i}.js")), "x").expect("write");
+        }
+        std::fs::write(repo.path().join("main.go"), "package main").expect("write");
+
+        let hint = walk_hint(
+            "grep -rn \"EvConnected\" --include=*.go .",
+            &repo.path().to_string_lossy(),
+        );
+        assert!(
+            hint.is_some_and(|h| h.contains("node_modules/")),
+            "a walk rooted at the repo does traverse node_modules"
+        );
+    }
+
+    /// A single explicit file is not a tree, so even under the cwd the advice
+    /// ("scope the path", "add --exclude-dir") would have nothing to act on.
+    #[test]
+    fn a_single_file_operand_never_produces_a_hint() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let bulk = repo.path().join("node_modules");
+        std::fs::create_dir_all(&bulk).expect("mkdir");
+        for i in 0..40 {
+            std::fs::write(bulk.join(format!("f{i}.js")), "x").expect("write");
+        }
+        let file = repo.path().join("main.go");
+        std::fs::write(&file, "package main").expect("write");
+
+        let hint = walk_hint(
+            &format!("grep -rn x {}", file.display()),
+            &repo.path().to_string_lossy(),
+        );
+        assert!(hint.is_none(), "{hint:?}");
+    }
+}
