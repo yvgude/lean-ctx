@@ -3,6 +3,7 @@
 mod agents;
 mod context;
 mod doctor;
+mod feedback;
 mod graph;
 pub(crate) mod health;
 pub mod helpers;
@@ -52,6 +53,7 @@ fn match_component_path(path: &str) -> Option<String> {
         "/static/components/cockpit-palette.js" => super::COCKPIT_COMPONENT_PALETTE_JS,
         "/static/components/cockpit-roi.js" => super::COCKPIT_COMPONENT_ROI_JS,
         "/static/components/cockpit-replay.js" => super::COCKPIT_COMPONENT_REPLAY_JS,
+        "/static/components/cockpit-feedback.js" => super::COCKPIT_COMPONENT_FEEDBACK_JS,
         "/static/components/cockpit-leaderboard.js" => super::COCKPIT_COMPONENT_LEADERBOARD_JS,
         "/static/components/cockpit-area-tabs.js" => super::COCKPIT_COMPONENT_AREA_TABS_JS,
         "/static/components/cockpit-protection.js" => super::COCKPIT_COMPONENT_PROTECTION_JS,
@@ -195,6 +197,7 @@ pub fn route_response(
         .or_else(|| settings::handle(path, query_str, method, body))
         .or_else(|| kernel::handle(path, query_str, method, body))
         .or_else(|| doctor::handle(path, query_str, method, body))
+        .or_else(|| feedback::handle(path, query_str, method, body))
         .or_else(|| leaderboard::handle(path, query_str, method, body))
         .or_else(|| health::handle(path, query_str, method, body))
         .or_else(|| provenance::handle(path, query_str, method, body));
