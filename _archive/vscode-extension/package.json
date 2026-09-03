@@ -170,6 +170,6 @@
     "undici": "^7.29.0",
     "serialize-javascript": "^7.0.5",
     "diff": "^8.0.3",
-    "fast-uri": "^3.1.5"
+    "fast-uri": "^3.1.7"
   }
 }
