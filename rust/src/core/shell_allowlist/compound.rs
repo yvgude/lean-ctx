@@ -283,6 +283,28 @@ fn assignment_substitution_leaves(s: &str) -> Vec<&str> {
             b'\'' => in_single_quote = true,
             b'"' => in_double_quote = true,
             b'$' if i + 1 < len && bytes[i + 1] == b'(' => {
+                // `$((expr))` is arithmetic expansion, not command substitution
+                // (GH #1664). It evaluates against the shell's own variables and
+                // can never execute anything, but the `(expr)` inside looked like
+                // a subshell: `x=$((1+2))` yielded a leaf `1+2`, which the
+                // allowlist then rejected as an unknown command — with the
+                // uncopyable advice `lean-ctx allow 1+2`.
+                //
+                // Skipping the whole expansion is what keeps counters usable, and
+                // so keeps bounded wait/poll loops writable at all. Nothing is
+                // given up: there is no command in there to gate. #1514 fixed the
+                // same parser for `VAR=$(cmd)` and did not reach this form.
+                if bytes.get(i + 2) == Some(&b'(') {
+                    if let Some((_, end)) = balanced_paren_at(prefix, i + 2) {
+                        // `end` is past the inner `)`; the outer one follows.
+                        i = if prefix.as_bytes().get(end) == Some(&b')') {
+                            end + 1
+                        } else {
+                            end
+                        };
+                        continue;
+                    }
+                }
                 if let Some((inner, end)) = balanced_paren_at(prefix, i + 1) {
                     found.push(inner);
                     i = end;
