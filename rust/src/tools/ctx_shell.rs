@@ -64,7 +64,12 @@ pub(crate) fn validate_command_with_write_allow_paths(
         );
     }
 
-    if let Some(reason) = download_to_file_reason(command) {
+    // #1672: on the heredoc-stripped text, for the same reason as #931 and
+    // #989 above. A download flag inside a heredoc *body* is opaque data — a
+    // commit message, a doc, a fixture — and refusing the call for it blocks
+    // writing about the guard at all. This detector was simply never switched
+    // over when the other two were.
+    if let Some(reason) = download_to_file_reason(&cmd_no_heredoc) {
         return Some(format!(
             "ERROR: ctx_shell detected a file download/write ({reason}). \
              ctx_shell is ONLY for reading command output — redirect-free flags bypass \
@@ -1180,6 +1185,45 @@ COMMIT_MSG"
         assert!(
             validate_command("echo secret > /tmpfoo/leak.txt").is_some(),
             "/tmpfoo is not /tmp — must be blocked"
+        );
+    }
+
+    // --- GH #1672: a heredoc body is data, not a command ---
+
+    /// Found live: a commit message quoting the guard's own advice was refused
+    /// as if it were a download. Nothing runs inside a heredoc body.
+    #[test]
+    fn a_download_flag_inside_a_heredoc_body_is_not_a_download() {
+        let commit = "git commit -F - <<'MSG'\n\
+             fix(x): something\n\
+             \n\
+             The reported case: cd /scratch && curl -sL -o shot.png https://e/x\n\
+             MSG";
+        assert!(
+            validate_command(commit).is_none(),
+            "a heredoc body is opaque data: {:?}",
+            validate_command(commit)
+        );
+
+        for body in [
+            "cat <<'EOF'\nwget https://example.com/a.tar.gz\nEOF",
+            "cat <<'EOF'\ndd if=/dev/zero of=/etc/passwd\nEOF",
+        ] {
+            assert!(validate_command(body).is_none(), "{body}");
+        }
+    }
+
+    /// The guard itself is untouched: a real download outside a heredoc, and
+    /// one on the same line as a heredoc redirection, are still refused.
+    #[test]
+    fn a_real_download_beside_a_heredoc_is_still_blocked() {
+        assert!(
+            validate_command("curl -sL -o shot.png https://e/x && cat <<'EOF'\nharmless\nEOF")
+                .is_some()
+        );
+        assert!(
+            validate_command("cat <<'EOF'\nharmless\nEOF\ncurl -sL -o shot.png https://e/x")
+                .is_some()
         );
     }
 

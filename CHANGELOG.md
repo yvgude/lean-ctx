@@ -55,6 +55,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   tested decision this fix leaves alone.
 - The refusal now names a route that works for the payload at hand.
 
+### Fixed — a heredoc body mentioning a download was refused (#1672)
+
+- `git commit -F - <<'MSG' … curl -sL -o shot.png … MSG` was blocked as a file
+  download. Nothing runs inside a heredoc body — the text was a commit message.
+- The redirect guard (#931) and the `tee` guard (#989) already run on
+  heredoc-stripped text; the download guard was simply never switched over and
+  still read the raw command. It now uses the same stripped form.
+- Found while writing the commit message for #1661, which quoted the guard's own
+  advice back at it. Any heredoc payload naming `curl -o`, `wget` or `dd of=`
+  was affected: commit messages, PR bodies, docs, fixtures.
+
 ### Fixed — a piped recursive grep ran for two minutes with no warning (#1662)
 
 - `grep -rn … --include=*.go . | head` produced its ten lines almost
