@@ -132,9 +132,10 @@ async fn phase1_session_task_and_overview() {
 async fn phase1_tree_depth() {
     let _lock = lean_ctx::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
+    let project = _dir.path().join("project");
 
     let tree = engine
-        .call_tool_text("ctx_tree", Some(json!({"depth": 3})))
+        .call_tool_text("ctx_tree", Some(json!({"path": project, "depth": 3})))
         .await
         .expect("tree");
     assert!(tree.contains("src"), "tree should show src: {tree}");
