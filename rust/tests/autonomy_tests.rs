@@ -341,6 +341,7 @@ fn enrich_after_read_disabled() {
 }
 
 #[test]
+#[serial_test::serial]
 fn enrich_after_read_no_index() {
     let state = make_state();
     let mut cache = SessionCache::new();
