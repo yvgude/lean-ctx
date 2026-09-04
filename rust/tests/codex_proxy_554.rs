@@ -147,6 +147,41 @@ fn proxy_enable_respects_codex_auth_mode_554() {
 
     const CHATGPT_AUTH: &str = r#"{"auth_mode":"chatgpt","tokens":{"access_token":"x"}}"#;
 
+    // Browser credentials may live outside auth.json (for example in the OS
+    // credential store). Ambiguous auth must remain native instead of sending
+    // a browser token to the API-key endpoint (#1685).
+    {
+        let _no_optin = EnvVar::cleared("LEAN_CTX_CODEX_CHATGPT_PROXY");
+        let (home, codex) = codex_home_with_auth(CHATGPT_AUTH);
+        std::fs::remove_file(codex.join("auth.json")).unwrap();
+        let _codex_home = CodexHome::set(&codex);
+        let (_listener, port) = dummy_proxy_port();
+        lean_ctx::proxy_setup::install_proxy_env_unchecked(home.path(), port, true, false);
+
+        let cfg = std::fs::read_to_string(codex.join("config.toml")).unwrap();
+        assert!(
+            !cfg.contains("openai_base_url"),
+            "unknown/keyring auth must never use the API-key /v1 rail, got:\n{cfg}"
+        );
+    }
+
+    // Codex 0.133 still accepts legacy browser-login files without an explicit
+    // auth_mode and resolves them as ChatGPT auth. Never route their OAuth token
+    // onto the API-key `/v1` rail (#1685).
+    {
+        let _no_optin = EnvVar::cleared("LEAN_CTX_CODEX_CHATGPT_PROXY");
+        let (home, codex) = codex_home_with_auth(r#"{"tokens":{"access_token":"x"}}"#);
+        let _codex_home = CodexHome::set(&codex);
+        let (_listener, port) = dummy_proxy_port();
+        lean_ctx::proxy_setup::install_proxy_env_unchecked(home.path(), port, true, false);
+
+        let cfg = std::fs::read_to_string(codex.join("config.toml")).unwrap();
+        assert!(
+            !cfg.contains("openai_base_url"),
+            "legacy browser login must never use the API-key /v1 rail, got:\n{cfg}"
+        );
+    }
+
     // --- ChatGPT login, default (opt-out): stay native, write no proxy entries (#597).
     {
         let _no_optin = EnvVar::cleared("LEAN_CTX_CODEX_CHATGPT_PROXY");

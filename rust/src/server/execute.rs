@@ -699,7 +699,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn the_timeout_line_does_not_imply_a_pipeline() {
-        let joined = vec!["a".to_string(), "b".to_string()].join("; ");
+        let joined = ["a".to_string(), "b".to_string()].join("; ");
         assert!(!joined.contains('|'), "no pipe may be invented: {joined}");
     }
 

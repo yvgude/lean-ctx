@@ -7,6 +7,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [3.10.1] — 2026-09-04
 
+### Fixed — Codex browser login was sent to the API-key endpoint (#1685)
+
+- `lean-ctx wrap codex` now selects the `/v1` proxy rail only when Codex has
+  positive API-key evidence. Browser-login credentials in an older `auth.json`,
+  the OS credential store, or another unreadable/unknown auth state stay on
+  Codex's native ChatGPT rail.
+- This prevents the misleading `401 Unauthorized: Missing scopes:
+  api.responses.write` failure seen after a successful browser login. Explicit
+  API-key users continue to use the compressed `/v1` route unchanged.
+
 ### Fixed — phone DLP confused repository numbers with phone numbers (#1682)
 
 - The phone detector no longer treats ordinary bare numbers such as issue and
