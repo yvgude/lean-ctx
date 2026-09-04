@@ -405,25 +405,36 @@ pub(crate) fn codex_uses_chatgpt_login(home: &Path) -> bool {
     auth_is_chatgpt(&codex_dir)
 }
 
-/// True when `<codex_dir>/auth.json` records a ChatGPT/backend auth mode.
-/// False when the file is missing, unreadable, or in API-key mode.
+/// True when Codex should remain on its native/Codex-backend auth rail.
+///
+/// Codex treats a legacy file without `auth_mode` as ChatGPT auth unless it
+/// contains `OPENAI_API_KEY`. Mirror that fallback: otherwise browser OAuth
+/// tokens get sent to the API-key `/v1` rail and OpenAI rejects them with a
+/// misleading `api.responses.write` scope error (#1685). Missing, unreadable,
+/// malformed, or unknown auth state also stays native; only positive API-key
+/// evidence may select the `/v1` rail.
 pub(crate) fn auth_is_chatgpt(codex_dir: &Path) -> bool {
     let Ok(content) = std::fs::read_to_string(codex_dir.join("auth.json")) else {
-        return false;
+        return true;
     };
     let Ok(doc) = serde_json::from_str::<serde_json::Value>(&content) else {
-        return false;
+        return true;
     };
-    let Some(mode) = doc.get("auth_mode").and_then(|v| v.as_str()) else {
-        return false;
-    };
-    let normalized = mode
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .collect::<String>()
-        .to_ascii_lowercase();
-    matches!(
-        normalized.as_str(),
-        "chatgpt" | "chatgptauthtokens" | "personalaccesstoken" | "agentidentity"
-    )
+    match doc.get("auth_mode").and_then(|v| v.as_str()) {
+        Some(mode) => {
+            let normalized = mode
+                .chars()
+                .filter(char::is_ascii_alphanumeric)
+                .collect::<String>()
+                .to_ascii_lowercase();
+            !matches!(
+                normalized.as_str(),
+                "apikey" | "bedrockapikey" | "bedrockaccesskeys"
+            )
+        }
+        None => doc
+            .get("OPENAI_API_KEY")
+            .and_then(|v| v.as_str())
+            .is_none_or(|v| v.trim().is_empty()),
+    }
 }

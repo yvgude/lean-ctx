@@ -637,7 +637,16 @@ fn auth_is_chatgpt_detects_login_mode() {
     let codex_dir = dir.path().join(".codex");
     std::fs::create_dir_all(&codex_dir).unwrap();
 
-    assert!(!auth_is_chatgpt(&codex_dir), "no auth.json => not chatgpt");
+    assert!(
+        auth_is_chatgpt(&codex_dir),
+        "unknown auth must stay off the API-key rail"
+    );
+
+    std::fs::write(codex_dir.join("auth.json"), "not json").unwrap();
+    assert!(
+        auth_is_chatgpt(&codex_dir),
+        "malformed auth must stay off the API-key rail"
+    );
 
     std::fs::write(
         codex_dir.join("auth.json"),
@@ -653,7 +662,32 @@ fn auth_is_chatgpt_detects_login_mode() {
     .unwrap();
     assert!(auth_is_chatgpt(&codex_dir), "chatgpt mode => true");
 
-    for mode in ["chatgptAuthTokens", "personalAccessToken", "agentIdentity"] {
+    std::fs::write(
+        codex_dir.join("auth.json"),
+        r#"{"tokens":{"access_token":"x"}}"#,
+    )
+    .unwrap();
+    assert!(
+        auth_is_chatgpt(&codex_dir),
+        "legacy browser login without auth_mode => chatgpt"
+    );
+
+    std::fs::write(
+        codex_dir.join("auth.json"),
+        r#"{"OPENAI_API_KEY":"sk-test"}"#,
+    )
+    .unwrap();
+    assert!(
+        !auth_is_chatgpt(&codex_dir),
+        "legacy API key without auth_mode => not chatgpt"
+    );
+
+    for mode in [
+        "chatgptAuthTokens",
+        "headers",
+        "personalAccessToken",
+        "agentIdentity",
+    ] {
         std::fs::write(
             codex_dir.join("auth.json"),
             format!(r#"{{"auth_mode":"{mode}","tokens":{{"access_token":"x"}}}}"#),
