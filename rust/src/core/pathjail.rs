@@ -7,6 +7,8 @@ use crate::core::error::PathJailError;
 /// never-matching prefix and concluded the whole option was broken (GH #392).
 /// Unset variables are left verbatim (and warned about) so the entry fails
 /// loudly in `lean-ctx doctor` instead of silently matching something else.
+/// `HOME` falls back to the platform home directory when the environment
+/// variable is absent, as is common in native Windows shells.
 pub fn expand_user_path(raw: &str) -> PathBuf {
     let mut s = raw.to_string();
 
@@ -34,6 +36,11 @@ pub fn expand_user_path(raw: &str) -> PathBuf {
         }
         if let Ok(val) = std::env::var(&name) {
             s.replace_range(start..start + token_len, &val);
+        } else if name == "HOME"
+            && let Some(home) = dirs::home_dir()
+        {
+            let home = home.to_string_lossy();
+            s.replace_range(start..start + token_len, home.as_ref());
         } else {
             tracing::warn!(
                 "allow_paths/extra_roots entry '{raw}' references unset variable ${name} — entry will never match"
@@ -1009,6 +1016,32 @@ mod tests {
         crate::test_env::remove_var("LEAN_CTX_TEST_SUB");
         // Absolute paths pass through untouched.
         assert_eq!(expand_user_path("/etc"), PathBuf::from("/etc"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn expand_user_path_home_falls_back_when_env_is_unset() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
+        let expected_home = dirs::home_dir().expect("home dir");
+        let previous_home = std::env::var_os("HOME");
+
+        struct RestoreHome(Option<std::ffi::OsString>);
+
+        impl Drop for RestoreHome {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(value) => crate::test_env::set_var("HOME", value),
+                    None => crate::test_env::remove_var("HOME"),
+                }
+            }
+        }
+
+        let _restore_home = RestoreHome(previous_home);
+        crate::test_env::remove_var("HOME");
+
+        assert_eq!(std::env::var_os("HOME"), None);
+        assert_eq!(expand_user_path("$HOME/code"), expected_home.join("code"));
+        assert_eq!(expand_user_path("${HOME}/code"), expected_home.join("code"));
     }
 
     #[test]
