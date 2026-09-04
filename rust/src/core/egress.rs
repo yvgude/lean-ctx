@@ -223,6 +223,32 @@ mod tests {
     }
 
     #[test]
+    fn block_secrets_distinguishes_repository_numbers_from_phones() {
+        let c = cfg(&[], true);
+        for content in [
+            "fixes #1234",
+            "run 17384920156",
+            "port 8069",
+            "at 14:22:05 UTC",
+            "pattern {0,120} bound",
+        ] {
+            assert_eq!(c.check_content(content, &[]), None, "{content}");
+        }
+        for content in [
+            "call +14155552671",
+            "phone: 6123386000",
+            "call 612-338-6000",
+            "call (612) 338-6000",
+        ] {
+            assert_eq!(
+                c.check_content(content, &[]).as_deref(),
+                Some("pii:phone"),
+                "{content}"
+            );
+        }
+    }
+
+    #[test]
     fn block_secrets_catches_redaction_pattern() {
         let c = cfg(&[], true);
         let redaction = vec![("employee_id".to_string(), Regex::new(r"EMP-\d{4}").unwrap())];

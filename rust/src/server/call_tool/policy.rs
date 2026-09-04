@@ -50,7 +50,8 @@ impl LeanCtxServer {
                     policy_guard::audit_egress(guard_name, &reason);
                     return Some(CallToolResult::success(vec![ContentBlock::text(format!(
                         "[POLICY BLOCKED] {kind} blocked by context policy pack egress rule \
-                         ({reason}). Adjust .lean-ctx/policy.toml to proceed."
+                         ({reason}). Review the effective local or organization \
+                         egress policy."
                     ))]));
                 }
                 if let Some(max) = active.egress.max_writes_per_min
