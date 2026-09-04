@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [3.10.1] — 2026-09-04
+
 ### Fixed — phone DLP confused repository numbers with phone numbers (#1682)
 
 - The phone detector no longer treats ordinary bare numbers such as issue and
@@ -111,8 +113,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - A sibling test pins both directions, so the relaxation cannot quietly mute the
   invariant. Whether an unrelated writer touches the data directory without
   `test_env_lock()` remains open and is unaffected by this.
-
-## [3.10.1] — 2026-09-01
 
 ### Fixed — the tee refusal contradicted itself (#1671)
 
