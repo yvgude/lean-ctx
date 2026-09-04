@@ -613,7 +613,9 @@ fn trigger_lazy_graph_build(project_root: &str) {
     if cfg!(test) {
         return;
     }
-    if GRAPH_BUILD_TRIGGERED.swap(true, Ordering::SeqCst) {
+    // Preserve the cheap post-trigger fast path, but do not claim the latch
+    // until the root has been validated as an actual project.
+    if GRAPH_BUILD_TRIGGERED.load(Ordering::SeqCst) {
         return;
     }
     let root = Path::new(project_root);
@@ -622,6 +624,9 @@ fn trigger_lazy_graph_build(project_root: &str) {
     let is_project = crate::core::pathutil::has_project_marker(root)
         || crate::core::pathutil::has_multi_repo_children(root);
     if !is_project {
+        return;
+    }
+    if GRAPH_BUILD_TRIGGERED.swap(true, Ordering::SeqCst) {
         return;
     }
     // #682.2: build via the same reliable worker that builds the JSON index
