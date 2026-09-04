@@ -84,11 +84,16 @@ fn rules() -> &'static [PiiRule] {
                 re: Regex::new(r"\d{3}-\d{2}-\d{4}").expect("valid SSN regex"),
                 validate: |_| true,
             },
-            // E.164 phone number (up to 15 digits, with an optional plus sign).
+            // Phone candidates: explicit E.164 or commonly formatted local
+            // numbers. Shape/context validation below rejects ordinary bare
+            // repository numbers such as years, issue IDs, ports, and counts.
             // This runs after structured identifiers to avoid overlapping matches.
             PiiRule {
                 kind: PiiKind::Phone,
-                re: Regex::new(r"\+?[1-9]\d{1,14}").expect("valid phone regex"),
+                re: Regex::new(
+                    r"(?:\+?[1-9]\d{0,2}[ .-])?(?:\(?\d{2,4}\)?[ .-]){1,3}\d{2,4}|\+?[1-9]\d{1,14}",
+                )
+                .expect("valid phone regex"),
                 validate: |_| true,
             },
         ]
@@ -108,11 +113,11 @@ pub fn redact(text: &str) -> (String, Vec<(&'static str, usize)>) {
             .re
             .replace_all(&source, |caps: &Captures| {
                 let m = caps.get(0).map_or("", |g| g.as_str());
-                let is_phone_substring = rule.kind == PiiKind::Phone
-                    && caps
+                let valid_phone_shape = rule.kind != PiiKind::Phone
+                    || caps
                         .get(0)
-                        .is_some_and(|matched| !phone_match_is_delimited(&source, matched));
-                if (rule.validate)(m) && !is_phone_substring {
+                        .is_some_and(|matched| phone_match_is_valid(&source, matched));
+                if (rule.validate)(m) && valid_phone_shape {
                     n += 1;
                     format!("[REDACTED:{}]", rule.kind.as_str())
                 } else {
@@ -127,15 +132,84 @@ pub fn redact(text: &str) -> (String, Vec<(&'static str, usize)>) {
     (out, counts)
 }
 
-/// An E.164 candidate must not be a substring of another structured identifier.
-/// This preserves the checksum guardrails for invalid cards, IBANs, and AHV IDs.
-fn phone_match_is_delimited(text: &str, matched: regex::Match<'_>) -> bool {
-    let before = text.as_bytes().get(matched.start().wrapping_sub(1));
-    let after = text.as_bytes().get(matched.end());
-    [before, after]
+/// Accept only phone-shaped candidates, not arbitrary digit runs. Explicit
+/// E.164 numbers are sufficient by themselves. Other candidates need familiar
+/// formatting or a nearby phone label, and every candidate must carry enough
+/// digits to be a plausible subscriber number.
+fn phone_match_is_valid(text: &str, matched: regex::Match<'_>) -> bool {
+    let before = text[..matched.start()].chars().next_back();
+    let after = text[matched.end()..].chars().next();
+    let delimited = [before, after]
         .into_iter()
         .flatten()
-        .all(|byte| !byte.is_ascii_alphanumeric() && !matches!(byte, b'.' | b'-'))
+        .all(|character| !character.is_alphanumeric() && !matches!(character, '.' | '-'));
+    if !delimited {
+        return false;
+    }
+    if overlaps_checksum_identifier(text, &matched) {
+        return false;
+    }
+
+    let candidate = matched.as_str();
+    let digit_count = candidate.bytes().filter(u8::is_ascii_digit).count();
+    if !(7..=15).contains(&digit_count) {
+        return false;
+    }
+    if candidate.starts_with('+') {
+        return true;
+    }
+    if phone_label_near(text, &matched) {
+        return true;
+    }
+
+    // Without an explicit prefix or label, keep the accepted shape narrow.
+    // This avoids reclassifying failed checksum identifiers or date/build
+    // sequences while covering the common formats reported in #1682.
+    let groups = candidate
+        .split(|character: char| !character.is_ascii_digit())
+        .filter(|group| !group.is_empty())
+        .map(str::len)
+        .collect::<Vec<_>>();
+    matches!(groups.as_slice(), [3, 3, 4] | [3 | 2, 3, 2, 2] | [2, 4, 4])
+}
+
+fn overlaps_checksum_identifier(text: &str, phone: &regex::Match<'_>) -> bool {
+    rules()
+        .iter()
+        .filter(|rule| matches!(rule.kind, PiiKind::ChAhv | PiiKind::Iban | PiiKind::Card))
+        .any(|rule| {
+            rule.re.find_iter(text).any(|identifier| {
+                phone.start() < identifier.end() && identifier.start() < phone.end()
+            })
+        })
+}
+
+fn phone_label_near(text: &str, matched: &regex::Match<'_>) -> bool {
+    const LABELS: &[&str] = &["call", "fax", "mobile", "phone", "tel", "telephone"];
+    const CONTEXT_CHARS: usize = 24;
+    let before_context = text[..matched.start()]
+        .chars()
+        .rev()
+        .take(CONTEXT_CHARS)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect::<String>();
+    let after_context = text[matched.end()..]
+        .chars()
+        .take(CONTEXT_CHARS)
+        .collect::<String>();
+    let before = before_context
+        .rsplit(|character: char| !character.is_ascii_alphabetic())
+        .find(|part| !part.is_empty())
+        .unwrap_or("");
+    let after = after_context
+        .split(|character: char| !character.is_ascii_alphabetic())
+        .find(|part| !part.is_empty())
+        .unwrap_or("");
+    LABELS
+        .iter()
+        .any(|label| before.eq_ignore_ascii_case(label) || after.eq_ignore_ascii_case(label))
 }
 
 /// Count validated PII matches per class without rewriting (for block
@@ -277,6 +351,44 @@ mod tests {
         let (out, counts) = redact("call +14155552671");
         assert_eq!(out, "call [REDACTED:phone]");
         assert_eq!(counts, vec![("phone", 1)]);
+    }
+
+    #[test]
+    fn phone_detection_requires_phone_shape_or_context() {
+        for text in [
+            "aa 25 bb",
+            "aa 2026 bb",
+            "fixes #1234",
+            "run 17384920156",
+            "port 8069",
+            "at 14:22:05 UTC",
+            "pattern {0,120} bound",
+            "lean-ctx 3.10.0",
+            "aa 2026-08-31 bb",
+            "build 2026-08-31 1234",
+            "invalid AHV 756 9217 0769 86",
+            "invalid card 1234-5678-9012-3",
+            "invalid card 123 456 7890 1234",
+            "invalid IBAN CH00 0076 2011 6238 5295 7",
+            "unicode-adjacent é612-338-6000",
+        ] {
+            assert!(detect(text).is_empty(), "false positive: {text}");
+        }
+
+        for text in [
+            "call +14155552671",
+            "call 6123386000",
+            "phone: 6123386000",
+            "aa 612-338-6000 bb",
+            "aa 612.338.6000 bb",
+            "aa +1 612-338-6000 bb",
+            "aa (612) 338-6000 bb",
+        ] {
+            assert!(
+                detect(text).iter().any(|(class, _)| *class == "phone"),
+                "missed phone: {text}"
+            );
+        }
     }
 
     #[test]

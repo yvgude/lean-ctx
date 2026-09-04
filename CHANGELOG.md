@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — phone DLP confused repository numbers with phone numbers (#1682)
+
+- The phone detector no longer treats ordinary bare numbers such as issue and
+  CI identifiers, ports, years, timestamps, counts, or regex bounds as phone
+  numbers. A candidate now needs an explicit international prefix, familiar
+  phone formatting, or nearby phone-specific context.
+- Common formatted numbers such as `612-338-6000`, `+1 612-338-6000`, and
+  `(612) 338-6000` are detected, while invalid checksum-protected identifiers
+  remain untouched instead of being reclassified as phones.
+- Egress remains fail-closed when `egress.block_secrets` is active. Its refusal
+  now points to the effective local or organization policy instead of implying
+  that a project-local file can always override an organization floor.
+
 ### Fixed — lines vanished mid-result behind a content-shaped marker (#1679)
 
 - `gh issue view … --comments` came back with 34 lines removed from the middle,
