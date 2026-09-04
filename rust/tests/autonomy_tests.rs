@@ -33,35 +33,115 @@ fn make_disabled_state() -> AutonomyState {
 }
 
 #[test]
+#[serial_test::serial]
 fn session_lifecycle_fires_once() {
     let state = make_state();
     let mut cache = SessionCache::new();
 
-    let _first = session_lifecycle_pre_hook(
+    let project = tempfile::tempdir().expect("project tempdir");
+    let src = project.path().join("src");
+    std::fs::create_dir_all(&src).expect("create src dir");
+    std::fs::write(src.join("lib.rs"), "pub fn answer() -> usize { 42 }\n")
+        .expect("write project fixture");
+
+    let root = project.path().to_string_lossy().to_string();
+
+    let graph = lean_ctx::core::graph_provider::open_or_build(&root);
+    assert!(graph.is_some(), "test setup must prewarm the graph");
+    drop(graph);
+
+    let first = session_lifecycle_pre_hook(
         &state,
         "ctx_read",
         &mut cache,
-        Some("fix auth bug"),
-        Some("/tmp/test-project"),
+        None,
+        Some(&root),
         CrpMode::Tdd,
+    );
+
+    assert!(
+        first
+            .as_deref()
+            .is_some_and(|out| out.contains("--- AUTO CONTEXT ---")),
+        "warm graph must inject overview auto context on the first eligible call"
+    );
+    assert!(
+        state.session_initialized.load(Ordering::SeqCst),
+        "flag must be set after successful warm-graph initialization"
     );
 
     let second = session_lifecycle_pre_hook(
         &state,
         "ctx_read",
         &mut cache,
-        Some("fix auth bug"),
-        Some("/tmp/test-project"),
+        None,
+        Some(&root),
         CrpMode::Tdd,
     );
 
     assert!(
-        state.session_initialized.load(Ordering::SeqCst),
-        "flag must be set after first call"
+        second.is_none(),
+        "second call must not inject auto context again"
     );
-    assert!(second.is_none(), "second call must return None");
 }
 
+#[test]
+#[serial_test::serial]
+fn session_lifecycle_warm_graph_with_task_fires_once() {
+    let state = make_state();
+    let mut cache = SessionCache::new();
+
+    let project = tempfile::tempdir().expect("project tempdir");
+    let src = project.path().join("src");
+    std::fs::create_dir_all(&src).expect("create src dir");
+    std::fs::write(
+        src.join("auth.rs"),
+        "pub fn authenticate_user() -> bool { true }\n",
+    )
+    .expect("write project fixture");
+
+    let root = project.path().to_string_lossy().to_string();
+
+    let graph = lean_ctx::core::graph_provider::open_or_build(&root);
+    assert!(graph.is_some(), "test setup must prewarm the graph");
+    drop(graph);
+
+    let task = "fix authentication in src/auth.rs authenticate_user";
+
+    let first = session_lifecycle_pre_hook(
+        &state,
+        "ctx_search",
+        &mut cache,
+        Some(task),
+        Some(&root),
+        CrpMode::Tdd,
+    );
+
+    assert!(
+        first
+            .as_deref()
+            .is_some_and(|out| out.contains("--- AUTO CONTEXT ---")),
+        "warm graph with a relevant task must inject preload auto context"
+    );
+    assert!(
+        state.session_initialized.load(Ordering::SeqCst),
+        "successful task preload must claim the one-shot latch"
+    );
+
+    let second = session_lifecycle_pre_hook(
+        &state,
+        "ctx_search",
+        &mut cache,
+        Some(task),
+        Some(&root),
+        CrpMode::Tdd,
+    );
+
+    assert!(
+        second.is_none(),
+        "task preload must run at most once per session"
+    );
+}
 #[test]
 fn session_lifecycle_skips_without_project_root() {
     let state = make_state();
@@ -278,5 +358,63 @@ fn enrich_after_read_no_index() {
     assert!(
         result.related_hint.is_none(),
         "must return None when no project index exists"
+    );
+}
+
+#[test]
+fn session_lifecycle_cold_graph_without_task_keeps_retry_eligible() {
+    let mut state = make_state();
+    state.config.enabled = true;
+    state.config.auto_preload = true;
+
+    let project = tempfile::tempdir().expect("project tempdir");
+    let root = project.path().to_string_lossy().to_string();
+    let mut cache = SessionCache::new();
+
+    let result = session_lifecycle_pre_hook(
+        &state,
+        "ctx_search",
+        &mut cache,
+        None,
+        Some(&root),
+        CrpMode::Tdd,
+    );
+
+    assert!(
+        result.is_none(),
+        "cold graph must not synchronously inject auto context"
+    );
+    assert!(
+        !state.session_initialized.load(Ordering::SeqCst),
+        "cold graph must keep the session eligible for a later auto-context retry"
+    );
+}
+
+#[test]
+fn session_lifecycle_cold_graph_with_task_keeps_retry_eligible() {
+    let mut state = make_state();
+    state.config.enabled = true;
+    state.config.auto_preload = true;
+
+    let project = tempfile::tempdir().expect("project tempdir");
+    let root = project.path().to_string_lossy().to_string();
+    let mut cache = SessionCache::new();
+
+    let result = session_lifecycle_pre_hook(
+        &state,
+        "ctx_search",
+        &mut cache,
+        Some("fix authentication bug"),
+        Some(&root),
+        CrpMode::Tdd,
+    );
+
+    assert!(
+        result.is_none(),
+        "cold graph must not synchronously inject task preload"
+    );
+    assert!(
+        !state.session_initialized.load(Ordering::SeqCst),
+        "cold graph must keep the session eligible for a later task-preload retry"
     );
 }

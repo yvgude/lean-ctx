@@ -120,6 +120,15 @@ pub fn session_lifecycle_pre_hook(
         return None;
     }
 
+    // Automatic context is opportunistic: a cold graph must never put the
+    // triggering interactive tool call on the synchronous graph-build path.
+    // `open_best_effort` starts the lazy build and returns None until ready;
+    // keep the one-shot latch open so a later tool call can retry.
+    if crate::core::graph_provider::open_best_effort(&root).is_none() {
+        state.session_initialized.store(false, Ordering::SeqCst);
+        return None;
+    }
+
     let (result, usable) = if let Some(task_desc) = task {
         crate::tools::ctx_preload::handle(cache, task_desc, Some(&root), crp_mode)
     } else {
