@@ -439,7 +439,10 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_IO",
 ] }
 
-[target.'cfg(not(windows))'.dependencies]
+[target.'cfg(all(not(windows), not(target_env = "musl")))'.dependencies]
+# jemalloc's bundled C build requires atomics that are not consistently exposed
+# by the supported musl toolchains. Musl releases deliberately use the system
+# allocator; glibc and macOS releases retain jemalloc.
 tikv-jemallocator = { version = "0.7", optional = true }
 tikv-jemalloc-ctl = { version = "0.7", optional = true }
 

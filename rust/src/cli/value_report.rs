@@ -1,6 +1,7 @@
 //! `lean-ctx value-report` — local ValueGate outcome and cost report.
 
 use crate::core::value_gate::{report, store::ValueGateStore};
+use std::path::Path;
 
 /// Entry point for `lean-ctx value-report [--live] [--format table|markdown|json] [--last N] [--since YYYY-MM-DD]`.
 pub(crate) fn cmd_value_report(args: &[String]) {
@@ -43,7 +44,11 @@ pub(crate) fn cmd_value_report(args: &[String]) {
 }
 
 fn tasks_from_disk() -> Vec<crate::core::value_gate::ValueAssessment> {
-    let mut tasks = ValueGateStore::load_from_disk();
+    tasks_from_path(&ValueGateStore::persist_path())
+}
+
+fn tasks_from_path(path: &Path) -> Vec<crate::core::value_gate::ValueAssessment> {
+    let mut tasks = ValueGateStore::load_from_path(path);
     tasks.reverse();
     tasks
 }
@@ -132,10 +137,11 @@ mod tests {
     }
     #[test]
     fn test_cli_reads_disk() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("value-assessments.jsonl");
         let task = sample().tasks.pop().unwrap();
-        ValueGateStore::append_to_disk(&task).unwrap();
-        assert_eq!(tasks_from_disk(), vec![task]);
+        ValueGateStore::append_to_path(&path, &task).unwrap();
+        assert_eq!(tasks_from_path(&path), vec![task]);
     }
 
     #[test]
