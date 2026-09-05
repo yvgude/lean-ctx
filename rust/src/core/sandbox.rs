@@ -423,6 +423,7 @@ const SANDBOX_ENV_ALLOWLIST: &[&str] = &[
     "TEMP",
     "SYSTEMROOT",
     "WINDIR",
+    "SystemDrive",
 ];
 
 fn apply_sandbox_env(cmd: &mut Command, runtime: &RuntimeConfig) {
@@ -810,6 +811,34 @@ pub mod tests {
         let result = execute("python", &huge, None);
         assert_eq!(result.exit_code, 1);
         assert!(result.stderr.contains("exceeds the"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn sandbox_env_preserves_system_drive() {
+        let expected =
+            std::env::var_os("SystemDrive").expect("SystemDrive must be defined on Windows");
+
+        let runtime = RuntimeConfig {
+            command: "cmd".to_string(),
+            args: Vec::new(),
+            needs_temp_file: false,
+            file_extension: "bat".to_string(),
+            env: HashMap::new(),
+        };
+
+        let mut cmd = Command::new("cmd");
+        apply_sandbox_env(&mut cmd, &runtime);
+
+        let preserved = cmd.get_envs().any(|(key, value)| {
+            key.to_string_lossy().eq_ignore_ascii_case("SystemDrive")
+                && value == Some(expected.as_os_str())
+        });
+
+        assert!(
+            preserved,
+            "Windows sandbox child environment must preserve SystemDrive"
+        );
     }
 
     #[test]
