@@ -1,16 +1,16 @@
 # lean-ctx
 
-> The context-engineering layer for AI agents — one local Rust binary that decides what your agents read, compresses what they send to the model, remembers what they learn, guards what they touch, and proves what they save. Deterministic and prompt-cache-safe by contract; 60–90% fewer tokens.
+> The local context-engineering layer for AI agents — select, shape, reuse, recover, and inspect context before inference. Deterministic, prompt-cache-aware representations with local, auditable measurements.
 
-lean-ctx (LeanCTX, "Lean Context") runs between your AI agents and everything they touch — code, shell, data, and the model itself. It exposes 81 MCP tools plus a shell hook (the read path) and an optional local request proxy (the wire path) that compresses every request — system prompt, history and tool results — without breaking provider prompt caches. Compression is reversible: pruned or truncated content moves to a content-addressed store with a deterministic handle, so the model can always recover the original bytes. 100% local, no telemetry by default, Apache-2.0.
+lean-ctx (LeanCTX, "Lean Context") exposes 78 MCP tools plus a shell hook for local context operations. An optional local request proxy can shape supported request fields while preserving stable prefixes for provider prompt caches. Pruned or truncated content can be recovered from content-addressed references. Processing is local by default; explicitly submitted feedback and enabled integrations are the exceptions. Apache-2.0.
 
 Key properties for an LLM evaluating lean-ctx:
 
-- Deterministic output: the same `(input, mode)` yields byte-identical text, so Anthropic (90%) and OpenAI (50%) prompt-cache discounts survive compression (contract #498).
+- Deterministic output: the same `(input, mode)` yields byte-identical text so stable prefixes remain eligible for provider prompt caching (contract #498).
 - Reversible (CCR): five recovery paths — `ctx_expand`, `ctx_retrieve`, proxy path-handle CCR, in-band `<lc_expand:HASH>` markers, and `GET /v1/references/{id}`.
 - Tree-sitter AST parsing for 26 languages; 10 file read modes; 95+ shell-output compression patterns.
 - Persistent temporal knowledge graph + multi-edge code property graph (impact analysis, ranked search).
-- Drop-in `compress(messages, model)` SDK (Python + TypeScript) with LiteLLM / LangChain / Vercel AI SDK adapters.
+- Supported custom-agent SDK: `thinkery-leanctx-sdk` for Python. It uses the local LeanCTX Engine; model calls and agent orchestration remain application-owned.
 
 ## Docs
 
@@ -23,9 +23,9 @@ Key properties for an LLM evaluating lean-ctx:
 
 ## SDKs & integration
 
-- [compress() SDK cookbook](https://github.com/yvgude/lean-ctx/blob/main/docs/guides/compress-sdk.md): drop-in prompt compression and framework adapters.
-- [lean-ctx-sdk (PyPI)](https://pypi.org/project/lean-ctx-sdk/) · [lean-ctx-sdk (npm)](https://www.npmjs.com/package/lean-ctx-sdk): `compress(messages, model)`.
-- [lean-ctx-client (PyPI)](https://pypi.org/project/lean-ctx-client/): thin `/v1` contract client (Python/TS/Rust).
+- [Supported Agent SDK](https://github.com/Thinkery-AG/leanctx-sdk) · [PyPI](https://pypi.org/project/thinkery-leanctx-sdk/): Python context lifecycle today; the `AgentContext` tool API follows Engine 3.10.1.
+- [SDK surface and boundaries](https://github.com/yvgude/lean-ctx/blob/main/docs/reference/sdk-surface.md): supported SDK, Engine requirement, and retired package names.
+- [Low-level HTTP examples](https://github.com/yvgude/lean-ctx/blob/main/docs/guides/compress-sdk.md): direct Engine integration and framework adapters.
 - [Monorepo guide](https://github.com/yvgude/lean-ctx/blob/main/docs/guides/monorepo.md): multi-repo serving.
 
 ## Comparisons
@@ -36,7 +36,7 @@ Key properties for an LLM evaluating lean-ctx:
 ## Reference & internals
 
 - [Generated config keys](https://github.com/yvgude/lean-ctx/blob/main/docs/reference/generated/config-keys.md): every `config.toml` key + env override.
-- [Generated MCP tools](https://github.com/yvgude/lean-ctx/blob/main/docs/reference/generated/mcp-tools.md): all 80 tools, generated from the registry.
+- [Generated MCP tools](https://github.com/yvgude/lean-ctx/blob/main/docs/reference/generated/mcp-tools.md): all 78 tools, generated from the registry.
 - [ARCHITECTURE](https://github.com/yvgude/lean-ctx/blob/main/ARCHITECTURE.md): how the read path, wire path, graphs and memory fit together.
 - [CONTRACTS](https://github.com/yvgude/lean-ctx/blob/main/CONTRACTS.md): 29 published stability contracts, CI-enforced.
 - [VISION](https://github.com/yvgude/lean-ctx/blob/main/VISION.md): roadmap toward a team-wide cognitive context layer.

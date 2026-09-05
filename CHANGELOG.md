@@ -5,7 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-## [3.10.1] — 2026-09-04
+## [3.10.1] — 2026-09-05
+
+### Fixed — Windows paths, sandbox environment, and daemon fallbacks
+
+- Path expansion now falls back to the platform home directory when Windows
+  does not define `HOME` (#1691).
+- Context Kernel feedback honors the configured cache directory instead of
+  constructing a HOME-relative path that could escape into the working tree
+  on Windows (#1693).
+- Sandboxed Windows processes preserve `SystemDrive`, preventing literal
+  `%SystemDrive%` directories from appearing in the project (#1696).
+- One-shot reads and `lean-ctx ls` recover safely when a shared daemon is
+  rooted in another project; genuine standalone directory errors now use
+  stderr and a nonzero exit status (#1695).
+- Cross-platform process and command-wrapping regressions no longer depend on
+  Unix utilities or POSIX-only rendering assumptions (#1698, #1700).
+- Git test fixtures ignore global commit-signing policy, keeping non-interactive
+  contributor test runs deterministic (#1703).
+- Public MCP-tool counts now match the generated registry reference: 78;
+  unscoped savings claims were replaced with local measurement guidance, and
+  SDK links now identify `thinkery-leanctx-sdk` as the supported Agent SDK.
 
 ### Fixed — Codex browser login was sent to the API-key endpoint (#1685)
 
