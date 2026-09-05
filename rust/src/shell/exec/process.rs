@@ -185,14 +185,49 @@ fn synthetic_failure_status() -> std::process::ExitStatus {
 
 #[cfg(test)]
 mod tests {
+    const OUTPUT_HELPER_ENV: &str = "LEAN_CTX_TEST_OUTPUT_HELPER";
+    const OUTPUT_HELPER_TEST: &str = "shell::exec::process::tests::wait_with_limits_output_helper";
+
     #[test]
-    fn wait_with_limits_captures_output() {
-        let child = std::process::Command::new("echo")
-            .arg("hello")
+    #[ignore = "subprocess helper for wait_with_limits tests"]
+    fn wait_with_limits_output_helper() {
+        use std::io::Write as _;
+
+        match std::env::var(OUTPUT_HELPER_ENV).as_deref() {
+            Ok("stdout-small") => {
+                std::io::stdout().write_all(b"hello\n").unwrap();
+            }
+            Ok("stdout-forever") => {
+                let chunk = [b'a'; 8192];
+                let mut stream = std::io::stdout().lock();
+                while stream.write_all(&chunk).is_ok() {}
+            }
+            Ok("stderr-forever") => {
+                let chunk = [b'a'; 8192];
+                let mut stream = std::io::stderr().lock();
+                while stream.write_all(&chunk).is_ok() {}
+            }
+            Ok("sleep") => {
+                std::thread::sleep(std::time::Duration::from_secs(60));
+            }
+            Ok(other) => panic!("unknown output helper mode: {other}"),
+            Err(_) => panic!("missing {OUTPUT_HELPER_ENV}"),
+        }
+    }
+
+    fn spawn_output_helper(mode: &str) -> std::process::Child {
+        std::process::Command::new(std::env::current_exe().unwrap())
+            .args([OUTPUT_HELPER_TEST, "--exact", "--ignored", "--nocapture"])
+            .env(OUTPUT_HELPER_ENV, mode)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
-            .unwrap();
+            .unwrap()
+    }
+
+    #[test]
+    fn wait_with_limits_captures_output() {
+        let child = spawn_output_helper("stdout-small");
 
         let output = super::wait_with_limits(child, 1024, std::time::Duration::from_secs(5), false);
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -205,13 +240,7 @@ mod tests {
 
     #[test]
     fn wait_with_limits_truncates_large_output() {
-        // Generate ~100 KB of output, limit to 1 KB
-        let child = std::process::Command::new("sh")
-            .args(["-c", "yes 'aaaa' | head -25000"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
+        let child = spawn_output_helper("stdout-forever");
 
         let output =
             super::wait_with_limits(child, 1024, std::time::Duration::from_secs(10), false);
@@ -238,12 +267,7 @@ mod tests {
 
     #[test]
     fn wait_with_limits_truncates_large_stderr() {
-        let child = std::process::Command::new("sh")
-            .args(["-c", "yes 'aaaaaaaaaa' | head -200000 >&2"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
+        let child = spawn_output_helper("stderr-forever");
 
         let output = super::wait_with_limits(
             child,
@@ -262,11 +286,7 @@ mod tests {
 
     #[test]
     fn wait_with_limits_kills_promptly_on_truncation() {
-        let child = std::process::Command::new("yes")
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
+        let child = spawn_output_helper("stdout-forever");
 
         let start = std::time::Instant::now();
         let output =
@@ -283,12 +303,7 @@ mod tests {
 
     #[test]
     fn wait_with_limits_timeout_kills_process() {
-        let child = std::process::Command::new("sleep")
-            .arg("60")
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
+        let child = spawn_output_helper("sleep");
 
         let start = std::time::Instant::now();
         let output =
