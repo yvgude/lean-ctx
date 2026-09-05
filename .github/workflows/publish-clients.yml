@@ -35,8 +35,6 @@ jobs:
           registry-url: https://registry.npmjs.org
       - name: Build, test, publish
         working-directory: cookbook
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           npm ci

@@ -79,7 +79,7 @@ class SecretExpiryTests(unittest.TestCase):
             [item["name"] for item in policy["secrets"]],
             [
                 "AUR_SSH_KEY", "CARGO_REGISTRY_TOKEN", "CLA_SIGNATURES_TOKEN",
-                "HOMEBREW_GITHUB_TOKEN", "NPM_TOKEN", "OVSX_PAT", "VSCE_PAT",
+                "HOMEBREW_SSH_KEY",
                 "TWITTER_ACCESS_SECRET", "TWITTER_ACCESS_TOKEN", "TWITTER_CONSUMER_KEY",
                 "TWITTER_CONSUMER_SECRET",
             ],
