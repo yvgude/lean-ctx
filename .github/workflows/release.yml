@@ -659,14 +659,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Clone and generate binary formula
+        env:
+          HOMEBREW_SSH_KEY: ${{ secrets.HOMEBREW_SSH_KEY }}
         run: |
+          set -euo pipefail
           VERSION="${{ steps.checksums.outputs.version }}"
           AARCH64_DARWIN_SHA="${{ steps.checksums.outputs.aarch64_darwin_sha }}"
           X86_64_DARWIN_SHA="${{ steps.checksums.outputs.x86_64_darwin_sha }}"
           AARCH64_LINUX_SHA="${{ steps.checksums.outputs.aarch64_linux_sha }}"
           X86_64_LINUX_SHA="${{ steps.checksums.outputs.x86_64_linux_sha }}"
 
-          git clone "https://x-access-token:${HOMEBREW_TOKEN}@github.com/yvgude/homebrew-lean-ctx.git"
+          KEY_DIR="${RUNNER_TEMP}/homebrew-ssh"
+          install -d -m 700 "${KEY_DIR}"
+          printf '%s\n' "${HOMEBREW_SSH_KEY}" > "${KEY_DIR}/id_ed25519"
+          chmod 600 "${KEY_DIR}/id_ed25519"
+          printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "${KEY_DIR}/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i ${KEY_DIR}/id_ed25519 -o IdentitiesOnly=yes -o UserKnownHostsFile=${KEY_DIR}/known_hosts"
+
+          git clone "git@github.com:yvgude/homebrew-lean-ctx.git"
           cd homebrew-lean-ctx
 
           cat > Formula/lean-ctx.rb <<EOF
@@ -718,9 +728,6 @@ jobs:
           git add Formula/lean-ctx.rb
           git diff --cached --quiet || git commit -m "lean-ctx ${VERSION}"
           git push
-        env:
-          HOMEBREW_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
-
   announce-twitter:
     name: Announce on Twitter
     needs: [release, publish-crates, publish-npm, publish-python-engine, update-homebrew]

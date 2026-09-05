@@ -15,7 +15,7 @@
 # further workflows — the full CI suite (ci.yml: 3-OS matrix, clippy, fmt,
 # deny, ...) then does NOT run automatically. Maintainer opt-in for
 # automatic gating: create a fine-grained PAT as the repo secret DEP_UPDATE_TOKEN
-# (contents:write + pull-requests:write), analogous to HOMEBREW_GITHUB_TOKEN.
+# (contents:write + pull-requests:write), isolated from release credentials.
 # Without a PAT, the smoke step below guards against grossly broken PRs.
 
 name: Dependency Auto-Update
