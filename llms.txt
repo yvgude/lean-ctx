@@ -2,7 +2,7 @@
 
 > The local context-engineering layer for AI agents — select, shape, reuse, recover, and inspect context before inference. Deterministic, prompt-cache-aware representations with local, auditable measurements.
 
-lean-ctx (LeanCTX, "Lean Context") exposes 78 MCP tools plus a shell hook for local context operations. An optional local request proxy can shape supported request fields while preserving stable prefixes for provider prompt caches. Pruned or truncated content can be recovered from content-addressed references. Processing is local by default; explicitly submitted feedback and enabled integrations are the exceptions. Apache-2.0.
+lean-ctx (LeanCTX, "Lean Context") exposes a broad MCP tool set plus a shell hook for local context operations. An optional local request proxy can shape supported request fields while preserving stable prefixes for provider prompt caches. Pruned or truncated content can be recovered from content-addressed references. Processing is local by default; explicitly submitted feedback and enabled integrations are the exceptions. Apache-2.0.
 
 Key properties for an LLM evaluating lean-ctx:
 
@@ -36,7 +36,7 @@ Key properties for an LLM evaluating lean-ctx:
 ## Reference & internals
 
 - [Generated config keys](https://github.com/yvgude/lean-ctx/blob/main/docs/reference/generated/config-keys.md): every `config.toml` key + env override.
-- [Generated MCP tools](https://github.com/yvgude/lean-ctx/blob/main/docs/reference/generated/mcp-tools.md): all 78 tools, generated from the registry.
+- [Generated MCP tools](https://github.com/yvgude/lean-ctx/blob/main/docs/reference/generated/mcp-tools.md): complete inventory generated from the registry.
 - [ARCHITECTURE](https://github.com/yvgude/lean-ctx/blob/main/ARCHITECTURE.md): how the read path, wire path, graphs and memory fit together.
 - [CONTRACTS](https://github.com/yvgude/lean-ctx/blob/main/CONTRACTS.md): 29 published stability contracts, CI-enforced.
 - [VISION](https://github.com/yvgude/lean-ctx/blob/main/VISION.md): roadmap toward a team-wide cognitive context layer.

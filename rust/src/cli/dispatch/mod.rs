@@ -330,11 +330,17 @@ pub fn run() {
                 return;
             }
             "wrap" => {
-                crate::cli::wrap_cmd::cmd_wrap(&rest);
+                let code = crate::cli::wrap_cmd::cmd_wrap(&rest);
+                if code != 0 {
+                    std::process::exit(code);
+                }
                 return;
             }
             "unwrap" => {
-                crate::cli::wrap_cmd::cmd_unwrap(&rest);
+                let code = crate::cli::wrap_cmd::cmd_unwrap(&rest);
+                if code != 0 {
+                    std::process::exit(code);
+                }
                 return;
             }
             "status" => {

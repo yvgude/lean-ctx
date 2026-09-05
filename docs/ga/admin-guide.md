@@ -175,6 +175,10 @@ lean-ctx wrap windsurf
 lean-ctx unwrap cursor
 ```
 
+For Claude Pro/Max OAuth, `wrap claude` registers MCP but adds no LeanCTX proxy
+redirect; existing custom endpoints remain untouched. Configure
+`ANTHROPIC_API_KEY` only when wire-level proxy compression is required.
+
 Use the agent bus when an operator needs accountability for concurrent agents:
 
 ```bash

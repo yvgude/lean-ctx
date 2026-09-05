@@ -2,7 +2,7 @@
 pkgname=lean-ctx
 pkgver=3.9.16
 pkgrel=1
-pkgdesc="Context Engineering Layer for AI Coding — 78 MCP tools, 10 read modes, 95+ shell patterns, persistent knowledge, multi-agent orchestration. Privacy-first, opt-in only."
+pkgdesc="Context Engineering Layer for AI Coding — MCP tools, 10 read modes, 95+ shell patterns, persistent knowledge, multi-agent orchestration. Privacy-first, opt-in only."
 arch=('x86_64' 'aarch64')
 url="https://leanctx.com"
 license=('Apache-2.0')

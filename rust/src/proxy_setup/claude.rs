@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::util::{is_local_lean_ctx_url, is_proxy_reachable};
+use super::util::is_proxy_reachable;
 
 /// Returns true when an Anthropic **API key** is available for the proxy to forward
 /// upstream.
@@ -60,6 +60,49 @@ fn warn_claude_subscription_skip() {
     eprintln!("    Savings on a subscription: use the lean-ctx MCP tools (ctx_read /");
     eprintln!("    ctx_search / ctx_shell). Pay-as-you-go? Set ANTHROPIC_API_KEY, then run:");
     eprintln!("      lean-ctx proxy enable");
+}
+
+/// Remove a Claude redirect only when the caller supplies the exact URL it can
+/// prove lean-ctx previously wrote. Arbitrary local and remote endpoints stay.
+pub(crate) fn repair_claude_subscription_env(home: &Path, owned_url: &str) -> Result<(), String> {
+    use crate::core::config::Config;
+
+    let settings_path = crate::core::editor_registry::claude_state_dir(home).join("settings.json");
+    let existing = match std::fs::read_to_string(&settings_path) {
+        Ok(content) if !content.trim().is_empty() => content,
+        Ok(_) => return Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("read {}: {error}", settings_path.display())),
+    };
+    let mut doc = crate::core::jsonc::parse_jsonc(&existing)
+        .map_err(|error| format!("{} contains invalid JSON: {error}", settings_path.display()))?;
+    let current_url = doc
+        .get("env")
+        .and_then(|env| env.get("ANTHROPIC_BASE_URL"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    if current_url != owned_url {
+        return Ok(());
+    }
+
+    let env = doc
+        .get_mut("env")
+        .and_then(|value| value.as_object_mut())
+        .ok_or_else(|| format!("{}.env must be a JSON object", settings_path.display()))?;
+    if let Some(upstream) = Config::load().proxy.anthropic_upstream {
+        env.insert(
+            "ANTHROPIC_BASE_URL".to_string(),
+            serde_json::Value::String(upstream),
+        );
+    } else {
+        env.remove("ANTHROPIC_BASE_URL");
+        if env.is_empty() {
+            doc.as_object_mut().map(|object| object.remove("env"));
+        }
+    }
+
+    let rendered = serde_json::to_string_pretty(&doc).map_err(|error| error.to_string())?;
+    crate::config_io::write_atomic_with_backup(&settings_path, &(rendered + "\n"))
 }
 
 pub(crate) fn uninstall_claude_env(home: &Path, quiet: bool) {
@@ -141,25 +184,6 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
     // must not point Claude Code at the proxy. `--force` overrides for power users whose
     // key lives somewhere we cannot probe (e.g. a keychain or apiKeyHelper we missed).
     if !force && !anthropic_api_key_available(home) {
-        // Repair an existing stale local redirect so Claude Code reaches Anthropic again.
-        if is_local_lean_ctx_url(&current_url) {
-            let cfg = Config::load();
-            if let Some(env_obj) = doc.get_mut("env").and_then(|e| e.as_object_mut()) {
-                if let Some(ref upstream) = cfg.proxy.anthropic_upstream {
-                    env_obj.insert(
-                        "ANTHROPIC_BASE_URL".to_string(),
-                        serde_json::Value::String(upstream.clone()),
-                    );
-                } else {
-                    env_obj.remove("ANTHROPIC_BASE_URL");
-                    if env_obj.is_empty() {
-                        doc.as_object_mut().map(|o| o.remove("env"));
-                    }
-                }
-                let out = serde_json::to_string_pretty(&doc).unwrap_or_default();
-                let _ = std::fs::write(&settings_path, out + "\n");
-            }
-        }
         if !quiet {
             warn_claude_subscription_skip();
         }

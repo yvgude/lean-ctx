@@ -179,7 +179,7 @@ fn subscription_guard_skips_redirect_without_key() {
 }
 
 #[test]
-fn subscription_guard_repairs_stale_local_redirect() {
+fn subscription_guard_preserves_unproven_local_redirect() {
     if env_provides_anthropic_key() || claude_dir_overridden() {
         return;
     }
@@ -196,9 +196,9 @@ fn subscription_guard_repairs_stale_local_redirect() {
         .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    assert!(
-        !is_local_lean_ctx_url(base),
-        "stale local redirect must be repaired in subscription mode, got {base:?}"
+    assert_eq!(
+        base, "http://127.0.0.1:4444",
+        "a local endpoint without ownership evidence must be preserved"
     );
 }
 

@@ -1,6 +1,6 @@
 # lean-ctx FAQ
 
-> **Latest version: 3.10.1** — 78 MCP tools · 10 read modes · 95+ shell patterns
+> **Latest version: 3.10.1** — complete MCP tool set · 10 read modes · 95+ shell patterns
 > Docs: https://leanctx.com/docs/getting-started
 
 ---
@@ -41,7 +41,7 @@ After updating, restart your shell (`source ~/.zshrc`) and your IDE.
 **Q: What does lean-ctx actually do?**
 lean-ctx sits between your AI tool and the system. It has two layers:
 1. **Shell Hook** — transparently compresses CLI output (git, ls, npm, cargo, etc.) using 95+ patterns before it reaches the LLM
-2. **MCP Server** — 78 tools for cached file reads, 10 read modes, deltas, dedup, memory, multi-agent coordination, and more
+2. **MCP Server** — tools for cached file reads, 10 read modes, deltas, dedup, memory, multi-agent coordination, and more
 
 Actual savings depend on the workload and enabled modes. Use `lean-ctx savings`
 for local observations and Shadow Mode for a comparable baseline.
@@ -108,7 +108,7 @@ Fixed in v3.2.0+. The shell hook now handles heredoc/EOF-style commit messages c
 
 ## MCP / Tools
 
-**Q: Where can I find docs for all 78 tools?**
+**Q: Where can I find docs for every tool?**
 - Tool overview: https://leanctx.com/docs/tools/
 - Intelligence tools: https://leanctx.com/docs/tools/intelligence/
 - Session & memory: https://leanctx.com/docs/tools/session/
@@ -133,7 +133,7 @@ This happens when the MCP server's project root is stuck from a previous session
 - Run `lean-ctx doctor` to verify the root
 
 **Q: How do I use Unified mode vs Full Tools?**
-- **Full (default)**: All 78 tools available as separate `ctx_*` tools
+- **Full (default)**: Every registered tool available as a separate `ctx_*` tool
 - **Unified** (`LEAN_CTX_UNIFIED=1`): 5 meta-tools only — `ctx`, `ctx_read`, `ctx_shell`, `ctx_search`, `ctx_tree`
 - **Lazy** (`LEAN_CTX_LAZY_TOOLS=1`): Reduced set + `ctx_discover_tools` for on-demand loading
 

@@ -90,7 +90,7 @@ lean-ctx init --global
 
 ### Step 4: SKILL.md
 
-lean-ctx installs a skill file at `~/.cursor/skills/lean-ctx/SKILL.md`. This gives Cursor detailed knowledge of all 78 tools, modes, and best practices.
+lean-ctx installs a skill file at `~/.cursor/skills/lean-ctx/SKILL.md`. This gives Cursor detailed knowledge of the registered tools, modes, and best practices.
 
 ## Hybrid Mode: MCP Reads + CLI Shell
 

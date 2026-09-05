@@ -39,25 +39,26 @@ that state. Three tiers: **wrap** (one command), **onboard** (all agents), **set
 ## 1. `lean-ctx wrap <agent>` — the recommended first command
 
 **What it does:** Sets up lean-ctx for one specific agent with a single command.
-Installs shell hooks, MCP registration, agent hooks, starts the daemon, verifies
-the MCP connection, and shows a summary — all automatically.
+It snapshots owned configuration, registers the MCP server, starts the request
+proxy when the agent's authentication is compatible, persists the required
+endpoint variables, and shows a summary.
 
 ```bash
-lean-ctx wrap cursor      # or: wrap claude / wrap codex / wrap vscode
+lean-ctx wrap cursor      # or: wrap claude / wrap codex
 ```
 
-**Under the hood** (`wrap::run_wrap_for_agent` in `rust/src/wrap/mod.rs`):
+**Under the hood** (`cli::wrap_cmd`):
 
 1. **Snapshots** existing config files for later restore via `unwrap`.
-2. Installs **shell hooks** (`shell_hook::install_all`).
-3. Writes **MCP server registration** via `editor_registry::write_config_with_options`.
-4. Installs **agent hooks** (`hooks::install_agent_hook_with_mode`).
-5. Starts the **daemon** if not already running.
-6. Saves the **snapshot manifest** for `unwrap`.
-7. **Probes the MCP server** — spawns `lean-ctx mcp`, sends JSON-RPC
-   `initialize` + `tools/list`, checks `ctx_read` is present.
-8. Detects whether the agent is running and gives a launch/restart hint.
-9. Prints a premium **summary** with tool count and next steps.
+2. Starts the local **request proxy** when the selected transport supports it.
+3. Writes the **MCP server registration**.
+4. Configures agent and shell endpoint variables where required.
+5. Prints a summary with verification and restart steps.
+
+Claude Pro/Max OAuth cannot use a custom `ANTHROPIC_BASE_URL`. Without an
+`ANTHROPIC_API_KEY`, `wrap claude` adds no LeanCTX proxy redirect and enables
+the MCP/shell path only; existing custom endpoints remain untouched. See
+[Advanced usage](05-advanced.md).
 
 **Undo:** `lean-ctx unwrap cursor` restores all modified files from the snapshot.
 
@@ -322,6 +323,3 @@ shipped are marked ✓.
 - ◯ Open: the interactive wizard is still 12 steps — consider collapsing
   optional opt-ins (proxy, telemetry, auto-update) behind a single
   "Configure advanced options? [y/N]" gate so the common path is ~4 prompts.
-
-
---- lean-ctx: ctx_compose bundles search+read+symbols in one call ---

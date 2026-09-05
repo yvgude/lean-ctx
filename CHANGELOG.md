@@ -23,9 +23,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   Unix utilities or POSIX-only rendering assumptions (#1698, #1700).
 - Git test fixtures ignore global commit-signing policy, keeping non-interactive
   contributor test runs deterministic (#1703).
-- Public MCP-tool counts now match the generated registry reference: 78;
-  unscoped savings claims were replaced with local measurement guidance, and
-  SDK links now identify `thinkery-leanctx-sdk` as the supported Agent SDK.
+- `lean-ctx wrap claude` now reuses the Claude authentication guard: Pro/Max
+  OAuth gets no new proxy redirect, stale lean-ctx-owned redirects are repaired,
+  custom endpoints are preserved, and API-key users retain wire-level proxy
+  compression (#1705).
+- Shell exports for Windsurf, Cline, and Aider apply the same guard, because an
+  exported `ANTHROPIC_BASE_URL` also affects Claude launched from that shell.
+- Fatal `wrap` and `unwrap` setup failures now return a nonzero process status;
+  invalid CLI arguments return status 2, and proxy failure occurs before agent
+  configuration is changed (#1707).
+- The README quick start now distinguishes the MCP/shell path available to
+  Claude Pro/Max users from API-key-only wire-level compression (#1706).
+- Public prose now links to the generated MCP registry instead of duplicating a
+  mutable tool count; unscoped savings claims were replaced with local
+  measurement guidance, and SDK links identify `thinkery-leanctx-sdk` as the
+  supported Agent SDK.
 
 ### Fixed — Codex browser login was sent to the API-key endpoint (#1685)
 
