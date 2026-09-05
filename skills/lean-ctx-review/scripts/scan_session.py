@@ -171,7 +171,7 @@ def main():
         for r in errors:
             show(r)
 
-    print(f"\nall calls (-d N for full output):")
+    print("\nall calls (-d N for full output):")
     for r in rows:
         print(one_line(r))
 
