@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [3.10.1] — 2026-09-05
 
+### Added — Python linting
+
+- CI now runs Ruff's Pyflakes rules across all shipped Python scripts, catching
+  undefined names and unused imports without introducing unrelated style churn
+  (#1676).
+
 ### Fixed — Windows paths, sandbox environment, and daemon fallbacks
 
 - Path expansion now falls back to the platform home directory when Windows
