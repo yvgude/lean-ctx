@@ -181,7 +181,7 @@ Best for simple tasks — no MCP overhead:
 You (in Pi): "Read the auth module and find security issues"
 
 Pi uses:
-  ctx_read src/auth/mod.rs    → compressed, ~60% smaller
+  ctx_read src/auth/mod.rs    → compressed; compare locally with `raw=true`
   ctx_grep "password" src/    → grouped results
   ctx_shell "cargo clippy"    → compressed output
 ```

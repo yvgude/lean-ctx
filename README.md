@@ -18,14 +18,15 @@ engineering layer for AI coding agents. It runs locally alongside your coding
 agent, helping it read repositories, run development commands, and send focused
 context to the model: it **understands** the task, **routes** the right context,
 **compresses** what it sends, and **tracks** the cost and outcome of that work.
-The result: 50–80% fewer tokens where compression applies.
+Savings depend on the workload and enabled modes; the local savings ledger and
+Shadow Mode show the measured result against a comparable baseline.
 Zero config required.
 Local-first.
 
 | Problem | With LeanCTX |
 |---------|-------------|
-| Repeated file reads: ~2000 tokens each | Cached re-reads: **~13 tokens** |
-| Raw `git status`: ~800 tokens | Compressed: **~120 tokens** |
+| Repeated file reads resend unchanged content | Cached re-reads return a compact deterministic reference |
+| Raw development commands include repetitive noise | Command-specific compression preserves salient output |
 | Every turn re-sends the whole history | Proxy compresses each request, **prompt-cache-safe** |
 | Context resets every chat | Session memory persists across chats |
 | No visibility into context usage | Real-time dashboard + budget control |
@@ -93,7 +94,7 @@ Local-first.
 ## Why developers use LeanCTX
 
 - **Longer useful coding sessions** — less context waste = more room for actual code reasoning
-- **Lower API costs** — 50–80% fewer tokens on reads and shell output, cached re-reads cost ~13 tokens
+- **Lower API costs** — reduce repeated context on reads and shell output; inspect the local savings ledger and Shadow Mode baseline for your workload
 - **No more "I already showed you this file"** — session memory persists across chats
 - **Works with your existing setup** — one `lean-ctx setup` command, no config changes needed
 - **Full visibility** — see exactly where your context window budget goes
@@ -124,7 +125,8 @@ One binary covers the capabilities that decide how well an AI agent performs:
 
 Your AI agent reads files and runs commands. LeanCTX compresses both automatically.
 
-- **50–80% token reduction** on eligible context while preserving recovery paths
+- **Workload-specific token reduction** on eligible context, with recovery paths
+  and a local Shadow Mode baseline for measurement
 
 - **File reads**: 10 read modes (`full`, `map`, `signatures`, `diff`, `lines:N-M`, `density:X`, …) — cached re-reads cost ~13 tokens
 - **Target density** (`density:0.4`): SDE-style budget compression — keeps the highest-entropy lines until ~40% of the original tokens remain, deterministic
@@ -192,7 +194,7 @@ lean-ctx shadow --latest
 ```
 
 <details>
-<summary><strong>Full feature list (83 MCP tools)</strong></summary>
+<summary><strong>Full feature list (complete MCP tool set)</strong></summary>
 
 - **Web & Research** (`ctx_url_read`): pull a public web page, PDF, or YouTube transcript into context as compressed, citation-backed text — `facts`/`quotes` return claims with a confidence score + source URL, relevance-ranked research-compression distils to a token budget, SSRF-guarded (http/https only)
 - **Graph-Powered Intelligence**: hybrid search (BM25 + embeddings + graph proximity via RRF), incremental git-diff updates
@@ -280,21 +282,21 @@ npm install -g lean-ctx-bin                          # Node.js
 cargo install lean-ctx                               # Rust
 
 # 2) One-command setup for your agent
-lean-ctx wrap cursor      # or: wrap claude / wrap codex / wrap vscode
+lean-ctx wrap cursor      # or: wrap claude / wrap codex
 
 # Done. Savings appear after your AI's first lean-ctx call.
 lean-ctx gain
 ```
 
-`lean-ctx wrap` installs shell hooks, registers the MCP server, sets up agent hooks, starts the daemon, and verifies the connection — all in one command. Undo anytime with `lean-ctx unwrap cursor`.
+`lean-ctx wrap` registers the MCP server and configures the supported local
+transport for that agent. Undo anytime with `lean-ctx unwrap cursor`.
 
-> **On a Claude Pro/Max subscription?** The `ctx_*` tools and shell-output
-> compression work exactly the same. The **request proxy** does not: a
-> subscription authenticates by OAuth, and Anthropic rejects OAuth behind a
-> custom `ANTHROPIC_BASE_URL`, so wire-level request compression for Claude
-> needs an `ANTHROPIC_API_KEY`. `wrap claude` detects this, leaves Claude Code
-> talking to `api.anthropic.com`, and says so — it will not create a
-> configuration that breaks your login.
+> **Claude Pro/Max:** subscription OAuth cannot use a custom
+> `ANTHROPIC_BASE_URL`. `lean-ctx wrap claude` therefore adds no proxy redirect
+> while enabling the `ctx_*` tools and shell-output compression; an existing
+> custom endpoint remains untouched.
+> Claude wire-level request compression requires `ANTHROPIC_API_KEY`. See
+> [advanced proxy setup](docs/reference/05-advanced.md).
 
 <details>
 <summary><strong>Alternative: full control</strong></summary>
@@ -325,7 +327,7 @@ lean-ctx setup            # interactive wizard with every option
 
 LeanCTX grows with you. Below are the journeys most people actually take — each
 links to a complete, function-by-function walkthrough in the
-**[Reference](docs/reference/README.md)** (every CLI command and all 79 MCP
+**[Reference](docs/reference/README.md)** (every CLI command and the complete MCP
 tools are documented there).
 
 <table>
@@ -491,7 +493,7 @@ All analytics live in the CLI/dashboard — never burning agent tokens.
 ### 📚 The full reference
 *"I want to read everything."*
 
-Every command and all 83 MCP tools, organized as user journeys, plus
+Every command and the complete MCP tool set, organized as user journeys, plus
 appendices for the [CLI map](docs/reference/appendix-cli-map.md),
 [MCP tools](docs/reference/appendix-mcp-tools.md), and
 [paths & config](docs/reference/appendix-paths-and-config.md).
@@ -508,7 +510,7 @@ LeanCTX is a standard **MCP server**, so it works with any MCP-compatible client
 | Mode | How it works | Best for |
 |---|---|---|
 | **Hybrid** | MCP for cached reads (~13 tokens) + shell hooks for command compression | Agents with shell access (Cursor, Claude Code, Codex, ...) |
-| **MCP** | All 79 tools via MCP protocol, no shell hooks | Protocol-only agents (JetBrains, VS Code, Zed, ...) |
+| **MCP** | Complete tool set via MCP protocol, no shell hooks | Protocol-only agents (JetBrains, VS Code, Zed, ...) |
 
 ### Agent compatibility matrix
 
@@ -635,7 +637,7 @@ committed recorded subset that blocks CI on any regression.
 - **280+ forks** — active community contributions
 - **200+ releases** — shipped near-daily since launch
 - **30+ supported AI coding agents** — broadest MCP compatibility
-- **83 MCP tools** — from simple file reads to multi-agent orchestration
+- **Broad MCP tool set** — from simple file reads to multi-agent orchestration
 - Used in production by teams running Claude Code, Cursor, and Codex daily
 - **Live adoption metrics**: [leanctx.com/metrics](https://leanctx.com/metrics/) — installs, stars and savings, updated continuously
 

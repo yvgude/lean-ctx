@@ -1,7 +1,7 @@
 //! `lean-ctx tools health` — does every advertised MCP tool and injected rule
 //! earn its always-on token cost? (#848)
 //!
-//! lean-ctx ships 79 MCP tools plus injected rules files; the thesis is "every
+//! lean-ctx ships a broad MCP tool set plus injected rules files; the thesis is "every
 //! token earns its place". This report cross-references the *fixed cost* of each
 //! advertised tool schema and rules file with *recorded usage* (the
 //! [`CostStore`] post-dispatch ledger) and flags "rot":

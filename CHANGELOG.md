@@ -5,63 +5,53 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-### Added — Python is linted (#1676)
+## [3.10.1] — 2026-09-05
 
-- The repo ships 20 Python files under `scripts/` and `skills/`, several of them
-  CI gates (`check-narrative-governance.py`, `check-release-tag.py`,
-  `verify-ocla-contract-suite.py`, …). None of them were linted: no `ruff`,
-  `flake8`, `black` or `mypy` anywhere, and the pre-commit hooks are
-  `types: [rust]`.
-- The exposure was never the gates that run on every push — those fail loudly.
-  It was the scripts that run rarely, where a typo'd name surfaces at the moment
-  someone needs them, which is usually the worst moment.
-- CI now runs `ruff check --select F`, scoped to pyflakes: undefined names and
-  unused imports. That is the ticket's own recommendation, and it is deliberate
-  — the default rule set flags 210 findings across those files, which would be
-  style churn rather than defect removal. Formatting and typing stay separate
-  decisions.
-- Two real findings, both fixed: an unused `sys` import in
-  `verify-release-integrity.py` (a release gate) and an f-string with no
-  placeholders in `scan_session.py`. Verified beyond the linter — every one of
-  the 20 files still compiles and `scan_session.py --selftest` still passes.
+### Added — Python linting
 
+- CI now runs Ruff's Pyflakes rules across all shipped Python scripts, catching
+  undefined names and unused imports without introducing unrelated style churn
+  (#1676).
 
-### Fixed — `wrap claude` could break a Pro/Max login (#1705)
+### Fixed — bounded session startup and retention
 
-- `lean-ctx wrap claude` wrote `ANTHROPIC_BASE_URL=http://127.0.0.1:4444` into
-  `~/.claude/settings.json` unconditionally. On a Claude Pro/Max subscription
-  that is exactly the configuration `proxy enable` refuses to create and
-  `lean-ctx doctor` immediately calls invalid: the proxy injects no credentials,
-  and Anthropic rejects OAuth behind a custom base URL — login loop or 401.
-- The failure surfaced on the *next* request, long after the one-command setup
-  path had reported success, which made it hard to connect to `wrap` at all.
-- `wrap` now uses the same predicate `proxy_setup` has guarded with since the
-  proxy shipped, and explains the skip at wrap time instead of leaving it to a
-  later failed request. With an API key present the proxy is configured as
-  before.
-- The guard applies to the **variable, not the agent**: an exported
-  `ANTHROPIC_BASE_URL` reaches every process started from that shell, so
-  wrapping Windsurf, Cline or Aider could break a Claude subscription login just
-  as effectively. The shell-profile writer filters on the same predicate.
+- Normal project-session lookup now uses a bounded per-project index instead of
+  scanning the entire global session store; missing, corrupt, empty, or stale
+  indexes are repaired safely on the exceptional path (#1713).
+- Explicit session cleanup has a configurable retention window and always keeps
+  the newest session for every project, independently of archive retention.
 
-### Fixed — a failed `wrap` exited 0 (#1707)
+### Fixed — Windows paths, sandbox environment, and daemon fallbacks
 
-- `wrap` printed its error and returned, so an unreachable proxy, an unsupported
-  autostart platform (Windows in 3.10.0), a failed backup, endpoint write, MCP
-  registration or profile write all exited **0**. Scripts, installers and CI
-  could not tell a failed setup from a successful one.
-- `wrap` and `unwrap` now return a status and the dispatcher exits with it —
-  the same shape `status` next to them already used. Help still exits 0.
-
-### Documented — subscription users and the request proxy (#1706)
-
-- The quick start now says, next to `wrap claude`, that a Pro/Max subscription
-  cannot use wire-level request compression and why — the `ctx_*` tools and
-  shell-output compression are unaffected. The limitation was only in the
-  advanced docs, one section away from the command that trips it.
-
-
-## [3.10.1] — 2026-09-04
+- Path expansion now falls back to the platform home directory when Windows
+  does not define `HOME` (#1691).
+- Context Kernel feedback honors the configured cache directory instead of
+  constructing a HOME-relative path that could escape into the working tree
+  on Windows (#1693).
+- Sandboxed Windows processes preserve `SystemDrive`, preventing literal
+  `%SystemDrive%` directories from appearing in the project (#1696).
+- One-shot reads and `lean-ctx ls` recover safely when a shared daemon is
+  rooted in another project; genuine standalone directory errors now use
+  stderr and a nonzero exit status (#1695).
+- Cross-platform process and command-wrapping regressions no longer depend on
+  Unix utilities or POSIX-only rendering assumptions (#1698, #1700).
+- Git test fixtures ignore global commit-signing policy, keeping non-interactive
+  contributor test runs deterministic (#1703).
+- `lean-ctx wrap claude` now reuses the Claude authentication guard: Pro/Max
+  OAuth gets no new proxy redirect, stale lean-ctx-owned redirects are repaired,
+  custom endpoints are preserved, and API-key users retain wire-level proxy
+  compression (#1705).
+- Shell exports for Windsurf, Cline, and Aider apply the same guard, because an
+  exported `ANTHROPIC_BASE_URL` also affects Claude launched from that shell.
+- Fatal `wrap` and `unwrap` setup failures now return a nonzero process status;
+  invalid CLI arguments return status 2, and proxy failure occurs before agent
+  configuration is changed (#1707).
+- The README quick start now distinguishes the MCP/shell path available to
+  Claude Pro/Max users from API-key-only wire-level compression (#1706).
+- Public prose now links to the generated MCP registry instead of duplicating a
+  mutable tool count; unscoped savings claims were replaced with local
+  measurement guidance, and SDK links identify `thinkery-leanctx-sdk` as the
+  supported Agent SDK.
 
 ### Fixed — Codex browser login was sent to the API-key endpoint (#1685)
 

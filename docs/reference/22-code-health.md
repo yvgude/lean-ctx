@@ -146,8 +146,8 @@ All knobs live under `[code_health]`:
 
 Every health output is a deterministic function of (file content, mode,
 threshold) — no timestamps, counters or random elements in tool-output bodies.
-That byte-stability keeps provider prompt caching (Anthropic up to 90%, OpenAI
-50%) applying, so the signal adds insight without breaking the cache discount it
+That byte-stability preserves stable-prefix eligibility for provider prompt
+caching, so the signal adds insight without invalidating the cache behavior it
 is meant to protect (#498).
 
 ---

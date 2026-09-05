@@ -1,5 +1,5 @@
 pkgbase = lean-ctx
-	pkgdesc = Context Engineering Layer for AI Coding — 81 MCP tools, 10 read modes, 95+ shell patterns, persistent knowledge, multi-agent orchestration. Privacy-first, opt-in only.
+	pkgdesc = Context Engineering Layer for AI Coding — MCP tools, 10 read modes, 95+ shell patterns, persistent knowledge, multi-agent orchestration. Privacy-first, opt-in only.
 	pkgver = 3.9.16
 	pkgrel = 1
 	url = https://leanctx.com

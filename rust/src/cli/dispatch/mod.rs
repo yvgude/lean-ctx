@@ -330,8 +330,6 @@ pub fn run() {
                 return;
             }
             "wrap" => {
-                // #1707: a failed setup stage must not exit 0 — scripts,
-                // installers and CI cannot tell it from success otherwise.
                 let code = crate::cli::wrap_cmd::cmd_wrap(&rest);
                 if code != 0 {
                     std::process::exit(code);

@@ -152,8 +152,8 @@ required Postgres service, health checks, and restart policies. See the
 
 ### 5. Connect supported AI tools
 
-`wrap` installs shell hooks, MCP registration, agent hooks, starts the daemon,
-and verifies the MCP connection. Run it once for every tool used on a machine:
+`wrap` snapshots owned configuration, registers MCP, and configures a compatible
+local request-proxy route. Run it once for every tool used on a machine:
 
 ```bash
 lean-ctx wrap cursor
@@ -161,6 +161,10 @@ lean-ctx wrap claude
 lean-ctx wrap codex
 lean-ctx wrap windsurf
 ```
+
+Claude Pro/Max OAuth gets no LeanCTX proxy redirect; MCP and shell compression
+still work, and existing custom endpoints remain untouched. Claude wire-level
+compression requires `ANTHROPIC_API_KEY`.
 
 If the installer already onboarded the machine, use `wrap` to target or repair
 an individual integration. `lean-ctx onboard` configures all detected tools;

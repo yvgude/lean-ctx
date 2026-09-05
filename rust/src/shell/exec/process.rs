@@ -208,10 +208,10 @@ mod tests {
                 while stream.write_all(&chunk).is_ok() {}
             }
             Ok("sleep") => {
-                std::thread::sleep(std::time::Duration::from_secs(60));
+                std::thread::sleep(std::time::Duration::from_mins(1));
             }
             Ok(other) => panic!("unknown output helper mode: {other}"),
-            Err(_) => panic!("missing {OUTPUT_HELPER_ENV}"),
+            Err(error) => panic!("missing {OUTPUT_HELPER_ENV}: {error}"),
         }
     }
 
