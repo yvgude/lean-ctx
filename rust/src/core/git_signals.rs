@@ -214,6 +214,7 @@ mod tests {
 
     fn run(dir: &std::path::Path, args: &[&str]) {
         let out = std::process::Command::new("git")
+            .args(["-c", "commit.gpgsign=false"])
             .args(args)
             .current_dir(dir)
             .env("GIT_AUTHOR_NAME", "t")
@@ -229,6 +230,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         run(dir.path(), &["init", "-q"]);
         dir
+    }
+
+    #[test]
+    fn fixture_commits_ignore_git_signing_config() {
+        let repo = temp_repo();
+
+        run(repo.path(), &["config", "commit.gpgsign", "true"]);
+        run(repo.path(), &["config", "gpg.format", "ssh"]);
+        run(
+            repo.path(),
+            &[
+                "config",
+                "user.signingkey",
+                "lean-ctx-test-missing-signing-key",
+            ],
+        );
+
+        std::fs::write(repo.path().join("signed.rs"), "// fixture").unwrap();
+        run(repo.path(), &["add", "."]);
+        run(repo.path(), &["commit", "-qm", "fixture"]);
     }
 
     #[test]
