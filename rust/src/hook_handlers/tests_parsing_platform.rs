@@ -167,9 +167,10 @@ fn wrap_command_preserves_bash_compatible_path() {
         !result.contains('\\'),
         "wrapped command must not contain backslashes, got: {result}"
     );
+    let executable = result.strip_prefix("& ").unwrap_or(&result);
     assert!(
-        result.contains(&binary),
-        "must preserve bash-compatible path, got: {result}"
+        executable.starts_with(&binary),
+        "must invoke the bash-compatible path as the executable, got: {result}"
     );
 }
 
