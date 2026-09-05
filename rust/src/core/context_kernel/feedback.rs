@@ -33,10 +33,13 @@ impl FeedbackCollector {
     }
 
     pub fn default_for_project(_project_root: &str) -> Self {
-        let cache_root = std::env::var_os("HOME")
-            .map_or_else(|| PathBuf::from("."), PathBuf::from)
-            .join(".cache")
-            .join("lean-ctx")
+        let cache_root = crate::core::paths::cache_dir()
+            .unwrap_or_else(|_| {
+                std::env::var_os("HOME")
+                    .map_or_else(|| PathBuf::from("."), PathBuf::from)
+                    .join(".cache")
+                    .join("lean-ctx")
+            })
             .join("kernel");
         Self::new(cache_root.join("feedback.jsonl"))
     }
@@ -170,6 +173,52 @@ pub mod tests {
             quality_signals: Vec::new(),
             feedback_attribution: HashMap::from([("files".to_owned(), 1.0)]),
         }
+    }
+
+    #[test]
+    fn default_for_project_honors_cache_dir_override() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
+        let home = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+
+        let previous_home = std::env::var_os("HOME");
+        let previous_cache = std::env::var_os("LEAN_CTX_CACHE_DIR");
+
+        crate::test_env::set_var("HOME", home.path());
+        crate::test_env::set_var("LEAN_CTX_CACHE_DIR", cache.path());
+
+        let expected = cache.path().join("kernel").join("feedback.jsonl");
+        let legacy = home
+            .path()
+            .join(".cache")
+            .join("lean-ctx")
+            .join("kernel")
+            .join("feedback.jsonl");
+
+        let mut collector = FeedbackCollector::default_for_project("project");
+        collector.record_outcome(&receipt(ReceiptOutcome::Rejected));
+
+        let expected_exists = expected.exists();
+        let legacy_exists = legacy.exists();
+
+        match previous_home {
+            Some(value) => crate::test_env::set_var("HOME", value),
+            None => crate::test_env::remove_var("HOME"),
+        }
+
+        match previous_cache {
+            Some(value) => crate::test_env::set_var("LEAN_CTX_CACHE_DIR", value),
+            None => crate::test_env::remove_var("LEAN_CTX_CACHE_DIR"),
+        }
+
+        assert!(
+            expected_exists,
+            "Context Kernel feedback must honor LEAN_CTX_CACHE_DIR"
+        );
+        assert!(
+            !legacy_exists,
+            "Context Kernel feedback must not bypass the central cache resolver"
+        );
     }
 
     #[test]
