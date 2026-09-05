@@ -40,6 +40,17 @@ jobs:
         run: python3 scripts/check-no-internal-artifacts.py
       - name: Enforce the single SDK surface
         run: python3 scripts/check-sdk-surface.py
+      # GH #1676: 20 Python files ship in this repo, several of them the CI
+      # gates in the steps above, and none of them were linted. A gate that
+      # breaks only when someone needs it is the worst kind. Scoped to
+      # pyflakes (`F`): undefined names and unused imports — real defects, at
+      # near-zero cost. Style and typing are separate, larger decisions, and
+      # the default rule set flags 210 findings that would be pure churn
+      # across those 20 files.
+      - name: Lint Python (pyflakes rules)
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check ruff
+          python3 -m ruff check --select F scripts/ skills/
 
   package-assets:
     name: Published crate assets

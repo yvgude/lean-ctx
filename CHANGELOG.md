@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added — Python is linted (#1676)
+
+- The repo ships 20 Python files under `scripts/` and `skills/`, several of them
+  CI gates (`check-narrative-governance.py`, `check-release-tag.py`,
+  `verify-ocla-contract-suite.py`, …). None of them were linted: no `ruff`,
+  `flake8`, `black` or `mypy` anywhere, and the pre-commit hooks are
+  `types: [rust]`.
+- The exposure was never the gates that run on every push — those fail loudly.
+  It was the scripts that run rarely, where a typo'd name surfaces at the moment
+  someone needs them, which is usually the worst moment.
+- CI now runs `ruff check --select F`, scoped to pyflakes: undefined names and
+  unused imports. That is the ticket's own recommendation, and it is deliberate
+  — the default rule set flags 210 findings across those files, which would be
+  style churn rather than defect removal. Formatting and typing stay separate
+  decisions.
+- Two real findings, both fixed: an unused `sys` import in
+  `verify-release-integrity.py` (a release gate) and an f-string with no
+  placeholders in `scan_session.py`. Verified beyond the linter — every one of
+  the 20 files still compiles and `scan_session.py --selftest` still passes.
+
+
 ### Fixed — `wrap claude` could break a Pro/Max login (#1705)
 
 - `lean-ctx wrap claude` wrote `ANTHROPIC_BASE_URL=http://127.0.0.1:4444` into
