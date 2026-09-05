@@ -5,6 +5,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — `wrap claude` could break a Pro/Max login (#1705)
+
+- `lean-ctx wrap claude` wrote `ANTHROPIC_BASE_URL=http://127.0.0.1:4444` into
+  `~/.claude/settings.json` unconditionally. On a Claude Pro/Max subscription
+  that is exactly the configuration `proxy enable` refuses to create and
+  `lean-ctx doctor` immediately calls invalid: the proxy injects no credentials,
+  and Anthropic rejects OAuth behind a custom base URL — login loop or 401.
+- The failure surfaced on the *next* request, long after the one-command setup
+  path had reported success, which made it hard to connect to `wrap` at all.
+- `wrap` now uses the same predicate `proxy_setup` has guarded with since the
+  proxy shipped, and explains the skip at wrap time instead of leaving it to a
+  later failed request. With an API key present the proxy is configured as
+  before.
+- The guard applies to the **variable, not the agent**: an exported
+  `ANTHROPIC_BASE_URL` reaches every process started from that shell, so
+  wrapping Windsurf, Cline or Aider could break a Claude subscription login just
+  as effectively. The shell-profile writer filters on the same predicate.
+
+### Fixed — a failed `wrap` exited 0 (#1707)
+
+- `wrap` printed its error and returned, so an unreachable proxy, an unsupported
+  autostart platform (Windows in 3.10.0), a failed backup, endpoint write, MCP
+  registration or profile write all exited **0**. Scripts, installers and CI
+  could not tell a failed setup from a successful one.
+- `wrap` and `unwrap` now return a status and the dispatcher exits with it —
+  the same shape `status` next to them already used. Help still exits 0.
+
+### Documented — subscription users and the request proxy (#1706)
+
+- The quick start now says, next to `wrap claude`, that a Pro/Max subscription
+  cannot use wire-level request compression and why — the `ctx_*` tools and
+  shell-output compression are unaffected. The limitation was only in the
+  advanced docs, one section away from the command that trips it.
+
+
 ## [3.10.1] — 2026-09-04
 
 ### Fixed — Codex browser login was sent to the API-key endpoint (#1685)

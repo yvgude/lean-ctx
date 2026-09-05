@@ -163,11 +163,20 @@ struct BackupFile {
     backup: Option<PathBuf>,
 }
 
-/// Dispatch `lean-ctx wrap <agent> [--port N] [--unwrap]`.
-pub(crate) fn cmd_wrap(args: &[String]) {
+/// Exit status for a failed setup stage (#1707).
+///
+/// `wrap` used to print an error and return `()`, so a fatal failure — an
+/// unreachable proxy, an unsupported autostart platform, a config write that
+/// did not happen — exited 0 and was indistinguishable from success to a
+/// script, an installer, CI, or anyone checking `$?` / `$LASTEXITCODE`.
+const EXIT_FAILURE: i32 = 1;
+
+/// Dispatch `lean-ctx wrap <agent> [--port N] [--unwrap]`. Returns the process
+/// exit status: non-zero when a setup stage failed.
+pub(crate) fn cmd_wrap(args: &[String]) -> i32 {
     if wants_help(args) {
         print_help();
-        return;
+        return 0;
     }
 
     let parsed = match WrapArgs::parse(args, false) {
@@ -175,22 +184,22 @@ pub(crate) fn cmd_wrap(args: &[String]) {
         Err(error) => {
             eprintln!("wrap: {error}");
             print_usage();
-            return;
+            return EXIT_FAILURE;
         }
     };
 
     if parsed.unwrap {
-        unwrap_agent(parsed.agent);
+        unwrap_agent(parsed.agent)
     } else {
-        wrap_agent(&parsed);
+        wrap_agent(&parsed)
     }
 }
 
 /// Dispatch the backwards-compatible `lean-ctx unwrap <agent>` spelling.
-pub(crate) fn cmd_unwrap(args: &[String]) {
+pub(crate) fn cmd_unwrap(args: &[String]) -> i32 {
     if wants_help(args) {
         print_unwrap_help();
-        return;
+        return 0;
     }
 
     let parsed = match WrapArgs::parse(args, true) {
@@ -198,16 +207,16 @@ pub(crate) fn cmd_unwrap(args: &[String]) {
         Err(error) => {
             eprintln!("unwrap: {error}");
             print_unwrap_usage();
-            return;
+            return EXIT_FAILURE;
         }
     };
-    unwrap_agent(parsed.agent);
+    unwrap_agent(parsed.agent)
 }
 
-fn wrap_agent(args: &WrapArgs) {
+fn wrap_agent(args: &WrapArgs) -> i32 {
     let Some(home) = dirs::home_dir() else {
         eprintln!("wrap: cannot determine the home directory");
-        return;
+        return EXIT_FAILURE;
     };
 
     let mut files = agent_config_paths(args.agent, &home);
@@ -216,12 +225,12 @@ fn wrap_agent(args: &WrapArgs) {
 
     if let Err(error) = ensure_proxy_running(args.port) {
         eprintln!("wrap: {error}");
-        return;
+        return EXIT_FAILURE;
     }
 
     if let Err(error) = save_backup_manifest(args.agent, &files) {
         eprintln!("wrap: could not create backups: {error}");
-        return;
+        return EXIT_FAILURE;
     }
 
     if let Err(error) = configure_agent_endpoint(args.agent, args.port, &home) {
@@ -229,23 +238,24 @@ fn wrap_agent(args: &WrapArgs) {
             "wrap: could not configure {}: {error}",
             args.agent.display_name()
         );
-        return;
+        return EXIT_FAILURE;
     }
 
     if let Err(error) = register_mcp(args.agent, &home) {
         eprintln!("wrap: could not register MCP server: {error}");
-        return;
+        return EXIT_FAILURE;
     }
 
     if let Err(error) = install_shell_exports(args.agent, args.port, &home) {
         eprintln!("wrap: could not persist environment variables: {error}");
-        return;
+        return EXIT_FAILURE;
     }
 
     print_wrap_success(args.agent, args.port);
+    0
 }
 
-fn unwrap_agent(agent: WrapAgent) {
+fn unwrap_agent(agent: WrapAgent) -> i32 {
     match load_backup_manifest(agent) {
         Ok(Some(manifest)) => match restore_backup_manifest(&manifest) {
             Ok(()) => {
@@ -255,22 +265,30 @@ fn unwrap_agent(agent: WrapAgent) {
                     "  Restart {} to use its restored configuration.",
                     agent.display_name()
                 );
+                0
             }
-            Err(error) => eprintln!("unwrap: could not restore backups: {error}"),
+            Err(error) => {
+                eprintln!("unwrap: could not restore backups: {error}");
+                EXIT_FAILURE
+            }
         },
         Ok(None) => {
             // A manually removed manifest should not strand an integration.  This
             // fallback only removes entries that identify themselves as lean-ctx.
             if let Err(error) = remove_owned_integration(agent) {
                 eprintln!("unwrap: {error}");
-                return;
+                return EXIT_FAILURE;
             }
             println!(
                 "✓ Removed lean-ctx integration for {}.",
                 agent.display_name()
             );
+            0
         }
-        Err(error) => eprintln!("unwrap: could not read backups: {error}"),
+        Err(error) => {
+            eprintln!("unwrap: could not read backups: {error}");
+            EXIT_FAILURE
+        }
     }
 }
 
@@ -321,9 +339,38 @@ fn agent_config_paths(agent: WrapAgent, home: &Path) -> Vec<PathBuf> {
     paths
 }
 
+/// May `ANTHROPIC_BASE_URL` be pointed at the local proxy? (#1705)
+///
+/// The proxy never injects credentials, so redirecting Claude Code only works
+/// in API-key mode. A Claude Pro/Max subscription authenticates by OAuth, which
+/// Anthropic rejects behind a custom `ANTHROPIC_BASE_URL` — the user gets a
+/// login loop or a 401, on the *next* request, long after `wrap` reported
+/// success.
+///
+/// `proxy_setup::install_claude_env_inner` has guarded this since the proxy
+/// shipped; `wrap` grew its own endpoint writer and never picked it up, so the
+/// one-command setup path could produce a configuration that `lean-ctx doctor`
+/// immediately calls invalid. This is the same predicate, not a second opinion.
+fn anthropic_redirect_allowed(home: &Path) -> bool {
+    crate::proxy_setup::anthropic_api_key_available(home)
+}
+
+/// Printed once when the redirect is skipped, so the reason is visible at
+/// wrap time rather than at the next failed request.
+fn explain_subscription_skip() {
+    println!("  Claude Code is authenticated by subscription (no Anthropic API key found).");
+    println!("  Leaving it pointed at api.anthropic.com — OAuth cannot be routed");
+    println!("  through a custom ANTHROPIC_BASE_URL, so the request proxy stays off.");
+    println!("  The ctx_* tools and shell-output compression work unchanged.");
+}
+
 fn configure_agent_endpoint(agent: WrapAgent, port: u16, home: &Path) -> Result<(), String> {
     match agent {
         WrapAgent::Claude => {
+            if !anthropic_redirect_allowed(home) {
+                explain_subscription_skip();
+                return Ok(());
+            }
             let path = crate::core::editor_registry::claude_state_dir(home).join("settings.json");
             set_json_env(
                 &path,
@@ -443,7 +490,15 @@ fn existing_shell_profiles(home: &Path) -> Vec<PathBuf> {
 }
 
 fn install_shell_exports(agent: WrapAgent, port: u16, home: &Path) -> Result<(), String> {
-    let variables = agent.environment(port);
+    // #1705: the guard is about the *variable*, not the agent. An exported
+    // `ANTHROPIC_BASE_URL` reaches every process started from that shell —
+    // Claude Code included — so wrapping Windsurf or Aider could break a
+    // subscription login just as effectively as wrapping Claude.
+    // `proxy_setup::shell` filters on exactly this predicate.
+    let mut variables = agent.environment(port);
+    if !anthropic_redirect_allowed(home) {
+        variables.retain(|(name, _)| *name != "ANTHROPIC_BASE_URL");
+    }
     if variables.is_empty() {
         return Ok(());
     }
@@ -793,5 +848,147 @@ mod tests {
         assert!(rendered.contains("OPENAI_BASE_URL=\"http://127.0.0.1:9340/v1\""));
         assert!(rendered.contains("export LAST=1"));
         assert!(!rendered.contains("old"));
+    }
+}
+
+#[cfg(test)]
+mod gh1705_1707 {
+    use super::*;
+
+    /// A home directory with Claude Code settings but no API key anywhere:
+    /// the Pro/Max subscription shape.
+    fn subscription_home() -> tempfile::TempDir {
+        let home = tempfile::tempdir().expect("tempdir");
+        let dir = crate::core::editor_registry::claude_state_dir(home.path());
+        std::fs::create_dir_all(&dir).expect("claude state dir");
+        std::fs::write(dir.join("settings.json"), "{}\n").expect("settings");
+        home
+    }
+
+    fn settings_of(home: &std::path::Path) -> String {
+        let path = crate::core::editor_registry::claude_state_dir(home).join("settings.json");
+        std::fs::read_to_string(path).unwrap_or_default()
+    }
+
+    /// The reported bug: `wrap claude` wrote a local ANTHROPIC_BASE_URL even
+    /// when Claude Code authenticates by subscription OAuth — a configuration
+    /// `lean-ctx doctor` immediately calls invalid, and which fails on the next
+    /// request rather than at wrap time.
+    #[test]
+    fn wrap_claude_leaves_a_subscription_pointed_at_anthropic() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let previous: Vec<_> = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]
+            .iter()
+            .map(|k| (*k, std::env::var(k).ok()))
+            .collect();
+        for (key, _) in &previous {
+            crate::test_env::remove_var(key);
+        }
+
+        let home = subscription_home();
+        let result = configure_agent_endpoint(WrapAgent::Claude, 4444, home.path());
+
+        for (key, value) in previous {
+            match value {
+                Some(v) => crate::test_env::set_var(key, v),
+                None => crate::test_env::remove_var(key),
+            }
+        }
+
+        assert!(result.is_ok(), "skipping is not an error: {result:?}");
+        assert!(
+            !settings_of(home.path()).contains("ANTHROPIC_BASE_URL"),
+            "no local redirect may be written for a subscription: {}",
+            settings_of(home.path())
+        );
+    }
+
+    /// With an API key present the proxy is the point of `wrap`, so it is
+    /// configured — the guard must not disable the feature outright.
+    #[test]
+    fn wrap_claude_configures_the_proxy_in_api_key_mode() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let previous = std::env::var("ANTHROPIC_API_KEY").ok();
+        crate::test_env::set_var("ANTHROPIC_API_KEY", "sk-ant-test");
+
+        let home = subscription_home();
+        let result = configure_agent_endpoint(WrapAgent::Claude, 4444, home.path());
+
+        match previous {
+            Some(v) => crate::test_env::set_var("ANTHROPIC_API_KEY", v),
+            None => crate::test_env::remove_var("ANTHROPIC_API_KEY"),
+        }
+
+        assert!(result.is_ok(), "{result:?}");
+        assert!(
+            settings_of(home.path()).contains("127.0.0.1:4444"),
+            "an API-key install still gets the proxy: {}",
+            settings_of(home.path())
+        );
+    }
+
+    /// The guard is about the variable, not the agent: an exported
+    /// ANTHROPIC_BASE_URL reaches every process started from that shell,
+    /// Claude Code included.
+    #[test]
+    fn no_agent_exports_anthropic_base_url_without_a_key() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let previous: Vec<_> = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]
+            .iter()
+            .map(|k| (*k, std::env::var(k).ok()))
+            .collect();
+        for (key, _) in &previous {
+            crate::test_env::remove_var(key);
+        }
+
+        let home = subscription_home();
+        let allowed = anthropic_redirect_allowed(home.path());
+
+        for (key, value) in previous {
+            match value {
+                Some(v) => crate::test_env::set_var(key, v),
+                None => crate::test_env::remove_var(key),
+            }
+        }
+
+        assert!(!allowed, "a subscription home has no API key");
+        // Every agent whose profile exports the variable is covered by the
+        // same filter in `install_shell_exports`.
+        for agent in [
+            WrapAgent::Claude,
+            WrapAgent::Windsurf,
+            WrapAgent::Cline,
+            WrapAgent::Aider,
+        ] {
+            assert!(
+                agent
+                    .environment(4444)
+                    .iter()
+                    .any(|(name, _)| *name == "ANTHROPIC_BASE_URL"),
+                "{agent:?} exports the variable, so the filter must apply to it"
+            );
+        }
+    }
+
+    /// #1707: a fatal setup stage must not exit 0. Argument parsing is the one
+    /// failure reachable without touching the filesystem or the network.
+    #[test]
+    fn a_failed_wrap_reports_a_non_zero_status() {
+        assert_eq!(cmd_wrap(&[]), EXIT_FAILURE, "no agent named");
+        assert_eq!(
+            cmd_wrap(&["definitely-not-an-agent".to_string()]),
+            EXIT_FAILURE
+        );
+        assert_eq!(
+            cmd_unwrap(&["definitely-not-an-agent".to_string()]),
+            EXIT_FAILURE
+        );
+    }
+
+    /// Help is not a failure.
+    #[test]
+    fn help_still_succeeds() {
+        assert_eq!(cmd_wrap(&["--help".to_string()]), 0);
+        assert_eq!(cmd_unwrap(&["--help".to_string()]), 0);
     }
 }

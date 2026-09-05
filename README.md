@@ -288,6 +288,14 @@ lean-ctx gain
 
 `lean-ctx wrap` installs shell hooks, registers the MCP server, sets up agent hooks, starts the daemon, and verifies the connection — all in one command. Undo anytime with `lean-ctx unwrap cursor`.
 
+> **On a Claude Pro/Max subscription?** The `ctx_*` tools and shell-output
+> compression work exactly the same. The **request proxy** does not: a
+> subscription authenticates by OAuth, and Anthropic rejects OAuth behind a
+> custom `ANTHROPIC_BASE_URL`, so wire-level request compression for Claude
+> needs an `ANTHROPIC_API_KEY`. `wrap claude` detects this, leaves Claude Code
+> talking to `api.anthropic.com`, and says so — it will not create a
+> configuration that breaks your login.
+
 <details>
 <summary><strong>Alternative: full control</strong></summary>
 
