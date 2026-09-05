@@ -141,6 +141,16 @@ class PythonEngineWheelTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, workflow)
 
+    def test_release_fetches_tag_history_for_changelog_link(self):
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+        release_job = workflow.split("  release:\n", 1)[1].split(
+            "\n  jetbrains-plugin:", 1
+        )[0]
+        self.assertIn("fetch-depth: 0", release_job)
+        self.assertIn("PREV_TAG=$(git tag --sort=-v:refname", release_job)
+
     def test_release_uses_one_trusted_publisher_per_distribution(self):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
