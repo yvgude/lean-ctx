@@ -160,6 +160,7 @@ impl Default for Config {
             max_ram_percent: serde_defaults::default_max_ram_percent(),
             max_disk_mb: 0,
             max_staleness_days: 0,
+            session_retention_days: serde_defaults::default_session_retention_days(),
             max_index_threads: 0,
             savings_footer: SavingsFooter::default(),
             compression_annotation: CompressionAnnotation::default(),

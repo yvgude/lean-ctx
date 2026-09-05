@@ -275,6 +275,17 @@ mod simplified_config_tests {
     }
 
     #[test]
+    fn session_retention_days_is_independent_from_archive_staleness() {
+        let cfg = Config {
+            max_staleness_days: 30,
+            session_retention_days: 14,
+            ..Default::default()
+        };
+
+        assert_eq!(cfg.session_retention_days_effective(), 14);
+    }
+
+    #[test]
     fn staleness_explicit_archive_age_overrides() {
         let cfg = Config {
             max_staleness_days: 30,

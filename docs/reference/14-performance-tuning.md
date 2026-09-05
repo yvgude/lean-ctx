@@ -132,7 +132,33 @@ equivalent). At sustained pressure, reduce `memory_profile`, disable
 
 ---
 
-## 5. Finding what's slow — `slow-log`
+## 5. Reproducing session-store startup latency
+
+Session lookup for a safe project root reads its bounded `project-index` first.
+An absent, malformed, or stale index is repaired once by scanning the store;
+the normal command path never scans unrelated session JSON.
+
+Build the release binary, then run the isolated benchmark. It creates a temporary
+Git project and data directory, seeds one indexed session plus 10,000 unrelated
+JSON sessions, warms the command, and reports p50 without touching user data:
+
+```bash
+cd rust && cargo build --release
+cd .. && scripts/benchmark/session-store.sh 10000
+```
+
+On the 2026-09-04 development Mac, assess `p50_ms` after warm-up against the
+MES-2189 target of 200 ms or less. Set `LEAN_CTX_BIN`, `RUNS`, or `WARMUP` to
+measure another built binary or sampling regime.
+
+Session retention is separate from archive retention: `session_retention_days`
+(or `LEAN_CTX_SESSION_RETENTION_DAYS`) supplies the default for explicit
+`lean-ctx sessions cleanup` and `ctx_session cleanup`. Cleanup preserves the
+newest session for every project root.
+
+---
+
+## 6. Finding what's slow — `slow-log`
 
 lean-ctx records commands that exceed `slow_command_threshold_ms` (default
 `5000`) so you can see where wall-clock time goes:
@@ -152,7 +178,7 @@ turn "it feels slow" into a concrete list.
 
 ---
 
-## 6. Keeping caches lean
+## 7. Keeping caches lean
 
 ```bash
 lean-ctx cache stats              # size + hit rate
@@ -166,7 +192,7 @@ in-budget entries.
 
 ---
 
-## 7. Workload fit — where lean-ctx nets out (and where it doesn't)
+## 8. Workload fit — where lean-ctx nets out (and where it doesn't)
 
 lean-ctx saves tokens two ways: **cold-read compression** (a single read sent
 smaller) and **cached re-reads** (an unchanged file re-read collapses to a
