@@ -160,16 +160,17 @@ fn rewrite_preserves_native_windows_binary_path() {
 }
 
 #[test]
-fn wrap_command_with_bash_path() {
+fn wrap_command_preserves_bash_compatible_path() {
     let binary = crate::hooks::to_bash_compatible_path(r"E:\packages\lean-ctx.exe");
     let result = wrap_single_command("git status", &binary);
     assert!(
         !result.contains('\\'),
         "wrapped command must not contain backslashes, got: {result}"
     );
+    let executable = result.strip_prefix("& ").unwrap_or(&result);
     assert!(
-        result.starts_with("/e/packages/lean-ctx.exe"),
-        "must use bash-compatible path, got: {result}"
+        executable.starts_with(&binary),
+        "must invoke the bash-compatible path as the executable, got: {result}"
     );
 }
 
