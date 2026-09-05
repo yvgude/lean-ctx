@@ -11,11 +11,13 @@ use crate::core::signatures;
 
 /// Detect daemon results that indicate a read failure — the CLI should fall
 /// through to standalone (which runs as the user's process, not sandboxed).
-/// Catches: `"file.rs 0L"` stubs and `"Cannot read file:"` handler errors.
+/// Catches: explicit tool errors, `"file.rs 0L"` stubs, and read-handler
+/// failures. A daemon is rooted at its startup project, so an absolute path from
+/// another CLI caller can be valid locally while the shared daemon rejects it.
 #[cfg(unix)]
 fn is_failed_daemon_result(output: &str) -> bool {
     let first_line = output.lines().next().unwrap_or("");
-    if first_line.starts_with("ERROR:TCC_RESTRICTED:") {
+    if first_line.starts_with("ERROR:") {
         return true;
     }
     if first_line.starts_with("Cannot read file:") || first_line.starts_with("File is empty:") {
@@ -721,8 +723,9 @@ pub fn cmd_ls(args: &[String]) {
                 })),
             )
         {
-            if !out.starts_with("ERROR:TCC_RESTRICTED:") {
-                println!("{}", super::common::filter_daemon_output(&out));
+            let filtered = super::common::filter_daemon_output(&out);
+            if !filtered.trim().is_empty() && !is_failed_daemon_result(&filtered) {
+                println!("{filtered}");
                 return;
             }
         }
@@ -731,6 +734,10 @@ pub fn cmd_ls(args: &[String]) {
 
     let (out, original) =
         crate::tools::ctx_tree::handle(path, depth, show_hidden, respect_gitignore);
+    if out.starts_with("ERROR:") {
+        eprintln!("{out}");
+        std::process::exit(1);
+    }
     println!("{out}");
     super::common::cli_track_tree(original, count_tokens(&out));
 }
@@ -793,6 +800,13 @@ fn main() {}
     fn detects_tcc_restricted_marker() {
         assert!(is_failed_daemon_result(
             "ERROR:TCC_RESTRICTED: daemon cannot access /Users/me/Documents/proj (sandboxed)"
+        ));
+    }
+
+    #[test]
+    fn detects_daemon_project_root_denial() {
+        assert!(is_failed_daemon_result(
+            "ERROR: path escapes project root: /work/current/scripts (root: /work/stale)"
         ));
     }
 }
