@@ -55,6 +55,31 @@ fn binary_read_file() {
 }
 
 #[test]
+fn binary_ls_missing_path_exits_nonzero() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let missing = root.path().join("missing");
+    let output = lean_ctx_bin()
+        .arg("ls")
+        .arg(&missing)
+        .output()
+        .expect("failed to run lean-ctx ls");
+
+    assert!(
+        !output.status.success(),
+        "directory access failures must return a nonzero status"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("does not exist or is not a directory"),
+        "unexpected stderr: {stderr}"
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "directory access failures must not be printed as successful output"
+    );
+}
+
+#[test]
 fn binary_config_shows_defaults() {
     let output = lean_ctx_bin()
         .arg("config")
