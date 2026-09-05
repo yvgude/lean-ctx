@@ -481,6 +481,15 @@ impl Config {
             .unwrap_or(self.max_staleness_days)
     }
 
+    /// Effective retention window for explicit session cleanup, independent of
+    /// the archive staleness policy.
+    pub fn session_retention_days_effective(&self) -> u32 {
+        std::env::var("LEAN_CTX_SESSION_RETENTION_DAYS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(self.session_retention_days)
+    }
+
     /// Effective fixed-context budget (tokens) from env or config (#964). `0`
     /// (env or config) disables the warning; otherwise the per-session footprint
     /// is checked against this in `doctor overhead` and `gain`.

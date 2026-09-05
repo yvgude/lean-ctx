@@ -13,6 +13,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   undefined names and unused imports without introducing unrelated style churn
   (#1676).
 
+### Fixed — bounded session startup and retention
+
+- Normal project-session lookup now uses a bounded per-project index instead of
+  scanning the entire global session store; missing, corrupt, empty, or stale
+  indexes are repaired safely on the exceptional path (#1713).
+- Explicit session cleanup has a configurable retention window and always keeps
+  the newest session for every project, independently of archive retention.
+
 ### Fixed — Windows paths, sandbox environment, and daemon fallbacks
 
 - Path expansion now falls back to the platform home directory when Windows
