@@ -53,6 +53,10 @@ pub(super) fn default_max_ram_percent() -> u8 {
     5
 }
 
+pub(super) fn default_session_retention_days() -> u32 {
+    7
+}
+
 pub(super) fn default_cognition_loop_interval() -> u64 {
     3600
 }

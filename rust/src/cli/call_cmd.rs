@@ -129,10 +129,10 @@ fn parse_args(args: &[String]) -> Result<CallArgs, CallError> {
 
 /// Load the project's most recent session for a one-shot `lean-ctx call`.
 ///
-/// Index-based, never a full scan: `load_latest_for_project_root` parses
-/// every file in the session store (measured: 160 files / 14.2 MB on one
-/// developer machine) before filtering on project root, and `lean-ctx call`
-/// is a short-lived subprocess that consumers spawn in loops.
+/// Index-based with bounded reads: `load_recent_for_project_root` resolves the
+/// canonical root, reads its project index, then loads only the indexed session.
+/// One-shot CLI calls are short-lived subprocesses that consumers spawn in loops,
+/// so their startup cost stays independent of unrelated session-store cardinality.
 ///
 /// This function only READS — it never writes the session back, and there is
 /// no implicit post-dispatch save (that belongs to the MCP server,

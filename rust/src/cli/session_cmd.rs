@@ -343,7 +343,14 @@ pub fn cmd_sessions(args: &[String]) {
             }
         }
         "cleanup" => {
-            let days = args.get(1).and_then(|s| s.parse::<i64>().ok()).unwrap_or(7);
+            let days = args
+                .get(1)
+                .and_then(|value| value.parse::<i64>().ok())
+                .unwrap_or_else(|| {
+                    i64::from(
+                        crate::core::config::Config::load().session_retention_days_effective(),
+                    )
+                });
             let removed = SessionState::cleanup_old_sessions(days);
             let (wf_removed, wf_freed) = crate::core::workflow::cleanup_expired();
             println!("Cleaned up {removed} session(s) older than {days} days.");

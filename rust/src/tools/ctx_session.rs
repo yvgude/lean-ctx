@@ -464,10 +464,9 @@ fn handle_list() -> String {
 }
 
 fn handle_cleanup() -> String {
-    {
-        let removed = SessionState::cleanup_old_sessions(7);
-        format!("Cleaned up {removed} old session(s) (>7 days).")
-    }
+    let days = crate::core::config::Config::load().session_retention_days_effective();
+    let removed = SessionState::cleanup_old_sessions(i64::from(days));
+    format!("Cleaned up {removed} old session(s) (>{days} days).")
 }
 
 fn handle_configure(session: &mut SessionState, opts: SessionToolOptions<'_>) -> String {

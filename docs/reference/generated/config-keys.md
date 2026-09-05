@@ -77,6 +77,7 @@ Top-level configuration keys
 - `rules_scope` (enum: both | global | project, default `both`) — Where agent rule files are installed. Override via LEAN_CTX_RULES_SCOPE
 - `sandbox_level` (u8, default `0` — env `LEAN_CTX_SANDBOX_LEVEL`) — Sandbox strictness level (0=default, 1=strict, 2=paranoid)
 - `savings_footer` (enum: auto | always | never, default `always` — env `LEAN_CTX_SAVINGS_FOOTER`) — Controls visibility of token savings footers: always (default, show on every response), never, auto (context-dependent). Also: LEAN_CTX_SHOW_SAVINGS=1|0
+- `session_retention_days` (u32, default `7` — env `LEAN_CTX_SESSION_RETENTION_DAYS`) — Retention window for explicit session cleanup; independent from archive retention and preserves the newest session per project
 - `shadow_mode` (bool, default `true` — env `LEAN_CTX_SHADOW_MODE`) — Default on: denies native tools at the permission level, forcing agents to use ctx_* MCP tools for maximum compression. Disable with shadow_mode = false if you prefer native tools.
 - `shell_activation` (enum: always | agents-only | off, default `agents-only` — env `LEAN_CTX_SHELL_ACTIVATION`) — Controls when the shell hook auto-activates aliases (agents-only since #699: transparent in plain human terminals)
 - `shell_allow_writes` (bool, default `false` — env `LEAN_CTX_SHELL_ALLOW_WRITES`) — Allow ctx_shell file-write redirects (>, >>, tee, heredoc-to-file, curl -o, wget default mode). Default false — prefer the native Write/Edit tool. The real command gating (allowlist, dangerous-pattern, interpreter-eval) still applies

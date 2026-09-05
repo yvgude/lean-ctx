@@ -545,6 +545,11 @@ pub struct Config {
     /// Flows into archive.max_age_hours and lifecycle idle TTL.
     #[serde(default)]
     pub max_staleness_days: u32,
+    /// Retention window for explicit session cleanup. This is independent from
+    /// archive retention and always preserves the newest session per project.
+    /// Override via LEAN_CTX_SESSION_RETENTION_DAYS.
+    #[serde(default = "serde_defaults::default_session_retention_days")]
+    pub session_retention_days: u32,
     /// Cap on the rayon worker threads used by the CPU-heavy index build
     /// (call graph etc.). 0 = rayon default (all cores). Set >0 to bound
     /// per-instance CPU so a fleet of concurrent sessions can't saturate the

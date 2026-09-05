@@ -620,6 +620,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
+        "session_retention_days".into(),
+        key_with_env(
+            "u32",
+            serde_json::json!(cfg.session_retention_days),
+            "Retention window for explicit session cleanup; independent from archive retention and preserves the newest session per project",
+            "LEAN_CTX_SESSION_RETENTION_DAYS",
+        ),
+    );
+    root.insert(
         "project_root".into(),
         key_with_env(
             "string?",

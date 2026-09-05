@@ -1235,6 +1235,11 @@ max_ram_percent = 5
 # Flows into archive.max_age_hours.
 # max_staleness_days = 30
 
+# Session retention for `lean-ctx sessions cleanup` and `ctx_session cleanup`.
+# This is independent from archive retention and preserves the newest session
+# for every project root.
+# session_retention_days = 7
+
 # Explicit project paths to scan/index (default: auto-detect).
 # [ide_paths]
 # cursor = ["/home/user/projects/app1"]
@@ -1276,6 +1281,14 @@ fn cmd_show_effective() {
         " max_ram_percent     = {:10}  {}",
         cfg.max_ram_percent,
         source_hint("LEAN_CTX_MAX_RAM_PERCENT", cfg.max_ram_percent != 5)
+    ));
+    box_row(&format!(
+        " session_retention_days = {:8}  {}",
+        cfg.session_retention_days_effective(),
+        source_hint(
+            "LEAN_CTX_SESSION_RETENTION_DAYS",
+            cfg.session_retention_days != 7
+        )
     ));
     box_row(&format!(
         " max_staleness_days  = {:10}  {}",
