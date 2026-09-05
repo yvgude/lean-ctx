@@ -141,7 +141,23 @@ class PythonEngineWheelTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, workflow)
 
-    def test_release_fetches_tag_history_for_changelog_link(self):
+    def test_release_uses_system_allocator_on_musl(self):
+        manifest = (ROOT / "rust" / "Cargo.toml").read_text(encoding="utf-8")
+        self.assertIn(
+            "[target.'cfg(all(not(windows), not(target_env = \"musl\")))'.dependencies]",
+            manifest,
+        )
+        for relative in (
+            "src/lib.rs",
+            "src/core/memory_guard.rs",
+            "src/dashboard/routes/memory.rs",
+            "src/doctor/checks/storage.rs",
+        ):
+            source = (ROOT / "rust" / relative).read_text(encoding="utf-8")
+            with self.subTest(relative=relative):
+                self.assertIn('not(target_env = "musl")', source)
+
+    def test_release_uses_last_published_release_for_changelog_range(self):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
         )
@@ -149,7 +165,13 @@ class PythonEngineWheelTests(unittest.TestCase):
             "\n  jetbrains-plugin:", 1
         )[0]
         self.assertIn("fetch-depth: 0", release_job)
-        self.assertIn("PREV_TAG=$(git tag --sort=-v:refname", release_job)
+        self.assertIn("PREV_TAG=$(gh release list", release_job)
+        self.assertIn("--exclude-drafts --exclude-pre-releases", release_job)
+        self.assertIn("--limit 100", release_job)
+        self.assertIn("select(.tagName != $current)", release_job)
+        self.assertIn('test("^v[0-9]+\\\\.[0-9]+\\\\.[0-9]+$")', release_job)
+        self.assertIn('PREV_VERSION="${PREV_TAG#v}"', release_job)
+        self.assertIn('index($0, "## [" previous "]") == 1', release_job)
 
     def test_release_uses_one_trusted_publisher_per_distribution(self):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(

@@ -357,7 +357,11 @@ pub(crate) fn ram_guardian_outcome() -> Outcome {
             ),
         };
     };
-    let allocator = if cfg!(all(feature = "jemalloc", not(windows))) {
+    let allocator = if cfg!(all(
+        feature = "jemalloc",
+        not(windows),
+        not(target_env = "musl")
+    )) {
         "jemalloc"
     } else {
         "system"

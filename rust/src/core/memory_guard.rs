@@ -229,7 +229,7 @@ impl MemorySnapshot {
 /// Uses `MALLCTL_ARENAS_ALL` (value 4096) which is the jemalloc sentinel
 /// for "all arenas". Logs errors instead of silently swallowing them.
 pub fn jemalloc_purge() {
-    #[cfg(all(feature = "jemalloc", not(windows)))]
+    #[cfg(all(feature = "jemalloc", not(windows), not(target_env = "musl")))]
     {
         use tikv_jemalloc_ctl::raw;
         let purge_mib = b"arena.4096.purge\0";

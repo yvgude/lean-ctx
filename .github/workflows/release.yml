@@ -398,10 +398,30 @@ jobs:
 
       - name: Extract release notes from CHANGELOG
         id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
-          PREV_TAG=$(git tag --sort=-v:refname | grep -A1 "^v${VERSION}$" | tail -1)
-          NOTES=$(awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found{print}" CHANGELOG.md)
+          # Compare with the last version users could install so an aborted
+          # release run cannot hide changes from the eventual release notes.
+          PREV_TAG=$(gh release list --repo "${GITHUB_REPOSITORY}" \
+            --exclude-drafts --exclude-pre-releases --limit 100 \
+            --json tagName | jq -r --arg current "$GITHUB_REF_NAME" '
+              [.[]
+                | select(.tagName != $current)
+                | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))
+              ][0].tagName // empty
+            ')
+          test -n "$PREV_TAG"
+          PREV_VERSION="${PREV_TAG#v}"
+          NOTES=$(awk -v current="$VERSION" -v previous="$PREV_VERSION" '
+            index($0, "## [" current "]") == 1 { found=1; next }
+            found && index($0, "## [" previous "]") == 1 { exit }
+            found { print }
+            END { if (!found) exit 1 }
+          ' CHANGELOG.md)
+          test -n "$NOTES"
 
           {
             echo "body<<BODY_EOF"

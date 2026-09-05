@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [3.10.1] — 2026-09-05
 
+### Fixed — release packaging
+
+- Linux musl release builds now use the platform system allocator instead of
+  compiling jemalloc, avoiding its C11-atomics incompatibility on supported
+  musl runners. glibc Linux and macOS builds continue to use jemalloc.
+- Release notes now compare against the latest actually published GitHub
+  release, so an aborted release run cannot omit still-unpublished changes.
+
 ### Added — Python linting
 
 - CI now runs Ruff's Pyflakes rules across all shipped Python scripts, catching

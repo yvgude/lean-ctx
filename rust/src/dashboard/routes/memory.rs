@@ -253,7 +253,11 @@ fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str
         }
         "/api/memory" => {
             let snap = crate::core::memory_guard::MemorySnapshot::capture();
-            let allocator = if cfg!(all(feature = "jemalloc", not(windows))) {
+            let allocator = if cfg!(all(
+                feature = "jemalloc",
+                not(windows),
+                not(target_env = "musl")
+            )) {
                 "jemalloc (dirty_decay: 1s)"
             } else {
                 "system"
