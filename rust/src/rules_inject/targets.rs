@@ -177,6 +177,14 @@ pub(super) fn build_rules_targets(
             path: home.join(".grok/AGENTS.md"),
             format: RulesFormat::SharedMarkdown,
         },
+        // Oh My Pi ships its own user instruction file under its agent dir;
+        // lean-ctx merges a marker-delimited block into it and never owns the
+        // whole file (that would clobber the user's own guidance).
+        RulesTarget {
+            name: "Oh My Pi",
+            path: crate::core::editor_registry::omp_agents_path(home),
+            format: RulesFormat::SharedMarkdown,
+        },
         RulesTarget {
             name: "Hermes Agent",
             path: home.join(".hermes/HERMES.md"),

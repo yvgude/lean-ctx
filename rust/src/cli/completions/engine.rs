@@ -159,6 +159,7 @@ const AGENT_KEYS: &[&str] = &[
     "jetbrains",
     "kiro",
     "neovim",
+    "omp",
     "openclaw",
     "opencode",
     "pi",

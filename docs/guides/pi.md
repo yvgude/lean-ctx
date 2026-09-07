@@ -304,3 +304,33 @@ Typical token savings with pi-lean-ctx:
 - [pi-lean-ctx README](https://github.com/yvgude/lean-ctx/tree/main/packages/pi-lean-ctx)
 - [Pi Coding Agent Docs](https://github.com/badlogic/pi-mono)
 - [lean-ctx Documentation](https://leanctx.com/docs)
+
+## Oh My Pi (`omp`)
+
+[Oh My Pi](https://github.com/can1357/oh-my-pi) is a **separate** lean-ctx
+target, not an alias for stock Pi. It is wired natively — no `pi-lean-ctx` npm
+extension, no shell hooks — and the two agents never share a config file.
+
+| Property | Value |
+|----------|-------|
+| Integration mode | Native MCP + shared rules (no shell hooks) |
+| MCP config | `~/.omp/agent/mcp.json` (`mcpServers`, stdio entry) |
+| Rules file | `~/.omp/agent/AGENTS.md` (marker-delimited block) |
+| Setup command | `lean-ctx init --agent omp` |
+
+```bash
+lean-ctx init --agent omp
+lean-ctx doctor
+```
+
+Behaviour worth knowing:
+
+- `PI_CODING_AGENT_DIR` is a **full override** of `~/.omp/agent`. When it is
+  set, lean-ctx writes the MCP entry and the rules block into that directory —
+  the same one OMP itself reads.
+- The MCP entry is a plain stdio server (`type`, `command`, `args`). OMP's
+  config schema has no `lifecycle` key, so lean-ctx never writes one.
+- Both files are merged, never replaced: unrelated `mcpServers` entries and
+  your own `AGENTS.md` content survive, and re-running setup is a no-op.
+- `lean-ctx wrap omp` has no proxy profile; the supported path is
+  `lean-ctx init --agent omp`.

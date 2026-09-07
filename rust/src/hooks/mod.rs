@@ -85,6 +85,7 @@ pub const HYBRID_AGENTS: &[&str] = &[
     "opencode",
     "openclaw",
     "pi",
+    "omp",
     "qoder",
     "qodercli",
     "windsurf",
@@ -204,6 +205,8 @@ const REFRESH_EXEMPT_HYBRID_AGENTS: &[&str] = &[
     "claude-code",
     // Installer shells out to `pi install` (subprocess) — unsafe on every start.
     "pi",
+    // OMP uses native MCP/rules files; it has no binary-embedding shell hook.
+    "omp",
     // Write project/cwd-relative rules (.clinerules, .kiro/steering) — a silent
     // server-start refresh must not create files in the user's working dir.
     "cline",
@@ -1015,6 +1018,7 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
         // MCP entry's `instructions` field written by the same writer.
         "vscode-insiders" | "commandcode" => {}
         "pi" => install_pi_hook_with_mode(global, mode),
+        "omp" => {}
         "qoder" | "qodercli" => install_qoder_hook_with_mode(mode),
         "qoderwork" => install_mcp_json_agent(
             "QoderWork",
@@ -1081,7 +1085,7 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
                 "    claude, cline, codebuddy, codex, commandcode, continue, copilot, crush, cursor, emacs, gemini, grok,"
             );
             eprintln!(
-                "    grok-build, hermes, jetbrains, kiro, neovim, openclaw, opencode, pi, qoder,"
+                "    grok-build, hermes, jetbrains, kiro, neovim, omp, openclaw, opencode, pi, qoder,"
             );
             eprintln!(
                 "    qodercli, qoderwork, qwen, roo, sublime, trae, verdent, vibe, vscode, windsurf, zed"

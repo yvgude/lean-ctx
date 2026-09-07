@@ -864,6 +864,16 @@ mod tests {
     }
 
     #[test]
+    fn omp_is_supported_but_has_no_proxy_wrap_profile() {
+        let err = WrapAgent::from_str("omp").expect_err("omp has no wrap profile");
+        assert!(
+            err.contains("lean-ctx init --agent omp"),
+            "error must point at the working command: {err}"
+        );
+        assert!(!err.starts_with("unsupported agent"));
+    }
+
+    #[test]
     fn supports_each_requested_agent() {
         for (name, agent) in [
             ("claude", WrapAgent::Claude),

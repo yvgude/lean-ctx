@@ -105,8 +105,8 @@ fn zed_rules_path_is_os_aware_and_matches_config_dir() {
 fn target_count() {
     let home = std::path::PathBuf::from("/tmp/fake_home");
     let targets = build_rules_targets(&home, crate::core::config::RulesInjection::Shared);
-    // Includes Grok (`~/.grok/AGENTS.md`).
-    assert_eq!(targets.len(), 26);
+    // Includes Grok and Oh My Pi (`~/.omp/agent/AGENTS.md`).
+    assert_eq!(targets.len(), 27);
     assert!(
         targets.iter().any(|t| t.name == "Grok"),
         "Grok must have a rules target"
@@ -120,7 +120,7 @@ fn target_count() {
         "CodeBuddy must not get a rules target"
     );
     let dedicated = build_rules_targets(&home, crate::core::config::RulesInjection::Dedicated);
-    assert_eq!(dedicated.len(), 26);
+    assert_eq!(dedicated.len(), 27);
 }
 
 #[test]
@@ -151,6 +151,37 @@ fn dedicated_mode_swaps_shared_agents_to_dedicated_files() {
 }
 
 #[test]
+fn omp_rules_target_merges_into_the_native_agents_file() {
+    let home = std::path::PathBuf::from("/tmp/fake_home");
+    for injection in [
+        crate::core::config::RulesInjection::Shared,
+        crate::core::config::RulesInjection::Dedicated,
+    ] {
+        let targets = build_rules_targets(&home, injection);
+        let omp = targets
+            .iter()
+            .find(|t| t.name == "Oh My Pi")
+            .expect("Oh My Pi must have a rules target");
+        assert_eq!(
+            omp.path,
+            crate::core::editor_registry::omp_agents_path(&home)
+        );
+        assert_eq!(omp.path.file_name().unwrap(), "AGENTS.md");
+        // Shared user instruction file -> marker-delimited merge. A dedicated
+        // (lean-ctx-owned) file would clobber the user's own guidance.
+        assert!(matches!(omp.format, RulesFormat::SharedMarkdown));
+    }
+}
+
+#[test]
+fn omp_and_pi_cli_keys_do_not_cross_match() {
+    assert!(match_agent_name("omp", "Oh My Pi"));
+    assert!(!match_agent_name("omp", "Pi Coding Agent"));
+    assert!(!match_agent_name("pi", "Oh My Pi"));
+    assert!(match_agent_name("pi", "Pi Coding Agent"));
+}
+
+#[test]
 fn rules_catalog_includes_previously_missing_agents_for_detection() {
     let home = std::path::Path::new("/home/tester");
     let names: std::collections::HashSet<&str> = [
@@ -161,7 +192,9 @@ fn rules_catalog_includes_previously_missing_agents_for_detection() {
     .flat_map(|inj| build_rules_targets(home, *inj))
     .map(|t| t.name)
     .collect();
-    for agent in ["OpenCode", "Zed", "Cline", "Roo Code", "Continue", "Crush"] {
+    for agent in [
+        "OpenCode", "Zed", "Cline", "Roo Code", "Continue", "Crush", "Oh My Pi",
+    ] {
         assert!(
             names.contains(agent),
             "{agent} must be in the rules catalog used for presence detection (#442)"

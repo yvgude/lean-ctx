@@ -264,6 +264,12 @@ pub(crate) fn agent_mcp_targets(
             crate::core::editor_registry::cline_cli_mcp_settings_path(),
             ConfigType::ClineCli,
         ),
+        "omp" => push(
+            &mut targets,
+            "Oh My Pi",
+            crate::core::editor_registry::omp_mcp_path(home),
+            ConfigType::OmpMcp,
+        ),
         "roo" => push(
             &mut targets,
             "Roo Code",
@@ -536,6 +542,12 @@ pub fn disable_agent_mcp(agent: &str, overwrite_invalid: bool) -> Result<(), Str
             crate::core::editor_registry::cline_cli_mcp_settings_path(),
             ConfigType::ClineCli,
         ),
+        "omp" => push(
+            &mut targets,
+            "Oh My Pi",
+            crate::core::editor_registry::omp_mcp_path(&home),
+            ConfigType::OmpMcp,
+        ),
         "roo" => push(
             &mut targets,
             "Roo Code",
@@ -678,6 +690,36 @@ mod qodercli_tests {
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0].name, "Cline CLI");
         assert_eq!(targets[0].config_type, ConfigType::ClineCli);
+    }
+
+    #[test]
+    fn omp_agent_target_uses_the_native_agent_dir_and_schema() {
+        let home = std::path::Path::new("/home/tester");
+        let targets = agent_mcp_targets("omp", home).unwrap();
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].name, "Oh My Pi");
+        assert_eq!(
+            targets[0].config_path,
+            crate::core::editor_registry::omp_mcp_path(home)
+        );
+        assert_eq!(targets[0].config_type, ConfigType::OmpMcp);
+        // Default layout only holds when the environment does not relocate the
+        // OMP agent dir; PI_CODING_AGENT_DIR is a documented full override.
+        if std::env::var_os("PI_CODING_AGENT_DIR").is_none() {
+            assert_eq!(targets[0].config_path, home.join(".omp/agent/mcp.json"));
+        }
+    }
+
+    #[test]
+    fn omp_and_pi_stay_separate_setup_targets() {
+        let home = std::path::Path::new("/home/tester");
+        let omp = agent_mcp_targets("omp", home).unwrap();
+        let pi = agent_mcp_targets("pi", home).unwrap();
+        assert!(
+            pi.iter().all(|t| t.config_path != omp[0].config_path),
+            "Oh My Pi must not write into the stock Pi config"
+        );
     }
 
     #[test]

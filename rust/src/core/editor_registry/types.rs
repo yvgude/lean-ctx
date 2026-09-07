@@ -45,4 +45,9 @@ pub enum ConfigType {
     /// `cline_mcp_settings.json` (under globalStorage, see `ConfigType::McpJson`
     /// via `cline_mcp_path`) and most other MCP-JSON agents use.
     ClineCli,
+    /// Oh My Pi (`~/.omp/agent/mcp.json`): native `mcpServers` root whose
+    /// entries are plain stdio servers (`type`/`command`/`args`). OMP's schema
+    /// has no `lifecycle` key — its client defers connecting on its own — so
+    /// this writer must never emit one.
+    OmpMcp,
 }

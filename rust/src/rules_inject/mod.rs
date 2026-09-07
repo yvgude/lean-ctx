@@ -317,6 +317,12 @@ pub fn any_rules_marker_present(home: &std::path::Path) -> bool {
 fn match_agent_name(cli_key: &str, target_name: &str) -> bool {
     let needle = cli_key.to_lowercase();
     let tn = target_name.to_lowercase();
+    if needle == "pi" {
+        return tn.contains("pi coding");
+    }
+    if needle == "omp" {
+        return tn.contains("oh my pi");
+    }
     needle.contains(&tn)
         || tn.contains(&needle)
         || (needle.contains("cursor") && tn.contains("cursor"))
@@ -335,7 +341,6 @@ fn match_agent_name(cli_key: &str, target_name: &str) -> bool {
         || (needle == "amp" && tn.contains("amp"))
         || (needle == "trae" && tn.contains("trae"))
         || (needle == "amazonq" && tn.contains("amazon"))
-        || (needle == "pi" && tn.contains("pi coding"))
         || (needle == "crush" && tn.contains("crush"))
         || (needle == "verdent" && tn.contains("verdent"))
         || (needle == "continue" && tn.contains("continue"))

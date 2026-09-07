@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 use super::paths::{
     augment_cli_settings_path, augment_vscode_mcp_path, claude_mcp_json_path,
     cline_cli_mcp_settings_path, cline_mcp_path, codebuddy_mcp_json_path, detect_vibe_path,
-    qoder_all_mcp_paths, qodercli_settings_path, qoderwork_mcp_path, roo_mcp_path,
-    vibe_config_path, vscode_insiders_mcp_path, vscode_mcp_path, zed_config_dir, zed_settings_path,
+    omp_agent_dir, omp_mcp_path, qoder_all_mcp_paths, qodercli_settings_path, qoderwork_mcp_path,
+    roo_mcp_path, vibe_config_path, vscode_insiders_mcp_path, vscode_mcp_path, zed_config_dir,
+    zed_settings_path,
 };
 use super::types::{ConfigType, EditorTarget};
 
@@ -211,6 +212,13 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
         // integrated via the pi-lean-ctx npm package (embedded MCP bridge) and
         // AGENTS.md; `init --agent pi` removes stale mcp.json entries.
         EditorTarget {
+            name: "Oh My Pi",
+            agent_key: "omp".to_string(),
+            config_path: omp_mcp_path(home),
+            detect_path: detect_omp_path(home),
+            config_type: ConfigType::OmpMcp,
+        },
+        EditorTarget {
             name: "Amp",
             agent_key: "amp".to_string(),
             config_path: home.join(".config/amp/settings.json"),
@@ -305,6 +313,28 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
     );
 
     targets
+}
+
+/// Detect Oh My Pi: its native agent directory first (cheap, and the exact
+/// directory lean-ctx writes into), then the `omp` executable on PATH.
+/// OMP and stock Pi intentionally remain separate targets and setup paths.
+pub fn detect_omp_path(home: &Path) -> PathBuf {
+    let state_dir = omp_agent_dir(home);
+    if state_dir.exists() {
+        return state_dir;
+    }
+
+    let which_cmd = if cfg!(windows) { "where" } else { "which" };
+    if let Ok(output) = std::process::Command::new(which_cmd).arg("omp").output()
+        && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if let Some(path) = stdout.lines().map(str::trim).find(|line| !line.is_empty()) {
+            return PathBuf::from(path);
+        }
+    }
+
+    PathBuf::from("/nonexistent")
 }
 
 fn detect_qoder_path(home: &Path) -> PathBuf {
@@ -853,6 +883,19 @@ mod augment_tests {
         assert_eq!(target.name, "Qoder CLI");
         assert_eq!(target.config_path, home.join(".qoder/settings.json"));
         assert!(matches!(target.config_type, ConfigType::QoderSettings));
+    }
+
+    #[test]
+    fn build_targets_includes_omp_native_mcp_entry() {
+        let home = Path::new("/home/tester");
+        let target = build_targets(home)
+            .into_iter()
+            .find(|t| t.agent_key == "omp")
+            .expect("omp target should be registered");
+
+        assert_eq!(target.name, "Oh My Pi");
+        assert_eq!(target.config_path, omp_mcp_path(home));
+        assert!(matches!(target.config_type, ConfigType::OmpMcp));
     }
 
     // Writer-layer round-trip: verifies the McpJson writer preserves unrelated

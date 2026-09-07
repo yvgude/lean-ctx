@@ -224,6 +224,35 @@ pub fn qoderwork_mcp_path(home: &Path) -> PathBuf {
     home.join(".qoderwork/mcp.json")
 }
 
+/// Oh My Pi's user-level agent directory.
+///
+/// OMP keeps its native MCP config (`mcp.json`) and its user instruction file
+/// (`AGENTS.md`) together under `~/.omp/agent`. `PI_CODING_AGENT_DIR` is OMP's
+/// documented *full* override of that directory: when it is set, OMP itself
+/// reads from there, so lean-ctx must write to the very same place instead of
+/// re-deriving a path under `$HOME`.
+pub fn omp_agent_dir(home: &Path) -> PathBuf {
+    omp_agent_dir_from(home, std::env::var("PI_CODING_AGENT_DIR").ok().as_deref())
+}
+
+/// Env-free core of [`omp_agent_dir`] so the override semantics stay testable
+/// without mutating process-global environment state. A blank/whitespace-only
+/// override is not a usable directory and falls back to the default layout.
+pub(crate) fn omp_agent_dir_from(home: &Path, override_dir: Option<&str>) -> PathBuf {
+    if let Some(explicit) = override_dir.map(str::trim).filter(|dir| !dir.is_empty()) {
+        return PathBuf::from(explicit);
+    }
+    home.join(".omp/agent")
+}
+
+pub fn omp_mcp_path(home: &Path) -> PathBuf {
+    omp_agent_dir(home).join("mcp.json")
+}
+
+pub fn omp_agents_path(home: &Path) -> PathBuf {
+    omp_agent_dir(home).join("AGENTS.md")
+}
+
 /// Qoder CLI stores user-scoped MCP servers in the shared Qoder settings file.
 /// This is intentionally separate from Qoder IDE's `mcp.json` locations: the
 /// two applications use the same `.qoder` state directory but do not consume
@@ -430,5 +459,46 @@ mod tests {
                 home.join("Library/Application Support/Qoder/SharedClientCache/mcp.json"),
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod omp_path_tests {
+    use super::{omp_agent_dir_from, omp_agents_path, omp_mcp_path};
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn omp_defaults_to_the_native_agent_dir() {
+        assert_eq!(
+            omp_agent_dir_from(Path::new("/home/tester"), None),
+            PathBuf::from("/home/tester/.omp/agent")
+        );
+    }
+
+    #[test]
+    fn pi_coding_agent_dir_is_a_full_override() {
+        assert_eq!(
+            omp_agent_dir_from(Path::new("/home/tester"), Some("/elsewhere/omp-agent")),
+            PathBuf::from("/elsewhere/omp-agent")
+        );
+    }
+
+    #[test]
+    fn blank_override_falls_back_to_the_default_layout() {
+        let home = Path::new("/home/tester");
+        assert_eq!(
+            omp_agent_dir_from(home, Some("   ")),
+            omp_agent_dir_from(home, None)
+        );
+    }
+
+    #[test]
+    fn omp_config_and_rules_share_one_agent_dir() {
+        // Env-robust: compares the two paths against each other, so it holds
+        // with or without a PI_CODING_AGENT_DIR override in the environment.
+        let home = Path::new("/home/tester");
+        assert_eq!(omp_mcp_path(home).parent(), omp_agents_path(home).parent());
+        assert_eq!(omp_mcp_path(home).file_name().unwrap(), "mcp.json");
+        assert_eq!(omp_agents_path(home).file_name().unwrap(), "AGENTS.md");
     }
 }

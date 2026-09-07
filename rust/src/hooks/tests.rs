@@ -40,6 +40,22 @@ fn qodercli_is_configured_for_hybrid_hooks() {
 }
 
 #[test]
+fn omp_is_supported_as_native_mcp_and_rules_integration() {
+    assert!(HYBRID_AGENTS.contains(&"omp"));
+    assert!(!REPLACE_AGENTS.contains(&"omp"));
+    assert!(REFRESH_EXEMPT_HYBRID_AGENTS.contains(&"omp"));
+    assert!(!REFRESHABLE_HOOK_AGENTS.contains(&"omp"));
+    // `init --agent omp` / `wrap omp` must recognise the key.
+    assert!(is_supported_agent("omp"));
+    // OMP installs no hook artifacts, so detection must stay false (and thus
+    // idempotent) even for a home that already has an OMP agent dir.
+    let tmp = unique_tmp_dir("leanctx_omp_hooks");
+    std::fs::create_dir_all(tmp.join(".omp/agent")).unwrap();
+    assert!(!hooks_installed_for("omp", &tmp));
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
 fn qodercli_hooks_are_eligible_for_refresh() {
     assert!(REFRESHABLE_HOOK_AGENTS.contains(&"qodercli"));
     assert!(!REFRESH_EXEMPT_HYBRID_AGENTS.contains(&"qodercli"));

@@ -14,6 +14,7 @@ mod crush;
 mod gemini;
 mod hermes;
 mod jetbrains;
+mod omp;
 mod openclaw;
 mod opencode;
 mod qoder;
@@ -44,6 +45,8 @@ pub(crate) use gemini::*;
 pub(crate) use hermes::*;
 #[allow(clippy::wildcard_imports)]
 pub(crate) use jetbrains::*;
+#[allow(clippy::wildcard_imports)]
+pub(crate) use omp::*;
 #[allow(clippy::wildcard_imports)]
 pub(crate) use openclaw::*;
 #[allow(clippy::wildcard_imports)]

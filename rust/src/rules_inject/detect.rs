@@ -44,6 +44,9 @@ pub(super) fn is_tool_detected(target: &RulesTarget, home: &std::path::Path) -> 
         "JetBrains IDEs" => detect_jetbrains_installed(home),
         "Antigravity" => home.join(".gemini/antigravity").exists(),
         "Pi Coding Agent" => home.join(".pi").exists() || command_exists("pi"),
+        "Oh My Pi" => {
+            crate::core::editor_registry::omp_agent_dir(home).exists() || command_exists("omp")
+        }
         "AWS Kiro" => home.join(".kiro").exists(),
         "Crush" => home.join(".config/crush").exists() || command_exists("crush"),
         "Verdent" => home.join(".verdent").exists(),

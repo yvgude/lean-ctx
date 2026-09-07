@@ -152,6 +152,56 @@ fn cline_cli_config_nests_command_under_transport() {
 }
 
 #[test]
+fn omp_config_uses_native_stdio_schema_preserves_servers_and_is_idempotent() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mcp.json");
+    std::fs::write(
+        &path,
+        r#"{ "disabledServers": ["other"], "mcpServers": { "other": { "command": "other-bin" }, "lean-ctx": { "command": "old", "lifecycle": "lazy" } } }"#,
+    )
+    .unwrap();
+
+    let t = target("Oh My Pi", path.clone(), ConfigType::OmpMcp);
+    let first =
+        write_config_with_options(&t, "/new/path/lean-ctx", WriteOptions::default()).unwrap();
+    assert_eq!(first.action, WriteAction::Updated);
+
+    let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(json["disabledServers"], serde_json::json!(["other"]));
+    assert_eq!(json["mcpServers"]["other"]["command"], "other-bin");
+    let entry = &json["mcpServers"]["lean-ctx"];
+    assert_eq!(entry["type"], "stdio");
+    assert_eq!(entry["command"], "/new/path/lean-ctx");
+    assert_eq!(entry["args"], serde_json::json!([]));
+    assert!(entry.get("lifecycle").is_none());
+    assert!(json["$schema"].as_str().unwrap().contains("oh-my-pi"));
+
+    let second =
+        write_config_with_options(&t, "/new/path/lean-ctx", WriteOptions::default()).unwrap();
+    assert_eq!(second.action, WriteAction::Already);
+}
+
+#[test]
+fn omp_config_is_created_with_the_native_stdio_schema() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("agent").join("mcp.json");
+    let t = target("Oh My Pi", path.clone(), ConfigType::OmpMcp);
+
+    let created = write_config_with_options(&t, "/bin/lean-ctx", WriteOptions::default()).unwrap();
+    assert_eq!(created.action, WriteAction::Created);
+
+    let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let entry = &json["mcpServers"]["lean-ctx"];
+    assert_eq!(entry["type"], "stdio");
+    assert_eq!(entry["command"], "/bin/lean-ctx");
+    assert_eq!(entry["args"], serde_json::json!([]));
+    assert!(entry.get("lifecycle").is_none(), "OMP has no lifecycle key");
+
+    let again = write_config_with_options(&t, "/bin/lean-ctx", WriteOptions::default()).unwrap();
+    assert_eq!(again.action, WriteAction::Already);
+}
+
+#[test]
 fn codex_toml_upserts_existing_section() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
