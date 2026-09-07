@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { selectBridgeTools, type McpTool } from "../extensions/mcp-bridge.js";
+import {
+  McpBridge,
+  type McpCallResult,
+  selectBridgeTools,
+  type McpTool,
+} from "../extensions/mcp-bridge.js";
 
 const tool = (name: string): McpTool => ({ name });
 
@@ -198,5 +203,144 @@ describe("propToTypebox", () => {
   it("handles array without items (fallback to Unknown)", () => {
     const result = propToTypebox({ type: "array" });
     expect(IsArray(result)).toBe(true);
+  });
+});
+
+function fakePi(registrations: unknown[]) {
+  return {
+    registerTool(definition: unknown) {
+      registrations.push(definition);
+    },
+  } as never;
+}
+
+const bridgePolicy = {
+  disabledTools: new Set<string>(),
+  localTools: new Set<string>(),
+};
+
+describe("McpBridge startup modes", () => {
+  it("registers cached tools without starting MCP until the first call", async () => {
+    let connections = 0;
+    const registrations: unknown[] = [];
+    const bridge = new McpBridge("test", {}, bridgePolicy, {
+      hooks: {
+        connect: async () => {
+          connections++;
+        },
+        callTool: async () => ({
+          content: [{ type: "text", text: "ok" }],
+        } as McpCallResult),
+      },
+    });
+
+    bridge.registerCachedTools(fakePi(registrations), [tool("ctx_search")]);
+    expect(registrations).toHaveLength(1);
+    expect(connections).toBe(0);
+
+    await bridge.callTool("ctx_search", {});
+    expect(connections).toBe(1);
+  });
+
+  it("preserves Pi's direct tool result contract on a lazy call", async () => {
+    const registrations: unknown[] = [];
+    const bridge = new McpBridge("test", {}, bridgePolicy, {
+      hooks: {
+        connect: async () => undefined,
+        callTool: async () => ({
+          content: [{ type: "text", text: "ok" }],
+        } as McpCallResult),
+      },
+    });
+    bridge.registerCachedTools(fakePi(registrations), [tool("ctx_search")]);
+
+    const definition = registrations[0] as {
+      execute: (
+        toolCallId: string,
+        params: Record<string, unknown>,
+        signal?: AbortSignal,
+      ) => Promise<unknown>;
+    };
+    const result = await definition.execute("call-1", {}, new AbortController().signal);
+
+    expect(result).toEqual({
+      content: [{ type: "text", text: "ok" }],
+      details: undefined,
+    });
+  });
+
+  it("coalesces concurrent first calls behind one connection", async () => {
+    let connections = 0;
+    let calls = 0;
+    let release!: () => void;
+    const connectionReady = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const bridge = new McpBridge("test", {}, bridgePolicy, {
+      hooks: {
+        connect: async () => {
+          connections++;
+          await connectionReady;
+        },
+        callTool: async () => {
+          calls++;
+          return { content: [{ type: "text", text: "ok" }] } as McpCallResult;
+        },
+      },
+    });
+    bridge.registerCachedTools(fakePi([]), [tool("ctx_search")]);
+
+    const first = bridge.callTool("ctx_search", {});
+    const second = bridge.callTool("ctx_search", {});
+    await Promise.resolve();
+    expect(connections).toBe(1);
+    release();
+    await Promise.all([first, second]);
+    expect(calls).toBe(2);
+  });
+
+  it("keeps cache-miss startup eager and registers discovered tools", async () => {
+    let connections = 0;
+    let discoveries = 0;
+    const registrations: unknown[] = [];
+    const bridge = new McpBridge("test", {}, bridgePolicy, {
+      hooks: {
+        connect: async () => {
+          connections++;
+        },
+        listTools: async () => {
+          discoveries++;
+          return [tool("ctx_search")];
+        },
+        callTool: async () => ({
+          content: [{ type: "text", text: "ok" }],
+        } as McpCallResult),
+      },
+    });
+
+    await bridge.start(fakePi(registrations));
+    expect(connections).toBe(1);
+    expect(discoveries).toBe(1);
+    expect(registrations).toHaveLength(1);
+  });
+
+  it("reports eager startup failure so the host can fall back to CLI tools", async () => {
+    const bridge = new McpBridge("test", {}, bridgePolicy, {
+      hooks: {
+        connect: async () => {
+          throw new Error("binary unavailable");
+        },
+      },
+    });
+
+    const started = await bridge.start(fakePi([]));
+
+    expect(started).toBe(false);
+    expect(bridge.isConnected()).toBe(false);
+    expect(bridge.getStatus()).toMatchObject({
+      connected: false,
+      startupMode: "eager",
+      lastError: "binary unavailable",
+    });
   });
 });

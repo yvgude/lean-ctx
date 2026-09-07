@@ -23,6 +23,8 @@ export type McpBridgeStatus = {
   /** Active prefix applied to bridge tool names, if any (#359). */
   toolPrefix?: string;
   reconnectAttempts: number;
+  /** Whether schemas were registered eagerly or from a warm cache. */
+  startupMode?: "eager" | "lazy";
   lastError?: string;
   lastHungTool?: string;
   lastRetry?: McpBridgeRetryState;

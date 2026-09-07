@@ -25,6 +25,17 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { homedir, platform } from "node:os";
 import { McpBridge } from "./mcp-bridge.js";
+import {
+  createMcpSchemaCacheKey,
+  identifyBinary,
+  identifyToolSurfaceConfiguration,
+  loadMcpSchemaCache,
+  MCP_ENGINE_VERSION,
+  mcpSchemaCachePath,
+  PI_EXTENSION_VERSION,
+  toolSurfaceEnvironment,
+  writeMcpSchemaCache,
+} from "./mcp-cache.js";
 import { loadPiConfig, resolvePiShellPath, resolveSuppressedBuiltins } from "./config.js";
 import { withFooter } from "./footer.js";
 
@@ -501,7 +512,7 @@ export default async function (pi: ExtensionAPI) {
         const mode = `lines:${startLine}-${endLine}`;
         // Route line-range reads through the bridge too, so re-reading the same
         // slice hits the session cache instead of re-spawning a CLI per call (#361).
-        if (mcpBridge?.isConnected()) {
+        if (mcpBridge) {
           try {
             const bridged = await mcpBridge.callTool("ctx_read", { path: absolutePath, mode, ...(forceFresh ? { fresh: true } : {}) }, signal);
             const bridgedText = bridged.content.map((block) => block.text).join("");
@@ -541,14 +552,13 @@ export default async function (pi: ExtensionAPI) {
       const wantsFresh = forceFresh || isExplicitFull;
       const mode = params.mode ?? await chooseReadMode(absolutePath);
 
-      // When the embedded MCP bridge is connected, route the read through it so
+      // When the embedded MCP bridge is available, route the read through it so
       // the persistent session cache engages: an unchanged re-read then costs
       // ~13 tokens instead of the full file, and the read registers as a real
       // CEP session (counted by `lean-ctx gain`). The one-shot CLI path below
       // spawns a fresh `lean-ctx read` per call and therefore cannot cache
-      // across calls — it is used only as a fallback when the bridge is
-      // unavailable or errors.
-      if (mcpBridge?.isConnected()) {
+      // across calls — it is used when the bridge is unavailable or errors.
+      if (mcpBridge) {
         try {
           const bridged = await mcpBridge.callTool(
             "ctx_read",
@@ -738,7 +748,7 @@ export default async function (pi: ExtensionAPI) {
     ],
     parameters: editSchema,
     async execute(_toolCallId, params, signal) {
-      if (!mcpBridge?.isConnected()) {
+      if (!mcpBridge) {
         throw new Error(
           "lean-ctx MCP bridge not connected. Use Pi's native edit tool instead.",
         );
@@ -759,28 +769,58 @@ export default async function (pi: ExtensionAPI) {
   // is actually serving it — pi has no native MCP support, and `lean-ctx init
   // --agent pi` writes that entry by default — so it must not silently disable the
   // bridge a user explicitly requested via LEAN_CTX_PI_ENABLE_MCP=1 / enableMcp.
-  mcpBridge = enableMcpBridge
-    ? new McpBridge(resolveBinary(), PI_CONFIG.forwardedEnv, {
+  const bridgeBinary = resolveBinary();
+  const cachePath = mcpSchemaCachePath(PI_CONFIG.configPath);
+  const cacheKey = createMcpSchemaCacheKey({
+    extensionVersion: PI_EXTENSION_VERSION,
+    engineVersion: MCP_ENGINE_VERSION,
+    binaryPath: bridgeBinary,
+    binaryIdentity: identifyBinary(bridgeBinary),
+    toolProfile: PI_CONFIG.toolProfile,
+    disabledTools: [...PI_CONFIG.disabledTools],
+    toolPrefix: PI_CONFIG.toolPrefix,
+    forwardedEnv: toolSurfaceEnvironment(PI_CONFIG.forwardedEnv),
+    localTools: [...localToolNames],
+    mode: PI_CONFIG.mode,
+    routeShell: PI_CONFIG.routeShell,
+    toolSurfaceConfiguration: identifyToolSurfaceConfiguration(),
+  });
+  const cachedTools = enableMcpBridge
+    ? loadMcpSchemaCache(cachePath, cacheKey)
+    : undefined;
+
+  const bridge = enableMcpBridge
+    ? new McpBridge(bridgeBinary, PI_CONFIG.forwardedEnv, {
         disabledTools: PI_CONFIG.disabledTools,
         toolPrefix: PI_CONFIG.toolPrefix,
         localTools: localToolNames,
+      }, {
+        onSchemasDiscovered: (tools) => {
+          try {
+            writeMcpSchemaCache(cachePath, cacheKey, tools);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(`[pi-lean-ctx] MCP schema cache refresh failed: ${msg}`);
+          }
+        },
       })
     : null;
+  mcpBridge = bridge;
 
-  if (mcpBridge) {
+  if (bridge) {
     pi.on("session_shutdown", async () => {
-      await mcpBridge?.shutdown();
+      await bridge.shutdown();
     });
 
     // Invalidate lean-ctx read cache when Pi's native edit/write modifies a
     // file, so subsequent ctx_read calls return fresh content.
     pi.on("tool_result", async (event) => {
-      if (!mcpBridge?.isConnected()) return;
+      if (!bridge.isConnected()) return;
       if (!isEditToolResult(event) && !isWriteToolResult(event)) return;
       const path = event.input?.path as string | undefined;
       if (!path) return;
       try {
-        await mcpBridge.callTool("ctx_session", {
+        await bridge.callTool("ctx_session", {
           action: "invalidate",
           path,
         });
@@ -789,23 +829,39 @@ export default async function (pi: ExtensionAPI) {
       }
     });
 
-    // GH #1426: await bridge startup so MCP tools are registered before
-    // session_start snapshots the tool list. Bounded timeout prevents a
-    // missing/unresponsive lean-ctx binary from blocking Pi indefinitely.
-    try {
-      await Promise.race([
-        mcpBridge.start(pi),
-        new Promise<void>((_, reject) =>
-          setTimeout(() => reject(new Error("timeout")), BRIDGE_STARTUP_TIMEOUT_MS),
-        ),
-      ]);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(
-        `[pi-lean-ctx] MCP bridge ${msg === "timeout" ? `startup timed out after ${BRIDGE_STARTUP_TIMEOUT_MS / 1000}s` : `startup failed: ${msg}`}. `
-          + "CLI-backed tools (ctx_read, ctx_shell) remain active; "
-          + "advanced MCP tools (ctx_compose, ctx_search, ctx_callgraph, ctx_patch, ctx_call) are unavailable.",
-      );
+    if (cachedTools) {
+      // Warm metadata is enough to preserve the direct tool surface. The MCP
+      // process is opened by the first bridge-backed call instead of Pi startup.
+      bridge.registerCachedTools(pi, cachedTools);
+    } else {
+      // Cache miss/incompatibility deliberately keeps the old eager discovery
+      // path, including its bounded startup wait and cache refresh.
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const started = await Promise.race([
+          bridge.start(pi),
+          new Promise<void>((_, reject) =>
+            timeoutHandle = setTimeout(
+              () => reject(new Error("timeout")),
+              BRIDGE_STARTUP_TIMEOUT_MS,
+            ),
+          ),
+        ]);
+        if (!started || !bridge.isConnected()) {
+          throw new Error(bridge.getStatus().lastError ?? "bridge did not connect");
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await bridge.shutdown();
+        if (mcpBridge === bridge) mcpBridge = null;
+        console.error(
+          `[pi-lean-ctx] MCP bridge ${msg === "timeout" ? `startup timed out after ${BRIDGE_STARTUP_TIMEOUT_MS / 1000}s` : `startup failed: ${msg}`}. `
+            + "CLI-backed tools (ctx_read, ctx_shell) remain active; "
+            + "advanced MCP tools (ctx_compose, ctx_search, ctx_callgraph, ctx_patch, ctx_call) are unavailable.",
+        );
+      } finally {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+      }
     }
   }
 
@@ -835,6 +891,7 @@ export default async function (pi: ExtensionAPI) {
         lines.push('  Enable: LEAN_CTX_PI_ENABLE_MCP=1 or "enableMcp": true in config.json, then restart Pi');
       } else if (status) {
         lines.push(`MCP bridge: ${status.mode} (${status.connected ? "connected" : "disconnected"})`);
+        if (status.startupMode) lines.push(`MCP startup: ${status.startupMode}`);
         lines.push(`Reconnect attempts: ${status.reconnectAttempts}`);
         lines.push(`MCP tools: ${status.toolCount} registered`);
         if (status.toolNames.length > 0) {

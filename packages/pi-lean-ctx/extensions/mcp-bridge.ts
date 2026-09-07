@@ -9,7 +9,7 @@ import { type TSchema, Type } from "typebox";
 import type { McpBridgeRetryState, McpBridgeStatus } from "./types.js";
 
 /** Result shape returned by the MCP client's `callTool`. */
-type McpCallResult = Awaited<ReturnType<Client["callTool"]>>;
+export type McpCallResult = Awaited<ReturnType<Client["callTool"]>>;
 
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_DELAY_MS = 2000;
@@ -20,6 +20,39 @@ export type McpTool = {
   description?: string;
   inputSchema?: Record<string, unknown>;
 };
+
+export type McpBridgeHooks = {
+  /** Test/runtime seam for connection setup; production uses the MCP transport. */
+  connect?: () => Promise<void>;
+  /** Test/runtime seam for schema discovery. */
+  listTools?: () => Promise<McpTool[]>;
+  /** Test/runtime seam for direct tool calls. */
+  callTool?: (
+    name: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ) => Promise<McpCallResult>;
+  /** Test/runtime seam for cleanup. */
+  close?: () => Promise<void>;
+};
+
+export type McpBridgeOptions = {
+  onSchemasDiscovered?: (tools: McpTool[]) => void | Promise<void>;
+  hooks?: McpBridgeHooks;
+};
+
+/** Coalesce all callers arriving before one async start completes. */
+export function createCoalescedStarter(start: () => Promise<void>): () => Promise<void> {
+  let pending: Promise<void> | undefined;
+  return () => {
+    if (!pending) {
+      pending = start().finally(() => {
+        pending = undefined;
+      });
+    }
+    return pending;
+  };
+}
 
 /**
  * How the bridge should expose discovered MCP tools, so lean-ctx can coexist
@@ -174,30 +207,71 @@ export class McpBridge {
   private lastError: string | undefined;
   private lastHungTool: string | undefined;
   private lastRetry: McpBridgeRetryState | undefined;
+  private readonly onSchemasDiscovered?: (tools: McpTool[]) => void | Promise<void>;
+  private readonly hooks: McpBridgeHooks;
+  private readonly ensureConnectedCoalesced: () => Promise<void>;
+  private startupMode: "eager" | "lazy" | undefined;
 
   constructor(
     binary: string,
     extraEnv: Record<string, string> = {},
     policy: BridgeToolPolicy = DEFAULT_TOOL_POLICY,
+    options: McpBridgeOptions = {},
   ) {
     this.binary = binary;
     this.extraEnv = extraEnv;
     this.policy = policy;
+    this.onSchemasDiscovered = options.onSchemasDiscovered;
+    this.hooks = options.hooks ?? {};
+    this.ensureConnectedCoalesced = createCoalescedStarter(() => this.connect());
   }
 
-  async start(pi: ExtensionAPI): Promise<void> {
+  async start(pi: ExtensionAPI): Promise<boolean> {
+    this.startupMode = "eager";
     try {
-      await this.connect();
-      await this.discoverAndRegisterTools(pi);
+      await this.ensureConnected();
+      if (this.shuttingDown) return false;
+      const tools = await this.discoverAndRegisterTools(pi);
+      if (this.shuttingDown) return false;
+      await this.onSchemasDiscovered?.(tools);
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.lastError = msg;
       console.error(`[lean-ctx MCP bridge] Failed to start: ${msg}`);
+      return false;
+    }
+  }
+
+  /** Register validated cached schemas without starting the MCP process. */
+  registerCachedTools(pi: ExtensionAPI, tools: McpTool[]): void {
+    this.startupMode = "lazy";
+    this.registerTools(pi, tools);
+  }
+
+  private async ensureConnected(): Promise<void> {
+    if (this.isConnected()) return;
+    await this.ensureConnectedCoalesced();
+    if (!this.isConnected()) {
+      throw new Error("lean-ctx MCP bridge failed to connect.");
     }
   }
 
   private async connect(): Promise<void> {
-    if (this.shuttingDown) return;
+    if (this.shuttingDown) {
+      throw new Error("lean-ctx MCP bridge is shutting down.");
+    }
+
+    if (this.hooks.connect || this.hooks.callTool) {
+      await this.hooks.connect?.();
+      if (this.shuttingDown) {
+        throw new Error("lean-ctx MCP bridge is shutting down.");
+      }
+      this.connected = true;
+      this.reconnectAttempts = 0;
+      this.lastError = undefined;
+      return;
+    }
 
     this.transport = new StdioClientTransport({
       command: this.binary,
@@ -224,6 +298,10 @@ export class McpBridge {
     };
 
     await this.client.connect(this.transport);
+    if (this.shuttingDown) {
+      await this.client.close().catch(() => undefined);
+      throw new Error("lean-ctx MCP bridge is shutting down.");
+    }
     this.connected = true;
     this.reconnectAttempts = 0;
     this.lastError = undefined;
@@ -261,7 +339,8 @@ export class McpBridge {
     if (this.shuttingDown) return;
     this.connected = false;
     try {
-      await this.client?.close();
+      if (this.hooks.close) await this.hooks.close();
+      else await this.client?.close();
     } catch {
       // best-effort cleanup
     }
@@ -270,12 +349,22 @@ export class McpBridge {
     await this.connect();
   }
 
-  private async discoverAndRegisterTools(pi: ExtensionAPI): Promise<void> {
-    if (!this.client) return;
+  private async discoverAndRegisterTools(pi: ExtensionAPI): Promise<McpTool[]> {
+    if (this.shuttingDown) return [];
+    const tools = await this.listTools();
+    if (this.shuttingDown) return [];
+    this.registerTools(pi, tools);
+    return tools;
+  }
 
+  private async listTools(): Promise<McpTool[]> {
+    if (this.hooks.listTools) return this.hooks.listTools();
+    if (!this.client) return [];
     const result = await this.client.listTools();
-    const tools = (result.tools ?? []) as McpTool[];
+    return (result.tools ?? []) as McpTool[];
+  }
 
+  private registerTools(pi: ExtensionAPI, tools: McpTool[]): void {
     const { toRegister, disabled } = selectBridgeTools(
       tools,
       this.policy.localTools,
@@ -332,17 +421,12 @@ export class McpBridge {
     args: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
-    if (!this.client || !this.connected) {
-      throw new Error(
-        `lean-ctx MCP bridge not connected. Tool "${name}" unavailable.`,
-      );
-    }
-
     if (signal?.aborted) {
       throw new Error(`lean-ctx MCP tool "${name}" interrupted by host.`);
     }
 
     try {
+      await this.ensureConnected();
       const result = await this.callToolWithTimeout(name, args, signal);
       this.lastError = undefined;
       return this.toTextBlocks(result);
@@ -378,7 +462,9 @@ export class McpBridge {
       throw new Error(`lean-ctx MCP tool "${name}" interrupted by host.`);
     }
 
-    const call = this.client?.callTool({ name, arguments: args }, undefined, { signal });
+    const call = this.hooks.callTool
+      ? this.hooks.callTool(name, args, signal)
+      : this.client?.callTool({ name, arguments: args }, undefined, { signal });
     if (!call) {
       throw new Error(`lean-ctx MCP bridge not connected. Tool "${name}" unavailable.`);
     }
@@ -467,7 +553,10 @@ export class McpBridge {
 
   /** True when the MCP client is connected and able to serve tool calls. */
   isConnected(): boolean {
-    return this.connected && this.client !== null;
+    return this.connected && (
+      this.client !== null
+      || this.hooks.callTool !== undefined
+    );
   }
 
   getStatus(): McpBridgeStatus {
@@ -483,6 +572,7 @@ export class McpBridge {
       lastError: this.lastError,
       lastHungTool: this.lastHungTool,
       lastRetry: this.lastRetry,
+      startupMode: this.startupMode,
     };
   }
 
@@ -494,7 +584,8 @@ export class McpBridge {
       this.reconnectTimer = undefined;
     }
     try {
-      await this.client?.close();
+      if (this.hooks.close) await this.hooks.close();
+      else await this.client?.close();
     } catch {
       // best-effort cleanup
     }

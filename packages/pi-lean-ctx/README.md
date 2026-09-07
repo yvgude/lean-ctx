@@ -153,7 +153,7 @@ shell routing enabled hides only `bash`.
 
 ### Embedded MCP bridge (session cache + advanced tools)
 
-On by default, pi-lean-ctx spawns the `lean-ctx` binary as an MCP server (JSON-RPC over stdio).
+On by default, pi-lean-ctx uses the `lean-ctx` binary as an MCP server (JSON-RPC over stdio).
 This persistent process holds the **session cache**: `ctx_read` (every mode, including line
 ranges) is routed through the bridge, allowing unchanged re-reads to use the Runtime's cached
 representation. Token use depends on the file, mode, cache policy, and host. The bridge
@@ -161,7 +161,13 @@ also discovers the server's advertised tools (`ctx_overview`, `ctx_graph`, `ctx_
 filters out those already exposed as `ctx_` CLI tools, and registers the rest as native Pi tools.
 By default that surface is the lean core + `ctx_call`; set `toolProfile: power` (see the
 [Tool surface](#tool-surface-lean--standard--power) section) to also surface `ctx_edit`
-and the rest of the registry as first-class Pi tools.
+and the rest of the registry as first-class Pi tools. After the first discovery, validated
+versioned schemas are cached beside the Pi extension config. Warm starts register that direct
+surface from the cache and defer the MCP process connection until the first bridge-backed call;
+concurrent first calls share one connection attempt. Cache invalidation covers the extension and
+engine contract, binary identity, tool profile, disabled tools, prefix, local tool surface, and
+forwarded engine configuration. A missing, corrupt, or incompatible cache keeps the eager
+discovery path for that startup and refreshes the cache atomically after success.
 
 The bridge wins over `~/.pi/agent/mcp.json`: a `lean-ctx` entry there (written by
 `lean-ctx init --agent pi`) does **not** disable the embedded bridge, because Pi has no native
