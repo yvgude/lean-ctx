@@ -130,7 +130,7 @@ pub struct BM25Index {
     pub doc_freqs: HashMap<String, usize>,
     #[serde(default)]
     pub files: HashMap<String, IndexedFileState>,
-    /// mtime (ms since epoch) of every directory that contained an indexed file
+    /// Content fingerprint of every directory that contained an indexed file
     /// when this index was built, keyed by root-relative path (`""` = the root
     /// itself). Sampling tracked *files* can never reveal a file that was never
     /// indexed, so the fast staleness check would keep serving a partial index
@@ -938,7 +938,7 @@ fn bm25_index_looks_stale_inner(index: &BM25Index, root: &Path, fast: bool) -> b
 
 const SENTINEL_SAMPLE_SIZE: usize = 10;
 
-/// True when the recorded directory mtimes no longer match the filesystem —
+/// True when recorded directory fingerprints no longer match the filesystem —
 /// i.e. a file was added to (or removed from) the indexed tree.
 ///
 /// An index persisted before directory snapshots existed carries no `dirs`, so
@@ -954,23 +954,31 @@ fn dirs_look_stale(index: &BM25Index, root: &Path) -> bool {
         } else {
             root.join(rel)
         };
-        if dir_mtime_ms(&abs) != Some(*recorded) {
+        if dir_fingerprint(&abs) != Some(*recorded) {
             return true;
         }
     }
     false
 }
 
-fn dir_mtime_ms(path: &Path) -> Option<u64> {
+fn dir_fingerprint(path: &Path) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+
     let meta = std::fs::metadata(path).ok()?;
-    meta.modified()
+    let modified = meta.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
+    let mut entries = std::fs::read_dir(path)
         .ok()?
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|d| d.as_millis() as u64)
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    entries.sort_unstable();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    modified.as_nanos().hash(&mut hasher);
+    entries.hash(&mut hasher);
+    Some(hasher.finish())
 }
 
-/// mtime snapshot of the root plus every ancestor directory of an indexed file.
+/// Content snapshot of the root plus every ancestor directory of an indexed file.
 /// Ancestors are included so a brand-new top-level directory (whose own mtime
 /// was never recorded) is still caught through its recorded parent.
 fn dir_states(root: &Path, files: &[String]) -> HashMap<String, u64> {
@@ -994,7 +1002,7 @@ fn dir_states(root: &Path, files: &[String]) -> HashMap<String, u64> {
             } else {
                 root.join(&rel)
             };
-            dir_mtime_ms(&abs).map(|m| (rel, m))
+            dir_fingerprint(&abs).map(|fingerprint| (rel, fingerprint))
         })
         .collect()
 }
