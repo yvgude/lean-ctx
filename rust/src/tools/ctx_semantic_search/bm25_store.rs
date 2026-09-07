@@ -43,7 +43,20 @@ pub(crate) fn load_or_refresh_bm25(root: &Path) -> Bm25LoadResult {
 
     let root_str = root.to_string_lossy().to_string();
 
+    // #1724: the resident cache holds ONE root, so every call for a sibling
+    // project (`ctx_compose(path=...)`) misses it and lands here. Loading the
+    // persisted index unconditionally pinned that project's first, partial tree
+    // forever — nothing on this path ever asked whether it was still current.
+    // Check staleness (one stat per tracked directory, no ingest walk); a stale
+    // index still answers this call, but it now also triggers the refresh that
+    // makes the next call complete, and it is not pinned into the resident
+    // cache so the rebuilt index is picked up as soon as it is persisted.
     if let Some(idx) = crate::core::index_orchestrator::try_load_bm25_index(&root_str) {
+        if crate::core::bm25_index::bm25_index_looks_stale_fast(&idx, root) {
+            tracing::debug!("[bm25_store: stale on-disk index for {root_str}; refreshing]");
+            crate::core::index_orchestrator::ensure_all_background(&root_str);
+            return Bm25LoadResult::Ready(std::sync::Arc::new(idx));
+        }
         let idx = std::sync::Arc::new(idx);
         store_in_thread_cache(root, &idx);
         return Bm25LoadResult::Ready(idx);

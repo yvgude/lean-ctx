@@ -1075,3 +1075,121 @@ fn remove_chunks_with_prefix_evicts_only_matching() {
     // A no-match prefix is a no-op.
     assert_eq!(index.remove_chunks_with_prefix("nope://"), 0);
 }
+
+// ── #1724: a path-scoped sibling project kept answering from its first,
+// partial tree. The fast staleness check only samples files it already knows,
+// so files added after that first build stayed invisible forever.
+
+#[test]
+fn fast_stale_check_sees_files_added_after_the_first_build() {
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    std::fs::write(root.join("main.go"), "package main\nfunc main() {}\n").expect("write main.go");
+
+    let idx = BM25Index::build_from_directory(root);
+    assert!(
+        !bm25_index_looks_stale_fast(&idx, root),
+        "a freshly built index is current"
+    );
+
+    // The reporter's case: a whole subsystem directory appears afterwards.
+    std::fs::create_dir_all(root.join("replacement")).expect("mkdir replacement");
+    std::fs::write(
+        root.join("replacement").join("docker.go"),
+        "package replacement\nfunc ReplaceContainer() {}\n",
+    )
+    .expect("write docker.go");
+
+    assert!(
+        bm25_index_looks_stale_fast(&idx, root),
+        "files added after the build must invalidate the sampled fast check"
+    );
+}
+
+#[test]
+fn load_or_build_fast_reindexes_after_new_files_land() {
+    let _env = crate::core::data_dir::test_env_lock();
+    let data_dir = tempdir().expect("data_dir");
+    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    std::fs::write(root.join("main.go"), "package main\nfunc main() {}\n").expect("write main.go");
+
+    // First path-scoped call: builds and persists the (then complete) index.
+    let first = BM25Index::load_or_build_fast(root);
+    assert!(first.files.keys().any(|f| f.ends_with("main.go")));
+    assert!(
+        first.search("ReplaceContainer", 5).is_empty(),
+        "the subsystem does not exist yet"
+    );
+
+    std::fs::create_dir_all(root.join("replacement")).expect("mkdir replacement");
+    std::fs::write(
+        root.join("replacement").join("docker.go"),
+        "package replacement\nfunc ReplaceContainer() {}\n",
+    )
+    .expect("write docker.go");
+
+    // Second call must not silently serve the earlier partial tree.
+    let second = BM25Index::load_or_build_fast(root);
+    assert!(
+        second.files.keys().any(|f| f.ends_with("docker.go")),
+        "newly added files must be indexed: {:?}",
+        second.files.keys().collect::<Vec<_>>()
+    );
+    assert!(
+        !second.search("ReplaceContainer", 5).is_empty(),
+        "the new subsystem must be searchable"
+    );
+
+    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+}
+
+#[test]
+fn directory_snapshot_covers_root_and_every_ancestor() {
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    std::fs::create_dir_all(root.join("moby").join("client")).expect("mkdir");
+    std::fs::write(
+        root.join("moby").join("client").join("api.go"),
+        "package client\nfunc Ping() {}\n",
+    )
+    .expect("write api.go");
+
+    let idx = BM25Index::build_from_directory(root);
+    assert!(idx.dirs.contains_key(""), "root is always recorded");
+    assert_eq!(
+        idx.dirs.len(),
+        3,
+        "root + moby + moby/client: {:?}",
+        idx.dirs.keys().collect::<Vec<_>>()
+    );
+
+    // A new top-level directory is caught through the recorded root even though
+    // its own mtime was never seen.
+    std::fs::create_dir_all(root.join("replacement")).expect("mkdir replacement");
+    assert!(bm25_index_looks_stale_fast(&idx, root));
+}
+
+#[test]
+fn index_without_directory_snapshot_is_refreshed_once() {
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    std::fs::write(root.join("a.rs"), "pub fn a() {}\n").expect("write a.rs");
+
+    // An index persisted before #1724 carries no directory snapshot, so its
+    // freshness cannot be proven cheaply: report it stale exactly once.
+    let mut legacy = BM25Index::build_from_directory(root);
+    legacy.dirs.clear();
+    assert!(bm25_index_looks_stale_fast(&legacy, root));
+
+    let refreshed = BM25Index::rebuild_incremental(root, &legacy);
+    assert!(
+        !refreshed.dirs.is_empty(),
+        "the rebuild records the snapshot"
+    );
+    assert!(
+        !bm25_index_looks_stale_fast(&refreshed, root),
+        "and the next call takes the cheap path again"
+    );
+}

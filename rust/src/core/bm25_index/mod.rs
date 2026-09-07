@@ -130,6 +130,16 @@ pub struct BM25Index {
     pub doc_freqs: HashMap<String, usize>,
     #[serde(default)]
     pub files: HashMap<String, IndexedFileState>,
+    /// mtime (ms since epoch) of every directory that contained an indexed file
+    /// when this index was built, keyed by root-relative path (`""` = the root
+    /// itself). Sampling tracked *files* can never reveal a file that was never
+    /// indexed, so the fast staleness check would keep serving a partial index
+    /// forever after new files appear (#1724). Creating or removing an entry
+    /// bumps its parent directory's mtime on every filesystem we support, so
+    /// comparing this snapshot detects added/deleted files in one stat per
+    /// directory instead of a full ingest walk.
+    #[serde(default)]
+    pub dirs: HashMap<String, u64>,
     /// True once `shrink_resident_content_to_snippet` has trimmed each chunk's
     /// `content` down to the snippet lines. Resident-only RAM-saving state: never
     /// persisted (`skip`) so the on-disk index keeps full content, and a reload
@@ -206,6 +216,7 @@ impl BM25Index {
             doc_count: 0,
             doc_freqs: HashMap::new(),
             files: HashMap::new(),
+            dirs: HashMap::new(),
             content_truncated: false,
         }
     }
@@ -229,8 +240,9 @@ impl BM25Index {
             .map(|(k, v)| k.len() + v.len() * 16 + 32)
             .sum();
         let files_size: usize = self.files.keys().map(|k| k.len() + 24).sum();
+        let dirs_size: usize = self.dirs.keys().map(|k| k.len() + 16).sum();
         let freqs_size: usize = self.doc_freqs.keys().map(|k| k.len() + 16).sum();
-        chunks_size + inverted_size + files_size + freqs_size
+        chunks_size + inverted_size + files_size + dirs_size + freqs_size
     }
 
     /// Drops all in-memory data, effectively freeing heap. Index can be re-loaded from disk.
@@ -240,6 +252,7 @@ impl BM25Index {
         self.inverted = HashMap::new();
         self.doc_freqs = HashMap::new();
         self.files = HashMap::new();
+        self.dirs = HashMap::new();
         self.avg_doc_len = 0.0;
         self.doc_count = 0;
         tracing::info!(
@@ -318,6 +331,11 @@ impl BM25Index {
             return Self::new();
         }
         let files = list_code_files(root);
+        // Snapshot directory mtimes *before* the (slow) chunking pass: a file
+        // that lands while we build then leaves its directory newer than the
+        // snapshot, so the next staleness check sees it instead of silently
+        // pinning the partial tree (#1724).
+        let dirs = dir_states(root, &files);
 
         // #933: parallel fast path for the common case. The per-file parse +
         // tokenize work is pure and thread-safe, so we fan it across a rayon pool
@@ -338,9 +356,13 @@ impl BM25Index {
             )
             .parallel_ok
         {
-            return Self::build_parallel(root, content_hint, &files);
+            let mut index = Self::build_parallel(root, content_hint, &files);
+            index.dirs = dirs;
+            return index;
         }
-        Self::build_sequential(root, content_hint, &files)
+        let mut index = Self::build_sequential(root, content_hint, &files);
+        index.dirs = dirs;
+        index
     }
 
     /// Group a previous index's chunks by file, each file's list sorted by
@@ -369,6 +391,7 @@ impl BM25Index {
     pub fn rebuild_incremental(root: &Path, prev: &BM25Index) -> Self {
         let old_by_file = Self::group_prev_chunks_by_file(prev);
         let files = list_code_files(root);
+        let dirs = dir_states(root, &files);
 
         // #581: mirror `build()`'s dispatch. The edit loop is the hottest path in
         // daily use, and its serial cost is dominated by re-tokenizing the *many
@@ -389,9 +412,13 @@ impl BM25Index {
             )
             .parallel_ok
         {
-            return Self::rebuild_incremental_parallel(root, prev, &old_by_file, &files);
+            let mut index = Self::rebuild_incremental_parallel(root, prev, &old_by_file, &files);
+            index.dirs = dirs;
+            return index;
         }
-        Self::rebuild_incremental_sequential(root, prev, &old_by_file, &files)
+        let mut index = Self::rebuild_incremental_sequential(root, prev, &old_by_file, &files);
+        index.dirs = dirs;
+        index
     }
 
     /// Sequential incremental rebuild with per-file memory-pressure guards. Reuses
@@ -880,7 +907,11 @@ fn bm25_index_looks_stale_inner(index: &BM25Index, root: &Path, fast: bool) -> b
                 return true;
             }
         }
-        return false;
+        // Sampling tracked files says nothing about files that were never
+        // indexed, so without this the fast path serves a partial tree forever
+        // (#1724). The directory snapshot closes that hole for one stat per
+        // indexed directory.
+        return dirs_look_stale(index, root);
     }
 
     for (rel, old_state) in &index.files {
@@ -906,6 +937,67 @@ fn bm25_index_looks_stale_inner(index: &BM25Index, root: &Path, fast: bool) -> b
 }
 
 const SENTINEL_SAMPLE_SIZE: usize = 10;
+
+/// True when the recorded directory mtimes no longer match the filesystem —
+/// i.e. a file was added to (or removed from) the indexed tree.
+///
+/// An index persisted before directory snapshots existed carries no `dirs`, so
+/// its freshness cannot be proven cheaply: it is reported stale exactly once,
+/// and the resulting rebuild records the snapshot for every later call.
+fn dirs_look_stale(index: &BM25Index, root: &Path) -> bool {
+    if index.dirs.is_empty() {
+        return true;
+    }
+    for (rel, recorded) in &index.dirs {
+        let abs = if rel.is_empty() {
+            root.to_path_buf()
+        } else {
+            root.join(rel)
+        };
+        if dir_mtime_ms(&abs) != Some(*recorded) {
+            return true;
+        }
+    }
+    false
+}
+
+fn dir_mtime_ms(path: &Path) -> Option<u64> {
+    let meta = std::fs::metadata(path).ok()?;
+    meta.modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_millis() as u64)
+}
+
+/// mtime snapshot of the root plus every ancestor directory of an indexed file.
+/// Ancestors are included so a brand-new top-level directory (whose own mtime
+/// was never recorded) is still caught through its recorded parent.
+fn dir_states(root: &Path, files: &[String]) -> HashMap<String, u64> {
+    let mut rels: std::collections::HashSet<String> = std::collections::HashSet::new();
+    rels.insert(String::new());
+    for rel in files {
+        let mut cur = Path::new(rel);
+        while let Some(parent) = cur.parent() {
+            let key = parent.to_string_lossy().to_string();
+            // Once a directory is known, so are all of its ancestors.
+            if !rels.insert(key) {
+                break;
+            }
+            cur = parent;
+        }
+    }
+    rels.into_iter()
+        .filter_map(|rel| {
+            let abs = if rel.is_empty() {
+                root.to_path_buf()
+            } else {
+                root.join(&rel)
+            };
+            dir_mtime_ms(&abs).map(|m| (rel, m))
+        })
+        .collect()
+}
 
 fn bounded_zstd_decode(compressed: &[u8], max_bytes: u64) -> Option<Vec<u8>> {
     use std::io::Read;

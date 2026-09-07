@@ -16,6 +16,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   reversible range compression backed by CCR without mutating cached prefixes
   (#1570 P1/P3).
 
+### Fixed — stale sibling-project index
+
+- A project indexed through `path` (`ctx_compose(path=…)`, `ctx_search(path=…)`)
+  no longer keeps answering from the tree it had at its first build. The fast
+  staleness check now records the mtime of every indexed directory, so files
+  added after that build are detected with one stat per directory instead of
+  being invisible to the sampled file check, and the resident-cache miss path
+  validates the persisted index before serving it (#1724).
+
 ## [3.10.1] — 2026-09-05
 
 ### Fixed — release packaging
