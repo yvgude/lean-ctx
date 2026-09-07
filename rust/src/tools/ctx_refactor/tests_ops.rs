@@ -930,10 +930,25 @@ fn reformat_command_path_reports_changed_and_invalidates_single_file() {
         eprintln!("SKIP: rustfmt not in PATH");
         return;
     }
+    // The command and JetBrains reformat arms both mutate the process-global
+    // `cli_cache` under `LEAN_CTX_DATA_DIR`. Hold the same guard as the
+    // multi-file regression so concurrent load-modify-save operations cannot
+    // clobber each other's cache entries (#1720).
+    let _data = crate::core::data_dir::isolated_data_dir();
+
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("drift.rs"), "fn   x( ){let y=1;}\n").unwrap(); // drift
     let root = dir.path().to_str().unwrap();
     let args = serde_json::json!({ "action": "reformat", "path": "drift.rs" });
+    let abs_path =
+        crate::core::path_resolve::resolve_tool_path(Some(root), None, "drift.rs").unwrap();
+
+    // Warm the same on-disk cache that the formatter invalidates.
+    let _ = crate::core::cli_cache::check_and_read(&abs_path);
+    assert!(matches!(
+        crate::core::cli_cache::check_and_read(&abs_path),
+        crate::core::cli_cache::CacheResult::Hit { .. }
+    ));
 
     // First run: rustfmt rewrites the drifted file → "changed".
     let out = super::handle_reformat_refactor(&args, root);
@@ -941,6 +956,13 @@ fn reformat_command_path_reports_changed_and_invalidates_single_file() {
     assert!(
         out.contains("— changed"),
         "first run must report changed; got: {out}"
+    );
+    assert!(
+        matches!(
+            crate::core::cli_cache::check_and_read(&abs_path),
+            crate::core::cli_cache::CacheResult::Miss { .. }
+        ),
+        "changed rustfmt output must invalidate the cached file"
     );
 
     // Second run: already conformant → honest "unchanged" (B2: blake3 on the
