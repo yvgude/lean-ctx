@@ -76,6 +76,6 @@ child.unref();
       }
     }
     try { runner.kill(); } catch {}
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10 });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
   }
 })().catch((error) => { console.error(error); process.exitCode = 1; });
