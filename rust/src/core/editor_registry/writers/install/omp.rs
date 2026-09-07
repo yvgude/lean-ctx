@@ -28,18 +28,15 @@ pub(crate) fn write_omp_mcp(
 
     if target.config_path.exists() {
         let content = std::fs::read_to_string(&target.config_path).map_err(|e| e.to_string())?;
-        let mut json = match crate::core::jsonc::parse_jsonc(&content) {
-            Ok(value) => value,
-            Err(_) => {
-                return handle_invalid_json_write(
-                    &target.config_path,
-                    &content,
-                    "mcpServers",
-                    "lean-ctx",
-                    &desired,
-                    opts.overwrite_invalid,
-                );
-            }
+        let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) else {
+            return handle_invalid_json_write(
+                &target.config_path,
+                &content,
+                "mcpServers",
+                "lean-ctx",
+                &desired,
+                opts.overwrite_invalid,
+            );
         };
         let obj = json
             .as_object_mut()

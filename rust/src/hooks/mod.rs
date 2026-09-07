@@ -1036,9 +1036,8 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
         // which honours the `servers` / `mcpServers` root the user already has
         // — `install_mcp_json_agent` would hardcode `mcpServers` and could add
         // a competing second root.
-        "vscode-insiders" | "commandcode" | "codewhale" => {}
+        "vscode-insiders" | "commandcode" | "codewhale" | "omp" => {}
         "pi" => install_pi_hook_with_mode(global, mode),
-        "omp" => {}
         "qoder" | "qodercli" => install_qoder_hook_with_mode(mode),
         "qoderwork" => install_mcp_json_agent(
             "QoderWork",
