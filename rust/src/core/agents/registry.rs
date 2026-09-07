@@ -11,10 +11,17 @@ use super::persistence::{
 use super::{AgentEntry, AgentRegistry, AgentStatus, LogicalSessionPresence, ScratchpadEntry};
 use crate::core::a2a::message::{MessagePriority, PrivacyLevel};
 
+mod resource_broker;
+#[cfg(test)]
+use resource_broker::active_worker_lease_seconds;
+use resource_broker::{
+    consumes_worker_capacity, ensure_worker_capacity, has_active_worker_lease,
+    max_concurrent_mutating_workers, max_concurrent_workers, role_can_mutate,
+};
+
 const LOGICAL_SESSION_SOURCE_MAX_BYTES: usize = 64;
 const LOGICAL_SESSION_WORKSPACE_MAX_BYTES: usize = 4096;
 const LOGICAL_SESSION_ID_MAX_BYTES: usize = 256;
-const HARD_MAX_CONCURRENT_WORKERS: usize = 15;
 const MAX_RETAINED_FINISHED_AGENTS: usize = 32;
 
 fn presence_ttl() -> u64 {
@@ -27,57 +34,6 @@ fn max_scratchpad() -> usize {
     crate::core::config::Config::load()
         .agents
         .max_scratchpad_entries
-}
-
-fn max_concurrent_workers() -> usize {
-    crate::core::config::Config::load()
-        .agents
-        .max_concurrent_workers
-        .clamp(1, HARD_MAX_CONCURRENT_WORKERS)
-}
-
-fn max_concurrent_mutating_workers() -> usize {
-    crate::core::config::Config::load()
-        .agents
-        .max_concurrent_mutating_workers
-        .clamp(1, HARD_MAX_CONCURRENT_WORKERS)
-}
-
-fn role_can_mutate(role: Option<&str>) -> bool {
-    let normalized = role.unwrap_or_default().to_ascii_lowercase();
-    ![
-        "analysis",
-        "analyst",
-        "audit",
-        "mapper",
-        "research",
-        "review",
-        "reviewer",
-        "read-only",
-        "readonly",
-    ]
-    .iter()
-    .any(|marker| normalized.contains(marker))
-}
-
-fn active_worker_lease_seconds() -> i64 {
-    i64::try_from(
-        crate::core::config::Config::load()
-            .agents
-            .active_worker_lease_seconds,
-    )
-    .unwrap_or(i64::MAX)
-    .max(1)
-}
-
-fn has_active_worker_lease(agent: &AgentEntry, now: chrono::DateTime<Utc>) -> bool {
-    agent.status == AgentStatus::Active
-        && now.signed_duration_since(agent.last_active).num_seconds()
-            <= active_worker_lease_seconds()
-}
-
-fn consumes_worker_capacity(agent: &AgentEntry) -> bool {
-    !(agent.agent_type == "mcp" && agent.role.as_deref() == Some("context-engine"))
 }
 
 pub(crate) fn process_identity_matches(
@@ -123,19 +79,6 @@ fn is_recoverable_legacy_finished(agent: &AgentEntry) -> bool {
     agent.process_identity.is_none()
         && agent.status == AgentStatus::Finished
         && agent.status_message.as_deref() == Some("process identity no longer matches")
-}
-
-fn ensure_worker_capacity(
-    active_machine_wide: usize,
-    limit: usize,
-    project_root: &str,
-) -> Result<(), String> {
-    if active_machine_wide < limit {
-        return Ok(());
-    }
-    Err(format!(
-        "machine-wide agent capacity reached while registering {project_root}: {active_machine_wide}/{limit} active leases; finish or idle a session before starting another"
-    ))
 }
 
 impl AgentRegistry {

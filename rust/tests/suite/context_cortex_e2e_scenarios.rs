@@ -193,6 +193,7 @@ fn scenario_bug_investigation_full_pipeline() {
         doc_count: 0,
         doc_freqs: std::collections::HashMap::new(),
         files: std::collections::HashMap::new(),
+        dirs: std::collections::HashMap::new(),
         content_truncated: false,
     };
     let mut edges: Vec<IndexEdge> = Vec::new();

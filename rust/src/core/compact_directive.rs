@@ -47,7 +47,7 @@ fn store_path() -> Option<std::path::PathBuf> {
 }
 
 /// Create a new directive. Fails when one was created less than
-/// [`MIN_INTERVAL_SECS`] ago (rate limit — nothing is ever blocked, the agent
+/// `MIN_INTERVAL_SECS` ago (rate limit — nothing is ever blocked, the agent
 /// simply keeps its current, already-compacted context).
 pub fn create(keep_recent_turns: usize, summary: String) -> Result<(), String> {
     if let Some(existing) = load_active()
@@ -76,7 +76,7 @@ pub fn save(directive: &CompactDirective) -> Result<(), String> {
     std::fs::write(path, json).map_err(|e| e.to_string())
 }
 
-/// Load the directive when it exists and is younger than [`TTL_SECS`].
+/// Load the directive when it exists and is younger than `TTL_SECS`.
 pub fn load_active() -> Option<CompactDirective> {
     let path = store_path()?;
     let raw = std::fs::read_to_string(&path).ok()?;

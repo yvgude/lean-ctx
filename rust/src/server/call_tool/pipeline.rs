@@ -1178,7 +1178,7 @@ pub(super) fn triage_bypass_requested(
     args: Option<&serde_json::Map<String, serde_json::Value>>,
 ) -> bool {
     name == "ctx_read"
-        || protected_path_requested(args)
+        || super::super::context_gate::protected_path_requested(args)
         || args.is_some_and(|args| {
             args.get("raw")
                 .and_then(serde_json::Value::as_bool)
@@ -1228,24 +1228,6 @@ pub(super) fn verbatim_requested(
                 .get("mode")
                 .and_then(serde_json::Value::as_str)
                 .is_some_and(|mode| mode == "raw")
-    })
-}
-
-/// #1570 P4: a call whose path-like argument matches a user-protected glob
-/// (`[protection].file_patterns`) is exempt from lossy filtering — the same
-/// standard as `raw=true`. Empty pattern list costs one cached config read.
-fn protected_path_requested(args: Option<&serde_json::Map<String, serde_json::Value>>) -> bool {
-    let Some(args) = args else {
-        return false;
-    };
-    let config = crate::core::config::Config::load();
-    if config.protection.file_patterns.is_empty() {
-        return false;
-    }
-    ["path", "file_path", "filePath"].iter().any(|key| {
-        args.get(*key)
-            .and_then(serde_json::Value::as_str)
-            .is_some_and(|path| config.protection.path_is_protected(path))
     })
 }
 

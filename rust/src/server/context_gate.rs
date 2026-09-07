@@ -2,6 +2,24 @@ use crate::core::context_field::{ContextItemId, ContextState};
 use crate::core::context_ledger::{ContextLedger, PressureAction};
 use crate::core::context_overlay::{OverlayOp, OverlayStore};
 
+/// #1570 P4: protected path arguments bypass every lossy output filter.
+pub(super) fn protected_path_requested(
+    args: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> bool {
+    let Some(args) = args else {
+        return false;
+    };
+    let config = crate::core::config::Config::load();
+    if config.protection.file_patterns.is_empty() {
+        return false;
+    }
+    ["path", "file_path", "filePath"].iter().any(|key| {
+        args.get(*key)
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|path| config.protection.path_is_protected(path))
+    })
+}
+
 /// #843: precise, pinned reads (`diff`, `lines:N-M`, `anchored`/`anchored:N-M`)
 /// must pass through every mode-override path untouched — bounce-prevention,
 /// pressure-downgrade, and the graph/knowledge heuristics below must never
