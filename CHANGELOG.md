@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added — cache-safe conversation management
+
+- Errored tool inputs are deterministically purged only after they enter the
+  mutable old-history region; error results remain intact, and stepped,
+  deduplicated budget nudges replace repeated warnings (#1570 P2/P5/P6).
+- User-controlled protected spans, file globs, and recent-turn windows now
+  prevent every lossy path from rewriting designated context (#1570 P4).
+- `ctx_session compact` and `restore` provide validated, rate-limited,
+  reversible range compression backed by CCR without mutating cached prefixes
+  (#1570 P1/P3).
+
 ## [3.10.1] — 2026-09-05
 
 ### Fixed — release packaging
