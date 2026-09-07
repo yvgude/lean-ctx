@@ -226,6 +226,7 @@ pub const AGENT_CONFIG_DIRS: &[&str] = &[
     ".claude",
     ".codex",
     ".codebuddy",
+    ".codewhale",
     ".copilot",
     ".cursor",
     ".windsurf",

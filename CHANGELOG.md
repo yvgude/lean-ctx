@@ -25,6 +25,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   being invisible to the sampled file check, and the resident-cache miss path
   validates the persisted index before serving it (#1724).
 
+### Added — CodeWhale agent integration
+
+- `lean-ctx init --agent codewhale` and `setup` now register the lean-ctx MCP
+  server with CodeWhale (#1402). The config path follows CodeWhale's own
+  resolution order — `DEEPSEEK_MCP_CONFIG`, then `~/.codewhale/mcp.json`, then
+  the pre-rename `~/.deepseek/mcp.json` — so exactly one file is written and it
+  is always the one CodeWhale reads. The writer merges into whichever root key
+  the existing config uses (`servers` or `mcpServers`), preserving every other
+  server and unrelated setting, and creates `mcpServers` only for a config it
+  makes itself. `doctor`, shell completions, `--agent` help and `uninstall`
+  (which visits both the current and the legacy path) cover the new agent.
+- Deliberately **not** shipped for CodeWhale: shell hooks and any write to
+  `instructions = [...]`. CodeWhale's hooks are TUI-only with observer/steering
+  semantics rather than the pre-tool rewrite/deny contract lean-ctx's scripts
+  assume, and `instructions` is user-owned upstream. lean-ctx guidance reaches
+  CodeWhale through the shared project `AGENTS.md` block it already auto-loads;
+  no `~/.codewhale/AGENTS.md` is created, because CodeWhale would never read it.
+
 ## [3.10.1] — 2026-09-05
 
 ### Fixed — release packaging

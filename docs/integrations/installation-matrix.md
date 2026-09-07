@@ -81,6 +81,7 @@ Legend:
 | Pi (`pi`) | `~/.pi/agent/mcp.json` | `~/.pi/agent/rules/lean-ctx.md` | — | — |
 | Qwen (`qwen`) | `~/.qwen/settings.json` | `~/.qwen/rules/lean-ctx.md` | — | — |
 | Trae (`trae`) | `~/.trae/mcp.json` | `~/.trae/rules/lean-ctx.md` | — | — |
+| CodeWhale (`codewhale`) | `~/.codewhale/mcp.json` — legacy `~/.deepseek/mcp.json` used only when it is the file CodeWhale reads; `DEEPSEEK_MCP_CONFIG` overrides both. Merged into whichever root key (`servers` or `mcpServers`) the file already has | — (project `AGENTS.md`; `instructions = [...]` in `~/.codewhale/config.toml` is user-owned upstream and never written by lean-ctx) | — (hooks are TUI-only with observer/steering semantics — **not** installed) | — |
 | Amazon Q (`amazonq`) | `~/.aws/amazonq/default.json` | `~/.aws/amazonq/rules/lean-ctx.md` | — | — |
 | Verdent (`verdent`) | `~/.verdent/mcp.json` | `~/.verdent/rules/lean-ctx.md` | — | — |
 | Zed (`zed`) | `~/Library/Application Support/Zed/settings.json` (macOS) · `~/.config/zed/settings.json` (Linux) — `context_servers` entry | `<zed-config-dir>/rules/lean-ctx.md` (same OS-aware dir as the settings file) | — | — |

@@ -309,6 +309,14 @@ pub(crate) fn agent_mcp_targets(
             home.join(".trae/mcp.json"),
             ConfigType::McpJson,
         ),
+        // #1402: resolves `~/.codewhale/mcp.json`, or the legacy
+        // `~/.deepseek/mcp.json` when that is the file CodeWhale still reads.
+        "codewhale" => push(
+            &mut targets,
+            "CodeWhale",
+            crate::core::editor_registry::codewhale_mcp_json_path(home),
+            ConfigType::CodeWhale,
+        ),
         "amazonq" => push(
             &mut targets,
             "Amazon Q Developer",
@@ -581,6 +589,14 @@ pub fn disable_agent_mcp(agent: &str, overwrite_invalid: bool) -> Result<(), Str
             home.join(".trae/mcp.json"),
             ConfigType::McpJson,
         ),
+        // #1402: same resolution as the enable path — disable must visit the
+        // exact file we wrote, never the shadowed legacy one.
+        "codewhale" => push(
+            &mut targets,
+            "CodeWhale",
+            crate::core::editor_registry::codewhale_mcp_json_path(home.as_ref()),
+            ConfigType::CodeWhale,
+        ),
         "amazonq" => push(
             &mut targets,
             "Amazon Q Developer",
@@ -680,6 +696,31 @@ mod qodercli_tests {
         assert_eq!(targets[0].name, "Command Code");
         assert_eq!(targets[0].config_path, home.join(".commandcode/mcp.json"));
         assert_eq!(targets[0].config_type, ConfigType::CommandCode);
+    }
+
+    #[test]
+    fn codewhale_agent_target_uses_codewhale_schema_and_current_path() {
+        // No `~/.codewhale` or `~/.deepseek` exists under this synthetic home,
+        // so resolution must land on the current path, not the legacy one.
+        let home = std::path::Path::new("/home/tester");
+        let targets = agent_mcp_targets("codewhale", home).unwrap();
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].name, "CodeWhale");
+        assert_eq!(targets[0].agent_key, "codewhale");
+        assert_eq!(targets[0].config_type, ConfigType::CodeWhale);
+        assert_eq!(targets[0].config_path, home.join(".codewhale/mcp.json"));
+    }
+
+    #[test]
+    fn codewhale_agent_target_follows_legacy_deepseek_config_when_that_is_the_live_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        std::fs::create_dir_all(home.join(".deepseek")).unwrap();
+        std::fs::write(home.join(".deepseek/mcp.json"), "{}").unwrap();
+
+        let targets = agent_mcp_targets("codewhale", home).unwrap();
+        assert_eq!(targets[0].config_path, home.join(".deepseek/mcp.json"));
     }
 
     #[test]

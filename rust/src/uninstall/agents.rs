@@ -350,6 +350,11 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
                 .join("config.toml"),
         ),
         ("Grok", home.join(".grok/config.toml")),
+        // #1402: install writes exactly one of these two, so uninstall visits
+        // both — otherwise a lean-ctx entry survives in whichever file was the
+        // active one at install time.
+        ("CodeWhale", home.join(".codewhale/mcp.json")),
+        ("CodeWhale (legacy)", home.join(".deepseek/mcp.json")),
         // #1585: OpenCode accepts either name. Uninstall visits both so a
         // lean-ctx entry is never left behind in the file we did not install to.
         ("OpenCode", home.join(".config/opencode/opencode.json")),

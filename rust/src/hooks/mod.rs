@@ -102,13 +102,26 @@ pub const HYBRID_AGENTS: &[&str] = &[
     "verdent",
 ];
 
+/// First-class agents that get MCP registration only — no shell hooks, because
+/// their hook surface does not (yet) carry lean-ctx's contract.
+///
+/// CodeWhale (#1402) is the first entry: its hooks are TUI-only and follow
+/// observer/steering semantics rather than the pre-tool rewrite/deny contract
+/// every `HYBRID_AGENTS` entry relies on, so installing lean-ctx's shell hooks
+/// there would ship a script whose behaviour we cannot honestly predict.
+/// Membership here does not enable any hook install — it only marks the agent
+/// as genuinely supported by `init --agent` / `setup` so `wrap` can say so.
+pub const MCP_ONLY_AGENTS: &[&str] = &["codewhale"];
+
 /// True when `agent` is integrated via `init --agent` / `setup` (hooks, rules,
 /// MCP registration). GH #1520: used by `wrap`'s error path to point users of
 /// a supported-but-not-proxy-wrappable agent (e.g. opencode) at the working
 /// command instead of a bare "unsupported agent".
 pub fn is_supported_agent(agent: &str) -> bool {
     let key = agent.to_ascii_lowercase();
-    REPLACE_AGENTS.contains(&key.as_str()) || HYBRID_AGENTS.contains(&key.as_str())
+    REPLACE_AGENTS.contains(&key.as_str())
+        || HYBRID_AGENTS.contains(&key.as_str())
+        || MCP_ONLY_AGENTS.contains(&key.as_str())
 }
 
 /// Auto-detect the best hook mode for a given agent key.
@@ -1016,7 +1029,14 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
         // user-global (`~/.copilot`), already covered by copilot/vscode.
         // Command Code has no hook surface either; shadow mode rides on the
         // MCP entry's `instructions` field written by the same writer.
-        "vscode-insiders" | "commandcode" => {}
+        // CodeWhale (#1402) has no hook surface lean-ctx can honestly drive:
+        // its hooks are TUI-only and use observer/steering semantics, not the
+        // pre-tool rewrite/deny contract our scripts assume. MCP registration
+        // is handled by the editor-registry writer via `configure_agent_mcp`,
+        // which honours the `servers` / `mcpServers` root the user already has
+        // — `install_mcp_json_agent` would hardcode `mcpServers` and could add
+        // a competing second root.
+        "vscode-insiders" | "commandcode" | "codewhale" => {}
         "pi" => install_pi_hook_with_mode(global, mode),
         "omp" => {}
         "qoder" | "qodercli" => install_qoder_hook_with_mode(mode),
@@ -1082,7 +1102,7 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
             eprintln!("Unknown agent: {agent}");
             eprintln!("  Supported: aider, amazonq, amp, antigravity, antigravity-cli, augment,");
             eprintln!(
-                "    claude, cline, codebuddy, codex, commandcode, continue, copilot, crush, cursor, emacs, gemini, grok,"
+                "    claude, cline, codebuddy, codewhale, codex, commandcode, continue, copilot, crush, cursor, emacs, gemini, grok,"
             );
             eprintln!(
                 "    grok-build, hermes, jetbrains, kiro, neovim, omp, openclaw, opencode, pi, qoder,"

@@ -50,6 +50,16 @@ pub(super) fn build_rules_targets(
     // so a separate ~/.codebuddy/rules/lean-ctx.md would duplicate it (GL #555/#558).
     // Guidance lives in the CODEBUDDY.md block + the on-demand skill; uninstall
     // still removes legacy ~/.codebuddy/rules/lean-ctx.md files from older installs.
+    //
+    // CodeWhale (#1402) also has NO rules target, for a different reason: it
+    // auto-loads the *project* `AGENTS.md` (plus `CLAUDE.md` /
+    // `.claude/instructions.md` as compatibility fallbacks) and has no
+    // lean-ctx-writable global instruction file. Its only global hook,
+    // `instructions = [...]` in `~/.codewhale/config.toml`, is explicitly
+    // user-owned upstream, so lean-ctx must not claim it. Guidance therefore
+    // reaches CodeWhale through the shared project `AGENTS.md` block that
+    // `core::rules_channel::AGENTS_MD_READERS` already accounts for — writing a
+    // `~/.codewhale/AGENTS.md` would create a file CodeWhale never reads.
     vec![
         // --- Shared config files (append-only) ---
         RulesTarget {

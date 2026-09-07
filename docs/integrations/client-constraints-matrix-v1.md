@@ -187,6 +187,15 @@ It is used by:
       "sources": ["https://x.ai/cli"]
     },
     {
+      "id": "codewhale",
+      "displayName": "CodeWhale",
+      "config": { "paths": ["~/.codewhale/mcp.json", "~/.deepseek/mcp.json", "$DEEPSEEK_MCP_CONFIG"], "rootKey": "servers|mcpServers" },
+      "hooks": { "supported": false, "paths": [], "events": [] },
+      "toolApproval": { "model": "prompted_or_policy", "key": null },
+      "instructionLimits": { "mcpServerInstructionsMaxChars": null },
+      "sources": ["https://github.com/Hmbown/CodeWhale/blob/main/docs/MCP.md", "https://github.com/Hmbown/CodeWhale/blob/main/docs/CONFIGURATION.md"]
+    },
+    {
       "id": "trae",
       "displayName": "Trae",
       "config": { "paths": ["~/.trae/mcp.json", ".trae/mcp.json"], "rootKey": "mcpServers" },
@@ -246,3 +255,11 @@ It is used by:
 - **Do not guess formats**: every entry must have at least one vendor doc source.
 - **No destructive writes**: installers must be merge‑based and keep other plugins/config intact.
 - **Tokens/headers**: never hardcode or print secrets; prefer env indirection or client-native secret inputs.
+- **CodeWhale** (#1402): `hooks.supported: false` records that lean-ctx installs
+  no hooks there, not that the client lacks a hook system. CodeWhale does have
+  hooks, but they are TUI-only and follow observer/steering semantics rather
+  than the pre-tool rewrite/deny contract lean-ctx's hook scripts assume, so
+  adapting them is deliberately out of scope until that contract is verified.
+  Likewise `instructions = [...]` in `~/.codewhale/config.toml` is user-owned
+  upstream (project-local config is ignored for that key by design) and is
+  never written by lean-ctx.

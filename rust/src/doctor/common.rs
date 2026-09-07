@@ -328,6 +328,27 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
         display: "~/.trae/mcp.json".into(),
         path: home.join(".trae").join("mcp.json"),
     });
+    // #1402: report the file CodeWhale actually reads — `~/.codewhale/mcp.json`
+    // unless only the legacy `~/.deepseek/mcp.json` exists.
+    {
+        use crate::core::editor_registry::{
+            codewhale_dir, codewhale_legacy_dir, codewhale_mcp_json_path,
+        };
+        let path = codewhale_mcp_json_path(home);
+        let display = if path == codewhale_dir(home).join("mcp.json") {
+            "~/.codewhale/mcp.json".to_string()
+        } else if path == codewhale_legacy_dir(home).join("mcp.json") {
+            "~/.deepseek/mcp.json (legacy)".to_string()
+        } else {
+            // DEEPSEEK_MCP_CONFIG override — name the real file, don't pretend.
+            path.display().to_string()
+        };
+        locations.push(McpLocation {
+            name: "CodeWhale",
+            display,
+            path,
+        });
+    }
     locations.push(McpLocation {
         name: "Amazon Q",
         display: "~/.aws/amazonq/default.json".into(),

@@ -464,6 +464,8 @@ fn scan_dirs(home: &Path) -> Vec<PathBuf> {
         home.join(".config/zed"),
         home.join(".qwen"),
         home.join(".trae"),
+        home.join(".codewhale"),
+        home.join(".deepseek"),
         home.join(".aws/amazonq"),
         home.join(".kiro"),
         home.join(".kiro/settings"),

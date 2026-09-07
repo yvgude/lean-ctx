@@ -66,6 +66,7 @@ pub fn write_config_with_options(
         ConfigType::CommandCode => write_commandcode_config(target, binary, opts),
         ConfigType::ClineCli => write_cline_cli_config(target, binary, opts),
         ConfigType::OmpMcp => write_omp_mcp(target, binary, opts),
+        ConfigType::CodeWhale => write_codewhale_config(target, binary, opts),
     }
 }
 
@@ -98,6 +99,19 @@ pub fn remove_lean_ctx_server(
         }
         ConfigType::OpenClaw => remove_lean_ctx_openclaw_server(&target.config_path, opts),
         ConfigType::VibeToml => remove_lean_ctx_vibe_toml_server(&target.config_path, opts),
+        // #1402: CodeWhale accepts either root key, and we merge into whichever
+        // one the user already had — so removal has to visit both, or an entry
+        // written under `servers` would survive `uninstall`.
+        ConfigType::CodeWhale => {
+            let servers = remove_lean_ctx_named_json_server(&target.config_path, "servers", opts)?;
+            let mcp_servers =
+                remove_lean_ctx_named_json_server(&target.config_path, "mcpServers", opts)?;
+            Ok(if servers.action == WriteAction::Updated {
+                servers
+            } else {
+                mcp_servers
+            })
+        }
     }
 }
 

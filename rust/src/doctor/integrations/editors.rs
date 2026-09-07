@@ -24,6 +24,7 @@ pub(crate) fn integration_generic(
     match target.config_type {
         crate::core::editor_registry::types::ConfigType::McpJson
         | crate::core::editor_registry::types::ConfigType::OmpMcp
+        | crate::core::editor_registry::types::ConfigType::CodeWhale
         | crate::core::editor_registry::types::ConfigType::CommandCode
         | crate::core::editor_registry::types::ConfigType::QoderSettings => {
             checks.push(check_mcp_json(&target.config_path, binary, data_dir));

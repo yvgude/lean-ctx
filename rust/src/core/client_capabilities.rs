@@ -162,6 +162,12 @@ fn identify_client(lower: &str) -> String {
         "cursor".to_string()
     } else if lower.contains("codebuddy") {
         "codebuddy".to_string()
+    } else if lower.contains("codewhale") {
+        // #1402. Matched on the product name only — CodeWhale's legacy config
+        // dir is `~/.deepseek`, but "deepseek" is a *model* family name that
+        // shows up in unrelated clients' identifiers, so it is not a client
+        // discriminator here.
+        "codewhale".to_string()
     } else if lower.contains("claude") {
         "claude-code".to_string()
     } else if lower.contains("windsurf") || lower.contains("codeium") {
@@ -292,6 +298,14 @@ mod tests {
         assert!(!caps.prompts);
         assert_eq!(caps.max_tools, Some(100));
         assert_eq!(caps.tier(), 3);
+    }
+
+    #[test]
+    fn codewhale_detection_is_distinct_and_not_confused_with_deepseek_models() {
+        assert_eq!(identify_client("codewhale"), "codewhale");
+        assert_eq!(identify_client("codewhale/0.9.9"), "codewhale");
+        // "deepseek" alone is a model family, not the CodeWhale client (#1402).
+        assert_eq!(identify_client("deepseek-v3"), "unknown");
     }
 
     #[test]

@@ -146,6 +146,7 @@ const AGENT_KEYS: &[&str] = &[
     "cline",
     "cline-cli",
     "codebuddy",
+    "codewhale",
     "codex",
     "commandcode",
     "continue",
@@ -203,4 +204,26 @@ fn filter(completions: Vec<Completion>, prefix: &str) -> Vec<Completion> {
         .into_iter()
         .filter(|c| c.value.starts_with(prefix))
         .collect()
+}
+
+#[cfg(test)]
+mod agent_key_tests {
+    use super::*;
+
+    #[test]
+    fn codewhale_is_offered_for_agent_completion() {
+        // #1402: `lean-ctx init --agent code<TAB>` must offer codewhale.
+        let completions = filter(resolve_dynamic(DynamicKind::Agents), "code");
+        let values: Vec<&str> = completions.iter().map(|c| c.value.as_str()).collect();
+        assert!(values.contains(&"codewhale"), "got {values:?}");
+    }
+
+    #[test]
+    fn every_completed_agent_key_is_lowercase_and_unique() {
+        let mut seen = std::collections::BTreeSet::new();
+        for key in AGENT_KEYS {
+            assert_eq!(*key, key.to_ascii_lowercase(), "`{key}` must be lowercase");
+            assert!(seen.insert(*key), "duplicate agent key `{key}`");
+        }
+    }
 }

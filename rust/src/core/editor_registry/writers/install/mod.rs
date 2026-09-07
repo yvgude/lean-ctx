@@ -7,6 +7,7 @@
 mod amp;
 mod claude;
 mod cline_cli;
+mod codewhale;
 mod codex;
 mod commandcode;
 mod copilot;
@@ -31,6 +32,8 @@ pub(crate) use amp::*;
 pub(crate) use claude::*;
 #[allow(clippy::wildcard_imports)]
 pub(crate) use cline_cli::*;
+#[allow(clippy::wildcard_imports)]
+pub(crate) use codewhale::*;
 #[allow(clippy::wildcard_imports)]
 pub(crate) use codex::*;
 #[allow(clippy::wildcard_imports)]

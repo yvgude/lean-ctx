@@ -132,6 +132,17 @@ pub(crate) const ALL_CLIENTS: &[ClientConstraints] = &[
         supports_auto_approve: false,
         supports_config_instructions: true,
     },
+    // #1402: CodeWhale's MCP loader fails closed on unknown fields in the
+    // entries it validates, and neither `instructions` nor `autoApprove` is
+    // part of its documented per-server schema — so lean-ctx writes the bare
+    // `command` entry its reporter verified against v0.9.9.
+    ClientConstraints {
+        id: "codewhale",
+        display_name: "CodeWhale",
+        mcp_instructions_max_chars: None,
+        supports_auto_approve: false,
+        supports_config_instructions: false,
+    },
     ClientConstraints {
         id: "trae",
         display_name: "Trae",
@@ -200,6 +211,7 @@ pub(crate) fn by_editor_name(name: &str) -> Option<&'static ClientConstraints> {
         "Antigravity" => by_client_id("antigravity"),
         "Codex CLI" => by_client_id("codex"),
         "Grok" => by_client_id("grok"),
+        "CodeWhale" => by_client_id("codewhale"),
         "Trae" => by_client_id("trae"),
         "Qwen Code" => by_client_id("qwen-code"),
         "Verdent" => by_client_id("verdent"),

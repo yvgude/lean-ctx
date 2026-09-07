@@ -2,10 +2,10 @@ use std::path::{Path, PathBuf};
 
 use super::paths::{
     augment_cli_settings_path, augment_vscode_mcp_path, claude_mcp_json_path,
-    cline_cli_mcp_settings_path, cline_mcp_path, codebuddy_mcp_json_path, detect_vibe_path,
-    omp_agent_dir, omp_mcp_path, qoder_all_mcp_paths, qodercli_settings_path, qoderwork_mcp_path,
-    roo_mcp_path, vibe_config_path, vscode_insiders_mcp_path, vscode_mcp_path, zed_config_dir,
-    zed_settings_path,
+    cline_cli_mcp_settings_path, cline_mcp_path, codebuddy_mcp_json_path, codewhale_detect_path,
+    codewhale_mcp_json_path, detect_vibe_path, omp_agent_dir, omp_mcp_path, qoder_all_mcp_paths,
+    qodercli_settings_path, qoderwork_mcp_path, roo_mcp_path, vibe_config_path,
+    vscode_insiders_mcp_path, vscode_mcp_path, zed_config_dir, zed_settings_path,
 };
 use super::types::{ConfigType, EditorTarget};
 
@@ -66,6 +66,15 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
                 .unwrap_or_else(|| home.join(".codex/config.toml")),
             detect_path: detect_codex_path(home),
             config_type: ConfigType::Codex,
+        },
+        EditorTarget {
+            name: "CodeWhale",
+            agent_key: "codewhale".to_string(),
+            // #1402: `~/.codewhale/mcp.json`, falling back to the pre-rename
+            // `~/.deepseek/mcp.json` only when that is the file CodeWhale reads.
+            config_path: codewhale_mcp_json_path(home),
+            detect_path: codewhale_detect_path(home),
+            config_type: ConfigType::CodeWhale,
         },
         EditorTarget {
             name: "Grok",
@@ -835,6 +844,37 @@ mod augment_tests {
     use crate::core::editor_registry::writers::{
         WriteAction, WriteOptions, remove_lean_ctx_server, write_config_with_options,
     };
+
+    #[test]
+    fn build_targets_registers_codewhale_as_a_distinct_agent() {
+        // #1402: CodeWhale must be its own agent key with its own writer — not
+        // folded into a generic mcp.json target.
+        let home = Path::new("/home/tester");
+        let targets = build_targets(home);
+        let codewhale: Vec<_> = targets
+            .iter()
+            .filter(|t| t.agent_key == "codewhale")
+            .collect();
+        assert_eq!(codewhale.len(), 1, "exactly one CodeWhale target");
+        assert_eq!(codewhale[0].name, "CodeWhale");
+        assert_eq!(codewhale[0].config_path, home.join(".codewhale/mcp.json"));
+        assert!(matches!(codewhale[0].config_type, ConfigType::CodeWhale));
+    }
+
+    #[test]
+    fn build_targets_points_codewhale_at_the_legacy_config_when_only_it_exists() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let home = tmp.path();
+        std::fs::create_dir_all(home.join(".deepseek")).expect("create dir");
+        std::fs::write(home.join(".deepseek/mcp.json"), "{}").expect("write cfg");
+
+        let target = build_targets(home)
+            .into_iter()
+            .find(|t| t.agent_key == "codewhale")
+            .expect("codewhale target should be registered");
+        assert_eq!(target.config_path, home.join(".deepseek/mcp.json"));
+        assert_eq!(target.detect_path, home.join(".deepseek"));
+    }
 
     #[test]
     fn build_targets_includes_augment_cli_entry() {

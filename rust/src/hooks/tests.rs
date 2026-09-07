@@ -847,3 +847,22 @@ fn heal_off_env_caps_replace_at_hybrid() {
     assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
     crate::test_env::remove_var("LEAN_CTX_HEAL");
 }
+
+#[test]
+fn mcp_only_agents_are_supported_but_claim_no_hook_surface() {
+    // #1402: CodeWhale must be reported as a first-class `init --agent` target
+    // (so `wrap` points at the working command instead of "unsupported"),
+    // while staying out of the two lists that promise shell hooks.
+    assert!(MCP_ONLY_AGENTS.contains(&"codewhale"));
+    for agent in MCP_ONLY_AGENTS {
+        assert!(is_supported_agent(agent), "`{agent}` must be supported");
+        assert!(
+            !HYBRID_AGENTS.contains(agent),
+            "`{agent}` must not promise shell hooks it does not have"
+        );
+        assert!(
+            !REPLACE_AGENTS.contains(agent),
+            "`{agent}` has no deny infrastructure"
+        );
+    }
+}

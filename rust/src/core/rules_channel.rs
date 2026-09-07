@@ -24,7 +24,7 @@ pub use crate::core::rules_canonical::{COMPRESSION_BLOCK_END, COMPRESSION_BLOCK_
 /// The agents that auto-load the shared project `AGENTS.md`. Kept in sync with
 /// `core::rules_overhead::collect_rules_files`, which attributes `AGENTS.md` to
 /// the same set.
-pub const AGENTS_MD_READERS: &[&str] = &["cursor", "codex", "opencode"];
+pub const AGENTS_MD_READERS: &[&str] = &["cursor", "codex", "opencode", "codewhale"];
 
 /// True when `content` carries a *full* lean-ctx payload — the canonical rule
 /// set (the `RULES_MARKER` header) or the compression/output-style block —

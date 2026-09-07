@@ -303,6 +303,136 @@ pub fn codebuddy_rules_dir(home: &Path) -> PathBuf {
     codebuddy_state_dir(home).join("rules")
 }
 
+/// CodeWhale's user-level MCP config (GH #1402).
+///
+/// Upstream resolution order (CodeWhale `docs/MCP.md`, verified 2026-09-07):
+///   1. `DEEPSEEK_MCP_CONFIG` — explicit override, still carrying the
+///      pre-rename env var name.
+///   2. `~/.codewhale/mcp.json` — current path.
+///   3. `~/.deepseek/mcp.json` — legacy path, read only while the CodeWhale
+///      file is absent.
+///
+/// We mirror that order exactly so `init`/`setup`/`doctor`/`uninstall` all
+/// touch the one file CodeWhale actually reads. Writing both would leave a
+/// lean-ctx entry in the shadowed file that the user never sees loaded and
+/// that a later `uninstall` of the other path would not explain.
+pub fn codewhale_mcp_json_path(home: &Path) -> PathBuf {
+    resolve_codewhale_mcp_path(home, std::env::var("DEEPSEEK_MCP_CONFIG").ok().as_deref())
+}
+
+/// Pure resolver behind [`codewhale_mcp_json_path`] — the env lookup is lifted
+/// to the caller so tests can cover the override without mutating process env
+/// (which races under the parallel test harness).
+fn resolve_codewhale_mcp_path(home: &Path, explicit_override: Option<&str>) -> PathBuf {
+    if let Some(explicit) = explicit_override {
+        let explicit = explicit.trim();
+        if !explicit.is_empty() {
+            return PathBuf::from(explicit);
+        }
+    }
+    let current = codewhale_dir(home).join("mcp.json");
+    if current.exists() {
+        return current;
+    }
+    let legacy = codewhale_legacy_dir(home).join("mcp.json");
+    if legacy.exists() {
+        return legacy;
+    }
+    current
+}
+
+/// `~/.codewhale` — CodeWhale's current config dir (`config.toml`, `mcp.json`).
+pub fn codewhale_dir(home: &Path) -> PathBuf {
+    home.join(".codewhale")
+}
+
+/// `~/.deepseek` — CodeWhale's pre-rename config dir, still honoured upstream
+/// as a read-only fallback.
+pub fn codewhale_legacy_dir(home: &Path) -> PathBuf {
+    home.join(".deepseek")
+}
+
+#[cfg(test)]
+mod codewhale_tests {
+    use super::*;
+
+    #[test]
+    fn defaults_to_codewhale_dir_when_nothing_exists() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let home = tmp.path();
+        assert_eq!(
+            resolve_codewhale_mcp_path(home, None),
+            home.join(".codewhale").join("mcp.json")
+        );
+    }
+
+    #[test]
+    fn prefers_existing_codewhale_config_over_legacy() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let home = tmp.path();
+        for dir in [".codewhale", ".deepseek"] {
+            std::fs::create_dir_all(home.join(dir)).expect("create dir");
+            std::fs::write(home.join(dir).join("mcp.json"), "{}").expect("write cfg");
+        }
+        assert_eq!(
+            resolve_codewhale_mcp_path(home, None),
+            home.join(".codewhale").join("mcp.json"),
+            "current path must win so we never write into the shadowed legacy file"
+        );
+    }
+
+    #[test]
+    fn falls_back_to_legacy_deepseek_config_when_only_it_exists() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let home = tmp.path();
+        std::fs::create_dir_all(home.join(".deepseek")).expect("create dir");
+        std::fs::write(home.join(".deepseek").join("mcp.json"), "{}").expect("write cfg");
+        assert_eq!(
+            resolve_codewhale_mcp_path(home, None),
+            home.join(".deepseek").join("mcp.json")
+        );
+    }
+
+    #[test]
+    fn explicit_override_wins_and_blank_is_ignored() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let home = tmp.path();
+        let explicit = home.join("custom").join("mcp.json");
+        assert_eq!(
+            resolve_codewhale_mcp_path(home, Some(&explicit.to_string_lossy())),
+            explicit
+        );
+        assert_eq!(
+            resolve_codewhale_mcp_path(home, Some("   ")),
+            home.join(".codewhale").join("mcp.json")
+        );
+    }
+
+    #[test]
+    fn detect_path_accepts_either_config_dir() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let home = tmp.path();
+        assert_eq!(codewhale_detect_path(home), home.join(".codewhale"));
+        std::fs::create_dir_all(home.join(".deepseek")).expect("create dir");
+        assert_eq!(codewhale_detect_path(home), home.join(".deepseek"));
+        std::fs::create_dir_all(home.join(".codewhale")).expect("create dir");
+        assert_eq!(codewhale_detect_path(home), home.join(".codewhale"));
+    }
+}
+
+/// Detection marker for CodeWhale: either config dir counts as "installed".
+pub fn codewhale_detect_path(home: &Path) -> PathBuf {
+    let current = codewhale_dir(home);
+    if current.exists() {
+        return current;
+    }
+    let legacy = codewhale_legacy_dir(home);
+    if legacy.exists() {
+        return legacy;
+    }
+    current
+}
+
 pub fn augment_cli_settings_path(home: &Path) -> PathBuf {
     home.join(".augment/settings.json")
 }
