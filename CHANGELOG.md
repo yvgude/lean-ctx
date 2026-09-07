@@ -43,6 +43,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   CodeWhale through the shared project `AGENTS.md` block it already auto-loads;
   no `~/.codewhale/AGENTS.md` is created, because CodeWhale would never read it.
 
+### Changed — machine-wide agent resource control
+
+- Agent admission now defaults to twelve machine-wide leases with a separate
+  four-worker ceiling for mutating roles, rejects duplicate project roles, and
+  releases workers after two minutes without a heartbeat.
+- Shell builds and tests are serialized across sessions; Cargo defaults to
+  three compiler jobs and a shared target cache to avoid CPU, RAM, and disk
+  amplification on multi-session laptops.
+
 ## [3.10.1] — 2026-09-05
 
 ### Fixed — release packaging

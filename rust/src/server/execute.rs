@@ -1,3 +1,4 @@
+use fs2::FileExt;
 use std::io::Read;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex, atomic::AtomicBool, mpsc};
@@ -7,6 +8,71 @@ const READER_RESULT_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Prefix of the timeout notice this module appends to a killed command.
 const TIMEOUT_MARKER: &str = "ERROR: command timed out after ";
+
+fn is_build_or_test_command(command: &str) -> bool {
+    let tokens: Vec<_> = command
+        .split(|ch: char| ch.is_ascii_whitespace() || matches!(ch, ';' | '&' | '|'))
+        .filter(|token| !token.is_empty())
+        .collect();
+    tokens.windows(2).any(|pair| {
+        let tool = std::path::Path::new(pair[0])
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(pair[0]);
+        (tool == "cargo"
+            && matches!(
+                pair[1],
+                "build" | "check" | "clippy" | "test" | "run" | "bench" | "install"
+            ))
+            || (matches!(tool, "npm" | "pnpm" | "yarn" | "bun")
+                && matches!(pair[1], "test" | "build" | "check"))
+    }) || tokens.windows(3).any(|triple| {
+        matches!(triple[0], "npm" | "pnpm" | "yarn" | "bun")
+            && triple[1] == "run"
+            && matches!(triple[2], "test" | "build" | "check" | "lint" | "typecheck")
+    }) || tokens.iter().any(|token| {
+        std::path::Path::new(token)
+            .file_name()
+            .and_then(|name| name.to_str())
+            == Some("rustc")
+    })
+}
+
+fn acquire_build_lease(
+    command: &str,
+    cancel: Option<&AtomicBool>,
+) -> Result<Option<std::fs::File>, String> {
+    let config = crate::core::config::Config::load();
+    if !config.agents.serialize_build_commands || !is_build_or_test_command(command) {
+        return Ok(None);
+    }
+    let dir = crate::core::data_dir::lean_ctx_data_dir()?.join("resources");
+    std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    let path = dir.join("build.lock");
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&path)
+        .map_err(|error| format!("open build lease {}: {error}", path.display()))?;
+    loop {
+        match file.try_lock_exclusive() {
+            Ok(()) => return Ok(Some(file)),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                if cancel.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire)) {
+                    return Err(
+                        "build cancelled while waiting for the machine-wide slot".to_string()
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(error) => {
+                return Err(format!("acquire build lease {}: {error}", path.display()));
+            }
+        }
+    }
+}
 
 /// The child's own output preceding the timeout marker, or `None` when the
 /// output carries no marker. `Some("")` means the command timed out having
@@ -62,6 +128,11 @@ pub(crate) fn execute_command_with_env_cancellable(
     // background job's `status` poll can show progress instead of nothing.
     live: Option<&std::sync::Mutex<String>>,
 ) -> (String, i32) {
+    let _build_lease = match acquire_build_lease(command, cancel) {
+        Ok(lease) => lease,
+        Err(error) => return (format!("ERROR: {error}"), 130),
+    };
+    let resource_config = crate::core::config::Config::load().agents;
     let (shell, flag) = crate::shell::shell_and_flag();
     let normalized_cmd = crate::tools::ctx_shell::normalize_command_for_shell(command);
     let normalized_cmd = crate::shell::platform::zsh_safe_command(&normalized_cmd, &shell);
@@ -110,6 +181,23 @@ pub(crate) fn execute_command_with_env_cancellable(
     // Explicit env vars from tool call (highest priority)
     for (key, val) in extra_env {
         cmd.env(key, val);
+    }
+    if is_build_or_test_command(command) {
+        if !extra_env.contains_key("CARGO_BUILD_JOBS") {
+            cmd.env(
+                "CARGO_BUILD_JOBS",
+                resource_config.cargo_build_jobs.max(1).to_string(),
+            );
+        }
+        if resource_config.shared_cargo_target
+            && !extra_env.contains_key("CARGO_TARGET_DIR")
+            && let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir()
+        {
+            cmd.env(
+                "CARGO_TARGET_DIR",
+                data_dir.join("build-cache/cargo-target"),
+            );
+        }
     }
     if dir.is_dir() {
         cmd.current_dir(dir);
@@ -517,7 +605,53 @@ fn command_timeout(command: &str, timeout_ms: Option<u64>) -> Duration {
 
 #[cfg(test)]
 mod tests {
-    use super::{command_timeout, ensure_utf8_locale, execute_command_in};
+    use super::{
+        command_timeout, ensure_utf8_locale, execute_command_in, is_build_or_test_command,
+    };
+
+    #[test]
+    fn resource_broker_build_slot_classifier_is_precise() {
+        for command in [
+            "cargo test --lib",
+            "cd rust && cargo clippy --all-features",
+            "/opt/bin/cargo build --release",
+            "npm test",
+            "npm run typecheck",
+            "pnpm build",
+            "rustc main.rs",
+        ] {
+            assert!(is_build_or_test_command(command), "{command}");
+        }
+        for command in [
+            "git status",
+            "cargo metadata",
+            "npm view lean-ctx",
+            "rg cargo",
+        ] {
+            assert!(!is_build_or_test_command(command), "{command}");
+        }
+    }
+
+    #[test]
+    fn resource_broker_serializes_build_leases() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        let first = super::acquire_build_lease("cargo test first", None)
+            .expect("first lease")
+            .expect("build command gets lease");
+        let acquired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let worker_acquired = std::sync::Arc::clone(&acquired);
+        let worker = std::thread::spawn(move || {
+            let _second = super::acquire_build_lease("cargo test second", None)
+                .expect("second lease")
+                .expect("build command gets lease");
+            worker_acquired.store(true, std::sync::atomic::Ordering::Release);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(!acquired.load(std::sync::atomic::Ordering::Acquire));
+        drop(first);
+        worker.join().expect("lease waiter");
+        assert!(acquired.load(std::sync::atomic::Ordering::Acquire));
+    }
 
     #[test]
     fn command_timeout_delegates_to_shell_timeout() {

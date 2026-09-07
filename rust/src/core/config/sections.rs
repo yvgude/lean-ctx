@@ -159,9 +159,18 @@ pub struct AgentsConfig {
     pub scratchpad_default_ttl_hours: u64,
     /// Logical session timeout (seconds).
     pub logical_session_ttl_seconds: u64,
-    /// Hard per-project cap for simultaneously admitted MCP workers (1–15).
-    /// This is admission control, not a queue or scheduler.
+    /// Machine-wide cap for simultaneously admitted MCP workers (1–15).
     pub max_concurrent_workers: usize,
+    /// Machine-wide cap for workers whose role can mutate project state.
+    pub max_concurrent_mutating_workers: usize,
+    /// Active worker lease. Missing heartbeats release capacity automatically.
+    pub active_worker_lease_seconds: u64,
+    /// Serialize build/test commands across all lean-ctx sessions.
+    pub serialize_build_commands: bool,
+    /// Cargo compiler processes per admitted build.
+    pub cargo_build_jobs: usize,
+    /// Reuse one machine-wide Cargo target directory across agent sessions.
+    pub shared_cargo_target: bool,
     /// Max scratchpad entries before oldest are evicted.
     pub max_scratchpad_entries: usize,
 }
@@ -174,7 +183,12 @@ impl Default for AgentsConfig {
             presence_ttl_hours: 24,
             scratchpad_default_ttl_hours: 12,
             logical_session_ttl_seconds: 180,
-            max_concurrent_workers: 15,
+            max_concurrent_workers: 12,
+            max_concurrent_mutating_workers: 4,
+            active_worker_lease_seconds: 120,
+            serialize_build_commands: true,
+            cargo_build_jobs: 3,
+            shared_cargo_target: true,
             max_scratchpad_entries: 200,
         }
     }
@@ -192,7 +206,12 @@ mod agents_config_tests {
         assert_eq!(cfg.presence_ttl_hours, 24);
         assert_eq!(cfg.scratchpad_default_ttl_hours, 12);
         assert_eq!(cfg.logical_session_ttl_seconds, 180);
-        assert_eq!(cfg.max_concurrent_workers, 15);
+        assert_eq!(cfg.max_concurrent_workers, 12);
+        assert_eq!(cfg.max_concurrent_mutating_workers, 4);
+        assert_eq!(cfg.active_worker_lease_seconds, 120);
+        assert!(cfg.serialize_build_commands);
+        assert_eq!(cfg.cargo_build_jobs, 3);
+        assert!(cfg.shared_cargo_target);
         assert_eq!(cfg.max_scratchpad_entries, 200);
     }
 
