@@ -151,22 +151,61 @@ export function createMcpSchemaCacheKey(inputs: McpSchemaCacheInputs): string {
     .digest("hex");
 }
 
+const DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD";
+
+/**
+ * Every filename `PATH` lookup should try for a bare command name, in order.
+ *
+ * On Windows a bare `lean-ctx` only ever exists on disk as `lean-ctx.exe`, so
+ * a scan without `PATHEXT` never resolves it and the identity degenerates to
+ * "missing" — which means a binary upgrade stops invalidating the schema cache.
+ * Exported so the platform-specific ordering is unit-testable off-Windows.
+ */
+export function binaryPathCandidates(
+  binaryName: string,
+  processEnv: Readonly<NodeJS.ProcessEnv> = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  const extensions = platform === "win32"
+    ? ["", ...(processEnv.PATHEXT ?? DEFAULT_PATHEXT)
+      .split(";")
+      .map((extension) => extension.trim())
+      .filter((extension) => extension.length > 0)]
+    : [""];
+
+  const candidates: string[] = [];
+  for (const directory of processEnv.PATH?.split(delimiter) ?? []) {
+    if (!directory) continue;
+    for (const extension of extensions) {
+      candidates.push(join(directory, `${binaryName}${extension}`));
+    }
+  }
+  return candidates;
+}
+
+function isExecutable(candidate: string): boolean {
+  try {
+    accessSync(candidate, constants.F_OK | constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Include the binary path plus stable file identity in cache invalidation. */
 export function identifyBinary(binaryPath: string): string {
   const explicitPath = binaryPath.includes("/") || binaryPath.includes("\\");
   const pathOnDisk = explicitPath
     ? resolve(binaryPath)
-    : process.env.PATH
-      ?.split(delimiter)
-      .map((directory) => join(directory, binaryPath))
-      .find((candidate) => {
-        try {
-          accessSync(candidate, constants.F_OK | constants.X_OK);
-          return true;
-        } catch {
-          return false;
-        }
-      }) ?? binaryPath;
+    : binaryPathCandidates(binaryPath).find(isExecutable);
+
+  if (pathOnDisk === undefined) {
+    // An unresolvable bare name must stay unresolved: `resolve()`-ing it would
+    // make the identity — and therefore the cache key — depend on the directory
+    // Pi happened to start in.
+    return canonicalJson({ missing: true, path: binaryPath });
+  }
+
   try {
     const info = statSync(pathOnDisk);
     return canonicalJson({

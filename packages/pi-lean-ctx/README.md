@@ -164,10 +164,13 @@ By default that surface is the lean core + `ctx_call`; set `toolProfile: power` 
 and the rest of the registry as first-class Pi tools. After the first discovery, validated
 versioned schemas are cached beside the Pi extension config. Warm starts register that direct
 surface from the cache and defer the MCP process connection until the first bridge-backed call;
-concurrent first calls share one connection attempt. Cache invalidation covers the extension and
-engine contract, binary identity, tool profile, disabled tools, prefix, local tool surface, and
-forwarded engine configuration. A missing, corrupt, or incompatible cache keeps the eager
-discovery path for that startup and refreshes the cache atomically after success.
+concurrent first calls share one connection attempt. That deferred connection is bounded by the
+same 10s startup limit as eager discovery and is cancelled by the host's abort signal; if it
+fails, the CLI-backed tools keep serving and a short cooldown stops every following call from
+paying the bound again. Cache invalidation covers the extension and engine contract, binary
+identity, tool profile, disabled tools, prefix, local tool surface, and forwarded engine
+configuration. A missing, corrupt, or incompatible cache keeps the eager discovery path for that
+startup and refreshes the cache atomically after success.
 
 The bridge wins over `~/.pi/agent/mcp.json`: a `lean-ctx` entry there (written by
 `lean-ctx init --agent pi`) does **not** disable the embedded bridge, because Pi has no native

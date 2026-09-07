@@ -1,15 +1,18 @@
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { McpTool } from "../extensions/mcp-bridge.js";
 import {
+  binaryPathCandidates,
   createMcpSchemaCacheKey,
+  identifyBinary,
   loadMcpSchemaCache,
   MCP_SCHEMA_CACHE_FORMAT_VERSION,
   type McpSchemaCacheInputs,
   identifyToolSurfaceConfiguration,
+  PI_EXTENSION_VERSION,
   toolSurfaceEnvironment,
   validateMcpSchemaCache,
   writeMcpSchemaCache,
@@ -178,5 +181,57 @@ describe("MCP schema cache", () => {
 
     writeFileSync(join(project, ".lean-ctx.toml"), "tool_profile = 'standard'\n", "utf8");
     expect(identifyToolSurfaceConfiguration(env, project)).not.toBe(second);
+  });
+
+  it("pins PI_EXTENSION_VERSION to the published package version (#1446 F3)", () => {
+    // The constant is part of the cache key: if it lags a release that changed
+    // the advertised tool surface, the key is unchanged and the new version
+    // silently serves the old schemas. `scripts/check-package-versions.py`
+    // enforces the same equality against the engine version at release time.
+    const manifest = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { version: string };
+    expect(PI_EXTENSION_VERSION).toBe(manifest.version);
+  });
+
+  it("scans PATHEXT variants for a bare binary name on Windows (#1446 F8)", () => {
+    const env = {
+      PATH: ["/opt/bin", "/usr/bin"].join(delimiter),
+      PATHEXT: ".COM;.EXE;.CMD",
+    };
+
+    expect(binaryPathCandidates("lean-ctx", env, "linux")).toEqual([
+      join("/opt/bin", "lean-ctx"),
+      join("/usr/bin", "lean-ctx"),
+    ]);
+
+    const windows = binaryPathCandidates("lean-ctx", env, "win32");
+    expect(windows).toHaveLength(8);
+    expect(windows.slice(0, 4)).toEqual([
+      join("/opt/bin", "lean-ctx"),
+      join("/opt/bin", "lean-ctx.COM"),
+      join("/opt/bin", "lean-ctx.EXE"),
+      join("/opt/bin", "lean-ctx.CMD"),
+    ]);
+
+    // Without PATHEXT set, the documented Windows default still finds the .exe.
+    expect(binaryPathCandidates("lean-ctx", { PATH: "/opt/bin" }, "win32"))
+      .toContain(join("/opt/bin", "lean-ctx.EXE"));
+  });
+
+  it("keeps an unresolvable bare binary name independent of cwd (#1446 F8)", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-lean-ctx-bin-"));
+    temporaryDirectories.push(root);
+    const originalPath = process.env.PATH;
+    process.env.PATH = root;
+    try {
+      const identity = identifyBinary("lean-ctx-not-installed");
+      expect(identity).toContain('"path":"lean-ctx-not-installed"');
+      // cwd-resolving an unresolvable name made the cache key depend on the
+      // directory Pi happened to start in.
+      expect(identity).not.toContain(process.cwd());
+    } finally {
+      process.env.PATH = originalPath;
+    }
   });
 });

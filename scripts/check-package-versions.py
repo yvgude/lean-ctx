@@ -18,6 +18,11 @@ Coupled packages (must equal the engine version):
   * packages/pi-lean-ctx/package.json   — Pi Coding Agent extension
   * packages/lean-ctx-bin/package.json  — npx/npm binary wrapper
 
+Coupled *source constants* (must equal the engine version):
+  * packages/pi-lean-ctx PI_EXTENSION_VERSION — part of the MCP schema-cache
+    key. If it lags a release that changed the advertised tool surface, the key
+    is unchanged and the new version silently serves the old cached schemas.
+
 Deliberately excluded:
   * vscode-extension          — decoupled cadence (vscode-v* tags, own workflow)
   * the cookbook example client — not a product surface (private: true)
@@ -38,6 +43,16 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 COUPLED_PACKAGES = [
     "packages/pi-lean-ctx/package.json",
     "packages/lean-ctx-bin/package.json",
+]
+
+# Shipped source constants whose literal must equal the engine version, as
+# (path, constant name, pattern capturing the literal).
+COUPLED_SOURCE_CONSTANTS = [
+    (
+        "packages/pi-lean-ctx/extensions/mcp-cache.ts",
+        "PI_EXTENSION_VERSION",
+        re.compile(r'^export const PI_EXTENSION_VERSION\s*=\s*"([^"]+)"', re.M),
+    ),
 ]
 
 FAILURES: list[str] = []
@@ -76,17 +91,43 @@ def main() -> int:
                 f"{rel} is {got} but the engine ships {engine} — bump it to {engine}"
             )
 
+    for rel, name, pattern in COUPLED_SOURCE_CONSTANTS:
+        label = f"{rel}:{name}"
+        try:
+            source = read(rel)
+        except OSError as e:
+            FAILURES.append(f"{label}: could not read ({e})")
+            continue
+        m = pattern.search(source)
+        if not m:
+            FAILURES.append(
+                f"{label}: constant not found — this gate can no longer verify it; "
+                "restore the `export const NAME = \"x.y.z\"` form or update this script"
+            )
+            continue
+        got = m.group(1)
+        status = "ok" if got == engine else "DRIFT"
+        print(f"  {label:<38} {got:<12} {status}")
+        if got != engine:
+            FAILURES.append(
+                f"{label} is {got} but the engine ships {engine} — bump it to {engine}"
+            )
+
     for f in FAILURES:
         print(f"::error title=Package version drift::{f}")
 
     if FAILURES:
         print(
-            f"\n{len(FAILURES)} package(s) out of sync with engine {engine}. "
-            "Bump every coupled package.json to the engine version before releasing."
+            f"\n{len(FAILURES)} version(s) out of sync with engine {engine}. "
+            "Bump every coupled package.json and source constant to the engine "
+            "version before releasing."
         )
         return 1
 
-    print(f"\nOK: all {len(COUPLED_PACKAGES)} coupled packages match engine {engine}")
+    print(
+        f"\nOK: all {len(COUPLED_PACKAGES)} coupled packages and "
+        f"{len(COUPLED_SOURCE_CONSTANTS)} source constant(s) match engine {engine}"
+    )
     return 0
 
 

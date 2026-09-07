@@ -829,11 +829,25 @@ export default async function (pi: ExtensionAPI) {
       }
     });
 
+    let registeredFromCache = false;
     if (cachedTools) {
       // Warm metadata is enough to preserve the direct tool surface. The MCP
       // process is opened by the first bridge-backed call instead of Pi startup.
-      bridge.registerCachedTools(pi, cachedTools);
-    } else {
+      // Contained: a throw here would escape the extension's default export and
+      // take down the CLI-backed tools too, so on-disk cache content can never
+      // be worse than a cache miss.
+      try {
+        bridge.registerCachedTools(pi, cachedTools);
+        registeredFromCache = true;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(
+          `[pi-lean-ctx] Cached MCP schema registration failed: ${msg}. Falling back to eager discovery.`,
+        );
+      }
+    }
+
+    if (!registeredFromCache) {
       // Cache miss/incompatibility deliberately keeps the old eager discovery
       // path, including its bounded startup wait and cache refresh.
       let timeoutHandle: ReturnType<typeof setTimeout> | undefined;

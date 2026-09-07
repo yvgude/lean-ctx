@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   McpBridge,
@@ -219,6 +219,21 @@ const bridgePolicy = {
   localTools: new Set<string>(),
 };
 
+const okResult = (): McpCallResult =>
+  ({ content: [{ type: "text", text: "ok" }] } as McpCallResult);
+
+/**
+ * The private state the reconnect/transport-lifecycle tests have to drive.
+ * `transport.onclose` firing is what arms the reconnect timer in production;
+ * the hook seams never build a real transport, so the tests reach for it here.
+ */
+type BridgeInternals = {
+  connected: boolean;
+  client: { close(): Promise<void> } | null;
+  transport: { onclose?: () => void; onerror?: (error: Error) => void } | null;
+  scheduleReconnect(): void;
+};
+
 describe("McpBridge startup modes", () => {
   it("registers cached tools without starting MCP until the first call", async () => {
     let connections = 0;
@@ -322,6 +337,179 @@ describe("McpBridge startup modes", () => {
     expect(connections).toBe(1);
     expect(discoveries).toBe(1);
     expect(registrations).toHaveLength(1);
+  });
+
+  it("keeps the reconnect timer from racing a lazy connect (#1446 F1)", async () => {
+    vi.useFakeTimers();
+    try {
+      let connections = 0;
+      const bridge = new McpBridge("test", {}, bridgePolicy, {
+        hooks: {
+          connect: async () => {
+            connections++;
+          },
+          callTool: async () => okResult(),
+        },
+      });
+      bridge.registerCachedTools(fakePi([]), [tool("ctx_search")]);
+      const internals = bridge as unknown as BridgeInternals;
+
+      // The server died: `transport.onclose` marks the bridge down and arms the
+      // reconnect timer.
+      internals.connected = false;
+      internals.scheduleReconnect();
+
+      // A lazy call lands before the timer fires and reconnects first.
+      await bridge.callTool("ctx_search", {});
+      expect(connections).toBe(1);
+
+      // The timer must observe the live connection and stand down. Before the
+      // fix it called connect() again, spawning a second lean-ctx child and
+      // dropping the first one — an orphan for the rest of the session.
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(connections).toBe(1);
+      expect(bridge.getStatus().reconnectAttempts).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("closes the previous transport before connecting again (#1446 F1)", async () => {
+    let closed = 0;
+    const bridge = new McpBridge("test", {}, bridgePolicy, {
+      hooks: {
+        connect: async () => undefined,
+        callTool: async () => okResult(),
+      },
+    });
+    bridge.registerCachedTools(fakePi([]), [tool("ctx_search")]);
+
+    const internals = bridge as unknown as BridgeInternals;
+    const staleTransport = {
+      onclose: (): void => {
+        throw new Error("a deliberate close must not schedule a reconnect");
+      },
+      onerror: (): void => undefined,
+      close: async (): Promise<void> => undefined,
+    };
+    internals.transport = staleTransport;
+    internals.client = {
+      close: async (): Promise<void> => {
+        closed++;
+      },
+    };
+
+    await bridge.callTool("ctx_search", {});
+
+    expect(closed).toBe(1);
+    expect(internals.client).toBeNull();
+    expect(internals.transport).toBeNull();
+    expect(staleTransport.onclose).toBeUndefined();
+  });
+
+  it("bounds a lazy connect and negative-caches the failure (#1446 F2)", async () => {
+    let starts = 0;
+    const bridge = new McpBridge("test", {}, bridgePolicy, {
+      connectTimeoutMs: 20,
+      connectFailureCooldownMs: 10_000,
+      hooks: {
+        // A binary that spawns but never completes `initialize`.
+        connect: () => {
+          starts++;
+          return new Promise<void>(() => undefined);
+        },
+        callTool: async () => okResult(),
+      },
+    });
+    bridge.registerCachedTools(fakePi([]), [tool("ctx_search")]);
+
+    await expect(bridge.callTool("ctx_search", {}))
+      .rejects.toThrow(/failed to connect within/);
+    expect(starts).toBe(1);
+
+    // Every later read short-circuits on the negative cache instead of paying
+    // the bound again; only this branch produces the "cooldown" wording.
+    await expect(bridge.callTool("ctx_search", {}))
+      .rejects.toThrow(/retrying after a short cooldown/);
+    expect(starts).toBe(1);
+  });
+
+  it("retries once the negative-cache window expires (#1446 F2)", async () => {
+    let attempts = 0;
+    const bridge = new McpBridge("test", {}, bridgePolicy, {
+      connectTimeoutMs: 1000,
+      connectFailureCooldownMs: 5,
+      hooks: {
+        connect: async () => {
+          attempts++;
+          if (attempts === 1) throw new Error("binary unavailable");
+        },
+        callTool: async () => okResult(),
+      },
+    });
+    bridge.registerCachedTools(fakePi([]), [tool("ctx_search")]);
+
+    await expect(bridge.callTool("ctx_search", {}))
+      .rejects.toThrow("binary unavailable");
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(await bridge.callTool("ctx_search", {})).toEqual(okResult());
+    expect(attempts).toBe(2);
+  });
+
+  it("aborts a pending lazy connect when the host cancels (#1446 F2)", async () => {
+    const controller = new AbortController();
+    const bridge = new McpBridge("test", {}, bridgePolicy, {
+      connectTimeoutMs: 60_000,
+      hooks: {
+        connect: () => new Promise<void>(() => undefined),
+        callTool: async () => okResult(),
+      },
+    });
+    bridge.registerCachedTools(fakePi([]), [tool("ctx_search")]);
+
+    const pending = bridge.callTool("ctx_search", {}, controller.signal);
+    controller.abort();
+
+    await expect(pending).rejects.toThrow(/interrupted by host/);
+    // A host abort is the caller's decision, not a bridge failure: it must not
+    // poison the next attempt with a cooldown.
+    expect(bridge.getStatus().lastError).toBeUndefined();
+  });
+
+  it("contains a schema-conversion failure instead of crashing (#1446 F6)", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const registrations: unknown[] = [];
+      const bridge = new McpBridge("test", {}, bridgePolicy, {
+        hooks: { connect: async () => undefined, callTool: async () => okResult() },
+      });
+      const hostile = {
+        name: "ctx_hostile",
+        inputSchema: {
+          type: "object",
+          properties: {
+            broken: {
+              get type(): string {
+                throw new Error("unconvertible cached schema");
+              },
+            },
+          },
+        },
+      } as unknown as McpTool;
+
+      expect(() => bridge.registerCachedTools(
+        fakePi(registrations),
+        [hostile, tool("ctx_search")],
+      )).not.toThrow();
+
+      expect((registrations as Array<{ name: string }>).map((r) => r.name))
+        .toEqual(["ctx_search"]);
+      expect(bridge.getStatus().skippedTools).toEqual(["ctx_hostile"]);
+    } finally {
+      errors.mockRestore();
+    }
   });
 
   it("reports eager startup failure so the host can fall back to CLI tools", async () => {

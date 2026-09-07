@@ -14,6 +14,19 @@ export type McpCallResult = Awaited<ReturnType<Client["callTool"]>>;
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_DELAY_MS = 2000;
 const TOOL_CALL_TIMEOUT_MS = 120000;
+/**
+ * Upper bound on a single connect attempt. Mirrors index.ts's eager
+ * `BRIDGE_STARTUP_TIMEOUT_MS` so the lazy first call is bounded the same way
+ * the cache-miss startup already was, instead of inheriting the MCP SDK's 60s
+ * request default.
+ */
+const CONNECT_TIMEOUT_MS = 10000;
+/**
+ * How long a failed connect short-circuits further attempts. Short and fixed:
+ * long enough that a broken binary cannot make every read pay the full bound,
+ * short enough that a transient failure still retries within one turn.
+ */
+const CONNECT_FAILURE_COOLDOWN_MS = 2000;
 
 export type McpTool = {
   name: string;
@@ -39,6 +52,10 @@ export type McpBridgeHooks = {
 export type McpBridgeOptions = {
   onSchemasDiscovered?: (tools: McpTool[]) => void | Promise<void>;
   hooks?: McpBridgeHooks;
+  /** Bound on one connect attempt; `0` disables the bound. Tests shorten it. */
+  connectTimeoutMs?: number;
+  /** Negative-cache window after a failed connect; `0` disables it. */
+  connectFailureCooldownMs?: number;
 };
 
 /** Coalesce all callers arriving before one async start completes. */
@@ -210,6 +227,9 @@ export class McpBridge {
   private readonly onSchemasDiscovered?: (tools: McpTool[]) => void | Promise<void>;
   private readonly hooks: McpBridgeHooks;
   private readonly ensureConnectedCoalesced: () => Promise<void>;
+  private readonly connectTimeoutMs: number;
+  private readonly connectFailureCooldownMs: number;
+  private connectBlockedUntil: number | undefined;
   private startupMode: "eager" | "lazy" | undefined;
 
   constructor(
@@ -223,6 +243,9 @@ export class McpBridge {
     this.policy = policy;
     this.onSchemasDiscovered = options.onSchemasDiscovered;
     this.hooks = options.hooks ?? {};
+    this.connectTimeoutMs = options.connectTimeoutMs ?? CONNECT_TIMEOUT_MS;
+    this.connectFailureCooldownMs =
+      options.connectFailureCooldownMs ?? CONNECT_FAILURE_COOLDOWN_MS;
     this.ensureConnectedCoalesced = createCoalescedStarter(() => this.connect());
   }
 
@@ -249,11 +272,109 @@ export class McpBridge {
     this.registerTools(pi, tools);
   }
 
-  private async ensureConnected(): Promise<void> {
+  private async ensureConnected(signal?: AbortSignal): Promise<void> {
     if (this.isConnected()) return;
-    await this.ensureConnectedCoalesced();
-    if (!this.isConnected()) {
-      throw new Error("lean-ctx MCP bridge failed to connect.");
+    if (signal?.aborted) {
+      throw new Error("lean-ctx MCP bridge connect aborted by host.");
+    }
+
+    if (this.connectBlockedUntil !== undefined) {
+      if (Date.now() < this.connectBlockedUntil) {
+        // Negative cache: without it a binary that spawns but never completes
+        // `initialize` makes *every* read pay the full startup bound again.
+        // The message deliberately avoids "timed out after" so `callTool`'s
+        // timeout-retry path does not treat a cooldown as a hung tool call.
+        throw new Error(
+          "lean-ctx MCP bridge failed to connect; retrying after a short cooldown.",
+        );
+      }
+      this.connectBlockedUntil = undefined;
+    }
+
+    try {
+      await this.raceConnect(signal);
+      if (!this.isConnected()) {
+        throw new Error("lean-ctx MCP bridge failed to connect.");
+      }
+    } catch (error) {
+      // A host abort is the caller's decision, not a bridge failure — it must
+      // not poison the next call's connect attempt.
+      if (!isAbortLikeError(error)) {
+        this.lastError = error instanceof Error ? error.message : String(error);
+        this.connectBlockedUntil = Date.now() + this.connectFailureCooldownMs;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Run one coalesced connect attempt, bounded by `connectTimeoutMs` and by the
+   * caller's abort signal. Losing the race abandons the shared start promise —
+   * it stays single-flight, so a later caller joins the same attempt instead of
+   * spawning a second server process.
+   */
+  private async raceConnect(signal?: AbortSignal): Promise<void> {
+    const started = this.ensureConnectedCoalesced();
+    // This caller may abandon `started`; keep its rejection handled either way.
+    started.catch(() => undefined);
+
+    const waits: Promise<void>[] = [started];
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (this.connectTimeoutMs > 0) {
+      waits.push(new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(
+            `lean-ctx MCP bridge failed to connect within ${Math.round(this.connectTimeoutMs / 1000)}s.`,
+          ));
+        }, this.connectTimeoutMs);
+        (timer as { unref?: () => void }).unref?.();
+      }));
+    }
+
+    let onAbort: (() => void) | undefined;
+    if (signal) {
+      waits.push(new Promise<never>((_, reject) => {
+        onAbort = () => {
+          reject(new Error("lean-ctx MCP bridge connect aborted by host."));
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+      }));
+    }
+
+    try {
+      await Promise.race(waits);
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (onAbort && signal) signal.removeEventListener("abort", onAbort);
+    }
+  }
+
+  /**
+   * Drop the live client/transport pair, detaching the transport callbacks
+   * first so a deliberate close cannot schedule a reconnect.
+   *
+   * Every path that replaces the pair must go through here: overwriting
+   * `this.transport` without closing the previous one orphans a `lean-ctx`
+   * child process for the rest of the session (the stray-server failure class
+   * that corrupts dashboard stats).
+   */
+  private async closeActiveConnection(): Promise<void> {
+    const client = this.client;
+    const transport = this.transport;
+    this.client = null;
+    this.transport = null;
+    this.connected = false;
+    if (!client && !transport) return;
+    if (transport) {
+      transport.onclose = undefined;
+      transport.onerror = undefined;
+    }
+    try {
+      if (client) await client.close();
+      else await transport?.close();
+    } catch {
+      // best-effort cleanup
     }
   }
 
@@ -261,6 +382,9 @@ export class McpBridge {
     if (this.shuttingDown) {
       throw new Error("lean-ctx MCP bridge is shutting down.");
     }
+
+    // Reap any previous pair before establishing a new one.
+    await this.closeActiveConnection();
 
     if (this.hooks.connect || this.hooks.callTool) {
       await this.hooks.connect?.();
@@ -270,10 +394,13 @@ export class McpBridge {
       this.connected = true;
       this.reconnectAttempts = 0;
       this.lastError = undefined;
+      this.connectBlockedUntil = undefined;
       return;
     }
 
-    this.transport = new StdioClientTransport({
+    // Held in locals so the callbacks below always describe *this* attempt,
+    // even if another one replaces `this.transport` while `connect()` awaits.
+    const transport = new StdioClientTransport({
       command: this.binary,
       args: [],
       // config.json `env` (lowest) < process env < the forced compress flag.
@@ -281,30 +408,37 @@ export class McpBridge {
       stderr: "pipe",
     });
 
-    this.client = new Client({
+    const client = new Client({
       name: "pi-lean-ctx",
       version: "2.0.0",
     });
 
-    this.transport.onclose = () => {
+    transport.onclose = () => {
+      // A superseded transport closing says nothing about the live one.
+      if (this.transport !== transport) return;
       this.connected = false;
       this.lastError = "MCP transport closed";
       if (!this.shuttingDown) this.scheduleReconnect();
     };
 
-    this.transport.onerror = (err) => {
+    transport.onerror = (err) => {
+      if (this.transport !== transport) return;
       this.lastError = err.message;
       console.error(`[lean-ctx MCP bridge] Transport error: ${err.message}`);
     };
 
-    await this.client.connect(this.transport);
+    this.transport = transport;
+    this.client = client;
+
+    await client.connect(transport);
     if (this.shuttingDown) {
-      await this.client.close().catch(() => undefined);
+      await client.close().catch(() => undefined);
       throw new Error("lean-ctx MCP bridge is shutting down.");
     }
     this.connected = true;
     this.reconnectAttempts = 0;
     this.lastError = undefined;
+    this.connectBlockedUntil = undefined;
   }
 
   private scheduleReconnect(): void {
@@ -324,8 +458,21 @@ export class McpBridge {
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = undefined;
       if (this.shuttingDown) return;
+      // A lazy `ensureConnected()` may have reconnected while this timer was
+      // pending. Re-entering `connect()` here used to spawn a second server and
+      // silently drop the first one, leaving an orphaned `lean-ctx` child for
+      // the rest of the session.
+      if (this.isConnected()) {
+        this.reconnectAttempts = 0;
+        return;
+      }
       try {
-        await this.connect();
+        // Single-flight and bounded, but deliberately not negative-cached: the
+        // reconnect backoff is the retry schedule here.
+        await this.raceConnect();
+        if (!this.isConnected()) {
+          throw new Error("lean-ctx MCP bridge failed to connect.");
+        }
         if (!this.shuttingDown) console.error("[lean-ctx MCP bridge] Reconnected successfully");
       } catch (error) {
         this.lastError = error instanceof Error ? error.message : String(error);
@@ -338,14 +485,14 @@ export class McpBridge {
   private async forceReconnect(): Promise<void> {
     if (this.shuttingDown) return;
     this.connected = false;
-    try {
-      if (this.hooks.close) await this.hooks.close();
-      else await this.client?.close();
-    } catch {
-      // best-effort cleanup
+    if (this.hooks.close) {
+      try {
+        await this.hooks.close();
+      } catch {
+        // best-effort cleanup
+      }
     }
-    this.client = null;
-    this.transport = null;
+    await this.closeActiveConnection();
     await this.connect();
   }
 
@@ -378,7 +525,6 @@ export class McpBridge {
 
   private registerMcpTool(pi: ExtensionAPI, tool: McpTool): void {
     const bridge = this;
-    const schema = this.jsonSchemaToTypebox(tool.inputSchema);
     // The prefix renames only the Pi-facing tool; the MCP call still targets
     // the real `tool.name` captured in the closure below.
     const exposedName = this.policy.toolPrefix
@@ -386,6 +532,10 @@ export class McpBridge {
       : tool.name;
 
     try {
+      // Inside the try: a cached schema is attacker-shaped input in the sense
+      // that it comes off disk, and a throw while converting it must not take
+      // the whole extension down with it.
+      const schema = this.jsonSchemaToTypebox(tool.inputSchema);
       pi.registerTool({
         name: exposedName,
         label: exposedName,
@@ -404,13 +554,14 @@ export class McpBridge {
       });
       this.registeredTools.push(exposedName);
     } catch (err) {
-      // Another extension (e.g. magic-context) already owns this name. Skip it
-      // and keep going so the whole agent doesn't crash on load (#359). Set a
-      // prefix (LEAN_CTX_PI_TOOL_PREFIX) or disable the tool to resolve cleanly.
+      // Usually: another extension (e.g. magic-context) already owns this name.
+      // Also covers a schema that fails conversion. Skip it and keep going so
+      // the whole agent doesn't crash on load (#359). Set a prefix
+      // (LEAN_CTX_PI_TOOL_PREFIX) or disable the tool to resolve cleanly.
       const msg = err instanceof Error ? err.message : String(err);
       this.skippedTools.push(exposedName);
       console.error(
-        `[lean-ctx MCP bridge] Skipped tool "${exposedName}" — already registered by another extension? (${msg}). `
+        `[lean-ctx MCP bridge] Skipped tool "${exposedName}" — already registered by another extension, or its schema is unusable? (${msg}). `
           + "Set LEAN_CTX_PI_TOOL_PREFIX or add it to LEAN_CTX_PI_DISABLE_TOOLS to silence this.",
       );
     }
@@ -426,7 +577,7 @@ export class McpBridge {
     }
 
     try {
-      await this.ensureConnected();
+      await this.ensureConnected(signal);
       const result = await this.callToolWithTimeout(name, args, signal);
       this.lastError = undefined;
       return this.toTextBlocks(result);
