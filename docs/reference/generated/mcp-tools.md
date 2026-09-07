@@ -605,7 +605,7 @@ Session memory. save at session end, load at start, status = snapshot;
 task|finding|decision record progress (value=text).
 ANTIPATTERN: permanent project knowledge → ctx_knowledge.
 
-Parameters: `action`*, `session_id`, `value`
+Parameters: `action`*, `keep_recent_turns`, `session_id`, `value`
 
 ## `ctx_shell`
 
