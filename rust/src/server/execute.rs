@@ -59,7 +59,7 @@ fn acquire_build_lease(
     loop {
         match file.try_lock_exclusive() {
             Ok(()) => return Ok(Some(file)),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+            Err(error) if lock_is_contended(&error) => {
                 if cancel.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire)) {
                     return Err(
                         "build cancelled while waiting for the machine-wide slot".to_string()
@@ -72,6 +72,11 @@ fn acquire_build_lease(
             }
         }
     }
+}
+
+fn lock_is_contended(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::WouldBlock
+        || cfg!(windows) && matches!(error.raw_os_error(), Some(32 | 33))
 }
 
 /// The child's own output preceding the timeout marker, or `None` when the
