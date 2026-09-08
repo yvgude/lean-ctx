@@ -23,7 +23,11 @@ pub fn get_rss_bytes() -> Option<u64> {
     {
         macos_rss()
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(windows)]
+    {
+        windows_rss()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
         None
     }
@@ -39,7 +43,11 @@ pub fn get_rss_bytes_for_pid(pid: u32) -> Option<u64> {
     {
         macos_rss_for_pid(pid)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(windows)]
+    {
+        windows_rss_for_pid(pid)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
         let _ = pid;
         None
@@ -56,9 +64,83 @@ pub fn get_system_ram_bytes() -> Option<u64> {
     {
         macos_memsize()
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(windows)]
+    {
+        windows_system_ram()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
         None
+    }
+}
+
+#[cfg(windows)]
+fn windows_rss() -> Option<u64> {
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+    // SAFETY: GetCurrentProcess returns a pseudo-handle valid for the current
+    // process and it must not be closed.
+    let process = unsafe { GetCurrentProcess() };
+    windows_rss_for_handle(process)
+}
+
+#[cfg(windows)]
+fn windows_rss_for_pid(pid: u32) -> Option<u64> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+
+    // SAFETY: OpenProcess is called with query-only access. A successful real
+    // handle is closed before returning.
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+
+    if process.is_null() {
+        return None;
+    }
+
+    let rss = windows_rss_for_handle(process);
+
+    // SAFETY: `process` is a real handle returned successfully by OpenProcess.
+    unsafe {
+        let _ = CloseHandle(process);
+    }
+
+    rss
+}
+
+#[cfg(windows)]
+fn windows_rss_for_handle(process: windows_sys::Win32::Foundation::HANDLE) -> Option<u64> {
+    use windows_sys::Win32::System::ProcessStatus::{
+        K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+    };
+
+    let mut counters = PROCESS_MEMORY_COUNTERS::default();
+    counters.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+
+    // SAFETY: `counters` has the documented size in `cb` and remains valid and
+    // writable for the duration of the call.
+    let ok = unsafe { K32GetProcessMemoryInfo(process, &mut counters, counters.cb) };
+
+    if ok == 0 {
+        None
+    } else {
+        Some(counters.WorkingSetSize as u64)
+    }
+}
+
+#[cfg(windows)]
+fn windows_system_ram() -> Option<u64> {
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+
+    let mut status = MEMORYSTATUSEX::default();
+    status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+
+    // SAFETY: `status` has the required `dwLength` and is writable for the call.
+    let ok = unsafe { GlobalMemoryStatusEx(&mut status) };
+
+    if ok == 0 {
+        None
+    } else {
+        Some(status.ullTotalPhys)
     }
 }
 
@@ -542,7 +624,7 @@ pub mod tests {
 
     #[test]
     fn rss_returns_some_on_supported_os() {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
+        if cfg!(any(target_os = "linux", target_os = "macos", windows)) {
             let rss = get_rss_bytes();
             assert!(rss.is_some(), "RSS should be readable");
             assert!(rss.unwrap() > 0, "RSS should be > 0");
@@ -551,7 +633,7 @@ pub mod tests {
 
     #[test]
     fn system_ram_returns_some_on_supported_os() {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
+        if cfg!(any(target_os = "linux", target_os = "macos", windows)) {
             let ram = get_system_ram_bytes();
             assert!(ram.is_some(), "System RAM should be readable");
             assert!(ram.unwrap() > 1_000_000, "System RAM should be > 1MB");
@@ -560,7 +642,7 @@ pub mod tests {
 
     #[test]
     fn snapshot_captures_correctly() {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
+        if cfg!(any(target_os = "linux", target_os = "macos", windows)) {
             let snap = MemorySnapshot::capture();
             assert!(snap.is_some());
             let s = snap.unwrap();
@@ -673,7 +755,7 @@ pub mod tests {
 
     #[test]
     fn rss_for_own_pid_matches_self() {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
+        if cfg!(any(target_os = "linux", target_os = "macos", windows)) {
             let self_rss = get_rss_bytes().unwrap();
             let pid_rss = get_rss_bytes_for_pid(std::process::id()).unwrap();
             let ratio = self_rss as f64 / pid_rss as f64;
@@ -692,7 +774,7 @@ pub mod tests {
 
     #[test]
     fn capture_for_pid_falls_back_on_dead_pid() {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
+        if cfg!(any(target_os = "linux", target_os = "macos", windows)) {
             let snap = MemorySnapshot::capture_for_pid(999_999_999);
             assert!(snap.is_some(), "should fall back to self RSS");
         }
