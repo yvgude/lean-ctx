@@ -356,9 +356,9 @@ fn run_build_worker(root: &str) {
         guard.report(0, 0);
         let graph_result = std::panic::catch_unwind(|| {
             let (idx, _cache) = graph_index::scan_with_content_cache(&graph_root);
-            if let Err(e) = idx.save() {
-                tracing::warn!("[index_orchestrator: graph save failed: {e}]");
-            }
+            // scan_with_content_cache persists the freshly built ProjectIndex
+            // before returning it; mirroring the same unchanged index again here
+            // only repeats the property-graph mirror.
             crate::core::code_health::persist::refresh_if_stale(&graph_root, &idx);
         });
         drop(guard);
