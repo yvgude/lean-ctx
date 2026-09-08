@@ -487,6 +487,9 @@ impl LeanCtxServer {
             // silently turns `ctx_read` into an un-editable "Output stored …" preview).
             if reference_enabled
                 && !crate::core::firewall::is_protected_read(name)
+                && !output.shell_outcome.as_ref().is_some_and(
+                    crate::server::tool_trait::ShellOutcome::is_terminal_background_status,
+                )
                 && final_text.len() > REFERENCE_THRESHOLD
             {
                 let ref_id = super::reference_store::store(final_text.clone());
