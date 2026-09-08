@@ -1170,10 +1170,6 @@ mod shell_outcome_tests {
 
         let structured = structured_of(&result);
         assert!(structured.get("archiveId").is_none());
-        assert_eq!(
-            structured["summary"],
-            serde_json::json!("output archive unavailable")
-        );
         assert_eq!(crate::core::archive::list_entries(None).len(), 0);
         let text = text_of(&result);
         assert!(!text.contains("ctx_expand"));

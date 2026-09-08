@@ -293,7 +293,9 @@ pub(in crate::server) async fn dispatch_and_post_process(
     // #1540: only the LEAN_CTX_MINIMAL env escape hatch skips archiving — the
     // `minimal_overhead` config key (default true) trims instruction overhead
     // and must never disable the archive/firewall safety net.
-    let archive_hint = if terminal_background_status {
+    let archive_hint = if crate::core::config::Config::minimal_escape_hatch() {
+        None
+    } else if terminal_background_status {
         use crate::core::archive;
         let chars = result_text.chars().count();
         let lines = result_text.lines().count();
@@ -306,7 +308,7 @@ pub(in crate::server) async fn dispatch_and_post_process(
             format!("{chars} chars, {lines} lines")
         };
         let mut stored_result = None;
-        if !trimmed.is_empty() && !crate::core::config::Config::minimal_escape_hatch() {
+        if !trimmed.is_empty() {
             let job_id = match shell_outcome.as_ref() {
                 Some(crate::server::tool_trait::ShellOutcome::Background(outcome)) => {
                     outcome.job_id.clone()
@@ -362,8 +364,6 @@ pub(in crate::server) async fn dispatch_and_post_process(
             } else {
                 summary = "output archive unavailable".to_string();
             }
-        } else if !trimmed.is_empty() {
-            summary = "output archive unavailable".to_string();
         }
         if let Some(crate::server::tool_trait::ShellOutcome::Background(outcome)) =
             shell_outcome.as_mut()
@@ -377,7 +377,7 @@ pub(in crate::server) async fn dispatch_and_post_process(
             }
         }
         None
-    } else if background_status || crate::core::config::Config::minimal_escape_hatch() {
+    } else if background_status {
         None
     } else {
         use crate::core::archive;
