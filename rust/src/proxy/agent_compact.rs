@@ -153,7 +153,7 @@ mod tests {
         ]})
     }
 
-    fn body(messages: Vec<Value>) -> Value {
+    fn body(messages: &[Value]) -> Value {
         json!({"model": "claude-x", "messages": messages})
     }
 
@@ -177,7 +177,7 @@ mod tests {
         msgs.push(plain_user("turn 2"));
         msgs.push(plain_user("turn 3 (latest)"));
 
-        let mut first = body(msgs.clone());
+        let mut first = body(&msgs);
         let saved = apply(&mut first);
         assert!(saved > 0, "compaction must save tokens");
         let compacted = first["messages"].as_array().unwrap();
@@ -198,7 +198,7 @@ mod tests {
         // byte-identical (fingerprint-pinned boundary).
         let mut grown = msgs.clone();
         grown.push(plain_user("turn 4 (new)"));
-        let mut second = body(grown);
+        let mut second = body(&grown);
         apply(&mut second);
         assert_eq!(
             first["messages"][0], second["messages"][0],
@@ -207,7 +207,7 @@ mod tests {
 
         // Restore = clear; the untouched original history flows again.
         assert!(crate::core::compact_directive::clear());
-        let mut third = body(msgs);
+        let mut third = body(&msgs);
         assert_eq!(apply(&mut third), 0);
         assert!(third["messages"][0]["content"].is_string());
     }
@@ -219,12 +219,12 @@ mod tests {
 
         // Span smaller than the minimum → no-op.
         seeded_directive(1);
-        let mut tiny = body(vec![plain_user("a"), plain_user("b")]);
+        let mut tiny = body(&[plain_user("a"), plain_user("b")]);
         assert_eq!(apply(&mut tiny), 0);
 
         // OpenAI shape (tool role) → no-op.
         seeded_directive(1);
-        let mut openai = body(vec![
+        let mut openai = body(&[
             plain_user("q"),
             json!({"role": "tool", "tool_call_id": "1", "content": "r"}),
             plain_user("next"),
@@ -235,7 +235,7 @@ mod tests {
         // First live message carries a tool_result (pair reaches into the
         // cached prefix) → no-op.
         seeded_directive(1);
-        let mut torn = body(vec![
+        let mut torn = body(&[
             json!({"role": "user", "cache_control": {"type": "ephemeral"}, "content": "cached"}),
             user_tool_result("t9"),
             plain_user("a"),

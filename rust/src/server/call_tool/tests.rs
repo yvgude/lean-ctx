@@ -660,21 +660,48 @@ mod shell_outcome_tests {
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(not(windows))]
     async fn explicit_background_launch_ack_is_structured_running() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let _threshold = ScopedEnvVar::set("LEAN_CTX_ARCHIVE_THRESHOLD", "4096");
         let mut args = serde_json::Map::new();
         args.insert(
             "command".to_string(),
-            serde_json::json!("sleep 2 # MES1609_EXPLICIT_LAUNCH"),
+            serde_json::json!("sleep 0.1; printf MES1727_EXPLICIT_OUTPUT"),
         );
         args.insert("run_in_background".to_string(), serde_json::json!(true));
 
         let result = call_shell(&args, &shell_context());
 
-        let _job = launched_job_guard(&result);
+        let job = launched_job_guard(&result);
         assert_ne!(result.is_error, Some(true));
         let structured = structured_of(&result);
         assert_eq!(structured["state"], serde_json::json!("running"));
         assert!(structured["jobId"].as_str().is_some());
         assert!(structured.get("exitCode").is_none());
+
+        for _ in 0..240 {
+            if matches!(
+                crate::server::background_shell::status(&job.job_id),
+                Some(crate::server::background_shell::JobState::Completed { .. })
+            ) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        let terminal = pipeline_background_status(&job.job_id, false, false, false).await;
+        let archive_id = structured_of(&terminal)["archiveId"]
+            .as_str()
+            .expect("short explicit background output must be archived");
+        assert_ne!(archive_id, job.job_id);
+        let expanded = crate::tools::ctx_expand::handle(&serde_json::json!({"id": &job.job_id}));
+        assert!(expanded.contains(&format!("Archive {archive_id}")));
+        assert!(expanded.contains("MES1727_EXPLICIT_OUTPUT"));
+
+        let repeated = pipeline_background_status(&job.job_id, false, false, false).await;
+        assert_eq!(
+            structured_of(&repeated)["archiveId"],
+            serde_json::json!(archive_id)
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -699,6 +726,29 @@ mod shell_outcome_tests {
         assert!(structured.get("exitCode").is_none());
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(not(windows))]
+    async fn running_background_status_is_not_archived() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let job_id = crate::server::background_shell::start(
+            "sleep 2".to_string(),
+            ".".to_string(),
+            std::collections::HashMap::default(),
+            Some(10_000),
+        );
+        let _job = BackgroundJobGuard::new(job_id.clone());
+
+        let result = pipeline_background_status(&job_id, false, false, false).await;
+
+        assert_eq!(
+            structured_of(&result)["state"],
+            serde_json::json!("running")
+        );
+        assert!(structured_of(&result).get("archiveId").is_none());
+        assert!(crate::core::archive::list_entries(None).is_empty());
+    }
+
     /// MES-1609: a successful auto-detached child remains queryable after
     /// the OS process exits and exposes an explicit terminal code 0.
     #[test]
@@ -717,6 +767,24 @@ mod shell_outcome_tests {
                 .is_some_and(|s| s.contains("LONG_OK"))
         );
         assert!(text_of(&result).contains("LONG_OK"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(not(windows))]
+    async fn auto_detached_short_output_is_recoverable_by_job_id() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+        let _threshold = ScopedEnvVar::set("LEAN_CTX_ARCHIVE_THRESHOLD", "4096");
+        let (result, job) = auto_detached_pipeline_result("printf MES1727_AUTO_OUTPUT").await;
+
+        let structured = structured_of(&result);
+        let archive_id = structured["archiveId"]
+            .as_str()
+            .expect("short auto-detached output must be archived");
+        assert_ne!(archive_id, job.job_id);
+        let expanded = crate::tools::ctx_expand::handle(&serde_json::json!({"id": &job.job_id}));
+        assert!(expanded.contains(&format!("Archive {archive_id}")));
+        assert!(expanded.contains("MES1727_AUTO_OUTPUT"));
     }
 
     /// MES-1609: terminal output too large for an inline response is archived
@@ -812,6 +880,7 @@ mod shell_outcome_tests {
         let _data_dir = crate::core::data_dir::isolated_data_dir();
         let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
         let _threshold = ScopedEnvVar::set("LEAN_CTX_ARCHIVE_THRESHOLD", "1");
+        let _references = ScopedEnvVar::set("LEAN_CTX_REFERENCE_RESULTS", "1");
         let job_id = crate::server::background_shell::start(
             "sleep 0.1; printf MES1609_PIPELINE; head -c 50000 /dev/zero | tr '\\000' P"
                 .to_string(),

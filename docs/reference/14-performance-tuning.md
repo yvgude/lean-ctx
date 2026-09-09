@@ -38,6 +38,15 @@ config + env + defaults into one view and tags the **source** of each value:
 `← config` vs `← default` tells you whether a value is yours or the built-in.
 `0` means "unbounded / use the derived default" (see each knob below).
 
+A terminal `ctx_shell` background status archives every non-empty output,
+regardless of the generic archive threshold. When status returns an `archiveId`,
+lean-ctx protects that archive from its TTL and disk-budget cleanup for at least
+one hour from that response; the configured lifetime (48 hours by default)
+applies afterward. If the disk budget cannot admit that guarantee, status omits
+the archive identifier and reports `output archive unavailable` without a stale
+size claim. `ctx_expand` accepts either the `archiveId` or the corresponding
+`shell_*` job identifier.
+
 ---
 
 ## 1. The memory profile — one dial for the footprint
