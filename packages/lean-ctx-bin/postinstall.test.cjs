@@ -76,6 +76,16 @@ child.unref();
       }
     }
     try { runner.kill(); } catch {}
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+    } catch (error) {
+      // Windows keeps a directory handle alive for a while after
+      // TerminateProcess, so the descendant killed just above can still hold
+      // `dir` past the retry budget and rmSync throws EBUSY. Every assertion
+      // has already run by this point — failing the suite on temp-directory
+      // hygiene turns a runner quirk into a red pipeline (it took down
+      // #1741, #1742, #1732 and #1749), and the runner is discarded anyway.
+      console.warn(`cleanup: could not remove ${dir}: ${error.message}`);
+    }
   }
 })().catch((error) => { console.error(error); process.exitCode = 1; });
