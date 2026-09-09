@@ -287,6 +287,15 @@ Session-scoped `RwLock`s on `ToolContext` are logically independent:
 These exist solely to serialise tests that mutate environment variables. They must not be held
 across any other lock acquisition.
 
+### Archive filesystem lock
+
+`core/archive.rs` uses the advisory `archives/.lock` file to serialize archive
+stores, capacity admission, metadata updates, and cleanup across processes.
+Archive code releases this lock before acquiring **L29** for FTS updates.
+The FTS cap path already holds **L29** when it calls `remove_files`, so the only
+permitted nested order is **L29 → `archives/.lock`**; never acquire them in the
+opposite order.
+
 ---
 
 ## 4. Async Code: `tokio::sync::Mutex` vs `std::sync::Mutex`
@@ -324,5 +333,4 @@ across any other lock acquisition.
 3. Assign a lock number (append to Section 1) and document the acquisition order here.
 4. If nesting is required, document the outer → inner relationship in Section 3.
 5. Run `cargo check --all-features` to verify `Send`/`Sync` bounds.
-
 
