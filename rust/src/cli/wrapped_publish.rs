@@ -748,33 +748,117 @@ fn auto_publish_due(last: Option<&str>, interval_hours: u64) -> bool {
     elapsed.num_hours() >= interval
 }
 
-/// `lean-ctx gain --unpublish[=<id>]` — delete a published card via its stored `edit_token`.
-/// With no id, removes the most recently published card.
-pub(crate) fn unpublish(id: Option<&str>) {
-    let mut store = PublishedStore::load();
-    let entry = match id {
-        Some(id) => store.cards.iter().find(|c| c.id == id).cloned(),
-        None => store.cards.last().cloned(),
-    };
+/// What `lean-ctx gain --unpublish` was asked to take down.
+#[derive(Clone, Copy)]
+pub(crate) enum UnpublishTarget<'a> {
+    /// `--unpublish` — the most recently published card.
+    Latest,
+    /// `--unpublish=all` — every card this machine published.
+    All,
+    /// `--unpublish=<id|url>` — one specific card.
+    One(&'a str),
+}
 
-    let Some(entry) = entry else {
-        match id {
-            Some(id) => println!("No published card with id {id} found locally."),
-            None => println!("No published cards found. Publish one with: lean-ctx gain --publish"),
+/// Extracts a card id from either a bare id or a published permalink.
+///
+/// The takedown request in #1726 arrived as a URL, because that is the only
+/// form a user ever sees — the id is never printed on its own. Accepts
+/// `https://leanctx.com/w/<id>`, `leanctx.com/w/<id>`, and the bare `<id>`;
+/// query strings and fragments are dropped.
+fn card_id_from_target(target: &str) -> &str {
+    let target = target.trim();
+    let target = target.split(['?', '#']).next().unwrap_or(target);
+    target
+        .rsplit('/')
+        .find(|segment| !segment.is_empty())
+        .unwrap_or(target)
+}
+
+/// Explains why a card the user can see is not takeable-down from here, instead
+/// of leaving them with a bare "not found". The `edit_token` is minted once, at
+/// publish time, and stored only on the publishing machine — so a card
+/// published from another machine (or from a since-cleared data directory)
+/// cannot be deleted from this one.
+fn print_unknown_card(target: &str, store: &PublishedStore) {
+    println!("No published card matching `{target}` is known on this machine.");
+    println!();
+    if store.cards.is_empty() {
+        println!("  This machine has no publication records at all.");
+    } else {
+        println!("  Cards published from this machine:");
+        for card in &store.cards {
+            println!("    {}  {}", card.id, card.url);
         }
-        return;
-    };
+        println!();
+        println!("  Remove one with: lean-ctx gain --unpublish=<id|url>");
+        println!("  Remove all with: lean-ctx gain --unpublish=all");
+    }
+    println!();
+    println!("  A card is deleted with the edit token minted when it was");
+    println!("  published, and that token is kept only on the machine that");
+    println!("  published it. If that machine or its data directory is gone,");
+    println!("  request takedown at https://leanctx.com/support");
+}
 
+/// Deletes one card via its stored `edit_token`. Returns `false` on a server
+/// error, having already reported it.
+fn unpublish_entry(store: &mut PublishedStore, entry: &PublishedEntry) -> bool {
     match cloud_client::unpublish_wrapped(&entry.id, &entry.edit_token) {
         Ok(()) => {
             store.cards.retain(|c| c.id != entry.id);
             let _ = store.save();
             println!("Unpublished {} ({})", entry.id, entry.url);
+            true
         }
         Err(e) => {
-            eprintln!("Unpublish failed: {e}");
-            std::process::exit(1);
+            eprintln!("Unpublish failed for {}: {e}", entry.id);
+            false
         }
+    }
+}
+
+/// `lean-ctx gain --unpublish[=<id|url|all>]` — take a published card down.
+///
+/// Deliberately not gated behind `LEAN_CTX_EXPERIMENTAL_PUBLICATION`: turning
+/// publishing off must never strand a page that is already public (#1726).
+pub(crate) fn unpublish(target: UnpublishTarget<'_>) {
+    let mut store = PublishedStore::load();
+
+    let entries = match target {
+        UnpublishTarget::All => store.cards.clone(),
+        UnpublishTarget::Latest => store.cards.last().cloned().into_iter().collect(),
+        UnpublishTarget::One(target) => {
+            let id = card_id_from_target(target);
+            store
+                .cards
+                .iter()
+                .find(|c| c.id == id)
+                .cloned()
+                .into_iter()
+                .collect()
+        }
+    };
+
+    if entries.is_empty() {
+        match target {
+            UnpublishTarget::One(target) => print_unknown_card(target, &store),
+            _ => println!("No published cards found on this machine."),
+        }
+        return;
+    }
+
+    let mut failed = 0_usize;
+    for entry in &entries {
+        if !unpublish_entry(&mut store, entry) {
+            failed += 1;
+        }
+    }
+    if failed > 0 {
+        eprintln!(
+            "{failed} of {} card(s) could not be removed.",
+            entries.len()
+        );
+        std::process::exit(1);
     }
 }
 
@@ -962,5 +1046,22 @@ mod tests {
         let loaded = PublishedStore::load();
         assert_eq!(loaded.cards.len(), 1);
         assert_eq!(loaded.cards[0].edit_token, "secret-token");
+    }
+
+    #[test]
+    fn card_id_is_extracted_from_a_published_permalink() {
+        // #1726: the id is never shown on its own, so a takedown request
+        // arrives as the URL the user can actually see.
+        let id = "196127aaad436a2cd42164cbbbbcd3cb";
+        for target in [
+            id,
+            &format!("https://leanctx.com/w/{id}"),
+            &format!("leanctx.com/w/{id}"),
+            &format!("https://leanctx.com/w/{id}/"),
+            &format!("https://leanctx.com/w/{id}?utm_source=x"),
+            &format!("  https://leanctx.com/w/{id}#top  "),
+        ] {
+            assert_eq!(card_id_from_target(target), id, "target: {target}");
+        }
     }
 }

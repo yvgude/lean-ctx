@@ -66,6 +66,9 @@ pub(in crate::server) async fn dispatch_and_post_process(
     let background_status = shell_outcome
         .as_ref()
         .is_some_and(crate::server::tool_trait::ShellOutcome::is_background_status);
+    let terminal_background_status = shell_outcome
+        .as_ref()
+        .is_some_and(crate::server::tool_trait::ShellOutcome::is_terminal_background_status);
     // #1484: respect lossless escape hatches — never triage when the caller
     // explicitly requested unfiltered output (raw, aggressiveness=0, fresh=true).
     // #1490: an explicit lines:N-M / anchored:N-M window is already an
@@ -292,7 +295,7 @@ pub(in crate::server) async fn dispatch_and_post_process(
     // and must never disable the archive/firewall safety net.
     let archive_hint = if crate::core::config::Config::minimal_escape_hatch() {
         None
-    } else if background_status {
+    } else if terminal_background_status {
         use crate::core::archive;
         let chars = result_text.chars().count();
         let lines = result_text.lines().count();
@@ -305,7 +308,7 @@ pub(in crate::server) async fn dispatch_and_post_process(
             format!("{chars} chars, {lines} lines")
         };
         let mut stored_result = None;
-        if archive::should_archive(&result_text) {
+        if !trimmed.is_empty() {
             let job_id = match shell_outcome.as_ref() {
                 Some(crate::server::tool_trait::ShellOutcome::Background(outcome)) => {
                     outcome.job_id.clone()
@@ -315,7 +318,7 @@ pub(in crate::server) async fn dispatch_and_post_process(
             let session_id = server.session.read().await.id.clone();
             let to_store = crate::core::redaction::redact_text_if_enabled(&result_text);
             if let Some(stored) =
-                archive::store_with_result(name, &job_id, &to_store, Some(&session_id))
+                archive::store_background(name, &job_id, &to_store, Some(&session_id))
             {
                 summary = if stored.truncated {
                     format!(
@@ -358,6 +361,8 @@ pub(in crate::server) async fn dispatch_and_post_process(
                     }
                 }
                 stored_result = Some(stored);
+            } else {
+                summary = "output archive unavailable".to_string();
             }
         }
         if let Some(crate::server::tool_trait::ShellOutcome::Background(outcome)) =
@@ -371,6 +376,8 @@ pub(in crate::server) async fn dispatch_and_post_process(
                 outcome.archived_chars = Some(stored.archived_chars);
             }
         }
+        None
+    } else if background_status {
         None
     } else {
         use crate::core::archive;

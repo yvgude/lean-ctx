@@ -424,24 +424,30 @@ pub mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "a.rs", "hello world\n");
 
-        let before = stats();
+        let state = FileState::from_path(&p).unwrap();
+        assert!(
+            get(&p, state).is_none(),
+            "a fresh cache must not already hold the file"
+        );
+
         let first = get_or_read(&p).unwrap();
         assert_eq!(&*first, "hello world\n");
-        let after_first = stats();
-        assert_eq!(
-            after_first.inserts,
-            before.inserts + 1,
-            "first read inserts"
+        assert!(
+            get(&p, state).is_some(),
+            "the first read must populate the cache for this path and state"
         );
 
         let second = get_or_read(&p).unwrap();
         assert_eq!(&*second, "hello world\n");
-        let after_second = stats();
-        assert_eq!(
-            after_second.inserts, after_first.inserts,
-            "second read must NOT re-insert (served from cache)"
+        // Allocation identity, not counter arithmetic: a cache hit clones the
+        // stored `Arc`, a re-read allocates a new one. `stats()` is
+        // process-wide, so bracketing a call with `stats()` deltas races every
+        // parallel test that touches the content cache — that is what made this
+        // test flake in CI (seen on #1736 / #1738).
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "the second read must serve the cached allocation, not re-read the file"
         );
-        assert!(after_second.hits > after_first.hits, "second read is a hit");
     }
 
     #[test]

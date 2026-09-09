@@ -530,14 +530,19 @@ pub fn recover_wrapped_edit_token(
 }
 
 /// Delete a previously published card using its one-time `edit_token` (sent as `X-Edit-Token`).
+///
+/// Idempotent: a card the server no longer has (404/410) counts as removed.
+/// The caller's goal is "this page is not public any more", and failing a
+/// takedown because it already succeeded would strand the local record with no
+/// way to clear it (#1726).
 pub fn unpublish_wrapped(id: &str, edit_token: &str) -> Result<(), String> {
     let url = format!("{}/api/wrapped/{id}", api_url());
 
-    ureq::delete(&url)
-        .header("X-Edit-Token", edit_token)
-        .call()
-        .map_err(|e| format!("Unpublish failed: {e}"))?;
-    Ok(())
+    match ureq::delete(&url).header("X-Edit-Token", edit_token).call() {
+        // Removed now, or already gone (404/410) — either way it is not public.
+        Ok(_) | Err(ureq::Error::StatusCode(404 | 410)) => Ok(()),
+        Err(e) => Err(format!("Unpublish failed: {e}")),
+    }
 }
 
 /// Bind a published card to the logged-in account so the leaderboard stacks all of the

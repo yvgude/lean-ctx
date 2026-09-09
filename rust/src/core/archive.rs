@@ -13,6 +13,10 @@ pub struct ArchiveEntry {
     pub size_tokens: usize,
     pub created_at: DateTime<Utc>,
     pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protected_until: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
 }
 
 fn archive_base_dir() -> PathBuf {
@@ -32,6 +36,29 @@ fn content_path(id: &str) -> PathBuf {
 
 fn meta_path(id: &str) -> PathBuf {
     entry_dir(id).join(format!("{id}.meta.json"))
+}
+
+fn lock_path() -> PathBuf {
+    archive_base_dir().join(".lock")
+}
+
+fn with_archive_lock<T>(f: impl FnOnce() -> T) -> Option<T> {
+    use fs2::FileExt;
+
+    std::fs::create_dir_all(archive_base_dir()).ok()?;
+    let lock = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(lock_path())
+        .ok()?;
+    #[cfg(unix)]
+    set_private_file_perms(&lock_path());
+    lock.lock_exclusive().ok()?;
+    let result = f();
+    let _ = FileExt::unlock(&lock);
+    Some(result)
 }
 
 #[cfg(unix)]
@@ -89,6 +116,7 @@ pub fn should_archive(content: &str) -> bool {
 }
 
 const MAX_ARCHIVE_SIZE: usize = 10 * 1024 * 1024; // 10 MB
+const BACKGROUND_RETENTION_HOURS: i64 = 1;
 
 pub fn store(tool: &str, command: &str, content: &str, session_id: Option<&str>) -> Option<String> {
     store_with_result(tool, command, content, session_id).map(|result| result.id)
@@ -112,78 +140,169 @@ pub fn store_with_result(
         return None;
     }
 
+    let (content, result) = prepared_content(content);
+    let id = result.id.clone();
+    let created = with_archive_lock(|| {
+        let c_path = content_path(&id);
+        if c_path.exists() && meta_path(&id).exists() {
+            return Some(false);
+        }
+        std::fs::create_dir_all(entry_dir(&id)).ok()?;
+        if !c_path.exists() {
+            super::atomic_fs::try_atomic_write(&c_path, content.as_bytes(), None).ok()?;
+            #[cfg(unix)]
+            set_private_file_perms(&c_path);
+        }
+        let entry = new_entry(&id, tool, command, content, session_id, Utc::now());
+        if write_metadata(&entry).is_none() {
+            let _ = std::fs::remove_file(c_path);
+            return None;
+        }
+        Some(true)
+    })
+    .flatten()?;
+    if created {
+        super::archive_fts::index_entry(&id, tool, command, content);
+    }
+    Some(result)
+}
+
+/// Persist a terminal background-shell result and guarantee that lean-ctx's
+/// managed cleanup paths retain it for at least one hour.
+pub fn store_background(
+    tool: &str,
+    job_id: &str,
+    content: &str,
+    session_id: Option<&str>,
+) -> Option<ArchiveStoreResult> {
+    store_background_with_limits(
+        tool,
+        job_id,
+        content,
+        session_id,
+        Utc::now(),
+        max_disk_bytes(),
+    )
+}
+
+fn store_background_with_limits(
+    tool: &str,
+    job_id: &str,
+    content: &str,
+    session_id: Option<&str>,
+    now: DateTime<Utc>,
+    budget_bytes: u64,
+) -> Option<ArchiveStoreResult> {
+    if !is_enabled() || content.is_empty() {
+        return None;
+    }
+
+    let (content, result) = prepared_content(content);
+    let id = result.id.clone();
+    let protected_until = now + chrono::Duration::hours(BACKGROUND_RETENTION_HOURS);
+    let (stored, evicted) = with_archive_lock(|| {
+        let mut entry = read_entry(&id)
+            .unwrap_or_else(|| new_entry(&id, tool, job_id, content, session_id, now));
+        if !entry.aliases.iter().any(|alias| alias == job_id) {
+            entry.aliases.push(job_id.to_string());
+        }
+        entry.protected_until = Some(
+            entry
+                .protected_until
+                .map_or(protected_until, |current| current.max(protected_until)),
+        );
+
+        let metadata = serde_json::to_string_pretty(&entry).ok()?;
+        let existing_bytes = scanned_entries()
+            .into_iter()
+            .find(|candidate| candidate.id == id)
+            .map_or(0, |candidate| candidate.bytes);
+        let required_bytes = content.len() as u64 + metadata.len() as u64;
+        let evicted = admit_locked(&id, existing_bytes, required_bytes, budget_bytes, now)?;
+
+        let c_path = content_path(&id);
+        let content_existed = c_path.exists();
+        if std::fs::create_dir_all(entry_dir(&id)).is_err() {
+            return Some((false, evicted));
+        }
+        if !content_existed {
+            if super::atomic_fs::try_atomic_write(&c_path, content.as_bytes(), None).is_err() {
+                return Some((false, evicted));
+            }
+            #[cfg(unix)]
+            set_private_file_perms(&c_path);
+        }
+        if super::atomic_fs::try_atomic_write(&meta_path(&id), metadata.as_bytes(), None).is_err() {
+            if !content_existed {
+                let _ = std::fs::remove_file(c_path);
+            }
+            return Some((false, evicted));
+        }
+        #[cfg(unix)]
+        set_private_file_perms(&meta_path(&id));
+        Some((true, evicted))
+    })
+    .flatten()?;
+
+    for evicted_id in evicted {
+        super::archive_fts::remove_entry(&evicted_id);
+    }
+    // A content-addressed archive may have been indexed by an earlier generic
+    // store. Protected background output must not remain on the FTS eviction path.
+    super::archive_fts::remove_entry(&id);
+    stored.then_some(result)
+}
+
+fn prepared_content(content: &str) -> (&str, ArchiveStoreResult) {
     let captured_chars = content.chars().count();
     let truncated = content.len() > MAX_ARCHIVE_SIZE;
-    let content = if content.len() > MAX_ARCHIVE_SIZE {
+    let content = if truncated {
         &content[..content.floor_char_boundary(MAX_ARCHIVE_SIZE)]
     } else {
         content
     };
-
     let id = compute_id(content);
     let result = ArchiveStoreResult {
-        id: id.clone(),
+        id,
         captured_chars,
         archived_chars: content.chars().count(),
         truncated,
     };
-    let c_path = content_path(&id);
+    (content, result)
+}
 
-    // Fast path: content already archived (idempotent, no race)
-    if c_path.exists() {
-        return Some(result);
-    }
-
-    let dir = entry_dir(&id);
-    if std::fs::create_dir_all(&dir).is_err() {
-        return None;
-    }
-
-    // Atomic write: PID-unique tmp file prevents race between parallel writers.
-    // rename() is atomic on POSIX; on Windows it replaces atomically too.
-    // If two processes race past the exists() check, both write their own tmp
-    // file and both rename to the same target — last writer wins, content is
-    // identical (same hash), so the result is correct either way.
-    let pid = std::process::id();
-    let tmp_path = c_path.with_extension(format!("tmp.{pid}"));
-    if std::fs::write(&tmp_path, content).is_err() {
-        return None;
-    }
-    if std::fs::rename(&tmp_path, &c_path).is_err() {
-        let _ = std::fs::remove_file(&tmp_path);
-        // Another process may have won the race — check if content is there now
-        if c_path.exists() {
-            return Some(result);
-        }
-        return None;
-    }
-    #[cfg(unix)]
-    set_private_file_perms(&c_path);
-
-    let tokens = super::tokens::count_tokens(content);
-    let entry = ArchiveEntry {
-        id: id.clone(),
+fn new_entry(
+    id: &str,
+    tool: &str,
+    command: &str,
+    content: &str,
+    session_id: Option<&str>,
+    created_at: DateTime<Utc>,
+) -> ArchiveEntry {
+    ArchiveEntry {
+        id: id.to_string(),
         tool: tool.to_string(),
         command: command.to_string(),
         size_chars: content.len(),
-        size_tokens: tokens,
-        created_at: Utc::now(),
+        size_tokens: super::tokens::count_tokens(content),
+        created_at,
         session_id: session_id.map(std::string::ToString::to_string),
-    };
-
-    if let Ok(json) = serde_json::to_string_pretty(&entry) {
-        let meta_tmp = meta_path(&id).with_extension(format!("tmp.{pid}"));
-        if std::fs::write(&meta_tmp, &json).is_ok() {
-            let meta_final = meta_path(&id);
-            let _ = std::fs::rename(&meta_tmp, &meta_final);
-            #[cfg(unix)]
-            set_private_file_perms(&meta_final);
-        }
+        protected_until: None,
+        aliases: Vec::new(),
     }
+}
 
-    super::archive_fts::index_entry(&id, tool, command, content);
+fn read_entry(id: &str) -> Option<ArchiveEntry> {
+    serde_json::from_str(&std::fs::read_to_string(meta_path(id)).ok()?).ok()
+}
 
-    Some(result)
+fn write_metadata(entry: &ArchiveEntry) -> Option<()> {
+    let path = meta_path(&entry.id);
+    let json = serde_json::to_string_pretty(entry).ok()?;
+    super::atomic_fs::try_atomic_write(&path, json.as_bytes(), None).ok()?;
+    #[cfg(unix)]
+    set_private_file_perms(&path);
+    Some(())
 }
 
 pub fn retrieve(id: &str) -> Option<String> {
@@ -385,12 +504,102 @@ pub fn list_entries(session_id: Option<&str>) -> Vec<ArchiveEntry> {
     entries
 }
 
+pub fn resolve_alias(alias: &str) -> Option<String> {
+    list_entries(None)
+        .into_iter()
+        .find(|entry| entry.aliases.iter().any(|candidate| candidate == alias))
+        .map(|entry| entry.id)
+}
+
+pub(crate) fn is_protected(id: &str) -> bool {
+    read_entry(id)
+        .and_then(|entry| entry.protected_until)
+        .is_some_and(|until| until > Utc::now())
+}
+
 /// Remove only the on-disk content + metadata files for an archive id, leaving
 /// the FTS index untouched. Used by the FTS cap-enforcer so the `.txt`/`.meta.json`
 /// blobs of rows it evicts can't outlive their index entry as orphans (#417).
 pub fn remove_files(id: &str) {
+    let _ = with_archive_lock(|| {
+        if !is_protected(id) {
+            remove_files_locked(id);
+        }
+    });
+}
+
+fn remove_files_locked(id: &str) {
     let _ = std::fs::remove_file(content_path(id));
     let _ = std::fs::remove_file(meta_path(id));
+}
+
+struct ScannedArchive {
+    id: String,
+    created_at: DateTime<Utc>,
+    protected_until: Option<DateTime<Utc>>,
+    bytes: u64,
+}
+
+fn scanned_entries() -> Vec<ScannedArchive> {
+    list_entries(None)
+        .into_iter()
+        .map(|entry| {
+            let content_bytes = std::fs::metadata(content_path(&entry.id)).map_or(0, |m| m.len());
+            let metadata_bytes = std::fs::metadata(meta_path(&entry.id)).map_or(0, |m| m.len());
+            ScannedArchive {
+                id: entry.id,
+                created_at: entry.created_at,
+                protected_until: entry.protected_until,
+                bytes: content_bytes + metadata_bytes,
+            }
+        })
+        .collect()
+}
+
+fn protected_at(entry: &ScannedArchive, now: DateTime<Utc>) -> bool {
+    entry.protected_until.is_some_and(|until| until > now)
+}
+
+fn admit_locked(
+    new_id: &str,
+    existing_bytes: u64,
+    required_bytes: u64,
+    budget_bytes: u64,
+    now: DateTime<Utc>,
+) -> Option<Vec<String>> {
+    if budget_bytes == 0 {
+        return Some(Vec::new());
+    }
+
+    let mut entries = scanned_entries();
+    let live_bytes: u64 = entries.iter().map(|entry| entry.bytes).sum();
+    let mut projected = live_bytes
+        .saturating_sub(existing_bytes)
+        .saturating_add(required_bytes);
+    if projected <= budget_bytes {
+        return Some(Vec::new());
+    }
+
+    entries.sort_by_key(|entry| entry.created_at);
+    let candidates: Vec<_> = entries
+        .into_iter()
+        .filter(|entry| entry.id != new_id && !protected_at(entry, now))
+        .collect();
+    let reclaimable: u64 = candidates.iter().map(|entry| entry.bytes).sum();
+    if projected.saturating_sub(reclaimable) > budget_bytes {
+        return None;
+    }
+
+    let mut evicted = Vec::new();
+    for entry in candidates {
+        remove_files_locked(&entry.id);
+        projected = projected.saturating_sub(entry.bytes);
+        evicted.push(entry.id);
+        if projected <= budget_bytes {
+            break;
+        }
+    }
+    Some(evicted)
 }
 
 /// Prune archived entries that exceed the age TTL (`max_age_hours`) or that push
@@ -402,74 +611,53 @@ pub fn remove_files(id: &str) {
 /// and `lean-ctx cache prune`; without an enforcer the archive grew unbounded on
 /// disk and starved the host of RAM via the page cache (#417).
 pub fn cleanup() -> u32 {
-    let cutoff = Utc::now() - chrono::Duration::hours(max_age_hours() as i64);
-    cleanup_with(cutoff, max_disk_bytes())
+    let now = Utc::now();
+    let cutoff = now - chrono::Duration::hours(max_age_hours() as i64);
+    cleanup_with(cutoff, max_disk_bytes(), now)
 }
 
 /// Core of [`cleanup`], parameterized for testing: drop entries older than
 /// `cutoff`, then evict the oldest survivors until the total on-disk footprint is
 /// at or below `budget_bytes` (`0` = no size cap).
-fn cleanup_with(cutoff: DateTime<Utc>, budget_bytes: u64) -> u32 {
+fn cleanup_with(cutoff: DateTime<Utc>, budget_bytes: u64, now: DateTime<Utc>) -> u32 {
     let base = archive_base_dir();
     if !base.exists() {
         return 0;
     }
 
-    struct Scanned {
-        id: String,
-        created_at: DateTime<Utc>,
-        bytes: u64,
-    }
+    let removed = with_archive_lock(|| {
+        let mut entries = scanned_entries();
+        entries.sort_by_key(|entry| entry.created_at);
+        let mut live_bytes: u64 = entries.iter().map(|entry| entry.bytes).sum();
+        let mut removed = std::collections::HashSet::new();
 
-    let mut entries: Vec<Scanned> = Vec::new();
-    if let Ok(dirs) = std::fs::read_dir(&base) {
-        for dir_entry in dirs.flatten() {
-            if !dir_entry.path().is_dir() {
-                continue;
+        for entry in &entries {
+            if entry.created_at < cutoff && !protected_at(entry, now) {
+                remove_files_locked(&entry.id);
+                live_bytes = live_bytes.saturating_sub(entry.bytes);
+                removed.insert(entry.id.clone());
             }
-            if let Ok(files) = std::fs::read_dir(dir_entry.path()) {
-                for file in files.flatten() {
-                    let path = file.path();
-                    if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                        continue;
-                    }
-                    let Ok(data) = std::fs::read_to_string(&path) else {
-                        continue;
-                    };
-                    let Ok(entry) = serde_json::from_str::<ArchiveEntry>(&data) else {
-                        continue;
-                    };
-                    let content_bytes =
-                        std::fs::metadata(content_path(&entry.id)).map_or(0, |m| m.len());
-                    let meta_bytes = file.metadata().map_or(0, |m| m.len());
-                    entries.push(Scanned {
-                        id: entry.id,
-                        created_at: entry.created_at,
-                        bytes: content_bytes + meta_bytes,
-                    });
+        }
+
+        if budget_bytes > 0 {
+            for entry in &entries {
+                if live_bytes <= budget_bytes {
+                    break;
+                }
+                if !removed.contains(&entry.id) && !protected_at(entry, now) {
+                    remove_files_locked(&entry.id);
+                    live_bytes = live_bytes.saturating_sub(entry.bytes);
+                    removed.insert(entry.id.clone());
                 }
             }
         }
+        removed
+    })
+    .unwrap_or_default();
+    for id in &removed {
+        super::archive_fts::remove_entry(id);
     }
-
-    // Oldest first: TTL victims drop first, then the oldest survivors are evicted
-    // until the store is back under budget. Sorted order lets us stop early.
-    entries.sort_by_key(|e| e.created_at);
-    let mut live_bytes: u64 = entries.iter().map(|e| e.bytes).sum();
-
-    let mut removed = 0u32;
-    for e in &entries {
-        let expired = e.created_at < cutoff;
-        let over_budget = budget_bytes > 0 && live_bytes > budget_bytes;
-        if !expired && !over_budget {
-            break;
-        }
-        remove_files(&e.id);
-        super::archive_fts::remove_entry(&e.id);
-        live_bytes = live_bytes.saturating_sub(e.bytes);
-        removed += 1;
-    }
-    removed
+    removed.len() as u32
 }
 
 pub fn disk_usage_bytes() -> u64 {
@@ -543,6 +731,8 @@ mod tests {
             size_tokens: content_bytes / 4,
             created_at,
             session_id: None,
+            protected_until: None,
+            aliases: Vec::new(),
         };
         std::fs::write(meta_path(id), serde_json::to_string(&entry).unwrap()).unwrap();
     }
@@ -558,7 +748,7 @@ mod tests {
         write_test_entry("bb_new", now - chrono::Duration::hours(1), 100);
 
         // Cutoff = 48h ago; budget effectively unlimited so only the TTL applies.
-        let removed = cleanup_with(now - chrono::Duration::hours(48), u64::MAX);
+        let removed = cleanup_with(now - chrono::Duration::hours(48), u64::MAX, now);
         assert_eq!(removed, 1);
         assert!(!content_path("aa_old").exists());
         assert!(!meta_path("aa_old").exists());
@@ -580,12 +770,129 @@ mod tests {
 
         // Nothing expired (cutoff far in the past). Budget 25 KB holds the two
         // newest (~20 KB content + meta); the single oldest entry is evicted.
-        let removed = cleanup_with(now - chrono::Duration::days(365), 25_000);
+        let removed = cleanup_with(now - chrono::Duration::days(365), 25_000, now);
         assert_eq!(removed, 1, "only the oldest over-budget entry is evicted");
         assert!(!content_path("c1_oldest").exists());
         assert!(content_path("c2_middle").exists());
         assert!(content_path("c3_newest").exists());
 
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+
+    #[test]
+    fn legacy_metadata_defaults_background_retention_fields() {
+        let entry: ArchiveEntry = serde_json::from_value(serde_json::json!({
+            "id": "legacy",
+            "tool": "ctx_shell",
+            "command": "printf legacy",
+            "size_chars": 6,
+            "size_tokens": 2,
+            "created_at": "2026-01-01T00:00:00Z",
+            "session_id": null
+        }))
+        .unwrap();
+
+        assert!(entry.protected_until.is_none());
+        assert!(entry.aliases.is_empty());
+    }
+
+    #[test]
+    fn protected_archive_survives_cleanup_and_direct_fts_removal_path() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+
+        let now = Utc::now();
+        write_test_entry("protected", now - chrono::Duration::hours(100), 100);
+        let mut entry = read_entry("protected").unwrap();
+        entry.protected_until = Some(now + chrono::Duration::hours(1));
+        write_metadata(&entry).unwrap();
+
+        assert_eq!(cleanup_with(now - chrono::Duration::hours(48), 1, now), 0);
+        remove_files("protected");
+        assert!(content_path("protected").exists());
+
+        let later = now + chrono::Duration::hours(2);
+        assert_eq!(cleanup_with(now, 1, later), 1);
+        assert!(!content_path("protected").exists());
+
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+
+    #[test]
+    fn background_store_refuses_when_protected_entries_fill_budget() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        crate::test_env::set_var("LEAN_CTX_ARCHIVE", "1");
+
+        let now = Utc::now();
+        let first = store_background_with_limits(
+            "ctx_shell",
+            "shell_first",
+            "first protected output",
+            None,
+            now,
+            u64::MAX,
+        )
+        .unwrap();
+        let budget = scanned_entries()
+            .into_iter()
+            .find(|entry| entry.id == first.id)
+            .unwrap()
+            .bytes;
+
+        assert!(
+            store_background_with_limits(
+                "ctx_shell",
+                "shell_second",
+                "different protected output",
+                None,
+                now,
+                budget,
+            )
+            .is_none()
+        );
+        assert_eq!(resolve_alias("shell_first"), Some(first.id));
+        assert!(resolve_alias("shell_second").is_none());
+
+        crate::test_env::remove_var("LEAN_CTX_ARCHIVE");
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+
+    #[test]
+    fn concurrent_background_writers_merge_content_aliases() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        crate::test_env::set_var("LEAN_CTX_ARCHIVE", "1");
+
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+        let mut writers = Vec::new();
+        for job_id in ["shell_alpha", "shell_beta"] {
+            let barrier = barrier.clone();
+            writers.push(std::thread::spawn(move || {
+                barrier.wait();
+                store_background_with_limits(
+                    "ctx_shell",
+                    job_id,
+                    "shared terminal output",
+                    None,
+                    Utc::now(),
+                    0,
+                )
+                .unwrap()
+            }));
+        }
+        barrier.wait();
+        let first = writers.remove(0).join().unwrap();
+        let second = writers.remove(0).join().unwrap();
+
+        assert_eq!(first.id, second.id);
+        assert_eq!(resolve_alias("shell_alpha"), Some(first.id.clone()));
+        assert_eq!(resolve_alias("shell_beta"), Some(first.id));
+
+        crate::test_env::remove_var("LEAN_CTX_ARCHIVE");
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }
 }

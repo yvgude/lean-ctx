@@ -1202,28 +1202,46 @@ mod tests {
         let handles: Vec<_> = (0..8)
             .map(|i| {
                 std::thread::spawn(move || {
-                    AgentRegistry::mutate_locked(|registry| {
-                        registry.agents.push(AgentEntry {
-                            agent_id: format!("agent-{i}"),
-                            agent_type: "test".to_string(),
-                            role: None,
-                            project_root: "/tmp/project".to_string(),
-                            started_at: Utc::now(),
-                            last_active: Utc::now(),
-                            pid: 10_000 + i,
-                            process_identity: None,
-                            status: AgentStatus::Active,
-                            status_message: None,
+                    // `mutate_locked` bounds its wait for the registry file lock
+                    // and reports exhaustion as a refusal: the lock was never
+                    // taken, nothing was written, and no other writer's change
+                    // was lost. Eight threads on a saturated CI runner can
+                    // exceed that budget, so a refusal is retried rather than
+                    // failed — the invariant under test is "no lost update",
+                    // not "the lock is never contended".
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+                    loop {
+                        let outcome = AgentRegistry::mutate_locked(|registry| {
+                            registry.agents.push(AgentEntry {
+                                agent_id: format!("agent-{i}"),
+                                agent_type: "test".to_string(),
+                                role: None,
+                                project_root: "/tmp/project".to_string(),
+                                started_at: Utc::now(),
+                                last_active: Utc::now(),
+                                pid: 10_000 + i,
+                                process_identity: None,
+                                status: AgentStatus::Active,
+                                status_message: None,
+                            });
                         });
-                    })
+                        match outcome {
+                            Ok(_) => return,
+                            Err(error)
+                                if error.contains("timed out")
+                                    && std::time::Instant::now() < deadline =>
+                            {
+                                std::thread::yield_now();
+                            }
+                            Err(error) => panic!("mutate_locked must succeed: {error}"),
+                        }
+                    }
                 })
             })
             .collect();
 
         for h in handles {
-            h.join()
-                .expect("writer thread must not panic")
-                .expect("mutate_locked must succeed");
+            h.join().expect("writer thread must not panic");
         }
 
         let registry = AgentRegistry::load_or_create();

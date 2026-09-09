@@ -172,7 +172,20 @@ jobs:
       - name: Install mold linker
         if: runner.os == 'Linux'
         shell: bash
-        run: sudo apt-get update && sudo apt-get install -y mold
+        run: |
+          # The runner image ships third-party apt lists (Google Chrome's
+          # among them) that this job never uses. When one of them serves a
+          # bad index — as dl.google.com did on 2026-09-09 with a Hash Sum
+          # mismatch — `apt-get update` exits 100 and takes the whole test
+          # matrix with it, over a package that only ever comes from
+          # Ubuntu's own archive. Drop those lists first, so the update
+          # stays fatal for the archives `mold` actually lives in.
+          # Matches both the .list and deb822 .sources spellings, whichever
+          # the current runner image happens to ship.
+          sudo rm -f /etc/apt/sources.list.d/*google* \
+                     /etc/apt/sources.list.d/*microsoft*
+          sudo apt-get update
+          sudo apt-get install -y mold
       - name: Run tests
         working-directory: rust
         shell: bash
