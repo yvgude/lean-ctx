@@ -155,7 +155,7 @@ COMMANDS:
     gain --publish [--name=<n>]    Development-only local export (hosted publication is Research)
     gain --publish --leaderboard   Unavailable: public rankings are Research
     gain --link [CODE]             Development-only local pairing experiment
-    gain --unpublish[=<id>]        Remove a local development export
+    gain --unpublish[=<id|url|all>]  Take a published card down (works even when publishing is off)
     config set gain.auto_publish true  Development-only local export setting (off by default)
     savings [--period day|week|month|all] [--format table|json|markdown] Local representation-change report; not comparable proof
     learning [status|export|import]  Local adaptive-learning state: inspect, export, import
