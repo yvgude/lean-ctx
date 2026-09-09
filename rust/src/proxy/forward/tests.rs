@@ -843,6 +843,118 @@ fn cache_prompt_hash_is_content_sensitive() {
     assert_ne!(hash(b"one"), hash(b"two"));
 }
 
+/// Loopback upstream that answers exactly one request and hands back its raw,
+/// lowercased request header block. Lets a test assert what actually leaves the
+/// proxy, not only what the allowlist constant claims.
+async fn upstream_capturing_headers() -> (String, tokio::task::JoinHandle<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        let mut buffer = [0_u8; 1024];
+        let header_end = loop {
+            let read = stream.read(&mut buffer).await.unwrap();
+            if read == 0 {
+                break request.len();
+            }
+            request.extend_from_slice(&buffer[..read]);
+            if let Some(end) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+                break end + 4;
+            }
+        };
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}")
+            .await
+            .unwrap();
+        String::from_utf8_lossy(&request[..header_end]).to_lowercase()
+    });
+    (format!("http://{address}"), server)
+}
+
+/// Minimal state for the transport layer. `send_upstream` reads only
+/// `state.client`; the watch receiver keeps serving its last value after the
+/// sender drops, so no keep-alive is needed.
+fn relay_test_state() -> ProxyState {
+    let (_upstreams, state_upstreams) =
+        tokio::sync::watch::channel(Arc::new(crate::core::config::Upstreams {
+            anthropic: "https://api.anthropic.com".into(),
+            openai: "https://api.openai.com".into(),
+            chatgpt: "https://chatgpt.com".into(),
+            gemini: "https://generativelanguage.googleapis.com".into(),
+            providers: Vec::new(),
+        }));
+    ProxyState {
+        client: reqwest::Client::new(),
+        port: 0,
+        stats: Arc::new(crate::proxy::ProxyStats::default()),
+        break_even: Arc::new(crate::proxy::break_even::BreakEvenCalculator::new(1500)),
+        introspect: Arc::new(crate::proxy::introspect::IntrospectState::default()),
+        ocla_cache: None,
+        upstreams: state_upstreams,
+        chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
+        mcp_servers: Arc::new(Vec::new()),
+        web_app_tracker: Arc::new(std::sync::Mutex::new(
+            crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
+        )),
+    }
+}
+
+#[test]
+fn forwards_claude_code_session_id_header() {
+    // #1730: Claude Code's per-conversation UUID must survive the relay so a
+    // downstream proxy can key session affinity and prompt-cache reuse on it.
+    assert!(ALLOWED_REQUEST_HEADERS.contains(&"x-claude-code-session-id"));
+    assert!(is_allowed_request_header("x-claude-code-session-id"));
+    assert!(should_forward_request_header(
+        "x-claude-code-session-id",
+        false
+    ));
+}
+
+#[tokio::test]
+async fn claude_code_session_id_reaches_the_upstream_verbatim() {
+    // #1730 end-to-end: assert what the upstream actually receives, including
+    // the mixed-case spelling Claude Code puts on the wire.
+    let (upstream, server) = upstream_capturing_headers().await;
+    let parts = Request::builder()
+        .method("POST")
+        .uri("/v1/messages")
+        .header(
+            "X-Claude-Code-Session-Id",
+            "11111111-2222-3333-4444-555555555555",
+        )
+        .header("X-Leanctx-Project", "internal-only")
+        .body(())
+        .unwrap()
+        .into_parts()
+        .0;
+
+    let response = transport::send_upstream(
+        &relay_test_state(),
+        &parts,
+        &upstream,
+        b"{}".to_vec(),
+        "Anthropic",
+        false,
+    )
+    .await
+    .unwrap();
+    assert!(response.status().is_success());
+
+    let seen = server.await.unwrap();
+    assert!(
+        seen.contains("x-claude-code-session-id: 11111111-2222-3333-4444-555555555555"),
+        "session id must reach the upstream verbatim, got: {seen}"
+    );
+    // Widening the allowlist for #1730 must not widen it for anything else:
+    // the internal gateway tag stays stripped (enterprise#11).
+    assert!(
+        !seen.contains("x-leanctx-project"),
+        "internal header must stay stripped, got: {seen}"
+    );
+}
+
 #[test]
 fn forwards_commandcode_cli_headers() {
     // Command Code (`cmd`) gates agent calls on `x-command-code-version`.

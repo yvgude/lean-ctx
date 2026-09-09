@@ -79,6 +79,12 @@ pub(crate) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
     "x-system-prompt-breakdown",
     "x-cmd-zdr",
     "x-session-id",
+    // #1730: Claude Code stamps every request with a stable per-conversation
+    // UUID. Relays behind this proxy key session affinity and prompt-cache
+    // reuse off it, so stripping it silently hands them a fresh session on
+    // every request. Passed through verbatim — lean-ctx neither renames nor
+    // invents it.
+    "x-claude-code-session-id",
 ];
 
 pub(crate) fn is_allowed_request_header(name: &str) -> bool {

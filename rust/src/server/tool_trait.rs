@@ -141,6 +141,19 @@ impl ShellOutcome {
             })
         )
     }
+
+    pub fn is_terminal_background_status(&self) -> bool {
+        matches!(
+            self,
+            ShellOutcome::Background(BackgroundShellOutcome {
+                state: BackgroundJobState::Completed
+                    | BackgroundJobState::Failed
+                    | BackgroundJobState::Cancelled,
+                display: Some(_),
+                ..
+            })
+        )
+    }
 }
 
 /// Result returned by an McpTool handler.

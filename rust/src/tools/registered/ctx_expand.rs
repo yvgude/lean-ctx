@@ -22,7 +22,7 @@ impl McpTool for CtxExpandTool {
             json!({
                 "type": "object",
                 "properties": {
-                    "id": { "type": "string", "description": "Archive ID or @F1 ref" },
+                    "id": { "type": "string", "description": "Archive ID, shell_* job ID, or @F1 ref" },
                     "action": { "type": "string", "description": "retrieve|list|search_all" },
                     "start_line": { "type": "integer" },
                     "end_line": { "type": "integer" },

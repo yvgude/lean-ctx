@@ -96,12 +96,23 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
         };
         return dispatch_selectors(id, &content, "Reference", args);
     }
-    let Some(content) = archive::retrieve(id) else {
+    let archive_id = if id.starts_with("shell_") {
+        let Some(archive_id) = archive::resolve_alias(id) else {
+            return format!(
+                "Background job '{id}' has no retrievable output archive. \
+                 The archive is unavailable or expired."
+            );
+        };
+        archive_id
+    } else {
+        id.to_string()
+    };
+    let Some(content) = archive::retrieve(&archive_id) else {
         return format!(
-            "Archive '{id}' not found or expired. Use ctx_expand(action=\"list\") to see available archives."
+            "Archive '{archive_id}' not found or expired. Use ctx_expand(action=\"list\") to see available archives."
         );
     };
-    dispatch_selectors(id, &content, "Archive", args)
+    dispatch_selectors(&archive_id, &content, "Archive", args)
 }
 
 /// Apply the structured selector ladder (head / tail / json_keys / search /

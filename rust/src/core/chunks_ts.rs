@@ -187,18 +187,16 @@ pub(crate) fn extract_chunks_ts(
     content: &str,
     file_ext: &str,
 ) -> Option<Vec<CodeChunk>> {
-    let lines: Vec<&str> = content.lines().collect();
     let mut chunks = Vec::new();
 
     for_each_chunk_node(
         content,
         file_ext,
         |node, name_text, kind, start_line, end_line| {
-            let start_row0 = node.start_position().row;
-            let end_row0 = node.end_position().row;
-            let block: String = lines[start_row0..=end_row0.min(lines.len().saturating_sub(1))]
-                .to_vec()
-                .join("\n");
+            let block = match node.utf8_text(content.as_bytes()) {
+                Ok(text) => text.to_owned(),
+                Err(_) => return,
+            };
             let token_count = super::bm25_index::tokenize_for_index(&block).len();
 
             chunks.push(CodeChunk {
@@ -436,6 +434,18 @@ pub fn complex(x: i32, y: i32) -> Result<String, Error> {
     #[test]
     fn empty_file_returns_none() {
         assert!(extract_chunks_ts("empty.rs", "", "rs").is_none());
+    }
+
+    #[test]
+    fn javascript_same_line_functions_use_exact_node_content() {
+        let src = "function alpha(){return 1;}function beta(){return 2;}";
+        let chunks = extract_chunks_ts("min.js", src, "js").unwrap();
+
+        let alpha = chunks.iter().find(|c| c.symbol_name == "alpha").unwrap();
+        let beta = chunks.iter().find(|c| c.symbol_name == "beta").unwrap();
+
+        assert_eq!(alpha.content, "function alpha(){return 1;}");
+        assert_eq!(beta.content, "function beta(){return 2;}");
     }
 
     #[test]

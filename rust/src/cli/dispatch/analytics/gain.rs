@@ -7,6 +7,18 @@ fn publication_research_enabled() -> bool {
     std::env::var("LEAN_CTX_EXPERIMENTAL_PUBLICATION").as_deref() == Ok("1")
 }
 
+/// Whether this invocation asks for a research-gated *publication* action.
+/// `--unpublish` is deliberately absent: removal stays available even when
+/// publishing is not (#1726).
+fn publication_requested(rest: &[String]) -> bool {
+    rest.iter().any(|arg| {
+        matches!(
+            arg.as_str(),
+            "--publish" | "--leaderboard" | "--link" | "--rejoin"
+        ) || arg.starts_with("--rejoin=")
+    }) || link_request(rest).is_some()
+}
+
 fn print_publication_unavailable() {
     eprintln!(
         "Hosted publication and public rankings are Research and unavailable in the public LeanCTX Runtime. \\
@@ -71,24 +83,22 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         core::context_overhead::set_no_cache_adjust(true);
     }
 
-    let publication_requested = rest.iter().any(|arg| {
-        matches!(
-            arg.as_str(),
-            "--publish" | "--leaderboard" | "--link" | "--rejoin"
-        ) || arg.starts_with("--rejoin=")
-    }) || unpublish_request(rest).is_some()
-        || link_request(rest).is_some();
-    if publication_requested && !publication_research_enabled() {
-        print_publication_unavailable();
+    // #1726: taking a published card down is never gated. Turning publication
+    // off (or shipping a runtime where it was never on) must not strand a page
+    // that is already public — the exit door has to outlive the entrance.
+    if let Some(req) = unpublish_request(rest) {
+        use crate::cli::wrapped_publish::UnpublishTarget;
+        let target = match &req {
+            UnpublishReq::All => UnpublishTarget::All,
+            UnpublishReq::Target(s) => UnpublishTarget::One(s.as_str()),
+            UnpublishReq::Latest => UnpublishTarget::Latest,
+        };
+        crate::cli::wrapped_publish::unpublish(target);
         return;
     }
 
-    if let Some(req) = unpublish_request(rest) {
-        let id = match &req {
-            UnpublishReq::Id(s) => Some(s.as_str()),
-            UnpublishReq::Latest => None,
-        };
-        crate::cli::wrapped_publish::unpublish(id);
+    if publication_requested(rest) && !publication_research_enabled() {
+        print_publication_unavailable();
         return;
     }
     if rest.iter().any(|a| a == "--rejoin") {
@@ -505,17 +515,23 @@ fn print_support_hint() {
 /// Resolves the output path for the shareable SVG Wrapped card, or `None` when no
 /// card was requested. Accepts `--svg`, `--svg=<path>`, `--card`, `--card=<path>`;
 /// a bare flag falls back to `lean-ctx-wrapped.svg` in the current directory.
-/// A requested `--unpublish`: either an explicit card id, or the most recent published card.
+/// A requested `--unpublish`: the most recent card, every card, or one named
+/// by id or by its published permalink.
 enum UnpublishReq {
     Latest,
-    Id(String),
+    All,
+    Target(String),
 }
 
-/// Parses `--unpublish[=<id>]`. `None` means it was not requested at all.
+/// Parses `--unpublish[=<id|url|all>]`. `None` means it was not requested.
 fn unpublish_request(rest: &[String]) -> Option<UnpublishReq> {
     for a in rest {
         if let Some(v) = a.strip_prefix("--unpublish=") {
-            return Some(UnpublishReq::Id(v.to_string()));
+            return Some(if v.eq_ignore_ascii_case("all") {
+                UnpublishReq::All
+            } else {
+                UnpublishReq::Target(v.to_string())
+            });
         }
         if a == "--unpublish" {
             return Some(UnpublishReq::Latest);
@@ -878,7 +894,10 @@ fn cmd_stats_raw(rest: &[String]) {
 
 #[cfg(test)]
 mod tests {
-    use super::{base_url_arg, share_target, svg_target};
+    use super::{
+        UnpublishReq, base_url_arg, publication_requested, share_target, svg_target,
+        unpublish_request,
+    };
 
     fn args(xs: &[&str]) -> Vec<String> {
         xs.iter().map(|s| (*s).to_string()).collect()
@@ -954,5 +973,47 @@ mod tests {
             Some("https://me.dev")
         );
         assert_eq!(base_url_arg(&args(&["--share"])), None);
+    }
+
+    #[test]
+    fn unpublish_accepts_id_permalink_and_all() {
+        assert!(matches!(
+            unpublish_request(&args(&["--unpublish"])),
+            Some(UnpublishReq::Latest)
+        ));
+        assert!(matches!(
+            unpublish_request(&args(&["--unpublish=all"])),
+            Some(UnpublishReq::All)
+        ));
+        assert!(matches!(
+            unpublish_request(&args(&["--unpublish=ALL"])),
+            Some(UnpublishReq::All)
+        ));
+        match unpublish_request(&args(&[
+            "--unpublish=https://leanctx.com/w/196127aaad436a2cd42164cbbbbcd3cb",
+        ])) {
+            Some(UnpublishReq::Target(target)) => {
+                assert!(target.ends_with("196127aaad436a2cd42164cbbbbcd3cb"));
+            }
+            other => panic!(
+                "permalink must parse as a target, got {:?}",
+                other.is_some()
+            ),
+        }
+        assert!(unpublish_request(&args(&["--publish"])).is_none());
+    }
+
+    #[test]
+    fn unpublish_is_not_a_research_gated_publication_action() {
+        // #1726: removal must stay reachable when publishing is unavailable,
+        // otherwise an already-published page can never be taken down.
+        assert!(!publication_requested(&args(&["--unpublish"])));
+        assert!(!publication_requested(&args(&["--unpublish=all"])));
+        for gated in ["--publish", "--leaderboard", "--link", "--rejoin"] {
+            assert!(
+                publication_requested(&args(&[gated])),
+                "`{gated}` must stay behind the research gate"
+            );
+        }
     }
 }
