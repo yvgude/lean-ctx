@@ -7,6 +7,23 @@ use std::path::PathBuf;
 
 use lean_ctx_embed::{Engine, ReadMode};
 
+/// The embedded tools resolve paths against process-global state: engine init
+/// sets `LEAN_CTX_*` once per process (`configure_process_env`), and the tool
+/// dispatch resolves relative paths against a shared session root. Two engines
+/// rooted at different temp projects therefore cannot be live at the same time.
+///
+/// libtest runs the tests in this binary in parallel, so they were racing:
+/// `read_then_reread_is_cheaper` intermittently resolved `src/main.rs` against
+/// another test's root and failed with "file not found" (CI on #1749).
+/// Serialising here is better than relying on `--test-threads=1` being passed.
+static ENGINE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn engine_guard() -> std::sync::MutexGuard<'static, ()> {
+    ENGINE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Create a unique temp project dir with a couple of source files.
 fn temp_project() -> PathBuf {
     let unique = format!(
@@ -34,6 +51,7 @@ fn temp_project() -> PathBuf {
 
 #[test]
 fn read_then_reread_is_cheaper() {
+    let _guard = engine_guard();
     let dir = temp_project();
     let engine = Engine::builder(&dir).build().expect("engine builds");
 
@@ -57,6 +75,7 @@ fn read_then_reread_is_cheaper() {
 
 #[test]
 fn pathjail_rejects_escape() {
+    let _guard = engine_guard();
     let dir = temp_project();
     let engine = Engine::builder(&dir).build().expect("engine builds");
 
@@ -73,6 +92,7 @@ fn pathjail_rejects_escape() {
 
 #[test]
 fn search_finds_symbol() {
+    let _guard = engine_guard();
     let dir = temp_project();
     let engine = Engine::builder(&dir).build().expect("engine builds");
 
@@ -87,6 +107,7 @@ fn search_finds_symbol() {
 
 #[test]
 fn exec_tool_requires_optin() {
+    let _guard = engine_guard();
     let dir = temp_project();
     let engine = Engine::builder(&dir).build().expect("engine builds");
 
@@ -108,6 +129,7 @@ fn exec_tool_requires_optin() {
 
 #[test]
 fn unknown_tool_errors() {
+    let _guard = engine_guard();
     let dir = temp_project();
     let engine = Engine::builder(&dir).build().expect("engine builds");
 
