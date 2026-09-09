@@ -20,7 +20,7 @@ pub fn cmd_import(args: &[String]) {
         .collect();
 
     if (all && !sources.is_empty()) || sources.len() > 1 {
-        eprintln!("Use one source (claude-code, codex, cursor) or --all.");
+        eprintln!("Use one source (claude-code, codex, cursor, opencode) or --all.");
         print_help();
         return;
     }
@@ -29,14 +29,16 @@ pub fn cmd_import(args: &[String]) {
         let mut result = import::claude_code::import();
         result.merge(import::codex::import());
         result.merge(import::cursor::import());
+        result.merge(import::opencode::import());
         ("all sources", result)
     } else {
         match sources.first().copied() {
             Some("claude-code") => ("claude-code", import::claude_code::import()),
             Some("codex") => ("codex", import::codex::import()),
             Some("cursor") => ("cursor", import::cursor::import()),
+            Some("opencode") => ("opencode", import::opencode::import()),
             _ => {
-                eprintln!("Choose a source: claude-code, codex, cursor, or --all.");
+                eprintln!("Choose a source: claude-code, codex, cursor, opencode, or --all.");
                 print_help();
                 return;
             }
@@ -97,7 +99,7 @@ fn persist_facts(project_root: &str, facts: Vec<KnowledgeFact>) -> Result<usize,
 }
 
 fn print_help() {
-    println!("Usage: lean-ctx import <claude-code|codex|cursor> [--dry-run]");
+    println!("Usage: lean-ctx import <claude-code|codex|cursor|opencode> [--dry-run]");
     println!("       lean-ctx import --all [--dry-run]");
 }
 
@@ -110,5 +112,6 @@ mod tests {
         assert_eq!(ImportSource::ClaudeCode.as_str(), "claude-code");
         assert_eq!(ImportSource::Codex.as_str(), "codex");
         assert_eq!(ImportSource::Cursor.as_str(), "cursor");
+        assert_eq!(ImportSource::OpenCode.as_str(), "opencode");
     }
 }

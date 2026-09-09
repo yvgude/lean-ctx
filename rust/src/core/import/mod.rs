@@ -3,6 +3,7 @@
 pub mod claude_code;
 pub mod codex;
 pub mod cursor;
+pub mod opencode;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -20,6 +21,7 @@ pub enum ImportSource {
     ClaudeCode,
     Codex,
     Cursor,
+    OpenCode,
 }
 
 impl ImportSource {
@@ -29,6 +31,7 @@ impl ImportSource {
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
             Self::Cursor => "cursor",
+            Self::OpenCode => "opencode",
         }
     }
 }
@@ -152,7 +155,7 @@ pub(crate) fn process_value(
                 source,
                 session,
                 "imported-observation",
-                format!("Touched file: {path}"),
+                &format!("Touched file: {path}"),
                 0.6,
             );
         }
@@ -170,7 +173,7 @@ pub(crate) fn process_value(
                     source,
                     session,
                     "imported-decision",
-                    decision,
+                    &decision,
                     0.65,
                 );
             }
@@ -182,7 +185,7 @@ pub(crate) fn process_value(
                 source,
                 session,
                 "imported-observation",
-                format!("Observed error: {error}"),
+                &format!("Observed error: {error}"),
                 0.55,
             );
         }
@@ -214,7 +217,7 @@ fn push_fact(
     source: ImportSource,
     session: &str,
     category: &str,
-    value: String,
+    value: &str,
     confidence: f32,
 ) {
     let value = truncate(value);
@@ -350,14 +353,28 @@ fn is_error(text: &str) -> bool {
     .any(|marker| text.contains(marker))
 }
 
-fn truncate(mut value: String) -> String {
-    value.truncate(MAX_FACT_VALUE_CHARS);
-    value.trim().to_owned()
+fn truncate(value: &str) -> String {
+    // The first char boundary *at or past* the cap can land one byte over it:
+    // with 2-byte characters starting at an odd offset the boundaries are
+    // 11, 13, … 499, 501, so a 500-byte cap yielded a 501-byte slice. Take the
+    // last boundary at or below the cap instead — the same idiom already used
+    // in `ctx_search` and `ctx_preload`.
+    value[..value.floor_char_boundary(MAX_FACT_VALUE_CHARS)]
+        .trim()
+        .to_owned()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn truncates_multibyte_facts_without_panicking() {
+        let value = format!("We decided {}", "é".repeat(300));
+        let truncated = truncate(&value);
+        assert!(truncated.len() <= MAX_FACT_VALUE_CHARS);
+        assert!(truncated.is_char_boundary(truncated.len()));
+    }
 
     #[test]
     fn extracts_touches_decisions_and_errors() {
