@@ -173,6 +173,14 @@ fn prepare_file(
         return None;
     }
 
+    // #1739: bundled/minified payloads explode the chunker (one chunk per
+    // nested scope, each carrying its full subtree text). Applied at the same
+    // point in all three build paths so parallel stays identical to sequential.
+    if looks_minified(&content) {
+        tracing::debug!("[bm25: skipping minified payload {rel}]");
+        return None;
+    }
+
     let mut chunks = extract_chunks(rel, &content);
     chunks.sort_by(|a, b| {
         a.start_line
@@ -403,6 +411,12 @@ impl BM25Index {
                     Err(_) => continue,
                 }
             };
+
+            // #1739: see `prepare_file` — same predicate, same position.
+            if looks_minified(&content) {
+                tracing::debug!("[bm25: skipping minified payload {rel}]");
+                continue;
+            }
 
             let mut chunks = extract_chunks(rel, &content);
             chunks.sort_by(|a, b| {

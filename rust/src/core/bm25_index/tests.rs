@@ -1193,3 +1193,69 @@ fn index_without_directory_snapshot_is_refreshed_once() {
         "and the next call takes the cheap path again"
     );
 }
+
+#[test]
+fn decompression_ceiling_follows_the_file_and_the_host_not_a_disk_budget() {
+    // #1739: the ceiling was `max_bm25_cache_bytes() * 20` — on the default
+    // 512 MB disk budget that authorised a 10 GB allocation for *any* index.
+    let tiny = max_decompressed_bytes(1024);
+    let ram = crate::core::memory_guard::rss_limit_bytes();
+
+    assert!(
+        tiny <= 64 * 1024 * 1024 || Some(tiny) == ram.map(|r| r.max(64 * 1024 * 1024)),
+        "a 1 KB index must not authorise more than the floor, got {tiny}"
+    );
+    assert!(
+        max_decompressed_bytes(10 * 1024 * 1024) >= max_decompressed_bytes(1024),
+        "the ceiling must not shrink as the file grows"
+    );
+    if let Some(limit) = ram {
+        assert!(
+            max_decompressed_bytes(u64::MAX / 32) <= limit.max(64 * 1024 * 1024),
+            "the host's RSS limit must cap the ceiling"
+        );
+    }
+
+    // The streaming guard still refuses payloads past whatever ceiling applies.
+    let payload = vec![b'x'; 4 * 1024 * 1024];
+    let compressed = zstd::encode_all(payload.as_slice(), 3).expect("compress");
+    assert!(bounded_zstd_decode(&compressed, 1024 * 1024).is_none());
+    assert_eq!(
+        bounded_zstd_decode(&compressed, 8 * 1024 * 1024).map(|out| out.len()),
+        Some(payload.len())
+    );
+}
+
+#[test]
+fn minified_payloads_stay_out_of_the_index() {
+    // #1739 end-to-end: a committed vendor bundle next to real source must not
+    // reach the chunker, while the source next to it indexes normally.
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(
+        root.join("app.rs"),
+        "pub fn distinctive_helper_name() -> i32 {\n    41 + 1\n}\n",
+    )
+    .expect("write source");
+    std::fs::write(
+        root.join("swagger-ui-bundle.js"),
+        format!(
+            "!function(){{{}}}();",
+            "var distinctiveBundleToken=1;".repeat(20_000)
+        ),
+    )
+    .expect("write bundle");
+
+    let index = BM25Index::build_from_directory(root);
+
+    assert!(
+        index.files.contains_key("app.rs"),
+        "real source must still be indexed, got {:?}",
+        index.files.keys().collect::<Vec<_>>()
+    );
+    assert!(
+        !index.files.contains_key("swagger-ui-bundle.js"),
+        "the minified bundle must be skipped, got {:?}",
+        index.files.keys().collect::<Vec<_>>()
+    );
+}

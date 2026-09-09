@@ -482,6 +482,11 @@ impl BM25Index {
             if content.is_empty() {
                 continue;
             }
+            // #1739: see `build::prepare_file` — same predicate, same position.
+            if looks_minified(&content) {
+                tracing::debug!("[bm25: skipping minified payload {rel}]");
+                continue;
+            }
             let mut chunks = extract_chunks(rel, &content);
             chunks.sort_by(|a, b| {
                 a.start_line
@@ -694,7 +699,7 @@ impl BM25Index {
                 return None;
             }
             let compressed = std::fs::read(&zst_path).ok()?;
-            let max_decompressed = max_bytes * 20; // allow 20x expansion ratio
+            let max_decompressed = max_decompressed_bytes(meta.len());
             let data = bounded_zstd_decode(&compressed, max_decompressed)?;
             let idx: Self = postcard::from_bytes(&data).ok()?;
             return Some(idx);
@@ -1007,6 +1012,13 @@ fn dir_states(root: &Path, files: &[String]) -> HashMap<String, u64> {
         .collect()
 }
 
+/// Streams the persisted index out, refusing anything past `max_bytes`.
+///
+/// The buffer never grows beyond `max_bytes`, so the ceiling passed in *is* the
+/// worst-case allocation — which is why #1739 hinged on that ceiling being a
+/// sane number rather than on this loop. Our own writer streams postcard into
+/// the encoder (#790) and so never records a frame content size, which rules
+/// out a cheap header pre-check.
 fn bounded_zstd_decode(compressed: &[u8], max_bytes: u64) -> Option<Vec<u8>> {
     use std::io::Read;
     let mut decoder = zstd::Decoder::new(compressed).ok()?;
@@ -1030,6 +1042,31 @@ fn bounded_zstd_decode(compressed: &[u8], max_bytes: u64) -> Option<Vec<u8>> {
         buf.extend_from_slice(&chunk[..n]);
     }
     Some(buf)
+}
+
+/// Worst-case RAM this process will spend decompressing a persisted index.
+///
+/// #1739: this was `max_bm25_cache_bytes() * 20` — twenty times a **disk**
+/// budget, with no reference to the file at hand or to the machine's memory. On
+/// the default 512 MB disk budget that authorised a 10 GB allocation for any
+/// index, however small the file; because `ctx_search` reloads on demand,
+/// repeated calls stacked to 20 GB RSS and froze the host.
+///
+/// The index is decompressed into RAM, so RAM is what has to bound it, and a
+/// given file cannot plausibly expand past a fixed ratio of its own size.
+fn max_decompressed_bytes(compressed_bytes: u64) -> u64 {
+    /// postcard + zstd on an index this shape expands well under this.
+    const MAX_EXPANSION_RATIO: u64 = 20;
+    /// Keeps small indices loadable on hosts that report little or no RAM.
+    const FLOOR: u64 = 64 * 1024 * 1024;
+
+    let file_derived = compressed_bytes
+        .saturating_mul(MAX_EXPANSION_RATIO)
+        .max(FLOOR);
+    match crate::core::memory_guard::rss_limit_bytes() {
+        Some(limit) => file_derived.min(limit.max(FLOOR)),
+        None => file_derived,
+    }
 }
 
 fn index_dir(root: &Path) -> PathBuf {

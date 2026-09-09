@@ -53,6 +53,45 @@ pub(crate) fn split_camel_case_tokens(tokens: &[String]) -> Vec<String> {
     result
 }
 
+/// Whether `content` is a bundled/minified payload rather than human-authored
+/// source — a whole program packed onto a handful of enormous lines.
+///
+/// These are the chunker's pathological input, not merely wasted index space.
+/// Tree-sitter emits one chunk per nested scope and each chunk carries its full
+/// subtree text, so a bundle with thousands of nested closures gets tokenized
+/// once per enclosing scope. #1739 measured 15 MB of committed vendor bundles
+/// producing a >10 GB in-memory index, while the surrounding 150 MB of real
+/// source produced 1.4 MB.
+///
+/// Glob lists cannot carry this alone: the bundles in #1739 were named
+/// `swagger-ui-bundle.js` and `redoc.standalone.js`, which no `*.min.js`
+/// pattern matches. The shape of the content is the reliable signal, so all
+/// three conditions must hold together — big enough to matter, dominated by
+/// huge lines, and huge on average — which prose and generated-but-readable
+/// code do not satisfy.
+pub(crate) fn looks_minified(content: &str) -> bool {
+    /// Below this a pathological file cannot move the index materially.
+    const MIN_BYTES: usize = 64 * 1024;
+    /// No hand-written line comes close; minified bundles run to megabytes.
+    const MIN_LONGEST_LINE_BYTES: usize = 5_000;
+    /// Real source averages well under this, unwrapped prose included.
+    const MIN_AVERAGE_LINE_BYTES: usize = 500;
+
+    if content.len() < MIN_BYTES {
+        return false;
+    }
+    let mut lines = 0_usize;
+    let mut longest = 0_usize;
+    for line in content.lines() {
+        lines += 1;
+        longest = longest.max(line.len());
+    }
+    if longest < MIN_LONGEST_LINE_BYTES {
+        return false;
+    }
+    content.len() / lines.max(1) >= MIN_AVERAGE_LINE_BYTES
+}
+
 pub(crate) fn extract_chunks(file_path: &str, content: &str) -> Vec<CodeChunk> {
     #[cfg(feature = "tree-sitter")]
     {
@@ -319,4 +358,44 @@ pub(crate) fn enrich_for_bm25(chunk: &CodeChunk) -> String {
     }
 
     format!("{} {} {} {}", chunk.content, stem, stem, dir)
+}
+
+#[cfg(test)]
+mod chunking_shape_tests {
+    use super::looks_minified;
+
+    #[test]
+    fn minified_bundles_are_recognised_without_a_glob() {
+        // #1739: the offending files were `swagger-ui-bundle.js` and
+        // `redoc.standalone.js` — no `*.min.js` pattern matches either.
+        let bundle = format!("!function(){{{}}}();", "var aB=1;".repeat(20_000));
+        assert!(bundle.len() > 64 * 1024);
+        assert!(looks_minified(&bundle));
+    }
+
+    #[test]
+    fn ordinary_source_and_prose_are_not_minified() {
+        // Real source: big file, ordinary lines.
+        let source = "pub fn compute(value: i32) -> i32 {\n    value * 2\n}\n".repeat(3_000);
+        assert!(source.len() > 64 * 1024);
+        assert!(!looks_minified(&source));
+
+        // Unwrapped prose: long lines, but nowhere near a minified bundle.
+        let prose = format!("{}\n", "lorem ipsum dolor sit amet ".repeat(60)).repeat(60);
+        assert!(prose.len() > 64 * 1024);
+        assert!(!looks_minified(&prose));
+
+        // A small file is never worth skipping, however it is shaped.
+        let tiny = format!("var a={};", "0".repeat(6_000));
+        assert!(!looks_minified(&tiny));
+
+        // One long line inside an otherwise normal large file (an embedded
+        // data URI, say) must not disqualify the file.
+        let mostly_normal = format!(
+            "{}\nconst DATA = \"{}\";\n",
+            "let x = 1;\n".repeat(20_000),
+            "A".repeat(9_000)
+        );
+        assert!(!looks_minified(&mostly_normal));
+    }
 }
