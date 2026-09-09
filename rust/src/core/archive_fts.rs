@@ -162,6 +162,9 @@ fn is_transient_sqlite_error(e: &rusqlite::Error) -> bool {
 }
 
 pub fn index_entry(archive_id: &str, tool: &str, command: &str, content: &str) {
+    if super::archive::is_protected(archive_id) {
+        return;
+    }
     let Some(mut guard) = DB.lock().ok() else {
         return;
     };
@@ -230,22 +233,33 @@ fn enforce_cap_locked(conn: &Connection) {
         }
         let batch = (count / 10).max(50);
         let ids: Vec<String> = conn
-            .prepare("SELECT archive_id FROM archive_meta ORDER BY created_at ASC LIMIT ?1")
+            .prepare("SELECT archive_id FROM archive_meta ORDER BY created_at ASC")
             .and_then(|mut stmt| {
-                let rows = stmt.query_map(params![batch], |row| row.get::<_, String>(0))?;
+                let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
                 Ok(rows.flatten().collect::<Vec<_>>())
             })
             .unwrap_or_default();
         if ids.is_empty() {
             break;
         }
+        let mut deleted = 0;
         for id in &ids {
+            if super::archive::is_protected(id) {
+                continue;
+            }
             let _ = conn.execute(
                 "DELETE FROM archive_meta WHERE archive_id = ?1",
                 params![id],
             );
             let _ = conn.execute("DELETE FROM archive_fts WHERE archive_id = ?1", params![id]);
             super::archive::remove_files(id);
+            deleted += 1;
+            if deleted >= batch {
+                break;
+            }
+        }
+        if deleted == 0 {
+            break;
         }
         // Best-effort reclamation: skip if another process holds the WAL lock.
         if conn
