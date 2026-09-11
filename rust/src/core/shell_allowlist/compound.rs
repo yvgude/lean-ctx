@@ -325,9 +325,66 @@ fn remainder_after_first_token(s: &str) -> &str {
     &trimmed[end..]
 }
 
-/// If `s` is a single balanced `( … )` subshell with nothing trailing the closing
-/// paren, return the inner command (`(a; b)` → `a; b`). `(a) b` returns `None`:
-/// the trailing content falls through to base extraction, which blocks it.
+/// #1751: is `suffix` — everything after a subshell's closing paren — nothing
+/// but redirections? `( … ) 2>&1` is still a plain subshell: the redirect binds
+/// the group's descriptors and cannot introduce a command, so the body must
+/// keep being recursed into exactly as it is without the redirect. `( … ) curl
+/// evil.com` must NOT qualify — that trailing command has to fall through to
+/// base extraction and stay blocked (#462).
+///
+/// Deliberately conservative: anything this does not positively recognise as a
+/// redirect (a quoted target with spaces, a herestring) returns `false` and
+/// keeps today's blocking behaviour rather than guessing.
+fn is_redirect_only_suffix(suffix: &str) -> bool {
+    let mut rest = suffix.trim();
+    while !rest.is_empty() {
+        let bytes = rest.as_bytes();
+        // Optional leading descriptor number (`2>`, `1>&2`), or `&>`/`&>>`
+        // which merges both streams.
+        let mut head = 0;
+        while head < bytes.len() && bytes[head].is_ascii_digit() {
+            head += 1;
+        }
+        if head == 0 && bytes.first() == Some(&b'&') && bytes.get(1) == Some(&b'>') {
+            head = 1;
+        }
+        let op = &rest[head..];
+        let op_len = if op.starts_with(">>")
+            || op.starts_with(">|")
+            || op.starts_with(">&")
+            || op.starts_with("<&")
+        {
+            2
+        } else if op.starts_with('>') || op.starts_with('<') {
+            1
+        } else {
+            return false;
+        };
+        rest = op[op_len..].trim_start();
+        // Target: `&1`/`-` for descriptor dups, otherwise one plain word. A
+        // shell metacharacter here means this is not a bare redirect target.
+        let target = rest
+            .bytes()
+            .take_while(|byte| {
+                !byte.is_ascii_whitespace()
+                    && !matches!(
+                        byte,
+                        b';' | b'|' | b'&' | b'(' | b')' | b'`' | b'$' | b'<' | b'>' | b'"' | b'\''
+                    )
+            })
+            .count();
+        if target == 0 {
+            return false;
+        }
+        rest = rest[target..].trim_start();
+    }
+    true
+}
+
+/// If `s` is a single balanced `( … )` subshell, return the inner command
+/// (`(a; b)` → `a; b`). A trailing redirection is part of the subshell and is
+/// accepted (`(a) 2>&1`, #1751); any other trailing content returns `None`, so
+/// `(a) b` falls through to base extraction, which blocks it.
 fn balanced_paren_inner(segment: &str) -> Option<&str> {
     let trimmed = segment.trim();
     let bytes = trimmed.as_bytes();
@@ -367,7 +424,7 @@ fn balanced_paren_inner(segment: &str) -> Option<&str> {
             b')' => {
                 depth -= 1;
                 if depth == 0 {
-                    return if i == len - 1 {
+                    return if i == len - 1 || is_redirect_only_suffix(&trimmed[i + 1..]) {
                         Some(trimmed[1..i].trim())
                     } else {
                         None
