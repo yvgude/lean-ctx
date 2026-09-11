@@ -31,7 +31,14 @@ while read LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     continue
   fi
   
-  FILES=$(git diff --name-only "$REMOTE_SHA..$LOCAL_SHA" 2>/dev/null || git diff --name-only HEAD)
+  if [ "$REMOTE_SHA" = "0000000000000000000000000000000000000000" ]; then
+    # New branch on the remote: every file in the pushed tree is newly
+    # published. The previous fallback compared the working tree against HEAD,
+    # which is empty on a clean checkout — the guard passed by construction.
+    FILES=$(git ls-tree -r --name-only "$LOCAL_SHA" 2>/dev/null || true)
+  else
+    FILES=$(git diff --name-only "$REMOTE_SHA..$LOCAL_SHA" 2>/dev/null || true)
+  fi
   
   for pattern in "${PROPRIETARY_PATTERNS[@]}"; do
     MATCHES=$(echo "$FILES" | grep "$pattern" || true)
