@@ -59,6 +59,23 @@ impl Config {
         }
     }
 
+    /// #1754: has the user declined lean-ctx steering their agent?
+    ///
+    /// `rules_injection = off` is the #1599 rule — off means off, on every
+    /// channel, including text lean-ctx appends inside a tool result. Under
+    /// `Off` such a reminder is also unclearable: `inject_all_rules`
+    /// early-returns, and the `lean-ctx setup` it suggests removes the rules
+    /// block rather than writing it, so the reminder returns next session.
+    ///
+    /// An explicit `setup.auto_inject_rules = false` says the same thing in the
+    /// setup section. `None` (auto — rules simply not present yet) is not a
+    /// refusal and still gets the reminder.
+    #[must_use]
+    pub fn declines_rule_steering(&self) -> bool {
+        self.rules_injection_effective() == RulesInjection::Off
+            || self.setup.auto_inject_rules == Some(false)
+    }
+
     /// Provider prompt-cache hit rate for net-of-injection (#1104).
     /// Returns the configured value or None (caller picks the default).
     #[must_use]

@@ -48,6 +48,54 @@ fn unknown_value_falls_back_to_shared() {
     assert_eq!(cfg.rules_injection_effective(), RulesInjection::Shared);
 }
 
+// --- #1754: which settings silence in-band steering ---
+
+#[test]
+fn off_declines_rule_steering() {
+    // #1599's rule reaches the in-band setup tip too: off means off, on every
+    // channel. Under `off` the tip is also unclearable — `lean-ctx setup`
+    // removes the rules block rather than writing it.
+    for raw in ["off", "none", "disabled"] {
+        let cfg = Config {
+            rules_injection: Some(raw.to_string()),
+            ..Default::default()
+        };
+        assert!(
+            cfg.declines_rule_steering(),
+            "{raw:?} must silence in-band steering"
+        );
+    }
+}
+
+#[test]
+fn explicit_auto_inject_false_declines_rule_steering() {
+    // "never inject" said in the setup section is the same refusal.
+    let cfg = Config {
+        setup: SetupConfig {
+            auto_inject_rules: Some(false),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(cfg.declines_rule_steering());
+}
+
+#[test]
+fn auto_and_explicit_true_still_accept_rule_steering() {
+    // `None` is auto, not a refusal: rules are simply not present yet, which is
+    // exactly the case the tip exists for. `Some(true)` wants them outright.
+    assert!(!Config::default().declines_rule_steering());
+
+    let explicit_on = Config {
+        setup: SetupConfig {
+            auto_inject_rules: Some(true),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(!explicit_on.declines_rule_steering());
+}
+
 #[test]
 fn deserialization_from_toml() {
     let cfg: Config = toml::from_str(r#"rules_injection = "dedicated""#).unwrap();
