@@ -901,6 +901,55 @@ fn relay_test_state() -> ProxyState {
 }
 
 #[test]
+fn forwards_opencode_session_header() {
+    // #1752: OpenCode (and OpenCode zen) key session affinity off their own
+    // header. #1730 enumerated only the Claude Code spellings, so this sibling
+    // kept being stripped and every relayed request looked like a new session.
+    assert!(ALLOWED_REQUEST_HEADERS.contains(&"x-opencode-session"));
+    assert!(is_allowed_request_header("x-opencode-session"));
+    assert!(should_forward_request_header("x-opencode-session", false));
+}
+
+#[tokio::test]
+async fn opencode_session_reaches_the_upstream_verbatim() {
+    // #1752 end-to-end: assert what the upstream actually receives, including
+    // the mixed-case spelling OpenCode puts on the wire.
+    let (upstream, server) = upstream_capturing_headers().await;
+    let parts = Request::builder()
+        .method("POST")
+        .uri("/v1/messages")
+        .header("X-OpenCode-Session", "0f9c2b71-4d3a-4e58-9c11-7a6e5b2d8f40")
+        .header("X-Leanctx-Project", "internal-only")
+        .body(())
+        .unwrap()
+        .into_parts()
+        .0;
+
+    let response = transport::send_upstream(
+        &relay_test_state(),
+        &parts,
+        &upstream,
+        b"{}".to_vec(),
+        "Anthropic",
+        false,
+    )
+    .await
+    .unwrap();
+    assert!(response.status().is_success());
+
+    let seen = server.await.unwrap();
+    assert!(
+        seen.contains("x-opencode-session: 0f9c2b71-4d3a-4e58-9c11-7a6e5b2d8f40"),
+        "session header must reach the upstream verbatim, got: {seen}"
+    );
+    // Widening the allowlist for #1752 must not widen it for anything else.
+    assert!(
+        !seen.contains("x-leanctx-project"),
+        "internal header must stay stripped, got: {seen}"
+    );
+}
+
+#[test]
 fn forwards_claude_code_session_id_header() {
     // #1730: Claude Code's per-conversation UUID must survive the relay so a
     // downstream proxy can key session affinity and prompt-cache reuse on it.
