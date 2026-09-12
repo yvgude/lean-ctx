@@ -643,7 +643,9 @@ pub(in crate::server) async fn dispatch_and_post_process(
             .swap(true, std::sync::atomic::Ordering::Relaxed)
         {
             let cfg = crate::core::config::Config::load();
-            if !cfg.setup.should_inject_rules() {
+            // #1754: this tip is lean-ctx steering delivered inside a tool
+            // result, so the settings that decline steering must silence it.
+            if !cfg.declines_rule_steering() && !cfg.setup.should_inject_rules() {
                 result_text = format!(
                     "{result_text}\n\n\
                          --- tip: run 'lean-ctx setup' to configure agent rules for optimal AI integration ---"
