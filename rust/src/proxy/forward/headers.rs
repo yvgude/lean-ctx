@@ -85,6 +85,11 @@ pub(crate) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
     // every request. Passed through verbatim — lean-ctx neither renames nor
     // invents it.
     "x-claude-code-session-id",
+    // #1752: OpenCode (and OpenCode zen) carry their session on their own
+    // header. #1730 enumerated only the Claude Code spellings, so this sibling
+    // kept being stripped and every relayed request reached the upstream as a
+    // fresh session. Passed through verbatim, same as the header above.
+    "x-opencode-session",
 ];
 
 pub(crate) fn is_allowed_request_header(name: &str) -> bool {
