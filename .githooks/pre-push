@@ -70,14 +70,16 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     fi
 
     if [[ "$REMOTE_SHA" == "0000000000000000000000000000000000000000" ]]; then
-        # New branch — check all commits
-        RANGE="$LOCAL_SHA"
+        # New branch on the remote: nothing exists there yet, so every file in
+        # the pushed tree becomes newly published. `git diff --name-only <sha>`
+        # compares the WORKING TREE against that commit — on a clean tree it
+        # prints nothing and exits 0, so the fallback below never fired and this
+        # guard passed by construction for the first push of a branch.
+        FILES=$(git ls-tree -r --name-only "$LOCAL_SHA" 2>/dev/null || true)
     else
-        RANGE="$REMOTE_SHA..$LOCAL_SHA"
+        # Existing branch: only what this push adds or modifies is newly exposed.
+        FILES=$(git diff --diff-filter=ACMR --name-only "$REMOTE_SHA..$LOCAL_SHA" 2>/dev/null || true)
     fi
-
-    # Get files ADDED or MODIFIED in the push range (not deletions)
-    FILES=$(git diff --diff-filter=ACMR --name-only "$RANGE" 2>/dev/null || git diff-tree --no-commit-id --diff-filter=ACMR --name-only -r "$LOCAL_SHA" 2>/dev/null || true)
 
     for file in $FILES; do
         for pattern in "${BLOCKED[@]}"; do
