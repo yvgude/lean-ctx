@@ -19,7 +19,7 @@ impl McpTool for CtxDeltaTool {
              WORKFLOW: ctx_read(mode=full) -> edit -> ctx_delta (no re-read needed).\n\
              Use INSTEAD of re-reading the whole file after modifications — it returns only changed\n\
              lines and avoids resending unchanged content. Path must have a prior ctx_read in this session\'s cache.\n\
-             For the full git diff against HEAD, use ctx_read(path, mode=diff) instead.",
+             ctx_read(mode=diff) diffs this same cache, not git; for HEAD use git diff.",
             json!({
                 "type": "object",
                 "properties": {

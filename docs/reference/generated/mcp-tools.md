@@ -168,7 +168,7 @@ Incremental diff since last read — shows only changed lines after you edit.
 WORKFLOW: ctx_read(mode=full) -> edit -> ctx_delta (no re-read needed).
 Use INSTEAD of re-reading the whole file after modifications — it returns only changed
 lines and avoids resending unchanged content. Path must have a prior ctx_read in this session's cache.
-For the full git diff against HEAD, use ctx_read(path, mode=diff) instead.
+ctx_read(mode=diff) diffs this same cache, not git; for HEAD use git diff.
 
 Parameters: `path`*
 
