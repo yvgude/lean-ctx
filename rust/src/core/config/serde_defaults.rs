@@ -49,6 +49,10 @@ pub(super) fn default_graph_index_max_files() -> u64 {
     15_000 // #790: cap to prevent unbounded RAM; override with graph_index_max_files = 0
 }
 
+pub(super) fn default_bm25_max_files() -> u64 {
+    crate::core::bm25_index::MAX_BM25_FILES as u64 // single source: the BM25 walk cap
+}
+
 pub(super) fn default_max_ram_percent() -> u8 {
     5
 }

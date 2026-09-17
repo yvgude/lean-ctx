@@ -525,6 +525,11 @@ pub struct Config {
     /// 0 = unlimited (default). Set >0 to cap for constrained systems.
     #[serde(default = "serde_defaults::default_graph_index_max_files")]
     pub graph_index_max_files: u64,
+    /// Maximum number of files indexed into the BM25 corpus; the semantic index
+    /// chunks the same corpus (#737), so this bounds semantic coverage too.
+    /// 0 = unlimited. Default 5000 (MAX_BM25_FILES).
+    #[serde(default = "serde_defaults::default_bm25_max_files")]
+    pub bm25_max_files: u64,
     /// Controls RAM vs feature trade-off. Values: "low", "balanced" (default), "performance".
     /// Override via LEAN_CTX_MEMORY_PROFILE env var.
     #[serde(default)]

@@ -11,7 +11,7 @@ pub use coordinator::{SearchIndexBuildProgress, get_or_start_build};
 #[cfg(test)]
 mod tests;
 
-const MAX_BM25_FILES: usize = 5000;
+pub(crate) const MAX_BM25_FILES: usize = 5000;
 const CHUNK_COUNT_WARNING: usize = 50_000;
 const ZSTD_LEVEL: i32 = 9;
 
@@ -1102,6 +1102,12 @@ fn list_code_files(root: &Path) -> Vec<String> {
 
     let mut files: Vec<String> = Vec::new();
     let mut filtered_out = 0usize;
+    // Mirrors graph_index_max_files: 0 = unlimited, default 5000 (MAX_BM25_FILES).
+    let max_files = if cfg.bm25_max_files == 0 {
+        usize::MAX
+    } else {
+        cfg.bm25_max_files as usize
+    };
     for entry in walker.flatten() {
         let path = entry.path();
         if !path.is_file() {
@@ -1128,9 +1134,10 @@ fn list_code_files(root: &Path) -> Vec<String> {
             filtered_out += 1;
             continue;
         }
-        if files.len() >= MAX_BM25_FILES {
+        if files.len() >= max_files {
             tracing::warn!(
-                "[bm25] file cap reached ({MAX_BM25_FILES}), skipping remaining files in {}",
+                "[bm25] file cap reached ({max_files}), skipping remaining files in {}. \
+                 Set bm25_max_files in config (0 = unlimited) to index more.",
                 root.display()
             );
             break;

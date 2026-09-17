@@ -155,6 +155,7 @@ impl Default for Config {
             updates: UpdatesConfig::default(),
             context: ContextConfig::default(),
             graph_index_max_files: serde_defaults::default_graph_index_max_files(),
+            bm25_max_files: serde_defaults::default_bm25_max_files(),
             bm25_max_cache_mb: serde_defaults::default_bm25_max_cache_mb(),
             memory_profile: MemoryProfile::default(),
             memory_cleanup: MemoryCleanup::default(),

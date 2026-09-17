@@ -713,6 +713,32 @@ fn list_code_files_respects_max_files_cap() {
 }
 
 #[test]
+fn list_code_files_honors_bm25_max_files_config() {
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+
+    for i in 0..6 {
+        std::fs::write(
+            root.join(format!("f{i}.rs")),
+            format!("pub fn f{i}() {{}}\n"),
+        )
+        .expect("write");
+    }
+
+    let cfg_dir = tempdir().expect("tempdir");
+    std::fs::write(cfg_dir.path().join("config.toml"), "bm25_max_files = 3\n").expect("write");
+    crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", cfg_dir.path());
+    let files = list_code_files(root);
+    crate::test_env::remove_var("LEAN_CTX_CONFIG_DIR");
+
+    assert_eq!(
+        files.len(),
+        3,
+        "bm25_max_files should bound the BM25 corpus"
+    );
+}
+
+#[test]
 fn max_bm25_cache_bytes_reads_env() {
     let _env = crate::core::data_dir::test_env_lock();
     crate::test_env::set_var("LEAN_CTX_BM25_MAX_CACHE_MB", "64");

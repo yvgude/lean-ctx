@@ -549,6 +549,14 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             ),
         );
     root.insert(
+            "bm25_max_files".into(),
+            key(
+                "u64",
+                serde_json::json!(cfg.bm25_max_files),
+                "Maximum files in the BM25 corpus (the semantic index chunks the same corpus). 0 = unlimited",
+            ),
+        );
+    root.insert(
         "memory_profile".into(),
         key_enum_with_env(
             &["low", "balanced", "performance"],
