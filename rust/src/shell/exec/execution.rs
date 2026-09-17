@@ -13,6 +13,10 @@ pub fn exec_argv(args: &[String]) -> i32 {
         return 127;
     }
 
+    if let Some(code) = reject_if_exec_depth_exceeded() {
+        return code;
+    }
+
     // Quote-safe join used only for the allowlist/policy *checks*; execution
     // below still consumes the pre-split argv verbatim (the whole reason `-t`
     // avoids `sh -c`). Joining first means a single argv element such as
@@ -51,6 +55,30 @@ pub fn exec_argv(args: &[String]) -> i32 {
     let code = exec_direct(args);
     crate::core::tool_lifecycle::record_shell_command(0, 0);
     code
+}
+
+/// Refuses to spawn another shell once nesting has gone past
+/// [`super::super::reentry::MAX_EXEC_DEPTH`] — the last line of defense
+/// against a runaway self-recursion loop (a shell hook re-firing inside a
+/// shell lean-ctx itself spawned, see `reentry::stamp_exec_depth`) that would
+/// otherwise fork-bomb the host.
+///
+/// Returns exit code 126, the same "not allowed" signal the shell-hook
+/// wrappers already treat as "fall back to `command "$@"`" — so exceeding the
+/// ceiling doesn't just stop lean-ctx, it makes the surrounding shell function
+/// run the real command directly, which is what actually breaks the loop.
+fn reject_if_exec_depth_exceeded() -> Option<i32> {
+    if !super::super::reentry::exec_depth_exceeded() {
+        return None;
+    }
+    eprintln!(
+        "lean-ctx: refusing to nest further (depth >= {}) — a shell hook is re-firing inside a \
+         command lean-ctx already spawned. Running the command raw instead of risking a \
+         runaway process loop. If this persists, check for a duplicate/competing shell \
+         integration that also wraps commands through lean-ctx.",
+        super::super::reentry::MAX_EXEC_DEPTH
+    );
+    Some(126)
 }
 
 fn exec_direct(args: &[String]) -> i32 {
@@ -227,6 +255,10 @@ fn allowlist_gate(command: &str) -> Option<i32> {
 }
 
 pub fn exec(command: &str) -> i32 {
+    if let Some(code) = reject_if_exec_depth_exceeded() {
+        return code;
+    }
+
     // #595: when the agent wraps its command in host scaffolding
     // (`… && eval '<cmd>' … && pwd -P >| …-cwd`), look through it so the allowlist
     // and compression act on the REAL command, not the wrapper — whose `eval` the
@@ -459,6 +491,7 @@ fn exec_shell_default(command: &str, shell: &str, shell_flag: &str) -> i32 {
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
     super::super::reentry::clear_shell_default_markers(&mut cmd);
+    super::super::reentry::stamp_exec_depth(&mut cmd);
     super::super::platform::apply_utf8_locale(&mut cmd);
     super::super::platform::apply_profile_free_env(&mut cmd);
     let status = cmd.status();
