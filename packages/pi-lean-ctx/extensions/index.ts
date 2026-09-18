@@ -115,6 +115,17 @@ const findSchema = Type.Object({
   limit: Type.Optional(Type.Number({ description: "Maximum number of results (default: 1000)" })),
 });
 
+/**
+ * Per-line budget for `ctx_grep` results, in bytes.
+ *
+ * #1650: `limit` bounds how many matches return, not how wide each one is, and
+ * the 512 KB output cap sits far above any single line — so one minified JSON
+ * line answered a `limit: 1` search with ~100 KB. 400 bytes comfortably fits a
+ * real source line while keeping a minified blob from filling the window; the
+ * `maxLineChars` parameter raises it, and `0` removes the bound entirely.
+ */
+const DEFAULT_GREP_MAX_LINE_CHARS = 400;
+
 const grepSchema = Type.Object({
   pattern: Type.String({ description: "Search pattern (regex or literal string)" }),
   path: Type.String({ description: "Directory or file to search. Pass the directory you are working in — there is no cwd fallback." }),
@@ -123,6 +134,12 @@ const grepSchema = Type.Object({
   literal: Type.Optional(Type.Boolean({ description: "Treat pattern as literal string (default: false)" })),
   context: Type.Optional(Type.Number({ description: "Lines of context around each match (default: 0)" })),
   limit: Type.Optional(Type.Number({ description: "Maximum number of matches (default: 100)" })),
+  maxLineChars: Type.Optional(
+    Type.Number({
+      description:
+        "Per-line budget in bytes (default: 400, 0 = unlimited). Longer matching lines are previewed up to the budget; re-read the full line with ctx_read(path, mode=\"lines:N-N\").",
+    }),
+  ),
 });
 
 const leanCtxSchema = Type.Object({
@@ -733,6 +750,20 @@ export default async function (pi: ExtensionAPI) {
       if (params.literal) searchArgs.push("-F");
       if (params.context && params.context > 0) searchArgs.push(`-C${params.context}`);
       if (params.glob) searchArgs.push("--glob", params.glob);
+
+      // #1650: `limit` caps how many matches come back, not how wide they are.
+      // One minified line could therefore return ~100 KB from a `limit: 1`
+      // search — the 512 KB output cap below sits far above a single long line,
+      // so nothing stopped it. ripgrep bounds this natively and knows where the
+      // match sits, so let it do the cutting rather than slicing the text here:
+      // `--max-columns-preview` keeps the head of the line plus ripgrep's own
+      // "[... N more matches]" marker, so the truncation is explicit rather
+      // than a silently short answer. `path:line:` is still in the output, so
+      // the full line is one `ctx_read(path, mode="lines:N-N")` away.
+      const maxLineChars = params.maxLineChars ?? DEFAULT_GREP_MAX_LINE_CHARS;
+      if (maxLineChars > 0) {
+        searchArgs.push(`-M${maxLineChars}`, "--max-columns-preview");
+      }
 
       const globalLimit = params.limit && params.limit > 0 ? params.limit : 100;
       searchArgs.push(params.pattern, absolutePath);
