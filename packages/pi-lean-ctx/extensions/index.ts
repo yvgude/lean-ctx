@@ -37,6 +37,7 @@ import {
   writeMcpSchemaCache,
 } from "./mcp-cache.js";
 import { loadPiConfig, resolvePiShellPath, resolveSuppressedBuiltins } from "./config.js";
+import { posixSafeEnv } from "./env.js";
 import { classifySearchExit, sanitizeExtraEnv } from "./exec-result.js";
 import { withFooter } from "./footer.js";
 
@@ -133,6 +134,9 @@ const leanCtxSchema = Type.Object({
   ),
 });
 
+// Host bash tools reject environment names outside the POSIX identifier
+// shape, which Windows' `ProgramFiles(x86)` violates (#1799). See `env.ts`
+// for why the filter sits at this boundary and not in `leanCtxEnv`.
 function shellQuote(value: string): string {
   if (!value) return "''";
   if (/^[A-Za-z0-9_./=:@,+%^-]+$/.test(value)) return value;
@@ -340,8 +344,10 @@ export default async function (pi: ExtensionAPI) {
         // Caller-supplied `env` (#1761) sits above the inherited environment
         // and below the flags lean-ctx must always see; `lean-ctx -c` passes
         // its environment through to the command, so this is the same
-        // channel the MCP `env` parameter uses.
-        env: leanCtxEnv({ ...env, ...extra }),
+        // channel the MCP `env` parameter uses. The result is filtered to
+        // names the host will accept (#1799); doing it last covers every
+        // source `leanCtxEnv` merges, including config-supplied `forwardedEnv`.
+        env: posixSafeEnv(leanCtxEnv({ ...env, ...extra })),
       };
     };
   const baseBashTool = createBashToolDefinition(process.cwd(), {
@@ -359,7 +365,13 @@ export default async function (pi: ExtensionAPI) {
     raw
       ? createBashToolDefinition(process.cwd(), {
           shellPath,
-          spawnHook: ({ command, cwd, env }) => ({ command, cwd, env: { ...env, ...extra } }),
+          // `raw` bypasses lean-ctx entirely but still spawns through the
+          // host's bash tool, so it needs the same name filter (#1799).
+          spawnHook: ({ command, cwd, env }) => ({
+            command,
+            cwd,
+            env: posixSafeEnv({ ...env, ...extra }),
+          }),
         })
       : createBashToolDefinition(process.cwd(), { shellPath, spawnHook: leanCtxSpawnHook(extra) });
 
