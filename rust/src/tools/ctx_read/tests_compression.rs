@@ -301,6 +301,41 @@ fn instruction_file_detection() {
     assert!(!is_instruction_file("/project/data/report.csv"));
 }
 
+/// #1794: classification is by file, not by ancestor directory. A skill ships
+/// its instructions as documents and its implementation as source; forcing the
+/// latter to `full` turned a bounded `map` request into a truncated dump.
+#[test]
+fn source_files_under_a_skill_are_not_instruction_files() {
+    for path in [
+        "/project/.agents/skills/example/scripts/runtime.ts",
+        "/project/.agents/skills/example/scripts/state.ts",
+        "/project/skills/demo/helper.py",
+        "/project/skills/demo/lib.rs",
+        "/workspace/.cursor/rules/generate.js",
+        "/home/user/.claude/rules/build.sh",
+    ] {
+        assert!(
+            !is_instruction_file(path),
+            "{path} is implementation, not an instruction document"
+        );
+    }
+}
+
+/// The documents themselves must keep their full-read guarantee, including
+/// extensionless rule files.
+#[test]
+fn documents_under_a_skill_remain_instruction_files() {
+    for path in [
+        "/project/.agents/skills/example/SKILL.md",
+        "/project/skills/demo/notes.txt",
+        "/project/skills/demo/guide.markdown",
+        "/workspace/.cursor/rules/house-style.mdc",
+        "/home/user/.claude/rules/PROMPT",
+    ] {
+        assert!(is_instruction_file(path), "{path} carries instructions");
+    }
+}
+
 #[test]
 fn resolve_auto_mode_returns_full_for_instruction_files() {
     let mode = resolve_auto_mode(

@@ -1,14 +1,27 @@
 //! Small, self-contained helper functions extracted from mod.rs to keep
 //! the main module below the LOC gate.
 
+/// Document extensions that carry instructions. Anything else beneath a skill
+/// or rules directory is implementation, not instruction (#1794).
+///
+/// An extensionless file counts as a document: rule files are routinely named
+/// without one (`.cursorrules`, `PROMPT`), and no language ships source that way.
+const INSTRUCTION_DOC_EXTENSIONS: &[&str] = &["md", "mdc", "markdown", "txt", "rst", "adoc"];
+
+/// Whether `path` is an instruction document that must always be read complete.
+///
+/// Matching is by *file*, never by ancestor directory alone (#1794). A skill
+/// ships its instructions as documents and its implementation as source, so a
+/// `.ts`/`.py`/`.rs` file under `skills/` is ordinary code: forcing it to
+/// `full` turned a bounded structural request into a large truncated dump —
+/// the caller lost the map it asked for *and* the tail of the file.
 pub fn is_instruction_file(path: &str) -> bool {
     let lower = path.to_lowercase();
-    let filename = std::path::Path::new(&lower)
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("");
+    let file = std::path::Path::new(&lower);
+    let filename = file.file_name().and_then(|f| f.to_str()).unwrap_or("");
 
-    matches!(
+    // Instruction documents by name, wherever they live.
+    if matches!(
         filename,
         "skill.md"
             | "agents.md"
@@ -17,10 +30,19 @@ pub fn is_instruction_file(path: &str) -> bool {
             | ".clinerules"
             | "lean-ctx.md"
             | "lean-ctx.mdc"
-    ) || lower.contains("/skills/")
+    ) {
+        return true;
+    }
+
+    // Inside an instruction directory, only documents qualify.
+    let in_instruction_dir = lower.contains("/skills/")
         || lower.contains("/.cursor/rules/")
-        || lower.contains("/.claude/rules/")
-        || lower.contains("/agents.md")
+        || lower.contains("/.claude/rules/");
+    in_instruction_dir
+        && file
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_none_or(|ext| INSTRUCTION_DOC_EXTENSIONS.contains(&ext))
 }
 
 pub(super) fn find_similar_and_update_semantic_index(path: &str, content: &str) -> Option<String> {
