@@ -83,6 +83,39 @@ fn write_json_atomic(dir: &Path, path: &Path, json: &str) -> Result<(), String> 
     Ok(())
 }
 
+/// Marker that identifies a fact as machine-derived rather than curated.
+///
+/// Both automatic producers already carry it: `extract_session_facts` tags the
+/// *category* (`auto:decision`, `auto:pattern`, `auto:blocker`) and
+/// `auto_capture` derives an `auto:`-prefixed *key*. Nothing a person writes
+/// through `ctx_knowledge(action="remember")` does.
+pub(crate) const MACHINE_DERIVED_PREFIX: &str = "auto:";
+
+/// Whether this fact was derived by lean-ctx rather than written by a person.
+pub(crate) fn is_machine_derived(category: &str, key: &str) -> bool {
+    category.trim_start().starts_with(MACHINE_DERIVED_PREFIX)
+        || key.trim_start().starts_with(MACHINE_DERIVED_PREFIX)
+}
+
+/// Whether a machine-derived fact may enter the durable store right now.
+///
+/// #1802: `auto_capture = false` was honoured by exactly one producer
+/// (`auto_capture::capture_finding`) and ignored by the other
+/// (`extract_session_facts`, reached from both the consolidation engine and
+/// the session *save* path) — so a single MCP call re-materialised every
+/// deleted `auto:*` fact, complete with its original `created_at`, and a
+/// curated store could not be kept clean.
+///
+/// The gate therefore lives here, at the store's own ingestion points, and not
+/// at the producers: a check placed at a call site only covers the call sites
+/// that exist when it is written, which is exactly how this defect arose.
+/// Session state itself is left untouched — it is ephemeral, capacity-capped,
+/// and backs handoff, session recap and metrics, none of which this key
+/// disables.
+pub(crate) fn machine_derived_writes_allowed() -> bool {
+    crate::core::auto_capture::is_enabled()
+}
+
 impl ProjectKnowledge {
     /// Return the most recent active decision-like facts for session handoff.
     /// Adds a pre-built fact, coalescing repeated observations into confirmations.
@@ -92,6 +125,12 @@ impl ProjectKnowledge {
         let trimmed_val = fact.value.trim().to_string();
         fact.value = trimmed_val;
         if fact.category.is_empty() || fact.value.is_empty() {
+            return false;
+        }
+        // #1802: refuse machine-derived facts while auto-capture is off. Placed
+        // before the coalescing branch below so a disabled run cannot even
+        // refresh `last_confirmed` on facts a previous enabled run left behind.
+        if is_machine_derived(&fact.category, &fact.key) && !machine_derived_writes_allowed() {
             return false;
         }
 
@@ -434,6 +473,116 @@ impl ProjectKnowledge {
 mod tests {
     use super::*;
     use fs2::FileExt;
+
+    // --- #1802: `auto_capture = false` must hold at the store, not the callers ---
+
+    fn machine_fact(category: &str, key: &str) -> KnowledgeFact {
+        let now = chrono::Utc::now();
+        KnowledgeFact {
+            category: category.to_string(),
+            key: key.to_string(),
+            value: "Finding: run-guards.ts: Read run-guards.ts (92L)".to_string(),
+            source_session: "session-1".to_string(),
+            confidence: 0.8,
+            created_at: now,
+            last_confirmed: now,
+            retrieval_count: 0,
+            last_retrieved: None,
+            valid_from: None,
+            valid_until: None,
+            supersedes: None,
+            confirmation_count: 1,
+            feedback_up: 0,
+            feedback_down: 0,
+            last_feedback: None,
+            privacy: Default::default(),
+            sensitivity: Default::default(),
+            imported_from: None,
+            archetype: Default::default(),
+            fidelity: None,
+            revision_count: 0,
+        }
+    }
+
+    #[test]
+    fn machine_derived_is_recognised_in_either_ingestion_shape() {
+        // `extract_session_facts` marks the category; `auto_capture` marks the
+        // key. Both producers must be recognisable by one predicate.
+        assert!(is_machine_derived("auto:blocker", "run-guards.ts"));
+        assert!(is_machine_derived("blocker", "auto:config.rs"));
+        assert!(!is_machine_derived("konventionen", "naming"));
+        assert!(!is_machine_derived("ops", "deploy"));
+    }
+
+    #[test]
+    fn a_curated_fact_is_never_affected_by_the_gate() {
+        // The key disables *automatic* capture. A fact a person wrote must be
+        // storable whatever the flag says, or the feature would be a footgun.
+        let mut knowledge = ProjectKnowledge::new("/tmp/project");
+        assert!(
+            knowledge.add_fact(machine_fact("konventionen", "naming")),
+            "curated facts must always be accepted"
+        );
+    }
+
+    #[test]
+    fn disabled_capture_blocks_every_machine_derived_shape() {
+        // The regression: a single MCP call re-materialised deleted `auto:*`
+        // facts because only one of two producers consulted the flag. Asserting
+        // at the store covers both, and any producer added later.
+        let _env = crate::core::data_dir::test_env_lock();
+        crate::test_env::set_var("LEAN_CTX_AUTO_CAPTURE", "0");
+
+        let mut knowledge = ProjectKnowledge::new("/tmp/project");
+        let category_marked = knowledge.add_fact(machine_fact("auto:blocker", "run-guards.ts"));
+        let key_marked = knowledge.add_fact(machine_fact("blocker", "auto:config.rs"));
+
+        crate::test_env::remove_var("LEAN_CTX_AUTO_CAPTURE");
+
+        assert!(!category_marked, "auto:* category must be refused");
+        assert!(!key_marked, "auto:* key must be refused");
+        assert!(
+            knowledge.facts.is_empty(),
+            "nothing machine-derived may reach the durable store"
+        );
+    }
+
+    #[test]
+    fn enabled_capture_still_stores_machine_derived_facts() {
+        let _env = crate::core::data_dir::test_env_lock();
+        crate::test_env::set_var("LEAN_CTX_AUTO_CAPTURE", "1");
+
+        let mut knowledge = ProjectKnowledge::new("/tmp/project");
+        let stored = knowledge.add_fact(machine_fact("auto:blocker", "run-guards.ts"));
+
+        crate::test_env::remove_var("LEAN_CTX_AUTO_CAPTURE");
+
+        assert!(stored, "the default behaviour must be unchanged");
+    }
+
+    #[test]
+    fn disabled_capture_does_not_refresh_existing_machine_facts() {
+        // Facts from an earlier enabled run stay on disk — the fix stops new
+        // writes, it does not delete history. But a disabled run must not keep
+        // touching them either, or they would look perpetually fresh to the
+        // lifecycle and never age out.
+        let _env = crate::core::data_dir::test_env_lock();
+        crate::test_env::set_var("LEAN_CTX_AUTO_CAPTURE", "1");
+        let mut knowledge = ProjectKnowledge::new("/tmp/project");
+        knowledge.add_fact(machine_fact("auto:blocker", "run-guards.ts"));
+        let confirmed_while_enabled = knowledge.facts[0].last_confirmed;
+
+        crate::test_env::set_var("LEAN_CTX_AUTO_CAPTURE", "0");
+        let refreshed = knowledge.add_fact(machine_fact("auto:blocker", "run-guards.ts"));
+        crate::test_env::remove_var("LEAN_CTX_AUTO_CAPTURE");
+
+        assert!(!refreshed);
+        assert_eq!(knowledge.facts.len(), 1);
+        assert_eq!(
+            knowledge.facts[0].last_confirmed, confirmed_while_enabled,
+            "a refused write must not refresh the existing fact"
+        );
+    }
 
     #[test]
     fn file_lock_is_exclusive_across_handles() {

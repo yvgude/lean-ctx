@@ -129,6 +129,15 @@ impl ProjectKnowledge {
         confidence: f32,
         policy: &MemoryPolicy,
     ) -> Option<Contradiction> {
+        // #1802: the store refuses machine-derived facts while auto-capture is
+        // off, whichever ingestion shape a producer uses. `add_fact` carries the
+        // same guard; between them no producer — present or future — can put an
+        // `auto:*` fact into the durable store behind the operator's back.
+        if super::persist::is_machine_derived(category, key)
+            && !super::persist::machine_derived_writes_allowed()
+        {
+            return None;
+        }
         let contradiction = self.check_contradiction(category, key, value, policy);
 
         if let Some(existing) = self
