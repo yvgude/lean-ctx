@@ -166,6 +166,21 @@ fn subagent_scope() -> Option<String> {
     static SCOPE: OnceLock<Option<String>> = OnceLock::new();
     SCOPE
         .get_or_init(|| {
+            // #1801: the test binary must not inherit the developer's ambient
+            // agent environment. Running the suite inside Claude Code resolves a
+            // `proc:` scope for *every* test, which silently changes delivery
+            // behaviour — while the same tests pass in CI, where `CLAUDECODE` is
+            // unset. That divergence is invisible until it bites: the suite was
+            // green in CI and 31 tests failed locally purely because of an
+            // exported variable.
+            //
+            // Scope behaviour itself stays covered, through the pure cores
+            // (`resolve_scope`, `allows_stub`, `allows_cold_stub`), which take
+            // every input explicitly — the same reason the gate matrix is tested
+            // that way rather than through the process-global recency store.
+            if cfg!(test) {
+                return None;
+            }
             resolve_scope(
                 std::env::var("CURSOR_TASK_ID").ok().as_deref(),
                 std::env::var("CLAUDECODE").ok().as_deref(),
@@ -299,26 +314,49 @@ pub(crate) fn multiple_conversations_recent() -> bool {
         .is_ok_and(|v| distinct_within(&v, Instant::now(), CONCURRENCY_WINDOW) > 1)
 }
 
+/// Whether the active scope can name an *individual* caller.
+///
+/// #1801: the `proc:` scope was introduced for Claude Code (#1292) on the
+/// premise that "each MCP connection is a separate stdio process", so one
+/// process meant one consumer. That premise does not hold — Claude Code
+/// sub-agents reuse their parent's MCP connection and spawn no lean-ctx
+/// process of their own, so the parent and every sub-agent resolve the
+/// *identical* `proc:` id. A match therefore proves nothing about who is
+/// asking, and a stub served on it reaches a sub-agent whose context window
+/// never held the content.
+///
+/// This is the same hazard `multiple_conversations_recent` already fails
+/// closed on, so it gets the same treatment. `task:` (Cursor) and `custom:`
+/// (explicit override) do name one agent and stay unaffected; so does the
+/// legacy transcript path, where one daemon serves one conversation.
+pub(crate) fn scope_cannot_identify_caller() -> bool {
+    subagent_scope().is_some_and(|scope| scope.starts_with("proc:"))
+}
+
 /// Whether a `[unchanged]` stub may be served for an entry that was delivered to
 /// `delivered`, given the `current` conversation.
 ///
 /// `current == None` (no conversation context) preserves the legacy
-/// process-scoped behavior — stub allowed — **unless** more than one conversation
-/// has been active recently, in which case every stub is withheld because the
-/// shared id signal can't identify the caller (#1040).
+/// process-scoped behavior — stub allowed — **unless** the caller cannot be
+/// identified: more than one conversation has been active recently (#1040), or
+/// the scope is only process-derived (#1801). Then every stub is withheld.
 pub(crate) fn conversation_allows_stub(current: Option<&str>, delivered: Option<&str>) -> bool {
     allows_stub(
         scope_enabled(),
-        multiple_conversations_recent(),
+        multiple_conversations_recent() || scope_cannot_identify_caller(),
         current,
         delivered,
     )
 }
 
 /// Pure decision core (no env / global reads) so the full matrix is unit-testable.
+///
+/// `unprovable` folds together every reason a matching id fails to prove the
+/// content is in *this* caller's context: several live chats (#1040) and a
+/// scope that cannot name one caller (#1801).
 fn allows_stub(
     scope_on: bool,
-    concurrent: bool,
+    unprovable: bool,
     current: Option<&str>,
     delivered: Option<&str>,
 ) -> bool {
@@ -326,9 +364,9 @@ fn allows_stub(
         // Explicit legacy mode: one daemon == one conversation by contract.
         return true;
     }
-    if concurrent {
-        // Multiple chats live: a matching id can't be trusted to name THIS caller,
-        // so nothing is provably in-context — withhold every stub (#1040).
+    if unprovable {
+        // A matching id can't be trusted to name THIS caller, so nothing is
+        // provably in-context — withhold every stub (#1040, #1801).
         return false;
     }
     match (current, delivered) {
@@ -354,12 +392,17 @@ pub(crate) fn conversation_allows_cold_stub(
     current: Option<&str>,
     delivered: Option<&str>,
 ) -> bool {
-    allows_cold_stub(multiple_conversations_recent(), current, delivered)
+    allows_cold_stub(
+        multiple_conversations_recent() || scope_cannot_identify_caller(),
+        current,
+        delivered,
+    )
 }
 
-/// Pure decision core of [`conversation_allows_cold_stub`].
-fn allows_cold_stub(concurrent: bool, current: Option<&str>, delivered: Option<&str>) -> bool {
-    !concurrent && matches!((current, delivered), (Some(c), Some(d)) if c == d)
+/// Pure decision core of [`conversation_allows_cold_stub`]. `unprovable` carries
+/// the same meaning as in [`allows_stub`].
+fn allows_cold_stub(unprovable: bool, current: Option<&str>, delivered: Option<&str>) -> bool {
+    !unprovable && matches!((current, delivered), (Some(c), Some(d)) if c == d)
 }
 
 #[cfg(test)]
@@ -370,9 +413,47 @@ mod tests {
     // `allows_cold_stub`) so the assertions are deterministic regardless of the
     // process-global recency store, which other tests mutate in parallel.
 
+    /// #1801: a `proc:` scope is shared by the parent and every Claude Code
+    /// sub-agent, so identical ids prove nothing about who is asking. The gate
+    /// must withhold exactly as it does for concurrent chats — otherwise a
+    /// sub-agent receives a reference to content it has never seen.
+    #[test]
+    fn process_derived_scope_withholds_stubs_even_when_ids_match() {
+        let scope = "proc:4242-1700000000";
+        assert!(
+            !allows_stub(true, true, Some(scope), Some(scope)),
+            "a shared process scope must not authorize a stub"
+        );
+        assert!(
+            !allows_cold_stub(true, Some(scope), Some(scope)),
+            "the cold path must withhold for the same reason"
+        );
+    }
+
+    /// A scope that *does* name one agent keeps its savings: Cursor's `task:`
+    /// and an explicit `custom:` override are per-agent by construction.
+    #[test]
+    fn per_agent_scopes_still_allow_stubs() {
+        for scope in ["task:abc123", "custom:my-worker"] {
+            assert!(
+                allows_stub(true, false, Some(scope), Some(scope)),
+                "{scope} identifies one caller and must keep deduplicating"
+            );
+        }
+    }
+
+    #[test]
+    fn only_process_scopes_are_treated_as_unidentifiable() {
+        assert!(subagent_scope_from(Some("abc")).is_some_and(|s| !s.starts_with("proc:")));
+        assert!(
+            resolve_scope(None, Some("1"), None, "4242-1700000000")
+                .is_some_and(|s| s.starts_with("proc:")),
+            "Claude Code without a per-subagent id must resolve to a proc: scope"
+        );
+    }
+
     #[test]
     fn no_current_context_allows_stub_legacy() {
-        // Single-conversation daemon, scoping on: behave exactly as before.
         assert!(allows_stub(true, false, None, None));
         assert!(allows_stub(true, false, None, Some("conv-a")));
     }

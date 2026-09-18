@@ -46,6 +46,7 @@ pub fn check_content(path: &str, content: &str, fresh: bool) -> DedupAction {
     }
     check_content_enabled(
         super::kernel_config::features().content_dedup,
+        crate::core::conversation::scope_cannot_identify_caller(),
         path,
         content,
     )
@@ -74,7 +75,7 @@ pub fn apply_dedup(path: &str, content: &str) -> String {
 }
 
 fn apply_dedup_enabled(enabled: bool, path: &str, content: &str) -> String {
-    match check_content_enabled(enabled, path, content) {
+    match check_content_enabled(enabled, false, path, content) {
         DedupAction::DeliverStub { stub } => stub,
         DedupAction::DeliverFull | DedupAction::DeliverModified => content.to_owned(),
     }
@@ -93,18 +94,43 @@ pub fn reset_dedup() {
     *lock(stats()) = DedupStats::default();
 }
 
-fn check_content_enabled(enabled: bool, path: &str, content: &str) -> DedupAction {
+/// `callers_indistinguishable` makes the ledger fail closed (#1804).
+///
+/// The ledger is process-global and keyed on path alone — it carries no
+/// session, conversation or agent argument, so it cannot tell two callers
+/// apart. That is sound only while one process serves one context window. In
+/// Claude Code a single lean-ctx process serves the parent session *and* every
+/// sub-agent, so a sub-agent's **first** read of a file the parent already read
+/// matched the parent's fingerprint and got `already in context` — a stub for
+/// content that agent never received, with nothing in it to signal the loss.
+///
+/// Dedup's whole premise is that the content sits in the requesting model's
+/// context window. When that cannot be established, the only safe answer is the
+/// content itself: re-delivering costs tokens, delivering a dangling reference
+/// costs the caller its data.
+fn check_content_enabled(
+    enabled: bool,
+    callers_indistinguishable: bool,
+    path: &str,
+    content: &str,
+) -> DedupAction {
     if !enabled {
         return DedupAction::DeliverFull;
     }
 
     let result = lock(dedup()).check_and_record(path, content);
     match result {
-        DedupResult::Unchanged { hash, saved_tokens } => {
+        DedupResult::Unchanged { hash, saved_tokens } if !callers_indistinguishable => {
             record_check(true, saved_tokens);
             DedupAction::DeliverStub {
                 stub: format_unchanged_stub(path, &hash),
             }
+        }
+        // Recorded above, so a later read by the same caller still dedups once
+        // the scope can identify it; this delivery just cannot be a stub.
+        DedupResult::Unchanged { .. } => {
+            record_check(false, 0);
+            DedupAction::DeliverFull
         }
         DedupResult::Fresh => {
             let modified = !lock(seen_paths()).insert(path.to_owned());
@@ -170,10 +196,37 @@ pub mod tests {
     }
 
     #[test]
+    fn indistinguishable_callers_never_receive_a_stub() {
+        // #1804: no test covered two distinct callers reading the same unchanged
+        // path, because every test resets the ledger first. In Claude Code one
+        // process serves the parent and all its sub-agents, so the second read
+        // here models a *different* agent's first read — it must get content.
+        let _guard = isolated();
+        check_content_enabled(true, true, "src/lib.rs", "content");
+        assert_eq!(
+            check_content_enabled(true, true, "src/lib.rs", "content"),
+            DedupAction::DeliverFull,
+            "a ledger that cannot tell callers apart must not substitute a stub"
+        );
+    }
+
+    #[test]
+    fn indistinguishable_callers_do_not_count_as_cache_hits() {
+        // A withheld stub saved nothing; recording it as a hit would overstate
+        // savings and hide the regression in `tools health`.
+        let _guard = isolated();
+        check_content_enabled(true, true, "a", "one");
+        check_content_enabled(true, true, "a", "one");
+        let stats = dedup_stats();
+        assert_eq!(stats.cache_hits, 0);
+        assert_eq!(stats.tokens_saved, 0);
+    }
+
+    #[test]
     fn new_content_delivers_full() {
         let _guard = isolated();
         assert_eq!(
-            check_content_enabled(true, "src/lib.rs", "content"),
+            check_content_enabled(true, false, "src/lib.rs", "content"),
             DedupAction::DeliverFull
         );
     }
@@ -181,9 +234,9 @@ pub mod tests {
     #[test]
     fn repeated_content_delivers_stub() {
         let _guard = isolated();
-        check_content_enabled(true, "src/lib.rs", "content");
+        check_content_enabled(true, false, "src/lib.rs", "content");
         assert!(matches!(
-            check_content_enabled(true, "src/lib.rs", "content"),
+            check_content_enabled(true, false, "src/lib.rs", "content"),
             DedupAction::DeliverStub { .. }
         ));
     }
@@ -191,9 +244,9 @@ pub mod tests {
     #[test]
     fn modified_content_delivers_modified() {
         let _guard = isolated();
-        check_content_enabled(true, "src/lib.rs", "before");
+        check_content_enabled(true, false, "src/lib.rs", "before");
         assert_eq!(
-            check_content_enabled(true, "src/lib.rs", "after"),
+            check_content_enabled(true, false, "src/lib.rs", "after"),
             DedupAction::DeliverModified
         );
     }
@@ -202,11 +255,11 @@ pub mod tests {
     fn disabled_always_full() {
         let _guard = isolated();
         assert_eq!(
-            check_content_enabled(false, "src/lib.rs", "content"),
+            check_content_enabled(false, false, "src/lib.rs", "content"),
             DedupAction::DeliverFull
         );
         assert_eq!(
-            check_content_enabled(false, "src/lib.rs", "content"),
+            check_content_enabled(false, false, "src/lib.rs", "content"),
             DedupAction::DeliverFull
         );
         assert_eq!(dedup_stats().total_checks, 0);
@@ -226,10 +279,10 @@ pub mod tests {
     #[test]
     fn invalidate_forces_full() {
         let _guard = isolated();
-        check_content_enabled(true, "src/lib.rs", "content");
+        check_content_enabled(true, false, "src/lib.rs", "content");
         invalidate("src/lib.rs");
         assert_eq!(
-            check_content_enabled(true, "src/lib.rs", "content"),
+            check_content_enabled(true, false, "src/lib.rs", "content"),
             DedupAction::DeliverFull
         );
     }
@@ -237,11 +290,11 @@ pub mod tests {
     #[test]
     fn stats_track_hits() {
         let _guard = isolated();
-        check_content_enabled(true, "a", "one");
-        check_content_enabled(true, "a", "one");
-        check_content_enabled(true, "a", "one");
-        check_content_enabled(true, "b", "two");
-        check_content_enabled(true, "b", "two");
+        check_content_enabled(true, false, "a", "one");
+        check_content_enabled(true, false, "a", "one");
+        check_content_enabled(true, false, "a", "one");
+        check_content_enabled(true, false, "b", "two");
+        check_content_enabled(true, false, "b", "two");
 
         let stats = dedup_stats();
         assert_eq!(stats.total_checks, 5);
