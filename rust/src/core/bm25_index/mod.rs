@@ -1081,7 +1081,10 @@ fn list_code_files(root: &Path) -> Vec<String> {
     let filter = crate::core::index_filter::IndexFileFilter::resolve(&cfg);
 
     let walker = ignore::WalkBuilder::new(root)
-        .hidden(true)
+        // #1792: the BM25 corpus is authoritative for `ctx_compose`/`ctx_overview`,
+        // so omitting tracked dotfiles made "no match" indistinguishable from
+        // "not indexed".
+        .hidden(crate::core::walk_filter::SKIP_HIDDEN_IN_CONTENT_WALK)
         .git_ignore(filter.respect_gitignore)
         .git_global(filter.respect_gitignore)
         .git_exclude(filter.respect_gitignore)

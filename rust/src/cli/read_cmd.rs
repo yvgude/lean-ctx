@@ -643,7 +643,9 @@ pub fn cmd_find(args: &[String]) {
     let mut found = false;
     let walk_root = crate::core::walk_filter::explicit_walk_root(std::path::Path::new(path));
     for entry in ignore::WalkBuilder::new(&walk_root)
-        .hidden(true)
+        // #1792: a tracked dotfile is part of the project. `.gitignore` already
+        // decides membership, and it is honoured below.
+        .hidden(crate::core::walk_filter::SKIP_HIDDEN_IN_CONTENT_WALK)
         .git_ignore(true)
         .git_global(true)
         .git_exclude(true)

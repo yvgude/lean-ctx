@@ -504,7 +504,9 @@ where
     }
 
     let walker = WalkBuilder::new(root_path)
-        .hidden(true)
+        // #1792: same corpus rule as the BM25 walk above — see
+        // `walk_filter::SKIP_HIDDEN_IN_CONTENT_WALK`.
+        .hidden(crate::core::walk_filter::SKIP_HIDDEN_IN_CONTENT_WALK)
         .max_depth(Some(MAX_WALK_DEPTH))
         .git_ignore(respect_gitignore)
         .git_global(respect_gitignore)

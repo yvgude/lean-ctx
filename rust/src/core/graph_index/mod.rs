@@ -634,7 +634,8 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
     // data would otherwise force needless graph rescans forever).
     let index_filter = crate::core::index_filter::IndexFileFilter::effective();
     let walker = ignore::WalkBuilder::new(root_abs)
-        .hidden(true)
+        // #1792: corpus membership follows git, not a leading dot.
+        .hidden(crate::core::walk_filter::SKIP_HIDDEN_IN_CONTENT_WALK)
         .git_ignore(index_filter.respect_gitignore)
         .git_global(index_filter.respect_gitignore)
         .git_exclude(index_filter.respect_gitignore)
@@ -768,7 +769,8 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     let index_filter = crate::core::index_filter::IndexFileFilter::resolve(&cfg);
 
     let walker = ignore::WalkBuilder::new(&project_root)
-        .hidden(true)
+        // #1792: kept identical to the BM25 walk, as the comment above promises.
+        .hidden(crate::core::walk_filter::SKIP_HIDDEN_IN_CONTENT_WALK)
         .git_ignore(index_filter.respect_gitignore)
         .git_global(index_filter.respect_gitignore)
         .git_exclude(index_filter.respect_gitignore)
