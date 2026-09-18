@@ -642,3 +642,55 @@ fn backtick_substitution_restarts_quoting_too() {
         "the older backtick form has the same restart rule"
     );
 }
+
+// --- #1793: `[[ … ]]` is a conditional construct, not a command ---
+
+#[test]
+fn double_bracket_shields_internal_operators() {
+    // The `&&` inside the condition joins predicates, not commands. Splitting
+    // there produced fragments (`[[ -x ./setup`, `-x ./scripts/lint ]]`) that
+    // resolve to no real command, so the whole line was rejected.
+    assert_eq!(
+        extract_all_commands("[[ -x ./setup && -x ./scripts/lint ]]"),
+        vec!["[[ -x ./setup && -x ./scripts/lint ]]"],
+        "operators inside a conditional must not split it"
+    );
+}
+
+#[test]
+fn double_bracket_after_earlier_segments_stays_intact() {
+    // The reported shape: a conditional that parses standalone but broke once
+    // other segments preceded it in the same command.
+    assert_eq!(
+        extract_all_commands("git status --short; if [[ -n x ]]; then printf 'ok'; fi"),
+        vec![
+            "git status --short",
+            "if [[ -n x ]]",
+            "then printf 'ok'",
+            "fi"
+        ],
+        "preceding segments must not change how the conditional parses"
+    );
+}
+
+#[test]
+fn separators_after_a_closed_conditional_still_split() {
+    // The shield must end at `]]` — otherwise everything after a conditional
+    // would escape validation entirely.
+    assert_eq!(
+        extract_all_commands("[[ -n x ]] && rm -rf /tmp/x"),
+        vec!["[[ -n x ]]", "rm -rf /tmp/x"],
+        "a command after the conditional is still its own segment"
+    );
+}
+
+#[test]
+fn glob_character_class_does_not_open_a_conditional() {
+    // `a[[:alpha:]]` is a glob, not a conditional. Treating its `[[` as an
+    // opener would shield the rest of the line from splitting.
+    assert_eq!(
+        extract_all_commands("ls a[[:alpha:]]; id"),
+        vec!["ls a[[:alpha:]]", "id"],
+        "a glob character class must not shield later operators"
+    );
+}

@@ -148,6 +148,11 @@ struct Frame {
     /// earlier physical line (e.g. after heredoc-body stripping collapses the
     /// body between them) is misread as its own bare command segment.
     brace_depth: u32,
+    /// #1793: `[[ … ]]` is a bash conditional *construct*, not a command, and
+    /// the `&&`/`||` inside it join predicates rather than commands. Without
+    /// shielding, `[[ -x a && -x b ]]` was split mid-condition into fragments
+    /// like `[[ -x a` and `-x b ]]`, none of which resolve to a real command.
+    bracket_depth: u32,
     kind: FrameKind,
 }
 
@@ -169,14 +174,54 @@ impl Frame {
             in_double_quote: false,
             paren_depth: 0,
             brace_depth: 0,
+            bracket_depth: 0,
             kind,
         }
     }
 
     /// Inside quotes, or inside a group whose closing delimiter is still open.
     const fn shields_operators(&self) -> bool {
-        self.in_single_quote || self.in_double_quote || self.paren_depth > 0 || self.brace_depth > 0
+        self.in_single_quote
+            || self.in_double_quote
+            || self.paren_depth > 0
+            || self.brace_depth > 0
+            || self.bracket_depth > 0
     }
+}
+
+/// True when the two bytes at `i` form a standalone `[[` token — the opener of
+/// a bash conditional (#1793).
+///
+/// Bash requires `[[` to be its own word, and so does this: a word boundary
+/// before and whitespace after. That distinction is what keeps a glob character
+/// class (`ls a[[:alpha:]]`) or a nested array subscript (`${arr[[i]]}`) from
+/// opening a depth that would never close and swallow the rest of the line.
+fn opens_double_bracket(bytes: &[u8], i: usize) -> bool {
+    if bytes.get(i) != Some(&b'[') || bytes.get(i + 1) != Some(&b'[') {
+        return false;
+    }
+    let boundary_before = i == 0
+        || matches!(
+            bytes[i - 1],
+            b' ' | b'\t' | b'\n' | b'\r' | b';' | b'&' | b'|' | b'('
+        );
+    let space_after = matches!(bytes.get(i + 2), Some(b' ' | b'\t' | b'\n' | b'\r'));
+    boundary_before && space_after
+}
+
+/// True when the two bytes at `i` form a standalone `]]` token closing a
+/// conditional opened by [`opens_double_bracket`]. Mirrors its word-boundary
+/// rule: whitespace before, and a separator or end of input after.
+fn closes_double_bracket(bytes: &[u8], i: usize) -> bool {
+    if bytes.get(i) != Some(&b']') || bytes.get(i + 1) != Some(&b']') {
+        return false;
+    }
+    let space_before = i > 0 && matches!(bytes[i - 1], b' ' | b'\t' | b'\n' | b'\r');
+    let separator_after = matches!(
+        bytes.get(i + 2),
+        None | Some(b' ' | b'\t' | b'\n' | b'\r' | b';' | b'&' | b'|' | b')')
+    );
+    space_before && separator_after
 }
 
 /// Split command string on shell operators: ;, &&, ||, |
@@ -252,6 +297,22 @@ pub(super) fn split_on_operators(command: &str) -> Vec<&str> {
 
         let at_top = stack.len() == 1;
         let unshielded = at_top && !frame.shields_operators();
+
+        // #1793: enter/leave a `[[ … ]]` conditional so its internal `&&`/`||`
+        // stay part of the condition. Both delimiters must be standalone words
+        // (see the helpers), so a glob class (`ls a[[:alpha:]]`) or an array
+        // subscript never opens a depth that would swallow the rest of the line.
+        if ch == b'[' && opens_double_bracket(bytes, i) {
+            stack.last_mut().expect("frame").bracket_depth += 1;
+            i += 2;
+            continue;
+        }
+        if ch == b']' && frame.bracket_depth > 0 && closes_double_bracket(bytes, i) {
+            let top = stack.last_mut().expect("frame");
+            top.bracket_depth = top.bracket_depth.saturating_sub(1);
+            i += 2;
+            continue;
+        }
 
         match ch {
             b'\\' => {

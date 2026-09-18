@@ -263,11 +263,18 @@ const UNCONDITIONAL_BLOCKED: &[&str] = &["eval", "exec", "source", "."];
 /// POSIX shell builtins that are executed by the shell itself — they cannot
 /// spawn an external process or escape any sandbox. Builtins bypass the
 /// allowlist check entirely (#1022).
+///
+/// `[[` is bash conditional *syntax* rather than a POSIX builtin, but it
+/// belongs here for the same reason (#1793): the shell evaluates it itself, it
+/// can spawn nothing, and `test`/`[` — its exact POSIX equivalents — are
+/// already listed. Its operands are shielded from operator splitting by
+/// `tokenizer::opens_double_bracket`, so any command substitution inside a
+/// condition is still extracted and validated separately.
 pub(super) const SHELL_BUILTINS: &[&str] = &[
-    "exit", "command", ":", "true", "false", "cd", "echo", "test", "[", "read", "set", "unset",
-    "export", "local", "return", "shift", "wait", "trap", "type", "hash", "pwd", "printf", "let",
-    "declare", "readonly", "getopts", "umask", "ulimit", "break", "continue", "bg", "fg", "jobs",
-    "times", "builtin", "enable", "shopt", "complete", "compgen",
+    "exit", "command", ":", "true", "false", "cd", "echo", "test", "[", "[[", "read", "set",
+    "unset", "export", "local", "return", "shift", "wait", "trap", "type", "hash", "pwd", "printf",
+    "let", "declare", "readonly", "getopts", "umask", "ulimit", "break", "continue", "bg", "fg",
+    "jobs", "times", "builtin", "enable", "shopt", "complete", "compgen",
 ];
 
 /// Interpreters that can execute arbitrary code via -c/-e flags.
