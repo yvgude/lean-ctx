@@ -714,6 +714,13 @@ fn list_code_files_respects_max_files_cap() {
 
 #[test]
 fn list_code_files_honors_bm25_max_files_config() {
+    // The env lock is load-bearing, not ceremony: this test points
+    // LEAN_CTX_CONFIG_DIR at a config with `bm25_max_files = 3`, and
+    // `Config::load_arc` memoizes into a process-wide cache. Without the lock
+    // a parallel test can observe that cap, and this test can observe another
+    // test's config — the pattern every other env-touching test in this file
+    // already follows.
+    let _env = crate::core::data_dir::test_env_lock();
     let td = tempdir().expect("tempdir");
     let root = td.path();
 
