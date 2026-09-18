@@ -141,6 +141,20 @@ fn compress_with_strategy(
     }
 
     let compressed = kept.join("\n\n");
+    // #1789: a compressor must never destroy all content. Section *removal* is
+    // sound for a document — the surviving sections still carry the meaning —
+    // but a single-section input (a chat turn, a one-paragraph note) has
+    // nothing left to survive, so an empty result is data loss, not
+    // compression. Callers legitimately treat "smaller" as "better", so this
+    // has to be refused here rather than left for each of them to notice.
+    if compressed.trim().is_empty() && !content.trim().is_empty() {
+        return ProseResult {
+            compressed: content.to_string(),
+            original_tokens,
+            compressed_tokens: original_tokens,
+            sections_removed: 0,
+        };
+    }
     ProseResult {
         compressed_tokens: count_tokens_for(&compressed, COUNTING_FAMILY) as u64,
         compressed,
@@ -432,6 +446,27 @@ mod tests {
     #[ignore = "prose compressor edge case — revisit"]
     fn empty_content_returns_empty() {
         assert_eq!(compress_prose("   \n\t", None), ProseResult::default());
+    }
+
+    #[test]
+    fn a_lone_non_technical_paragraph_is_never_deleted() {
+        // #1789: the proxy emptied whole conversation turns. Aggressive drops
+        // any paragraph without a task/technical keyword, and a chat turn is a
+        // single paragraph — so the drop deleted the message. Compression may
+        // shrink content; it may never remove all of it.
+        for text in [
+            "Bonjour, quelle est la capitale de la France ?",
+            "La capitale de la France est Paris.",
+            "Et combien d habitants environ ?",
+        ] {
+            let result = ProseCompressor::new(Some("question"))
+                .with_strategy(CompressionStrategy::Aggressive)
+                .compress(text);
+            assert!(
+                !result.compressed.trim().is_empty(),
+                "compressing {text:?} returned an empty result"
+            );
+        }
     }
 
     #[test]

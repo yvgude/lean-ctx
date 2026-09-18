@@ -18,7 +18,7 @@ use crate::{
         effort_routing::score_complexity,
         live_zone::{compress_live_only, detect_live_zone},
         pre_optimize::classify_task,
-        prose_compress::compress_prose,
+        prose_compress::{CompressionStrategy, ProseCompressor},
     },
 };
 
@@ -195,9 +195,21 @@ impl CompressionPipeline {
             determinism_started,
         ));
 
+        // #1789: a stage that emptied a turn must revert, however good its
+        // savings look. Checked alongside the determinism proof because neither
+        // that proof nor the savings floor below can observe this failure mode.
+        let content_destroyed = destroys_content(&original_messages, messages);
+        if content_destroyed {
+            tracing::warn!(
+                "lean-ctx pipeline: compression emptied a message that had content; \
+                 reverting compression stages"
+            );
+        }
+
         let mut total_tokens_after = messages_tokens(messages);
         let mut total_savings_pct = savings_pct(total_tokens_before, total_tokens_after);
         let should_revert = determinism_unstable
+            || content_destroyed
             || (total_tokens_before > 0 && total_savings_pct < config.min_savings_pct);
         if should_revert {
             *messages = original_messages;
@@ -303,11 +315,57 @@ fn compress_live_prose(
     }
 }
 
+/// Compress one conversation turn.
+///
+/// #1789: this deliberately pins the strategy to [`CompressionStrategy::Light`]
+/// instead of letting `ProseCompressor::new` infer `Aggressive` from the
+/// presence of a task hint. `Aggressive` *drops* whole sections that carry no
+/// task/technical keyword — sound for a document, where the surviving sections
+/// still carry the content, but a chat turn is a single paragraph, so dropping
+/// its only section deletes the message. `Light` keeps every section and still
+/// applies the lossless pattern pass, which is the only squeeze a conversation
+/// turn may safely receive. Tool output keeps its section-dropping compressor
+/// in the `tool_results` stage, where whole-message deletion is impossible.
 fn compress_text(text: &mut String, task_class: &str) {
-    let result = compress_prose(text, Some(task_class));
-    if result.compressed_tokens < result.original_tokens && result.compressed.len() < text.len() {
+    let result = ProseCompressor::new(Some(task_class))
+        .with_strategy(CompressionStrategy::Light)
+        .compress(text);
+    if result.compressed_tokens < result.original_tokens
+        && result.compressed.len() < text.len()
+        && !result.compressed.trim().is_empty()
+    {
         *text = result.compressed;
     }
+}
+
+/// All text a message carries, across both wire shapes: a plain string
+/// (`content: "…"`, OpenAI) and a block array (`content: [{type:"text",…}]`,
+/// Anthropic).
+fn message_text(message: &Value) -> String {
+    match message.get("content") {
+        Some(Value::String(text)) => text.clone(),
+        Some(Value::Array(blocks)) => blocks
+            .iter()
+            .filter_map(|block| block.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join(""),
+        _ => String::new(),
+    }
+}
+
+/// True when compression emptied a message that arrived with text (#1789).
+///
+/// This is a *content* invariant, deliberately separate from the determinism
+/// guard's *cache-prefix* invariant: emptying every live turn leaves the frozen
+/// prefix byte-identical, so the determinism proof stays stable while the
+/// request loses everything the model was supposed to read. Savings-based
+/// reverting cannot catch it either — deleting all content scores as a perfect
+/// ~100% saving and sails past `min_savings_pct`.
+fn destroys_content(before: &[Value], after: &[Value]) -> bool {
+    before.len() == after.len()
+        && before.iter().zip(after).any(|(before, after)| {
+            !message_text(before).trim().is_empty() && message_text(after).trim().is_empty()
+        })
 }
 
 fn insert_header(headers: &mut axum::http::HeaderMap, name: &str, value: &str) {
@@ -448,5 +506,34 @@ mod tests {
         assert!(messages.is_empty());
         assert_eq!(report.total_tokens_before, 0);
         assert_eq!(report.total_tokens_after, 0);
+    }
+
+    /// #1789: the proxy emptied every non-system turn on provider routes.
+    ///
+    /// The prose stage runs `ProseCompressor` with a task hint, which selects
+    /// `CompressionStrategy::Aggressive`. That strategy drops any paragraph
+    /// without a hardcoded English technical keyword — and a chat turn *is* a
+    /// single paragraph, so dropping it deletes the whole message. The system
+    /// turn survived only because it sits in the frozen prefix.
+    #[test]
+    fn conversation_turns_never_lose_their_content() {
+        let mut messages = vec![
+            json!({"role": "system",    "content": "Tu es un assistant francais."}),
+            json!({"role": "user",      "content": "Bonjour, quelle est la capitale de la France ?"}),
+            json!({"role": "assistant", "content": "La capitale de la France est Paris."}),
+            json!({"role": "user",      "content": "Et combien d habitants environ ?"}),
+        ];
+
+        CompressionPipeline::run(&mut messages, &PipelineConfig::default());
+
+        for message in &messages {
+            let role = message["role"].as_str().unwrap_or_default();
+            let content = message["content"].as_str().unwrap_or_default();
+            assert!(
+                !content.trim().is_empty(),
+                "#1789: `{role}` turn was emptied by the compression pipeline; \
+                 upstream would receive a conversation the model cannot see"
+            );
+        }
     }
 }
