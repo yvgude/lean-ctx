@@ -1213,12 +1213,20 @@ pub(super) fn triage_bypass_requested(
 
 /// Whether the caller explicitly asked for the original bytes (#1582).
 ///
-/// Deliberately narrower than [`triage_bypass_requested`]: only `raw = true` and
-/// `mode = "raw"` count. Those two are the escape hatch every compression
-/// annotation points at, so they earn the larger verbatim turn budget. `full`,
-/// `lines:`, `anchored` and friends stay on the ordinary budget — they are
-/// routine reads, not a request to defeat compression, and exempting them would
-/// turn the backstop off for most traffic.
+/// Deliberately narrower than [`triage_bypass_requested`]: only `raw = true`,
+/// `mode = "raw"` and `inline = true` count. Those are the escape hatches every
+/// compression annotation points at, so they earn the larger verbatim turn
+/// budget. `full`, `lines:`, `anchored` and friends stay on the ordinary budget
+/// — they are routine reads, not a request to defeat compression, and exempting
+/// them would turn the backstop off for most traffic.
+///
+/// #1812: `inline` belongs here. It is the same request as `raw` — "return the
+/// command's own output, uncompressed" — and holding it to the smaller backstop
+/// truncated it at ~4k tokens while the identical command with `raw=true`
+/// returned in full. Worse, the compressed path is what produces the archive
+/// line, so a truncated `inline` response had no recovery route at all and its
+/// notice pointed at `ctx_read(lines=)`, which needs a path that command output
+/// does not have.
 pub(super) fn verbatim_requested(
     name: &str,
     args: Option<&serde_json::Map<String, serde_json::Value>>,
@@ -1230,6 +1238,10 @@ pub(super) fn verbatim_requested(
         args.get("raw")
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false)
+            || args
+                .get("inline")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
             || args
                 .get("mode")
                 .and_then(serde_json::Value::as_str)
@@ -1362,129 +1374,9 @@ fn record_decision_loop(
     }
 }
 
+// LOC gate: these tests live in their own file so `pipeline.rs` stays under
+// the 1500-line cap. `#[path]` keeps them a child module of `pipeline`, so they
+// still reach its private items through `super::`.
 #[cfg(test)]
-mod savings_tests {
-    use super::{
-        apply_task_triage_filter, compression_tracker_tokens, triage_bypass_requested,
-        verbatim_requested,
-    };
-
-    #[test]
-    fn test_tracker_in_pipeline() {
-        let mut tracker = crate::core::savings_tracker::SessionSavingsTracker::default();
-        let (raw, compressed) = compression_tracker_tokens("ctx_read", 75, 25).expect("tracked");
-        tracker.record_compression(raw, compressed, "ctx_read");
-        let after = tracker.session_summary();
-
-        assert_eq!(
-            (
-                after.total_raw,
-                after.total_compressed,
-                after.savings_tokens
-            ),
-            (100, 25, 75)
-        );
-    }
-
-    #[test]
-    fn triage_filter_rewrites_raw_output_and_tracks_removed_lines() {
-        let profile = crate::core::triage::profile::TaskProfileLocal {
-            confidence_milli: 500,
-            context_need_milli: 400,
-            ..Default::default()
-        };
-        let mut context = Some(crate::core::decision_loop_runtime::TaskContext {
-            task_id: String::new(),
-            session_id: String::new(),
-            triage_class: String::new(),
-            profile_intent: String::new(),
-            profile_complexity: String::new(),
-            filtered_lines: 0,
-            start_time: std::time::Instant::now(),
-        });
-        let raw = format!("// boilerplate\n{}", "content\n".repeat(100));
-
-        let filtered = apply_task_triage_filter(raw, Some(&profile), &mut context, 2);
-
-        assert!(!filtered.starts_with("// boilerplate"));
-        assert_eq!(context.as_ref().unwrap().filtered_lines, 1);
-    }
-
-    #[test]
-    fn triage_filter_fails_open_without_a_profile() {
-        let raw = "content\n".repeat(100);
-        let mut context = None;
-
-        assert_eq!(
-            apply_task_triage_filter(raw.clone(), None, &mut context, 2),
-            raw
-        );
-    }
-
-    #[test]
-    fn triage_filter_cap_zero_preserves_output_unchanged() {
-        let profile = crate::core::triage::profile::TaskProfileLocal {
-            confidence_milli: 500,
-            context_need_milli: 200,
-            ..Default::default()
-        };
-        let raw = format!("fn render() {{\n{}\n}}", "    token_value();\n".repeat(40));
-        let mut context = None;
-
-        assert_eq!(
-            apply_task_triage_filter(raw.clone(), Some(&profile), &mut context, 0),
-            raw
-        );
-    }
-
-    #[test]
-    fn ctx_read_always_bypasses_second_lossy_filter() {
-        let auto = serde_json::Map::from_iter([(
-            "mode".to_owned(),
-            serde_json::Value::String("auto".to_owned()),
-        )]);
-        assert!(triage_bypass_requested("ctx_read", Some(&auto)));
-
-        let shell = serde_json::Map::new();
-        assert!(!triage_bypass_requested("ctx_shell", Some(&shell)));
-    }
-
-    fn args(pairs: &[(&str, serde_json::Value)]) -> serde_json::Map<String, serde_json::Value> {
-        pairs
-            .iter()
-            .map(|(k, v)| ((*k).to_owned(), v.clone()))
-            .collect()
-    }
-
-    #[test]
-    fn raw_true_and_mode_raw_are_explicit_verbatim_requests() {
-        let raw_flag = args(&[("raw", serde_json::Value::Bool(true))]);
-        let raw_mode = args(&[("mode", serde_json::Value::String("raw".to_owned()))]);
-        assert!(verbatim_requested("ctx_read", Some(&raw_flag)));
-        assert!(verbatim_requested("ctx_read", Some(&raw_mode)));
-        assert!(verbatim_requested("ctx_shell", Some(&raw_flag)));
-    }
-
-    #[test]
-    fn ordinary_reads_stay_on_the_ordinary_budget() {
-        // #1582 raises the cap for an explicit escape hatch, not for the
-        // everyday modes — otherwise the backstop is off for most traffic.
-        for mode in ["full", "auto", "lines:1-40", "anchored", "signatures"] {
-            let a = args(&[("mode", serde_json::Value::String(mode.to_owned()))]);
-            assert!(
-                !verbatim_requested("ctx_read", Some(&a)),
-                "mode={mode} must not claim the verbatim budget"
-            );
-        }
-        let off = args(&[("raw", serde_json::Value::Bool(false))]);
-        assert!(!verbatim_requested("ctx_read", Some(&off)));
-        assert!(!verbatim_requested("ctx_read", None));
-    }
-
-    #[test]
-    fn other_tools_never_claim_the_verbatim_budget() {
-        let raw_flag = args(&[("raw", serde_json::Value::Bool(true))]);
-        assert!(!verbatim_requested("ctx_search", Some(&raw_flag)));
-        assert!(!verbatim_requested("ctx_compose", Some(&raw_flag)));
-    }
-}
+#[path = "pipeline_savings_tests.rs"]
+mod savings_tests;
