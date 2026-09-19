@@ -256,6 +256,21 @@ impl FromStr for ReadMode {
                     } else {
                         ReadMode::Lines(parse_line_range(payload, other)?)
                     }
+                } else if let Some(count) = other.trim().strip_prefix('-')
+                    && count.chars().all(|c| c.is_ascii_digit())
+                    && !count.is_empty()
+                {
+                    // #1813: the schema documents a bare `-N` tail form, but only
+                    // the `lines:-N` spelling was implemented. A bare `-3` fell
+                    // through to `Unknown` and was answered with the *head* of
+                    // the file — the caller read the wrong end, and on a long
+                    // file truncation hid that the tail never arrived. Honour
+                    // the documented spelling instead of removing it: `tail -N`
+                    // is what a caller reaches for, and `-N` is how they write it.
+                    ReadMode::LinesTail(
+                        parse_tail_count(count)
+                            .ok_or_else(|| ParseModeError::Malformed(other.to_string()))?,
+                    )
                 } else if let Some(payload) = other.strip_prefix("anchored:") {
                     ReadMode::Anchored(Some(parse_line_range(payload, other)?))
                 } else if let Some(payload) = other.strip_prefix("density:") {
@@ -270,6 +285,35 @@ impl FromStr for ReadMode {
             }
         })
     }
+}
+
+/// Rewrite the documented bare tail spelling `-N` to its canonical `lines:-N`
+/// form (#1813).
+///
+/// The schema has always advertised `-N=tail`, but only `lines:-N` was ever
+/// implemented. A bare `-3` therefore failed to parse as a mode and was
+/// answered with the *head* of the file, with no header and no warning — the
+/// caller read the wrong end, and on a long file the token cap hid that the
+/// tail had never been delivered. Silently returning the opposite end is the
+/// worst of the available answers, so the documented spelling is honoured
+/// rather than removed: `tail -N` is what a caller reaches for, and `-N` is how
+/// they write it.
+///
+/// This lives beside [`ReadMode`] because spelling is what that type owns, and
+/// because both entry points — the MCP handler and `lean-ctx read` — must agree.
+/// Canonicalizing to one internal form also avoids teaching a second spelling
+/// to the render path and cache key, which branch on `starts_with("lines:")` in
+/// several places each.
+///
+/// Only a pure `-<digits>` payload is rewritten. Anything else (`-N-M`, `-x`, a
+/// bare `-`) is left alone so it still reaches the normal unknown-mode warning
+/// instead of being silently reinterpreted — which is the failure this exists
+/// to remove.
+#[must_use]
+pub(crate) fn canonicalize_tail_mode(mode: &str) -> Option<String> {
+    let count = mode.trim().strip_prefix('-')?;
+    (!count.is_empty() && count.chars().all(|c| c.is_ascii_digit()))
+        .then(|| format!("lines:-{count}"))
 }
 
 impl fmt::Display for ReadMode {

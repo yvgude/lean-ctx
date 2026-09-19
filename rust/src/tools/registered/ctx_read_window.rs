@@ -173,9 +173,66 @@ pub(super) fn resolve_raw_alias(arg_raw: bool, mode_arg: Option<String>) -> Opti
     }
 }
 
+/// Rewrite the documented bare tail spelling `-N` to `lines:-N` (#1813).
+/// Thin wrapper over the shared rule in [`crate::tools::ctx_read::mode`] so the
+/// MCP handler and `lean-ctx read` cannot drift apart on spelling.
+pub(super) fn canonicalize_tail_mode(mode_arg: Option<String>) -> Option<String> {
+    let mode = mode_arg?;
+    Some(crate::tools::ctx_read::canonicalize_tail_mode(&mode).unwrap_or(mode))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // #1813: the schema documents `-N=tail`; only `lines:-N` was implemented,
+    // so a bare `-3` was answered with the head of the file, silently.
+    #[test]
+    fn bare_tail_mode_canonicalizes_to_lines_form() {
+        for (input, expected) in [
+            ("-3", "lines:-3"),
+            ("-1", "lines:-1"),
+            ("-250", "lines:-250"),
+        ] {
+            assert_eq!(
+                canonicalize_tail_mode(Some(input.to_string())),
+                Some(expected.to_string()),
+                "{input} is the documented tail spelling"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_and_other_modes_pass_through_untouched() {
+        for mode in [
+            "lines:-3", // already canonical
+            "full",
+            "signatures",
+            "lines:5-10",
+            "anchored:1-2",
+        ] {
+            assert_eq!(
+                canonicalize_tail_mode(Some(mode.to_string())),
+                Some(mode.to_string())
+            );
+        }
+        assert_eq!(canonicalize_tail_mode(None), None);
+    }
+
+    /// Only a pure `-<digits>` payload is a tail. Anything else must keep
+    /// reaching the unknown-mode warning rather than being silently
+    /// reinterpreted as something the caller did not ask for — which is the
+    /// exact failure this fix exists to remove.
+    #[test]
+    fn dash_shapes_that_are_not_tails_are_left_alone() {
+        for mode in ["-", "-x", "-3-5", "--3", "-3px", "- 3"] {
+            assert_eq!(
+                canonicalize_tail_mode(Some(mode.to_string())),
+                Some(mode.to_string()),
+                "{mode} must not be reinterpreted as a tail"
+            );
+        }
+    }
 
     // #1490: raw=true must NOT override an explicit lines: or anchored: mode.
     #[test]

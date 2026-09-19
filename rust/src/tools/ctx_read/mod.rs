@@ -21,7 +21,7 @@ pub(crate) use render::*;
 /// Type-safe read-mode vocabulary (#528): single source of truth for which
 /// modes exist and how each is classified.
 pub(crate) mod mode;
-pub(crate) use mode::ReadMode;
+pub(crate) use mode::{ReadMode, canonicalize_tail_mode};
 
 mod types;
 pub use types::*;

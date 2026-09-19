@@ -182,7 +182,8 @@ impl CtxReadTool {
         // force a fresh disk read below so a re-read never collapses to an
         // `[unchanged]`/auto-delta stub. An explicit raw flag wins over `mode`.
         let arg_raw = get_bool(args, "raw").unwrap_or(false);
-        let explicit_mode_arg = resolve_raw_alias(arg_raw, get_str(args, "mode"));
+        let explicit_mode_arg =
+            canonicalize_tail_mode(resolve_raw_alias(arg_raw, get_str(args, "mode")));
         let explicit_mode = explicit_mode_arg.is_some();
         // #1209: a malformed line-range payload (e.g. `lines:44:48` with a colon
         // instead of a dash) must fail loudly, not silently return an empty
@@ -1476,8 +1477,8 @@ mod window;
 #[allow(unused_imports)]
 // lines_mode + resolve_line_window used in #[cfg(test)] ctx_read_inline_tests
 use window::{
-    apply_line_window, hint_intersects_ranges, lines_mode, resolve_instruction_file_mode,
-    resolve_line_window, resolve_raw_alias, scoped_read_ranges,
+    apply_line_window, canonicalize_tail_mode, hint_intersects_ranges, lines_mode,
+    resolve_instruction_file_mode, resolve_line_window, resolve_raw_alias, scoped_read_ranges,
 };
 
 // #660 LOC gate: inline tests split out to keep this file under the line cap.

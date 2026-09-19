@@ -82,18 +82,20 @@ fn should_force_fresh(args: &[String], hook_child: bool) -> bool {
 /// `lean-ctx read f.ps1 map` used to silently serve the `auto` default instead
 /// of the requested view (limitations audit 2026-07-03). Unknown positionals
 /// and flags are left alone so existing invocations keep their meaning.
-fn resolve_cli_read_mode(args: &[String]) -> &str {
+fn resolve_cli_read_mode(args: &[String]) -> String {
     if let Some(m) = args
         .iter()
         .position(|a| a == "--mode" || a == "-m")
         .and_then(|i| args.get(i + 1))
     {
-        return m.as_str();
+        // #1813: `--mode -3` is the documented tail spelling; canonicalize it
+        // here too, or the CLI keeps answering with the head while MCP does not.
+        return crate::tools::ctx_read::canonicalize_tail_mode(m).unwrap_or_else(|| m.clone());
     }
     args.iter()
         .skip(1)
         .find(|a| !a.starts_with('-') && a.parse::<crate::tools::ctx_read::ReadMode>().is_ok())
-        .map_or("auto", std::string::String::as_str)
+        .map_or_else(|| "auto".to_string(), std::clone::Clone::clone)
 }
 
 pub fn cmd_read(args: &[String]) {
@@ -254,7 +256,7 @@ pub fn cmd_read(args: &[String]) {
     } else if mode != "full" && crate::tools::ctx_read::is_instruction_file(path) {
         "full".to_string()
     } else {
-        mode.to_string()
+        mode
     };
     let mode = if (mode == "map" || mode == "signatures") && original_tokens <= 400 {
         "full".to_string()
