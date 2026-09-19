@@ -1213,12 +1213,20 @@ pub(super) fn triage_bypass_requested(
 
 /// Whether the caller explicitly asked for the original bytes (#1582).
 ///
-/// Deliberately narrower than [`triage_bypass_requested`]: only `raw = true` and
-/// `mode = "raw"` count. Those two are the escape hatch every compression
-/// annotation points at, so they earn the larger verbatim turn budget. `full`,
-/// `lines:`, `anchored` and friends stay on the ordinary budget — they are
-/// routine reads, not a request to defeat compression, and exempting them would
-/// turn the backstop off for most traffic.
+/// Deliberately narrower than [`triage_bypass_requested`]: only `raw = true`,
+/// `mode = "raw"` and `inline = true` count. Those are the escape hatches every
+/// compression annotation points at, so they earn the larger verbatim turn
+/// budget. `full`, `lines:`, `anchored` and friends stay on the ordinary budget
+/// — they are routine reads, not a request to defeat compression, and exempting
+/// them would turn the backstop off for most traffic.
+///
+/// #1812: `inline` belongs here. It is the same request as `raw` — "return the
+/// command's own output, uncompressed" — and holding it to the smaller backstop
+/// truncated it at ~4k tokens while the identical command with `raw=true`
+/// returned in full. Worse, the compressed path is what produces the archive
+/// line, so a truncated `inline` response had no recovery route at all and its
+/// notice pointed at `ctx_read(lines=)`, which needs a path that command output
+/// does not have.
 pub(super) fn verbatim_requested(
     name: &str,
     args: Option<&serde_json::Map<String, serde_json::Value>>,
@@ -1230,6 +1238,10 @@ pub(super) fn verbatim_requested(
         args.get("raw")
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false)
+            || args
+                .get("inline")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
             || args
                 .get("mode")
                 .and_then(serde_json::Value::as_str)
@@ -1486,5 +1498,31 @@ mod savings_tests {
         let raw_flag = args(&[("raw", serde_json::Value::Bool(true))]);
         assert!(!verbatim_requested("ctx_search", Some(&raw_flag)));
         assert!(!verbatim_requested("ctx_compose", Some(&raw_flag)));
+    }
+
+    /// #1812: `inline` is the same request as `raw` — verbatim command output.
+    /// Held to the smaller backstop it was truncated at ~4k tokens while the
+    /// identical command with `raw=true` returned in full, and because the
+    /// archive line only exists on the compressed path, the cut response had no
+    /// recovery route at all.
+    #[test]
+    fn inline_earns_the_verbatim_budget_like_raw() {
+        let inline = args(&[("inline", serde_json::Value::Bool(true))]);
+        assert!(verbatim_requested("ctx_shell", Some(&inline)));
+
+        let raw = args(&[("raw", serde_json::Value::Bool(true))]);
+        assert_eq!(
+            verbatim_requested("ctx_shell", Some(&inline)),
+            verbatim_requested("ctx_shell", Some(&raw)),
+            "inline and raw request the same thing and must be budgeted alike"
+        );
+    }
+
+    #[test]
+    fn inline_false_stays_on_the_ordinary_budget() {
+        let off = args(&[("inline", serde_json::Value::Bool(false))]);
+        assert!(!verbatim_requested("ctx_shell", Some(&off)));
+        let none = args(&[]);
+        assert!(!verbatim_requested("ctx_shell", Some(&none)));
     }
 }
