@@ -836,17 +836,102 @@ fn redirect_refusal_names_the_destination_not_a_size() {
 #[test]
 fn disallowed_redirect_target_is_reported_verbatim() {
     assert_eq!(
-        disallowed_write_redirect_target("echo hi > out.txt", &[], None).as_deref(),
+        disallowed_write_redirect_target("echo hi > out.txt", &[], None, None).as_deref(),
         Some("out.txt")
     );
     assert_eq!(
-        disallowed_write_redirect_target("echo a; echo hi >> logs/run.log; echo b", &[], None)
-            .as_deref(),
+        disallowed_write_redirect_target(
+            "echo a; echo hi >> logs/run.log; echo b",
+            &[],
+            None,
+            None
+        )
+        .as_deref(),
         Some("logs/run.log")
     );
     assert_eq!(
-        disallowed_write_redirect_target("echo x >&1", &[], None),
+        disallowed_write_redirect_target("echo x >&1", &[], None, None),
         None,
         "fd duplication names no file"
+    );
+}
+
+// --- #1811: the destination decides, so a relative target gets placed first ---
+
+/// The reported case: a relative target under a scratch `cwd` was blocked while
+/// the identical absolute path was allowed, and the refusal claimed "the
+/// destination decides" about a destination it had never resolved.
+#[test]
+fn relative_target_under_scratch_cwd_is_allowed() {
+    let paths = vec!["/private/tmp".to_string()];
+    assert!(
+        validate_command_in_cwd(
+            "echo x > probe.txt",
+            &paths,
+            Some("/repo"),
+            Some("/private/tmp/scratch"),
+        )
+        .is_none(),
+        "a relative target resolving into a scratch path must be allowed"
+    );
+}
+
+/// The direction that matters more: resolving must not become a loophole. A
+/// relative target under a *project* cwd now resolves into the project and is
+/// refused on the same rule as an absolute one.
+#[test]
+fn relative_target_under_project_cwd_stays_blocked() {
+    let paths = vec!["/private/tmp".to_string()];
+    for command in [
+        "echo x > probe.txt",
+        "echo x >> logs/run.log",
+        "echo x | tee probe.txt",
+    ] {
+        assert!(
+            validate_command_in_cwd(command, &paths, Some("/repo"), Some("/repo/sub"),).is_some(),
+            "{command}: a relative target inside the project must stay blocked"
+        );
+    }
+}
+
+/// `..` must not walk out and back in unnoticed: the comparison resolves the
+/// joined path, so traversal landing inside the project is still refused.
+#[test]
+fn relative_traversal_back_into_the_project_stays_blocked() {
+    let paths = vec!["/private/tmp".to_string()];
+    assert!(
+        validate_command_in_cwd(
+            "echo x > ../src/main.rs",
+            &paths,
+            Some("/repo"),
+            Some("/repo/sub"),
+        )
+        .is_some(),
+        "traversal that lands back inside the project must stay blocked"
+    );
+}
+
+/// Without a cwd nothing changes: a relative target cannot be placed, so it
+/// keeps the pre-existing conservative refusal.
+#[test]
+fn relative_target_without_cwd_keeps_the_old_refusal() {
+    let paths = vec!["/private/tmp".to_string()];
+    assert!(validate_command_in_cwd("echo x > probe.txt", &paths, Some("/repo"), None).is_some());
+}
+
+/// A cwd outside both the project and the allow-list is not a licence to write
+/// there — the allow-list decides, the cwd only places the target.
+#[test]
+fn relative_target_under_unlisted_cwd_stays_blocked() {
+    let paths = vec!["/private/tmp".to_string()];
+    assert!(
+        validate_command_in_cwd(
+            "echo x > probe.txt",
+            &paths,
+            Some("/repo"),
+            Some("/somewhere/else"),
+        )
+        .is_some(),
+        "cwd places the target; it does not allow-list it"
     );
 }

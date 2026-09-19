@@ -10,10 +10,31 @@ pub fn validate_command(command: &str) -> Option<String> {
     validate_command_with_write_allow_paths(command, &write_allow_paths, project_root.as_deref())
 }
 
+/// Validate without knowing where the command will run.
+///
+/// A relative redirect target cannot be placed, so it is refused — the
+/// conservative reading. Callers that know the working directory should use
+/// [`validate_command_in_cwd`] instead, which resolves the destination first.
 pub(crate) fn validate_command_with_write_allow_paths(
     command: &str,
     write_allow_paths: &[String],
     project_root: Option<&str>,
+) -> Option<String> {
+    validate_command_in_cwd(command, write_allow_paths, project_root, None)
+}
+
+/// Validate against the directory the command will actually run in (#1811).
+///
+/// The write guard classifies the *destination*, so a relative redirect target
+/// has to be placed before it can be judged. Without a `cwd` it cannot be, and
+/// every relative target was refused — which made `cwd=<scratch> … > probe.txt`
+/// fail while the identical absolute path succeeded, under a message promising
+/// that the destination decides.
+pub(crate) fn validate_command_in_cwd(
+    command: &str,
+    write_allow_paths: &[String],
+    project_root: Option<&str>,
+    cwd: Option<&str>,
 ) -> Option<String> {
     if command.len() > MAX_COMMAND_BYTES {
         return Some(format!(
@@ -40,7 +61,7 @@ pub(crate) fn validate_command_with_write_allow_paths(
     // bytes; and a scratch capture is precisely how a large payload stays out
     // of the MCP channel.
     if let Some(target) =
-        disallowed_write_redirect_target(&cmd_no_heredoc, write_allow_paths, project_root)
+        disallowed_write_redirect_target(&cmd_no_heredoc, write_allow_paths, project_root, cwd)
     {
         return Some(format!(
             "ERROR: ctx_shell refuses the redirect into `{target}` — the destination decides, \
@@ -65,7 +86,9 @@ pub(crate) fn validate_command_with_write_allow_paths(
     // because an alternative was offered, and closed a review with no findings.
     // Naming the pipe also sent callers off to restructure their pipeline,
     // which cannot help: `… | tee FILE | wc -l` is judged identically.
-    if let Some(target) = disallowed_tee_target(&cmd_no_heredoc, write_allow_paths, project_root) {
+    if let Some(target) =
+        disallowed_tee_target(&cmd_no_heredoc, write_allow_paths, project_root, cwd)
+    {
         return Some(format!(
             "ERROR: ctx_shell refuses `tee {target}` — the destination is inside the \
              project, and ctx_shell compresses what it returns, so the captured bytes may \
@@ -78,7 +101,7 @@ pub(crate) fn validate_command_with_write_allow_paths(
         ));
     }
 
-    if is_heredoc_file_write(command, write_allow_paths, project_root) {
+    if is_heredoc_file_write(command, write_allow_paths, project_root, cwd) {
         return Some(
             "ERROR: ctx_shell detected a heredoc writing to a file. \
              ctx_shell compresses what it returns, so content it captures into a file may \
@@ -248,6 +271,7 @@ fn is_heredoc_file_write(
     command: &str,
     write_allow_paths: &[String],
     project_root: Option<&str>,
+    cwd: Option<&str>,
 ) -> bool {
     let has_heredoc = command.contains("<<");
     if !has_heredoc {
@@ -262,7 +286,7 @@ fn is_heredoc_file_write(
     // #931: strip heredoc bodies so `>` / `>>` inside the body are not
     // mistaken for file-write redirects.
     let stripped = crate::core::shell_allowlist::strip_all_heredoc_bodies(command);
-    disallowed_write_redirect_target(&stripped, write_allow_paths, project_root).is_some()
+    disallowed_write_redirect_target(&stripped, write_allow_paths, project_root, cwd).is_some()
 }
 
 /// Detects shell redirect operators (`>` or `>>`) that write to files.
@@ -276,13 +300,16 @@ fn is_heredoc_file_write(
 /// not file authoring.
 pub fn is_temp_redirect_target(target: &str) -> bool {
     let write_allow_paths = crate::core::config::default_shell_write_allow_paths();
-    is_write_allowed_redirect_target(target, &write_allow_paths, None)
+    // No cwd here: this public helper judges a target in isolation, so a
+    // relative one stays unplaceable and therefore not allowed (#1811).
+    is_write_allowed_redirect_target(target, &write_allow_paths, None, None)
 }
 
 fn is_write_allowed_redirect_target(
     target: &str,
     write_allow_paths: &[String],
     project_root: Option<&str>,
+    cwd: Option<&str>,
 ) -> bool {
     // `>|` is the noclobber-override form of `>`; the `|` is not part of the path.
     let t = target.trim_start_matches(['>', '&', '|']);
@@ -302,10 +329,30 @@ fn is_write_allowed_redirect_target(
         return true;
     }
 
+    // #1811: a relative target is a destination like any other — it just needs
+    // placing first. The guard used to refuse every relative target outright,
+    // so `cwd=<scratch> … > probe.txt` was blocked while the identical
+    // `> <scratch>/probe.txt` was allowed, and the refusal said "the
+    // destination decides" about a destination it had not resolved.
+    //
+    // Resolving narrows as often as it widens: a relative target under a
+    // project cwd now resolves *into* the project and is refused on the same
+    // rule as an absolute one, instead of by accident of its spelling.
+    //
+    // Only the caller-supplied `cwd` is used. An in-command `cd` is not
+    // followed: deciding the effective directory from the command text means
+    // getting `cd a && cd b`, conditional and quoted forms all right, and an
+    // error there would grant a write the guard means to refuse.
     let path = std::path::Path::new(t);
-    if !path.is_absolute() {
+    let resolved_input;
+    let path = if path.is_absolute() {
+        path
+    } else if let Some(base) = cwd.filter(|c| !c.trim().is_empty()) {
+        resolved_input = std::path::Path::new(base).join(path);
+        resolved_input.as_path()
+    } else {
         return false;
-    }
+    };
     let resolved = resolve_path_for_comparison(path);
     if project_root.is_some_and(|root| {
         resolved.starts_with(resolve_path_for_comparison(std::path::Path::new(root)))
@@ -387,10 +434,11 @@ fn disallowed_tee_target(
     command: &str,
     write_allow_paths: &[String],
     project_root: Option<&str>,
+    cwd: Option<&str>,
 ) -> Option<String> {
     tee_targets(command).into_iter().find(|target| {
         !target.is_empty()
-            && !is_write_allowed_redirect_target(target, write_allow_paths, project_root)
+            && !is_write_allowed_redirect_target(target, write_allow_paths, project_root, cwd)
     })
 }
 
@@ -406,7 +454,10 @@ fn has_file_write_redirect(
     write_allow_paths: &[String],
     project_root: Option<&str>,
 ) -> bool {
-    disallowed_write_redirect_target(command, write_allow_paths, project_root).is_some()
+    // No cwd: these assertions pin the target-spelling rules, where a relative
+    // target is unplaceable and therefore refused (#1811). The cwd-resolution
+    // behaviour has its own tests that call the public entry point.
+    disallowed_write_redirect_target(command, write_allow_paths, project_root, None).is_some()
 }
 
 /// The first redirect target that is **not** write-allowed, or `None` when the
@@ -421,6 +472,7 @@ fn disallowed_write_redirect_target(
     command: &str,
     write_allow_paths: &[String],
     project_root: Option<&str>,
+    cwd: Option<&str>,
 ) -> Option<String> {
     let bytes = command.as_bytes();
     let len = bytes.len();
@@ -497,7 +549,7 @@ fn disallowed_write_redirect_target(
             }
             // #848: allow redirects to temp directories — agents capture
             // build output for grepping, not writing persistent files.
-            if is_write_allowed_redirect_target(&target, write_allow_paths, project_root) {
+            if is_write_allowed_redirect_target(&target, write_allow_paths, project_root, cwd) {
                 i += 1;
                 continue;
             }

@@ -58,17 +58,13 @@ impl McpTool for ShellAliasTool {
         let command = get_str(args, "command")
             .ok_or_else(|| ErrorData::invalid_params("command is required", None))?;
 
-        let write_allow_paths =
-            crate::core::config::Config::load().shell_write_allow_paths_effective();
-        let project_root = crate::core::config::Config::find_project_root();
-        if let Some(rejection) = crate::tools::ctx_shell::validate_command_with_write_allow_paths(
-            &command,
-            &write_allow_paths,
-            project_root.as_deref(),
-        ) {
-            return Ok(ToolOutput::simple(rejection));
-        }
-
+        // #1811: the write-doctrine check is deliberately NOT repeated here.
+        // It judges where a relative redirect target lands, and only the
+        // delegate below knows that — it resolves the requested `cwd` through
+        // the project-root jail before deciding. Judging the raw argument here
+        // would answer for a directory the command may never run in, and a
+        // second copy of the rule is a second answer waiting to drift from the
+        // first. The delegate refuses, with its own message, before executing.
         if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(&command) {
             return Ok(ToolOutput::simple(msg.to_string()));
         }

@@ -147,6 +147,57 @@ fn update_shell_cwd_calls_jail_path() {
     );
 }
 
+/// #1811: the write-doctrine guard decides where a *relative* redirect target
+/// lands, so it has to be told the directory the command really runs in. The
+/// `cwd` argument is not that directory — `effective_cwd_checked` replaces a
+/// jail-rejected one with the project root. Handing the raw argument to the
+/// guard would let a caller name an out-of-project scratch dir, have the guard
+/// approve `> probe.txt` against it, and then have the command run in the
+/// project root and write there. Pin that the guard is fed the resolved value.
+#[test]
+fn shell_write_guard_is_given_the_resolved_cwd_not_the_raw_argument() {
+    let src = include_str!("../../src/tools/registered/ctx_shell.rs");
+
+    let call = src
+        .find("validate_command_in_cwd(")
+        .expect("the write-doctrine guard call is missing");
+    let call_body = &src[call..call + 300];
+    assert!(
+        call_body.contains("resolved_cwd"),
+        "H1/#1811: the guard must receive the resolved run directory, got: {call_body}"
+    );
+    assert!(
+        !call_body.contains("get_str(args, \"cwd\")"),
+        "H1/#1811: the guard must not judge the raw `cwd` argument, got: {call_body}"
+    );
+
+    // The resolution itself must go through the jail-aware session helper —
+    // a second, hand-rolled placement here would drift from the one the
+    // executed command uses, which is the whole defect.
+    let resolve = src
+        .find("let resolved_cwd = ")
+        .expect("the single cwd resolution is missing");
+    let resolve_body = &src[resolve..resolve + 600];
+    assert!(
+        resolve_body.contains("resolve_effective_cwd("),
+        "H1/#1811: the run directory must come from resolve_effective_cwd"
+    );
+}
+
+/// #1811: the `shell` alias delegates to `ctx_shell`, which owns the
+/// write-doctrine check together with the resolved run directory. A second
+/// copy here would judge the raw `cwd` argument and refuse writes the delegate
+/// allows — the pre-#1811 behaviour, reintroduced one layer up.
+#[test]
+fn shell_alias_does_not_repeat_the_write_guard() {
+    let src = include_str!("../../src/tools/registered/shell_alias.rs");
+    assert!(
+        !src.contains("validate_command_in_cwd(")
+            && !src.contains("validate_command_with_write_allow_paths("),
+        "H1/#1811: the alias must leave the write-doctrine check to its delegate"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // H2 — MCP ctx_read path has secret check
 // ---------------------------------------------------------------------------

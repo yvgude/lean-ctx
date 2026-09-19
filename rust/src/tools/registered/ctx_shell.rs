@@ -91,6 +91,34 @@ impl McpTool for CtxShellTool {
             .ok_or_else(|| ErrorData::invalid_params("command is required", None))?;
         let timeout_ms = get_int(args, "timeout_ms").and_then(|n| u64::try_from(n).ok());
 
+        // #1811: the write-doctrine guard classifies the *destination*, so a
+        // relative redirect target only means something once it is placed
+        // against the directory the command runs in. That directory is not the
+        // `cwd` argument: `effective_cwd_checked` replaces a jail-rejected one
+        // with the project root, and falls back to the session cwd when none
+        // was passed. So it is resolved once, here, and the same value feeds
+        // both the guard and the run below — resolving it twice would let the
+        // two answers drift, and a guard that judged a directory the command
+        // never ran in is exactly the bug #1811 reports.
+        let explicit_cwd = get_str(args, "cwd");
+        let had_explicit_cwd = explicit_cwd.is_some();
+        // Without a session (one-shot CLI contexts) the run directory cannot be
+        // resolved here. That is not an error yet — the cat-redirect below never
+        // needs one — so the guard is simply told nothing and keeps its stricter
+        // pre-#1811 refusal, and the session requirement is raised further down,
+        // where running the command actually depends on it.
+        let resolved_cwd = match ctx.session.as_ref() {
+            Some(session_lock) => Some(tokio::task::block_in_place(|| {
+                let guard = crate::server::bounded_lock::read_for(
+                    session_lock,
+                    "ctx_shell_cwd",
+                    SESSION_LOCK_BUDGET,
+                );
+                resolve_effective_cwd(guard, explicit_cwd.as_deref())
+            })?),
+            None => None,
+        };
+
         // The write-doctrine check (no `>`, `tee`, heredoc-to-file, curl -o, …)
         // is an MCP-payload-safety convention, not a security boundary, so it is
         // opt-out via `shell_allow_writes` (#523). The real command gating
@@ -99,12 +127,12 @@ impl McpTool for CtxShellTool {
         let write_allow_paths = config.shell_write_allow_paths_effective();
         let project_root = crate::core::config::Config::find_project_root();
         if !config.shell_allow_writes_effective()
-            && let Some(rejection) =
-                crate::tools::ctx_shell::validate_command_with_write_allow_paths(
-                    &command,
-                    &write_allow_paths,
-                    project_root.as_deref(),
-                )
+            && let Some(rejection) = crate::tools::ctx_shell::validate_command_in_cwd(
+                &command,
+                &write_allow_paths,
+                project_root.as_deref(),
+                resolved_cwd.as_ref().map(|(cwd, _)| cwd.as_str()),
+            )
         {
             // The command never ran — report as a tool error so MCP clients
             // (guards, retry logic) can detect it programmatically (#389).
@@ -168,16 +196,9 @@ impl McpTool for CtxShellTool {
                 .session
                 .as_ref()
                 .ok_or_else(|| ErrorData::internal_error("session not available", None))?;
-
-            let explicit_cwd = get_str(args, "cwd");
-            let had_explicit_cwd = explicit_cwd.is_some();
-            let guard = crate::server::bounded_lock::read_for(
-                session_lock,
-                "ctx_shell_cwd",
-                SESSION_LOCK_BUDGET,
-            );
-            let (effective_cwd, cwd_jail_reason) =
-                resolve_effective_cwd(guard, explicit_cwd.as_deref())?;
+            let Some((effective_cwd, cwd_jail_reason)) = resolved_cwd else {
+                return Err(ErrorData::internal_error("session not available", None));
+            };
             // A `cwd` rejected by the project-root jail is silently replaced with
             // the root (deliberate sandboxing). Surface that swap as a one-line
             // hint so the caller does not mistake the run dir for the requested
