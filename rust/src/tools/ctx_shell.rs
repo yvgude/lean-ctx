@@ -44,12 +44,14 @@ pub(crate) fn validate_command_with_write_allow_paths(
     {
         return Some(format!(
             "ERROR: ctx_shell refuses the redirect into `{target}` — the destination decides, \
-             not the size of the output. ctx_shell compresses what it returns, so a redirect \
-             into a file you keep can write compression markers instead of the command's own \
-             bytes, and ctx_shell never modifies project files. \
-             Use the native Write tool or ctx_patch for project files. \
-             Capturing output to a scratch path (/tmp, /var/tmp, $TMPDIR) is allowed — that \
-             keeps the output out of the MCP channel entirely."
+             not the size of the output. ctx_shell compresses what it returns, so capturing \
+             that output into a file you keep can write compression markers instead of the \
+             command's own bytes. \
+             The rule is output capture (`>`, `>>`, `| tee`) into a project path — other \
+             commands are not restricted. \
+             Write the file with the native Write tool or ctx_patch, or capture to a scratch \
+             path (/tmp, /var/tmp, $TMPDIR), which is allowed and keeps the output out of \
+             the MCP channel entirely."
         ));
     }
 
@@ -66,18 +68,21 @@ pub(crate) fn validate_command_with_write_allow_paths(
     if let Some(target) = disallowed_tee_target(&cmd_no_heredoc, write_allow_paths, project_root) {
         return Some(format!(
             "ERROR: ctx_shell refuses `tee {target}` — the destination is inside the \
-             project, and ctx_shell is ONLY for reading command output. \
+             project, and ctx_shell compresses what it returns, so the captured bytes may \
+             not be the command's own. \
              Piping makes no difference: the destination decides. \
-             Use the native Write tool to create/modify project files, or tee to a \
-             scratch path (/tmp, /var/tmp, $TMPDIR), which is allowed."
+             The rule is output capture into a project path — other commands are not \
+             restricted. \
+             Write the file with the native Write tool, or tee to a scratch path \
+             (/tmp, /var/tmp, $TMPDIR), which is allowed."
         ));
     }
 
     if is_heredoc_file_write(command, write_allow_paths, project_root) {
         return Some(
             "ERROR: ctx_shell detected a heredoc writing to a file. \
-             Use the native Write tool to create/modify files. \
-             ctx_shell is ONLY for reading command output. \
+             ctx_shell compresses what it returns, so content it captures into a file may \
+             not be the bytes you wrote. Use the native Write tool to create the file. \
              Note: heredocs for input piping (e.g. psql <<EOF) are allowed."
                 .to_string(),
         );
@@ -91,8 +96,9 @@ pub(crate) fn validate_command_with_write_allow_paths(
     if let Some(reason) = download_to_file_reason(&cmd_no_heredoc) {
         return Some(format!(
             "ERROR: ctx_shell detected a file download/write ({reason}). \
-             ctx_shell is ONLY for reading command output — redirect-free flags bypass \
-             this doctrine, so they are blocked too (GH #391). \
+             Writing fetched bytes through ctx_shell risks capturing compressed output \
+             instead of the payload — redirect-free flags bypass the redirect check, so \
+             they are blocked too (GH #391). \
              For text, fetch to stdout: curl <url> / wget -qO- <url>. \
              For a binary (image, PDF, archive) neither stdout nor the editor's Write \
              tool can carry the bytes — download to an absolute scratch path instead, \
