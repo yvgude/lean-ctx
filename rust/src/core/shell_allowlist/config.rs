@@ -60,6 +60,24 @@ pub(super) fn allowlist_block_message(base: &str) -> String {
         |p| p.display().to_string(),
     );
 
+    // #1814: a `$var` command word is a *correct* split, not a mis-split — the
+    // variable genuinely is the command, and the allowlist cannot see what it
+    // expands to at run time. Sending that caller to file a mis-split bug wastes
+    // their time and ours, and "quote the fragment differently" cannot help:
+    // no quoting makes a variable command allowable. Say what actually works.
+    if let Some(name) = base.strip_prefix('$') {
+        let hint = name.trim_start_matches('{').trim_end_matches('}');
+        return format!(
+            "[BLOCKED — DO NOT RETRY] '{base}' expands to the command name at run time, so \
+             the allowlist cannot see which command would run.\n\
+             Write the command literally instead (e.g. `echo hi`, `.venv/bin/python -c ...`) — \
+             that is the form the allowlist can gate.\n\
+             Do NOT run `lean-ctx allow {hint}`; it would allowlist the variable's name, not \
+             the command.\n\
+             Config in effect: {cfg_path}"
+        );
+    }
+
     // A base that cannot be a command name means the scanner mis-split the line,
     // not that the user needs to allow something. Printing
     // `lean-ctx allow print(urllib.parse.quote(sys.argv[1],safe=))` — a real
@@ -217,4 +235,49 @@ pub(super) fn parse_bash_permission(entry: &str) -> Option<String> {
     }
     let base = cmd.rsplit('/').next().unwrap_or(cmd);
     Some(base.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::allowlist_block_message;
+
+    /// #1814: a `$var` command word is a *correct* split, not a mis-split. The
+    /// old text asked the caller to file a bug for intended behaviour and
+    /// suggested re-quoting, which cannot help — no quoting makes a variable
+    /// command gateable.
+    #[test]
+    fn variable_command_word_explains_expansion_not_a_parser_bug() {
+        for base in ["$X", "$PY", "${CMD}"] {
+            let msg = allowlist_block_message(base);
+            assert!(
+                msg.contains("expands to the command name at run time"),
+                "{base}: must explain expansion, got: {msg}"
+            );
+            assert!(
+                !msg.contains("mis-split"),
+                "{base}: must not blame the parser, got: {msg}"
+            );
+            assert!(
+                !msg.contains("github.com/yvgude/lean-ctx/issues"),
+                "{base}: must not request a bug report for intended behaviour"
+            );
+        }
+    }
+
+    /// The genuine mis-split guidance must survive for tokens that really are
+    /// not command names — that is what #1646 added it for.
+    #[test]
+    fn genuine_mis_splits_still_ask_for_a_report() {
+        let msg = allowlist_block_message("print(urllib.parse.quote(sys.argv[1],safe=))");
+        assert!(msg.contains("mis-split"), "got: {msg}");
+        assert!(msg.contains("github.com/yvgude/lean-ctx/issues"));
+    }
+
+    /// An ordinary unknown command keeps the actionable `lean-ctx allow` path.
+    #[test]
+    fn ordinary_command_still_offers_allow() {
+        let msg = allowlist_block_message("ncat");
+        assert!(msg.contains("lean-ctx allow ncat"), "got: {msg}");
+        assert!(!msg.contains("expands to the command name"));
+    }
 }
