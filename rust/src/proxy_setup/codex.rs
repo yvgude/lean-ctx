@@ -370,9 +370,14 @@ pub(crate) fn toml_assignment_key(t: &str) -> Option<&str> {
     }
 }
 
+/// True for a `model_provider` pin that lean-ctx itself wrote.
+///
+/// Only the generated `leanctx-chatgpt` provider qualifies. `model_provider =
+/// "openai"` used to be matched here too, but lean-ctx never wrote that value —
+/// it writes [`CODEX_CHATGPT_PROVIDER_ID`] — so the branch could only ever
+/// delete a pin the user had set themselves, silently, on every setup pass.
 pub(crate) fn is_codex_proxy_model_provider_entry(t: &str) -> bool {
     is_toml_string_assignment(t, "model_provider", CODEX_CHATGPT_PROVIDER_ID)
-        || is_toml_string_assignment(t, "model_provider", "openai")
 }
 
 pub(crate) fn is_toml_string_assignment(t: &str, key: &str, value: &str) -> bool {

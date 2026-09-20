@@ -38,6 +38,100 @@ fn proxy_timeout_default_200ms() {
     assert_eq!(proxy_timeout(), std::time::Duration::from_millis(200));
 }
 
+/// Codex's auth state now decides whether the OpenAI export is written (#1685),
+/// and `resolve_codex_dir` reads the real `~/.codex` unless `CODEX_HOME` points
+/// somewhere else. Pin it to a temp dir so these tests do not depend on how the
+/// developer running them happens to be signed in.
+///
+/// Returns the dir so the caller keeps it alive for the duration of the test.
+fn pin_codex_home(auth_json: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("auth.json"), auth_json).unwrap();
+    crate::test_env::set_var("CODEX_HOME", dir.path().to_string_lossy().as_ref());
+    dir
+}
+
+const CODEX_AUTH_API_KEY: &str = r#"{"auth_mode": "apikey", "OPENAI_API_KEY": "sk-test"}"#;
+const CODEX_AUTH_CHATGPT: &str = r#"{"auth_mode": "chatgpt"}"#;
+
+/// #1685: the shell export used to pin `OPENAI_BASE_URL` to the `/v1` rail for
+/// everyone, including Codex ChatGPT-subscription logins — for whom
+/// `install_codex_env` deliberately writes nothing, because that rail answers a
+/// subscription token with `401 … Missing scopes: api.responses.write`. The
+/// environment then overrode the config decision and the 401 was what users saw.
+#[test]
+fn shell_export_omits_openai_for_a_chatgpt_login() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    if std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.trim().is_empty()) {
+        return; // an explicit key opts into API-key mode by design
+    }
+    let _codex = pin_codex_home(CODEX_AUTH_CHATGPT);
+    let home = tempfile::tempdir().unwrap();
+    std::fs::write(home.path().join(".zshrc"), "# user rc\n").unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    install_shell_exports(home.path(), port, true, false);
+
+    let rc = std::fs::read_to_string(home.path().join(".zshrc")).unwrap();
+    assert!(
+        !rc.contains("export OPENAI_BASE_URL="),
+        "a ChatGPT subscription login must not be pinned to the /v1 rail, got:\n{rc}"
+    );
+    assert!(
+        rc.contains(OPENAI_OMITTED_NOTE),
+        "the omission must be explained in the RC block, got:\n{rc}"
+    );
+}
+
+/// The other half of the rule: API-key Codex is billed per token, so it belongs
+/// on the proxy's `/v1` rail and must keep the `/v1` suffix (#366).
+#[test]
+fn shell_export_keeps_openai_for_an_api_key_login() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    let _codex = pin_codex_home(CODEX_AUTH_API_KEY);
+    let home = tempfile::tempdir().unwrap();
+    std::fs::write(home.path().join(".zshrc"), "# user rc\n").unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    install_shell_exports(home.path(), port, true, false);
+
+    let rc = std::fs::read_to_string(home.path().join(".zshrc")).unwrap();
+    assert!(
+        rc.contains(&format!(
+            "export OPENAI_BASE_URL=\"http://127.0.0.1:{port}/v1\""
+        )),
+        "API-key mode must route OpenAI through the proxy, got:\n{rc}"
+    );
+}
+
+/// #1685: `model_provider = "openai"` is a pin lean-ctx never writes — it writes
+/// `leanctx-chatgpt`. Treating it as one of ours meant every setup pass silently
+/// deleted a setting the user had made.
+#[test]
+fn a_user_set_model_provider_survives_the_strip() {
+    let existing = "model = \"gpt-5.5\"\nmodel_provider = \"openai\"\n";
+    let cleaned = strip_codex_proxy_entries(existing);
+    assert!(
+        cleaned.contains("model_provider = \"openai\""),
+        "a pin lean-ctx never wrote must be left alone, got:\n{cleaned}"
+    );
+}
+
+/// The generated pin is still ours and must still be removed, so flipping the
+/// ChatGPT rail back off restores native Codex history (#597).
+#[test]
+fn the_generated_model_provider_pin_is_still_stripped() {
+    let existing = "model_provider = \"leanctx-chatgpt\"\nmodel = \"gpt-5.5\"\n";
+    let cleaned = strip_codex_proxy_entries(existing);
+    assert!(
+        !cleaned.contains("leanctx-chatgpt"),
+        "lean-ctx's own pin must still be removed, got:\n{cleaned}"
+    );
+    assert!(cleaned.contains("model = \"gpt-5.5\""));
+}
+
 #[test]
 fn proxy_timeout_is_non_zero() {
     let t = proxy_timeout();
@@ -237,9 +331,13 @@ fn install_redirects_claude_when_api_key_present() {
 /// api.anthropic.com.
 #[test]
 fn shell_export_omits_anthropic_without_key() {
+    let _lock = crate::core::data_dir::test_env_lock();
     if env_provides_anthropic_key() || claude_dir_overridden() {
         return;
     }
+    // #1685: the OpenAI line now depends on Codex's auth mode, so pin it —
+    // otherwise this test's OpenAI assertion would track the developer's login.
+    let _codex = pin_codex_home(CODEX_AUTH_API_KEY);
     let home = tempfile::tempdir().unwrap();
     std::fs::write(home.path().join(".zshrc"), "# user rc\n").unwrap();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

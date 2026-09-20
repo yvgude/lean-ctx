@@ -17,6 +17,14 @@ pub(crate) const GROK_OMITTED_NOTE: &str = "Grok proxy env omitted: run `grok lo
 pub(crate) const COMMANDCODE_OMITTED_NOTE: &str =
     "Command Code omitted (no ~/.commandcode auth — run `cmd login` or set COMMAND_CODE_API_KEY)";
 
+/// Comment written in place of the `OPENAI_BASE_URL` export when Codex is signed
+/// in with a ChatGPT subscription (#1685).
+///
+/// `api.openai.com` accepts API keys only; a subscription OAuth token sent to its
+/// `/v1` rail comes back as `401 … Missing scopes: api.responses.write`, which
+/// reads like an organization-permission problem and is not one.
+pub(crate) const OPENAI_OMITTED_NOTE: &str = "OPENAI_BASE_URL omitted: Codex is signed in with a ChatGPT subscription, whose token only authenticates against chatgpt.com (set OPENAI_API_KEY to route OpenAI through the proxy)";
+
 pub fn is_local_lean_ctx_url(url: &str) -> bool {
     url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")
 }
