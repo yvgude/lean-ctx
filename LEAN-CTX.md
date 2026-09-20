@@ -1,8 +1,8 @@
 <!-- lean-ctx-owned: PROJECT-LEAN-CTX.md v1 -->
 <!-- lean-ctx-rules -->
-<!-- version: 9 -->
+<!-- version: 10 -->
 
-CRITICAL: ALWAYS use lean-ctx ctx_* tools instead of native equivalents. This is NOT optional.
+CRITICAL: the ctx_* mapping below is not optional.
 
 ACTUALLY EMIT the ctx_* tool call (ctx_compose first) — describing a tool is not calling it.
 
@@ -13,7 +13,7 @@ MANDATORY MAPPING:
 • Glob/find -> ctx_glob(pattern)
 • ls/find -> ctx_tree(path, depth)
 
-NEVER use native Read/Grep/Shell/Glob when a ctx_* equivalent exists. SELF-CORRECT: the moment you reach for one, stop and call the ctx_* tool instead.
+NEVER use built-in Read/Grep/Shell/Glob when a ctx_* equivalent exists. SELF-CORRECT: the moment you reach for one, stop and call the ctx_* tool instead. Other MCP servers keep their own jobs.
 
 Tool selection by intent:
 • Orient / understand code (call FIRST) -> ctx_compose

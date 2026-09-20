@@ -96,6 +96,56 @@ fn bare_has_no_markers() {
     assert!(!content.contains(rules_canonical::END_MARK));
 }
 
+/// #1788: the steering has to say what it governs. Unqualified, "ALWAYS use
+/// ctx_* — NOT optional" reads as a ranking over every tool the host exposes,
+/// so a model with an IDE/LSP, database or issue-tracker MCP server attached
+/// routed those questions here too. The rule is about the host's *built-in*
+/// file/search/shell tools; every profile that carries the rule must carry the
+/// boundary with it, or the same misreading returns through whichever profile
+/// forgot it.
+#[test]
+fn every_steering_profile_states_what_it_governs() {
+    for wrapper in [
+        rules_canonical::Wrapper::Dedicated,
+        rules_canonical::Wrapper::Shared,
+        rules_canonical::Wrapper::Bare,
+    ] {
+        let content = rules_canonical::render(false, wrapper, CompressionLevel::Off, &tp());
+        // Only profiles that actually steer need the boundary.
+        if !content.contains("NEVER use") && !content.contains("CRITICAL:") {
+            continue;
+        }
+        assert!(
+            content.contains("built-in"),
+            "{wrapper:?} steers but never says the rule is about built-in tools:\n{content}"
+        );
+        assert!(
+            content.contains("Other MCP servers keep their own jobs."),
+            "{wrapper:?} steers but never exempts other MCP servers:\n{content}"
+        );
+    }
+}
+
+/// The boundary must not be phrased as a licence to skip ctx_* for ordinary
+/// reads and searches — that is the behaviour the layer exists for.
+#[test]
+fn the_boundary_does_not_weaken_the_built_in_tool_rule() {
+    let content = rules_canonical::render(
+        false,
+        rules_canonical::Wrapper::Dedicated,
+        CompressionLevel::Off,
+        &tp(),
+    );
+    assert!(
+        content.contains("NEVER use built-in Read/Grep/Shell/Glob"),
+        "the built-in mapping must stay absolute:\n{content}"
+    );
+    assert!(
+        content.contains("MANDATORY MAPPING"),
+        "the mapping itself must survive the rewording:\n{content}"
+    );
+}
+
 #[test]
 fn all_wrappers_use_current_version() {
     let version = format!("version: {}", rules_canonical::RULES_VERSION);

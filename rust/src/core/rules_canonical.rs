@@ -108,11 +108,24 @@ Never skip: validation, security, error handling.\n\
 /// v9 (#1287): the "re-reads ~13 tokens" claim is scoped to unchanged
 /// full/auto re-reads — signatures/map re-reads currently return the full
 /// (cached) payload.
-pub const RULES_VERSION: usize = 9;
+/// v10 (#1788): the steering states its own boundary. It governs the host's
+/// built-in file/search/shell tools; it is not a ranking over other MCP
+/// servers, which the previous unqualified wording was read as.
+pub const RULES_VERSION: usize = 10;
 
 /// Banner placed at the top of dedicated rule files (non-shadow only).
-pub const CRITICAL: &str = "CRITICAL: ALWAYS use lean-ctx ctx_* tools instead of native equivalents. \
-     This is NOT optional.";
+///
+/// It used to restate the whole rule ("ALWAYS use ctx_* instead of native
+/// equivalents. This is NOT optional.") immediately above `NEVER`, which says
+/// the same thing in the opposite polarity and with an actual tool list. That
+/// duplication was also the most over-claiming line in the ruleset: unqualified,
+/// it read as a ranking over every tool the host exposes, so a model with an
+/// IDE/LSP, database or issue-tracker MCP server attached routed those questions
+/// here too (#1788). The banner now points at the mapping instead of restating
+/// it, and the freed characters pay for the scope clause in `NEVER` — the
+/// injected profile sits on a hard per-turn budget, so the boundary had to be
+/// bought, not added.
+pub const CRITICAL: &str = "CRITICAL: the ctx_* mapping below is not optional.";
 
 /// Weak-model adherence nudge (#1067 / GH #593). Smaller models (e.g. GLM 5.2 in
 /// Windsurf) often read the tool-mapping rules yet still answer from memory or
@@ -138,8 +151,16 @@ MANDATORY MAPPING:\n\
 
 /// One-line admonition reinforcing the tool preference.  Always right after
 /// `BULLETS` in both profiles.
-pub const NEVER: &str = "NEVER use native Read/Grep/Shell/Glob when a ctx_* equivalent \
-    exists. SELF-CORRECT: the moment you reach for one, stop and call the ctx_* tool instead.";
+///
+/// Carries the scope boundary for the whole ruleset (#1788). The steering used
+/// to name no limit, so it was read as ranking lean-ctx above every other MCP
+/// server — an IDE/LSP bridge, a database, an issue tracker — rather than above
+/// the host's built-in file/search/shell tools. The closing clause is kept to
+/// one short sentence: this text ships on every turn, and the layer that sells
+/// token savings cannot pay for its own disclaimer twice.
+pub const NEVER: &str = "NEVER use built-in Read/Grep/Shell/Glob when a ctx_* \
+    equivalent exists. SELF-CORRECT: the moment you reach for one, stop and call the ctx_* tool \
+    instead. Other MCP servers keep their own jobs.";
 
 /// Intent-to-tool playbook — maps common agent questions to the right tool.
 /// Since v5 it also absorbs the agent-loop phases (#609) and the navigation
@@ -147,7 +168,7 @@ pub const NEVER: &str = "NEVER use native Read/Grep/Shell/Glob when a ctx_* equi
 /// profile (they stay verbatim in LONGFORM).
 pub const INTENT: &str = "\
 Tool selection by intent:\n\
-• Orient / understand code (call FIRST) -> ctx_compose\n\
+• Orient in this codebase (call FIRST) -> ctx_compose\n\
 • Read a file -> ctx_read(path, mode=signatures|map|full); edit after reading -> ctx_patch\n\
 • Exact symbol -> ctx_search(action=symbol); pattern -> ctx_search; by meaning -> ctx_search(action=semantic)\n\
 • Files by glob -> ctx_glob; structure -> ctx_tree; callers/impact -> ctx_callgraph\n\
