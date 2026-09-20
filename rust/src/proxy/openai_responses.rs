@@ -28,8 +28,17 @@ use crate::core::config::{HistoryMode, ProseRole};
 /// Handles `POST /v1/responses` (and the bare `/responses`) over HTTP/SSE.
 pub async fn handler(
     State(state): State<ProxyState>,
-    req: Request<Body>,
+    mut req: Request<Body>,
 ) -> Result<Response, StatusCode> {
+    // #1685: a Codex ChatGPT-subscription login that reaches this rail is on the
+    // wrong one, and `api.openai.com` says so with `401 … Missing scopes:
+    // api.responses.write` — a message about organization roles that names
+    // nothing real. Send it where it authenticates instead of forwarding it to a
+    // certain failure and explaining the failure afterwards.
+    if let Some(uri) = chatgpt_rail_uri(&state, &req) {
+        *req.uri_mut() = uri;
+        return super::chatgpt::codex_responses_handler(State(state), req).await;
+    }
     let upstream = state.openai_upstream();
     forward::forward_request(
         State(state),
@@ -41,6 +50,78 @@ pub async fn handler(
         &[],
     )
     .await
+}
+
+/// The ChatGPT-rail URI this request belongs on, or `None` to forward it to the
+/// OpenAI platform rail unchanged.
+///
+/// Re-routing is deliberately confined to the one configuration where the
+/// current route cannot succeed: a **stock** `api.openai.com` upstream reached
+/// with a bearer that is not an OpenAI API key but is a JWT. `api.openai.com`
+/// accepts `sk-` keys only, so such a request is rejected no matter what we do —
+/// which is what makes moving it safe. No working setup changes route: an Azure,
+/// Copilot, LiteLLM or other gateway upstream is configured explicitly and fails
+/// condition one, and an API key fails condition two.
+///
+/// This does not contradict #366. That issue is about the URL the *client* is
+/// given — `OPENAI_BASE_URL` keeps its `/v1` so OpenCode's ChatGPT-OAuth plugin
+/// still matches `/v1/responses`. Which upstream the proxy then forwards to is a
+/// separate decision, and the credential that arrived answers it.
+fn chatgpt_rail_uri(state: &ProxyState, req: &Request<Body>) -> Option<axum::http::Uri> {
+    if !is_stock_openai_upstream(&state.openai_upstream()) {
+        return None;
+    }
+    if !is_chatgpt_subscription_bearer(req.headers()) {
+        return None;
+    }
+    let path = req.uri().path();
+    let rest = path
+        .strip_prefix("/v1/responses")
+        .or_else(|| path.strip_prefix("/responses"))?;
+    let query = req
+        .uri()
+        .query()
+        .map_or_else(String::new, |q| format!("?{q}"));
+    axum::http::Uri::try_from(format!("/backend-api/codex/responses{rest}{query}")).ok()
+}
+
+/// True for the default OpenAI endpoint — the only upstream for which
+/// `chatgpt.com` is the meaningful alternative. Any configured gateway
+/// (Azure, Copilot, LiteLLM, a self-hosted relay) returns false and is never
+/// re-routed.
+fn is_stock_openai_upstream(upstream: &str) -> bool {
+    let host = upstream
+        .trim_end_matches('/')
+        .rsplit_once("//")
+        .map_or(upstream, |(_, rest)| rest);
+    let host = host.split('/').next().unwrap_or(host);
+    let host = host.split(':').next().unwrap_or(host);
+    host.eq_ignore_ascii_case("api.openai.com")
+}
+
+/// True when the `Authorization` bearer is a ChatGPT subscription token rather
+/// than an OpenAI platform API key.
+///
+/// Platform keys are opaque `sk-…` strings and are never JWTs; a ChatGPT login
+/// carries the OAuth access token Codex stores in `auth.json`, which is one.
+/// The token is only ever inspected for its shape — never decoded, stored or
+/// logged.
+fn is_chatgpt_subscription_bearer(headers: &axum::http::HeaderMap) -> bool {
+    let Some(token) = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+    else {
+        return false;
+    };
+    if token.starts_with("sk-") {
+        return false;
+    }
+    // A compact JWS: three base64url segments. The header of every JWT whose
+    // first claim set starts with `{"alg"` encodes to this prefix.
+    token.starts_with("eyJ") && token.split('.').count() == 3
 }
 
 /// Handles the WebSocket Responses transport on `GET /v1/responses`.
@@ -266,6 +347,124 @@ fn compress_output_field(
 mod tests {
     use super::super::compress::compress_tool_result;
     use super::*;
+
+    // --- #1685: a subscription token is moved to the rail it authenticates on ---
+
+    /// A shape-valid compact JWS. Only the three-segment `eyJ…` shape is read;
+    /// nothing here is decoded, so the payload is arbitrary.
+    const JWT_BEARER: &str = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.c2lnbmF0dXJl";
+
+    fn headers_with_auth(value: &str) -> axum::http::HeaderMap {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            axum::http::HeaderValue::from_str(value).unwrap(),
+        );
+        headers
+    }
+
+    #[test]
+    fn a_jwt_bearer_is_recognized_and_an_api_key_is_not() {
+        assert!(is_chatgpt_subscription_bearer(&headers_with_auth(
+            &format!("Bearer {JWT_BEARER}")
+        )));
+        assert!(
+            !is_chatgpt_subscription_bearer(&headers_with_auth("Bearer sk-proj-abc123")),
+            "an OpenAI platform key belongs on the /v1 rail"
+        );
+        assert!(
+            !is_chatgpt_subscription_bearer(&headers_with_auth("Bearer opaque-gateway-token")),
+            "a credential whose shape says nothing must not be moved"
+        );
+        assert!(
+            !is_chatgpt_subscription_bearer(&axum::http::HeaderMap::new()),
+            "no credential, no re-route"
+        );
+    }
+
+    #[test]
+    fn only_the_stock_openai_endpoint_is_eligible() {
+        assert!(is_stock_openai_upstream("https://api.openai.com"));
+        assert!(is_stock_openai_upstream("https://api.openai.com/"));
+        // A configured gateway is an explicit choice and is never second-guessed.
+        for configured in [
+            "https://my-resource.openai.azure.com",
+            "https://api.githubcopilot.com",
+            "http://127.0.0.1:4000",
+            "https://api.openai.com.evil.test",
+        ] {
+            assert!(
+                !is_stock_openai_upstream(configured),
+                "{configured} must keep its configured upstream"
+            );
+        }
+    }
+
+    fn rail_for(upstream: &str, auth: &str, uri: &str) -> Option<String> {
+        // `chatgpt_rail_uri` reads only the upstream string and the headers, so
+        // the decision is exercised without standing up a ProxyState.
+        if !is_stock_openai_upstream(upstream) {
+            return None;
+        }
+        if !is_chatgpt_subscription_bearer(&headers_with_auth(auth)) {
+            return None;
+        }
+        let uri: axum::http::Uri = uri.parse().unwrap();
+        let rest = uri
+            .path()
+            .strip_prefix("/v1/responses")
+            .or_else(|| uri.path().strip_prefix("/responses"))?;
+        let query = uri.query().map_or_else(String::new, |q| format!("?{q}"));
+        Some(format!("/backend-api/codex/responses{rest}{query}"))
+    }
+
+    #[test]
+    fn a_subscription_token_moves_to_the_chatgpt_rail() {
+        assert_eq!(
+            rail_for(
+                "https://api.openai.com",
+                &format!("Bearer {JWT_BEARER}"),
+                "/v1/responses"
+            )
+            .as_deref(),
+            Some("/backend-api/codex/responses")
+        );
+    }
+
+    #[test]
+    fn the_rail_move_preserves_subpaths_and_query() {
+        assert_eq!(
+            rail_for(
+                "https://api.openai.com",
+                &format!("Bearer {JWT_BEARER}"),
+                "/v1/responses/resp_abc/cancel?stream=true"
+            )
+            .as_deref(),
+            Some("/backend-api/codex/responses/resp_abc/cancel?stream=true")
+        );
+    }
+
+    #[test]
+    fn an_api_key_and_a_configured_gateway_both_stay_put() {
+        assert_eq!(
+            rail_for(
+                "https://api.openai.com",
+                "Bearer sk-proj-abc123",
+                "/v1/responses"
+            ),
+            None,
+            "an API key is exactly what the /v1 rail wants"
+        );
+        assert_eq!(
+            rail_for(
+                "https://my-resource.openai.azure.com",
+                &format!("Bearer {JWT_BEARER}"),
+                "/v1/responses"
+            ),
+            None,
+            "a configured gateway may legitimately accept a JWT"
+        );
+    }
 
     /// A long `git status` is a known-compressible fixture: `has_structural_output`
     /// is false for it, so it flows through the git-status pattern compressor.

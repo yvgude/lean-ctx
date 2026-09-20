@@ -735,10 +735,12 @@ pub async fn forward_request(
     // cause is the rail: a subscription token only authenticates against
     // chatgpt.com.
     //
-    // Re-routing here is not an option — OpenCode's own ChatGPT-OAuth plugin
-    // legitimately uses this same path, and `/v1` was added to OPENAI_BASE_URL
-    // precisely so that plugin matches (#366). So name the cause instead, and
-    // append it: the upstream text is preserved byte for byte.
+    // #1685 moved the clear-cut case off this path entirely: a JWT bearer on a
+    // stock `api.openai.com` upstream is now re-routed to the ChatGPT rail before
+    // it is sent (`openai_responses::chatgpt_rail_uri`). What still reaches here
+    // is the residue that cannot be re-routed safely — a configured gateway
+    // upstream, or a credential whose shape says nothing — so the annotation
+    // stays as the explanation of last resort.
     if provider_label == "OpenAI" && response.status() == StatusCode::UNAUTHORIZED {
         response = annotate_openai_scope_401(response).await;
     }
