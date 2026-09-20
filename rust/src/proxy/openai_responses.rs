@@ -466,6 +466,141 @@ mod tests {
         );
     }
 
+    // --- the same decision, driven through the real handler ---
+    //
+    // The tests above pin the rule; these pin that the rule is actually wired
+    // into `handler` and that the request arrives at the other end on the path
+    // it was moved to. Both point every upstream the handler could pick at a
+    // local sink, so no test reaches the network.
+
+    fn proxy_state(openai_upstream: &str, chatgpt_upstream: &str) -> ProxyState {
+        use std::sync::Arc;
+        let (_tx, rx) = tokio::sync::watch::channel(Arc::new(crate::core::config::Upstreams {
+            anthropic: "https://api.anthropic.com".into(),
+            openai: openai_upstream.into(),
+            chatgpt: chatgpt_upstream.into(),
+            gemini: "https://generativelanguage.googleapis.com".into(),
+            providers: Vec::new(),
+        }));
+        // The sender is dropped here; a `watch::Receiver` keeps serving the last
+        // value it saw, which is all `state.openai_upstream()` needs.
+        ProxyState {
+            client: reqwest::Client::new(),
+            port: 0,
+            stats: Arc::new(crate::proxy::ProxyStats::default()),
+            break_even: Arc::new(crate::proxy::break_even::BreakEvenCalculator::new(1500)),
+            introspect: Arc::new(crate::proxy::introspect::IntrospectState::default()),
+            ocla_cache: None,
+            upstreams: rx,
+            chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(
+            ),
+            mcp_servers: Arc::new(Vec::new()),
+            web_app_tracker: Arc::new(std::sync::Mutex::new(
+                crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
+            )),
+        }
+    }
+
+    /// A one-shot upstream that reports the request line it was given.
+    async fn spawn_sink() -> (String, tokio::sync::oneshot::Receiver<String>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = Vec::new();
+            let mut chunk = [0_u8; 2048];
+            while let Ok(n) = socket.read(&mut chunk).await {
+                if n == 0 {
+                    break;
+                }
+                buf.extend_from_slice(&chunk[..n]);
+                if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let first_line = String::from_utf8_lossy(&buf)
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .to_string();
+            let _ = tx.send(first_line);
+            let _ = socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\n\
+                      content-type: application/json\r\n\
+                      content-length: 2\r\n\
+                      \r\n\
+                      {}",
+                )
+                .await;
+        });
+        (format!("http://{addr}"), rx)
+    }
+
+    fn responses_request(auth: &str) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/v1/responses")
+            .header(axum::http::header::AUTHORIZATION, auth)
+            .header(axum::http::header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&serde_json::json!({"model": "gpt-5.5", "input": []})).unwrap(),
+            ))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn handler_sends_a_subscription_token_to_the_chatgpt_backend() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let (sink, seen) = spawn_sink().await;
+        // Stock OpenAI upstream — the condition under test. It is never
+        // contacted, because the request is moved to the ChatGPT sink.
+        let state = proxy_state("https://api.openai.com", &sink);
+
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            handler(
+                State(state),
+                responses_request(&format!("Bearer {JWT_BEARER}")),
+            ),
+        )
+        .await
+        .expect("the handler must answer from the local sink");
+
+        let line = seen.await.unwrap();
+        assert!(
+            line.starts_with("POST /backend-api/codex/responses "),
+            "a subscription token must arrive on the ChatGPT rail, got: {line}"
+        );
+    }
+
+    #[tokio::test]
+    async fn handler_leaves_a_configured_gateway_on_the_platform_path() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let (sink, seen) = spawn_sink().await;
+        // The same JWT, but the operator configured this upstream explicitly.
+        // It may well accept a JWT, so the path must be left exactly as sent.
+        let state = proxy_state(&sink, "https://chatgpt.com");
+
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            handler(
+                State(state),
+                responses_request(&format!("Bearer {JWT_BEARER}")),
+            ),
+        )
+        .await
+        .expect("the handler must answer from the local sink");
+
+        let line = seen.await.unwrap();
+        assert!(
+            line.starts_with("POST /v1/responses "),
+            "a configured gateway must keep the path it was sent, got: {line}"
+        );
+    }
+
     /// A long `git status` is a known-compressible fixture: `has_structural_output`
     /// is false for it, so it flows through the git-status pattern compressor.
     fn long_git_status() -> String {
