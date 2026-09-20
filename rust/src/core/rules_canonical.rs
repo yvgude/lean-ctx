@@ -115,17 +115,14 @@ pub const RULES_VERSION: usize = 10;
 
 /// Banner placed at the top of dedicated rule files (non-shadow only).
 ///
-/// It used to restate the whole rule ("ALWAYS use ctx_* instead of native
-/// equivalents. This is NOT optional.") immediately above `NEVER`, which says
-/// the same thing in the opposite polarity and with an actual tool list. That
-/// duplication was also the most over-claiming line in the ruleset: unqualified,
-/// it read as a ranking over every tool the host exposes, so a model with an
-/// IDE/LSP, database or issue-tracker MCP server attached routed those questions
-/// here too (#1788). The banner now points at the mapping instead of restating
-/// it, and the freed characters pay for the scope clause in `NEVER` — the
-/// injected profile sits on a hard per-turn budget, so the boundary had to be
-/// bought, not added.
-pub const CRITICAL: &str = "CRITICAL: the ctx_* mapping below is not optional.";
+/// It used to end "…instead of native equivalents. This is NOT optional." —
+/// unqualified, so it read as a ranking over every tool the host exposes, and a
+/// model with an IDE/LSP, database or issue-tracker MCP server attached routed
+/// those questions here too (#1788). The imperative stays (it is the adherence
+/// lever, and the instructions channel is guarded on it); what goes is the
+/// unbounded object. "as mapped below" hands the scope to `BULLETS`, which
+/// names the four tools this actually governs.
+pub const CRITICAL: &str = "CRITICAL: ALWAYS use lean-ctx ctx_* tools as mapped below.";
 
 /// Weak-model adherence nudge (#1067 / GH #593). Smaller models (e.g. GLM 5.2 in
 /// Windsurf) often read the tool-mapping rules yet still answer from memory or
@@ -157,9 +154,11 @@ MANDATORY MAPPING:\n\
 /// server — an IDE/LSP bridge, a database, an issue tracker — rather than above
 /// the host's built-in file/search/shell tools. The closing clause is kept to
 /// one short sentence: this text ships on every turn, and the layer that sells
-/// token savings cannot pay for its own disclaimer twice.
-pub const NEVER: &str = "NEVER use built-in Read/Grep/Shell/Glob when a ctx_* \
-    equivalent exists. SELF-CORRECT: the moment you reach for one, stop and call the ctx_* tool \
+/// token savings cannot pay for its own disclaimer twice. It is paid for, not
+/// added: "for these jobs" replaces "when a ctx_* equivalent exists", which
+/// restated the mapping printed directly above it.
+pub const NEVER: &str = "NEVER use built-in Read/Grep/Shell/Glob for these jobs. \
+    SELF-CORRECT: the moment you reach for one, stop and call the ctx_* tool \
     instead. Other MCP servers keep their own jobs.";
 
 /// Intent-to-tool playbook — maps common agent questions to the right tool.
