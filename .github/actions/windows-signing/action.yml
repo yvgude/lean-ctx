@@ -1,0 +1,60 @@
+name: Sign Windows engine
+description: Sign and verify the Windows engine with Thinkery AG's Azure certificate.
+inputs:
+  binary:
+    description: Path to the built lean-ctx.exe
+    required: true
+  client-id:
+    description: Azure application ID
+    required: true
+  tenant-id:
+    description: Azure tenant ID
+    required: true
+  subscription-id:
+    description: Azure subscription ID
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Validate signing context
+      shell: pwsh
+      env:
+        SIGNING_BINARY: ${{ inputs.binary }}
+        SIGNING_CLIENT_ID: ${{ inputs.client-id }}
+        SIGNING_TENANT_ID: ${{ inputs.tenant-id }}
+        SIGNING_SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        if ($env:RUNNER_OS -ne 'Windows') { throw 'Windows runner required' }
+        if ($env:GITHUB_REPOSITORY -ne 'yvgude/lean-ctx') { throw 'Unexpected signing repository' }
+        $release = $env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -match '^refs/tags/v[0-9]'
+        $smoke = $env:GITHUB_EVENT_NAME -eq 'workflow_dispatch' -and $env:GITHUB_REF -eq 'refs/heads/main'
+        if (-not ($release -or $smoke)) { throw 'Signing requires a release tag or manual main build' }
+        foreach ($value in @($env:SIGNING_CLIENT_ID, $env:SIGNING_TENANT_ID, $env:SIGNING_SUBSCRIPTION_ID)) {
+          if ([string]::IsNullOrWhiteSpace($value)) { throw 'Missing Azure signing configuration' }
+        }
+        $binary = Get-Item -LiteralPath $env:SIGNING_BINARY
+        if ($binary.PSIsContainer -or $binary.Name -ne 'lean-ctx.exe') { throw 'Expected lean-ctx.exe' }
+    - name: Log in to Azure using GitHub OIDC
+      uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+      with:
+        client-id: ${{ inputs.client-id }}
+        tenant-id: ${{ inputs.tenant-id }}
+        subscription-id: ${{ inputs.subscription-id }}
+    - name: Sign and timestamp
+      uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
+      with:
+        endpoint: https://swn.codesigning.azure.net/
+        signing-account-name: thinkery-signing
+        certificate-profile-name: leanctx-public-trust
+        files: ${{ github.workspace }}/${{ inputs.binary }}
+        file-digest: SHA256
+        timestamp-rfc3161: http://timestamp.acs.microsoft.com
+        timestamp-digest: SHA256
+        exclude-environment-credential: true
+        exclude-azure-cli-credential: false
+    - name: Verify publisher and timestamp
+      shell: pwsh
+      env:
+        SIGNING_BINARY: ${{ inputs.binary }}
+      run: ./scripts/verify-windows-signature.ps1 -Path $env:SIGNING_BINARY

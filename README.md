@@ -311,6 +311,24 @@ lean-ctx setup            # interactive wizard with every option
 **Building from source on Windows?** Clone the repo and run `./install.ps1` in PowerShell — it builds the release binary and installs it into Cargo's bin directory (pass `-BuildOnly` to build without installing).
 
 <details>
+<summary><strong>Windows code signing and Smart App Control</strong></summary>
+
+The current release workflow signs new Windows binaries as **Thinkery AG**,
+including the binaries inside ZIP archives and Python companion wheels.
+Earlier releases may still contain unsigned executables. Signing does not
+guarantee acceptance by every Windows security policy.
+
+If Windows blocks an older unsigned download, use WSL or build locally with
+`cargo install lean-ctx`; do not disable system-wide security protections for
+this tool. Windows-side MCP clients can launch the WSL installation with
+`wsl lean-ctx mcp`.
+
+See [Windows signing and verification](docs/windows-signing.md) and
+[#1820](https://github.com/yvgude/lean-ctx/issues/1820) for verification status.
+
+</details>
+
+<details>
 <summary><strong>Troubleshooting / Safety</strong></summary>
 
 - Disable immediately (current shell): `lean-ctx-off`

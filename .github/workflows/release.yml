@@ -9,8 +9,7 @@ on:
       - 'v[0-9]*'
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
   sdk-gate:
@@ -90,7 +89,7 @@ jobs:
       - name: Rehearse hermetic rollback contract
         run: python3 tests/delivery/test_rehearse_delivery.py
       - name: Verify deterministic Python Engine wheel builder
-        run: python3 -m unittest tests.delivery.test_python_engine_wheel -v
+        run: python3 -m unittest tests.delivery.test_python_engine_wheel tests.delivery.test_windows_packages -v
 
   build:
     name: Build ${{ matrix.artifact || matrix.target }}
@@ -102,6 +101,7 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
+            jemalloc: false
             wheel_distribution: thinkery-leanctx-engine
             wheel_platform: manylinux_2_35_x86_64
           - target: x86_64-unknown-linux-gnu
@@ -134,17 +134,10 @@ jobs:
             macos_deployment_target: "11.0"
             wheel_distribution: thinkery-leanctx-engine
             wheel_platform: macosx_11_0_arm64
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            wheel_distribution: thinkery-leanctx-engine
-            wheel_platform: win_amd64
-          - target: x86_64-pc-windows-gnu
-            os: windows-latest
-            jemalloc: true
-            wheel_distribution: thinkery-leanctx-engine-windows-gnu
-            wheel_platform: win_amd64
 
-    steps:
+    # Both build jobs share identical build/package steps, but only Windows
+    # receives the signing environment and OIDC permission.
+    steps: &engine-build-steps
       - uses: actions/checkout@v4 # v4
         with:
           persist-credentials: false
@@ -259,6 +252,15 @@ jobs:
             cargo build --release --locked --target ${{ matrix.target }} "${feature_args[@]}"
           fi
 
+      - name: Sign Windows engine
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/windows-signing
+        with:
+          binary: rust/target/${{ matrix.target }}/release/lean-ctx.exe
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
       - name: Package (Unix)
         if: runner.os != 'Windows'
         shell: bash
@@ -287,6 +289,15 @@ jobs:
             --version "${GITHUB_REF_NAME#v}" \
             --platform-tag "${{ matrix.wheel_platform }}" \
             --output-dir dist-engine-wheels
+
+      - name: Verify signed Windows packages
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $wheel = @(Get-ChildItem dist-engine-wheels -Filter '*.whl')
+          if ($wheel.Count -ne 1) { throw 'Expected exactly one engine wheel' }
+          python scripts/verify-windows-packages.py --binary "rust/target/${{ matrix.target }}/release/lean-ctx.exe" "lean-ctx-${{ matrix.artifact || matrix.target }}.zip" $wheel[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged signature bytes differ' }
 
       - name: Verify native companion wheel and Agent Tools protocol
         shell: bash
@@ -330,10 +341,47 @@ jobs:
             lean-ctx-${{ matrix.artifact || matrix.target }}.zip
             dist-engine-wheels/*.whl
 
+  build-windows:
+    name: Build ${{ matrix.target }}
+    needs: delivery-gate
+    runs-on: windows-2025
+    environment: windows-signing
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            wheel_distribution: thinkery-leanctx-engine
+            wheel_platform: win_amd64
+            jemalloc: false
+            cross: false
+            musl: false
+            zig: false
+            artifact: ''
+            cargo_features: ''
+            macos_deployment_target: ''
+          - target: x86_64-pc-windows-gnu
+            wheel_distribution: thinkery-leanctx-engine-windows-gnu
+            wheel_platform: win_amd64
+            jemalloc: true
+            cross: false
+            musl: false
+            zig: false
+            artifact: ''
+            cargo_features: ''
+            macos_deployment_target: ''
+    steps: *engine-build-steps
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, build-windows]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4 # v4
         with:
