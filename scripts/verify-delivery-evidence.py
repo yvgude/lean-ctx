@@ -78,8 +78,8 @@ TARGETS = (
     ("aarch64-unknown-linux-musl", "aarch64-unknown-linux-musl", "ubuntu-22.04"),
     ("x86_64-apple-darwin", "x86_64-apple-darwin", "macos-latest"),
     ("aarch64-apple-darwin", "aarch64-apple-darwin", "macos-latest"),
-    ("x86_64-pc-windows-msvc", "x86_64-pc-windows-msvc", "windows-latest"),
-    ("x86_64-pc-windows-gnu", "x86_64-pc-windows-gnu", "windows-latest"),
+    ("x86_64-pc-windows-msvc", "x86_64-pc-windows-msvc", "windows-2025"),
+    ("x86_64-pc-windows-gnu", "x86_64-pc-windows-gnu", "windows-2025"),
 )
 PUBLISH_CHANNELS = (
     ("engine-release", ".github/workflows/release.yml", "v[0-9]*"),
