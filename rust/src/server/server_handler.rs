@@ -157,6 +157,10 @@ impl ServerHandler for LeanCtxServer {
                     rt.metrics.record_session_persisted();
                 }
             } else if let Err(e) = session.save() {
+                // Synchronous on purpose: this runs once per connection, before
+                // any tool can be called, and the session must be on disk before
+                // it is. The wait is bounded by `PreparedSave`'s lock deadline,
+                // so it cannot become the wedge #1783 describes.
                 tracing::warn!("lean-ctx: failed to persist session state: {e}");
             }
         }

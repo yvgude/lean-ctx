@@ -11,6 +11,11 @@ use super::types::*;
 /// optimisation and must never turn process startup into a session-store scan.
 const PROJECT_HISTORY_LIMIT: usize = 8;
 
+/// How long a save waits for the per-session lock before reporting failure.
+/// Generous enough that an ordinary concurrent save wins it, short enough that
+/// a holder which has stopped making progress cannot hold a caller forever.
+const SAVE_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct ProjectSessionIndex {
     version: u8,
@@ -60,10 +65,9 @@ fn with_project_index_lock<T>(
     operation: impl FnOnce(&std::path::Path) -> Result<T, String>,
 ) -> Result<T, String> {
     use fs2::FileExt;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     const LOCK_TIMEOUT: Duration = Duration::from_millis(200);
-    const RETRY_INTERVAL: Duration = Duration::from_millis(10);
 
     let index_path = project_index_path(dir, project_root);
     let index_dir = index_path.parent().ok_or("project index has no parent")?;
@@ -74,21 +78,8 @@ fn with_project_index_lock<T>(
         .write(true)
         .open(index_path.with_extension("lock"))
         .map_err(|e| format!("project index lock: {e}"))?;
-    let deadline = Instant::now() + LOCK_TIMEOUT;
-    loop {
-        match lock.try_lock_exclusive() {
-            Ok(()) => break,
-            Err(error)
-                if crate::core::file_lock::is_contended(&error) && Instant::now() < deadline =>
-            {
-                std::thread::sleep(RETRY_INTERVAL);
-            }
-            Err(error) if crate::core::file_lock::is_contended(&error) => {
-                return Err("project index lock timed out".to_string());
-            }
-            Err(error) => return Err(format!("project index lock: {error}")),
-        }
-    }
+    crate::core::file_lock::acquire_exclusive_timeout(&lock, LOCK_TIMEOUT)
+        .map_err(|e| format!("project index lock: {e}"))?;
     let result = operation(&index_path);
     let _ = FileExt::unlock(&lock);
     result
@@ -209,6 +200,12 @@ impl PreparedSave {
     /// snapshot to disk atomically. A per-session file lock and version check
     /// make deferred saves monotonic even when background tasks finish out of
     /// order.
+    ///
+    /// The lock has a deadline. A save that cannot get it reports that instead
+    /// of waiting, because `SessionState::save` restores `unsaved_changes` on
+    /// `Err` and the next batch tries again — whereas a caller stuck in an
+    /// unbounded wait keeps whatever it holds until the other side lets go
+    /// (#1783).
     pub fn write_to_disk(self) -> Result<(), String> {
         use fs2::FileExt;
 
@@ -222,7 +219,7 @@ impl PreparedSave {
             .write(true)
             .open(lock_path)
             .map_err(|e| format!("open session save lock: {e}"))?;
-        lock.lock_exclusive()
+        crate::core::file_lock::acquire_exclusive_timeout(&lock, SAVE_LOCK_TIMEOUT)
             .map_err(|e| format!("lock session save: {e}"))?;
 
         let result = (|| {
@@ -677,6 +674,47 @@ mod tests {
     fn recent_project_sessions_refuse_broad_roots() {
         let _data = crate::core::data_dir::isolated_data_dir();
         assert!(SessionState::load_recent_for_project_root("/", 8).is_empty());
+    }
+
+    /// #1783: a save must never wait on the per-session lock indefinitely. The
+    /// callers that matter hold a `tokio` guard the rest of the server needs,
+    /// so an unbounded wait here is a permanent server-wide wedge; a reported
+    /// failure is recoverable, because `save` re-arms `unsaved_changes` and the
+    /// next batch writes.
+    #[test]
+    fn save_gives_up_when_another_holder_keeps_the_session_lock() {
+        use fs2::FileExt;
+
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().expect("project tempdir");
+        let mut session = SessionState::new();
+        session.id = "wedged".to_string();
+        session.project_root = Some(project.path().to_string_lossy().to_string());
+
+        let sessions = crate::core::session::paths::sessions_dir().expect("sessions dir");
+        std::fs::create_dir_all(&sessions).expect("create sessions dir");
+        let holder = std::fs::File::create(sessions.join(".wedged.save.lock")).expect("lock file");
+        holder.lock_exclusive().expect("hold the save lock");
+
+        let started = std::time::Instant::now();
+        let error = session
+            .save()
+            .expect_err("a held lock must not be waited out");
+        let waited = started.elapsed();
+
+        assert!(
+            error.contains("lock session save"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            waited < super::SAVE_LOCK_TIMEOUT * 4,
+            "save must return on its own deadline, waited {waited:?}"
+        );
+        assert_ne!(
+            session.stats.unsaved_changes, 0,
+            "a failed save must stay pending so the next batch retries"
+        );
+        FileExt::unlock(&holder).expect("release");
     }
 
     #[test]
