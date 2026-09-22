@@ -58,6 +58,6 @@
   "baseline": {
     "commit": "bff280bfc8eba6959854fafcbf104b5745d794c3",
     "report": "security/evidence/full-history-baseline-v1.json",
-    "report_sha256": "99aaf4c3f9a0882bf4d7e1103012b87db7838a3df9c43cf62164bef04778b8c5"
+    "report_sha256": "16e6886348f6bb8d0226f85147ceb550c5aac9378da6943156935d6219df40b3"
   }
 }
