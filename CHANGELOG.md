@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — Claude Code's Bash sandbox no longer blocks every command (#1834)
+
+- With `sandbox.enabled`, Claude Code spawns each Bash call as
+  `env SANDBOX_RUNTIME=1 … /usr/bin/sandbox-exec -p '<profile>' /bin/zsh -c '<cmd>'`
+  through `zsh -c`. The `.zshenv` redirect forwarded that launcher to
+  `lean-ctx -c`, nothing recognised it, and the allowlist hard-blocked on the
+  inner `eval` — exit 126 for every command, even `echo`. `lean-ctx -c` now
+  recognises the launcher shape and runs it verbatim with the hook re-entry
+  guard cleared, so the shell it starts inside the sandbox re-enters the hook
+  and gates/compresses the real command there. The launcher is deliberately
+  not "unwrapped": that would run the command outside the user's sandbox.
+
 ### Fixed — the release gate now checks the Agent-Tools-SDK coupling before building
 
 - **v3.10.2's first release run failed on all nine build legs** with `SDK Engine
