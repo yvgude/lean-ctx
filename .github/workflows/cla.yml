@@ -17,11 +17,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: CLA Assistant
-        # Only act on the sign/recreate comment phrases or on PR lifecycle events.
+        # Only act on the sign/recheck comment phrases or on PR lifecycle events.
+        #
+        # Substring, not equality: GitHub's comment box appends a trailing
+        # newline, so `==` rejected a correctly worded signature — and because a
+        # skipped step still reports success, the workflow run looked green while
+        # the check stayed red and the contributor was told to sign again.
+        #
+        # Being loose here is safe. This condition only decides whether the
+        # action runs; the action itself is the authority on what counts as a
+        # signature, and it compares the trimmed, lowercased comment for exact
+        # equality. A comment that merely quotes the phrase therefore triggers a
+        # re-evaluation and nothing more.
         if: >-
-          (github.event.comment.body == 'recreate-cla' ||
-           github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA') ||
-          github.event_name == 'pull_request_target'
+          github.event_name == 'pull_request_target' ||
+          contains(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA') ||
+          contains(github.event.comment.body, 'recreate-cla') ||
+          contains(github.event.comment.body, 'recheck')
         # Pinned to the v2.6.1 commit SHA (supply-chain hardening; a moving tag
         # could be repointed to malicious code). Bump deliberately when upgrading.
         uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
