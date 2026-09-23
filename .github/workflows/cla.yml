@@ -29,11 +29,17 @@ jobs:
         # signature, and it compares the trimmed, lowercased comment for exact
         # equality. A comment that merely quotes the phrase therefore triggers a
         # re-evaluation and nothing more.
+        #
+        # `issue_comment` also fires on plain issues, where a comment that
+        # happens to say "recheck" would start the action against something
+        # that is not a pull request and fail the run — so comments count only
+        # on pull requests.
         if: >-
           github.event_name == 'pull_request_target' ||
-          contains(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA') ||
-          contains(github.event.comment.body, 'recreate-cla') ||
-          contains(github.event.comment.body, 'recheck')
+          (github.event.issue.pull_request &&
+           (contains(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA') ||
+            contains(github.event.comment.body, 'recreate-cla') ||
+            contains(github.event.comment.body, 'recheck')))
         # Pinned to the v2.6.1 commit SHA (supply-chain hardening; a moving tag
         # could be repointed to malicious code). Bump deliberately when upgrading.
         uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
