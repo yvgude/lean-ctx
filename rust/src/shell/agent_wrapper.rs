@@ -52,13 +52,15 @@
 //! ```
 //!
 //! The host runs this through `zsh -c`, so `.zshenv` forwards the launcher
-//! itself to `lean-ctx -c`. It is not unwrapped and not gated: unwrapping would
-//! run the real command *outside* the sandbox the user turned on, and gating it
-//! hard-blocks on the inner `eval`/`$()` for every call (exit 126). Instead
-//! [`os_sandbox_launcher_argv`] recognises the shape and `exec` runs the argv
-//! verbatim with the hook re-entry guard cleared, so the shell the launcher
-//! starts *inside* the sandbox re-enters the hook and Path B gates and
-//! compresses the real command there.
+//! itself to `lean-ctx -c`. It is not unwrapped: that would run the real
+//! command *outside* the sandbox the user turned on. Gating the launcher as a
+//! whole hard-blocks on the inner `eval`/`$()` for every call (exit 126).
+//! Instead [`os_sandbox_launcher_argv`] recognises the exact shape, `exec`
+//! gates the script inside it the way Path A/B would, and only then runs the
+//! argv verbatim with the hook re-entry guard cleared. The gate in the outer
+//! process is the one that counts — the inner shell may be bash, which never
+//! reads `.zshenv` — and a zsh inside the sandbox re-enters the hook for
+//! compression.
 
 /// A decoded agent command wrapper.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -308,18 +310,80 @@ fn basename(word: &str) -> &str {
     word.rsplit('/').next().unwrap_or(word)
 }
 
-/// `NAME=value` as `env` (and the shell) read it.
-fn env_assignment_name(word: &str) -> Option<&str> {
-    let (name, _) = word.split_once('=')?;
+fn is_env_name(name: &str) -> bool {
     let mut chars = name.chars();
-    let first = chars.next()?;
-    ((first.is_ascii_alphabetic() || first == '_')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_'))
-    .then_some(name)
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn is_digits(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Variables the sandbox launcher may assign, each with the only values Claude
+/// Code's sandbox runtime ever gives it. This is an allowlist on purpose:
+/// anything else a launcher sets (`SHELLOPTS`/`PS4`, `BASH_FUNC_*`,
+/// `DYLD_*`, `GIT_ASKPASS`, a `core.sshCommand` config pair, …) can run code,
+/// so an unknown assignment falls back to the ordinary gate. `git_keys` holds
+/// the indices of the `GIT_CONFIG_KEY_n` already accepted, so a
+/// `GIT_CONFIG_VALUE_n` can never pair with a key from the inherited
+/// environment.
+fn is_launcher_assignment(name: &str, value: &str, git_keys: &mut Vec<String>) -> bool {
+    match name {
+        // Proxy endpoints, CA bundles and the scratch dir: data, never code.
+        "SANDBOX_RUNTIME" | "TMPDIR" | "NO_PROXY" | "no_proxy" | "HTTP_PROXY" | "HTTPS_PROXY"
+        | "http_proxy" | "https_proxy" | "ALL_PROXY" | "all_proxy" | "GRPC_PROXY"
+        | "grpc_proxy" | "FTP_PROXY" | "ftp_proxy" | "RSYNC_PROXY" | "DOCKER_HTTP_PROXY"
+        | "DOCKER_HTTPS_PROXY" | "CLOUDSDK_PROXY_TYPE" | "CLOUDSDK_PROXY_ADDRESS"
+        | "CLOUDSDK_PROXY_PORT" | "CLOUDSDK_PROXY_USERNAME" | "CLOUDSDK_PROXY_PASSWORD"
+        | "NODE_EXTRA_CA_CERTS" | "SSL_CERT_FILE" | "CURL_CA_BUNDLE" | "REQUESTS_CA_BUNDLE"
+        | "PIP_CERT" | "GIT_SSL_CAINFO" | "AWS_CA_BUNDLE" | "CARGO_HTTP_CAINFO" | "DENO_CERT"
+        | "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE" | "NIX_SSL_CERT_FILE" => true,
+        "GIT_CONFIG_COUNT" => is_digits(value),
+        "GIT_CONFIG_PARAMETERS" => value == "'http.proxyAuthMethod=basic'",
+        "JAVA_TOOL_OPTIONS" => value == "-Djava.net.preferIPv4Stack=true",
+        // ssh runs `ProxyCommand` through a shell: only the SOCKS hop to the
+        // sandbox's own localhost proxy is host scaffolding.
+        "GIT_SSH_COMMAND" => value
+            .strip_prefix(
+                "ssh -o ControlMaster=no -o ControlPath=none -o ProxyCommand='nc -X 5 -x localhost:",
+            )
+            .and_then(|rest| rest.strip_suffix(" %h %p'"))
+            .is_some_and(is_digits),
+        _ => {
+            if let Some(n) = name.strip_prefix("GIT_CONFIG_KEY_") {
+                let known = matches!(
+                    value,
+                    "safe.directory" | "http.schannelUseSSLCAInfo" | "http.schannelCheckRevoke"
+                );
+                if is_digits(n) && known {
+                    git_keys.push(n.to_string());
+                    return true;
+                }
+                return false;
+            }
+            name.strip_prefix("GIT_CONFIG_VALUE_")
+                .is_some_and(|n| git_keys.iter().any(|k| k == n))
+        }
+    }
+}
+
+/// The inner shell must be a real one the model cannot have written: a system
+/// shell, or the user's own login shell (`$SHELL`, e.g. Homebrew zsh) — the
+/// path the host resolves when it builds the launcher.
+fn is_trusted_shell(shell: &str, login_shell: Option<&str>) -> bool {
+    matches!(shell, "/bin/zsh" | "/bin/bash" | "/bin/sh")
+        || login_shell.is_some_and(|login| {
+            login == shell
+                && login.starts_with('/')
+                && matches!(basename(login), "zsh" | "bash" | "sh")
+        })
 }
 
 /// Variables that decide whether the inner shell re-enters the lean-ctx hook
-/// and which rc file it reads. A launcher that sets any of them is not
+/// and which rc file it reads. A launcher that unsets any of them is not
 /// trusted as host scaffolding: run through the normal gate instead.
 fn steers_shell_hook(name: &str) -> bool {
     name.starts_with("LEAN_CTX_")
@@ -342,44 +406,57 @@ fn steers_shell_hook(name: &str) -> bool {
 /// Argv of a host's OS-sandbox launcher (Path C, see the module docs), or
 /// `None` for anything else.
 ///
-/// Detection is deliberately tight. The string must be a single simple command
-/// (no operators, no unquoted newlines) of the shape
-/// `[env NAME=value…] <launcher> … <shell> -c <script>` where `<launcher>` is
-/// `sandbox-exec` (macOS Seatbelt) or `bwrap` (Linux bubblewrap) and `<shell>`
-/// is `zsh`, `bash` or `sh`. `env` may carry only plain assignments — no
-/// options such as `-i`/`-u`, which could strip the agent markers the hook
-/// keys on — and none of the assignments may name a variable that steers the
-/// hook itself ([`steers_shell_hook`]). Anything the model could use to keep
-/// the inner shell from re-entering the gate therefore falls back to the
-/// ordinary allowlist path.
+/// The script is the last element. The caller must still gate it: the
+/// launcher only decides *where* the command runs, never *whether*.
+///
+/// Detection accepts exactly the argv Claude Code's sandbox runtime builds and
+/// nothing looser, because every extra degree of freedom is a way to run code
+/// before the gated script:
+///
+/// ```text
+/// [env [-u NAME]… NAME=value…] /usr/bin/sandbox-exec -p <profile> <shell> -c <script>
+/// ```
+///
+/// - a single simple command (no operators, no unquoted newlines);
+/// - `env` / `/usr/bin/env` with no option other than `-u` for a name that
+///   does not steer the hook ([`steers_shell_hook`]), and only assignments
+///   from [`is_launcher_assignment`];
+/// - exactly `/usr/bin/sandbox-exec -p <profile>` — no `-f` profile file, no
+///   program between the launcher and the shell;
+/// - a shell from [`is_trusted_shell`], then `-c <script>` and nothing after.
 pub(crate) fn os_sandbox_launcher_argv(command: &str) -> Option<Vec<String>> {
+    let login_shell = std::env::var("SHELL").ok();
+    launcher_argv(command, login_shell.as_deref())
+}
+
+fn launcher_argv(command: &str, login_shell: Option<&str>) -> Option<Vec<String>> {
     let words = split_simple_command(command)?;
     let mut idx = 0;
-    if basename(&words[0]) == "env" {
+    if matches!(words[0].as_str(), "env" | "/usr/bin/env") {
         idx = 1;
-        while let Some(word) = words.get(idx) {
-            match env_assignment_name(word) {
-                Some(name) if steers_shell_hook(name) => return None,
-                Some(_) => idx += 1,
-                None if word.starts_with('-') => return None,
-                None => break,
+        while words.get(idx).map(String::as_str) == Some("-u") {
+            let name = words.get(idx + 1)?;
+            if !is_env_name(name) || steers_shell_hook(name) {
+                return None;
             }
+            idx += 2;
+        }
+        let mut git_keys = Vec::new();
+        while let Some((name, value)) = words.get(idx).and_then(|w| w.split_once('=')) {
+            if !is_env_name(name) || !is_launcher_assignment(name, value, &mut git_keys) {
+                return None;
+            }
+            idx += 1;
         }
     }
-    let launcher = words.get(idx)?;
-    if !matches!(basename(launcher), "sandbox-exec" | "bwrap") {
+    let [launcher, flag, _profile, shell, dash_c, _script] = &words[idx..] else {
         return None;
-    }
-    // `… <shell> -c <script>` must close the launcher: that is the only place
-    // the real command can live, and the shell is what re-enters the hook.
-    let n = words.len();
-    if n < idx + 4 {
-        return None;
-    }
-    if !matches!(basename(&words[n - 3]), "zsh" | "bash" | "sh") || words[n - 2] != "-c" {
-        return None;
-    }
-    Some(words)
+    };
+    (launcher == "/usr/bin/sandbox-exec"
+        && flag == "-p"
+        && is_trusted_shell(shell, login_shell)
+        && dash_c == "-c")
+        .then_some(words)
 }
 
 /// Strip an outer `/bin/{zsh,bash,sh} -c '<inner>'` invocation that
@@ -830,20 +907,37 @@ mod tests {
 
     // --- Path C: OS sandbox launcher (Claude Code `sandbox.enabled`, macOS) ---
 
-    /// The launcher Claude Code 2.1.275 spawns with `sandbox.enabled` on macOS
-    /// (proxy credentials and most of the Seatbelt profile elided). Note the
-    /// multi-line single-quoted profile and the `'"'"'` quoting of the inner
-    /// script.
-    const LAUNCHER: &str = "env SANDBOX_RUNTIME=1 TMPDIR=/tmp/claude-501 HTTPS_PROXY=http://u:p@localhost:57373 'GIT_SSH_COMMAND=ssh -o ProxyCommand='\"'\"'nc -X 5 -x localhost:57373 %h %p'\"'\"'' GIT_CONFIG_COUNT=2 /usr/bin/sandbox-exec -p '(version 1)\n(deny default (with message \"SBX\"))\n(allow process-exec)' /bin/zsh -c 'setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && { \\builtin unalias -- '\"'\"'unsetenv'\"'\"'; } >/dev/null 2>&1 || true && eval '\"'\"'git status --short'\"'\"' < /dev/null && pwd -P >| /tmp/claude-501/cwd-ddf8'";
+    /// The launcher Claude Code 2.1.280 builds with `sandbox.enabled` on macOS
+    /// (`env …Hc() vars… /usr/bin/sandbox-exec -p <profile> <shell> -c <cmd>`;
+    /// proxy token and most of the Seatbelt profile elided). Note the
+    /// multi-line single-quoted profile and the `'"'"'` quoting.
+    const LAUNCHER: &str = "env SANDBOX_RUNTIME=1 TMPDIR=/tmp/claude NO_PROXY=localhost,127.0.0.1,::1 no_proxy=localhost,127.0.0.1,::1 HTTP_PROXY=http://srt:tok@localhost:57372 HTTPS_PROXY=http://srt:tok@localhost:57372 http_proxy=http://srt:tok@localhost:57372 https_proxy=http://srt:tok@localhost:57372 'GIT_CONFIG_PARAMETERS='\"'\"'http.proxyAuthMethod=basic'\"'\"'' ALL_PROXY=http://srt:tok@localhost:57372 all_proxy=http://srt:tok@localhost:57372 GRPC_PROXY=http://srt:tok@localhost:57372 grpc_proxy=http://srt:tok@localhost:57372 'GIT_SSH_COMMAND=ssh -o ControlMaster=no -o ControlPath=none -o ProxyCommand='\"'\"'nc -X 5 -x localhost:57373 %h %p'\"'\"'' FTP_PROXY=socks5h://srt:tok@localhost:57373 ftp_proxy=socks5h://srt:tok@localhost:57373 RSYNC_PROXY=localhost:57373 DOCKER_HTTP_PROXY=http://srt:tok@localhost:57372 DOCKER_HTTPS_PROXY=http://srt:tok@localhost:57372 CLOUDSDK_PROXY_TYPE=http CLOUDSDK_PROXY_ADDRESS=localhost CLOUDSDK_PROXY_PORT=57372 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/Users/me/repo GIT_CONFIG_KEY_1=safe.directory 'GIT_CONFIG_VALUE_1=/Users/me/repo/*' GIT_CONFIG_COUNT=2 /usr/bin/sandbox-exec -p '(version 1)\n(deny default (with message \"SBX\"))\n(allow process-exec)' /bin/zsh -c 'setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && { \\builtin unalias -- '\"'\"'unsetenv'\"'\"'; } >/dev/null 2>&1 || true && eval '\"'\"'git status --short'\"'\"' < /dev/null && pwd -P >| /tmp/claude/cwd-ddf8'";
+
+    /// Detection with no login shell, so the result never depends on `$SHELL`.
+    fn detect(command: &str) -> Option<Vec<String>> {
+        launcher_argv(command, None)
+    }
+
+    /// `LAUNCHER` with one extra `env` word spliced in before `sandbox-exec`.
+    fn launcher_with(extra: &str) -> String {
+        LAUNCHER.replacen(
+            " /usr/bin/sandbox-exec ",
+            &format!(" {extra} /usr/bin/sandbox-exec "),
+            1,
+        )
+    }
 
     #[test]
     fn launcher_is_recognised_and_split_verbatim() {
-        let argv = os_sandbox_launcher_argv(LAUNCHER).expect("must recognise the launcher");
+        let argv = detect(LAUNCHER).expect("must recognise the launcher");
         assert_eq!(argv[0], "env");
         assert_eq!(argv[1], "SANDBOX_RUNTIME=1");
-        assert_eq!(
-            argv[3 + 1],
-            "GIT_SSH_COMMAND=ssh -o ProxyCommand='nc -X 5 -x localhost:57373 %h %p'",
+        assert!(argv.contains(&"GIT_CONFIG_PARAMETERS='http.proxyAuthMethod=basic'".to_string()));
+        assert!(
+            argv.contains(
+                &"GIT_SSH_COMMAND=ssh -o ControlMaster=no -o ControlPath=none -o ProxyCommand='nc -X 5 -x localhost:57373 %h %p'"
+                    .to_string()
+            ),
             "adjacent-quote concatenation must decode like the shell"
         );
         let profile = &argv[argv.len() - 4];
@@ -857,7 +951,7 @@ mod tests {
         assert!(inner.starts_with("setopt NO_EXTENDED_GLOB"), "{inner}");
         assert!(
             inner.contains(
-                "eval 'git status --short' < /dev/null && pwd -P >| /tmp/claude-501/cwd-ddf8"
+                "eval 'git status --short' < /dev/null && pwd -P >| /tmp/claude/cwd-ddf8"
             ),
             "{inner}"
         );
@@ -874,36 +968,63 @@ mod tests {
     }
 
     #[test]
-    fn launcher_without_env_prefix_and_linux_bwrap() {
+    fn launcher_minimal_shapes_and_user_unsets() {
         assert!(
-            os_sandbox_launcher_argv(
-                "/usr/bin/sandbox-exec -p '(version 1)' /bin/zsh -c 'echo hi && pwd'"
+            detect("/usr/bin/sandbox-exec -p '(version 1)' /bin/zsh -c 'echo hi && pwd'").is_some()
+        );
+        assert!(
+            detect("env SANDBOX_RUNTIME=1 /usr/bin/sandbox-exec -p p /bin/bash -c 'echo'")
+                .is_some()
+        );
+        assert!(
+            detect("/usr/bin/env TMPDIR=/tmp/claude /usr/bin/sandbox-exec -p p /bin/sh -c 'echo'")
+                .is_some()
+        );
+        // `sandbox.unsetEnvVars` from the user's settings arrive as `env -u`.
+        assert!(
+            detect(
+                "env -u AWS_PROFILE SANDBOX_RUNTIME=1 /usr/bin/sandbox-exec -p p /bin/zsh -c 'echo'"
             )
             .is_some()
         );
         assert!(
-            os_sandbox_launcher_argv("env A=1 sandbox-exec -f /tmp/p.sb zsh -c 'echo'").is_some()
-        );
-        assert!(
-            os_sandbox_launcher_argv("bwrap --ro-bind / / --dev /dev -- /bin/bash -c 'echo hi'")
-                .is_some()
+            detect(&launcher_with(
+                "JAVA_TOOL_OPTIONS=-Djava.net.preferIPv4Stack=true"
+            ))
+            .is_some()
         );
     }
 
     #[test]
-    fn launcher_rejects_shapes_that_could_dodge_the_inner_gate() {
-        // `env` options can strip the agent markers the hook keys on.
-        assert!(
-            os_sandbox_launcher_argv("env -i sandbox-exec -p '(version 1)' /bin/zsh -c 'rm -rf x'")
-                .is_none()
-        );
-        assert!(
-            os_sandbox_launcher_argv(
-                "env -u CLAUDECODE sandbox-exec -p '(version 1)' /bin/zsh -c 'x'"
-            )
-            .is_none()
-        );
-        // Assignments that decide whether / how the inner shell re-enters the hook.
+    fn launcher_trusts_the_users_own_login_shell() {
+        let cmd = "/usr/bin/sandbox-exec -p p /opt/homebrew/bin/zsh -c 'echo'";
+        assert!(launcher_argv(cmd, Some("/opt/homebrew/bin/zsh")).is_some());
+        assert!(launcher_argv(cmd, None).is_none());
+        assert!(launcher_argv(cmd, Some("/bin/zsh")).is_none());
+        let evil = "/usr/bin/sandbox-exec -p p /tmp/evil -c 'echo'";
+        assert!(launcher_argv(evil, Some("/tmp/evil")).is_none());
+    }
+
+    #[test]
+    fn launcher_rejects_env_options_that_touch_the_hook() {
+        for opts in [
+            "-i",
+            "-S",
+            "-u CLAUDECODE",
+            "-u LEAN_CTX_ACTIVE",
+            "-u ZDOTDIR",
+            "-u 'A B'",
+            "-u",
+        ] {
+            let cmd = format!("env {opts} /usr/bin/sandbox-exec -p p /bin/zsh -c 'rm -rf x'");
+            assert!(detect(&cmd).is_none(), "{cmd}");
+        }
+    }
+
+    /// Every assignment that can run code before (or instead of) the gated
+    /// script, or keep the inner shell from re-entering the hook.
+    #[test]
+    fn launcher_rejects_assignments_outside_the_host_allowlist() {
         for var in [
             "LEAN_CTX_ACTIVE=1",
             "LEAN_CTX_DISABLED=1",
@@ -911,41 +1032,67 @@ mod tests {
             "CLAUDECODE=",
             "PATH=/tmp",
             "HOME=/tmp",
+            "BASH_ENV=/tmp/x",
+            "ENV=/tmp/x",
+            "SHELLOPTS=xtrace",
+            "'PS4=$(touch /tmp/pwned)'",
+            "'BASH_FUNC_echo%%=() { id; }'",
+            "IFS=/",
+            "PROMPT_COMMAND=id",
+            "DYLD_INSERT_LIBRARIES=/tmp/x.dylib",
+            "LD_PRELOAD=/tmp/x.so",
+            "NODE_OPTIONS=--require=/tmp/x.js",
+            "GIT_ASKPASS=/tmp/x",
+            "GIT_EXTERNAL_DIFF=/tmp/x",
+            "GIT_SSH=/tmp/x",
+            "'GIT_SSH_COMMAND=sh -c id'",
+            "'GIT_SSH_COMMAND=ssh -o ControlMaster=no -o ControlPath=none -o ProxyCommand='\"'\"'nc -X 5 -x localhost:1 %h %p; id'\"'\"''",
+            "'GIT_SSH_COMMAND=ssh -o ControlMaster=no -o ControlPath=none -o ProxyCommand='\"'\"'nc -X 5 -x localhost:$(id) %h %p'\"'\"''",
+            "'GIT_CONFIG_PARAMETERS='\"'\"'core.fsmonitor=/tmp/x'\"'\"''",
+            "GIT_CONFIG_KEY_9=core.sshCommand",
+            "GIT_CONFIG_KEY_9=core.fsmonitor",
+            "GIT_CONFIG_VALUE_7=/tmp/x",
+            "GIT_CONFIG_COUNT=1x",
+            "JAVA_TOOL_OPTIONS=-javaagent:/tmp/x.jar",
+            "SANDBOX_RUNTIME",
+            "'1BAD=x'",
         ] {
-            let cmd = format!("env {var} sandbox-exec -p '(version 1)' /bin/zsh -c 'rm -rf x'");
-            assert!(os_sandbox_launcher_argv(&cmd).is_none(), "{cmd}");
+            let cmd = launcher_with(var);
+            assert!(detect(&cmd).is_none(), "{var}");
         }
-        // Not a lone simple command: lists, pipes, redirects, unquoted newlines.
-        assert!(
-            os_sandbox_launcher_argv("sandbox-exec -p '(version 1)' /bin/zsh -c 'x'; rm -rf y")
-                .is_none()
-        );
-        assert!(
-            os_sandbox_launcher_argv("sandbox-exec -p '(version 1)' /bin/zsh -c 'x' | tee log")
-                .is_none()
-        );
-        assert!(
-            os_sandbox_launcher_argv("sandbox-exec -p '(version 1)' /bin/zsh -c 'x' > out")
-                .is_none()
-        );
-        assert!(
-            os_sandbox_launcher_argv("sandbox-exec -p '(version 1)' /bin/zsh -c 'x'\nrm -rf y")
-                .is_none()
-        );
-        // Must end in `<shell> -c <script>`.
-        assert!(os_sandbox_launcher_argv("sandbox-exec -p '(version 1)' /bin/zsh").is_none());
-        assert!(
-            os_sandbox_launcher_argv(
-                "sandbox-exec -p '(version 1)' /usr/bin/python3 -c 'print(1)'"
-            )
-            .is_none()
-        );
-        assert!(
-            os_sandbox_launcher_argv("sandbox-exec -p '(version 1)' /bin/zsh -c 'x' extra")
-                .is_none()
-        );
-        // Unterminated quote.
-        assert!(os_sandbox_launcher_argv("sandbox-exec -p '(version 1) /bin/zsh -c 'x'").is_none());
+    }
+
+    #[test]
+    fn launcher_rejects_anything_between_or_around_the_known_argv() {
+        for cmd in [
+            // Relative / model-writable launcher or shell.
+            "sandbox-exec -p p /bin/zsh -c 'x'",
+            "./sandbox-exec -p p /bin/zsh -c 'x'",
+            "/usr/bin/sandbox-exec -p p zsh -c 'x'",
+            "/usr/bin/sandbox-exec -p p ./zsh -c 'x'",
+            "/usr/bin/sandbox-exec -p p /tmp/zsh -c 'x'",
+            // A program between the launcher and the shell.
+            "/usr/bin/sandbox-exec -p p /usr/bin/env -i /bin/zsh -c 'x'",
+            "/usr/bin/sandbox-exec -p p /usr/bin/python3 evil.py /bin/zsh -c 'x'",
+            // Profile from a (model-written) file, other launchers.
+            "/usr/bin/sandbox-exec -f /tmp/p.sb /bin/zsh -c 'x'",
+            "/usr/bin/sandbox-exec -D K=v -p p /bin/zsh -c 'x'",
+            "bwrap --ro-bind / / -- /bin/bash -c 'x'",
+            // Not a lone simple command: lists, pipes, redirects, unquoted newlines.
+            "/usr/bin/sandbox-exec -p p /bin/zsh -c 'x'; rm -rf y",
+            "/usr/bin/sandbox-exec -p p /bin/zsh -c 'x' | tee log",
+            "/usr/bin/sandbox-exec -p p /bin/zsh -c 'x' > out",
+            "/usr/bin/sandbox-exec -p p /bin/zsh -c 'x'\nrm -rf y",
+            // Must end in `<shell> -c <script>`.
+            "/usr/bin/sandbox-exec -p p /bin/zsh",
+            "/usr/bin/sandbox-exec -p p /usr/bin/python3 -c 'print(1)'",
+            "/usr/bin/sandbox-exec -p p /bin/zsh -c 'x' extra",
+            "/usr/bin/sandbox-exec -p p /bin/zsh -x -c 'x'",
+            // Unterminated quote.
+            "/usr/bin/sandbox-exec -p '(version 1) /bin/zsh -c 'x'",
+        ] {
+            assert!(detect(cmd).is_none(), "{cmd}");
+        }
     }
 
     #[test]
@@ -959,7 +1106,7 @@ mod tests {
             ISSUE_595,
             "",
         ] {
-            assert!(os_sandbox_launcher_argv(cmd).is_none(), "{cmd}");
+            assert!(detect(cmd).is_none(), "{cmd}");
         }
     }
 }
