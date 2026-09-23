@@ -341,6 +341,29 @@ unsafe fn renameat2_compat(
     }
 }
 
+/// No-replace rename for Unix targets without `renameat2`/`renameatx_np`.
+/// FreeBSD only gained `renameat2` in 16.0, and calling an unknown syscall
+/// number there raises SIGSYS, which kills the process. `link(2)` refuses an
+/// existing target with EEXIST on every POSIX system, so the new name is
+/// linked first and the old one removed afterwards. Returns 0 on success and
+/// -1 with `errno` set otherwise, like the rename calls it stands in for.
+#[cfg(any(test, not(any(target_os = "linux", target_os = "macos"))))]
+unsafe fn rename_noreplace_by_link(
+    old_dirfd: RawFd,
+    old_name: *const libc::c_char,
+    new_dirfd: RawFd,
+    new_name: *const libc::c_char,
+) -> libc::c_int {
+    // SAFETY: the caller upholds the descriptor and NUL-termination
+    // invariants. Flags 0 links the entry itself and never follows a symlink.
+    if unsafe { libc::linkat(old_dirfd, old_name, new_dirfd, new_name, 0) } != 0 {
+        return -1;
+    }
+    // SAFETY: same invariants; only the old name is removed, the new one
+    // already refers to the same file.
+    unsafe { libc::unlinkat(old_dirfd, old_name, 0) }
+}
+
 fn preflight_publication(directory_fd: RawFd) -> Result<(), String> {
     if super::test_capability_preflight_failure() {
         return Err(ARTIFACT_PUBLISH_UNSUPPORTED.to_owned());
@@ -393,7 +416,17 @@ fn preflight_publication(directory_fd: RawFd) -> Result<(), String> {
         )
     };
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    return Err(ARTIFACT_PUBLISH_UNSUPPORTED.to_owned());
+    // SAFETY: directory_fd is held and both probe names are NUL-terminated.
+    // Linking a name onto itself must fail with EEXIST; a file system
+    // without hard links fails differently and is reported unsupported.
+    let result = unsafe {
+        rename_noreplace_by_link(
+            directory_fd,
+            probe_name.as_ptr(),
+            directory_fd,
+            probe_name.as_ptr(),
+        )
+    };
 
     let supported = result == 0 || errno() == libc::EEXIST;
     drop(probe_file);
@@ -487,7 +520,15 @@ fn publish_temp_artifact(
         )
     };
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    let published = -1;
+    // SAFETY: directory_fd is held and both names are NUL-terminated.
+    let published = unsafe {
+        rename_noreplace_by_link(
+            directory_fd,
+            temp.name.as_ptr(),
+            directory_fd,
+            final_name.as_ptr(),
+        )
+    };
 
     if published == 0 {
         if !named_entry_matches_file(temp_file, directory_fd, final_name) {
@@ -665,4 +706,87 @@ fn cstring(value: String) -> Result<CString, String> {
 
 fn errno() -> i32 {
     std::io::Error::last_os_error().raw_os_error().unwrap_or(-1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn open_dir(path: &Path) -> std::fs::File {
+        std::fs::File::open(path).expect("open directory")
+    }
+
+    fn name(value: &str) -> CString {
+        CString::new(value).expect("name")
+    }
+
+    fn link_rename(dir: &std::fs::File, old: &CString, new: &CString) -> (libc::c_int, i32) {
+        // SAFETY: dir is a live directory descriptor; both names are NUL-terminated.
+        let result = unsafe {
+            rename_noreplace_by_link(dir.as_raw_fd(), old.as_ptr(), dir.as_raw_fd(), new.as_ptr())
+        };
+        (result, errno())
+    }
+
+    #[test]
+    fn link_rename_moves_the_entry() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(tmp.path().join("old"), b"payload").expect("write");
+        let dir = open_dir(tmp.path());
+
+        let (result, _) = link_rename(&dir, &name("old"), &name("new"));
+
+        assert_eq!(result, 0);
+        assert!(!tmp.path().join("old").exists());
+        assert_eq!(
+            std::fs::read(tmp.path().join("new")).expect("read"),
+            b"payload"
+        );
+    }
+
+    #[test]
+    fn link_rename_never_replaces_an_existing_name() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(tmp.path().join("old"), b"new content").expect("write");
+        std::fs::write(tmp.path().join("new"), b"kept").expect("write");
+        let dir = open_dir(tmp.path());
+
+        let (result, err) = link_rename(&dir, &name("old"), &name("new"));
+
+        assert_eq!((result, err), (-1, libc::EEXIST));
+        assert_eq!(
+            std::fs::read(tmp.path().join("new")).expect("read"),
+            b"kept"
+        );
+        assert_eq!(
+            std::fs::read(tmp.path().join("old")).expect("read"),
+            b"new content"
+        );
+    }
+
+    #[test]
+    fn link_rename_onto_itself_reports_eexist_as_the_preflight_expects() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(tmp.path().join("probe"), b"").expect("write");
+        let dir = open_dir(tmp.path());
+
+        let (result, err) = link_rename(&dir, &name("probe"), &name("probe"));
+
+        assert_eq!((result, err), (-1, libc::EEXIST));
+        assert!(tmp.path().join("probe").exists());
+    }
+
+    #[test]
+    fn link_rename_does_not_follow_a_symlinked_source() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(tmp.path().join("target"), b"outside").expect("write");
+        std::os::unix::fs::symlink("target", tmp.path().join("link")).expect("symlink");
+        let dir = open_dir(tmp.path());
+
+        let (result, _) = link_rename(&dir, &name("link"), &name("moved"));
+
+        assert_eq!(result, 0);
+        let moved = std::fs::symlink_metadata(tmp.path().join("moved")).expect("stat");
+        assert!(moved.file_type().is_symlink());
+    }
 }

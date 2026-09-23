@@ -44,6 +44,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   so the contract that pins `release.yml` by digest also names the check that
   guards it. The two `release.yml` digests move with the workflow change.
 
+### Fixed — lean-ctx builds on FreeBSD again, without relying on `renameat2`
+
+- **The FreeBSD build stopped at `engine_artifact/unix.rs`** with
+  `cannot find value result` (#1828, reported with a patch by @yurivict).
+  Engine artifacts are published with a rename that must never replace an
+  existing file; only Linux (`renameat2`) and macOS (`renameatx_np`) had one,
+  and the fallback branch for every other Unix did not compile.
+- The fix does not call `renameat2` by syscall number: FreeBSD only has it
+  since 16.0, and an unknown syscall on 14.x/15.x raises SIGSYS and kills the
+  process. Targets without a native no-replace rename now link the new name
+  (`linkat` fails with `EEXIST` if it exists, on every POSIX system) and then
+  remove the temporary name. A file system without hard links is reported as
+  unsupported by the existing capability probe instead of failing mid-publish.
+
 ## [3.10.2] — 2026-09-16
 
 ### Fixed — a transient file lock no longer looks like a content change (#1780)
