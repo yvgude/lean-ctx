@@ -307,6 +307,8 @@ jobs:
           node-version: "22"
       - name: Test stdio isolation
         run: node packages/lean-ctx-bin/postinstall.test.cjs
+      - name: Test install paths containing `$`
+        run: node packages/lean-ctx-bin/postinstall.dollar.test.cjs
 
   cookbook:
     name: Cookbook (Node)

@@ -187,14 +187,16 @@ function powershellDownloadDirect(releaseUrl, assetName, dest) {
 
 function curlAvailable() {
   try {
-    execSync("curl --version", { stdio: "ignore", timeout: 3000 });
+    execFileSync("curl", ["--version"], { stdio: "ignore", timeout: 3000 });
     return true;
   } catch { return false; }
 }
 
+// Paths and URLs go to curl/tar/the binary as argv, never through a shell:
+// a `$` or `%` in the install path must reach the program unexpanded.
 function curlDownload(url, dest) {
   console.log(`lean-ctx: downloading via curl...`);
-  execSync(`curl -fSL --connect-timeout 15 --max-time 120 -o "${dest}" "${url}"`, {
+  execFileSync("curl", ["-fSL", "--connect-timeout", "15", "--max-time", "120", "-o", dest, url], {
     stdio: "inherit",
     timeout: 180000,
   });
@@ -342,8 +344,9 @@ async function fetchRelease() {
   if (curlAvailable()) {
     console.log("lean-ctx: retrying GitHub API via curl...");
     try {
-      const out = execSync(
-        `curl -fsSL --connect-timeout 10 --max-time 15 -H "User-Agent: lean-ctx-bin-npm" "${apiUrl}"`,
+      const out = execFileSync(
+        "curl",
+        ["-fsSL", "--connect-timeout", "10", "--max-time", "15", "-H", "User-Agent: lean-ctx-bin-npm", apiUrl],
         { encoding: "utf8", timeout: 20000 }
       );
       return JSON.parse(out);
@@ -426,7 +429,7 @@ async function main() {
       // Stop processes that may hold the binary open (defense-in-depth; preinstall
       // should have done this already, but npm doesn't guarantee hook ordering on
       // every version and the user may run postinstall manually).
-      try { execSync(`"${BINARY_PATH}" stop`, { stdio: "ignore", timeout: 10000 }); } catch {}
+      try { execFileSync(BINARY_PATH, ["stop"], { stdio: "ignore", timeout: 10000 }); } catch {}
       try { execSync('taskkill /F /IM "lean-ctx.exe" /T', { stdio: "ignore", timeout: 5000 }); } catch {}
       try { execSync("timeout /T 1 /NOBREAK >NUL 2>&1", { stdio: "ignore" }); } catch {}
 
@@ -442,7 +445,7 @@ async function main() {
       const oldBin = BINARY_PATH + ".old";
       try { fs.unlinkSync(oldBin); } catch {}
       try { fs.renameSync(BINARY_PATH, oldBin); } catch {}
-      execSync(`tar -xf "${archivePath}" -C "${BIN_DIR}"`, { stdio: "ignore" });
+      execFileSync("tar", ["-xf", archivePath, "-C", BIN_DIR], { stdio: "ignore" });
       try { fs.unlinkSync(oldBin); } catch {}
     } else {
       await extractTarGz(archivePath, BIN_DIR, "lean-ctx");

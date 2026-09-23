@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — npm install no longer breaks when the install path contains `$`
+
+- **`npm install lean-ctx-bin` into a path such as `cache_$HOME_bin` ran the
+  wrong command** (#1838). `postinstall.js` built shell strings like
+  `"<binary>" onboard`, and a double-quoted `$…` is still expanded by the shell,
+  so the binary path was rewritten before it ran. `onboard` and the pre-install
+  `stop` now go through `execFileSync` with an argv array.
+- The same applies to the remaining commands that carried a path or URL: the
+  curl download, the GitHub API lookup, the Windows `stop` and the Windows `tar`
+  extraction. None of them go through a shell anymore.
+- `postinstall.dollar.test.cjs` now runs in CI next to the stdio test (skipped
+  on Windows, where the shebang fixture cannot run).
+
 ### Fixed — the release gate now checks the Agent-Tools-SDK coupling before building
 
 - **v3.10.2's first release run failed on all nine build legs** with `SDK Engine

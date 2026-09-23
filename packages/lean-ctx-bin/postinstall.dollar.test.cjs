@@ -8,6 +8,12 @@ const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
 
+// The fake binary is a shebang script, which Windows cannot execute.
+if (process.platform === "win32") {
+  console.log("skip: postinstall.dollar.test.cjs needs a POSIX shell");
+  process.exit(0);
+}
+
 const postinstall = path.join(__dirname, "postinstall.js");
 const source = fs.readFileSync(postinstall, "utf8");
 const start = source.indexOf("function runOnboard");
