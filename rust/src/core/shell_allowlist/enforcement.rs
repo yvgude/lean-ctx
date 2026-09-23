@@ -176,8 +176,15 @@ fn check_interpreter_inner(
     depth: usize,
     inline_ok: bool,
 ) -> Result<(), ShellError> {
-    if depth > 3 {
-        return Ok(());
+    // Fail closed: stopping the walk early would let `env env env env bash -c …`
+    // skip every check below.
+    if depth > MAX_DELEGATION_DEPTH {
+        return Err(format!(
+            "[BLOCKED — DO NOT RETRY] More than {MAX_DELEGATION_DEPTH} nested delegation \
+             wrappers (env, nice, timeout, …). Call the command directly.\n\
+             This is a permanent security restriction."
+        )
+        .into());
     }
     let trimmed = skip_env_assignments(segment.trim());
     let tokens = shell_tokenize(trimmed);
@@ -219,12 +226,23 @@ fn check_interpreter_inner(
 
     // Delegation-command walk (recursive).
     if DELEGATION_COMMANDS.contains(&base.as_str()) {
-        let rest_tokens = delegated_command_tokens(&tokens[1..]);
-        if let Some(&delegated_tok) = rest_tokens.first() {
+        let rest_tokens = delegated_command_tokens(&base, &tokens[1..]);
+        if let Some(delegated_tok) = rest_tokens.first() {
+            let delegated = delegated_tok.rsplit('/').next().unwrap_or(delegated_tok);
+            if UNCONDITIONAL_BLOCKED.contains(&delegated) {
+                return Err(format!(
+                    "[BLOCKED — DO NOT RETRY] '{base}' delegates to '{delegated}', which is \
+                     unconditionally blocked. This is a permanent security restriction."
+                )
+                .into());
+            }
             // In restricted mode, the delegated command must be in the allowlist.
+            // Builtins need no entry (`command echo`), as at the top level.
             if let Some(al) = allowlist {
-                let delegated = delegated_tok.rsplit('/').next().unwrap_or(delegated_tok);
-                if !delegated.is_empty() && !matches_allowlist_entry(delegated, al) {
+                if !delegated.is_empty()
+                    && !SHELL_BUILTINS.contains(&delegated)
+                    && !matches_allowlist_entry(delegated, al)
+                {
                     return Err(format!(
                         "[BLOCKED — DO NOT RETRY] '{base}' delegates to '{delegated}' which is not \
                          in the shell allowlist. This is a permanent restriction."
@@ -297,22 +315,201 @@ const SCRIPT_EXTENSIONS: &[&str] = &[
 /// Commands that delegate to another command (the delegated command must also be allowed).
 /// `xargs` is here because `… | xargs bash -c '…'` would otherwise smuggle an
 /// interpreter past both the allowlist and the inline-code check (GH #391).
-const DELEGATION_COMMANDS: &[&str] = &["env", "nice", "timeout", "sudo", "doas", "xargs", "nohup"];
+/// `command` and `builtin` are shell builtins that run the word after them.
+const DELEGATION_COMMANDS: &[&str] = &[
+    "env", "nice", "timeout", "sudo", "doas", "xargs", "nohup", "command", "builtin",
+];
 
-/// Skips a delegation command's own flags/operands to find the delegated
-/// command token: leading `-x` flags, `KEY=VALUE` pairs (env), bare numbers
-/// (timeout/nice durations) and `{}` placeholders (xargs -I).
-fn delegated_command_tokens(tokens: &[String]) -> Vec<&str> {
-    tokens
-        .iter()
-        .map(std::string::String::as_str)
-        .skip_while(|t| {
-            t.starts_with('-')
-                || t.contains('=')
-                || *t == "{}"
-                || (!t.is_empty() && t.chars().all(|c| c.is_ascii_digit()))
-        })
-        .collect()
+/// Wrappers nested deeper than this are refused rather than walked.
+const MAX_DELEGATION_DEPTH: usize = 3;
+
+/// How a delegation wrapper's own options consume words, so the walk can tell
+/// an option value (`env -u git`) from the command it runs. All of these stop
+/// parsing options at the first non-option word, so no permutation is needed.
+#[derive(Default)]
+struct WrapperOptions {
+    /// Short options taking a value, attached (`-ugit`) or as the next word.
+    short_value: &'static str,
+    /// Short options whose value is optional and only ever attached (`xargs -i`).
+    short_optional_value: &'static str,
+    /// Long options (without `--`) taking a value, `--opt=v` or `--opt v`.
+    long_value: &'static [&'static str],
+    /// Short options that only look a name up; nothing runs (`command -v`).
+    lookup_only: &'static str,
+    /// The option whose value is split into words and parsed in place (`env -S`).
+    split_string: Option<(char, &'static str)>,
+    /// Positional operands before the command (`timeout`'s DURATION).
+    operands: usize,
+    /// Whether `NAME=VALUE` words before the command are assignments.
+    assignments: bool,
+    /// Whether a lone `-` is an option (`env -` is `env -i`).
+    bare_dash: bool,
+}
+
+fn wrapper_options(wrapper: &str) -> WrapperOptions {
+    match wrapper {
+        // GNU and BSD `env`.
+        "env" => WrapperOptions {
+            short_value: "uCSPaLU",
+            long_value: &["unset", "chdir", "split-string", "argv0"],
+            split_string: Some(('S', "split-string")),
+            assignments: true,
+            bare_dash: true,
+            ..WrapperOptions::default()
+        },
+        "nice" => WrapperOptions {
+            short_value: "n",
+            long_value: &["adjustment"],
+            ..WrapperOptions::default()
+        },
+        "timeout" => WrapperOptions {
+            short_value: "sk",
+            long_value: &["signal", "kill-after"],
+            operands: 1,
+            ..WrapperOptions::default()
+        },
+        "sudo" => WrapperOptions {
+            short_value: "CDghpRrTtUu",
+            long_value: &[
+                "close-from",
+                "chdir",
+                "group",
+                "host",
+                "prompt",
+                "chroot",
+                "role",
+                "command-timeout",
+                "type",
+                "other-user",
+                "user",
+            ],
+            assignments: true,
+            ..WrapperOptions::default()
+        },
+        "doas" => WrapperOptions {
+            short_value: "Cua",
+            ..WrapperOptions::default()
+        },
+        // GNU and BSD `xargs`.
+        "xargs" => WrapperOptions {
+            short_value: "adEIJLnPRSs",
+            short_optional_value: "eil",
+            long_value: &[
+                "arg-file",
+                "delimiter",
+                "max-args",
+                "max-procs",
+                "max-chars",
+                "process-slot-var",
+            ],
+            ..WrapperOptions::default()
+        },
+        "command" => WrapperOptions {
+            lookup_only: "vV",
+            ..WrapperOptions::default()
+        },
+        _ => WrapperOptions::default(),
+    }
+}
+
+/// Returns the delegated command and its arguments: everything after the
+/// wrapper's own options, option values, assignments and operands. Empty when
+/// the wrapper runs nothing.
+fn delegated_command_tokens(wrapper: &str, tokens: &[String]) -> Vec<String> {
+    let opts = wrapper_options(wrapper);
+    let mut words = tokens.to_vec();
+    let mut operands = opts.operands;
+    let mut options_done = false;
+    let mut i = 0;
+    while i < words.len() {
+        let word = words[i].clone();
+        let is_option =
+            word.starts_with('-') && (word.len() > 1 || opts.bare_dash) && !options_done;
+        if !is_option {
+            options_done = true;
+            if opts.assignments && is_assignment(&word) {
+                i += 1;
+                continue;
+            }
+            if operands > 0 {
+                operands -= 1;
+                i += 1;
+                continue;
+            }
+            break;
+        }
+        i += 1;
+        if word == "--" {
+            options_done = true;
+            continue;
+        }
+
+        let mut split = None;
+        if let Some(long) = word.strip_prefix("--") {
+            let (name, attached) = match long.split_once('=') {
+                Some((name, value)) => (name, Some(value.to_string())),
+                None => (long, None),
+            };
+            // GNU accepts any unambiguous prefix (`--uns` for `--unset`).
+            let takes_value = opts.long_value.iter().any(|o| o.starts_with(name));
+            let value = match attached {
+                Some(v) => Some(v),
+                None if takes_value => {
+                    i += 1;
+                    words.get(i - 1).cloned()
+                }
+                None => None,
+            };
+            if opts
+                .split_string
+                .is_some_and(|(_, long_name)| long_name.starts_with(name))
+            {
+                split = value;
+            }
+        } else {
+            let cluster: Vec<char> = word.chars().skip(1).collect();
+            for (pos, &c) in cluster.iter().enumerate() {
+                if opts.lookup_only.contains(c) {
+                    return Vec::new();
+                }
+                if opts.short_optional_value.contains(c) {
+                    break;
+                }
+                if opts.short_value.contains(c) {
+                    let attached: String = cluster[pos + 1..].iter().collect();
+                    let value = if attached.is_empty() {
+                        i += 1;
+                        words.get(i - 1).cloned()
+                    } else {
+                        Some(attached)
+                    };
+                    if opts.split_string.is_some_and(|(short, _)| short == c) {
+                        split = value;
+                    }
+                    break;
+                }
+            }
+        }
+
+        // `env -S 'a b'` behaves as if `a` and `b` were given in its place.
+        if let Some(value) = split {
+            let mut spliced = shell_tokenize(&value);
+            spliced.extend(words.drain(i.min(words.len())..));
+            words = spliced;
+            i = 0;
+        }
+    }
+    words.split_off(i.min(words.len()))
+}
+
+/// `NAME=VALUE` with a valid shell variable name.
+fn is_assignment(word: &str) -> bool {
+    word.split_once('=').is_some_and(|(name, _)| {
+        name.chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    })
 }
 
 /// Check if a segment uses an interpreter with an eval flag, or a delegation command
@@ -547,7 +744,13 @@ pub(super) fn check_all_segments(command: &str, allowlist: &[String]) -> Result<
             for body_seg in &body_cmds {
                 check_inline_env_block(body_seg)?;
                 let body_base = extract_base_from_segment(body_seg);
-                if body_base.is_empty() || SHELL_BUILTINS.contains(&body_base.as_str()) {
+                if body_base.is_empty() {
+                    continue;
+                }
+                if SHELL_BUILTINS.contains(&body_base.as_str()) {
+                    if DELEGATION_COMMANDS.contains(&body_base.as_str()) {
+                        check_interpreter_abuse(body_seg, allowlist)?;
+                    }
                     continue;
                 }
                 if !matches_allowlist_entry(&body_base, allowlist) {
@@ -555,6 +758,8 @@ pub(super) fn check_all_segments(command: &str, allowlist: &[String]) -> Result<
                         "[BLOCKED — DO NOT RETRY] '{body_base}' (inside function body) is not in the                          shell allowlist.\nFix (additive, keeps the defaults): run  lean-ctx allow {body_base}",
                     ).into());
                 }
+                check_interpreter_abuse(body_seg, allowlist)?;
+                check_dangerous_flags(body_seg)?;
             }
             continue;
         }
@@ -578,6 +783,11 @@ pub(super) fn check_all_segments(command: &str, allowlist: &[String]) -> Result<
             .into());
         }
         if SHELL_BUILTINS.contains(&base.as_str()) {
+            // `command`/`builtin` need no entry themselves, but they run the
+            // word after them, which must pass like any delegated command.
+            if DELEGATION_COMMANDS.contains(&base.as_str()) {
+                check_interpreter_abuse(seg, allowlist)?;
+            }
             continue;
         }
         // #1442: PowerShell verb-prefix matching — safe cmdlets (Get-*, Test-*,

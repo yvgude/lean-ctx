@@ -18,6 +18,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - `postinstall.dollar.test.cjs` now runs in CI next to the stdio test (skipped
   on Windows, where the shebang fixture cannot run).
 
+### Security — the shell allowlist checks the command a wrapper really runs
+
+- **An option value of a delegation wrapper was taken for the delegated
+  command.** For `env`, `sudo`, `doas`, `nice`, `timeout` and `xargs` the
+  allowlist skipped each `-x` word on its own, so the value that followed it
+  (`-u NAME`, `-s SIGNAL`, `-I REPLACE`, …) was checked in place of the command
+  that actually runs, and that command never reached the allowlist or the
+  inline-code check. Each wrapper's options are now parsed with the argument
+  they take — attached or separate, short clusters, GNU long-option prefixes,
+  `--`, `timeout`'s duration operand, `env -S` split strings — and the check
+  applies to the real command.
+- The side effect ran the other way too: `env -u HOME git status` was blocked
+  because `HOME` looked like the command. It is allowed now.
+- `command` and `builtin` run the word after them, but as shell builtins they
+  skipped every check. They are now walked like the other wrappers;
+  `command -v`/`-V` still only look a name up.
+- A wrapper can no longer reach `eval`, `exec` or `source`, which stay
+  blocked regardless of the allowlist.
+- Wrappers nested more than three deep used to end the check silently; they
+  are now refused.
+- Commands inside a shell function body now get the inline-code and
+  dangerous-flag checks, not only the allowlist lookup.
+
 ### Fixed — the release gate now checks the Agent-Tools-SDK coupling before building
 
 - **v3.10.2's first release run failed on all nine build legs** with `SDK Engine

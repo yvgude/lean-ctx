@@ -3,6 +3,8 @@
 
 #[path = "comment_strip_tests.rs"]
 mod comment_strip_tests;
+#[path = "delegation_option_tests.rs"]
+mod delegation_option_tests;
 #[path = "function_def_tests.rs"]
 mod function_def_tests;
 #[path = "inline_script_tests.rs"]
