@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — Pi: `ctx_shell`'s `timeout` now reaches `lean-ctx -c` (#1833)
+
+- In `pi-lean-ctx`, `ctx_shell(command, timeout=<seconds>)` passed the timeout
+  only to Pi's outer bash tool. The `lean-ctx -c` wrapper inside it kept its
+  default of 120 s. A call with `timeout=200` was therefore stopped after
+  about two minutes with `output truncated at 8 MB / 120s limit`. The
+  per-call timeout is now passed to `lean-ctx -c` as
+  `LEAN_CTX_SHELL_TIMEOUT_MS`, capped at the same one-hour ceiling the MCP
+  `timeout_ms` has. A `LEAN_CTX_SHELL_TIMEOUT_MS` you set yourself still wins,
+  and `raw=true` is unchanged because it does not go through lean-ctx. Thanks
+  to @rtbe for the precise report.
+
 ### Fixed — Claude Code's Bash sandbox no longer blocks every command (#1834)
 
 - With `sandbox.enabled`, Claude Code spawns each Bash call as

@@ -118,3 +118,28 @@ export function sanitizeExtraEnv(extra: unknown): SanitizedEnv {
   }
   return { accepted, rejected };
 }
+
+// The ceiling lean-ctx itself puts on a per-call timeout (`MAX_CALL_TIMEOUT_MS`
+// in rust/src/shell/exec/timeout.rs).
+const MAX_INNER_TIMEOUT_MS = 3_600_000;
+
+/**
+ * #1833: the environment that hands ctx_shell's per-call `timeout` (seconds)
+ * to the wrapped `lean-ctx -c`, which otherwise stops the command at its own
+ * default of 120 s. Pi's bash tool stays the outer limit. A
+ * `LEAN_CTX_SHELL_TIMEOUT_MS` the operator already set wins, as it does in
+ * lean-ctx, so nothing is added then.
+ */
+export function innerTimeoutEnv(
+  timeoutSecs: unknown,
+  inherited: NodeJS.ProcessEnv,
+): Record<string, string> {
+  if (typeof timeoutSecs !== "number" || !Number.isFinite(timeoutSecs) || timeoutSecs <= 0) {
+    return {};
+  }
+  // Same test as lean-ctx's `env_u64`: only a positive integer is a pin.
+  const pinned = inherited.LEAN_CTX_SHELL_TIMEOUT_MS;
+  if (pinned && /^\d+$/.test(pinned) && Number(pinned) > 0) return {};
+  const ms = Math.min(Math.ceil(timeoutSecs * 1000), MAX_INNER_TIMEOUT_MS);
+  return { LEAN_CTX_SHELL_TIMEOUT_MS: String(ms) };
+}
