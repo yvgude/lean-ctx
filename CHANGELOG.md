@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — a `jq` program in single quotes is no longer blocked as `source` (#1829)
+
+- A quoted `jq` filter such as `'… | . as $r | …'` was blocked. The block said
+  the command runs `eval`/`exec`/`source` or a substitution. The quick
+  pre-scan for `| . ` and similar separators looked through quotes, so it read
+  jq's identity filter as the shell's `.` (source) builtin. That scan now
+  ignores text inside single quotes. The per-segment check still decides
+  every command, so a real `.` or `source` at command position is still
+  blocked, next to quotes too. The block message now names `source` and `.`.
+  Thanks to @andig for the report and the reproductions.
+
 ### Fixed — Claude Code's Bash sandbox no longer blocks every command (#1834)
 
 - With `sandbox.enabled`, Claude Code spawns each Bash call as
