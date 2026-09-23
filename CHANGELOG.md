@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — a task overview no longer lists facts that share only a generic verb (#1832)
+
+- `lean-ctx overview '<task>'` listed any fact that shared a single word with
+  the task as a "relevant fact". A task like "Inspect alpha parser header
+  validation." therefore showed an unrelated fact such as "Inspect and review
+  gamma certificate deployment sequencing." because both contain "inspect".
+  Two unrelated tasks got the same unrelated facts. Only the task's content
+  words are matched now: words like "the", "and", "inspect", "review", "check"
+  or "fix" are ignored, punctuation is trimmed ("validation." matches
+  "validation") and words are split the way facts are indexed. A task made
+  only of such words lists no facts. The sub-agent briefing pack uses the same
+  matching. An explicit `ctx_knowledge` recall still matches every word you
+  pass. Thanks to @rtbe for the isolated reproduction.
+
 ### Fixed — Claude Code's Bash sandbox no longer blocks every command (#1834)
 
 - With `sandbox.enabled`, Claude Code spawns each Bash call as

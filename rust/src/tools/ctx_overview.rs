@@ -261,7 +261,11 @@ fn append_knowledge_task_section(output: &mut Vec<String>, project_root: &str, t
     let Some(knowledge) = crate::core::knowledge::ProjectKnowledge::load(project_root) else {
         return;
     };
-    let hits: Vec<_> = knowledge.recall(task).into_iter().take(5).collect();
+    let hits: Vec<_> = knowledge
+        .recall_for_task(task)
+        .into_iter()
+        .take(5)
+        .collect();
     if hits.is_empty() {
         return;
     }
@@ -765,6 +769,63 @@ mod tests {
             "a task-less wake-up keeps the facts block:\n{without_task}"
         );
         assert!(without_task.contains("net/retry.rs"));
+
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+
+    /// #1832: a fact that shares only a generic verb ("inspect", "review")
+    /// with the task is not relevant to it; one that shares a content word is.
+    #[test]
+    fn task_knowledge_section_ignores_shared_generic_verbs() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let data = tempfile::tempdir().expect("data dir");
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path().to_str().unwrap());
+        let root = tmp.path().to_str().unwrap();
+
+        let policy = crate::core::memory_policy::MemoryPolicy::default();
+        let mut knowledge = crate::core::knowledge::ProjectKnowledge::new(root);
+        knowledge.remember(
+            "finding",
+            "malformed-launcher",
+            "Finding: #!/usr/bin/env: Inspect and review a synthetic workflow launcher.",
+            "test-session",
+            0.6,
+            &policy,
+        );
+        knowledge.remember(
+            "finding",
+            "gamma-deployer",
+            "Inspect and review gamma certificate deployment sequencing.",
+            "test-session",
+            0.6,
+            &policy,
+        );
+        knowledge.remember(
+            "finding",
+            "alpha-header",
+            "alpha parser rejects an empty header value",
+            "test-session",
+            0.6,
+            &policy,
+        );
+        knowledge.save().expect("persist knowledge");
+
+        let section = |task: &str| {
+            let mut out = Vec::new();
+            append_knowledge_task_section(&mut out, root, task);
+            out.join("\n")
+        };
+
+        let alpha = section("Inspect alpha parser header validation.");
+        assert!(alpha.contains("[knowledge: 1 relevant facts]"), "{alpha}");
+        assert!(alpha.contains("empty header value"), "{alpha}");
+
+        let beta = section("Review beta dashboard row rendering.");
+        assert!(beta.is_empty(), "no fact shares a content word:\n{beta}");
+
+        let generic = section("Inspect and review.");
+        assert!(generic.is_empty(), "only generic words:\n{generic}");
 
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }

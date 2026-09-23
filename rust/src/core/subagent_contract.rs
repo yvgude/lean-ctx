@@ -48,10 +48,11 @@ pub(crate) fn build_briefing_pack(
 ) -> SubAgentContractV1 {
     let mut used = count_tokens(task);
 
-    // Deterministic relevance: term-coverage on the lexical index, quality
-    // tie-break, then stable (category, key) ordering. recall() already
-    // filters to current facts and sorts deterministically.
-    let ranked = knowledge.recall(task);
+    // Deterministic relevance: term-coverage on the lexical index over the
+    // task's content words only (#1832), quality tie-break, then stable
+    // (category, key) ordering. recall_for_task() already filters to current
+    // facts and sorts deterministically.
+    let ranked = knowledge.recall_for_task(task);
 
     let mut facts: Vec<ContractFact> = Vec::new();
     for f in ranked {
@@ -178,6 +179,27 @@ mod tests {
         );
         assert_eq!(pack.contract_version, 1);
         assert_eq!(pack.return_format, RETURN_FORMAT_V1);
+    }
+
+    #[test]
+    fn briefing_pack_ignores_a_shared_generic_verb() {
+        // #1832: "fix" alone must not pull the deploy fact into the briefing.
+        let policy = MemoryPolicy::default();
+        let mut k = knowledge_with_facts();
+        k.remember(
+            "deploy",
+            "rollout",
+            "Fix the rollout order",
+            "s1",
+            0.8,
+            &policy,
+        );
+        let pack = build_briefing_pack(&k, "fix authentication bug", 500);
+        assert!(
+            pack.facts.iter().all(|f| f.key != "rollout"),
+            "{:?}",
+            pack.facts
+        );
     }
 
     #[test]

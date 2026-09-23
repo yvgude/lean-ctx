@@ -93,6 +93,95 @@ fn fsrs_boosted_relevance(fact: &KnowledgeFact, relevance: f32, now: DateTime<Ut
     relevance * multiplier
 }
 
+/// Words that frame a task rather than name its subject: function words and
+/// the action verbs nearly every task starts with.
+const TASK_FILLER_WORDS: &[&str] = &[
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "how",
+    "i",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "me",
+    "my",
+    "of",
+    "on",
+    "or",
+    "our",
+    "please",
+    "so",
+    "that",
+    "the",
+    "then",
+    "this",
+    "to",
+    "up",
+    "we",
+    "what",
+    "when",
+    "where",
+    "which",
+    "why",
+    "with",
+    // Generic task verbs. Words that are just as often the subject ("build",
+    // "test", "run", "support") stay content words.
+    "add",
+    "analyse",
+    "analyze",
+    "change",
+    "check",
+    "create",
+    "debug",
+    "explain",
+    "explore",
+    "find",
+    "fix",
+    "implement",
+    "improve",
+    "inspect",
+    "investigate",
+    "look",
+    "make",
+    "refactor",
+    "remove",
+    "rename",
+    "review",
+    "see",
+    "show",
+    "understand",
+    "update",
+    "verify",
+    "write",
+];
+
+/// The task's content words, lowercased and split like the knowledge index
+/// splits facts, with surrounding punctuation trimmed ("validation." →
+/// "validation") and filler words dropped. Order-preserving and deduplicated.
+fn task_content_terms(task: &str) -> Vec<String> {
+    let mut terms: Vec<String> = Vec::new();
+    for token in super::ranking::tokenize_lower(task) {
+        let term = token.trim_matches(|c: char| !c.is_alphanumeric());
+        if term.is_empty() || TASK_FILLER_WORDS.contains(&term) {
+            continue;
+        }
+        if !terms.iter().any(|t| t == term) {
+            terms.push(term.to_string());
+        }
+    }
+    terms
+}
+
 impl ProjectKnowledge {
     fn matching_indices(&self, term: &str, include_session: bool) -> Vec<usize> {
         let Some(indices) = self.index.token_positions.get(term) else {
@@ -160,6 +249,23 @@ impl ProjectKnowledge {
 
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         results.into_iter().map(|(f, _)| f).collect()
+    }
+
+    /// Recall for a free-text task description (overview, sub-agent briefing).
+    ///
+    /// Unlike [`Self::recall`], which serves an explicit knowledge query, a
+    /// task sentence is mostly framing: "Inspect alpha parser header
+    /// validation." shares only "inspect" with an unrelated fact about
+    /// deployments, and that single word used to be enough to present the
+    /// fact as relevant (#1832). Only the task's content words are matched,
+    /// tokenized the way the index is, so a task made of nothing but generic
+    /// words recalls nothing.
+    pub fn recall_for_task(&self, task: &str) -> Vec<&KnowledgeFact> {
+        let terms = task_content_terms(task);
+        if terms.is_empty() {
+            return Vec::new();
+        }
+        self.recall(&terms.join(" "))
     }
 
     pub fn recall_by_category(&self, category: &str) -> Vec<&KnowledgeFact> {

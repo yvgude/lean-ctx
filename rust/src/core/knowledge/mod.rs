@@ -210,6 +210,36 @@ mod tests {
     }
 
     #[test]
+    fn recall_for_task_matches_content_words_only() {
+        let policy = default_policy();
+        let mut k = ProjectKnowledge::new("/tmp/test-task-recall");
+        k.remember(
+            "finding",
+            "deploy",
+            "Review the deploy order",
+            "s1",
+            0.8,
+            &policy,
+        );
+        k.remember("api", "rate-limit", "100/min", "s1", 0.8, &policy);
+
+        // #1832: "review" is framing; the explicit query still matches it.
+        assert!(
+            k.recall_for_task("Review the rate limit.")
+                .iter()
+                .all(|f| f.key != "deploy")
+        );
+        assert_eq!(k.recall("review").len(), 1);
+
+        // Punctuation and underscores split like the index splits facts.
+        let hits = k.recall_for_task("Check rate_limit handling.");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].key, "rate-limit");
+
+        assert!(k.recall_for_task("Please review and fix this.").is_empty());
+    }
+
+    #[test]
     fn remember_infers_archetype_from_category() {
         let policy = default_policy();
         let mut k = ProjectKnowledge::new("/tmp/test-archetype");
@@ -334,6 +364,13 @@ mod tests {
         let mut policy = default_policy();
         policy.knowledge.max_facts = 5;
 
+        // Eviction archives into the data dir. Own it, so a parallel test that
+        // swaps LEAN_CTX_DATA_DIR cannot make the archive (and so the eviction)
+        // fail, and nothing lands in the real data dir.
+        let _lock = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().expect("data dir");
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path().to_str().unwrap());
+
         // Produce a batch larger than 2x the cap via a generously-capped source.
         let mut source_policy = default_policy();
         source_policy.knowledge.max_facts = 1000;
@@ -363,6 +400,7 @@ mod tests {
             policy.knowledge.max_facts,
             k.facts.len()
         );
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }
 
     #[test]
