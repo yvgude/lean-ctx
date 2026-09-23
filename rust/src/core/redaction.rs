@@ -105,13 +105,17 @@ fn is_identifier_reference(value: &str) -> bool {
 
 /// #718: obvious provider-token placeholders, `your_key_here`,
 /// `<insert-token>`) are documentation, not secrets — `.env.example` files
-/// must survive ctx_read verbatim.
+/// must survive ctx_read verbatim. #1831: so is an asterisk mask (`*****`),
+/// which is what a redactor itself writes in place of a secret.
 fn is_placeholder_value(value: &str) -> bool {
     let v = value
         .trim()
         .trim_matches(|c| c == '"' || c == '\'' || c == '`')
         .to_ascii_lowercase();
     if v.starts_with('<') && v.ends_with('>') {
+        return true;
+    }
+    if !v.is_empty() && v.chars().all(|c| c == '*') {
         return true;
     }
     const MARKERS: &[&str] = &[
@@ -219,20 +223,23 @@ fn redaction_rules() -> Vec<Rule> {
     vec![
         Rule {
             label: "Bearer token",
-            re: static_regex!(r"(?i)(bearer\s+)[a-zA-Z0-9\-_\.]{8,}"),
+            re: static_regex!(r"(?i)(bearer[ \t]+)[a-zA-Z0-9\-_\.]{8,}"),
             guard_value: false,
         },
         Rule {
             label: "Authorization header",
-            re: static_regex!(r"(?i)(authorization:\s*(?:basic|bearer|token)\s+)[^\s\r\n]+"),
+            re: static_regex!(r"(?i)(authorization:[ \t]*(?:basic|bearer|token)[ \t]+)[^\s\r\n]+"),
             guard_value: false,
         },
         // Key/value secrets: group 1 = predecessor + `name=`/`name: ` prefix
         // (kept), group 2 = the value (redacted unless benign — GH #430/#718).
+        // #1830: only blanks around the separator, never a line break — a
+        // valueless `token:` must not take the next line's key or diff marker
+        // for its value.
         Rule {
             label: "API key param",
             re: static_regex!(
-                r#"(?im)((?:^|[^a-z0-9])(?:api[_-]?key|apikey|access[_-]?key|secret[_-]?key|token|password|passwd|pwd|secret)\s*[=:]\s*)([^\s\r\n,;&"']+)"#
+                r#"(?im)((?:^|[^a-z0-9])(?:api[_-]?key|apikey|access[_-]?key|secret[_-]?key|token|password|passwd|pwd|secret)[ \t]*[=:][ \t]*)([^\s\r\n,;&"']+)"#
             ),
             guard_value: true,
         },
@@ -261,7 +268,7 @@ fn redaction_rules() -> Vec<Rule> {
         Rule {
             label: "Generic long secret",
             re: static_regex!(
-                r#"(?im)((?:^|[^a-z0-9])(?:key|token|secret|password|credential|auth)\s*[=:]\s*)(['"]?[a-zA-Z0-9+/=\-_]{32,}['"]?)"#
+                r#"(?im)((?:^|[^a-z0-9])(?:key|token|secret|password|credential|auth)[ \t]*[=:][ \t]*)(['"]?[a-zA-Z0-9+/=\-_]{32,}['"]?)"#
             ),
             guard_value: true,
         },
@@ -525,6 +532,44 @@ mod tests {
         ] {
             assert_eq!(redact_text(s), s, "placeholder redacted: {s}");
         }
+    }
+
+    /// #1830: a keyword with no value on its line must not take the next
+    /// line's diff marker or key for its value.
+    #[test]
+    fn a_valueless_key_does_not_reach_into_the_next_line() {
+        for s in [
+            "+token:\n+  accesstoken: acc",
+            "token:\n  refreshtoken: ref",
+            "password =\n-  old_value",
+            "Authorization: Bearer\nnext_line_word",
+            "credential:\n  ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef012345",
+        ] {
+            assert_eq!(redact_text(s), s, "crossed a line break: {s:?}");
+        }
+        // The value on the key's own line is still redacted.
+        let out = redact_text("token:\n  password: hunter2-real-value");
+        assert!(!out.contains("hunter2"), "leaked: {out}");
+        assert!(
+            out.starts_with("token:\n  password: [REDACTED"),
+            "got: {out}"
+        );
+    }
+
+    /// #1831: an asterisk mask is what a redactor writes; it is not a secret,
+    /// and a `full` read must round-trip it into an edit.
+    #[test]
+    fn keeps_asterisk_masks() {
+        for s in [
+            "password: *****",
+            "password: ***",
+            r#"expected := []string{"password: *****", "title: My Home"}"#,
+            "token=*",
+        ] {
+            assert_eq!(redact_text(s), s, "mask redacted: {s}");
+        }
+        // A value that merely contains asterisks is not a mask.
+        assert!(redact_text("password: ab*cd1234").contains("[REDACTED"));
     }
 
     /// The flip side: real secret-shaped values must STILL be redacted after

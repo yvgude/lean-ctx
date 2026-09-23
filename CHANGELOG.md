@@ -64,6 +64,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - Commands inside a shell function body now get the inline-code and
   dangerous-flag checks, not only the allowlist lookup.
 
+### Fixed — secret redaction stays on its line and leaves `*****` masks alone (#1830, #1831)
+
+- **A keyword with no value redacted the next line.** When a line ended in
+  `token:` or `password =`, the blank after the separator also matched the line
+  break, so the first word of the following line was treated as the value. In
+  a diff that was the `+`/`-` marker; in YAML the nested key was replaced
+  while its value stayed visible. All key/value rules, in both `ctx_read`
+  redaction and secret detection, now allow only spaces and tabs around the
+  separator; `Bearer` and `Authorization:` likewise stay on their line.
+  Reported by @andig (#1830).
+- **Asterisk masks such as `password: *****` were redacted.** They are what a
+  redactor writes in place of a secret, not a secret. Replacing them broke
+  `full` reads as an edit source: `replace_unique` built from the view did not
+  find the text on disk. An all-asterisk value now counts as a placeholder.
+  Reported by @andig (#1831).
+
 ### Fixed — the release gate now checks the Agent-Tools-SDK coupling before building
 
 - **v3.10.2's first release run failed on all nine build legs** with `SDK Engine

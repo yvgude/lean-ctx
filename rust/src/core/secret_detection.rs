@@ -43,15 +43,17 @@ fn openai_key_re() -> &'static Regex {
 // names (`MY_TOKEN=…`) keep matching — `_` stays a permitted predecessor.
 // Group 1 = predecessor + key prefix (kept on redaction), group 2 = value
 // (guarded: identifier references and placeholders are benign).
+// #1830: blanks only around the separator — a valueless `token:` line must not
+// take the next line for its value.
 fn generic_api_key_re() -> &'static Regex {
     static_regex!(
-        r#"(?im)((?:^|[^a-z0-9])(?:api[_-]?key|secret[_-]?key|token|password|passwd|access[_-]?token|client[_-]?secret)\s*[=:]\s*)(['"]?[a-zA-Z0-9_\-]{20,})"#
+        r#"(?im)((?:^|[^a-z0-9])(?:api[_-]?key|secret[_-]?key|token|password|passwd|access[_-]?token|client[_-]?secret)[ \t]*[=:][ \t]*)(['"]?[a-zA-Z0-9_\-]{20,})"#
     )
 }
 
 fn high_entropy_b64_re() -> &'static Regex {
     static_regex!(
-        r#"(?im)((?:^|[^a-z0-9])(?:key|token|secret|password|credential|auth)\s*[=:]\s*)(['"]?[A-Za-z0-9+/=\-_]{40,})"#
+        r#"(?im)((?:^|[^a-z0-9])(?:key|token|secret|password|credential|auth)[ \t]*[=:][ \t]*)(['"]?[A-Za-z0-9+/=\-_]{40,})"#
     )
 }
 
