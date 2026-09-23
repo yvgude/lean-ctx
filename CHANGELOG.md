@@ -19,6 +19,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   matching. An explicit `ctx_knowledge` recall still matches every word you
   pass. Thanks to @rtbe for the isolated reproduction.
 
+### Fixed — Pi: `ctx_shell`'s `timeout` now reaches `lean-ctx -c` (#1833)
+
+- In `pi-lean-ctx`, `ctx_shell(command, timeout=<seconds>)` passed the timeout
+  only to Pi's outer bash tool. The `lean-ctx -c` wrapper inside it kept its
+  default of 120 s. A call with `timeout=200` was therefore stopped after
+  about two minutes with `output truncated at 8 MB / 120s limit`. The
+  per-call timeout is now passed to `lean-ctx -c` as
+  `LEAN_CTX_SHELL_TIMEOUT_MS`, capped at the same one-hour ceiling the MCP
+  `timeout_ms` has. A `LEAN_CTX_SHELL_TIMEOUT_MS` you set yourself still wins,
+  and `raw=true` is unchanged because it does not go through lean-ctx. Thanks
+  to @rtbe for the precise report.
+
+### Fixed — a `jq` program in single quotes is no longer blocked as `source` (#1829)
+
+- A quoted `jq` filter such as `'… | . as $r | …'` was blocked. The block said
+  the command runs `eval`/`exec`/`source` or a substitution. The quick
+  pre-scan for `| . ` and similar separators looked through quotes, so it read
+  jq's identity filter as the shell's `.` (source) builtin. That scan now
+  ignores text inside single quotes. The per-segment check still decides
+  every command, so a real `.` or `source` at command position is still
+  blocked, next to quotes too. The block message now names `source` and `.`.
+  Thanks to @andig for the report and the reproductions.
+
 ### Fixed — Claude Code's Bash sandbox no longer blocks every command (#1834)
 
 - With `sandbox.enabled`, Claude Code spawns each Bash call as

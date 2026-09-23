@@ -74,7 +74,7 @@ pub(super) fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
 
     if has_dangerous_patterns(cmd) {
         return Err(format!(
-            "[BLOCKED — DO NOT RETRY] Command uses eval or $()/ backticks at command position, \
+            "[BLOCKED — DO NOT RETRY] Command runs eval, exec, source, `.` or a $()/backtick substitution at command position, \
              which is blocked regardless of allowlist. \
              This is a permanent security restriction, not a transient error.\n\
              Command: {command}"
@@ -718,7 +718,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &[String]) -> Result<
 
     if has_dangerous_patterns(command) {
         return Err(format!(
-            "[BLOCKED — DO NOT RETRY] Command uses eval or $()/ backticks at command position, \
+            "[BLOCKED — DO NOT RETRY] Command runs eval, exec, source, `.` or a $()/backtick substitution at command position, \
              which is blocked in restricted mode. \
              This is a permanent security restriction, not a transient error.\n\
              Command: {command}"
@@ -850,14 +850,19 @@ pub(super) fn check_all_segments(command: &str, allowlist: &[String]) -> Result<
 /// pre-commit hooks, playwright scripts).
 fn has_dangerous_patterns(command: &str) -> bool {
     let trimmed = command.trim();
+    // #1829: the separator scan below is not quote-aware, so single-quoted
+    // text (a jq program such as `'x | . as $r | ($r|z)'`) matched `| . ` and
+    // was blocked. Single quotes are pure data to the shell; mask them out.
+    // The real command-position check runs per parsed segment elsewhere.
+    let unquoted = mask_single_quoted(trimmed);
 
     for blocked in UNCONDITIONAL_BLOCKED {
         let with_space = format!("{blocked} ");
-        if trimmed.starts_with(&with_space) {
+        if unquoted.starts_with(&with_space) {
             return true;
         }
         for sep in ["; ", "&& ", "|| ", "| ", "\n"] {
-            if trimmed.contains(&format!("{sep}{blocked} ")) {
+            if unquoted.contains(&format!("{sep}{blocked} ")) {
                 return true;
             }
         }
@@ -868,6 +873,39 @@ fn has_dangerous_patterns(command: &str) -> bool {
     }
 
     false
+}
+
+/// Replace the contents of single-quoted strings with spaces, keeping the
+/// quotes and everything else byte-for-byte. A `'` inside double quotes or
+/// escaped with `\` does not open a string. This only feeds the coarse
+/// separator scan above; the per-segment `UNCONDITIONAL_BLOCKED` check in
+/// `check_all_segments` / `check_unconditional_blocked_only` stays the
+/// authority on what runs at command position.
+fn mask_single_quoted(command: &str) -> String {
+    let mut out = String::with_capacity(command.len());
+    let (mut in_single, mut in_double, mut escaped) = (false, false, false);
+    for ch in command.chars() {
+        if in_single {
+            if ch == '\'' {
+                in_single = false;
+                out.push(ch);
+            } else {
+                out.push(' ');
+            }
+            continue;
+        }
+        out.push(ch);
+        if escaped {
+            escaped = false;
+        } else if ch == '\\' {
+            escaped = true;
+        } else if ch == '"' {
+            in_double = !in_double;
+        } else if ch == '\'' && !in_double {
+            in_single = true;
+        }
+    }
+    out
 }
 
 /// Check if `$()` or backticks appear at command position (first token

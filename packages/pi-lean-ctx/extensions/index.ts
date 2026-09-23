@@ -38,7 +38,7 @@ import {
 } from "./mcp-cache.js";
 import { loadPiConfig, resolvePiShellPath, resolveSuppressedBuiltins } from "./config.js";
 import { posixSafeEnv } from "./env.js";
-import { classifySearchExit, sanitizeExtraEnv } from "./exec-result.js";
+import { classifySearchExit, innerTimeoutEnv, sanitizeExtraEnv } from "./exec-result.js";
 import { withFooter } from "./footer.js";
 
 const BRIDGE_STARTUP_TIMEOUT_MS = 10_000;
@@ -352,9 +352,12 @@ export default async function (pi: ExtensionAPI) {
 
   const shellPath = resolvePiShellPath();
   const leanCtxSpawnHook =
-    (extra: Record<string, string>) =>
+    (extra: Record<string, string>, timeoutSecs?: number) =>
     ({ command, cwd, env }: { command: string; cwd: string; env: NodeJS.ProcessEnv }) => {
       const bin = resolveBinary();
+      // #1833: the per-call timeout reaches Pi's bash tool only; `lean-ctx -c`
+      // would stop the command at its own 120 s default without this.
+      const timeoutEnv = innerTimeoutEnv(timeoutSecs, { ...PI_CONFIG.forwardedEnv, ...env });
       return {
         command: `${shellQuote(bin)} -c ${shellQuote(command)}`,
         cwd,
@@ -364,7 +367,7 @@ export default async function (pi: ExtensionAPI) {
         // channel the MCP `env` parameter uses. The result is filtered to
         // names the host will accept (#1799); doing it last covers every
         // source `leanCtxEnv` merges, including config-supplied `forwardedEnv`.
-        env: posixSafeEnv(leanCtxEnv({ ...env, ...extra })),
+        env: posixSafeEnv(leanCtxEnv({ ...env, ...extra, ...timeoutEnv })),
       };
     };
   const baseBashTool = createBashToolDefinition(process.cwd(), {
@@ -377,8 +380,9 @@ export default async function (pi: ExtensionAPI) {
   // #1761: the CLI rejects inline overrides like `GIT_EDITOR=true git …` and
   // recommends `ctx_shell(command=…, env={…})`. The spawn hook of a tool
   // definition is fixed per definition and calls may interleave, so a call
-  // that carries `env` gets its own definition instead of a shared mutable slot.
-  const bashToolWithEnv = (extra: Record<string, string>, raw: boolean) =>
+  // that carries `env` or a `timeout` gets its own definition instead of a
+  // shared mutable slot.
+  const bashToolWithEnv = (extra: Record<string, string>, raw: boolean, timeoutSecs?: number) =>
     raw
       ? createBashToolDefinition(process.cwd(), {
           shellPath,
@@ -390,7 +394,10 @@ export default async function (pi: ExtensionAPI) {
             env: posixSafeEnv({ ...env, ...extra }),
           }),
         })
-      : createBashToolDefinition(process.cwd(), { shellPath, spawnHook: leanCtxSpawnHook(extra) });
+      : createBashToolDefinition(process.cwd(), {
+          shellPath,
+          spawnHook: leanCtxSpawnHook(extra, timeoutSecs),
+        });
 
   const bashSchemaWithRaw = Type.Object({
     command: Type.String({ description: "Bash command to execute" }),
@@ -452,8 +459,10 @@ export default async function (pi: ExtensionAPI) {
       const toolParams = { command: params.command, timeout: params.timeout };
       const extraEnv = sanitizeExtraEnv(params.env);
       const hasExtraEnv = Object.keys(extraEnv.accepted).length > 0;
-      const tool = hasExtraEnv
-        ? bashToolWithEnv(extraEnv.accepted, isRaw)
+      // `raw` never runs `lean-ctx -c`, so only Pi's own timeout applies there.
+      const innerTimeout = !isRaw && params.timeout !== undefined ? params.timeout : undefined;
+      const tool = hasExtraEnv || innerTimeout !== undefined
+        ? bashToolWithEnv(extraEnv.accepted, isRaw, innerTimeout)
         : isRaw
           ? rawBash
           : baseBashTool;

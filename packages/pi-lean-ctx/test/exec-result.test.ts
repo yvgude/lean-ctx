@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   classifySearchExit,
+  innerTimeoutEnv,
   isDangerousEnvKey,
   sanitizeExtraEnv,
 } from "../extensions/exec-result.js";
@@ -98,6 +99,34 @@ describe("sanitizeExtraEnv (#1761)", () => {
     }
     for (const key of ["GIT_EDITOR", "GIT_EXTERNAL_DIFF", "SSH_ASKPASS", "RUST_LOG", "TERM"]) {
       expect(isDangerousEnvKey(key), key).toBe(false);
+    }
+  });
+});
+
+describe("innerTimeoutEnv (#1833)", () => {
+  it("hands the per-call timeout to lean-ctx -c in milliseconds", () => {
+    // The issue's repro: timeout=200 must outlast lean-ctx's 120 s default.
+    expect(innerTimeoutEnv(200, {})).toEqual({ LEAN_CTX_SHELL_TIMEOUT_MS: "200000" });
+    expect(innerTimeoutEnv(0.5, {})).toEqual({ LEAN_CTX_SHELL_TIMEOUT_MS: "500" });
+  });
+
+  it("caps at lean-ctx's own one-hour ceiling for a per-call timeout", () => {
+    expect(innerTimeoutEnv(86_400, {})).toEqual({ LEAN_CTX_SHELL_TIMEOUT_MS: "3600000" });
+  });
+
+  it("adds nothing without a usable timeout", () => {
+    for (const value of [undefined, 0, -5, Number.NaN, Number.POSITIVE_INFINITY, "200"]) {
+      expect(innerTimeoutEnv(value, {}), String(value)).toEqual({});
+    }
+  });
+
+  it("leaves an operator pin in place, as lean-ctx does", () => {
+    expect(innerTimeoutEnv(200, { LEAN_CTX_SHELL_TIMEOUT_MS: "900000" })).toEqual({});
+    // lean-ctx ignores an empty, zero or malformed pin, so the call's value applies.
+    for (const pin of ["", "0", "abc", "-1"]) {
+      expect(innerTimeoutEnv(200, { LEAN_CTX_SHELL_TIMEOUT_MS: pin }), pin).toEqual({
+        LEAN_CTX_SHELL_TIMEOUT_MS: "200000",
+      });
     }
   });
 });
