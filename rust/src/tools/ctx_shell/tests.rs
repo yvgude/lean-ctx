@@ -935,3 +935,144 @@ fn relative_target_under_unlisted_cwd_stays_blocked() {
         "cwd places the target; it does not allow-list it"
     );
 }
+
+/// #1850, the false block: the call runs in the project, but `cd` moves the
+/// redirect into scratch. Judged against the call's cwd, `out.txt` looked like
+/// a project write.
+#[test]
+fn a_cd_into_scratch_places_a_relative_target_in_scratch() {
+    let paths = vec!["/private/tmp".to_string()];
+    for command in [
+        "cd /private/tmp/work && echo x > out.txt",
+        "cd /private/tmp/work && go test ./... | tee run.log",
+        "cd /private/tmp && cd work && echo x >> out.txt",
+    ] {
+        assert!(
+            validate_command_in_cwd(command, &paths, Some("/repo"), Some("/repo")).is_none(),
+            "{command}: the target lands in scratch and must be allowed"
+        );
+    }
+}
+
+/// #1850, the direction that matters more: from a scratch cwd, `cd` into the
+/// project must not smuggle a relative target past the guard.
+#[test]
+fn a_cd_into_the_project_keeps_a_relative_target_blocked() {
+    let paths = vec!["/private/tmp".to_string()];
+    for command in [
+        "cd /repo && echo hi > f",
+        "cd /repo/src && echo hi >> lib.rs",
+        "cd /repo && echo hi | tee f",
+        "cd ../../../repo && echo hi > f",
+    ] {
+        assert!(
+            validate_command_in_cwd(command, &paths, Some("/repo"), Some("/private/tmp/s"))
+                .is_some(),
+            "{command}: the target lands in the project and must be refused"
+        );
+    }
+}
+
+/// Wherever the directory is not certain, a relative target is refused — even
+/// though every one of these starts from a scratch cwd, because each can end up
+/// running in the project.
+#[test]
+fn a_relative_target_after_an_uncertain_cd_is_refused() {
+    let paths = vec!["/private/tmp".to_string()];
+    for command in [
+        // May not have run, or may have failed and fallen through.
+        "true || cd /private/tmp/x && echo hi > f",
+        "cd /private/tmp/missing && true; echo hi > f",
+        "cd /private/tmp/missing && true || echo hi > f",
+        "cd /private/tmp/missing || echo failed; echo hi > f",
+        "false && cd /private/tmp/x; echo hi > f",
+        // Moves the shell in a way the text does not spell out.
+        "pushd /repo && echo hi > f",
+        "builtin cd /repo && echo hi > f",
+        "{ cd /repo; } && echo hi > f",
+        "for d in a; do cd /repo; done; echo hi > f",
+        "cd \"$PROJECT\" && echo hi > f",
+    ] {
+        assert!(
+            validate_command_in_cwd(command, &paths, Some("/repo"), Some("/private/tmp/s"))
+                .is_some(),
+            "{command}: the directory is not certain, so a relative target must be refused"
+        );
+    }
+}
+
+/// A `cd` in a background job or a subshell moves nothing after it, so the
+/// target stays where the call runs — in the project here.
+#[test]
+fn a_cd_that_cannot_move_the_shell_does_not_move_the_target() {
+    let paths = vec!["/private/tmp".to_string()];
+    for command in [
+        "cd /private/tmp/x && true & echo hi > f",
+        "(cd /private/tmp/x && make) && echo hi > f",
+    ] {
+        assert!(
+            validate_command_in_cwd(command, &paths, Some("/repo"), Some("/repo")).is_some(),
+            "{command}: the target still lands in the project"
+        );
+    }
+}
+
+/// `cd x || exit` is how scripts make a `cd` certain; what follows runs in `x`.
+#[test]
+fn cd_or_exit_makes_the_directory_certain() {
+    let paths = vec!["/private/tmp".to_string()];
+    assert!(
+        validate_command_in_cwd(
+            "cd /private/tmp/work || exit 1; echo x > out.txt",
+            &paths,
+            Some("/repo"),
+            Some("/repo"),
+        )
+        .is_none()
+    );
+}
+
+/// `cd <dir>; …` runs the next command either way, so it only moves the target
+/// when the directory exists and the `cd` cannot fail.
+#[test]
+#[cfg(unix)]
+fn cd_then_semicolon_follows_an_existing_directory_only() {
+    let scratch = tempfile::tempdir().expect("tempdir");
+    let dir = scratch.path().to_string_lossy().into_owned();
+    let paths = vec![dir.clone()];
+    assert!(
+        validate_command_in_cwd(
+            &format!("cd {dir}; echo x > out.txt"),
+            &paths,
+            Some("/repo"),
+            Some("/repo"),
+        )
+        .is_none(),
+        "an existing directory: the `cd` takes effect"
+    );
+    assert!(
+        validate_command_in_cwd(
+            &format!("cd {dir}/missing; echo x > out.txt"),
+            &paths,
+            Some("/repo"),
+            Some("/repo"),
+        )
+        .is_some(),
+        "a missing directory: the `cd` fails and the write lands in the project"
+    );
+}
+
+/// A refused relative target says how it was placed, so the caller knows to
+/// give an absolute path; an absolute one does not need the explanation.
+#[test]
+fn a_refused_relative_target_explains_where_it_was_placed() {
+    let paths = vec!["/private/tmp".to_string()];
+    let relative = validate_command_in_cwd("pushd /x && echo hi > f", &paths, Some("/repo"), None)
+        .expect("refused");
+    assert!(relative.contains("its own command runs in"), "{relative}");
+    assert!(relative.contains("absolute path"), "{relative}");
+    let absolute =
+        validate_command_in_cwd("echo hi > /repo/f", &paths, Some("/repo"), Some("/repo"))
+            .expect("refused");
+    assert!(!absolute.contains("its own command runs in"), "{absolute}");
+}
