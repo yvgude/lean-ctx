@@ -432,22 +432,7 @@ fn print_deny_compression_markers(tool_name: &str, payload: &str) {
 ///   so the JSON verdict renders as a clean permission denial; 2 for every
 ///   other host, matching their historical exit-code contract.
 fn emit_deny(msg: &str, payload: &str) -> ! {
-    let output = serde_json::json!({
-        // Cursor legacy dialect.
-        "decision": "deny",
-        "reason": msg,
-        "permission": "deny",
-        "user_message": msg,
-        // GitHub Copilot CLI dialect (top-level permissionDecision).
-        "permissionDecision": "deny",
-        // Claude Code / CodeBuddy dialect.
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": msg
-        }
-    });
-    println!("{output}");
+    println!("{}", super::build_dual_deny_output(msg));
     eprintln!("{msg}");
     if payload_is_claude_code(payload) {
         std::process::exit(0);

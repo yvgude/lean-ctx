@@ -28,6 +28,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   unchanged. Run `lean-ctx init --global` once after updating to rewrite the
   hook. Thanks to @ZacKienzle2 for the detailed report.
 
+### Fixed — `ctx_shell` places a relative redirect after a `cd` where it lands (#1850)
+
+- The write guard placed a relative redirect or `tee` target in the call's
+  `cwd`, even after a `cd` earlier in the same command. `cd /tmp/x && echo a >
+  out.txt` was therefore refused, although `out.txt` lands in a scratch
+  directory. With a scratch `cwd`, `cd <project> && echo a > f` was allowed,
+  although `f` lands inside the project. Each command is now judged in the
+  directory it actually runs in: the call's `cwd`, moved by a plain
+  `cd <dir>` that is certain to have run before it. When that directory cannot
+  be known, a relative target is refused, and the message asks for an
+  absolute path. That covers a `cd` through a variable, `pushd`, a `cd` in a
+  subshell or a group, a `cd` that may fail or be skipped, and a backgrounded
+  list. Absolute targets are judged as before. Thanks to @andig for the report.
+
+### Fixed — the PowerShell tool no longer gets a Bash command back (#1848)
+
+- On Windows, Claude Code and Copilot CLI send PowerShell tool calls through
+  `lean-ctx hook rewrite`. The hook answered them the way it answers Bash:
+  compounds and commands outside the shell allowlist came back wrapped as
+  `'…\lean-ctx.exe' -c '…'`. PowerShell cannot parse that
+  (`Unexpected token '-c'`), so every such call failed. Quoting alone would not
+  have fixed it: `lean-ctx -c` runs its command in the shell lean-ctx detects
+  for itself, which is Git Bash on most Windows machines, not PowerShell.
+- PowerShell calls now take their own path. A single `Get-Content`,
+  `Select-String` or `Get-ChildItem` (and the other read, search and list
+  commands) becomes `& '…\lean-ctx.exe' read …`, quoted for PowerShell.
+  Windows paths such as `src\main.rs` keep their backslashes. Everything else
+  runs in PowerShell unchanged. A word that PowerShell would evaluate first,
+  such as `$env:X`, `@args`, `a,b`, `*.md` or `(…)`, is never rewritten.
+- The shell allowlist still applies. In `enforce` mode a PowerShell command it
+  blocks (for example `Remove-Item`) is refused with the allowlist's reason,
+  not wrapped. `warn` and `off` behave as before.
+- PowerShell quoting elsewhere in lean-ctx now also quotes `@` and `,`, which
+  PowerShell treats as operators.
+- Thanks to @ZacKienzle2 for the precise root-cause analysis.
+
 ## [3.10.3] — 2026-09-22
 
 ### Fixed — a task overview no longer lists facts that share only a generic verb (#1832)
