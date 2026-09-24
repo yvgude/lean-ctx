@@ -5,6 +5,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — the PowerShell tool no longer gets a Bash command back (#1848)
+
+- On Windows, Claude Code and Copilot CLI send PowerShell tool calls through
+  `lean-ctx hook rewrite`. The hook answered them the way it answers Bash:
+  compounds and commands outside the shell allowlist came back wrapped as
+  `'…\lean-ctx.exe' -c '…'`. PowerShell cannot parse that
+  (`Unexpected token '-c'`), so every such call failed. Quoting alone would not
+  have fixed it: `lean-ctx -c` runs its command in the shell lean-ctx detects
+  for itself, which is Git Bash on most Windows machines, not PowerShell.
+- PowerShell calls now take their own path. A single `Get-Content`,
+  `Select-String` or `Get-ChildItem` (and the other read, search and list
+  commands) becomes `& '…\lean-ctx.exe' read …`, quoted for PowerShell.
+  Windows paths such as `src\main.rs` keep their backslashes. Everything else
+  runs in PowerShell unchanged. A word that PowerShell would evaluate first,
+  such as `$env:X`, `@args`, `a,b`, `*.md` or `(…)`, is never rewritten.
+- The shell allowlist still applies. In `enforce` mode a PowerShell command it
+  blocks (for example `Remove-Item`) is refused with the allowlist's reason,
+  not wrapped. `warn` and `off` behave as before.
+- PowerShell quoting elsewhere in lean-ctx now also quotes `@` and `,`, which
+  PowerShell treats as operators.
+- Thanks to @ZacKienzle2 for the precise root-cause analysis.
+
 ## [3.10.3] — 2026-09-22
 
 ### Fixed — a task overview no longer lists facts that share only a generic verb (#1832)
