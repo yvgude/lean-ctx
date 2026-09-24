@@ -99,7 +99,11 @@ pub fn cmd_init(args: &[String]) {
     let is_fish = shell_name.contains("fish");
     let is_powershell = cfg!(windows) && shell_name.is_empty();
 
-    let binary = crate::core::portable_binary::resolve_portable_binary();
+    // Shell hooks outlive the build that wrote them: embed the stable PATH
+    // entry, not a versioned package-manager directory (#1851).
+    let binary = crate::core::portable_binary::stable_shell_binary(
+        &crate::core::portable_binary::resolve_portable_binary(),
+    );
 
     if dry_run {
         let rc = if is_powershell {

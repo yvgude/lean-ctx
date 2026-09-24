@@ -90,8 +90,9 @@ fn build_shell_hook_step(opts: SetupOptions, _binary: &str) -> SetupStepReport {
         crate::shell_hook::install_all(opts.json);
         #[cfg(not(windows))]
         {
-            let binary = _binary;
-            let hook_content = crate::cli::generate_hook_posix(binary);
+            // Same stable PATH entry `init` embeds in the hook (#1851).
+            let binary = crate::core::portable_binary::stable_shell_binary(_binary);
+            let hook_content = crate::cli::generate_hook_posix(&binary);
             if crate::shell::is_container() {
                 crate::cli::write_env_sh_for_containers(&hook_content);
                 shell_step.items.push(SetupItem {
