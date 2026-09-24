@@ -6,18 +6,25 @@
 //! Judging either against the call's `cwd` alone gets the answer wrong — too
 //! lenient in the first case, too strict in the second.
 //!
-//! Only a plain leading `cd <literal>` is followed. Anything the shell would
-//! have to evaluate — a variable, a substitution, `pushd`, a subshell — leaves
-//! the directory unknown, and an unknown directory is reported as such rather
-//! than guessed at.
+//! Only a plain `cd <literal>` segment is followed, and only where it is
+//! certain to have run before the next command (#1850). Everything else that
+//! can move the shell — a variable, a substitution, `pushd`/`popd`, a `cd`
+//! inside a subshell, a brace group, a loop or a function, a `cd` that may be
+//! skipped (`a || cd x`) or may fail (`cd missing; …`) — leaves the directory
+//! unknown, and an unknown directory is reported as such rather than guessed
+//! at. The write guard relies on that: judging a later command against a
+//! directory it does not run in is how a redirect lands in the project.
 
 use std::path::{Path, PathBuf};
+
+use super::shell_allowlist::Separator;
 
 /// One command segment together with the directory it runs in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SegmentCwd {
     pub segment: String,
-    /// `None` once a `cd` has moved somewhere this cannot resolve statically.
+    /// `None` once a `cd` has moved somewhere this cannot resolve statically,
+    /// or when more than one directory is possible.
     pub cwd: Option<PathBuf>,
 }
 
@@ -26,33 +33,174 @@ pub struct SegmentCwd {
 /// Segmentation is delegated to the shell tokenizer so this never disagrees
 /// with the allowlist about where one command ends and the next begins.
 pub fn segments_with_cwd(command: &str, base: Option<&Path>) -> Vec<SegmentCwd> {
-    let mut cwd: Option<PathBuf> = base.map(Path::to_path_buf);
-    let mut out = Vec::new();
-
-    for segment in super::shell_allowlist::extract_all_commands_pub(command) {
-        if let Some(target) = cd_target(&segment) {
-            cwd = resolve_cd(cwd.as_deref(), target);
-            // The `cd` itself runs in the directory it is leaving; recording it
-            // with the new one would misattribute a `cd` that fails.
-            out.push(SegmentCwd {
-                segment,
-                cwd: cwd.clone(),
-            });
-            continue;
-        }
-        out.push(SegmentCwd {
-            segment,
-            cwd: cwd.clone(),
-        });
-    }
-    out
+    track(command, base).0
 }
 
 /// The directory in effect once every segment has run.
 pub fn final_cwd(command: &str, base: Option<&Path>) -> Option<PathBuf> {
-    segments_with_cwd(command, base)
-        .last()
-        .and_then(|s| s.cwd.clone())
+    track(command, base).1
+}
+
+/// A `cd` that may not be in effect: it can fail (its target does not exist
+/// yet) or be skipped (`a && cd x`, `a || cd x`). Commands reached from it only
+/// through `&&` — and the pipelines among them — run in `moved`; anything that
+/// can also be reached when the `cd` did not happen runs in either directory.
+struct Pending {
+    moved: Option<PathBuf>,
+    /// Where the shell is if this `cd` did not take effect.
+    old: Option<PathBuf>,
+    /// Behind `||`: a successful left side skips the `cd` entirely.
+    skippable: bool,
+    /// `cd x || …`: the next segment is the fallback, which runs only if the
+    /// `cd` did not take effect.
+    fallback: bool,
+}
+
+impl Pending {
+    fn either(self) -> Option<PathBuf> {
+        merge(self.moved, self.old.as_deref())
+    }
+}
+
+fn track(command: &str, base: Option<&Path>) -> (Vec<SegmentCwd>, Option<PathBuf>) {
+    let segments = super::shell_allowlist::segments_with_separators(command);
+    // `CDPATH` reroutes a relative `cd sub` to wherever it finds `sub` first.
+    let cdpath = std::env::var_os("CDPATH").is_some_and(|v| !v.is_empty())
+        || segments.iter().any(|(s, _)| s.contains("CDPATH"));
+
+    // The directory the next segment starts in.
+    let mut cwd: Option<PathBuf> = base.map(Path::to_path_buf);
+    // Where the current and-or list started: `a && cd x &` runs the whole list
+    // in a background subshell, so nothing in it moves what comes after.
+    let mut list_base = cwd.clone();
+    let mut pending: Option<Pending> = None;
+    let mut prev: Option<Separator> = None;
+    let mut out = Vec::with_capacity(segments.len());
+
+    for (segment, sep) in segments {
+        // Every segment runs where it starts — a `cd` included: its own
+        // redirect is opened before it moves, and a failed `cd` stays put.
+        let here = cwd.clone();
+        let mut own = here.clone();
+
+        if let Some(p) = pending.take_if(|p| p.fallback) {
+            // `cd x || exit 1; …` — past the fallback, only a working `cd` is
+            // left. A skippable `cd` is not: `a || cd x || exit` exits on neither
+            // path when `a` succeeds.
+            cwd = if exits(&segment) && !p.skippable {
+                p.moved
+            } else if cd_target(&segment).is_some() || moves_opaquely(&segment) {
+                None
+            } else {
+                p.either()
+            };
+        } else if let Some(target) = cd_target(&segment) {
+            let moved = if cdpath && is_cdpath_candidate(target) {
+                None
+            } else {
+                resolve_cd(here.as_deref(), target)
+            };
+            // With an uncertain `cd` still open (`cd a && cd b`), not taking
+            // this one leaves the shell in `a` *or* where `a` started.
+            let old = match pending.take() {
+                Some(p) => merge(here.clone(), p.old.as_deref()),
+                None => here.clone(),
+            };
+            let runs_unconditionally = matches!(
+                prev,
+                None | Some(Separator::Sequence | Separator::Background)
+            );
+            if prev == Some(Separator::Pipe) || sep == Some(Separator::Pipe) {
+                // A pipeline element runs in a subshell — in bash. zsh runs the
+                // last one in the current shell, so neither reading is safe.
+                cwd = merge(moved, old.as_deref());
+            } else if runs_unconditionally && moved.as_deref().is_some_and(Path::is_dir) {
+                // Runs, and into a directory that exists: it takes effect.
+                cwd = moved;
+            } else {
+                let skippable = prev == Some(Separator::Or);
+                let p = Pending {
+                    moved,
+                    old,
+                    skippable,
+                    fallback: sep == Some(Separator::Or),
+                };
+                cwd = match sep {
+                    Some(Separator::Or) => p.old.clone(),
+                    Some(Separator::Sequence) => merge(p.moved.clone(), p.old.as_deref()),
+                    _ if skippable => merge(p.moved.clone(), p.old.as_deref()),
+                    _ => p.moved.clone(),
+                };
+                if matches!(sep, Some(Separator::Or | Separator::And) | None) {
+                    pending = Some(p);
+                }
+            }
+        } else {
+            if moves_opaquely(&segment) {
+                own = None;
+                // A subshell `( … )` cannot move what follows it; anything else
+                // (a brace group, a loop body, a function, `pushd`) can.
+                if !segment.starts_with('(') {
+                    cwd = None;
+                    pending = None;
+                }
+            }
+            // Leaving the `&&` chain of an uncertain `cd`: what comes next can
+            // also be reached when that `cd` did not happen.
+            if let Some(p) = pending.take() {
+                match sep {
+                    Some(Separator::And | Separator::Pipe) | None => pending = Some(p),
+                    Some(Separator::Or | Separator::Sequence | Separator::Background) => {
+                        cwd = p.either();
+                    }
+                }
+            }
+        }
+
+        out.push(SegmentCwd { segment, cwd: own });
+        match sep {
+            Some(Separator::Background) => {
+                cwd.clone_from(&list_base);
+                pending = None;
+            }
+            Some(Separator::Sequence) => list_base.clone_from(&cwd),
+            _ => {}
+        }
+        prev = sep;
+    }
+    (out, cwd)
+}
+
+/// One directory when both possibilities agree, otherwise unknown.
+fn merge(a: Option<PathBuf>, b: Option<&Path>) -> Option<PathBuf> {
+    if a.as_deref() == b { a } else { None }
+}
+
+/// A `cd x || exit` fallback: nothing after it runs unless the `cd` worked.
+fn exits(segment: &str) -> bool {
+    matches!(segment.split_whitespace().next(), Some("exit" | "return"))
+}
+
+/// A relative name `CDPATH` would look up (`./x` and `../x` bypass it).
+fn is_cdpath_candidate(target: &str) -> bool {
+    let t = target.trim_matches(['"', '\'']);
+    !(t.starts_with('/')
+        || t.starts_with('~')
+        || t.starts_with("./")
+        || t.starts_with("../")
+        || t == "."
+        || t == ".."
+        || Path::new(t).is_absolute())
+}
+
+/// Whether a segment that is not a plain `cd <literal>` may still change the
+/// directory: `pushd`, `popd`, `cd` after `do`/`then`/`builtin`/`command`, or
+/// any of them inside a subshell, brace group, substitution or function body.
+/// Deliberately broad — a false positive only makes the directory unknown.
+fn moves_opaquely(segment: &str) -> bool {
+    segment
+        .split(|c: char| c.is_whitespace() || "(){};&|`".contains(c))
+        .any(|word| matches!(word, "cd" | "pushd" | "popd" | "chdir"))
 }
 
 /// The literal argument of a segment that is exactly `cd <path>`.
@@ -219,5 +367,87 @@ mod tests {
     #[test]
     fn no_base_and_no_cd_is_unknown() {
         assert_eq!(final_cwd("ls -la", None), None);
+    }
+
+    fn cwds(command: &str) -> Vec<Option<PathBuf>> {
+        segments_with_cwd(command, Some(Path::new("/proj")))
+            .into_iter()
+            .map(|s| s.cwd)
+            .collect()
+    }
+
+    const MISSING: &str = "/lean-ctx-1850-does-not-exist";
+
+    /// A `cd` runs where it starts: its own redirect is opened before it moves.
+    #[test]
+    fn a_cd_segment_runs_in_the_directory_before_it() {
+        assert_eq!(cwds("cd /tmp && ls")[0], Some(PathBuf::from("/proj")));
+    }
+
+    /// #1850: `cd x && a; b` — if the `cd` fails, `a` is skipped but `b` still
+    /// runs, in the old directory. Past the `;` both are possible.
+    #[test]
+    fn a_cd_that_may_fail_does_not_carry_past_a_sequence() {
+        let got = cwds(&format!("cd {MISSING} && true; echo x"));
+        assert_eq!(got[1], Some(PathBuf::from(MISSING)), "reached only via &&");
+        assert_eq!(got[2], None);
+    }
+
+    #[test]
+    fn a_cd_that_may_be_skipped_leaves_the_directory_unknown() {
+        assert_eq!(cwds("false && cd /tmp; echo x")[2], None);
+        assert_eq!(cwds("true || cd /tmp && echo x")[2], None);
+        assert_eq!(cwds("cd /tmp | cat; echo x")[2], None, "a pipeline element");
+    }
+
+    /// `cd a && cd .` must not merge the two possibilities into one directory
+    /// just because both `cd`s name the same place.
+    #[test]
+    fn a_second_cd_does_not_make_a_failed_first_one_certain() {
+        assert_eq!(cwds(&format!("cd {MISSING} && cd . ; echo x"))[2], None);
+    }
+
+    #[test]
+    fn cd_or_exit_leaves_only_the_moved_directory() {
+        let got = cwds(&format!("cd {MISSING} || exit 1; echo x"));
+        assert_eq!(got[1], Some(PathBuf::from("/proj")), "the fallback");
+        assert_eq!(got[2], Some(PathBuf::from(MISSING)));
+    }
+
+    /// `&` runs the whole and-or list in a background subshell.
+    #[test]
+    fn a_backgrounded_list_does_not_move_what_follows() {
+        assert_eq!(
+            cwds("cd /tmp && echo a & echo b")[2],
+            Some(PathBuf::from("/proj"))
+        );
+    }
+
+    #[test]
+    fn opaque_movers_make_the_directory_unknown() {
+        for command in [
+            "pushd /tmp && echo x",
+            "builtin cd /tmp && echo x",
+            "{ cd /tmp; } && echo x",
+        ] {
+            assert_eq!(cwds(command).last(), Some(&None), "{command}");
+        }
+        let subshell = cwds("(cd /tmp) && echo x");
+        assert_eq!(subshell[0], None, "its own directory is not followed");
+        assert_eq!(
+            subshell[1],
+            Some(PathBuf::from("/proj")),
+            "but it cannot move the parent shell"
+        );
+    }
+
+    #[test]
+    fn cdpath_makes_a_relative_cd_unknown() {
+        assert_eq!(cwds("CDPATH=/elsewhere; cd sub && ls")[2], None);
+        assert_eq!(
+            cwds("CDPATH=/elsewhere; cd ./sub && ls")[2],
+            Some(PathBuf::from("/proj/sub")),
+            "`./` bypasses CDPATH"
+        );
     }
 }

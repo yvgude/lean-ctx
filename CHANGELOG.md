@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — `ctx_shell` places a relative redirect after a `cd` where it lands (#1850)
+
+- The write guard placed a relative redirect or `tee` target in the call's
+  `cwd`, even after a `cd` earlier in the same command. `cd /tmp/x && echo a >
+  out.txt` was therefore refused, although `out.txt` lands in a scratch
+  directory. With a scratch `cwd`, `cd <project> && echo a > f` was allowed,
+  although `f` lands inside the project. Each command is now judged in the
+  directory it actually runs in: the call's `cwd`, moved by a plain
+  `cd <dir>` that is certain to have run before it. When that directory cannot
+  be known, a relative target is refused, and the message asks for an
+  absolute path. That covers a `cd` through a variable, `pushd`, a `cd` in a
+  subshell or a group, a `cd` that may fail or be skipped, and a backgrounded
+  list. Absolute targets are judged as before. Thanks to @andig for the report.
+
 ## [3.10.3] — 2026-09-22
 
 ### Fixed — a task overview no longer lists facts that share only a generic verb (#1832)

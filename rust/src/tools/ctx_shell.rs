@@ -49,6 +49,13 @@ pub(crate) fn validate_command_in_cwd(
     // #931: strip heredoc bodies before the redirect scanner — a `>` inside a
     // heredoc body is opaque data, not a file-write redirect.
     let cmd_no_heredoc = crate::core::shell_allowlist::strip_all_heredoc_bodies(command);
+    // #1850: a relative target lands where its own command runs, and a `cd`
+    // earlier in the line moves that. Judging every target against the call's
+    // `cwd` blocked `cd /tmp && echo x > out.txt` and let `cd <project> && echo
+    // x > f` from a scratch cwd write straight into the project. Each segment
+    // is judged against its own directory; where that cannot be known, a
+    // relative target is refused.
+    let segments = segments_in_cwd(&cmd_no_heredoc, cwd);
     // #1768: the rule is the destination, not the size of the payload. The
     // refusal used to justify itself with "MCP protocol corruption on large
     // payloads" while the guard allows a megabyte into /tmp and blocks two
@@ -60,9 +67,9 @@ pub(crate) fn validate_command_in_cwd(
     // can land there with compression markers instead of the command's own
     // bytes; and a scratch capture is precisely how a large payload stays out
     // of the MCP channel.
-    if let Some(target) =
-        disallowed_write_redirect_target(&cmd_no_heredoc, write_allow_paths, project_root, cwd)
-    {
+    if let Some(target) = segments.iter().find_map(|(segment, here)| {
+        disallowed_write_redirect_target(segment, write_allow_paths, project_root, here.as_deref())
+    }) {
         return Some(format!(
             "ERROR: ctx_shell refuses the redirect into `{target}` — the destination decides, \
              not the size of the output. ctx_shell compresses what it returns, so capturing \
@@ -72,7 +79,8 @@ pub(crate) fn validate_command_in_cwd(
              commands are not restricted. \
              Write the file with the native Write tool or ctx_patch, or capture to a scratch \
              path (/tmp, /var/tmp, $TMPDIR), which is allowed and keeps the output out of \
-             the MCP channel entirely."
+             the MCP channel entirely.{}",
+            relative_target_note(&target)
         ));
     }
 
@@ -86,9 +94,9 @@ pub(crate) fn validate_command_in_cwd(
     // because an alternative was offered, and closed a review with no findings.
     // Naming the pipe also sent callers off to restructure their pipeline,
     // which cannot help: `… | tee FILE | wc -l` is judged identically.
-    if let Some(target) =
-        disallowed_tee_target(&cmd_no_heredoc, write_allow_paths, project_root, cwd)
-    {
+    if let Some(target) = segments.iter().find_map(|(segment, here)| {
+        disallowed_tee_target(segment, write_allow_paths, project_root, here.as_deref())
+    }) {
         return Some(format!(
             "ERROR: ctx_shell refuses `tee {target}` — the destination is inside the \
              project, and ctx_shell compresses what it returns, so the captured bytes may \
@@ -97,11 +105,12 @@ pub(crate) fn validate_command_in_cwd(
              The rule is output capture into a project path — other commands are not \
              restricted. \
              Write the file with the native Write tool, or tee to a scratch path \
-             (/tmp, /var/tmp, $TMPDIR), which is allowed."
+             (/tmp, /var/tmp, $TMPDIR), which is allowed.{}",
+            relative_target_note(&target)
         ));
     }
 
-    if is_heredoc_file_write(command, write_allow_paths, project_root, cwd) {
+    if is_heredoc_file_write(command, &segments, write_allow_paths, project_root) {
         return Some(
             "ERROR: ctx_shell detected a heredoc writing to a file. \
              ctx_shell compresses what it returns, so content it captures into a file may \
@@ -130,6 +139,36 @@ pub(crate) fn validate_command_in_cwd(
     }
 
     None
+}
+
+/// How a relative target is placed — said when one is refused, because the
+/// answer is usually to say where it should go (#1850).
+fn relative_target_note(target: &str) -> &'static str {
+    let t = target
+        .trim_start_matches(['>', '&', '|'])
+        .trim_matches(['"', '\'']);
+    if t.starts_with('/') || std::path::Path::new(t).is_absolute() {
+        return "";
+    }
+    " A relative target is placed in the directory its own command runs in: the call's \
+     `cwd`, moved by a plain `cd <dir> &&` before it. Where that directory cannot be \
+     known — a `cd` through a variable, `pushd`, a subshell, a `cd` that may not have \
+     run — a relative target is refused; give an absolute path."
+}
+
+/// Each segment of the heredoc-stripped command with the directory it runs in,
+/// as a string for the path checks. An empty `cwd` is no `cwd`.
+fn segments_in_cwd(command: &str, cwd: Option<&str>) -> Vec<(String, Option<String>)> {
+    let base = cwd
+        .filter(|c| !c.trim().is_empty())
+        .map(std::path::Path::new);
+    crate::core::command_cwd::segments_with_cwd(command, base)
+        .into_iter()
+        .map(|s| {
+            let here = s.cwd.map(|p| p.to_string_lossy().into_owned());
+            (s.segment, here)
+        })
+        .collect()
 }
 
 /// Well-known Unix scratch prefixes that agents use on every platform.
@@ -267,11 +306,12 @@ fn download_to_file_reason(command: &str) -> Option<String> {
 
 /// Returns true only for heredocs that redirect to files (the dangerous pattern).
 /// Legitimate heredoc uses (input piping, inline scripts) are allowed through.
+/// `segments` is the heredoc-stripped command with each segment's directory.
 fn is_heredoc_file_write(
     command: &str,
+    segments: &[(String, Option<String>)],
     write_allow_paths: &[String],
     project_root: Option<&str>,
-    cwd: Option<&str>,
 ) -> bool {
     let has_heredoc = command.contains("<<");
     if !has_heredoc {
@@ -283,10 +323,12 @@ fn is_heredoc_file_write(
     if !has_known_heredoc {
         return false;
     }
-    // #931: strip heredoc bodies so `>` / `>>` inside the body are not
-    // mistaken for file-write redirects.
-    let stripped = crate::core::shell_allowlist::strip_all_heredoc_bodies(command);
-    disallowed_write_redirect_target(&stripped, write_allow_paths, project_root, cwd).is_some()
+    // #931: the segments come from the heredoc-stripped text, so `>` / `>>`
+    // inside the body are not mistaken for file-write redirects.
+    segments.iter().any(|(segment, here)| {
+        disallowed_write_redirect_target(segment, write_allow_paths, project_root, here.as_deref())
+            .is_some()
+    })
 }
 
 /// Detects shell redirect operators (`>` or `>>`) that write to files.
@@ -339,10 +381,9 @@ fn is_write_allowed_redirect_target(
     // project cwd now resolves *into* the project and is refused on the same
     // rule as an absolute one, instead of by accident of its spelling.
     //
-    // Only the caller-supplied `cwd` is used. An in-command `cd` is not
-    // followed: deciding the effective directory from the command text means
-    // getting `cd a && cd b`, conditional and quoted forms all right, and an
-    // error there would grant a write the guard means to refuse.
+    // `cwd` is the directory the target's own command runs in — the call's
+    // `cwd` moved by any `cd` before it (#1850, `command_cwd`), or `None` when
+    // that cannot be known, which refuses a relative target below.
     let path = std::path::Path::new(t);
     let resolved_input;
     let path = if path.is_absolute() {

@@ -231,6 +231,43 @@ fn closes_double_bracket(bytes: &[u8], i: usize) -> bool {
 /// split there and blocked the pattern fragment as an unknown command; same
 /// for `find … -exec rm {} \;`.
 pub(super) fn split_on_operators(command: &str) -> Vec<&str> {
+    split_with_separators(command)
+        .into_iter()
+        .map(|(segment, _)| segment)
+        .collect()
+}
+
+/// The operator that ends a command segment.
+///
+/// Where a segment runs can depend on it (#1850): a `cd` followed by `&&`
+/// moves the next command, one followed by `||` only runs the next command if
+/// it failed, and one in a pipeline or in the background moves nothing at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Separator {
+    /// `;`, a newline or a carriage return.
+    Sequence,
+    /// `&&`
+    And,
+    /// `||`
+    Or,
+    /// `|`
+    Pipe,
+    /// A single `&`.
+    Background,
+}
+
+/// Every segment together with the separator that ends it; the last segment
+/// has none. Same scanner as `split_on_operators`, so the two never disagree
+/// about where a command ends.
+pub fn segments_with_separators(command: &str) -> Vec<(String, Option<Separator>)> {
+    split_with_separators(command)
+        .into_iter()
+        .map(|(segment, sep)| (segment.trim().to_string(), sep))
+        .filter(|(segment, _)| !segment.is_empty())
+        .collect()
+}
+
+fn split_with_separators(command: &str) -> Vec<(&str, Option<Separator>)> {
     let mut segments = Vec::new();
     let mut start = 0;
     let bytes = command.as_bytes();
@@ -353,14 +390,14 @@ pub(super) fn split_on_operators(command: &str) -> Vec<&str> {
                 i += 1;
             }
             b'\n' | b'\r' | b';' if unshielded => {
-                segments.push(&command[start..i]);
+                segments.push((&command[start..i], Some(Separator::Sequence)));
                 i += 1;
                 start = i;
             }
             b'&' if unshielded => {
                 if i + 1 < len && bytes[i + 1] == b'&' {
                     // &&
-                    segments.push(&command[start..i]);
+                    segments.push((&command[start..i], Some(Separator::And)));
                     i += 2;
                     start = i;
                 } else if (i > 0 && bytes[i - 1] == b'>') || (i + 1 < len && bytes[i + 1] == b'>') {
@@ -371,7 +408,7 @@ pub(super) fn split_on_operators(command: &str) -> Vec<&str> {
                     i += 1;
                 } else {
                     // single & (background operator) — still a command separator
-                    segments.push(&command[start..i]);
+                    segments.push((&command[start..i], Some(Separator::Background)));
                     i += 1;
                     start = i;
                 }
@@ -379,7 +416,7 @@ pub(super) fn split_on_operators(command: &str) -> Vec<&str> {
             b'|' if unshielded => {
                 if i + 1 < len && bytes[i + 1] == b'|' {
                     // ||
-                    segments.push(&command[start..i]);
+                    segments.push((&command[start..i], Some(Separator::Or)));
                     i += 2;
                     start = i;
                 } else if i > 0 && bytes[i - 1] == b'>' {
@@ -391,7 +428,7 @@ pub(super) fn split_on_operators(command: &str) -> Vec<&str> {
                     i += 1;
                 } else {
                     // pipe
-                    segments.push(&command[start..i]);
+                    segments.push((&command[start..i], Some(Separator::Pipe)));
                     i += 1;
                     start = i;
                 }
@@ -403,7 +440,7 @@ pub(super) fn split_on_operators(command: &str) -> Vec<&str> {
     }
 
     if start < len {
-        segments.push(&command[start..]);
+        segments.push((&command[start..], None));
     }
 
     segments
