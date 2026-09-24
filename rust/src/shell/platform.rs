@@ -498,8 +498,10 @@ fn quote_powershell(s: &str) -> String {
     if s.is_empty() {
         return "''".to_string();
     }
+    // Unlike POSIX, `@` (splatting, `@(…)`) and `,` (array operator) are
+    // syntax in PowerShell, so they are not safe bare (#1848).
     if s.bytes()
-        .all(|b| b.is_ascii_alphanumeric() || b"-_./=:@,+%^".contains(&b))
+        .all(|b| b.is_ascii_alphanumeric() || b"-_./=:+%^".contains(&b))
     {
         return s.to_string();
     }
@@ -571,6 +573,12 @@ mod join_command_tests {
     fn powershell_single_quotes_escaped() {
         let args: Vec<String> = vec!["echo".into(), "it's done".into()];
         assert_eq!(join_command_for(&args, "-Command"), "& echo 'it''s done'");
+    }
+
+    #[test]
+    fn powershell_quotes_splat_and_array_syntax() {
+        let args: Vec<String> = vec!["echo".into(), "@args".into(), "a,b".into()];
+        assert_eq!(join_command_for(&args, "-Command"), "& echo '@args' 'a,b'");
     }
 
     #[test]

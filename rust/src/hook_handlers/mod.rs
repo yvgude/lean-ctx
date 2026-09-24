@@ -25,6 +25,8 @@ mod edit_health;
 mod file_rewrite;
 mod observe;
 mod payload;
+// PowerShell-tool rewrites: PowerShell quoting, no `lean-ctx -c` wrap (#1848).
+mod powershell_rewrite;
 // Redirect decision logic (#660/#966 LOC gate) for Read/Grep/Glob.
 mod read_dedup;
 mod redirect;
@@ -205,6 +207,27 @@ fn build_dual_allow_output() -> String {
     .to_string()
 }
 
+/// A deny verdict every supported host reads: Cursor's legacy keys, Copilot's
+/// top-level `permissionDecision`, and Claude Code's `hookSpecificOutput`.
+fn build_dual_deny_output(msg: &str) -> String {
+    serde_json::json!({
+        // Cursor legacy dialect.
+        "decision": "deny",
+        "reason": msg,
+        "permission": "deny",
+        "user_message": msg,
+        // GitHub Copilot CLI dialect (top-level permissionDecision).
+        "permissionDecision": "deny",
+        // Claude Code / CodeBuddy dialect.
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": msg
+        }
+    })
+    .to_string()
+}
+
 fn build_dual_rewrite_output(tool_input: Option<&serde_json::Value>, rewritten: &str) -> String {
     let updated_input = if let Some(obj) = tool_input.and_then(|v| v.as_object()) {
         let mut m = obj.clone();
@@ -336,7 +359,12 @@ pub fn handle_copilot() {
         return;
     };
 
-    if let Some(rewritten) = file_rewrite::rewrite_candidate(&cmd, &binary) {
+    let rewritten = if powershell_rewrite::is_powershell_tool(&tool_name) {
+        powershell_rewrite::rewrite_candidate_powershell(&cmd, &binary)
+    } else {
+        file_rewrite::rewrite_candidate(&cmd, &binary)
+    };
+    if let Some(rewritten) = rewritten {
         print!(
             "{}",
             build_dual_rewrite_output(tool_args.as_ref(), &rewritten)
