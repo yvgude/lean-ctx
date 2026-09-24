@@ -169,19 +169,23 @@ const PATH_SHIMS: [&str; 2] = ["_lc", "_lc_compress"];
 const SHIM_MARKER: &str = "lean-ctx PATH fallback";
 
 /// Directories that may hold our shims: the parent of every managed binary
-/// candidate, minus dev-build (`target/`) dirs we must never touch. De-duped,
-/// order preserved.
+/// candidate, then every `PATH` directory — `init` writes the shims to the
+/// `PATH` directory holding the `lean-ctx` launcher (#1851), and the binary may
+/// already be gone by the time the shims are removed. Safe because only marked
+/// shims are deleted. Dev-build (`target/`) dirs we must never touch are
+/// skipped in both. De-duped, order preserved.
 fn shim_dirs(home: &Path) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
-    for path in candidate_paths(home) {
-        if matches!(classify(&path), Disposition::DevBuild) {
+    let binary_dirs = candidate_paths(home)
+        .into_iter()
+        .filter_map(|path| path.parent().map(Path::to_path_buf));
+    let path_dirs = crate::core::portable_binary::path_dirs();
+    for dir in binary_dirs.chain(path_dirs) {
+        if matches!(classify(&dir.join("lean-ctx")), Disposition::DevBuild) {
             continue;
         }
-        if let Some(dir) = path.parent() {
-            let dir = dir.to_path_buf();
-            if !dirs.contains(&dir) {
-                dirs.push(dir);
-            }
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
         }
     }
     dirs

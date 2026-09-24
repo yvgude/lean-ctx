@@ -24,6 +24,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   no longer tells Codex to use a native `Glob` it does not have.
   Thanks to @skonebrant for the detailed report.
 
+### Fixed — `_lc` shims and shell hooks survive package-manager installs and updates (#1851)
+
+- `lean-ctx init --global` wrote the `_lc`/`_lc_compress` PATH shims next to
+  the running binary. With scoop, Homebrew, npm or mise that is a versioned
+  directory off `PATH` (`scoop/apps/lean-ctx/3.10.2`, `Cellar/…`,
+  `node_modules/…`, `mise/installs/…`). The shims were therefore never found.
+  Hosts that replay a shell snapshot without the `_lc` function, such as
+  Claude Code's Bash tool, kept the `alias git='_lc git'` aliases, and every
+  aliased command failed with `_lc: command not found`.
+- The shims now go to the running binary's directory only when it is on
+  `PATH`. Otherwise they go to the `PATH` directory holding the `lean-ctx`
+  launcher: the Homebrew symlink, the scoop shim, the npm or mise launcher.
+  `~/.local/bin` is the last choice when it is on `PATH`, and the first
+  writable directory wins. `lean-ctx uninstall` also removes shims from the
+  `PATH` directories, and still removes only files carrying the lean-ctx
+  marker.
+- `shell-hook.*` and `env.sh` embedded the same versioned path, which stopped
+  existing after `scoop update` + `scoop cleanup` or `brew upgrade`. They now
+  embed the stable `PATH` launcher when the binary is off `PATH`. Installs
+  whose binary sits on `PATH` (the `install.sh` and Windows ZIP layouts) are
+  unchanged. Run `lean-ctx init --global` once after updating to rewrite the
+  hook. Thanks to @ZacKienzle2 for the detailed report.
+
 ### Fixed — `ctx_shell` places a relative redirect after a `cd` where it lands (#1850)
 
 - The write guard placed a relative redirect or `tee` target in the call's

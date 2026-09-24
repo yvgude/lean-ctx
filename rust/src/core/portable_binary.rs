@@ -34,6 +34,70 @@ pub(crate) fn resolve_portable_binary() -> String {
     choose_binary_path(current.as_deref(), which_raw.as_deref())
 }
 
+/// File names a `lean-ctx` launcher can have inside a `PATH` directory.
+const LAUNCHER_NAMES: &[&str] = if cfg!(windows) {
+    &["lean-ctx.exe", "lean-ctx.cmd"]
+} else {
+    &["lean-ctx"]
+};
+
+/// The directories on `PATH`, in lookup order.
+pub(crate) fn path_dirs() -> Vec<std::path::PathBuf> {
+    std::env::var_os("PATH")
+        .map(|p| {
+            std::env::split_paths(&p)
+                .filter(|d| !d.as_os_str().is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// True when `dir` is one of `path_dirs`, directly or through a symlink.
+pub(crate) fn dir_on_path(dir: &std::path::Path, path_dirs: &[std::path::PathBuf]) -> bool {
+    let canonical = std::fs::canonicalize(dir).ok();
+    path_dirs
+        .iter()
+        .any(|d| d == dir || (canonical.is_some() && std::fs::canonicalize(d).ok() == canonical))
+}
+
+/// Every `lean-ctx` launcher on `PATH`, in lookup order: the entry a shell
+/// runs for `lean-ctx`, followed by the ones it shadows.
+pub(crate) fn launchers_on_path(path_dirs: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
+    path_dirs
+        .iter()
+        .filter_map(|d| {
+            LAUNCHER_NAMES
+                .iter()
+                .map(|name| d.join(name))
+                .find(|p| p.is_file())
+        })
+        .collect()
+}
+
+/// The binary path to embed in machine-local shell artifacts — the shell
+/// hooks, `env.sh` and the `_lc` shims (#1851).
+///
+/// Package managers expose `lean-ctx` on `PATH` through a stable entry (a
+/// Homebrew symlink, a scoop shim, an npm or mise launcher) while the binary
+/// itself lives in a versioned directory off `PATH`. `current_exe` resolves to
+/// that versioned directory, which the next update removes. So when `binary`
+/// is not in a `PATH` directory, the first launcher on `PATH` is embedded
+/// instead: it is what the user runs for `lean-ctx`, and it follows updates.
+pub(crate) fn stable_shell_binary(binary: &str) -> String {
+    stable_shell_binary_in(binary, &path_dirs())
+}
+
+fn stable_shell_binary_in(binary: &str, path_dirs: &[std::path::PathBuf]) -> String {
+    let path = std::path::Path::new(binary);
+    if !path.is_absolute() || path.parent().is_some_and(|d| dir_on_path(d, path_dirs)) {
+        return binary.to_string();
+    }
+    launchers_on_path(path_dirs).first().map_or_else(
+        || binary.to_string(),
+        |p| sanitize_exe_path(&p.to_string_lossy()),
+    )
+}
+
 /// Decide which `lean-ctx` path to bake into generated artifacts (autostart
 /// plists, daemon spawn, MCP server command, agent/shell hooks, update
 /// scheduler). The chosen path must be the *exact build the user is running*, so
@@ -286,6 +350,63 @@ mod tests {
                 Some("/Users/dev/.local/bin/lean-ctx\n/opt/homebrew/bin/lean-ctx"),
             );
             assert_eq!(chosen, "/Users/dev/.local/bin/lean-ctx");
+        }
+    }
+
+    /// #1851: package-manager layouts, a versioned install dir off PATH and a
+    /// stable launcher dir on it.
+    #[cfg(unix)]
+    mod stable_shell_binary {
+        use super::super::*;
+        use std::path::{Path, PathBuf};
+
+        fn launcher(dir: &Path) -> PathBuf {
+            std::fs::create_dir_all(dir).unwrap();
+            let path = dir.join("lean-ctx");
+            std::fs::write(&path, "#!/bin/sh\n").unwrap();
+            path
+        }
+
+        #[test]
+        fn binary_in_a_path_dir_is_kept() {
+            let tmp = tempfile::tempdir().unwrap();
+            let bin = launcher(&tmp.path().join("bin"));
+            let other = launcher(&tmp.path().join("other"));
+            let dirs: Vec<PathBuf> =
+                vec![other.parent().unwrap().into(), bin.parent().unwrap().into()];
+            let bin = bin.to_string_lossy();
+            assert_eq!(stable_shell_binary_in(&bin, &dirs), bin);
+        }
+
+        #[test]
+        fn versioned_install_dir_resolves_to_the_path_launcher() {
+            let tmp = tempfile::tempdir().unwrap();
+            let cellar = launcher(&tmp.path().join("Cellar/lean-ctx/3.10.2/bin"));
+            let shims = launcher(&tmp.path().join("shims"));
+            let dirs = vec![tmp.path().join("empty"), shims.parent().unwrap().into()];
+            assert_eq!(
+                stable_shell_binary_in(&cellar.to_string_lossy(), &dirs),
+                shims.to_string_lossy()
+            );
+        }
+
+        #[test]
+        fn symlinked_path_dir_counts_as_on_path() {
+            let tmp = tempfile::tempdir().unwrap();
+            let bin = launcher(&tmp.path().join("real"));
+            let link = tmp.path().join("link");
+            std::os::unix::fs::symlink(bin.parent().unwrap(), &link).unwrap();
+            let bin = bin.to_string_lossy();
+            assert_eq!(stable_shell_binary_in(&bin, &[link]), bin);
+        }
+
+        #[test]
+        fn no_launcher_on_path_keeps_the_binary() {
+            let tmp = tempfile::tempdir().unwrap();
+            let bin = launcher(&tmp.path().join("apps/3.10.2"));
+            let bin = bin.to_string_lossy();
+            assert_eq!(stable_shell_binary_in(&bin, &[tmp.path().join("x")]), bin);
+            assert_eq!(stable_shell_binary_in("lean-ctx", &[]), "lean-ctx");
         }
     }
 }
