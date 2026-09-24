@@ -111,7 +111,9 @@ Never skip: validation, security, error handling.\n\
 /// v10 (#1788): the steering states its own boundary. It governs the host's
 /// built-in file/search/shell tools; it is not a ranking over other MCP
 /// servers, which the previous unqualified wording was read as.
-pub const RULES_VERSION: usize = 10;
+/// v11 (#1849): the shadow edit line names no host tool — "native
+/// Edit/StrReplace" was wrong for Codex, which edits through `apply_patch`.
+pub const RULES_VERSION: usize = 11;
 
 /// Banner placed at the top of dedicated rule files (non-shadow only).
 ///
@@ -256,7 +258,7 @@ pub const LITM_END: &str = "TOOL PREFERENCE (END): ctx_compose>chain ctx_read>Re
 /// tools that have *no* native trigger to intercept still need advertising.
 pub const SHADOW_MINIMAL: &str = "\
 lean-ctx shadow mode: native read/search/shell calls auto-route to ctx_* — no tool-mapping needed.\n\
-File editing → native Edit/StrReplace (lean-ctx only handles reads); if denied, use ctx_patch.\n\
+File editing → the host's native edit tool (lean-ctx only handles reads); if denied, use ctx_patch.\n\
 Exclusive tools (no native trigger): ctx_compose (understand code, call first), ctx_search(action=symbol) (exact symbol), ctx_search(action=semantic) (by meaning), ctx_callgraph (callers), ctx_knowledge / ctx_session (memory).";
 
 /// Hook-covered header (GL #1153): the honest replacement for the
@@ -359,14 +361,14 @@ fn longform_non_shadow_sections(p: &super::tool_profiles::ToolProfile) -> Vec<St
     use super::rules_sections as rs;
     let mut v = vec![
         s(CRITICAL),
-        s(MUST_INVOKE),
+        rs::must_invoke_section(p),
         s(BULLETS),
         s(NEVER),
         rs::intent_section(p),
         s(AGENT_LOOP), // verbose teaching — LONGFORM only
         rs::anti_section(p),
         s(NAV_PARADOX), // verbose teaching — LONGFORM only
-        s(PARALLEL),
+        rs::parallel_section(p),
         s(AUTO),
         s(RECOVER),
         s(ROOT_RESTRICTION),
@@ -383,12 +385,12 @@ fn full_non_shadow_sections(p: &super::tool_profiles::ToolProfile) -> Vec<String
     use super::rules_sections as rs;
     let mut v = vec![
         s(CRITICAL),
-        s(MUST_INVOKE),
+        rs::must_invoke_section(p),
         s(BULLETS),
         s(NEVER),
         rs::intent_section(p),
         rs::anti_section(p),
-        s(PARALLEL),
+        rs::parallel_section(p),
         s(AUTO),
         s(RECOVER_COMPACT),
         s(ROOT_RESTRICTION),
@@ -410,7 +412,7 @@ fn hook_covered_non_shadow_sections(p: &super::tool_profiles::ToolProfile) -> Ve
     let mut v = vec![
         s(HOOK_COVERED_HEADER),
         rs::hook_covered_tools_section(p),
-        s(PARALLEL),
+        rs::parallel_section(p),
         s(RECOVER_COMPACT),
         s(ROOT_RESTRICTION),
     ];
@@ -428,7 +430,7 @@ fn compact_non_shadow_sections(p: &super::tool_profiles::ToolProfile) -> Vec<Str
         s(NEVER),
         rs::intent_section(p),
         rs::anti_section(p),
-        s(PARALLEL),
+        rs::parallel_section(p),
         s(RECOVER_COMPACT),
         s(ROOT_RESTRICTION),
     ];

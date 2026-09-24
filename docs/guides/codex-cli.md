@@ -69,8 +69,8 @@ Anti-pattern: NEVER use `full` for files you won't edit — use `map` or `signat
 ## File Editing
 Anchored editing: `ctx_read(mode="anchored")` → `ctx_patch(path, op, line, hash, new_text)` —
 never echo old text; batch via `ops:[…]`; `op=create` for new files. Stale anchor → CONFLICT
-with fresh anchors (retry once). Native Edit/StrReplace stay fine; `ctx_edit` is the legacy
-power-profile fallback. Write, Delete, Glob → use normally.
+with fresh anchors (retry once). Codex's own `apply_patch` stays fine; `ctx_edit` is the legacy
+power-profile fallback.
 
 ## Proactive (use without being asked)
 - `ctx_overview(task)` at session start

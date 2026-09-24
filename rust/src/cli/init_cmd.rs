@@ -13,6 +13,14 @@ macro_rules! qprintln {
 }
 
 pub fn cmd_init(args: &[String]) {
+    // Safety (#476 class, #1849): asking about init must never *run* it —
+    // `init --agent claude --help` used to write the agent's rules file. The
+    // guard sits here rather than in the dispatcher so every entry point
+    // (`cmd_init_quiet`, `doctor --fix`) inherits it.
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        print_init_help();
+        return;
+    }
     let global = args.iter().any(|a| a == "--global" || a == "-g");
     let project = args.iter().any(|a| a == "--project");
     let dry_run = args.iter().any(|a| a == "--dry-run");
@@ -195,4 +203,30 @@ pub fn cmd_init(args: &[String]) {
 pub fn cmd_init_quiet(args: &[String]) {
     let _quiet_guard = crate::core::runtime_flags::scoped_quiet();
     cmd_init(args);
+}
+
+/// Help for `lean-ctx init`. Printed for `--help`/`-h`, whatever else is on
+/// the line, and never followed by an init.
+fn print_init_help() {
+    println!("Usage: lean-ctx init [options]");
+    println!("       lean-ctx init <bash|zsh|fish|powershell|pwsh>");
+    println!();
+    println!("Installs the shell aliases, or connects an AI tool with --agent.");
+    println!("The second form prints the shell hook to stdout for `eval` and writes nothing.");
+    println!();
+    println!("Options:");
+    println!("  --global, -g        Install the shell aliases into your shell profile");
+    println!("  --agent <tool>      Configure an AI tool: MCP, hooks and rules (repeatable)");
+    println!("  --mode <mode>       Hook mode for --agent: mcp, hybrid or replace");
+    println!("                      (auto-detected per agent when omitted)");
+    println!("  --project           With --agent: also install project-local hooks");
+    println!("  --no-shell-hook     Skip the shell aliases; MCP tools stay active");
+    println!("  --dry-run           Show what the shell setup would change, change nothing");
+    println!("  --help, -h          Show this help (never runs init)");
+    println!();
+    println!("Examples:");
+    println!("  lean-ctx init --global --dry-run");
+    println!("  lean-ctx init --global");
+    println!("  lean-ctx init --agent claude");
+    println!("  lean-ctx init --agent codex --mode hybrid");
 }

@@ -141,8 +141,10 @@ pub fn build_instructions_with_client_for_compiler(
     client_name: &str,
     _unified_tool_mode: bool,
 ) -> String {
-    let tp =
-        crate::core::tool_profiles::ToolProfile::from_config(&crate::core::config::Config::load());
+    let tp = crate::server::tool_visibility::guidance_profile(
+        &crate::core::config::Config::load(),
+        client_name,
+    );
     let skeleton = rc::render(true, Wrapper::Bare, CompressionLevel::Off, &tp);
     let shell_hint = build_shell_hint();
 
@@ -155,8 +157,6 @@ pub fn build_instructions_with_client_for_compiler(
             crate::core::protocol::instruction_decoder_block(matches!(crp_mode, CrpMode::Tdd)),
         origin = crate::core::integrity::origin_line(),
     );
-
-    let _ = client_name;
 
     match crp_mode_suffix(crp_mode) {
         "" => base,
@@ -353,7 +353,10 @@ fn build_full_instructions(
     // the native calls re-creates exactly the instruction dissonance the
     // HookCovered rule profile removes.
     let cfg = crate::core::config::Config::load();
-    let tool_profile = crate::core::tool_profiles::ToolProfile::from_config(&cfg);
+    // #1849: name only tools this session can call — the same gates as
+    // `tools/list` (profile, `disabled_tools`, client quirks), not the bare
+    // configured profile.
+    let tool_profile = crate::server::tool_visibility::guidance_profile(&cfg, client_name);
     let is_shadow_only = is_shadow_surface_active();
     let skeleton = if client_loads_rules_from_file(client_name) {
         let anchor = if client_is_hook_covered(client_name) {

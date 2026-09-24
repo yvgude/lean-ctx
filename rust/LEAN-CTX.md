@@ -1,6 +1,6 @@
 <!-- lean-ctx-owned: PROJECT-LEAN-CTX.md v1 -->
 <!-- lean-ctx-rules -->
-<!-- version: 10 -->
+<!-- version: 11 -->
 
 CRITICAL: ALWAYS use lean-ctx ctx_* tools as mapped below.
 

@@ -118,10 +118,12 @@ pub(crate) fn shadow_minimal_section(p: &ToolProfile) -> String {
         exclusives.push("ctx_knowledge / ctx_session (memory)");
     }
 
+    // #1849: the same text goes to every host, and their edit tools differ
+    // (Edit, StrReplace, Codex `apply_patch`) — so name none of them.
     let edit_line = if has(p, "ctx_patch") {
-        "File editing → native Edit/StrReplace (lean-ctx only handles reads); if denied, use ctx_patch.\n"
+        "File editing → the host's native edit tool (lean-ctx only handles reads); if denied, use ctx_patch.\n"
     } else {
-        "File editing → native Edit/StrReplace (lean-ctx only handles reads).\n"
+        "File editing → the host's native edit tool (lean-ctx only handles reads).\n"
     };
 
     format!(
@@ -147,15 +149,42 @@ pub(crate) fn anti_section(p: &ToolProfile) -> String {
 
     lines.push("• Use ctx_read(mode=full) for orientation — use mode=signatures".into());
 
-    if has(p, "ctx_callgraph") || has(p, "ctx_graph") {
-        lines.push(
-            "• Use ctx_callgraph/ctx_graph for const/static/variable refs — they track \
+    // #1849: name only the graph tools the profile keeps — a disabled
+    // ctx_callgraph must not reappear through its ctx_graph sibling.
+    let graph_tools: Vec<&str> = ["ctx_callgraph", "ctx_graph"]
+        .into_iter()
+        .filter(|t| has(p, t))
+        .collect();
+    if !graph_tools.is_empty() {
+        let (names, verb) = match graph_tools.as_slice() {
+            [one] => (*one, "it tracks"),
+            _ => ("ctx_callgraph/ctx_graph", "they track"),
+        };
+        lines.push(format!(
+            "• Use {names} for const/static/variable refs — {verb} \
              call edges and file deps only; use ctx_search instead"
-                .into(),
-        );
+        ));
     }
 
     lines.join("\n")
+}
+
+/// Invocation nudge — "ctx_compose first" only where the profile has it (#1849).
+pub(crate) fn must_invoke_section(p: &ToolProfile) -> String {
+    if has(p, "ctx_compose") {
+        super::rules_canonical::MUST_INVOKE.to_string()
+    } else {
+        "ACTUALLY EMIT the ctx_* tool call — describing a tool is not calling it.".to_string()
+    }
+}
+
+/// Parallel-calls nudge — the ctx_compose aside only where the profile has it (#1849).
+pub(crate) fn parallel_section(p: &ToolProfile) -> String {
+    if has(p, "ctx_compose") {
+        super::rules_canonical::PARALLEL.to_string()
+    } else {
+        "PARALLEL: fire independent tool calls in the SAME turn.".to_string()
+    }
 }
 
 /// LITM end-of-instructions preference line — only lists enabled tools.
@@ -277,6 +306,52 @@ mod tests {
 
         let power = shadow_minimal_section(&ToolProfile::Power);
         assert!(power.contains("ctx_patch"));
+    }
+
+    #[test]
+    fn nudges_name_ctx_compose_only_when_the_profile_has_it() {
+        // #1849: PARALLEL and MUST_INVOKE were static and said "ctx_compose"
+        // on every profile, including Minimal, which does not expose it.
+        use crate::core::rules_canonical::{MUST_INVOKE, PARALLEL};
+        assert_eq!(parallel_section(&ToolProfile::Power), PARALLEL);
+        assert_eq!(must_invoke_section(&ToolProfile::Power), MUST_INVOKE);
+        for text in [
+            parallel_section(&ToolProfile::Minimal),
+            must_invoke_section(&ToolProfile::Minimal),
+        ] {
+            assert!(text.starts_with("PARALLEL") || text.starts_with("ACTUALLY EMIT"));
+            assert!(!text.contains("ctx_compose"), "{text}");
+        }
+    }
+
+    #[test]
+    fn anti_graph_line_names_only_enabled_graph_tools() {
+        // #1849: disabling ctx_callgraph left it named through "ctx_callgraph/ctx_graph".
+        let graph_only = ToolProfile::Custom(vec!["ctx_read".into(), "ctx_graph".into()]);
+        let text = anti_section(&graph_only);
+        assert!(text.contains("• Use ctx_graph for const/static/variable refs — it tracks"));
+        assert!(!text.contains("ctx_callgraph"), "{text}");
+        let power = anti_section(&ToolProfile::Power);
+        assert!(
+            power.contains("ctx_callgraph/ctx_graph for const/static/variable refs — they track")
+        );
+    }
+
+    #[test]
+    fn shadow_edit_line_names_no_host_tool() {
+        // #1849: Codex edits through `apply_patch`; naming Edit/StrReplace sent
+        // it looking for tools it does not have.
+        for p in [
+            ToolProfile::Minimal,
+            ToolProfile::Standard,
+            ToolProfile::Power,
+        ] {
+            let text = shadow_minimal_section(&p);
+            assert!(text.contains("the host's native edit tool"), "{p}");
+            for host_tool in ["StrReplace", "Edit/", "apply_patch"] {
+                assert!(!text.contains(host_tool), "{p}: names {host_tool}");
+            }
+        }
     }
 
     #[test]

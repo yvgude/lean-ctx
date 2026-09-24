@@ -201,6 +201,52 @@ pub fn is_tool_visible(
     role_allows
 }
 
+/// The tool set agent-facing guidance may name for `client_name`: the MCP
+/// `instructions` and the injected rule files (#1849). It passes the same
+/// gates as `tools/list` — the effective profile, `disabled_tools` (which
+/// folds in `prefer_native_editor`) and the client's quirks — so the text
+/// never points the agent at a tool its session cannot call.
+#[must_use]
+pub fn guidance_profile(cfg: &crate::core::config::Config, client_name: &str) -> ToolProfile {
+    let candidate = candidate_set(&CandidateInputs {
+        full_mode: crate::tool_defs::is_full_mode(),
+        unified_env: std::env::var("LEAN_CTX_UNIFIED").is_ok(),
+        explicit_profile: explicit_profile(cfg),
+        hook_covered: false, // no longer affects the candidate set (GH #1474)
+    });
+    narrow_to_surface(
+        cfg.tool_profile_effective(),
+        &cfg.disabled_tools_effective(),
+        ClientQuirks::resolve(client_name, candidate),
+    )
+}
+
+/// Pure core of [`guidance_profile`]: `profile` minus every tool the surface
+/// withholds. `Auto` is taken at its starting point (minimal) — guidance is
+/// written once per session and must not promise a tool before escalation.
+#[must_use]
+pub fn narrow_to_surface(
+    profile: ToolProfile,
+    disabled: &[String],
+    quirks: ClientQuirks,
+) -> ToolProfile {
+    let profile = if profile == ToolProfile::Auto {
+        ToolProfile::Minimal
+    } else {
+        profile
+    };
+    let mut hidden: Vec<&str> = disabled.iter().map(String::as_str).collect();
+    if quirks.hide_ctx_edit {
+        hidden.push("ctx_edit");
+    }
+    if quirks.hide_ctx_patch {
+        hidden.push("ctx_patch");
+    }
+    hidden
+        .into_iter()
+        .fold(profile, |p, name| p.without_tool(name))
+}
+
 /// Computes the tool set this install advertises to a default client
 /// (no client quirks, no role restriction, no workflow gate, static tool list),
 /// including the live description compression. Offline counterpart of the
@@ -487,6 +533,99 @@ mod tests {
         assert!(!is_tool_visible("ctx_patch", &p, &[], native, true));
         assert!(is_tool_visible("ctx_read", &p, &[], native, true));
         assert!(is_tool_visible("ctx_edit", &p, &[], native, true));
+    }
+
+    /// Every tool the guidance names under `profile`, checked against the
+    /// same gate `tools/list` applies (#1849).
+    fn guidance_names(profile: &ToolProfile) -> String {
+        use crate::core::config::CompressionLevel;
+        use crate::core::rules_canonical::{Wrapper, render};
+        let mut text = String::new();
+        for shadow in [true, false] {
+            text.push_str(&render(
+                shadow,
+                Wrapper::Bare,
+                CompressionLevel::Off,
+                profile,
+            ));
+        }
+        text
+    }
+
+    #[test]
+    fn disabled_tools_leave_the_guidance() {
+        // #1849: `disabled_tools = ["ctx_callgraph"]` hid the tool from
+        // `tools/list`, but the instructions still said "ctx_callgraph (callers)".
+        let disabled = vec!["ctx_callgraph".to_string()];
+        let p = narrow_to_surface(ToolProfile::Power, &disabled, ClientQuirks::default());
+        assert!(!p.is_tool_enabled("ctx_callgraph"));
+        assert!(
+            !is_tool_visible(
+                "ctx_callgraph",
+                &ToolProfile::Power,
+                &disabled,
+                ClientQuirks::default(),
+                true
+            ),
+            "precondition: tools/list hides it"
+        );
+        let text = guidance_names(&p);
+        assert!(
+            !text.contains("ctx_callgraph"),
+            "guidance names a disabled tool:\n{text}"
+        );
+        // Nothing else is lost on the way.
+        assert!(text.contains("ctx_patch"));
+        assert!(text.contains("ctx_compose"));
+    }
+
+    #[test]
+    fn a_hidden_ctx_patch_leaves_the_guidance() {
+        // #1849: `prefer_native_editor` folds ctx_patch into the disabled
+        // list; the native-editor quirk hides it on the lazy surface. Either
+        // way "if denied, use ctx_patch" points at a tool the agent lacks.
+        let quirk = ClientQuirks {
+            hide_ctx_edit: false,
+            hide_ctx_patch: true,
+        };
+        let by_quirk = narrow_to_surface(ToolProfile::Power, &[], quirk);
+        let disabled = vec!["ctx_edit".to_string(), "ctx_patch".to_string()];
+        let by_config =
+            narrow_to_surface(ToolProfile::Standard, &disabled, ClientQuirks::default());
+        for p in [by_quirk, by_config] {
+            let text = guidance_names(&p);
+            assert!(
+                !text.contains("ctx_patch"),
+                "{p}: guidance names ctx_patch:\n{text}"
+            );
+            assert!(
+                text.contains("the host's native edit tool"),
+                "{p}: edit line lost"
+            );
+        }
+    }
+
+    #[test]
+    fn auto_guidance_starts_at_minimal() {
+        // Guidance is written once per session; Auto must not promise the
+        // tools it only escalates to later.
+        let p = narrow_to_surface(ToolProfile::Auto, &[], ClientQuirks::default());
+        assert_eq!(p, ToolProfile::Minimal);
+        assert!(!guidance_names(&p).contains("ctx_compose"));
+    }
+
+    #[test]
+    fn an_unrestricted_surface_keeps_the_profile() {
+        for p in [
+            ToolProfile::Power,
+            ToolProfile::Standard,
+            ToolProfile::Minimal,
+        ] {
+            assert_eq!(
+                narrow_to_surface(p.clone(), &[], ClientQuirks::default()),
+                p
+            );
+        }
     }
 
     #[test]

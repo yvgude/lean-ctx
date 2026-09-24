@@ -41,6 +41,7 @@ mod hardening_ir_traits;
 mod hn_hardening_scenarios;
 mod hook_connect_only_566;
 mod http_server_streamable;
+mod init_help_safety_1849;
 mod integration_tests;
 mod io_health_scenarios;
 mod issue_885_anchored_after_patch;
