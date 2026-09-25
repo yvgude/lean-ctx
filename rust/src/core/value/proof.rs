@@ -10,8 +10,10 @@
 //! report *tampered*: the numbers are still printed, but flagged as not proof,
 //! and the CLI exits non-zero.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use crate::core::audit_trail::{self, AuditEntry};
@@ -68,6 +70,10 @@ pub struct Proof {
     pub audit_evidence: Evidence,
     /// The live display counters, for comparison only — not proof.
     pub live: Option<ValueSnapshot>,
+    /// UTC days (`YYYY-MM-DD`) with at least one attributed ledger event —
+    /// the evidence behind streak milestones.
+    #[serde(skip)]
+    pub active_days: BTreeSet<String>,
 }
 
 impl Proof {
@@ -128,6 +134,7 @@ pub fn build_from(
         security: SecurityCounts::default(),
         audit_evidence: Evidence::default(),
         live,
+        active_days: BTreeSet::new(),
     };
 
     for ev in &events {
@@ -141,6 +148,9 @@ pub fn build_from(
         proof.tokens_saved = proof.tokens_saved.saturating_add(ev.saved_tokens);
         proof.tokens_bounced = proof.tokens_bounced.saturating_add(ev.bounce_adjustment);
         proof.ledger_evidence.push(&ev.entry_hash);
+        if let Some(day) = ev.ts.get(..10) {
+            proof.active_days.insert(day.to_string());
+        }
     }
 
     if let Some(path) = trail_path {
@@ -188,6 +198,34 @@ pub fn build(session: Option<&str>, lifetime: bool) -> Proof {
         session.as_deref(),
         live,
     )
+}
+
+/// ✓ measured security events since `cutoff` (lifetime when `None`), from the
+/// local audit trail. `None` when the trail fails verification, so a tampered
+/// chain never reaches a report or share card.
+pub fn verified_security_since(cutoff: Option<DateTime<Utc>>) -> Option<SecurityCounts> {
+    security_since_at(&audit_trail::default_trail_path()?, cutoff)
+}
+
+fn security_since_at(path: &Path, cutoff: Option<DateTime<Utc>>) -> Option<SecurityCounts> {
+    if !audit_trail::verify_chain_at(path).valid {
+        return None;
+    }
+    let mut counts = SecurityCounts::default();
+    for entry in audit_trail::load_all_at(path) {
+        if let Some(cutoff) = cutoff {
+            let Ok(ts) = DateTime::parse_from_rfc3339(&entry.timestamp) else {
+                continue;
+            };
+            if ts.with_timezone(&Utc) < cutoff {
+                continue;
+            }
+        }
+        if let Some((kind, n, _)) = entry.action.as_deref().and_then(parse_action) {
+            counts.add(kind, n);
+        }
+    }
+    Some(counts)
 }
 
 fn short(hash: Option<&String>) -> String {
@@ -450,6 +488,25 @@ mod tests {
         );
         assert!(!proof.tampered());
         assert!(render(&proof, Style::PLAIN).contains("nothing recorded"));
+    }
+
+    #[test]
+    fn security_since_filters_by_time_and_refuses_a_tampered_trail() {
+        let (_dir, _ledger, trail) = fixture();
+        let all = security_since_at(&trail, None).unwrap();
+        assert_eq!(all.total(), 3);
+        let future = Utc::now() + chrono::Duration::days(1);
+        assert!(security_since_at(&trail, Some(future)).unwrap().is_empty());
+        let past = Utc::now() - chrono::Duration::days(7);
+        assert_eq!(security_since_at(&trail, Some(past)).unwrap(), all);
+
+        let raw = std::fs::read_to_string(&trail).unwrap();
+        std::fs::write(
+            &trail,
+            raw.replacen("secret_redacted:2", "secret_redacted:9", 1),
+        )
+        .unwrap();
+        assert_eq!(security_since_at(&trail, None), None);
     }
 
     #[test]

@@ -21,6 +21,7 @@ fn publish_value_snapshot(snapshot: crate::core::value::snapshot::ValueSnapshot)
     }
     drop(tokio::task::spawn_blocking(move || {
         crate::core::value::snapshot::write_throttled(&snapshot);
+        crate::core::value::milestones::maybe_notify();
     }));
 }
 

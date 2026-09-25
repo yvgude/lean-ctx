@@ -26,6 +26,10 @@ integration.
 - Local configuration makes context selection, representation, reuse, and
   recovery inspectable for a project.
 
+[Seeing what lean-ctx did](value-display.md) covers the status line, prompt
+segment, milestone notifications and commit trailer, and how every number
+they show is proven.
+
 The generated [MCP tool inventory](../reference/generated/mcp-tools.md) and
 [configuration inventory](../reference/generated/config-keys.md) are the
 current implementation reference.

@@ -1,3 +1,4 @@
+use crate::core::security_events::SecurityCounts;
 use crate::core::session::SessionState;
 use crate::core::stats;
 
@@ -23,6 +24,10 @@ pub struct WrappedReport {
     /// Estimated percentile rank among lean-ctx users (0-100). Based on tokens saved.
     /// None if insufficient data or user hasn't opted into community metrics.
     pub percentile: Option<u8>,
+    /// ✓ measured security events of the period, re-counted from the signed
+    /// audit trail. `None` when nothing happened or the chain fails
+    /// verification — an unproven count is never shown.
+    pub security: Option<SecurityCounts>,
 }
 
 impl WrappedReport {
@@ -51,6 +56,10 @@ impl WrappedReport {
         };
         let bounce_tokens = crate::core::savings_ledger::bounce_tokens(period_days);
         let tokens_saved = gross_tokens_saved.saturating_sub(bounce_tokens);
+        let security = crate::core::value::proof::verified_security_since(
+            period_days.map(|d| chrono::Utc::now() - chrono::Duration::days(i64::from(d))),
+        )
+        .filter(|c| !c.is_empty());
 
         let env_model = std::env::var("LEAN_CTX_MODEL")
             .or_else(|_| std::env::var("LCTX_MODEL"))
@@ -138,7 +147,17 @@ impl WrappedReport {
             model_key,
             pricing_estimated,
             percentile: estimate_percentile(tokens_saved),
+            security,
         }
+    }
+
+    /// The period's security events in the contract's wording, one phrase per
+    /// kind; empty when there is nothing verified to show.
+    pub fn security_phrases(&self) -> Vec<String> {
+        self.security
+            .as_ref()
+            .map(crate::core::value::format::security_phrases)
+            .unwrap_or_default()
     }
 
     /// One-line, conservative explanation of how the headline numbers were derived.
@@ -251,6 +270,18 @@ impl WrappedReport {
             out.push(box_line(""));
         }
 
+        // Security: only counts re-derived from the verified audit trail.
+        let security = self.security_phrases();
+        if !security.is_empty() {
+            out.push(format!("  {}", t.box_mid(w)));
+            for phrase in &security {
+                out.push(box_line(&format!("   {sc}✓{rst}  {phrase}")));
+            }
+            out.push(box_line(&format!(
+                "      {dim}measured · signed audit trail intact{rst}"
+            )));
+        }
+
         // Top commands (truncated to fit the inner box width).
         if !self.top_commands.is_empty() {
             let prefix_visible = 8; // "   top  "
@@ -308,8 +339,17 @@ impl WrappedReport {
         } else {
             ""
         };
+        let security = self.security_phrases();
+        let security_str = if security.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " | Security: {} (audit trail verified)",
+                security.join(", ")
+            )
+        };
         format!(
-            "WRAPPED [{}]: {} tok saved, {} avoided{}, {} sessions, {} cmds | Top: {} | Compression: {:.1}% | Energy: {} | model={}",
+            "WRAPPED [{}]: {} tok saved, {} avoided{}, {} sessions, {} cmds | Top: {} | Compression: {:.1}% | Energy: {}{} | model={}",
             self.period,
             saved_str,
             cost_str,
@@ -319,6 +359,7 @@ impl WrappedReport {
             top_str,
             self.compression_rate_pct,
             crate::core::energy::format_for_tokens(self.tokens_saved),
+            security_str,
             self.model_key,
         )
     }
@@ -417,6 +458,7 @@ pub mod tests {
             model_key: "claude-3.5-sonnet".into(),
             pricing_estimated: false,
             percentile: Some(95),
+            security: None,
         }
     }
 
@@ -526,5 +568,28 @@ pub mod tests {
         );
         assert!(r.format_compact().contains("(est.)"));
         assert!(r.methodology_line().contains("fallback"));
+    }
+
+    #[test]
+    fn verified_security_is_shown_and_absent_security_is_not() {
+        assert!(!sample().format_ascii().contains("audit trail"));
+        assert!(!sample().format_compact().contains("Security:"));
+
+        let mut r = sample();
+        r.security = Some(SecurityCounts {
+            secrets_redacted: 2,
+            shell_blocked: 1,
+            ..SecurityCounts::default()
+        });
+        let ascii = r.format_ascii();
+        assert!(ascii.contains("2 secrets kept out of context"), "{ascii}");
+        assert!(ascii.contains("1 risky command blocked"), "{ascii}");
+        assert!(ascii.contains("signed audit trail intact"), "{ascii}");
+        let compact = r.format_compact();
+        assert!(
+            compact.contains("Security: 2 secrets kept out of context, 1 risky command blocked"),
+            "{compact}"
+        );
+        assert!(!compact.contains('\n'));
     }
 }

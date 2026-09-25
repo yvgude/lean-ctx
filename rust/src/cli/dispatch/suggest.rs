@@ -39,6 +39,7 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "prove",
     "value",
     "statusline",
+    "prompt-segment",
     "verify",
     "eval",
     "verify-cache",

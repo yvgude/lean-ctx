@@ -772,7 +772,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "bool",
             serde_json::json!(vd.notifications),
-            "OS notifications for milestones, at most one per day (default true)",
+            "OS notifications for milestones in mode milestones or verbose, at most one per day (default true)",
         ),
     );
     value_display.insert(

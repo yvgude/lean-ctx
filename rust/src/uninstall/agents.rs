@@ -292,6 +292,9 @@ pub(super) fn remove_shell_hook(home: &Path, dry_run: bool) -> bool {
         }
     }
 
+    // The opt-in prompt segment (`init --prompt`) has its own rc block.
+    removed |= crate::cli::prompt_init::uninstall(home, dry_run);
+
     if !removed && !shell.is_empty() {
         println!("  · No shell hook found");
     }

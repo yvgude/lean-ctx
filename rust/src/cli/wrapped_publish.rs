@@ -947,6 +947,7 @@ mod tests {
             model_key: "claude-opus".into(),
             pricing_estimated: true,
             percentile: Some(99),
+            security: None,
         }
     }
 

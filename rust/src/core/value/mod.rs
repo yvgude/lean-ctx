@@ -9,8 +9,12 @@
 //!   and audit trail and verifies both chains (`lean-ctx value`).
 //! * [`recap`] — when a host hook speaks up (turn and session recaps, weekly
 //!   digest), always as a user-only message, never into the model's context.
+//! * [`milestones`] — a native desktop notification ([`notify`]) when a
+//!   verified lifetime threshold is first crossed; at most one a day.
 
 pub mod format;
+pub mod milestones;
+pub mod notify;
 pub mod proof;
 pub mod recap;
 pub mod snapshot;
