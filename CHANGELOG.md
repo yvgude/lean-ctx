@@ -308,6 +308,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - `postinstall.dollar.test.cjs` now runs in CI next to the stdio test (skipped
   on Windows, where the shebang fixture cannot run).
 
+### Security — a rewritten Bash command no longer expands `$vars` or runs `` `…` `` early (#1862)
+
+- `lean-ctx hook rewrite` built the command it handed back to the host's Bash
+  tool with double quotes in two places. On Windows, the `lean-ctx -c "…"` wrap
+  used the quoting of the shell lean-ctx detects for itself, which can be
+  cmd.exe. Git Bash then expanded `$HOME` and ran `$(…)` before lean-ctx saw
+  the command. On every platform, a word that the direct `read`/`grep`/`ls`
+  rewrites re-quoted, such as a single-quoted `'$HOME'` pattern, came back as
+  `"$HOME"` and was expanded as well.
+- The Bash tool's shell is POSIX everywhere, so the wrap and every re-quoted
+  word now use single quotes. `lean-ctx -c 'git log --format="$HOME"'` reaches
+  lean-ctx unchanged.
+- A command containing `$` or `` ` `` is no longer rewritten word by word, since
+  the rewrite cannot tell `'$HOME'` (literal) from `"$HOME"` (expand). It keeps
+  the agent's own quoting inside the `-c` wrap, or runs unchanged where there
+  is no wrap (`cat`).
+- PowerShell tool calls are unaffected; they have their own path (#1848).
+- Thanks to @rickgoud for the report.
+
 ### Security — the shell allowlist checks the command a wrapper really runs
 
 - **An option value of a delegation wrapper was taken for the delegated
