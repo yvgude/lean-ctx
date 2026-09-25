@@ -115,7 +115,7 @@ pub fn write_to(dir: &Path, snap: &ValueSnapshot) -> Result<(), String> {
 }
 
 /// Throttled write used by the MCP server: at most once per
-/// [`WRITE_INTERVAL`], except that a changed security tally always writes so a
+/// `WRITE_INTERVAL` (1 s), except that a changed security tally always writes so a
 /// blocked command or a kept-out secret shows up immediately.
 pub fn write_throttled(snap: &ValueSnapshot) {
     static LAST: Mutex<Option<(Instant, SecurityCounts)>> = Mutex::new(None);

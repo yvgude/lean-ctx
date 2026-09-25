@@ -4,7 +4,7 @@
 //! * [`snapshot`] — a tiny per-session file the MCP server keeps current, so
 //!   status lines and prompt segments render in microseconds without touching
 //!   the ledger.
-//! * [`format`] — the shared one-line renderer.
+//! * [`mod@format`] — the shared one-line renderer.
 //! * [`proof`] — recomputes each number from the hash-chained savings ledger
 //!   and audit trail and verifies both chains (`lean-ctx value`).
 
