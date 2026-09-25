@@ -158,7 +158,8 @@ fn new_event(tool: &str) -> SavingsEvent {
         evidence_class: Some(evidence_class),
         confidence: None,
         request_id: None,
-        session_id: None,
+        // Committed into the v7 hash, so per-session totals are chain-backed.
+        session_id: crate::core::value::current_session(),
         trace_id: None,
         solution_decision: None,
         loc_added: None,

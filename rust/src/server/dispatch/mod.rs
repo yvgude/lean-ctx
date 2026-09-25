@@ -471,15 +471,14 @@ impl LeanCtxServer {
                     signals = injection_signals.len(),
                     "prompt-injection patterns detected in tool output"
                 );
-                crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
-                    agent_id: agent_id.clone(),
-                    tool: name.to_string(),
-                    action: None,
-                    input_hash: String::new(),
-                    output_tokens: 0,
-                    role: role.clone(),
-                    event_type: crate::core::audit_trail::AuditEventType::SecurityViolation,
-                });
+                // Flagged, not neutralized: the output still reaches the agent.
+                let mut flagged = crate::core::security_events::SecurityCounts::default();
+                flagged.add(
+                    crate::core::security_events::SecurityKind::InjectionFlagged,
+                    injection_signals.len() as u64,
+                );
+                crate::core::security_events::record(name, &agent_id, &flagged);
+                self.publish_value_snapshot().await;
             }
 
             let reference_enabled = std::env::var("LEAN_CTX_REFERENCE_RESULTS").map_or_else(
@@ -552,7 +551,22 @@ impl LeanCtxServer {
         ctx: ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
         let args_owned = args_map.clone();
-        let join = tokio::task::spawn_blocking(move || tool.handle(&args_owned, &ctx));
+        let tool_name = name.to_string();
+        let agent_id = self
+            .agent_id
+            .read()
+            .await
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        // Security events are counted once per tool result: the collector sees
+        // exactly this handler, and the tally is recorded (audit trail + session
+        // counters) before `record_call` publishes the value snapshot.
+        let join = tokio::task::spawn_blocking(move || {
+            let (result, tally) =
+                crate::core::security_events::collect(|| tool.handle(&args_owned, &ctx));
+            crate::core::security_events::record(&tool_name, &agent_id, &tally);
+            result
+        });
         Self::watchdog_join(name, join, Self::handler_watchdog(name)).await
     }
 

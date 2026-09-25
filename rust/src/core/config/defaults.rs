@@ -78,6 +78,7 @@ impl Default for Config {
             response_shaping: ResponseShapingConfig::default(),
             ocla: OclaConfig::default(),
             shadow: ShadowConfig::default(),
+            value_display: ValueDisplayConfig::default(),
             cache: CacheConfig::default(),
             agents: AgentsConfig::default(),
             proxy_enabled: None,

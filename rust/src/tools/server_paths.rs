@@ -115,6 +115,13 @@ impl LeanCtxServer {
                 {
                     jailed
                 } else {
+                    // Resolution runs on the async side, outside the handler's
+                    // collector, so the refusal is recorded directly.
+                    crate::core::security_events::record_one(
+                        "resolve_path",
+                        "unknown",
+                        crate::core::security_events::SecurityKind::PathBlocked,
+                    );
                     return Err(e.to_string());
                 }
             }

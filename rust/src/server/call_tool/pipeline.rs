@@ -17,6 +17,9 @@ pub(in crate::server) async fn dispatch_and_post_process(
 ) -> Result<CallToolResult, ErrorData> {
     let tool_start = std::time::Instant::now();
     let shadow_auto_record = config.shadow.enabled && config.shadow.auto_record;
+    // Ledger and security events recorded during this call commit the
+    // session id into their hashes, so `lean-ctx value` can scope to it.
+    crate::core::value::set_current_session(&server.session.read().await.id);
     let (mut result_text, tool_saved_tokens, shell_outcome, content_blocks) =
         match server.dispatch_tool(name, args, minimal).await {
             Ok(tuple) => tuple,

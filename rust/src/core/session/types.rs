@@ -194,6 +194,9 @@ pub struct SessionStats {
     pub intents_inferred: u32,
     pub intents_explicit: u32,
     pub unsaved_changes: u32,
+    /// Security events of this session (display counters; the audit trail is
+    /// the proof — see `lean-ctx value`).
+    pub security: crate::core::security_events::SecurityCounts,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

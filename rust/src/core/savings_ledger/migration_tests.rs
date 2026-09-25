@@ -93,7 +93,8 @@ fn linked(mut ev: SavingsEvent, prev: &str, version: u8) -> SavingsEvent {
         3 => ev.canonical_content_v3(),
         4 => ev.canonical_content_v4(),
         5 => ev.canonical_content_v5(),
-        6 => ev.canonical_content(),
+        6 => ev.canonical_content_v6(),
+        7 => ev.canonical_content(),
         _ => unreachable!("test fixture version"),
     };
     ev.entry_hash = compute_hash(prev, &content);
@@ -177,11 +178,23 @@ fn mixed_version_chain_verifies() {
         4,
     );
     let v5 = linked(full_event(), &v4.entry_hash, 5);
+    let v6 = linked(full_event(), &v5.entry_hash, 6);
+    let v7 = linked(
+        {
+            let mut ev = full_event();
+            ev.session_id = Some("sess-42".into());
+            ev
+        },
+        &v6.entry_hash,
+        7,
+    );
 
     assert!(v1.hash_matches(GENESIS));
     assert!(v3.hash_matches(&v1.entry_hash));
     assert!(v4.hash_matches(&v3.entry_hash));
     assert!(v5.hash_matches(&v4.entry_hash));
+    assert!(v6.hash_matches(&v5.entry_hash));
+    assert!(v7.hash_matches(&v6.entry_hash));
 }
 
 #[test]

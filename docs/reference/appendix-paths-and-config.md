@@ -157,11 +157,13 @@ or the single dir for legacy/mixed installs — see §1); per-project override a
 | `[proxy]` | Upstream URLs for Anthropic/OpenAI/Gemini |
 | `[memory.*]` | Knowledge/episodic/procedural/lifecycle/gotcha/embeddings caps |
 | `[llm]` | Optional local LLM enhance (Ollama) |
+| `[value_display]` | How lean-ctx shows its value outside the model's context: `mode` (`off`/`minimal`/`milestones`/`verbose`), recap cadence, notifications, git trailer |
 
 Key defaults worth knowing:
 - `compression_level = "lite"` (root) — light compression on by default.
-- `savings_footer = "always"` config default, but the **`SavingsFooter` enum
-  default is `Never`** so no inline footer tokens are emitted unless enabled.
+- `savings_footer = "never"` — no inline footer tokens are emitted unless
+  enabled. The value surface (`[value_display]`, `lean-ctx value`) shows the
+  savings without spending model context.
 - `memory_profile = "performance"`, `memory_cleanup = "aggressive"`.
 - `[memory.knowledge] max_facts = 200` — the source of doctor's "facts at
   capacity" warning.

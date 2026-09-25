@@ -27,7 +27,13 @@ pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
             }
             Ok(())
         }
-        ShellSecurity::Enforce => enforce_shell_allowlist(command),
+        ShellSecurity::Enforce => enforce_shell_allowlist(command).inspect_err(|_| {
+            // Counts only inside an MCP tool call (see `security_events::note`).
+            crate::core::security_events::note(
+                crate::core::security_events::SecurityKind::ShellBlocked,
+                1,
+            );
+        }),
     }
 }
 

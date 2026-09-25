@@ -952,6 +952,37 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
+        name: "value",
+        aliases: &[],
+        description: "Show what lean-ctx did, recomputed from the verified chains",
+        subcommands: &[],
+        flags: &[
+            FlagSpec {
+                long: "--session",
+                short: None,
+                description: "A specific session (default: the current/last one)",
+                takes_value: true,
+                value_kind: None,
+            },
+            FlagSpec {
+                long: "--all",
+                short: None,
+                description: "Lifetime, across all sessions",
+                takes_value: false,
+                value_kind: None,
+            },
+            FlagSpec {
+                long: "--json",
+                short: None,
+                description: "Machine-readable output",
+                takes_value: false,
+                value_kind: None,
+            },
+        ],
+        positional: None,
+        hidden: false,
+    },
+    CommandNode {
         name: "verify",
         aliases: &["proof"],
         description: "Verify cache integrity",

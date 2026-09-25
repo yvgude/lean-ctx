@@ -37,6 +37,7 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "rules",
     "proof",
     "prove",
+    "value",
     "verify",
     "eval",
     "verify-cache",

@@ -25,6 +25,7 @@ mod serde_defaults;
 pub mod setter;
 mod shell_activation;
 pub mod solution;
+mod value_display;
 
 /// Cache payload for [`Config::load_arc`]: the shared config alongside the
 /// content hashes of the global and project-local files plus the environment-
@@ -66,6 +67,7 @@ pub use response_shaping::{
     ResponseShapingConfig,
 };
 pub use shell_activation::ShellActivation;
+pub use value_display::{ValueDisplayConfig, ValueDisplayMode};
 
 #[cfg(test)]
 mod solution_tests;

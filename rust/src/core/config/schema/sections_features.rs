@@ -739,4 +739,55 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             keys: gain,
         },
     );
+
+    let vd = &cfg.value_display;
+    let mut value_display = BTreeMap::new();
+    value_display.insert(
+        "mode".into(),
+        key_enum_with_env(
+            &["off", "minimal", "milestones", "verbose"],
+            "minimal",
+            "How lean-ctx shows its measured value to you (never to the model): off, minimal (default: status line + threshold recaps), milestones (+ OS notifications), verbose (every recap window)",
+            "LEAN_CTX_VALUE_DISPLAY",
+        ),
+    );
+    value_display.insert(
+        "recap_every_turns".into(),
+        key(
+            "u32",
+            serde_json::json!(vd.recap_every_turns),
+            "A turn recap is considered every N agent turns (default 10)",
+        ),
+    );
+    value_display.insert(
+        "recap_min_tokens".into(),
+        key(
+            "u64",
+            serde_json::json!(vd.recap_min_tokens),
+            "Show a turn recap only when the window saved at least this many tokens or a security event happened (default 50000)",
+        ),
+    );
+    value_display.insert(
+        "notifications".into(),
+        key(
+            "bool",
+            serde_json::json!(vd.notifications),
+            "OS notifications for milestones, at most one per day (default true)",
+        ),
+    );
+    value_display.insert(
+        "git_trailer".into(),
+        key(
+            "bool",
+            serde_json::json!(vd.git_trailer),
+            "Opt-in `lean-ctx:` trailer in commit messages (default false)",
+        ),
+    );
+    sections.insert(
+        "value_display".into(),
+        SectionSchema {
+            description: "User-only value surface: status line, recaps, prompt segment, milestones. Every number is backed by `lean-ctx value`.".into(),
+            keys: value_display,
+        },
+    );
 }
