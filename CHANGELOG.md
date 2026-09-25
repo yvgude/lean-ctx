@@ -115,6 +115,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   lean-ctx was faster without answering fewer tasks correctly. No surface
   estimates speed from live sessions.
 
+### Added — what lean-ctx did, in your editor, the dashboard and the team push
+
+- **VS Code, Cursor and Windsurf extension** (`packages/vscode-lean-ctx`): one
+  quiet status bar item for the open project, for example `◆ −1.2M tok ⛨ 3`.
+  - Hovering it shows the breakdown, each line labelled `✓` (counted) or `≈`
+    (derived), plus the verified speed proof if you have one.
+  - Clicking it runs `lean-ctx value`.
+  - It is hidden when nothing was measured, the numbers are stale, or
+    `mode = off` is set.
+  - The extension computes nothing itself and never writes to the model's
+    context.
+- `lean-ctx prompt-segment --json [--dir PATH]` prints the segment, the
+  labelled breakdown, the speed proof, the directory to watch and the verify
+  command as a stable JSON contract (`schema: 1`) for editor status bars.
+- **Dashboard:** the Protection view opens with **Guards that fired**.
+  - It shows the lifetime counts of secrets kept out of context, risky
+    commands blocked, paths outside the project blocked, and prompt-injection
+    patterns flagged.
+  - Every count is re-derived from the audit trail (`/api/value`, the same as
+    `lean-ctx value --all`).
+  - It shows whether the trail is intact, or where the chain breaks.
+- **Team push:** a signed savings batch now carries a separately signed
+  security tally.
+  - The tally holds the counts, the audit trail's entry count, and its first
+    and last hash.
+  - It is bound to the batch's last entry hash, so a copied or edited tally
+    fails `savings verify-batch`, which lists it.
+  - The batch's own signature is unchanged, so servers that do not read the
+    tally keep verifying batches as before.
+
 ### Fixed — the `savings_footer` default is documented as `never`
 
 - The config schema and reference said `savings_footer` defaults to `always`.

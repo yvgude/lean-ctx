@@ -2,7 +2,8 @@
 
 lean-ctx keeps tokens, secrets and risky commands out of your agent's context.
 The dashboard shows all of it. This guide covers the smaller surfaces that
-show it where you already are: your agent, your shell prompt, your commits.
+show it where you already are: your agent, your shell prompt, your editor,
+your commits.
 
 Every one of them follows three rules:
 
@@ -221,6 +222,66 @@ edited number shows `TAMPERED` and exits 1.
 
 It is left out when the proof does not verify, when lean-ctx was not faster,
 or when it answered fewer tasks correctly than the baseline.
+
+## VS Code, Cursor and Windsurf
+
+The lean-ctx extension (`packages/vscode-lean-ctx`) adds one status bar item
+with the same segment as the shell prompt, for the workspace folder of the
+file you are editing:
+
+```text
+◆ −1.2M tok ⛨ 3
+```
+
+Hovering it shows the breakdown, with each line labelled `✓` (counted) or `≈`
+(derived). If you ran `prove speed`, the verified speed proof is shown too.
+Clicking it runs `lean-ctx value` in a terminal.
+
+The extension computes nothing itself. It calls:
+
+```bash
+lean-ctx prompt-segment --json --dir <workspace folder>
+```
+
+and refreshes when the snapshot directory named in the `watch` field changes,
+at most every 1.5 seconds, plus once a minute. The item is hidden when:
+
+- nothing was measured,
+- the numbers are older than 12 hours,
+- `mode = off` is set, or
+- the binary is missing or older than 3.10.3.
+
+The payload is also a stable contract (`schema: 1`) for other editors:
+
+```json
+{
+  "schema": 1,
+  "display": "minimal",
+  "segment": "◆ −1.2M tok ⛨ 3",
+  "tooltip": ["✓ 1.2M tokens kept out of context", "≈ 60% of 2.0M tokens of tool output", "✓ 3 secrets kept out of context"],
+  "speed": null,
+  "watch": "<data_dir>/value/projects",
+  "verify": "lean-ctx value"
+}
+```
+
+## Dashboard and team
+
+The dashboard's **Protection** view starts with **Guards that fired**. It shows
+the lifetime security counts from `lean-ctx value --all` (`/api/value`) next to
+the audit-trail status: `✓ audit trail intact · N entries`, or where the chain
+breaks.
+
+With cloud sync on, each signed savings batch carries a separately signed
+security tally:
+
+- the counts
+- the audit trail's entry count, plus its first and last hash
+- the batch's last entry hash, which binds the tally to that batch
+
+`lean-ctx savings verify-batch` checks both signatures and lists the tally.
+A copied or edited tally fails verification. A server that does not know the
+tally still verifies the batch as before.
 
 ## Proof
 

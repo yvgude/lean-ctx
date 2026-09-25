@@ -188,6 +188,7 @@ mod tests {
             },
             signer_public_key: signed.then(|| "pubkey".to_string()),
             signature: signed.then(|| "sig".to_string()),
+            security: None,
         }
     }
 

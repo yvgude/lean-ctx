@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 
 use super::LedgerSummary;
 use super::store::GENESIS;
+use crate::core::security_events::SecurityCounts;
+use crate::core::value::proof::Evidence;
 
 const SCHEMA_VERSION: u32 = 1;
 const KIND: &str = "lean-ctx.savings-batch";
@@ -104,6 +106,35 @@ pub struct SignedSavingsBatchV1 {
     pub signer_public_key: Option<String>,
     /// Ed25519 signature over the canonical bytes (hex). `None` until signed.
     pub signature: Option<String>,
+    /// Security events from the audit trail, signed separately. Outside the
+    /// batch's canonical bytes, so servers that re-serialize their own copy of
+    /// the batch keep verifying it; servers that know the block verify it too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security: Option<SecurityTallyV1>,
+}
+
+/// ✓ measured security events, re-counted from the verified audit trail
+/// (`value::proof`), bound to the savings batch they travel with.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SecurityTallyV1 {
+    pub counts: SecurityCounts,
+    /// Audit-trail entries the counts rest on, and the first and last of
+    /// their `entry_hash`es — anyone holding the trail can look them up.
+    pub audit_entries: u64,
+    pub audit_first_hash: Option<String>,
+    pub audit_last_hash: Option<String>,
+    /// The batch's `last_entry_hash`: the tally cannot be moved onto another batch.
+    pub batch_last_entry_hash: String,
+    /// Ed25519 signature (hex) by the batch's signer over the tally with this field cleared.
+    pub signature: Option<String>,
+}
+
+impl SecurityTallyV1 {
+    fn canonical_bytes(&self) -> Result<Vec<u8>, String> {
+        let mut clone = self.clone();
+        clone.signature = None;
+        serde_json::to_vec(&clone).map_err(|e| format!("serialize security tally: {e}"))
+    }
 }
 
 /// Outcome of verifying a [`SignedSavingsBatchV1`].
@@ -123,13 +154,32 @@ impl SignedSavingsBatchV1 {
         let events = super::all_events();
         let summary = super::summary();
         let chain_valid = super::verify().valid;
-        Self::from_parts(
+        let mut batch = Self::from_parts(
             agent_id,
             "all",
             &events_head_tail(&events),
             chain_valid,
             &summary,
-        )
+        );
+        if let Some((counts, evidence)) = crate::core::value::proof::verified_security_evidence()
+            .filter(|(counts, _)| !counts.is_empty())
+        {
+            batch.attach_security(counts, evidence);
+        }
+        batch
+    }
+
+    /// Attaches a security tally bound to this batch's chain head. It is signed
+    /// together with the batch by [`Self::sign_with_key`].
+    pub fn attach_security(&mut self, counts: SecurityCounts, evidence: Evidence) {
+        self.security = Some(SecurityTallyV1 {
+            counts,
+            audit_entries: evidence.entries,
+            audit_first_hash: evidence.first_hash,
+            audit_last_hash: evidence.last_hash,
+            batch_last_entry_hash: self.last_entry_hash.clone(),
+            signature: None,
+        });
     }
 
     /// Pure constructor (testable without touching the real data dir).
@@ -154,15 +204,18 @@ impl SignedSavingsBatchV1 {
             totals: BatchTotals::from_summary(summary),
             signer_public_key: None,
             signature: None,
+            security: None,
         }
     }
 
     /// Deterministic bytes that get signed/verified: the whole struct with the two signature
-    /// fields cleared. Identical on sign and verify regardless of JSON float formatting.
+    /// fields and the separately signed `security` tally cleared. Identical on sign and verify
+    /// regardless of JSON float formatting.
     pub fn canonical_bytes(&self) -> Result<Vec<u8>, String> {
         let mut clone = self.clone();
         clone.signature = None;
         clone.signer_public_key = None;
+        clone.security = None;
         serde_json::to_vec(&clone).map_err(|e| format!("serialize for signing: {e}"))
     }
 
@@ -179,6 +232,16 @@ impl SignedSavingsBatchV1 {
         self.signer_public_key = None;
         let canonical = self.canonical_bytes()?;
         let sig = key.sign(&canonical);
+        if let Some(tally) = self.security.as_mut() {
+            tally
+                .batch_last_entry_hash
+                .clone_from(&self.last_entry_hash);
+            tally.signature = None;
+            let tally_sig = key.sign(&tally.canonical_bytes()?);
+            tally.signature = Some(crate::core::agent_identity::hex_encode(
+                &tally_sig.to_bytes(),
+            ));
+        }
         self.signer_public_key = Some(crate::core::agent_identity::hex_encode(
             &key.verifying_key().to_bytes(),
         ));
@@ -208,15 +271,36 @@ impl SignedSavingsBatchV1 {
             Ok(c) => c,
             Err(e) => return fail(&e),
         };
-        if crate::core::agent_identity::verify_signature(&pk_bytes, &canonical, &sig_bytes) {
-            BatchVerifyResult {
-                signature_valid: true,
-                signer_public_key: Some(pk_hex.clone()),
-                error: None,
-            }
-        } else {
-            fail("signature does not match payload (tampered or wrong key)")
+        if !crate::core::agent_identity::verify_signature(&pk_bytes, &canonical, &sig_bytes) {
+            return fail("signature does not match payload (tampered or wrong key)");
         }
+        if let Some(tally) = &self.security {
+            if let Err(e) = verify_tally(tally, &pk_bytes, &self.last_entry_hash) {
+                return fail(&e);
+            }
+        }
+        BatchVerifyResult {
+            signature_valid: true,
+            signer_public_key: Some(pk_hex.clone()),
+            error: None,
+        }
+    }
+}
+
+fn verify_tally(tally: &SecurityTallyV1, pk: &[u8], last_entry_hash: &str) -> Result<(), String> {
+    if tally.batch_last_entry_hash != last_entry_hash {
+        return Err("security tally is bound to a different batch".into());
+    }
+    let sig = tally
+        .signature
+        .as_deref()
+        .ok_or("security tally is not signed")?;
+    let sig = crate::core::agent_identity::hex_decode(sig)
+        .map_err(|_| "malformed security tally signature hex")?;
+    if crate::core::agent_identity::verify_signature(pk, &tally.canonical_bytes()?, &sig) {
+        Ok(())
+    } else {
+        Err("security tally signature does not match (tampered or wrong key)".into())
     }
 }
 
@@ -402,6 +486,70 @@ mod tests {
             "loaded artifact still verifies"
         );
         let _ = std::fs::remove_file(&path);
+    }
+
+    fn with_security() -> SignedSavingsBatchV1 {
+        let mut b = batch();
+        b.attach_security(
+            SecurityCounts {
+                secrets_redacted: 2,
+                shell_blocked: 1,
+                ..SecurityCounts::default()
+            },
+            Evidence {
+                entries: 2,
+                first_hash: Some("aaa".into()),
+                last_hash: Some("bbb".into()),
+            },
+        );
+        b
+    }
+
+    #[test]
+    fn security_tally_is_signed_and_verifies() {
+        let mut b = with_security();
+        b.sign_with_key(&key()).unwrap();
+        assert!(b.verify().signature_valid, "{:?}", b.verify());
+        let tally = b.security.as_ref().unwrap();
+        assert!(tally.signature.is_some());
+        assert_eq!(tally.batch_last_entry_hash, "lasthash");
+    }
+
+    #[test]
+    fn a_server_that_drops_the_tally_still_verifies_the_batch() {
+        // The enterprise ingest re-serializes the batch into its own struct,
+        // which has no `security` field: the batch signature must not cover it.
+        let mut b = with_security();
+        b.sign_with_key(&key()).unwrap();
+        let mut json: serde_json::Value = serde_json::to_value(&b).unwrap();
+        json.as_object_mut().unwrap().remove("security");
+        let stripped: SignedSavingsBatchV1 = serde_json::from_value(json).unwrap();
+        assert!(stripped.security.is_none());
+        assert!(stripped.verify().signature_valid);
+        assert!(
+            !serde_json::to_string(&batch())
+                .unwrap()
+                .contains("security"),
+            "a batch without security events serializes exactly as before"
+        );
+    }
+
+    #[test]
+    fn tampered_or_transplanted_tally_fails_verification() {
+        let mut b = with_security();
+        b.sign_with_key(&key()).unwrap();
+
+        let mut inflated = b.clone();
+        inflated.security.as_mut().unwrap().counts.secrets_redacted = 50;
+        assert!(!inflated.verify().signature_valid);
+
+        let mut moved = b.clone();
+        moved.security.as_mut().unwrap().batch_last_entry_hash = "otherbatch".into();
+        assert!(!moved.verify().signature_valid);
+
+        let mut unsigned = b;
+        unsigned.security.as_mut().unwrap().signature = None;
+        assert!(!unsigned.verify().signature_valid);
     }
 
     #[test]

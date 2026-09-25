@@ -5,8 +5,11 @@
 //! and prints nothing (no newline either) when there is nothing measured, the
 //! numbers are stale, or the value display is off. `init --prompt` wires it
 //! into zsh, bash and fish; Starship calls it with `--shell plain`.
+//! `--json` serves editor status bars (the VS Code extension): the segment
+//! plus its labelled breakdown, from the same snapshot.
 
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::core::config::{Config, ValueDisplayMode};
@@ -44,27 +47,124 @@ pub(crate) fn cmd_prompt_segment(args: &[String]) {
         usage();
         return;
     }
-    let shell = match args {
-        [] => PromptShell::Plain,
-        [flag, value] if flag == "--shell" => parse_or_exit(value),
-        [arg] if arg.starts_with("--shell=") => parse_or_exit(&arg["--shell=".len()..]),
-        _ => {
-            usage();
-            std::process::exit(2);
-        }
+    let Some(opts) = Options::parse(args) else {
+        usage();
+        std::process::exit(2);
     };
-    if Config::load_arc().value_display.effective_mode() == ValueDisplayMode::Off {
+    let mode = Config::load_arc().value_display.effective_mode();
+    let dir = opts.dir.or_else(|| std::env::current_dir().ok());
+    if opts.json {
+        let snap = (mode != ValueDisplayMode::Off)
+            .then(|| dir.as_deref().and_then(snapshot::load_for_dir))
+            .flatten();
+        let speed = (mode != ValueDisplayMode::Off)
+            .then(crate::core::eval_ab::speed::SpeedHeadline::latest)
+            .flatten();
+        let watch = snapshot::value_dir().map(|d| d.join("projects"));
+        let payload = json_payload(mode, snap.as_ref(), speed.as_ref(), watch.as_deref());
+        println!("{payload}");
         return;
     }
-    let snap = std::env::current_dir()
-        .ok()
-        .and_then(|cwd| snapshot::load_for_dir(&cwd))
+    if mode == ValueDisplayMode::Off {
+        return;
+    }
+    let snap = dir
+        .as_deref()
+        .and_then(snapshot::load_for_dir)
         .filter(|s| s.is_fresh(MAX_AGE));
     let style = format::Style::from_env();
-    if let Some(out) = snap.and_then(|s| render(&s, shell, style)) {
+    if let Some(out) = snap.and_then(|s| render(&s, opts.shell, style)) {
         let mut stdout = std::io::stdout().lock();
         let _ = stdout.write_all(out.as_bytes());
     }
+}
+
+struct Options {
+    shell: PromptShell,
+    json: bool,
+    dir: Option<PathBuf>,
+}
+
+impl Options {
+    fn parse(args: &[String]) -> Option<Self> {
+        let mut opts = Self {
+            shell: PromptShell::Plain,
+            json: false,
+            dir: None,
+        };
+        let mut it = args.iter();
+        while let Some(arg) = it.next() {
+            match arg.as_str() {
+                "--json" => opts.json = true,
+                "--shell" => opts.shell = parse_or_exit(it.next()?),
+                "--dir" => opts.dir = Some(PathBuf::from(it.next()?)),
+                a if a.starts_with("--shell=") => {
+                    opts.shell = parse_or_exit(&a["--shell=".len()..]);
+                }
+                a if a.starts_with("--dir=") => {
+                    opts.dir = Some(PathBuf::from(&a["--dir=".len()..]));
+                }
+                _ => return None,
+            }
+        }
+        Some(opts)
+    }
+}
+
+/// `--json`: everything an editor status bar needs in one call, so the
+/// extension formats nothing itself. Schema 1:
+/// `{schema, display, segment, tooltip[], speed?, watch, verify}`.
+/// `segment` is null when there is nothing fresh to show — never a 0.
+pub(crate) fn json_payload(
+    mode: ValueDisplayMode,
+    snap: Option<&snapshot::ValueSnapshot>,
+    speed: Option<&crate::core::eval_ab::speed::SpeedHeadline>,
+    watch: Option<&Path>,
+) -> serde_json::Value {
+    let style = format::Style {
+        color: false,
+        unicode: true,
+    };
+    let fresh = snap.filter(|s| mode != ValueDisplayMode::Off && s.is_fresh(MAX_AGE));
+    let segment = fresh.and_then(|s| format::compact(s, style));
+    let tooltip = fresh.map(tooltip_lines).unwrap_or_default();
+    serde_json::json!({
+        "schema": 1,
+        "display": mode,
+        "segment": segment,
+        "tooltip": tooltip,
+        "speed": speed.map(|h| serde_json::json!({ "phrase": h.phrase(), "detail": h.detail() })),
+        "watch": watch.map(|p| p.to_string_lossy().into_owned()),
+        "verify": "lean-ctx value",
+    })
+}
+
+/// The breakdown behind the segment, each line labelled by where its number
+/// comes from: `✓` counted, `≈` arithmetic on counted values.
+fn tooltip_lines(snap: &snapshot::ValueSnapshot) -> Vec<String> {
+    use crate::core::wrapped::format_tokens;
+    let mut lines = Vec::new();
+    if snap.tokens_saved > 0 {
+        lines.push(format!(
+            "✓ {} tokens kept out of context",
+            format_tokens(snap.tokens_saved)
+        ));
+        if let Some(pct) = snap.saved_pct() {
+            lines.push(format!(
+                "≈ {pct:.0}% of {} tokens of tool output",
+                format_tokens(snap.tokens_input)
+            ));
+        }
+    }
+    if snap.cache_hits > 0 {
+        lines.push(format!("✓ {} re-reads served from cache", snap.cache_hits));
+    }
+    lines.extend(
+        format::security_phrases(&snap.security)
+            .into_iter()
+            .map(|p| format!("✓ {p}")),
+    );
+    lines
 }
 
 fn parse_or_exit(value: &str) -> PromptShell {
@@ -98,10 +198,13 @@ fn usage() {
         "Shell prompt segment: what lean-ctx did in this project, e.g. `◆ −1.2M tok ⛨ 3`.\n\n\
          Prints nothing when nothing was measured yet or the numbers are stale.\n\
          `lean-ctx value` proves them. Set up with `lean-ctx init --prompt`.\n\n\
-         Usage: lean-ctx prompt-segment [--shell zsh|bash|fish|plain]\n\n\
+         Usage: lean-ctx prompt-segment [--shell zsh|bash|fish|plain] [--json] [--dir PATH]\n\n\
          Options:\n  \
            --shell <shell>  escape the dim colour for this shell's prompt;\n                   \
-           plain (default) prints no colour, for Starship\n"
+           plain (default) prints no colour, for Starship\n  \
+           --json           segment, labelled breakdown and verify hint as JSON\n                   \
+           (for editor status bars)\n  \
+           --dir <path>     the project directory (default: the current one)\n"
     );
 }
 
@@ -177,5 +280,85 @@ mod tests {
         assert_eq!(PromptShell::parse("zsh"), Some(PromptShell::Zsh));
         assert_eq!(PromptShell::parse("starship"), Some(PromptShell::Plain));
         assert_eq!(PromptShell::parse("tcsh"), None);
+    }
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn options_parse_in_any_order_and_reject_strays() {
+        let o = Options::parse(&args(&["--dir", "/w", "--json", "--shell=zsh"])).unwrap();
+        assert!(o.json);
+        assert_eq!(o.shell, PromptShell::Zsh);
+        assert_eq!(o.dir, Some(PathBuf::from("/w")));
+        assert!(Options::parse(&args(&["--dir"])).is_none());
+        assert!(Options::parse(&args(&["extra"])).is_none());
+        assert!(!Options::parse(&[]).unwrap().json);
+    }
+
+    fn fresh() -> snapshot::ValueSnapshot {
+        let mut s = snap();
+        s.updated_at = Some(chrono::Utc::now());
+        s.cache_hits = 41;
+        s
+    }
+
+    #[test]
+    fn json_labels_every_line_by_its_source() {
+        let v = json_payload(
+            ValueDisplayMode::Minimal,
+            Some(&fresh()),
+            None,
+            Some(Path::new("/d/value/projects")),
+        );
+        assert_eq!(v["schema"], 1);
+        assert_eq!(v["display"], "minimal");
+        assert_eq!(v["segment"], "◆ −1.2M tok ⛨ 3");
+        assert_eq!(v["watch"], "/d/value/projects");
+        assert_eq!(v["verify"], "lean-ctx value");
+        assert!(v["speed"].is_null());
+        let lines: Vec<&str> = v["tooltip"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                "✓ 1.2M tokens kept out of context",
+                "≈ 60% of 2.0M tokens of tool output",
+                "✓ 41 re-reads served from cache",
+                "✓ 3 secrets kept out of context",
+            ]
+        );
+    }
+
+    #[test]
+    fn json_shows_nothing_for_stale_or_disabled_numbers() {
+        for (mode, s) in [
+            (ValueDisplayMode::Minimal, snap()),
+            (ValueDisplayMode::Off, fresh()),
+        ] {
+            let v = json_payload(mode, Some(&s), None, None);
+            assert!(v["segment"].is_null(), "{v}");
+            assert_eq!(v["tooltip"], serde_json::json!([]));
+        }
+        assert!(json_payload(ValueDisplayMode::Minimal, None, None, None)["segment"].is_null());
+    }
+
+    #[test]
+    fn json_quotes_speed_only_from_a_verified_headline() {
+        let h = crate::core::eval_ab::speed::SpeedHeadline {
+            faster_pct: 24.0,
+            measured_on: "2026-09-25".into(),
+            tasks: 12,
+            runs: 3,
+            model: "m".into(),
+        };
+        let v = json_payload(ValueDisplayMode::Minimal, None, Some(&h), None);
+        assert_eq!(v["speed"]["phrase"], h.phrase());
+        assert_eq!(v["speed"]["detail"], h.detail());
     }
 }

@@ -41,6 +41,8 @@ const CACHED_ROUTES: &[&str] = &[
     "/api/context-radar",
     "/api/context-events",
     "/api/context-model",
+    // Re-walks the savings ledger and audit trail from genesis.
+    "/api/value",
 ];
 
 /// Check if a route is cache-eligible.
