@@ -160,6 +160,7 @@ COMMANDS:
     savings [--period day|week|month|all] [--format table|json|markdown] Local representation-change report; not comparable proof
     value [--session <id>|--all] [--json]  What lean-ctx did, recomputed from the verified chains
     statusline [--wrap \"<cmd>\"]    Claude Code status line (set up by `init --agent claude`)
+    prompt-segment [--shell zsh|bash|fish|plain]  Shell prompt segment (set up by `init --prompt`)
     learning [status|export|import]  Local adaptive-learning state: inspect, export, import
          token-report [--json]          Token + memory report (project + session + CEP)
     pack --pr                      PR Context Pack (changed files, impact, tests, artifacts)

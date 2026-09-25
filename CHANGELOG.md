@@ -60,6 +60,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   not show `systemMessage` (Codex, Cursor) get no recap. `mode = off` turns
   all of it off, and `lean-ctx value` proves every number.
 
+### Added — what lean-ctx did, in your prompt, your desktop and your commits
+
+- **Prompt segment.** `lean-ctx init --prompt` adds a dim segment such as
+  `◆ −1.2M tok ⛨ 3` for the project you are in. It goes on the right in zsh
+  and fish, and in front of `PS1` in bash. The segment has its own rc block,
+  your prompt stays as it is, and `init --prompt off` or `lean-ctx uninstall`
+  removes it. Under Starship, `init` prints a `custom` module instead of
+  editing rc files. `lean-ctx prompt-segment --shell plain` serves any other
+  prompt engine. It reads one small snapshot file and prints nothing when
+  there is nothing current to show.
+- **Milestone notifications** with `mode = milestones`: a desktop notification
+  the first time you reach 1M/10M/100M/1B tokens kept out of context, the
+  first secret kept out of context, the first risky command blocked, or a
+  7/30/100-day streak.
+  - At most one a day, and of a ladder only the highest new rung is shown.
+  - Milestones are computed from the verified chains. A chain that fails
+    verification triggers none.
+  - Every notification ends with `Proof: lean-ctx value --all`.
+  - They use `osascript`, `notify-send` or a Windows toast, with no new
+    dependency. The text is passed as arguments, never as script.
+- **Commit trailer.** `lean-ctx init --git-trailer` installs a
+  `prepare-commit-msg` hook that adds `lean-ctx: 840.0K tokens saved, 1 secret
+  kept out of context` to a commit message.
+  - It counts only what happened in this project since the last trailered
+    commit.
+  - It skips merges, squashes and amends.
+  - It can never fail a commit, and it leaves an existing hook untouched
+    (printing the line to add instead).
+- **Wrapped security section.** `gain --wrapped` and its compact form list the
+  period's security events, re-counted from the audit trail. They appear only
+  when the trail verifies.
+- The guide [Seeing what lean-ctx did](docs/guides/value-display.md) covers
+  every surface, including Starship and Powerlevel10k.
+
 ### Fixed — the `savings_footer` default is documented as `never`
 
 - The config schema and reference said `savings_footer` defaults to `always`.

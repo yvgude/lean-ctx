@@ -21,6 +21,18 @@ pub fn cmd_init(args: &[String]) {
         print_init_help();
         return;
     }
+    // Opt-in value surfaces: each is its own step, never part of the alias setup.
+    if let Some(enable) = opt_in_flag(args, "--prompt") {
+        let binary = crate::core::portable_binary::stable_shell_binary(
+            &crate::core::portable_binary::resolve_portable_binary(),
+        );
+        super::prompt_init::cmd_init_prompt(enable, &binary);
+        return;
+    }
+    if let Some(enable) = opt_in_flag(args, "--git-trailer") {
+        super::git_trailer::cmd_init_git_trailer(enable);
+        return;
+    }
     let global = args.iter().any(|a| a == "--global" || a == "-g");
     let project = args.iter().any(|a| a == "--project");
     let dry_run = args.iter().any(|a| a == "--dry-run");
@@ -209,6 +221,17 @@ pub fn cmd_init_quiet(args: &[String]) {
     cmd_init(args);
 }
 
+/// `--flag` → enable, `--flag off` / `--flag=off` → disable, absent → `None`.
+fn opt_in_flag(args: &[String], flag: &str) -> Option<bool> {
+    let pos = args
+        .iter()
+        .position(|a| a == flag || a.starts_with(&format!("{flag}=")))?;
+    let value = args[pos]
+        .strip_prefix(&format!("{flag}="))
+        .or_else(|| args.get(pos + 1).map(String::as_str));
+    Some(!matches!(value, Some("off" | "false" | "0")))
+}
+
 /// Help for `lean-ctx init`. Printed for `--help`/`-h`, whatever else is on
 /// the line, and never followed by an init.
 fn print_init_help() {
@@ -226,11 +249,45 @@ fn print_init_help() {
     println!("  --project           With --agent: also install project-local hooks");
     println!("  --no-shell-hook     Skip the shell aliases; MCP tools stay active");
     println!("  --dry-run           Show what the shell setup would change, change nothing");
+    println!("  --prompt [off]      Show what lean-ctx did in your shell prompt (zsh, bash,");
+    println!("                      fish; prints a module for Starship). `off` removes it");
+    println!("  --git-trailer [off] Add a `lean-ctx:` trailer to this repo's commit messages.");
+    println!("                      `off` removes the hook");
     println!("  --help, -h          Show this help (never runs init)");
     println!();
     println!("Examples:");
     println!("  lean-ctx init --global --dry-run");
     println!("  lean-ctx init --global");
+    println!("  lean-ctx init --prompt");
     println!("  lean-ctx init --agent claude");
     println!("  lean-ctx init --agent codex --mode hybrid");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::opt_in_flag;
+
+    fn args(a: &[&str]) -> Vec<String> {
+        a.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn opt_in_flags_parse_on_and_off() {
+        assert_eq!(opt_in_flag(&args(&["--prompt"]), "--prompt"), Some(true));
+        assert_eq!(
+            opt_in_flag(&args(&["--prompt", "off"]), "--prompt"),
+            Some(false)
+        );
+        assert_eq!(
+            opt_in_flag(&args(&["--prompt=false"]), "--prompt"),
+            Some(false)
+        );
+        assert_eq!(
+            opt_in_flag(&args(&["--git-trailer", "0"]), "--git-trailer"),
+            Some(false)
+        );
+        assert_eq!(opt_in_flag(&args(&["--global"]), "--prompt"), None);
+        // `--prompt-foo` is not `--prompt`.
+        assert_eq!(opt_in_flag(&args(&["--prompt-foo"]), "--prompt"), None);
+    }
 }

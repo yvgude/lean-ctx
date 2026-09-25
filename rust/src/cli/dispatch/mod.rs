@@ -208,6 +208,15 @@ pub fn run() {
                 crate::cli::cmd_value(&rest);
                 return;
             }
+            "prompt-segment" => {
+                crate::cli::cmd_prompt_segment(&rest);
+                return;
+            }
+            // Hidden: run by the prepare-commit-msg hook from `init --git-trailer`.
+            "git-trailer" => {
+                crate::cli::cmd_git_trailer(&rest);
+                return;
+            }
             "statusline" => {
                 crate::cli::cmd_statusline(&rest);
                 return;

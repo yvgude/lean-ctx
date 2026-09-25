@@ -44,7 +44,8 @@ pub struct ValueDisplayConfig {
     /// …and only shown when the window saved at least this many tokens (or a
     /// security event happened).
     pub recap_min_tokens: u64,
-    /// OS notifications for milestones (at most one per day).
+    /// OS notifications for milestones (at most one per day) in mode
+    /// `milestones` or `verbose`; `false` silences them there.
     pub notifications: bool,
     /// Opt-in `lean-ctx:` trailer in commit messages.
     pub git_trailer: bool,

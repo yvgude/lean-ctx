@@ -39,7 +39,7 @@ fn hook_binary_for_shell(shell: &str, binary: &str) -> String {
     }
 }
 
-fn backup_shell_config(path: &std::path::Path) {
+pub(super) fn backup_shell_config(path: &std::path::Path) {
     if !path.exists() {
         return;
     }
@@ -59,11 +59,11 @@ fn backup_shell_config(path: &std::path::Path) {
 /// `env.sh`. These are config files (RO-safe), so they live in [`config_dir`]
 /// (GH #408). For legacy/mixed installs `config_dir()` collapses onto the same
 /// single directory as before, so this is a no-op there.
-fn config_artifact_dir() -> Option<std::path::PathBuf> {
+pub(super) fn config_artifact_dir() -> Option<std::path::PathBuf> {
     crate::core::paths::config_dir().ok()
 }
 
-fn write_hook_file(filename: &str, content: &str) -> Option<std::path::PathBuf> {
+pub(super) fn write_hook_file(filename: &str, content: &str) -> Option<std::path::PathBuf> {
     let dir = config_artifact_dir()?;
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join(filename);
@@ -83,7 +83,7 @@ fn write_hook_file(filename: &str, content: &str) -> Option<std::path::PathBuf> 
     }
 }
 
-fn resolved_hook_dir_display() -> String {
+pub(super) fn resolved_hook_dir_display() -> String {
     config_artifact_dir().map_or_else(
         || "$HOME/.config/lean-ctx".to_string(),
         |p| p.to_string_lossy().to_string(),

@@ -76,6 +76,28 @@ pub fn one_line(snap: &ValueSnapshot, style: Style) -> Option<String> {
     })
 }
 
+/// `◆ −1.2M tok ⛨ 3` for a shell prompt: the shortest honest form, never
+/// coloured (prompt escaping differs per shell, so the caller wraps it).
+pub fn compact(snap: &ValueSnapshot, style: Style) -> Option<String> {
+    if snap.is_empty() {
+        return None;
+    }
+    let mut out = style.mark().to_string();
+    if snap.tokens_saved > 0 {
+        out.push_str(&format!(
+            " {}{} tok",
+            style.minus(),
+            format_tokens(snap.tokens_saved)
+        ));
+    }
+    let security = snap.security.total();
+    if security > 0 {
+        out.push_str(&format!(" {} {security}", style.shield()));
+    }
+    // Only cache hits measured: nothing short enough to be worth a prompt slot.
+    (out.len() > style.mark().len()).then_some(out)
+}
+
 fn plural(n: u64, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
@@ -162,6 +184,25 @@ mod tests {
         };
         let line = one_line(&snap(5_000, 0, 0), style).unwrap();
         assert!(line.starts_with("\x1b[2m") && line.ends_with("\x1b[0m"));
+    }
+
+    #[test]
+    fn compact_is_short_and_uncoloured() {
+        let style = Style {
+            color: true,
+            unicode: true,
+        };
+        assert_eq!(
+            compact(&snap(1_200_000, 41, 3), style).unwrap(),
+            "◆ −1.2M tok ⛨ 3"
+        );
+        let ascii = Style {
+            color: false,
+            unicode: false,
+        };
+        assert_eq!(compact(&snap(0, 0, 2), ascii).unwrap(), "* sec 2");
+        assert_eq!(compact(&snap(0, 9, 0), Style::PLAIN), None);
+        assert_eq!(compact(&ValueSnapshot::default(), Style::PLAIN), None);
     }
 
     #[test]

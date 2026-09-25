@@ -38,6 +38,8 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 | `value-report [--format table\|markdown\|json] [--last N]` | Outcome report for recent assessed tasks, including acceptance and CPAO; example: `lean-ctx value-report --format markdown --last 20` |
 | `value [--session <id>\|--all] [--json]` | What lean-ctx did in a session (tokens kept out of context, security events), recomputed from the verified savings ledger and audit trail; exits 1 when a chain is broken |
 | `statusline [--wrap "<cmd>"]` | Claude Code status line (`statusLine.command`), set by `init --agent claude` when none exists; `--wrap` chains your own status line and appends lean-ctx's segment to its first line |
+| `prompt-segment [--shell zsh\|bash\|fish\|plain]` | One dim shell-prompt segment for the current project, or nothing; wired by `init --prompt` (zsh/bash/fish, `off` removes it), `plain` for Starship and other prompt engines — see [value display](../guides/value-display.md) |
+| `init --git-trailer [off]` | Opt-in `prepare-commit-msg` hook that adds a `lean-ctx:` trailer with what was saved since the last trailered commit; never touches an existing hook or fails a commit |
 | `shadow [--latest\|--list\|--force]` | Inspect or generate local baseline-versus-treatment recommendations; example: `lean-ctx shadow --latest` |
 | `token-report` (`report-tokens`) | Token + memory report; `--json` |
 | `learning` | Adaptive-learning state: `status`, `export [file]`, `import <file\|->` — share learned thresholds + LITM calibration with your team (secret-free, idempotent merge) |
