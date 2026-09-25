@@ -77,7 +77,7 @@ Top-level configuration keys
 - `rules_injection` (enum: shared | dedicated | off, default `shared`) — How rules load for CLAUDE.md/AGENTS.md/GEMINI.md agents: shared block, dedicated (no shared-file edits; SessionStart hook / instructions[] / context.fileName), or off (write no rules file — for hosts that supply their own steering or phase-isolated/non-caching harnesses). Override via LEAN_CTX_RULES_INJECTION
 - `rules_scope` (enum: both | global | project, default `both`) — Where agent rule files are installed. Override via LEAN_CTX_RULES_SCOPE
 - `sandbox_level` (u8, default `0` — env `LEAN_CTX_SANDBOX_LEVEL`) — Sandbox strictness level (0=default, 1=strict, 2=paranoid)
-- `savings_footer` (enum: auto | always | never, default `always` — env `LEAN_CTX_SAVINGS_FOOTER`) — Controls visibility of token savings footers: always (default, show on every response), never, auto (context-dependent). Also: LEAN_CTX_SHOW_SAVINGS=1|0
+- `savings_footer` (enum: auto | always | never, default `never` — env `LEAN_CTX_SAVINGS_FOOTER`) — Controls visibility of token savings footers: never (default), always (show on every response), auto (context-dependent). Also: LEAN_CTX_SHOW_SAVINGS=1|0
 - `session_retention_days` (u32, default `7` — env `LEAN_CTX_SESSION_RETENTION_DAYS`) — Retention window for explicit session cleanup; independent from archive retention and preserves the newest session per project
 - `shadow_mode` (bool, default `true` — env `LEAN_CTX_SHADOW_MODE`) — Default on: denies native tools at the permission level, forcing agents to use ctx_* MCP tools for maximum compression. Disable with shadow_mode = false if you prefer native tools.
 - `shell_activation` (enum: always | agents-only | off, default `agents-only` — env `LEAN_CTX_SHELL_ACTIVATION`) — Controls when the shell hook auto-activates aliases (agents-only since #699: transparent in plain human terminals)
@@ -531,4 +531,14 @@ Automatic update configuration
 - `auto_update` (bool, default `false`) — Enable automatic updates (requires explicit opt-in)
 - `check_interval_hours` (u64, default `6`) — How often to check for updates (hours)
 - `notify_only` (bool, default `false`) — Only notify about updates, don't install automatically
+
+## `[value_display]`
+
+User-only value surface: status line, recaps, prompt segment, milestones. Every number is backed by `lean-ctx value`.
+
+- `git_trailer` (bool, default `false`) — Opt-in `lean-ctx:` trailer in commit messages (default false)
+- `mode` (enum: off | minimal | milestones | verbose, default `minimal` — env `LEAN_CTX_VALUE_DISPLAY`) — How lean-ctx shows its measured value to you (never to the model): off, minimal (default: status line + threshold recaps), milestones (+ OS notifications), verbose (every recap window)
+- `notifications` (bool, default `true`) — OS notifications for milestones, at most one per day (default true)
+- `recap_every_turns` (u32, default `10`) — A turn recap is considered every N agent turns (default 10)
+- `recap_min_tokens` (u64, default `50000`) — Show a turn recap only when the window saved at least this many tokens or a security event happened (default 50000)
 

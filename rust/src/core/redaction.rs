@@ -17,11 +17,21 @@ pub(crate) fn redaction_enabled_for_active_role() -> bool {
     }
 }
 
+/// Redacts text bound for the model (tool output). Only this entry point
+/// counts toward the value surface: persistence passes (`redact_text`) keep
+/// secrets out of files, not out of the model context, and an already
+/// redacted `[REDACTED:…]` marker never matches again, so nested passes over
+/// one output do not double count.
 pub(crate) fn redact_text_if_enabled(input: &str) -> String {
     if !redaction_enabled_for_active_role() {
         return input.to_string();
     }
-    redact_text_with_excludes(input, config_exclude_patterns().as_slice())
+    let (out, hits) = redact_counting(input, config_exclude_patterns().as_slice());
+    crate::core::security_events::note(
+        crate::core::security_events::SecurityKind::SecretRedacted,
+        hits,
+    );
+    out
 }
 
 /// #718: unquoted identifier or property-access chains (`SvelteKit`,
@@ -284,7 +294,13 @@ pub(crate) fn redact_text(input: &str) -> String {
 /// regex is kept verbatim, so known-safe naming conventions can be carved out
 /// without disabling secret detection wholesale.
 pub(crate) fn redact_text_with_excludes(input: &str, excludes: &[regex::Regex]) -> String {
+    redact_counting(input, excludes).0
+}
+
+/// [`redact_text_with_excludes`] plus the number of secrets it replaced.
+fn redact_counting(input: &str, excludes: &[regex::Regex]) -> (String, usize) {
     let mut out = input.to_string();
+    let mut hits = 0usize;
     for rule in redaction_rules() {
         out = rule
             .re
@@ -301,6 +317,7 @@ pub(crate) fn redact_text_with_excludes(input: &str, excludes: &[regex::Regex]) 
                     // — keep verbatim (#430, #718).
                     return whole.to_string();
                 }
+                hits += 1;
                 match caps.get(1) {
                     Some(prefix) => format!("{}[REDACTED:{}]", prefix.as_str(), rule.label),
                     None => format!("[REDACTED:{}]", rule.label),
@@ -308,7 +325,7 @@ pub(crate) fn redact_text_with_excludes(input: &str, excludes: &[regex::Regex]) 
             })
             .to_string();
     }
-    out
+    (out, hits)
 }
 
 /// Compile the configured `exclude_patterns` (#718). Invalid regexes are

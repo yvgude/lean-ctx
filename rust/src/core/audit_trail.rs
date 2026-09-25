@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditEntry {
@@ -121,14 +121,19 @@ fn compute_entry_hash(prev_hash: &str, data_json: &str) -> String {
 }
 
 pub fn record(data: AuditEntryData) {
+    let Some(path) = trail_path() else { return };
+    record_at(&path, data);
+}
+
+/// Appends `data` to the trail at `path` (chained and signed like [`record`]).
+pub fn record_at(path: &Path, data: AuditEntryData) {
     use fs2::FileExt;
 
-    let Some(path) = trail_path() else { return };
     let Ok(mut file) = OpenOptions::new()
         .create(true)
         .append(true)
         .read(true)
-        .open(&path)
+        .open(path)
     else {
         return;
     };
@@ -175,21 +180,30 @@ pub fn record(data: AuditEntryData) {
     let _ = FileExt::unlock(&file);
 }
 
+/// Path of the local audit trail (`<data_dir>/audit/trail.jsonl`).
+pub fn default_trail_path() -> Option<PathBuf> {
+    trail_path()
+}
+
 pub fn load_recent(limit: usize) -> Vec<AuditEntry> {
     let Some(path) = trail_path() else {
         return Vec::new();
     };
-    let Ok(file) = fs::File::open(&path) else {
+    let entries = load_all_at(&path);
+    let skip = entries.len().saturating_sub(limit);
+    entries.into_iter().skip(skip).collect()
+}
+
+/// Every parseable entry of the trail at `path`.
+pub fn load_all_at(path: &Path) -> Vec<AuditEntry> {
+    let Ok(file) = fs::File::open(path) else {
         return Vec::new();
     };
-    let reader = std::io::BufReader::new(file);
-    let entries: Vec<AuditEntry> = reader
+    std::io::BufReader::new(file)
         .lines()
         .map_while(Result::ok)
         .filter_map(|line| serde_json::from_str(&line).ok())
-        .collect();
-    let skip = entries.len().saturating_sub(limit);
-    entries.into_iter().skip(skip).collect()
+        .collect()
 }
 
 pub fn verify_chain() -> ChainVerifyResult {
@@ -200,7 +214,12 @@ pub fn verify_chain() -> ChainVerifyResult {
             first_invalid_at: None,
         };
     };
-    let Ok(file) = fs::File::open(&path) else {
+    verify_chain_at(&path)
+}
+
+/// Re-walks the trail at `path` from genesis, recomputing every hash.
+pub fn verify_chain_at(path: &Path) -> ChainVerifyResult {
+    let Ok(file) = fs::File::open(path) else {
         return ChainVerifyResult {
             total_entries: 0,
             valid: true,

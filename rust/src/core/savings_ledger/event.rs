@@ -253,11 +253,24 @@ pub struct SavingsEvent {
 }
 
 impl SavingsEvent {
-    /// Canonical (v5) representation: v4 + P5 unified ledger fields.
-    /// New fields are committed as `option_str(field)` — `None` becomes "_"
+    /// Canonical (v7) representation: v6 + `session_id`, so a per-session
+    /// value claim (`lean-ctx value`) is backed by events whose session
+    /// attribution is committed to the chain and cannot be re-assigned.
+    /// Optional fields are committed as `option_str(field)` — `None` becomes "_"
     /// (a sentinel that never appears in real values), so the hash is stable
     /// regardless of whether the field was populated.
     pub fn canonical_content(&self) -> String {
+        format!(
+            "v7|{}|{}",
+            self.canonical_content_v6()
+                .strip_prefix("v6|")
+                .unwrap_or_default(),
+            option_str(self.session_id.as_ref()),
+        )
+    }
+
+    /// v6 canonical: retained so v6-written ledgers verify after the session upgrade.
+    pub fn canonical_content_v6(&self) -> String {
         format!(
             "v6|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             self.ts,
@@ -429,6 +442,7 @@ impl SavingsEvent {
     /// valid; broken-by-bug ones are repaired by `rechain`, which re-hashes under v4).
     pub fn hash_matches(&self, prev_hash: &str) -> bool {
         self.entry_hash == compute_hash(prev_hash, &self.canonical_content())
+            || self.entry_hash == compute_hash(prev_hash, &self.canonical_content_v6())
             || self.entry_hash == compute_hash(prev_hash, &self.canonical_content_v5())
             || self.entry_hash == compute_hash(prev_hash, &self.canonical_content_v4())
             || self.entry_hash == compute_hash(prev_hash, &self.canonical_content_v3())
@@ -727,6 +741,28 @@ mod tests {
             !forged.hash_matches(&forged.prev_hash),
             "rewriting edit LOC must be tamper-evident"
         );
+    }
+
+    #[test]
+    fn v7_commits_session_id() {
+        let mut e = ev();
+        e.session_id = Some("sess-a".into());
+        e.prev_hash = "genesis".into();
+        e.entry_hash = compute_hash(&e.prev_hash, &e.canonical_content());
+        assert!(e.canonical_content().starts_with("v7|"));
+        assert!(e.hash_matches(&e.prev_hash));
+
+        let mut moved = e.clone();
+        moved.session_id = Some("sess-b".into());
+        assert!(
+            !moved.hash_matches(&moved.prev_hash),
+            "re-attributing an event to another session must be tamper-evident"
+        );
+
+        let mut v6 = ev();
+        v6.prev_hash = "genesis".into();
+        v6.entry_hash = compute_hash(&v6.prev_hash, &v6.canonical_content_v6());
+        assert!(v6.hash_matches(&v6.prev_hash), "v6 ledgers keep verifying");
     }
 
     #[test]

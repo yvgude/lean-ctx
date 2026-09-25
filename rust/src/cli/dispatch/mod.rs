@@ -204,6 +204,10 @@ pub fn run() {
                 crate::cli::cmd_prove(&rest);
                 return;
             }
+            "value" => {
+                crate::cli::cmd_value(&rest);
+                return;
+            }
             "snapshot" => {
                 crate::cli::cmd_snapshot(&rest);
                 return;

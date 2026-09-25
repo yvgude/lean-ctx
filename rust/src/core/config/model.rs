@@ -81,6 +81,10 @@ pub struct Config {
     /// Counterfactual Shadow Mode reporting (`[shadow]`), opt-in.
     #[serde(default)]
     pub shadow: ShadowConfig,
+    /// User-only value display (`[value_display]`): status line, recaps,
+    /// prompt segment, milestones. Never reaches the model context.
+    #[serde(default)]
+    pub value_display: ValueDisplayConfig,
     /// Generalized L1/L2/L3 cache settings (`[cache]`).
     #[serde(default)]
     pub cache: CacheConfig,
@@ -566,7 +570,7 @@ pub struct Config {
     #[serde(default)]
     pub max_index_threads: usize,
     /// Controls visibility of token savings footers in tool output.
-    /// Values: "always" (default, show on every response), "never", "auto" (legacy compatibility).
+    /// Values: "never" (default), "always" (show on every response), "auto" (legacy compatibility).
     /// Override via LEAN_CTX_SAVINGS_FOOTER or LEAN_CTX_SHOW_SAVINGS=1|0 env var.
     #[serde(default)]
     pub savings_footer: SavingsFooter,

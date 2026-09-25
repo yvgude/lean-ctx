@@ -158,6 +158,7 @@ COMMANDS:
     gain --unpublish[=<id|url|all>]  Take a published card down (works even when publishing is off)
     config set gain.auto_publish true  Development-only local export setting (off by default)
     savings [--period day|week|month|all] [--format table|json|markdown] Local representation-change report; not comparable proof
+    value [--session <id>|--all] [--json]  What lean-ctx did, recomputed from the verified chains
     learning [status|export|import]  Local adaptive-learning state: inspect, export, import
          token-report [--json]          Token + memory report (project + session + CEP)
     pack --pr                      PR Context Pack (changed files, impact, tests, artifacts)

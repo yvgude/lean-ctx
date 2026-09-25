@@ -578,8 +578,8 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "savings_footer".into(),
             key_enum_with_env(
                 &["auto", "always", "never"],
-                "always",
-                "Controls visibility of token savings footers: always (default, show on every response), never, auto (context-dependent). Also: LEAN_CTX_SHOW_SAVINGS=1|0",
+                "never",
+                "Controls visibility of token savings footers: never (default), always (show on every response), auto (context-dependent). Also: LEAN_CTX_SHOW_SAVINGS=1|0",
                 "LEAN_CTX_SAVINGS_FOOTER",
             ),
         );

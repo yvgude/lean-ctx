@@ -5,6 +5,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added — `lean-ctx value`: what lean-ctx did, with proof
+
+- `lean-ctx value` shows the tokens kept out of the model's context and the
+  security events of the current session. `--session <id>` picks another
+  session, `--all` covers every session, and `--json` prints the result as
+  JSON. The numbers do not come from the display counters. They are
+  recomputed from the hash-chained savings ledger and the signed audit trail.
+  Both chains are checked from their first entry, and the output names the
+  first and last entry hash each number rests on. When a chain is broken, the
+  numbers are marked as not proven and the command exits 1.
+- Ledger events now include the session id in their hash (canonical v7), so
+  a session's savings can be proven on their own. Entries written as v1–v6
+  still verify.
+- Protections that fire by default now leave a signed audit-trail entry:
+  - a secret redacted from tool output (counted once, on the output that
+    reaches the model)
+  - a shell command blocked by the allowlist
+  - a path refused by the project jail
+
+  The entry records the kind, the count and the session.
+- New `[value_display]` config section (`mode = off | minimal | milestones |
+  verbose`, default `minimal`, env `LEAN_CTX_VALUE_DISPLAY`). It controls the
+  value surfaces added in later changes. The proof chains are written
+  regardless of the mode.
+
+### Fixed — the `savings_footer` default is documented as `never`
+
+- The config schema and reference said `savings_footer` defaults to `always`.
+  The real default has always been `never`, so no footer tokens are added to
+  tool output unless you turn it on.
+
 ### Fixed — `init --help` prints help, and the rules name only tools the agent has (#1849)
 
 - `lean-ctx init --help` (and `-h`) ran a full `init` instead of printing the

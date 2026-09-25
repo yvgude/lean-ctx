@@ -4,6 +4,26 @@ use super::server::{CepComputedStats, CrpMode, LeanCtxServer, ToolCallRecord};
 use super::startup::auto_consolidate_knowledge;
 use super::{ctx_compress, ctx_share};
 
+/// Moves the security events recorded since the last call into the session's
+/// counters and captures the value snapshot the display channels read.
+fn fold_value_snapshot(
+    session: &mut crate::core::session::SessionState,
+) -> crate::core::value::snapshot::ValueSnapshot {
+    let security = crate::core::security_events::drain_pending();
+    session.stats.security.merge(&security);
+    crate::core::value::snapshot::ValueSnapshot::from_session(session)
+}
+
+/// Writes the snapshot off the async workers (throttled, atomic).
+fn publish_value_snapshot(snapshot: crate::core::value::snapshot::ValueSnapshot) {
+    if !crate::core::value::display_enabled() {
+        return;
+    }
+    drop(tokio::task::spawn_blocking(move || {
+        crate::core::value::snapshot::write_throttled(&snapshot);
+    }));
+}
+
 /// Build payload-free OCLA metrics for one completed MCP tool call.
 ///
 /// Values use milli-units and saturate at the signed metric contract's upper
@@ -246,8 +266,10 @@ impl LeanCtxServer {
         } else {
             None
         };
+        let value_snapshot = fold_value_snapshot(&mut session);
         drop(calls);
         drop(session);
+        publish_value_snapshot(value_snapshot);
 
         let pro_count = self.pro_trigger_check_count.fetch_add(1, Ordering::Relaxed) + 1;
         if pro_count.is_multiple_of(10) {
@@ -270,6 +292,17 @@ impl LeanCtxServer {
 
         self.write_mcp_live_stats().await;
         write_science_live_stats();
+    }
+
+    /// Folds security events recorded outside `record_call` (e.g. injection
+    /// flags found after the handler) into the session and republishes the
+    /// value snapshot, so the status line never lags a blocked or flagged call.
+    pub async fn publish_value_snapshot(&self) {
+        let snapshot = {
+            let mut session = self.session.write().await;
+            fold_value_snapshot(&mut session)
+        };
+        publish_value_snapshot(snapshot);
     }
 
     /// Increments the call counter and returns true if a checkpoint is due.
