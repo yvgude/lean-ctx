@@ -144,6 +144,7 @@ mod tests {
             pricing_estimated: false,
             percentile: Some(99),
             security: None,
+            speed: None,
         }
     }
 

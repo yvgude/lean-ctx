@@ -948,6 +948,7 @@ mod tests {
             pricing_estimated: true,
             percentile: Some(99),
             security: None,
+            speed: None,
         }
     }
 
