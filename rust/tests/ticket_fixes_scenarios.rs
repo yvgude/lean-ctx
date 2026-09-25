@@ -782,8 +782,8 @@ fn hook_shell_tokenize_simple_no_quotes() {
 fn hook_shell_quote_adds_quotes_for_spaces() {
     use lean_ctx::hook_handlers::shell_quote;
     let q = shell_quote("My Documents/file.txt");
-    assert!(q.starts_with('"') && q.ends_with('"'));
-    assert!(q.contains("My Documents"));
+    // Single quotes: the calling POSIX shell must expand nothing (#1862).
+    assert_eq!(q, "'My Documents/file.txt'");
 }
 
 #[test]

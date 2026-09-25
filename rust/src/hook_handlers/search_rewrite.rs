@@ -425,7 +425,12 @@ pub fn shell_tokenize(input: &str) -> Vec<String> {
     tokens
 }
 
-/// Quote a path/arg for shell if it contains spaces or special chars.
+/// Quote a path/arg for the POSIX shell that runs the rewritten command if it
+/// contains spaces or special chars.
+///
+/// Single quotes, never double: the word reaches us already unquoted, so a
+/// literal `$HOME` or `` `id` `` the agent single-quoted must stay literal.
+/// Double quotes would let the calling shell expand or execute it (#1862).
 pub fn shell_quote(s: &str) -> String {
     if s.contains(|c: char| {
         c.is_whitespace()
@@ -453,7 +458,7 @@ pub fn shell_quote(s: &str) -> String {
                     | '~'
             )
     }) {
-        format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+        format!("'{}'", s.replace('\'', "'\\''"))
     } else {
         s.to_string()
     }

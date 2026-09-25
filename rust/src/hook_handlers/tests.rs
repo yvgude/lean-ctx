@@ -4,7 +4,7 @@
 use super::*;
 
 fn expect_wrapped(cmd: &str, binary: &str) -> String {
-    crate::shell::join_command(&[binary.to_owned(), "-c".to_owned(), cmd.to_owned()])
+    crate::shell::join_command_for(&[binary.to_owned(), "-c".to_owned(), cmd.to_owned()], "-c")
 }
 
 /// Pins a deterministic shell allowlist while `body` runs, so the `passes_enforced`

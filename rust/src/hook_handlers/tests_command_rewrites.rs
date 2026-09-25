@@ -15,6 +15,69 @@ fn wrap_with_quotes() {
     );
 }
 
+/// #1862: the wrap is single-quoted for the Bash tool on every platform, so the
+/// calling shell expands nothing — not the detected shell's quoting, which on
+/// Windows can be cmd.exe's double quotes.
+#[test]
+fn wrap_is_posix_single_quoted_whatever_shell_is_detected() {
+    assert_eq!(
+        wrap_single_command(r#"git log --format="$HOME $(id) `id`" -1"#, "lean-ctx"),
+        r#"lean-ctx -c 'git log --format="$HOME $(id) `id`" -1'"#
+    );
+    assert_eq!(
+        wrap_single_command("git log --grep 'it''s'", "lean-ctx"),
+        r"lean-ctx -c 'git log --grep '\''it'\'''\''s'\'''"
+    );
+}
+
+/// #1862: the tokenizer behind the direct rewrites drops the quotes, so it
+/// cannot tell `'$HOME'` (literal) from `"$HOME"` (expand). A command with `$`
+/// or `` ` `` keeps its own quoting — inside the `-c` wrap, or untouched where
+/// the command is never wrapped (`cat`). Every other word is re-quoted in
+/// single quotes so the calling shell leaves it alone.
+#[test]
+fn expansion_chars_keep_the_agents_own_quoting() {
+    for cmd in [
+        "grep -n '$HOME' README.md",
+        r#"grep -n "$HOME" README.md"#,
+        "rg 'foo`id`$(id)' src",
+    ] {
+        assert_eq!(
+            rewrite_candidate(cmd, "lean-ctx"),
+            Some(expect_wrapped(cmd, "lean-ctx")),
+            "{cmd}"
+        );
+    }
+    assert_eq!(rewrite_candidate("cat 'a$b.txt'", "lean-ctx"), None);
+    assert_eq!(
+        rewrite_candidate("cat a.md && cat 'b$c.md'", "lean-ctx"),
+        Some("lean-ctx read a.md && cat 'b$c.md'".to_owned())
+    );
+    assert_eq!(
+        rewrite_candidate(r#"cat "it's here.txt""#, "lean-ctx"),
+        Some(r"lean-ctx read 'it'\''s here.txt'".to_owned())
+    );
+}
+
+#[test]
+fn shell_quote_round_trips_through_shell_tokenize() {
+    for word in [
+        "$HOME",
+        "`id`",
+        "$(id)",
+        "it's",
+        r#"say "hi""#,
+        r"C:\Users\x",
+        "a b",
+    ] {
+        assert_eq!(
+            shell_tokenize(&shell_quote(word)),
+            vec![word.to_owned()],
+            "{word}"
+        );
+    }
+}
+
 #[test]
 fn rewrite_candidate_returns_none_for_existing_lean_ctx_command() {
     assert_eq!(

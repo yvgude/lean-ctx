@@ -28,7 +28,7 @@ fn file_read_cat_declines_multi_file_and_flags() {
     // A quoted path with spaces is one token — still rewritten.
     assert_eq!(
         rewrite_file_read_command("cat 'my file.md'", "lean-ctx"),
-        Some("lean-ctx read \"my file.md\"".to_string())
+        Some("lean-ctx read 'my file.md'".to_string())
     );
 }
 

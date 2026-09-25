@@ -210,13 +210,8 @@ mod tests {
         .unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         let ti = &v["hook_specific_output"]["tool_input"];
-        // Wrapping follows the detected shell, which can be Git Bash on Windows.
-        let expected = crate::shell::join_command(&[
-            "lean-ctx".to_owned(),
-            "-c".to_owned(),
-            "git status".to_owned(),
-        ]);
-        assert_eq!(ti["command"], expected);
+        // The Bash tool's shell is POSIX on every platform (#1862).
+        assert_eq!(ti["command"], "lean-ctx -c 'git status'");
         assert_eq!(ti["timeout"], 42, "non-command fields must be preserved");
     }
 
