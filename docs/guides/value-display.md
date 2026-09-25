@@ -1,9 +1,9 @@
 # Seeing what lean-ctx did
 
 lean-ctx keeps tokens, secrets and risky commands out of your agent's context.
-The dashboard shows all of it. This guide covers the smaller surfaces that
-show it where you already are: your agent, your shell prompt, your editor,
-your commits.
+The local web view (`lean-ctx dashboard`) shows all of it. This guide covers
+the smaller surfaces that show it where you already are: your agent, your
+shell prompt, your editor, your commits.
 
 Every one of them follows three rules:
 
@@ -193,7 +193,8 @@ Each task goes to the same live model twice per run: once with a raw context
 dump (baseline) and once with lean-ctx's context, both within the same token
 budget. The first request is a warm-up and is not counted. Which arm goes
 first alternates. Each arm's latency is the median of `--runs` rounds
-(default 3), and every answer is scored:
+(default 3), and every answer is scored. The numbers below illustrate the
+format; they are not a measurement of lean-ctx:
 
 ```text
 ◆ lean-ctx speed proof · suite.ndjson · qwen2.5-coder:7b
@@ -213,7 +214,9 @@ The proof is signed with your agent key. `lean-ctx prove speed --verify`
 checks the signature and recomputes the summary from the raw timings, so an
 edited number shows `TAMPERED` and exits 1.
 
-`gain --wrapped` then shows the latest proof, with its date, size and model:
+`gain --wrapped` then shows your latest proof, with its date, size and model
+(same illustrative numbers). It describes your suite, model and machine, not
+lean-ctx in general:
 
 ```text
   ⚡  41% faster model answers with lean-ctx
@@ -227,7 +230,8 @@ or when it answered fewer tasks correctly than the baseline.
 
 The lean-ctx extension (`packages/vscode-lean-ctx`) adds one status bar item
 with the same segment as the shell prompt, for the workspace folder of the
-file you are editing:
+file you are editing. In 3.10.3 it ships as source only and is not yet
+published to an extension registry:
 
 ```text
 ◆ −1.2M tok ⛨ 3
@@ -265,23 +269,23 @@ The payload is also a stable contract (`schema: 1`) for other editors:
 }
 ```
 
-## Dashboard and team
+## Local Protection view and signed batches
 
-The dashboard's **Protection** view starts with **Guards that fired**. It shows
-the lifetime security counts from `lean-ctx value --all` (`/api/value`) next to
-the audit-trail status: `✓ audit trail intact · N entries`, or where the chain
-breaks.
+The **Protection** page that `lean-ctx dashboard` serves on your machine
+starts with **Guards that fired**. It shows the lifetime security counts from
+`lean-ctx value --all` next to the audit-trail status:
+`✓ audit trail intact · N entries`, or where the chain breaks.
 
-With cloud sync on, each signed savings batch carries a separately signed
-security tally:
+Each signed savings batch (`lean-ctx savings sign`) carries a separately
+signed security tally:
 
 - the counts
 - the audit trail's entry count, plus its first and last hash
 - the batch's last entry hash, which binds the tally to that batch
 
 `lean-ctx savings verify-batch` checks both signatures and lists the tally.
-A copied or edited tally fails verification. A server that does not know the
-tally still verifies the batch as before.
+A copied or edited tally fails verification. A verifier that does not know
+the tally still verifies the batch as before.
 
 ## Proof
 

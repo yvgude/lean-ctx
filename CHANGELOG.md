@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [3.10.3] — 2026-09-25
+
 ### Added — `lean-ctx value`: what lean-ctx did, with proof
 
 - `lean-ctx value` shows the tokens kept out of the model's context and the
@@ -110,15 +112,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   copy, `--json` to print it). `prove speed --verify [FILE]` re-checks the
   signature and recomputes the summary from the raw timings. A modified proof
   prints `TAMPERED` and exits 1.
-- `gain --wrapped` quotes the latest proof (e.g. `41% faster model answers
-  with lean-ctx`, with date, tasks, runs and model) only when it verifies and
-  lean-ctx was faster without answering fewer tasks correctly. No surface
-  estimates speed from live sessions.
+- `gain --wrapped` quotes your latest proof (`<N>% faster model answers with
+  lean-ctx`, with date, tasks, runs and model) only when it verifies and
+  lean-ctx was faster without answering fewer tasks correctly. The figure
+  describes your suite, model and machine, not lean-ctx in general. No
+  surface estimates speed from live sessions.
 
-### Added — what lean-ctx did, in your editor, the dashboard and the team push
+### Added — what lean-ctx did, in your editor and in signed savings batches
 
-- **VS Code, Cursor and Windsurf extension** (`packages/vscode-lean-ctx`): one
-  quiet status bar item for the open project, for example `◆ −1.2M tok ⛨ 3`.
+- **VS Code, Cursor and Windsurf extension** (`packages/vscode-lean-ctx`,
+  source only in this release; it is not yet published to an extension
+  registry): one quiet status bar item for the open project, for example
+  `◆ −1.2M tok ⛨ 3`.
   - Hovering it shows the breakdown, each line labelled `✓` (counted) or `≈`
     (derived), plus the verified speed proof if you have one.
   - Clicking it runs `lean-ctx value`.
@@ -129,21 +134,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - `lean-ctx prompt-segment --json [--dir PATH]` prints the segment, the
   labelled breakdown, the speed proof, the directory to watch and the verify
   command as a stable JSON contract (`schema: 1`) for editor status bars.
-- **Dashboard:** the Protection view opens with **Guards that fired**.
+- **Local Protection view:** the Protection page that `lean-ctx dashboard`
+  serves on your machine opens with **Guards that fired**.
   - It shows the lifetime counts of secrets kept out of context, risky
     commands blocked, paths outside the project blocked, and prompt-injection
     patterns flagged.
-  - Every count is re-derived from the audit trail (`/api/value`, the same as
-    `lean-ctx value --all`).
+  - Every count is re-derived from the local audit trail, the same as
+    `lean-ctx value --all`.
   - It shows whether the trail is intact, or where the chain breaks.
-- **Team push:** a signed savings batch now carries a separately signed
-  security tally.
+- **Signed savings batches:** a signed savings batch now carries a separately
+  signed security tally.
   - The tally holds the counts, the audit trail's entry count, and its first
     and last hash.
   - It is bound to the batch's last entry hash, so a copied or edited tally
-    fails `savings verify-batch`, which lists it.
-  - The batch's own signature is unchanged, so servers that do not read the
-    tally keep verifying batches as before.
+    fails `lean-ctx savings verify-batch`, which lists it.
+  - The batch's own signature is unchanged, so a verifier that does not read
+    the tally keeps verifying batches as before.
 
 ### Fixed — the `savings_footer` default is documented as `never`
 
@@ -228,8 +234,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - PowerShell quoting elsewhere in lean-ctx now also quotes `@` and `,`, which
   PowerShell treats as operators.
 - Thanks to @ZacKienzle2 for the precise root-cause analysis.
-
-## [3.10.3] — 2026-09-22
 
 ### Fixed — a task overview no longer lists facts that share only a generic verb (#1832)
 
@@ -357,55 +361,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   remove the temporary name. A file system without hard links is reported as
   unsupported by the existing capability probe instead of failing mid-publish.
 
-### Fixed — account sync is available again in the public build
+### Fixed — the account commands are no longer hidden behind a research flag
 
 - **`login`, `register`, `sync`, `cloud` and `contribute` answered "unavailable"
-  unless `LEAN_CTX_EXPERIMENTAL_HOSTED=1` was set.** The gate was meant for
-  unreleased hosted research, but it also covered the account sync that paying
-  customers already use. A Pro account on a current build therefore had no
-  sync at all. The gate is gone, and these commands work by default again.
-- `cloud status` now reads "Connected to LeanCTX Cloud as <email>."
+  unless `LEAN_CTX_EXPERIMENTAL_HOSTED=1` was set.** The flag was meant for
+  unreleased research, but it also hid the optional account sync of existing
+  accounts. The flag is gone, and these commands work without it again. They
+  need an account; without one, lean-ctx keeps working locally as before.
+- `cloud status` names the signed-in account.
 - If your plan does not include synchronization, the message now says so
-  directly. It also confirms that local context is unchanged and points to
-  https://leanctx.com/account/billing/ and hello@leanctx.com, instead of a
-  generic upgrade pitch.
+  directly and confirms that local context is unchanged, instead of a generic
+  upgrade pitch.
 - The help section `HOSTED RESEARCH` is now `ACCOUNT SYNC` and lists the
   commands that actually work.
 
-### Fixed — a silent sign-out no longer looks like being offline
+### Fixed — a rejected credential no longer looks like being offline
 
-- **Background Personal-Cloud sync treated a rejected credential as a network
-  problem.** `classify_outcomes` special-cased only HTTP 402 (the Pro gate);
-  an HTTP 401 fell through to `NetworkFailure`, which prints nothing and
-  deliberately leaves the day's sync slot open so the next cycle retries. A
-  machine whose API key had been revoked therefore retried forever, in
-  silence, while the user had every reason to believe sync was working.
-- Added `AutoSyncOutcome::Unauthenticated`, ranked above the Pro gate: a dead
-  credential makes every other signal moot. It prints once per process, says
-  that local data and server data are both intact, and names the fix
-  (`lean-ctx login`).
+- **Background sync treated a rejected credential as a network problem.**
+  `classify_outcomes` special-cased only HTTP 402; an HTTP 401 fell through to
+  `NetworkFailure`, which prints nothing and deliberately leaves the day's sync
+  slot open so the next cycle retries. A machine whose API key had been
+  revoked therefore retried forever, in silence.
+- Added `AutoSyncOutcome::Unauthenticated`, ranked above the plan check: a
+  dead credential makes every other signal moot. It prints once per process,
+  says that local data is intact, and names the fix (`lean-ctx login`).
 - The slot rule is now the named predicate `consumes_daily_slot`, so "only a
   network failure leaves the slot open" is stated in one place and tested.
-- `login` and `register` now send a device label, so the server can bind the
-  key it issues to this machine rather than to the account.
-
-### Fixed — logging in no longer signs out your other machines (server-side)
-
-Deployed with the Cloud API, so this reaches accounts independently of the CLI
-release.
-
-- **Every `login` deleted *all* of the account's API keys and issued one
-  replacement.** Signing in on a laptop — or merely opening the web account
-  page — silently revoked the key the desktop was syncing with. The desktop
-  then hit HTTP 401 forever, which the bug above rendered invisible.
-- API keys are now scoped to a device label. Signing in on a machine replaces
-  only that machine's key; other machines keep syncing. Keys are capped per
-  account, evicting the least recently used.
-- Revoking is explicit: the account page's **Forget** button now revokes that
-  device's key as well as its sync history, and `POST /api/auth/keys/revoke`
-  can drop a single key or every key but the caller's own.
-- `last_used_at` is finally written (at most hourly, best-effort), so a key
-  that stops being used is now visible as such.
+- `login` and `register` now send a device label with the request.
 
 ### Fixed — a `grep` pattern is no longer silently reinterpreted (#1827)
 
@@ -809,10 +791,9 @@ release.
 ### Changed — Windows release engines are signed as Thinkery AG (#1820)
 
 - Release builds for `x86_64-pc-windows-msvc` and `x86_64-pc-windows-gnu` are
-  signed through Azure Trusted Signing before packaging, using the
-  `leanctx-public-trust` certificate profile in Switzerland North. Authentication
-  is secretless OIDC against the `windows-signing` GitHub environment — no
-  certificate or key material enters the repository or the runner.
+  signed through Azure Trusted Signing before packaging. The workflow
+  authenticates without a stored secret, so no certificate or key material
+  enters the repository or the runner.
 - Signatures are RFC3161-timestamped (`timestamp.acs.microsoft.com`, SHA256), so
   they remain valid after the signing certificate expires. A verification step
   runs `scripts/verify-windows-signature.ps1` on the signed binary, so an
