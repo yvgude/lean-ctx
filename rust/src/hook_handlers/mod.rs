@@ -34,8 +34,8 @@ mod redirect;
 // `search_rewrite` submodule (#660 LOC gate).
 mod search_rewrite;
 pub mod solution_capture;
+mod value_recap;
 mod vibe;
-pub(crate) use codex::emit_session_start_additional_context;
 pub use codex::{handle_codex_pretooluse, handle_codex_session_start};
 pub use solution_capture::handle_post_commit;
 pub use vibe::handle_vibe_pre_tool;

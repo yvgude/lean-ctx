@@ -30,19 +30,19 @@ impl Style {
         }
     }
 
-    fn mark(self) -> &'static str {
+    pub(crate) fn mark(self) -> &'static str {
         if self.unicode { "◆" } else { "*" }
     }
 
-    fn shield(self) -> &'static str {
+    pub(crate) fn shield(self) -> &'static str {
         if self.unicode { "⛨" } else { "sec" }
     }
 
-    fn minus(self) -> &'static str {
+    pub(crate) fn minus(self) -> &'static str {
         if self.unicode { "−" } else { "-" }
     }
 
-    fn sep(self) -> &'static str {
+    pub(crate) fn sep(self) -> &'static str {
         if self.unicode { " · " } else { " | " }
     }
 }

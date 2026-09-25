@@ -130,7 +130,7 @@ All `std::sync::Mutex` unless noted otherwise.
 | L111 | `DOCTOR_CACHE` | `dashboard/routes/doctor.rs:17` | `Mutex<Option<(Instant, String)>>` | Cached doctor check response; independent leaf lock, never nested |
 | L112 | `POLL_CACHE` | `tools/ctx_read/terminal_compress.rs:35` | `Mutex<Option<HashMap<String, PollState>>>` | Terminal poll content hash cache for dedup; independent leaf lock, never nested |
 | L113 | `JOURNAL_LOCK` | `core/journal.rs:14` | `LazyLock<Mutex<()>>` | Serializes journal rotation and writes; held while acquiring only the journal's independent OS file lock, never nested with another Rust static lock |
-| L114 | `PENDING` | `core/security_events.rs:164` | `Mutex<SecurityCounts>` | Security-event counters pending for the session snapshot; leaf lock, taken after the audit-trail write returns, never nested |
+| L114 | `PENDING` | `core/security_events.rs:177` | `Mutex<SecurityCounts>` | Security-event counters pending for the session snapshot; leaf lock, taken after the audit-trail write returns, never nested |
 | L115 | `CURRENT_SESSION` | `core/value/mod.rs:17` | `RwLock<Option<String>>` | Session id committed into ledger and security-event hashes; leaf lock, never nested |
 
 ### Test / Environment Locks (serialise env-var mutations)

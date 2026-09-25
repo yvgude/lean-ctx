@@ -952,6 +952,21 @@ pub static COMMAND_TREE: &[CommandNode] = &[
         hidden: false,
     },
     CommandNode {
+        name: "statusline",
+        aliases: &[],
+        description: "Claude Code status line: what lean-ctx did in this project",
+        subcommands: &[],
+        flags: &[FlagSpec {
+            long: "--wrap",
+            short: None,
+            description: "Run an existing status line too and append to its first line",
+            takes_value: true,
+            value_kind: None,
+        }],
+        positional: None,
+        hidden: false,
+    },
+    CommandNode {
         name: "value",
         aliases: &[],
         description: "Show what lean-ctx did, recomputed from the verified chains",

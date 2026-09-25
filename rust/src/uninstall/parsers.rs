@@ -1138,6 +1138,34 @@ command = \"other\"
     }
 
     #[test]
+    fn claude_settings_status_line_is_given_back_or_removed() {
+        let own = r#"{
+  "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "lean-ctx hook observe" }] }] },
+  "statusLine": { "type": "command", "command": "lean-ctx statusline" }
+}"#;
+        assert!(
+            matches!(
+                remove_lean_ctx_from_hooks_json(own),
+                HookCleanupResult::EntirelyLeanCtx
+            ),
+            "hooks and status line were all lean-ctx's"
+        );
+
+        let wrapped = r#"{
+  "statusLine": { "type": "command", "command": "lean-ctx statusline --wrap 'bash ~/line.sh'" }
+}"#;
+        let result = match remove_lean_ctx_from_hooks_json(wrapped) {
+            HookCleanupResult::Cleaned(s) => s,
+            other => panic!("expected Cleaned, got {other:?}"),
+        };
+        assert!(
+            result.contains("\"command\": \"bash ~/line.sh\""),
+            "{result}"
+        );
+        assert!(!result.contains("lean-ctx"));
+    }
+
+    #[test]
     fn hooks_json_parse_error_does_not_delete() {
         let input = "{ this is not valid JSON at all !!!";
         assert!(

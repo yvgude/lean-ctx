@@ -25,7 +25,15 @@ pub fn handle_observe() {
     // non-polluting stand-in for the (skipped) CLAUDE.md/CODEBUDDY.md/AGENTS.md block. All
     // three agents register `hook observe` on SessionStart, so this is the single
     // emit point (the Codex-specific handler stays silent in dedicated mode).
-    emit_dedicated_session_context(&input);
+    // The value recap (Stop/SessionStart `systemMessage`, user-only) rides in
+    // the same JSON object: a host parses exactly one per hook.
+    let context = dedicated_session_context(&input);
+    let recap = super::value_recap::system_message(&input);
+    if let Some(json) =
+        super::value_recap::hook_output("SessionStart", context.as_deref(), recap.as_deref())
+    {
+        println!("{json}");
+    }
     // #1288: per-turn tool-precedence reinjection. Harness auto-modes can
     // inject session instructions ("work through the Bash tool: cat, sed -n,
     // grep") AFTER SessionStart context, and recency wins — observed live: a
@@ -193,18 +201,17 @@ fn session_lifecycle_presence_fields(
     Some((event, source.to_string(), workspace, session_id))
 }
 
-fn emit_dedicated_session_context(input: &str) {
+/// The SessionStart rules for this payload (`additionalContext`), if any.
+fn dedicated_session_context(input: &str) -> Option<String> {
     // SessionStart additionalContext is model-visible rule steering.
     // Do not emit it after the user explicitly declined that steering.
     if crate::core::config::Config::load().declines_rule_steering() {
-        return;
+        return None;
     }
 
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(input) else {
-        return;
-    };
+    let v = serde_json::from_str::<serde_json::Value>(input).ok()?;
     if !session_start_honours_additional_context(&v) {
-        return;
+        return None;
     }
     let cfg = crate::core::config::Config::load();
 
@@ -213,13 +220,16 @@ fn emit_dedicated_session_context(input: &str) {
         // where the static rules file is skipped.
         let profile = crate::core::tool_profiles::ToolProfile::from_config(&cfg);
         let client_name = session_start_client_name(&v);
-        let summary = build_dedicated_session_context(client_name, cfg.shadow_mode, &profile);
-        emit_session_start_additional_context(&summary);
+        Some(build_dedicated_session_context(
+            client_name,
+            cfg.shadow_mode,
+            &profile,
+        ))
     } else {
         // Short reinforcement nudge for shared-mode hosts (Cursor) that already
         // have static rules but benefit from in-conversation emphasis on exclusive
         // tools. Models weight in-conversation context above static instructions.
-        emit_session_start_additional_context(
+        Some(
             "lean-ctx active: ALWAYS use ctx_* MCP tools instead of native equivalents.\n\
              - ctx_read > native Read (cached, unchanged full/auto re-reads ~13 tokens; 10 modes incl. map/signatures)\n\
              - ctx_search > native Grep (compact results, denied by hook)\n\
@@ -227,8 +237,9 @@ fn emit_dedicated_session_context(input: &str) {
              - ctx_glob > native Glob (denied by hook)\n\
              - ctx_compose = orient FIRST (bundles search+read+symbols in one call)\n\
              Native Read passes through for StrReplace internals only — never use it for exploration.\n\
-             Exclusive tools: ctx_compose, ctx_callgraph, ctx_knowledge, ctx_session.",
-        );
+             Exclusive tools: ctx_compose, ctx_callgraph, ctx_knowledge, ctx_session."
+                .to_string(),
+        )
     }
 }
 

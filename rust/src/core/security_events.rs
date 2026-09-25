@@ -105,6 +105,19 @@ impl SecurityCounts {
             .saturating_add(other.injection_flagged);
     }
 
+    /// Events since `base` (a counter never goes below zero).
+    #[must_use]
+    pub fn since(&self, base: &Self) -> Self {
+        Self {
+            secrets_redacted: self.secrets_redacted.saturating_sub(base.secrets_redacted),
+            shell_blocked: self.shell_blocked.saturating_sub(base.shell_blocked),
+            path_blocked: self.path_blocked.saturating_sub(base.path_blocked),
+            injection_flagged: self
+                .injection_flagged
+                .saturating_sub(base.injection_flagged),
+        }
+    }
+
     pub fn total(&self) -> u64 {
         self.secrets_redacted
             .saturating_add(self.shell_blocked)

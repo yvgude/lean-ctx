@@ -1134,6 +1134,11 @@ pub(super) fn remove_lean_ctx_from_hooks_json(content: &str) -> HookCleanupResul
         }
     }
 
+    // Claude Code status line: a wrapped command goes back, our own entry goes.
+    if crate::hooks::agents::remove_lean_ctx_statusline(&mut parsed) {
+        modified = true;
+    }
+
     if !modified {
         return HookCleanupResult::Unchanged;
     }

@@ -1,8 +1,9 @@
 //! Per-session value snapshot: the small file every display channel reads.
 //!
 //! Written by the MCP server after tool calls (throttled, atomic) to
-//! `<data_dir>/value/sessions/<id>.json` plus `value/current.json`. Readers
-//! (status line, prompt segment, IDE) never open the ledger on their hot path;
+//! `<data_dir>/value/sessions/<id>.json`, `value/current.json` and, keyed by
+//! the session's project root, `value/projects/<hash>.json`. Readers (status
+//! line, prompt segment, hooks, IDE) never open the ledger on their hot path;
 //! `lean-ctx value` re-derives every number from the chains instead.
 
 use std::path::{Path, PathBuf};
@@ -11,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::core::security_events::SecurityCounts;
 
@@ -102,14 +104,30 @@ pub fn current_path(dir: &Path) -> PathBuf {
     dir.join("current.json")
 }
 
-/// Writes `snap` as the session's snapshot and as `current.json`.
+/// Where the latest snapshot for project `root` lives. Hosts (a Claude status
+/// line, a Stop hook) know their working directory but not lean-ctx's session
+/// id; this pointer is how they find the numbers of the session serving them.
+pub fn project_path(dir: &Path, root: &str) -> PathBuf {
+    let digest = crate::core::agent_identity::hex_encode(&Sha256::digest(root.as_bytes()));
+    dir.join("projects").join(format!("{}.json", &digest[..16]))
+}
+
+/// Writes `snap` as the session's snapshot, as `current.json` and, when the
+/// session has a project root, as that project's snapshot.
 pub fn write_to(dir: &Path, snap: &ValueSnapshot) -> Result<(), String> {
     let path = session_path(dir, &snap.session_id).ok_or("invalid session id")?;
     let json = serde_json::to_vec(snap).map_err(|e| e.to_string())?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let project = snap
+        .project_root
+        .as_deref()
+        .filter(|root| !root.is_empty())
+        .map(|root| project_path(dir, root));
+    for target in [Some(&path), project.as_ref()].into_iter().flatten() {
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        crate::core::atomic_fs::try_atomic_write(target, &json, None).map_err(|e| e.to_string())?;
     }
-    crate::core::atomic_fs::try_atomic_write(&path, &json, None).map_err(|e| e.to_string())?;
     crate::core::atomic_fs::try_atomic_write(&current_path(dir), &json, None)
         .map_err(|e| e.to_string())
 }
@@ -149,6 +167,24 @@ pub fn load(id: Option<&str>) -> Option<ValueSnapshot> {
     }
 }
 
+/// The latest snapshot of the project containing `cwd`: the nearest ancestor
+/// (canonical first, then as given) that has one.
+pub fn load_for_dir(cwd: &Path) -> Option<ValueSnapshot> {
+    load_for_dir_in(&value_dir()?, cwd)
+}
+
+pub fn load_for_dir_in(dir: &Path, cwd: &Path) -> Option<ValueSnapshot> {
+    let canonical = crate::core::pathutil::safe_canonicalize_or_self(cwd);
+    [canonical.as_path(), cwd]
+        .into_iter()
+        .flat_map(Path::ancestors)
+        .filter_map(Path::to_str)
+        .find_map(|root| {
+            read_path(&project_path(dir, root))
+                .filter(|snap| snap.project_root.as_deref() == Some(root))
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,6 +198,23 @@ mod tests {
             tokens_saved: 400,
             ..ValueSnapshot::default()
         }
+    }
+
+    #[test]
+    fn project_snapshot_is_found_from_any_subdirectory() {
+        let data = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let root = crate::core::pathutil::safe_canonicalize_or_self(project.path());
+        let nested = root.join("src/deep");
+        std::fs::create_dir_all(&nested).unwrap();
+        let mut s = snap("sess-p");
+        s.project_root = Some(root.to_string_lossy().into_owned());
+        write_to(data.path(), &s).unwrap();
+
+        assert_eq!(load_for_dir_in(data.path(), &nested), Some(s.clone()));
+        assert_eq!(load_for_dir_in(data.path(), &root), Some(s));
+        let elsewhere = tempfile::tempdir().unwrap();
+        assert_eq!(load_for_dir_in(data.path(), elsewhere.path()), None);
     }
 
     #[test]
