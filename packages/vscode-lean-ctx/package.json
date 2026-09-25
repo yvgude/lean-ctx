@@ -1,0 +1,82 @@
+{
+  "name": "lean-ctx",
+  "displayName": "lean-ctx",
+  "description": "See what lean-ctx did in this project — tokens kept out of context, secrets kept out, risky commands blocked — in one quiet status bar item. Every number is provable with `lean-ctx value`.",
+  "version": "0.3.0",
+  "publisher": "LeanCTX",
+  "license": "Apache-2.0",
+  "icon": "resources/icon.png",
+  "homepage": "https://leanctx.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yvgude/lean-ctx.git",
+    "directory": "packages/vscode-lean-ctx"
+  },
+  "bugs": {
+    "url": "https://github.com/yvgude/lean-ctx/issues"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "context",
+    "llm",
+    "tokens",
+    "mcp",
+    "security"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "leanctx.showProof",
+        "title": "Show proof",
+        "category": "lean-ctx"
+      },
+      {
+        "command": "leanctx.openDashboard",
+        "title": "Open dashboard",
+        "category": "lean-ctx"
+      },
+      {
+        "command": "leanctx.refresh",
+        "title": "Refresh status bar",
+        "category": "lean-ctx"
+      }
+    ],
+    "configuration": {
+      "title": "lean-ctx",
+      "properties": {
+        "leanctx.binaryPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the `lean-ctx` binary. Empty: look on `PATH` and in the usual install locations."
+        },
+        "leanctx.statusBar.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show what lean-ctx did in this project in the status bar. `value_display.mode = \"off\"` in the lean-ctx config hides it as well."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "test": "tsc -p . && node --test out/test/value.test.js out/test/binary.test.js",
+    "vscode:prepublish": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "~1.80.0",
+    "typescript": "^5.4.0"
+  }
+}

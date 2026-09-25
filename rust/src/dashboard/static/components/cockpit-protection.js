@@ -1,7 +1,9 @@
 /**
  * Risk & Policies view (Protection area, GL #487).
  *
- * Two real data sources, no new backend logic:
+ * Three real data sources, no new backend logic:
+ * - /api/value — `lean-ctx value --all`: the guards that actually fired,
+ *   re-counted from the verified audit trail.
  * - /api/context-risk — compressed-read-before-edit warnings, compression
  *   health counts and overlay (pin/exclude) summary for this session.
  * - /api/owasp — the OWASP Top 10 for Agentic Applications alignment that
@@ -38,6 +40,7 @@ class CockpitProtection extends HTMLElement {
     this._error = null;
     this._risk = null;
     this._owasp = null;
+    this._value = null;
     this._onRefresh = this._onRefresh.bind(this);
   }
 
@@ -77,11 +80,15 @@ class CockpitProtection extends HTMLElement {
       fetchJson('/api/owasp', { timeoutMs: 10000 }).catch(function (e) {
         return { __error: e && e.error ? e.error : String(e || 'error') };
       }),
+      ckpCached('/api/value', { timeoutMs: 10000 }).catch(function (e) {
+        return { __error: e && e.error ? e.error : String(e || 'error') };
+      }),
     ]);
 
     this._risk = results[0] && !results[0].__error ? results[0] : null;
     this._owasp = Array.isArray(results[1]) ? results[1] : null;
-    if (!this._risk && !this._owasp) {
+    this._value = results[2] && results[2].security && results[2].audit ? results[2] : null;
+    if (!this._risk && !this._owasp && !this._value) {
       this._error = 'Could not load protection data';
     }
     this._loading = false;
@@ -100,9 +107,44 @@ class CockpitProtection extends HTMLElement {
       return;
     }
     this.innerHTML =
+      this._renderGuardsFired() +
       this._renderRiskSummary() +
       this._renderWarnings() +
       this._renderOwasp();
+  }
+
+  /* ---- guards that fired (verified audit trail) ---- */
+
+  _renderGuardsFired() {
+    var v = this._value;
+    if (!v) return '';
+    var s = v.security || {};
+    var intact = !!v.audit.intact;
+    var chain = intact
+      ? '<span class="prot-coverage ok" title="The audit trail re-verified from genesis: every count below is backed by a hash-chained, signed entry.">✓ audit trail intact · ' +
+        ckpEsc(v.audit.entries || 0) + ' entries</span>'
+      : '<span class="prot-coverage warn" title="The audit trail failed verification — these numbers are not proof.">✗ audit trail TAMPERED at entry ' +
+        ckpEsc(v.audit.first_invalid_at || 0) + '</span>';
+    var kpi = function (n, label, tip) {
+      return (
+        '<div class="prot-kpi' + (n > 0 && intact ? ' ok' : '') + '" title="' + ckpEsc(tip) + '">' +
+        '<div class="prot-kpi-v">' + ckpEsc(n || 0) + '</div>' +
+        '<div class="prot-kpi-l">' + ckpEsc(label) + '</div></div>'
+      );
+    };
+    return (
+      '<div class="card">' +
+      '<div class="card-title" title="Lifetime guard events, re-counted from the audit trail — the same numbers `lean-ctx value --all` prints.">Guards that fired</div>' +
+      '<div class="prot-kpis">' +
+      kpi(s.secrets_redacted, 'secrets kept out of context', 'Secrets redacted before a tool result reached the model.') +
+      kpi(s.shell_blocked, 'risky commands blocked', 'Shell commands stopped by the allowlist.') +
+      kpi(s.path_blocked, 'paths outside the project blocked', 'Reads and writes stopped by the path jail.') +
+      kpi(s.injection_flagged, 'prompt-injection patterns flagged', 'Prompt-injection patterns flagged in tool output. Flagged, not removed.') +
+      '</div>' +
+      '<div class="prot-owasp-risk" style="margin-top:10px">' + chain +
+      ' <span>Verify locally: <code>lean-ctx value --all</code></span></div>' +
+      '</div>'
+    );
   }
 
   /* ---- session risk ---- */

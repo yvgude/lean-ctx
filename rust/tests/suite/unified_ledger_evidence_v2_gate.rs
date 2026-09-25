@@ -141,6 +141,7 @@ fn signed_batch(snapshot: &VerifiedLedgerSnapshotV2) -> SignedSavingsBatchV1 {
         },
         signer_public_key: None,
         signature: None,
+        security: None,
     };
     batch
         .sign_with_key(&SigningKey::from_bytes(&[7_u8; 32]))

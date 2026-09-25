@@ -1,0 +1,37 @@
+name: VS Code extension
+
+# Its own workflow so the extension can change without touching ci.yml,
+# whose hash is pinned by security/public-build-policy-v1.json.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/vscode-lean-ctx/**"
+      - ".github/workflows/vscode-extension.yml"
+  pull_request:
+    paths:
+      - "packages/vscode-lean-ctx/**"
+      - ".github/workflows/vscode-extension.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  vscode-extension:
+    name: VS Code Extension (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: packages/vscode-lean-ctx/package-lock.json
+      - name: Install
+        working-directory: packages/vscode-lean-ctx
+        run: npm ci
+      - name: Typecheck and test
+        working-directory: packages/vscode-lean-ctx
+        run: npm test

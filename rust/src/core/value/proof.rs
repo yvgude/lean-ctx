@@ -207,6 +207,20 @@ pub fn verified_security_since(cutoff: Option<DateTime<Utc>>) -> Option<Security
     security_since_at(&audit_trail::default_trail_path()?, cutoff)
 }
 
+/// ✓ measured lifetime security events together with the audit-trail entry
+/// hashes they rest on. `None` when there is no trail or it fails verification.
+pub fn verified_security_evidence() -> Option<(SecurityCounts, Evidence)> {
+    security_evidence_at(&audit_trail::default_trail_path()?)
+}
+
+fn security_evidence_at(path: &Path) -> Option<(SecurityCounts, Evidence)> {
+    let proof = build_from(None, Some(path), None, None);
+    proof
+        .audit
+        .intact
+        .then_some((proof.security, proof.audit_evidence))
+}
+
 fn security_since_at(path: &Path, cutoff: Option<DateTime<Utc>>) -> Option<SecurityCounts> {
     if !audit_trail::verify_chain_at(path).valid {
         return None;
@@ -507,6 +521,23 @@ mod tests {
         )
         .unwrap();
         assert_eq!(security_since_at(&trail, None), None);
+    }
+
+    #[test]
+    fn security_evidence_carries_the_hashes_and_refuses_a_tampered_trail() {
+        let (_dir, _ledger, trail) = fixture();
+        let (counts, evidence) = security_evidence_at(&trail).unwrap();
+        assert_eq!(counts.total(), 3);
+        assert_eq!(evidence.entries, 2);
+        assert!(evidence.first_hash.is_some() && evidence.last_hash.is_some());
+
+        let raw = std::fs::read_to_string(&trail).unwrap();
+        std::fs::write(
+            &trail,
+            raw.replacen("shell_blocked:1", "shell_blocked:5", 1),
+        )
+        .unwrap();
+        assert!(security_evidence_at(&trail).is_none());
     }
 
     #[test]
