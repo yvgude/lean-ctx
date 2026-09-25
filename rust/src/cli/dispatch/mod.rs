@@ -208,6 +208,10 @@ pub fn run() {
                 crate::cli::cmd_value(&rest);
                 return;
             }
+            "statusline" => {
+                crate::cli::cmd_statusline(&rest);
+                return;
+            }
             "snapshot" => {
                 crate::cli::cmd_snapshot(&rest);
                 return;

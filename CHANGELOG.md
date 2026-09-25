@@ -30,6 +30,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   value surfaces added in later changes. The proof chains are written
   regardless of the mode.
 
+### Added — Claude Code shows what lean-ctx did, outside the model's context
+
+- **Status line.** `lean-ctx statusline` prints one dim line for Claude Code's
+  `statusLine`, for example `◆ lean-ctx −1.2M tok · 41 cached · ⛨ 3` (⛨ counts
+  security events). It reads the snapshot of the project Claude Code is
+  working in. It prints nothing when nothing was measured yet, when the
+  numbers are older than 12 hours, or when they belong to an earlier
+  conversation. `init --agent claude` sets it only when there is no status
+  line yet, or when the existing one is already lean-ctx's. If you have your
+  own status line, it stays untouched and `init` prints the command that
+  chains it: `lean-ctx statusline --wrap '<your command>'`. The wrapped
+  command gets the same input, and lean-ctx's segment is appended to its
+  first line. Uninstall gives your wrapped command back and removes only
+  lean-ctx's own entry.
+- **Turn recap.** Every 10 turns (`recap_every_turns`), the Stop hook shows a
+  one-line `systemMessage` such as `◆ lean-ctx · last 10 turns: −312.0K
+  tokens`, but only when at least 50,000 tokens were saved
+  (`recap_min_tokens`) or a security event happened. A quiet window keeps
+  growing until it is worth a line.
+- **Session recap and weekly digest.** On a fresh start, SessionStart shows
+  the last session once, with its share of tool input
+  (`◆ lean-ctx · last session (62% of tool input): −1.4M tokens`). Once a
+  week it shows a digest of all sessions instead. Nothing is shown on
+  resume, compact or clear.
+- These lines are `systemMessage` and status-line output. They never reach
+  the model's context. The SessionStart rules and the recap are written as a
+  single JSON object, because a host reads only one per hook. Hosts that do
+  not show `systemMessage` (Codex, Cursor) get no recap. `mode = off` turns
+  all of it off, and `lean-ctx value` proves every number.
+
 ### Fixed — the `savings_footer` default is documented as `never`
 
 - The config schema and reference said `savings_footer` defaults to `always`.

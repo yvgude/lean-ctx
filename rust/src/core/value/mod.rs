@@ -7,9 +7,12 @@
 //! * [`mod@format`] — the shared one-line renderer.
 //! * [`proof`] — recomputes each number from the hash-chained savings ledger
 //!   and audit trail and verifies both chains (`lean-ctx value`).
+//! * [`recap`] — when a host hook speaks up (turn and session recaps, weekly
+//!   digest), always as a user-only message, never into the model's context.
 
 pub mod format;
 pub mod proof;
+pub mod recap;
 pub mod snapshot;
 
 use std::sync::RwLock;

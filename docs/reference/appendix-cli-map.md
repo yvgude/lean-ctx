@@ -36,6 +36,8 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 | `gain` | Token-savings dashboard; `--live`, `--graph`, `--daily`, `--json`, `--wrapped`, `--svg`, `--share`, `--copy`, `--open`, `--publish`, `--leaderboard`, `--unpublish`, `--cost`, `--tasks`, `--agents`, `--heatmap` |
 | `savings [--period day\|week\|month\|all] [--format table\|json\|markdown]` | Cost-intelligence report: token reduction, estimated versus actual cost, CPAO, and top savings sources; example: `lean-ctx savings --period month --format markdown` |
 | `value-report [--format table\|markdown\|json] [--last N]` | Outcome report for recent assessed tasks, including acceptance and CPAO; example: `lean-ctx value-report --format markdown --last 20` |
+| `value [--session <id>\|--all] [--json]` | What lean-ctx did in a session (tokens kept out of context, security events), recomputed from the verified savings ledger and audit trail; exits 1 when a chain is broken |
+| `statusline [--wrap "<cmd>"]` | Claude Code status line (`statusLine.command`), set by `init --agent claude` when none exists; `--wrap` chains your own status line and appends lean-ctx's segment to its first line |
 | `shadow [--latest\|--list\|--force]` | Inspect or generate local baseline-versus-treatment recommendations; example: `lean-ctx shadow --latest` |
 | `token-report` (`report-tokens`) | Token + memory report; `--json` |
 | `learning` | Adaptive-learning state: `status`, `export [file]`, `import <file\|->` — share learned thresholds + LITM calibration with your team (secret-free, idempotent merge) |
