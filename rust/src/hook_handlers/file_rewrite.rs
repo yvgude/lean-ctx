@@ -209,8 +209,14 @@ pub(super) fn is_compound(cmd: &str) -> bool {
         .any(|s| matches!(s, compound_lexer::Segment::Operator(_)))
 }
 
+/// Wrap `cmd` in `lean-ctx -c '…'`, quoted for the host's Bash tool.
+///
+/// Always POSIX: the calling shell is the host's Bash (Git Bash on Windows),
+/// not the shell lean-ctx detects for itself. cmd.exe-style double quotes let
+/// Bash expand `$vars` and run `$(…)` before lean-ctx sees the command (#1862).
+/// PowerShell tools never get here (#1848).
 pub(super) fn wrap_single_command(cmd: &str, binary: &str) -> String {
-    crate::shell::join_command(&[binary.to_owned(), "-c".to_owned(), cmd.to_owned()])
+    crate::shell::join_command_for(&[binary.to_owned(), "-c".to_owned(), cmd.to_owned()], "-c")
 }
 
 /// Quote-aware check for stdout file redirects (`>`, `>>`).
@@ -347,9 +353,20 @@ pub(super) fn passes_rewrite_guards(cmd: &str, binary: &str) -> bool {
 /// A single read/search/list command mapped onto the matching `lean-ctx`
 /// subcommand (`read`/`grep`/`ls`) — no `-c` wrap, so no shell in between.
 pub(super) fn direct_rewrite(cmd: &str, binary: &str) -> Option<String> {
+    if has_shell_expansion(cmd) {
+        return None;
+    }
     rewrite_file_read_command(cmd, binary)
         .or_else(|| rewrite_search_command(cmd, binary))
         .or_else(|| rewrite_dir_list_command(cmd, binary))
+}
+
+/// `$` or `` ` `` anywhere in the command. The tokenizer that feeds the direct
+/// rewrites drops the quotes, so it cannot tell `"$HOME"` (expand) from
+/// `'$HOME'` (literal). Such commands take the `-c` wrap, which hands the
+/// original text to a shell unchanged (#1862).
+fn has_shell_expansion(cmd: &str) -> bool {
+    cmd.contains(['$', '`'])
 }
 
 /// Rewrites cat/head/tail to lean-ctx read with appropriate arguments.
@@ -801,7 +818,10 @@ pub(super) fn rewrite_segments_in_place(
             }
             Segment::Command(c) => {
                 let c = c.trim();
-                if let Some(r) = rewrite_file_read_command(c, binary) {
+                if let Some(r) = (!has_shell_expansion(c))
+                    .then(|| rewrite_file_read_command(c, binary))
+                    .flatten()
+                {
                     out.push_str(&r);
                     rewrote = true;
                 } else {

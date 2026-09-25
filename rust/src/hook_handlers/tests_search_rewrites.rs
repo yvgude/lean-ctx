@@ -27,15 +27,16 @@ fn egrep_pattern_with_pipe_still_rewrites() {
     // crate agrees — so `egrep` keeps the direct rewrite.
     assert_eq!(
         rewrite_candidate("egrep -r \"TODO|FIXME\" .", "lean-ctx"),
-        Some("lean-ctx grep \"TODO|FIXME\" .".to_string())
+        Some("lean-ctx grep 'TODO|FIXME' .".to_string())
     );
 }
 
 #[test]
-fn grep_pattern_with_dollar_is_quoted() {
+fn grep_pattern_with_dollar_keeps_its_quoting_in_the_wrap() {
+    // `"$HOME"` must still expand, so the command is not re-tokenized (#1862).
     assert_eq!(
         rewrite_candidate("grep -rn \"$HOME\" src/", "lean-ctx"),
-        Some("lean-ctx grep \"$HOME\" src/".to_string())
+        Some("lean-ctx -c 'grep -rn \"$HOME\" src/'".to_string())
     );
 }
 
@@ -53,7 +54,7 @@ fn grep_pattern_with_parens_falls_through_to_native_grep() {
 fn grep_pattern_with_star_is_quoted() {
     assert_eq!(
         rewrite_candidate("grep \"func.*Handler\" src/", "lean-ctx"),
-        Some("lean-ctx grep \"func.*Handler\" src/".to_string())
+        Some("lean-ctx grep 'func.*Handler' src/".to_string())
     );
 }
 
@@ -93,7 +94,7 @@ fn grep_no_path_rewrites() {
 fn egrep_rewrites_with_quoted_pattern() {
     assert_eq!(
         rewrite_candidate("egrep \"func|struct|impl\" src/", "lean-ctx"),
-        Some("lean-ctx grep \"func|struct|impl\" src/".to_string())
+        Some("lean-ctx grep 'func|struct|impl' src/".to_string())
     );
 }
 
