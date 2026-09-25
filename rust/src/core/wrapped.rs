@@ -1,3 +1,4 @@
+use crate::core::eval_ab::speed::SpeedHeadline;
 use crate::core::security_events::SecurityCounts;
 use crate::core::session::SessionState;
 use crate::core::stats;
@@ -28,6 +29,10 @@ pub struct WrappedReport {
     /// audit trail. `None` when nothing happened or the chain fails
     /// verification — an unproven count is never shown.
     pub security: Option<SecurityCounts>,
+    /// The latest `lean-ctx prove speed` result, only when its signature
+    /// verifies and lean-ctx was faster without answering worse. Speed is
+    /// never extrapolated from live sessions.
+    pub speed: Option<SpeedHeadline>,
 }
 
 impl WrappedReport {
@@ -148,6 +153,7 @@ impl WrappedReport {
             pricing_estimated,
             percentile: estimate_percentile(tokens_saved),
             security,
+            speed: SpeedHeadline::latest(),
         }
     }
 
@@ -282,6 +288,17 @@ impl WrappedReport {
             )));
         }
 
+        // Speed: only from a signed A/B proof (`lean-ctx prove speed`).
+        if let Some(speed) = &self.speed {
+            out.push(format!("  {}", t.box_mid(w)));
+            out.push(box_line(&format!(
+                "   {c3}⚡{rst}  {:.0}% faster model answers with lean-ctx",
+                speed.faster_pct
+            )));
+            let detail = theme::truncate_visual(&speed.detail(), w - 6);
+            out.push(box_line(&format!("      {dim}{detail}{rst}")));
+        }
+
         // Top commands (truncated to fit the inner box width).
         if !self.top_commands.is_empty() {
             let prefix_visible = 8; // "   top  "
@@ -348,8 +365,11 @@ impl WrappedReport {
                 security.join(", ")
             )
         };
+        let speed_str = self.speed.as_ref().map_or_else(String::new, |s| {
+            format!(" | Speed: {} ({}, signed)", s.phrase(), s.detail())
+        });
         format!(
-            "WRAPPED [{}]: {} tok saved, {} avoided{}, {} sessions, {} cmds | Top: {} | Compression: {:.1}% | Energy: {}{} | model={}",
+            "WRAPPED [{}]: {} tok saved, {} avoided{}, {} sessions, {} cmds | Top: {} | Compression: {:.1}% | Energy: {}{}{} | model={}",
             self.period,
             saved_str,
             cost_str,
@@ -360,6 +380,7 @@ impl WrappedReport {
             self.compression_rate_pct,
             crate::core::energy::format_for_tokens(self.tokens_saved),
             security_str,
+            speed_str,
             self.model_key,
         )
     }
@@ -459,6 +480,7 @@ pub mod tests {
             pricing_estimated: false,
             percentile: Some(95),
             security: None,
+            speed: None,
         }
     }
 
@@ -591,5 +613,43 @@ pub mod tests {
             "{compact}"
         );
         assert!(!compact.contains('\n'));
+    }
+
+    #[test]
+    fn speed_is_shown_only_from_a_proof() {
+        assert!(!sample().format_ascii().contains("faster"));
+        assert!(!sample().format_compact().contains("Speed:"));
+
+        let mut r = sample();
+        r.speed = Some(SpeedHeadline {
+            faster_pct: 41.2,
+            measured_on: "2026-09-25".into(),
+            tasks: 12,
+            runs: 3,
+            model: "gpt-4o-mini".into(),
+        });
+        let ascii = r.format_ascii();
+        assert!(
+            ascii.contains("41% faster model answers with lean-ctx"),
+            "{ascii}"
+        );
+        assert!(
+            ascii.contains("measured 2026-09-25 · 12 tasks × 3 runs"),
+            "{ascii}"
+        );
+        // The speed rows keep the box closed: same width as the title row.
+        let width_of = |needle: &str| {
+            ascii
+                .lines()
+                .find(|l| l.contains(needle))
+                .map(crate::core::theme::visual_len)
+        };
+        assert_eq!(width_of("faster"), width_of("Wrapped"), "{ascii}");
+        assert_eq!(width_of("measured 2026"), width_of("Wrapped"), "{ascii}");
+        let compact = r.format_compact();
+        assert!(
+            compact.contains("Speed: model answered 41% faster with lean-ctx context"),
+            "{compact}"
+        );
     }
 }

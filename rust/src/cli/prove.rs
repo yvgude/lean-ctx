@@ -6,6 +6,10 @@ use crate::core::integration_proof::{ProofResult, TaskProof, prove_decision_loop
 
 #[rustfmt::skip]
 pub(crate) fn cmd_prove(args: &[String]) {
+    if args.first().is_some_and(|a| a == "speed") {
+        crate::cli::prove_speed::cmd_prove_speed(&args[1..]);
+        return;
+    }
     if args.iter().any(|arg| matches!(arg.as_str(), "-h" | "--help")) {
         usage();
         return;
@@ -47,7 +51,7 @@ fn parse(args: &[String]) -> Option<(&str, Option<&str>)> {
 
 fn usage() {
     println!(
-        "Generate auditable decision-loop evidence.\n\nUsage: lean-ctx prove [--format <table|json|markdown>] [--output FILE]\n\nExamples:\n  lean-ctx prove\n  lean-ctx prove --format markdown --output proof.md\n  lean-ctx prove --format json"
+        "Generate auditable decision-loop evidence.\n\nUsage: lean-ctx prove [--format <table|json|markdown>] [--output FILE]\n       lean-ctx prove speed --suite FILE [--runs N]   (signed A/B latency proof; see `prove speed --help`)\n\nExamples:\n  lean-ctx prove\n  lean-ctx prove --format markdown --output proof.md\n  lean-ctx prove --format json"
     );
 }
 

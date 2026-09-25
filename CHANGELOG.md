@@ -94,6 +94,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - The guide [Seeing what lean-ctx did](docs/guides/value-display.md) covers
   every surface, including Starship and Powerlevel10k.
 
+### Added — `lean-ctx prove speed`: a signed measurement instead of a speed claim
+
+- `lean-ctx prove speed --suite <file>` asks your model each task of an eval
+  suite twice per run: once with a raw context dump, once with lean-ctx's
+  context, both within the same token budget (`--budget`, default 4000). It
+  needs a live, OpenAI-compatible endpoint (`LEAN_CTX_EVAL_MODEL_URL`,
+  `LEAN_CTX_EVAL_MODEL`, optional `LEAN_CTX_EVAL_MODEL_KEY`), local Ollama
+  included. Recorded responses are refused, since they have no latency.
+- The measurement is built to be fair: one warm-up request is not counted, the
+  arm that goes first alternates per task and round, and each arm's latency is
+  the median of `--runs` rounds (default 3). Every answer is scored, so a
+  faster but worse result is reported as worse.
+- The result is a signed proof (`<data_dir>/value/speed/`, `--out` for a
+  copy, `--json` to print it). `prove speed --verify [FILE]` re-checks the
+  signature and recomputes the summary from the raw timings. A modified proof
+  prints `TAMPERED` and exits 1.
+- `gain --wrapped` quotes the latest proof (e.g. `41% faster model answers
+  with lean-ctx`, with date, tasks, runs and model) only when it verifies and
+  lean-ctx was faster without answering fewer tasks correctly. No surface
+  estimates speed from live sessions.
+
 ### Fixed — the `savings_footer` default is documented as `never`
 
 - The config schema and reference said `savings_footer` defaults to `always`.

@@ -63,6 +63,7 @@ mod prompt_cmd;
 pub(crate) mod prompt_init;
 mod proof_cmd;
 pub(crate) mod prove;
+pub(crate) mod prove_speed;
 pub(crate) mod quality_lab_cmd;
 mod read_cmd;
 mod repomap_cmd;

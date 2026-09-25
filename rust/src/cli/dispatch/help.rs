@@ -170,6 +170,7 @@ COMMANDS:
     cep                            CEP report (compression metrics, cache, modes, trends)
     verify-cache [path] [--json]   Inspect local session-cache re-read behavior
     prove [--format table|json|markdown] [--output FILE]  Generate Decision Loop evidence report
+    prove speed --suite FILE [--runs N] [--budget N] [--json] | --verify [FILE]  Signed A/B proof of model latency with vs. without lean-ctx
     health [path] [--json] [--gate]  Code-health report: cognitive complexity, naming, navigability score + token tax
     dashboard [--port=N] [--host=H] [--base-path=/prefix] [--open=browser|none|vscode]  Open web dashboard (default: http://localhost:3333)
     serve [--host H] [--port N]    MCP over HTTP (Streamable HTTP, local-first)
