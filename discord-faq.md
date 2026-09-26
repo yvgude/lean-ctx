@@ -1,6 +1,6 @@
 # lean-ctx FAQ
 
-> **Latest version: 3.10.3** — complete MCP tool set · 10 read modes · 95+ shell patterns
+> **Latest version: 3.10.4** — complete MCP tool set · 10 read modes · 95+ shell patterns
 > Docs: https://leanctx.com/docs/getting-started
 
 ---
