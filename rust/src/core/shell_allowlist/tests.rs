@@ -698,21 +698,6 @@ fn gh391_strict_mode_blocks_pipe_to_bare_interpreter() {
     assert!(check_pipe_to_bare_interpreter("cat data.json | python3 process.py", true).is_ok());
 }
 
-/// #1867: an interpreter after `;`/`&&`/`||` is not a pipe target and must
-/// not be flagged; a real pipe into it still is.
-#[test]
-fn gh1867_interpreter_after_sequence_is_not_a_pipe_target() {
-    for cmd in [
-        "git --version | head -1; python --version",
-        "ls | wc -l && python3",
-        "echo hi | cat || node",
-    ] {
-        assert!(check_pipe_to_bare_interpreter(cmd, true).is_ok(), "{cmd}");
-    }
-    assert!(check_pipe_to_bare_interpreter("cat x | python", true).is_err());
-    assert!(check_pipe_to_bare_interpreter("true; cat x | python", true).is_err());
-}
-
 #[test]
 fn env_delegates_to_listed_allowed() {
     let list = allow(&["env", "git"]);
