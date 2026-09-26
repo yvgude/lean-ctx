@@ -1,3 +1,5 @@
+use std::io::IsTerminal;
+
 use tracing_subscriber::EnvFilter;
 
 /// Initialize the tracing subscriber for CLI usage.
@@ -12,6 +14,7 @@ pub(crate) fn init_logging() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::new(filter))
         .with_writer(std::io::stderr)
+        .with_ansi(stderr_is_terminal())
         .try_init();
 }
 
@@ -25,5 +28,12 @@ pub(crate) fn init_mcp_logging() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::new(filter))
         .with_writer(std::io::stderr)
+        .with_ansi(stderr_is_terminal())
         .try_init();
+}
+
+/// Colour escapes only for a person at a terminal: redirected to a file or
+/// captured into an agent's tool result they are noise (#1866).
+fn stderr_is_terminal() -> bool {
+    std::io::stderr().is_terminal()
 }

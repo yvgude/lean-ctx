@@ -38,8 +38,9 @@ pub(crate) fn install_opencode_hook_with_mode(mode: HookMode) {
     });
 
     // #313: `shadow_mode` (default off) controls whether native tools (read,
-    // grep, glob, bash) are denied at the permission level in opencode.json,
-    // forcing the agent to use ctx_* equivalents via the MCP server.
+    // grep, glob, bash) are set to "ask" at the permission level in opencode.json,
+    // steering the agent to ctx_* equivalents via the MCP server without
+    // removing the tools from the request (#1864).
     // In Replace mode, shadow permissions are always applied regardless of config.
     let cfg = Config::load();
     let shadow = cfg.shadow_mode || mode == HookMode::Replace;
@@ -108,7 +109,7 @@ pub(crate) fn install_opencode_hook_with_mode(mode: HookMode) {
             if !mcp_server_quiet_mode() {
                 if perm_changed && shadow {
                     eprintln!(
-                        "  \x1b[32m✓\x1b[0m Shadow mode: native tools denied at {display_path}"
+                        "  \x1b[32m✓\x1b[0m Shadow mode: native tools set to ask at {display_path}"
                     );
                 } else if perm_changed {
                     eprintln!(
@@ -125,7 +126,7 @@ pub(crate) fn install_opencode_hook_with_mode(mode: HookMode) {
     }
 
     // #442: inject the "prefer ctx_*" rules block so the agent knows to use
-    // lean-ctx tools. In shadow mode, native tools are denied — the agent
+    // lean-ctx tools. In shadow mode, native tools require approval — the agent
     // must use ctx_* tools, so rules are even more important.
     if super::super::should_register_mcp() && cfg.setup.auto_inject_rules != Some(false) {
         let _ = crate::rules_inject::inject_rules_for_agent(&home, "OpenCode");
@@ -258,10 +259,23 @@ fn strip_opencode_agents_block(home: &std::path::Path) {
     }
 }
 
-/// Native tools that shadow mode denies via opencode.json `permission` object.
+/// Native tools that shadow mode steers away from via the opencode.json
+/// `permission` object.
 const SHADOW_DENIED_TOOLS: &[&str] = &["read", "grep", "glob", "bash"];
 
-/// Apply permission denies in-place on a JSON object.
+/// `ask`, not `deny`: opencode drops a denied tool from the request, and
+/// OpenCode Zen's free tier rejects any request whose tool list lacks `bash` or
+/// `read` (#1864). An asked tool stays declared and still needs the user's
+/// approval, so the agent keeps reaching for the ctx_* tools.
+const SHADOW_ACTION: &str = "ask";
+
+/// Values shadow mode has written: the current one, and `deny` from releases
+/// before #1864.
+fn is_shadow_value(v: Option<&serde_json::Value>) -> bool {
+    matches!(v.and_then(|v| v.as_str()), Some("ask" | "deny"))
+}
+
+/// Apply the shadow permissions in-place on a JSON object.
 /// Returns true if any changes were made.
 fn apply_shadow_permissions_inplace(obj: &mut serde_json::Map<String, serde_json::Value>) -> bool {
     let perms = obj
@@ -273,8 +287,8 @@ fn apply_shadow_permissions_inplace(obj: &mut serde_json::Map<String, serde_json
 
     let mut changed = false;
     for &tool in SHADOW_DENIED_TOOLS {
-        if perms_obj.get(tool).and_then(|v| v.as_str()) != Some("deny") {
-            perms_obj.insert(tool.to_string(), serde_json::json!("deny"));
+        if perms_obj.get(tool).and_then(|v| v.as_str()) != Some(SHADOW_ACTION) {
+            perms_obj.insert(tool.to_string(), serde_json::json!(SHADOW_ACTION));
             changed = true;
         }
     }
@@ -298,7 +312,7 @@ fn apply_shadow_permissions(config_path: &std::path::Path, display_path: &str) {
     {
         let _ = std::fs::write(config_path, formatted);
         if !mcp_server_quiet_mode() {
-            eprintln!("  \x1b[32m✓\x1b[0m Shadow mode: native tools denied at {display_path}");
+            eprintln!("  \x1b[32m✓\x1b[0m Shadow mode: native tools set to ask at {display_path}");
         }
     }
 }
@@ -312,7 +326,7 @@ fn remove_shadow_permissions_inplace(obj: &mut serde_json::Map<String, serde_jso
 
     let mut changed = false;
     for &tool in SHADOW_DENIED_TOOLS {
-        if perms.get(tool).and_then(|v| v.as_str()) == Some("deny") {
+        if is_shadow_value(perms.get(tool)) {
             perms.remove(tool);
             changed = true;
         }
@@ -326,7 +340,7 @@ fn remove_shadow_permissions_inplace(obj: &mut serde_json::Map<String, serde_jso
 }
 
 /// Remove shadow-mode permission denies from opencode.json. Only removes
-/// entries WE set — tools with value "deny" that are in our deny list.
+/// entries WE set — tools with a shadow value ("ask", or legacy "deny") in our list.
 /// Leaves other permission entries and other values for these tools untouched.
 #[cfg(test)]
 fn remove_shadow_permissions(config_path: &std::path::Path, display_path: &str) {
@@ -472,13 +486,13 @@ mod shadow_permission_tests {
     // --- apply_shadow_permissions ---
 
     #[test]
-    fn apply_adds_deny_for_all_tools() {
+    fn apply_adds_ask_for_all_tools() {
         let (_dir, cfg) = temp_cfg_with_tag("apply_adds", r#"{"mcp":{"other":{"type":"local"}}}"#);
         apply_shadow_permissions(&cfg, "test");
         let json = read_json(&cfg);
         let perms = json["permission"].as_object().unwrap();
         for tool in &["read", "grep", "glob", "bash"] {
-            assert_eq!(perms[*tool], "deny", "{tool} should be deny");
+            assert_eq!(perms[*tool], "ask", "{tool} should be ask");
         }
         assert_eq!(
             json["mcp"]["other"]["type"], "local",
@@ -502,7 +516,7 @@ mod shadow_permission_tests {
         );
         apply_shadow_permissions(&cfg, "test");
         let json = read_json(&cfg);
-        assert_eq!(json["permission"]["read"], "deny", "user allow overwritten");
+        assert_eq!(json["permission"]["read"], "ask", "user allow overwritten");
         assert_eq!(
             json["permission"]["edit"], "allow",
             "non-shadow tool preserved"
@@ -526,7 +540,7 @@ mod shadow_permission_tests {
         let json = read_json(&cfg);
         let perms = json["permission"].as_object().unwrap();
         for tool in &["read", "grep", "glob", "bash"] {
-            assert_eq!(perms[*tool], "deny", "{tool} should be deny in new file");
+            assert_eq!(perms[*tool], "ask", "{tool} should be ask in new file");
         }
     }
 
@@ -538,8 +552,8 @@ mod shadow_permission_tests {
         let perms = json["permission"].as_object().unwrap();
         for tool in &["read", "grep", "glob", "bash"] {
             assert_eq!(
-                perms[*tool], "deny",
-                "{tool} should be deny after corrupt apply"
+                perms[*tool], "ask",
+                "{tool} should be ask after corrupt apply"
             );
         }
     }
@@ -636,6 +650,38 @@ mod shadow_permission_tests {
         assert_eq!(before, after, "corrupt file left unchanged");
     }
 
+    // --- #1864: legacy "deny" written by older releases ---
+
+    #[test]
+    fn apply_migrates_legacy_deny_to_ask() {
+        let (_dir, cfg) = temp_cfg_with_tag(
+            "legacy_migrate",
+            r#"{"permission":{"read":"deny","grep":"deny","glob":"deny","bash":"deny","edit":"deny"}}"#,
+        );
+        apply_shadow_permissions(&cfg, "test");
+        let json = read_json(&cfg);
+        let perms = json["permission"].as_object().unwrap();
+        for tool in &["read", "grep", "glob", "bash"] {
+            assert_eq!(perms[*tool], "ask", "{tool} must no longer be denied");
+        }
+        assert_eq!(perms["edit"], "deny", "non-shadow tool untouched");
+    }
+
+    #[test]
+    fn remove_clears_current_ask_entries() {
+        let (_dir, cfg) = temp_cfg_with_tag(
+            "rm_ask",
+            r#"{"permission":{"read":"ask","grep":"ask","glob":"ask","bash":"ask","edit":"allow"}}"#,
+        );
+        remove_shadow_permissions(&cfg, "test");
+        let json = read_json(&cfg);
+        let perms = json["permission"].as_object().unwrap();
+        for tool in &["read", "grep", "glob", "bash"] {
+            assert!(perms.get(*tool).is_none(), "{tool} should be removed");
+        }
+        assert_eq!(perms["edit"], "allow");
+    }
+
     // --- State transitions ---
 
     #[test]
@@ -652,14 +698,14 @@ mod shadow_permission_tests {
     }
 
     #[test]
-    fn remove_then_apply_adds_denies() {
+    fn remove_then_apply_adds_asks() {
         let (_dir, cfg) = temp_cfg_with_tag("rm_then_apply", r"{}");
         remove_shadow_permissions(&cfg, "test");
         apply_shadow_permissions(&cfg, "test");
         let json = read_json(&cfg);
         let perms = json["permission"].as_object().unwrap();
         for tool in &["read", "grep", "glob", "bash"] {
-            assert_eq!(perms[*tool], "deny", "{tool} should be deny");
+            assert_eq!(perms[*tool], "ask", "{tool} should be ask");
         }
     }
 

@@ -756,7 +756,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "u32",
             serde_json::json!(vd.recap_every_turns),
-            "A turn recap is considered every N agent turns (default 10)",
+            "A turn recap is considered every N agent turns (default 5)",
         ),
     );
     value_display.insert(
@@ -764,7 +764,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "u64",
             serde_json::json!(vd.recap_min_tokens),
-            "Show a turn recap only when the window saved at least this many tokens or a security event happened (default 50000)",
+            "Show a turn recap only when the window saved at least this many tokens or a security event happened (default 10000)",
         ),
     );
     value_display.insert(

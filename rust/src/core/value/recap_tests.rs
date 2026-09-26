@@ -1,9 +1,12 @@
 use super::*;
 use crate::core::value::snapshot::{SCHEMA, write_to};
 
+/// Pinned cadence, so these tests check the mechanics, not the defaults.
 fn cfg() -> ValueDisplayConfig {
     ValueDisplayConfig {
         mode: ValueDisplayMode::Minimal,
+        recap_every_turns: 10,
+        recap_min_tokens: 50_000,
         ..ValueDisplayConfig::default()
     }
 }

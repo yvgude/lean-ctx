@@ -52,7 +52,9 @@ pub(crate) fn check_substitution_in_args(command: &str, strict: bool) -> Result<
         )
         .into());
     }
-    tracing::warn!(
+    // Advisory only: at `warn` it lands in the wrapped command's stderr, i.e.
+    // in the agent's tool result, on every call (#1866).
+    tracing::info!(
         "[SECURITY] Command substitution with non-allowlisted command (warn-only): {}",
         names.join(", ")
     );

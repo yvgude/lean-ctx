@@ -14,6 +14,52 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   code 2 instead of running an update. `--force` and `--rewire` are still
   accepted, and still have no effect, because older instructions mention them.
 
+### Fixed — the value status line now reaches existing Claude Code installs
+
+- 3.10.3 added lean-ctx's status line (`◆ lean-ctx −13.1K tok`) to Claude
+  Code, but it was only written by `lean-ctx init --agent claude`. Installs
+  that were updated, or set up with `lean-ctx setup`, never got it. The hook
+  refresh that runs on update and when the MCP server starts now sets it too.
+  A status line of your own is never replaced. To switch the status line off,
+  set `[value_display] mode = "off"`.
+- A `"statusLine": null` entry in Claude's `settings.json` is now replaced.
+  Before, lean-ctx reported the status line as set but wrote nothing.
+- Turn recaps now appear in a normal session: every 5 turns when the window
+  saved at least 10K tokens (was every 10 turns and 50K, which most sessions
+  never reached). A security event still always gets a recap. Existing
+  `recap_every_turns` / `recap_min_tokens` settings are kept.
+
+### Fixed — OpenCode, Windows paths and allowlist noise
+
+- OpenCode: shadow mode now sets `read`, `grep`, `glob` and `bash` to `"ask"`
+  instead of `"deny"` in `opencode.json` (#1864). OpenCode removes a denied
+  tool from the request, and the OpenCode Zen free tier refuses requests
+  without `bash` and `read` with a 403. `lean-ctx setup` rewrites the
+  `"deny"` entries older releases wrote; uninstall removes both values.
+- The rewritten `lean-ctx read`/`grep`/`ls` commands now quote the lean-ctx
+  path. Before, a binary under a path with a space, such as
+  `C:\Program Files\...`, was split by the shell and the command failed with
+  exit 127 (#1865).
+- Warn-only allowlist findings (command substitution, pipe into an
+  interpreter) are logged at `info` instead of `warn`, so they no longer show
+  up on stderr of every command. Log output carries ANSI colour codes only
+  when stderr is a terminal (#1866).
+- `git --version | head -1; python --version` is no longer reported as a pipe
+  into a bare interpreter. Only the command that actually receives the pipe is
+  checked (#1867).
+
+### Fixed — `ctx_shell` can no longer suspend the agent in your terminal
+
+- A command run through `ctx_shell` now starts in its own session without a
+  controlling terminal. Before, an interactive shell somewhere below it (a
+  test suite that runs `zsh -i` or `bash -i`, for example) took over the
+  terminal, and the terminal stopped Claude Code: zsh printed
+  `suspended (tty input)  claude` and the terminal was left in mouse mode.
+  Commands that need a terminal now fail right away instead of freezing
+  the agent.
+- lean-ctx's own prompt-integration tests no longer take over the terminal
+  when `cargo test` runs in one.
+
 ## [3.10.3] — 2026-09-25
 
 ### Added — `lean-ctx value`: what lean-ctx did, with proof

@@ -55,8 +55,11 @@ impl Default for ValueDisplayConfig {
     fn default() -> Self {
         Self {
             mode: ValueDisplayMode::default(),
-            recap_every_turns: 10,
-            recap_min_tokens: 50_000,
+            // 50K per 10 turns was rarely reached in real sessions, so most
+            // users never saw a recap. 10K per 5 turns is still quiet (a recap
+            // needs a real saving) but shows up in a normal working session.
+            recap_every_turns: 5,
+            recap_min_tokens: 10_000,
             notifications: true,
             git_trailer: false,
         }
@@ -88,10 +91,10 @@ mod tests {
     #[test]
     fn parses_toml_section() {
         let cfg: ValueDisplayConfig =
-            toml::from_str("mode = \"off\"\nrecap_every_turns = 5").unwrap();
+            toml::from_str("mode = \"off\"\nrecap_every_turns = 20").unwrap();
         assert_eq!(cfg.mode, ValueDisplayMode::Off);
-        assert_eq!(cfg.recap_every_turns, 5);
-        assert_eq!(cfg.recap_min_tokens, 50_000);
+        assert_eq!(cfg.recap_every_turns, 20);
+        assert_eq!(cfg.recap_min_tokens, 10_000);
     }
 
     #[test]

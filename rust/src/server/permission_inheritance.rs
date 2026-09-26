@@ -103,7 +103,7 @@ pub fn check(
         return PermissionCheck::allow();
     }
 
-    // Shadow mode writes top-level denies (read/grep/glob/bash) into the IDE's
+    // Shadow mode writes top-level rules (read/grep/glob/bash) into the IDE's
     // permission config. A blanket skip would also suppress user sub-command
     // rules like "rm *": "ask" — a dangerous bypass (GH #1428). Instead: run
     // the check, then filter out top-level denies for the four shadow-denied
@@ -122,8 +122,9 @@ pub fn check(
     decide(display_name(cid), &policy, tool, key, input.as_deref())
 }
 
-/// The four tool keys that shadow mode writes as `"deny"` into the IDE's
-/// permission config. A matched rule whose name is exactly one of these was
+/// The four tool keys that shadow mode writes into the IDE's permission
+/// config (`"ask"` since #1864, `"deny"` in older releases). A matched rule
+/// whose name is exactly one of these was
 /// shadow-written by lean-ctx — not user-authored — and should be skipped
 /// so the agent retains working tools. Sub-command rules like `"bash:rm *"`
 /// are user-authored and must be honored.

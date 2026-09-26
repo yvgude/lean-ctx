@@ -539,6 +539,6 @@ User-only value surface: status line, recaps, prompt segment, milestones. Every 
 - `git_trailer` (bool, default `false`) — Opt-in `lean-ctx:` trailer in commit messages (default false)
 - `mode` (enum: off | minimal | milestones | verbose, default `minimal` — env `LEAN_CTX_VALUE_DISPLAY`) — How lean-ctx shows its measured value to you (never to the model): off, minimal (default: status line + threshold recaps), milestones (+ OS notifications), verbose (every recap window)
 - `notifications` (bool, default `true`) — OS notifications for milestones in mode milestones or verbose, at most one per day (default true)
-- `recap_every_turns` (u32, default `10`) — A turn recap is considered every N agent turns (default 10)
-- `recap_min_tokens` (u64, default `50000`) — Show a turn recap only when the window saved at least this many tokens or a security event happened (default 50000)
+- `recap_every_turns` (u32, default `5`) — A turn recap is considered every N agent turns (default 5)
+- `recap_min_tokens` (u64, default `10000`) — Show a turn recap only when the window saved at least this many tokens or a security event happened (default 10000)
 

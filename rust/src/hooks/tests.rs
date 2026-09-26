@@ -415,6 +415,30 @@ fn claude_settings_hooks_emit_override_verbatim_and_stay_idempotent() {
     crate::test_env::remove_var("LEAN_CTX_HOOK_BINARY");
 }
 
+/// The value status line (3.10.3) must reach installs that already exist: the
+/// update/MCP-start refresh used to rewrite hooks only, so it never appeared.
+#[test]
+fn refresh_adds_the_value_status_line_to_an_existing_claude_install() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    crate::test_env::remove_var("LEAN_CTX_VALUE_DISPLAY");
+    let home = tempfile::tempdir().unwrap();
+    install_claude_hook_config(home.path());
+    let settings_path = home.path().join(".claude/settings.json");
+    let before: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
+    assert!(
+        before.get("statusLine").is_none(),
+        "precondition: 3.10.3 state"
+    );
+
+    refresh_agent_hooks("claude", home.path());
+
+    let after: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
+    let cmd = after["statusLine"]["command"].as_str().unwrap_or_default();
+    assert!(cmd.ends_with(" statusline"), "status line set: {after}");
+}
+
 // ── #719: wrapper scripts must honor the override and survive healing ──
 
 #[test]

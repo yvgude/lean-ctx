@@ -177,18 +177,18 @@ use agents::{
     install_amp_hook, install_antigravity_cli_hook, install_antigravity_hook,
     install_claude_hook_config, install_claude_hook_scripts, install_claude_hook_with_mode,
     install_claude_permissions_allow_mcp, install_claude_permissions_deny_replace,
-    install_claude_project_hooks, install_cline_rules, install_codebuddy_hook_config,
-    install_codebuddy_hook_scripts, install_codebuddy_hook_with_mode,
-    install_codebuddy_permissions_deny_replace, install_codebuddy_project_hooks,
-    install_codex_hook, install_codex_runtime_hook, install_copilot_hook,
-    install_copilot_runtime_hook, install_crush_hook_with_mode, install_cursor_deny_hook,
-    install_cursor_hook_config, install_cursor_hook_scripts, install_cursor_hook_with_mode,
-    install_gemini_deny_hook, install_gemini_hook, install_gemini_hook_config,
-    install_gemini_hook_scripts, install_grok_mcp, install_hermes_hook_with_mode,
-    install_jetbrains_hook, install_kiro_hook, install_openclaw_hook,
-    install_opencode_hook_with_mode, install_pi_hook_with_mode, install_qoder_hook_with_mode,
-    install_qoder_runtime_hook_with_mode, install_vibe_hook, install_windsurf_hooks,
-    install_windsurf_hooks_replace, install_windsurf_rules,
+    install_claude_project_hooks, install_claude_statusline, install_cline_rules,
+    install_codebuddy_hook_config, install_codebuddy_hook_scripts,
+    install_codebuddy_hook_with_mode, install_codebuddy_permissions_deny_replace,
+    install_codebuddy_project_hooks, install_codex_hook, install_codex_runtime_hook,
+    install_copilot_hook, install_copilot_runtime_hook, install_crush_hook_with_mode,
+    install_cursor_deny_hook, install_cursor_hook_config, install_cursor_hook_scripts,
+    install_cursor_hook_with_mode, install_gemini_deny_hook, install_gemini_hook,
+    install_gemini_hook_config, install_gemini_hook_scripts, install_grok_mcp,
+    install_hermes_hook_with_mode, install_jetbrains_hook, install_kiro_hook,
+    install_openclaw_hook, install_opencode_hook_with_mode, install_pi_hook_with_mode,
+    install_qoder_hook_with_mode, install_qoder_runtime_hook_with_mode, install_vibe_hook,
+    install_windsurf_hooks, install_windsurf_hooks_replace, install_windsurf_rules,
 };
 use support::{
     ensure_codex_hooks_enabled, install_codex_instruction_docs, install_named_json_server,
@@ -306,6 +306,9 @@ fn refresh_agent_hooks(agent: &str, home: &std::path::Path) {
         "claude" => {
             install_claude_hook_scripts(home);
             install_claude_hook_config(home);
+            // The value status line shipped in 3.10.3 but was only written by
+            // `init --agent claude`, so every existing install missed it.
+            install_claude_statusline(home);
             if mode == HookMode::Replace {
                 install_claude_permissions_deny_replace(home);
             }
@@ -1146,6 +1149,7 @@ pub(crate) fn install_agent_runtime_hook_with_mode(agent: &str, global: bool, mo
         "claude" | "claude-code" => {
             install_claude_hook_scripts(&home);
             install_claude_hook_config(&home);
+            install_claude_statusline(&home);
 
             if mode == HookMode::Replace {
                 install_claude_permissions_deny_replace(&home);

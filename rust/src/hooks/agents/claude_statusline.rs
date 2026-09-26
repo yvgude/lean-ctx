@@ -81,9 +81,12 @@ pub(crate) fn merge_statusline(settings: &mut Value, binary: &str) -> Statusline
     if existing_cmd == Some(desired_cmd.as_str()) {
         return StatuslineMerge::Unchanged;
     }
-    let entry = root
-        .entry("statusLine".to_string())
-        .or_insert_with(|| serde_json::json!({ "type": "command", "padding": 0 }));
+    let entry = root.entry("statusLine".to_string()).or_insert(Value::Null);
+    // `"statusLine": null` (left behind by an editor or a manual reset) is no
+    // status line at all: replace it instead of silently writing nothing.
+    if entry.is_null() {
+        *entry = serde_json::json!({ "type": "command", "padding": 0 });
+    }
     if let Some(obj) = entry.as_object_mut() {
         obj.insert("type".to_string(), Value::from("command"));
         obj.insert("command".to_string(), Value::from(desired_cmd));
@@ -171,6 +174,16 @@ mod tests {
             json!({ "type": "command", "command": format!("{BIN} statusline"), "padding": 0 })
         );
         assert_eq!(merge_statusline(&mut s, BIN), StatuslineMerge::Unchanged);
+    }
+
+    #[test]
+    fn replaces_a_null_status_line() {
+        let mut s = json!({ "statusLine": null });
+        assert_eq!(merge_statusline(&mut s, BIN), StatuslineMerge::Set);
+        assert_eq!(
+            s["statusLine"],
+            json!({ "type": "command", "command": format!("{BIN} statusline"), "padding": 0 })
+        );
     }
 
     #[test]

@@ -1,5 +1,6 @@
 use crate::core::error::ShellError;
 
+use super::tokenizer::{Separator, segments_with_separators};
 use super::{
     ShellSecurity, allowlist_block_message, check_substitution_in_args, effective_allowlist,
     expand_to_leaf_segments, extract_all_commands, extract_base_from_segment, shell_tokenize,
@@ -115,12 +116,15 @@ pub(super) fn check_pipe_to_bare_interpreter(
     command: &str,
     strict: bool,
 ) -> Result<(), ShellError> {
-    let segments = split_on_operators(command);
+    // Only the command right of a `|` reads the pipe; one after `;`, `&&` or
+    // `||` starts fresh and reads the terminal (#1867).
+    let segments = segments_with_separators(command);
+    let piped_into = segments
+        .windows(2)
+        .filter(|pair| pair[0].1 == Some(Separator::Pipe))
+        .map(|pair| pair[1].0.as_str());
 
-    for (idx, seg) in segments.iter().enumerate() {
-        if idx == 0 {
-            continue;
-        }
+    for seg in piped_into {
         if is_bare_interpreter_stdin(seg) {
             let base = extract_base_from_segment(seg);
             if strict {
@@ -134,7 +138,9 @@ pub(super) fn check_pipe_to_bare_interpreter(
                 )
                 .into());
             }
-            tracing::warn!("[SECURITY] Pipe to bare interpreter '{base}' detected (warn-only)");
+            // Advisory only: at `warn` it lands in the wrapped command's stderr,
+            // i.e. in the agent's tool result, on every call (#1866).
+            tracing::info!("[SECURITY] Pipe to bare interpreter '{base}' detected (warn-only)");
         }
     }
     Ok(())

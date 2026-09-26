@@ -217,10 +217,25 @@ pub(crate) fn execute_command_with_env_cancellable(
     // Isolate the shell in its own process group on Unix. A timeout must kill
     // descendants too; otherwise a child can retain a pipe write-end and make
     // the caller report an empty result despite bytes already captured (#995).
+    //
+    // A new *session* rather than just a group: it also drops the controlling
+    // terminal. Otherwise an interactive descendant (`zsh -i`, `bash -i`, a
+    // test suite that spawns one) takes the terminal's foreground with
+    // tcsetpgrp, and the agent that launched the MCP server is stopped by
+    // SIGTTIN — "zsh: suspended claude", with mouse reporting still on.
+    // The session leader's pid is its pgid, so the timeout kill is unchanged.
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        cmd.process_group(0);
+        // SAFETY: setsid is async-signal-safe and touches no parent state.
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
     }
 
     let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
@@ -925,6 +940,20 @@ mod tests {
             output.contains("output reader still draining"),
             "an incomplete reader must be flagged, got: {output:?}"
         );
+    }
+
+    /// A command runs without a controlling terminal, so an interactive
+    /// descendant cannot take the terminal's foreground from the agent.
+    /// (Vacuous where the test runner itself has no terminal, as in CI.)
+    #[test]
+    #[cfg(unix)]
+    fn command_has_no_controlling_terminal() {
+        let (output, code) = execute_command_in(
+            "if (exec 3</dev/tty) 2>/dev/null; then echo HAS_TTY; else echo NO_TTY; fi",
+            ".",
+        );
+        assert_eq!(code, 0, "{output:?}");
+        assert!(output.contains("NO_TTY"), "got: {output:?}");
     }
 
     #[test]
