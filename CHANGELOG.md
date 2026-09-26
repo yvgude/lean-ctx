@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — `lean-ctx update --help` no longer installs an update
+
+- `lean-ctx update --help` (and `-h`, and the same flags on `enable-gpu`)
+  now print the command's options. Before, the flag was ignored and the
+  command downloaded and installed the latest release.
+- An unknown option, for example a typo like `--chek`, is refused with exit
+  code 2 instead of running an update. `--force` and `--rewire` are still
+  accepted, and still have no effect, because older instructions mention them.
+
 ## [3.10.3] — 2026-09-25
 
 ### Added — `lean-ctx value`: what lean-ctx did, with proof

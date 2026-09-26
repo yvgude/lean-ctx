@@ -17,7 +17,78 @@ enum UpdateMode {
     EnableGpu,
 }
 
+/// Flags `update` / `enable-gpu` understand. Anything else starting with `-`
+/// is refused: the command replaces the installed binary, so a typo or a
+/// `--help` must never fall through to a real update.
+const KNOWN_FLAGS: &[&str] = &[
+    "--check",
+    "--insecure",
+    "--quiet",
+    "--skip-rules",
+    "--scheduled",
+    "--schedule",
+    // No effect, accepted as before: the Windows deferred-update script tells
+    // users to run `update --force`, and older docs mention `--rewire`.
+    "--force",
+    "--rewire",
+];
+
+#[derive(Debug, PartialEq, Eq)]
+enum FlagCheck<'a> {
+    Run,
+    Help,
+    Unknown(&'a str),
+}
+
+fn check_flags(args: &[String]) -> FlagCheck<'_> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        return FlagCheck::Help;
+    }
+    args.iter()
+        .map(String::as_str)
+        .find(|a| a.starts_with('-') && !KNOWN_FLAGS.contains(a))
+        .map_or(FlagCheck::Run, FlagCheck::Unknown)
+}
+
+fn command_name(mode: UpdateMode) -> &'static str {
+    match mode {
+        UpdateMode::Normal => "update",
+        UpdateMode::EnableGpu => "enable-gpu",
+    }
+}
+
+fn print_help(mode: UpdateMode) {
+    let cmd = command_name(mode);
+    println!("Usage: lean-ctx {cmd} [VERSION] [OPTIONS]");
+    println!();
+    println!("  VERSION                install this release (e.g. 3.10.3) instead of the latest");
+    println!("  --check                only report whether an update is available");
+    println!("  --quiet                print nothing unless something changes");
+    println!("  --skip-rules           do not refresh agent rules after updating");
+    println!("  --insecure             install even if the download fails its checksum check");
+    println!("  --schedule [N|Nh]      install automatic updates every N hours (default 6)");
+    println!("  --schedule notify      only notify about updates");
+    println!("  --schedule status      show the update schedule");
+    println!("  --schedule off         disable automatic updates");
+    println!("  -h, --help             show this help");
+}
+
 fn run_with_mode(args: &[String], mode: UpdateMode) {
+    match check_flags(args) {
+        FlagCheck::Run => {}
+        FlagCheck::Help => {
+            print_help(mode);
+            return;
+        }
+        FlagCheck::Unknown(flag) => {
+            eprintln!("  \x1b[31m✗\x1b[0m Unknown option: {flag}");
+            eprintln!(
+                "  \x1b[2mSee: lean-ctx {} --help\x1b[0m",
+                command_name(mode)
+            );
+            std::process::exit(2);
+        }
+    }
     let mut check_only = args.iter().any(|a| a == "--check");
     let insecure = args.iter().any(|a| a == "--insecure");
     let quiet = args.iter().any(|a| a == "--quiet");
@@ -1352,5 +1423,43 @@ mod tests {
         assert!(!looks_like_version("--check"));
         assert!(!looks_like_version("latest"));
         assert!(!looks_like_version("3"));
+    }
+
+    fn args(v: &[&str]) -> Vec<String> {
+        v.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn help_never_falls_through_to_an_update() {
+        assert_eq!(check_flags(&args(&["--help"])), FlagCheck::Help);
+        assert_eq!(check_flags(&args(&["-h"])), FlagCheck::Help);
+        assert_eq!(check_flags(&args(&["--check", "--help"])), FlagCheck::Help);
+    }
+
+    #[test]
+    fn unknown_flags_are_refused() {
+        assert_eq!(
+            check_flags(&args(&["--chek"])),
+            FlagCheck::Unknown("--chek")
+        );
+        assert_eq!(
+            check_flags(&args(&["3.10.3", "--forse"])),
+            FlagCheck::Unknown("--forse")
+        );
+    }
+
+    #[test]
+    fn scheduler_and_known_invocations_still_run() {
+        for ok in [
+            &[][..],
+            &["--quiet", "--scheduled"][..],
+            &["--check"][..],
+            &["3.10.3", "--insecure", "--skip-rules"][..],
+            &["--schedule", "12h"][..],
+            &["--schedule", "off"][..],
+            &["--force"][..],
+        ] {
+            assert_eq!(check_flags(&args(ok)), FlagCheck::Run, "{ok:?}");
+        }
     }
 }
