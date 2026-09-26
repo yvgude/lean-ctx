@@ -141,7 +141,7 @@ pub fn handle_codex_pretooluse() {
     // Commands already routed through lean-ctx (e.g. `lean-ctx -c '...'` or
     // `/opt/homebrew/bin/lean-ctx -c '...'`) must pass through — denying them
     // blocks lean-ctx's own CLI surface (#801).
-    if cmd.starts_with("lean-ctx ") || cmd.starts_with(&format!("{binary} ")) {
+    if super::file_rewrite::is_leanctx_call(cmd, &binary) {
         print!("{}", codex_allow_output());
         return;
     }

@@ -59,6 +59,34 @@ fn expansion_chars_keep_the_agents_own_quoting() {
     );
 }
 
+/// #1865: a lean-ctx binary under a path with a space (Windows: `C:\Program
+/// Files\...`) must be quoted in the direct rewrites too, or the calling shell
+/// splits it and fails with exit 127.
+#[test]
+fn direct_rewrite_quotes_binary_path_with_space() {
+    let bin = "/opt/Program Files/lean-ctx";
+    assert_eq!(
+        rewrite_candidate("cat notes.md", bin),
+        Some("'/opt/Program Files/lean-ctx' read notes.md".to_owned())
+    );
+    assert_eq!(
+        rewrite_candidate("cat a.md && cat b.md", bin),
+        Some(
+            "'/opt/Program Files/lean-ctx' read a.md && '/opt/Program Files/lean-ctx' read b.md"
+                .to_owned()
+        )
+    );
+    // The quoted form is recognised as an existing lean-ctx call (no re-wrap).
+    assert!(super::file_rewrite::is_leanctx_call(
+        "'/opt/Program Files/lean-ctx' read notes.md",
+        bin
+    ));
+    assert_eq!(
+        rewrite_candidate("'/opt/Program Files/lean-ctx' read notes.md", bin),
+        None
+    );
+}
+
 #[test]
 fn shell_quote_round_trips_through_shell_tokenize() {
     for word in [

@@ -21,8 +21,8 @@ Every one of them follows three rules:
 ```toml
 [value_display]
 mode = "minimal"          # off | minimal | milestones | verbose
-recap_every_turns = 10    # consider a turn recap every N turns
-recap_min_tokens = 50000  # …and show it only above this (or on a security event)
+recap_every_turns = 5     # consider a turn recap every N turns
+recap_min_tokens = 10000  # …and show it only above this (or on a security event)
 notifications = true      # milestone notifications, in mode milestones/verbose
 git_trailer = false       # set by `lean-ctx init --git-trailer`
 ```
@@ -39,7 +39,10 @@ git_trailer = false       # set by `lean-ctx init --git-trailer`
 ## Claude Code
 
 `lean-ctx init --agent claude` sets up the
-[status line](https://docs.anthropic.com/en/docs/claude-code/statusline):
+[status line](https://docs.anthropic.com/en/docs/claude-code/statusline).
+Existing installs get it too: `lean-ctx update` and the MCP server's start
+refresh the Claude hooks and add the status line when there is none (a
+`"statusLine": null` entry counts as none):
 
 ```text
 ◆ lean-ctx −1.2M tok · 41 cached · ⛨ 3
@@ -58,8 +61,9 @@ lean-ctx statusline --wrap '<your command>'
 Your command gets the same input, and lean-ctx's segment is appended to its
 first line. `lean-ctx uninstall` gives your command back.
 
-The Stop hook adds a one-line recap every 10 turns when it is worth one
-(`◆ lean-ctx · last 10 turns: −312.0K tokens`). On a fresh start the last
+The Stop hook adds a one-line recap every 5 turns when it is worth one, that
+is when the window saved at least 10K tokens or had a security event
+(`◆ lean-ctx · last 5 turns: −48.2K tokens`). On a fresh start the last
 session is summarised once, and once a week a digest covers all sessions.
 
 ## Shell prompt

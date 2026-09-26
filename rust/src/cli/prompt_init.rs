@@ -329,6 +329,26 @@ mod tests {
             .is_ok_and(|s| s.success())
     }
 
+    /// An interactive shell (`-i`) detached from the controlling terminal.
+    /// With the terminal it grabs the foreground (tcsetpgrp) and stops
+    /// whatever runs the tests — `cargo test` in a terminal, or an agent.
+    #[cfg(unix)]
+    fn interactive_shell(name: &str) -> std::process::Command {
+        use std::os::unix::process::CommandExt;
+        let mut cmd = std::process::Command::new(name);
+        cmd.stdin(std::process::Stdio::null());
+        // SAFETY: setsid is async-signal-safe and touches no parent state.
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        cmd
+    }
+
     /// Sourcing the script twice must not stack the segment or the hook.
     #[cfg(unix)]
     #[test]
@@ -340,7 +360,7 @@ mod tests {
         let path = dir.path().join("prompt.bash");
         std::fs::write(&path, script(Shell::Bash, "/bin/echo")).unwrap();
         let p = path.display();
-        let out = std::process::Command::new("bash")
+        let out = interactive_shell("bash")
             .args(["--norc", "-i", "-c"])
             .arg(format!(
                 "PS1='$ '; PROMPT_COMMAND='other'; . '{p}'; . '{p}'; \
@@ -362,7 +382,7 @@ mod tests {
         let path = dir.path().join("prompt.zsh");
         std::fs::write(&path, script(Shell::Zsh, "/bin/echo")).unwrap();
         let p = path.display();
-        let out = std::process::Command::new("zsh")
+        let out = interactive_shell("zsh")
             .args(["-f", "-i", "-c"])
             .arg(format!(
                 "RPROMPT='%T'; . '{p}'; . '{p}'; print -rn -- \"$RPROMPT|${{#precmd_functions}}\""

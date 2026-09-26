@@ -93,7 +93,7 @@ fn decide(
 
             // Commands already routed through lean-ctx must pass through —
             // denying them would block lean-ctx's own CLI surface (#801).
-            if cmd.starts_with("lean-ctx ") || cmd.starts_with(&format!("{binary} ")) {
+            if super::file_rewrite::is_leanctx_call(cmd, binary) {
                 return None;
             }
 

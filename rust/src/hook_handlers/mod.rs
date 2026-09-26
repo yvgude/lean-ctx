@@ -391,11 +391,6 @@ pub fn handle_rewrite_inline() {
         return;
     }
 
-    if cmd.starts_with("lean-ctx ") || cmd.starts_with(&format!("{binary} ")) {
-        print!("{cmd}");
-        return;
-    }
-
     print!("{cmd}");
 }
 

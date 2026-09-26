@@ -281,7 +281,9 @@ pub(super) fn rewrite_candidate(cmd: &str, binary: &str) -> Option<String> {
         return None;
     }
 
-    if let Some(rewritten) = direct_rewrite(cmd, binary) {
+    // The direct rewrites splice the binary into a Bash command line as-is: a
+    // path with a space (`C:/Users/First Last/…`) must arrive quoted (#1865).
+    if let Some(rewritten) = direct_rewrite(cmd, &shell_quote(binary)) {
         return Some(rewritten);
     }
 
@@ -304,7 +306,7 @@ pub(super) fn rewrite_candidate(cmd: &str, binary: &str) -> Option<String> {
 /// Commands no rewrite may touch, whatever shell runs them. Shared with the
 /// PowerShell path (#1848).
 pub(super) fn passes_rewrite_guards(cmd: &str, binary: &str) -> bool {
-    if cmd.starts_with("lean-ctx ") || cmd.starts_with(&format!("{binary} ")) {
+    if is_leanctx_call(cmd, binary) {
         return false;
     }
 
@@ -348,6 +350,14 @@ pub(super) fn passes_rewrite_guards(cmd: &str, binary: &str) -> bool {
     // (b) add quoting overhead that can break redirect target paths.
     // Let the native shell handle the redirect directly. (#1303)
     !has_stdout_file_redirect(cmd)
+}
+
+/// `cmd` already runs lean-ctx: bare, by path, or by a quoted path as our own
+/// rewrites emit it (#1865).
+pub(super) fn is_leanctx_call(cmd: &str, binary: &str) -> bool {
+    cmd.starts_with("lean-ctx ")
+        || cmd.starts_with(&format!("{binary} "))
+        || cmd.starts_with(&format!("{} ", shell_quote(binary)))
 }
 
 /// A single read/search/list command mapped onto the matching `lean-ctx`
@@ -767,10 +777,8 @@ pub(super) fn build_rewrite_compound(cmd: &str, binary: &str) -> Option<String> 
         return None;
     }
 
-    let is_leanctx = |c: &str| c.starts_with("lean-ctx ") || c.starts_with(&format!("{binary} "));
-
     // A segment is already a lean-ctx call → don't nest `-c "… lean-ctx -c …"`.
-    if commands.iter().any(|c| is_leanctx(c)) {
+    if commands.iter().any(|c| is_leanctx_call(c, binary)) {
         return None;
     }
 
@@ -790,7 +798,7 @@ pub(super) fn build_rewrite_compound(cmd: &str, binary: &str) -> Option<String> 
     // rewritable tail stayed native. For `&&`/`||`/`;` chains without pipes,
     // rewrite each directly-mappable file-read segment in place and keep the
     // rest native.
-    rewrite_segments_in_place(&segments, binary)
+    rewrite_segments_in_place(&segments, &shell_quote(binary))
 }
 
 /// Rewrites file-read segments of a `&&`/`||`/`;` chain in place (#1279).
