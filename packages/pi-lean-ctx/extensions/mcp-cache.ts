@@ -17,7 +17,7 @@ import type { McpTool } from "./mcp-bridge.js";
 /** Bump when the on-disk cache representation changes incompatibly. */
 export const MCP_SCHEMA_CACHE_FORMAT_VERSION = 1;
 /** Bump when the Pi extension's schema-producing behavior changes. */
-export const PI_EXTENSION_VERSION = "3.10.3";
+export const PI_EXTENSION_VERSION = "3.10.4";
 /** MCP client/server contract version used by the embedded bridge. */
 export const MCP_ENGINE_VERSION = "2.0.0";
 

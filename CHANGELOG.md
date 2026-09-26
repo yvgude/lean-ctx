@@ -3,7 +3,7 @@
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [3.10.4] — 2026-09-26
 
 ### Fixed — `lean-ctx update --help` no longer installs an update
 
