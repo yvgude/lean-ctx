@@ -83,6 +83,67 @@ fn extract_change_stats(output: &str) -> String {
     }
 }
 
+/// Sum insertions/deletions from every git `--stat` / `--shortstat` summary line.
+///
+/// Returns `None` when no summary line is present so callers can omit totals
+/// instead of guessing from `+/-` prefixes (commit-message bullets look like
+/// deletions; `--stat` graph lines never start with `+/-`).
+fn sum_stat_change_totals(lines: &[&str]) -> Option<(u32, u32)> {
+    let mut additions = 0u32;
+    let mut deletions = 0u32;
+    let mut found = false;
+
+    for line in lines {
+        if !files_changed_re().is_match(line) {
+            continue;
+        }
+        found = true;
+        if let Some(c) = insertions_re().captures(line) {
+            additions += c[1].parse::<u32>().unwrap_or(0);
+        }
+        if let Some(c) = deletions_re().captures(line) {
+            deletions += c[1].parse::<u32>().unwrap_or(0);
+        }
+    }
+
+    found.then_some((additions, deletions))
+}
+
+/// Count `+/-` lines only inside real unified-diff hunks (`@@` …), never in
+/// commit messages or `--stat` graph rows.
+fn count_hunk_change_totals(lines: &[&str]) -> Option<(u32, u32)> {
+    let mut additions = 0u32;
+    let mut deletions = 0u32;
+    let mut in_hunk = false;
+    let mut found_diff = false;
+
+    for line in lines {
+        if line.starts_with("diff --git") {
+            found_diff = true;
+            in_hunk = false;
+            continue;
+        }
+        if line.starts_with("commit ") {
+            in_hunk = false;
+            continue;
+        }
+        if line.starts_with("@@ ") {
+            in_hunk = true;
+            continue;
+        }
+        if !in_hunk {
+            continue;
+        }
+        if line.starts_with('+') && !line.starts_with("+++") {
+            additions += 1;
+        } else if line.starts_with('-') && !line.starts_with("---") {
+            deletions += 1;
+        }
+    }
+
+    found_diff.then_some((additions, deletions))
+}
+
 fn compact_lines(text: &str, max: usize) -> String {
     let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
     if lines.len() <= max {
@@ -419,6 +480,101 @@ mod tests {
             "stat output should be compressed ({} vs {})",
             result.len(),
             output.len()
+        );
+        assert!(
+            result.contains("[5 commits, +20/-30 total]"),
+            "totals must sum git summary lines, got: {result}"
+        );
+    }
+
+    /// Regression for #1893: commit-message bullets look like deletions, and
+    /// `--stat` graph lines never start with `+/-`, so naive prefix counting
+    /// reported a false aggregate (e.g. +0/-12).
+    #[test]
+    fn git_log_stat_totals_from_summary_not_bullets() {
+        let output = "\
+commit abc1234567890abcdef
+Author: User <user@email.com>
+Date:   Mon Mar 25 10:00:00 2026 +0100
+
+    fix: window path handling
+
+    - document DACL edge case
+    - keep uvx hook order
+    - note CJK path encoding
+
+ src/hooks/win.rs | 12 ++++++-----
+ 1 file changed, 2359 insertions(+), 370 deletions(-)
+
+commit def4567890abcdef1234
+Author: User <user@email.com>
+Date:   Sun Mar 24 09:00:00 2026 +0100
+
+    chore: release notes
+
+    - bump version
+    - update changelog
+
+ docs/CHANGELOG.md | 3 +++
+ 1 file changed, 3 insertions(+)
+";
+        let result = compress("git log --stat -5", output).unwrap();
+        assert!(
+            result.contains("[2 commits, +2362/-370 total]"),
+            "must use git summary lines, not message bullets, got: {result}"
+        );
+        assert!(
+            !result.contains("+0/-"),
+            "must not invent zero additions from bullet counting: {result}"
+        );
+        assert!(
+            result.contains("fix: window path handling"),
+            "subject preserved: {result}"
+        );
+    }
+
+    #[test]
+    fn git_log_stat_omits_totals_without_reliable_source() {
+        let output = "\
+commit abc1234567890abcdef
+Author: User <user@email.com>
+Date:   Mon Mar 25 10:00:00 2026 +0100
+
+    docs: bullets only
+
+    - one
+    - two
+    - three
+";
+        let result = compress("git log --stat -5", output).unwrap();
+        assert!(
+            !result.contains("total]"),
+            "no summary/hunk source => omit totals rather than guess: {result}"
+        );
+        assert!(
+            result.contains("docs: bullets only"),
+            "subject preserved: {result}"
+        );
+    }
+
+    #[test]
+    fn git_log_c_flag_uses_same_stat_totals() {
+        let output = "\
+commit abc1234567890abcdef
+Author: User <user@email.com>
+Date:   Mon Mar 25 10:00:00 2026 +0100
+
+    feat: add helper
+
+ src/lib.rs | 10 +++++-----
+ 1 file changed, 100 insertions(+), 20 deletions(-)
+";
+        let via_c = compress("git -C /tmp/repo log --stat -5", output).unwrap();
+        let plain = compress("git log --stat -5", output).unwrap();
+        assert_eq!(via_c, plain, "git -C must hit the same log compressor");
+        assert!(
+            via_c.contains("[1 commits, +100/-20 total]"),
+            "got: {via_c}"
         );
     }
 

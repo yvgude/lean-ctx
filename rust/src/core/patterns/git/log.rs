@@ -1,4 +1,4 @@
-use super::is_diff_or_stat_line;
+use super::{count_hunk_change_totals, sum_stat_change_totals};
 
 pub(super) fn compress_log(command: &str, output: &str) -> String {
     let lines: Vec<&str> = output.lines().collect();
@@ -217,12 +217,9 @@ fn compress_log_with_patches(
 }
 
 fn compress_log_summary(lines: &[&str], max_entries: usize) -> String {
-    let has_diff = lines.iter().any(|l| l.starts_with("diff --git"));
-    let has_stat = lines
-        .iter()
-        .any(|l| l.contains(" | ") && l.trim().ends_with(['+', '-']));
-    let mut total_additions = 0u32;
-    let mut total_deletions = 0u32;
+    // Prefer git's own summary lines. Counting `+/-` prefixes falsely treats
+    // commit-message bullets as deletions and ignores `--stat` graph rows (#1893).
+    let totals = sum_stat_change_totals(lines).or_else(|| count_hunk_change_totals(lines));
 
     let mut entries = Vec::new();
     let mut in_diff = false;
@@ -246,17 +243,19 @@ fn compress_log_summary(lines: &[&str], max_entries: usize) -> String {
             continue;
         }
 
-        if trimmed.starts_with("diff --git") || trimmed.starts_with("---") && trimmed.contains("a/")
+        if trimmed.starts_with("diff --git") || (trimmed.starts_with("---") && trimmed.contains("a/"))
         {
             in_diff = true;
+            continue;
         }
 
-        if in_diff || is_diff_or_stat_line(trimmed) {
-            if trimmed.starts_with('+') && !trimmed.starts_with("+++") {
-                total_additions += 1;
-            } else if trimmed.starts_with('-') && !trimmed.starts_with("---") {
-                total_deletions += 1;
-            }
+        // Skip patch / --stat body while collecting commit subjects. Do not
+        // treat markdown bullets (`- item`) as diff lines.
+        if in_diff
+            || trimmed.starts_with("@@ ")
+            || (trimmed.contains(" | ") && trimmed.chars().any(|c| c == '+' || c == '-'))
+            || files_changed_summary_line(trimmed)
+        {
             continue;
         }
 
@@ -287,12 +286,19 @@ fn compress_log_summary(lines: &[&str], max_entries: usize) -> String {
         entries.join("\n")
     };
 
-    if (has_diff || has_stat) && (total_additions > 0 || total_deletions > 0) {
-        result.push_str(&format!(
-            "\n[{} commits, +{total_additions}/-{total_deletions} total]",
-            entries.len()
-        ));
+    if let Some((total_additions, total_deletions)) = totals {
+        if total_additions > 0 || total_deletions > 0 {
+            result.push_str(&format!(
+                "\n[{} commits, +{total_additions}/-{total_deletions} total]",
+                entries.len()
+            ));
+        }
     }
 
     result
+}
+
+fn files_changed_summary_line(line: &str) -> bool {
+    line.contains("changed")
+        && (line.contains("insertion") || line.contains("deletion") || line.contains("file"))
 }
