@@ -145,6 +145,17 @@ jobs:
           workspaces: rust -> target
 
       # ---- Windows: MSYS2 + GNU target + jemalloc -------------------------
+      # Defender's real-time scan inspects every object file rustc writes and
+      # every tempdir the tests create; on this critical-path leg the lib
+      # suite ran 135 s against 61 s on Linux. Exclude only the build and
+      # temp paths of this ephemeral runner; real-time protection stays on.
+      - name: Exclude build and temp dirs from Defender scanning
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP, $env:TEMP, "$env:USERPROFILE\.cargo", "$env:USERPROFILE\.rustup"
+          (Get-MpPreference).ExclusionPath
+
       # The default MSVC toolchain can't build jemalloc (autotools mismatch).
       # We switch to the GNU target with MSYS2/MinGW and pre-build jemalloc.
       # See .github/actions/windows-jemalloc for the gory details.
