@@ -19,6 +19,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   supported. Fixture recordings are always tier A.
 - `eval footprint` recommends pruning an injected element only on powered
   evidence from a real model; underpowered or fixture-only runs keep it.
+- `lean-ctx eval footprint --export <file>` writes this build's injected
+  footprint (rules, tool schemas, wakeup); `--compare <file>` runs a paired
+  evaluation of that baseline against the current build on the same tasks and
+  reports the verdict next to the per-request token delta, so a smaller
+  footprint ships only with non-inferior evidence.
 - New `lean-ctx eval frontier`: scores several lean-ctx strategies against one
   shared baseline and prints quality delta vs. token reduction per strategy.
   Suites gain an optional `task_class` field and a guard that fails when a

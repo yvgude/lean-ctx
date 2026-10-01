@@ -70,7 +70,9 @@ footprint OPTIONS (also: `eval --delta`):\n\
   --floor <n>        Min marginal tokens before flagging an element to prune (default 50)\n\
   --replay <file>    Replay a recording (deterministic); --record to capture live\n\
   --json             Emit the full JSON report instead of the side-by-side table\n\
-  --gate             Exit non-zero if any injected element is actively harmful\n\n\
+  --gate             Exit non-zero if any injected element is actively harmful\n\
+  --export <file>    Write this build's footprint (rules, tool schemas, wakeup) as JSON\n\
+  --compare <file>   Paired run: exported baseline footprint vs. this build's footprint\n\n\
 routing OPTIONS:\n\
   --suite <file>     NDJSON suite of real task prompts (required)\n\
   --requested <m>    Model the off-arm assumes (default: [proxy.baseline].reference_model)\n\
@@ -400,6 +402,87 @@ fn cmd_routing(args: &[String]) {
 /// `eval footprint` (alias `eval --delta`): ablate each element of lean-ctx's own
 /// injected context (rules / tool schemas / wakeup) and report per-element
 /// pass-rate Δ + token Δ with a prune recommendation (#959).
+/// `eval footprint --compare <baseline.json>`: the exported footprint of another
+/// build against this build's live footprint, paired on the same tasks.
+fn cmd_footprint_compare(
+    args: &[String],
+    suite: &EvalSuite,
+    suite_name: &str,
+    baseline_path: &str,
+    candidate: &Footprint,
+    mut report_cfg: ReportConfig,
+) {
+    let baseline: Footprint = match std::fs::read_to_string(baseline_path)
+        .map_err(|e| e.to_string())
+        .and_then(|raw| serde_json::from_str(&raw).map_err(|e| e.to_string()))
+    {
+        Ok(fp) => fp,
+        Err(e) => {
+            eprintln!("eval footprint: cannot load baseline footprint {baseline_path}: {e}");
+            std::process::exit(1);
+        }
+    };
+    let run = |runner: &dyn crate::core::eval_ab::model::ModelRunner, cfg: ReportConfig| {
+        match crate::core::eval_ab::footprint::run_footprint_compare(
+            suite, suite_name, &baseline, candidate, runner, cfg,
+        ) {
+            Ok(report) => report,
+            Err(e) => {
+                eprintln!("eval footprint: {e:#}");
+                std::process::exit(1);
+            }
+        }
+    };
+    let report = if let Some(replay) = flag_value(args, "--replay") {
+        match RecordedRunner::from_file(Path::new(replay)) {
+            Ok(runner) => run(&runner, report_cfg),
+            Err(e) => {
+                eprintln!("eval footprint: {e:#}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        let live = match OpenAiRunner::from_env() {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!(
+                    "eval footprint: no live model configured: {e:#}\n(use --replay <file> for an offline run)"
+                );
+                std::process::exit(1);
+            }
+        };
+        report_cfg.live_model = true;
+        if let Some(record_path) = flag_value(args, "--record") {
+            let recorder = RecordingRunner::new(live);
+            let report = run(&recorder, report_cfg);
+            if let Err(e) = recorder.into_recording().save(Path::new(record_path)) {
+                eprintln!("eval footprint: failed to save recording: {e:#}");
+                std::process::exit(1);
+            }
+            println!("Recording saved → {record_path}");
+            report
+        } else {
+            run(&live, report_cfg)
+        }
+    };
+    let saved = report
+        .records
+        .first()
+        .map_or(0, |r| r.baseline_tokens as i64 - r.lean_ctx_tokens as i64);
+    println!("Footprint compare: baseline {baseline_path} vs. this build");
+    println!(
+        "Fixed footprint delta: {saved:+} tokens per request (positive = candidate smaller)\n"
+    );
+    println!("{}", report.render());
+    if has_flag(args, "--gate") && !report.verdict.passes_gate(has_flag(args, "--mechanism")) {
+        eprintln!(
+            "\nfootprint compare gate FAILED: {}",
+            report.verdict.label()
+        );
+        std::process::exit(1);
+    }
+}
+
 fn cmd_footprint(args: &[String]) {
     let Some(suite_path) = flag_value(args, "--suite") else {
         eprintln!("eval footprint: --suite <file> is required");
@@ -436,6 +519,20 @@ fn cmd_footprint(args: &[String]) {
     let project_root = std::env::current_dir()
         .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().into_owned());
     let footprint = Footprint::live(&project_root);
+
+    if let Some(path) = flag_value(args, "--export") {
+        let json = serde_json::to_string_pretty(&footprint).unwrap_or_default();
+        if let Err(e) = std::fs::write(path, json) {
+            eprintln!("eval footprint: cannot write {path}: {e}");
+            std::process::exit(1);
+        }
+        println!("Footprint exported → {path}");
+        return;
+    }
+    if let Some(path) = flag_value(args, "--compare") {
+        cmd_footprint_compare(args, &suite, &suite_name, path, &footprint, cfg.report);
+        return;
+    }
 
     let mut report = if let Some(replay) = flag_value(args, "--replay") {
         let runner = match RecordedRunner::from_file(Path::new(replay)) {

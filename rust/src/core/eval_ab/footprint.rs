@@ -72,8 +72,9 @@ impl InjectedElement {
     }
 }
 
-/// The three injected texts, rendered once and reused across every arm.
-#[derive(Debug, Clone, Default)]
+/// The three injected texts, rendered once and reused across every arm. Serializable
+/// so a released build's footprint can be exported and compared against a candidate.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Footprint {
     /// Rules block text (`rules_inject::canonical_rules_block`).
     pub rules: String,
@@ -346,6 +347,57 @@ impl FootprintReport {
         ));
         out
     }
+}
+
+/// Compares two complete footprints on the same tasks: `baseline` (for example the
+/// footprint exported from the released build) against `candidate` (a trimmed tool
+/// surface or shorter instructions). Same model, same tasks, same system framing —
+/// the footprint text is the only variable. A reduction is only worth shipping when
+/// this report is `NonInferior` or `Improved`; the token delta sits in every record.
+pub fn run_footprint_compare(
+    suite: &EvalSuite,
+    suite_name: &str,
+    baseline: &Footprint,
+    candidate: &Footprint,
+    runner: &dyn ModelRunner,
+    cfg: ReportConfig,
+) -> Result<AbReport> {
+    let base = assemble_prefix(baseline, None);
+    let cand = assemble_prefix(candidate, None);
+    let mut records = Vec::with_capacity(suite.tasks.len());
+    for task in &suite.tasks {
+        let workspace = task.workspace_path(&suite.dir);
+        let base_resp = runner.run(&build_footprint_request(&base.text, &task.prompt))?;
+        let base_score = score_task(task, &base_resp.text, &workspace)?;
+        // Identical prefixes would issue an identically keyed request: reuse it.
+        let (cand_score, cand_digest) = if cand.digest == base.digest {
+            (base_score.clone(), base_resp.digest())
+        } else {
+            let resp = runner.run(&build_footprint_request(&cand.text, &task.prompt))?;
+            (score_task(task, &resp.text, &workspace)?, resp.digest())
+        };
+        records.push(PairRecord {
+            task_id: task.id.clone(),
+            domain: task.domain.label().to_string(),
+            baseline_value: base_score.value,
+            lean_ctx_value: cand_score.value,
+            baseline_passed: base_score.passed,
+            lean_ctx_passed: cand_score.passed,
+            baseline_tokens: base.tokens,
+            lean_ctx_tokens: cand.tokens,
+            baseline_context_digest: base.digest.clone(),
+            lean_ctx_context_digest: cand.digest.clone(),
+            baseline_answer_digest: base_resp.digest(),
+            lean_ctx_answer_digest: cand_digest,
+        });
+    }
+    Ok(AbReport::build(
+        format!("{suite_name}::footprint-compare"),
+        cand.tokens,
+        runner.fingerprint().clone(),
+        records,
+        cfg,
+    ))
 }
 
 /// Runs the footprint ablation: the full arm once, then each element's minus arm,
@@ -650,6 +702,40 @@ mod tests {
             report.gate_passes(false),
             "no element is actively harmful here"
         );
+    }
+
+    /// A candidate footprint that drops what the answers depend on must show up as a
+    /// regression against the baseline, with its token saving in every record.
+    #[test]
+    fn footprint_compare_flags_a_smaller_candidate_that_loses_answers() {
+        let (suite, fp, runner) = pipeline_setup(super::super::report::MIN_POWERED_PAIRS);
+        let candidate = Footprint {
+            tool_schemas: String::new(),
+            ..fp.clone()
+        };
+        let report = run_footprint_compare(
+            &suite,
+            "fixture",
+            &fp,
+            &candidate,
+            &runner,
+            ReportConfig::default(),
+        )
+        .expect("recording covers both prefixes");
+        assert_eq!(report.verdict, Verdict::Regressed, "{:?}", report.stats);
+        assert!(report.records[0].lean_ctx_tokens < report.records[0].baseline_tokens);
+
+        let same = run_footprint_compare(
+            &suite,
+            "fixture",
+            &fp,
+            &fp,
+            &runner,
+            ReportConfig::default(),
+        )
+        .expect("identical footprints reuse one request per task");
+        assert_eq!(same.stats.losses, 0);
+        assert_eq!(same.stats.wins, 0);
     }
 
     #[test]
