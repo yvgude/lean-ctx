@@ -7,7 +7,7 @@ repository. Two ways it can be defeated are checked here:
 1. A denied path is already tracked. The pre-push hook only inspects files a
    push adds, so a file committed before its path was denied stays public
    forever unless the tracked tree itself is checked.
-2. A path marked confidential in `.gitignore` is missing from `.github-ignore`.
+2. A path in the internal section of `.gitignore` is missing from `.github-ignore`.
    `.gitignore` only stops `git add`; a forced add or an older commit still
    publishes the file, and nothing else would notice.
 
@@ -21,8 +21,8 @@ import sys
 from pathlib import Path
 from typing import Iterable, List
 
-# `.gitignore` sections whose entries are confidential, by their header line.
-CONFIDENTIAL_GITIGNORE_SECTIONS = ("Internal strategy docs (confidential)",)
+# `.gitignore` sections whose entries must never be published, by header line.
+INTERNAL_GITIGNORE_SECTIONS = ("Internal strategy docs (confidential)",)
 
 
 def _entries(lines: Iterable[str]) -> List[str]:
@@ -38,14 +38,14 @@ def denied_paths(github_ignore: str) -> List[str]:
     return [line.lstrip("/") for line in _entries(github_ignore.splitlines())]
 
 
-def confidential_gitignore_entries(gitignore: str) -> List[str]:
-    """Entries of the confidential sections, without glob-only patterns."""
+def internal_gitignore_entries(gitignore: str) -> List[str]:
+    """Entries of the internal sections, without glob-only patterns."""
     entries: List[str] = []
     active = False
     for raw in gitignore.splitlines():
         line = raw.strip()
         if line.startswith("# ──"):
-            active = any(name in line for name in CONFIDENTIAL_GITIGNORE_SECTIONS)
+            active = any(name in line for name in INTERNAL_GITIGNORE_SECTIONS)
             continue
         if not active or not line or line.startswith("#"):
             continue
@@ -68,10 +68,10 @@ def _covered(path: str, denied: Iterable[str]) -> bool:
 def find_violations(github_ignore: str, gitignore: str, tracked: Iterable[str]) -> List[str]:
     denied = denied_paths(github_ignore)
     findings = []
-    for entry in confidential_gitignore_entries(gitignore):
+    for entry in internal_gitignore_entries(gitignore):
         if not _covered(entry, denied):
             findings.append(
-                f"[drift] confidential .gitignore entry {entry!r} is missing from .github-ignore"
+                f"[drift] internal .gitignore entry {entry!r} is missing from .github-ignore"
             )
     for path in sorted(tracked):
         if _covered(path, denied):

@@ -38,17 +38,17 @@ class PrivatePathTests(unittest.TestCase):
             ["[tracked] .codex/vision-input/02-VISION.md is listed in .github-ignore but tracked"],
         )
 
-    def test_a_confidential_gitignore_entry_missing_from_the_deny_list_fails(self):
+    def test_an_internal_gitignore_entry_missing_from_the_deny_list_fails(self):
         findings = CHECK.find_violations("docs/internal/\n", GITIGNORE, [])
         self.assertEqual(
             findings,
             [
-                "[drift] confidential .gitignore entry '.codex/vision-input/' "
+                "[drift] internal .gitignore entry '.codex/vision-input/' "
                 "is missing from .github-ignore"
             ],
         )
 
-    def test_non_confidential_sections_and_lookalike_paths_are_not_flagged(self):
+    def test_other_sections_and_lookalike_paths_are_not_flagged(self):
         findings = CHECK.find_violations(
             ".codex/vision-input/\ndocs/internal/\n",
             GITIGNORE,
