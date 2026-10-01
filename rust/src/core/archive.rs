@@ -311,9 +311,40 @@ fn write_metadata(entry: &ArchiveEntry) -> Option<()> {
     Some(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArchiveResolveError {
+    Malformed,
+    Missing,
+    Refused(&'static str),
+}
+
+/// Resolve only canonical archive IDs so untrusted handles cannot supply path
+/// components to `content_path`.
+pub(crate) fn retrieve_checked(id: &str) -> Result<String, ArchiveResolveError> {
+    if id.len() != 16
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    {
+        return Err(ArchiveResolveError::Malformed);
+    }
+
+    std::fs::read_to_string(content_path(id)).map_err(|error| match error.kind() {
+        std::io::ErrorKind::PermissionDenied => {
+            ArchiveResolveError::Refused("archive read refused by filesystem policy")
+        }
+        std::io::ErrorKind::InvalidData => ArchiveResolveError::Malformed,
+        _ => ArchiveResolveError::Missing,
+    })
+}
+
 pub fn retrieve(id: &str) -> Option<String> {
-    let path = content_path(id);
-    std::fs::read_to_string(path).ok()
+    retrieve_checked(id).ok()
+}
+
+/// Check the content-address contract used when the archive ID was minted.
+pub(crate) fn content_matches_id(id: &str, content: &str) -> bool {
+    compute_id(content) == id
 }
 
 /// Format a range of lines from content with `{:>6}|` line-number gutter.

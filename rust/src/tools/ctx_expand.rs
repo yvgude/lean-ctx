@@ -15,21 +15,26 @@ pub fn handle(args: &serde_json::Value) -> String {
     }
 }
 
+fn normalized_handle_ref(id: &str) -> Option<&str> {
+    let clean = id.strip_prefix('@').unwrap_or(id);
+    if clean.len() < 2
+        || !matches!(clean.chars().next()?, 'F' | 'S' | 'K' | 'M' | 'P')
+        || !clean[1..].chars().all(|c| c.is_ascii_digit())
+    {
+        return None;
+    }
+    Some(clean)
+}
+
+/// Whether `id` has a handle-reference shape accepted by `ctx_expand`.
+pub(crate) fn is_handle_ref(id: &str) -> bool {
+    normalized_handle_ref(id).is_some()
+}
+
 /// Try to resolve a handle reference (@F1, @K1, etc.) to a file path.
 /// Returns None if the ID is not a handle reference.
 pub fn resolve_handle_ref(id: &str) -> Option<String> {
-    let clean = id.strip_prefix('@').unwrap_or(id);
-    if clean.len() < 2 {
-        return None;
-    }
-    let prefix = clean.chars().next()?;
-    if !matches!(prefix, 'F' | 'S' | 'K' | 'M' | 'P') {
-        return None;
-    }
-    if !clean[1..].chars().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-
+    let clean = normalized_handle_ref(id)?;
     let ledger = ContextLedger::load();
     let mut registry = HandleRegistry::new();
     for entry in &ledger.entries {

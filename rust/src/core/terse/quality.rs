@@ -4,8 +4,9 @@
 //! - File paths must be preserved
 //! - Code identifiers (>= 6 chars) must be preserved
 //! - Critical facts (error codes, failing-test counts, failure status, problem
-//!   locations) must survive verbatim — terse output has no recovery path, so a
-//!   dropped critical fact would be lost (`context_quality::retention`)
+//!   locations) must survive in the *final* output — terse output has no recovery
+//!   path, so a dropped critical fact would be lost ([`critical_facts_lost`],
+//!   checked by the engine after dictionaries and the auto-dictionary)
 //! - Minimum savings threshold (default 10%) must be met
 
 use std::collections::HashSet;
@@ -78,19 +79,7 @@ pub fn check(
     let identifiers_preserved = orig_idents.is_empty()
         || (idents_found as f32 / orig_idents.len() as f32) >= config.min_identifier_preservation;
 
-    let critical_lost = if original == compressed {
-        0
-    } else {
-        crate::core::context_quality::retention::assess(
-            original,
-            compressed,
-            crate::core::context_quality::RecoveryPath::None,
-        )
-        .critical
-        .lost
-    };
-
-    let passed = paths_preserved && identifiers_preserved && critical_lost == 0;
+    let passed = paths_preserved && identifiers_preserved;
 
     QualityReport {
         passed,
@@ -101,7 +90,26 @@ pub fn check(
         paths_found,
         identifiers_total: orig_idents.len(),
         identifiers_found: idents_found,
-        critical_lost,
+        critical_lost: 0,
+    }
+}
+
+/// Critical facts of `original` missing from the final `delivered` text (after every
+/// rewrite). Terse output has no recovery path, so a missing critical fact is lost.
+/// Returns at least 1 when the facts could not all be checked (fail closed).
+pub fn critical_facts_lost(original: &str, delivered: &str) -> usize {
+    if original == delivered {
+        return 0;
+    }
+    let report = crate::core::context_quality::retention::assess(
+        original,
+        delivered,
+        crate::core::context_quality::RecoveryPath::None,
+    );
+    if report.passes() {
+        0
+    } else {
+        report.critical.lost.max(1)
     }
 }
 
@@ -209,7 +217,7 @@ mod tests {
     /// The identifier ratio tolerates 10 % loss, so a long output can lose its one
     /// failing-test count and still clear it. The critical-fact check must not.
     #[test]
-    fn quality_fails_when_a_critical_fact_is_dropped() {
+    fn critical_fact_check_catches_what_the_identifier_ratio_tolerates() {
         let cases = (0..40)
             .map(|i| format!("payments_integration::refund_case_{i:02} ... ok"))
             .collect::<Vec<_>>()
@@ -218,8 +226,7 @@ mod tests {
         let compressed = format!("{cases}\nsummary: 40 passed\n");
         let report = check(&original, &compressed, 100, 70, &QualityConfig::default());
         assert!(report.identifiers_preserved, "{report:?}");
-        assert!(report.critical_lost > 0);
-        assert!(!report.passed);
+        assert!(critical_facts_lost(&original, &compressed) > 0);
     }
 
     /// A pure-digit, hex-shaped blob (e.g. an all-numeric slice of a

@@ -292,6 +292,7 @@ fn evaluate_task(
             let evaluation_task = EvaluationTask {
                 id: task.id.clone(),
                 domain: Domain::Qa,
+                task_class: None,
                 prompt: task.description.clone(),
                 workspace: working_dir.display().to_string(),
                 retrieval_query: None,
@@ -316,6 +317,7 @@ fn evaluate_task(
             let evaluation_task = EvaluationTask {
                 id: task.id.clone(),
                 domain: Domain::Code,
+                task_class: None,
                 prompt: task.description.clone(),
                 workspace: working_dir.display().to_string(),
                 retrieval_query: None,

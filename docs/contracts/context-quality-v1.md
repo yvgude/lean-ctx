@@ -53,9 +53,16 @@ v1 reports still parse; they render `EVIDENCE: UNSPECIFIED` and back no claim.
   print the tier and whether a claim is supported.
 - Several verdicts combine to the most conservative one:
   `regressed` > `inconclusive` > `non_inferior` > `improved`; an empty set is `inconclusive`.
-- `eval footprint` recommends pruning an injected element only on evidence
-  (`non_inferior` or `regressed`). An inconclusive run keeps the element: uncertainty
-  moves toward more context, never less.
+- A run without bootstrap iterations has no confidence interval and is
+  `inconclusive` regardless of its size.
+- `eval footprint` recommends pruning an injected element only on powered evidence
+  from a real model (tier C+, `non_inferior` or `regressed`). Underpowered and
+  fixture-only runs keep the element: uncertainty moves toward more context,
+  never less.
+- `regressions.json` (testbench) carries `evidence_tier` (weakest across repos)
+  and `quality_claim_supported` next to the verdict.
+- v2 fields are omitted when absent, so a v1 artifact re-serializes to the bytes it
+  was signed over and still verifies.
 
 30 pairs is a floor, not a sufficiency proof. Whether a suite can detect a given
 effect depends on its variance and the declared non-inferiority margin; reports
@@ -76,21 +83,33 @@ deterministically extracted probes of the original:
 
 Each probe resolves to:
 
-- **RETAINED** — present verbatim in the text the model receives;
+- **RETAINED** — the same fact appears as a whole token in the text the model
+  receives (`src/lib.rs:42` is not retained by `archive/src/lib.rs:42`; runner
+  summaries and statuses match case-insensitively);
 - **RECOVERABLE** — absent, but an exact recovery path to the original was
   verified for this delivery;
 - **LOST** — neither.
 
-Hard invariant: **a lost critical probe fails the check.** Prose may be rewritten
-(abbreviations, whitespace) without counting as loss; atomic facts must survive.
+Hard invariants:
+
+- **A lost critical probe fails the check.**
+- **Every critical probe is checked.** Up to 4096 critical facts per text are all
+  matched (first error, last summary and everything between); beyond that bound the
+  check fails closed (`critical_unchecked`) instead of sampling.
+
+Prose may be rewritten (abbreviations, whitespace) without counting as loss; atomic
+facts must survive. Reversible rewrites are resolved before matching: the terse
+auto-dictionary legend (`[dict: @D0=…]`) is expanded, and the Cargo dictionary's
+`FAIL` / `PASS` count as `test result: FAILED` / `test result: ok`.
 
 Security is a separate dimension: lines carrying a detected secret are not probed.
 Removing a secret is a security action, never "context loss", and a secret
 removed by policy is never reported as recoverable for the model.
 
-Runtime use: the terse compression gate (shell and tool output, which has no
-recovery path) rejects a compressed result that loses a critical probe and
-delivers the original instead.
+Runtime use: the terse compression engine (shell and tool output, which has no
+recovery path) checks the *final* text — after line filtering, dictionaries and
+the auto-dictionary — and delivers the original when a critical probe would be
+lost or could not be checked.
 
 ## Context Quality Receipt (`lean-ctx.context-quality-receipt` v1)
 
@@ -103,6 +122,11 @@ Independent dimensions, never one score:
 | recovery | handles emitted/verified, failures, critical failures | `UNMEASURED` |
 | security | probe-bearing lines withheld because they carry a secret | — |
 | task quality | always `UNMEASURED` — a single transformation never measures it | — |
+
+Overall state: `FAIL` if a measured dimension failed, `UNMEASURED` if neither
+retention nor recovery measured anything, `PASS` only when something was measured
+and held. A gate checks "no measured failure"; that is never shown as `PASS` on its
+own.
 
 The receipt contains no content and no timestamp; identical inputs render
 byte-identically (#498). `lean-ctx quality-lab --original A --compressed B`

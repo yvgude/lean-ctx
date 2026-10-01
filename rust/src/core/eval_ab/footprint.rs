@@ -19,6 +19,7 @@ use ed25519_dalek::{Signer, SigningKey};
 use serde::{Deserialize, Serialize};
 
 use crate::core::agent_identity::{hex_decode, hex_encode, verify_signature};
+use crate::core::context_quality::EvidenceTier;
 use crate::core::tokens::count_tokens;
 
 use super::model::{ModelFingerprint, ModelRequest, ModelRunner};
@@ -405,10 +406,14 @@ pub fn run_footprint_ab(
         );
         let pass_rate_with = report.stats.lean_ctx_pass_rate;
         let pass_rate_without = report.stats.baseline_pass_rate;
-        // Pruning removes context, so it needs powered evidence: an underpowered run keeps
-        // the element even when it looked harmful (uncertainty moves toward more context).
-        // The gate still fails on any observed regression.
+        // Pruning removes context, so it needs powered evidence from a real model: an
+        // underpowered or fixture-only run keeps the element even when it looked harmful
+        // (uncertainty moves toward more context). The gate still fails on any observed
+        // regression.
         let prune_recommended = report.power.is_some_and(|p| p.powered)
+            && report
+                .evidence_tier
+                .is_some_and(EvidenceTier::supports_task_quality_claim)
             && matches!(report.verdict, Verdict::NonInferior | Verdict::Regressed)
             && token_cost >= cfg.token_floor;
 
@@ -513,6 +518,25 @@ mod tests {
     /// element that changes an answer, so (when powered) tool_schemas must be IMPROVED
     /// (kept) and rules/wakeup must be prune candidates (cost tokens, no quality gain).
     fn pipeline_setup(n: usize) -> (EvalSuite, Footprint, RecordedRunner) {
+        pipeline_setup_with(n, fixture_fingerprint())
+    }
+
+    /// Same recording, labelled as a capture of a real model (replayed → tier C).
+    fn real_model_fingerprint() -> ModelFingerprint {
+        ModelFingerprint {
+            provider: crate::core::eval_ab::model::PROVIDER_OPENAI.into(),
+            endpoint: "http://localhost:11434/v1".into(),
+            params: ModelParams {
+                model: "gemma4:e4b".into(),
+                ..ModelParams::default()
+            },
+        }
+    }
+
+    fn pipeline_setup_with(
+        n: usize,
+        fingerprint: ModelFingerprint,
+    ) -> (EvalSuite, Footprint, RecordedRunner) {
         let raw: Vec<String> = (0..n)
             .map(|i| {
                 let (q, a) = if i % 2 == 0 {
@@ -529,7 +553,7 @@ mod tests {
         let fp = fixed_footprint();
         let full = assemble_prefix(&fp, None);
 
-        let mut rec = Recording::new(fixture_fingerprint());
+        let mut rec = Recording::new(fingerprint);
         for task in &suite.tasks {
             let gold = task.answers[0].clone();
             let full_req = build_footprint_request(&full.text, &task.prompt);
@@ -568,8 +592,25 @@ mod tests {
     }
 
     #[test]
-    fn footprint_run_flags_unhelpful_elements_for_pruning() {
+    fn powered_fixture_answers_never_recommend_pruning() {
         let (suite, fp, runner) = pipeline_setup(super::super::report::MIN_POWERED_PAIRS);
+        let report = run_footprint_ab(&suite, "fixture", &fp, &runner, &FootprintConfig::default())
+            .expect("recording must cover every replay key");
+        for e in &report.elements {
+            assert!(
+                !e.prune_recommended,
+                "{} pruned on tier-A fixture evidence",
+                e.element.label()
+            );
+        }
+    }
+
+    #[test]
+    fn footprint_run_flags_unhelpful_elements_for_pruning() {
+        let (suite, fp, runner) = pipeline_setup_with(
+            super::super::report::MIN_POWERED_PAIRS,
+            real_model_fingerprint(),
+        );
         let report = run_footprint_ab(&suite, "fixture", &fp, &runner, &FootprintConfig::default())
             .expect("recording must cover every replay key");
 

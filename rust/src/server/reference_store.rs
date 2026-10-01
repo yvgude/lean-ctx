@@ -48,18 +48,52 @@ pub fn store(content: String) -> String {
     id
 }
 
-pub fn resolve(id: &str) -> Option<String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReferenceResolveError {
+    Malformed,
+    Missing,
+    Expired,
+}
+
+/// Detailed form shared by the MCP resolver and the recovery verifier.
+pub(crate) fn resolve_checked(id: &str) -> Result<String, ReferenceResolveError> {
+    let Some(digest) = id.strip_prefix("ref_") else {
+        return Err(ReferenceResolveError::Malformed);
+    };
+    if digest.is_empty() || !digest.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(ReferenceResolveError::Malformed);
+    }
+
     let mut map = store_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(entry) = map.get_mut(id) {
         if entry.created_at.elapsed() < TTL {
             entry.access_count += 1;
-            return Some(entry.content.clone());
+            return Ok(entry.content.clone());
         }
         map.remove(id);
+        return Err(ReferenceResolveError::Expired);
     }
-    None
+    Err(ReferenceResolveError::Missing)
+}
+
+/// Back-compatible resolver used by `ctx_expand`.
+pub fn resolve(id: &str) -> Option<String> {
+    resolve_checked(id).ok()
+}
+
+#[cfg(test)]
+pub(crate) fn expire_for_test(id: &str) {
+    if let Some(entry) = store_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get_mut(id)
+    {
+        entry.created_at = Instant::now()
+            .checked_sub(TTL + Duration::from_secs(1))
+            .expect("test timestamp supports TTL subtraction");
+    }
 }
 
 pub fn stats() -> (usize, usize) {

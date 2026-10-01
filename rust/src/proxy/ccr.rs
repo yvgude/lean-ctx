@@ -237,34 +237,112 @@ fn is_shell_tee_name(name: &str) -> bool {
     }
 }
 
-/// Resolve a retrieval `id` back to a file in the shared `{state}/tee/` store.
-/// Accepts every handle form a stub or footer can carry, with a fixed precedence
-/// so the forms can never collide (#936):
-///
-/// 1. **Prefix forms** — `<prefix>_<16hex>(.log)` for every [`TEE_PREFIXES`]
-///    entry (`proxy_`, `conv_`, `json_`, `tbl_`, `yaml_`, `html_`), or a bare
-///    `<16hex>` (→ `proxy_`, back-compat). The proxy history-prune / live stubs,
-///    the JSON / tabular / YAML crushers' lossy originals and the HTML→markdown
-///    crush's verbatim page (#1124).
-/// 2. **Shell-tee form** — `<slug>_<8hex>.log` (`save_tee`), so every compressed
-///    shell command's already-teed verbatim output is surgically retrievable.
-///
-/// The 16-vs-8 hex length already disambiguates the two classes; the explicit
-/// order documents intent. Security: only the *file name* is trusted — the path
-/// is always rebuilt under `{state}/tee/`, so a crafted `id` can never escape the
-/// store (no path traversal) and a non-tee id resolves to `None`.
-pub(crate) fn resolve_tee(id: &str) -> Option<PathBuf> {
+/// Why a canonical tee handle could not be resolved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TeeResolveError {
+    Malformed,
+    Missing,
+    Refused(&'static str),
+}
+
+/// Resolve a retrieval ID through the same canonical store path used by
+/// `ctx_expand`, while distinguishing malformed IDs and policy refusals.
+pub(crate) fn resolve_tee_checked(id: &str) -> Result<PathBuf, TeeResolveError> {
     let name = Path::new(id)
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(id);
-    let canon =
-        canonical_tee_name(name).or_else(|| is_shell_tee_name(name).then(|| name.to_string()))?;
-    let path = crate::core::paths::state_dir()
-        .ok()?
-        .join("tee")
-        .join(canon);
-    path.is_file().then_some(path)
+    let canon = canonical_tee_name(name)
+        .or_else(|| is_shell_tee_name(name).then(|| name.to_string()))
+        .ok_or(TeeResolveError::Malformed)?;
+    let state_dir = crate::core::paths::state_dir().map_err(|_| TeeResolveError::Missing)?;
+    let tee_dir = state_dir.join("tee");
+    let path = tee_dir.join(canon);
+
+    let link_metadata = std::fs::symlink_metadata(&path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::PermissionDenied {
+            TeeResolveError::Refused("tee metadata read refused by filesystem policy")
+        } else {
+            TeeResolveError::Missing
+        }
+    })?;
+    if link_metadata.file_type().is_symlink() {
+        return Err(TeeResolveError::Refused(
+            "tee handles cannot resolve through symlinks",
+        ));
+    }
+    if !link_metadata.is_file() {
+        return Err(TeeResolveError::Missing);
+    }
+
+    let canonical_state = std::fs::canonicalize(&state_dir).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::PermissionDenied {
+            TeeResolveError::Refused("tee store access refused by filesystem policy")
+        } else {
+            TeeResolveError::Missing
+        }
+    })?;
+    let canonical_tee = std::fs::canonicalize(&tee_dir).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::PermissionDenied {
+            TeeResolveError::Refused("tee store access refused by filesystem policy")
+        } else {
+            TeeResolveError::Missing
+        }
+    })?;
+    if !canonical_tee.starts_with(&canonical_state) {
+        return Err(TeeResolveError::Refused(
+            "tee store resolves outside the state directory",
+        ));
+    }
+
+    let canonical_file = std::fs::canonicalize(&path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::PermissionDenied {
+            TeeResolveError::Refused("tee read refused by filesystem policy")
+        } else {
+            TeeResolveError::Missing
+        }
+    })?;
+    if !canonical_file.starts_with(&canonical_tee) {
+        return Err(TeeResolveError::Refused(
+            "tee handle resolves outside the tee store",
+        ));
+    }
+    if !canonical_file.is_file() {
+        return Err(TeeResolveError::Missing);
+    }
+    Ok(path)
+}
+
+/// Whether `id` uses one of the handle shapes emitted by the tee producers.
+pub(crate) fn is_tee_handle(id: &str) -> bool {
+    let name = Path::new(id)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(id);
+    canonical_tee_name(name).is_some() || is_shell_tee_name(name)
+}
+
+/// Whether the input is a legacy bare 16-hex CCR ID that can also be tried as
+/// an archive ID after the tee store lookup, matching `ctx_expand` precedence.
+pub(crate) fn is_bare_tee_handle(id: &str) -> bool {
+    is_hex(id, TEE_HASH_LEN)
+}
+
+/// Catch malformed IDs that still declare a known tee producer prefix.
+pub(crate) fn looks_like_tee_handle(id: &str) -> bool {
+    let name = Path::new(id)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(id);
+    let stem = name.strip_suffix(".log").unwrap_or(name);
+    TEE_PREFIXES
+        .iter()
+        .any(|prefix| stem.starts_with(&format!("{prefix}_")))
+}
+
+/// Back-compatible resolver used by `ctx_expand`.
+pub(crate) fn resolve_tee(id: &str) -> Option<PathBuf> {
+    resolve_tee_checked(id).ok()
 }
 
 /// The in-band retrieval marker `<lc_expand:HASH>` for a CCR `handle` (#493).

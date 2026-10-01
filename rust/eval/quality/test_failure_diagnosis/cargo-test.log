@@ -1,0 +1,90 @@
+running 12 tests
+
+---- readiness::canary_reports_ready stdout ----
+thread 'readiness::canary_reports_ready' panicked at tests/readiness.rs:44:9:
+assertion `left == right` failed
+  left: 451
+ right: 200
+
+---- migration::commits_only_active_phase stdout ----
+thread 'migration::commits_only_active_phase' panicked at tests/migration.rs:88:9:
+assertion `left == right` failed
+  left: "warmup"
+ right: "active"
+
+---- cache::evicts_oldest_entry stdout ----
+thread 'cache::evicts_oldest_entry' panicked at tests/cache.rs:118:9:
+assertion `left == right` failed
+  left: "cache-key-amber"
+ right: "cache-key-cinder"
+
+---- retry::stops_after_budget stdout ----
+thread 'retry::stops_after_budget' panicked at tests/retry.rs:63:9:
+assertion `left == right` failed
+  left: 8
+ right: 5
+
+---- snapshot::routes_to_secondary_region stdout ----
+thread 'snapshot::routes_to_secondary_region' panicked at tests/snapshot.rs:105:9:
+assertion `left == right` failed
+  left: "us-east-2"
+ right: "us-west-1"
+
+---- signing::accepts_rotated_key stdout ----
+thread 'signing::accepts_rotated_key' panicked at tests/signing.rs:71:9:
+assertion `left == right` failed
+  left: false
+ right: true
+
+---- worker::restarts_after_transient_exit stdout ----
+thread 'worker::restarts_after_transient_exit' panicked at tests/worker.rs:132:9:
+assertion `left == right` failed
+  left: "node-crash"
+ right: "transient-exit"
+
+---- batch::respects_target_rate stdout ----
+thread 'batch::respects_target_rate' panicked at tests/batch.rs:99:9:
+assertion `left == right` failed
+  left: 3.75
+ right: 4.00
+
+---- breaker::opens_after_budget stdout ----
+thread 'breaker::opens_after_budget' panicked at tests/breaker.rs:54:9:
+assertion `left == right` failed
+  left: Retry
+ right: Open
+
+---- scheduler::yields_to_oldest_job stdout ----
+thread 'scheduler::yields_to_oldest_job' panicked at tests/scheduler.rs:141:9:
+assertion `left == right` failed
+  left: 750ms
+ right: 500ms
+
+---- shutdown::drains_before_exit stdout ----
+thread 'shutdown::drains_before_exit' panicked at tests/shutdown.rs:37:9:
+assertion `left == right` failed
+  left: SIGHUP
+ right: SIGTERM
+
+---- store::reconciles_orphaned_records stdout ----
+thread 'store::reconciles_orphaned_records' panicked at tests/store.rs:204:9:
+assertion `left == right` failed
+  left: 42
+ right: 0
+
+failures:
+    readiness::canary_reports_ready
+    migration::commits_only_active_phase
+    cache::evicts_oldest_entry
+    retry::stops_after_budget
+    snapshot::routes_to_secondary_region
+    signing::accepts_rotated_key
+    worker::restarts_after_transient_exit
+    batch::respects_target_rate
+    breaker::opens_after_budget
+    scheduler::yields_to_oldest_job
+    shutdown::drains_before_exit
+    store::reconciles_orphaned_records
+
+test result: FAILED. 0 passed; 12 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+

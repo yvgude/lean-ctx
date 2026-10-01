@@ -1376,6 +1376,143 @@ mod shell_outcome_tests {
         assert_ne!(r.is_error, Some(true));
         assert!(r.structured_content.is_none());
     }
+
+    /// A real registered file-output tool must pass through the model-bound
+    /// policy redaction before its MCP result is returned.
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(not(windows))]
+    async fn registered_file_output_is_policy_redacted_before_mcp_reply() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let nonce_text = nonce
+            .to_string()
+            .chars()
+            .map(|digit| digit.to_string())
+            .collect::<Vec<_>>()
+            .join("-");
+        let secret = format!("cobalt badger egress marker {nonce_text} private note");
+        std::fs::write(root.path().join("probe.txt"), &secret).unwrap();
+        let _policy = ScopedPolicy::redacting("cq06_runtime_probe", &regex::escape(&secret));
+
+        let server = crate::tools::LeanCtxServer::new_with_project_root(Some(
+            root.path().to_str().expect("temporary root is UTF-8"),
+        ));
+        *server.presence_agent_id.write().await = Some("cq06-egress-test".to_owned());
+        let args = serde_json::Map::from_iter([
+            ("path".to_owned(), serde_json::json!("probe.txt")),
+            ("mode".to_owned(), serde_json::json!("full")),
+        ]);
+        let request = rmcp::model::CallToolRequestParams::new("ctx_read").with_arguments(args);
+
+        let result = server
+            .call_tool_guarded(request)
+            .await
+            .expect("registered ctx_read call must succeed");
+        let visible = result
+            .content
+            .iter()
+            .filter_map(|block| block.as_text())
+            .map(|block| block.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            !visible.contains(&secret),
+            "model-visible MCP result leaked runtime secret: {visible}"
+        );
+        assert!(
+            visible.contains("[REDACTED:cq06_runtime_probe]"),
+            "policy redaction marker missing from model-visible result: {visible}"
+        );
+    }
+
+    /// Security invariant across the registry and dispatch files: every
+    /// registered McpTool is invoked only by the one generic dispatcher that
+    /// the MCP handler sends through dispatch_and_post_process. The sole
+    /// exemption is this cfg(test)-only file, whose direct calls test handlers
+    /// in isolation and never create model-visible MCP replies.
+    #[test]
+    fn registered_tool_dispatch_has_one_outbound_pipeline_entry() {
+        const TEST_ONLY_EXEMPTIONS: &[&str] = &["call_tool/tests.rs"];
+
+        let server_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/server");
+        for exemption in TEST_ONLY_EXEMPTIONS {
+            let path = server_dir.join(exemption);
+            assert!(path.is_file(), "stale egress exemption: {exemption}");
+            let source = std::fs::read_to_string(path).expect("read test-only exemption");
+            assert!(
+                source.contains(".handle("),
+                "stale egress exemption no longer contains isolated direct handler tests: {exemption}"
+            );
+        }
+
+        let mut direct_handler_calls = Vec::new();
+        for entry in walkdir::WalkDir::new(&server_dir)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "rs"))
+        {
+            let relative = entry
+                .path()
+                .strip_prefix(&server_dir)
+                .expect("entry is under server source")
+                .to_string_lossy()
+                .into_owned();
+            if TEST_ONLY_EXEMPTIONS.contains(&relative.as_str()) {
+                continue;
+            }
+            let source = std::fs::read_to_string(entry.path()).expect("read server source");
+            for (line, text) in source.lines().enumerate() {
+                if text.contains(".handle(") {
+                    direct_handler_calls.push((relative.clone(), line + 1, text.trim().to_owned()));
+                }
+            }
+        }
+
+        assert_eq!(
+            direct_handler_calls.len(),
+            1,
+            "registered McpTool handlers must have one production invocation site: {direct_handler_calls:?}"
+        );
+        assert_eq!(direct_handler_calls[0].0, "dispatch/mod.rs");
+        assert!(direct_handler_calls[0].2.contains("tool.handle("));
+
+        let server_handler = include_str!("../server_handler.rs");
+        let guarded = include_str!("guarded.rs");
+        let pipeline = include_str!("pipeline.rs");
+        let dispatch = include_str!("../dispatch/mod.rs");
+        let resources = include_str!("../resources.rs");
+        let file_resource = include_str!("../file_resource.rs");
+        let prompts = include_str!("../prompts.rs");
+        let cli_call = include_str!("../../cli/call_cmd.rs");
+        let cli_agent_tools = include_str!("../../cli/agent_tools_cmd.rs");
+        let embed_engine = include_str!("../../../crates/lean-ctx-embed/src/engine.rs");
+        assert!(server_handler.contains("self.call_tool_guarded(request)"));
+        assert!(guarded.contains("dispatch_and_post_process("));
+        assert!(pipeline.contains("server.dispatch_tool(name, args, minimal).await"));
+        assert!(pipeline.contains("policy_guard::redact_result(&result_text)"));
+        assert!(pipeline.contains("sensitivity::enforce_text"));
+        assert!(dispatch.contains("_ => self.dispatch_inner(name, args, minimal).await"));
+        assert!(dispatch.contains("r.get_arc(name)"));
+        assert!(resources.contains("policy_guard::redact_model_text"));
+        assert!(file_resource.contains("resources::text_resource(&content, uri)"));
+        assert!(prompts.contains("policy_guard::redact_model_text"));
+        assert!(cli_call.contains("policy_guard::redact_model_text(&output.text)"));
+        assert!(cli_agent_tools.contains("policy_guard::redact_model_text(&output.text)"));
+        assert!(embed_engine.contains("policy_guard::redact_model_text(&out.text)"));
+
+        let registry = crate::server::registry::build_registry();
+        let names = registry.names();
+        assert!(!names.is_empty(), "registry must include registered tools");
+        for name in names {
+            let tool = registry.get(name).expect("every registered name resolves");
+            assert_eq!(tool.name(), name);
+        }
+    }
 }
 
 #[cfg(test)]

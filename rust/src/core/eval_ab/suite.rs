@@ -51,6 +51,9 @@ pub struct Task {
     pub id: String,
     /// Selects the scorer and the meaning of the remaining fields.
     pub domain: Domain,
+    /// Optional evaluation category, added without breaking existing suite files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_class: Option<String>,
     /// The instruction shown to the model (the "user turn").
     pub prompt: String,
     /// Repo / corpus directory the context is assembled from. Safe relative paths resolve
@@ -120,6 +123,13 @@ impl Task {
     pub(crate) fn validate(&self) -> std::result::Result<(), String> {
         if self.id.trim().is_empty() {
             return Err("task id is empty".into());
+        }
+        if self
+            .task_class
+            .as_deref()
+            .is_some_and(|class| class.trim().is_empty())
+        {
+            return Err(format!("task {}: task_class is empty", self.id));
         }
         if self.prompt.trim().is_empty() {
             return Err(format!("task {}: prompt is empty", self.id));
@@ -264,6 +274,14 @@ mod tests {
         assert_eq!(suite.tasks[0].domain, Domain::Qa);
         assert_eq!(suite.tasks[1].domain, Domain::Code);
         assert_eq!(suite.tasks[0].query(), suite.tasks[0].prompt);
+        assert_eq!(suite.tasks[0].task_class, None);
+
+        let classified = r#"{"id":"q2","domain":"qa","task_class":"needle_retrieval","prompt":"Find the owner","workspace":"corpus","answers":["registry"]}"#;
+        let classified = EvalSuite::parse(classified, PathBuf::from("/suites")).unwrap();
+        assert_eq!(
+            classified.tasks[0].task_class.as_deref(),
+            Some("needle_retrieval")
+        );
     }
 
     #[test]
@@ -325,6 +343,67 @@ mod tests {
                 r#"{{"id":"c","domain":"code","prompt":"p","workspace":".","target_file":"solution.sh","test_cmd":"{test_cmd}"}}"#
             );
             assert!(EvalSuite::parse(&raw, PathBuf::from(".")).is_err());
+        }
+    }
+
+    #[test]
+    fn committed_task_class_corpus_parses_without_gold_in_task_metadata() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("eval/quality-suite.ndjson");
+        let suite = EvalSuite::load(&path).expect("committed task-class suite must parse");
+        assert!(
+            suite.tasks.len() >= 120,
+            "quality suite must meet the requested minimum of 120 tasks"
+        );
+        let expected = [
+            "needle_retrieval",
+            "long_context_qa",
+            "structured_data",
+            "code_understanding",
+            "test_failure_diagnosis",
+            "compiler_output_interpretation",
+            "shell_log_analysis",
+            "config_reasoning",
+            "dependency_tracing",
+            "security_relevant_reasoning",
+        ]
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>();
+        let actual = suite
+            .tasks
+            .iter()
+            .filter_map(|task| task.task_class.as_deref())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(actual, expected);
+        let normalize = |value: &str| {
+            value
+                .chars()
+                .filter(|character| character.is_alphanumeric())
+                .flat_map(char::to_lowercase)
+                .collect::<String>()
+        };
+
+        for task in &suite.tasks {
+            task.resolve_workspace_path(&suite.dir)
+                .unwrap_or_else(|error| panic!("resolve {}: {error:#}", task.id));
+            for answer in &task.answers {
+                let gold = normalize(answer);
+                if gold.is_empty() {
+                    continue;
+                }
+                let metadata = [
+                    task.id.as_str(),
+                    task.prompt.as_str(),
+                    task.query(),
+                    task.task_class.as_deref().unwrap_or_default(),
+                ];
+                for field in metadata {
+                    assert!(
+                        !normalize(field).contains(&gold),
+                        "gold leaked into task metadata for {}",
+                        task.id
+                    );
+                }
+            }
         }
     }
 

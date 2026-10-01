@@ -8,9 +8,11 @@
 use std::path::{Path, PathBuf};
 
 use crate::core::eval_ab::artifact::{self, SignedAbReportV1};
+use crate::core::eval_ab::conditions::Condition;
 use crate::core::eval_ab::footprint::{
     Footprint, FootprintConfig, FootprintReport, run_footprint_ab,
 };
+use crate::core::eval_ab::frontier::{self, FrontierReport};
 use crate::core::eval_ab::model::{ModelRunner, OpenAiRunner, RecordedRunner, RecordingRunner};
 use crate::core::eval_ab::report::ReportConfig;
 use crate::core::eval_ab::suite::EvalSuite;
@@ -29,6 +31,7 @@ pub fn cmd_eval(args: &[String]) {
     }
     match args.first().map(String::as_str) {
         Some("ab") => cmd_ab(&args[1..]),
+        Some("frontier") => cmd_frontier(&args[1..]),
         Some("footprint" | "delta") => cmd_footprint(&args[1..]),
         Some("routing") => cmd_routing(&args[1..]),
         Some("testbench") => cmd_testbench(&args[1..]),
@@ -87,6 +90,14 @@ LIVE MODEL (when not replaying) is read from the environment:\n\
   LEAN_CTX_EVAL_MODEL       Model id (e.g. gpt-4o-mini)\n\
   LEAN_CTX_EVAL_MODEL_KEY   API key (optional for local servers)\n\
   LEAN_CTX_EVAL_SEED        Decoding seed (default 7)"
+    );
+    println!(
+        "  lean-ctx eval frontier --suite <file> --strategies <csv> [opts]\n\
+frontier strategies: lean_ctx, json_crush, tabular_crush, yaml_crush\n\
+frontier options: --limit <n>, --budget <n>, --replay <file>, --record <file>, --json, --gate"
+    );
+    println!(
+        "Model revision provenance: LEAN_CTX_EVAL_MODEL_VERSION (defaults to a colon-tagged model revision when available)."
     );
 }
 
@@ -194,6 +205,118 @@ fn cmd_ab(args: &[String]) {
     if has_flag(args, "--gate") && !signed.verdict.gate_passes() {
         eprintln!("\nquality gate FAILED: {}", signed.verdict.label());
         std::process::exit(1);
+    }
+}
+
+fn cmd_frontier(args: &[String]) {
+    let Some(suite_path) = flag_value(args, "--suite") else {
+        eprintln!("eval frontier: --suite <file> is required");
+        std::process::exit(2);
+    };
+    let Some(strategy_names) = flag_value(args, "--strategies") else {
+        eprintln!("eval frontier: --strategies <csv> is required");
+        std::process::exit(2);
+    };
+    let strategies = match frontier::parse_strategies(strategy_names) {
+        Ok(strategies) => strategies,
+        Err(error) => {
+            eprintln!("eval frontier: {error:#}");
+            std::process::exit(2);
+        }
+    };
+
+    let suite_path = PathBuf::from(suite_path);
+    let mut suite = match EvalSuite::load(&suite_path) {
+        Ok(suite) => suite,
+        Err(error) => {
+            eprintln!("eval frontier: {error:#}");
+            std::process::exit(1);
+        }
+    };
+    if let Some(limit) = flag_value(args, "--limit") {
+        let Ok(limit) = limit.parse::<usize>() else {
+            eprintln!("eval frontier: --limit must be a positive integer");
+            std::process::exit(2);
+        };
+        if limit == 0 {
+            eprintln!("eval frontier: --limit must be a positive integer");
+            std::process::exit(2);
+        }
+        suite.tasks.truncate(limit);
+    }
+    let suite_name = suite_path.file_name().map_or_else(
+        || "suite".to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+
+    let mut cfg = AbRunConfig::default();
+    if let Some(budget) = flag_value(args, "--budget").and_then(|value| value.parse().ok()) {
+        cfg.budget_tokens = budget;
+    }
+    cfg.report = ReportConfig {
+        noninferiority_margin: flag_value(args, "--margin")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0.0),
+        ..ReportConfig::default()
+    };
+
+    let report = if let Some(replay) = flag_value(args, "--replay") {
+        let runner = match RecordedRunner::from_file(Path::new(replay)) {
+            Ok(runner) => runner,
+            Err(error) => {
+                eprintln!("eval frontier: {error:#}");
+                std::process::exit(1);
+            }
+        };
+        run_frontier_or_exit(&suite, &suite_name, &runner, &cfg, &strategies)
+    } else {
+        let live = match OpenAiRunner::from_env() {
+            Ok(runner) => runner,
+            Err(error) => {
+                eprintln!(
+                    "eval frontier: no live model configured: {error:#}\n(use --replay <file> for an offline run)"
+                );
+                std::process::exit(1);
+            }
+        };
+        if let Some(record_path) = flag_value(args, "--record") {
+            let recorder = RecordingRunner::new(live);
+            let report = run_frontier_or_exit(&suite, &suite_name, &recorder, &cfg, &strategies);
+            if let Err(error) = recorder.into_recording().save(Path::new(record_path)) {
+                eprintln!("eval frontier: failed to save recording: {error:#}");
+                std::process::exit(1);
+            }
+            eprintln!("Recording saved → {record_path}");
+            report
+        } else {
+            run_frontier_or_exit(&suite, &suite_name, &live, &cfg, &strategies)
+        }
+    };
+
+    if has_flag(args, "--json") {
+        println!("{}", report.to_json());
+    } else {
+        print!("{}", report.render_table());
+    }
+    if has_flag(args, "--gate") && !report.gate_passes() {
+        eprintln!("\nquality gate FAILED: one or more frontier strategies regressed");
+        std::process::exit(1);
+    }
+}
+
+fn run_frontier_or_exit(
+    suite: &EvalSuite,
+    suite_name: &str,
+    runner: &dyn ModelRunner,
+    cfg: &AbRunConfig,
+    strategies: &[Condition],
+) -> FrontierReport {
+    match frontier::run_frontier(suite, suite_name, runner, cfg, strategies) {
+        Ok(report) => report,
+        Err(error) => {
+            eprintln!("eval frontier: run failed: {error:#}");
+            std::process::exit(1);
+        }
     }
 }
 

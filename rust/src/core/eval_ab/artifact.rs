@@ -314,6 +314,25 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// A v1 artifact was signed over bytes without the v2 fields. Loading it yields
+    /// `None` for them; re-serializing must not add `null` keys, or every signature made
+    /// by an older build would fail `eval verify`.
+    #[test]
+    fn v1_artifact_canonical_bytes_do_not_gain_v2_keys() {
+        let mut v1 = report();
+        v1.schema_version = 1;
+        v1.evidence_tier = None;
+        v1.power = None;
+        let mut a = SignedAbReportV1::from_report(v1, "local");
+        a.sign_with_key(&key()).unwrap();
+        let json = serde_json::to_string(&a).unwrap();
+        let reloaded: SignedAbReportV1 = serde_json::from_str(&json).unwrap();
+        let canonical = String::from_utf8(reloaded.canonical_bytes().unwrap()).unwrap();
+        assert!(!canonical.contains("evidence_tier"), "{canonical}");
+        assert!(!canonical.contains("\"power\""), "{canonical}");
+        assert!(reloaded.verify().ok());
+    }
+
     #[test]
     fn load_rejects_foreign_json() {
         let nanos = std::time::SystemTime::now()

@@ -140,6 +140,7 @@ mod tests {
         Task {
             id: "q".into(),
             domain: Domain::Qa,
+            task_class: None,
             prompt: "What stores does consolidation persist to?".into(),
             workspace: ".".into(),
             retrieval_query: None,

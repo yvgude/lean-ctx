@@ -1,0 +1,6 @@
+record,queue,region,owner,enabled
+CSV-913,quartz-mirror,sa-east-3,team-elm,true
+CSV-264,birch-scheduler,eu-central-5,team-ivy,true
+CSV-781,amber-reconcile,ap-northeast-6,team-maple,true
+CSV-356,cloud-spool,us-east-8,team-pine,true
+

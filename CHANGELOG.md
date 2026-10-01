@@ -15,8 +15,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   carry an evidence tier — A mechanism, B deterministic, C recorded replay,
   D live run, E production — and `eval verify` prints whether a quality
   claim is supported. Fixture recordings are always tier A.
-- `eval footprint` recommends pruning an injected element only on evidence;
-  an inconclusive run keeps it.
+- `eval footprint` recommends pruning an injected element only on powered
+  evidence from a real model; underpowered or fixture-only runs keep it.
+- New `lean-ctx eval frontier`: scores several lean-ctx strategies against one
+  shared baseline and prints quality delta vs. token reduction per strategy.
+  New 120-task suite `rust/eval/quality-suite.ndjson` (10 task classes, 12
+  each, objective scorers); suites gain an optional `task_class` field and a
+  guard that fails when a gold answer leaks into task metadata.
 - `lean-ctx quality-lab`: the `Premium/Good/…` "quality grade" is now a
   `representation_grade` (`Excellent/Good/…`, schema v2; v1 JSON still
   parses). It grades savings and structural fidelity, not task quality, and
@@ -25,10 +30,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   dimensions shown as `UNMEASURED`), and `--gate` also fails when a critical
   fact is lost.
 - Terse compression of shell/tool output falls back to the original when the
-  compressed text drops a critical fact (error code, failing-test count,
-  failure status, problem location). Expect slightly fewer savings on failing
-  builds and test runs; those are the outputs where losing a line hurts most.
+  final text (after dictionaries and the auto-dictionary) drops a critical
+  fact (error code, failing-test count, failure status, problem location).
+  Facts are matched as whole tokens; reversible rewrites (`FAIL`, the
+  auto-dictionary legend) count as kept.
 - Contract: [docs/contracts/context-quality-v1.md](docs/contracts/context-quality-v1.md).
+
+### Security — secret redaction covers more forms
+
+- Redaction now also catches AWS `ASIA…` session keys, GitHub fine-grained
+  and GitLab tokens, Anthropic/OpenAI keys, JWTs, Slack, Stripe and npm
+  tokens, EC/DSA/OpenSSH private keys, URL-encoded and JSON-escaped values,
+  and secrets split by zero-width or full-width characters. A private-key
+  block is now replaced whole, markers included. UUIDs and already-masked
+  values are no longer redacted. A measured corpus (false negatives and false
+  positives per class) guards this in `cargo test`.
+- MCP resources, prompts, `lean-ctx call`, the agent-tools CLI and the embed
+  crate pass returned text through the same redaction as registered tools;
+  a structural test fails if a tool is dispatched around the shared pipeline.
+  The LLM proxy rails are covered by the Context Gateway work, not here.
+
+### Changed — recovery and runtime feedback
+
+- Recovery handles (tee, archive, reference store, context ledger) can be
+  verified — resolves, not expired, digest matches, no path escape — without
+  exposing content. Policy refusals count as "not recoverable for the model",
+  not as a broken mechanism.
+- Edit-failure and re-read-bounce feedback share one bounded estimator keyed
+  by extension, size and read mode, with hysteresis and decay. It only ever
+  moves reads toward more conservative modes and returns to the configured
+  default as evidence decays. Contract: `docs/contracts/quality-loop-v2.md`.
 
 ### Fixed — shell hooks follow package-manager upgrades (#1959)
 

@@ -421,6 +421,7 @@ mod tests {
         Task {
             id: "q".into(),
             domain: Domain::Qa,
+            task_class: None,
             prompt: "p".into(),
             workspace: "w".into(),
             retrieval_query: None,
@@ -471,6 +472,7 @@ mod tests {
         let task = Task {
             id: "c".into(),
             domain: Domain::Code,
+            task_class: None,
             prompt: "implement add".into(),
             workspace: ".".into(),
             retrieval_query: None,
@@ -499,6 +501,7 @@ mod tests {
         let task = Task {
             id: "c".into(),
             domain: Domain::Code,
+            task_class: None,
             prompt: "implement add".into(),
             workspace: "code".into(),
             retrieval_query: None,

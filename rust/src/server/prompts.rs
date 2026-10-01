@@ -8,6 +8,13 @@ fn required_arg(name: &str, desc: &str) -> PromptArgument {
         .with_required(true)
 }
 
+fn assistant_text(text: &str) -> PromptMessage {
+    PromptMessage::new_text(
+        Role::Assistant,
+        crate::server::policy_guard::redact_model_text(text),
+    )
+}
+
 pub fn list_prompts() -> Vec<Prompt> {
     vec![
         Prompt::new(
@@ -92,7 +99,7 @@ fn get_context_focus(
         ledger.entries.len(),
         pressure.utilization * 100.0,
     );
-    GetPromptResult::new(vec![PromptMessage::new_text(Role::Assistant, msg)])
+    GetPromptResult::new(vec![assistant_text(&msg)])
 }
 
 fn get_context_review(ledger: &crate::core::context_ledger::ContextLedger) -> GetPromptResult {
@@ -106,12 +113,11 @@ fn get_context_review(ledger: &crate::core::context_ledger::ContextLedger) -> Ge
         "Context Review:\n{summary}\nAdjusted savings: {adjusted} tokens\n{bounce_info}\n\n\
          Use ctx_metrics() for detailed breakdown or ctx_plan(task=\"review context state\") for mode recommendations.",
     );
-    GetPromptResult::new(vec![PromptMessage::new_text(Role::Assistant, msg)])
+    GetPromptResult::new(vec![assistant_text(&msg)])
 }
 
 fn get_context_reset() -> GetPromptResult {
-    GetPromptResult::new(vec![PromptMessage::new_text(
-        Role::Assistant,
+    GetPromptResult::new(vec![assistant_text(
         "Reset context: Use ctx_control(action=\"reset\") to clear all overlays and reset ledger states.",
     )])
 }
@@ -120,7 +126,7 @@ fn get_context_pin(path: &str) -> GetPromptResult {
     let msg = format!(
         "Pin file: Use ctx_control(action=\"pin\", target=\"{path}\") to keep this file in full context regardless of pressure."
     );
-    GetPromptResult::new(vec![PromptMessage::new_text(Role::Assistant, msg)])
+    GetPromptResult::new(vec![assistant_text(&msg)])
 }
 
 fn get_context_budget(tokens: &str) -> GetPromptResult {
@@ -128,7 +134,7 @@ fn get_context_budget(tokens: &str) -> GetPromptResult {
         "Set budget: Configure the context window to {tokens} tokens. \
          Use ctx_session(action=\"budget\", value=\"{tokens}\") or set LCTX_CONTEXT_BUDGET={tokens} in your environment."
     );
-    GetPromptResult::new(vec![PromptMessage::new_text(Role::Assistant, msg)])
+    GetPromptResult::new(vec![assistant_text(&msg)])
 }
 
 #[cfg(test)]

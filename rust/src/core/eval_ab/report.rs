@@ -171,10 +171,12 @@ pub struct AbReport {
     pub stats: AbStats,
     pub verdict: Verdict,
     /// Kind of evidence behind the verdict. `None` only for v1 reports, which predate it.
-    #[serde(default)]
+    /// Skipped when absent so a v1 artifact re-serializes byte-identically and its
+    /// signature still verifies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence_tier: Option<EvidenceTier>,
     /// Sample-size status. `None` only for v1 reports.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub power: Option<PowerStatus>,
 }
 
@@ -339,7 +341,9 @@ fn compute_stats(records: &[PairRecord], cfg: ReportConfig) -> AbStats {
 }
 
 fn verdict_for(stats: &AbStats, cfg: ReportConfig) -> Verdict {
-    if stats.n == 0 {
+    // Without pairs or without a bootstrap there is no confidence interval: the
+    // [0, 0] placeholder must never read as "no regression".
+    if stats.n == 0 || cfg.bootstrap_iters == 0 {
         return Verdict::Inconclusive;
     }
     // An observed regression blocks at any sample size: a small suite cannot show that
@@ -472,6 +476,22 @@ mod tests {
     #[test]
     fn empty_run_is_inconclusive_not_non_inferior() {
         let report = AbReport::build("s", 4000, fp(), Vec::new(), ReportConfig::default());
+        assert_eq!(report.verdict, Verdict::Inconclusive);
+        assert!(!report.supports_quality_claim());
+    }
+
+    #[test]
+    fn a_run_without_bootstrap_never_claims_non_inferiority() {
+        // Consistently worse treatment on a powered, model-backed run: with no bootstrap
+        // the CI is a [0, 0] placeholder and must not read as "no regression".
+        let worse: Vec<_> = (0..MIN_POWERED_PAIRS)
+            .map(|i| rec(&i.to_string(), 0.9, 0.2))
+            .collect();
+        let cfg = ReportConfig {
+            bootstrap_iters: 0,
+            ..ReportConfig::default()
+        };
+        let report = AbReport::build("s", 4000, fp_real(), worse, cfg);
         assert_eq!(report.verdict, Verdict::Inconclusive);
         assert!(!report.supports_quality_claim());
     }

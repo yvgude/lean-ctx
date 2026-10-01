@@ -722,6 +722,15 @@ jobs:
           else
             echo "::notice::Output-quality gate skipped — commit rust/eval/recording.json or set LEAN_CTX_EVAL_* secrets."
           fi
+          TIER_C_REC=eval/frontier-recording.json
+          if [ -f "$TIER_C_REC" ]; then
+            echo "Replaying Tier-C multi-strategy frontier (deterministic, no secrets)…"
+            "$BIN" eval frontier --suite eval/quality-suite.ndjson --limit 30 \
+              --strategies lean_ctx,json_crush --replay "$TIER_C_REC" --json --gate \
+              > frontier-report.json
+          else
+            echo "::notice::Tier-C frontier replay skipped — capture rust/eval/frontier-recording.json with the documented eval frontier command."
+          fi
       - name: Verify artifact (signature + determinism digest)
         working-directory: rust
         shell: bash

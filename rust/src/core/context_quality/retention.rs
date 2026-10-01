@@ -6,21 +6,28 @@
 //! [`Retention::Recoverable`] (absent, but an exact verified recovery path to the
 //! original exists), or [`Retention::Lost`]. A lost *critical* probe fails the check.
 //!
-//! Atomic tokens are matched instead of whole lines because compressors legitimately
-//! rewrite prose (dictionaries abbreviate `warning`, whitespace is collapsed); a code
-//! such as `E0308` or a count such as `2 failed` must survive verbatim.
+//! Matching is by exact token, not substring: the delivered text is scanned with the
+//! same extractors and a probe is retained only if the same fact appears there as a
+//! whole token (`src/lib.rs:42` is not retained by `archive/src/lib.rs:42`). Atomic
+//! tokens are used instead of whole lines because compressors legitimately rewrite
+//! prose; the known reversible rewrites of terse compression (the auto-dictionary
+//! legend, `test result: FAILED` → `FAIL`) are resolved before matching.
 //!
 //! Lines that carry a detected secret are not probed at all: removing a secret is a
 //! security action, not context loss, and must never be reported as recoverable.
 
-use std::collections::BTreeSet;
+use std::borrow::Cow;
+use std::collections::{BTreeSet, HashSet};
 use std::sync::OnceLock;
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-/// Upper bound on probes per text so the check stays cheap on large outputs.
+/// Cap on non-critical probes per text (they only feed report detail).
 pub const MAX_PROBES: usize = 256;
+/// Cap on critical probes per text. Every critical fact up to this bound is checked;
+/// beyond it the check fails closed instead of sampling.
+pub const MAX_CRITICAL_PROBES: usize = 4096;
 
 /// What kind of fact a probe captures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -110,15 +117,29 @@ pub struct RetentionReport {
     /// Probe-bearing lines skipped because they carry a detected secret (security, not
     /// retention).
     pub secret_lines_withheld: usize,
-    /// More probes existed than [`MAX_PROBES`]; the remainder was not checked.
+    /// More than [`MAX_PROBES`] non-critical probes existed; the rest was not checked.
     pub truncated: bool,
+    /// More than [`MAX_CRITICAL_PROBES`] critical facts existed. They could not all be
+    /// checked, so the report fails closed.
+    #[serde(default)]
+    pub critical_unchecked: bool,
 }
 
 impl RetentionReport {
-    /// The hard invariant: no critical fact may be lost without a recovery path.
+    /// The hard invariant: no critical fact may be lost without a recovery path, and
+    /// critical facts that were not checked count as a failure, never as a pass.
     pub fn passes(&self) -> bool {
-        self.critical.lost == 0
+        self.critical.lost == 0 && !self.critical_unchecked
     }
+}
+
+/// Probes of one text plus the extraction bookkeeping.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Extraction {
+    pub probes: Vec<Probe>,
+    pub truncated: bool,
+    pub critical_unchecked: bool,
+    pub secret_lines: usize,
 }
 
 fn re(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
@@ -169,6 +190,12 @@ fn url_re() -> &'static Regex {
     re(&R, r#"https?://[^\s"'<>)\]]+"#)
 }
 
+/// Abbreviations terse's Cargo dictionary applies to runner summaries.
+fn dictionary_outcome_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    re(&R, r"\b(?:FAIL|PASS)\b")
+}
+
 /// Whether a line reports a problem, which upgrades codes/locations on it to critical.
 fn is_problem_line(line: &str) -> bool {
     status_re().is_match(line) || {
@@ -177,138 +204,170 @@ fn is_problem_line(line: &str) -> bool {
     }
 }
 
-/// Extracts the probes of `text`, sorted and deduplicated, at most [`MAX_PROBES`].
-/// Returns the probes and whether extraction was truncated and how many secret-bearing
-/// lines were skipped.
-pub fn extract_probes(text: &str) -> (Vec<Probe>, bool, usize) {
-    let mut probes: BTreeSet<Probe> = BTreeSet::new();
-    let mut secret_lines = 0usize;
-    let mut truncated = false;
-    let mut other_count = 0usize;
-    let mut critical: Vec<Probe> = Vec::new();
-    let mut critical_seen: BTreeSet<String> = BTreeSet::new();
+/// Every fact token on one line, with its kind (criticality is decided by the caller).
+fn scan_line(line: &str) -> Vec<(ProbeKind, &str)> {
+    let mut out = Vec::new();
+    out.extend(
+        test_result_re()
+            .find_iter(line)
+            .map(|m| (ProbeKind::TestResult, m.as_str())),
+    );
+    out.extend(
+        status_re()
+            .find_iter(line)
+            .map(|m| (ProbeKind::Status, m.as_str())),
+    );
+    out.extend(
+        error_code_re()
+            .find_iter(line)
+            .map(|m| (ProbeKind::ErrorCode, m.as_str())),
+    );
+    out.extend(
+        location_re()
+            .find_iter(line)
+            .map(|m| (ProbeKind::Location, m.as_str())),
+    );
+    out.extend(
+        path_re()
+            .find_iter(line)
+            .map(|m| (ProbeKind::Path, m.as_str())),
+    );
+    out.extend(
+        hash_re()
+            .find_iter(line)
+            .map(|m| m.as_str())
+            .filter(|v| {
+                v.bytes().any(|b| b.is_ascii_digit()) && v.bytes().any(|b| b.is_ascii_alphabetic())
+            })
+            .map(|v| (ProbeKind::Hash, v)),
+    );
+    out.extend(
+        url_re()
+            .find_iter(line)
+            .map(|m| (ProbeKind::Url, m.as_str())),
+    );
+    out
+}
+
+/// Canonical form used for matching: runner summaries and statuses may change case
+/// (`FAILED` / `failed`), every other fact must match exactly.
+fn canonical(kind: ProbeKind, value: &str) -> String {
+    match kind {
+        ProbeKind::TestResult | ProbeKind::Status => value.to_ascii_lowercase(),
+        _ => value.to_string(),
+    }
+}
+
+fn criticality_of(kind: ProbeKind, problem_line: bool) -> Criticality {
+    match kind {
+        ProbeKind::TestResult | ProbeKind::Status => Criticality::Critical,
+        ProbeKind::ErrorCode | ProbeKind::Location if problem_line => Criticality::Critical,
+        _ => Criticality::Important,
+    }
+}
+
+/// Extracts the probes of `text`, sorted and deduplicated.
+///
+/// The whole text is scanned: the facts that matter most (a test summary, the final
+/// error) are often on the last lines. All critical probes are kept up to
+/// [`MAX_CRITICAL_PROBES`]; past that bound extraction reports `critical_unchecked`.
+pub fn extract_probes(text: &str) -> Extraction {
+    let mut ex = Extraction::default();
+    let mut critical: BTreeSet<Probe> = BTreeSet::new();
+    let mut other: BTreeSet<Probe> = BTreeSet::new();
 
     for line in text.lines() {
-        let mut line_probes: Vec<Probe> = Vec::new();
-        let on_problem = if is_problem_line(line) {
-            Criticality::Critical
-        } else {
-            Criticality::Important
-        };
-        let mut push = |kind, criticality, value: &str| {
-            line_probes.push(Probe {
-                kind,
-                criticality,
-                value: value.to_string(),
-            });
-        };
-        for m in test_result_re().find_iter(line) {
-            push(ProbeKind::TestResult, Criticality::Critical, m.as_str());
-        }
-        for m in status_re().find_iter(line) {
-            push(ProbeKind::Status, Criticality::Critical, m.as_str());
-        }
-        for m in error_code_re().find_iter(line) {
-            push(ProbeKind::ErrorCode, on_problem, m.as_str());
-        }
-        for m in location_re().find_iter(line) {
-            push(ProbeKind::Location, on_problem, m.as_str());
-        }
-        for m in path_re().find_iter(line) {
-            push(ProbeKind::Path, Criticality::Important, m.as_str());
-        }
-        for m in hash_re().find_iter(line) {
-            let v = m.as_str();
-            if v.bytes().any(|b| b.is_ascii_digit()) && v.bytes().any(|b| b.is_ascii_alphabetic()) {
-                push(ProbeKind::Hash, Criticality::Important, v);
-            }
-        }
-        for m in url_re().find_iter(line) {
-            push(ProbeKind::Url, Criticality::Important, m.as_str());
-        }
-        if line_probes.is_empty() {
+        let hits = scan_line(line);
+        if hits.is_empty() {
             continue;
         }
         // Secret detection only runs on lines that would be probed, keeping the
         // check cheap on large outputs.
         if !crate::core::secret_detection::detect_secrets(line).is_empty() {
-            secret_lines += 1;
+            ex.secret_lines += 1;
             continue;
         }
-        // The whole text is scanned: the facts that matter most (a test summary, the
-        // final error) are often on the last lines. Critical probes are all collected
-        // and trimmed below; the rest share a capped budget.
-        for p in line_probes {
-            if p.criticality == Criticality::Critical {
-                if critical_seen.insert(p.value.clone()) {
-                    critical.push(p);
+        let problem = is_problem_line(line);
+        for (kind, value) in hits {
+            let probe = Probe {
+                kind,
+                criticality: criticality_of(kind, problem),
+                value: value.to_string(),
+            };
+            if probe.criticality == Criticality::Critical {
+                if critical.len() < MAX_CRITICAL_PROBES {
+                    critical.insert(probe);
+                } else if !critical.contains(&probe) {
+                    ex.critical_unchecked = true;
                 }
-            } else if other_count < MAX_PROBES {
-                if probes.insert(p) {
-                    other_count += 1;
-                }
-            } else {
-                truncated = true;
+            } else if other.len() < MAX_PROBES {
+                other.insert(probe);
+            } else if !other.contains(&probe) {
+                ex.truncated = true;
             }
         }
     }
 
-    // Too many critical facts: keep the first ones (root cause) and the last ones
-    // (summary), dropping the middle.
-    if critical.len() > MAX_PROBES {
-        truncated = true;
-        let tail = critical.split_off(critical.len() - MAX_PROBES / 2);
-        critical.truncate(MAX_PROBES - tail.len());
-        critical.extend(tail);
-    }
-    probes.extend(critical);
-
     // A value captured under several kinds/criticalities keeps only its strongest entry.
-    let mut seen: BTreeSet<&str> = BTreeSet::new();
-    let mut ordered: Vec<&Probe> = probes.iter().collect();
+    let mut ordered: Vec<Probe> = critical.into_iter().chain(other).collect();
     ordered.sort_by(|a, b| b.criticality.cmp(&a.criticality).then(a.cmp(b)));
-    let mut out: Vec<Probe> = Vec::new();
-    for p in ordered {
-        if seen.insert(p.value.as_str()) {
-            out.push(p.clone());
-        }
-    }
-    out.truncate(MAX_PROBES);
-    out.sort();
-    (out, truncated, secret_lines)
+    let mut seen: HashSet<String> = HashSet::new();
+    ordered.retain(|p| seen.insert(p.value.clone()));
+    ordered.sort();
+    ex.probes = ordered;
+    ex
 }
 
-fn classify(probe: &Probe, delivered: &str, recovery: RecoveryPath) -> Retention {
-    let present = match probe.kind {
-        // Runner summaries may change case ("FAILED" → "failed") but keep the count.
-        ProbeKind::TestResult => delivered
-            .to_ascii_lowercase()
-            .contains(&probe.value.to_ascii_lowercase()),
-        _ => delivered.contains(&probe.value),
-    };
-    if present {
-        Retention::Retained
-    } else if recovery == RecoveryPath::Verified {
-        Retention::Recoverable
-    } else {
-        Retention::Lost
+/// The delivered text with terse's reversible auto-dictionary legend resolved.
+fn resolve_reversible_rewrites(delivered: &str) -> Cow<'_, str> {
+    match crate::core::terse::auto_dict::expand(delivered) {
+        Some(expanded) => Cow::Owned(expanded),
+        None => Cow::Borrowed(delivered),
     }
+}
+
+/// Canonical fact tokens present in what the model receives.
+fn delivered_facts(delivered: &str) -> HashSet<(ProbeKind, String)> {
+    let text = resolve_reversible_rewrites(delivered);
+    let mut facts = HashSet::new();
+    for line in text.lines() {
+        for (kind, value) in scan_line(line) {
+            facts.insert((kind, canonical(kind, value)));
+        }
+        for m in dictionary_outcome_re().find_iter(line) {
+            if m.as_str() == "FAIL" {
+                facts.insert((ProbeKind::TestResult, "test result: failed".into()));
+                facts.insert((ProbeKind::Status, "failed".into()));
+            } else {
+                facts.insert((ProbeKind::TestResult, "test result: ok".into()));
+            }
+        }
+    }
+    facts
 }
 
 /// Probes `original` and checks each fact against what the model receives.
 pub fn assess(original: &str, delivered: &str, recovery: RecoveryPath) -> RetentionReport {
-    let (probes, truncated, secret_lines_withheld) = extract_probes(original);
+    let ex = extract_probes(original);
+    let facts = delivered_facts(delivered);
     let mut report = RetentionReport {
         critical: RetentionCounts::default(),
         important: RetentionCounts::default(),
         informational: RetentionCounts::default(),
         lost_critical_kinds: Vec::new(),
-        secret_lines_withheld,
-        truncated,
+        secret_lines_withheld: ex.secret_lines,
+        truncated: ex.truncated,
+        critical_unchecked: ex.critical_unchecked,
     };
     let mut lost_kinds: BTreeSet<ProbeKind> = BTreeSet::new();
-    for probe in &probes {
-        let r = classify(probe, delivered, recovery);
+    for probe in &ex.probes {
+        let r = if facts.contains(&(probe.kind, canonical(probe.kind, &probe.value))) {
+            Retention::Retained
+        } else if recovery == RecoveryPath::Verified {
+            Retention::Recoverable
+        } else {
+            Retention::Lost
+        };
         match probe.criticality {
             Criticality::Critical => {
                 report.critical.add(r);
@@ -342,7 +401,7 @@ commit 3f9c2a7b81d4e6f0
 
     fn kinds_of(text: &str, kind: ProbeKind) -> Vec<String> {
         extract_probes(text)
-            .0
+            .probes
             .into_iter()
             .filter(|p| p.kind == kind)
             .map(|p| p.value)
@@ -361,7 +420,7 @@ commit 3f9c2a7b81d4e6f0
             kinds_of(CARGO_FAILURE, ProbeKind::Hash),
             vec!["3f9c2a7b81d4e6f0"]
         );
-        let (probes, _, _) = extract_probes(CARGO_FAILURE);
+        let probes = extract_probes(CARGO_FAILURE).probes;
         let e0308 = probes.iter().find(|p| p.value == "E0308").unwrap();
         assert_eq!(
             e0308.criticality,
@@ -388,6 +447,15 @@ commit 3f9c2a7b81d4e6f0
     }
 
     #[test]
+    fn a_location_inside_a_different_path_is_not_retained() {
+        let original = "error[E0308]: mismatched types at src/lib.rs:42\n";
+        let moved = "error[E0308]: mismatched types at archive/src/lib.rs:42.old\n";
+        let r = assess(original, moved, RecoveryPath::None);
+        assert!(!r.passes(), "pointing at another file is a loss: {r:?}");
+        assert_eq!(r.lost_critical_kinds, vec![ProbeKind::Location]);
+    }
+
+    #[test]
     fn missing_facts_with_a_verified_recovery_path_are_recoverable_not_lost() {
         let r = assess(CARGO_FAILURE, "build output elided", RecoveryPath::Verified);
         assert!(r.passes());
@@ -396,12 +464,27 @@ commit 3f9c2a7b81d4e6f0
     }
 
     #[test]
-    fn prose_rewrites_do_not_count_as_loss() {
-        let original =
-            "warning: unused variable in src/config/env.rs:42\nerror[E0425]: not found\n";
-        // Dictionary-style abbreviation of prose keeps every atomic fact.
-        let delivered = "warn: unused var in src/config/env.rs:42\nerr[E0425]: not found\n";
-        assert!(assess(original, delivered, RecoveryPath::None).passes());
+    fn terse_reversible_rewrites_do_not_count_as_loss() {
+        let original = "warning: unused variable in src/config/env.rs:42\n\
+                        error[E0425]: not found in deploy 3f9c2a7b81d4e6f0\n\
+                        retry 3f9c2a7b81d4e6f0 failed\n\
+                        rollback 3f9c2a7b81d4e6f0\n\
+                        test result: FAILED. 3 passed; 2 failed\n";
+        let filtered = original.replace("warning", "W").replace("variable", "var");
+        // Run the real terse rewrites: Cargo dictionary (FAIL) and auto-dictionary
+        // (the repeated hash becomes @D0 plus a legend line).
+        let dict = crate::core::terse::dictionaries::apply_dictionaries(
+            &filtered,
+            crate::core::terse::dictionaries::DictLevel::Full,
+        );
+        let delivered = crate::core::terse::auto_dict::apply(&dict).expect("hash repeats");
+        assert!(
+            delivered.starts_with("[dict: @D0=3f9c2a7b81d4e6f0]"),
+            "{delivered}"
+        );
+        assert!(delivered.contains("FAIL."), "{delivered}");
+        let r = assess(original, &delivered, RecoveryPath::None);
+        assert!(r.passes(), "{r:?}\n{delivered}");
     }
 
     #[test]
@@ -419,32 +502,30 @@ commit 3f9c2a7b81d4e6f0
     }
 
     #[test]
-    fn probe_extraction_is_bounded() {
-        let big = (0..2000)
-            .map(|i| format!("error at src/m{i}.rs:{i}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let (probes, truncated, _) = extract_probes(&big);
-        assert!(probes.len() <= MAX_PROBES);
-        assert!(truncated);
+    fn every_critical_fact_of_a_long_log_is_checked() {
+        let mut log = String::from("error[E0433]: failed to resolve: use of undeclared crate\n");
+        for i in 0..3000 {
+            log.push_str(&format!("error: unused import at src/gen/m{i}.rs:{i}:1\n"));
+        }
+        log.push_str("test result: FAILED. 12 passed; 3 failed\n");
+        let ex = extract_probes(&log);
+        assert!(!ex.critical_unchecked);
+        // Dropping one line from the middle is caught, not sampled away.
+        let without_middle = log.replace("src/gen/m1500.rs:1500:1", "");
+        assert!(!assess(&log, &without_middle, RecoveryPath::None).passes());
+        let without_summary = log.replace("test result: FAILED. 12 passed; 3 failed\n", "");
+        assert!(!assess(&log, &without_summary, RecoveryPath::None).passes());
     }
 
     #[test]
-    fn a_long_noisy_log_still_checks_its_first_error_and_final_summary() {
-        let mut log = String::from("error[E0433]: failed to resolve: use of undeclared crate\n");
-        for i in 0..3000 {
-            log.push_str(&format!(
-                "warning: unused import at src/gen/m{i}.rs:{i}:1 (error-prone)\n"
-            ));
-        }
-        log.push_str("test result: FAILED. 12 passed; 3 failed\n");
-        let (probes, truncated, _) = extract_probes(&log);
-        assert!(truncated);
-        let values: Vec<&str> = probes.iter().map(|p| p.value.as_str()).collect();
-        assert!(values.contains(&"E0433"), "first error kept");
-        assert!(values.contains(&"3 failed"), "final summary kept");
-        // Dropping that summary from an otherwise intact log is a critical loss.
-        let without_summary = log.replace("test result: FAILED. 12 passed; 3 failed\n", "");
-        assert!(!assess(&log, &without_summary, RecoveryPath::None).passes());
+    fn critical_overflow_fails_closed() {
+        let log = (0..=MAX_CRITICAL_PROBES)
+            .map(|i| format!("error at src/m{i}.rs:{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let r = assess(&log, &log, RecoveryPath::None);
+        assert!(r.critical_unchecked);
+        assert_eq!(r.critical.lost, 0);
+        assert!(!r.passes(), "unchecked critical facts never pass");
     }
 }

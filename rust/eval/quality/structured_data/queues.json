@@ -1,0 +1,33 @@
+{
+  "services": [
+    {
+      "record": "RO-641",
+      "queue": "citrine-dispatch",
+      "region": "eu-north-7",
+      "owner": "ops-marlow",
+      "enabled": true
+    },
+    {
+      "record": "RO-852",
+      "queue": "willow-ingest",
+      "region": "ap-south-4",
+      "owner": "ops-arden",
+      "enabled": true
+    },
+    {
+      "record": "RO-309",
+      "queue": "granite-audit",
+      "region": "us-central-6",
+      "owner": "ops-linden",
+      "enabled": true
+    },
+    {
+      "record": "RO-774",
+      "queue": "harbor-replay",
+      "region": "eu-west-8",
+      "owner": "ops-sorrel",
+      "enabled": true
+    }
+  ]
+}
+

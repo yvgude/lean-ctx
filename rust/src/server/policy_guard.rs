@@ -114,6 +114,13 @@ pub fn redact_result(text: &str) -> (String, usize) {
     }
 }
 
+/// Apply the policy-pack and built-in secret redactors to text sent to a model
+/// by protocol surfaces outside the MCP tool pipeline.
+pub fn redact_model_text(text: &str) -> String {
+    let (policy_redacted, _) = redact_result(text);
+    crate::core::redaction::redact_text_if_enabled(&policy_redacted)
+}
+
 /// Audit a content-filter decision (GL #675). **Privacy-preserving**: records
 /// only the detector classes and counts (e.g. `pii:iban×2`) — never the matched
 /// values. A `blocked` decision additionally surfaces a policy-violation event;
@@ -266,6 +273,8 @@ mod tests {
             let (out, hits) = redact_result("contact EMP-1234 today");
             assert_eq!(hits, 1);
             assert!(out.contains("[REDACTED:employee_id]"));
+            assert!(out.starts_with("contact "));
+            assert!(out.ends_with(" today"));
         }
         assert!(
             !check_tool_access("ctx_url_read").blocked,

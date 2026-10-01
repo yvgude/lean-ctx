@@ -239,7 +239,10 @@ fn pre_dispatch_inner(
         && bt.should_force_full(path)
     {
         return PreDispatchResult {
-            overridden_mode: Some("full".to_string()),
+            overridden_mode: Some(crate::tools::ctx_read::mode::more_conservative(
+                requested_mode,
+                "full",
+            )),
             reason: Some("bounce-prevention"),
             pressure_downgraded: false,
             budget_blocked: false,

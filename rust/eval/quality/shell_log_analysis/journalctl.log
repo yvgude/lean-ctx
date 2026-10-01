@@ -1,0 +1,25 @@
+Oct 01 02:41:18 node-a systemd[1]: snapshot-sync.service: Main process exited, code=exited, status=73/IOERR
+Oct 01 14:00:02 node-a systemd[1]: a.service: Failed with result 'exit-code'.
+Oct 01 03:12:04 node-b systemd[1]: cache-warm.service: Main process exited, code=killed, status=137/KILL
+Oct 01 15:00:02 node-b systemd[1]: b.service: Failed with result 'exit-code'.
+Oct 01 05:06:32 node-c systemd[1]: queue-drain.service: Main process exited, code=exited, status=78/CONFIG
+Oct 01 16:00:02 node-c systemd[1]: c.service: Failed with result 'exit-code'.
+Oct 01 06:45:09 node-a systemd[1]: index-rebuild.service: Main process exited, code=exited, status=24/TOOBIG
+Oct 01 17:00:02 node-d systemd[1]: d.service: Failed with result 'exit-code'.
+Oct 01 07:10:51 node-d systemd[1]: token-prune.service: Main process exited, code=exited, status=75/TEMPFAIL
+Oct 01 18:00:02 node-e systemd[1]: e.service: Failed with result 'exit-code'.
+Oct 01 08:03:27 node-b systemd[1]: route-refresh.service: Main process exited, code=exited, status=65/DATAERR
+Oct 01 19:00:02 node-a systemd[1]: f.service: Failed with result 'exit-code'.
+Oct 01 09:33:02 node-e systemd[1]: upload-replay.service: Main process exited, code=exited, status=69/UNAVAILABLE
+Oct 01 20:00:02 node-b systemd[1]: g.service: Failed with result 'exit-code'.
+Oct 01 10:22:44 node-c systemd[1]: policy-scan.service: Main process exited, code=exited, status=77/NOKEY
+Oct 01 21:00:02 node-c systemd[1]: h.service: Failed with result 'exit-code'.
+Oct 01 11:19:36 node-d systemd[1]: shard-repair.service: Main process exited, code=exited, status=70/SOFTWARE
+Oct 01 22:00:02 node-d systemd[1]: i.service: Failed with result 'exit-code'.
+Oct 01 12:10:15 node-a systemd[1]: cert-renew.service: Main process exited, code=exited, status=76/PROTOCOL
+Oct 01 23:00:02 node-e systemd[1]: j.service: Failed with result 'exit-code'.
+Oct 01 13:52:48 node-e systemd[1]: tenant-compact.service: Main process exited, code=exited, status=71/OSERR
+Oct 01 24:00:02 node-a systemd[1]: k.service: Failed with result 'exit-code'.
+Oct 01 14:08:03 node-c systemd[1]: spool-reconcile.service: Main process exited, code=exited, status=74/IOERR
+Oct 01 25:00:02 node-b systemd[1]: l.service: Failed with result 'exit-code'.
+

@@ -85,7 +85,7 @@ pub(super) fn read_file_resource(
         }
     })?;
 
-    Ok(vec![ResourceContents::text(content, uri)])
+    Ok(vec![super::resources::text_resource(&content, uri)])
 }
 
 /// Parse `file://` URIs and raw absolute paths to a local path string.

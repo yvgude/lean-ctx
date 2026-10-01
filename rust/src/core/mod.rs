@@ -435,6 +435,8 @@ pub mod provider_cache;
 pub mod providers;
 pub(crate) mod read_stub_index;
 pub(crate) mod recovery;
+#[allow(dead_code)] // CQ-03 consumes the receipt API from this module.
+pub(crate) mod recovery_verify;
 pub(crate) mod redaction;
 pub mod reference_docs;
 pub mod roles;

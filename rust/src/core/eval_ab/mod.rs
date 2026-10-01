@@ -17,6 +17,7 @@
 pub mod artifact;
 pub mod conditions;
 pub mod footprint;
+pub mod frontier;
 pub mod judge;
 pub mod model;
 pub mod report;
@@ -225,6 +226,48 @@ mod tests {
         // Empty recording → first request misses → run errors (no silent fallback).
         assert!(run_ab(&suite, "s", &runner, &AbRunConfig::default()).is_err());
         let _ = PathBuf::new();
+    }
+
+    #[test]
+    fn gold_answers_never_reach_model_context_or_prompt() {
+        struct GoldGuardRunner {
+            fingerprint: ModelFingerprint,
+            gold: String,
+        }
+
+        impl ModelRunner for GoldGuardRunner {
+            fn fingerprint(&self) -> &ModelFingerprint {
+                &self.fingerprint
+            }
+
+            fn run(&self, request: &ModelRequest) -> anyhow::Result<ModelResponse> {
+                assert!(!request.system.contains(&self.gold));
+                assert!(!request.user.contains(&self.gold));
+                Ok(ModelResponse::new("not present"))
+            }
+        }
+
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("facts.md"),
+            "The export worker stores its signed manifest in the archive index.\n",
+        )
+        .unwrap();
+        let gold = "private-gold-qz917";
+        let raw = format!(
+            r#"{{"id":"archive-location","domain":"qa","task_class":"security_relevant_reasoning","prompt":"Where does the export worker store its signed manifest?","workspace":".","retrieval_query":"export worker signed manifest location","answers":["{gold}"]}}"#
+        );
+        let suite = EvalSuite::parse(&raw, root.path().to_path_buf()).unwrap();
+        let runner = GoldGuardRunner {
+            fingerprint: ModelFingerprint {
+                provider: model::PROVIDER_RECORDED.into(),
+                endpoint: "gold-isolation-test".into(),
+                params: ModelParams::default(),
+            },
+            gold: gold.to_string(),
+        };
+
+        run_ab(&suite, "gold-isolation", &runner, &AbRunConfig::default()).unwrap();
     }
 }
 

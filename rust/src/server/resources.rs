@@ -36,16 +36,20 @@ pub fn list_resources() -> Vec<Resource> {
     ]
 }
 
+pub(super) fn text_resource(text: &str, uri: &str) -> ResourceContents {
+    ResourceContents::text(crate::server::policy_guard::redact_model_text(text), uri)
+}
+
 pub fn read_resource(
     uri: &str,
     ledger: &crate::core::context_ledger::ContextLedger,
 ) -> Option<Vec<ResourceContents>> {
     match uri {
-        URI_SUMMARY => Some(vec![ResourceContents::text(build_summary(ledger), uri)]),
-        URI_PRESSURE => Some(vec![ResourceContents::text(build_pressure(ledger), uri)]),
-        URI_PLAN => Some(vec![ResourceContents::text(build_plan(ledger), uri)]),
-        URI_PINNED => Some(vec![ResourceContents::text(build_pinned(ledger), uri)]),
-        URI_BOUNCE => Some(vec![ResourceContents::text(build_bounce(), uri)]),
+        URI_SUMMARY => Some(vec![text_resource(&build_summary(ledger), uri)]),
+        URI_PRESSURE => Some(vec![text_resource(&build_pressure(ledger), uri)]),
+        URI_PLAN => Some(vec![text_resource(&build_plan(ledger), uri)]),
+        URI_PINNED => Some(vec![text_resource(&build_pinned(ledger), uri)]),
+        URI_BOUNCE => Some(vec![text_resource(&build_bounce(), uri)]),
         _ => None,
     }
 }

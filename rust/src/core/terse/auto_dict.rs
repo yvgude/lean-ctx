@@ -118,9 +118,39 @@ pub fn apply(text: &str) -> Option<String> {
     Some(format!("{legend_line}{output}"))
 }
 
+/// Inverse of [`apply`]: resolves the legend so a checker can see every fact the
+/// short codes stand for. Returns `None` when `text` does not start with a legend.
+pub fn expand(text: &str) -> Option<String> {
+    let (first, rest) = text.split_once('\n')?;
+    let entries = first.strip_prefix("[dict: ")?.strip_suffix(']')?;
+    let mut legend: Vec<(&str, &str)> = entries
+        .split(", ")
+        .map(|entry| entry.split_once('='))
+        .collect::<Option<_>>()?;
+    if legend.iter().any(|(short, _)| !short.starts_with("@D")) {
+        return None;
+    }
+    // Longest code first so `@D1` never rewrites the prefix of `@D10`.
+    legend.sort_by_key(|(short, _)| std::cmp::Reverse(short.len()));
+    let mut out = rest.to_string();
+    for (short, long) in legend {
+        out = replace_whole_word(&out, short, long);
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expand_restores_exactly_what_apply_abbreviated() {
+        let text = "ConfigurationManagerFactory init\nConfigurationManagerFactory ready\n\
+                    ConfigurationManagerFactory done\nretry 3f9c2a7b81d4e6f0 3f9c2a7b81d4e6f0 3f9c2a7b81d4e6f0";
+        let abbreviated = apply(text).expect("two repeated tokens");
+        assert_eq!(expand(&abbreviated).as_deref(), Some(text));
+        assert_eq!(expand(text), None, "no legend, nothing to expand");
+    }
 
     #[test]
     fn no_candidates_returns_none() {

@@ -110,12 +110,12 @@ impl ContextQualityReceiptV1 {
     }
 
     pub fn retention_state(&self) -> DimensionState {
-        if self.retention.critical.total() + self.retention.important.total() == 0 {
-            DimensionState::Unmeasured
-        } else if self.retention.passes() {
-            DimensionState::Pass
-        } else {
+        if !self.retention.passes() {
             DimensionState::Fail
+        } else if self.retention.critical.total() + self.retention.important.total() == 0 {
+            DimensionState::Unmeasured
+        } else {
+            DimensionState::Pass
         }
     }
 
@@ -127,11 +127,24 @@ impl ContextQualityReceiptV1 {
         }
     }
 
-    /// Context quality passes when no measured dimension fails. Unmeasured dimensions
-    /// are reported as such; they never turn into a pass on their own.
+    /// No measured dimension failed. This is what a gate checks; it is *not* a claim of
+    /// measured success — see [`Self::overall_state`].
     pub fn passes(&self) -> bool {
         self.retention_state() != DimensionState::Fail
             && self.recovery_state() != DimensionState::Fail
+    }
+
+    /// `Fail` if any measured dimension failed, `Unmeasured` if neither retention nor
+    /// recovery measured anything, `Pass` only when something was measured and held.
+    pub fn overall_state(&self) -> DimensionState {
+        let states = [self.retention_state(), self.recovery_state()];
+        if states.contains(&DimensionState::Fail) {
+            DimensionState::Fail
+        } else if states.iter().all(|s| *s == DimensionState::Unmeasured) {
+            DimensionState::Unmeasured
+        } else {
+            DimensionState::Pass
+        }
     }
 
     /// Human-readable report: one block per dimension, `UNMEASURED` instead of zeros.
@@ -166,8 +179,11 @@ impl ContextQualityReceiptV1 {
                 .collect();
             out.push_str(&format!("  lost critical kinds: {}\n", kinds.join(", ")));
         }
+        if r.critical_unchecked {
+            out.push_str("  too many critical facts to check — failing closed\n");
+        }
         if r.truncated {
-            out.push_str("  (probe limit reached — remainder unchecked)\n");
+            out.push_str("  (non-critical probe limit reached — remainder unchecked)\n");
         }
         match self.recovery {
             Some(rec) => out.push_str(&format!(
@@ -190,7 +206,7 @@ impl ContextQualityReceiptV1 {
         ));
         out.push_str(&format!(
             "Verdict          Context quality {}\n",
-            if self.passes() { "PASS" } else { "FAIL" }
+            self.overall_state().label()
         ));
         out
     }
@@ -216,6 +232,9 @@ mod tests {
         assert!(text.contains("Retention        UNMEASURED"));
         assert!(text.contains("Recovery         UNMEASURED"));
         assert!(text.contains("Task quality     UNMEASURED"));
+        // Nothing measured is not a pass, even though nothing failed.
+        assert_eq!(r.overall_state(), DimensionState::Unmeasured);
+        assert!(text.contains("Context quality UNMEASURED"));
     }
 
     #[test]
