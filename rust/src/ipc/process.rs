@@ -591,19 +591,64 @@ fn collect_pids(stdout: &[u8], protected: &std::collections::HashSet<u32>, out: 
     }
 }
 
-/// Returns PIDs that are NOT MCP stdio servers (safe to kill during `lean-ctx stop`).
+/// Returns PIDs that are safe to kill during `lean-ctx stop`: neither MCP stdio
+/// servers nor in-flight command runners.
+///
 /// MCP servers are child processes of the IDE and must not be killed — the IDE
 /// will immediately respawn them, causing a kill loop that requires a reboot.
+/// Command runners (`lean-ctx -c <cmd>`, `exec`, `--track`) are executing
+/// someone's command right now — another agent's `cargo test`, a commit hook.
+/// Killing one ends that work with SIGTERM/SIGKILL and holds nothing lean-ctx
+/// owns, so even a deliberate "stop everything" leaves them to finish (#1292).
 pub fn find_killable_pids(name: &str) -> Vec<u32> {
-    killable_excluding_mcp(find_pids_by_name(name), &find_mcp_server_pids(name))
+    let mut protected = find_mcp_server_pids(name);
+    protected.extend(find_command_runner_pids(name));
+    killable_excluding_mcp(find_pids_by_name(name), &protected)
 }
 
-/// Pure set-difference: every PID in `all` that is not an MCP server PID. Split
-/// out from [`find_killable_pids`] so the IDE-protection invariant — the
-/// MCP-stdio server is never returned as killable (#1036) — is unit-testable
-/// without spawning real processes.
-fn killable_excluding_mcp(all: Vec<u32>, mcp: &[u32]) -> Vec<u32> {
-    all.into_iter().filter(|p| !mcp.contains(p)).collect()
+/// Pure set-difference: every PID in `all` that is not a protected PID (MCP
+/// server or command runner). Split out from [`find_killable_pids`] so the
+/// protection invariant — a protected process is never returned as killable
+/// (#1036, #1292) — is unit-testable without spawning real processes.
+fn killable_excluding_mcp(all: Vec<u32>, protected: &[u32]) -> Vec<u32> {
+    all.into_iter().filter(|p| !protected.contains(p)).collect()
+}
+
+/// `lean-ctx` processes that are running a user's command (#1292).
+#[cfg(unix)]
+fn find_command_runner_pids(name: &str) -> Vec<u32> {
+    find_pids_by_name(name)
+        .into_iter()
+        .filter(|&pid| {
+            std::process::Command::new("ps")
+                .args(["-o", "command=", "-p", &pid.to_string()])
+                .output()
+                .is_ok_and(|out| is_command_runner_cmdline(&String::from_utf8_lossy(&out.stdout)))
+        })
+        .collect()
+}
+
+/// Windows keeps the running `.exe` locked, so `dev-install` and `uninstall`
+/// must still be able to stop a runner there before replacing the binary.
+#[cfg(not(unix))]
+fn find_command_runner_pids(_name: &str) -> Vec<u32> {
+    Vec::new()
+}
+
+/// True when `command` is a `lean-ctx` invocation that runs a user command:
+/// `-c`/`exec` (the shell wrapper) or `-t`/`--track`.
+// Only the Unix runner lookup calls this; the unit test runs on every target,
+// so the function is not gated, only its dead-code lint off Unix.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn is_command_runner_cmdline(command: &str) -> bool {
+    let mut words = command.split_whitespace();
+    let Some(argv0) = words.next() else {
+        return false;
+    };
+    if argv0 != "lean-ctx" && !argv0.ends_with("/lean-ctx") {
+        return false;
+    }
+    matches!(words.next(), Some("-c" | "exec" | "-t" | "--track"))
 }
 
 #[cfg(unix)]
@@ -788,6 +833,38 @@ mod tests {
             killable_excluding_mcp(vec![11, 17, 23], &[11, 23]),
             vec![17]
         );
+    }
+
+    /// #1292: `lean-ctx stop` SIGKILLed other agents' in-flight commands
+    /// (`lean-ctx -c "cargo test"`, a commit hook) as "orphans". A command
+    /// runner is never killable; daemons, proxies and dashboards still are.
+    #[test]
+    fn in_flight_command_runners_are_never_killable() {
+        for runner in [
+            "lean-ctx -c cargo test --lib",
+            "/Users/me/.local/bin/lean-ctx -c git commit -m x",
+            "/usr/local/bin/lean-ctx exec make",
+            "lean-ctx --track npm test",
+            "lean-ctx -t pytest",
+        ] {
+            assert!(
+                is_command_runner_cmdline(runner),
+                "must be protected: {runner}"
+            );
+        }
+        for stoppable in [
+            "lean-ctx serve --_foreground-daemon",
+            "/Users/me/.local/bin/lean-ctx proxy start --port 4444",
+            "lean-ctx dashboard",
+            "lean-ctx",
+            "/usr/bin/grep -c lean-ctx",
+            "",
+        ] {
+            assert!(
+                !is_command_runner_cmdline(stoppable),
+                "must stay stoppable: {stoppable}"
+            );
+        }
     }
 
     #[test]

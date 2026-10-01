@@ -7,6 +7,15 @@ use std::io::Write;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+/// The interpreter a study uses unless configured otherwise. On Windows the
+/// installer and `actions/setup-python` provide `python.exe`, while
+/// `python3.exe` is usually the Microsoft Store alias, which does not run a
+/// script and can stall until the task timeout instead of failing fast.
+#[cfg(windows)]
+pub(crate) const DEFAULT_PYTHON_BIN: &str = "python";
+#[cfg(not(windows))]
+pub(crate) const DEFAULT_PYTHON_BIN: &str = "python3";
+
 /// Result of a sandboxed execution.
 #[derive(Debug, Clone)]
 pub(crate) struct SandboxResult {
@@ -136,24 +145,37 @@ pub(crate) fn execute_python(python_bin: &str, code: &str, timeout: Duration) ->
 mod tests {
     use super::*;
 
+    /// The platform's default interpreter when it actually runs a script, else
+    /// `None` and the test is skipped (as in `core::sandbox`'s tests). These
+    /// tests check how a result is reported, not interpreter start-up speed, so
+    /// the probe and the scripts get a budget a loaded CI runner can meet.
+    fn python() -> Option<&'static str> {
+        execute_python(DEFAULT_PYTHON_BIN, "pass", Duration::from_secs(30))
+            .passed
+            .then_some(DEFAULT_PYTHON_BIN)
+    }
+
     #[test]
     fn simple_passing_script() {
-        let result = execute_python("python3", "assert 1 + 1 == 2", Duration::from_secs(10));
+        let Some(python) = python() else { return };
+        let result = execute_python(python, "assert 1 + 1 == 2", Duration::from_secs(30));
         assert!(result.passed);
         assert!(!result.timed_out);
     }
 
     #[test]
     fn failing_assertion() {
-        let result = execute_python("python3", "assert 1 + 1 == 3", Duration::from_secs(10));
+        let Some(python) = python() else { return };
+        let result = execute_python(python, "assert 1 + 1 == 3", Duration::from_secs(30));
         assert!(!result.passed);
         assert!(!result.timed_out);
     }
 
     #[test]
     fn timeout_detection() {
+        let Some(python) = python() else { return };
         let result = execute_python(
-            "python3",
+            python,
             "import time; time.sleep(60)",
             Duration::from_secs(1),
         );

@@ -75,6 +75,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   exposing content. Policy refusals count as "not recoverable for the model",
   not as a broken mechanism.
 
+### Fixed — `ctx_read` keeps a `-N` tail window under `raw=true` (#1965)
+
+- `mode="-3", raw=true` returned the whole file from line 1, with no header
+  and no notice, instead of the last 3 lines. The tail spelling is now
+  canonicalized to `lines:-N` before the raw alias runs, so `-N` behaves like
+  `lines:-N` and `lines:N-M` already did (#1490): verbatim bytes of the
+  requested window.
+
+### Removed — the orphaned `core::solution_rules` module (#1923)
+
+- `core::solution_rules` built a third copy of the solution-efficiency ladder
+  that no code path read; the live rule blocks come from
+  `SolutionConfig::ladder_text()` (`rules_canonical`, `instructions`,
+  `ctx_optimize`), which honour `solution.intensity`. Removing it changes no
+  runtime behaviour. `core::solution_types` stays: it is the documented
+  backward-compatible re-export of the Solution Intelligence types for library
+  users.
+
 ### Fixed — shell hooks follow package-manager upgrades (#1959)
 
 - `_lc: command not found` came back after an upgrade through FreeBSD

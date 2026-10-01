@@ -63,8 +63,9 @@ pub(crate) mod runtime_flags;
 pub mod shared_context;
 pub mod solution_auto_capture;
 pub mod solution_commercial;
-pub mod solution_rules;
 pub mod solution_tracker;
+/// Backward-compatible re-export of the Solution Intelligence types that live in
+/// `core::knowledge`. Kept on purpose for library users (#1923).
 pub mod solution_types;
 pub(crate) mod structured_read;
 pub mod tabular_crush;

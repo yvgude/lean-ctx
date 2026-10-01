@@ -77,7 +77,7 @@ impl Default for StudyConfig {
             tiers: TierConfig::default(),
             repeats: 1,
             concurrency: 4,
-            python_bin: "python3".into(),
+            python_bin: super::sandbox::DEFAULT_PYTHON_BIN.into(),
             task_timeout_secs: 120,
         }
     }

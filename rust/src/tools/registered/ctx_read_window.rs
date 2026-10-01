@@ -181,6 +181,16 @@ pub(super) fn canonicalize_tail_mode(mode_arg: Option<String>) -> Option<String>
     Some(crate::tools::ctx_read::canonicalize_tail_mode(&mode).unwrap_or(mode))
 }
 
+/// The explicit `mode` a `ctx_read` call asked for, after both spelling rules.
+///
+/// #1965: the order matters. The tail spelling is canonicalized *before* the
+/// raw alias looks at the mode, so `mode="-3", raw=true` keeps its window like
+/// `lines:-3` does (#1490). The other way round, raw saw a bare `-3`, did not
+/// recognise it as a window, and replaced it with the whole file — silently.
+pub(super) fn resolve_explicit_mode(arg_raw: bool, mode_arg: Option<String>) -> Option<String> {
+    resolve_raw_alias(arg_raw, canonicalize_tail_mode(mode_arg))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,6 +255,23 @@ mod tests {
             resolve_raw_alias(true, Some("anchored:5-10".into())),
             Some("anchored:5-10".into()),
         );
+    }
+
+    // #1965: `-N` with raw=true returned the whole file instead of the tail.
+    #[test]
+    fn gh1965_raw_keeps_bare_tail_window() {
+        for (mode, expected) in [
+            ("-3", "lines:-3"),
+            ("lines:-3", "lines:-3"),
+            ("lines:195-201", "lines:195-201"),
+            ("full", "raw"),
+        ] {
+            assert_eq!(
+                resolve_explicit_mode(true, Some(mode.into())),
+                Some(expected.into()),
+                "raw=true with mode={mode}"
+            );
+        }
     }
 
     #[test]

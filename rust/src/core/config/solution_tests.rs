@@ -168,16 +168,3 @@ fn gain_summary_formats_correctly() {
     let summary = crate::core::solution_tracker::gain_summary();
     assert!(summary.contains("decisions") || summary.contains("reduction"));
 }
-
-#[test]
-fn solution_rules_block_has_markers_for_each_intensity() {
-    let block = crate::core::solution_rules::solution_rules_block("balanced");
-    assert!(block.contains("lean-ctx-solution"));
-    assert!(block.contains("stdlib"));
-
-    let block = crate::core::solution_rules::solution_rules_block("minimal");
-    assert!(block.contains("lean-ctx-solution"));
-
-    let block = crate::core::solution_rules::solution_rules_block("aggressive");
-    assert!(block.contains("Challenge") || block.contains("delet"));
-}
