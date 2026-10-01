@@ -38,6 +38,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   auto-dictionary legend) count as kept.
 - Contract: [docs/contracts/context-quality-v1.md](docs/contracts/context-quality-v1.md).
 
+### Fixed — `gain` no longer reports a bill saving it cannot see
+
+- When the proxy is not in the provider request path (for example a Claude
+  Code subscription, where only hooks and MCP tools pass through lean-ctx),
+  `lean-ctx gain` used to show the gross tool-output savings as the "net bill
+  impact" and an ROI. It now says the provider bill impact is unknown, shows
+  the gross figure as a local estimate on observed tool output, and leaves ROI
+  unavailable. `ctx_gain` JSON gains `economic_evidence` (local estimate …
+  paired control), `provider_path_observed` and `net_bill_impact_tokens/usd`
+  (`null` when not observable); existing keys are unchanged.
+
 ### Security — secret redaction covers more forms
 
 - Redaction now also catches AWS `ASIA…` session keys, GitHub fine-grained

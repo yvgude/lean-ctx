@@ -146,7 +146,7 @@ pub fn format_gain_hero_themed(t: &Theme) -> String {
     } else if summary.injected_overhead_tokens_per_turn > 0 {
         out.push(box_line(""));
         out.push(box_line(&format!(
-            "  {dim}injection:{rst} {dim}+{op}/turn fixed (net = gross; proxy not in path){rst}",
+            "  {dim}injection:{rst} {dim}+{op}/turn fixed (bill impact unknown; proxy not in path){rst}",
             op = format_big(summary.injected_overhead_tokens_per_turn),
         )));
     }

@@ -281,6 +281,9 @@ class CockpitOverview extends HTMLElement {
     var calls = stats ? stats.total_commands || 0 : 0;
     var energyWh = ewh(saved);
     var avoidedUsd = gain && gain.summary ? gain.summary.avoided_usd || 0 : 0;
+    // Without an observed provider turn the bill side is invisible: the figure is
+    // a local estimate on tool output, not a provider bill saving.
+    var billObserved = !!(gain && gain.summary && gain.summary.provider_path_observed);
     var scoreTotal = gain && gain.summary && gain.summary.score
       ? gain.summary.score.total || 0 : 0;
 
@@ -313,7 +316,9 @@ class CockpitOverview extends HTMLElement {
       '<div class="hv">' + esc(fu(avoidedUsd)) + '</div>' +
       // Input-side only — the cost analysis card below adds the estimated
       // output savings on top, so the two figures intentionally differ.
-      '<p class="hs">estimated input cost avoided</p>' +
+      '<p class="hs">' + (billObserved
+        ? 'estimated input cost avoided'
+        : 'local estimate on tool output · bill impact unknown') + '</p>' +
       '</div>' +
 
       this._solutionHeroCard(esc) +
@@ -329,7 +334,7 @@ class CockpitOverview extends HTMLElement {
       '<div class="hc">' +
       '<span class="hl">Net savings rate' + tip('compression_rate') + '</span>' +
       '<div class="hv">' + esc(String(compRate)) + '%</div>' +
-      '<p class="hs">verified net savings / all input tokens</p>' +
+      '<p class="hs">ledger net savings / all input tokens</p>' +
       '</div>' +
 
       '<div class="hc">' +
