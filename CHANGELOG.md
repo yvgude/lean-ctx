@@ -5,6 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed — quality evidence states what it can prove (#1905)
+
+- `lean-ctx eval ab` / `testbench` / `footprint`: a run with fewer than 30
+  paired tasks is now `INCONCLUSIVE` instead of `NO REGRESSION`, and an empty
+  run is no longer non-inferior. A regression still fails `--gate` at any
+  size; an inconclusive run passes the gate but backs no quality claim. The
+  non-regression label is now `NON-INFERIOR`. Reports (schema v2, additive)
+  carry an evidence tier — A mechanism, B deterministic, C recorded replay,
+  D live run, E production — and `eval verify` prints whether a quality
+  claim is supported. Fixture recordings are always tier A.
+- `eval footprint` recommends pruning an injected element only on evidence;
+  an inconclusive run keeps it.
+- `lean-ctx quality-lab`: the `Premium/Good/…` "quality grade" is now a
+  `representation_grade` (`Excellent/Good/…`, schema v2; v1 JSON still
+  parses). It grades savings and structural fidelity, not task quality, and
+  the report says so. With `--original/--compressed` it now prints a Context
+  Quality receipt (retention, recovery, security, task quality — unmeasured
+  dimensions shown as `UNMEASURED`), and `--gate` also fails when a critical
+  fact is lost.
+- Terse compression of shell/tool output falls back to the original when the
+  compressed text drops a critical fact (error code, failing-test count,
+  failure status, problem location). Expect slightly fewer savings on failing
+  builds and test runs; those are the outputs where losing a line hurts most.
+- Contract: [docs/contracts/context-quality-v1.md](docs/contracts/context-quality-v1.md).
+
 ### Fixed — shell hooks follow package-manager upgrades (#1959)
 
 - `_lc: command not found` came back after an upgrade through FreeBSD

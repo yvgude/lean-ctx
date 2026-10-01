@@ -405,8 +405,12 @@ pub fn run_footprint_ab(
         );
         let pass_rate_with = report.stats.lean_ctx_pass_rate;
         let pass_rate_without = report.stats.baseline_pass_rate;
-        let prune_recommended =
-            !matches!(report.verdict, Verdict::Improved) && token_cost >= cfg.token_floor;
+        // Pruning removes context, so it needs powered evidence: an underpowered run keeps
+        // the element even when it looked harmful (uncertainty moves toward more context).
+        // The gate still fails on any observed regression.
+        let prune_recommended = report.power.is_some_and(|p| p.powered)
+            && matches!(report.verdict, Verdict::NonInferior | Verdict::Regressed)
+            && token_cost >= cfg.token_floor;
 
         elements.push(ElementVerdict {
             element,
@@ -505,13 +509,23 @@ mod tests {
         }
     }
 
-    /// Builds a 2-task QA suite + a recording where the tool schemas are the only
-    /// element that changes an answer, so tool_schemas must be IMPROVED (kept) and
-    /// rules/wakeup must be prune candidates (cost tokens, no quality gain).
-    fn pipeline_setup() -> (EvalSuite, Footprint, RecordedRunner) {
-        let raw = "{\"id\":\"t1\",\"domain\":\"qa\",\"prompt\":\"Which tool finds a symbol?\",\"workspace\":\"ws\",\"answers\":[\"ctx_symbol\"]}\n\
-             {\"id\":\"t2\",\"domain\":\"qa\",\"prompt\":\"Which tool searches code?\",\"workspace\":\"ws\",\"answers\":[\"ctx_search\"]}";
-        let suite = EvalSuite::parse(raw, PathBuf::from(".")).unwrap();
+    /// Builds an `n`-task QA suite + a recording where the tool schemas are the only
+    /// element that changes an answer, so (when powered) tool_schemas must be IMPROVED
+    /// (kept) and rules/wakeup must be prune candidates (cost tokens, no quality gain).
+    fn pipeline_setup(n: usize) -> (EvalSuite, Footprint, RecordedRunner) {
+        let raw: Vec<String> = (0..n)
+            .map(|i| {
+                let (q, a) = if i % 2 == 0 {
+                    ("finds a symbol", "ctx_symbol")
+                } else {
+                    ("searches code", "ctx_search")
+                };
+                format!(
+                    "{{\"id\":\"t{i}\",\"domain\":\"qa\",\"prompt\":\"Which tool {q} (case {i})?\",\"workspace\":\"ws\",\"answers\":[\"{a}\"]}}"
+                )
+            })
+            .collect();
+        let suite = EvalSuite::parse(&raw.join("\n"), PathBuf::from(".")).unwrap();
         let fp = fixed_footprint();
         let full = assemble_prefix(&fp, None);
 
@@ -539,8 +553,23 @@ mod tests {
     }
 
     #[test]
+    fn underpowered_footprint_run_never_recommends_pruning() {
+        let (suite, fp, runner) = pipeline_setup(2);
+        let report = run_footprint_ab(&suite, "fixture", &fp, &runner, &FootprintConfig::default())
+            .expect("recording must cover every replay key");
+        for e in &report.elements {
+            assert_eq!(e.verdict, Verdict::Inconclusive, "{}", e.element.label());
+            assert!(
+                !e.prune_recommended,
+                "{} pruned on two tasks of evidence",
+                e.element.label()
+            );
+        }
+    }
+
+    #[test]
     fn footprint_run_flags_unhelpful_elements_for_pruning() {
-        let (suite, fp, runner) = pipeline_setup();
+        let (suite, fp, runner) = pipeline_setup(super::super::report::MIN_POWERED_PAIRS);
         let report = run_footprint_ab(&suite, "fixture", &fp, &runner, &FootprintConfig::default())
             .expect("recording must cover every replay key");
 
@@ -572,7 +601,7 @@ mod tests {
 
     #[test]
     fn footprint_report_is_deterministic_and_signable() {
-        let (suite, fp, runner) = pipeline_setup();
+        let (suite, fp, runner) = pipeline_setup(2);
         let cfg = FootprintConfig::default();
         let report = run_footprint_ab(&suite, "fixture", &fp, &runner, &cfg).unwrap();
         let report2 = run_footprint_ab(&suite, "fixture", &fp, &runner, &cfg).unwrap();

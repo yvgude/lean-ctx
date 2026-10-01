@@ -131,6 +131,7 @@ pub(crate) mod context_package;
 pub mod context_policies;
 pub(crate) mod context_proof;
 pub mod context_proof_v2;
+pub mod context_quality;
 pub mod context_radar;
 pub(crate) mod context_snapshot;
 pub mod cross_source_edges;

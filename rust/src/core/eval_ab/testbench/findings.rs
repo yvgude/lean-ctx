@@ -107,7 +107,20 @@ pub fn render_findings(report: &TestbenchReport) -> String {
         "- Determinism digest: `{}`\n",
         report.determinism_digest
     ));
-    s.push_str(&format!("- **Verdict: {}**\n\n", report.verdict.label()));
+    s.push_str(&format!("- **Verdict: {}**\n", report.verdict.label()));
+    if let Some(tier) = report
+        .repos
+        .iter()
+        .filter_map(|r| r.report.evidence_tier)
+        .min()
+    {
+        s.push_str(&format!(
+            "- Evidence tier: {} ({})\n",
+            tier.code(),
+            tier.label()
+        ));
+    }
+    s.push('\n');
 
     s.push_str(
         "| repo | tasks | quality off→on | pass off→on | ctx tokens off→on | Δtokens | walltime off→on |\n",
@@ -251,7 +264,7 @@ mod tests {
     fn findings_table_reports_token_delta_and_verdict() {
         let r = repo("qa-api", vec![record("a", 1.0, 1.0)]);
         let md = render_findings(&testbench(vec![r], Verdict::NonInferior));
-        assert!(md.contains("NO REGRESSION"));
+        assert!(md.contains("NON-INFERIOR"));
         assert!(md.contains("qa-api"));
         assert!(md.contains("300→90"));
         assert!(md.contains("-70.0%"), "expected token saving in: {md}");

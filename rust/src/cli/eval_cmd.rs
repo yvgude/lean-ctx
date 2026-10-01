@@ -150,6 +150,7 @@ fn cmd_ab(args: &[String]) {
                 std::process::exit(1);
             }
         };
+        cfg.report.live_model = true;
         if let Some(record_path) = flag_value(args, "--record") {
             let recorder = RecordingRunner::new(live);
             let report = run_or_exit(&suite, &suite_name, &recorder, &cfg);
@@ -297,7 +298,7 @@ fn cmd_footprint(args: &[String]) {
     let token_floor = flag_value(args, "--floor")
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| FootprintConfig::default().token_floor);
-    let cfg = FootprintConfig {
+    let mut cfg = FootprintConfig {
         report: ReportConfig {
             noninferiority_margin: margin,
             ..ReportConfig::default()
@@ -329,6 +330,7 @@ fn cmd_footprint(args: &[String]) {
                 std::process::exit(1);
             }
         };
+        cfg.report.live_model = true;
         if let Some(record_path) = flag_value(args, "--record") {
             let recorder = RecordingRunner::new(live);
             let report = run_footprint_or_exit(&suite, &suite_name, &footprint, &recorder, &cfg);
@@ -455,6 +457,7 @@ fn cmd_testbench(args: &[String]) {
                 std::process::exit(1);
             }
         };
+        cfg.run.report.live_model = true;
         if let Some(record_path) = flag_value(args, "--record") {
             let recorder = RecordingRunner::new(live);
             let report = run_testbench_or_exit(&lock, &cache_dir, &recorder, &cfg);
@@ -517,6 +520,21 @@ fn cmd_verify(args: &[String]) {
     let result = artifact.verify();
     println!("Artifact:           {path}");
     println!("Verdict:            {}", artifact.verdict.label());
+    println!(
+        "Evidence tier:      {}",
+        artifact.report.evidence_tier.map_or_else(
+            || "UNSPECIFIED (v1 report)".to_string(),
+            |t| format!("{} ({})", t.code(), t.label())
+        )
+    );
+    println!(
+        "Quality claim:      {}",
+        if artifact.report.supports_quality_claim() {
+            "supported (powered, model-backed)"
+        } else {
+            "none"
+        }
+    );
     println!("Determinism digest: {}", artifact.determinism_digest);
     println!(
         "Digest matches:     {}",

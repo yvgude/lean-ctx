@@ -1,3 +1,11 @@
+//! Human/judge rubric for *code-review answers* (correctness, completeness, …).
+//!
+//! This is graded answer evidence for one comparison arm, not a context-quality measure:
+//! scores come from a reviewer (`ScoreConfidence::Human`) or an automated judge and must
+//! be reported separately from the deterministic context-quality checks in
+//! [`crate::core::context_quality`]. The v4 evidence flow consumes it; keep its API
+//! stable on `main` so that branch re-merges cleanly.
+
 use chrono::Utc;
 use serde::{Deserialize, Deserializer, Serialize, de::Error as DeError};
 

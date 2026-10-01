@@ -3,6 +3,9 @@
 //! Ensures compression does not destroy critical information:
 //! - File paths must be preserved
 //! - Code identifiers (>= 6 chars) must be preserved
+//! - Critical facts (error codes, failing-test counts, failure status, problem
+//!   locations) must survive verbatim — terse output has no recovery path, so a
+//!   dropped critical fact would be lost (`context_quality::retention`)
 //! - Minimum savings threshold (default 10%) must be met
 
 use std::collections::HashSet;
@@ -17,6 +20,8 @@ pub struct QualityReport {
     pub paths_found: usize,
     pub identifiers_total: usize,
     pub identifiers_found: usize,
+    /// Critical retention probes missing from the compressed text.
+    pub critical_lost: usize,
 }
 
 pub struct QualityConfig {
@@ -73,7 +78,19 @@ pub fn check(
     let identifiers_preserved = orig_idents.is_empty()
         || (idents_found as f32 / orig_idents.len() as f32) >= config.min_identifier_preservation;
 
-    let passed = paths_preserved && identifiers_preserved;
+    let critical_lost = if original == compressed {
+        0
+    } else {
+        crate::core::context_quality::retention::assess(
+            original,
+            compressed,
+            crate::core::context_quality::RecoveryPath::None,
+        )
+        .critical
+        .lost
+    };
+
+    let passed = paths_preserved && identifiers_preserved && critical_lost == 0;
 
     QualityReport {
         passed,
@@ -84,6 +101,7 @@ pub fn check(
         paths_found,
         identifiers_total: orig_idents.len(),
         identifiers_found: idents_found,
+        critical_lost,
     }
 }
 
@@ -186,6 +204,22 @@ mod tests {
         let compressed = "error occurred";
         let report = check(original, compressed, 100, 50, &QualityConfig::default());
         assert!(!report.paths_preserved);
+    }
+
+    /// The identifier ratio tolerates 10 % loss, so a long output can lose its one
+    /// failing-test count and still clear it. The critical-fact check must not.
+    #[test]
+    fn quality_fails_when_a_critical_fact_is_dropped() {
+        let cases = (0..40)
+            .map(|i| format!("payments_integration::refund_case_{i:02} ... ok"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let original = format!("{cases}\nsummary: 40 passed\n2 failed\n");
+        let compressed = format!("{cases}\nsummary: 40 passed\n");
+        let report = check(&original, &compressed, 100, 70, &QualityConfig::default());
+        assert!(report.identifiers_preserved, "{report:?}");
+        assert!(report.critical_lost > 0);
+        assert!(!report.passed);
     }
 
     /// A pure-digit, hex-shaped blob (e.g. an all-numeric slice of a

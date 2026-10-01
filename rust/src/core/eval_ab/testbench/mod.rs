@@ -239,20 +239,9 @@ fn score_pair(
     }
 }
 
-/// Worst (most conservative) verdict across repos: any regression dominates, then any
-/// "no regression", else "improved". An empty set is treated as non-inferior.
+/// Worst (most conservative) verdict across repos; an empty set is inconclusive.
 fn worst_verdict(repos: &[RepoReport]) -> Verdict {
-    let mut worst = Verdict::Improved;
-    let mut any = false;
-    for r in repos {
-        any = true;
-        worst = match (worst, r.report.verdict) {
-            (Verdict::Regressed, _) | (_, Verdict::Regressed) => Verdict::Regressed,
-            (Verdict::NonInferior, _) | (_, Verdict::NonInferior) => Verdict::NonInferior,
-            _ => Verdict::Improved,
-        };
-    }
-    if any { worst } else { Verdict::NonInferior }
+    Verdict::most_conservative(repos.iter().map(|r| r.report.verdict))
 }
 
 /// Aggregate determinism digest: per-repo evidence digests (sorted by name) bound to

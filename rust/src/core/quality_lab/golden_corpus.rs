@@ -375,7 +375,7 @@ fn test_corpus_orchestrator_integration() {
         .expect("structural corpus sample must exist");
     let report =
         super::orchestrator::run_quality_lab(sample.original, sample.compressed, sample.ext);
-    assert_eq!(report.schema_version, "lean-ctx.quality-lab/v1");
+    assert_eq!(report.schema_version, "lean-ctx.quality-lab/v2");
     assert!(report.input_compression.quality_gate_passed);
 }
 
