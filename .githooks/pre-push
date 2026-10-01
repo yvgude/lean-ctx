@@ -47,6 +47,14 @@ if [[ ! -f "$IGNORE_FILE" ]]; then
     exit 0
 fi
 
+# The diff check below only sees files a push adds. A denied path that is
+# already tracked would stay public, so check the whole tracked tree too.
+if ! python3 "$REPO_ROOT/scripts/check-private-paths.py" "$REPO_ROOT"; then
+    echo ""
+    echo "pre-push BLOCKED: a private path is tracked (see above)."
+    exit 1
+fi
+
 # Read blocked patterns (skip comments and blank lines)
 BLOCKED=()
 while IFS= read -r line; do

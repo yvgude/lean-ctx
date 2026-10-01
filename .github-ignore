@@ -20,6 +20,16 @@ Makefile.deploy
 # the CI Proprietary Code Guard alarm if it is ever force-added (defense in depth).
 server.md
 
+# ── Internal planning (private; mirrors the confidential section of .gitignore) ──
+# scripts/check-private-paths.py fails CI when an entry from that .gitignore
+# section is missing here, or when any path listed in this file is tracked.
+docs/internal/
+docs/internal.zip
+.codex/vision-input/
+.codex/vision-output/
+.cursor/skills/focus-contract/
+docs/archive/
+
 # ── Business / monetization (private; never on the public GitHub mirror) ──
 docs/business/
 memory-bank/
