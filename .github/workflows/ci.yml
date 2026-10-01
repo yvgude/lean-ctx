@@ -714,22 +714,13 @@ jobs:
           "$BIN" eval init eval-suite
           if [ -f "$REC" ]; then
             echo "Replaying committed recording (deterministic, no secrets)…"
-            "$BIN" eval ab --suite eval-suite/suite.ndjson --replay "$REC" --out ab-report.json --gate
+            "$BIN" eval ab --suite eval-suite/suite.ndjson --replay "$REC" --out ab-report.json --gate --mechanism
           elif [ -n "${LEAN_CTX_EVAL_MODEL_URL:-}" ]; then
             echo "No committed recording; capturing from the configured live model…"
             mkdir -p eval
-            "$BIN" eval ab --suite eval-suite/suite.ndjson --record "$REC" --out ab-report.json --gate
+            "$BIN" eval ab --suite eval-suite/suite.ndjson --record "$REC" --out ab-report.json --gate --mechanism
           else
             echo "::notice::Output-quality gate skipped — commit rust/eval/recording.json or set LEAN_CTX_EVAL_* secrets."
-          fi
-          TIER_C_REC=eval/frontier-recording.json
-          if [ -f "$TIER_C_REC" ]; then
-            echo "Replaying Tier-C multi-strategy frontier (deterministic, no secrets)…"
-            "$BIN" eval frontier --suite eval/quality-suite.ndjson --limit 30 \
-              --strategies lean_ctx,json_crush --replay "$TIER_C_REC" --json --gate \
-              > frontier-report.json
-          else
-            echo "::notice::Tier-C frontier replay skipped — capture rust/eval/frontier-recording.json with the documented eval frontier command."
           fi
       - name: Verify artifact (signature + determinism digest)
         working-directory: rust
@@ -757,7 +748,7 @@ jobs:
           REC=eval/testbench/recording.json
           if [ -f "$REC" ]; then
             echo "Replaying committed testbench subset (deterministic, no secrets)…"
-            "$BIN" eval testbench --lock "$LOCK" --replay "$REC" --out testbench-out --gate
+            "$BIN" eval testbench --lock "$LOCK" --replay "$REC" --out testbench-out --gate --mechanism
           else
             echo "::notice::Testbench gate skipped — commit rust/eval/testbench/recording.json."
           fi

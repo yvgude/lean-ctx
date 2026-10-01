@@ -185,7 +185,7 @@ fn dispatch_selectors(id: &str, content: &str, noun: &str, args: &serde_json::Va
 /// the verbatim tee content on disk, so the agent pulls back only the slice it
 /// needs rather than undoing the proxy's compression with a full re-inject.
 fn expand_tee_file(path: &std::path::Path, args: &serde_json::Value) -> String {
-    let Ok(content) = std::fs::read_to_string(path) else {
+    let Some(content) = crate::proxy::ccr::read_tee_file(path) else {
         return format!(
             "ERROR: CCR tee file is no longer available: {}",
             path.display()

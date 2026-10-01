@@ -149,6 +149,26 @@ fn corpus() -> Vec<Case> {
             anthropic,
         ),
         Case::supported("jwt", "jwt_three_segments", wrap(&jwt), jwt.into()),
+        // Review regressions: letters-only values look like identifiers, and a
+        // short Basic credential is still a credential.
+        Case::supported(
+            "auth_header",
+            "bearer_letters_only",
+            wrap("curl -H 'Bearer QWxhZGRpbkhlbGxvV29ybGQ'"),
+            "QWxhZGRpbkhlbGxvV29ybGQ".into(),
+        ),
+        Case::supported(
+            "auth_header",
+            "basic_short_credential",
+            wrap("Authorization: Basic dTpw"),
+            "dTpw".into(),
+        ),
+        Case::supported(
+            "key_value",
+            "quoted_letters_only_api_key",
+            wrap(r#"API_KEY="QwErTyUiOpAsDfGhJkLzXc""#),
+            "QwErTyUiOpAsDfGhJkLzXc".into(),
+        ),
         Case::supported(
             "private_key",
             "pem_rsa_private_key",
@@ -348,6 +368,22 @@ fn corpus() -> Vec<Case> {
             wrap("<your-api-key>"),
         ),
         Case::negative("placeholders", "xxxx_placeholder", wrap("xxxx")),
+        // Bearer in prose and docs must survive the default redaction path.
+        Case::negative(
+            "bearer_prose",
+            "bearer_authentication_prose",
+            wrap("The API uses Bearer authentication for every call."),
+        ),
+        Case::negative(
+            "bearer_prose",
+            "bearer_tokens_prose",
+            wrap("bearer tokens_are_rotated_daily by the gateway"),
+        ),
+        Case::negative(
+            "bearer_prose",
+            "bearer_doc_placeholder",
+            wrap("curl -H 'Authorization-Hint: Bearer YOUR_TOKEN_HERE'"),
+        ),
         Case::negative(
             "placeholders",
             "openai_docs_ellipsis",

@@ -7,8 +7,8 @@
 //! CI quality gate.
 //!
 //! The verdict is only as strong as the evidence behind it: every report carries its
-//! [`EvidenceTier`] and power status, and an underpowered run is `Inconclusive` unless it
-//! already shows a regression.
+//! [`EvidenceTier`] and power status, and an underpowered run is `Underpowered` unless it
+//! already shows a regression, and the production gate rejects it.
 
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +16,7 @@ use super::model::ModelFingerprint;
 use crate::core::context_quality::EvidenceTier;
 
 /// Report schema discriminator + version (also guards artifact parsing).
-/// v2 (additive): `Verdict::Inconclusive`, `evidence_tier`, `power`.
+/// v2 (additive): `Verdict::Underpowered`, `evidence_tier`, `power`.
 pub const REPORT_KIND: &str = "lean-ctx.eval-ab-report";
 pub const REPORT_SCHEMA_VERSION: u32 = 2;
 
@@ -79,9 +79,9 @@ pub enum Verdict {
     NonInferior,
     /// CI lower bound below −margin — a regression the gate must block, at any sample size.
     Regressed,
-    /// Too few paired tasks to conclude anything about quality. The pipeline ran and
-    /// showed no regression, which is all this verdict says.
-    Inconclusive,
+    /// Too few paired tasks (or no bootstrap) to conclude anything about quality. The
+    /// pipeline ran and showed no regression, which is all this verdict says.
+    Underpowered,
 }
 
 impl Verdict {
@@ -90,14 +90,30 @@ impl Verdict {
             Verdict::Improved => "IMPROVED",
             Verdict::NonInferior => "NON-INFERIOR",
             Verdict::Regressed => "REGRESSED",
-            Verdict::Inconclusive => "INCONCLUSIVE",
+            Verdict::Underpowered => "UNDERPOWERED",
         }
     }
 
-    /// Whether the CI quality gate should pass. Only an observed regression fails it;
-    /// an inconclusive run passes the gate but backs no quality claim.
+    /// Whether the production quality gate passes: only a powered run without a
+    /// regression does. An underpowered run fails it — it shows nothing about quality.
     pub fn gate_passes(self) -> bool {
+        matches!(self, Verdict::Improved | Verdict::NonInferior)
+    }
+
+    /// Gate for mechanism/wiring checks (tiny fixture suites, `--mechanism`): passes
+    /// unless a regression was observed. Never a quality claim.
+    pub fn mechanism_gate_passes(self) -> bool {
         !matches!(self, Verdict::Regressed)
+    }
+
+    /// [`Self::gate_passes`], or [`Self::mechanism_gate_passes`] when the caller runs an
+    /// explicit mechanism/wiring check.
+    pub fn passes_gate(self, mechanism: bool) -> bool {
+        if mechanism {
+            self.mechanism_gate_passes()
+        } else {
+            self.gate_passes()
+        }
     }
 
     /// The most conservative verdict of a set: a regression dominates, then missing
@@ -105,14 +121,14 @@ impl Verdict {
     pub fn most_conservative(verdicts: impl IntoIterator<Item = Verdict>) -> Verdict {
         let rank = |v: &Verdict| match v {
             Verdict::Regressed => 3,
-            Verdict::Inconclusive => 2,
+            Verdict::Underpowered => 2,
             Verdict::NonInferior => 1,
             Verdict::Improved => 0,
         };
         verdicts
             .into_iter()
             .max_by_key(rank)
-            .unwrap_or(Verdict::Inconclusive)
+            .unwrap_or(Verdict::Underpowered)
     }
 }
 
@@ -344,7 +360,7 @@ fn verdict_for(stats: &AbStats, cfg: ReportConfig) -> Verdict {
     // Without pairs or without a bootstrap there is no confidence interval: the
     // [0, 0] placeholder must never read as "no regression".
     if stats.n == 0 || cfg.bootstrap_iters == 0 {
-        return Verdict::Inconclusive;
+        return Verdict::Underpowered;
     }
     // An observed regression blocks at any sample size: a small suite cannot show that
     // quality is kept, but it can show that it was lost.
@@ -352,7 +368,7 @@ fn verdict_for(stats: &AbStats, cfg: ReportConfig) -> Verdict {
         return Verdict::Regressed;
     }
     if stats.n < MIN_POWERED_PAIRS {
-        return Verdict::Inconclusive;
+        return Verdict::Underpowered;
     }
     if stats.ci_low > EPS {
         Verdict::Improved
@@ -468,15 +484,19 @@ mod tests {
 
         // Same effect, five pairs: an apparent improvement is not evidence (#1905).
         let report = AbReport::build("s", 4000, fp(), improving(5), ReportConfig::default());
-        assert_eq!(report.verdict, Verdict::Inconclusive, "{:?}", report.stats);
-        assert!(report.verdict.gate_passes());
+        assert_eq!(report.verdict, Verdict::Underpowered, "{:?}", report.stats);
+        assert!(
+            !report.verdict.gate_passes(),
+            "underpowered fails the production gate"
+        );
+        assert!(report.verdict.mechanism_gate_passes());
         assert!(!report.supports_quality_claim());
     }
 
     #[test]
     fn empty_run_is_inconclusive_not_non_inferior() {
         let report = AbReport::build("s", 4000, fp(), Vec::new(), ReportConfig::default());
-        assert_eq!(report.verdict, Verdict::Inconclusive);
+        assert_eq!(report.verdict, Verdict::Underpowered);
         assert!(!report.supports_quality_claim());
     }
 
@@ -492,7 +512,7 @@ mod tests {
             ..ReportConfig::default()
         };
         let report = AbReport::build("s", 4000, fp_real(), worse, cfg);
-        assert_eq!(report.verdict, Verdict::Inconclusive);
+        assert_eq!(report.verdict, Verdict::Underpowered);
         assert!(!report.supports_quality_claim());
     }
 
@@ -564,14 +584,14 @@ mod tests {
         use Verdict::*;
         assert_eq!(Verdict::most_conservative([Improved, Regressed]), Regressed);
         assert_eq!(
-            Verdict::most_conservative([Improved, NonInferior, Inconclusive]),
-            Inconclusive
+            Verdict::most_conservative([Improved, NonInferior, Underpowered]),
+            Underpowered
         );
         assert_eq!(
             Verdict::most_conservative([Improved, NonInferior]),
             NonInferior
         );
-        assert_eq!(Verdict::most_conservative([]), Inconclusive);
+        assert_eq!(Verdict::most_conservative([]), Underpowered);
     }
 
     #[test]
@@ -591,9 +611,10 @@ mod tests {
     fn identical_scores_are_non_inferior_only_when_powered() {
         let records = vec![rec("1", 0.7, 0.7), rec("2", 0.4, 0.4)];
         let report = AbReport::build("s", 4000, fp(), records, ReportConfig::default());
-        assert_eq!(report.verdict, Verdict::Inconclusive);
+        assert_eq!(report.verdict, Verdict::Underpowered);
         assert_eq!(report.stats.ties, 2);
-        assert!(report.verdict.gate_passes());
+        assert!(!report.verdict.gate_passes());
+        assert!(report.verdict.mechanism_gate_passes());
 
         let records: Vec<_> = (0..MIN_POWERED_PAIRS)
             .map(|i| rec(&i.to_string(), 0.7, 0.7))

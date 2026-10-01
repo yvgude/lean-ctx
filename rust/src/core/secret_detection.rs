@@ -64,7 +64,15 @@ fn url_encoded_secret_re() -> &'static Regex {
 }
 
 fn authorization_header_re() -> &'static Regex {
-    static_regex!(r"(?i)authorization[ \t]*:[ \t]*(?:bearer|basic)[ \t]+[A-Za-z0-9_+/=\-.]{8,}")
+    static_regex!(r"(?i)authorization[ \t]*:[ \t]*(?:bearer|basic)[ \t]+[A-Za-z0-9_+/=\-.]{4,}")
+}
+
+/// A bare `Bearer <token>` outside an `Authorization:` header (curl flags, logs).
+/// Group 1 is filtered by `redaction::bearer_value_is_credential`, the same check
+/// the core redactor applies, so prose ("Bearer authentication") stays clean and
+/// the two layers cannot disagree.
+fn bearer_token_re() -> &'static Regex {
+    static_regex!(r"(?i)bearer[ \t]+([A-Za-z0-9_\-.]{8,})")
 }
 
 fn gitlab_pat_re() -> &'static Regex {
@@ -124,8 +132,18 @@ const GUARDED_PATTERNS: &[(&str, fn() -> &'static Regex)] = &[
 /// (#718) — shares the benign-value heuristics with `core::redaction` so the
 /// two layers cannot drift.
 fn guarded_match_is_benign(caps: &regex::Captures) -> bool {
-    caps.get(2)
-        .is_some_and(|value| crate::core::redaction::is_benign_secret_value(value.as_str()))
+    // A quoted value is a literal, never an identifier reference — same rule as
+    // the core redactor, so the scanner cannot report "clean" for what it redacts.
+    let quoted = caps
+        .get(1)
+        .is_some_and(|prefix| prefix.as_str().ends_with(['"', '\'']));
+    caps.get(2).is_some_and(|value| {
+        if quoted {
+            crate::core::redaction::is_benign_quoted_value(value.as_str())
+        } else {
+            crate::core::redaction::is_benign_secret_value(value.as_str())
+        }
+    })
 }
 
 /// Compile the subtractive `exclude_patterns` from config (#718). Invalid
@@ -179,6 +197,23 @@ fn collect_matches(
                 redacted_preview: make_redacted_preview(m.as_str()),
             });
         }
+    }
+
+    for caps in bearer_token_re().captures_iter(&normalized) {
+        let Some(whole) = caps.get(0) else {
+            continue;
+        };
+        let credential = caps.get(1).is_some_and(|value| {
+            crate::core::redaction::bearer_value_is_credential(value.as_str())
+        });
+        if !credential || excluded(excludes, whole.as_str()) {
+            continue;
+        }
+        matches.push(SecretMatch {
+            pattern_name: "bearer_token",
+            line_number: offset_to_line(whole.start()),
+            redacted_preview: make_redacted_preview(whole.as_str()),
+        });
     }
 
     for &(name, regex_fn) in GUARDED_PATTERNS {
@@ -490,5 +525,53 @@ pub mod tests {
         let input = concat!("-----BEGIN OPENSSH PRIVATE", " KEY-----");
         let matches = detect_secrets(input);
         assert!(matches.iter().any(|m| m.pattern_name == "private_key"));
+    }
+
+    /// The context-gateway admission path relies on this contract: report-only mode
+    /// returns the input untouched, custom/exclude patterns are honoured, and redacted
+    /// output has no residual match (admission re-scans it and withholds on a hit).
+    /// Normalization (zero-width, full-width) only affects matching, never the bytes
+    /// outside a redacted span.
+    #[test]
+    fn scan_and_redact_keeps_the_gateway_contract() {
+        let aws = format!("AK\u{200b}IA{}", "Q7".repeat(8));
+        let key_block = [
+            "-----BEGIN ",
+            "PRIVATE KEY-----\nbody-line-one\nbody-line-two\n-----END ",
+            "PRIVATE KEY-----",
+        ]
+        .concat();
+        let excluded_key = concat!("AK", "IAIOSFODNN7EXAMPLE");
+        let input = format!(
+            "keep before\nAWS_ACCESS_KEY_ID={aws}\n{key_block}\nticket EMP-4711\nsample {excluded_key}\nkeep after\n"
+        );
+        let cfg = SecretDetectionConfig {
+            custom_patterns: vec![r"EMP-\d{4}".into()],
+            exclude_patterns: vec![excluded_key.into()],
+            ..SecretDetectionConfig::default()
+        };
+
+        let report_only = SecretDetectionConfig {
+            redact: false,
+            ..cfg.clone()
+        };
+        let (unchanged, found) = scan_and_redact(&input, &report_only);
+        assert_eq!(unchanged, input, "report-only mode must not touch the text");
+        assert!(!found.is_empty());
+
+        let (redacted, _) = scan_and_redact(&input, &cfg);
+        assert!(redacted.starts_with("keep before\n"), "{redacted}");
+        assert!(redacted.ends_with("keep after\n"), "{redacted}");
+        assert!(
+            redacted.contains(excluded_key),
+            "excluded value kept verbatim"
+        );
+        assert!(!redacted.contains("EMP-4711"), "custom pattern redacted");
+        assert!(!redacted.contains("body-line-one"), "{redacted}");
+        let (_, residual) = scan_and_redact(&redacted, &report_only);
+        assert!(
+            residual.is_empty(),
+            "redacted output must not match again: {residual:?}\n{redacted}"
+        );
     }
 }

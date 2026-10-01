@@ -15,9 +15,9 @@ const TRACKED_PATH_TTL_SEQ: u64 = 64;
 
 #[derive(Debug, Clone)]
 struct ReadEvent {
-    mode: String,
+    _mode: String,
     tokens_sent: usize,
-    original_tokens: usize,
+    _original_tokens: usize,
     seq: u64,
     was_compressed: bool,
 }
@@ -44,8 +44,7 @@ pub struct BounceTracker {
 }
 
 fn is_compressed_mode(mode: &str) -> bool {
-    mode.parse::<crate::tools::ctx_read::ReadMode>()
-        .is_ok_and(|parsed| parsed.counts_as_compressed())
+    !matches!(mode, "full" | "diff")
 }
 
 fn extension_of(path: &str) -> String {
@@ -81,7 +80,7 @@ impl BounceTracker {
         let compressed = is_compressed_mode(mode);
 
         if !compressed {
-            self.detect_bounce(&norm, seq, Some(mode));
+            self.detect_bounce(&norm, seq);
         }
         if self.persist {
             // Keep the long-term majority rule honest: clean reads dilute
@@ -91,9 +90,9 @@ impl BounceTracker {
 
         let events = self.recent_reads.entry(norm).or_default();
         events.push(ReadEvent {
-            mode: mode.to_string(),
+            _mode: mode.to_string(),
             tokens_sent,
-            original_tokens,
+            _original_tokens: original_tokens,
             seq,
             was_compressed: compressed,
         });
@@ -111,7 +110,7 @@ impl BounceTracker {
         self.prune_stale_paths();
     }
 
-    fn detect_bounce(&mut self, norm_path: &str, full_seq: u64, followup_mode: Option<&str>) {
+    fn detect_bounce(&mut self, norm_path: &str, full_seq: u64) {
         // A full re-read the system itself forced after an edit is not a
         // compression failure (GL #622): `should_force_full` returns `full` for
         // EDIT_FORCE_WINDOW ticks post-edit, so the agent had no choice. Counting
@@ -133,8 +132,6 @@ impl BounceTracker {
             && full_seq.saturating_sub(ev.seq) <= BOUNCE_WINDOW
         {
             let wasted = ev.tokens_sent;
-            let source_mode = ev.mode.clone();
-            let source_tokens = ev.original_tokens;
             self.total_bounces += 1;
             self.total_wasted_tokens += wasted;
 
@@ -147,15 +144,6 @@ impl BounceTracker {
 
             if self.persist {
                 crate::core::savings_ledger::record_bounce_event(wasted);
-                // Only this same-path, same-window compressed→full transition
-                // carries enough provenance to enter the runtime estimator.
-                if followup_mode == Some("full") {
-                    crate::core::edit_quality::record_full_reread_bounce(
-                        norm_path,
-                        &source_mode,
-                        source_tokens,
-                    );
-                }
                 // Long-term per-path memory (#496): remember which exact
                 // files keep bouncing so auto-mode learns across restarts.
                 crate::core::path_mode_memory::record_bounce(norm_path);
@@ -184,13 +172,7 @@ impl BounceTracker {
     pub fn record_shell_file_access(&mut self, path: &str) {
         let norm = crate::core::pathutil::normalize_tool_path(path);
         let seq = self.seq_counter;
-        self.detect_bounce(&norm, seq, None);
-    }
-
-    fn last_read_context(&self, path: &str) -> Option<(String, usize)> {
-        let norm = crate::core::pathutil::normalize_tool_path(path);
-        let event = self.recent_reads.get(&norm)?.last()?;
-        Some((event.mode.clone(), event.original_tokens))
+        self.detect_bounce(&norm, seq);
     }
 
     /// Records an explicit archive/context expansion as a quality bounce.
@@ -347,12 +329,6 @@ pub fn global() -> &'static Mutex<BounceTracker> {
         bt.persist = true;
         Mutex::new(bt)
     })
-}
-
-/// Exact mode and original token count for the last tracked read of this path.
-/// Edit-quality attribution requires this to match the cache's `last_mode`.
-pub(crate) fn last_read_context(path: &str) -> Option<(String, usize)> {
-    global().lock().ok()?.last_read_context(path)
 }
 
 #[cfg(test)]

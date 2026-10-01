@@ -258,6 +258,13 @@ pub(crate) fn resolve_tee_checked(id: &str) -> Result<PathBuf, TeeResolveError> 
     let state_dir = crate::core::paths::state_dir().map_err(|_| TeeResolveError::Missing)?;
     let tee_dir = state_dir.join("tee");
     let path = tee_dir.join(canon);
+    // The tee store itself must be a real directory: a `tee` link to another
+    // store (archives, references) would let a tee-shaped name read that store.
+    if std::fs::symlink_metadata(&tee_dir).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(TeeResolveError::Refused(
+            "tee store is a symlink to another location",
+        ));
+    }
 
     let link_metadata = std::fs::symlink_metadata(&path).map_err(|error| {
         if error.kind() == std::io::ErrorKind::PermissionDenied {
@@ -289,7 +296,7 @@ pub(crate) fn resolve_tee_checked(id: &str) -> Result<PathBuf, TeeResolveError> 
             TeeResolveError::Missing
         }
     })?;
-    if !canonical_tee.starts_with(&canonical_state) {
+    if canonical_tee != canonical_state.join("tee") {
         return Err(TeeResolveError::Refused(
             "tee store resolves outside the state directory",
         ));
@@ -373,13 +380,25 @@ pub(crate) fn inband_locator(handle: &str) -> Option<String> {
         .flatten()
 }
 
+/// Read a tee file that [`resolve_tee`] returned, without following a link
+/// planted after resolution (the read is bound to the checked file).
+pub(crate) fn read_tee_file(path: &Path) -> Option<String> {
+    let tee_dir = crate::core::paths::state_dir().ok()?.join("tee");
+    crate::core::atomic_fs::read_store_file(&tee_dir, path).ok()
+}
+
+/// Resolve and read a tee handle in one step.
+pub(crate) fn read_tee(id: &str) -> Option<String> {
+    read_tee_file(&resolve_tee(id)?)
+}
+
 /// Recover the verbatim original for a 16-hex CCR `hash` from the local tee
 /// store, or `None` when the hash is malformed or the file is gone (past TTL).
 fn recover(hash: &str) -> Option<String> {
     if hash.len() != 16 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
-    std::fs::read_to_string(resolve_tee(hash)?).ok()
+    read_tee(hash)
 }
 
 /// Length of a LiteLLM gateway retrieval hash (#702): LiteLLM's headroom
@@ -410,7 +429,7 @@ pub(crate) fn retrieve_litellm(hash: &str) -> Option<String> {
     {
         return None;
     }
-    std::fs::read_to_string(resolve_tee(&hash[..TEE_HASH_LEN])?).ok()
+    read_tee(&hash[..TEE_HASH_LEN])
 }
 
 /// Replace every `<lc_expand:HASH>` marker in `s` with the verbatim original

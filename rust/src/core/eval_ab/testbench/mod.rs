@@ -91,9 +91,10 @@ pub struct TestbenchReport {
 }
 
 impl TestbenchReport {
-    /// Whether the CI quality gate should pass (no repo regressed).
-    pub fn gate_passes(&self) -> bool {
-        self.verdict.gate_passes()
+    /// Whether the gate passes; `mechanism` accepts an underpowered run that shows no
+    /// regression (wiring check), otherwise only a powered non-regressing run passes.
+    pub fn gate_passes(&self, mechanism: bool) -> bool {
+        self.verdict.passes_gate(mechanism)
     }
 
     /// Pretty JSON for the machine-readable artifact.
@@ -316,7 +317,7 @@ mod tests {
         let report = run_testbench(&lock, cache.path(), &runner, &TestbenchConfig::default())
             .expect("committed recording must cover every replay key");
         assert!(
-            report.gate_passes(),
+            report.gate_passes(true),
             "committed subset must not encode a regression, got {}",
             report.verdict.label()
         );

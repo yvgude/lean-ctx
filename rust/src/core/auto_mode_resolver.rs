@@ -131,63 +131,31 @@ pub fn configured_default_mode() -> Option<String> {
 /// Single entry point for auto-mode resolution.
 /// Merges Pipeline A (select_mode_with_task) and Pipeline B (resolve_auto_mode).
 pub fn resolve(ctx: &AutoModeContext) -> ResolvedMode {
-    let configured_default = configured_default_mode();
-
     // Quality loop (#1008): a ctx_patch anchor went stale — hand back fresh line
     // anchors (not `full`) so the agent retries by reference, one-shot. Checked
     // before the `full` escalation: it is the strictly better recovery for a
     // model already editing via anchors.
     if crate::core::edit_quality::take_pending_anchored_escalation(ctx.path) {
-        let mode = conservative_overlay("anchored", configured_default.as_deref(), false);
-        return resolved(&mode, "anchored_edit_fail_escalation");
+        return resolved("anchored", "anchored_edit_fail_escalation");
     }
 
     // Quality loop (#494), signal 1: an edit on this file just failed after a
     // compressed read — the agent needs the real body now, one-shot.
     if crate::core::edit_quality::take_pending_escalation(ctx.path) {
-        let mode = conservative_overlay("full", configured_default.as_deref(), true);
-        return resolved(&mode, "edit_fail_escalation");
+        return resolved("full", "edit_fail_escalation");
     }
 
     let r = resolve_inner(ctx);
-    let mode = conservative_overlay(&r.mode, configured_default.as_deref(), false);
-    let source = if mode == r.mode {
-        r.source
-    } else {
-        "configured_default"
-    };
 
-    // The persistent path-only bounce store predates strategy and size
-    // provenance. Keep it as a compatibility input until its legacy entries
-    // decay, but route its result through the same conservative clamp.
-    if mode != "full"
-        && crate::core::config::Config::load().auto_mode_learning_effective()
-        && crate::core::path_mode_memory::should_force_full(ctx.path)
-    {
-        let mode = conservative_overlay("full", configured_default.as_deref(), true);
-        return resolved(&mode, "path_bounce_memory");
+    // Quality loop (#494), signal 2: this mode keeps producing edit failures
+    // for this file type — compression here is a proven net loss, so serve
+    // `full` (docs/contracts/quality-loop-v1.md). #1911: no `signatures` step
+    // in between — a body-less view is exactly what the failing edits lacked,
+    // and the penalty may only ever escalate toward `full`.
+    if r.mode != "full" && crate::core::edit_quality::is_risky_mode(ctx.path, &r.mode) {
+        return resolved("full", "edit_quality_penalty");
     }
-
-    // Repeated, attributed negative events are keyed by extension, size bucket,
-    // and the exact delivered strategy. They can only clamp the auto result to
-    // a more conservative approved strategy.
-    if crate::core::edit_quality::is_risky_mode(ctx.path, &mode, ctx.token_count) {
-        let mode = conservative_overlay(&mode, configured_default.as_deref(), true);
-        return resolved(&mode, "runtime_quality_estimator");
-    }
-    resolved(&mode, source)
-}
-
-fn conservative_overlay(mode: &str, configured_default: Option<&str>, negative: bool) -> String {
-    let configured = configured_default.map_or_else(
-        || mode.to_string(),
-        |default| crate::tools::ctx_read::mode::more_conservative(mode, default),
-    );
-    if negative {
-        crate::tools::ctx_read::mode::more_conservative(&configured, "full")
-    } else {
-        configured
-    }
+    r
 }
 
 fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
@@ -346,6 +314,19 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
 /// heuristic. Only invoked when `auto_mode_learning` is enabled, so its disk I/O
 /// and non-determinism never touch the default cascade.
 fn resolve_adaptive(ctx: &AutoModeContext) -> Option<ResolvedMode> {
+    if let Ok(bt) = crate::core::bounce_tracker::global().lock()
+        && bt.should_force_full(ctx.path)
+    {
+        return Some(resolved("full", "bounce_tracker"));
+    }
+
+    // Per-path long-term memory (#496): a file that historically bounced in
+    // the majority of its reads will bounce again — compression is a proven
+    // net loss for it, across process restarts.
+    if crate::core::path_mode_memory::should_force_full(ctx.path) {
+        return Some(resolved("full", "path_bounce_memory"));
+    }
+
     let sig = FileSignature::from_path(ctx.path, ctx.token_count);
     let predictor = ModePredictor::new();
     let mut predicted = predictor
@@ -370,12 +351,8 @@ fn resolve_adaptive(ctx: &AutoModeContext) -> Option<ResolvedMode> {
         && avg_ratio < 0.30
     {
         let conservative = match predicted.as_str() {
-            "signatures" | "aggressive" | "entropy" => {
-                crate::tools::ctx_read::mode::more_conservative(&predicted, "map")
-            }
-            "map" if ctx.token_count <= 6000 => {
-                crate::tools::ctx_read::mode::more_conservative(&predicted, "full")
-            }
+            "signatures" | "aggressive" | "entropy" => "map".to_string(),
+            "map" if ctx.token_count <= 6000 => "full".to_string(),
             other => other.to_string(),
         };
         if conservative != predicted {
@@ -699,32 +676,6 @@ mod tests {
             "signatures"
         );
         assert_eq!(resolve_mode_precedence(None, None, None, "full"), "full");
-    }
-
-    #[test]
-    fn configured_and_negative_overlays_never_increase_strategy_risk() {
-        use crate::tools::ctx_read::ReadMode;
-
-        let rank = |mode: &str| {
-            mode.parse::<ReadMode>()
-                .expect("mode family parses")
-                .conservative_risk_rank()
-        };
-        for base in crate::tools::ctx_read::mode::MODE_FAMILIES {
-            for configured in crate::tools::ctx_read::mode::MODE_FAMILIES {
-                for negative in [false, true] {
-                    let selected = conservative_overlay(base, Some(configured), negative);
-                    assert!(
-                        rank(&selected) <= rank(base),
-                        "{selected} is riskier than resolver base {base}"
-                    );
-                    assert!(
-                        rank(&selected) <= rank(configured),
-                        "{selected} is riskier than configured default {configured}"
-                    );
-                }
-            }
-        }
     }
 
     #[test]

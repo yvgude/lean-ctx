@@ -643,8 +643,8 @@ repo's own tests, and emits `FINDINGS.md` (tokens / turns / walltime / quality) 
 regressions file. What CI replays is a small committed recording: it is a
 **mechanism gate** (it catches a broken pipeline or a changed grade), not evidence
 that compression preserves answer quality. Every eval report states its evidence
-tier (A mechanism … E production) and a run below 30 paired tasks is
-`INCONCLUSIVE` unless it already shows a regression — see
+tier (A mechanism … E production); a run below 30 paired tasks is
+`UNDERPOWERED` and fails `--gate` unless run as an explicit `--mechanism` check — see
 [context-quality-v1](docs/contracts/context-quality-v1.md).
 A powered quality study is still open ([#1905](https://github.com/yvgude/lean-ctx/issues/1905)).
 

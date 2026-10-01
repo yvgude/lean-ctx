@@ -150,7 +150,7 @@ fn error_code_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     re(
         &R,
-        r"\b(?:E\d{4}|TS\d{4}|CS\d{4}|[A-Z]{2,12}[-_]\d{2,6}|[A-Z]{3,}\d{3,5})\b",
+        r"(?-u:\b)(?:E\d{4}|TS\d{4}|CS\d{4}|[A-Z]{2,12}[-_]\d{2,6}|[A-Z]{3,}\d{3,5})(?-u:\b)",
     )
 }
 
@@ -158,7 +158,7 @@ fn test_result_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     re(
         &R,
-        r"(?i)\btest result: (?:ok|failed)\b|\b\d+ (?:passed|failed|failing|errors?|skipped)\b",
+        r"(?i)(?-u:\b)test result: (?:ok|failed)(?-u:\b)|(?-u:\b)\d+ (?:passed|failed|failing|errors?|skipped)(?-u:\b)",
     )
 }
 
@@ -166,7 +166,7 @@ fn status_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     re(
         &R,
-        r"\b(?:FAILED|FAILURE|FATAL|CRITICAL|PANIC|panicked|OOMKilled|SIGSEGV|SIGKILL|Segmentation fault|CrashLoopBackOff|CVE-\d{4}-\d{4,})\b",
+        r"(?-u:\b)(?:FAILED|FAILURE|FATAL|CRITICAL|PANIC|panicked|OOMKilled|SIGSEGV|SIGKILL|Segmentation fault|CrashLoopBackOff|CVE-\d{4}-\d{4,})(?-u:\b)",
     )
 }
 
@@ -177,12 +177,12 @@ fn location_re() -> &'static Regex {
 
 fn path_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    re(&R, r"(?:[\w.-]+/)+[\w.-]+\.[A-Za-z0-9]{1,6}\b")
+    re(&R, r"(?:[\w.-]+/)+[\w.-]+\.[A-Za-z0-9]{1,6}(?-u:\b)")
 }
 
 fn hash_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    re(&R, r"\b[0-9a-f]{12,64}\b")
+    re(&R, r"(?-u:\b)[0-9a-f]{12,64}(?-u:\b)")
 }
 
 fn url_re() -> &'static Regex {
@@ -193,7 +193,7 @@ fn url_re() -> &'static Regex {
 /// Abbreviations terse's Cargo dictionary applies to runner summaries.
 fn dictionary_outcome_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    re(&R, r"\b(?:FAIL|PASS)\b")
+    re(&R, r"(?-u:\b)(?:FAIL|PASS)(?-u:\b)")
 }
 
 /// Whether a line reports a problem, which upgrades codes/locations on it to critical.
@@ -204,49 +204,43 @@ fn is_problem_line(line: &str) -> bool {
     }
 }
 
-/// Every fact token on one line, with its kind (criticality is decided by the caller).
-fn scan_line(line: &str) -> Vec<(ProbeKind, &str)> {
+/// Upper bound on hits per extractor and line, so one pathological line cannot
+/// allocate without bound. Overflow is reported, never silently dropped.
+const MAX_HITS_PER_LINE: usize = 64;
+
+/// Every fact token on one line, with its kind (criticality is decided by the
+/// caller), plus whether any extractor hit [`MAX_HITS_PER_LINE`].
+fn scan_line(line: &str) -> (Vec<(ProbeKind, &str)>, bool) {
+    let extractors: [(ProbeKind, &Regex); 7] = [
+        (ProbeKind::TestResult, test_result_re()),
+        (ProbeKind::Status, status_re()),
+        (ProbeKind::ErrorCode, error_code_re()),
+        (ProbeKind::Location, location_re()),
+        (ProbeKind::Path, path_re()),
+        (ProbeKind::Hash, hash_re()),
+        (ProbeKind::Url, url_re()),
+    ];
     let mut out = Vec::new();
-    out.extend(
-        test_result_re()
-            .find_iter(line)
-            .map(|m| (ProbeKind::TestResult, m.as_str())),
-    );
-    out.extend(
-        status_re()
-            .find_iter(line)
-            .map(|m| (ProbeKind::Status, m.as_str())),
-    );
-    out.extend(
-        error_code_re()
-            .find_iter(line)
-            .map(|m| (ProbeKind::ErrorCode, m.as_str())),
-    );
-    out.extend(
-        location_re()
-            .find_iter(line)
-            .map(|m| (ProbeKind::Location, m.as_str())),
-    );
-    out.extend(
-        path_re()
-            .find_iter(line)
-            .map(|m| (ProbeKind::Path, m.as_str())),
-    );
-    out.extend(
-        hash_re()
-            .find_iter(line)
-            .map(|m| m.as_str())
-            .filter(|v| {
-                v.bytes().any(|b| b.is_ascii_digit()) && v.bytes().any(|b| b.is_ascii_alphabetic())
-            })
-            .map(|v| (ProbeKind::Hash, v)),
-    );
-    out.extend(
-        url_re()
-            .find_iter(line)
-            .map(|m| (ProbeKind::Url, m.as_str())),
-    );
-    out
+    let mut overflow = false;
+    for (kind, re) in extractors {
+        let mut hits = 0usize;
+        for m in re.find_iter(line) {
+            let v = m.as_str();
+            if kind == ProbeKind::Hash
+                && !(v.bytes().any(|b| b.is_ascii_digit())
+                    && v.bytes().any(|b| b.is_ascii_alphabetic()))
+            {
+                continue;
+            }
+            if hits == MAX_HITS_PER_LINE {
+                overflow = true;
+                break;
+            }
+            hits += 1;
+            out.push((kind, v));
+        }
+    }
+    (out, overflow)
 }
 
 /// Canonical form used for matching: runner summaries and statuses may change case
@@ -277,7 +271,12 @@ pub fn extract_probes(text: &str) -> Extraction {
     let mut other: BTreeSet<Probe> = BTreeSet::new();
 
     for line in text.lines() {
-        let hits = scan_line(line);
+        let (hits, overflow) = scan_line(line);
+        if overflow {
+            // Facts on this line went unchecked: fail closed and stop scanning.
+            ex.critical_unchecked = true;
+            break;
+        }
         if hits.is_empty() {
             continue;
         }
@@ -299,12 +298,17 @@ pub fn extract_probes(text: &str) -> Extraction {
                     critical.insert(probe);
                 } else if !critical.contains(&probe) {
                     ex.critical_unchecked = true;
+                    break;
                 }
             } else if other.len() < MAX_PROBES {
                 other.insert(probe);
             } else if !other.contains(&probe) {
                 ex.truncated = true;
             }
+        }
+        if ex.critical_unchecked {
+            // The result already fails closed; scanning on is wasted work.
+            break;
         }
     }
 
@@ -331,7 +335,7 @@ fn delivered_facts(delivered: &str) -> HashSet<(ProbeKind, String)> {
     let text = resolve_reversible_rewrites(delivered);
     let mut facts = HashSet::new();
     for line in text.lines() {
-        for (kind, value) in scan_line(line) {
+        for (kind, value) in scan_line(line).0 {
             facts.insert((kind, canonical(kind, value)));
         }
         for m in dictionary_outcome_re().find_iter(line) {
@@ -527,5 +531,15 @@ commit 3f9c2a7b81d4e6f0
         assert!(r.critical_unchecked);
         assert_eq!(r.critical.lost, 0);
         assert!(!r.passes(), "unchecked critical facts never pass");
+
+        // One pathological line: per-line work is bounded and the overflow fails
+        // closed instead of dropping facts silently.
+        let line = (0..=MAX_HITS_PER_LINE)
+            .map(|i| format!("E{:04}", 1000 + i))
+            .collect::<Vec<_>>()
+            .join(" error ");
+        let r = assess(&line, &line, RecoveryPath::None);
+        assert!(r.critical_unchecked);
+        assert!(!r.passes());
     }
 }

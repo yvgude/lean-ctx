@@ -1,16 +1,25 @@
-//! Unified conservative quality loop (#CQ-07).
+//! Quality loop v1 (#494): compression-caused edit failures feed back into
+//! mode selection.
 //!
-//! High-confidence compressed-read edit misses and same-path compressed→full
-//! bounces feed one bounded estimator keyed by extension, size bucket, and
-//! delivered strategy. Two attributed negative samples enter risk; exponential
-//! time decay and a lower exit threshold return the resolver to its configured
-//! default. Clean outcomes do not promote compression. The v1 per-path edit
-//! retry and anchored retry remain one-shot recovery behavior; legacy v1 pair
-//! state is retained and migrated additively.
+//! `BounceTracker`/`path_mode_memory` close the loop for *re-read* bounces,
+//! but an edit that fails because the file was last read in a compressed mode
+//! (`old_string` not found — the body simply wasn't in context) taught the
+//! system nothing. This module records edit outcomes correlated with the last
+//! read mode and feeds two signals back into `auto_mode_resolver::resolve`:
 //!
-//! Storage remains `~/.lean-ctx/edit_quality.json` (respecting
-//! `LEAN_CTX_DATA_DIR`), atomic write (tmp+rename), loaded once per process,
-//! flushed periodically like `path_mode_memory`.
+//! 1. **Per-path escalation** — after a compression-correlated edit failure
+//!    the *next* auto read of that file resolves to `full` (one-shot, 1 h TTL).
+//! 2. **Per-(extension × mode) penalty** — modes whose edit-failure rate for a
+//!    file type crosses the risky threshold resolve to `full` until the rate
+//!    recovers (hysteresis, see below).
+//!
+//! Risk formula (documented in `docs/contracts/quality-loop-v1.md`):
+//! a (ext, mode) pair becomes risky when `fails >= 2 && fails / (fails +
+//! successes) >= 0.25`, and stops being risky only when the rate drops below
+//! `0.15` — two thresholds so one lucky edit doesn't flap the decision.
+//!
+//! Storage: `~/.lean-ctx/edit_quality.json`, atomic write (tmp+rename),
+//! loaded once per process, flushed periodically like `path_mode_memory`.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -34,17 +43,6 @@ const RISKY_ENTER_RATE: f64 = 0.25;
 /// …and recovers only once the rate drops below this (hysteresis).
 const RISKY_EXIT_RATE: f64 = 0.15;
 const RISKY_MIN_FAILS: u32 = 2;
-
-/// Runtime signal state uses the existing edit-quality file and follows its
-/// 30-day evidence horizon. A 15-day half-life makes two fresh high-confidence
-/// signals fall below the 0.5 exit threshold at about the existing horizon.
-const ESTIMATOR_HALF_LIFE_SECS: f64 = 15.0 * 24.0 * 3600.0;
-// Half-life decay makes adjacent events fractional; 1.5 still requires two
-// recent negative events while allowing their seconds-apart decay to count.
-const ESTIMATOR_MIN_SAMPLES: f64 = 1.5;
-const ESTIMATOR_ENTER_EVIDENCE: f64 = 1.5;
-const ESTIMATOR_EXIT_EVIDENCE: f64 = 0.5;
-const MAX_ESTIMATES: usize = 200;
 
 static STORE: OnceLock<Mutex<EditQualityStore>> = OnceLock::new();
 static RECORD_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -78,368 +76,9 @@ impl PairStats {
     }
 }
 
-/// Size buckets use the same token boundaries that divide the built-in auto
-/// resolver's small, medium, large, and very-large paths.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-enum SizeBucket {
-    Small,
-    Medium,
-    Large,
-    VeryLarge,
-    Unknown,
-}
-
-impl SizeBucket {
-    fn from_tokens(tokens: usize) -> Self {
-        match tokens {
-            0 => Self::Unknown,
-            1..=500 => Self::Small,
-            501..=2_000 => Self::Medium,
-            2_001..=8_000 => Self::Large,
-            _ => Self::VeryLarge,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-struct EstimateKey {
-    language_or_ext: String,
-    size_bucket: SizeBucket,
-    mode: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct EstimateStats {
-    negative_evidence: f64,
-    effective_samples: f64,
-    edit_successes: f64,
-    edit_failures: f64,
-    full_reread_bounces: f64,
-    risky: bool,
-    last_updated_unix: u64,
-    last_activity_unix: u64,
-}
-
-impl EstimateStats {
-    fn decay(&mut self, now: u64) {
-        if self.last_updated_unix == 0 {
-            // A fresh entry has no elapsed evidence to decay. For older
-            // partially populated state, start from its last activity so that
-            // persisted evidence ages from the signal rather than the epoch.
-            self.last_updated_unix = if self.last_activity_unix == 0 {
-                now
-            } else {
-                self.last_activity_unix
-            };
-        }
-        let elapsed = now.saturating_sub(self.last_updated_unix);
-        if elapsed > 0 {
-            let factor = 2.0_f64.powf(-(elapsed as f64) / ESTIMATOR_HALF_LIFE_SECS);
-            self.negative_evidence *= factor;
-            self.effective_samples *= factor;
-            self.edit_successes *= factor;
-            self.edit_failures *= factor;
-            self.full_reread_bounces *= factor;
-            self.last_updated_unix = now;
-        }
-        self.update_risk();
-    }
-
-    fn add_negative(&mut self, kind: RuntimeSignalKind, weight: f64, now: u64) {
-        self.decay(now);
-        self.negative_evidence += weight;
-        self.effective_samples += weight;
-        match kind {
-            RuntimeSignalKind::EditFailureAfterCompressedRead => self.edit_failures += weight,
-            RuntimeSignalKind::FullRereadBounce => self.full_reread_bounces += weight,
-        }
-        self.last_activity_unix = now;
-        self.last_updated_unix = now;
-        self.update_risk();
-    }
-
-    fn add_clean_edit(&mut self, weight: f64, now: u64) {
-        self.decay(now);
-        self.effective_samples += weight;
-        self.edit_successes += weight;
-        self.last_activity_unix = now;
-        self.last_updated_unix = now;
-        self.update_risk();
-    }
-
-    fn update_risk(&mut self) {
-        if self.risky {
-            if self.negative_evidence < ESTIMATOR_EXIT_EVIDENCE {
-                self.risky = false;
-            }
-        } else if self.effective_samples >= ESTIMATOR_MIN_SAMPLES
-            && self.negative_evidence >= ESTIMATOR_ENTER_EVIDENCE
-            && self.negative_evidence / self.effective_samples >= RISKY_ENTER_RATE
-        {
-            self.risky = true;
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct EstimateEntry {
-    key: EstimateKey,
-    stats: EstimateStats,
-    last_used: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct ConservativeQualityEstimator {
-    entries: Vec<EstimateEntry>,
-    access_clock: u64,
-}
-
-/// Only runtime events with a direct same-file, same-mode link enter the
-/// estimator. The provenance and confidence are carried with the event until
-/// it is recorded, then counters are persisted under the strategy key.
-#[derive(Debug, Clone, Copy)]
-enum RuntimeSignalKind {
-    EditFailureAfterCompressedRead,
-    FullRereadBounce,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum SignalProvenance {
-    CtxEditOldStringMiss,
-    CtxEditReplacementApplied,
-    SamePathCompressedThenFullRead,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum AttributionConfidence {
-    High,
-}
-
-impl AttributionConfidence {
-    fn weight(self) -> f64 {
-        match self {
-            Self::High => 1.0,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct AttributedRuntimeSignal {
-    kind: RuntimeSignalKind,
-    provenance: SignalProvenance,
-    confidence: AttributionConfidence,
-    path: String,
-    mode: String,
-    original_tokens: usize,
-}
-
-#[derive(Debug, Clone)]
-struct AttributedCleanEdit {
-    provenance: SignalProvenance,
-    confidence: AttributionConfidence,
-    path: String,
-    mode: String,
-    original_tokens: usize,
-}
-
-impl ConservativeQualityEstimator {
-    fn record(&mut self, signal: &AttributedRuntimeSignal, now: u64) -> bool {
-        let provenance_matches = matches!(
-            (signal.kind, signal.provenance),
-            (
-                RuntimeSignalKind::EditFailureAfterCompressedRead,
-                SignalProvenance::CtxEditOldStringMiss
-            ) | (
-                RuntimeSignalKind::FullRereadBounce,
-                SignalProvenance::SamePathCompressedThenFullRead
-            )
-        );
-        if !provenance_matches {
-            return false;
-        }
-        if !is_compressed_read_mode(&signal.mode) {
-            return false;
-        }
-        let Some(mode) = estimator_mode(&signal.mode) else {
-            return false;
-        };
-        let key = EstimateKey {
-            language_or_ext: ext_of(&signal.path),
-            size_bucket: SizeBucket::from_tokens(signal.original_tokens),
-            mode,
-        };
-        let index = self.ensure_entry(key, now);
-        self.entries[index]
-            .stats
-            .add_negative(signal.kind, signal.confidence.weight(), now);
-        true
-    }
-
-    fn record_clean_edit(&mut self, sample: &AttributedCleanEdit, now: u64) -> bool {
-        if !matches!(
-            sample.provenance,
-            SignalProvenance::CtxEditReplacementApplied
-        ) {
-            return false;
-        }
-        if !is_compressed_read_mode(&sample.mode) {
-            return false;
-        }
-        let Some(mode) = estimator_mode(&sample.mode) else {
-            return false;
-        };
-        let key = EstimateKey {
-            language_or_ext: ext_of(&sample.path),
-            size_bucket: SizeBucket::from_tokens(sample.original_tokens),
-            mode,
-        };
-        let index = self.ensure_entry(key, now);
-        self.entries[index]
-            .stats
-            .add_clean_edit(sample.confidence.weight(), now);
-        true
-    }
-
-    fn is_risky(&mut self, path: &str, mode: &str, original_tokens: usize, now: u64) -> bool {
-        let Some(mode) = estimator_mode(mode) else {
-            return false;
-        };
-        self.decay_and_prune(now);
-        let ext = ext_of(path);
-        let size_bucket = SizeBucket::from_tokens(original_tokens);
-        let exact = EstimateKey {
-            language_or_ext: ext.clone(),
-            size_bucket,
-            mode: mode.clone(),
-        };
-        let legacy = EstimateKey {
-            language_or_ext: ext,
-            size_bucket: SizeBucket::Unknown,
-            mode,
-        };
-        let mut risky = false;
-        for index in 0..self.entries.len() {
-            let key = &self.entries[index].key;
-            if key == &exact || (key == &legacy && legacy != exact) {
-                self.access_clock = self.access_clock.saturating_add(1);
-                self.entries[index].last_used = self.access_clock;
-                self.entries[index].stats.decay(now);
-                risky |= self.entries[index].stats.risky;
-            }
-        }
-        risky
-    }
-
-    fn import_legacy_risk(
-        &mut self,
-        ext: &str,
-        mode: &str,
-        fails: u32,
-        successes: u32,
-        last_fail: u64,
-    ) -> bool {
-        if !is_compressed_read_mode(mode) {
-            return false;
-        }
-        let Some(mode) = estimator_mode(mode) else {
-            return false;
-        };
-        let key = EstimateKey {
-            language_or_ext: ext.to_ascii_lowercase(),
-            size_bucket: SizeBucket::Unknown,
-            mode,
-        };
-        if self.entries.iter().any(|entry| entry.key == key) {
-            return false;
-        }
-        let index = self.ensure_entry(key, last_fail);
-        let stats = &mut self.entries[index].stats;
-        let imported_fails = f64::from(fails.max(RISKY_MIN_FAILS));
-        let imported_successes = f64::from(successes);
-        stats.negative_evidence = stats.negative_evidence.max(imported_fails);
-        stats.effective_samples = stats
-            .effective_samples
-            .max(imported_fails + imported_successes);
-        stats.edit_failures = stats.edit_failures.max(imported_fails);
-        stats.edit_successes = stats.edit_successes.max(imported_successes);
-        stats.risky = true;
-        stats.last_updated_unix = last_fail;
-        stats.last_activity_unix = last_fail;
-        true
-    }
-
-    fn decay_and_prune(&mut self, now: u64) {
-        for entry in &mut self.entries {
-            entry.stats.decay(now);
-        }
-        let before = self.entries.len();
-        self.entries
-            .retain(|entry| now.saturating_sub(entry.stats.last_activity_unix) <= DECAY_SECS);
-        if self.entries.len() != before {
-            self.evict_to_cap();
-        }
-    }
-
-    fn ensure_entry(&mut self, key: EstimateKey, now: u64) -> usize {
-        if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
-            self.access_clock = self.access_clock.saturating_add(1);
-            self.entries[index].last_used = self.access_clock;
-            self.entries[index].stats.decay(now);
-            return index;
-        }
-        if self.entries.len() >= MAX_ESTIMATES {
-            self.evict_lru();
-        }
-        self.access_clock = self.access_clock.saturating_add(1);
-        self.entries.push(EstimateEntry {
-            key,
-            stats: EstimateStats::default(),
-            last_used: self.access_clock,
-        });
-        self.entries.len() - 1
-    }
-
-    fn evict_lru(&mut self) {
-        if let Some((index, _)) = self
-            .entries
-            .iter()
-            .enumerate()
-            .min_by(|(_, left), (_, right)| {
-                left.last_used
-                    .cmp(&right.last_used)
-                    .then_with(|| left.key.cmp(&right.key))
-            })
-        {
-            self.entries.remove(index);
-        }
-    }
-
-    fn evict_to_cap(&mut self) -> bool {
-        let mut evicted = false;
-        while self.entries.len() > MAX_ESTIMATES {
-            self.evict_lru();
-            evicted = true;
-        }
-        evicted
-    }
-}
-
-fn estimator_mode(mode: &str) -> Option<String> {
-    use crate::tools::ctx_read::ReadMode;
-
-    let parsed = mode.parse::<ReadMode>().ok()?;
-    Some(match parsed {
-        ReadMode::Lines(_) | ReadMode::LinesMulti(_) | ReadMode::LinesTail(_) => "lines".into(),
-        ReadMode::Anchored(_) => "anchored".into(),
-        ReadMode::Density(_) => "density".into(),
-        other => other.to_string(),
-    })
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct EditQualityStore {
-    /// Legacy key: `"{ext}|{mode}"` (e.g. `"rs|map"`). Kept for migration and
-    /// existing metrics; new mode decisions use `ConservativeQualityEstimator`.
+    /// Key: `"{ext}|{mode}"` (e.g. `"rs|map"`).
     pub pairs: HashMap<String, PairStats>,
     /// Normalized path -> unix time of the compression-correlated edit fail.
     pub pending_escalations: HashMap<String, u64>,
@@ -449,10 +88,6 @@ pub(crate) struct EditQualityStore {
     /// `#[serde(default)]` keeps stores written before anchored editing loadable.
     #[serde(default)]
     pub pending_anchored_escalations: HashMap<String, u64>,
-    /// Bounded strategy-keyed estimator added additively to the legacy store.
-    /// Older `pairs` remain readable for metrics and migration.
-    #[serde(default)]
-    estimator: ConservativeQualityEstimator,
     /// All-time counter of consumed escalations (observability).
     #[serde(default)]
     pub escalations_served: u64,
@@ -486,55 +121,24 @@ impl EditQualityStore {
             return Self::default();
         };
         let mut store: Self = serde_json::from_str(&raw).unwrap_or_default();
-        let now = now_unix();
-        store.decay(now);
-        store.migrate_legacy_risks();
+        store.decay(now_unix());
         store
-    }
-
-    /// Copy active v1 `(ext, mode)` risk into an unknown-size estimator bucket.
-    /// The old data has no size dimension, so this fallback preserves its
-    /// conservative effect until its original 30-day evidence window expires.
-    fn migrate_legacy_risks(&mut self) {
-        let mut legacy: Vec<(String, PairStats)> = self
-            .pairs
-            .iter()
-            .filter(|(_, stats)| stats.risky)
-            .map(|(key, stats)| (key.clone(), stats.clone()))
-            .collect();
-        legacy.sort_by(|left, right| left.0.cmp(&right.0));
-        for (key, stats) in legacy {
-            let Some((ext, mode)) = key.split_once('|') else {
-                continue;
-            };
-            self.dirty |= self.estimator.import_legacy_risk(
-                ext,
-                mode,
-                stats.fails,
-                stats.successes,
-                stats.last_fail_unix,
-            );
-        }
-        self.dirty |= self.estimator.evict_to_cap();
     }
 
     fn decay(&mut self, now: u64) {
         let before = self.pairs.len()
             + self.pending_escalations.len()
             + self.pending_anchored_escalations.len();
-        let estimate_count = self.estimator.entries.len();
         self.pairs
             .retain(|_, s| now.saturating_sub(s.last_fail_unix) <= DECAY_SECS);
         self.pending_escalations
             .retain(|_, ts| now.saturating_sub(*ts) <= ESCALATION_TTL_SECS);
         self.pending_anchored_escalations
             .retain(|_, ts| now.saturating_sub(*ts) <= ESCALATION_TTL_SECS);
-        self.estimator.decay_and_prune(now);
         if self.pairs.len()
             + self.pending_escalations.len()
             + self.pending_anchored_escalations.len()
             != before
-            || self.estimator.entries.len() != estimate_count
         {
             self.dirty = true;
         }
@@ -556,7 +160,6 @@ impl EditQualityStore {
         }
         evict_pending_to_cap(&mut self.pending_escalations, &mut self.dirty);
         evict_pending_to_cap(&mut self.pending_anchored_escalations, &mut self.dirty);
-        self.dirty |= self.estimator.evict_to_cap();
     }
 
     pub(crate) fn record_failure(&mut self, ext: &str, mode: &str, now: u64) {
@@ -573,20 +176,6 @@ impl EditQualityStore {
         entry.successes = entry.successes.saturating_add(1);
         entry.update_risky();
         self.dirty = true;
-    }
-
-    fn record_attributed_signal(&mut self, signal: &AttributedRuntimeSignal, now: u64) {
-        if self.estimator.record(signal, now) {
-            self.dirty = true;
-            self.evict_to_caps();
-        }
-    }
-
-    fn record_attributed_clean_edit(&mut self, sample: &AttributedCleanEdit, now: u64) {
-        if self.estimator.record_clean_edit(sample, now) {
-            self.dirty = true;
-            self.evict_to_caps();
-        }
     }
 
     pub(crate) fn set_pending_escalation(&mut self, norm_path: &str, now: u64) {
@@ -647,12 +236,10 @@ impl EditQualityStore {
         }
     }
 
-    fn is_risky(&mut self, path: &str, mode: &str, original_tokens: usize, now: u64) -> bool {
-        let risky = self.estimator.is_risky(path, mode, original_tokens, now);
-        // Querying advances exponential decay and LRU recency; flush those
-        // persisted fields through the existing every-10-recordings cadence.
-        self.dirty = true;
-        risky
+    pub(crate) fn is_risky(&self, ext: &str, mode: &str) -> bool {
+        self.pairs
+            .get(&pair_key(ext, mode))
+            .is_some_and(|s| s.risky)
     }
 
     pub(crate) fn save(&self) -> std::io::Result<()> {
@@ -687,8 +274,8 @@ fn ext_of(path: &str) -> String {
     std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase)
-        .unwrap_or_default()
+        .unwrap_or("")
+        .to_string()
 }
 
 /// Process-global: record the outcome of an edit, correlated with the mode of
@@ -734,61 +321,28 @@ fn record_outcome_with(path: &str, last_mode: &str, success: bool, esc: Escalati
     if last_mode.is_empty() {
         return;
     }
-    // Read provenance before taking the edit-quality lock. Bounce recording
-    // takes its lock before this store, so reversing that order could deadlock.
-    let (signal, clean_edit) = if success {
-        (
-            None,
-            clean_edit_sample(
-                path,
-                last_mode,
-                crate::core::bounce_tracker::last_read_context(path),
-                esc,
-            ),
-        )
-    } else {
-        (
-            edit_failure_signal(
-                path,
-                last_mode,
-                crate::core::bounce_tracker::last_read_context(path),
-                esc,
-            ),
-            None,
-        )
-    };
-    let attributed = signal.is_some();
     let ext = ext_of(path);
     let Ok(mut store) = global().lock() else {
         return;
     };
     if success {
         store.record_success(&ext, last_mode);
-        if let Some(sample) = clean_edit {
-            store.record_attributed_clean_edit(&sample, now_unix());
-        }
     } else {
         let now = now_unix();
-        if signal.is_some() || matches!(esc, Escalation::Anchored) {
-            store.record_failure(&ext, last_mode, now);
-        }
-        if let Some(signal) = signal {
-            store.record_attributed_signal(&signal, now);
-        }
+        store.record_failure(&ext, last_mode, now);
         if last_mode != esc.target_mode() {
             let norm = crate::core::pathutil::normalize_tool_path(path);
             match esc {
                 Escalation::Full => store.set_pending_escalation(&norm, now),
                 Escalation::Anchored => store.set_pending_anchored_escalation(&norm, now),
             }
-            // Keep the existing bandit penalty only for the same high-confidence
-            // compressed-read miss admitted to the conservative estimator.
-            if attributed {
-                crate::core::adaptive_thresholds::record_quality_signal(
-                    path,
-                    crate::core::threshold_learning::QualitySignal::EditFail,
-                );
-            }
+            // Quality signal (#538): edit failures after a stale read are the
+            // strongest "the model's view was wrong" evidence we have — they also
+            // penalize the bandit arm that produced the read (#593).
+            crate::core::adaptive_thresholds::record_quality_signal(
+                path,
+                crate::core::threshold_learning::QualitySignal::EditFail,
+            );
             // Stigmergy (#540): edit failures mark the path as Stuck ("context
             // drifted"), the explicit anchor-miss signal called for in #1008.
             let scent_path = norm.clone();
@@ -805,51 +359,6 @@ fn record_outcome_with(path: &str, last_mode: &str, success: bool, esc: Escalati
     maybe_flush(&mut store);
 }
 
-fn edit_failure_signal(
-    path: &str,
-    last_mode: &str,
-    read_context: Option<(String, usize)>,
-    escalation: Escalation,
-) -> Option<AttributedRuntimeSignal> {
-    if !matches!(escalation, Escalation::Full) {
-        return None;
-    }
-    let (mode, original_tokens) = read_context?;
-    if mode != last_mode || !is_compressed_read_mode(&mode) {
-        return None;
-    }
-    Some(AttributedRuntimeSignal {
-        kind: RuntimeSignalKind::EditFailureAfterCompressedRead,
-        provenance: SignalProvenance::CtxEditOldStringMiss,
-        confidence: AttributionConfidence::High,
-        path: path.to_string(),
-        mode,
-        original_tokens,
-    })
-}
-
-fn clean_edit_sample(
-    path: &str,
-    last_mode: &str,
-    read_context: Option<(String, usize)>,
-    escalation: Escalation,
-) -> Option<AttributedCleanEdit> {
-    if !matches!(escalation, Escalation::Full) {
-        return None;
-    }
-    let (mode, original_tokens) = read_context?;
-    if mode != last_mode || !is_compressed_read_mode(&mode) {
-        return None;
-    }
-    Some(AttributedCleanEdit {
-        provenance: SignalProvenance::CtxEditReplacementApplied,
-        confidence: AttributionConfidence::High,
-        path: path.to_string(),
-        mode,
-        original_tokens,
-    })
-}
-
 /// Process-global: one-shot check-and-consume of the per-path `full` escalation.
 pub(crate) fn take_pending_escalation(path: &str) -> bool {
     consume_escalation(path, false)
@@ -859,27 +368,6 @@ pub(crate) fn take_pending_escalation(path: &str) -> bool {
 /// escalation (armed by [`record_anchored_edit_outcome`]).
 pub(crate) fn take_pending_anchored_escalation(path: &str) -> bool {
     consume_escalation(path, true)
-}
-
-/// Record a full re-read bounce only when the tracker observed the same path,
-/// compressed source mode, and non-edit-forced follow-up in its short window.
-pub(crate) fn record_full_reread_bounce(path: &str, mode: &str, original_tokens: usize) {
-    if !is_compressed_read_mode(mode) {
-        return;
-    }
-    let signal = AttributedRuntimeSignal {
-        kind: RuntimeSignalKind::FullRereadBounce,
-        provenance: SignalProvenance::SamePathCompressedThenFullRead,
-        confidence: AttributionConfidence::High,
-        path: path.to_string(),
-        mode: mode.to_string(),
-        original_tokens,
-    };
-    let Ok(mut store) = global().lock() else {
-        return;
-    };
-    store.record_attributed_signal(&signal, now_unix());
-    maybe_flush(&mut store);
 }
 
 fn consume_escalation(path: &str, anchored: bool) -> bool {
@@ -899,21 +387,10 @@ fn consume_escalation(path: &str, anchored: bool) -> bool {
     hit
 }
 
-fn is_compressed_read_mode(mode: &str) -> bool {
-    mode.parse::<crate::tools::ctx_read::ReadMode>()
-        .is_ok_and(|parsed| parsed.counts_as_compressed())
-}
-
-/// Process-global: is this `(extension, size bucket, mode)` currently risky?
-pub(crate) fn is_risky_mode(path: &str, mode: &str, original_tokens: usize) -> bool {
-    let Ok(mut store) = global().lock() else {
-        return false;
-    };
-    let risky = store.is_risky(path, mode, original_tokens, now_unix());
-    if store.dirty {
-        maybe_flush(&mut store);
-    }
-    risky
+/// Process-global: is `mode` currently risky for files with this extension?
+pub(crate) fn is_risky_mode(path: &str, mode: &str) -> bool {
+    let ext = ext_of(path);
+    global().lock().is_ok_and(|s| s.is_risky(&ext, mode))
 }
 
 /// Snapshot for `ctx_metrics`: (risky pairs, per-pair stats, escalations served).
@@ -939,38 +416,8 @@ pub(crate) fn metrics_snapshot() -> serde_json::Value {
         let fb = b["fail_rate"].as_f64().unwrap_or(0.0);
         fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
     });
-    let mut estimates: Vec<serde_json::Value> = store
-        .estimator
-        .entries
-        .iter()
-        .map(|entry| {
-            serde_json::json!({
-                "language_or_ext": entry.key.language_or_ext,
-                "size_bucket": entry.key.size_bucket,
-                "mode": entry.key.mode,
-                "negative_evidence": (entry.stats.negative_evidence * 1000.0).round() / 1000.0,
-                "effective_samples": (entry.stats.effective_samples * 1000.0).round() / 1000.0,
-                "edit_successes": (entry.stats.edit_successes * 1000.0).round() / 1000.0,
-                "edit_failures": (entry.stats.edit_failures * 1000.0).round() / 1000.0,
-                "full_reread_bounces": (entry.stats.full_reread_bounces * 1000.0).round() / 1000.0,
-                "risky": entry.stats.risky,
-            })
-        })
-        .collect();
-    estimates.sort_by(|a, b| {
-        a["language_or_ext"]
-            .as_str()
-            .cmp(&b["language_or_ext"].as_str())
-            .then_with(|| {
-                a["size_bucket"]
-                    .to_string()
-                    .cmp(&b["size_bucket"].to_string())
-            })
-            .then_with(|| a["mode"].as_str().cmp(&b["mode"].as_str()))
-    });
     serde_json::json!({
         "pairs": pairs,
-        "strategies": estimates,
         "pending_escalations": store.pending_escalations.len(),
         "pending_anchored_escalations": store.pending_anchored_escalations.len(),
         "escalations_served": store.escalations_served,
@@ -997,19 +444,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn legacy_pairs_keep_their_v1_hysteresis_for_additive_migration() {
+    fn risky_after_two_majority_fails_with_hysteresis() {
         let mut s = EditQualityStore::default();
         s.record_failure("rs", "map", 1000);
-        assert!(!s.pairs.get("rs|map").is_some_and(|p| p.risky));
+        assert!(!s.is_risky("rs", "map"), "one fail is not a pattern");
         s.record_failure("rs", "map", 1001);
-        assert!(s.pairs.get("rs|map").is_some_and(|p| p.risky));
+        assert!(s.is_risky("rs", "map"), "2 fails, rate 1.0 >= 0.25");
 
+        // Rate must drop below 0.15 to recover: 2 fails need > 11 successes.
         for _ in 0..11 {
             s.record_success("rs", "map");
         }
-        assert!(s.pairs.get("rs|map").is_some_and(|p| p.risky));
+        assert!(s.is_risky("rs", "map"), "2/13 ≈ 0.154 still risky");
         s.record_success("rs", "map");
-        assert!(!s.pairs.get("rs|map").is_some_and(|p| p.risky));
+        assert!(!s.is_risky("rs", "map"), "2/14 ≈ 0.143 < 0.15 recovers");
     }
 
     #[test]
@@ -1021,267 +469,20 @@ mod tests {
         s.record_failure("ts", "signatures", 1000);
         s.record_failure("ts", "signatures", 1001);
         // 2 fails / 9 total ≈ 0.22 < 0.25 — healthy mode stays usable.
-        assert!(!s.pairs.get("ts|signatures").is_some_and(|p| p.risky));
+        assert!(!s.is_risky("ts", "signatures"));
         s.record_failure("ts", "signatures", 1002);
         // 3/10 = 0.30 — now risky.
-        assert!(s.pairs.get("ts|signatures").is_some_and(|p| p.risky));
+        assert!(s.is_risky("ts", "signatures"));
     }
 
     #[test]
-    fn legacy_risk_migrates_to_unknown_size_without_removing_v1_data() {
+    fn penalty_is_per_extension_not_global() {
         let mut s = EditQualityStore::default();
         s.record_failure("rs", "map", 1000);
         s.record_failure("rs", "map", 1001);
-        s.migrate_legacy_risks();
-        assert!(s.pairs.contains_key("rs|map"), "v1 data remains readable");
-        assert!(s.estimator.is_risky("src/main.rs", "map", 2_000, 1001));
-        assert!(!s.estimator.is_risky("src/main.py", "map", 2_000, 1001));
-        assert!(
-            !s.estimator
-                .is_risky("src/main.rs", "signatures", 2_000, 1001)
-        );
-    }
-
-    fn signal(
-        kind: RuntimeSignalKind,
-        path: &str,
-        mode: &str,
-        tokens: usize,
-    ) -> AttributedRuntimeSignal {
-        let provenance = match kind {
-            RuntimeSignalKind::EditFailureAfterCompressedRead => {
-                SignalProvenance::CtxEditOldStringMiss
-            }
-            RuntimeSignalKind::FullRereadBounce => SignalProvenance::SamePathCompressedThenFullRead,
-        };
-        AttributedRuntimeSignal {
-            kind,
-            provenance,
-            confidence: AttributionConfidence::High,
-            path: path.to_string(),
-            mode: mode.to_string(),
-            original_tokens: tokens,
-        }
-    }
-
-    fn clean_sample(path: &str, mode: &str, tokens: usize) -> AttributedCleanEdit {
-        clean_edit_sample(
-            path,
-            mode,
-            Some((mode.to_string(), tokens)),
-            Escalation::Full,
-        )
-        .expect("matching compressed ctx_edit success is attributable")
-    }
-
-    #[test]
-    fn estimator_preserves_v1_minimum_and_enter_rate() {
-        let mut store = EditQualityStore::default();
-        for i in 0..7 {
-            store.record_attributed_clean_edit(&clean_sample("a.rs", "map", 900), 1_000 + i);
-        }
-        store.record_attributed_signal(
-            &signal(
-                RuntimeSignalKind::EditFailureAfterCompressedRead,
-                "a.rs",
-                "map",
-                900,
-            ),
-            1_010,
-        );
-        assert!(!store.is_risky("a.rs", "map", 900, 1_010));
-        store.record_attributed_signal(
-            &signal(
-                RuntimeSignalKind::EditFailureAfterCompressedRead,
-                "a.rs",
-                "map",
-                900,
-            ),
-            1_011,
-        );
-        // 2/9 is below the retained v1 25% enter rate.
-        assert!(!store.is_risky("a.rs", "map", 900, 1_011));
-        store.record_attributed_signal(
-            &signal(
-                RuntimeSignalKind::EditFailureAfterCompressedRead,
-                "a.rs",
-                "map",
-                900,
-            ),
-            1_012,
-        );
-        // 3/10 clears both the two-failure minimum and the 25% rate threshold.
-        assert!(store.is_risky("a.rs", "map", 900, 1_012));
-    }
-
-    #[test]
-    fn two_attributed_negative_samples_only_escalate_their_strategy_key() {
-        let mut s = EditQualityStore::default();
-        s.record_attributed_signal(
-            &signal(
-                RuntimeSignalKind::EditFailureAfterCompressedRead,
-                "src/main.rs",
-                "map",
-                1_000,
-            ),
-            1_000,
-        );
-        assert!(!s.is_risky("src/main.rs", "map", 1_000, 1_000));
-        assert_eq!(
-            crate::tools::ctx_read::mode::more_conservative("map", "full"),
-            "full"
-        );
-
-        s.record_attributed_signal(
-            &signal(
-                RuntimeSignalKind::FullRereadBounce,
-                "src/main.rs",
-                "map",
-                1_000,
-            ),
-            1_001,
-        );
-        assert!(s.is_risky("src/main.rs", "map", 1_000, 1_001));
-        assert!(!s.is_risky("src/other.py", "map", 1_000, 1_001));
-        assert!(!s.is_risky("src/main.rs", "signatures", 1_000, 1_001));
-        assert!(!s.is_risky("src/main.rs", "map", 3_000, 1_001));
-    }
-
-    #[test]
-    fn hysteresis_holds_risk_between_enter_and_exit_after_mixed_signals() {
-        let mut store = EditQualityStore::default();
-        let t0 = 1_000;
-        store.record_attributed_signal(
-            &signal(
-                RuntimeSignalKind::EditFailureAfterCompressedRead,
-                "a.rs",
-                "map",
-                900,
-            ),
-            t0,
-        );
-        store.record_attributed_signal(
-            &signal(RuntimeSignalKind::FullRereadBounce, "a.rs", "map", 900),
-            t0 + 1,
-        );
-        assert!(store.is_risky("a.rs", "map", 900, t0 + 1));
-        for i in 0..8 {
-            store.record_attributed_clean_edit(&clean_sample("a.rs", "map", 900), t0 + 2 + i);
-        }
-
-        let half_life = ESTIMATOR_HALF_LIFE_SECS as u64;
-        assert!(store.is_risky("a.rs", "map", 900, t0 + half_life));
-        store.record_attributed_signal(
-            &signal(
-                RuntimeSignalKind::EditFailureAfterCompressedRead,
-                "a.rs",
-                "map",
-                900,
-            ),
-            t0 + half_life,
-        );
-        assert!(store.is_risky("a.rs", "map", 900, t0 + half_life));
-    }
-
-    #[test]
-    fn decayed_evidence_returns_to_the_configured_default() {
-        let mut estimator = ConservativeQualityEstimator::default();
-        estimator.record(
-            &signal(
-                RuntimeSignalKind::EditFailureAfterCompressedRead,
-                "a.rs",
-                "map",
-                900,
-            ),
-            1_000,
-        );
-        estimator.record(
-            &signal(
-                RuntimeSignalKind::EditFailureAfterCompressedRead,
-                "a.rs",
-                "map",
-                900,
-            ),
-            1_001,
-        );
-        assert!(estimator.is_risky("a.rs", "map", 900, 1_001));
-
-        let default = "signatures";
-        let after_decay = if estimator.is_risky("a.rs", "map", 900, 1_001 + DECAY_SECS + 1) {
-            crate::tools::ctx_read::mode::more_conservative(default, "full")
-        } else {
-            default.to_string()
-        };
-        assert_eq!(after_decay, default);
-    }
-
-    #[test]
-    fn estimator_is_bounded_and_evicts_least_recently_used_key() {
-        let mut estimator = ConservativeQualityEstimator::default();
-        let key = |i: usize| EstimateKey {
-            language_or_ext: format!("e{i}"),
-            size_bucket: SizeBucket::Small,
-            mode: "map".to_string(),
-        };
-        for i in 0..MAX_ESTIMATES {
-            estimator.ensure_entry(key(i), i as u64);
-        }
-        estimator.ensure_entry(key(0), MAX_ESTIMATES as u64);
-        estimator.ensure_entry(key(MAX_ESTIMATES), (MAX_ESTIMATES + 1) as u64);
-        assert_eq!(estimator.entries.len(), MAX_ESTIMATES);
-        assert!(estimator.entries.iter().any(|entry| entry.key == key(0)));
-        assert!(!estimator.entries.iter().any(|entry| entry.key == key(1)));
-    }
-
-    #[test]
-    fn bare_or_mismatched_edit_failures_are_not_attributed() {
-        assert!(edit_failure_signal("a.rs", "map", None, Escalation::Full).is_none());
-        assert!(
-            edit_failure_signal(
-                "a.rs",
-                "map",
-                Some(("full".to_string(), 900)),
-                Escalation::Full
-            )
-            .is_none()
-        );
-        assert!(
-            edit_failure_signal(
-                "a.rs",
-                "map",
-                Some(("signatures".to_string(), 900)),
-                Escalation::Full,
-            )
-            .is_none()
-        );
-        assert!(
-            edit_failure_signal(
-                "a.rs",
-                "full",
-                Some(("full".to_string(), 900)),
-                Escalation::Full
-            )
-            .is_none()
-        );
-        assert!(
-            edit_failure_signal(
-                "a.rs",
-                "map",
-                Some(("map".to_string(), 900)),
-                Escalation::Anchored,
-            )
-            .is_none()
-        );
-        assert!(clean_edit_sample("a.rs", "map", None, Escalation::Full).is_none());
-        assert!(
-            clean_edit_sample(
-                "a.rs",
-                "map",
-                Some(("full".to_string(), 900)),
-                Escalation::Full,
-            )
-            .is_none()
-        );
+        assert!(s.is_risky("rs", "map"));
+        assert!(!s.is_risky("py", "map"), "py|map untouched");
+        assert!(!s.is_risky("rs", "signatures"), "rs|signatures untouched");
     }
 
     #[test]

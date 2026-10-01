@@ -446,59 +446,6 @@ impl ReadMode {
                 | ReadMode::Anchored(_)
         )
     }
-
-    /// Conservative risk rank for automatic feedback (lower is safer). This
-    /// follows the renderers' source coverage, not the mode names: `map` keeps
-    /// dependency/export structure and task-relevant bodies, while `signatures`
-    /// is the API surface; `aggressive`, `entropy`, and `mdl` have
-    /// extension-dependent lossy renderers and share a tier. Modes in a tier
-    /// with different renderers are peers; feedback never swaps between them.
-    #[must_use]
-    pub(crate) fn conservative_risk_rank(&self) -> u8 {
-        match self {
-            ReadMode::Full | ReadMode::Raw | ReadMode::Anchored(None) => 0,
-            ReadMode::FullCompact => 1,
-            ReadMode::Lines(_)
-            | ReadMode::LinesMulti(_)
-            | ReadMode::LinesTail(_)
-            | ReadMode::Diff
-            | ReadMode::Anchored(Some(_)) => 2,
-            ReadMode::Cognitive | ReadMode::Task | ReadMode::Map => 3,
-            ReadMode::Signatures => 4,
-            ReadMode::Mdl | ReadMode::Aggressive | ReadMode::Entropy | ReadMode::Density(_) => 5,
-            ReadMode::Reference => 6,
-            // `auto` is a resolver request, not a delivered strategy. If one
-            // reaches feedback comparison, treat it as uncertain and choose
-            // the safest concrete mode.
-            ReadMode::Auto => u8::MAX,
-        }
-    }
-}
-
-/// Return the more conservative of two delivered strategies. Lower risk ranks
-/// preserve more source context; an unknown spelling resolves to `full` because
-/// no safe ordering can be established for it. Equal-tier strategies retain
-/// the current mode instead of making an unmeasured peer swap.
-#[must_use]
-pub(crate) fn more_conservative(current: &str, candidate: &str) -> String {
-    let (Ok(current_mode), Ok(candidate_mode)) =
-        (current.parse::<ReadMode>(), candidate.parse::<ReadMode>())
-    else {
-        return "full".to_string();
-    };
-    let current_rank = current_mode.conservative_risk_rank();
-    let candidate_rank = candidate_mode.conservative_risk_rank();
-    if current_rank == u8::MAX || candidate_rank == u8::MAX {
-        return "full".to_string();
-    }
-    if current == candidate {
-        return current.to_string();
-    }
-    if current_rank <= candidate_rank {
-        current.to_string()
-    } else {
-        candidate.to_string()
-    }
 }
 
 #[cfg(test)]
@@ -838,55 +785,5 @@ mod tests {
                 "'{mode}' must not be a precise pinned read"
             );
         }
-    }
-
-    #[test]
-    fn conservative_order_tracks_actual_read_views() {
-        let rank = |mode: &str| {
-            mode.parse::<ReadMode>()
-                .expect("canonical strategy parses")
-                .conservative_risk_rank()
-        };
-
-        assert!(rank("full") < rank("lines:5-10"));
-        assert_eq!(rank("anchored"), rank("full"));
-        assert_eq!(rank("anchored:5-10"), rank("lines:5-10"));
-        assert!(rank("full") < rank("full-compact"));
-        assert!(rank("full-compact") < rank("lines:5-10"));
-        assert!(rank("lines:5-10") < rank("cognitive"));
-        // `auto_mode_resolver::heuristic_mode` documents why map carries more
-        // context than signatures: map retains dependencies, exports, and task
-        // bodies, while signatures is the API-only view.
-        assert!(rank("map") < rank("signatures"));
-        assert!(rank("signatures") < rank("aggressive"));
-        assert_eq!(rank("aggressive"), rank("entropy"));
-        assert!(rank("entropy") < rank("reference"));
-    }
-
-    #[test]
-    fn conservative_comparison_never_exceeds_either_input_risk() {
-        for current in MODE_FAMILIES {
-            for candidate in MODE_FAMILIES {
-                let selected = more_conservative(current, candidate);
-                let selected_rank = selected
-                    .parse::<ReadMode>()
-                    .expect("selection is a validated mode")
-                    .conservative_risk_rank();
-                assert!(selected_rank <= rank_mode(current));
-                assert!(selected_rank <= rank_mode(candidate));
-            }
-        }
-
-        assert_eq!(more_conservative("signatures", "map"), "map");
-        assert_eq!(more_conservative("custom-mode", "map"), "full");
-        assert_eq!(more_conservative("custom-mode", "custom-mode"), "full");
-        assert_eq!(more_conservative("auto", "map"), "full");
-        assert_eq!(more_conservative("auto", "auto"), "full");
-    }
-
-    fn rank_mode(mode: &str) -> u8 {
-        mode.parse::<ReadMode>()
-            .expect("canonical strategy parses")
-            .conservative_risk_rank()
     }
 }

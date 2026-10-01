@@ -85,6 +85,8 @@ testbench OPTIONS:\n\
   --margin <f>       Non-inferiority margin for the per-repo gate (default 0.0)\n\
   --replay <file>    Replay a recording (deterministic CI); --record to capture live\n\
   --gate             Exit non-zero if any repo regressed\n\n\
+GATES: --gate fails on REGRESSED and on UNDERPOWERED (too few pairs to show quality).\n\
+  --mechanism        With --gate: wiring check for tiny fixture suites; only REGRESSED fails\n\n\
 LIVE MODEL (when not replaying) is read from the environment:\n\
   LEAN_CTX_EVAL_MODEL_URL   OpenAI-compatible base URL (e.g. https://api.openai.com/v1)\n\
   LEAN_CTX_EVAL_MODEL       Model id (e.g. gpt-4o-mini)\n\
@@ -202,7 +204,7 @@ fn cmd_ab(args: &[String]) {
     println!("determinism digest: {}", signed.determinism_digest);
     println!("artifact:           {}", out.display());
 
-    if has_flag(args, "--gate") && !signed.verdict.gate_passes() {
+    if has_flag(args, "--gate") && !signed.verdict.passes_gate(has_flag(args, "--mechanism")) {
         eprintln!("\nquality gate FAILED: {}", signed.verdict.label());
         std::process::exit(1);
     }
@@ -279,6 +281,7 @@ fn cmd_frontier(args: &[String]) {
                 std::process::exit(1);
             }
         };
+        cfg.report.live_model = true;
         if let Some(record_path) = flag_value(args, "--record") {
             let recorder = RecordingRunner::new(live);
             let report = run_frontier_or_exit(&suite, &suite_name, &recorder, &cfg, &strategies);
@@ -298,7 +301,7 @@ fn cmd_frontier(args: &[String]) {
     } else {
         print!("{}", report.render_table());
     }
-    if has_flag(args, "--gate") && !report.gate_passes() {
+    if has_flag(args, "--gate") && !report.gate_passes(has_flag(args, "--mechanism")) {
         eprintln!("\nquality gate FAILED: one or more frontier strategies regressed");
         std::process::exit(1);
     }
@@ -499,7 +502,7 @@ fn cmd_footprint(args: &[String]) {
         println!("artifact:           {}", out.display());
     }
 
-    if has_flag(args, "--gate") && !report.gate_passes() {
+    if has_flag(args, "--gate") && !report.gate_passes(has_flag(args, "--mechanism")) {
         eprintln!("\nfootprint gate FAILED: a harmful injected element is present");
         std::process::exit(1);
     }
@@ -607,7 +610,7 @@ fn cmd_testbench(args: &[String]) {
     println!("\nFINDINGS:     {}", findings_path.display());
     println!("regressions:  {}", regressions_path.display());
 
-    if has_flag(args, "--gate") && !report.gate_passes() {
+    if has_flag(args, "--gate") && !report.gate_passes(has_flag(args, "--mechanism")) {
         eprintln!("\ntestbench gate FAILED: {}", report.verdict.label());
         std::process::exit(1);
     }
@@ -784,7 +787,7 @@ mod recording_guard_tests {
         let report = run_ab(&suite, "suite.ndjson", &runner, &AbRunConfig::default())
             .expect("committed recording must cover every replay key");
         assert!(
-            report.verdict.gate_passes(),
+            report.verdict.mechanism_gate_passes(),
             "committed recording must not encode a regression, got: {}",
             report.verdict.label()
         );

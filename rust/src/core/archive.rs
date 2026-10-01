@@ -329,12 +329,21 @@ pub(crate) fn retrieve_checked(id: &str) -> Result<String, ArchiveResolveError> 
         return Err(ArchiveResolveError::Malformed);
     }
 
-    std::fs::read_to_string(content_path(id)).map_err(|error| match error.kind() {
-        std::io::ErrorKind::PermissionDenied => {
-            ArchiveResolveError::Refused("archive read refused by filesystem policy")
+    // Archive content reaches the model through ctx_expand: never follow a link
+    // planted in the store to a file outside it.
+    super::atomic_fs::read_store_file(&archive_base_dir(), &content_path(id)).map_err(|error| {
+        match error {
+            super::atomic_fs::StoreReadError::Escapes => {
+                ArchiveResolveError::Refused("archive entry resolves outside the archive store")
+            }
+            super::atomic_fs::StoreReadError::Io(error) => match error.kind() {
+                std::io::ErrorKind::PermissionDenied => {
+                    ArchiveResolveError::Refused("archive read refused by filesystem policy")
+                }
+                std::io::ErrorKind::InvalidData => ArchiveResolveError::Malformed,
+                _ => ArchiveResolveError::Missing,
+            },
         }
-        std::io::ErrorKind::InvalidData => ArchiveResolveError::Malformed,
-        _ => ArchiveResolveError::Missing,
     })
 }
 

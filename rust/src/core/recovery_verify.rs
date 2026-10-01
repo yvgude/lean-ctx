@@ -150,20 +150,31 @@ pub(crate) fn verify_handle(handle: &str, expected_digest: Option<&str>) -> Reco
 }
 
 fn verify_tee_file(path: &std::path::Path, expected_digest: Option<&str>) -> RecoveryVerification {
-    let bytes = match std::fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+    use crate::core::atomic_fs::StoreReadError;
+    // Read exactly the way ctx_expand reads, so a verified handle is the content
+    // the model would receive.
+    let Ok(state_dir) = crate::core::paths::state_dir() else {
+        return RecoveryVerification::unavailable(RecoveryOutcome::Missing);
+    };
+    let content = match crate::core::atomic_fs::read_store_file(&state_dir.join("tee"), path) {
+        Ok(content) => content,
+        Err(StoreReadError::Escapes) => {
             return RecoveryVerification::unavailable(RecoveryOutcome::Refused(
-                "tee read refused by filesystem policy".to_string(),
+                "tee handle resolves outside the tee store".to_string(),
             ));
         }
-        Err(_) => return RecoveryVerification::unavailable(RecoveryOutcome::Missing),
-    };
-    let Ok(content) = std::str::from_utf8(&bytes) else {
-        return RecoveryVerification::resolved(&bytes, RecoveryOutcome::Malformed);
+        Err(StoreReadError::Io(error)) => {
+            return RecoveryVerification::unavailable(match error.kind() {
+                std::io::ErrorKind::PermissionDenied => {
+                    RecoveryOutcome::Refused("tee read refused by filesystem policy".to_string())
+                }
+                std::io::ErrorKind::InvalidData => RecoveryOutcome::Malformed,
+                _ => RecoveryOutcome::Missing,
+            });
+        }
     };
     // Tee IDs hash pre-redaction input, so byte identity uses an explicit digest.
-    verify_content(content, expected_digest, true)
+    verify_content(&content, expected_digest, true)
 }
 
 fn verify_archive(id: &str, expected_digest: Option<&str>) -> RecoveryVerification {

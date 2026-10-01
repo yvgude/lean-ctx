@@ -80,10 +80,10 @@ impl FrontierReport {
         out
     }
 
-    pub fn gate_passes(&self) -> bool {
+    pub fn gate_passes(&self, mechanism: bool) -> bool {
         self.strategies
             .iter()
-            .all(|result| result.verdict.gate_passes())
+            .all(|result| result.verdict.passes_gate(mechanism))
     }
 }
 

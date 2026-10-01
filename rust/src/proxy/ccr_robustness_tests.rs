@@ -17,7 +17,7 @@ use crate::core::data_dir::test_env_lock;
 use crate::core::hasher::hash_short;
 use crate::core::recovery_verify::{RecoveryOutcome, verify_handle};
 use crate::proxy::ccr::{
-    MIN_TEE_BYTES, inband_marker, persist, persist_json, persist_tabular, resolve_tee,
+    MIN_TEE_BYTES, inband_marker, persist, persist_json, persist_tabular, read_tee, resolve_tee,
     splice_inband_in_place,
 };
 use crate::tools::ctx_expand;
@@ -404,5 +404,58 @@ fn recovery_paths_reject_traversal_symlink_escape_and_cross_store_handles() {
             !ctx_expand_result.contains("outside symlink sentinel"),
             "ctx_expand must not read through a symlink outside the tee store"
         );
+
+        // The same planted link inside the archive store: a valid archive ID whose
+        // content file points outside must not reach the model through ctx_expand.
+        crate::test_env::set_var("LEAN_CTX_ARCHIVE", "1");
+        let planted_body = big("archive symlink escape");
+        let planted_id = crate::core::archive::store("ctx_shell", "cq04", &planted_body, None)
+            .expect("archive handle");
+        crate::test_env::remove_var("LEAN_CTX_ARCHIVE");
+        let content_file = crate::core::archive::content_path_str(&planted_id);
+        std::fs::remove_file(&content_file).expect("remove archived content");
+        symlink(&target, &content_file).expect("plant archive symlink");
+        let archive_expand = crate::tools::ctx_expand::handle(&serde_json::json!({
+            "id": planted_id
+        }));
+        let archive_verify = verify_handle(&planted_id, None);
+        let archive_read = crate::core::archive::retrieve(&planted_id);
+        std::fs::remove_file(&content_file).expect("remove planted archive symlink");
+        assert!(
+            !archive_expand.contains("outside symlink sentinel"),
+            "ctx_expand must not follow an archive link out of the store: {archive_expand}"
+        );
+        assert!(archive_read.is_none());
+        assert!(matches!(
+            archive_verify.outcome,
+            RecoveryOutcome::Refused(_)
+        ));
     }
+}
+
+/// A `tee` directory that is itself a link to another store must not let a
+/// tee-shaped name read that store.
+#[cfg(unix)]
+#[test]
+fn tee_store_that_links_to_another_store_is_refused() {
+    use std::os::unix::fs::symlink;
+
+    let _lock = test_env_lock();
+    let body = big("tee store link");
+    let handle = persist(&body).expect("tee handle");
+    let state = crate::core::paths::state_dir().expect("state directory");
+    let tee = state.join("tee");
+    let real = state.join("tee-real-for-test");
+    let _ = std::fs::remove_dir_all(&real);
+    std::fs::rename(&tee, &real).expect("move tee store aside");
+    symlink(&real, &tee).expect("link tee store");
+
+    let resolved = resolve_tee(&handle);
+    let read = read_tee(&handle);
+
+    std::fs::remove_file(&tee).expect("remove tee link");
+    std::fs::rename(&real, &tee).expect("restore tee store");
+    assert!(resolved.is_none(), "a linked tee store must be refused");
+    assert!(read.is_none());
+    assert_eq!(read_tee(&handle).as_deref(), Some(body.as_str()));
 }

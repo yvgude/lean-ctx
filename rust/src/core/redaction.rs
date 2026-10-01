@@ -260,16 +260,43 @@ pub(crate) fn normalize_secret_text(input: &str) -> String {
     input.chars().filter_map(fold_secret_match_char).collect()
 }
 
+/// Whether the word after a bare `Bearer` is a credential rather than prose or a
+/// placeholder. Precision matters on the default redaction path ("Bearer
+/// authentication", "Bearer YOUR_TOKEN_HERE" must survive), but the identifier
+/// heuristic cannot be used: an opaque base64 token can be letters only. A
+/// credential is long and mixes character classes.
+pub(crate) fn bearer_value_is_credential(value: &str) -> bool {
+    let classes = [
+        value.bytes().any(|b| b.is_ascii_uppercase()),
+        value.bytes().any(|b| b.is_ascii_lowercase()),
+        value.bytes().any(|b| b.is_ascii_digit()),
+    ];
+    value.len() >= 16
+        && classes.iter().filter(|present| **present).count() >= 2
+        && !is_placeholder_value(value)
+}
+
 /// Combined benign-value check for key/value secret rules (#430 + #718):
 /// language literals and type annotations, unquoted identifier/property
-/// references, and documentation placeholders are never redacted. Quoted
-/// string values stay protected — they ARE literal values.
+/// references, and documentation placeholders are never redacted.
 pub(crate) fn is_benign_secret_value(value: &str) -> bool {
     is_comparison_operator_residue(value)
         || is_non_secret_literal(value)
         || is_identifier_reference(value)
         || is_placeholder_value(value)
         || looks_like_uuid(value)
+}
+
+/// Benign-value check for a *quoted* value. A quoted string is a literal, never
+/// an identifier reference, so that heuristic is skipped (`API_KEY="<letters>"`
+/// is a credential). Literals, placeholders, UUIDs and plain numbers — digests,
+/// counters, ids in JSON — stay benign.
+pub(crate) fn is_benign_quoted_value(value: &str) -> bool {
+    is_comparison_operator_residue(value)
+        || is_non_secret_literal(value)
+        || is_placeholder_value(value)
+        || looks_like_uuid(value)
+        || (!value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// #1095: when the regex `key=` consumes one `=` from `==`, the captured
@@ -292,13 +319,17 @@ fn redaction_rules() -> Vec<Rule> {
     vec![
         Rule {
             label: "Bearer token",
+            // Not the identifier guard (a letters-only base64 token is still a
+            // credential); `bearer_value_is_credential` filters prose instead.
             re: static_regex!(r"(?i)(bearer[ \t]+)([a-zA-Z0-9_\-\.]{8,})"),
-            guard_value: true,
+            guard_value: false,
         },
         Rule {
             label: "Authorization header",
+            // Any token-character credential, however short: `Basic dTpw` (u:p) is
+            // four characters. Token characters only, so adjacent text survives.
             re: static_regex!(
-                r"(?i)(authorization:[ \t]*(?:basic|bearer|token)[ \t]+)([A-Za-z0-9_+/=.-]{8,})"
+                r"(?i)(authorization:[ \t]*(?:basic|bearer|token)[ \t]+)([A-Za-z0-9._~+/=-]+)"
             ),
             guard_value: false,
         },
@@ -474,8 +505,18 @@ fn redact_counting_with_labels(
             // benign-value guard does not apply to it.
             if rule.guard_value
                 && let Some(value) = caps.get(2)
-                && !is_quoted_at(&normalized, value.start())
-                && is_benign_secret_value(value.as_str())
+                && if is_quoted_at(&normalized, value.start()) {
+                    is_benign_quoted_value(value.as_str())
+                } else {
+                    is_benign_secret_value(value.as_str())
+                }
+            {
+                continue;
+            }
+            if rule.label == "Bearer token"
+                && caps
+                    .get(2)
+                    .is_some_and(|value| !bearer_value_is_credential(value.as_str()))
             {
                 continue;
             }

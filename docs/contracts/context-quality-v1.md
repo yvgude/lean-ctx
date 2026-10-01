@@ -42,19 +42,20 @@ v1 reports still parse; they render `EVIDENCE: UNSPECIFIED` and back no claim.
 | Verdict | Condition |
 |---|---|
 | `regressed` | bootstrap CI lower bound of the paired delta < −margin — at **any** sample size |
-| `inconclusive` | no pairs, or fewer than `MIN_POWERED_PAIRS` (30) pairs without a regression |
+| `underpowered` | no pairs, no bootstrap, or fewer than `MIN_POWERED_PAIRS` (30) pairs without a regression |
 | `improved` | powered run, CI lower bound > 0 |
 | `non_inferior` | powered run, CI lower bound ≥ −margin |
 
-- The CI gate (`--gate`) fails only on `regressed`. An `inconclusive` run passes
-  the gate as a mechanism check and backs no quality claim.
+- `--gate` passes only `improved` and `non_inferior`; it fails `regressed` and
+  `underpowered`.
+- `--gate --mechanism` is the wiring check for tiny fixture suites: it fails only
+  on `regressed` and never backs a quality claim. CI uses it for the committed
+  fixture recordings.
 - `supports_quality_claim()` is true only for a powered `improved`/`non_inferior`
   run of tier C or higher. `eval ab`, `eval verify` and the testbench findings
   print the tier and whether a claim is supported.
 - Several verdicts combine to the most conservative one:
-  `regressed` > `inconclusive` > `non_inferior` > `improved`; an empty set is `inconclusive`.
-- A run without bootstrap iterations has no confidence interval and is
-  `inconclusive` regardless of its size.
+  `regressed` > `underpowered` > `non_inferior` > `improved`; an empty set is `underpowered`.
 - `eval footprint` recommends pruning an injected element only on powered evidence
   from a real model (tier C+, `non_inferior` or `regressed`). Underpowered and
   fixture-only runs keep the element: uncertainty moves toward more context,

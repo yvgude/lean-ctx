@@ -7,21 +7,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed — quality evidence states what it can prove (#1905)
 
-- `lean-ctx eval ab` / `testbench` / `footprint`: a run with fewer than 30
-  paired tasks is now `INCONCLUSIVE` instead of `NO REGRESSION`, and an empty
-  run is no longer non-inferior. A regression still fails `--gate` at any
-  size; an inconclusive run passes the gate but backs no quality claim. The
-  non-regression label is now `NON-INFERIOR`. Reports (schema v2, additive)
-  carry an evidence tier — A mechanism, B deterministic, C recorded replay,
-  D live run, E production — and `eval verify` prints whether a quality
-  claim is supported. Fixture recordings are always tier A.
+- **Breaking for CI users of `--gate`:** `lean-ctx eval ab` / `testbench` /
+  `footprint` / `frontier` report `UNDERPOWERED` for a run with fewer than 30
+  paired tasks (or no bootstrap) instead of `NO REGRESSION`, and `--gate` now
+  fails it. Add `--mechanism` to keep a tiny fixture suite as a wiring check —
+  it then fails only on `REGRESSED` and never backs a quality claim. A
+  regression fails at any size. The non-regression label is `NON-INFERIOR`.
+  Reports (schema v2, additive; v1 artifacts still verify) carry an evidence
+  tier — A mechanism, B deterministic, C recorded replay, D live run,
+  E production — and `eval verify` prints whether a quality claim is
+  supported. Fixture recordings are always tier A.
 - `eval footprint` recommends pruning an injected element only on powered
   evidence from a real model; underpowered or fixture-only runs keep it.
 - New `lean-ctx eval frontier`: scores several lean-ctx strategies against one
   shared baseline and prints quality delta vs. token reduction per strategy.
-  New 120-task suite `rust/eval/quality-suite.ndjson` (10 task classes, 12
-  each, objective scorers); suites gain an optional `task_class` field and a
-  guard that fails when a gold answer leaks into task metadata.
+  Suites gain an optional `task_class` field and a guard that fails when a
+  gold answer leaks into task metadata; `rust/eval/quality-suite.ndjson` is a
+  one-task-per-class mechanism fixture.
 - `lean-ctx quality-lab`: the `Premium/Good/…` "quality grade" is now a
   `representation_grade` (`Excellent/Good/…`, schema v2; v1 JSON still
   parses). It grades savings and structural fidelity, not task quality, and
@@ -50,16 +52,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   a structural test fails if a tool is dispatched around the shared pipeline.
   The LLM proxy rails are covered by the Context Gateway work, not here.
 
-### Changed — recovery and runtime feedback
+### Changed — recovery verification
 
 - Recovery handles (tee, archive, reference store, context ledger) can be
   verified — resolves, not expired, digest matches, no path escape — without
   exposing content. Policy refusals count as "not recoverable for the model",
   not as a broken mechanism.
-- Edit-failure and re-read-bounce feedback share one bounded estimator keyed
-  by extension, size and read mode, with hysteresis and decay. It only ever
-  moves reads toward more conservative modes and returns to the configured
-  default as evidence decays. Contract: `docs/contracts/quality-loop-v2.md`.
 
 ### Fixed — shell hooks follow package-manager upgrades (#1959)
 

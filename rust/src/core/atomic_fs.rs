@@ -196,6 +196,70 @@ pub(crate) fn in_place_overwrite(
     Ok(())
 }
 
+/// Why a store file could not be read safely.
+#[derive(Debug)]
+pub(crate) enum StoreReadError {
+    /// The path, a directory on it, or the opened file is a symlink, not a regular
+    /// file, or resolves outside `store_root`.
+    Escapes,
+    Io(std::io::Error),
+}
+
+/// Read a file of a local content store (archive, tee) for the model without
+/// following links out of the store and without a check-then-open race.
+///
+/// The parent directory must canonicalize to a path inside `store_root`, the final
+/// component is opened without following symlinks (`O_NOFOLLOW` on Unix), and the
+/// opened handle must be a regular file. Whatever the path pointed at between the
+/// check and the read, the bytes returned come from the file that was checked.
+pub(crate) fn read_store_file(
+    store_root: &std::path::Path,
+    path: &std::path::Path,
+) -> Result<String, StoreReadError> {
+    use std::io::Read;
+
+    let root = std::fs::canonicalize(store_root).map_err(StoreReadError::Io)?;
+    let parent = path.parent().ok_or(StoreReadError::Escapes)?;
+    let canonical_parent = std::fs::canonicalize(parent).map_err(StoreReadError::Io)?;
+    if !canonical_parent.starts_with(&root) {
+        return Err(StoreReadError::Escapes);
+    }
+    let link = std::fs::symlink_metadata(path).map_err(StoreReadError::Io)?;
+    if link.file_type().is_symlink() || !link.is_file() {
+        return Err(StoreReadError::Escapes);
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = options.open(path).map_err(|error| {
+        // ELOOP: the final component was swapped for a symlink after the check.
+        #[cfg(unix)]
+        if error.raw_os_error() == Some(libc::ELOOP) {
+            return StoreReadError::Escapes;
+        }
+        StoreReadError::Io(error)
+    })?;
+    let opened = file.metadata().map_err(StoreReadError::Io)?;
+    if !opened.is_file() {
+        return Err(StoreReadError::Escapes);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if opened.dev() != link.dev() || opened.ino() != link.ino() {
+            return Err(StoreReadError::Escapes);
+        }
+    }
+    let mut content = String::new();
+    file.read_to_string(&mut content)
+        .map_err(StoreReadError::Io)?;
+    Ok(content)
+}
+
 /// True for errors that mean "this directory won't accept create/rename" even
 /// though the target file may be writable: `EROFS` (read-only fs) plus
 /// `EACCES`/`EPERM` (directory write denied).

@@ -231,13 +231,22 @@ pub struct FootprintReport {
 }
 
 impl FootprintReport {
-    /// The CI gate passes unless an injected element is actively *harmful*
-    /// (removing it improves quality beyond the margin).
+    /// No injected element is actively *harmful* (removing it improves quality
+    /// beyond the margin).
     #[must_use]
-    pub fn gate_passes(&self) -> bool {
+    pub fn no_harmful_element(&self) -> bool {
         self.elements
             .iter()
             .all(|e| e.verdict != Verdict::Regressed)
+    }
+
+    /// The gate: no harmful element, and — unless this is a mechanism check — every
+    /// element's verdict is powered.
+    #[must_use]
+    pub fn gate_passes(&self, mechanism: bool) -> bool {
+        self.elements
+            .iter()
+            .all(|e| e.verdict.passes_gate(mechanism))
     }
 
     /// Recomputes the evidence digest from the per-element reports.
@@ -325,7 +334,7 @@ impl FootprintReport {
         }
         out.push_str(&format!(
             "\nVerdict: {}\n",
-            if self.gate_passes() {
+            if self.no_harmful_element() {
                 "OK (no harmful element)"
             } else {
                 "HARMFUL ELEMENT PRESENT"
@@ -582,7 +591,7 @@ mod tests {
         let report = run_footprint_ab(&suite, "fixture", &fp, &runner, &FootprintConfig::default())
             .expect("recording must cover every replay key");
         for e in &report.elements {
-            assert_eq!(e.verdict, Verdict::Inconclusive, "{}", e.element.label());
+            assert_eq!(e.verdict, Verdict::Underpowered, "{}", e.element.label());
             assert!(
                 !e.prune_recommended,
                 "{} pruned on two tasks of evidence",
@@ -637,7 +646,10 @@ mod tests {
             rules.prune_recommended,
             "rules cost tokens but never changed an answer → prune"
         );
-        assert!(report.gate_passes(), "no element is actively harmful here");
+        assert!(
+            report.gate_passes(false),
+            "no element is actively harmful here"
+        );
     }
 
     #[test]
