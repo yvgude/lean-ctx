@@ -249,7 +249,7 @@ pub(crate) fn run_call(args: &[String]) -> Result<String, CallError> {
         })
     })?;
 
-    Ok(output.text)
+    Ok(crate::server::policy_guard::redact_model_text(&output.text))
 }
 
 /// Thin CLI wrapper: print result to stdout (exit 0, even for functional

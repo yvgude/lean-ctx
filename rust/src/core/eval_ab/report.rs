@@ -5,14 +5,20 @@
 //! 95% confidence interval (fixed seed → byte-identical CI on every machine), win/tie/loss
 //! counts and pass-rate deltas, then collapse it all into a single [`Verdict`] that drives the
 //! CI quality gate.
+//!
+//! The verdict is only as strong as the evidence behind it: every report carries its
+//! [`EvidenceTier`] and power status, and an underpowered run is `Underpowered` unless it
+//! already shows a regression, and the production gate rejects it.
 
 use serde::{Deserialize, Serialize};
 
 use super::model::ModelFingerprint;
+use crate::core::context_quality::EvidenceTier;
 
 /// Report schema discriminator + version (also guards artifact parsing).
+/// v2 (additive): `Verdict::Underpowered`, `evidence_tier`, `power`.
 pub const REPORT_KIND: &str = "lean-ctx.eval-ab-report";
-pub const REPORT_SCHEMA_VERSION: u32 = 1;
+pub const REPORT_SCHEMA_VERSION: u32 = 2;
 
 /// Equality tolerance when classifying a task as win/tie/loss.
 const EPS: f64 = 1e-9;
@@ -67,26 +73,80 @@ pub struct AbStats {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Verdict {
-    /// CI lower bound is strictly positive — lean-ctx improves quality.
+    /// Powered run, CI lower bound strictly positive — lean-ctx improves quality.
     Improved,
-    /// CI lower bound ≥ −margin — no regression within the tolerated margin.
+    /// Powered run, CI lower bound ≥ −margin — no regression within the tolerated margin.
     NonInferior,
-    /// CI lower bound below −margin — a regression the gate must block.
+    /// CI lower bound below −margin — a regression the gate must block, at any sample size.
     Regressed,
+    /// Too few paired tasks (or no bootstrap) to conclude anything about quality. The
+    /// pipeline ran and showed no regression, which is all this verdict says.
+    Underpowered,
 }
 
 impl Verdict {
     pub fn label(self) -> &'static str {
         match self {
             Verdict::Improved => "IMPROVED",
-            Verdict::NonInferior => "NO REGRESSION",
+            Verdict::NonInferior => "NON-INFERIOR",
             Verdict::Regressed => "REGRESSED",
+            Verdict::Underpowered => "UNDERPOWERED",
         }
     }
 
-    /// Whether the CI quality gate should pass.
+    /// Whether the production quality gate passes: only a powered run without a
+    /// regression does. An underpowered run fails it — it shows nothing about quality.
     pub fn gate_passes(self) -> bool {
+        matches!(self, Verdict::Improved | Verdict::NonInferior)
+    }
+
+    /// Gate for mechanism/wiring checks (tiny fixture suites, `--mechanism`): passes
+    /// unless a regression was observed. Never a quality claim.
+    pub fn mechanism_gate_passes(self) -> bool {
         !matches!(self, Verdict::Regressed)
+    }
+
+    /// [`Self::gate_passes`], or [`Self::mechanism_gate_passes`] when the caller runs an
+    /// explicit mechanism/wiring check.
+    pub fn passes_gate(self, mechanism: bool) -> bool {
+        if mechanism {
+            self.mechanism_gate_passes()
+        } else {
+            self.gate_passes()
+        }
+    }
+
+    /// The most conservative verdict of a set: a regression dominates, then missing
+    /// evidence, then "no regression", then improvement. An empty set is inconclusive.
+    pub fn most_conservative(verdicts: impl IntoIterator<Item = Verdict>) -> Verdict {
+        let rank = |v: &Verdict| match v {
+            Verdict::Regressed => 3,
+            Verdict::Underpowered => 2,
+            Verdict::NonInferior => 1,
+            Verdict::Improved => 0,
+        };
+        verdicts
+            .into_iter()
+            .max_by_key(rank)
+            .unwrap_or(Verdict::Underpowered)
+    }
+}
+
+/// Whether the run had enough paired tasks for its verdict to mean anything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PowerStatus {
+    pub pairs: usize,
+    pub required_pairs: usize,
+    pub powered: bool,
+}
+
+impl PowerStatus {
+    fn for_pairs(pairs: usize) -> Self {
+        Self {
+            pairs,
+            required_pairs: MIN_POWERED_PAIRS,
+            powered: pairs >= MIN_POWERED_PAIRS,
+        }
     }
 }
 
@@ -97,6 +157,9 @@ pub struct ReportConfig {
     pub bootstrap_seed: u64,
     /// How far the CI lower bound may sit below zero and still count as "no regression".
     pub noninferiority_margin: f64,
+    /// The answers came from a live model call, not a replayed recording. Defaults to
+    /// `false` so a caller that forgets to set it gets the weaker evidence tier.
+    pub live_model: bool,
 }
 
 impl Default for ReportConfig {
@@ -105,6 +168,7 @@ impl Default for ReportConfig {
             bootstrap_iters: 2000,
             bootstrap_seed: 0x5EED_5EED_5EED_5EED,
             noninferiority_margin: 0.0,
+            live_model: false,
         }
     }
 }
@@ -122,6 +186,14 @@ pub struct AbReport {
     pub records: Vec<PairRecord>,
     pub stats: AbStats,
     pub verdict: Verdict,
+    /// Kind of evidence behind the verdict. `None` only for v1 reports, which predate it.
+    /// Skipped when absent so a v1 artifact re-serializes byte-identically and its
+    /// signature still verifies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_tier: Option<EvidenceTier>,
+    /// Sample-size status. `None` only for v1 reports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power: Option<PowerStatus>,
 }
 
 impl AbReport {
@@ -135,6 +207,8 @@ impl AbReport {
     ) -> Self {
         let stats = compute_stats(&records, cfg);
         let verdict = verdict_for(&stats, cfg);
+        let evidence_tier = EvidenceTier::for_model_run(&model, !cfg.live_model);
+        let power = PowerStatus::for_pairs(stats.n);
         Self {
             schema_version: REPORT_SCHEMA_VERSION,
             kind: REPORT_KIND.to_string(),
@@ -146,7 +220,19 @@ impl AbReport {
             records,
             stats,
             verdict,
+            evidence_tier: Some(evidence_tier),
+            power: Some(power),
         }
+    }
+
+    /// Whether this report backs a statement about task quality on a real model: a
+    /// powered, non-regressing run of a model-backed evidence tier.
+    pub fn supports_quality_claim(&self) -> bool {
+        matches!(self.verdict, Verdict::Improved | Verdict::NonInferior)
+            && self.power.is_some_and(|p| p.powered)
+            && self
+                .evidence_tier
+                .is_some_and(EvidenceTier::supports_task_quality_claim)
     }
 
     /// Pretty JSON for machine consumption / artifact embedding.
@@ -189,6 +275,15 @@ impl AbReport {
             s.wins, s.ties, s.losses
         ));
         out.push_str(&format!("VERDICT: {}\n", self.verdict.label()));
+        match self.evidence_tier {
+            Some(tier) => out.push_str(&format!(
+                "EVIDENCE: tier {} ({}), NI margin -{:.3}\n",
+                tier.code(),
+                tier.label(),
+                s.noninferiority_margin
+            )),
+            None => out.push_str("EVIDENCE: UNSPECIFIED (v1 report)\n"),
+        }
         if s.n < MIN_POWERED_PAIRS {
             out.push_str(&format!(
                 "POWER:   underpowered — {} paired task(s) < {MIN_POWERED_PAIRS}; this run checks \
@@ -196,6 +291,11 @@ impl AbReport {
                 s.n
             ));
         }
+        out.push_str(if self.supports_quality_claim() {
+            "CLAIM:   supports a task-quality claim for this suite, model and methodology\n"
+        } else {
+            "CLAIM:   none — this run is a mechanism / regression check only\n"
+        });
         out
     }
 }
@@ -257,15 +357,23 @@ fn compute_stats(records: &[PairRecord], cfg: ReportConfig) -> AbStats {
 }
 
 fn verdict_for(stats: &AbStats, cfg: ReportConfig) -> Verdict {
-    if stats.n == 0 {
-        return Verdict::NonInferior;
+    // Without pairs or without a bootstrap there is no confidence interval: the
+    // [0, 0] placeholder must never read as "no regression".
+    if stats.n == 0 || cfg.bootstrap_iters == 0 {
+        return Verdict::Underpowered;
+    }
+    // An observed regression blocks at any sample size: a small suite cannot show that
+    // quality is kept, but it can show that it was lost.
+    if stats.ci_low < -cfg.noninferiority_margin - EPS {
+        return Verdict::Regressed;
+    }
+    if stats.n < MIN_POWERED_PAIRS {
+        return Verdict::Underpowered;
     }
     if stats.ci_low > EPS {
         Verdict::Improved
-    } else if stats.ci_low >= -cfg.noninferiority_margin - EPS {
-        Verdict::NonInferior
     } else {
-        Verdict::Regressed
+        Verdict::NonInferior
     }
 }
 
@@ -348,19 +456,142 @@ mod tests {
         }
     }
 
+    fn fp_real() -> ModelFingerprint {
+        ModelFingerprint {
+            provider: crate::core::eval_ab::model::PROVIDER_OPENAI.into(),
+            endpoint: "http://localhost:11434/v1".into(),
+            params: ModelParams::default(),
+        }
+    }
+
+    fn improving(n: usize) -> Vec<PairRecord> {
+        (0..n)
+            .map(|i| rec(&i.to_string(), 0.1 * (i % 3) as f64, 0.9))
+            .collect()
+    }
+
     #[test]
-    fn clear_improvement_is_verdict_improved() {
-        let records = vec![
-            rec("1", 0.0, 1.0),
-            rec("2", 0.0, 1.0),
-            rec("3", 0.2, 0.9),
-            rec("4", 0.1, 1.0),
-            rec("5", 0.0, 0.8),
-        ];
-        let report = AbReport::build("s", 4000, fp(), records, ReportConfig::default());
+    fn clear_improvement_is_improved_only_when_powered() {
+        let report = AbReport::build(
+            "s",
+            4000,
+            fp(),
+            improving(MIN_POWERED_PAIRS),
+            ReportConfig::default(),
+        );
         assert_eq!(report.verdict, Verdict::Improved, "{:?}", report.stats);
         assert!(report.verdict.gate_passes());
-        assert_eq!(report.stats.wins, 5);
+
+        // Same effect, five pairs: an apparent improvement is not evidence (#1905).
+        let report = AbReport::build("s", 4000, fp(), improving(5), ReportConfig::default());
+        assert_eq!(report.verdict, Verdict::Underpowered, "{:?}", report.stats);
+        assert!(
+            !report.verdict.gate_passes(),
+            "underpowered fails the production gate"
+        );
+        assert!(report.verdict.mechanism_gate_passes());
+        assert!(!report.supports_quality_claim());
+    }
+
+    #[test]
+    fn empty_run_is_inconclusive_not_non_inferior() {
+        let report = AbReport::build("s", 4000, fp(), Vec::new(), ReportConfig::default());
+        assert_eq!(report.verdict, Verdict::Underpowered);
+        assert!(!report.supports_quality_claim());
+    }
+
+    #[test]
+    fn a_run_without_bootstrap_never_claims_non_inferiority() {
+        // Consistently worse treatment on a powered, model-backed run: with no bootstrap
+        // the CI is a [0, 0] placeholder and must not read as "no regression".
+        let worse: Vec<_> = (0..MIN_POWERED_PAIRS)
+            .map(|i| rec(&i.to_string(), 0.9, 0.2))
+            .collect();
+        let cfg = ReportConfig {
+            bootstrap_iters: 0,
+            ..ReportConfig::default()
+        };
+        let report = AbReport::build("s", 4000, fp_real(), worse, cfg);
+        assert_eq!(report.verdict, Verdict::Underpowered);
+        assert!(!report.supports_quality_claim());
+    }
+
+    #[test]
+    fn quality_claim_needs_power_and_a_model_backed_tier() {
+        let ties = |n: usize| -> Vec<PairRecord> {
+            (0..n).map(|i| rec(&i.to_string(), 0.6, 0.6)).collect()
+        };
+        // Powered replay of a real model: Tier C, claim supported.
+        let replay = AbReport::build(
+            "s",
+            4000,
+            fp_real(),
+            ties(MIN_POWERED_PAIRS),
+            ReportConfig::default(),
+        );
+        assert_eq!(replay.verdict, Verdict::NonInferior);
+        assert_eq!(replay.evidence_tier, Some(EvidenceTier::RecordedRegression));
+        assert!(replay.supports_quality_claim());
+
+        // Live call of the same model: Tier D.
+        let live = AbReport::build(
+            "s",
+            4000,
+            fp_real(),
+            ties(MIN_POWERED_PAIRS),
+            ReportConfig {
+                live_model: true,
+                ..ReportConfig::default()
+            },
+        );
+        assert_eq!(live.evidence_tier, Some(EvidenceTier::LiveTaskEvaluation));
+
+        // Fixture answers handed to both arms: powered tie, still only a mechanism check.
+        let fixture = AbReport::build(
+            "s",
+            4000,
+            fp(),
+            ties(MIN_POWERED_PAIRS),
+            ReportConfig::default(),
+        );
+        assert_eq!(fixture.verdict, Verdict::NonInferior);
+        assert_eq!(fixture.evidence_tier, Some(EvidenceTier::Mechanism));
+        assert!(!fixture.supports_quality_claim());
+        assert!(fixture.render().contains("CLAIM:   none"));
+    }
+
+    #[test]
+    fn v1_report_without_tier_parses_and_claims_nothing() {
+        let mut v2 = AbReport::build(
+            "s",
+            4000,
+            fp_real(),
+            improving(MIN_POWERED_PAIRS),
+            ReportConfig::default(),
+        );
+        let mut json: serde_json::Value = serde_json::from_str(&v2.to_json()).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        obj.remove("evidence_tier");
+        obj.remove("power");
+        v2 = serde_json::from_value(json).unwrap();
+        assert_eq!(v2.evidence_tier, None);
+        assert!(!v2.supports_quality_claim());
+        assert!(v2.render().contains("EVIDENCE: UNSPECIFIED"));
+    }
+
+    #[test]
+    fn most_conservative_verdict_prefers_regression_then_missing_evidence() {
+        use Verdict::*;
+        assert_eq!(Verdict::most_conservative([Improved, Regressed]), Regressed);
+        assert_eq!(
+            Verdict::most_conservative([Improved, NonInferior, Underpowered]),
+            Underpowered
+        );
+        assert_eq!(
+            Verdict::most_conservative([Improved, NonInferior]),
+            NonInferior
+        );
+        assert_eq!(Verdict::most_conservative([]), Underpowered);
     }
 
     #[test]
@@ -377,12 +608,19 @@ mod tests {
     }
 
     #[test]
-    fn identical_scores_are_non_inferior() {
+    fn identical_scores_are_non_inferior_only_when_powered() {
         let records = vec![rec("1", 0.7, 0.7), rec("2", 0.4, 0.4)];
         let report = AbReport::build("s", 4000, fp(), records, ReportConfig::default());
-        assert_eq!(report.verdict, Verdict::NonInferior);
+        assert_eq!(report.verdict, Verdict::Underpowered);
         assert_eq!(report.stats.ties, 2);
-        assert!(report.verdict.gate_passes());
+        assert!(!report.verdict.gate_passes());
+        assert!(report.verdict.mechanism_gate_passes());
+
+        let records: Vec<_> = (0..MIN_POWERED_PAIRS)
+            .map(|i| rec(&i.to_string(), 0.7, 0.7))
+            .collect();
+        let report = AbReport::build("s", 4000, fp(), records, ReportConfig::default());
+        assert_eq!(report.verdict, Verdict::NonInferior);
     }
 
     #[test]

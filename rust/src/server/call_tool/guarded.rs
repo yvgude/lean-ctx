@@ -45,6 +45,12 @@ pub(super) fn response_cache_key(
     })
 }
 
+fn cache_allowed_for_current_egress(config: &crate::core::config::Config) -> bool {
+    !crate::core::policy::runtime::is_active()
+        && !config.sensitivity_effective().enabled_effective()
+        && crate::core::redaction::redaction_enabled_for_active_role()
+}
+
 pub(super) fn cached_call_result(
     cache: &ResponseCache,
     key: &ResponseCacheKey,
@@ -461,7 +467,9 @@ impl LeanCtxServer {
             .project_root
             .clone()
             .unwrap_or_default();
-        let cache_key = response_cache_key(name, args, &project_root);
+        let cache_key = cache_allowed_for_current_egress(&config)
+            .then(|| response_cache_key(name, args, &project_root))
+            .flatten();
         let call_start = std::time::Instant::now();
         if let Some(cached) = cache_key
             .as_ref()
@@ -574,6 +582,32 @@ mod tests {
         for tool_name in ["ctx_search", "ctx_tree", "ctx_glob"] {
             assert!(response_cache_key(tool_name, None, "/project").is_some());
         }
+    }
+
+    #[test]
+    fn active_policy_disables_response_cache_reuse() {
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(
+            crate::core::policy::ResolvedPolicy {
+                name: "cache-egress-test".into(),
+                version: "1.0.0".into(),
+                description: "cache egress guard".into(),
+                chain: vec![],
+                default_read_mode: None,
+                allow_tools: None,
+                deny_tools: vec![],
+                max_context_tokens: None,
+                audit_retention_days: None,
+                redaction: std::collections::BTreeMap::new(),
+                filters: crate::core::policy::FilterRules::default(),
+                egress: crate::core::policy::EgressRules::default(),
+                routing: crate::core::policy::RoutingPolicyRules::default(),
+                budgets: crate::core::policy::BudgetRules::default(),
+            },
+        ));
+
+        assert!(!super::cache_allowed_for_current_egress(
+            &crate::core::config::Config::default()
+        ));
     }
 
     /// The daily telemetry flush is scheduled off `background_tick`, so a call

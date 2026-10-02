@@ -56,6 +56,17 @@ fn looks_like_number(v: &str) -> bool {
             .all(|c| c.is_ascii_digit() || c == '.' || c == 'e' || c == 'E' || c == '+' || c == '-')
 }
 
+fn looks_like_uuid(value: &str) -> bool {
+    let value = value
+        .trim()
+        .trim_matches(|c| c == '"' || c == '\'' || c == '`' || c == '{' || c == '}');
+    let groups: Vec<&str> = value.split('-').collect();
+    groups.len() == 5
+        && [8, 4, 4, 4, 12].iter().zip(&groups).all(|(len, group)| {
+            group.len() == *len && group.chars().all(|ch| ch.is_ascii_hexdigit())
+        })
+}
+
 /// #827: env-variable reference patterns that should not be redacted.
 /// Matches: `os.environ/NAME`, `os.getenv("NAME")`, `process.env.NAME`,
 /// `inputEnv.NAME`, `${NAME}`, `$NAME`, `%NAME%` (Windows).
@@ -143,6 +154,9 @@ fn is_placeholder_value(value: &str) -> bool {
         "fixme",
         "replace_me",
         "replace-me",
+        "redacted",
+        "...",
+        "…",
     ];
     MARKERS.iter().any(|m| v.contains(m))
 }
@@ -202,15 +216,87 @@ struct Rule {
     guard_value: bool,
 }
 
+/// Normalization used only for matching: remove invisible zero-width format
+/// characters and fold full-width ASCII plus ideographic space to their ASCII
+/// forms. Original text and byte boundaries are retained for span-only edits.
+fn normalize_for_secret_matching(input: &str) -> (String, Vec<usize>) {
+    let mut normalized = String::with_capacity(input.len());
+    let mut original_boundaries = vec![0usize];
+
+    for (start, ch) in input.char_indices() {
+        let end = start + ch.len_utf8();
+        let Some(folded) = fold_secret_match_char(ch) else {
+            if let Some(boundary) = original_boundaries.last_mut() {
+                *boundary = end;
+            }
+            continue;
+        };
+        let folded_len = folded.len_utf8();
+        normalized.push(folded);
+        for byte in 1..=folded_len {
+            original_boundaries.push(if byte == folded_len { end } else { start });
+        }
+    }
+
+    (normalized, original_boundaries)
+}
+
+fn fold_secret_match_char(ch: char) -> Option<char> {
+    if matches!(
+        ch,
+        '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{2060}' | '\u{feff}'
+    ) {
+        return None;
+    }
+    Some(match ch {
+        '\u{3000}' => ' ',
+        '\u{ff01}'..='\u{ff5e}' => char::from_u32(ch as u32 - 0xfee0).unwrap_or(ch),
+        _ => ch,
+    })
+}
+
+/// A normalized view for detection-only callers that do not need span offsets.
+pub(crate) fn normalize_secret_text(input: &str) -> String {
+    input.chars().filter_map(fold_secret_match_char).collect()
+}
+
+/// Whether the word after a bare `Bearer` is a credential rather than prose or a
+/// placeholder. Precision matters on the default redaction path ("Bearer
+/// authentication", "Bearer YOUR_TOKEN_HERE" must survive), but the identifier
+/// heuristic cannot be used: an opaque base64 token can be letters only. A
+/// credential is long and mixes character classes.
+pub(crate) fn bearer_value_is_credential(value: &str) -> bool {
+    let classes = [
+        value.bytes().any(|b| b.is_ascii_uppercase()),
+        value.bytes().any(|b| b.is_ascii_lowercase()),
+        value.bytes().any(|b| b.is_ascii_digit()),
+    ];
+    value.len() >= 16
+        && classes.iter().filter(|present| **present).count() >= 2
+        && !is_placeholder_value(value)
+}
+
 /// Combined benign-value check for key/value secret rules (#430 + #718):
 /// language literals and type annotations, unquoted identifier/property
-/// references, and documentation placeholders are never redacted. Quoted
-/// string values stay protected — they ARE literal values.
+/// references, and documentation placeholders are never redacted.
 pub(crate) fn is_benign_secret_value(value: &str) -> bool {
     is_comparison_operator_residue(value)
         || is_non_secret_literal(value)
         || is_identifier_reference(value)
         || is_placeholder_value(value)
+        || looks_like_uuid(value)
+}
+
+/// Benign-value check for a *quoted* value. A quoted string is a literal, never
+/// an identifier reference, so that heuristic is skipped (`API_KEY="<letters>"`
+/// is a credential). Literals, placeholders, UUIDs and plain numbers — digests,
+/// counters, ids in JSON — stay benign.
+pub(crate) fn is_benign_quoted_value(value: &str) -> bool {
+    is_comparison_operator_residue(value)
+        || is_non_secret_literal(value)
+        || is_placeholder_value(value)
+        || looks_like_uuid(value)
+        || (!value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// #1095: when the regex `key=` consumes one `=` from `==`, the captured
@@ -233,44 +319,97 @@ fn redaction_rules() -> Vec<Rule> {
     vec![
         Rule {
             label: "Bearer token",
-            re: static_regex!(r"(?i)(bearer[ \t]+)[a-zA-Z0-9\-_\.]{8,}"),
+            // Not the identifier guard (a letters-only base64 token is still a
+            // credential); `bearer_value_is_credential` filters prose instead.
+            re: static_regex!(r"(?i)(bearer[ \t]+)([a-zA-Z0-9_\-\.]{8,})"),
             guard_value: false,
         },
         Rule {
             label: "Authorization header",
-            re: static_regex!(r"(?i)(authorization:[ \t]*(?:basic|bearer|token)[ \t]+)[^\s\r\n]+"),
-            guard_value: false,
-        },
-        // Key/value secrets: group 1 = predecessor + `name=`/`name: ` prefix
-        // (kept), group 2 = the value (redacted unless benign — GH #430/#718).
-        // #1830: only blanks around the separator, never a line break — a
-        // valueless `token:` must not take the next line's key or diff marker
-        // for its value.
-        Rule {
-            label: "API key param",
+            // Any token-character credential, however short: `Basic dTpw` (u:p) is
+            // four characters. Token characters only, so adjacent text survives.
             re: static_regex!(
-                r#"(?im)((?:^|[^a-z0-9])(?:api[_-]?key|apikey|access[_-]?key|secret[_-]?key|token|password|passwd|pwd|secret)[ \t]*[=:][ \t]*)([^\s\r\n,;&"']+)"#
+                r"(?i)(authorization:[ \t]*(?:basic|bearer|token)[ \t]+)([A-Za-z0-9._~+/=-]+)"
             ),
-            guard_value: true,
+            guard_value: false,
         },
         // Whole token is the secret — no prefix group, so the entire match is
         // replaced. (Previously group 1 captured the key itself and leaked it.)
         Rule {
             label: "AWS key",
-            re: static_regex!(r"AKIA[0-9A-Z]{12,}"),
+            re: static_regex!(r"(?:AKIA|ASIA)[0-9A-Z]{16}"),
             guard_value: false,
         },
         Rule {
             label: "Private key block",
+            // No kept prefix: the whole block, markers included, is replaced.
             re: static_regex!(
-                r"(?s)(-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----).+?-----END\s+(?:RSA\s+)?PRIVATE\s+KEY-----"
+                r"(?s)-----BEGIN\s+(?:RSA\s+|EC\s+|DSA\s+|OPENSSH\s+)?PRIVATE\s+KEY-----.+?-----END\s+(?:RSA\s+|EC\s+|DSA\s+|OPENSSH\s+)?PRIVATE\s+KEY-----"
             ),
             guard_value: false,
         },
         Rule {
             label: "GitHub token",
-            re: static_regex!(r"(gh[pousr]_)[a-zA-Z0-9]{20,}"),
+            re: static_regex!(r"(gh[pousr]_)[a-zA-Z0-9_]{20,}"),
             guard_value: false,
+        },
+        Rule {
+            label: "GitHub fine-grained token",
+            re: static_regex!(r"(github_pat_)[A-Za-z0-9_]{20,}"),
+            guard_value: false,
+        },
+        Rule {
+            label: "GitLab token",
+            re: static_regex!(r"(glpat-)[A-Za-z0-9_\-]{20,}"),
+            guard_value: false,
+        },
+        Rule {
+            label: "Anthropic key",
+            re: static_regex!(r"(sk-ant-)[A-Za-z0-9_\-]{20,}"),
+            guard_value: false,
+        },
+        Rule {
+            label: "OpenAI key",
+            re: static_regex!(r"(sk-)[A-Za-z0-9]{20,}"),
+            guard_value: false,
+        },
+        Rule {
+            label: "JWT",
+            re: static_regex!(
+                r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}(?:\.[A-Za-z0-9_\-]{8,})?"
+            ),
+            guard_value: false,
+        },
+        Rule {
+            label: "Slack token",
+            re: static_regex!(r"(xox[bpas]-)[0-9a-zA-Z\-]{10,}"),
+            guard_value: false,
+        },
+        Rule {
+            label: "Stripe key",
+            re: static_regex!(r"([sr]k_live_)[0-9a-zA-Z]{10,}"),
+            guard_value: false,
+        },
+        Rule {
+            label: "npm token",
+            re: static_regex!(r"(npm_)[A-Za-z0-9]{10,}"),
+            guard_value: false,
+        },
+        // Key/value secrets run after provider-specific forms so `key=<AWS key id>`
+        // retains the more precise provider class label.
+        Rule {
+            label: "API key param",
+            re: static_regex!(
+                r#"(?im)((?:^|[^a-z0-9])(?:aws[_-]?secret[_-]?access[_-]?key|secret[_-]?access[_-]?key|api[_-]?key|apikey|access[_-]?key|secret[_-]?key|access[_-]?token|client[_-]?secret|token|password|passwd|pwd|secret)(?:\\?["'])?[ \t]*[=:][ \t]*(?:\\?["'])?)([^\s\r\n,;&"']+)"#
+            ),
+            guard_value: true,
+        },
+        Rule {
+            label: "URL-encoded secret",
+            re: static_regex!(
+                r"(?im)((?:^|[^a-z0-9])(?:aws[_-]?secret[_-]?access[_-]?key|secret[_-]?access[_-]?key|api[_-]?key|apikey|access[_-]?key|secret[_-]?key|access[_-]?token|client[_-]?secret|token|password|passwd|pwd|secret)[ \t]*[=:][ \t]*)(?:((?:%[0-9a-f]{2}|[A-Za-z0-9_\-]){20,}))"
+            ),
+            guard_value: true,
         },
         // Group 1 = prefix (kept), group 2 = the 32+ char value. Guarded since
         // #718: 32-char identifiers like `confirmRequiredEndpointKeySchema`
@@ -278,7 +417,7 @@ fn redaction_rules() -> Vec<Rule> {
         Rule {
             label: "Generic long secret",
             re: static_regex!(
-                r#"(?im)((?:^|[^a-z0-9])(?:key|token|secret|password|credential|auth)[ \t]*[=:][ \t]*)(['"]?[a-zA-Z0-9+/=\-_]{32,}['"]?)"#
+                r#"(?im)((?:^|[^a-z0-9])(?:key|token|secret|password|credential|auth)(?:\\?["'])?[ \t]*[=:][ \t]*(?:\\?["'])?)([a-zA-Z0-9+/=\-_]{32,})"#
             ),
             guard_value: true,
         },
@@ -297,35 +436,176 @@ pub(crate) fn redact_text_with_excludes(input: &str, excludes: &[regex::Regex]) 
     redact_counting(input, excludes).0
 }
 
+/// Scanner-side equivalent with the established `secret_detection` labels.
+pub(crate) fn redact_text_with_excludes_for_detection(
+    input: &str,
+    excludes: &[regex::Regex],
+) -> String {
+    redact_counting_with_labels(input, excludes, true).0
+}
+
 /// [`redact_text_with_excludes`] plus the number of secrets it replaced.
 fn redact_counting(input: &str, excludes: &[regex::Regex]) -> (String, usize) {
-    let mut out = input.to_string();
-    let mut hits = 0usize;
+    redact_counting_with_labels(input, excludes, false)
+}
+
+fn redact_counting_with_labels(
+    input: &str,
+    excludes: &[regex::Regex],
+    detector_labels: bool,
+) -> (String, usize) {
+    let (normalized, boundaries) = normalize_for_secret_matching(input);
+    let mut replacements = Vec::new();
+
+    let database_re = static_regex!(
+        r"(?i)((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://)([^:/@?#\s]+):([^@/?#\s]+)@([^/?#\s]+)"
+    );
+    for caps in database_re.captures_iter(&normalized) {
+        let Some(whole) = caps.get(0) else {
+            continue;
+        };
+        let start = boundaries[whole.start()];
+        let end = boundaries[whole.end()];
+        let original = input.get(start..end).unwrap_or(whole.as_str());
+        if excluded(excludes, whole.as_str()) || excluded(excludes, original) {
+            continue;
+        }
+        if caps
+            .get(3)
+            .is_some_and(|password| is_placeholder_value(password.as_str()))
+        {
+            continue;
+        }
+        let scheme = caps
+            .get(1)
+            .map_or("", |m| original_span(input, &boundaries, m));
+        let host = caps
+            .get(4)
+            .map_or("", |m| original_span(input, &boundaries, m));
+        let label = if detector_labels {
+            "db_url"
+        } else {
+            "Database credentials"
+        };
+        replacements.push((start, end, format!("{scheme}[REDACTED:{label}]@{host}")));
+    }
+
     for rule in redaction_rules() {
-        out = rule
-            .re
-            .replace_all(&out, |caps: &regex::Captures| {
-                let whole = caps.get(0).map_or("", |m| m.as_str());
-                if excludes.iter().any(|ex| ex.is_match(whole)) {
-                    return whole.to_string();
+        for caps in rule.re.captures_iter(&normalized) {
+            let Some(whole) = caps.get(0) else {
+                continue;
+            };
+            let start = boundaries[whole.start()];
+            let end = boundaries[whole.end()];
+            let original = input.get(start..end).unwrap_or(whole.as_str());
+            if excluded(excludes, whole.as_str()) || excluded(excludes, original) {
+                continue;
+            }
+            // A quoted value is a literal, never an identifier reference, so the
+            // benign-value guard does not apply to it.
+            if rule.guard_value
+                && let Some(value) = caps.get(2)
+                && if is_quoted_at(&normalized, value.start()) {
+                    is_benign_quoted_value(value.as_str())
+                } else {
+                    is_benign_secret_value(value.as_str())
                 }
-                if rule.guard_value
-                    && let Some(value) = caps.get(2)
-                    && is_benign_secret_value(value.as_str())
-                {
-                    // Not a secret (identifier reference, literal, placeholder)
-                    // — keep verbatim (#430, #718).
-                    return whole.to_string();
-                }
-                hits += 1;
-                match caps.get(1) {
-                    Some(prefix) => format!("{}[REDACTED:{}]", prefix.as_str(), rule.label),
-                    None => format!("[REDACTED:{}]", rule.label),
-                }
-            })
-            .to_string();
+            {
+                continue;
+            }
+            if rule.label == "Bearer token"
+                && caps
+                    .get(2)
+                    .is_some_and(|value| !bearer_value_is_credential(value.as_str()))
+            {
+                continue;
+            }
+            // Overlapping matches: the wider span wins. Skipping a wider match (a whole
+            // private-key block) because a narrower rule already hit inside it would
+            // leak the rest of the block.
+            let overlapping: Vec<usize> = replacements
+                .iter()
+                .enumerate()
+                .filter(|(_, (other_start, other_end, _))| start < *other_end && *other_start < end)
+                .map(|(i, _)| i)
+                .collect();
+            if overlapping.iter().any(|&i| {
+                let (other_start, other_end, _) = &replacements[i];
+                *other_start <= start && end <= *other_end
+            }) {
+                continue;
+            }
+            let start = overlapping
+                .iter()
+                .map(|&i| replacements[i].0)
+                .fold(start, usize::min);
+            let end = overlapping
+                .iter()
+                .map(|&i| replacements[i].1)
+                .fold(end, usize::max);
+            for &i in overlapping.iter().rev() {
+                replacements.remove(i);
+            }
+
+            let label = if detector_labels {
+                detector_redaction_label(rule.label, caps.get(2).map(|value| value.as_str()))
+            } else {
+                rule.label
+            };
+            let replacement = caps.get(1).map_or_else(
+                || format!("[REDACTED:{label}]"),
+                |prefix| {
+                    let original_prefix = original_span(input, &boundaries, prefix);
+                    format!("{original_prefix}[REDACTED:{label}]")
+                },
+            );
+            replacements.push((start, end, replacement));
+        }
+    }
+
+    replacements.sort_by_key(|(start, _, _)| *start);
+    let hits = replacements.len();
+    let mut out = input.to_string();
+    for (start, end, replacement) in replacements.into_iter().rev() {
+        out.replace_range(start..end, &replacement);
     }
     (out, hits)
+}
+
+fn original_span<'a>(input: &'a str, boundaries: &[usize], matched: regex::Match<'_>) -> &'a str {
+    let start = boundaries.get(matched.start()).copied().unwrap_or_default();
+    let end = boundaries.get(matched.end()).copied().unwrap_or(start);
+    input.get(start..end).unwrap_or("")
+}
+
+fn detector_redaction_label(label: &str, value: Option<&str>) -> &'static str {
+    match label {
+        "Bearer token" | "Authorization header" => "authorization_header",
+        "URL-encoded secret" => "url_encoded_secret",
+        "AWS key" => "aws_key",
+        "Private key block" => "private_key",
+        "GitHub token" => "github_token",
+        "GitHub fine-grained token" => "github_fine_grained",
+        "GitLab token" => "gitlab_pat",
+        "Anthropic key" => "anthropic_key",
+        "OpenAI key" => "openai_key",
+        "JWT" => "jwt",
+        "Slack token" => "slack_token",
+        "Stripe key" => "stripe_key",
+        "npm token" => "npm_token",
+        "Generic long secret" if value.is_some_and(|v| v.len() >= 40) => "high_entropy_secret",
+        "API key param" | "Generic long secret" => "generic_api_key",
+        _ => "secret",
+    }
+}
+
+/// Whether the byte before `pos` in `text` is a quote (the value is a quoted literal).
+fn is_quoted_at(text: &str, pos: usize) -> bool {
+    pos > 0 && matches!(text.as_bytes()[pos - 1], b'"' | b'\'')
+}
+
+fn excluded(excludes: &[regex::Regex], value: &str) -> bool {
+    excludes.iter().any(|pattern| pattern.is_match(value))
 }
 
 /// Compile the configured `exclude_patterns` (#718). Invalid regexes are

@@ -313,7 +313,10 @@ impl Engine {
         });
 
         match joined {
-            Ok(Ok(out)) => Ok(out),
+            Ok(Ok(mut out)) => {
+                out.text = lean_ctx::server::policy_guard::redact_model_text(&out.text);
+                Ok(out)
+            }
             Ok(Err(e)) => Err(Error::tool(&tool_owned, e.message)),
             Err(_join) => Err(Error::Incomplete(tool_owned)),
         }

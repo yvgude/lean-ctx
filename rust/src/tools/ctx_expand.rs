@@ -15,21 +15,26 @@ pub fn handle(args: &serde_json::Value) -> String {
     }
 }
 
+fn normalized_handle_ref(id: &str) -> Option<&str> {
+    let clean = id.strip_prefix('@').unwrap_or(id);
+    if clean.len() < 2
+        || !matches!(clean.chars().next()?, 'F' | 'S' | 'K' | 'M' | 'P')
+        || !clean[1..].chars().all(|c| c.is_ascii_digit())
+    {
+        return None;
+    }
+    Some(clean)
+}
+
+/// Whether `id` has a handle-reference shape accepted by `ctx_expand`.
+pub(crate) fn is_handle_ref(id: &str) -> bool {
+    normalized_handle_ref(id).is_some()
+}
+
 /// Try to resolve a handle reference (@F1, @K1, etc.) to a file path.
 /// Returns None if the ID is not a handle reference.
 pub fn resolve_handle_ref(id: &str) -> Option<String> {
-    let clean = id.strip_prefix('@').unwrap_or(id);
-    if clean.len() < 2 {
-        return None;
-    }
-    let prefix = clean.chars().next()?;
-    if !matches!(prefix, 'F' | 'S' | 'K' | 'M' | 'P') {
-        return None;
-    }
-    if !clean[1..].chars().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-
+    let clean = normalized_handle_ref(id)?;
     let ledger = ContextLedger::load();
     let mut registry = HandleRegistry::new();
     for entry in &ledger.entries {
@@ -180,7 +185,7 @@ fn dispatch_selectors(id: &str, content: &str, noun: &str, args: &serde_json::Va
 /// the verbatim tee content on disk, so the agent pulls back only the slice it
 /// needs rather than undoing the proxy's compression with a full re-inject.
 fn expand_tee_file(path: &std::path::Path, args: &serde_json::Value) -> String {
-    let Ok(content) = std::fs::read_to_string(path) else {
+    let Some(content) = crate::proxy::ccr::read_tee_file(path) else {
         return format!(
             "ERROR: CCR tee file is no longer available: {}",
             path.display()

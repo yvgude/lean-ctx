@@ -14,6 +14,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use super::{RepoReport, TestbenchReport};
+use crate::core::context_quality::EvidenceTier;
 
 /// Tolerance for calling an on-vs-off score difference a real regression.
 const EPS: f64 = 1e-9;
@@ -40,6 +41,13 @@ pub struct Regression {
 pub struct Regressions {
     pub kind: String,
     pub verdict: String,
+    /// Weakest evidence tier across repos (`mechanism`, `recorded_regression`, …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_tier: Option<EvidenceTier>,
+    /// Every repo report backs a task-quality claim (powered, model-backed, no
+    /// regression). A bare verdict without this is a mechanism result.
+    #[serde(default)]
+    pub quality_claim_supported: bool,
     pub determinism_digest: String,
     pub count: usize,
     pub regressions: Vec<Regression>,
@@ -76,6 +84,16 @@ pub fn collect_regressions(report: &TestbenchReport) -> Regressions {
     Regressions {
         kind: REGRESSIONS_KIND.to_string(),
         verdict: report.verdict.label().to_string(),
+        evidence_tier: report
+            .repos
+            .iter()
+            .filter_map(|r| r.report.evidence_tier)
+            .min(),
+        quality_claim_supported: !report.repos.is_empty()
+            && report
+                .repos
+                .iter()
+                .all(|r| r.report.supports_quality_claim()),
         determinism_digest: report.determinism_digest.clone(),
         count: out.len(),
         regressions: out,
@@ -107,7 +125,20 @@ pub fn render_findings(report: &TestbenchReport) -> String {
         "- Determinism digest: `{}`\n",
         report.determinism_digest
     ));
-    s.push_str(&format!("- **Verdict: {}**\n\n", report.verdict.label()));
+    s.push_str(&format!("- **Verdict: {}**\n", report.verdict.label()));
+    if let Some(tier) = report
+        .repos
+        .iter()
+        .filter_map(|r| r.report.evidence_tier)
+        .min()
+    {
+        s.push_str(&format!(
+            "- Evidence tier: {} ({})\n",
+            tier.code(),
+            tier.label()
+        ));
+    }
+    s.push('\n');
 
     s.push_str(
         "| repo | tasks | quality off→on | pass off→on | ctx tokens off→on | Δtokens | walltime off→on |\n",
@@ -244,14 +275,18 @@ mod tests {
     fn ties_produce_no_regressions() {
         let r = repo("r", vec![record("a", 1.0, 1.0), record("b", 0.7, 0.7)]);
         let report = testbench(vec![r], Verdict::NonInferior);
-        assert_eq!(collect_regressions(&report).count, 0);
+        let regs = collect_regressions(&report);
+        assert_eq!(regs.count, 0);
+        // A fixture tie published as NON-INFERIOR must say it backs no quality claim.
+        assert_eq!(regs.evidence_tier, Some(EvidenceTier::Mechanism));
+        assert!(!regs.quality_claim_supported);
     }
 
     #[test]
     fn findings_table_reports_token_delta_and_verdict() {
         let r = repo("qa-api", vec![record("a", 1.0, 1.0)]);
         let md = render_findings(&testbench(vec![r], Verdict::NonInferior));
-        assert!(md.contains("NO REGRESSION"));
+        assert!(md.contains("NON-INFERIOR"));
         assert!(md.contains("qa-api"));
         assert!(md.contains("300→90"));
         assert!(md.contains("-70.0%"), "expected token saving in: {md}");

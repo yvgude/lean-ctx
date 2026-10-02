@@ -19,6 +19,7 @@ use ed25519_dalek::{Signer, SigningKey};
 use serde::{Deserialize, Serialize};
 
 use crate::core::agent_identity::{hex_decode, hex_encode, verify_signature};
+use crate::core::context_quality::EvidenceTier;
 use crate::core::tokens::count_tokens;
 
 use super::model::{ModelFingerprint, ModelRequest, ModelRunner};
@@ -71,8 +72,9 @@ impl InjectedElement {
     }
 }
 
-/// The three injected texts, rendered once and reused across every arm.
-#[derive(Debug, Clone, Default)]
+/// The three injected texts, rendered once and reused across every arm. Serializable
+/// so a released build's footprint can be exported and compared against a candidate.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Footprint {
     /// Rules block text (`rules_inject::canonical_rules_block`).
     pub rules: String,
@@ -230,13 +232,22 @@ pub struct FootprintReport {
 }
 
 impl FootprintReport {
-    /// The CI gate passes unless an injected element is actively *harmful*
-    /// (removing it improves quality beyond the margin).
+    /// No injected element is actively *harmful* (removing it improves quality
+    /// beyond the margin).
     #[must_use]
-    pub fn gate_passes(&self) -> bool {
+    pub fn no_harmful_element(&self) -> bool {
         self.elements
             .iter()
             .all(|e| e.verdict != Verdict::Regressed)
+    }
+
+    /// The gate: no harmful element, and — unless this is a mechanism check — every
+    /// element's verdict is powered.
+    #[must_use]
+    pub fn gate_passes(&self, mechanism: bool) -> bool {
+        self.elements
+            .iter()
+            .all(|e| e.verdict.passes_gate(mechanism))
     }
 
     /// Recomputes the evidence digest from the per-element reports.
@@ -324,7 +335,7 @@ impl FootprintReport {
         }
         out.push_str(&format!(
             "\nVerdict: {}\n",
-            if self.gate_passes() {
+            if self.no_harmful_element() {
                 "OK (no harmful element)"
             } else {
                 "HARMFUL ELEMENT PRESENT"
@@ -336,6 +347,57 @@ impl FootprintReport {
         ));
         out
     }
+}
+
+/// Compares two complete footprints on the same tasks: `baseline` (for example the
+/// footprint exported from the released build) against `candidate` (a trimmed tool
+/// surface or shorter instructions). Same model, same tasks, same system framing —
+/// the footprint text is the only variable. A reduction is only worth shipping when
+/// this report is `NonInferior` or `Improved`; the token delta sits in every record.
+pub fn run_footprint_compare(
+    suite: &EvalSuite,
+    suite_name: &str,
+    baseline: &Footprint,
+    candidate: &Footprint,
+    runner: &dyn ModelRunner,
+    cfg: ReportConfig,
+) -> Result<AbReport> {
+    let base = assemble_prefix(baseline, None);
+    let cand = assemble_prefix(candidate, None);
+    let mut records = Vec::with_capacity(suite.tasks.len());
+    for task in &suite.tasks {
+        let workspace = task.workspace_path(&suite.dir);
+        let base_resp = runner.run(&build_footprint_request(&base.text, &task.prompt))?;
+        let base_score = score_task(task, &base_resp.text, &workspace)?;
+        // Identical prefixes would issue an identically keyed request: reuse it.
+        let (cand_score, cand_digest) = if cand.digest == base.digest {
+            (base_score.clone(), base_resp.digest())
+        } else {
+            let resp = runner.run(&build_footprint_request(&cand.text, &task.prompt))?;
+            (score_task(task, &resp.text, &workspace)?, resp.digest())
+        };
+        records.push(PairRecord {
+            task_id: task.id.clone(),
+            domain: task.domain.label().to_string(),
+            baseline_value: base_score.value,
+            lean_ctx_value: cand_score.value,
+            baseline_passed: base_score.passed,
+            lean_ctx_passed: cand_score.passed,
+            baseline_tokens: base.tokens,
+            lean_ctx_tokens: cand.tokens,
+            baseline_context_digest: base.digest.clone(),
+            lean_ctx_context_digest: cand.digest.clone(),
+            baseline_answer_digest: base_resp.digest(),
+            lean_ctx_answer_digest: cand_digest,
+        });
+    }
+    Ok(AbReport::build(
+        format!("{suite_name}::footprint-compare"),
+        cand.tokens,
+        runner.fingerprint().clone(),
+        records,
+        cfg,
+    ))
 }
 
 /// Runs the footprint ablation: the full arm once, then each element's minus arm,
@@ -405,8 +467,16 @@ pub fn run_footprint_ab(
         );
         let pass_rate_with = report.stats.lean_ctx_pass_rate;
         let pass_rate_without = report.stats.baseline_pass_rate;
-        let prune_recommended =
-            !matches!(report.verdict, Verdict::Improved) && token_cost >= cfg.token_floor;
+        // Pruning removes context, so it needs powered evidence from a real model: an
+        // underpowered or fixture-only run keeps the element even when it looked harmful
+        // (uncertainty moves toward more context). The gate still fails on any observed
+        // regression.
+        let prune_recommended = report.power.is_some_and(|p| p.powered)
+            && report
+                .evidence_tier
+                .is_some_and(EvidenceTier::supports_task_quality_claim)
+            && matches!(report.verdict, Verdict::NonInferior | Verdict::Regressed)
+            && token_cost >= cfg.token_floor;
 
         elements.push(ElementVerdict {
             element,
@@ -505,17 +575,46 @@ mod tests {
         }
     }
 
-    /// Builds a 2-task QA suite + a recording where the tool schemas are the only
-    /// element that changes an answer, so tool_schemas must be IMPROVED (kept) and
-    /// rules/wakeup must be prune candidates (cost tokens, no quality gain).
-    fn pipeline_setup() -> (EvalSuite, Footprint, RecordedRunner) {
-        let raw = "{\"id\":\"t1\",\"domain\":\"qa\",\"prompt\":\"Which tool finds a symbol?\",\"workspace\":\"ws\",\"answers\":[\"ctx_symbol\"]}\n\
-             {\"id\":\"t2\",\"domain\":\"qa\",\"prompt\":\"Which tool searches code?\",\"workspace\":\"ws\",\"answers\":[\"ctx_search\"]}";
-        let suite = EvalSuite::parse(raw, PathBuf::from(".")).unwrap();
+    /// Builds an `n`-task QA suite + a recording where the tool schemas are the only
+    /// element that changes an answer, so (when powered) tool_schemas must be IMPROVED
+    /// (kept) and rules/wakeup must be prune candidates (cost tokens, no quality gain).
+    fn pipeline_setup(n: usize) -> (EvalSuite, Footprint, RecordedRunner) {
+        pipeline_setup_with(n, fixture_fingerprint())
+    }
+
+    /// Same recording, labelled as a capture of a real model (replayed → tier C).
+    fn real_model_fingerprint() -> ModelFingerprint {
+        ModelFingerprint {
+            provider: crate::core::eval_ab::model::PROVIDER_OPENAI.into(),
+            endpoint: "http://localhost:11434/v1".into(),
+            params: ModelParams {
+                model: "gemma4:e4b".into(),
+                ..ModelParams::default()
+            },
+        }
+    }
+
+    fn pipeline_setup_with(
+        n: usize,
+        fingerprint: ModelFingerprint,
+    ) -> (EvalSuite, Footprint, RecordedRunner) {
+        let raw: Vec<String> = (0..n)
+            .map(|i| {
+                let (q, a) = if i % 2 == 0 {
+                    ("finds a symbol", "ctx_symbol")
+                } else {
+                    ("searches code", "ctx_search")
+                };
+                format!(
+                    "{{\"id\":\"t{i}\",\"domain\":\"qa\",\"prompt\":\"Which tool {q} (case {i})?\",\"workspace\":\"ws\",\"answers\":[\"{a}\"]}}"
+                )
+            })
+            .collect();
+        let suite = EvalSuite::parse(&raw.join("\n"), PathBuf::from(".")).unwrap();
         let fp = fixed_footprint();
         let full = assemble_prefix(&fp, None);
 
-        let mut rec = Recording::new(fixture_fingerprint());
+        let mut rec = Recording::new(fingerprint);
         for task in &suite.tasks {
             let gold = task.answers[0].clone();
             let full_req = build_footprint_request(&full.text, &task.prompt);
@@ -539,8 +638,40 @@ mod tests {
     }
 
     #[test]
+    fn underpowered_footprint_run_never_recommends_pruning() {
+        let (suite, fp, runner) = pipeline_setup(2);
+        let report = run_footprint_ab(&suite, "fixture", &fp, &runner, &FootprintConfig::default())
+            .expect("recording must cover every replay key");
+        for e in &report.elements {
+            assert_eq!(e.verdict, Verdict::Underpowered, "{}", e.element.label());
+            assert!(
+                !e.prune_recommended,
+                "{} pruned on two tasks of evidence",
+                e.element.label()
+            );
+        }
+    }
+
+    #[test]
+    fn powered_fixture_answers_never_recommend_pruning() {
+        let (suite, fp, runner) = pipeline_setup(super::super::report::MIN_POWERED_PAIRS);
+        let report = run_footprint_ab(&suite, "fixture", &fp, &runner, &FootprintConfig::default())
+            .expect("recording must cover every replay key");
+        for e in &report.elements {
+            assert!(
+                !e.prune_recommended,
+                "{} pruned on tier-A fixture evidence",
+                e.element.label()
+            );
+        }
+    }
+
+    #[test]
     fn footprint_run_flags_unhelpful_elements_for_pruning() {
-        let (suite, fp, runner) = pipeline_setup();
+        let (suite, fp, runner) = pipeline_setup_with(
+            super::super::report::MIN_POWERED_PAIRS,
+            real_model_fingerprint(),
+        );
         let report = run_footprint_ab(&suite, "fixture", &fp, &runner, &FootprintConfig::default())
             .expect("recording must cover every replay key");
 
@@ -567,12 +698,49 @@ mod tests {
             rules.prune_recommended,
             "rules cost tokens but never changed an answer → prune"
         );
-        assert!(report.gate_passes(), "no element is actively harmful here");
+        assert!(
+            report.gate_passes(false),
+            "no element is actively harmful here"
+        );
+    }
+
+    /// A candidate footprint that drops what the answers depend on must show up as a
+    /// regression against the baseline, with its token saving in every record.
+    #[test]
+    fn footprint_compare_flags_a_smaller_candidate_that_loses_answers() {
+        let (suite, fp, runner) = pipeline_setup(super::super::report::MIN_POWERED_PAIRS);
+        let candidate = Footprint {
+            tool_schemas: String::new(),
+            ..fp.clone()
+        };
+        let report = run_footprint_compare(
+            &suite,
+            "fixture",
+            &fp,
+            &candidate,
+            &runner,
+            ReportConfig::default(),
+        )
+        .expect("recording covers both prefixes");
+        assert_eq!(report.verdict, Verdict::Regressed, "{:?}", report.stats);
+        assert!(report.records[0].lean_ctx_tokens < report.records[0].baseline_tokens);
+
+        let same = run_footprint_compare(
+            &suite,
+            "fixture",
+            &fp,
+            &fp,
+            &runner,
+            ReportConfig::default(),
+        )
+        .expect("identical footprints reuse one request per task");
+        assert_eq!(same.stats.losses, 0);
+        assert_eq!(same.stats.wins, 0);
     }
 
     #[test]
     fn footprint_report_is_deterministic_and_signable() {
-        let (suite, fp, runner) = pipeline_setup();
+        let (suite, fp, runner) = pipeline_setup(2);
         let cfg = FootprintConfig::default();
         let report = run_footprint_ab(&suite, "fixture", &fp, &runner, &cfg).unwrap();
         let report2 = run_footprint_ab(&suite, "fixture", &fp, &runner, &cfg).unwrap();

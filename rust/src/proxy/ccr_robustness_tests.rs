@@ -15,6 +15,9 @@ use serde_json::json;
 
 use crate::core::data_dir::test_env_lock;
 use crate::core::hasher::hash_short;
+use crate::core::recovery_verify::{RecoveryOutcome, verify_handle};
+#[cfg(unix)]
+use crate::proxy::ccr::read_tee;
 use crate::proxy::ccr::{
     MIN_TEE_BYTES, inband_marker, persist, persist_json, persist_tabular, resolve_tee,
     splice_inband_in_place,
@@ -253,4 +256,208 @@ fn read_stub_bookkeeping_survives_restart_without_storing_content() {
         "the index must hold bookkeeping only, never file content (#955)"
     );
     rsi::clear_for_test();
+}
+
+#[test]
+fn recovery_verifier_checks_resolved_bytes_digest_and_expiry() {
+    let _lock = test_env_lock();
+    let body = big("recovery verification body");
+    let handle = persist(&body).expect("tee handle");
+    let digest = blake3::hash(body.as_bytes()).to_hex().to_string();
+
+    let verified = verify_handle(&handle, Some(&digest));
+    assert_eq!(verified.outcome, RecoveryOutcome::Verified);
+    assert_eq!(verified.byte_len, Some(body.len()));
+    assert_eq!(verified.digest.as_deref(), Some(digest.as_str()));
+    assert!(verified.is_recoverable_for_model());
+
+    let wrong_digest = blake3::hash(b"different content").to_hex().to_string();
+    let mismatch = verify_handle(&handle, Some(&wrong_digest));
+    assert_eq!(mismatch.outcome, RecoveryOutcome::DigestMismatch);
+    assert_eq!(mismatch.byte_len, Some(body.len()));
+    assert_eq!(mismatch.digest.as_deref(), Some(digest.as_str()));
+    assert!(!mismatch.is_recoverable_for_model());
+
+    let missing_seed = "unique missing recovery handle for cq04";
+    let missing_handle = format!("proxy_{}.log", hash_short(missing_seed));
+    if let Some(path) = resolve_tee(&missing_handle) {
+        std::fs::remove_file(path).expect("clear stale test handle");
+    }
+    assert_eq!(
+        verify_handle(&missing_handle, None).outcome,
+        RecoveryOutcome::Missing
+    );
+
+    let reference = crate::server::reference_store::store("expired reference".to_string());
+    crate::server::reference_store::expire_for_test(&reference);
+    assert_eq!(
+        verify_handle(&reference, None).outcome,
+        RecoveryOutcome::Expired
+    );
+
+    let overlong = "x".repeat(4097);
+    for malformed in [
+        "",
+        "garbage",
+        "wrong_0123456789abcdef.log",
+        "proxy_bad",
+        "/etc/passwd",
+        "%2e%2e/etc/passwd",
+        overlong.as_str(),
+    ] {
+        assert_eq!(
+            verify_handle(malformed, None).outcome,
+            RecoveryOutcome::Malformed,
+            "malformed handle must not resolve: {malformed}"
+        );
+    }
+}
+
+#[test]
+fn recovery_paths_reject_traversal_symlink_escape_and_cross_store_handles() {
+    let _lock = test_env_lock();
+    let body = big("cross-store recovery verification");
+    let ccr_handle = persist(&body).expect("tee handle");
+
+    crate::test_env::set_var("LEAN_CTX_ARCHIVE", "1");
+    let archive_id =
+        crate::core::archive::store("ctx_shell", "cq04", &body, None).expect("archive handle");
+    crate::test_env::remove_var("LEAN_CTX_ARCHIVE");
+
+    assert!(crate::core::archive::retrieve(&ccr_handle).is_none());
+    assert!(resolve_tee(&archive_id).is_none());
+    let digest = blake3::hash(body.as_bytes()).to_hex().to_string();
+    assert_eq!(
+        verify_handle(&archive_id, Some(&digest)).outcome,
+        RecoveryOutcome::Verified
+    );
+
+    let tee_root = crate::core::paths::state_dir()
+        .expect("state directory")
+        .join("tee")
+        .canonicalize()
+        .expect("tee directory");
+    let basename = std::path::Path::new(&ccr_handle)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("tee basename");
+    let outside = tempfile::tempdir().expect("outside directory");
+    for crafted in [
+        format!("../{basename}"),
+        outside.path().join(basename).to_string_lossy().into_owned(),
+        format!("%2e%2e/{basename}"),
+    ] {
+        if let Some(resolved) = resolve_tee(&crafted) {
+            let canonical = resolved.canonicalize().expect("canonical tee result");
+            assert!(
+                canonical.starts_with(&tee_root),
+                "crafted handle escaped the tee store: {crafted}"
+            );
+        }
+    }
+    for traversal in ["../../etc/passwd", "%2e%2e/etc/passwd"] {
+        assert!(resolve_tee(traversal).is_none());
+    }
+
+    let absolute_base = outside.path().join("absolute");
+    std::fs::write(absolute_base.with_extension("txt"), "outside sentinel")
+        .expect("write absolute traversal target");
+    assert!(
+        crate::core::archive::retrieve(&absolute_base.to_string_lossy()).is_none(),
+        "absolute archive handles must not read outside the archive store"
+    );
+
+    let data_dir = outside.path().join("nested").join("data");
+    std::fs::create_dir_all(&data_dir).expect("create archive test data directory");
+    std::fs::write(outside.path().join("outside.txt"), "outside sentinel")
+        .expect("write relative traversal target");
+    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().as_ref());
+    let escaped = crate::core::archive::retrieve("../../outside");
+    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    assert!(
+        escaped.is_none(),
+        "relative archive traversal must not read outside the archive store"
+    );
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+
+        let target = outside.path().join("symlink-target.txt");
+        std::fs::write(&target, "outside symlink sentinel").expect("write symlink target");
+        let symlink_body = big("symlink escape recovery handle");
+        let symlink_handle = format!("proxy_{}.log", hash_short(&symlink_body));
+        let link = crate::core::paths::state_dir()
+            .expect("state directory")
+            .join("tee")
+            .join(format!("proxy_{}.log", hash_short(&symlink_body)));
+        let _ = std::fs::remove_file(&link);
+        symlink(&target, &link).expect("install outside-store symlink");
+
+        let refused = verify_handle(&symlink_handle, None);
+        let ctx_expand_result = crate::tools::ctx_expand::handle(&serde_json::json!({
+            "id": symlink_handle
+        }));
+        std::fs::remove_file(&link).expect("remove outside-store symlink");
+
+        assert!(matches!(refused.outcome, RecoveryOutcome::Refused(_)));
+        assert!(resolve_tee(&symlink_handle).is_none());
+        assert!(
+            !ctx_expand_result.contains("outside symlink sentinel"),
+            "ctx_expand must not read through a symlink outside the tee store"
+        );
+
+        // The same planted link inside the archive store: a valid archive ID whose
+        // content file points outside must not reach the model through ctx_expand.
+        crate::test_env::set_var("LEAN_CTX_ARCHIVE", "1");
+        let planted_body = big("archive symlink escape");
+        let planted_id = crate::core::archive::store("ctx_shell", "cq04", &planted_body, None)
+            .expect("archive handle");
+        crate::test_env::remove_var("LEAN_CTX_ARCHIVE");
+        let content_file = crate::core::archive::content_path_str(&planted_id);
+        std::fs::remove_file(&content_file).expect("remove archived content");
+        symlink(&target, &content_file).expect("plant archive symlink");
+        let archive_expand = crate::tools::ctx_expand::handle(&serde_json::json!({
+            "id": planted_id
+        }));
+        let archive_verify = verify_handle(&planted_id, None);
+        let archive_read = crate::core::archive::retrieve(&planted_id);
+        std::fs::remove_file(&content_file).expect("remove planted archive symlink");
+        assert!(
+            !archive_expand.contains("outside symlink sentinel"),
+            "ctx_expand must not follow an archive link out of the store: {archive_expand}"
+        );
+        assert!(archive_read.is_none());
+        assert!(matches!(
+            archive_verify.outcome,
+            RecoveryOutcome::Refused(_)
+        ));
+    }
+}
+
+/// A `tee` directory that is itself a link to another store must not let a
+/// tee-shaped name read that store.
+#[cfg(unix)]
+#[test]
+fn tee_store_that_links_to_another_store_is_refused() {
+    use std::os::unix::fs::symlink;
+
+    let _lock = test_env_lock();
+    let body = big("tee store link");
+    let handle = persist(&body).expect("tee handle");
+    let state = crate::core::paths::state_dir().expect("state directory");
+    let tee = state.join("tee");
+    let real = state.join("tee-real-for-test");
+    let _ = std::fs::remove_dir_all(&real);
+    std::fs::rename(&tee, &real).expect("move tee store aside");
+    symlink(&real, &tee).expect("link tee store");
+
+    let resolved = resolve_tee(&handle);
+    let read = read_tee(&handle);
+
+    std::fs::remove_file(&tee).expect("remove tee link");
+    std::fs::rename(&real, &tee).expect("restore tee store");
+    assert!(resolved.is_none(), "a linked tee store must be refused");
+    assert!(read.is_none());
+    assert_eq!(read_tee(&handle).as_deref(), Some(body.as_str()));
 }

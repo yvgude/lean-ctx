@@ -91,9 +91,10 @@ pub struct TestbenchReport {
 }
 
 impl TestbenchReport {
-    /// Whether the CI quality gate should pass (no repo regressed).
-    pub fn gate_passes(&self) -> bool {
-        self.verdict.gate_passes()
+    /// Whether the gate passes; `mechanism` accepts an underpowered run that shows no
+    /// regression (wiring check), otherwise only a powered non-regressing run passes.
+    pub fn gate_passes(&self, mechanism: bool) -> bool {
+        self.verdict.passes_gate(mechanism)
     }
 
     /// Pretty JSON for the machine-readable artifact.
@@ -239,20 +240,9 @@ fn score_pair(
     }
 }
 
-/// Worst (most conservative) verdict across repos: any regression dominates, then any
-/// "no regression", else "improved". An empty set is treated as non-inferior.
+/// Worst (most conservative) verdict across repos; an empty set is inconclusive.
 fn worst_verdict(repos: &[RepoReport]) -> Verdict {
-    let mut worst = Verdict::Improved;
-    let mut any = false;
-    for r in repos {
-        any = true;
-        worst = match (worst, r.report.verdict) {
-            (Verdict::Regressed, _) | (_, Verdict::Regressed) => Verdict::Regressed,
-            (Verdict::NonInferior, _) | (_, Verdict::NonInferior) => Verdict::NonInferior,
-            _ => Verdict::Improved,
-        };
-    }
-    if any { worst } else { Verdict::NonInferior }
+    Verdict::most_conservative(repos.iter().map(|r| r.report.verdict))
 }
 
 /// Aggregate determinism digest: per-repo evidence digests (sorted by name) bound to
@@ -327,7 +317,7 @@ mod tests {
         let report = run_testbench(&lock, cache.path(), &runner, &TestbenchConfig::default())
             .expect("committed recording must cover every replay key");
         assert!(
-            report.gate_passes(),
+            report.gate_passes(true),
             "committed subset must not encode a regression, got {}",
             report.verdict.label()
         );

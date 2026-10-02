@@ -132,6 +132,7 @@ pub(crate) mod context_package;
 pub mod context_policies;
 pub(crate) mod context_proof;
 pub mod context_proof_v2;
+pub mod context_quality;
 pub mod context_radar;
 pub(crate) mod context_snapshot;
 pub mod cross_source_edges;
@@ -435,6 +436,8 @@ pub mod provider_cache;
 pub mod providers;
 pub(crate) mod read_stub_index;
 pub(crate) mod recovery;
+#[allow(dead_code)] // CQ-03 consumes the receipt API from this module.
+pub(crate) mod recovery_verify;
 pub(crate) mod redaction;
 pub mod reference_docs;
 pub mod roles;

@@ -8,9 +8,11 @@
 use std::path::{Path, PathBuf};
 
 use crate::core::eval_ab::artifact::{self, SignedAbReportV1};
+use crate::core::eval_ab::conditions::Condition;
 use crate::core::eval_ab::footprint::{
     Footprint, FootprintConfig, FootprintReport, run_footprint_ab,
 };
+use crate::core::eval_ab::frontier::{self, FrontierReport};
 use crate::core::eval_ab::model::{ModelRunner, OpenAiRunner, RecordedRunner, RecordingRunner};
 use crate::core::eval_ab::report::ReportConfig;
 use crate::core::eval_ab::suite::EvalSuite;
@@ -29,6 +31,7 @@ pub fn cmd_eval(args: &[String]) {
     }
     match args.first().map(String::as_str) {
         Some("ab") => cmd_ab(&args[1..]),
+        Some("frontier") => cmd_frontier(&args[1..]),
         Some("footprint" | "delta") => cmd_footprint(&args[1..]),
         Some("routing") => cmd_routing(&args[1..]),
         Some("testbench") => cmd_testbench(&args[1..]),
@@ -67,7 +70,9 @@ footprint OPTIONS (also: `eval --delta`):\n\
   --floor <n>        Min marginal tokens before flagging an element to prune (default 50)\n\
   --replay <file>    Replay a recording (deterministic); --record to capture live\n\
   --json             Emit the full JSON report instead of the side-by-side table\n\
-  --gate             Exit non-zero if any injected element is actively harmful\n\n\
+  --gate             Exit non-zero if any injected element is actively harmful\n\
+  --export <file>    Write this build's footprint (rules, tool schemas, wakeup) as JSON\n\
+  --compare <file>   Paired run: exported baseline footprint vs. this build's footprint\n\n\
 routing OPTIONS:\n\
   --suite <file>     NDJSON suite of real task prompts (required)\n\
   --requested <m>    Model the off-arm assumes (default: [proxy.baseline].reference_model)\n\
@@ -82,11 +87,21 @@ testbench OPTIONS:\n\
   --margin <f>       Non-inferiority margin for the per-repo gate (default 0.0)\n\
   --replay <file>    Replay a recording (deterministic CI); --record to capture live\n\
   --gate             Exit non-zero if any repo regressed\n\n\
+GATES: --gate fails on REGRESSED and on UNDERPOWERED (too few pairs to show quality).\n\
+  --mechanism        With --gate: wiring check for tiny fixture suites; only REGRESSED fails\n\n\
 LIVE MODEL (when not replaying) is read from the environment:\n\
   LEAN_CTX_EVAL_MODEL_URL   OpenAI-compatible base URL (e.g. https://api.openai.com/v1)\n\
   LEAN_CTX_EVAL_MODEL       Model id (e.g. gpt-4o-mini)\n\
   LEAN_CTX_EVAL_MODEL_KEY   API key (optional for local servers)\n\
   LEAN_CTX_EVAL_SEED        Decoding seed (default 7)"
+    );
+    println!(
+        "  lean-ctx eval frontier --suite <file> --strategies <csv> [opts]\n\
+frontier strategies: lean_ctx, json_crush, tabular_crush, yaml_crush\n\
+frontier options: --limit <n>, --budget <n>, --replay <file>, --record <file>, --json, --gate"
+    );
+    println!(
+        "Model revision provenance: LEAN_CTX_EVAL_MODEL_VERSION (defaults to a colon-tagged model revision when available)."
     );
 }
 
@@ -150,6 +165,7 @@ fn cmd_ab(args: &[String]) {
                 std::process::exit(1);
             }
         };
+        cfg.report.live_model = true;
         if let Some(record_path) = flag_value(args, "--record") {
             let recorder = RecordingRunner::new(live);
             let report = run_or_exit(&suite, &suite_name, &recorder, &cfg);
@@ -190,9 +206,122 @@ fn cmd_ab(args: &[String]) {
     println!("determinism digest: {}", signed.determinism_digest);
     println!("artifact:           {}", out.display());
 
-    if has_flag(args, "--gate") && !signed.verdict.gate_passes() {
+    if has_flag(args, "--gate") && !signed.verdict.passes_gate(has_flag(args, "--mechanism")) {
         eprintln!("\nquality gate FAILED: {}", signed.verdict.label());
         std::process::exit(1);
+    }
+}
+
+fn cmd_frontier(args: &[String]) {
+    let Some(suite_path) = flag_value(args, "--suite") else {
+        eprintln!("eval frontier: --suite <file> is required");
+        std::process::exit(2);
+    };
+    let Some(strategy_names) = flag_value(args, "--strategies") else {
+        eprintln!("eval frontier: --strategies <csv> is required");
+        std::process::exit(2);
+    };
+    let strategies = match frontier::parse_strategies(strategy_names) {
+        Ok(strategies) => strategies,
+        Err(error) => {
+            eprintln!("eval frontier: {error:#}");
+            std::process::exit(2);
+        }
+    };
+
+    let suite_path = PathBuf::from(suite_path);
+    let mut suite = match EvalSuite::load(&suite_path) {
+        Ok(suite) => suite,
+        Err(error) => {
+            eprintln!("eval frontier: {error:#}");
+            std::process::exit(1);
+        }
+    };
+    if let Some(limit) = flag_value(args, "--limit") {
+        let Ok(limit) = limit.parse::<usize>() else {
+            eprintln!("eval frontier: --limit must be a positive integer");
+            std::process::exit(2);
+        };
+        if limit == 0 {
+            eprintln!("eval frontier: --limit must be a positive integer");
+            std::process::exit(2);
+        }
+        suite.tasks.truncate(limit);
+    }
+    let suite_name = suite_path.file_name().map_or_else(
+        || "suite".to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+
+    let mut cfg = AbRunConfig::default();
+    if let Some(budget) = flag_value(args, "--budget").and_then(|value| value.parse().ok()) {
+        cfg.budget_tokens = budget;
+    }
+    cfg.report = ReportConfig {
+        noninferiority_margin: flag_value(args, "--margin")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0.0),
+        ..ReportConfig::default()
+    };
+
+    let report = if let Some(replay) = flag_value(args, "--replay") {
+        let runner = match RecordedRunner::from_file(Path::new(replay)) {
+            Ok(runner) => runner,
+            Err(error) => {
+                eprintln!("eval frontier: {error:#}");
+                std::process::exit(1);
+            }
+        };
+        run_frontier_or_exit(&suite, &suite_name, &runner, &cfg, &strategies)
+    } else {
+        let live = match OpenAiRunner::from_env() {
+            Ok(runner) => runner,
+            Err(error) => {
+                eprintln!(
+                    "eval frontier: no live model configured: {error:#}\n(use --replay <file> for an offline run)"
+                );
+                std::process::exit(1);
+            }
+        };
+        cfg.report.live_model = true;
+        if let Some(record_path) = flag_value(args, "--record") {
+            let recorder = RecordingRunner::new(live);
+            let report = run_frontier_or_exit(&suite, &suite_name, &recorder, &cfg, &strategies);
+            if let Err(error) = recorder.into_recording().save(Path::new(record_path)) {
+                eprintln!("eval frontier: failed to save recording: {error:#}");
+                std::process::exit(1);
+            }
+            eprintln!("Recording saved → {record_path}");
+            report
+        } else {
+            run_frontier_or_exit(&suite, &suite_name, &live, &cfg, &strategies)
+        }
+    };
+
+    if has_flag(args, "--json") {
+        println!("{}", report.to_json());
+    } else {
+        print!("{}", report.render_table());
+    }
+    if has_flag(args, "--gate") && !report.gate_passes(has_flag(args, "--mechanism")) {
+        eprintln!("\nquality gate FAILED: one or more frontier strategies regressed");
+        std::process::exit(1);
+    }
+}
+
+fn run_frontier_or_exit(
+    suite: &EvalSuite,
+    suite_name: &str,
+    runner: &dyn ModelRunner,
+    cfg: &AbRunConfig,
+    strategies: &[Condition],
+) -> FrontierReport {
+    match frontier::run_frontier(suite, suite_name, runner, cfg, strategies) {
+        Ok(report) => report,
+        Err(error) => {
+            eprintln!("eval frontier: run failed: {error:#}");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -273,6 +402,87 @@ fn cmd_routing(args: &[String]) {
 /// `eval footprint` (alias `eval --delta`): ablate each element of lean-ctx's own
 /// injected context (rules / tool schemas / wakeup) and report per-element
 /// pass-rate Δ + token Δ with a prune recommendation (#959).
+/// `eval footprint --compare <baseline.json>`: the exported footprint of another
+/// build against this build's live footprint, paired on the same tasks.
+fn cmd_footprint_compare(
+    args: &[String],
+    suite: &EvalSuite,
+    suite_name: &str,
+    baseline_path: &str,
+    candidate: &Footprint,
+    mut report_cfg: ReportConfig,
+) {
+    let baseline: Footprint = match std::fs::read_to_string(baseline_path)
+        .map_err(|e| e.to_string())
+        .and_then(|raw| serde_json::from_str(&raw).map_err(|e| e.to_string()))
+    {
+        Ok(fp) => fp,
+        Err(e) => {
+            eprintln!("eval footprint: cannot load baseline footprint {baseline_path}: {e}");
+            std::process::exit(1);
+        }
+    };
+    let run = |runner: &dyn crate::core::eval_ab::model::ModelRunner, cfg: ReportConfig| {
+        match crate::core::eval_ab::footprint::run_footprint_compare(
+            suite, suite_name, &baseline, candidate, runner, cfg,
+        ) {
+            Ok(report) => report,
+            Err(e) => {
+                eprintln!("eval footprint: {e:#}");
+                std::process::exit(1);
+            }
+        }
+    };
+    let report = if let Some(replay) = flag_value(args, "--replay") {
+        match RecordedRunner::from_file(Path::new(replay)) {
+            Ok(runner) => run(&runner, report_cfg),
+            Err(e) => {
+                eprintln!("eval footprint: {e:#}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        let live = match OpenAiRunner::from_env() {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!(
+                    "eval footprint: no live model configured: {e:#}\n(use --replay <file> for an offline run)"
+                );
+                std::process::exit(1);
+            }
+        };
+        report_cfg.live_model = true;
+        if let Some(record_path) = flag_value(args, "--record") {
+            let recorder = RecordingRunner::new(live);
+            let report = run(&recorder, report_cfg);
+            if let Err(e) = recorder.into_recording().save(Path::new(record_path)) {
+                eprintln!("eval footprint: failed to save recording: {e:#}");
+                std::process::exit(1);
+            }
+            println!("Recording saved → {record_path}");
+            report
+        } else {
+            run(&live, report_cfg)
+        }
+    };
+    let saved = report
+        .records
+        .first()
+        .map_or(0, |r| r.baseline_tokens as i64 - r.lean_ctx_tokens as i64);
+    println!("Footprint compare: baseline {baseline_path} vs. this build");
+    println!(
+        "Fixed footprint delta: {saved:+} tokens per request (positive = candidate smaller)\n"
+    );
+    println!("{}", report.render());
+    if has_flag(args, "--gate") && !report.verdict.passes_gate(has_flag(args, "--mechanism")) {
+        eprintln!(
+            "\nfootprint compare gate FAILED: {}",
+            report.verdict.label()
+        );
+        std::process::exit(1);
+    }
+}
+
 fn cmd_footprint(args: &[String]) {
     let Some(suite_path) = flag_value(args, "--suite") else {
         eprintln!("eval footprint: --suite <file> is required");
@@ -297,7 +507,7 @@ fn cmd_footprint(args: &[String]) {
     let token_floor = flag_value(args, "--floor")
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| FootprintConfig::default().token_floor);
-    let cfg = FootprintConfig {
+    let mut cfg = FootprintConfig {
         report: ReportConfig {
             noninferiority_margin: margin,
             ..ReportConfig::default()
@@ -309,6 +519,20 @@ fn cmd_footprint(args: &[String]) {
     let project_root = std::env::current_dir()
         .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().into_owned());
     let footprint = Footprint::live(&project_root);
+
+    if let Some(path) = flag_value(args, "--export") {
+        let json = serde_json::to_string_pretty(&footprint).unwrap_or_default();
+        if let Err(e) = std::fs::write(path, json) {
+            eprintln!("eval footprint: cannot write {path}: {e}");
+            std::process::exit(1);
+        }
+        println!("Footprint exported → {path}");
+        return;
+    }
+    if let Some(path) = flag_value(args, "--compare") {
+        cmd_footprint_compare(args, &suite, &suite_name, path, &footprint, cfg.report);
+        return;
+    }
 
     let mut report = if let Some(replay) = flag_value(args, "--replay") {
         let runner = match RecordedRunner::from_file(Path::new(replay)) {
@@ -329,6 +553,7 @@ fn cmd_footprint(args: &[String]) {
                 std::process::exit(1);
             }
         };
+        cfg.report.live_model = true;
         if let Some(record_path) = flag_value(args, "--record") {
             let recorder = RecordingRunner::new(live);
             let report = run_footprint_or_exit(&suite, &suite_name, &footprint, &recorder, &cfg);
@@ -374,7 +599,7 @@ fn cmd_footprint(args: &[String]) {
         println!("artifact:           {}", out.display());
     }
 
-    if has_flag(args, "--gate") && !report.gate_passes() {
+    if has_flag(args, "--gate") && !report.gate_passes(has_flag(args, "--mechanism")) {
         eprintln!("\nfootprint gate FAILED: a harmful injected element is present");
         std::process::exit(1);
     }
@@ -455,6 +680,7 @@ fn cmd_testbench(args: &[String]) {
                 std::process::exit(1);
             }
         };
+        cfg.run.report.live_model = true;
         if let Some(record_path) = flag_value(args, "--record") {
             let recorder = RecordingRunner::new(live);
             let report = run_testbench_or_exit(&lock, &cache_dir, &recorder, &cfg);
@@ -481,7 +707,7 @@ fn cmd_testbench(args: &[String]) {
     println!("\nFINDINGS:     {}", findings_path.display());
     println!("regressions:  {}", regressions_path.display());
 
-    if has_flag(args, "--gate") && !report.gate_passes() {
+    if has_flag(args, "--gate") && !report.gate_passes(has_flag(args, "--mechanism")) {
         eprintln!("\ntestbench gate FAILED: {}", report.verdict.label());
         std::process::exit(1);
     }
@@ -517,6 +743,21 @@ fn cmd_verify(args: &[String]) {
     let result = artifact.verify();
     println!("Artifact:           {path}");
     println!("Verdict:            {}", artifact.verdict.label());
+    println!(
+        "Evidence tier:      {}",
+        artifact.report.evidence_tier.map_or_else(
+            || "UNSPECIFIED (v1 report)".to_string(),
+            |t| format!("{} ({})", t.code(), t.label())
+        )
+    );
+    println!(
+        "Quality claim:      {}",
+        if artifact.report.supports_quality_claim() {
+            "supported (powered, model-backed)"
+        } else {
+            "none"
+        }
+    );
     println!("Determinism digest: {}", artifact.determinism_digest);
     println!(
         "Digest matches:     {}",
@@ -643,7 +884,7 @@ mod recording_guard_tests {
         let report = run_ab(&suite, "suite.ndjson", &runner, &AbRunConfig::default())
             .expect("committed recording must cover every replay key");
         assert!(
-            report.verdict.gate_passes(),
+            report.verdict.mechanism_gate_passes(),
             "committed recording must not encode a regression, got: {}",
             report.verdict.label()
         );

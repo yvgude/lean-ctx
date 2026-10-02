@@ -42,6 +42,7 @@ wire definitions; documents here describe their use and surrounding systems.
 - [autonomy-drivers-v1.md](autonomy-drivers-v1.md) — Autonomy drivers.
 - [context-candidate-admission-v1.md](context-candidate-admission-v1.md) — Context candidate admission.
 - [context-policy-packs-v1.md](context-policy-packs-v1.md) — Policy packs.
+- [context-quality-v1.md](context-quality-v1.md) — Evidence tiers, eval verdicts, retention probes, quality receipt.
 - [degradation-policy-v1.md](degradation-policy-v1.md) — Degradation policy.
 - [knowledge-policy-contract-v1.md](knowledge-policy-contract-v1.md) — Knowledge policy.
 - [org-policy-v1.md](org-policy-v1.md) — Organization policy.

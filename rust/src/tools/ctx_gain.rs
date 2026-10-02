@@ -37,6 +37,19 @@ pub(crate) fn render_wrapped(period: &str, compact: bool) -> String {
     }
 }
 
+/// The headline economics line. Without an observed provider turn the bill side
+/// is invisible, so the line shows the gross figure as what it is — a local
+/// estimate on observed tool output — and says the bill impact is unknown.
+fn gain_line(s: &crate::core::gain::GainSummary, avoided: &str, spend: &str, roi: &str) -> String {
+    if s.provider_path_observed {
+        format!("Gain: {avoided} est. net avoided  | tool spend {spend}  | ROI {roi}")
+    } else {
+        format!(
+            "Gain: {avoided} gross on observed tool output (local estimate)  | provider bill impact: unknown — proxy not in request path  | ROI n/a"
+        )
+    }
+}
+
 fn format_summary(engine: &GainEngine, model: Option<&str>) -> String {
     let s = engine.summary(model);
     let bridge = crate::core::gain::bridge_status::BridgeStatus::detect();
@@ -62,10 +75,13 @@ fn format_summary(engine: &GainEngine, model: Option<&str>) -> String {
          {bridge_line}\n\
          Score: {total}/100  (compression {comp}, cost {cost}, quality {qual}, consistency {cons}, navigability {nav})  trend={trend}\n\
          Tokens: {input} in → {out} out  | saved {saved}  ({rate:.1}%)\n\
-         Gain: {avoided} avoided  | tool spend {spend}  | ROI {roi}\n\
+         {gain_line}\n\
+         Evidence: {evidence}\n\
          Impact: {energy} grid energy avoided  | {co2} CO₂e (est.)\n\
          Pricing: model={model_key} ({match_kind:?}) input=${in_m:.2}/M cache_write=${cw_m:.2}/M cache_read=${cr_m:.2}/M output=${out_m:.2}/M\n",
         bridge_line = bridge.summary_line(),
+        gain_line = gain_line(&s, &avoided, &spend, &roi),
+        evidence = s.economic_evidence.label(),
         total = s.score.total,
         comp = s.score.compression,
         cost = s.score.cost_efficiency,
@@ -118,7 +134,8 @@ fn format_summary(engine: &GainEngine, model: Option<&str>) -> String {
             )
         ),
         format_usd(-streams.overhead_usd),
-        format_usd(streams.net_usd_saved),
+        s.net_bill_impact_usd
+            .map_or_else(|| "unknown".to_string(), format_usd),
     ));
 
     // Net-of-injection honesty line (#361): reconcile the meter to the bill.
@@ -136,7 +153,7 @@ fn format_summary(engine: &GainEngine, model: Option<&str>) -> String {
         ));
     } else if overhead_pt > 0 {
         report.push_str(&format!(
-            "Injection: {op}/turn fixed context tax (proxy not in request path — net = gross above)\n",
+            "Injection: {op}/turn fixed context tax (proxy not in request path — provider bill impact unknown)\n",
             op = format_tokens(overhead_pt),
         ));
     }
@@ -885,6 +902,11 @@ mod tests {
             "turns",
             "injected_overhead_total_tokens",
             "net_tokens_saved",
+            // Economic evidence: an unobservable bill impact is null, never gross.
+            "economic_evidence",
+            "provider_path_observed",
+            "net_bill_impact_tokens",
+            "net_bill_impact_usd",
         ] {
             assert!(summary.get(k).is_some(), "summary.{k} missing");
         }

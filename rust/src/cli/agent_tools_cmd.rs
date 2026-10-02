@@ -147,7 +147,7 @@ impl Session {
             });
         }
         if tool == "ctx_shell" {
-            return self.call_shell(arguments);
+            return self.call_shell(arguments).map(redact_tool_output);
         }
         let handler = self.registry.get(tool).ok_or_else(|| ErrorV1 {
             code: "unsupported_capability",
@@ -185,6 +185,7 @@ impl Session {
                 code: "tool_error",
                 message: error.to_string(),
             })
+            .map(redact_tool_output)
     }
 
     fn call_shell(&self, arguments: &Map<String, Value>) -> Result<ToolOutput, ErrorV1> {
@@ -345,6 +346,11 @@ impl Session {
         prepared.insert("timeout_ms".to_string(), Value::from(timeout_ms));
         Ok(prepared)
     }
+}
+
+fn redact_tool_output(mut output: ToolOutput) -> ToolOutput {
+    output.text = crate::server::policy_guard::redact_model_text(&output.text);
+    output
 }
 
 fn invalid_request(message: &str) -> ErrorV1 {

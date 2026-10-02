@@ -1,6 +1,7 @@
 use std::sync::atomic::Ordering;
 
 use crate::core::context_kernel::proxy_bridge;
+use crate::core::context_quality::{ContextQualityReceiptV1, EvidenceTier, RecoveryPath};
 use crate::core::telemetry::global_metrics;
 
 use super::calibration::{CalibratedCount, compare_calibration};
@@ -54,12 +55,29 @@ pub(crate) struct QualityLabReport {
     pub cache_effectiveness: CacheEffectivenessMetrics,
     pub tokenizer_calibration: TokenizerCalibrationMetrics,
     pub etpao: EtpaoSummary,
-    pub overall_quality_grade: QualityGrade,
+    /// Grades the *representation* (savings, cache reuse, structural fidelity). It is not
+    /// a task-quality measure; that needs a model evaluation (`lean-ctx eval ab`).
+    #[serde(alias = "overall_quality_grade")]
+    pub representation_grade: RepresentationGrade,
+    /// Kind of evidence this report is (v2). Task quality is never measured here.
+    #[serde(default = "deterministic_tier")]
+    pub evidence_tier: EvidenceTier,
+    /// Retention/recovery/security receipt for the measured pair (v2). `None` when the
+    /// lab ran without an original/compressed pair.
+    #[serde(default)]
+    pub context_quality: Option<ContextQualityReceiptV1>,
 }
 
+fn deterministic_tier() -> EvidenceTier {
+    EvidenceTier::DeterministicQuality
+}
+
+/// Efficiency + fidelity grade of a compressed representation (v1 called this the
+/// "quality grade" with a `Premium` top level, which read as a task-quality claim).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) enum QualityGrade {
-    Premium,
+pub(crate) enum RepresentationGrade {
+    #[serde(alias = "Premium")]
+    Excellent,
     Good,
     Acceptable,
     BelowThreshold,
@@ -158,7 +176,7 @@ pub(crate) fn assess_tokenizer_calibration(sample_text: &str) -> TokenizerCalibr
     }
 }
 
-pub(crate) fn compute_quality_grade(report: &QualityLabReport) -> QualityGrade {
+pub(crate) fn compute_representation_grade(report: &QualityLabReport) -> RepresentationGrade {
     let input = &report.input_compression;
     let structural = matches!(input.fidelity_class.as_str(), "Exact" | "Structural");
     let savings = input.best_savings_pct;
@@ -166,13 +184,13 @@ pub(crate) fn compute_quality_grade(report: &QualityLabReport) -> QualityGrade {
     let etpao = report.etpao.savings_rate_pct;
 
     if savings >= 80.0 && cache >= 50.0 && structural && etpao >= 50.0 {
-        QualityGrade::Premium
+        RepresentationGrade::Excellent
     } else if savings >= 60.0 && cache >= 30.0 && structural {
-        QualityGrade::Good
+        RepresentationGrade::Good
     } else if savings >= 40.0 && structural {
-        QualityGrade::Acceptable
+        RepresentationGrade::Acceptable
     } else {
-        QualityGrade::BelowThreshold
+        RepresentationGrade::BelowThreshold
     }
 }
 
@@ -182,18 +200,39 @@ pub(crate) fn run_quality_lab(original: &str, compressed: &str, ext: &str) -> Qu
     let tokenizer_calibration = assess_tokenizer_calibration(original);
     let etpao = assess_etpao(input_compression.best_savings_pct);
     let mut report = QualityLabReport {
-        schema_version: "lean-ctx.quality-lab/v1".to_string(),
+        schema_version: "lean-ctx.quality-lab/v2".to_string(),
         input_compression,
         cache_effectiveness,
         tokenizer_calibration,
         etpao,
-        overall_quality_grade: QualityGrade::BelowThreshold,
+        representation_grade: RepresentationGrade::BelowThreshold,
+        evidence_tier: EvidenceTier::DeterministicQuality,
+        // The lab sees only the pair, not a recovery handle: judge it strictly.
+        context_quality: (!original.is_empty()).then(|| {
+            ContextQualityReceiptV1::assess(
+                ext,
+                "provided",
+                original,
+                compressed,
+                RecoveryPath::None,
+                None,
+            )
+        }),
     };
-    report.overall_quality_grade = compute_quality_grade(&report);
+    report.representation_grade = compute_representation_grade(&report);
     report
 }
 
 pub(crate) fn format_quality_report(report: &QualityLabReport) -> String {
+    let mut out = format_lab_metrics(report);
+    if let Some(receipt) = &report.context_quality {
+        out.push_str("\n\n");
+        out.push_str(receipt.render().trim_end());
+    }
+    out
+}
+
+fn format_lab_metrics(report: &QualityLabReport) -> String {
     format!(
         concat!(
             "Quality Lab ({})\n",
@@ -206,7 +245,8 @@ pub(crate) fn format_quality_report(report: &QualityLabReport) -> String {
             "  families={} variance={:.1}% dominant={} ({})\n",
             "ETPAO\n",
             "  current={} savings={:.1}% events={} gate={}\n",
-            "Overall Grade: {:?}"
+            "Representation Grade: {:?} (efficiency + structural fidelity)\n",
+            "Task Quality: UNMEASURED (evidence tier {}; run `lean-ctx eval ab`)"
         ),
         report.schema_version,
         report.input_compression.best_savings_pct,
@@ -225,7 +265,8 @@ pub(crate) fn format_quality_report(report: &QualityLabReport) -> String {
         report.etpao.savings_rate_pct,
         report.etpao.total_events,
         report.etpao.quality_gate,
-        report.overall_quality_grade,
+        report.representation_grade,
+        report.evidence_tier.code(),
     )
 }
 
@@ -293,10 +334,10 @@ fn format_etpao(value: Option<f64>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        CacheEffectivenessMetrics, EtpaoSummary, InputCompressionMetrics, QualityGrade,
-        QualityLabReport, TokenizerCalibrationMetrics, assess_cache_effectiveness,
-        assess_input_compression, assess_tokenizer_calibration, compute_quality_grade,
-        format_quality_report, run_quality_lab,
+        CacheEffectivenessMetrics, EtpaoSummary, EvidenceTier, InputCompressionMetrics,
+        QualityLabReport, RepresentationGrade, TokenizerCalibrationMetrics,
+        assess_cache_effectiveness, assess_input_compression, assess_tokenizer_calibration,
+        compute_representation_grade, format_quality_report, run_quality_lab,
     };
 
     const ORIGINAL: &str = r"pub fn process(items: &[Item]) -> Result<Vec<Output>, Error> {
@@ -340,47 +381,57 @@ mod tests {
     }
 
     #[test]
-    fn test_premium_grade_thresholds() {
+    fn test_excellent_grade_thresholds() {
         let report = report_with(85.0, 55.0, "Structural", 70.0);
-        assert_eq!(compute_quality_grade(&report), QualityGrade::Premium);
+        assert_eq!(
+            compute_representation_grade(&report),
+            RepresentationGrade::Excellent
+        );
     }
 
     #[test]
     fn test_below_threshold_grade() {
         let report = report_with(25.0, 90.0, "Lossy", 80.0);
-        assert_eq!(compute_quality_grade(&report), QualityGrade::BelowThreshold);
+        assert_eq!(
+            compute_representation_grade(&report),
+            RepresentationGrade::BelowThreshold
+        );
     }
 
     #[test]
-    fn test_quality_lab_report_serialization() {
-        let report = report_with(65.0, 35.0, "Exact", 40.0);
-        let json = serde_json::to_string(&report).expect("serialize report");
-        let decoded: QualityLabReport = serde_json::from_str(&json).expect("deserialize report");
-        assert_eq!(decoded.schema_version, report.schema_version);
-        assert_eq!(decoded.overall_quality_grade, report.overall_quality_grade);
+    fn v1_report_with_premium_quality_grade_still_parses() {
+        let mut json = serde_json::to_value(report_with(85.0, 55.0, "Exact", 70.0)).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        obj.remove("representation_grade");
+        obj.remove("evidence_tier");
+        obj.insert("overall_quality_grade".into(), "Premium".into());
+        let decoded: QualityLabReport = serde_json::from_value(json).expect("v1 report parses");
+        assert_eq!(decoded.representation_grade, RepresentationGrade::Excellent);
+        assert_eq!(decoded.evidence_tier, EvidenceTier::DeterministicQuality);
     }
 
     #[test]
-    fn test_format_report_output() {
-        let output = format_quality_report(&report_with(65.0, 35.0, "Exact", 40.0));
+    fn test_format_report_never_implies_task_quality() {
+        let mut report = report_with(85.0, 55.0, "Exact", 70.0);
+        report.representation_grade = compute_representation_grade(&report);
+        let output = format_quality_report(&report);
         assert!(output.contains("Input Compression"));
-        assert!(output.contains("Cache Effectiveness"));
-        assert!(output.contains("Tokenizer Calibration"));
-        assert!(output.contains("ETPAO"));
-        assert!(output.contains("Overall Grade"));
+        assert!(output.contains("Representation Grade: Excellent"));
+        assert!(output.contains("Task Quality: UNMEASURED"));
+        assert!(!output.contains("Premium"));
     }
 
     #[test]
     fn test_run_quality_lab_integration() {
         let report = run_quality_lab(ORIGINAL, COMPRESSED, "rs");
-        assert_eq!(report.schema_version, "lean-ctx.quality-lab/v1");
+        assert_eq!(report.schema_version, "lean-ctx.quality-lab/v2");
         assert!(report.tokenizer_calibration.families_tested > 1);
         assert!((0.0..=100.0).contains(&report.input_compression.best_savings_pct));
     }
 
     fn report_with(savings: f64, cache: f64, fidelity: &str, etpao: f64) -> QualityLabReport {
         QualityLabReport {
-            schema_version: "lean-ctx.quality-lab/v1".to_string(),
+            schema_version: "lean-ctx.quality-lab/v2".to_string(),
             input_compression: InputCompressionMetrics {
                 modes_tested: 1,
                 best_mode: "provided".to_string(),
@@ -409,7 +460,9 @@ mod tests {
                 total_events: 12,
                 quality_gate: "PASS".to_string(),
             },
-            overall_quality_grade: QualityGrade::BelowThreshold,
+            representation_grade: RepresentationGrade::BelowThreshold,
+            evidence_tier: EvidenceTier::DeterministicQuality,
+            context_quality: None,
         }
     }
 }

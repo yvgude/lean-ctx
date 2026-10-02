@@ -1,4 +1,5 @@
 pub mod bridge_status;
+pub mod evidence;
 #[allow(dead_code)]
 pub mod gain_score;
 #[allow(dead_code)]
@@ -57,20 +58,32 @@ pub struct GainSummary {
     #[serde(default)]
     pub injected_overhead_tokens_per_turn: u64,
     /// Provider turns (requests) the proxy actually saw carry the injected
-    /// prefix. `0` when the proxy is not in the request path, in which case the
-    /// net figure below collapses to the gross `tokens_saved` (we cannot count
-    /// turns we never observed, and we refuse to guess).
+    /// prefix. `0` when the proxy is not in the request path; the provider bill
+    /// impact is then unknown (`net_bill_impact_*` = `None`).
     #[serde(default)]
     pub turns: u64,
     /// `injected_overhead_tokens_per_turn × turns` — the total fixed context tax
     /// re-billed across the run on a provider without prompt caching.
     #[serde(default)]
     pub injected_overhead_total_tokens: u64,
-    /// The honest bill impact: `tokens_saved − injected_overhead_total_tokens`.
-    /// Signed, because on a non-caching rail a short run can legitimately go
-    /// net-negative until savings outgrow the per-turn injection.
+    /// `tokens_saved − injected_overhead_total_tokens`. Legacy DTO field: with no
+    /// observed provider turn it equals the gross savings and says nothing about
+    /// the bill — read `net_bill_impact_tokens` and `economic_evidence` instead.
     #[serde(default)]
     pub net_tokens_saved: i64,
+    /// What the economic figures rest on (local estimate … paired control).
+    #[serde(default)]
+    pub economic_evidence: evidence::EconomicEvidence,
+    /// Whether the proxy carried provider requests, i.e. the bill side is visible.
+    #[serde(default)]
+    pub provider_path_observed: bool,
+    /// Net provider-bill impact in tokens — `None` when the provider path was not
+    /// observed. Never the gross number in disguise.
+    #[serde(default)]
+    pub net_bill_impact_tokens: Option<i64>,
+    /// Net provider-bill impact in USD — `None` when not observable.
+    #[serde(default)]
+    pub net_bill_impact_usd: Option<f64>,
     /// Configured fixed-context budget (`[context] budget_tokens`); 0 disables
     /// the check (#964). Surfaced so `gain` can flag a bloated injected prefix.
     #[serde(default)]
@@ -161,11 +174,6 @@ impl GainEngine {
         );
         let avoided_usd = stream_savings.net_usd_saved;
         let tool_spend_usd = self.costs.total_cost().max(0.0);
-        let roi = if tool_spend_usd > 0.0 {
-            Some(avoided_usd / tool_spend_usd)
-        } else {
-            None
-        };
         let score = GainScore::compute(
             &self.stats,
             &self.costs,
@@ -193,6 +201,16 @@ impl GainEngine {
                 injected_overhead_tokens_per_turn,
                 turns,
             );
+        // Without an observed provider turn the bill side is invisible: net and ROI
+        // stay unknown instead of collapsing to the gross savings.
+        let economics = evidence::economic_view(
+            self.stats.total_commands,
+            turns,
+            net_tokens_saved,
+            avoided_usd,
+            tool_spend_usd,
+        );
+        let roi = economics.roi;
         // Budget awareness (#964): flag when the fixed per-turn prefix outgrows
         // the configured `[context] budget_tokens` (shared knob with `doctor
         // overhead`). 0 disables the check.
@@ -216,6 +234,10 @@ impl GainEngine {
             turns,
             injected_overhead_total_tokens,
             net_tokens_saved,
+            economic_evidence: economics.evidence,
+            provider_path_observed: economics.evidence.bill_impact_observable(),
+            net_bill_impact_tokens: economics.net_bill_impact_tokens,
+            net_bill_impact_usd: economics.net_bill_impact_usd,
             injected_overhead_budget_tokens,
             over_budget,
             avoided_usd,

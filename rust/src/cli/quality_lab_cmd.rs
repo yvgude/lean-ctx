@@ -41,9 +41,13 @@ pub(crate) fn cmd_quality_lab(args: &[String]) -> i32 {
     }
 
     if gate
-        && report.overall_quality_grade
-            == crate::core::quality_lab::orchestrator::QualityGrade::BelowThreshold
+        && report.representation_grade
+            == crate::core::quality_lab::orchestrator::RepresentationGrade::BelowThreshold
     {
+        return 1;
+    }
+    // A critical fact lost without recovery fails the gate regardless of the grade.
+    if gate && report.context_quality.as_ref().is_some_and(|r| !r.passes()) {
         return 1;
     }
     0

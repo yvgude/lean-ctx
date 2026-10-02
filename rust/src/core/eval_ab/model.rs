@@ -28,11 +28,16 @@ pub const PROVIDER_OPENAI: &str = "openai-compatible";
 /// Provider label for the strict replay runner.
 pub const PROVIDER_RECORDED: &str = "recorded";
 
-/// Decoding parameters pinned for reproducibility.
+/// Model identity and decoding parameters pinned for reproducibility. The lean-ctx
+/// version is recorded on the report (`AbReport::lean_ctx_version`), outside every
+/// digest, so a version bump never invalidates a committed recording.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelParams {
     /// Provider model identifier, e.g. `gpt-4o-mini` or `qwen2.5-coder:7b`.
     pub model: String,
+    /// Provider-reported model revision or tag when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
     pub temperature: f64,
     pub top_p: f64,
     pub max_tokens: u32,
@@ -44,6 +49,7 @@ impl Default for ModelParams {
     fn default() -> Self {
         Self {
             model: String::new(),
+            version: None,
             temperature: 0.0,
             top_p: 1.0,
             max_tokens: 1024,
@@ -155,8 +161,14 @@ impl OpenAiRunner {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(ModelParams::default().seed);
+        let version = std::env::var("LEAN_CTX_EVAL_MODEL_VERSION")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .or_else(|| model.rsplit_once(':').map(|(_, tag)| tag.to_string()));
         let params = ModelParams {
             model,
+            version,
             seed,
             ..ModelParams::default()
         };
@@ -406,6 +418,19 @@ mod tests {
         let d1 = f1.digest();
         f1.params.seed = 99;
         assert_ne!(d1, f1.digest());
+        f1.params.seed = ModelParams::default().seed;
+        f1.params.version = Some("revision-2".into());
+        assert_ne!(d1, f1.digest());
+    }
+
+    #[test]
+    fn legacy_recording_without_model_version_still_loads() {
+        let legacy = r#"{"kind":"lean-ctx.eval-recording","fingerprint":{"provider":"openai-compatible","endpoint":"http://localhost:11434/v1","params":{"model":"gemma4:e4b","temperature":0.0,"top_p":1.0,"max_tokens":1024,"seed":7}},"entries":{}}"#;
+        let recording: Recording = serde_json::from_str(legacy).unwrap();
+        assert_eq!(recording.fingerprint.params.version, None);
+        // Committed recordings must re-serialize byte-identically, or the
+        // `gen_testbench_recording --check` gate breaks on every release.
+        assert_eq!(serde_json::to_string(&recording).unwrap(), legacy);
     }
 
     #[test]

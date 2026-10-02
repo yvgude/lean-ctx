@@ -162,6 +162,23 @@ fn compress_at_level(text: &str, tokens_before: u32, level: &CompressionLevel) -
         DictLevel::Full => super::auto_dict::apply(&compressed).unwrap_or(compressed),
         DictLevel::General => compressed,
     };
+    // The critical-fact check runs on the final text, after every rewrite: filtering,
+    // dictionaries and the auto-dictionary all have to keep the facts a reader needs.
+    let critical_lost = quality::critical_facts_lost(text, &compressed);
+    if critical_lost > 0 {
+        return EngineResult {
+            output: text.to_string(),
+            tokens_before,
+            tokens_after: tokens_before,
+            quality: QualityReport {
+                passed: false,
+                critical_lost,
+                ..quality_report
+            },
+            lines_removed: 0,
+            lines_total,
+        };
+    }
     let tokens_after = counter::count(&compressed);
 
     EngineResult {
@@ -265,6 +282,23 @@ mod tests {
         let result = compress(text, &CompressionLevel::Off);
         assert_eq!(result.output, text);
         assert_eq!(result.lines_removed, 0);
+    }
+
+    /// The Cargo dictionary rewrites `test result: FAILED` to `FAIL`. The final-output
+    /// critical-fact check must accept that rewrite rather than fall back to the
+    /// original on every failing test run.
+    #[test]
+    fn dictionary_rewritten_test_summary_keeps_compression() {
+        let text = "running 3 tests\n\n\
+                    test orders::totals ... FAILED\n\n\
+                    test orders::refund ... ok\n\n\
+                    failures:\n\n\
+                    test result: FAILED. 2 passed; 1 failed; 0 ignored\n\n";
+        let result = compress(text, &CompressionLevel::Standard);
+        assert_eq!(result.quality.critical_lost, 0, "{}", result.output);
+        assert_ne!(result.output, text, "compression must not fall back");
+        assert!(result.output.contains("FAIL"), "{}", result.output);
+        assert!(result.output.contains("1 failed"), "{}", result.output);
     }
 
     #[test]

@@ -19,7 +19,7 @@ pub struct SecretMatch {
 }
 
 fn aws_key_re() -> &'static Regex {
-    static_regex!(r"AKIA[0-9A-Z]{16}")
+    static_regex!(r"(?:AKIA|ASIA)[0-9A-Z]{16}")
 }
 
 fn private_key_re() -> &'static Regex {
@@ -47,14 +47,32 @@ fn openai_key_re() -> &'static Regex {
 // take the next line for its value.
 fn generic_api_key_re() -> &'static Regex {
     static_regex!(
-        r#"(?im)((?:^|[^a-z0-9])(?:api[_-]?key|secret[_-]?key|token|password|passwd|access[_-]?token|client[_-]?secret)[ \t]*[=:][ \t]*)(['"]?[a-zA-Z0-9_\-]{20,})"#
+        r#"(?im)((?:^|[^a-z0-9])(?:aws[_-]?secret[_-]?access[_-]?key|secret[_-]?access[_-]?key|api[_-]?key|secret[_-]?key|token|password|passwd|access[_-]?token|client[_-]?secret)(?:\\?["'])?[ \t]*[=:][ \t]*(?:\\?["'])?)([A-Za-z0-9_+/=\-]{20,})"#
     )
 }
 
 fn high_entropy_b64_re() -> &'static Regex {
     static_regex!(
-        r#"(?im)((?:^|[^a-z0-9])(?:key|token|secret|password|credential|auth)[ \t]*[=:][ \t]*)(['"]?[A-Za-z0-9+/=\-_]{40,})"#
+        r#"(?im)((?:^|[^a-z0-9])(?:key|token|secret|password|credential|auth)(?:\\?["'])?[ \t]*[=:][ \t]*(?:\\?["'])?)([A-Za-z0-9+/=\-_]{40,})"#
     )
+}
+
+fn url_encoded_secret_re() -> &'static Regex {
+    static_regex!(
+        r#"(?im)((?:^|[^a-z0-9])(?:aws[_-]?secret[_-]?access[_-]?key|secret[_-]?access[_-]?key|api[_-]?key|secret[_-]?key|token|password|passwd|access[_-]?token|client[_-]?secret)(?:\\?["'])?[ \t]*[=:][ \t]*(?:\\?["'])?)((?:%[0-9a-f]{2}|[A-Za-z0-9_\-]){20,})"#
+    )
+}
+
+fn authorization_header_re() -> &'static Regex {
+    static_regex!(r"(?i)authorization[ \t]*:[ \t]*(?:bearer|basic)[ \t]+[A-Za-z0-9_+/=\-.]{4,}")
+}
+
+/// A bare `Bearer <token>` outside an `Authorization:` header (curl flags, logs).
+/// Group 1 is filtered by `redaction::bearer_value_is_credential`, the same check
+/// the core redactor applies, so prose ("Bearer authentication") stays clean and
+/// the two layers cannot disagree.
+fn bearer_token_re() -> &'static Regex {
+    static_regex!(r"(?i)bearer[ \t]+([A-Za-z0-9_\-.]{8,})")
 }
 
 fn gitlab_pat_re() -> &'static Regex {
@@ -74,7 +92,7 @@ fn stripe_key_re() -> &'static Regex {
 }
 
 fn db_url_re() -> &'static Regex {
-    static_regex!(r"(?:postgres|mysql|mongodb|redis)://[^\s]+:[^\s]+@")
+    static_regex!(r"(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://[^\s]+:[^\s]+@")
 }
 
 fn npm_token_re() -> &'static Regex {
@@ -87,6 +105,7 @@ fn github_fine_grained_re() -> &'static Regex {
 
 const BUILTIN_PATTERNS: &[(&str, fn() -> &'static Regex)] = &[
     ("aws_key", aws_key_re),
+    ("authorization_header", authorization_header_re),
     ("private_key", private_key_re),
     ("github_token", github_token_re),
     ("github_fine_grained", github_fine_grained_re),
@@ -106,14 +125,25 @@ const BUILTIN_PATTERNS: &[(&str, fn() -> &'static Regex)] = &[
 const GUARDED_PATTERNS: &[(&str, fn() -> &'static Regex)] = &[
     ("generic_api_key", generic_api_key_re),
     ("high_entropy_secret", high_entropy_b64_re),
+    ("url_encoded_secret", url_encoded_secret_re),
 ];
 
 /// True when a guarded-pattern match should be skipped: the value is benign
 /// (#718) — shares the benign-value heuristics with `core::redaction` so the
 /// two layers cannot drift.
 fn guarded_match_is_benign(caps: &regex::Captures) -> bool {
-    caps.get(2)
-        .is_some_and(|value| crate::core::redaction::is_benign_secret_value(value.as_str()))
+    // A quoted value is a literal, never an identifier reference — same rule as
+    // the core redactor, so the scanner cannot report "clean" for what it redacts.
+    let quoted = caps
+        .get(1)
+        .is_some_and(|prefix| prefix.as_str().ends_with(['"', '\'']));
+    caps.get(2).is_some_and(|value| {
+        if quoted {
+            crate::core::redaction::is_benign_quoted_value(value.as_str())
+        } else {
+            crate::core::redaction::is_benign_secret_value(value.as_str())
+        }
+    })
 }
 
 /// Compile the subtractive `exclude_patterns` from config (#718). Invalid
@@ -142,9 +172,10 @@ fn collect_matches(
     excludes: &[Regex],
 ) -> Vec<SecretMatch> {
     let mut matches = Vec::new();
+    let normalized = crate::core::redaction::normalize_secret_text(content);
 
     let line_offsets: Vec<usize> = std::iter::once(0)
-        .chain(content.match_indices('\n').map(|(i, _)| i + 1))
+        .chain(normalized.match_indices('\n').map(|(i, _)| i + 1))
         .collect();
 
     let offset_to_line = |byte_offset: usize| -> usize {
@@ -156,7 +187,7 @@ fn collect_matches(
 
     for &(name, regex_fn) in BUILTIN_PATTERNS {
         let re = regex_fn();
-        for m in re.find_iter(content) {
+        for m in re.find_iter(&normalized) {
             if excluded(excludes, m.as_str()) {
                 continue;
             }
@@ -168,9 +199,26 @@ fn collect_matches(
         }
     }
 
+    for caps in bearer_token_re().captures_iter(&normalized) {
+        let Some(whole) = caps.get(0) else {
+            continue;
+        };
+        let credential = caps.get(1).is_some_and(|value| {
+            crate::core::redaction::bearer_value_is_credential(value.as_str())
+        });
+        if !credential || excluded(excludes, whole.as_str()) {
+            continue;
+        }
+        matches.push(SecretMatch {
+            pattern_name: "bearer_token",
+            line_number: offset_to_line(whole.start()),
+            redacted_preview: make_redacted_preview(whole.as_str()),
+        });
+    }
+
     for &(name, regex_fn) in GUARDED_PATTERNS {
         let re = regex_fn();
-        for caps in re.captures_iter(content) {
+        for caps in re.captures_iter(&normalized) {
             let whole = caps.get(0).map_or("", |m| m.as_str());
             if guarded_match_is_benign(&caps) || excluded(excludes, whole) {
                 continue;
@@ -186,7 +234,7 @@ fn collect_matches(
 
     for pattern_str in custom_patterns {
         if let Ok(re) = Regex::new(pattern_str) {
-            for m in re.find_iter(content) {
+            for m in re.find_iter(&normalized) {
                 if excluded(excludes, m.as_str()) {
                     continue;
                 }
@@ -225,33 +273,8 @@ pub fn scan_and_redact(
         return (content.to_string(), matches);
     }
 
-    let mut redacted = content.to_string();
-    for &(name, regex_fn) in BUILTIN_PATTERNS {
-        let re = regex_fn();
-        redacted = re
-            .replace_all(&redacted, |caps: &regex::Captures| {
-                let whole = caps.get(0).map_or("", |m| m.as_str());
-                if excluded(&excludes, whole) {
-                    return whole.to_string();
-                }
-                format!("[REDACTED:{name}]")
-            })
-            .to_string();
-    }
-
-    for &(name, regex_fn) in GUARDED_PATTERNS {
-        let re = regex_fn();
-        redacted = re
-            .replace_all(&redacted, |caps: &regex::Captures| {
-                let whole = caps.get(0).map_or("", |m| m.as_str());
-                if guarded_match_is_benign(caps) || excluded(&excludes, whole) {
-                    return whole.to_string();
-                }
-                let prefix = caps.get(1).map_or("", |m| m.as_str());
-                format!("{prefix}[REDACTED:{name}]")
-            })
-            .to_string();
-    }
+    let mut redacted =
+        crate::core::redaction::redact_text_with_excludes_for_detection(content, &excludes);
 
     for pattern_str in &config.custom_patterns {
         if let Ok(re) = Regex::new(pattern_str) {
@@ -274,6 +297,10 @@ pub fn scan_and_redact_from_config(content: &str) -> (String, Vec<SecretMatch>) 
     let cfg = Config::load();
     scan_and_redact(content, &cfg.secret_detection)
 }
+
+#[cfg(test)]
+#[path = "security_corpus_tests.rs"]
+mod security_corpus_tests;
 
 #[cfg(test)]
 pub mod tests {
@@ -498,5 +525,53 @@ pub mod tests {
         let input = concat!("-----BEGIN OPENSSH PRIVATE", " KEY-----");
         let matches = detect_secrets(input);
         assert!(matches.iter().any(|m| m.pattern_name == "private_key"));
+    }
+
+    /// The context-gateway admission path relies on this contract: report-only mode
+    /// returns the input untouched, custom/exclude patterns are honoured, and redacted
+    /// output has no residual match (admission re-scans it and withholds on a hit).
+    /// Normalization (zero-width, full-width) only affects matching, never the bytes
+    /// outside a redacted span.
+    #[test]
+    fn scan_and_redact_keeps_the_gateway_contract() {
+        let aws = format!("AK\u{200b}IA{}", "Q7".repeat(8));
+        let key_block = [
+            "-----BEGIN PRIVATE KEY",
+            "-----\nbody-line-one\nbody-line-two\n-----END PRIVATE KEY",
+            "-----",
+        ]
+        .concat();
+        let excluded_key = concat!("AK", "IAIOSFODNN7EXAMPLE");
+        let input = format!(
+            "keep before\nAWS_ACCESS_KEY_ID={aws}\n{key_block}\nticket EMP-4711\nsample {excluded_key}\nkeep after\n"
+        );
+        let cfg = SecretDetectionConfig {
+            custom_patterns: vec![r"EMP-\d{4}".into()],
+            exclude_patterns: vec![excluded_key.into()],
+            ..SecretDetectionConfig::default()
+        };
+
+        let report_only = SecretDetectionConfig {
+            redact: false,
+            ..cfg.clone()
+        };
+        let (unchanged, found) = scan_and_redact(&input, &report_only);
+        assert_eq!(unchanged, input, "report-only mode must not touch the text");
+        assert!(!found.is_empty());
+
+        let (redacted, _) = scan_and_redact(&input, &cfg);
+        assert!(redacted.starts_with("keep before\n"), "{redacted}");
+        assert!(redacted.ends_with("keep after\n"), "{redacted}");
+        assert!(
+            redacted.contains(excluded_key),
+            "excluded value kept verbatim"
+        );
+        assert!(!redacted.contains("EMP-4711"), "custom pattern redacted");
+        assert!(!redacted.contains("body-line-one"), "{redacted}");
+        let (_, residual) = scan_and_redact(&redacted, &report_only);
+        assert!(
+            residual.is_empty(),
+            "redacted output must not match again: {residual:?}\n{redacted}"
+        );
     }
 }

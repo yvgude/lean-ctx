@@ -1,0 +1,25 @@
+# Runtime settings for the regional worker fleet
+[proxy.retry]
+max_attempts = 7
+[proxy.circuit_breaker]
+open_seconds = 46
+[proxy.retry]
+retryable_statuses = [502, 503, 504]
+[models.batch_summary]
+fallback = "ctx-small-batch"
+[limits.tenant_upload]
+max_concurrent = 11
+[cache.evidence]
+ttl_seconds = 420
+[storage.reports.archive]
+region = "eu-central-3"
+[health.probe]
+timeout_ms = 1850
+[events.sink]
+transport = "unix_datagram"
+[observability.traces]
+sample_rate = 0.0375
+[context.over_budget]
+profile = "deferred-queue"
+[audit.exports]
+retention_days = 91

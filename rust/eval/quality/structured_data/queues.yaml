@@ -1,0 +1,21 @@
+services:
+  - record: YM-228
+    queue: cobalt-index
+    region: ca-east-5
+    owner: team-cedar
+    enabled: true
+  - record: YM-503
+    queue: meadow-compact
+    region: ap-east-9
+    owner: team-ember
+    enabled: true
+  - record: YM-816
+    queue: silver-export
+    region: us-west-6
+    owner: team-fern
+    enabled: true
+  - record: YM-437
+    queue: orchid-restore
+    region: eu-south-2
+    owner: team-ash
+    enabled: true

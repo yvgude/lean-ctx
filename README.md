@@ -642,8 +642,10 @@ identical token budget, grades free-form QA with an LLM judge and code with each
 repo's own tests, and emits `FINDINGS.md` (tokens / turns / walltime / quality) plus a
 regressions file. What CI replays is a small committed recording: it is a
 **mechanism gate** (it catches a broken pipeline or a changed grade), not evidence
-that compression preserves answer quality — the recorded suites are far below the 30
-paired tasks `lean-ctx eval ab` needs before it stops labelling a run underpowered.
+that compression preserves answer quality. Every eval report states its evidence
+tier (A mechanism … E production); a run below 30 paired tasks is
+`UNDERPOWERED` and fails `--gate` unless run as an explicit `--mechanism` check — see
+[context-quality-v1](docs/contracts/context-quality-v1.md).
 A powered quality study is still open ([#1905](https://github.com/yvgude/lean-ctx/issues/1905)).
 
 - **Latest snapshot**: [BENCHMARKS.md](BENCHMARKS.md)
