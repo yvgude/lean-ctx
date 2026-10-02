@@ -273,7 +273,7 @@ pub(crate) fn install_grok_env_at(
     force: bool,
     mode: GrokAuthMode,
 ) {
-    use crate::core::config::{is_local_proxy_url, normalize_url_opt};
+    use crate::core::config::normalize_url_opt;
 
     if !grok_dir.exists() {
         return;
@@ -332,7 +332,8 @@ pub(crate) fn install_grok_env_at(
             }
         }
         GrokAuthMode::ApiKey => {
-            // Never clobber a custom remote models_base_url unless --force.
+            // Never clobber a models_base_url lean-ctx did not write — remote or
+            // on another localhost port (#1972) — unless --force.
             if let Some(current) = grok_models_base_url(&existing) {
                 if current == proxy_url {
                     if !quiet {
@@ -342,7 +343,7 @@ pub(crate) fn install_grok_env_at(
                 }
                 if !force
                     && let Some(custom) = normalize_url_opt(&current)
-                    && !is_local_proxy_url(&custom)
+                    && !is_local_lean_ctx_url(&custom)
                     && !custom.contains("/providers/xai/")
                 {
                     if !quiet {

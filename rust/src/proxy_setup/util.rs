@@ -25,8 +25,41 @@ pub(crate) const COMMANDCODE_OMITTED_NOTE: &str =
 /// reads like an organization-permission problem and is not one.
 pub(crate) const OPENAI_OMITTED_NOTE: &str = "OPENAI_BASE_URL omitted: Codex is signed in with a ChatGPT subscription, whose token only authenticates against chatgpt.com (set OPENAI_API_KEY to route OpenAI through the proxy)";
 
+/// True when `url` is the lean-ctx proxy itself: a loopback base URL on a port
+/// lean-ctx owns. Callers use this to decide what lean-ctx may overwrite or
+/// remove, so "any localhost URL" is not enough — another local gateway
+/// (Omniroute, LiteLLM, a corporate relay) belongs to the user (#1972).
 pub fn is_local_lean_ctx_url(url: &str) -> bool {
-    url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")
+    is_owned_proxy_url(url, &owned_proxy_ports())
+}
+
+/// [`is_local_lean_ctx_url`], also owning `install_port` — the port an install
+/// pass is wiring right now, which may differ from the configured one.
+pub(crate) fn is_lean_ctx_url_on(url: &str, install_port: Option<u16>) -> bool {
+    is_local_lean_ctx_url(url) || install_port.is_some_and(|port| is_owned_proxy_url(url, &[port]))
+}
+
+/// The ports a lean-ctx proxy listens on: the configured or UID-derived port,
+/// plus the historical default that older installs wrote.
+fn owned_proxy_ports() -> [u16; 3] {
+    [default_port(), uid_based_port(), DEFAULT_PROXY_PORT]
+}
+
+/// [`is_local_lean_ctx_url`] with the owned ports passed in, so the rule is
+/// testable without reading config or the environment.
+pub(crate) fn is_owned_proxy_url(url: &str, ports: &[u16]) -> bool {
+    loopback_port(url).is_some_and(|port| ports.contains(&port))
+}
+
+/// Port of a plain-HTTP loopback URL (`127.0.0.1`, `localhost`, `[::1]`),
+/// path allowed; `None` for anything else.
+fn loopback_port(url: &str) -> Option<u16> {
+    let url = url.trim();
+    let rest = ["http://127.0.0.1:", "http://localhost:", "http://[::1]:"]
+        .iter()
+        .find_map(|prefix| url.strip_prefix(prefix))?;
+    let port = rest.split('/').next()?;
+    port.parse().ok()
 }
 
 /// Proxy reachability timeout. Priority: env var > config.toml > 200ms default.

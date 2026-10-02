@@ -425,13 +425,17 @@ pub fn generate_hook_fish(binary: &str) -> String {
         \tcommand $argv\n\
         end\n\
         \n\
+        # Exit status 0 = ON, 1 = OFF/DISABLED; LEAN_CTX_ENABLED=0 is OFF (#1971).\n\
         function lean-ctx-status\n\
         \tif set -q LEAN_CTX_DISABLED\n\
         \t\tisatty stdout; and echo 'lean-ctx: DISABLED (LEAN_CTX_DISABLED is set)'\n\
-        \telse if set -q LEAN_CTX_ENABLED\n\
+        \t\treturn 1\n\
+        \telse if set -q LEAN_CTX_ENABLED; and test \"$LEAN_CTX_ENABLED\" != 0\n\
         \t\tisatty stdout; and echo 'lean-ctx: ON'\n\
+        \t\treturn 0\n\
         \telse\n\
         \t\tisatty stdout; and echo 'lean-ctx: OFF'\n\
+        \t\treturn 1\n\
         \tend\n\
         end\n\
         \n\
@@ -589,13 +593,18 @@ lean-ctx-raw() {{
     LEAN_CTX_RAW=1 command "$@"
 }}
 
+# Exit status 0 = ON, 1 = OFF/DISABLED. lean-ctx-off exports
+# LEAN_CTX_ENABLED=0, so a set-but-zero value is OFF, not ON (#1971).
 lean-ctx-status() {{
     if [ -n "${{LEAN_CTX_DISABLED:-}}" ]; then
         [ -t 1 ] && echo "lean-ctx: DISABLED (LEAN_CTX_DISABLED is set)"
-    elif [ -n "${{LEAN_CTX_ENABLED:-}}" ]; then
+        return 1
+    elif [ "${{LEAN_CTX_ENABLED:-0}}" != "0" ]; then
         [ -t 1 ] && echo "lean-ctx: ON"
+        return 0
     else
         [ -t 1 ] && echo "lean-ctx: OFF"
+        return 1
     fi
 }}
 
@@ -1063,6 +1072,37 @@ export EDITOR=vim
             stdout.contains("lean-ctx:-t git status --short"),
             "alias must route through lean-ctx: stdout={stdout} stderr={stderr}"
         );
+    }
+
+    /// #1971: after `lean-ctx-off`, `lean-ctx-status` still said ON, because
+    /// it only checked that `LEAN_CTX_ENABLED` was set — and off sets it to 0.
+    #[cfg(unix)]
+    #[test]
+    fn posix_status_reports_off_after_lean_ctx_off() {
+        if std::process::Command::new("bash")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let hook = dir.path().join("hook.sh");
+        std::fs::write(&hook, generate_hook_posix("lean-ctx")).unwrap();
+        let out = std::process::Command::new("bash")
+            .arg("-c")
+            .arg(format!(
+                ". '{}'\n\
+                 lean-ctx-on; lean-ctx-status; echo \"on=$?\"\n\
+                 lean-ctx-off; lean-ctx-status; echo \"off=$?\"\n",
+                hook.display()
+            ))
+            .env_remove("LEAN_CTX_DISABLED")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("on=0"), "status after on: {stdout}");
+        assert!(stdout.contains("off=1"), "status after off: {stdout}");
     }
 
     #[test]

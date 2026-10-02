@@ -76,7 +76,7 @@ fn unknown_action_help_lists_declaration() {
     let abs = file.to_string_lossy().to_string();
 
     let _stub = crate::lsp::router::stub_test_lock();
-    crate::lsp::router::seed_stub_backend("rust", Box::new(StubBackend));
+    crate::lsp::router::seed_stub_backend(&root, "rust", Box::new(StubBackend));
 
     let args = json!({"action": "definitely_bogus", "path": "x.rs", "line": 1});
     let out = super::handle(&args, &root, &abs);
@@ -600,7 +600,7 @@ fn references_output_surfaces_truncation_note() {
         }
     }
     let _stub = crate::lsp::router::stub_test_lock();
-    crate::lsp::router::seed_stub_backend("rust", Box::new(TruncBackend));
+    crate::lsp::router::seed_stub_backend("/proj", "rust", Box::new(TruncBackend));
     let uri = crate::lsp::client::file_path_to_uri("/proj/a.rs").unwrap();
     let out = super::handle_references(
         "/proj/a.rs",
@@ -683,7 +683,7 @@ fn inspections_run_and_list_dispatch_and_truncation() {
         }
     }
     let _stub = crate::lsp::router::stub_test_lock();
-    crate::lsp::router::seed_stub_backend("rust", Box::new(InspBackend));
+    crate::lsp::router::seed_stub_backend("/proj", "rust", Box::new(InspBackend));
     let uri = crate::lsp::client::file_path_to_uri("/proj/a.rs").unwrap();
 
     // run mode (default): formats path:line SEVERITY message + truncation note

@@ -768,6 +768,15 @@ impl LspBackend for JetBrainsHttpBackend {
         }
     }
 
+    fn is_dead_after_error(&self, project_root: &str) -> bool {
+        // A failed call justifies the one bounded `/health` ping `is_stale`
+        // avoids: it catches a dead plugin listener whose IDE pid and port
+        // file survive (pid_alive is optimistic off Linux).
+        self.is_stale(project_root)
+            || crate::lsp::port_discovery::read_port_file(project_root)
+                .is_none_or(|pf| !crate::lsp::port_discovery::health_ok(&pf))
+    }
+
     fn last_truncation(&self) -> Option<crate::lsp::backend::Truncation> {
         self.last_meta
     }
@@ -1059,6 +1068,12 @@ mod tests {
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", &tmp);
         let pf_path = crate::lsp::port_discovery::port_file_path(&root).unwrap();
         let pid = std::process::id();
+        // A port nothing listens on (bound, then released): the plugin is "dead".
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
         // Serialize via serde so the path is JSON-escaped. On Windows `root`
         // contains backslashes (C:\...\Temp\...), which are invalid raw JSON string
         // escapes — hand-built JSON would fail to parse and read_port_file would
@@ -1066,7 +1081,7 @@ mod tests {
         std::fs::write(
             &pf_path,
             serde_json::json!({
-                "port": 4567,
+                "port": port,
                 "token": "tok",
                 "pid": pid,
                 "project_root": root,
@@ -1075,13 +1090,19 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        let backend = JetBrainsHttpBackend::new(4567, "tok".to_string(), root.clone(), pid);
+        let backend = JetBrainsHttpBackend::new(port, "tok".to_string(), root.clone(), pid);
         assert!(
             !backend.is_stale(&root),
             "matching live pid+port must be fresh"
         );
+        // Same IDE pid + port file, but the listener is gone: the cheap check
+        // cannot see it, the post-error probe must.
+        assert!(
+            backend.is_dead_after_error(&root),
+            "dead plugin listener must be evicted after a failed call"
+        );
         // Different cached pid → stale even though the file is live.
-        let other = JetBrainsHttpBackend::new(4567, "tok".to_string(), root.clone(), pid + 1);
+        let other = JetBrainsHttpBackend::new(port, "tok".to_string(), root.clone(), pid + 1);
         assert!(other.is_stale(&root), "pid mismatch must be stale");
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
         let _ = std::fs::remove_dir_all(&tmp);

@@ -922,20 +922,18 @@ pub fn resolve_callee_file(
     rank_callee_def_file(&def_files, caller_file, imports)
 }
 
-/// Resolve callee names to a single defining file *when scope makes it
-/// unambiguous across all call sites*. Names that resolve to different files
-/// from different scopes are omitted, so callers never attribute a call to the
-/// wrong file. Keyed by callee name to match the call graph's name-keyed nodes.
-pub fn resolve_callee_files(
+/// Resolve each edge's callee to its defining file in *that edge's own* caller
+/// scope (index-aligned with `edges`). `None` = ambiguous or unknown; never
+/// guesses. Use this for per-edge consumers (graph edges); the name-keyed
+/// [`resolve_callee_files`] additionally drops names that differ across scopes.
+pub fn resolve_edge_callee_files(
     inputs: &CallGraphInputs,
     edges: &[CallEdge],
-) -> HashMap<String, String> {
-    use std::collections::HashSet;
-
-    let imports = build_import_adjacency(inputs);
-    let callee_names: HashSet<&str> = edges.iter().map(|e| e.callee_name.as_str()).collect();
+) -> Vec<Option<String>> {
+    let callee_names: std::collections::HashSet<&str> =
+        edges.iter().map(|e| e.callee_name.as_str()).collect();
     if callee_names.is_empty() {
-        return HashMap::new();
+        return Vec::new();
     }
 
     let mut name_files: HashMap<&str, Vec<&str>> = HashMap::new();
@@ -952,11 +950,30 @@ pub fn resolve_callee_files(
         files.dedup();
     }
 
+    let imports = build_import_adjacency(inputs);
+    edges
+        .iter()
+        .map(|e| {
+            name_files
+                .get(e.callee_name.as_str())
+                .and_then(|defs| rank_callee_def_file(defs, &e.caller_file, &imports))
+        })
+        .collect()
+}
+
+/// Resolve callee names to a single defining file *when scope makes it
+/// unambiguous across all call sites*. Names that resolve to different files
+/// from different scopes are omitted, so callers never attribute a call to the
+/// wrong file. Keyed by callee name to match the call graph's name-keyed nodes.
+pub fn resolve_callee_files(
+    inputs: &CallGraphInputs,
+    edges: &[CallEdge],
+) -> HashMap<String, String> {
+    use std::collections::HashSet;
+
     let mut resolved: HashMap<&str, HashSet<String>> = HashMap::new();
-    for e in edges {
-        if let Some(defs) = name_files.get(e.callee_name.as_str())
-            && let Some(file) = rank_callee_def_file(defs, &e.caller_file, &imports)
-        {
+    for (e, file) in edges.iter().zip(resolve_edge_callee_files(inputs, edges)) {
+        if let Some(file) = file {
             resolved
                 .entry(e.callee_name.as_str())
                 .or_default()

@@ -153,7 +153,7 @@ fn install_codex_env_at_path(
     }
 
     let existing = std::fs::read_to_string(config_path).unwrap_or_default();
-    let updated = render_codex_config(&existing, &entries, provider_block.as_deref());
+    let updated = render_codex_config(&existing, &entries, provider_block.as_deref(), port);
 
     if updated == existing {
         if !quiet {
@@ -197,15 +197,17 @@ fn install_codex_env_at_path(
 /// entries — the dead `[env] OPENAI_BASE_URL` (#554) and the pre-#597
 /// `model_provider = leanctx-chatgpt` + `[model_providers.leanctx-chatgpt]` block
 /// (which hid Codex history) — and migrates a stale local value to the canonical
-/// one. A custom *remote* `openai_base_url` the user configured is preserved and
-/// never overwritten in API-key mode (#366). Keys are emitted as top-level keys
+/// one. An `openai_base_url` lean-ctx did not write — remote (#366) or a gateway
+/// on another localhost port (#1972) — is preserved and never overwritten.
+/// `port` is the proxy port this pass wires; a value on it is lean-ctx's own. Keys are emitted as top-level keys
 /// (before the first `[table]`) so Codex actually reads them.
 pub(crate) fn render_codex_config(
     existing: &str,
     entries: &[(&str, String)],
     append_block: Option<&str>,
+    port: u16,
 ) -> String {
-    let mut cleaned = strip_codex_proxy_entries(existing);
+    let mut cleaned = strip_owned_codex_entries(existing, Some(port));
     if entries.iter().any(|(key, _)| *key == "model_provider") {
         cleaned = strip_top_level_codex_config_key(&cleaned, "model_provider");
         cleaned = strip_top_level_codex_config_key(&cleaned, "chatgpt_base_url");
@@ -213,17 +215,17 @@ pub(crate) fn render_codex_config(
 
     let mut prefix = String::new();
     for (key, value) in entries {
-        let has_remote_key = has_top_level_codex_config_key(&cleaned, key, |t| {
-            !(t.contains("127.0.0.1") || t.contains("localhost"))
-        });
-        if !has_remote_key {
+        // Whatever survived the strip is not lean-ctx's (remote, or a gateway on
+        // another localhost port, #1972): keep it, and never add a second copy —
+        // a duplicate key makes the whole config.toml unparseable.
+        if !has_top_level_codex_config_key(&cleaned, key, |_| true) {
             prefix.push_str(&format!("{key} = \"{value}\"\n"));
         }
     }
     let mut rendered = if prefix.is_empty() {
         cleaned
     } else {
-        // `strip_codex_proxy_entries` already dropped local keys, so prepend fresh
+        // The strip already dropped lean-ctx's own keys, so prepend fresh
         // top-level keys ahead of every existing line.
         format!("{prefix}{cleaned}")
     };
@@ -265,8 +267,15 @@ pub(crate) fn strip_top_level_codex_config_key(body: &str, key: &str) -> String 
 
 /// Remove lean-ctx's own Codex proxy entries from a `config.toml` body: local
 /// top-level proxy URLs, older dead `[env]` URL lines (#554), and the generated
-/// ChatGPT provider block. Custom remote endpoints and profile tables are preserved.
+/// ChatGPT provider block. Endpoints lean-ctx did not write — remote or on
+/// another localhost port (#1972) — and profile tables are preserved.
 pub(crate) fn strip_codex_proxy_entries(body: &str) -> String {
+    strip_owned_codex_entries(body, None)
+}
+
+/// [`strip_codex_proxy_entries`] that also owns `install_port`, the port an
+/// install pass is about to write, so its own previous value is replaced.
+fn strip_owned_codex_entries(body: &str, install_port: Option<u16>) -> String {
     let lines: Vec<&str> = body.lines().collect();
     let mut kept: Vec<&str> = Vec::with_capacity(lines.len());
     let mut current_table: Option<&str> = None;
@@ -288,7 +297,7 @@ pub(crate) fn strip_codex_proxy_entries(body: &str) -> String {
             continue;
         }
 
-        if should_strip_codex_proxy_entry(lines[i].trim_start(), current_table) {
+        if should_strip_codex_proxy_entry(lines[i].trim_start(), current_table, install_port) {
             i += 1;
             continue;
         }
@@ -345,20 +354,34 @@ pub(crate) fn has_top_level_codex_config_key(
     false
 }
 
-pub(crate) fn should_strip_codex_proxy_entry(t: &str, current_table: Option<&str>) -> bool {
+pub(crate) fn should_strip_codex_proxy_entry(
+    t: &str,
+    current_table: Option<&str>,
+    install_port: Option<u16>,
+) -> bool {
     match current_table {
         None => {
-            is_local_codex_base_url_entry(t, &["openai_base_url", "chatgpt_base_url"])
+            is_local_codex_base_url_entry(t, &["openai_base_url", "chatgpt_base_url"], install_port)
                 || is_codex_proxy_model_provider_entry(t)
         }
-        Some("[env]") => is_local_codex_base_url_entry(t, &["OPENAI_BASE_URL", "CHATGPT_BASE_URL"]),
+        Some("[env]") => {
+            is_local_codex_base_url_entry(t, &["OPENAI_BASE_URL", "CHATGPT_BASE_URL"], install_port)
+        }
         _ => false,
     }
 }
 
-pub(crate) fn is_local_codex_base_url_entry(t: &str, keys: &[&str]) -> bool {
+/// A `key = "url"` line whose URL is lean-ctx's own proxy. A gateway on another
+/// localhost port is the user's and must survive cleanup (#1972).
+pub(crate) fn is_local_codex_base_url_entry(
+    t: &str,
+    keys: &[&str],
+    install_port: Option<u16>,
+) -> bool {
     toml_assignment_key(t).is_some_and(|key| keys.contains(&key))
-        && (t.contains("127.0.0.1") || t.contains("localhost"))
+        && t.split_once('=')
+            .and_then(|(_, rhs)| rhs.split('"').nth(1))
+            .is_some_and(|url| super::util::is_lean_ctx_url_on(url, install_port))
 }
 
 pub(crate) fn toml_assignment_key(t: &str) -> Option<&str> {
@@ -409,14 +432,18 @@ pub(crate) fn codex_config_has_local_proxy_entry(body: &str) -> bool {
         }
         match current_table {
             None => {
-                if is_local_codex_base_url_entry(t, &["openai_base_url", "chatgpt_base_url"])
+                if is_local_codex_base_url_entry(t, &["openai_base_url", "chatgpt_base_url"], None)
                     || is_toml_string_assignment(t, "model_provider", CODEX_CHATGPT_PROVIDER_ID)
                 {
                     return true;
                 }
             }
             Some("[env]")
-                if is_local_codex_base_url_entry(t, &["OPENAI_BASE_URL", "CHATGPT_BASE_URL"]) =>
+                if is_local_codex_base_url_entry(
+                    t,
+                    &["OPENAI_BASE_URL", "CHATGPT_BASE_URL"],
+                    None,
+                ) =>
             {
                 return true;
             }

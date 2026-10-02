@@ -50,7 +50,7 @@ impl Drop for TestEnv {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 1: is_local_lean_ctx_url correctly identifies local proxy URLs
+// Scenario 1: is_local_lean_ctx_url identifies lean-ctx's own proxy URLs only
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -59,9 +59,12 @@ fn scenario_local_url_detection() {
 
     assert!(is_local_lean_ctx_url("http://127.0.0.1:4444"));
     assert!(is_local_lean_ctx_url("http://localhost:4444"));
-    assert!(is_local_lean_ctx_url("http://127.0.0.1:5555"));
-    assert!(is_local_lean_ctx_url("http://localhost:3333"));
+    assert!(is_local_lean_ctx_url("http://127.0.0.1:4444/v1"));
 
+    // #1972: a loopback URL on another port is a different gateway
+    // (Omniroute, LiteLLM, …), not lean-ctx's proxy.
+    assert!(!is_local_lean_ctx_url("http://localhost:20128"));
+    assert!(!is_local_lean_ctx_url("http://127.0.0.1:5555"));
     assert!(!is_local_lean_ctx_url("https://api.anthropic.com"));
     assert!(!is_local_lean_ctx_url("https://proxy.company.com:4444"));
     assert!(!is_local_lean_ctx_url(""));
@@ -236,17 +239,29 @@ fn scenario_has_stale_url_detection() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 11: cleanup with non-default port
+// Scenario 11: cleanup keeps a gateway on a port lean-ctx does not own
 // ---------------------------------------------------------------------------
 
 #[test]
 #[serial_test::serial]
-fn scenario_cleanup_non_default_port() {
+fn scenario_cleanup_keeps_foreign_local_gateway() {
     let env = TestEnv::new();
-    env.set_claude_settings(r#"{"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:5555"}}"#);
+    // #1972: Omniroute on localhost:20128 was deleted as a "stale" proxy URL.
+    env.set_claude_settings(r#"{"env": {"ANTHROPIC_BASE_URL": "http://localhost:20128"}}"#);
 
     let cleaned = lean_ctx::proxy_setup::cleanup_stale_proxy_env(&env.home);
-    assert!(cleaned > 0, "should clean non-default port too");
+    assert_eq!(cleaned, 0, "another gateway's URL is not stale");
+
+    let doc = env.read_claude_settings();
+    let url = doc
+        .get("env")
+        .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert_eq!(
+        url, "http://localhost:20128",
+        "foreign gateway must survive"
+    );
 }
 
 // ---------------------------------------------------------------------------

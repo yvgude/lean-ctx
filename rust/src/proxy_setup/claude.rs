@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::util::is_proxy_reachable;
+use super::util::{is_local_lean_ctx_url, is_proxy_reachable};
 
 /// Returns true when an Anthropic **API key** is available for the proxy to forward
 /// upstream.
@@ -123,7 +123,13 @@ pub(crate) fn uninstall_claude_env(home: &Path, quiet: bool) {
         return;
     };
 
-    if !env_obj.contains_key("ANTHROPIC_BASE_URL") {
+    // #1972: only undo what lean-ctx wrote. Another gateway's URL — local
+    // (Omniroute on localhost:20128) or remote — is the user's and stays.
+    let owned = env_obj
+        .get("ANTHROPIC_BASE_URL")
+        .and_then(|v| v.as_str())
+        .is_some_and(is_local_lean_ctx_url);
+    if !owned {
         return;
     }
 
@@ -155,7 +161,7 @@ pub(crate) fn install_claude_env(home: &Path, port: u16, quiet: bool) {
 }
 
 pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, force: bool) {
-    use crate::core::config::{Config, is_local_proxy_url, normalize_url_opt};
+    use crate::core::config::{Config, normalize_url_opt};
 
     let base = format!("http://127.0.0.1:{port}");
 
@@ -197,9 +203,11 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
         return;
     }
 
-    // HARD GUARD: never overwrite non-local endpoints unless --force
+    // HARD GUARD: never overwrite an endpoint lean-ctx did not write unless
+    // --force. "Local" is not "ours": a gateway on another localhost port
+    // (#1972) is as much the user's as a remote one.
     if let Some(upstream) = normalize_url_opt(&current_url)
-        && !is_local_proxy_url(&upstream)
+        && !is_local_lean_ctx_url(&upstream)
     {
         if Config::load_global().proxy.anthropic_upstream.is_none()
             && let Err(e) =

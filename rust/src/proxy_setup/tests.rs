@@ -219,6 +219,22 @@ fn subscription_guard_preserves_unproven_local_redirect() {
     );
 }
 
+/// #1972: `lean-ctx uninstall` deleted an Omniroute gateway on
+/// `localhost:20128` because every loopback URL counted as lean-ctx's proxy.
+#[test]
+fn uninstall_keeps_a_foreign_local_gateway() {
+    if claude_dir_overridden() {
+        return;
+    }
+    let home = tempfile::tempdir().unwrap();
+    let original = r#"{"env": {"ANTHROPIC_BASE_URL": "http://localhost:20128"}}"#;
+    let path = write_claude_settings(home.path(), original);
+
+    super::uninstall_claude_env(home.path(), true);
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+}
+
 /// API-key mode must STILL route Claude through the proxy (we only protect
 /// subscriptions; pay-as-you-go users keep their compression). Uses a real bound
 /// port so `is_proxy_reachable` passes, exercising the full production path.
@@ -645,8 +661,8 @@ fn codex_chatgpt_upgrade_strips_legacy_leanctx_provider() {
 #[test]
 fn render_codex_config_is_idempotent() {
     let entries = vec![("openai_base_url", "http://127.0.0.1:4444/v1".to_string())];
-    let once = render_codex_config("model = \"gpt-5.5\"\n", &entries, None);
-    let twice = render_codex_config(&once, &entries, None);
+    let once = render_codex_config("model = \"gpt-5.5\"\n", &entries, None, 4444);
+    let twice = render_codex_config(&once, &entries, None, 4444);
     assert_eq!(once, twice, "render must be idempotent");
     assert!(once.starts_with("openai_base_url = \"http://127.0.0.1:4444/v1\"\n"));
     assert!(once.contains("model = \"gpt-5.5\""));
@@ -703,7 +719,7 @@ fn codex_proxy_cleanup_detection_ignores_plain_openai_provider() {
 fn render_codex_config_inserts_before_first_table() {
     let body = "model = \"gpt-5.5\"\n\n[features]\nhooks = true\n";
     let entries = vec![("openai_base_url", "http://127.0.0.1:4444/v1".to_string())];
-    let out = render_codex_config(body, &entries, None);
+    let out = render_codex_config(body, &entries, None, 4444);
     let key_idx = out.find("openai_base_url").expect("key present");
     let table_idx = out.find("[features]").expect("table present");
     assert!(

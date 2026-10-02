@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::util::is_proxy_reachable;
+use super::util::{is_local_lean_ctx_url, is_proxy_reachable};
 
 /// Pi / forge resolve their provider endpoint from `~/.pi/agent/models.json`
 /// (`providers.<name>.baseUrl`) + OAuth, *not* from `ANTHROPIC_BASE_URL` /
@@ -27,7 +27,7 @@ pub(crate) fn uninstall_pi_env(home: &Path, quiet: bool) {
 /// preserved unless `force`, and only the providers we actually rewrite are
 /// touched, so the file round-trips cleanly on `disable`.
 pub(crate) fn install_pi_env_at(agent_dir: &Path, port: u16, quiet: bool, force: bool) {
-    use crate::core::config::{is_local_proxy_url, normalize_url_opt};
+    use crate::core::config::normalize_url_opt;
 
     // Only wire Pi when it is actually configured on this machine.
     if !agent_dir.exists() {
@@ -62,10 +62,11 @@ pub(crate) fn install_pi_env_at(agent_dir: &Path, port: u16, quiet: bool, force:
         if current == proxy_url {
             continue;
         }
-        // Never silently clobber a user's custom remote gateway; --force overrides.
+        // Never silently clobber a gateway lean-ctx did not write — remote or on
+        // another localhost port (#1972); --force overrides.
         if !force
             && let Some(custom) = normalize_url_opt(&current)
-            && !is_local_proxy_url(&custom)
+            && !is_local_lean_ctx_url(&custom)
         {
             kept_custom.push(format!("{provider} → {custom}"));
             continue;
@@ -95,8 +96,6 @@ pub(crate) fn install_pi_env_at(agent_dir: &Path, port: u16, quiet: bool, force:
 /// `baseUrl` still points at the local proxy (i.e. the ones we set), so a custom
 /// remote endpoint the user configured themselves is never removed.
 pub(crate) fn uninstall_pi_env_at(agent_dir: &Path, quiet: bool) {
-    use crate::core::config::is_local_proxy_url;
-
     let models_path = agent_dir.join("models.json");
     let existing = match std::fs::read_to_string(&models_path) {
         Ok(s) if !s.trim().is_empty() => s,
@@ -109,7 +108,7 @@ pub(crate) fn uninstall_pi_env_at(agent_dir: &Path, quiet: bool) {
 
     let mut changed = false;
     for provider in ["anthropic", "openai"] {
-        if is_local_proxy_url(pi_provider_base_url(&doc, provider))
+        if is_local_lean_ctx_url(pi_provider_base_url(&doc, provider))
             && remove_pi_provider_base_url(&mut doc, provider)
         {
             changed = true;

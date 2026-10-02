@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
@@ -46,6 +47,36 @@ pub struct LspClient {
     response_rx: Receiver<Result<Value, String>>,
     next_id: AtomicI64,
     initialized: bool,
+    /// Cleared by the reader thread once the server's stdout ends (exit/crash),
+    /// so the router can evict a dead server without `&mut` access.
+    alive: Arc<AtomicBool>,
+}
+
+/// Credential-bearing variables are not inherited by language servers: they
+/// read source and must not be able to reuse the user's tokens. This holds for
+/// toolchain tokens too (`NPM_TOKEN`, `CARGO_REGISTRIES_*_TOKEN`); toolchain
+/// *configuration* (`CARGO_HOME`, `GOPROXY`, `GOPRIVATE`, …) is kept, and
+/// file-based credentials (`~/.cargo/credentials.toml`, `.npmrc`, `.netrc`)
+/// remain available for private registry resolution.
+fn is_credential_env(name: &str) -> bool {
+    const SECRET_MARKERS: &[&str] = &[
+        "TOKEN",
+        "SECRET",
+        "PASSWORD",
+        "PASSWD",
+        "API_KEY",
+        "APIKEY",
+        "ACCESS_KEY",
+        "SECRET_KEY",
+        "PRIVATE_KEY",
+        "CREDENTIALS",
+        "AUTH",
+        "AUTH_CONFIG",
+    ];
+    let upper = name.to_ascii_uppercase();
+    SECRET_MARKERS
+        .iter()
+        .any(|m| upper == *m || upper.ends_with(&format!("_{m}")))
 }
 
 #[derive(Serialize)]
@@ -98,7 +129,7 @@ fn read_one_message(reader: &mut BufReader<ChildStdout>) -> Result<Value, String
     serde_json::from_str(&text).map_err(|e| format!("Parse response: {e}"))
 }
 
-fn spawn_reader(stdout: ChildStdout) -> Receiver<Result<Value, String>> {
+fn spawn_reader(stdout: ChildStdout, alive: Arc<AtomicBool>) -> Receiver<Result<Value, String>> {
     let (tx, rx) = mpsc::channel();
     std::thread::Builder::new()
         .name("lsp-reader".into())
@@ -112,6 +143,7 @@ fn spawn_reader(stdout: ChildStdout) -> Receiver<Result<Value, String>> {
                         }
                     }
                     Err(e) => {
+                        alive.store(false, Ordering::Release);
                         let _ = tx.send(Err(e));
                         break;
                     }
@@ -124,17 +156,24 @@ fn spawn_reader(stdout: ChildStdout) -> Receiver<Result<Value, String>> {
 
 impl LspClient {
     pub fn start(config: &LspServerConfig, root_uri: &Uri) -> Result<Self, String> {
-        let mut child = Command::new(&config.command)
-            .args(&config.args)
+        let mut cmd = Command::new(&config.command);
+        cmd.args(&config.args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::null());
+        for (name, _) in std::env::vars_os() {
+            if name.to_str().is_some_and(is_credential_env) {
+                cmd.env_remove(&name);
+            }
+        }
+        let mut child = cmd
             .spawn()
             .map_err(|e| format!("Failed to start LSP server '{}': {e}", config.command))?;
 
         let stdin = child.stdin.take().ok_or("No stdin")?;
         let stdout = child.stdout.take().ok_or("No stdout")?;
-        let response_rx = spawn_reader(stdout);
+        let alive = Arc::new(AtomicBool::new(true));
+        let response_rx = spawn_reader(stdout, Arc::clone(&alive));
 
         let mut client = Self {
             child,
@@ -142,6 +181,7 @@ impl LspClient {
             response_rx,
             next_id: AtomicI64::new(1),
             initialized: false,
+            alive,
         };
 
         client.initialize(root_uri)?;
@@ -397,21 +437,38 @@ impl LspClient {
     }
 
     pub fn shutdown(&mut self) {
-        let _ = self.request_raw_with_timeout(
-            "shutdown",
-            Value::Null,
-            Duration::from_secs(SHUTDOWN_TIMEOUT_SECS),
-        );
-        let _ = self.send_notification::<notification::Exit>(());
+        if self.initialized {
+            let _ = self.request_raw_with_timeout(
+                "shutdown",
+                Value::Null,
+                Duration::from_secs(SHUTDOWN_TIMEOUT_SECS),
+            );
+            let _ = self.send_notification::<notification::Exit>(());
+            self.initialized = false;
+        }
+        self.reap(Duration::from_secs(SHUTDOWN_TIMEOUT_SECS));
+    }
+
+    /// Waits up to `grace` for the server to exit, then kills it. A server that
+    /// ignores `exit` (or never finished `initialize`) can therefore neither
+    /// block the caller — the idle reaper, `shutdown_all` — nor be left behind.
+    fn reap(&mut self, grace: Duration) {
+        let deadline = Instant::now() + grace;
+        while Instant::now() < deadline {
+            match self.child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+                Err(_) => break,
+            }
+        }
+        let _ = self.child.kill();
         let _ = self.child.wait();
     }
 }
 
 impl Drop for LspClient {
     fn drop(&mut self) {
-        if self.initialized {
-            self.shutdown();
-        }
+        self.shutdown();
     }
 }
 
@@ -455,5 +512,46 @@ impl crate::lsp::backend::LspBackend for LspClient {
     ) -> Result<Option<lsp_types::WorkspaceEdit>, String> {
         LspClient::rename(self, uri, position, new_name)
     }
+    /// A server whose stdout closed (exit or crash) is stale; the router evicts
+    /// it and starts a fresh one on the next call.
+    fn is_stale(&self, _project_root: &str) -> bool {
+        !self.alive.load(Ordering::Acquire)
+    }
     // declaration/type_hierarchy/symbols_overview/format/inspections: Default-Err (Backing A).
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_credential_env;
+
+    #[test]
+    fn credential_env_is_scrubbed_but_toolchain_config_is_kept() {
+        for scrubbed in [
+            "GITHUB_TOKEN",
+            "ANTHROPIC_API_KEY",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "DB_PASSWORD",
+            "CARGO_REGISTRIES_CORP_TOKEN",
+            "NPM_TOKEN",
+            "DOCKER_AUTH_CONFIG",
+            "token",
+        ] {
+            assert!(is_credential_env(scrubbed), "{scrubbed} must be scrubbed");
+        }
+        for kept in [
+            "PATH",
+            "HOME",
+            "CARGO_HOME",
+            "GOPROXY",
+            "GOPRIVATE",
+            "GOAUTH",
+            "SSH_AUTH_SOCK",
+            "SSL_CERT_FILE",
+            "VIRTUAL_ENV",
+            "TOKENIZERS_PARALLELISM",
+        ] {
+            assert!(!is_credential_env(kept), "{kept} must be kept");
+        }
+    }
 }

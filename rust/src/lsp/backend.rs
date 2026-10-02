@@ -396,10 +396,17 @@ pub trait LspBackend: Send {
 
     // ── Self-management (liveness) ──
     /// Whether a cached instance of this backend is no longer valid and must be
-    /// evicted + re-selected. Backing A (in-process LSP) is never stale → default `false`.
-    /// Backing B overrides: the IDE may have closed/restarted since caching.
+    /// evicted + re-selected. Checked before every call, so it must stay cheap.
+    /// Backing A overrides: the server process exited. Backing B overrides: the
+    /// IDE may have closed/restarted since caching.
     fn is_stale(&self, _project_root: &str) -> bool {
         false
+    }
+    /// After a failed call: is the backend dead (evict) rather than reporting an
+    /// ordinary error (keep)? Runs only on the error path, so it may afford a
+    /// costlier probe than [`Self::is_stale`]. Defaults to `is_stale`.
+    fn is_dead_after_error(&self, project_root: &str) -> bool {
+        self.is_stale(project_root)
     }
     /// Truncation metadata of the most recent capped call, or `None` (Backing A,
     /// or no capped call yet). Lets `ctx_refactor` surface "(truncated …)".

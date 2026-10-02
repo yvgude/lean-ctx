@@ -88,7 +88,6 @@ pub(crate) fn stale_proxy_env_outcome() -> Option<Outcome> {
 
     let home = dirs::home_dir()?;
     let cfg = Config::load();
-    let port = crate::proxy_setup::default_port();
 
     if cfg.proxy_enabled == Some(true) {
         return None;
@@ -109,13 +108,9 @@ pub(crate) fn stale_proxy_env_outcome() -> Option<Outcome> {
         return None;
     }
 
-    let local_proxy = format!("http://127.0.0.1:{port}");
-    let is_local = base_url == local_proxy
-        || base_url == format!("http://localhost:{port}")
-        || base_url.starts_with("http://127.0.0.1:")
-        || base_url.starts_with("http://localhost:");
-
-    if !is_local {
+    // #1972: only lean-ctx's own proxy URL is stale. Another local gateway is
+    // the user's — flagging it sent them to `proxy cleanup`, which deleted it.
+    if !crate::proxy_setup::is_local_lean_ctx_url(base_url) {
         return None;
     }
 

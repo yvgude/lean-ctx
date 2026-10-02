@@ -354,30 +354,32 @@ pub(crate) fn enrich_graph(
 }
 
 fn consolidate_callgraph(graph: &CodeGraph, project_root: &str) -> anyhow::Result<EnrichmentStats> {
-    let mut stats = EnrichmentStats::default();
-
     let inputs = crate::core::call_graph::CallGraphInputs::open(project_root);
     let call_graph = crate::core::call_graph::CallGraph::load_or_build(project_root, &inputs);
+    consolidate_call_edges(graph, &inputs, &call_graph.edges)
+}
 
-    // Symbols now come from the PropertyGraph via the facade (#696, resolving
-    // opt1415): the call-graph inputs already carry the full symbol table.
-    let callee_to_file: std::collections::HashMap<&str, &str> = inputs
-        .symbols
+/// Lifts call edges to file-level `Calls` edges. Each callee is resolved in its
+/// caller's own scope (same file → unique import → unique project-wide); an
+/// ambiguous name (e.g. five `save()` methods) yields no edge rather than an
+/// arbitrary one. Pairs are deduplicated and visited in sorted order so the
+/// resulting graph is deterministic.
+fn consolidate_call_edges(
+    graph: &CodeGraph,
+    inputs: &crate::core::call_graph::CallGraphInputs,
+    edges: &[crate::core::call_graph::CallEdge],
+) -> anyhow::Result<EnrichmentStats> {
+    let mut stats = EnrichmentStats::default();
+
+    let targets = crate::core::call_graph::resolve_edge_callee_files(inputs, edges);
+    let pairs: std::collections::BTreeSet<(&str, &str)> = edges
         .iter()
-        .map(|s| (s.name.as_str(), s.file.as_str()))
+        .zip(&targets)
+        .filter_map(|(edge, to)| Some((edge.caller_file.as_str(), to.as_deref()?)))
+        .filter(|(from, to)| from != to)
         .collect();
 
-    for edge in &call_graph.edges {
-        let from_file = &edge.caller_file;
-        let to_file = match callee_to_file.get(edge.callee_name.as_str()) {
-            Some(f) => *f,
-            None => continue,
-        };
-
-        if from_file == to_file {
-            continue;
-        }
-
+    for (from_file, to_file) in pairs {
         let from_node = graph.get_node_by_path(from_file)?;
         let to_node = graph.get_node_by_path(to_file)?;
 
@@ -564,5 +566,44 @@ mod tests {
 
         let edges = g.edges_from(file_id).unwrap();
         assert_eq!(edges[0].kind, EdgeKind::MentionedIn);
+    }
+
+    /// Regression: a name→file map (last symbol wins) attributed every `save()`
+    /// call to whichever `save` was listed last, inventing false `Calls` edges.
+    #[test]
+    fn consolidate_calls_resolves_in_caller_scope_and_skips_ambiguous() {
+        use crate::core::call_graph::{CallEdge, CallGraphInputs, SymbolSpan};
+        let sym = |file: &str| SymbolSpan {
+            file: file.into(),
+            name: "save".into(),
+            start_line: 1,
+            end_line: 3,
+        };
+        let call = |file: &str| CallEdge {
+            caller_file: file.into(),
+            caller_symbol: "f".into(),
+            caller_line: 1,
+            callee_name: "save".into(),
+        };
+        let inputs = CallGraphInputs {
+            project_root: "/p".into(),
+            symbols: vec![sym("b.rs"), sym("a.rs")],
+            import_edges: vec![("c.rs".into(), "b.rs".into())],
+            ..Default::default()
+        };
+
+        let g = CodeGraph::open_in_memory().unwrap();
+        let ids: Vec<i64> = ["a.rs", "b.rs", "c.rs", "d.rs"]
+            .iter()
+            .map(|f| g.upsert_node(&Node::file(f)).unwrap())
+            .collect();
+
+        // c.rs imports b.rs → b.rs; d.rs has no scope hint → ambiguous → no edge.
+        consolidate_call_edges(&g, &inputs, &[call("c.rs"), call("d.rs")]).unwrap();
+
+        let from_c = g.edges_from(ids[2]).unwrap();
+        assert_eq!(from_c.len(), 1);
+        assert_eq!(from_c[0].target_id, ids[1]);
+        assert!(g.edges_from(ids[3]).unwrap().is_empty());
     }
 }

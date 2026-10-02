@@ -75,6 +75,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   exposing content. Policy refusals count as "not recoverable for the model",
   not as a broken mechanism.
 
+### Fixed — lean-ctx never touches another gateway's endpoint (#1972)
+
+- `lean-ctx uninstall` deleted `ANTHROPIC_BASE_URL` from Claude Code's
+  settings even when it pointed at a different gateway (e.g. Omniroute on
+  `localhost:20128`), and `proxy enable` overwrote such a local gateway without
+  `--force`. Every loopback URL was treated as lean-ctx's proxy.
+- A URL now counts as lean-ctx's only on a lean-ctx proxy port (configured,
+  UID-derived, or the historical 4444). Install, uninstall, `proxy cleanup`,
+  `doctor` / `doctor --fix` and the Claude, Codex, Pi and Grok wiring all use
+  that rule; any other endpoint, local or remote, is kept unless `--force`.
+- Codex: a kept `openai_base_url` is no longer followed by a second
+  lean-ctx copy, which would have made `config.toml` unparseable.
+
+### Fixed — `lean-ctx-status` reports OFF after `lean-ctx-off` (#1971)
+
+- `lean-ctx-off` sets `LEAN_CTX_ENABLED=0`, but `lean-ctx-status` only checked
+  that the variable was set and kept printing `ON` (bash, zsh and fish). It
+  now reads the value, and its exit status is 0 for ON and 1 for OFF/DISABLED,
+  so scripts can test it.
+
 ### Fixed — `ctx_read` keeps a `-N` tail window under `raw=true` (#1965)
 
 - `mode="-3", raw=true` returned the whole file from line 1, with no header

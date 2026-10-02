@@ -97,6 +97,15 @@ impl MemoryProfile {
     pub fn embeddings_enabled(&self) -> bool {
         !matches!(self, Self::Low)
     }
+
+    /// How long an unused language server stays warm before it is shut down.
+    pub fn lsp_idle_ttl(&self) -> std::time::Duration {
+        std::time::Duration::from_mins(match self {
+            Self::Low => 5,
+            Self::Balanced => 15,
+            Self::Performance => 30,
+        })
+    }
 }
 
 /// Controls visibility of token savings footers in tool output.
