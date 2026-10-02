@@ -168,9 +168,17 @@ pub async fn forward_request(
     let original_messages = original_parsed
         .as_ref()
         .map(super::determinism_guard::cache_relevant_messages);
+    // #1905: decide the input-compression holdout arm once, on the caller's
+    // pristine body. The control arm skips pre-optimization here and every
+    // compression stage in `prepare_request_body` and the pipeline below.
+    let compression_arm = original_parsed
+        .as_ref()
+        .and_then(super::holdout::compression_holdout_arm);
+    let compression_control = compression_arm == Some(super::holdout::Arm::Control);
     let (mut body_bytes, mut pre_optimize_result) =
         serde_json::from_slice::<serde_json::Value>(&raw_body_bytes)
             .ok()
+            .filter(|_| !compression_control)
             .and_then(|mut parsed_body| {
                 let result = crate::proxy::pre_optimize::pre_optimize(&mut parsed_body)?;
                 #[cfg(feature = "enterprise")]
@@ -316,6 +324,7 @@ pub async fn forward_request(
         route_hook,
         upstream_base,
         provider_label == "OpenAI",
+        compression_arm,
     )?;
     let guard = super::determinism_guard::DeterminismGuard::new(&trace_id);
     let mut determinism_proof = original_messages.as_deref().map_or_else(
@@ -364,8 +373,10 @@ pub async fn forward_request(
     let mut pipeline_report = None;
     let mut pipeline_changed = false;
     // #1912: a guard revert promised the caller's exact bytes — no pipeline
-    // stage and no effort injection may run on top of it.
+    // stage and no effort injection may run on top of it. #1905: neither may
+    // the input-compression control arm, which is forwarded uncompressed.
     if !guard_reverted
+        && !compression_control
         && let Some(messages) = prepared
             .parsed
             .as_mut()
@@ -510,10 +521,14 @@ pub async fn forward_request(
         state.introspect.record(breakdown);
     }
     // #895 Track B: assign output-savings holdout from the same pristine parsed
-    // body that each provider's compressor receives. Only when active.
-    let cohort = parsed
-        .as_ref()
-        .and_then(|p| prepare::cohort_arm(p, provider_label, default_path));
+    // body that each provider's compressor receives. Only when active. The
+    // input-compression arm (#1905) was decided before any rewrite, above.
+    let cohort = super::holdout::Cohorts {
+        output: parsed
+            .as_ref()
+            .and_then(|p| prepare::cohort_arm(p, provider_label, default_path)),
+        compression: compression_arm,
+    };
     if compression_candidate {
         // Shape label drives compression/routing; stats identity may differ —
         // Grok registry routes speak OpenAI shape but meter under "Grok".

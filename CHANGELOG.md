@@ -103,6 +103,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   exposing content. Policy refusals count as "not recoverable for the model",
   not as a broken mechanism.
 
+### Added — a real holdout arm for the proxy's input compression (#1905)
+
+- `[proxy] compression_holdout` (env `LEAN_CTX_PROXY_COMPRESSION_HOLDOUT`,
+  default `0`, opt-in) forwards a deterministic fraction of conversations
+  **uncompressed**. The arm is decided once, on the caller's pristine body,
+  and skips every input-compression stage: pre-optimization, conversation
+  shaping, agent compaction, tool-result dedup, the provider compressors and
+  the compression pipeline. Cache-only features run the same in both arms.
+- The cohort is salted independently of `output_holdout`, so both experiments
+  can run at once without confounding each other.
+- Both arms are metered by whole-prompt tokens (billed input plus cache reads
+  and writes). `lean-ctx output-savings` reports the measured reduction with a
+  95 % confidence interval once each arm has 30 turns, "pending" before that,
+  and never an estimate. Answer quality is reported as `unknown`: the holdout
+  measures prompt size, not quality. Only token counts are stored.
+- Unlike Shadow Mode, whose baseline is simulated from the treatment's own
+  numbers, this is a real uncompressed baseline.
+
 ### Fixed — lean-ctx never touches another gateway's endpoint (#1972)
 
 - `lean-ctx uninstall` deleted `ANTHROPIC_BASE_URL` from Claude Code's

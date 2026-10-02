@@ -144,7 +144,7 @@ pub(crate) fn check_and_read(path: &str) -> CacheResult {
     if let Some(entry) = store.entries.get_mut(&key)
         && entry.hash == hash
         && entry.nonce == process_nonce()
-        && (now - entry.timestamp) < CACHE_TTL_SECS
+        && now.saturating_sub(entry.timestamp) < CACHE_TTL_SECS
     {
         entry.read_count += 1;
         entry.timestamp = now;
@@ -213,9 +213,13 @@ pub(crate) fn stats() -> (u64, u64, usize) {
 }
 
 fn evict_stale(store: &mut CliCacheStore, now: u64) {
+    // A concurrent writer can store an entry stamped after this caller read
+    // `now`. Plain `now - timestamp` then underflowed: a panic in debug builds,
+    // and in release a wrapped, huge age that evicted the other writer's fresh
+    // entry. An entry from the future is simply not stale.
     store
         .entries
-        .retain(|_, e| (now - e.timestamp) < CACHE_TTL_SECS);
+        .retain(|_, e| now.saturating_sub(e.timestamp) < CACHE_TTL_SECS);
 
     if store.entries.len() > MAX_ENTRIES {
         let mut entries: Vec<(String, u64)> = store

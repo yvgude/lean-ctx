@@ -485,6 +485,7 @@ fn zstd_request_bodies_are_rewritten_and_reencoded() {
         |_| None,
         "https://api.openai.com",
         false,
+        None,
     )
     .unwrap();
     assert_eq!(request_body_encoding(&parts), RequestBodyEncoding::Zstd);
@@ -520,6 +521,7 @@ fn gzip_request_bodies_are_rewritten_and_reencoded() {
         |_| None,
         "https://api.openai.com",
         false,
+        None,
     )
     .unwrap();
     assert_eq!(request_body_encoding(&parts), RequestBodyEncoding::Gzip);
@@ -547,6 +549,7 @@ fn openrouter_chat_requests_opt_into_billed_cost() {
         |_| None,
         "https://openrouter.ai/api",
         true,
+        None,
     )
     .unwrap();
     let parsed: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
@@ -570,6 +573,7 @@ fn non_openrouter_upstreams_never_carry_the_usage_opt_in() {
         |_| None,
         "https://api.openai.com",
         true,
+        None,
     )
     .unwrap();
     let parsed: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
@@ -593,6 +597,7 @@ fn responses_api_bodies_never_carry_the_usage_opt_in() {
         |_| None,
         "https://openrouter.ai/api",
         true,
+        None,
     )
     .unwrap();
     let parsed: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
@@ -633,6 +638,7 @@ fn unknown_encoded_request_bodies_stay_passthrough() {
         |_| None,
         "https://api.openai.com",
         false,
+        None,
     )
     .unwrap();
 
@@ -663,6 +669,7 @@ fn invalid_json_request_bodies_are_not_compression_candidates() {
         |_| None,
         "https://api.openai.com",
         false,
+        None,
     )
     .unwrap();
 
@@ -671,6 +678,65 @@ fn invalid_json_request_bodies_are_not_compression_candidates() {
     assert!(prepared.parsed.is_none());
     assert!(!prepared.compression_candidate);
     assert!(!prepared.preserve_content_encoding);
+}
+
+/// #1905: the compression holdout's control arm is the uncompressed baseline.
+/// The same request is compressed in the treatment arm and forwarded with its
+/// content unchanged in the control arm, and both carry their arm to the meter.
+#[test]
+fn compression_holdout_control_arm_is_forwarded_uncompressed() {
+    use crate::proxy::holdout::Arm;
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    // Output shaping is the other, independent holdout; keep it out of the way
+    // so the body comparison is about input compression alone.
+    crate::test_env::remove_var("LEAN_CTX_PROXY_VERBOSITY_STEER");
+    crate::test_env::remove_var("LEAN_CTX_PROXY_EFFORT");
+    crate::core::config::Config::update_global(|c| c.proxy.verbosity_steer = Some(false)).unwrap();
+    let log = (0..90).fold(String::new(), |mut log, i| {
+        use std::fmt::Write as _;
+        let _ = writeln!(
+            log,
+            "INFO  processing item {i}: ok, latency={i}ms, queue depth normal"
+        );
+        log
+    });
+    let body = serde_json::json!({
+        "model": "claude-opus-4-8",
+        "messages": [
+            {"role": "assistant", "content": [{"type": "tool_use", "id": "f1", "name": "forge_shell", "input": {}}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "f1", "content": log}]}
+        ]
+    });
+    let json = serde_json::to_vec(&body).unwrap();
+    let parts = parts_for("/v1/messages");
+    let prepare = |arm| {
+        prepare_request_body(
+            &parts,
+            &json,
+            crate::proxy::anthropic::compress_request_body,
+            |_| None,
+            "https://api.anthropic.com",
+            false,
+            Some(arm),
+        )
+        .unwrap()
+    };
+
+    let treatment = prepare(Arm::Treatment);
+    assert!(
+        treatment.compressed_size < treatment.original_size,
+        "the treatment arm must be compressed"
+    );
+    assert_eq!(treatment.compression_arm, Some(Arm::Treatment));
+
+    let control = prepare(Arm::Control);
+    assert_eq!(control.compressed_size, control.original_size);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&control.body).unwrap(),
+        body,
+        "the control arm must reach the upstream uncompressed"
+    );
+    assert_eq!(control.compression_arm, Some(Arm::Control));
 }
 
 #[test]

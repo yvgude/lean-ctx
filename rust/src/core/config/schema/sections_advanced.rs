@@ -199,6 +199,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     proxy.insert(
+        "compression_holdout".into(),
+        key_with_env(
+            "f64",
+            serde_json::json!(cfg.proxy.compression_holdout_fraction()),
+            "Fraction 0.0-1.0 of conversations placed in the input-compression control arm (#1905). 0 (default) = no holdout. When > 0, a deterministic cohort (salted independently of output_holdout) puts ~this fraction in a control arm forwarded without any of the proxy's input compression (tool-output compression, history pruning, prose rewriting, cold-prefix repack) but still metered, so the input-token reduction is measured against a real uncompressed baseline (lean-ctx output-savings). Answer quality is not measured by this holdout and is reported as unknown",
+            "LEAN_CTX_PROXY_COMPRESSION_HOLDOUT",
+        ),
+    );
+    proxy.insert(
         "verbosity_steer".into(),
         key_with_env(
             "bool",

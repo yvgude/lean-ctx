@@ -145,10 +145,25 @@ pub(super) fn compress_request_body(
     // the global config flag. The header is checked in forward.rs and the
     // result is threaded through via a thread-local set by the caller.
     let _headroom_compat = config_headroom || HEADROOM_REQUEST.get();
-    let system_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::System);
-    let user_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::User);
-    let live_compress = cfg.proxy.live_compresses();
-    let mode = cfg.proxy.resolved_history_mode();
+    // #1905: input-compression holdout. The forward path decided the arm on the
+    // pristine body; the control arm turns off every input-compression stage so
+    // the meter sees a real uncompressed baseline. Cache-only features stay as
+    // they are in both arms, keeping the comparison about compression alone.
+    let compression_control = super::holdout::in_compression_control();
+    let system_aggr = cfg
+        .proxy
+        .resolved_role_aggressiveness(ProseRole::System)
+        .filter(|_| !compression_control);
+    let user_aggr = cfg
+        .proxy
+        .resolved_role_aggressiveness(ProseRole::User)
+        .filter(|_| !compression_control);
+    let live_compress = cfg.proxy.live_compresses() && !compression_control;
+    let mode = if compression_control {
+        HistoryMode::Off
+    } else {
+        cfg.proxy.resolved_history_mode()
+    };
     // #939: active prompt-cache breakpoint injection (opt-in, Anthropic-only).
     // Resolved up front so the meter-only short-circuit below does not skip the
     // one mutation this mode performs — its whole point is to add a cache anchor
@@ -259,6 +274,7 @@ pub(super) fn compress_request_body(
     // (`worth_repacking`). The gate is an extra AND-condition, so it can only make
     // repacking *more* conservative; default-off proxies keep the prior value.
     let repack = cfg.proxy.repacks_cold_prefix()
+        && !compression_control
         && doc
             .get("messages")
             .and_then(|m| m.as_array())

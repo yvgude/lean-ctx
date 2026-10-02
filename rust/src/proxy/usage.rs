@@ -66,10 +66,10 @@ pub struct RealUsage {
     /// The measured figure beats any price-table estimate wherever both exist.
     /// `None` for providers that report tokens only (Anthropic/OpenAI/Gemini).
     pub provider_cost_usd: Option<f64>,
-    /// Output-savings experiment arm for this turn (#895 Track B), or `None` when
-    /// no holdout is active. Stamped from the request, not parsed from the
-    /// response — it identifies whether this turn was output-shaped.
-    pub cohort: Option<super::holdout::Arm>,
+    /// Holdout arms for this turn: output shaping (#895 Track B) and input
+    /// compression (#1905), each `None` when that holdout is off. Stamped from
+    /// the request, not parsed from the response.
+    pub cohort: super::holdout::Cohorts,
     /// Request-side gateway context (enterprise#11/#17/#18): identity tags,
     /// compression savings and baseline inputs, stamped from the request before
     /// it left for the upstream. `None` outside the forward path (e.g. tests
@@ -186,8 +186,8 @@ pub struct Scanner {
     provider: Provider,
     /// Model parsed from the request URL (Gemini puts it there, not in the body).
     url_model: Option<String>,
-    /// Output-savings arm (#895), stamped onto the usage at finalize.
-    cohort: Option<super::holdout::Arm>,
+    /// Holdout arms (#895, #1905), stamped onto the usage at finalize.
+    cohort: super::holdout::Cohorts,
     /// Request-side gateway context (enterprise#11/#18), stamped at finalize.
     wire: Option<Box<WireContext>>,
     /// Billed USD from a gateway response header (#1189), stamped at finalize
@@ -202,7 +202,7 @@ impl Scanner {
         Self {
             provider,
             url_model,
-            cohort: None,
+            cohort: super::holdout::Cohorts::default(),
             wire: None,
             header_cost: None,
             buf: Vec::new(),
@@ -210,9 +210,9 @@ impl Scanner {
         }
     }
 
-    /// Tags the usage this scanner produces with an output-savings arm (#895).
+    /// Tags the usage this scanner produces with its holdout arms (#895, #1905).
     #[must_use]
-    pub fn with_cohort(mut self, cohort: Option<super::holdout::Arm>) -> Self {
+    pub fn with_cohort(mut self, cohort: super::holdout::Cohorts) -> Self {
         self.cohort = cohort;
         self
     }

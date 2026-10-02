@@ -145,9 +145,18 @@ pub struct ModelSpend {
     pub pricing_estimated: bool,
 }
 
-/// Cumulative output-savings cohort totals (#895 Track B). Keyed by arm name
-/// (`"control"` | `"treatment"`); the average output tokens per turn is
-/// `output_tokens / requests`. Only populated while a holdout is active.
+/// Cohort-store key for an input-compression holdout arm (#1905). Prefixed so
+/// it never collides with the output-savings arms stored as `control` /
+/// `treatment`, which keeps existing files and readers unchanged.
+#[must_use]
+pub fn compression_cohort_key(arm: super::holdout::Arm) -> String {
+    format!("compression:{}", arm.as_str())
+}
+
+/// Cumulative holdout cohort totals. Keyed by arm name: `"control"` |
+/// `"treatment"` for output savings (#895 Track B), `"compression:control"` |
+/// `"compression:treatment"` for input compression (#1905). The average tokens
+/// per turn are `*_tokens / requests`. Only populated while a holdout is active.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct CohortUsage {
     pub requests: u64,
@@ -158,6 +167,15 @@ pub struct CohortUsage {
     /// `#[serde(default)]` keeps pre-#895 files loadable.
     #[serde(default)]
     pub sum_sq_output: u64,
+    /// Whole prompt per turn — billed input plus cache reads and writes (#1905).
+    /// Compression shrinks the prompt wherever it is billed, so the
+    /// input-compression comparison uses this, not `input_tokens` alone.
+    /// `#[serde(default)]` keeps earlier files loadable.
+    #[serde(default)]
+    pub prompt_tokens: u64,
+    /// Sum of squared per-turn `prompt_tokens`, for its confidence interval.
+    #[serde(default)]
+    pub sum_sq_prompt: u64,
 }
 
 impl CohortUsage {
@@ -166,6 +184,12 @@ impl CohortUsage {
         self.input_tokens += u.input_tokens;
         self.output_tokens += u.output_tokens;
         self.sum_sq_output += u.output_tokens.saturating_mul(u.output_tokens);
+        let prompt = u
+            .input_tokens
+            .saturating_add(u.cache_read_tokens)
+            .saturating_add(u.cache_write_tokens);
+        self.prompt_tokens += prompt;
+        self.sum_sq_prompt += prompt.saturating_mul(prompt);
     }
 
     /// Average output tokens per turn, or `None` with no observations.
@@ -356,11 +380,19 @@ pub fn record(u: &super::usage::RealUsage) {
         };
         map.entry(key).or_default().add(u);
     }
-    if let Some(arm) = u.cohort {
+    if u.cohort.output.is_some() || u.cohort.compression.is_some() {
         let mut cohorts = cohort_store()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        cohorts.entry(arm.as_str().to_string()).or_default().add(u);
+        if let Some(arm) = u.cohort.output {
+            cohorts.entry(arm.as_str().to_string()).or_default().add(u);
+        }
+        if let Some(arm) = u.cohort.compression {
+            cohorts
+                .entry(compression_cohort_key(arm))
+                .or_default()
+                .add(u);
+        }
     }
     persist();
 }
@@ -842,6 +874,7 @@ mod tests {
                 input_tokens: 30,
                 output_tokens: 300,
                 sum_sq_output: 30_000,
+                ..CohortUsage::default()
             },
         );
         let json = serde_json::to_string(&p).unwrap();

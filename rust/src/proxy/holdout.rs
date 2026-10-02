@@ -13,6 +13,10 @@
 //! `output_holdout = 0` (default) puts everyone in `Treatment` → no behaviour
 //! change. The hash is content-addressed (blake3), not random, so it is stable
 //! across processes and machines.
+//!
+//! The same machinery runs a second, independent experiment for the proxy's
+//! *input* compression (#1905, [`compression_arm`]), whose control arm is sent
+//! uncompressed.
 
 use serde_json::Value;
 
@@ -65,6 +69,83 @@ pub fn assign(key: &str, holdout: f64) -> Arm {
     } else {
         Arm::Treatment
     }
+}
+
+/// Arm for the input-compression holdout (#1905). The control arm forwards the
+/// request without any of the proxy's input compression, giving a real
+/// uncompressed baseline instead of the simulated one Shadow Mode reports.
+///
+/// The key is salted so this cohort is independent of the output-savings one:
+/// with both holdouts active, being in one control arm says nothing about the
+/// other, and each comparison stays clean.
+#[must_use]
+pub fn compression_arm(key: &str, holdout: f64) -> Arm {
+    assign(&format!("compression{FIELD_SEP}{key}"), holdout)
+}
+
+/// Conversation key for any supported request shape, for holdouts decided
+/// before the provider is known (#1905). Gemini bodies carry `contents`,
+/// Responses-API bodies `input`, Anthropic bodies a top-level `system`; the rest
+/// are Chat Completions.
+#[must_use]
+pub fn conversation_key(doc: &Value) -> String {
+    if doc.get("contents").is_some() {
+        google_key(doc)
+    } else if doc.get("input").is_some() && doc.get("messages").is_none() {
+        openai_responses_key(doc)
+    } else if doc.get("system").is_some() {
+        anthropic_key(doc)
+    } else {
+        openai_chat_key(doc)
+    }
+}
+
+/// Input-compression holdout arm (#1905) for a parsed request body, or `None`
+/// when `[proxy] compression_holdout` is off. The forward path calls this once,
+/// on the caller's pristine body before any stage rewrites it, so every turn
+/// of a conversation lands in the same arm.
+#[must_use]
+pub fn compression_holdout_arm(doc: &Value) -> Option<Arm> {
+    let fraction = crate::core::config::Config::load()
+        .proxy
+        .compression_holdout_fraction();
+    (fraction > 0.0).then(|| compression_arm(&conversation_key(doc), fraction))
+}
+
+thread_local! {
+    static COMPRESSION_CONTROL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Marks the requests compressed on this thread as input-compression control
+/// (#1905) until the guard drops. The forward path decides the arm once, on the
+/// pristine body, and every compression stage it calls synchronously reads it
+/// through [`in_compression_control`] — one decision, so no stage can disagree.
+pub(crate) struct CompressionControlScope(bool);
+
+pub(crate) fn enter_compression_control(control: bool) -> CompressionControlScope {
+    CompressionControlScope(COMPRESSION_CONTROL.replace(control))
+}
+
+impl Drop for CompressionControlScope {
+    fn drop(&mut self) {
+        COMPRESSION_CONTROL.set(self.0);
+    }
+}
+
+/// Whether the request being compressed on this thread is in the
+/// input-compression control arm, i.e. must be forwarded uncompressed.
+#[must_use]
+pub(crate) fn in_compression_control() -> bool {
+    COMPRESSION_CONTROL.get()
+}
+
+/// The holdout arms one request belongs to; `None` where that holdout is off.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Cohorts {
+    /// Output-shaping holdout (#895).
+    pub output: Option<Arm>,
+    /// Input-compression holdout (#1905).
+    pub compression: Option<Arm>,
 }
 
 /// Flatten a JSON content value (string / array of text blocks / `{text}` /

@@ -183,6 +183,16 @@ pub struct ProxyConfig {
     /// across turns (cache-safe). Env `LEAN_CTX_PROXY_OUTPUT_HOLDOUT`. See
     /// [`ProxyConfig::output_holdout_fraction`].
     pub output_holdout: Option<f64>,
+    /// Fraction `0.0..=1.0` of conversations placed in the input-compression
+    /// control arm (#1905). `0` (default) = no holdout. When `> 0`, a
+    /// deterministic cohort (salted separately from `output_holdout`) puts ~this
+    /// fraction of conversations in a control arm whose requests are forwarded
+    /// without any of the proxy's input compression (tool-output compression,
+    /// history pruning, prose rewriting, cold-prefix repack) but still metered,
+    /// so the input-token reduction is measured against a real uncompressed
+    /// baseline. Env `LEAN_CTX_PROXY_COMPRESSION_HOLDOUT`. See
+    /// [`ProxyConfig::compression_holdout_fraction`].
+    pub compression_holdout: Option<f64>,
     /// Opt-in cache-safe wire verbosity steer (#895). When `true`, the proxy
     /// appends a single constant "be concise" instruction to the last user turn
     /// of each request (output-shaping for non-rules-aware API clients). The
@@ -721,6 +731,21 @@ impl ProxyConfig {
             .and_then(|v| v.trim().parse::<f64>().ok());
         from_env
             .or(self.output_holdout)
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0)
+    }
+
+    /// Resolved input-compression holdout fraction (#1905), clamped to `[0,1]`.
+    /// Precedence: `LEAN_CTX_PROXY_COMPRESSION_HOLDOUT` env > `[proxy]
+    /// compression_holdout` > `0.0` (no holdout). An unparseable/blank env value
+    /// is ignored, as for [`ProxyConfig::output_holdout_fraction`].
+    #[must_use]
+    pub fn compression_holdout_fraction(&self) -> f64 {
+        let from_env = std::env::var("LEAN_CTX_PROXY_COMPRESSION_HOLDOUT")
+            .ok()
+            .and_then(|v| v.trim().parse::<f64>().ok());
+        from_env
+            .or(self.compression_holdout)
             .unwrap_or(0.0)
             .clamp(0.0, 1.0)
     }

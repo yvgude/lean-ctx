@@ -6,7 +6,11 @@
 //! enough paired turns, this prints a real A/B reduction with a 95 % confidence
 //! interval; otherwise it prints the model-based estimate as a band and tells the
 //! user how to switch on the holdout to get a measured number.
+//!
+//! It also reports the input-compression holdout (#1905,
+//! [`crate::proxy::compression_savings`]): measured or pending, never estimated.
 
+use crate::proxy::compression_savings::{self, CompressionSavings};
 use crate::proxy::output_savings::{self, Savings};
 
 /// Entry point for `lean-ctx output-savings [--json]`.
@@ -17,16 +21,70 @@ pub(crate) fn cmd_output_savings(args: &[String]) {
     }
 
     let savings = output_savings::current();
+    let compression = compression_savings::current();
 
     if args.iter().any(|a| a == "--json") {
-        let v = output_savings::to_json(&savings);
+        let mut v = output_savings::to_json(&savings);
+        v["compression"] = compression_savings::to_json(&compression);
         println!(
             "{}",
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
         );
     } else {
         println!("{}", format_human(&savings));
+        println!("{}", format_compression(&compression));
     }
+}
+
+/// The input-compression holdout section (#1905). Never shows an estimate:
+/// without the holdout there is no measured baseline, and it says so.
+fn format_compression(s: &CompressionSavings) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::from("lean-ctx — Input Compression (holdout)\n\n");
+    match s {
+        CompressionSavings::Measured(m) => {
+            let _ = writeln!(
+                out,
+                "  Measured prompt reduction  {:.1}%  (95% CI {:.1}–{:.1}%)",
+                m.reduction_pct, m.ci95_low_pct, m.ci95_high_pct
+            );
+            let _ = writeln!(
+                out,
+                "  Avg prompt/turn     {:.0} tok uncompressed → {:.0} tok compressed",
+                m.control_avg, m.treatment_avg
+            );
+            let _ = writeln!(
+                out,
+                "  Sample              {} uncompressed turns · {} compressed turns",
+                m.control_n, m.treatment_n
+            );
+        }
+        CompressionSavings::Pending {
+            control_n,
+            treatment_n,
+            needed,
+        } => {
+            let _ = writeln!(
+                out,
+                "  Holdout running — {control_n}/{needed} uncompressed, {treatment_n}/{needed} compressed turns."
+            );
+        }
+        CompressionSavings::Off => {
+            let _ = writeln!(
+                out,
+                "  Not measured. Forward a share of conversations uncompressed to get a real baseline:"
+            );
+            let _ = writeln!(
+                out,
+                "      lean-ctx config set proxy.compression_holdout 0.1   # 10% control"
+            );
+        }
+    }
+    let _ = write!(
+        out,
+        "  Answer quality      unknown — the holdout measures prompt size, not quality."
+    );
+    out
 }
 
 /// Human-readable, terminal-friendly summary.
@@ -99,6 +157,7 @@ fn print_usage() {
     println!("  --json      Machine-readable JSON");
     println!();
     println!("Measured numbers require a holdout: lean-ctx config set proxy.output_holdout 0.1");
+    println!("Input compression is measured the same way:  proxy.compression_holdout 0.1");
 }
 
 #[cfg(test)]

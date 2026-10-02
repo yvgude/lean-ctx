@@ -144,10 +144,22 @@ pub(super) fn compress_request_body(
 ) -> (Vec<u8>, usize, usize) {
     let mut doc = parsed;
     let cfg = crate::core::config::Config::load();
-    let system_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::System);
-    let user_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::User);
-    let live_compress = cfg.proxy.live_compresses();
-    let mode = cfg.proxy.resolved_history_mode();
+    // #1905: the input-compression control arm forwards the body uncompressed.
+    let compression_control = super::holdout::in_compression_control();
+    let system_aggr = cfg
+        .proxy
+        .resolved_role_aggressiveness(ProseRole::System)
+        .filter(|_| !compression_control);
+    let user_aggr = cfg
+        .proxy
+        .resolved_role_aggressiveness(ProseRole::User)
+        .filter(|_| !compression_control);
+    let live_compress = cfg.proxy.live_compresses() && !compression_control;
+    let mode = if compression_control {
+        HistoryMode::Off
+    } else {
+        cfg.proxy.resolved_history_mode()
+    };
     // #493: in-band CCR expansion (opt-in). Splice any <lc_expand:HASH> the model
     // echoed back into the verbatim original from the local tee store. A strict
     // no-op when no marker is present (byte-identical body → cache-safe). Runs
@@ -300,7 +312,7 @@ pub(super) fn compress_responses_input(doc: &mut Value) -> bool {
     // #481: recent-region live compression respects the global toggle. Old-region
     // pruning stays governed by `history_mode` in `prune_responses_input`.
     let cfg = crate::core::config::Config::load();
-    if !cfg.proxy.live_compresses() {
+    if !cfg.proxy.live_compresses() || super::holdout::in_compression_control() {
         return false;
     }
     let mut modified = false;

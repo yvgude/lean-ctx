@@ -40,6 +40,7 @@ pub mod cold_prefix;
 pub mod compress;
 pub mod compress_api;
 pub mod compress_shared;
+pub mod compression_savings;
 mod connector;
 pub(crate) mod conversation;
 pub mod cost;

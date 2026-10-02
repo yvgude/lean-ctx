@@ -218,6 +218,9 @@ pub(crate) struct PreparedRequestBody {
     pub(crate) content_dedup_tokens_saved: usize,
     /// Routing decision applied to the body (enterprise#13); `None` = passthrough.
     pub(crate) route: Option<crate::proxy::routing::RouteDecision>,
+    /// Input-compression holdout arm (#1905); `None` when that holdout is off
+    /// or the body could not be parsed.
+    pub(crate) compression_arm: Option<crate::proxy::holdout::Arm>,
 }
 
 pub(crate) fn prepare_request_body(
@@ -227,6 +230,7 @@ pub(crate) fn prepare_request_body(
     route_hook: impl FnOnce(&mut serde_json::Value) -> Option<crate::proxy::routing::RouteDecision>,
     default_upstream_base: &str,
     openai_shape: bool,
+    compression_arm: Option<crate::proxy::holdout::Arm>,
 ) -> Result<PreparedRequestBody, StatusCode> {
     let cache = dedup_cache();
     cache.advance_turn();
@@ -245,12 +249,21 @@ pub(crate) fn prepare_request_body(
                 preserve_content_encoding: true,
                 content_dedup_tokens_saved: 0,
                 route: None,
+                compression_arm,
             });
         }
     };
 
-    let decoded = if let Some((compressed_body, _tokens_saved, _summarized, _dropped)) =
-        crate::proxy::shaping_hook::compress_conversation_if_enabled(&decoded)
+    // #1905: the control arm of the input-compression holdout skips every
+    // compression stage below — conversation shaping, agent compaction, tool
+    // result dedup and the provider compressor — so it is forwarded as sent.
+    // Every return carries the arm: the comparison is by assignment, so a body
+    // that could not be compressed still counts in the arm it was assigned to.
+    let compression_control = compression_arm == Some(crate::proxy::holdout::Arm::Control);
+
+    let decoded = if !compression_control
+        && let Some((compressed_body, _tokens_saved, _summarized, _dropped)) =
+            crate::proxy::shaping_hook::compress_conversation_if_enabled(&decoded)
     {
         Cow::Owned(compressed_body)
     } else {
@@ -267,6 +280,7 @@ pub(crate) fn prepare_request_body(
             preserve_content_encoding: encoding != RequestBodyEncoding::Identity,
             content_dedup_tokens_saved: 0,
             route: None,
+            compression_arm,
         });
     };
     // #1570 P1: agent-requested compaction runs FIRST, on the raw client
@@ -274,10 +288,17 @@ pub(crate) fn prepare_request_body(
     // boundary. The determinism guard reverts it wholesale like every other
     // mutation; its savings ride the content-level counter below (zeroed on
     // revert together with it).
-    let agent_compact_tokens_saved = crate::proxy::agent_compact::apply(&mut parsed);
-    let (tool_results_to_cache, dedup_tokens_saved) = deduplicate_tool_results(&mut parsed, cache);
-    let content_dedup_tokens_saved =
-        agent_compact_tokens_saved + content_dedup_live_suffix(&mut parsed);
+    let (agent_compact_tokens_saved, (tool_results_to_cache, dedup_tokens_saved), live_suffix) =
+        if compression_control {
+            (0, (Vec::new(), 0), 0)
+        } else {
+            (
+                crate::proxy::agent_compact::apply(&mut parsed),
+                deduplicate_tool_results(&mut parsed, cache),
+                content_dedup_live_suffix(&mut parsed),
+            )
+        };
+    let content_dedup_tokens_saved = agent_compact_tokens_saved + live_suffix;
 
     if dedup_tokens_saved > 0 {
         tracing::debug!(dedup_tokens_saved, "deduplicated proxy tool results");
@@ -314,6 +335,9 @@ pub(crate) fn prepare_request_body(
     }
 
     let original_size = decoded.len();
+    // The provider compressors read the holdout arm through this scope; it ends
+    // with the synchronous compression pass below.
+    let control_scope = crate::proxy::holdout::enter_compression_control(compression_control);
     // Cross-shape route (enterprise#16): translate Messages→Chat-Completions
     // and compress with the target shape's compressor. An untranslatable body
     // fails open — the route is cancelled and the request forwards natively.
@@ -335,6 +359,7 @@ pub(crate) fn prepare_request_body(
             }
             compress_body(parsed.clone(), original_size)
         };
+    drop(control_scope);
     cache_tool_results(cache, tool_results_to_cache);
     let final_parsed = serde_json::from_slice(&logical_body).ok();
     let body = encode_request_body(parts, logical_body)?;
@@ -348,6 +373,7 @@ pub(crate) fn prepare_request_body(
         preserve_content_encoding: encoding != RequestBodyEncoding::Identity,
         content_dedup_tokens_saved,
         route,
+        compression_arm,
     })
 }
 

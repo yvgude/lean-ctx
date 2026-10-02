@@ -42,10 +42,22 @@ pub(super) fn compress_request_body(
 
     // Opt-in per-role prose aggressiveness (#710); both default `None` → no-op.
     let cfg = crate::core::config::Config::load();
-    let system_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::System);
-    let user_aggr = cfg.proxy.resolved_role_aggressiveness(ProseRole::User);
-    let live_compress = cfg.proxy.live_compresses();
-    let mode = cfg.proxy.resolved_history_mode();
+    // #1905: the input-compression control arm forwards the body uncompressed.
+    let compression_control = super::holdout::in_compression_control();
+    let system_aggr = cfg
+        .proxy
+        .resolved_role_aggressiveness(ProseRole::System)
+        .filter(|_| !compression_control);
+    let user_aggr = cfg
+        .proxy
+        .resolved_role_aggressiveness(ProseRole::User)
+        .filter(|_| !compression_control);
+    let live_compress = cfg.proxy.live_compresses() && !compression_control;
+    let mode = if compression_control {
+        HistoryMode::Off
+    } else {
+        cfg.proxy.resolved_history_mode()
+    };
     // #895 Track B: output-savings holdout arm, from the pristine body (before any
     // mutation below) so it matches the arm the response meter records. Control
     // conversations skip output-shaping but are still metered. Default 0 → Treatment.

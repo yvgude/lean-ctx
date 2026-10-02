@@ -70,7 +70,7 @@ pub(crate) async fn build_response(
     extra_stream_types: &[&str],
     usage_provider: crate::proxy::usage::Provider,
     url_model: Option<String>,
-    cohort: Option<crate::proxy::holdout::Arm>,
+    cohort: crate::proxy::holdout::Cohorts,
     wire: Option<Box<crate::proxy::usage::WireContext>>,
     xlat: bool,
     cache: Option<&crate::proxy::ocla_cache_bridge::OclaCacheBridge>,

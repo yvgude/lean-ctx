@@ -144,15 +144,62 @@ pub fn from_cohorts(cohorts: &HashMap<String, CohortUsage>) -> Savings {
 /// Two-sample reduction with a Welch 95 % CI, or `None` if degenerate
 /// (control mean 0, or variance unavailable).
 fn measured(control: &CohortUsage, treatment: &CohortUsage) -> Option<Measured> {
-    let control_avg = control.avg_output()?;
-    let treatment_avg = treatment.avg_output()?;
+    welch_reduction(
+        Sample::new(
+            control.output_tokens,
+            control.sum_sq_output,
+            control.requests,
+        ),
+        Sample::new(
+            treatment.output_tokens,
+            treatment.sum_sq_output,
+            treatment.requests,
+        ),
+    )
+}
+
+/// Running totals of one per-turn quantity in one arm.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Sample {
+    sum: u64,
+    sum_sq: u64,
+    n: u64,
+}
+
+impl Sample {
+    pub(crate) fn new(sum: u64, sum_sq: u64, n: u64) -> Self {
+        Self { sum, sum_sq, n }
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn mean(self) -> Option<f64> {
+        (self.n > 0).then(|| self.sum as f64 / self.n as f64)
+    }
+
+    /// Unbiased sample variance, clamped at 0 against floating-point error.
+    #[allow(clippy::cast_precision_loss)]
+    fn variance(self) -> Option<f64> {
+        if self.n < 2 {
+            return None;
+        }
+        let (n, sum, sum_sq) = (self.n as f64, self.sum as f64, self.sum_sq as f64);
+        Some(((sum_sq - sum * sum / n) / (n - 1.0)).max(0.0))
+    }
+}
+
+/// Relative reduction of the per-turn mean from `control` to `treatment`, with
+/// a 95 % CI from the Welch standard error of the difference of means. Shared
+/// by the output-savings and input-compression holdouts. `None` if degenerate.
+pub(crate) fn welch_reduction(control: Sample, treatment: Sample) -> Option<Measured> {
+    let control_avg = control.mean()?;
+    let treatment_avg = treatment.mean()?;
     if control_avg <= 0.0 {
         return None;
     }
-    let var_c = control.variance_output()?;
-    let var_t = treatment.variance_output()?;
+    let var_c = control.variance()?;
+    let var_t = treatment.variance()?;
     #[allow(clippy::cast_precision_loss)]
-    let (n_c, n_t) = (control.requests as f64, treatment.requests as f64);
+    let (n_c, n_t) = (control.n as f64, treatment.n as f64);
 
     let diff = control_avg - treatment_avg; // tokens saved per turn (may be < 0)
     let se = (var_c / n_c + var_t / n_t).sqrt();
@@ -165,8 +212,8 @@ fn measured(control: &CohortUsage, treatment: &CohortUsage) -> Option<Measured> 
         reduction_pct: diff / control_avg * 100.0,
         ci95_low_pct: (diff - margin) / control_avg * 100.0,
         ci95_high_pct: (diff + margin) / control_avg * 100.0,
-        control_n: control.requests,
-        treatment_n: treatment.requests,
+        control_n: control.n,
+        treatment_n: treatment.n,
     })
 }
 
@@ -200,6 +247,7 @@ mod tests {
             input_tokens: 0,
             output_tokens,
             sum_sq_output,
+            ..CohortUsage::default()
         }
     }
 
