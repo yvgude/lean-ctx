@@ -297,7 +297,7 @@ PROJECT & AGENT TOOLS:
 
 EVIDENCE & MEASUREMENT:
     stats [json|reset-cep]         Raw token counters (JSON export, reset CEP stats)
-    roi [--json|--md] [--export <path>]  Verified savings (ROI) report from the signed ledger
+    roi [--json|--md] [--export <path>]  Recorded savings (ROI) report from the signed ledger
     finops export [--target=focus|cbf|vantage] [--from=D] [--to=D] [--out=FILE]
                                    Daily cost/savings rows from the savings ledger
     measure <baseline-start|baseline-stop|treatment-start|treatment-stop|compare|report>

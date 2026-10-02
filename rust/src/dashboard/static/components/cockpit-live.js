@@ -750,7 +750,7 @@ class CockpitLive extends HTMLElement {
               esc(ff(nativePassthrough)) + ' native passthrough</span>'
             : '') +
           '</p>'
-        : '<p class="hs">verified savings today</p>') +
+        : '<p class="hs">recorded savings today (signed ledger)</p>') +
       '</div>' +
       '<div class="hc">' +
       '<span class="hl">All-Time Tokens Saved' + tip('all_time_saved') + '</span>' +

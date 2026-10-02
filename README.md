@@ -207,7 +207,7 @@ lean-ctx shadow --latest
 - **Context Packages**: `lean-ctx pack create` bundles Knowledge + Graph + Session into portable `.ctxpkg` files with SHA-256 integrity
 - **Context Time Machine**: `lean-ctx snapshot create|list|show|verify|restore|publish|import` — git-anchored, ed25519-signed snapshots of the layer state (lineage, ledger Φ, ROI, session) on an append-only timeline; replay them in the dashboard, `restore` to resume a session (and `--git` to check out the commit), or `publish`/`import` a signed snapshot to share it ([concept →](docs/concepts/context-time-machine.md))
 - **Observability**: `lean-ctx gain --live` for real-time savings, `lean-ctx wrapped` for weekly/monthly summaries (`gain --svg`/`--share` for a shareable card or self-hostable page), `lean-ctx watch` for TUI monitoring
-- **Verified savings**: `lean-ctx savings` is an auditable, per-event ledger (tokenizer transparency, bounce-netting, tamper-evident SHA-256 chain) — local-only, on by default
+- **Savings ledger**: `lean-ctx savings` is an auditable, per-event ledger of local token counts (tokenizer transparency, bounce-netting, tamper-evident SHA-256 chain) — local-only, on by default; provider-measured savings need the proxy with counterfactual metering
 - **HTTP mode**: `lean-ctx serve` for Streamable HTTP MCP + `/v1/tools/call` (used by the Cookbook and external clients)
 
 </details>

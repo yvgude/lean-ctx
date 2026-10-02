@@ -38,7 +38,7 @@ fn tags_json(row: &DailyCostRow) -> String {
 }
 
 /// Vantage custom-provider CSV: Usage rows plus Credit rows (negative cost)
-/// for the verified savings.
+/// for the recorded ledger savings.
 pub fn to_csv(rows: &[DailyCostRow]) -> String {
     let mut out = HEADER.join(",");
     out.push('\n');

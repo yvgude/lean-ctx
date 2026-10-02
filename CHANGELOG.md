@@ -54,6 +54,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   paired control), `provider_path_observed` and `net_bill_impact_tokens/usd`
   (`null` when not observable); existing keys are unchanged.
 
+### Changed — the savings ledger no longer calls its numbers "verified"
+
+- The ledger signature proves a record was not altered; the numbers in it are
+  local token counts (before vs. after lean-ctx), not provider-billed usage.
+  `lean-ctx roi` (terminal and Markdown) is now titled "Recorded Savings" and
+  states that basis, `lean-ctx savings` shows "SIGNED SAVINGS LEDGER", the
+  cockpit says "recorded savings today", and FinOps FOCUS credit rows read
+  "LeanCTX recorded savings (hash-chained ledger, local token counts)".
+  Provider-measured savings remain the counterfactual-metering pair (#701) in
+  `lean-ctx proxy status`. JSON keys and metric names (`saved_verified`) are
+  unchanged.
+- `SavingsEvent::quality_signal` uses one set of compression bands for every
+  writer (≥ 70 / 50 / 30 % removed) and is documented as a compression measure.
+
 ### Security — secret redaction covers more forms
 
 - Redaction now also catches AWS `ASIA…` session keys, GitHub fine-grained

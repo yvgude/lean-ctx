@@ -13,7 +13,7 @@
 //!
 //! Two rows per [`DailyCostRow`]:
 //! - `ChargeCategory=Usage`: the actual token spend through lean-ctx.
-//! - `ChargeCategory=Credit`: verified savings as a negative cost (FOCUS's
+//! - `ChargeCategory=Credit`: recorded ledger savings as a negative cost (FOCUS's
 //!   category for granted reductions) — never mixed into Usage so budgets
 //!   stay clean.
 
@@ -209,7 +209,7 @@ pub fn to_csv(rows: &[DailyCostRow]) -> String {
                 -row.savings_usd,
                 row.tokens_saved,
                 format!(
-                    "LeanCTX verified savings (hash-chained ledger) via {} ({})",
+                    "LeanCTX recorded savings (hash-chained ledger, local token counts) via {} ({})",
                     row.tool, row.model
                 ),
             );
