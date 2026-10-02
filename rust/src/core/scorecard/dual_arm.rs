@@ -35,8 +35,20 @@
 //! model the carried prefix (the bulk) is additionally billed at the cheap
 //! `cache_read` rate, widening the margin. Hence: **strict win when cache-priced,
 //! at-least break-even otherwise** — the exact claim from the plan's DoD.
+//!
+//! ## What this is not
+//!
+//! A synthetic upper bound, not "lean-ctx on vs. off". Arm A never uses the
+//! provider's prompt cache, but real agent hosts cache the carried prefix with or
+//! without lean-ctx, so the percentage overstates what switching lean-ctx on saves.
+//! Fair on/off comparisons are `eval ab`, `eval footprint --compare` and the proxy
+//! compression holdout. The scorecard labels itself `synthetic_upper_bound`.
 
 use serde::Serialize;
+
+/// How the arms relate; serialized so no consumer can mistake the result for an
+/// on/off measurement.
+pub const COMPARISON: &str = "synthetic_upper_bound";
 
 use crate::core::benchmark::{self, FileMeasurement};
 use crate::core::gain::model_pricing::{ModelCost, ModelPricing};
@@ -89,6 +101,8 @@ pub struct DualArmResult {
 #[derive(Debug, Clone, Serialize)]
 pub struct DualArmScorecard {
     pub schema_version: u32,
+    /// Always [`COMPARISON`]: Arm A is a no-prompt-cache worst case, not lean-ctx off.
+    pub comparison: &'static str,
     pub tokenizer: String,
     pub scenario: String,
     pub turns: usize,
@@ -248,6 +262,7 @@ fn run_for_dir(scenario: &str, root: &std::path::Path) -> DualArmScorecard {
 
     DualArmScorecard {
         schema_version: 1,
+        comparison: COMPARISON,
         tokenizer: crate::core::tokens::counting_family_label(),
         scenario: scenario.to_string(),
         turns: turns.len(),
@@ -287,7 +302,9 @@ impl DualArmScorecard {
     /// Human-readable table for `lean-ctx benchmark dual-arm`.
     pub fn to_human(&self) -> String {
         let mut out = String::new();
-        out.push_str("lean-ctx dual-arm self-verify (input-side, output held equal)\n");
+        out.push_str(
+            "lean-ctx dual-arm self-verify (synthetic upper bound, input-side, output held equal)\n",
+        );
         out.push_str(&format!(
             "scenario:  {} ({} turns)\n",
             self.scenario, self.turns
@@ -320,8 +337,10 @@ impl DualArmScorecard {
         out.push_str("------------------------------------------------------------------------------------\n");
         out.push_str(
             "Arm B (long-lived + cache-aware) is the lean-ctx proxy rail; Arm A is a stateless,\n\
-             phase-isolated session. Cache-priced models show a strict win; non-caching models\n\
-             still win on compression + read-cache, never worse than break-even.\n",
+             phase-isolated session that never uses the provider's prompt cache. Real agent\n\
+             hosts cache the prefix with or without lean-ctx, so this is an upper bound, not\n\
+             lean-ctx on vs. off. For on/off evidence use `lean-ctx eval ab` or\n\
+             `lean-ctx eval footprint --compare`.\n",
         );
         out
     }
@@ -433,7 +452,10 @@ mod tests {
         let human = sc.to_human();
         assert!(human.contains("dual-arm self-verify"));
         assert!(human.contains("claude-opus-4.5"));
+        // The worst-case baseline must never read as an on/off measurement.
+        assert!(human.contains("upper bound, not\nlean-ctx on vs. off"));
         let json: serde_json::Value = serde_json::from_str(&sc.to_json()).unwrap();
+        assert_eq!(json["comparison"], "synthetic_upper_bound");
         assert!(json["results"].as_array().unwrap().len() >= 5);
         assert_eq!(json["schema_version"], 1);
     }

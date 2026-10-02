@@ -393,6 +393,9 @@ response's billed usage. `/status` then carries a `verified_savings` block
 next to the estimate. Same-request pairing means no traffic-mix confounds; a
 net-negative result (stub overhead exceeding the squeeze) is reported honestly,
 never clamped. Anthropic only — OpenAI/Gemini have no free counting endpoint.
+Scope: this verifies the input saving of each rewritten request. It does not
+measure a conversation run without lean-ctx, which may take a different number
+of turns; see [measurement scope](../concepts/measurement-scope.md).
 
 ```bash
 lean-ctx config set proxy.counterfactual_metering true

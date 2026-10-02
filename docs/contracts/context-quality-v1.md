@@ -146,3 +146,6 @@ task quality — and states `Task Quality: UNMEASURED`. v1 JSON (including
 Documentation and release notes may state a quality claim only with its tier,
 suite, model population and verdict. Tier A/B results support statements about
 mechanisms and invariants only.
+
+Economic figures follow the same rule; their evidence levels per data path are
+described in [measurement scope](../concepts/measurement-scope.md).

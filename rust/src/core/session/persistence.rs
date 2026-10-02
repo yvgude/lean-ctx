@@ -26,6 +26,13 @@ struct ProjectSessionIndex {
     project_root: String,
     /// Oldest to newest; duplicates are removed before appending on every save.
     session_ids: Vec<String>,
+    /// Set only by a full-store scan that found no session for this root, written
+    /// under the index lock. It makes "no session" a cached answer: without it
+    /// every process (each hook call loads config, which resolves the project
+    /// root) re-parsed the whole session store for a project without sessions.
+    /// Any save for the root appends an id, which ends the empty state.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    verified_empty: bool,
 }
 
 fn normalized_safe_project_root(project_root: &str) -> Option<String> {
@@ -99,7 +106,9 @@ fn update_project_index(dir: &std::path::Path, project_root: &str, id: &str) -> 
                 version: 1,
                 project_root: project_root.to_string(),
                 session_ids: Vec::new(),
+                verified_empty: false,
             });
+        index.verified_empty = false;
         index.session_ids.retain(|existing| existing != id);
         index.session_ids.push(id.to_string());
         let excess = index
@@ -135,17 +144,29 @@ fn repair_project_index(dir: &std::path::Path, project_root: &str) -> Option<Ses
     }
     matches.sort_by_key(|session| session.updated_at);
     let latest = matches.last().cloned();
-    let first_retained = matches.len().saturating_sub(PROJECT_HISTORY_LIMIT);
-    let session_ids = matches[first_retained..]
-        .iter()
-        .map(|session| session.id.clone())
-        .collect();
+    let scanned_ids: Vec<String> = matches.iter().map(|session| session.id.clone()).collect();
     if let Err(error) = with_project_index_lock(dir, project_root, |index_path| {
+        // The scan ran outside the lock; a save may have indexed a session in the
+        // meantime. Merge instead of overwriting so that id is never lost, but drop
+        // ids whose file is gone (the reason this repair ran).
+        let mut session_ids = scanned_ids;
+        if let Some(current) = read_project_index(dir, project_root) {
+            for id in current.session_ids {
+                if !dir.join(format!("{id}.json")).is_file() {
+                    continue;
+                }
+                session_ids.retain(|existing| existing != &id);
+                session_ids.push(id);
+            }
+        }
+        let first_retained = session_ids.len().saturating_sub(PROJECT_HISTORY_LIMIT);
+        session_ids.drain(..first_retained);
         write_project_index(
             index_path,
             &ProjectSessionIndex {
                 version: 1,
                 project_root: project_root.to_string(),
+                verified_empty: session_ids.is_empty(),
                 session_ids,
             },
         )
@@ -410,12 +431,16 @@ impl SessionState {
         let target_root = normalized_safe_project_root(project_root)?;
         let dir = sessions_dir()?;
 
-        if let Some(index) = read_project_index(&dir, &target_root)
-            && let Some(id) = index.session_ids.last()
-            && let Some(session) = Self::load_by_id(id)
-            && session_matches_project_root(&session, std::path::Path::new(&target_root))
-        {
-            return Some(session);
+        if let Some(index) = read_project_index(&dir, &target_root) {
+            if let Some(id) = index.session_ids.last()
+                && let Some(session) = Self::load_by_id(id)
+                && session_matches_project_root(&session, std::path::Path::new(&target_root))
+            {
+                return Some(session);
+            }
+            if index.session_ids.is_empty() && index.verified_empty {
+                return None;
+            }
         }
 
         repair_project_index(&dir, &target_root)
@@ -819,6 +844,7 @@ mod tests {
                 version: 1,
                 project_root: canonical_root,
                 session_ids: Vec::new(),
+                verified_empty: false,
             },
         )
         .expect("empty project index");
@@ -833,6 +859,42 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(index_path).expect("repaired index"))
                 .expect("valid repaired index");
         assert_eq!(repaired.session_ids, ["repair-empty"]);
+    }
+
+    #[test]
+    fn a_scan_that_finds_no_session_is_cached_until_the_next_save() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().expect("project tempdir");
+        let root = project.path().to_string_lossy().to_string();
+        let sessions = crate::core::session::paths::sessions_dir().expect("sessions dir");
+        std::fs::create_dir_all(&sessions).expect("session store exists");
+
+        // First lookup scans the store, finds nothing and records that.
+        assert!(SessionState::load_latest_for_project_root(&root).is_none());
+
+        // A later unindexed file is not picked up: the verified-empty answer is
+        // reused instead of re-parsing the whole store on every process start.
+        let mut unindexed = SessionState::new();
+        unindexed.id = "unindexed-after-scan".to_string();
+        unindexed.project_root = Some(root.clone());
+        std::fs::write(
+            sessions.join("unindexed-after-scan.json"),
+            serde_json::to_string(&unindexed).expect("serialize session"),
+        )
+        .expect("write unindexed session");
+        assert!(SessionState::load_latest_for_project_root(&root).is_none());
+
+        // A real save indexes the session and ends the empty state.
+        let mut saved = SessionState::new();
+        saved.id = "saved-after-scan".to_string();
+        saved.project_root = Some(root.clone());
+        saved.save().expect("save session");
+        assert_eq!(
+            SessionState::load_latest_for_project_root(&root)
+                .expect("saved session")
+                .id,
+            "saved-after-scan"
+        );
     }
 
     #[test]

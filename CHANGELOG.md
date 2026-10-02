@@ -5,6 +5,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — hooks no longer re-parse every saved session in projects without one
+
+- In a project with no saved session, every `hook rewrite` / `hook redirect`
+  (each agent Bash and Read call) loaded the config, which resolves the project
+  root through the latest session, and found the project index empty. An empty
+  index was treated as "unknown", so each hook process re-parsed the whole
+  session store. Measured on a store with 7,361 sessions (283 MB): a Bash
+  rewrite hook took 2.7 s and a Read redirect 2.7 s (median); with this fix
+  both take ~25 ms.
+- A full-store scan that finds no session now records that in the project
+  index (`verified_empty`). The next save for the project clears it. An empty
+  index without that mark (older versions, a damaged file) is still repaired.
+- The repair merges with the index under its lock instead of overwriting it, so
+  a session saved while the scan ran keeps its index entry.
+
+### Changed — `benchmark dual-arm` is labelled a synthetic upper bound
+
+- Its baseline never uses the provider's prompt cache, while agent hosts cache
+  the prefix with or without lean-ctx. The report now says it is an upper bound,
+  not lean-ctx on vs. off, and the JSON carries
+  `"comparison": "synthetic_upper_bound"`. The README no longer quotes its
+  percentage as a saving.
+- New [measurement scope](docs/concepts/measurement-scope.md) page: what each
+  data path (tool path, proxy, embedded) can observe and which evidence level a
+  savings, reach or quality figure can reach.
+
 ### Changed — quality evidence states what it can prove (#1905)
 
 - **Breaking for CI users of `--gate`:** `lean-ctx eval ab` / `testbench` /
@@ -317,8 +343,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - README: the CI testbench and A/B replays are described as mechanism gates,
   and Shadow Mode as a simulated baseline. The archived E-Bench v2 report now
   names the model its result files record (gpt-5.6-terra, not GPT-4.1).
-- Still open in #1905: a powered with/without study and a real holdout arm
-  for compression.
+- Still open from #1905: a powered with/without study. The real holdout arm
+  for compression is listed above.
 
 ### Added — `lean-ctx pack --limit`: one bundle that fits a chat box (#1885)
 

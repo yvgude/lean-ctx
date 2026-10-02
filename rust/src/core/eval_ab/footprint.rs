@@ -588,7 +588,7 @@ mod tests {
             provider: crate::core::eval_ab::model::PROVIDER_OPENAI.into(),
             endpoint: "http://localhost:11434/v1".into(),
             params: ModelParams {
-                model: "gemma4:e4b".into(),
+                model: "local-model".into(),
                 ..ModelParams::default()
             },
         }

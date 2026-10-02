@@ -627,11 +627,13 @@ true by construction: an unchanged cached re-read costs ~13 tokens.
 
 lean-ctx's **own cost is measured too**: the CI-measured fixed per-session
 footprint (advertised tool schemas + MCP instructions + wakeup briefing) is
-~3.0K tokens and gated via `lean-ctx doctor overhead --gate`. And the
-long-lived proxy rail has a deterministic self-verify —
-`lean-ctx benchmark dual-arm --json` replays a 72-turn session and prices it per
-model (digest `f5ed145e61ce3689`, 99.4% input-side saving on cache-priced rails;
-methodology: [bench/agent-task/r2](bench/agent-task/r2/README.md)).
+~3.0K tokens and gated via `lean-ctx doctor overhead --gate`. The long-lived
+proxy rail has a deterministic self-verify, `lean-ctx benchmark dual-arm --json`,
+which replays a 72-turn session and prices it per model. Its baseline never uses
+the provider's prompt cache, so the result is a **synthetic upper bound**, not
+lean-ctx on vs. off: agent hosts cache the prefix with or without lean-ctx. For
+on/off evidence use `lean-ctx eval ab`, `lean-ctx eval footprint --compare` or the
+proxy's compression holdout (`[proxy] compression_holdout`, opt-in).
 
 Accuracy is gated, within stated limits. A model-free A/B gate checks that the JSON
 crusher keeps every gold answer in its fixtures while cutting tokens, and proxy
@@ -646,7 +648,10 @@ that compression preserves answer quality. Every eval report states its evidence
 tier (A mechanism … E production); a run below 30 paired tasks is
 `UNDERPOWERED` and fails `--gate` unless run as an explicit `--mechanism` check — see
 [context-quality-v1](docs/contracts/context-quality-v1.md).
-A powered quality study is still open ([#1905](https://github.com/yvgude/lean-ctx/issues/1905)).
+A powered with/without quality study has not been run yet; the proxy's
+compression holdout measures prompt size on real traffic and reports answer
+quality as `unknown`. What each number can and cannot show, per data path:
+[measurement scope](docs/concepts/measurement-scope.md).
 
 - **Latest snapshot**: [BENCHMARKS.md](BENCHMARKS.md)
 - **Reproduce**: `lean-ctx benchmark report .`
