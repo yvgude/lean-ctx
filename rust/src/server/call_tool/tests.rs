@@ -1461,7 +1461,8 @@ mod shell_outcome_tests {
                 .strip_prefix(&server_dir)
                 .expect("entry is under server source")
                 .to_string_lossy()
-                .into_owned();
+                // Windows yields `call_tool\tests.rs`; compare in one separator.
+                .replace('\\', "/");
             if TEST_ONLY_EXEMPTIONS.contains(&relative.as_str()) {
                 continue;
             }

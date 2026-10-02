@@ -239,6 +239,9 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Experimental,
         ),
+        // Evidence tiers, eval verdicts, retention probes and the quality
+        // receipt; the receipt section is still being extended additively.
+        doc("context-quality", "context-quality-v1.md", 1, Experimental),
         doc(
             "multi-agent-efficiency-benchmark",
             "multi-agent-efficiency-benchmark-v1.md",
