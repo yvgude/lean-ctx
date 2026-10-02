@@ -18,60 +18,34 @@ pub(super) fn handle(
     }
 }
 
-/// #1284: today's (UTC) totals from metering.jsonl — input tokens, saved
-/// tokens, and native_shell_passthrough call count. Unlike the savings ledger,
+/// #1284: today's (UTC) totals from metering.jsonl. Unlike the savings ledger,
 /// metering records EVERY ctx_* call including zero-saving ones, so this is
-/// the honest denominator. Cached on file length: the Live view polls every
-/// few seconds and the file is append-only.
-fn today_metering_summary() -> (u64, u64, u64) {
+/// the honest denominator. Only today's tail of the file is read; the result is
+/// cached on (file length, day) because the Live view polls every few seconds.
+fn today_metering_summary() -> crate::core::metering::DayTotals {
+    use crate::core::metering::{DayTotals, MeterStore};
     use std::sync::Mutex;
-    static CACHE: Mutex<Option<(u64, (u64, u64, u64))>> = Mutex::new(None);
+    static CACHE: Mutex<Option<(u64, chrono::NaiveDate, DayTotals)>> = Mutex::new(None);
 
-    let Ok(store) = crate::core::metering::MeterStore::from_data_dir() else {
-        return (0, 0, 0);
+    let Ok(store) = MeterStore::from_data_dir() else {
+        return DayTotals::default();
     };
     let len = std::fs::metadata(store.path())
         .map(|m| m.len())
         .unwrap_or(0);
+    let today = Utc::now().date_naive();
     if let Ok(guard) = CACHE.lock()
-        && let Some((cached_len, result)) = *guard
+        && let Some((cached_len, cached_day, totals)) = *guard
         && cached_len == len
+        && cached_day == today
     {
-        return result;
+        return totals;
     }
-
-    let today = Utc::now().format("%Y-%m-%d").to_string();
-    let mut input = 0u64;
-    let mut saved = 0u64;
-    let mut passthrough = 0u64;
-    if let Ok(content) = std::fs::read_to_string(store.path()) {
-        // Append-only and chronological: walk from the end, stop at yesterday.
-        for line in content.lines().rev() {
-            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
-                continue;
-            };
-            let ts = v.get("timestamp").and_then(|t| t.as_str()).unwrap_or("");
-            if !ts.starts_with(&today) {
-                break;
-            }
-            input += v
-                .get("input_tokens")
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or(0);
-            saved += v
-                .get("savings_tokens")
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or(0);
-            if v.get("tool_name").and_then(|t| t.as_str()) == Some("native_shell_passthrough") {
-                passthrough += 1;
-            }
-        }
-    }
-    let result = (input, saved, passthrough);
+    let totals = store.day_totals(today);
     if let Ok(mut guard) = CACHE.lock() {
-        *guard = Some((len, result));
+        *guard = Some((len, today, totals));
     }
-    result
+    totals
 }
 
 fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str, String)> {
@@ -182,7 +156,13 @@ fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str
             // agent did". Ship the metering view (ALL metered ctx_* calls,
             // zero-saving ones included) and the native-passthrough count next
             // to it so the panel can label the denominator honestly.
-            let (metered_input, metered_saved, native_passthrough) = today_metering_summary();
+            let metered = today_metering_summary();
+            let (metered_input, metered_saved) = (metered.input_tokens, metered.savings_tokens);
+            let reach =
+                crate::core::gain::reach::reach_view(crate::core::gain::reach::ReachCounts {
+                    routed_calls: metered.routed_calls,
+                    native_passthrough_calls: metered.native_passthrough_calls,
+                });
             let compression_session = serde_json::json!({
                 "savings_tokens": today_saved,
                 "total_raw": today_baseline,
@@ -198,7 +178,8 @@ fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str
                 "savings_percent_of_metered": if metered_input > 0 {
                     metered_saved as f64 * 100.0 / metered_input as f64
                 } else { 0.0 },
-                "native_passthrough_calls": native_passthrough,
+                "native_passthrough_calls": metered.native_passthrough_calls,
+                "reach": reach,
             });
 
             let global = crate::core::stats::load_for_display();

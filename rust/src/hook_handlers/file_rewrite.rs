@@ -151,7 +151,7 @@ fn powershell_output(
 fn record_native_passthrough() {
     if let Ok(store) = crate::core::metering::MeterStore::from_data_dir() {
         let _ = store.append(&crate::core::metering::MeterEntry::new(
-            "native_shell_passthrough",
+            crate::core::metering::NATIVE_PASSTHROUGH_TOOL,
             0,
             0,
             0,

@@ -5,6 +5,7 @@ pub mod gain_score;
 #[allow(dead_code)]
 pub mod live_pricing;
 pub mod model_pricing;
+pub mod reach;
 pub mod stream_savings;
 pub mod task_classifier;
 

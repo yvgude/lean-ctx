@@ -705,6 +705,10 @@ class CockpitLive extends HTMLElement {
     var meteredInput = comp ? Number(comp.metered_input_tokens || 0) : 0;
     var meteredPct = comp ? Math.round(Number(comp.savings_percent_of_metered || 0)) : 0;
     var nativePassthrough = comp ? Number(comp.native_passthrough_calls || 0) : 0;
+    // Reach: the denominator is only what lean-ctx observed (routed + native
+    // passthrough); native calls that bypass every hook are unknown.
+    var reach = comp && comp.reach ? comp.reach : null;
+    var reachObserved = reach ? Number(reach.observed_calls || 0) : 0;
 
     var allTimeSaved = 0;
     if (stats) {
@@ -745,9 +749,11 @@ class CockpitLive extends HTMLElement {
           (meteredInput > 0
             ? ' · ' + esc(String(meteredPct)) + '% of all ' + esc(ff(meteredInput)) + ' metered tokens'
             : '') +
-          (nativePassthrough > 0
-            ? ' · <span title="native shell calls that bypassed lean-ctx — token volume unmetered">' +
-              esc(ff(nativePassthrough)) + ' native passthrough</span>'
+          (reachObserved > 0
+            ? ' · <span title="Share of tool calls lean-ctx observed today (routed + ' +
+              esc(ff(nativePassthrough)) + ' native shell passthrough). Native tool calls that bypass every hook are not observable, so this is not a share of all agent activity.">' +
+              esc(String(Math.round(Number(reach.routed_pct_of_observed || 0)))) + '% of ' +
+              esc(ff(reachObserved)) + ' observed calls routed</span>'
             : '') +
           '</p>'
         : '<p class="hs">recorded savings today (signed ledger)</p>') +
@@ -757,7 +763,7 @@ class CockpitLive extends HTMLElement {
       '<div class="token-counter" id="ckl-alltime-saved" data-live="1">' +
       esc(ff(allTimeSaved)) +
       '</div>' +
-      '<p class="hs">across all sessions</p>' +
+      '<p class="hs">across all sessions · local estimate on lean-ctx traffic</p>' +
       '</div>' +
       '<div class="hc">' +
       '<span class="hl">Read Rendering Reuse</span>' +

@@ -1,6 +1,8 @@
 /**
- * Adoption Widget — shows lean-ctx MCP adoption rate vs native passthrough.
- * Reads from /api/stats (mcp-live.json) and renders a gauge + breakdown.
+ * Reach Widget — share of today's *observed* tool calls routed through lean-ctx.
+ * Reads compression_session.reach from /api/session (the same reach the live
+ * cockpit shows). Native calls that bypass every hook cannot be counted, so
+ * the share is never presented as a share of all agent activity.
  */
 
 function adoptApi() {
@@ -49,8 +51,9 @@ class CockpitAdoption extends HTMLElement {
     var fetch = adoptApi();
     if (!fetch) { this._render(); return; }
     try {
-      var res = await fetch('/api/stats');
-      this._data = res;
+      var res = await fetch('/api/session');
+      var comp = res && res.compression_session ? res.compression_session : null;
+      this._data = comp && comp.reach ? comp.reach : null;
       this._error = null;
     } catch (e) {
       this._error = e.message || 'Failed to load';
@@ -65,28 +68,34 @@ class CockpitAdoption extends HTMLElement {
       return;
     }
     if (this._error || !this._data) {
-      this.innerHTML = '<div class="widget-card"><p class="muted">No adoption data available.</p></div>';
+      this.innerHTML = '<div class="widget-card"><p class="muted">No reach data available.</p></div>';
       return;
     }
 
     var d = this._data;
-    var pct = Number(d.adoption_pct) || 0;
-    var ctx = Number(d.ctx_tool_calls) || 0;
-    var native = Number(d.native_passthrough) || 0;
-    var total = ctx + native;
+    var routed = Number(d.routed_calls) || 0;
+    var native = Number(d.native_passthrough_calls) || 0;
+    var observed = Number(d.observed_calls) || 0;
+    if (observed === 0) {
+      this.innerHTML = '<div class="widget-card"><h3 class="widget-title">lean-ctx Reach</h3>' +
+        '<p class="muted">No tool calls observed today.</p></div>';
+      return;
+    }
+    var pct = Math.round(Number(d.routed_pct_of_observed) || 0);
     var color = adoptColor(pct);
 
     this.innerHTML = '<div class="widget-card adopt-card">' +
-      '<h3 class="widget-title">lean-ctx Adoption</h3>' +
+      '<h3 class="widget-title">lean-ctx Reach (today)</h3>' +
       '<div class="adopt-body">' +
         '<div class="adopt-gauge">' +
           adoptGauge(pct, color) +
           '<span class="adopt-pct" style="color:' + color + '">' + pct + '%</span>' +
         '</div>' +
         '<div class="adopt-breakdown">' +
-          '<div class="adopt-row"><span class="adopt-label">MCP (ctx_*)</span><span class="adopt-val">' + ctx + '</span></div>' +
-          '<div class="adopt-row"><span class="adopt-label">Native passthrough</span><span class="adopt-val">' + native + '</span></div>' +
-          '<div class="adopt-row adopt-total"><span class="adopt-label">Total calls</span><span class="adopt-val">' + total + '</span></div>' +
+          '<div class="adopt-row"><span class="adopt-label">Routed through lean-ctx</span><span class="adopt-val">' + routed + '</span></div>' +
+          '<div class="adopt-row"><span class="adopt-label">Native shell passthrough</span><span class="adopt-val">' + native + '</span></div>' +
+          '<div class="adopt-row adopt-total"><span class="adopt-label">Observed calls</span><span class="adopt-val">' + observed + '</span></div>' +
+          '<div class="adopt-row"><span class="adopt-label">Native calls outside hooks</span><span class="adopt-val">unknown</span></div>' +
         '</div>' +
       '</div>' +
       '<div class="adopt-hint">' + this._hint(pct) + '</div>' +
@@ -94,10 +103,10 @@ class CockpitAdoption extends HTMLElement {
   }
 
   _hint(pct) {
-    if (pct >= 90) return '<span class="hint-good">Excellent — full lean-ctx adoption.</span>';
-    if (pct >= 70) return '<span class="hint-ok">Good — most calls use MCP tools.</span>';
-    if (pct >= 40) return '<span class="hint-warn">Moderate — consider enforcing Replace mode.</span>';
-    return '<span class="hint-bad">Low adoption — check hook configuration.</span>';
+    if (pct >= 90) return '<span class="hint-good">Nearly every observed call is routed.</span>';
+    if (pct >= 70) return '<span class="hint-ok">Most observed calls are routed.</span>';
+    if (pct >= 40) return '<span class="hint-warn">Many observed calls bypass lean-ctx — consider Replace mode.</span>';
+    return '<span class="hint-bad">Most observed calls bypass lean-ctx — check hook configuration.</span>';
   }
 }
 
