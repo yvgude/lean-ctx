@@ -16,8 +16,10 @@ use serde_json::json;
 use crate::core::data_dir::test_env_lock;
 use crate::core::hasher::hash_short;
 use crate::core::recovery_verify::{RecoveryOutcome, verify_handle};
+#[cfg(unix)]
+use crate::proxy::ccr::read_tee;
 use crate::proxy::ccr::{
-    MIN_TEE_BYTES, inband_marker, persist, persist_json, persist_tabular, read_tee, resolve_tee,
+    MIN_TEE_BYTES, inband_marker, persist, persist_json, persist_tabular, resolve_tee,
     splice_inband_in_place,
 };
 use crate::tools::ctx_expand;

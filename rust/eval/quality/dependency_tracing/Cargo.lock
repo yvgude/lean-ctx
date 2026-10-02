@@ -62,4 +62,3 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "libsqlite3-sys"
 version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-

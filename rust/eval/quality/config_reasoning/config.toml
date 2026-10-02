@@ -23,4 +23,3 @@ sample_rate = 0.0375
 profile = "deferred-queue"
 [audit.exports]
 retention_days = 91
-

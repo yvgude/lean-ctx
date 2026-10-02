@@ -40,4 +40,3 @@ error[E0599]: no method named `try_into` found for struct `HeaderValue` in the c
 
 error[E0384]: cannot assign twice to immutable variable `limit`
   --> src/budget.rs:28:5
-

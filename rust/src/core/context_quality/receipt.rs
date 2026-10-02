@@ -122,7 +122,9 @@ impl ContextQualityReceiptV1 {
     pub fn recovery_state(&self) -> DimensionState {
         match self.recovery {
             None => DimensionState::Unmeasured,
-            Some(r) if r.critical_failures > 0 => DimensionState::Fail,
+            // A handle that does not recover is broken even when the facts behind it
+            // were not critical.
+            Some(r) if r.failures > 0 => DimensionState::Fail,
             Some(_) => DimensionState::Pass,
         }
     }
@@ -261,7 +263,7 @@ mod tests {
                 handles_emitted: 1,
                 handles_verified: 0,
                 failures: 1,
-                critical_failures: 1,
+                critical_failures: 0,
             }),
         );
         assert!(!broken_recovery.passes());

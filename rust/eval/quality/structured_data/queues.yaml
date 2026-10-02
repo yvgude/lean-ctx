@@ -19,4 +19,3 @@ services:
     region: eu-south-2
     owner: team-ash
     enabled: true
-
