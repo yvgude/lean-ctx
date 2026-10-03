@@ -1,0 +1,15 @@
+{
+  "name": "lean-ctx-local",
+  "description": "Local marketplace for the lean-ctx Claude Code mod MVP.",
+  "owner": {
+    "name": "Thinkery / Yves Gugger"
+  },
+  "plugins": [
+    {
+      "name": "lean-ctx",
+      "source": ".",
+      "description": "Shape lean-ctx tools, wake on background job completion, and show per-session request usage.",
+      "version": "0.1.0"
+    }
+  ]
+}

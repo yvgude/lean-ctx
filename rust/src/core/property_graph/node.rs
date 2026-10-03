@@ -370,7 +370,7 @@ pub(super) fn all_edges_flat(
     // non-existent `e.weight` made this query error out, so PG `edges()` always
     // returned empty (#682.3). Compute the weight from the kind instead.
     let mut stmt = conn.prepare(
-        "SELECT p1.path, p2.path, e.kind
+        "SELECT p1.path, p2.path, e.kind, e.metadata
          FROM edges e
          JOIN nodes n1 ON e.source_id = n1.id
          JOIN nodes n2 ON e.target_id = n2.id
@@ -383,12 +383,13 @@ pub(super) fn all_edges_flat(
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
             row.get::<_, String>(2)?,
+            row.get::<_, Option<String>>(3)?,
         ))
     })?;
     let mut result = Vec::new();
     for r in rows {
-        let (from, to, kind) = r?;
-        let weight = super::queries::edge_weight(&kind);
+        let (from, to, kind, metadata) = r?;
+        let weight = super::queries::evidence_weight(&kind, metadata.as_deref());
         result.push((from, to, kind, weight));
     }
     Ok(result)

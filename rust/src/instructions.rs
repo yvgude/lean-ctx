@@ -53,6 +53,37 @@ pub fn build_instructions_with_client_and_session(
     build_instructions_with_client_and_optional_session(crp_mode, client_name, Some(session))
 }
 
+/// The client's documented hard limit for initialize `instructions`, in chars
+/// (`client_constraints`; Claude Code: 2048). Claude Code cuts any overflow
+/// itself, mid-sentence, with a `[truncated]` marker.
+fn client_instruction_char_cap(client_name: &str) -> Option<usize> {
+    let id = crate::core::client_capabilities::ClientMcpCapabilities::detect(client_name).client_id;
+    crate::core::client_constraints::by_client_id(&id).and_then(|c| c.mcp_instructions_max_chars)
+}
+
+/// Longest prefix of `s` that ends at a line break and holds at most `budget`
+/// characters (not bytes); CRLF-safe. The skeleton leads with the binding
+/// mapping, so trimming from the end drops the least important lines first.
+/// Deterministic (#498).
+fn trim_to_char_budget(s: &str, budget: usize) -> String {
+    if s.chars().count() <= budget {
+        return s.to_string();
+    }
+    // `n` = chars before position `i`; a `\n` there ends a prefix of `n` chars.
+    let best = s
+        .char_indices()
+        .enumerate()
+        .take_while(|(n, _)| *n <= budget)
+        .filter(|(_, (_, c))| *c == '\n')
+        .map(|(_, (i, _))| i)
+        .last()
+        .unwrap_or(0);
+    if best == 0 {
+        return s.chars().take(budget).collect();
+    }
+    s[..best].trim_end().to_string()
+}
+
 fn build_instructions_with_client_and_optional_session(
     crp_mode: CrpMode,
     client_name: &str,
@@ -444,6 +475,15 @@ fn build_full_instructions(
     // Keep the ladder after the CRP block.
     let guidance_suffix = format!("{}{}", crp_mode_suffix(crp_mode), solution_ladder);
 
+    // A host char cap trims only the base: the protected suffix and the
+    // `\n\n` join always fit, so the host never cuts mid-sentence.
+    let base = match client_instruction_char_cap(client_name) {
+        Some(max) => {
+            let suffix_chars = guidance_suffix.trim_end_matches('\n').chars().count();
+            trim_to_char_budget(&base, max.saturating_sub(suffix_chars + 2))
+        }
+        None => base,
+    };
     assemble_within_cap(&base, &guidance_suffix, INSTRUCTION_CAP_TOKENS)
 }
 
@@ -649,6 +689,35 @@ pub(crate) fn max_shell_hint_tokens() -> usize {
 mod tests {
     use super::*;
     use crate::core::tokens::count_tokens;
+
+    /// Claude Code's 2048 cap is in characters; a byte count over-trims text
+    /// with em-dashes/arrows, and a mid-line cut is exactly the host behaviour
+    /// this replaces.
+    #[test]
+    fn char_budget_cuts_at_line_ends_counting_chars() {
+        let line = "→".repeat(10); // 10 chars, 30 bytes
+        let text = format!("{line}\r\n{line}\r\n{line}");
+        // Each line is 10 chars + CRLF: 25 chars hold two whole lines, a
+        // byte count (30 bytes per line) would not even hold one.
+        assert_eq!(
+            trim_to_char_budget(&text, 25),
+            format!("{line}\r\n{line}"),
+            "CRLF-safe, whole lines"
+        );
+        assert_eq!(trim_to_char_budget(&text, 15), line);
+        assert_eq!(
+            trim_to_char_budget(&text, 100),
+            text,
+            "under budget untouched"
+        );
+        assert_eq!(
+            trim_to_char_budget(&"é".repeat(50), 7),
+            "é".repeat(7),
+            "one long line"
+        );
+        assert_eq!(client_instruction_char_cap("claude-code"), Some(2048));
+        assert_eq!(client_instruction_char_cap("cursor"), None);
+    }
 
     #[test]
     fn guidance_suffix_survives_oversized_base() {

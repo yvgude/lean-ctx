@@ -13,6 +13,7 @@ mod node;
 mod path_id;
 mod queries;
 mod schema;
+pub mod semantic_cache;
 pub mod snapshot;
 mod sync;
 
@@ -23,6 +24,7 @@ pub use node::{Node, NodeKind};
 pub use queries::{
     DependencyChain, GraphQuery, ImpactResult, edge_weight, file_connectivity, related_files,
 };
+pub use semantic_cache::CachedResolution;
 pub use sync::{mirror_index, parse_symbol_metadata, populate_from_project_index};
 
 use rusqlite::Connection;
@@ -78,7 +80,10 @@ fn migrate_if_needed(project_root: &str, new_dir: &Path) {
 /// - `4`: same-package `type_ref` edges extended to Go (directory-scoped) and
 ///   Kotlin (GH #398 bug class); graphs built before they existed must rebuild.
 /// - `5`: PropertyGraph file paths use interned IDs; pre-ID databases rebuild.
-pub const GRAPH_ENGINE_VERSION: u32 = 5;
+/// - `6`: `calls` edges carry typed evidence and are no longer guessed (the
+///   `ctx_impact` builder bound ambiguous callees to the alphabetically first
+///   definition); graphs holding unannotated guessed edges must rebuild.
+pub const GRAPH_ENGINE_VERSION: u32 = 6;
 
 /// `true` when the persisted graph was built by an engine older than
 /// [`GRAPH_ENGINE_VERSION`] — or predates the version stamp entirely (missing or
@@ -239,6 +244,123 @@ impl CodeGraph {
 
     pub fn edge_count(&self) -> anyhow::Result<usize> {
         edge::count(&self.conn)
+    }
+
+    /// Cached semantic answer for a call site, if the caller is unchanged.
+    pub fn semantic_lookup(
+        &self,
+        site: semantic_cache::SiteKey<'_>,
+        caller_hash: &str,
+    ) -> anyhow::Result<Option<CachedResolution>> {
+        semantic_cache::lookup(&self.conn, site, caller_hash)
+    }
+
+    pub fn semantic_store(
+        &self,
+        site: semantic_cache::SiteKey<'_>,
+        caller_hash: &str,
+        value: &CachedResolution,
+    ) -> anyhow::Result<()> {
+        semantic_cache::store(&self.conn, site, caller_hash, value)
+    }
+
+    /// Removes cached answers for vanished or changed caller files.
+    pub fn semantic_prune(
+        &self,
+        live_hashes: &std::collections::HashMap<String, String>,
+    ) -> anyhow::Result<usize> {
+        semantic_cache::prune(&self.conn, live_hashes)
+    }
+
+    /// File→file edges of `kind` with their metadata, as
+    /// `(source path, target path, metadata)` — sorted for determinism.
+    pub fn file_edges_of_kind(
+        &self,
+        kind: &EdgeKind,
+    ) -> anyhow::Result<Vec<(String, String, Option<String>)>> {
+        edge::file_edges_of_kind(&self.conn, kind)
+    }
+
+    /// Upserts an edge carrying typed evidence. The incoming producer's
+    /// contribution replaces only its own earlier one; other producers'
+    /// contributions on the same edge are kept
+    /// ([`crate::core::semantic::EdgeEvidence::merge`]).
+    pub fn upsert_edge_with_evidence(
+        &self,
+        source_id: i64,
+        target_id: i64,
+        kind: &EdgeKind,
+        evidence: &crate::core::semantic::EdgeEvidence,
+    ) -> anyhow::Result<()> {
+        use crate::core::semantic::EdgeEvidence;
+        self.atomically(|| {
+            let existing = edge::metadata_of(&self.conn, source_id, target_id, kind)?;
+            let merged = EdgeEvidence::merge(
+                EdgeEvidence::from_metadata(existing.as_deref()),
+                evidence.clone(),
+            );
+            edge::upsert(
+                &self.conn,
+                &Edge::new(source_id, target_id, kind.clone()).with_metadata(&merged.to_metadata()),
+            )
+        })
+    }
+
+    /// Runs a read-modify-write as one unit. Another process (daemon vs. MCP
+    /// server) may update the same edge concurrently; `BEGIN IMMEDIATE` takes
+    /// the write lock before the read, so no contribution is lost. Inside an
+    /// outer transaction that one already provides atomicity.
+    fn atomically<T>(&self, f: impl FnOnce() -> anyhow::Result<T>) -> anyhow::Result<T> {
+        if !self.conn.is_autocommit() {
+            return f();
+        }
+        self.conn.execute_batch("BEGIN IMMEDIATE")?;
+        let outcome = f().and_then(|value| {
+            self.conn.execute_batch("COMMIT")?;
+            Ok(value)
+        });
+        // A failed body *or* a failed COMMIT must not leave the connection
+        // inside a transaction: the next call would see !is_autocommit, skip
+        // BEGIN and never commit, while holding the writer lock.
+        if outcome.is_err() && !self.conn.is_autocommit() {
+            let _ = self.conn.execute_batch("ROLLBACK");
+        }
+        outcome
+    }
+
+    /// Withdraws `origin`'s contribution from the file→file edge
+    /// `source → target`: the edge is deleted only when no other producer
+    /// still derives it. Edges without typed evidence are left untouched.
+    pub fn withdraw_file_edge(
+        &self,
+        source: &str,
+        target: &str,
+        kind: &EdgeKind,
+        origin: crate::core::semantic::EvidenceOrigin,
+    ) -> anyhow::Result<()> {
+        use crate::core::semantic::EdgeEvidence;
+        let (Some(s), Some(t)) = (
+            self.get_node_by_path(source)?.and_then(|n| n.id),
+            self.get_node_by_path(target)?.and_then(|n| n.id),
+        ) else {
+            return Ok(());
+        };
+        self.atomically(|| {
+            let existing = edge::metadata_of(&self.conn, s, t, kind)?;
+            let Some(evidence) = EdgeEvidence::from_metadata(existing.as_deref()) else {
+                return Ok(());
+            };
+            if !evidence.has(origin) {
+                return Ok(());
+            }
+            match evidence.without(origin) {
+                Some(rest) => edge::upsert(
+                    &self.conn,
+                    &Edge::new(s, t, kind.clone()).with_metadata(&rest.to_metadata()),
+                ),
+                None => edge::remove_file_edge(&self.conn, source, target, kind),
+            }
+        })
     }
 
     /// Persist a cross-source edge (code file ↔ external source URI) into the
@@ -439,6 +561,43 @@ mod tests {
         assert!(deep.affected_files.contains(&"d.rs".to_string()));
     }
 
+    /// Weighted propagation is exact and separates name-match-only reach:
+    /// a heavier path found later still propagates, and a guess on a pair
+    /// never lends its weight to that pair's evidence-backed edge.
+    #[test]
+    #[allow(clippy::many_single_char_names)] // graph test nodes
+    fn impact_propagates_the_heaviest_path_and_marks_guess_only_reach() {
+        use crate::core::semantic::{EdgeEvidence, EvidenceGrade, EvidenceOrigin};
+        let g = test_graph();
+        let id = |p: &str| g.upsert_node(&Node::file(p)).unwrap();
+        let (a, b, c, x, y, z) = (id("a"), id("b"), id("c"), id("x"), id("y"), id("z"));
+        let edge = |from, to, kind| g.upsert_edge(&Edge::new(from, to, kind)).unwrap();
+        // b → a: a name-match call guess (0.8 × 0.5 = 0.4) plus a fact
+        // (sibling, 0.25); c → b: co-change (0.35). Over all edges c gets
+        // 0.4 × 0.35 = 0.14, over facts only 0.25 × 0.35 < 0.1.
+        let guess = EdgeEvidence::new(
+            EvidenceGrade::HeuristicStructural,
+            EvidenceOrigin::Enrichment,
+            None,
+            1,
+        );
+        g.upsert_edge_with_evidence(b, a, &EdgeKind::Calls, &guess)
+            .unwrap();
+        edge(b, a, EdgeKind::Sibling);
+        edge(c, b, EdgeKind::Cochange);
+        // x is first reached lightly (sibling, 0.25), then fully via y at
+        // depth 2; only the full weight carries on to z (0.35).
+        edge(x, a, EdgeKind::Sibling);
+        edge(y, a, EdgeKind::Imports);
+        edge(x, y, EdgeKind::Imports);
+        edge(z, x, EdgeKind::Cochange);
+
+        let impact = g.impact_analysis("a", 5).unwrap();
+        assert_eq!(impact.affected_files, ["b", "c", "x", "y", "z"]);
+        assert_eq!(impact.weak_files, ["c"]);
+        assert_eq!(impact.max_depth_reached, 3);
+    }
+
     #[test]
     fn upsert_idempotent() {
         let g = test_graph();
@@ -552,6 +711,59 @@ mod tests {
             b_score > c_score,
             "b.rs has imports+calls, should rank higher than c.rs with type_ref"
         );
+    }
+
+    /// The same call relationship stored at file and symbol granularity must
+    /// count once (at its strongest evidence), and a name-only guess must not
+    /// outrank a verified relationship.
+    #[test]
+    fn related_files_counts_each_relationship_once_weighted_by_evidence() {
+        use crate::core::semantic::{EdgeEvidence, EvidenceGrade, EvidenceOrigin};
+        let g = test_graph();
+        let a = g.upsert_node(&Node::file("a.rs")).unwrap();
+        let b = g.upsert_node(&Node::file("b.rs")).unwrap();
+        let c = g.upsert_node(&Node::file("c.rs")).unwrap();
+        let evidence = |grade| EdgeEvidence::new(grade, EvidenceOrigin::Enrichment, None, 1);
+
+        // a→b: one verified call, also mirrored by three symbol→symbol edges.
+        g.upsert_edge_with_evidence(
+            a,
+            b,
+            &EdgeKind::Calls,
+            &evidence(EvidenceGrade::VerifiedSemantic),
+        )
+        .unwrap();
+        for i in 0..3 {
+            let caller = g
+                .upsert_node(&Node::symbol(&format!("f{i}"), "a.rs", NodeKind::Symbol))
+                .unwrap();
+            let callee = g
+                .upsert_node(&Node::symbol(&format!("g{i}"), "b.rs", NodeKind::Symbol))
+                .unwrap();
+            g.upsert_edge_with_evidence(
+                caller,
+                callee,
+                &EdgeKind::Calls,
+                &evidence(EvidenceGrade::ResolvedStructural),
+            )
+            .unwrap();
+        }
+        // a→c: a heuristic name match only.
+        g.upsert_edge_with_evidence(
+            a,
+            c,
+            &EdgeKind::Calls,
+            &evidence(EvidenceGrade::HeuristicStructural),
+        )
+        .unwrap();
+
+        let related = g.related_files("a.rs", 10).unwrap();
+        let score = |p: &str| related.iter().find(|(f, _)| f == p).unwrap().1;
+        assert!(
+            (score("b.rs") - edge_weight("calls")).abs() < 1e-9,
+            "counted once"
+        );
+        assert!(score("b.rs") > score("c.rs"), "verified outranks heuristic");
     }
 
     #[test]

@@ -45,17 +45,10 @@ impl BuiltinObservationHook {
         ring.iter().skip(start).cloned().collect()
     }
 
-    /// Classify compression quality from the fraction of tokens saved.
+    /// Compression band from the fraction of tokens saved — the same bands the
+    /// savings ledger records, so `quality_signal` has one meaning per event.
     pub fn quality_signal_for_compression(ratio: f64) -> String {
-        if ratio >= 0.8 {
-            "excellent".into()
-        } else if ratio >= 0.5 {
-            "good".into()
-        } else if ratio >= 0.2 {
-            "moderate".into()
-        } else {
-            "marginal".into()
-        }
+        crate::core::savings_ledger::compression_band(ratio).into()
     }
 
     /// Attach compression quality context to a savings event.
@@ -262,26 +255,6 @@ mod tests {
         let stored = state.ring.get("s1").unwrap().back().unwrap();
         assert_eq!(stored.attributes[DELIVERED_TOKENS], "0");
         assert_eq!(stored.attributes[COMPRESSION_RATIO_MILLI], "1000");
-    }
-
-    #[test]
-    fn compression_quality_signal_uses_expected_thresholds() {
-        assert_eq!(
-            BuiltinObservationHook::quality_signal_for_compression(0.8),
-            "excellent"
-        );
-        assert_eq!(
-            BuiltinObservationHook::quality_signal_for_compression(0.5),
-            "good"
-        );
-        assert_eq!(
-            BuiltinObservationHook::quality_signal_for_compression(0.2),
-            "moderate"
-        );
-        assert_eq!(
-            BuiltinObservationHook::quality_signal_for_compression(0.19),
-            "marginal"
-        );
     }
 
     #[test]

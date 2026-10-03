@@ -1,13 +1,20 @@
-//! `lean-ctx roi` — print the verified savings (ROI) report.
+//! `lean-ctx roi` — print the recorded savings (ROI) report.
 //!
 //! A fully local, Local-Free surface over the signed savings ledger
 //! ([`crate::core::savings_ledger::roi`]). It only *reads* the ledger and renders
 //! a shareable, signature-backed summary of how many tokens — and how much money
-//! — lean-ctx has saved on this machine. Producing your own ROI report is a local
+//! — lean-ctx has saved on this machine. The signature makes the record
+//! tamper-evident; the numbers themselves are local token counts (before vs.
+//! after lean-ctx), not provider-billed usage, and the report says so. Producing your own ROI report is a local
 //! capability, so it is never gated by a plan (the paid surface is the *team*
 //! roll-up across many developers, not your own numbers).
 
 use crate::core::savings_ledger::{RoiReport, roi_report};
+
+/// What the ledger numbers are. Provider-measured savings exist only on the proxy
+/// path with counterfactual metering (#701, `lean-ctx proxy status`).
+const MEASUREMENT_BASIS: &str =
+    "local token counts (before vs. after lean-ctx), not provider-billed usage";
 
 /// Entry point for `lean-ctx roi [report] [--json|--md] [--export <path>]`.
 pub(crate) fn cmd_roi(args: &[String]) {
@@ -119,13 +126,13 @@ fn provenance(report: &RoiReport) -> String {
 fn format_human(report: &RoiReport) -> String {
     use std::fmt::Write as _;
     if report.total_events == 0 {
-        return "lean-ctx ROI: no verified savings recorded yet.\n\
+        return "lean-ctx ROI: no savings recorded yet.\n\
                 Use lean-ctx (ctx_read / ctx_search / …) for a while, then run `lean-ctx roi` again."
             .to_string();
     }
 
     let mut s = String::new();
-    let _ = writeln!(s, "lean-ctx — Verified Savings (ROI)");
+    let _ = writeln!(s, "lean-ctx — Recorded Savings (ROI)");
     let _ = writeln!(
         s,
         "Period {} · generated {}",
@@ -171,7 +178,8 @@ fn format_human(report: &RoiReport) -> String {
         }
     }
 
-    let _ = writeln!(s, "\n  Verification  {}", provenance(report));
+    let _ = writeln!(s, "\n  Basis         {MEASUREMENT_BASIS}");
+    let _ = writeln!(s, "  Verification  {}", provenance(report));
     let _ = writeln!(s, "  Share it      lean-ctx roi --export roi.md");
     s
 }
@@ -180,7 +188,7 @@ fn format_human(report: &RoiReport) -> String {
 fn format_markdown(report: &RoiReport) -> String {
     use std::fmt::Write as _;
     let mut s = String::new();
-    let _ = writeln!(s, "# lean-ctx — Verified Savings (ROI)\n");
+    let _ = writeln!(s, "# lean-ctx — Recorded Savings (ROI)\n");
     let _ = writeln!(
         s,
         "- **Net tokens saved:** {}",
@@ -199,6 +207,7 @@ fn format_markdown(report: &RoiReport) -> String {
     let _ = writeln!(s, "- **Events:** {}", fmt_int(report.total_events as u64));
     let _ = writeln!(s, "- **Period:** {}", report.period);
     let _ = writeln!(s, "- **Generated:** {}", report.created_at);
+    let _ = writeln!(s, "- **Basis:** {MEASUREMENT_BASIS}");
     let _ = writeln!(s, "- **Verification:** {}", provenance(report));
 
     if !report.top_models.is_empty() {
@@ -227,7 +236,7 @@ fn format_markdown(report: &RoiReport) -> String {
 fn print_usage() {
     println!("Usage: lean-ctx roi [--json | --md] [--export <path>]");
     println!();
-    println!("Print the verified savings (ROI) report from your local signed ledger.");
+    println!("Print the recorded savings (ROI) report from your local signed ledger.");
     println!("  (no flags)        Human-readable summary");
     println!("  --json            Machine-readable JSON (the RoiReport)");
     println!("  --md, --markdown  Markdown (shareable)");
@@ -277,11 +286,21 @@ mod tests {
     #[test]
     fn human_report_shows_headline_numbers() {
         let out = format_human(&sample(4));
-        assert!(out.contains("Verified Savings (ROI)"));
+        assert!(out.contains("Recorded Savings (ROI)"));
         assert!(out.contains("1,234,000"), "net tokens with separators");
         assert!(out.contains("$3.70"), "dollar headline");
         assert!(out.contains("ctx_read"), "top tool");
         assert!(out.contains("signed"), "provenance");
+        // A signature proves the record was not altered, not that a provider billed
+        // these savings: every shareable form states the basis and never says
+        // "verified savings".
+        for report in [out, format_markdown(&sample(4))] {
+            assert!(report.contains(MEASUREMENT_BASIS), "{report}");
+            assert!(
+                !report.to_lowercase().contains("verified savings"),
+                "{report}"
+            );
+        }
     }
 
     #[test]
@@ -314,13 +333,13 @@ mod tests {
     #[test]
     fn empty_ledger_is_friendly_not_blank() {
         let out = format_human(&sample(0));
-        assert!(out.contains("no verified savings recorded yet"));
+        assert!(out.contains("no savings recorded yet"));
     }
 
     #[test]
     fn markdown_report_has_heading_and_tables() {
         let md = format_markdown(&sample(4));
-        assert!(md.starts_with("# lean-ctx — Verified Savings (ROI)"));
+        assert!(md.starts_with("# lean-ctx — Recorded Savings (ROI)"));
         assert!(md.contains("| Model | Tokens saved | $ saved |"));
         assert!(md.contains("| Tool | Tokens saved |"));
         assert!(md.contains("Ed25519-signed"));

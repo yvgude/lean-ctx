@@ -32,7 +32,6 @@ pub mod routing_quality;
 #[cfg(feature = "http-server")]
 pub mod runtime;
 pub mod scheduler_service;
-pub mod shell_cache_allowlist;
 pub mod sidecar;
 pub mod tracing;
 #[allow(dead_code)]

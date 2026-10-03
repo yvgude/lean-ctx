@@ -476,31 +476,6 @@ fn skill_template_not_empty() {
 }
 
 #[test]
-fn skill_template_lean_profile_matches_core_tool_registry() {
-    let lean_row = SKILL_TEMPLATE
-        .lines()
-        .find(|line| line.starts_with("| Lean (default, unpinned) |"))
-        .expect("SKILL.md must document the default lean tool surface");
-
-    for tool in crate::tool_defs::core_tool_names() {
-        assert!(
-            lean_row.contains(&format!("`{tool}`")),
-            "default lean row is missing {tool}"
-        );
-    }
-    assert!(
-        lean_row.contains("`ctx_patch`*"),
-        "client-dependent ctx_patch visibility must be marked"
-    );
-    for hidden in ["ctx_knowledge", "ctx_overview", "ctx_graph"] {
-        assert!(
-            !lean_row.contains(hidden),
-            "{hidden} is not part of the default lean surface"
-        );
-    }
-}
-
-#[test]
 fn skill_targets_count() {
     // Claude, CodeBuddy, Cursor, Codex, Copilot, Grok, OpenClaw + OpenCode (GH #686).
     let home = std::path::PathBuf::from("/tmp/fake_home");

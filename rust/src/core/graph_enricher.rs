@@ -6,7 +6,8 @@
 //! 3. **Knowledge bridge**: `ctx_knowledge` facts → Knowledge nodes + `mentioned_in` edges
 
 use crate::core::property_graph::{CodeGraph, Edge, EdgeKind, Node};
-use std::collections::HashSet;
+use crate::core::semantic::{EdgeEvidence, EvidenceGrade, EvidenceOrigin};
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
 // ---------------------------------------------------------------------------
@@ -311,6 +312,8 @@ pub(crate) struct EnrichmentStats {
     pub tests_indexed: usize,
     pub knowledge_indexed: usize,
     pub edges_created: usize,
+    /// Semantic escalation of structurally uncertain call edges.
+    pub semantic: crate::core::semantic::EscalationStats,
 }
 
 impl EnrichmentStats {
@@ -319,13 +322,28 @@ impl EnrichmentStats {
         self.tests_indexed += other.tests_indexed;
         self.knowledge_indexed += other.knowledge_indexed;
         self.edges_created += other.edges_created;
+        let (s, o) = (&mut self.semantic, &other.semantic);
+        s.candidates += o.candidates;
+        s.cache_hits += o.cache_hits;
+        s.live_queries += o.live_queries;
+        s.verified += o.verified;
+        s.not_in_project += o.not_in_project;
+        s.unresolved += o.unresolved;
     }
 
     pub(crate) fn format_summary(&self) -> String {
-        format!(
+        let mut out = format!(
             "Graph enriched: {} commits, {} tests, {} knowledge entries, {} edges",
             self.commits_indexed, self.tests_indexed, self.knowledge_indexed, self.edges_created
-        )
+        );
+        let s = &self.semantic;
+        if s.candidates > 0 {
+            out.push_str(&format!(
+                "\nSemantic: {} uncertain call sites → {} verified, {} outside project, {} unresolved ({} cached, {} live queries)",
+                s.candidates, s.verified, s.not_in_project, s.unresolved, s.cache_hits, s.live_queries
+            ));
+        }
+        out
     }
 }
 
@@ -353,45 +371,269 @@ pub(crate) fn enrich_graph(
     Ok(total)
 }
 
-fn consolidate_callgraph(graph: &CodeGraph, project_root: &str) -> anyhow::Result<EnrichmentStats> {
-    let inputs = crate::core::call_graph::CallGraphInputs::open(project_root);
-    let call_graph = crate::core::call_graph::CallGraph::load_or_build(project_root, &inputs);
-    consolidate_call_edges(graph, &inputs, &call_graph.edges)
+/// Background semantic pass after a graph build: refreshes evidence-graded
+/// call and `implements` edges — but only when it can add something.
+/// `off` never runs; `auto` runs only while a semantic backend is already
+/// live for the project (warm server or open IDE), so an idle machine pays
+/// nothing; `eager` always runs. All live work is budget-bounded.
+pub(crate) fn refresh_semantic_edges_in_background(project_root: &str) {
+    use crate::core::config::SemanticMode;
+    let mode = SemanticMode::for_project(project_root);
+    let worthwhile = match mode {
+        SemanticMode::Off => false,
+        SemanticMode::Auto => crate::lsp::router::has_live_backend(project_root),
+        SemanticMode::Eager => true,
+    };
+    if !worthwhile {
+        return;
+    }
+    match CodeGraph::open(project_root) {
+        Ok(graph) => {
+            if let Err(e) = consolidate_callgraph(&graph, project_root) {
+                tracing::warn!("[semantic] call-edge refresh failed for {project_root}: {e}");
+            }
+        }
+        Err(e) => tracing::debug!("[semantic] no property graph for {project_root}: {e}"),
+    }
 }
 
-/// Lifts call edges to file-level `Calls` edges. Each callee is resolved in its
-/// caller's own scope (same file → unique import → unique project-wide); an
-/// ambiguous name (e.g. five `save()` methods) yields no edge rather than an
-/// arbitrary one. Pairs are deduplicated and visited in sorted order so the
-/// resulting graph is deterministic.
+/// Minimum spacing of backend-triggered refreshes per project: a burst of
+/// `ctx_refactor` calls warming several languages yields one pass.
+const BACKEND_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_mins(5);
+/// Retry delay when a pass could not run (graph not ready, backend kept busy).
+const BACKEND_REFRESH_RETRY: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// A semantic backend is in use *in this process* (a language server started
+/// for `ctx_refactor`, an attached IDE). Graph builds may run in another
+/// process (the daemon) that cannot see this backend, so `auto` mode would
+/// otherwise never use it: schedule a bounded refresh here, where the backend
+/// lives. It waits until the current call is done (never competing with
+/// interactive use) and runs only on a current, populated property graph.
+/// At most one pass per project every [`BACKEND_REFRESH_INTERVAL`]; a pass
+/// that could not run is retried on a use after [`BACKEND_REFRESH_RETRY`].
+pub(crate) fn schedule_semantic_refresh(project_root: &str) {
+    use std::collections::HashMap;
+    use std::sync::{LazyLock, Mutex, PoisonError};
+    use std::time::{Duration, Instant};
+    /// Earliest next pass per project root.
+    static NEXT: LazyLock<Mutex<HashMap<String, Instant>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    let defer = |root: &str, by: Duration| {
+        NEXT.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(root.to_string(), Instant::now() + by);
+    };
+
+    // Unit tests seed fake backends for fake roots; never refresh those.
+    if cfg!(test) {
+        return;
+    }
+    let root = crate::core::index_paths::normalize_project_root(project_root);
+    {
+        let now = Instant::now();
+        let mut next = NEXT.lock().unwrap_or_else(PoisonError::into_inner);
+        if next.get(&root).is_some_and(|t| now < *t) {
+            return;
+        }
+        // Expired entries carry no state; the map stays bounded by the
+        // projects with a pass due or running.
+        next.retain(|_, t| now < *t);
+        // Reserved while the pass is pending.
+        next.insert(root.clone(), now + BACKEND_REFRESH_INTERVAL);
+    }
+    let worker_root = root.clone();
+    let spawned = std::thread::Builder::new()
+        .name("leanctx-semantic-refresh".into())
+        .spawn(move || {
+            let root = worker_root;
+            let give_up = Instant::now() + Duration::from_mins(2);
+            loop {
+                std::thread::sleep(Duration::from_secs(2));
+                if !crate::lsp::router::backend_busy(&root) {
+                    break;
+                }
+                if Instant::now() > give_up {
+                    return defer(&root, BACKEND_REFRESH_RETRY);
+                }
+            }
+            let ready = !crate::core::property_graph::engine_outdated(&root)
+                && CodeGraph::open(&root).is_ok_and(|g| g.node_count().unwrap_or(0) > 0);
+            if !ready {
+                return defer(&root, BACKEND_REFRESH_RETRY);
+            }
+            refresh_semantic_edges_in_background(&root);
+            defer(&root, BACKEND_REFRESH_INTERVAL);
+        });
+    if spawned.is_err() {
+        NEXT.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&root);
+    }
+}
+
+fn consolidate_callgraph(graph: &CodeGraph, project_root: &str) -> anyhow::Result<EnrichmentStats> {
+    use crate::core::call_graph::{CallGraph, CallGraphInputs, resolve_edge_callee_targets};
+    use crate::core::semantic::{escalate_calls, implementations::resolve_implements_edges};
+
+    let inputs = CallGraphInputs::open(project_root);
+    let call_graph = CallGraph::load_or_build(project_root, &inputs);
+    let structural = resolve_edge_callee_targets(&inputs, &call_graph.edges);
+    let mode = crate::core::config::SemanticMode::for_project(project_root);
+    let escalation = escalate_calls(
+        graph,
+        project_root,
+        &inputs,
+        &call_graph.edges,
+        &structural,
+        &call_graph.file_hashes,
+        mode,
+        crate::core::semantic::EscalationBudget::BACKGROUND,
+    );
+    let mut stats = consolidate_call_edges(graph, &call_graph.edges, &structural, &escalation)?;
+    stats.semantic = escalation.stats;
+
+    let implements =
+        resolve_implements_edges(graph, project_root, &inputs, &call_graph.file_hashes, mode);
+    stats.merge(&apply_implements_edges(graph, &implements)?);
+    Ok(stats)
+}
+
+/// Per file pair: strongest evidence grade, the backend behind it (smallest
+/// identity on ties, for determinism) and the number of supporting sites.
+type PairEvidence = (EvidenceGrade, Option<String>, u32);
+
+/// Lifts call edges to file-level `Calls` edges with typed evidence.
+///
+/// Per edge, a semantic verdict wins over structure: `Verified` binds the
+/// callee file; `NotInProject` vetoes a structural name match. Otherwise the
+/// callee is resolved in the caller's own scope (same file → unique import →
+/// unique project-wide); an ambiguous name yields no edge rather than an
+/// arbitrary one. Pairs are visited in sorted order (deterministic graph).
+///
+/// This producer then withdraws its contribution from edges it no longer
+/// derives — but only for callers whose candidates were all settled this
+/// pass: an unanswered site (backend unavailable or busy, budget, cold
+/// server) is not evidence that an earlier verified edge is wrong.
 fn consolidate_call_edges(
     graph: &CodeGraph,
-    inputs: &crate::core::call_graph::CallGraphInputs,
     edges: &[crate::core::call_graph::CallEdge],
+    structural: &[crate::core::call_graph::StructuralTarget],
+    escalation: &crate::core::semantic::Escalation,
 ) -> anyhow::Result<EnrichmentStats> {
+    use crate::core::call_graph::StructuralTarget;
+    use crate::core::semantic::SemanticVerdict;
+
     let mut stats = EnrichmentStats::default();
-
-    let targets = crate::core::call_graph::resolve_edge_callee_files(inputs, edges);
-    let pairs: std::collections::BTreeSet<(&str, &str)> = edges
+    let mut pairs: BTreeMap<(&str, String), PairEvidence> = BTreeMap::new();
+    let unsettled_callers: std::collections::BTreeSet<&str> = edges
         .iter()
-        .zip(&targets)
-        .filter_map(|(edge, to)| Some((edge.caller_file.as_str(), to.as_deref()?)))
-        .filter(|(from, to)| from != to)
+        .zip(&escalation.unsettled)
+        .filter(|(_, unsettled)| **unsettled)
+        .map(|(e, _)| e.caller_file.as_str())
         .collect();
+    for ((edge, target), verdict) in edges.iter().zip(structural).zip(&escalation.verdicts) {
+        let resolved = match verdict {
+            Some(SemanticVerdict::Verified { file, backend }) => Some((
+                file.clone(),
+                EvidenceGrade::VerifiedSemantic,
+                Some(backend.clone()),
+            )),
+            Some(SemanticVerdict::NotInProject) => None,
+            None => match target {
+                StructuralTarget::Resolved { file, via } => {
+                    Some((file.clone(), EvidenceGrade::from_scope(*via), None))
+                }
+                StructuralTarget::Ambiguous | StructuralTarget::Unknown => None,
+            },
+        };
+        let Some((to, grade, backend)) = resolved else {
+            continue;
+        };
+        if to == edge.caller_file {
+            continue;
+        }
+        let slot =
+            pairs
+                .entry((edge.caller_file.as_str(), to))
+                .or_insert((grade, backend.clone(), 0));
+        slot.2 += 1;
+        if grade > slot.0 || (grade == slot.0 && backend < slot.1 && backend.is_some()) {
+            slot.0 = grade;
+            slot.1 = backend;
+        }
+    }
 
-    for (from_file, to_file) in pairs {
-        let from_node = graph.get_node_by_path(from_file)?;
-        let to_node = graph.get_node_by_path(to_file)?;
-
-        if let (Some(from_n), Some(to_n)) = (from_node, to_node)
-            && let (Some(from_id), Some(to_id)) = (from_n.id, to_n.id)
-        {
-            graph.upsert_edge(&Edge::new(from_id, to_id, EdgeKind::Calls))?;
+    for ((from_file, to_file), (grade, backend, sites)) in &pairs {
+        let evidence =
+            EdgeEvidence::new(*grade, EvidenceOrigin::Enrichment, backend.clone(), *sites);
+        if let (Some(from_id), Some(to_id)) = (
+            file_node_id(graph, from_file)?,
+            file_node_id(graph, to_file)?,
+        ) {
+            graph.upsert_edge_with_evidence(from_id, to_id, &EdgeKind::Calls, &evidence)?;
             stats.edges_created += 1;
         }
     }
 
+    withdraw_own_file_edges(graph, &EdgeKind::Calls, |s, t| {
+        pairs.contains_key(&(s, t.to_string())) || unsettled_callers.contains(s)
+    })?;
     Ok(stats)
+}
+
+/// Writes `implements` edges and withdraws the ones this producer no longer
+/// derives — for settled declaring files only.
+fn apply_implements_edges(
+    graph: &CodeGraph,
+    pass: &crate::core::semantic::implementations::ImplementsPass,
+) -> anyhow::Result<EnrichmentStats> {
+    let mut stats = EnrichmentStats::default();
+    for e in &pass.edges {
+        let evidence = EdgeEvidence::new(
+            EvidenceGrade::VerifiedSemantic,
+            EvidenceOrigin::Enrichment,
+            Some(e.backend.clone()),
+            1,
+        );
+        if let (Some(from_id), Some(to_id)) = (
+            file_node_id(graph, &e.impl_file)?,
+            file_node_id(graph, &e.abstract_file)?,
+        ) {
+            graph.upsert_edge_with_evidence(from_id, to_id, &EdgeKind::Implements, &evidence)?;
+            stats.edges_created += 1;
+        }
+    }
+    let live: std::collections::BTreeSet<(&str, &str)> = pass
+        .edges
+        .iter()
+        .map(|e| (e.impl_file.as_str(), e.abstract_file.as_str()))
+        .collect();
+    withdraw_own_file_edges(graph, &EdgeKind::Implements, |s, t| {
+        live.contains(&(s, t)) || !pass.settled.contains(t)
+    })?;
+    Ok(stats)
+}
+
+fn file_node_id(graph: &CodeGraph, path: &str) -> anyhow::Result<Option<i64>> {
+    Ok(graph.get_node_by_path(path)?.and_then(|n| n.id))
+}
+
+/// Withdraws enrichment's contribution from file→file edges of `kind` that
+/// `keep` no longer confirms. An edge disappears only when no other producer
+/// still derives it; edges without typed evidence are never touched.
+fn withdraw_own_file_edges(
+    graph: &CodeGraph,
+    kind: &EdgeKind,
+    keep: impl Fn(&str, &str) -> bool,
+) -> anyhow::Result<()> {
+    for (source, target, metadata) in graph.file_edges_of_kind(kind)? {
+        let own = EdgeEvidence::from_metadata(metadata.as_deref())
+            .is_some_and(|e| e.has(EvidenceOrigin::Enrichment));
+        if own && !keep(&source, &target) {
+            graph.withdraw_file_edge(&source, &target, kind, EvidenceOrigin::Enrichment)?;
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -481,12 +723,14 @@ mod tests {
             tests_indexed: 3,
             knowledge_indexed: 2,
             edges_created: 10,
+            ..Default::default()
         };
         let b = EnrichmentStats {
             commits_indexed: 2,
             tests_indexed: 1,
             knowledge_indexed: 0,
             edges_created: 4,
+            ..Default::default()
         };
         a.merge(&b);
         assert_eq!(a.commits_indexed, 7);
@@ -500,6 +744,7 @@ mod tests {
             tests_indexed: 5,
             knowledge_indexed: 3,
             edges_created: 20,
+            ..Default::default()
         };
         let fmt = s.format_summary();
         assert!(fmt.contains("10 commits"));
@@ -578,12 +823,14 @@ mod tests {
             name: "save".into(),
             start_line: 1,
             end_line: 3,
+            ..Default::default()
         };
         let call = |file: &str| CallEdge {
             caller_file: file.into(),
             caller_symbol: "f".into(),
             caller_line: 1,
             callee_name: "save".into(),
+            ..Default::default()
         };
         let inputs = CallGraphInputs {
             project_root: "/p".into(),
@@ -599,11 +846,70 @@ mod tests {
             .collect();
 
         // c.rs imports b.rs → b.rs; d.rs has no scope hint → ambiguous → no edge.
-        consolidate_call_edges(&g, &inputs, &[call("c.rs"), call("d.rs")]).unwrap();
+        use crate::core::semantic::{Escalation, SemanticVerdict};
+        let run = |verdicts: Vec<Option<SemanticVerdict>>, unsettled: Vec<bool>| Escalation {
+            verdicts,
+            unsettled,
+            ..Default::default()
+        };
+        let edges = [call("c.rs"), call("d.rs")];
+        let structural = crate::core::call_graph::resolve_edge_callee_targets(&inputs, &edges);
+        consolidate_call_edges(
+            &g,
+            &edges,
+            &structural,
+            &run(vec![None, None], vec![false; 2]),
+        )
+        .unwrap();
 
         let from_c = g.edges_from(ids[2]).unwrap();
         assert_eq!(from_c.len(), 1);
         assert_eq!(from_c[0].target_id, ids[1]);
+        assert_eq!(
+            EdgeEvidence::from_metadata(from_c[0].metadata.as_deref()).map(|e| e.grade),
+            Some(EvidenceGrade::ResolvedStructural)
+        );
         assert!(g.edges_from(ids[3]).unwrap().is_empty());
+
+        // Semantic verdicts: the backend binds d.rs's ambiguous call to a.rs
+        // and places c.rs's callee outside the project — the structural c→b
+        // edge this producer wrote before must disappear.
+        let verdicts = vec![
+            Some(SemanticVerdict::NotInProject),
+            Some(SemanticVerdict::Verified {
+                file: "a.rs".into(),
+                backend: "lsp:ra@1".into(),
+            }),
+        ];
+        consolidate_call_edges(&g, &edges, &structural, &run(verdicts, vec![false; 2])).unwrap();
+
+        assert!(
+            g.edges_from(ids[2]).unwrap().is_empty(),
+            "vetoed edge pruned"
+        );
+        let from_d = g.edges_from(ids[3]).unwrap();
+        assert_eq!(from_d.len(), 1);
+        assert_eq!(from_d[0].target_id, ids[0]);
+        let evidence = EdgeEvidence::from_metadata(from_d[0].metadata.as_deref()).unwrap();
+        assert_eq!(evidence.grade, EvidenceGrade::VerifiedSemantic);
+        assert_eq!(
+            evidence.primary().and_then(|c| c.backend.as_deref()),
+            Some("lsp:ra@1")
+        );
+
+        // Regression (review): d.rs changed and the backend is cold — its
+        // site is unanswered. That is not evidence against d→a: it stays.
+        consolidate_call_edges(
+            &g,
+            &edges,
+            &structural,
+            &run(vec![None, None], vec![false, true]),
+        )
+        .unwrap();
+        assert_eq!(
+            g.edges_from(ids[3]).unwrap().len(),
+            1,
+            "unsettled caller kept"
+        );
     }
 }

@@ -106,6 +106,10 @@ fn should_allow(tool_name: &str, file_path: Option<&str>, payload: &str) -> bool
         return true;
     }
 
+    if is_notifying_background_shell(tool_name, payload) {
+        return true;
+    }
+
     // GH #1228: Claude/CodeBuddy auto memory must use native Read/Edit even
     // when Replace-mode deny hooks are installed.
     if file_path.is_some_and(|p| {
@@ -119,6 +123,38 @@ fn should_allow(tool_name: &str, file_path: Option<&str>, payload: &str) -> bool
     }
 
     false
+}
+
+/// Claude Code's `Bash` with `run_in_background: true` re-invokes the model when
+/// the job ends; a `ctx_shell` background job cannot (MCP has no wake channel).
+/// Denying it pushed agents into `sleep` + status polling — ~19 % of all model
+/// requests in a 30-day transcript corpus. Its output lands in a file the agent
+/// reads later, so nothing uncompressed floods the context.
+///
+/// The exception is never weaker than the path the deny redirects to: the
+/// command must pass the same shell allowlist `ctx_shell` enforces, and only an
+/// exact Claude PreToolUse payload qualifies.
+fn is_notifying_background_shell(tool_name: &str, payload: &str) -> bool {
+    use crate::core::shell_allowlist::{ShellSecurity, passes_enforced};
+    if tool_name != "Bash" {
+        return false;
+    }
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return false;
+    };
+    let background = v
+        .pointer("/tool_input/run_in_background")
+        .and_then(serde_json::Value::as_bool)
+        == Some(true);
+    let Some(cmd) = v
+        .pointer("/tool_input/command")
+        .and_then(serde_json::Value::as_str)
+    else {
+        return false;
+    };
+    super::is_claude_pretooluse_payload(&v)
+        && background
+        && (ShellSecurity::resolve() == ShellSecurity::Off || passes_enforced(cmd))
 }
 
 fn is_lean_ctx_tool(tool_name: &str) -> bool {
@@ -428,27 +464,30 @@ fn print_deny_compression_markers(tool_name: &str, payload: &str) {
 /// model got no guidance to switch to ctx_*.
 ///
 /// Strategy:
-/// - stdout: one JSON object carrying the Cursor legacy keys, the Copilot
-///   top-level `permissionDecision`, and the Claude Code `hookSpecificOutput`.
+/// - stdout: Claude Code PreToolUse payloads get only `hookSpecificOutput`
+///   (Claude rejects the legacy top-level `decision: "deny"`); every other host
+///   gets one object carrying the Cursor legacy keys, the Copilot top-level
+///   `permissionDecision`, and `hookSpecificOutput`.
 /// - stderr: the plain reason (Claude Code surfaces stderr on exit 2).
-/// - exit code: 0 for Claude-Code-shaped payloads (`transcript_path` marker)
-///   so the JSON verdict renders as a clean permission denial; 2 for every
-///   other host, matching their historical exit-code contract.
+/// - exit code: [`deny_exit_code`] — 0 only together with the Claude-only JSON.
 fn emit_deny(msg: &str, payload: &str) -> ! {
-    println!("{}", super::build_dual_deny_output(msg));
+    let parsed = serde_json::from_str(payload).unwrap_or(serde_json::Value::Null);
+    println!("{}", super::build_deny_output(msg, &parsed));
     eprintln!("{msg}");
-    if payload_is_claude_code(payload) {
-        std::process::exit(0);
-    }
-    std::process::exit(2);
+    std::process::exit(deny_exit_code(&parsed));
 }
 
-/// Claude Code hook payloads carry `transcript_path` (and `hook_event_name`);
-/// no other supported host sends a transcript path. Used only to pick the exit
-/// code Claude Code renders best — the JSON body is host-complete either way.
-fn payload_is_claude_code(payload: &str) -> bool {
-    serde_json::from_str::<serde_json::Value>(payload)
-        .is_ok_and(|v| v.get("transcript_path").is_some())
+/// One predicate decides body AND exit code. Exit 0 is safe only with the
+/// Claude-only JSON: Claude treats an invalid body at exit 0 as non-blocking
+/// (fail-open). Anything else — other hosts, or a Claude-like payload missing
+/// its event marker — exits 2, which every host treats as a block with the
+/// stderr reason (fail-closed).
+fn deny_exit_code(payload: &serde_json::Value) -> i32 {
+    if super::is_claude_pretooluse_payload(payload) {
+        0
+    } else {
+        2
+    }
 }
 
 #[derive(Debug)]
@@ -608,7 +647,9 @@ fn build_ctx_shell_hint(args: &serde_json::Map<String, serde_json::Value>) -> St
         .or_else(|| args.get("cmd"))
         .and_then(serde_json::Value::as_str)
         .unwrap_or("<command>");
-    let short_cmd = if cmd.len() > 80 { &cmd[..80] } else { cmd };
+    // Cut on a char boundary: a byte slice panics when byte 80 lands inside a
+    // multi-byte character (umlaut, emoji), killing the hook mid-verdict.
+    let short_cmd = cmd.char_indices().nth(80).map_or(cmd, |(i, _)| &cmd[..i]);
     format!(
         "[DENIED] Native Shell blocked. Use: ctx_shell(command=\"{short_cmd}\") — lean-ctx replace mode is active."
     )
@@ -977,6 +1018,66 @@ mod tests {
             detect_marker_source(payload),
             MarkerSource::Content
         ));
+    }
+
+    /// The background exception must never be weaker than `ctx_shell`: only an
+    /// exact Claude PreToolUse payload whose command passes the enforced
+    /// allowlist escapes the deny.
+    #[test]
+    fn background_bash_escapes_deny_only_within_the_allowlist() {
+        // No env mutation: overriding the process-global allowlist raced
+        // unlocked readers in parallel tests (Windows CI). `cargo` is on the
+        // default allowlist; `eval` is blocked in every mode.
+        let call = |event: &str, cmd: &str, bg: bool| {
+            serde_json::json!({
+                "hook_event_name": event, "transcript_path": "/t", "tool_name": "Bash",
+                "tool_input": { "command": cmd, "run_in_background": bg }
+            })
+            .to_string()
+        };
+        let allowed_bg =
+            is_notifying_background_shell("Bash", &call("PreToolUse", "cargo test", true));
+        let foreground =
+            is_notifying_background_shell("Bash", &call("PreToolUse", "cargo test", false));
+        let sink =
+            is_notifying_background_shell("Bash", &call("PreToolUse", "eval cat .env", true));
+        let other_host =
+            is_notifying_background_shell("Bash", &call("BeforeTool", "cargo test", true));
+        assert!(
+            allowed_bg,
+            "allowlisted background job must not be pushed into polling"
+        );
+        assert!(!foreground, "foreground shell stays denied");
+        assert!(
+            !sink,
+            "a non-allowlisted command must not ride the exception"
+        );
+        assert!(!other_host, "only exact Claude PreToolUse payloads qualify");
+    }
+
+    /// Body and exit code come from one predicate: exit 0 only with the
+    /// Claude-only JSON; a Claude-like payload without its event marker and
+    /// every other host exit 2 (blocking everywhere, fail-closed).
+    #[test]
+    fn deny_exit_code_is_zero_only_for_exact_claude_payloads() {
+        let claude = serde_json::json!({"hook_event_name": "PreToolUse", "transcript_path": "/t"});
+        let no_event = serde_json::json!({"transcript_path": "/t"});
+        let gemini = serde_json::json!({"hook_event_name": "BeforeTool", "transcript_path": "/t"});
+        let cursor = serde_json::json!({"tool_name": "Shell", "command": "ls"});
+        assert_eq!(deny_exit_code(&claude), 0);
+        for other in [no_event, gemini, cursor] {
+            assert_eq!(deny_exit_code(&other), 2, "{other}");
+        }
+    }
+
+    #[test]
+    fn shell_hint_truncates_on_char_boundary() {
+        // Byte 80 falls inside "ü" (2 bytes): a byte slice panicked here.
+        let cmd = format!("{}ü{}", "a".repeat(79), "b".repeat(20));
+        let mut args = serde_json::Map::new();
+        args.insert("command".into(), serde_json::Value::String(cmd));
+        let hint = build_ctx_shell_hint(&args);
+        assert!(hint.contains(&format!("{}ü\"", "a".repeat(79))), "{hint}");
     }
 
     #[test]

@@ -140,6 +140,12 @@ pub(crate) fn strip_sensitive_overrides(local: &mut Config) -> Vec<&'static str>
         local.proxy.gemini_upstream = None;
         withheld.push("proxy.*_upstream");
     }
+    // `eager` lets background work start language servers, which execute
+    // project code (build scripts, proc macros). Lowering to off/auto is safe.
+    if local.semantic_mode == super::SemanticMode::Eager {
+        local.semantic_mode = super::SemanticMode::default();
+        withheld.push("semantic_mode");
+    }
     if local.rules_scope.is_some() {
         local.rules_scope = None;
         withheld.push("rules_scope");
@@ -399,6 +405,30 @@ impl Config {
             *guard = Some((Arc::clone(&cfg), global_hash, local_hash, selected_profile));
         }
 
+        cfg
+    }
+
+    /// Global config merged with the `.lean-ctx.toml` of `project_root` — not
+    /// of the process's own project. A daemon serving several repositories
+    /// must evaluate per-project settings (and their workspace trust) against
+    /// the project being processed. Uncached; same merge + trust rules as
+    /// [`load_arc`](Self::load_arc).
+    pub fn load_for_project_root(project_root: &str) -> Self {
+        let selected_profile = environment_config_profile();
+        let mut cfg = Self::path()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|c| parse_config_with_profile(&c, selected_profile.as_deref()).ok())
+            .unwrap_or_default();
+        let local_path = Self::local_path(project_root);
+        if crate::core::pathutil::may_probe_path(local_path.as_path())
+            && let Ok(local) = std::fs::read_to_string(&local_path)
+        {
+            let trusted = crate::core::workspace_trust::is_trusted_for(
+                std::path::Path::new(project_root),
+                &crate::core::hasher::hash_str(&local),
+            );
+            cfg.merge_local(&local, trusted);
+        }
         cfg
     }
 

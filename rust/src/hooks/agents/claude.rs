@@ -62,8 +62,8 @@ fn install_claude_mcp_server(home: &std::path::Path) {
 
     let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
     if existing.contains("\"lean-ctx\"") && existing.contains("mcpServers") {
-        // Entry already exists — ensure autoApprove is set (#1467).
-        ensure_claude_mcp_auto_approve(&config_path, &existing);
+        // Entry already exists — ensure autoApprove (#1467) and alwaysLoad.
+        ensure_claude_mcp_entry_defaults(&config_path, &existing);
         return;
     }
 
@@ -89,7 +89,8 @@ fn install_claude_mcp_server(home: &std::path::Path) {
                 serde_json::json!({
                     "command": binary,
                     "args": [],
-                    "autoApprove": auto_approve
+                    "autoApprove": auto_approve,
+                    "alwaysLoad": true
                 }),
             );
             write_file(
@@ -103,8 +104,11 @@ fn install_claude_mcp_server(home: &std::path::Path) {
     }
 }
 
-/// Backfill `autoApprove` on existing MCP entries that lack it.
-fn ensure_claude_mcp_auto_approve(config_path: &std::path::Path, content: &str) {
+/// Backfill `autoApprove` and `alwaysLoad` on an existing entry. Without
+/// `alwaysLoad`, Claude Code lists lean-ctx tools by name only behind
+/// ToolSearch: agents pay a round trip to load a schema and fall back to the
+/// one generic tool they already have (`ctx_shell`) for everything.
+fn ensure_claude_mcp_entry_defaults(config_path: &std::path::Path, content: &str) {
     let Ok(mut root) = crate::core::jsonc::parse_jsonc(content) else {
         return;
     };
@@ -116,10 +120,14 @@ fn ensure_claude_mcp_auto_approve(config_path: &std::path::Path, content: &str) 
     };
     let desired = crate::core::editor_registry::writers::auto_approve_tools();
     let desired_json = serde_json::json!(desired);
-    if entry.get("autoApprove") == Some(&desired_json) {
+    let always_load = serde_json::Value::Bool(true);
+    if entry.get("autoApprove") == Some(&desired_json)
+        && entry.get("alwaysLoad") == Some(&always_load)
+    {
         return;
     }
     entry.insert("autoApprove".to_string(), desired_json);
+    entry.insert("alwaysLoad".to_string(), always_load);
     if let Ok(out) = serde_json::to_string_pretty(&root) {
         write_file(config_path, &out);
     }

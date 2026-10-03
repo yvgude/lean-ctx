@@ -181,7 +181,6 @@ fn detailed_type_error(revision: char) -> String {
 }
 
 #[test]
-#[ignore = "semantic dedup edge case — revisit"]
 fn repeated_errors_deduped() {
     let first = detailed_type_error('a');
     let mut messages = vec![json!({
@@ -196,6 +195,7 @@ fn repeated_errors_deduped() {
         messages.push(json!({
             "role": "tool",
             "name": "terminal",
+            "tool_call_id": format!("call_{revision}"),
             "content": detailed_type_error(revision),
         }));
     }
@@ -204,11 +204,13 @@ fn repeated_errors_deduped() {
     messages.push(json!({
         "role": "tool",
         "name": "terminal",
+        "tool_call_id": "call_4",
         "content": "error[E0308]: expected AuthContext, found String (retry 4)",
     }));
     messages.push(json!({
         "role": "tool",
         "name": "terminal",
+        "tool_call_id": "call_5",
         "content": "error[E0308]: expected AuthContext, found String (retry 5)",
     }));
 
@@ -225,12 +227,15 @@ fn repeated_errors_deduped() {
         first,
         "first error was not retained"
     );
-    for message in &messages[2..4] {
+    // Near duplicates become a lossless delta against the retained error: the
+    // differing line is carried verbatim.
+    for (message, revision) in messages[2..4].iter().zip(['b', 'c']) {
+        let delta = tool_content(message);
         assert!(
-            tool_content(message).starts_with("[~similar to turn "),
-            "near-duplicate error was not replaced: {}",
-            tool_content(message)
+            delta.starts_with("[lean-ctx: tool result call_a above, except line "),
+            "near-duplicate error was not replaced: {delta}"
         );
+        assert!(delta.contains(&revision.to_string().repeat(2_000)));
     }
     assert!(tool_content(&messages[4]).contains("retry 4"));
     assert!(tool_content(&messages[5]).contains("retry 5"));

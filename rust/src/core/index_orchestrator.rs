@@ -361,6 +361,13 @@ fn run_build_worker(root: &str) {
             // only repeats the property-graph mirror.
             crate::core::code_health::persist::refresh_if_stale(&graph_root, &idx);
         });
+        if graph_result.is_ok() {
+            // Evidence-graded call/implements edges on top of the fresh
+            // structure; a no-op unless a semantic backend can contribute.
+            let _ = std::panic::catch_unwind(|| {
+                crate::core::graph_enricher::refresh_semantic_edges_in_background(&graph_root);
+            });
+        }
         drop(guard);
         {
             let mut s = graph_state

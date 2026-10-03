@@ -5,8 +5,9 @@
 //! Check: `cargo run --example gen_rules --features dev-tools -- --check`
 //!
 //! Bumping `RULES_VERSION` or editing a canonical section makes the checked-in
-//! `LEAN-CTX.md` / `rust/LEAN-CTX.md` stale; this writer brings them back in
-//! sync. `--check` mirrors `tests/rules_drift.rs` for a fast pre-write gate.
+//! `LEAN-CTX.md` / `rust/LEAN-CTX.md` stale, and editing `templates/SKILL.md`
+//! makes `skills/lean-ctx/SKILL.md` stale; this writer brings them back in sync.
+//! `--check` mirrors `tests/suite/rules_drift.rs` for a fast pre-write gate.
 
 use std::path::{Path, PathBuf};
 
@@ -95,6 +96,6 @@ fn write_if_changed(path: &Path, content: &str) -> Result<bool, String> {
 
 fn print_help() {
     println!(
-        "gen_rules\n\nUSAGE:\n  cargo run --example gen_rules --features dev-tools [-- --root <dir>] [--check]\n\nDEFAULT ROOT:\n  <repo_root> (writes LEAN-CTX.md and rust/LEAN-CTX.md)"
+        "gen_rules\n\nUSAGE:\n  cargo run --example gen_rules --features dev-tools [-- --root <dir>] [--check]\n\nDEFAULT ROOT:\n  <repo_root> (writes LEAN-CTX.md, rust/LEAN-CTX.md, skills/lean-ctx/SKILL.md)"
     );
 }

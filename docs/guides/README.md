@@ -30,6 +30,9 @@ integration.
 segment, milestone notifications and commit trailer, and how every number
 they show is proven.
 
+[Semantic code intelligence](semantic-intelligence.md) covers language-server
+evidence on graph edges: modes, server installation, and how to read it.
+
 The generated [MCP tool inventory](../reference/generated/mcp-tools.md) and
 [configuration inventory](../reference/generated/config-keys.md) are the
 current implementation reference.

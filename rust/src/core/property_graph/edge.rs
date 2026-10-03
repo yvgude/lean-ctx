@@ -19,6 +19,8 @@ pub enum EdgeKind {
     Module,
     /// Git co-change correlation (files frequently changed together)
     Cochange,
+    /// Implementation → interface/trait it implements (semantic backend)
+    Implements,
     /// Sibling/orphan rescue edge (fallback connectivity)
     Sibling,
 }
@@ -40,6 +42,7 @@ impl EdgeKind {
             Self::Module => "module",
             Self::Cochange => "cochange",
             Self::Sibling => "sibling",
+            Self::Implements => "implements",
         }
     }
 
@@ -58,6 +61,7 @@ impl EdgeKind {
             "module" => Self::Module,
             "cochange" => Self::Cochange,
             "sibling" => Self::Sibling,
+            "implements" => Self::Implements,
             _ => Self::Imports,
         }
     }
@@ -148,4 +152,61 @@ pub(super) fn to_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<Edg
 pub(super) fn count(conn: &Connection) -> anyhow::Result<usize> {
     let c: i64 = conn.query_row("SELECT COUNT(*) FROM edges", [], |row| row.get(0))?;
     Ok(c as usize)
+}
+
+pub(super) fn metadata_of(
+    conn: &Connection,
+    source_id: i64,
+    target_id: i64,
+    kind: &EdgeKind,
+) -> anyhow::Result<Option<String>> {
+    use rusqlite::OptionalExtension;
+    // `None` for both "no such edge" and "edge without metadata".
+    Ok(conn
+        .query_row(
+            "SELECT metadata FROM edges WHERE source_id = ?1 AND target_id = ?2 AND kind = ?3",
+            params![source_id, target_id, kind.as_str()],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .optional()?
+        .flatten())
+}
+
+pub(super) fn file_edges_of_kind(
+    conn: &Connection,
+    kind: &EdgeKind,
+) -> anyhow::Result<Vec<(String, String, Option<String>)>> {
+    let mut stmt = conn.prepare(
+        "SELECT ps.path, pt.path, e.metadata
+         FROM edges e
+         JOIN nodes ns ON ns.id = e.source_id
+         JOIN nodes nt ON nt.id = e.target_id
+         JOIN paths ps ON ps.id = ns.file_id
+         JOIN paths pt ON pt.id = nt.file_id
+         WHERE e.kind = ?1 AND ns.kind = 'file' AND nt.kind = 'file'
+         ORDER BY ps.path, pt.path",
+    )?;
+    let rows = stmt
+        .query_map(params![kind.as_str()], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub(super) fn remove_file_edge(
+    conn: &Connection,
+    source: &str,
+    target: &str,
+    kind: &EdgeKind,
+) -> anyhow::Result<()> {
+    conn.execute(
+        "DELETE FROM edges WHERE kind = ?3
+           AND source_id IN (SELECT n.id FROM nodes n JOIN paths p ON p.id = n.file_id
+                             WHERE n.kind = 'file' AND p.path = ?1)
+           AND target_id IN (SELECT n.id FROM nodes n JOIN paths p ON p.id = n.file_id
+                             WHERE n.kind = 'file' AND p.path = ?2)",
+        params![source, target, kind.as_str()],
+    )?;
+    Ok(())
 }

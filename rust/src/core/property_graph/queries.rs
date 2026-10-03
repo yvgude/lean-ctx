@@ -5,7 +5,7 @@
 //! exports, type_ref, tested_by, and more. Edge kinds are weighted
 //! for impact scoring.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use rusqlite::{Connection, params};
 
@@ -16,6 +16,9 @@ pub struct GraphQuery;
 pub struct ImpactResult {
     pub root_file: String,
     pub affected_files: Vec<String>,
+    /// Affected files reachable *only* through name-match guesses
+    /// (heuristic `calls` edges) — possibly not affected at all. Sorted.
+    pub weak_files: Vec<String>,
     pub max_depth_reached: usize,
     pub edges_traversed: usize,
 }
@@ -28,14 +31,14 @@ pub struct DependencyChain {
 
 /// Edge kinds considered structural (code connectivity).
 const STRUCTURAL_EDGE_KINDS: &str =
-    "'imports','calls','exports','type_ref','tested_by','module','cochange','sibling'";
+    "'imports','calls','implements','exports','type_ref','tested_by','module','cochange','sibling'";
 
 /// Weight multiplier per edge kind for impact scoring.
 pub fn edge_weight(kind: &str) -> f64 {
     match kind {
         "imports" => 1.0,
         "calls" => 0.8,
-        "exports" => 0.7,
+        "exports" | "implements" => 0.7,
         "module" => 0.6,
         "type_ref" => 0.5,
         "tested_by" => 0.4,
@@ -110,47 +113,89 @@ pub(super) fn impact_analysis(
     let file_path = file_path.replace('\\', "/");
     let file_path = file_path.as_str();
     let reverse_graph = build_weighted_reverse_graph(conn)?;
-    const PROPAGATION_THRESHOLD: f64 = 0.1;
 
-    let mut visited: HashSet<String> = HashSet::new();
-    let mut queue: VecDeque<(String, usize, f64)> = VecDeque::new();
-    let mut max_depth_reached = 0;
-    let mut edges_traversed = 0;
-
-    visited.insert(file_path.to_string());
-    queue.push_back((file_path.to_string(), 0, 1.0));
-
-    while let Some((current, depth, weight)) = queue.pop_front() {
-        if depth >= max_depth {
-            continue;
-        }
-
-        if let Some(dependents) = reverse_graph.get(&current) {
-            for (dep, ew) in dependents {
-                edges_traversed += 1;
-                let propagated = weight * ew;
-                if propagated < PROPAGATION_THRESHOLD {
-                    continue;
-                }
-                if visited.insert(dep.clone()) {
-                    let new_depth = depth + 1;
-                    if new_depth > max_depth_reached {
-                        max_depth_reached = new_depth;
-                    }
-                    queue.push_back((dep.clone(), new_depth, propagated));
-                }
-            }
-        }
-    }
-
-    visited.remove(file_path);
+    let all = propagate(&reverse_graph, file_path, max_depth, false);
+    // Files also reachable over evidence-backed edges alone; the rest hang on
+    // name-match guesses only and are reported as such. A strong edge never
+    // weighs more than the pair's strongest edge overall, so the strong set
+    // is a subset of the full one.
+    let strong = propagate(&reverse_graph, file_path, max_depth, true);
+    let weak_files: Vec<String> = all.reached.difference(&strong.reached).cloned().collect();
 
     Ok(ImpactResult {
         root_file: file_path.to_string(),
-        affected_files: visited.into_iter().collect(),
-        max_depth_reached,
-        edges_traversed,
+        affected_files: all.reached.into_iter().collect(),
+        weak_files,
+        max_depth_reached: all.max_depth_reached,
+        edges_traversed: all.edges_traversed,
     })
+}
+
+struct Propagation {
+    reached: BTreeSet<String>,
+    max_depth_reached: usize,
+    edges_traversed: usize,
+}
+
+/// Weighted reverse propagation from `root` (excluded from the result) up
+/// to `max_depth` hops; a file is reached when some path to it keeps a
+/// cumulative weight ≥ 0.1. Exact, not first-come: a heavier path found
+/// later still propagates, unless an equally heavy or heavier one already
+/// arrived at the same or a shallower depth. Processing order is sorted, so
+/// the result is deterministic. With `strong_only`, name-match-only edges
+/// are not followed.
+fn propagate(
+    reverse_graph: &ReverseGraph,
+    root: &str,
+    max_depth: usize,
+    strong_only: bool,
+) -> Propagation {
+    const PROPAGATION_THRESHOLD: f64 = 0.1;
+    // Heaviest weight per file over all depths processed so far.
+    let mut best: HashMap<&str, f64> = HashMap::from([(root, 1.0)]);
+    let mut first_depth: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut layer: BTreeMap<&str, f64> = BTreeMap::from([(root, 1.0)]);
+    let mut edges_traversed = 0;
+
+    for depth in 1..=max_depth {
+        let mut next: BTreeMap<&str, f64> = BTreeMap::new();
+        for (file, weight) in &layer {
+            for dep in reverse_graph.get(*file).into_iter().flatten() {
+                let Some(edge_weight) = (if strong_only {
+                    dep.strong_weight
+                } else {
+                    Some(dep.weight)
+                }) else {
+                    continue;
+                };
+                edges_traversed += 1;
+                let propagated = weight * edge_weight;
+                if propagated < PROPAGATION_THRESHOLD
+                    || best
+                        .get(dep.file.as_str())
+                        .is_some_and(|b| *b >= propagated)
+                {
+                    continue;
+                }
+                let slot = next.entry(dep.file.as_str()).or_insert(0.0);
+                *slot = slot.max(propagated);
+            }
+        }
+        if next.is_empty() {
+            break;
+        }
+        for (file, weight) in &next {
+            best.insert(file, *weight);
+            first_depth.entry(file).or_insert(depth);
+        }
+        layer = next;
+    }
+    first_depth.remove(root);
+    Propagation {
+        max_depth_reached: first_depth.values().copied().max().unwrap_or(0),
+        reached: first_depth.into_keys().map(str::to_string).collect(),
+        edges_traversed,
+    }
 }
 
 /// BFS shortest path from `from` to `to` following structural edges.
@@ -207,7 +252,7 @@ pub fn related_files(
     limit: usize,
 ) -> anyhow::Result<Vec<(String, f64)>> {
     let sql = format!(
-        "SELECT p_other.path, e.kind
+        "SELECT p_other.path, e.kind, e.metadata
          FROM edges e
          JOIN nodes n_self ON (e.source_id = n_self.id OR e.target_id = n_self.id)
          JOIN nodes n_other ON (
@@ -222,20 +267,49 @@ pub fn related_files(
     );
     let mut stmt = conn.prepare(&sql)?;
 
-    let mut scores: HashMap<String, f64> = HashMap::new();
+    // One relationship can be stored several times — file→file plus
+    // symbol→symbol `calls` edges for the same call. Count each (file, kind)
+    // relationship once, at its strongest evidence, so finer-grained edges
+    // cannot inflate a neighbour's score.
+    // Ordered maps: floating-point sums must accumulate in a fixed order so
+    // equal relationships always yield bit-identical scores (#498).
+    let mut strongest: BTreeMap<(String, String), f64> = BTreeMap::new();
     let rows = stmt.query_map(params![file_path], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(2)?,
+        ))
     })?;
-
     for row in rows {
-        let (path, kind) = row?;
-        *scores.entry(path).or_default() += edge_weight(&kind);
+        let (path, kind, metadata) = row?;
+        let w = evidence_weight(&kind, metadata.as_deref());
+        let slot = strongest.entry((path, kind)).or_insert(0.0);
+        if w > *slot {
+            *slot = w;
+        }
+    }
+
+    let mut scores: BTreeMap<String, f64> = BTreeMap::new();
+    for ((path, _), w) in strongest {
+        *scores.entry(path).or_default() += w;
     }
 
     let mut results: Vec<(String, f64)> = scores.into_iter().collect();
-    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
     results.truncate(limit);
     Ok(results)
+}
+
+/// Kind weight scaled by the edge's evidence grade (see
+/// [`crate::core::semantic::EdgeEvidence`]); edges without evidence keep
+/// their full kind weight.
+pub(super) fn evidence_weight(kind: &str, metadata: Option<&str>) -> f64 {
+    edge_weight(kind) * crate::core::semantic::EdgeEvidence::weight_factor_of(metadata)
 }
 
 /// Graph connectivity stats for a file: incoming/outgoing edge counts by kind.
@@ -278,11 +352,21 @@ pub fn file_connectivity(
     Ok(result)
 }
 
-fn build_weighted_reverse_graph(
-    conn: &Connection,
-) -> anyhow::Result<HashMap<String, Vec<(String, f64)>>> {
+/// A file depending on another, as seen from the dependency.
+struct Dependent {
+    file: String,
+    /// Strongest edge of the pair.
+    weight: f64,
+    /// Strongest edge of the pair that is not a name-match guess, if any.
+    strong_weight: Option<f64>,
+}
+
+/// Dependency → its dependents, both sorted by path.
+type ReverseGraph = BTreeMap<String, Vec<Dependent>>;
+
+fn build_weighted_reverse_graph(conn: &Connection) -> anyhow::Result<ReverseGraph> {
     let sql = format!(
-        "SELECT p_tgt.path, p_src.path, e.kind
+        "SELECT p_tgt.path, p_src.path, e.kind, e.metadata
          FROM edges e
          JOIN nodes n_src ON e.source_id = n_src.id
          JOIN nodes n_tgt ON e.target_id = n_tgt.id
@@ -293,31 +377,48 @@ fn build_weighted_reverse_graph(
     );
     let mut stmt = conn.prepare(&sql)?;
 
-    let mut graph: HashMap<String, HashMap<String, f64>> = HashMap::new();
+    let mut graph: BTreeMap<String, BTreeMap<String, (f64, Option<f64>)>> = BTreeMap::new();
     let rows = stmt.query_map([], |row| {
         Ok((
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
             row.get::<_, String>(2)?,
+            row.get::<_, Option<String>>(3)?,
         ))
     })?;
 
     for row in rows {
-        let (target, source, kind) = row?;
-        let w = edge_weight(&kind);
+        let (target, source, kind, metadata) = row?;
+        let w = evidence_weight(&kind, metadata.as_deref());
+        // Only a name-match guess is weak; scope-bound, verified and
+        // non-call structural edges (imports, type refs) are facts.
+        let strong = crate::core::semantic::EdgeEvidence::from_metadata(metadata.as_deref())
+            .is_none_or(|e| e.grade != crate::core::semantic::EvidenceGrade::HeuristicStructural);
         let entry = graph
             .entry(target)
             .or_default()
             .entry(source)
-            .or_insert(0.0);
-        if w > *entry {
-            *entry = w;
+            .or_insert((0.0, None));
+        entry.0 = entry.0.max(w);
+        if strong {
+            entry.1 = Some(entry.1.map_or(w, |s| s.max(w)));
         }
     }
 
     Ok(graph
         .into_iter()
-        .map(|(k, v)| (k, v.into_iter().collect()))
+        .map(|(k, v)| {
+            (
+                k,
+                v.into_iter()
+                    .map(|(file, (weight, strong_weight))| Dependent {
+                        file,
+                        weight,
+                        strong_weight,
+                    })
+                    .collect(),
+            )
+        })
         .collect())
 }
 

@@ -103,6 +103,24 @@ pub(super) fn initialize(conn: &Connection) -> anyhow::Result<()> {
             ON cross_source_edges(from_path);
         CREATE INDEX IF NOT EXISTS idx_cross_source_to
             ON cross_source_edges(to_path);
+
+        -- Semantic backend answers per call site. One row per site and
+        -- operation: a new caller hash overwrites, so the table stays bounded
+        -- by the code size. Valid only while caller_hash matches.
+        CREATE TABLE IF NOT EXISTS semantic_resolutions (
+            caller_file   TEXT NOT NULL,
+            line          INTEGER NOT NULL,
+            col           INTEGER NOT NULL,
+            op            TEXT NOT NULL,
+            caller_hash   TEXT NOT NULL,
+            backend       TEXT NOT NULL,
+            outcome       TEXT NOT NULL,
+            target_file   TEXT,
+            target_line   INTEGER,
+            target_symbol TEXT,
+            context       TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (caller_file, line, col, op)
+        );
         ",
     )?;
     Ok(())

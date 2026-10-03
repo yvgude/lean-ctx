@@ -470,8 +470,15 @@ fn handle_status(root: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ");
 
+    let semantic = crate::core::property_graph::CodeGraph::open(root).map_or_else(
+        |_| String::new(),
+        |g| {
+            let mode = crate::core::config::SemanticMode::for_project(root);
+            format!("\n{}", crate::core::semantic::status_line(&g, mode, root))
+        },
+    );
     format!(
-        "Graph: {} files, {} symbols, {} edges ({:?}) | {} tok total\nLast scan: {}\nLanguages: {lang_summary}\nStored: {}",
+        "Graph: {} files, {} symbols, {} edges ({:?}) | {} tok total\nLast scan: {}\nLanguages: {lang_summary}{semantic}\nStored: {}",
         gp.file_count(),
         gp.symbol_count(),
         gp.edge_count().unwrap_or(0),

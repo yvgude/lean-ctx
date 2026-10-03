@@ -144,6 +144,74 @@ mod tests {
         assert!(!analysis.calls.is_empty());
     }
 
+    /// The semantic backend is asked about the callee identifier, so its
+    /// position must point at the method/function name — not the receiver,
+    /// not an argument, not a path prefix — in every grammar family.
+    #[test]
+    fn callee_position_points_at_the_callee_identifier() {
+        let cases = [
+            (
+                "rs",
+                "fn f() { repo.save(save); }",
+                "save",
+                "fn f() { repo.save(",
+            ),
+            (
+                "rs",
+                "fn f() { crate::db::save(); }",
+                "save",
+                "fn f() { crate::db::save(",
+            ),
+            (
+                "rs",
+                "fn f() { a.b().c().save(); }",
+                "save",
+                "fn f() { a.b().c().save(",
+            ),
+            (
+                "ts",
+                "function f() { repo.save(save); }",
+                "save",
+                "function f() { repo.save(",
+            ),
+            (
+                "py",
+                "def f():\n    repo.save(save)\n",
+                "save",
+                "    repo.save(",
+            ),
+            (
+                "go",
+                "package p\nfunc f() { repo.Save(Save) }\n",
+                "Save",
+                "func f() { repo.Save(",
+            ),
+            (
+                "java",
+                "class A { void f() { repo.save(save); } }",
+                "save",
+                "class A { void f() { repo.save(",
+            ),
+        ];
+        for (ext, src, callee, prefix_through_callee) in cases {
+            let call = analyze(src, ext)
+                .calls
+                .into_iter()
+                // Path calls keep the full path as callee (`crate::db::save`).
+                .find(|c| c.callee == callee || c.callee.ends_with(&format!("::{callee}")))
+                .unwrap_or_else(|| panic!("{ext}: no call to {callee}"));
+            let (line, col) = call
+                .callee_pos
+                .unwrap_or_else(|| panic!("{ext}: no position"));
+            let line_text = src.lines().nth(line - 1).unwrap();
+            let expected = prefix_through_callee.len() - callee.len() - 1;
+            assert_eq!(
+                col, expected,
+                "{ext}: callee in `{line_text}` must be at {expected}"
+            );
+        }
+    }
+
     #[test]
     fn rust_calls_inside_macros_are_extracted() {
         // #658: `main` only calls `greet` inside println!/assert_eq! — the call

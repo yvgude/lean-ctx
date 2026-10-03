@@ -1,4 +1,4 @@
-use crate::core::call_graph::{CallGraph, CallGraphInputs, RiskLevel};
+use crate::core::call_graph::{CallEdge, CallGraph, CallGraphInputs, RiskLevel};
 use crate::core::index_paths;
 
 const MAX_BFS_DEPTH: usize = 5;
@@ -31,10 +31,61 @@ pub fn handle(
 }
 
 fn load_graph(project_root: &str) -> CallGraph {
+    load_graph_with_inputs(project_root).0
+}
+
+fn load_graph_with_inputs(project_root: &str) -> (CallGraph, CallGraphInputs) {
     let inputs = CallGraphInputs::open(project_root);
     let graph = CallGraph::load_or_build(project_root, &inputs);
     let _ = graph.save();
-    graph
+    (graph, inputs)
+}
+
+/// Where each listed call goes, with the evidence behind it:
+/// `⇒ src/repo.rs [verified]`. Structurally uncertain edges are escalated to
+/// a semantic backend on the spot (cached; `semantic_mode` rules apply).
+/// Unknown callees (std, dependencies) get no annotation.
+fn target_annotations(
+    edges: &[&CallEdge],
+    graph: &CallGraph,
+    inputs: &CallGraphInputs,
+    project_root: &str,
+) -> Vec<String> {
+    use crate::core::call_graph::{StructuralTarget, resolve_edge_callee_targets};
+    use crate::core::semantic::{EvidenceGrade, SemanticVerdict, escalate_calls};
+
+    let owned: Vec<CallEdge> = edges.iter().map(|e| (*e).clone()).collect();
+    let structural = resolve_edge_callee_targets(inputs, &owned);
+    let verdicts = match crate::core::property_graph::CodeGraph::open(project_root) {
+        Ok(store) => {
+            let mode = crate::core::config::SemanticMode::for_project(project_root);
+            escalate_calls(
+                &store,
+                project_root,
+                inputs,
+                &owned,
+                &structural,
+                &graph.file_hashes,
+                mode,
+                crate::core::semantic::EscalationBudget::INTERACTIVE,
+            )
+            .verdicts
+        }
+        Err(_) => vec![None; owned.len()],
+    };
+    structural
+        .iter()
+        .zip(verdicts)
+        .map(|(target, verdict)| match (verdict, target) {
+            (Some(SemanticVerdict::Verified { file, .. }), _) => format!("  ⇒ {file} [verified]"),
+            (Some(SemanticVerdict::NotInProject), _) => "  ⇒ external [verified]".to_string(),
+            (None, StructuralTarget::Resolved { file, via }) => {
+                format!("  ⇒ {file} [{}]", EvidenceGrade::from_scope(*via).as_str())
+            }
+            (None, StructuralTarget::Ambiguous) => "  ⇒ ? [ambiguous]".to_string(),
+            (None, StructuralTarget::Unknown) => String::new(),
+        })
+        .collect()
 }
 
 fn handle_direction(
@@ -44,17 +95,21 @@ fn handle_direction(
     direction: &str,
     depth: usize,
 ) -> String {
-    let graph = load_graph(project_root);
-    let filter = file.map(|f| graph_file_filter(f, project_root));
     let clamped_depth = depth.clamp(1, MAX_BFS_DEPTH);
 
     if clamped_depth == 1 {
+        let (graph, inputs) = load_graph_with_inputs(project_root);
+        let filter = file.map(|f| graph_file_filter(f, project_root));
+        let annotate =
+            |edges: &[&CallEdge]| target_annotations(edges, &graph, &inputs, project_root);
         match direction {
-            "callers" => format_callers(symbol, &graph, filter.as_deref()),
-            "callees" => format_callees(symbol, &graph, filter.as_deref()),
+            "callers" => format_callers(symbol, &graph, filter.as_deref(), annotate),
+            "callees" => format_callees(symbol, &graph, filter.as_deref(), annotate),
             _ => unreachable!(),
         }
     } else {
+        let graph = load_graph(project_root);
+        let filter = file.map(|f| graph_file_filter(f, project_root));
         match direction {
             "callers" => format_bfs_callers(symbol, &graph, clamped_depth, filter.as_deref()),
             "callees" => format_bfs_callees(symbol, &graph, clamped_depth, filter.as_deref()),
@@ -127,7 +182,12 @@ fn handle_risk(symbol: &str, project_root: &str) -> String {
 // Single-hop formatters (existing behavior)
 // ---------------------------------------------------------------------------
 
-fn format_callers(symbol: &str, graph: &CallGraph, filter: Option<&str>) -> String {
+fn format_callers(
+    symbol: &str,
+    graph: &CallGraph,
+    filter: Option<&str>,
+    annotate: impl FnOnce(&[&CallEdge]) -> Vec<String>,
+) -> String {
     let mut callers = graph.callers_of(symbol);
     if let Some(f) = filter {
         callers.retain(|e| index_paths::graph_match_key(&e.caller_file).contains(f));
@@ -142,16 +202,21 @@ fn format_callers(symbol: &str, graph: &CallGraph, filter: Option<&str>) -> Stri
     }
 
     let mut out = format!("{} caller(s) of '{symbol}':\n", callers.len());
-    for edge in &callers {
+    for (edge, target) in callers.iter().zip(annotate(&callers)) {
         out.push_str(&format!(
-            "  {} → {}  (L{})\n",
+            "  {} → {}  (L{}){target}\n",
             edge.caller_file, edge.caller_symbol, edge.caller_line
         ));
     }
     out
 }
 
-fn format_callees(symbol: &str, graph: &CallGraph, filter: Option<&str>) -> String {
+fn format_callees(
+    symbol: &str,
+    graph: &CallGraph,
+    filter: Option<&str>,
+    annotate: impl FnOnce(&[&CallEdge]) -> Vec<String>,
+) -> String {
     let mut callees = graph.callees_of(symbol);
     if let Some(f) = filter {
         callees.retain(|e| index_paths::graph_match_key(&e.caller_file).contains(f));
@@ -166,9 +231,9 @@ fn format_callees(symbol: &str, graph: &CallGraph, filter: Option<&str>) -> Stri
     }
 
     let mut out = format!("{} callee(s) of '{symbol}':\n", callees.len());
-    for edge in &callees {
+    for (edge, target) in callees.iter().zip(annotate(&callees)) {
         out.push_str(&format!(
-            "  → {}  ({}:L{})\n",
+            "  → {}  ({}:L{}){target}\n",
             edge.callee_name, edge.caller_file, edge.caller_line
         ));
     }

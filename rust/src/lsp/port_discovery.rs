@@ -48,8 +48,19 @@ pub fn port_file_path(project_root: &str) -> Option<std::path::PathBuf> {
 
 /// Reads + parses the port file, or `None` if absent/unreadable/malformed.
 pub fn read_port_file(project_root: &str) -> Option<PortFile> {
+    use std::io::Read;
+    // A port file is a few hundred bytes; anything far larger is not one.
+    const MAX_BYTES: u64 = 64 * 1024;
     let path = port_file_path(project_root)?;
-    let text = std::fs::read_to_string(path).ok()?;
+    let mut text = String::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(MAX_BYTES + 1)
+        .read_to_string(&mut text)
+        .ok()?;
+    if text.len() as u64 > MAX_BYTES {
+        return None;
+    }
     serde_json::from_str(&text).ok()
 }
 

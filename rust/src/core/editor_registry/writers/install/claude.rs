@@ -11,19 +11,26 @@ pub(crate) fn write_mcp_json(
     opts: WriteOptions,
 ) -> Result<WriteResult, String> {
     let include_aa = supports_auto_approve(target);
-    let constraints = crate::core::client_constraints::by_client_id(&target.agent_key);
+    // `agent_key` is the setup key ("claude"), not the constraint id
+    // ("claude-code"): fall back to the display name so Claude's rules apply.
+    let constraints = crate::core::client_constraints::by_client_id(&target.agent_key)
+        .or_else(|| crate::core::client_constraints::by_editor_name(target.name));
     let wants_instructions = constraints.is_none_or(|c| c.supports_config_instructions);
-    let desired = if target.agent_key.is_empty() || !wants_instructions {
+    let mut desired = if target.agent_key.is_empty() || !wants_instructions {
         lean_ctx_server_entry(binary, include_aa)
     } else {
         lean_ctx_server_entry_with_instructions(binary, include_aa, &target.agent_key)
     };
+    let is_claude = target.agent_key == "claude" || target.name == "Claude Code";
+    if is_claude {
+        desired["alwaysLoad"] = Value::Bool(true);
+    }
 
     // Claude Code manages ~/.claude.json and may overwrite it on first start.
     // Prefer the official CLI integration when available.
     // Skip when LEAN_CTX_QUIET=1 (bootstrap --json / setup --json) to avoid
     // spawning `claude mcp add-json` which can stall in non-interactive CI.
-    if (target.agent_key == "claude" || target.name == "Claude Code")
+    if is_claude
         && !matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1")
         && let Ok(result) = try_claude_mcp_add(&desired)
     {

@@ -29,8 +29,15 @@ fn ctx_tool_tokens(text: &str) -> BTreeSet<String> {
             while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
                 end += 1;
             }
+            let token = &text[i..end];
+            // `mcp__lean-ctx__ctx_read` starts a match at the server name's
+            // `ctx__…`; skip just that prefix so the scan finds `ctx_read`.
+            if token.starts_with("ctx__") {
+                i += 4;
+                continue;
+            }
             if end > i + 4 {
-                tokens.insert(text[i..end].to_string());
+                tokens.insert(token.to_string());
             }
             i = end.max(i + 4);
         } else {
@@ -52,21 +59,41 @@ fn template_files() -> Vec<PathBuf> {
     files
 }
 
+/// Every tool a shipped text names must be one agents can see: registered and
+/// publicly advertised — not a deprecated alias (`ctx_symbol`) or a hidden
+/// local-collaboration tool (`ctx_workflow`). The skill named six hidden tools
+/// for months because this gate only checked registration.
 #[test]
 fn templates_only_reference_registered_ctx_tools() {
+    use lean_ctx::server::dynamic_tools::is_publicly_advertised_tool;
     let registry = build_registry();
     let mut violations: Vec<String> = Vec::new();
 
     let files = template_files();
     assert!(!files.is_empty(), "expected at least one shipped template");
 
-    for path in files {
-        let text = std::fs::read_to_string(&path).expect("template is readable");
+    let mut texts: Vec<(String, String)> = files
+        .iter()
+        .map(|path| {
+            (
+                path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("?")
+                    .to_string(),
+                std::fs::read_to_string(path).expect("template is readable"),
+            )
+        })
+        .collect();
+    texts.push((
+        "hermes extras".to_string(),
+        lean_ctx::hooks::agents::hermes::HERMES_TOOL_EXTRAS.to_string(),
+    ));
+
+    for (name, text) in texts {
         for token in ctx_tool_tokens(&text) {
-            if !registry.contains(&token) {
+            if !(registry.contains(&token) && is_publicly_advertised_tool(&token)) {
                 violations.push(format!(
-                    "{}: `{token}` is not a registered MCP tool",
-                    path.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                    "{name}: `{token}` is not a publicly advertised MCP tool"
                 ));
             }
         }
@@ -105,6 +132,8 @@ fn pi_template_tracks_canonical_search_glob_tree_tools() {
 #[test]
 fn token_extractor_ignores_globs_and_bare_prefix() {
     assert!(ctx_tool_tokens("use ctx_* tools and ctx_ alone").is_empty());
+    assert!(ctx_tool_tokens("select:mcp__lean-ctx__ctx_read").contains("ctx_read"));
+    assert!(!ctx_tool_tokens("select:mcp__lean-ctx__ctx_read").contains("ctx__ctx_read"));
     let tokens = ctx_tool_tokens("`ctx_read`/ctx_shell, ctx_search(pattern)");
     assert!(tokens.contains("ctx_read"));
     assert!(tokens.contains("ctx_shell"));

@@ -26,5 +26,3 @@ Edits: `ctx_read(path, mode="anchored")` → `ctx_patch(path, op, line, hash, ne
 never echo old text (`op=create` for new files). Native Write/Edit, where the host provides them, stay fine.
 
 CRITICAL: Every time you reach for Read, Bash, Grep, or ListFiles — stop and use the lean-ctx MCP equivalent instead. This is not optional.
-
-Preferred workflow: use `ctx_workflow` for state + evidence + tool gating.

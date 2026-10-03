@@ -408,6 +408,30 @@ pub trait LspBackend: Send {
     fn is_dead_after_error(&self, project_root: &str) -> bool {
         self.is_stale(project_root)
     }
+    /// Caps how long a single request may block (`None` restores the default).
+    /// Opportunistic semantic work sets a short deadline so it never holds the
+    /// backend long; backends without a per-request timeout ignore it.
+    fn set_request_timeout(&mut self, _timeout: Option<std::time::Duration>) {}
+    /// Identity, negotiated capabilities and position encoding. The default
+    /// describes a backend offering exactly the five mandatory operations.
+    fn backend_info(&self) -> crate::lsp::capabilities::SemanticBackendInfo {
+        use crate::lsp::capabilities::{
+            SemanticBackendInfo, SemanticBackendKind, SemanticCapabilities,
+        };
+        SemanticBackendInfo {
+            kind: SemanticBackendKind::Lsp,
+            server_name: None,
+            server_version: None,
+            capabilities: SemanticCapabilities {
+                definition: true,
+                references: true,
+                implementations: true,
+                rename: true,
+                ..SemanticCapabilities::default()
+            },
+            utf8_positions: false,
+        }
+    }
     /// Truncation metadata of the most recent capped call, or `None` (Backing A,
     /// or no capped call yet). Lets `ctx_refactor` surface "(truncated …)".
     fn last_truncation(&self) -> Option<Truncation> {

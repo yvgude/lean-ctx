@@ -151,6 +151,8 @@ All `std::sync::Mutex` unless noted otherwise.
 | L114 | `PENDING` | `core/security_events.rs:177` | `Mutex<SecurityCounts>` | Security-event counters pending for the session snapshot; leaf lock, taken after the audit-trail write returns, never nested |
 | L115 | `CURRENT_SESSION` | `core/value/mod.rs:17` | `RwLock<Option<String>>` | Session id committed into ledger and security-event hashes; leaf lock, never nested |
 | L116 | `FOLDED` | `core/telemetry_aggregate.rs:600` | `OnceLock<Mutex<HashMap<PathBuf, CounterCheckpoint>>>` | Per-process tool counters already folded into each telemetry one-shot sidecar; taken under the one-shot OS file lock but never nested with another Rust static lock, guard dropped before any I/O |
+| L117 | `NEXT` | `core/graph_enricher.rs:419` | `LazyLock<Mutex<HashMap<String, Instant>>>` | Earliest next backend-triggered semantic refresh per project root (`schedule_semantic_refresh`). Leaf lock: taken briefly under a router backend *slot* lock (never under L22 `BACKENDS`) and in the refresh worker; never held across I/O, thread spawn or another lock |
+| L118 | `CACHE` | `core/semantic/coverage.rs:101` | `LazyLock<Mutex<HashMap<(String, String), (Option<String>, Instant)>>>` | Per (language, project root) language-server availability for status surfaces (60 s TTL). Leaf lock: released before server resolution (config load, `PATH` probe) and re-taken only to store the answer |
 
 ### Test / Environment Locks (serialise env-var mutations)
 

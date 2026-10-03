@@ -726,6 +726,7 @@ mod tests {
             caller_symbol: "main".into(),
             caller_line: 2,
             callee_name: "greet".into(),
+            ..Default::default()
         });
         graph.save().expect("persist call graph");
 

@@ -479,7 +479,12 @@ pub async fn forward_request(
     }
 
     let compression_candidate = prepared.compression_candidate;
-    let content_dedup_tokens_saved = prepared.content_dedup_tokens_saved;
+    // Agent compaction (prepare) plus the pipeline's in-request tool-output
+    // dedup (#1980); a reverted pipeline reports zero for its stage.
+    let content_dedup_tokens_saved = prepared.content_dedup_tokens_saved
+        + pipeline_report
+            .as_ref()
+            .map_or(0, PipelineReport::dedup_tokens_saved);
     let route = prepared.route;
     let parsed = prepared.parsed;
     let intent_classification =

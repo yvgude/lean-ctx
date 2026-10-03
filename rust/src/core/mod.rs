@@ -175,6 +175,7 @@ pub(crate) mod pgvector_store;
 #[cfg(feature = "qdrant")]
 pub(crate) mod qdrant_store;
 pub mod search_reranking;
+pub mod semantic;
 pub mod semantic_cache;
 pub(crate) mod splade_retrieval;
 pub mod spreading_activation;

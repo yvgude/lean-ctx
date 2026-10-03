@@ -38,7 +38,7 @@ fn call_graph() -> (&'static str, &'static str, String) {
                 "analyzed_file_count": graph.file_hashes.len(),
                 "call_graph_support": call_graph_support(&provider),
                 "language_matrix":
-                    super::capability_matrix::realized_from_provider(&provider, Some(graph.edges.as_slice())),
+                    super::capability_matrix::realized_from_provider(&provider, Some(graph.edges.as_slice()), &root),
                 "communities": communities,
                 "symbol_files": crate::core::call_graph::resolve_callee_files(&cg_inputs, &graph.edges),
             });

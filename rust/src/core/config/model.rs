@@ -543,6 +543,12 @@ pub struct Config {
     /// Override via LEAN_CTX_MEMORY_CLEANUP env var.
     #[serde(default)]
     pub memory_cleanup: MemoryCleanup,
+    /// How the code graph uses local semantic backends (language servers, a
+    /// live JetBrains IDE). Values: "off", "auto" (default: only backends that
+    /// are already running), "eager" (may start language servers).
+    /// Override via LEAN_CTX_SEMANTIC_MODE env var.
+    #[serde(default)]
+    pub semantic_mode: SemanticMode,
     /// Soft process-RSS target as a percentage of system RAM (default: 5).
     /// The guardian throttles and evicts above it, but this is not an OS hard cap.
     /// Use a cgroup/container MemoryMax when strict isolation is required.

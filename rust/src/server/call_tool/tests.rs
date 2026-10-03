@@ -781,6 +781,36 @@ mod shell_outcome_tests {
         );
     }
 
+    // #1980: with `[cache] shell_cache_enabled = true` (since removed), a
+    // repeated state-observing command replayed its first output after the
+    // file it reads had changed. Every call must observe the workspace as is.
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(not(windows))]
+    async fn repeated_state_observing_command_sees_the_current_file() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let config = crate::core::config::Config::path().expect("isolated config path");
+        std::fs::create_dir_all(config.parent().expect("config dir")).unwrap();
+        std::fs::write(&config, "[cache]\nshell_cache_enabled = true\n").unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("probe.txt");
+        let mut args = serde_json::Map::new();
+        args.insert(
+            "command".to_string(),
+            serde_json::json!(format!("wc -c {}", file.display())),
+        );
+        let byte_count = |content: &str| {
+            std::fs::write(&file, content).unwrap();
+            let result = call_shell(&args, &shell_context());
+            text_of(&result)
+                .split_whitespace()
+                .next()
+                .map(str::to_owned)
+        };
+
+        assert_eq!(byte_count("a").as_deref(), Some("1"));
+        assert_eq!(byte_count("abcdef").as_deref(), Some("6"));
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(not(windows))]
     async fn soft_cap_auto_detach_ack_is_structured_running() {

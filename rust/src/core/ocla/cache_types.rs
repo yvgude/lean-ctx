@@ -246,35 +246,6 @@ impl CacheKeyBuilder for FileReadKey {
     }
 }
 
-/// Cache-key inputs for a normalized shell command.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ShellCommandKey {
-    /// Normalized command text.
-    pub command_normalized: String,
-    /// Canonical working directory.
-    pub cwd: String,
-    /// Digest of environment variables visible to the command.
-    pub env_hash: String,
-}
-
-impl CacheKeyBuilder for ShellCommandKey {
-    fn kind(&self) -> DeliveryKind {
-        DeliveryKind::ShellCommand
-    }
-
-    fn canonical_input(&self) -> String {
-        canonical(&[
-            ("command_normalized", self.command_normalized.clone()),
-            ("cwd", self.cwd.clone()),
-            ("env_hash", self.env_hash.clone()),
-        ])
-    }
-
-    fn validator(&self) -> CacheValidator {
-        CacheValidator::Immutable
-    }
-}
-
 /// Cache-key inputs for a search query.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SearchQueryKey {
@@ -521,17 +492,6 @@ mod tests {
             }
             .cache_key()
         );
-    }
-
-    #[test]
-    fn shell_builder_is_immutable() {
-        let key = ShellCommandKey {
-            command_normalized: "git status".into(),
-            cwd: "/repo".into(),
-            env_hash: "env".into(),
-        };
-        assert_eq!(key.kind(), DeliveryKind::ShellCommand);
-        assert_eq!(key.validator(), CacheValidator::Immutable);
     }
 
     #[test]

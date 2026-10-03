@@ -13,7 +13,7 @@ use crate::{
     },
     proxy::{
         adaptive_policy::select_policy,
-        dedup::ContentAddressedDedup,
+        dedup::dedup_tool_outputs,
         determinism_guard,
         effort_routing::score_session_complexity,
         live_zone::{compress_live_only, detect_live_zone},
@@ -46,6 +46,16 @@ impl PipelineReport {
         self.effort_complexity.is_some_and(|complexity| {
             crate::proxy::effort_routing::inject_effort_budget(request, complexity).1
         })
+    }
+
+    /// Tokens the in-request tool-output dedup stage saved (0 when reverted).
+    pub(crate) fn dedup_tokens_saved(&self) -> usize {
+        self.stages_run
+            .iter()
+            .find(|stage| stage.name == "dedup")
+            .map_or(0, |stage| {
+                usize::try_from(stage.tokens_saved).unwrap_or(usize::MAX)
+            })
     }
 
     pub(crate) fn apply_response_headers(&self, headers: &mut axum::http::HeaderMap) {
@@ -112,22 +122,6 @@ impl CompressionPipeline {
         let mut live_messages = messages.split_off(live_zone.boundary_turn);
         stages_run.push(stage_report("live_zone", true, 0, started));
 
-        let dedup_started = Instant::now();
-        let dedup_saved = if config.enable_dedup {
-            let before = messages_tokens(&live_messages);
-            let mut dedup = ContentAddressedDedup::new();
-            let _ = dedup.dedup_messages(&mut live_messages);
-            before.saturating_sub(messages_tokens(&live_messages))
-        } else {
-            0
-        };
-        stages_run.push(stage_report(
-            "dedup",
-            config.enable_dedup,
-            dedup_saved,
-            dedup_started,
-        ));
-
         let task_class = task_class(&live_messages);
         let policy_started = Instant::now();
         let policy = select_policy(task_class);
@@ -161,6 +155,24 @@ impl CompressionPipeline {
             config.enable_prose,
             tool_saved,
             tool_started,
+        ));
+
+        // Dedup runs after every stage that rewrites tool output: its references
+        // and line deltas describe the earlier result exactly as it is sent, so
+        // nothing may change that result afterwards (#1980).
+        let dedup_started = Instant::now();
+        let dedup_saved = if config.enable_dedup {
+            let before = messages_tokens(&live_messages);
+            let _ = dedup_tool_outputs(&mut live_messages);
+            before.saturating_sub(messages_tokens(&live_messages))
+        } else {
+            0
+        };
+        stages_run.push(stage_report(
+            "dedup",
+            config.enable_dedup,
+            dedup_saved,
+            dedup_started,
         ));
 
         let effort_started = Instant::now();
@@ -407,12 +419,14 @@ mod tests {
                 .iter()
                 .map(|stage| stage.name)
                 .collect::<Vec<_>>(),
+            // `dedup` must follow `tool_results` (#1980): a delta against a
+            // result that is compressed afterwards no longer reconstructs it.
             vec![
                 "live_zone",
-                "dedup",
                 "adaptive_policy",
                 "prose",
                 "tool_results",
+                "dedup",
                 "effort",
                 "determinism_guard",
             ]

@@ -2,110 +2,13 @@
 
 use axum::http::{StatusCode, request::Parts};
 use std::borrow::Cow;
-use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
 
 use crate::proxy::codec::{
     RequestBodyEncoding, decode_gzip_bounded, decode_zstd_bounded, encode_gzip, encode_zstd,
     request_body_encoding,
 };
-use crate::proxy::dedup::{ContentAddressedDedup, ToolResultCache};
 
 use super::max_body_bytes;
-
-/// One proxy process serves one agent session, so its tool-result cache is safe
-/// to share across forwarded requests.
-static DEDUP_CACHE: OnceLock<Arc<ToolResultCache>> = OnceLock::new();
-
-fn dedup_cache() -> &'static Arc<ToolResultCache> {
-    DEDUP_CACHE.get_or_init(|| Arc::new(ToolResultCache::new()))
-}
-
-fn content_dedup_cache() -> &'static std::sync::Mutex<ContentAddressedDedup> {
-    static CACHE: OnceLock<std::sync::Mutex<ContentAddressedDedup>> = OnceLock::new();
-    CACHE.get_or_init(|| std::sync::Mutex::new(ContentAddressedDedup::new()))
-}
-
-struct ToolResultToCache {
-    tool_name: String,
-    content: String,
-}
-
-/// Replace result blocks already sent during an earlier request, returning the
-/// misses to cache after the request's normal compression pass completes.
-fn deduplicate_tool_results(
-    parsed: &mut serde_json::Value,
-    cache: &ToolResultCache,
-) -> (Vec<ToolResultToCache>, usize) {
-    let Some(messages) = parsed.get_mut("messages").and_then(|v| v.as_array_mut()) else {
-        return (Vec::new(), 0);
-    };
-
-    let tool_names = messages
-        .iter()
-        .flat_map(|message| {
-            message
-                .get("content")
-                .and_then(|content| content.as_array())
-                .into_iter()
-                .flatten()
-        })
-        .filter(|block| block.get("type").and_then(|kind| kind.as_str()) == Some("tool_use"))
-        .filter_map(|block| {
-            Some((
-                block.get("id")?.as_str()?.to_owned(),
-                block.get("name")?.as_str()?.to_owned(),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let mut misses = Vec::new();
-    let mut tokens_saved = 0;
-    let cached_prefix = crate::proxy::history_prune::cached_prefix_len(messages);
-
-    for (index, message) in messages.iter_mut().enumerate() {
-        if index < cached_prefix {
-            continue;
-        }
-        let Some(blocks) = message
-            .get_mut("content")
-            .and_then(|content| content.as_array_mut())
-        else {
-            continue;
-        };
-        for block in blocks {
-            if block.get("type").and_then(|kind| kind.as_str()) != Some("tool_result") {
-                continue;
-            }
-            let Some(content) = block.get("content").and_then(|content| content.as_str()) else {
-                continue;
-            };
-            let tool_name = block
-                .get("tool_use_id")
-                .and_then(|id| id.as_str())
-                .and_then(|id| tool_names.get(id))
-                .cloned()
-                .unwrap_or_else(|| "tool_result".to_owned());
-
-            if let Some(hit) = cache.check(&tool_name, content) {
-                tokens_saved += hit.tokens_saved;
-                block["content"] = serde_json::Value::String(hit.stub);
-            } else {
-                misses.push(ToolResultToCache {
-                    tool_name,
-                    content: content.to_owned(),
-                });
-            }
-        }
-    }
-    (misses, tokens_saved)
-}
-
-fn cache_tool_results(cache: &ToolResultCache, results: Vec<ToolResultToCache>) {
-    for result in results {
-        let token_count = result.content.len().saturating_add(3) / 4;
-        cache.insert(&result.tool_name, &result.content, token_count, None);
-    }
-}
 
 #[cfg(feature = "shape-xlat")]
 use super::xlat::translated_openai_body;
@@ -232,8 +135,6 @@ pub(crate) fn prepare_request_body(
     openai_shape: bool,
     compression_arm: Option<crate::proxy::holdout::Arm>,
 ) -> Result<PreparedRequestBody, StatusCode> {
-    let cache = dedup_cache();
-    cache.advance_turn();
     let encoding = request_body_encoding(parts);
     let decoded = match encoding {
         RequestBodyEncoding::Identity => Cow::Borrowed(body_bytes),
@@ -255,8 +156,8 @@ pub(crate) fn prepare_request_body(
     };
 
     // #1905: the control arm of the input-compression holdout skips every
-    // compression stage below — conversation shaping, agent compaction, tool
-    // result dedup and the provider compressor — so it is forwarded as sent.
+    // compression stage below — conversation shaping, agent compaction and the
+    // provider compressor — so it is forwarded as sent.
     // Every return carries the arm: the comparison is by assignment, so a body
     // that could not be compressed still counts in the arm it was assigned to.
     let compression_control = compression_arm == Some(crate::proxy::holdout::Arm::Control);
@@ -284,25 +185,16 @@ pub(crate) fn prepare_request_body(
         });
     };
     // #1570 P1: agent-requested compaction runs FIRST, on the raw client
-    // bytes — later mutations (dedup) must never shift its fingerprint-pinned
+    // bytes — later mutations must never shift its fingerprint-pinned
     // boundary. The determinism guard reverts it wholesale like every other
-    // mutation; its savings ride the content-level counter below (zeroed on
-    // revert together with it).
-    let (agent_compact_tokens_saved, (tool_results_to_cache, dedup_tokens_saved), live_suffix) =
-        if compression_control {
-            (0, (Vec::new(), 0), 0)
-        } else {
-            (
-                crate::proxy::agent_compact::apply(&mut parsed),
-                deduplicate_tool_results(&mut parsed, cache),
-                content_dedup_live_suffix(&mut parsed),
-            )
-        };
-    let content_dedup_tokens_saved = agent_compact_tokens_saved + live_suffix;
-
-    if dedup_tokens_saved > 0 {
-        tracing::debug!(dedup_tokens_saved, "deduplicated proxy tool results");
-    }
+    // mutation; its savings ride the content-level counter (zeroed on revert
+    // together with it). Repeated tool output is deduplicated later, inside
+    // the request only, by the compression pipeline (#1980).
+    let content_dedup_tokens_saved = if compression_control {
+        0
+    } else {
+        crate::proxy::agent_compact::apply(&mut parsed)
+    };
 
     // Router runs on the freshly parsed body, before compression: the model
     // swap lands in the same single serialization as the compression pass.
@@ -360,7 +252,6 @@ pub(crate) fn prepare_request_body(
             compress_body(parsed.clone(), original_size)
         };
     drop(control_scope);
-    cache_tool_results(cache, tool_results_to_cache);
     let final_parsed = serde_json::from_slice(&logical_body).ok();
     let body = encode_request_body(parts, logical_body)?;
 
@@ -395,129 +286,4 @@ pub(crate) fn translated_openai_body(
     _parsed: &serde_json::Value,
 ) -> Option<serde_json::Value> {
     None
-}
-
-/// #1545: the content-addressed dedup cache persists across requests, so
-/// without prefix protection it rewrites tool results that now live inside
-/// the client's cache_control'd prefix — the determinism guard then reverts
-/// the whole request and compression stays at 0%. Mirror the
-/// deduplicate_tool_results fix (3aae8096): only the live suffix is deduped.
-pub(super) fn content_dedup_live_suffix(parsed: &mut serde_json::Value) -> usize {
-    parsed
-        .get_mut("messages")
-        .and_then(|messages| messages.as_array_mut())
-        .map(|messages| {
-            let cached_prefix = crate::proxy::history_prune::cached_prefix_len(messages);
-            let mut live_messages = messages.split_off(cached_prefix);
-            let tokens_saved = content_dedup_cache()
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .dedup_messages(&mut live_messages)
-                .tokens_saved;
-            messages.append(&mut live_messages);
-            tokens_saved
-        })
-        .unwrap_or_default()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        ToolResultCache, cache_tool_results, content_dedup_live_suffix, deduplicate_tool_results,
-    };
-    use serde_json::json;
-
-    fn tool_result_body(content: &str) -> serde_json::Value {
-        json!({
-            "messages": [
-                {
-                    "role": "assistant",
-                    "content": [{
-                        "type": "tool_use",
-                        "id": "toolu_1",
-                        "name": "ctx_shell",
-                        "input": {}
-                    }]
-                },
-                {
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": "toolu_1",
-                        "content": content
-                    }]
-                }
-            ]
-        })
-    }
-
-    // #1545: the cross-request content-dedup cache must never rewrite a
-    // message inside the client's cache_control'd prefix — that invalidates
-    // the provider prompt cache and the determinism guard reverts everything.
-    #[test]
-    fn content_dedup_skips_cache_controlled_prefix() {
-        let unique = "unique-1545-prefix-payload ".repeat(40);
-        // Request 1: the payload arrives as a live message and seeds the cache.
-        let mut first = json!({"messages": [
-            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": unique}]}
-        ]});
-        let _ = content_dedup_live_suffix(&mut first);
-        // Request 2: the same payload now sits inside the cached prefix.
-        let mut second = json!({"messages": [
-            {"role": "user", "content": [
-                {"type": "tool_result", "tool_use_id": "t1", "cache_control": {"type": "ephemeral"}, "content": unique}
-            ]},
-            {"role": "user", "content": "continue"}
-        ]});
-        let before = second["messages"][0].to_string();
-        let _ = content_dedup_live_suffix(&mut second);
-        assert_eq!(
-            second["messages"][0].to_string(),
-            before,
-            "cache_control'd prefix must stay byte-identical"
-        );
-    }
-
-    #[test]
-    fn repeated_tool_result_on_second_request_returns_stub() {
-        let cache = ToolResultCache::new();
-        let content = "cargo test completed successfully";
-
-        cache.advance_turn();
-        let (first_misses, first_saved) =
-            deduplicate_tool_results(&mut tool_result_body(content), &cache);
-        assert_eq!(first_saved, 0);
-        cache_tool_results(&cache, first_misses);
-
-        cache.advance_turn();
-        let mut repeated = tool_result_body(content);
-        let (_second_misses, second_saved) = deduplicate_tool_results(&mut repeated, &cache);
-        let stub = repeated["messages"][1]["content"][0]["content"]
-            .as_str()
-            .expect("dedup stub content");
-        assert!(stub.contains("unchanged since turn 1"));
-        assert!(stub.contains("cargo test completed successfully"));
-        assert!(second_saved > 0);
-    }
-
-    #[test]
-    fn different_tool_results_are_not_deduplicated() {
-        let cache = ToolResultCache::new();
-        let first = "first result";
-        let second = "different result";
-
-        cache.advance_turn();
-        let (misses, _) = deduplicate_tool_results(&mut tool_result_body(first), &cache);
-        cache_tool_results(&cache, misses);
-
-        cache.advance_turn();
-        let mut different = tool_result_body(second);
-        let (misses, saved) = deduplicate_tool_results(&mut different, &cache);
-        assert_eq!(saved, 0);
-        assert_eq!(misses.len(), 1);
-        assert_eq!(
-            different["messages"][1]["content"][0]["content"],
-            json!(second)
-        );
-    }
 }

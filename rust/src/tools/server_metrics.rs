@@ -572,25 +572,6 @@ impl LeanCtxServer {
             cache_hits: stats.cache_hits(),
             total_reads: stats.total_reads(),
             tool_call_count: calls.len() as u64,
-            adoption: Self::compute_adoption(calls),
-        }
-    }
-
-    /// Compute adoption metrics from tool call history.
-    /// ctx_* calls = lean-ctx MCP adoption; other tools = native passthrough.
-    fn compute_adoption(calls: &[ToolCallRecord]) -> super::server::AdoptionMetrics {
-        let ctx_tool_calls = calls.iter().filter(|c| c.tool.starts_with("ctx_")).count() as u64;
-        let total = calls.len() as u64;
-        let native_passthrough = total.saturating_sub(ctx_tool_calls);
-        let adoption_pct = if total > 0 {
-            ((ctx_tool_calls as f64 / total as f64) * 100.0).round() as u32
-        } else {
-            0
-        };
-        super::server::AdoptionMetrics {
-            ctx_tool_calls,
-            native_passthrough,
-            adoption_pct,
         }
     }
 
@@ -693,9 +674,6 @@ impl LeanCtxServer {
             "tokens_saved": cs.total_saved,
             "tokens_original": cs.total_original,
             "tool_calls": cs.tool_call_count,
-            "adoption_pct": cs.adoption.adoption_pct,
-            "ctx_tool_calls": cs.adoption.ctx_tool_calls,
-            "native_passthrough": cs.adoption.native_passthrough,
             "started_at": started_at,
             "updated_at": chrono::Local::now().to_rfc3339(),
         });

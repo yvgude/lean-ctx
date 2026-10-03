@@ -1,173 +1,75 @@
 ---
 name: lean-ctx
-description: Local context tooling for AI agents. Use it to select, shape, reuse, recover, and inspect context before inference when reading files, running shell commands, searching code, or exploring directories.
+description: Pick the right lean-ctx tool for reading, searching, understanding and running code with fewer tokens and fewer round trips. Use when lean-ctx MCP tools (ctx_*) are available or when a command output, file read or search would be large.
 ---
 
-# LeanCTX — Local Context SDK for AI Agents
+# lean-ctx — which tool, when
 
-LeanCTX is a local context layer for existing agents. It provides selectable file representations, focused search, controlled shell-output shaping, session continuity, and recovery to exact source when needed.
+lean-ctx shapes context before it reaches you: cached reads, compressed shell
+output, focused search, recovery to exact source. Two rules beat every detail:
 
-## Setup (run first)
+1. **Fewer round trips beat smaller outputs.** One call that answers the
+   question is cheaper than three small ones. Never add a call just to save a
+   few hundred tokens.
+2. **Never wait by polling.** Do not loop `sleep` + status checks (see below).
 
-Before using lean-ctx, verify it is installed:
+## Intent → tool
 
-```bash
-which lean-ctx || bash scripts/install.sh
-```
+| You want to… | Call |
+|---|---|
+| Understand how something works (unknown location) | `ctx_compose(task)` — ranked files + source in one call; use it FIRST instead of search→read→read |
+| Find the exact definition of a symbol | `ctx_search(action="symbol", name=…)` |
+| Find code by meaning | `ctx_search(action="semantic", query=…)` |
+| Find a text/regex pattern | `ctx_search(pattern=…, path=…)` |
+| Who calls X / what calls X makes | `ctx_callgraph(action="callers"|"callees", symbol=…)` |
+| Read a file you will edit | `ctx_read(path, mode="anchored")` → edit with `ctx_patch`, or the host's native edit tool |
+| Read a file only for context | `ctx_read(path, mode="signatures"|"map")`; a range: `mode="lines:N-M"` |
+| Re-check a file after editing | `ctx_read(path, mode="diff")` |
+| Run a command (build, test, git, …) | `ctx_shell(command)` — output is compressed |
+| List files / directory shape | `ctx_glob(pattern)` / `ctx_tree(path, depth)` |
+| Remember across sessions | `ctx_session(action="finding"|"decision"|"task", value=…)`; durable project facts: `ctx_knowledge(action="remember", …)` |
 
-If the install script is not available locally, install manually:
+Do not read or search through `ctx_shell` (`cat`, `sed -n`, `grep`, `rg`):
+that bypasses the read cache and symbol index. Use `ctx_read` / `ctx_search`.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/yvgude/lean-ctx/main/skills/lean-ctx/scripts/install.sh | bash
-```
+## Deferred tools (ToolSearch)
 
-After installation, run the one-command setup (installs shell hook + editor wiring + rules + skills):
+If the host lists lean-ctx tools by name only, load what the task needs in
+**one** call, e.g. `select:mcp__lean-ctx__ctx_compose,mcp__lean-ctx__ctx_search,mcp__lean-ctx__ctx_read`.
+Do not fall back to `ctx_shell` for everything because it happens to be loaded.
+A tool named here that your tool list lacks (the default profile shows a
+small core) is still callable: `ctx_call(name="ctx_knowledge", arguments={…})`.
+`ctx_call(name="ctx_discover_tools", arguments={"query": "…"})` lists all of them.
 
-```bash
-lean-ctx setup
-```
+## Long-running commands
 
-lean-ctx supports two integration styles (auto-detected per agent):
-- **Hybrid (default where shell access exists)**: MCP for cached reads/search + shell hooks that compress command output.
-- **MCP (for IDE-extension agents without reliable shell hooks)**: cached reads + all tools via MCP.
+- Prefer the host's own background execution that notifies on completion
+  (Claude Code: `Bash` with `run_in_background`, or `Monitor`). Start it, then
+  continue other work or end the turn — you will be told when it finishes.
+- `ctx_shell(run_in_background=true)` jobs do not notify by themselves. Check
+  a job at most once when you actually need its result; never `sleep` in a loop.
 
-## When to use lean-ctx
+## Truncated output
 
-Prefer the current shell's configured compression over nested wrappers. In agent
-shells, run commands normally unless the user explicitly asks for
-`lean-ctx -c <command>` or task setup/docs explicitly say the shell is not
-wrapped. Do not inspect env vars just to decide; users may forbid env access.
+Compressed or archived output ends with a recovery handle. Fetch only the
+slice you need: `ctx_expand(id, search=… | head=N | json_path=…)`, or
+`ctx_read(path, raw=true)` for exact bytes. Do not re-run the command.
 
-Use `lean-ctx -c <command>` over running commands directly only when:
-- The command produces verbose output (build logs, git diffs, dependency trees, test results)
-- You are reading files and only need the structure or API surface
-- You want to inspect local context-usage estimates for the current session
-
-## Shell commands
-
-```bash
-git status                      # Compressed by configured agent shell/wrapper
-git diff                        # Meaningful diff lines when configured
-git log --oneline -10
-npm install                     # Strips progress bars/noise when configured
-cargo build
-cargo test
-docker ps
-kubectl get pods
-aws ec2 describe-instances
-helm list
-prisma migrate dev
-curl -s <url>                   # JSON schema extraction
-ls -la <dir>                    # Grouped directory listing
-
-# Explicit user request / documented unwrapped shell:
-lean-ctx -c "git status"
-```
-
-Supported: git, npm, pnpm, yarn, bun, deno, cargo, docker, kubectl, helm, gh, pip, ruff, go, eslint, prettier, tsc, aws, psql, mysql, prisma, swift, zig, cmake, ansible, composer, mix, bazel, systemd, terraform, make, maven, dotnet, flutter, poetry, rubocop, playwright, curl, wget, and more.
-
-## File reading (compressed modes)
+## Without MCP (CLI)
 
 ```bash
-lean-ctx read <file>                    # Full content with structured header
-lean-ctx read <file> -m map             # Dependency graph + exports + API (~5-15% tokens)
-lean-ctx read <file> -m signatures      # Function/class signatures only (~10-20% tokens)
-lean-ctx read <file> -m aggressive      # Syntax-stripped (~30-50% tokens)
-lean-ctx read <file> -m entropy         # Shannon entropy filtered (~20-40% tokens)
-lean-ctx read <file> -m diff            # Only changed lines since last read
+lean-ctx read <file> -m signatures    # or map | diff | lines:N-M
+lean-ctx grep <pattern> [path]
+lean-ctx -c "<command>"               # only where the shell is not already wrapped
+lean-ctx raw "<command>"              # exact, uncompressed output
 ```
 
-Use `map` mode when you need to understand what a file does without reading every line.
-Use `signatures` mode when you need the API surface of a module (tree-sitter for 26 languages).
-Use `anchored` mode (MCP: `ctx_read(mode="anchored")`) when you will edit the file — it adds
-`N:hh|` anchors so `ctx_patch` can edit by reference without echoing old text.
-
-## AI Tool Integration
+## Setup
 
 ```bash
-lean-ctx init --global                # Install shell aliases
-lean-ctx init --agent cursor          # Hybrid (MCP reads/search + shell hooks)
-lean-ctx init --agent claude          # Hybrid (Claude Code)
-lean-ctx init --agent codebuddy       # Hybrid (CodeBuddy)
-lean-ctx init --agent codex           # Hybrid (Codex CLI)
-lean-ctx init --agent opencode        # Hybrid (OpenCode)
-
-lean-ctx init --agent copilot         # MCP (VS Code / Copilot)
-lean-ctx init --agent jetbrains       # MCP (JetBrains)
-lean-ctx init --agent windsurf        # Hybrid (Windsurf)
-
-# Mode is auto-detected; override with --mode mcp|hybrid if needed.
+which lean-ctx || curl -fsSL https://raw.githubusercontent.com/yvgude/lean-ctx/main/skills/lean-ctx/scripts/install.sh | bash
+lean-ctx setup        # editor wiring, hooks, rules, this skill
+lean-ctx doctor       # verify
 ```
 
-## Local knowledge and session continuity
-
-CLI (works in Hybrid and MCP setups):
-
-```bash
-lean-ctx knowledge remember "value" --category <c> --key <k>
-lean-ctx knowledge recall "query"
-lean-ctx knowledge search "query"
-lean-ctx knowledge export [--format json|jsonl|simple] [--output <path>]
-lean-ctx knowledge import <path> [--merge replace|append|skip-existing] [--dry-run]
-lean-ctx knowledge remove --category <c> --key <k>
-lean-ctx knowledge consolidate [--all]
-
-lean-ctx session task "what you're doing"
-lean-ctx session finding "what you found"
-lean-ctx session decision "what you decided"
-lean-ctx session save
-```
-
-If MCP is enabled for your IDE, the same local capabilities are also available as MCP tools
-(`ctx_knowledge`, `ctx_session`, ...). Experimental local collaboration tools are opt-in and not part of the default public Runtime surface.
-
-## Additional Intelligence Tools
-
-- `ctx_patch(path, ops)` — anchored editing: `N:hh|` line+hash anchors from `ctx_read(mode="anchored")`, batch-atomic, `op=create` for new files (`ctx_edit` is the legacy str-replace fallback)
-- `ctx_overview(task)` — task-relevant project map at session start
-- `ctx_preload(task)` — proactive context loader, caches task-relevant files
-- `ctx_semantic_search(query)` — BM25 code search by meaning across the project
-- `ctx_intent` now supports multi-intent detection and complexity classification
-- Semantic cache: TF-IDF + cosine similarity for finding similar files across reads
-
-## Session continuity
-
-```bash
-lean-ctx sessions list          # List all CCP sessions
-lean-ctx sessions show          # Show latest session state
-lean-ctx sessions delete <id>   # Delete one saved session
-lean-ctx wrapped                # Local usage summary card
-lean-ctx wrapped --month        # Monthly local usage summary card
-lean-ctx benchmark run          # Local representation comparison (terminal output)
-lean-ctx benchmark run --json   # Machine-readable JSON output
-lean-ctx benchmark report       # Shareable Markdown report
-```
-
-MCP tools for session continuity:
-- `ctx_session status` — show current session state (~400 tokens)
-- `ctx_session load` — restore previous session (cross-chat memory)
-- `ctx_session task "description"` — set current task
-- `ctx_session finding "file:line — summary"` — record key finding
-- `ctx_session decision "summary"` — record architectural decision
-- `ctx_session save` — force persist session to disk
-- `ctx_gain action=wrapped` — generate a local usage summary card in chat
-- `ctx_refactor` — LSP-powered rename, references, definition, implementations (requires language server)
-- `ctx_expand action=search_all query="..."` — FTS5 cross-archive fulltext search
-
-## Analytics
-
-```bash
-lean-ctx gain                   # Visual local context-usage estimates (not a benchmark)
-lean-ctx dashboard              # Web dashboard at localhost:3333
-lean-ctx session                # Adoption statistics
-lean-ctx discover               # Find uncompressed commands in shell history
-```
-
-## Tips
-
-- The output suffix reports the local source/output token counts for that representation
-- For large outputs, lean-ctx automatically truncates while preserving relevant context
-- JSON responses from curl/wget are reduced to schema outlines
-- Build errors are grouped by type with counts
-- Test results show only failures with summary counts
-- Cached re-reads can return a compact local reference
+Docs: https://leanctx.com/docs

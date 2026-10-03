@@ -236,6 +236,16 @@ pub struct LanguageCapabilityRow {
     /// Call edges whose caller file is in this language. `None` when call data
     /// isn't available in the calling context (e.g. the dependency-graph route).
     pub calls_found: Option<usize>,
+    /// Standalone language server for semantic verification and whether it
+    /// can run here (`None` = not measured in this context).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub semantic_server: Option<crate::core::semantic::coverage::ServerStatus>,
+    /// File-level call edges of this language and how many are verified by a
+    /// semantic backend (`None` = no evidence-carrying graph in this context).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calls_verified: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calls_with_evidence: Option<usize>,
 }
 
 /// Build a capability matrix for the languages actually present in `file_paths`,
@@ -265,6 +275,9 @@ where
                 symbols_found: None,
                 imports_found: None,
                 calls_found: None,
+                semantic_server: None,
+                calls_verified: None,
+                calls_with_evidence: None,
             }
         })
         .collect();
@@ -328,6 +341,9 @@ pub fn language_capability_matrix_realized(
                 symbols_found: Some(symbols.get(&lang).copied().unwrap_or(0)),
                 imports_found: Some(imports.get(&lang).copied().unwrap_or(0)),
                 calls_found: call_caller_files.map(|_| calls.get(&lang).copied().unwrap_or(0)),
+                semantic_server: None,
+                calls_verified: None,
+                calls_with_evidence: None,
             }
         })
         .collect();

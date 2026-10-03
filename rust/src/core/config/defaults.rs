@@ -160,6 +160,7 @@ impl Default for Config {
             bm25_max_cache_mb: serde_defaults::default_bm25_max_cache_mb(),
             memory_profile: MemoryProfile::default(),
             memory_cleanup: MemoryCleanup::default(),
+            semantic_mode: SemanticMode::default(),
             max_ram_percent: serde_defaults::default_max_ram_percent(),
             max_disk_mb: 0,
             max_staleness_days: 0,

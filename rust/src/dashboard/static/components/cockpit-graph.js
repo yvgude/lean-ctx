@@ -417,6 +417,24 @@ class CockpitGraph extends HTMLElement {
       var color = found > 0 ? 'var(--text)' : 'var(--muted)';
       return mark + ' <span style="color:' + color + '">' + esc(String(found)) + '</span>';
     };
+    // Semantic verification: the language server (runnable or with an install
+    // hint) and, when the graph carries evidence, "verified / call edges".
+    var semantic = function (r) {
+      var s = r.semantic_server;
+      var server = !s
+        ? '<span style="color:var(--muted)" title="No standalone language server; a JetBrains IDE can still serve it">IDE only</span>'
+        : s.runnable
+          ? '<span style="color:var(--green)">✓</span> ' + esc(String(s.binary))
+          : '<span style="color:var(--muted)" title="' + esc(String(s.install_hint || '')) + '">' +
+            esc(String(s.binary)) + ' not installed</span>';
+      if (r.calls_with_evidence === null || r.calls_with_evidence === undefined) return server;
+      var pct = r.calls_with_evidence > 0
+        ? Math.floor((100 * r.calls_verified) / r.calls_with_evidence)
+        : 0;
+      return server + ' · <span style="color:' + (r.calls_verified > 0 ? 'var(--text)' : 'var(--muted)') + '">' +
+        esc(String(r.calls_verified)) + '/' + esc(String(r.calls_with_evidence)) +
+        ' verified (' + pct + '%)</span>';
+    };
     var rows = matrix
       .map(function (r) {
         return '<tr>' +
@@ -425,6 +443,7 @@ class CockpitGraph extends HTMLElement {
           '<td style="padding:2px 12px">' + cap(r.symbols, r.symbols_found) + '</td>' +
           '<td style="padding:2px 12px">' + cap(r.imports, r.imports_found) + '</td>' +
           '<td style="padding:2px 12px">' + cap(r.call_graph, r.calls_found) + '</td>' +
+          '<td style="text-align:left;padding:2px 12px">' + semantic(r) + '</td>' +
           '</tr>';
       })
       .join('');
@@ -437,6 +456,7 @@ class CockpitGraph extends HTMLElement {
       '<th style="padding:2px 12px">Symbols</th>' +
       '<th style="padding:2px 12px">Imports</th>' +
       '<th style="padding:2px 12px">Call graph</th>' +
+      '<th style="text-align:left;padding:2px 12px">Semantic</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 

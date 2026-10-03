@@ -32,8 +32,6 @@ Native Edit/StrReplace stay fine when the host provides them. `ctx_edit(path, ol
 is the legacy str-replace fallback (power profile / ctx_call).
 Write, Delete have no lean-ctx equivalent — use them normally.
 
-Prefer `ctx_workflow` for state + evidence + tool gating.
-
 ## Session Documentation
 
 After significant work, document progress for session continuity:

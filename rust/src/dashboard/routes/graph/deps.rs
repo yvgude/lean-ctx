@@ -172,7 +172,7 @@ fn graph() -> (&'static str, &'static str, String) {
 
     // Realized per-language coverage (real symbol/import counts) — works for
     // either backend now that the facade surfaces symbols + edges (#696 phase C).
-    let language_matrix = super::capability_matrix::realized_from_provider(gp, None);
+    let language_matrix = super::capability_matrix::realized_from_provider(gp, None, &root);
 
     let val = serde_json::json!({
         "project_root": super::project_basename(&root),

@@ -289,6 +289,33 @@ fn claude_allow_output_omits_deprecated_top_level_decision() {
     assert_eq!(parsed["hookSpecificOutput"]["permissionDecision"], "allow");
 }
 
+/// Claude Code 2.1.25x+ discarded the multi-dialect deny (top-level
+/// `decision: "deny"` is not `approve|block`) as a non-blocking error, losing
+/// the verdict and its guidance. Claude payloads get only hookSpecificOutput;
+/// other hosts keep the Cursor/Copilot keys.
+#[test]
+fn deny_output_is_claude_valid_for_claude_payloads_only() {
+    let claude = serde_json::json!({
+        "hook_event_name": "PreToolUse",
+        "transcript_path": "/t.jsonl",
+        "tool_name": "Bash"
+    });
+    let p: serde_json::Value =
+        serde_json::from_str(&build_deny_output("use ctx_shell", &claude)).expect("valid JSON");
+    assert!(p.get("decision").is_none());
+    assert_eq!(p["hookSpecificOutput"]["permissionDecision"], "deny");
+    assert_eq!(
+        p["hookSpecificOutput"]["permissionDecisionReason"],
+        "use ctx_shell"
+    );
+
+    let cursor = serde_json::json!({ "tool_name": "Shell", "command": "ls" });
+    let p: serde_json::Value =
+        serde_json::from_str(&build_deny_output("x", &cursor)).expect("valid JSON");
+    assert_eq!(p["permission"], "deny");
+    assert_eq!(p["permissionDecision"], "deny");
+}
+
 #[test]
 fn redirect_output_carries_copilot_modified_args() {
     // #551: the read/grep redirect must also surface modifiedArgs so Copilot CLI

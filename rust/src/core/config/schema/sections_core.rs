@@ -566,6 +566,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
+        "semantic_mode".into(),
+        key_enum_with_env(
+            &["off", "auto", "eager"],
+            "auto",
+            "Semantic code intelligence: off, auto (use only running language servers / a live IDE), eager (may start language servers; trusted workspaces only)",
+            "LEAN_CTX_SEMANTIC_MODE",
+        ),
+    );
+    root.insert(
         "memory_cleanup".into(),
         key_enum_with_env(
             &["aggressive", "shared"],

@@ -692,11 +692,17 @@ fn run_inner(json: bool) -> u32 {
 
     // LSP servers (optional, informational)
     if !json {
-        println!("\n  {BOLD}{WHITE}LSP (optional — for ctx_refactor):{RST}");
+        println!(
+            "\n  {BOLD}{WHITE}Semantic intelligence (optional — ctx_refactor + verified graph edges):{RST}"
+        );
     }
+    board.info(&semantic_mode_outcome());
     let lsp_outcomes = lsp_server_outcomes();
     for lsp_check in &lsp_outcomes {
         board.info(lsp_check);
+    }
+    for coverage in semantic_coverage_outcomes() {
+        board.info(&coverage);
     }
 
     // Shadow mode status. #1280: the old single line claimed "native tools

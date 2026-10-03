@@ -470,7 +470,7 @@ fn format_savings_summary() -> String {
     out.push(String::new());
     out.push(format!(
         "  {}",
-        t.box_top_labeled(w, "VERIFIED SAVINGS LEDGER")
+        t.box_top_labeled(w, "SIGNED SAVINGS LEDGER")
     ));
     out.push(sl(&format!(
         "  {bold}Events{rst}      {m}{}{rst}",

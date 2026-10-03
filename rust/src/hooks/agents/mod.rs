@@ -11,7 +11,7 @@ mod crush;
 mod cursor;
 mod gemini;
 mod grok;
-mod hermes;
+pub mod hermes;
 mod jetbrains;
 mod kiro;
 mod openclaw;

@@ -3,6 +3,12 @@ use super::super::{HookMode, install_project_rules, resolve_binary_path};
 const HERMES_BLOCK_START: &str = "<!-- lean-ctx -->";
 const HERMES_BLOCK_END: &str = "<!-- /lean-ctx -->";
 
+/// Hermes-specific extras after the canonical block. Only publicly advertised
+/// tools (the old text named the deprecated `ctx_semantic_search` and hidden
+/// `ctx_agent` actions); `ctx_search` covers semantic/symbol lookup.
+pub const HERMES_TOOL_EXTRAS: &str = "Also available: ctx_overview, ctx_preload, ctx_dedup, \
+     ctx_compress, ctx_session, ctx_knowledge, ctx_search(action=semantic|symbol).\n";
+
 fn hermes_marked_block(mode: HookMode) -> String {
     let body = if mode == HookMode::Replace {
         hermes_replace_rules_content()
@@ -27,10 +33,7 @@ pub(super) fn hermes_rules_content() -> String {
     );
     format!(
         "{base}\n\
-         Available tools: ctx_overview, ctx_preload, ctx_dedup, ctx_compress, \
-         ctx_session, ctx_knowledge, ctx_semantic_search.\n\
-         Multi-agent: ctx_agent(action=handoff|sync). \
-         Diary: ctx_agent(action=diary, category=discovery|decision|blocker|progress|insight).\n"
+         {HERMES_TOOL_EXTRAS}"
     )
 }
 
@@ -140,10 +143,7 @@ fn hermes_replace_rules_content() -> String {
         "{base}\n\
          ## Replace Mode — native tools denied\n\
          Native Read/Grep/Glob/Bash are denied. Use ONLY ctx_* MCP tools.\n\
-         Available tools: ctx_overview, ctx_preload, ctx_dedup, ctx_compress, \
-         ctx_session, ctx_knowledge, ctx_semantic_search.\n\
-         Multi-agent: ctx_agent(action=handoff|sync). \
-         Diary: ctx_agent(action=diary, category=discovery|decision|blocker|progress|insight).\n"
+         {HERMES_TOOL_EXTRAS}"
     )
 }
 

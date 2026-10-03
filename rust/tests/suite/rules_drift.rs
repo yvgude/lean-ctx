@@ -14,7 +14,7 @@
 use std::path::PathBuf;
 
 use lean_ctx::core::reference_docs::content_matches;
-use lean_ctx::core::rule_artifacts::{ARTIFACT_PATHS, artifacts};
+use lean_ctx::core::rule_artifacts::{ARTIFACT_PATHS, SKILL_COPY_PATH, artifacts};
 use lean_ctx::core::rules_canonical::{RULES_VERSION, RulesFile};
 
 fn repo_root() -> PathBuf {
@@ -68,6 +68,12 @@ fn committed_rule_artifacts_match_generator_output() {
     for (rel, expected) in artifacts() {
         let path = root.join(rel);
         let Ok(on_disk) = std::fs::read_to_string(&path) else {
+            // The skill copy is what install.sh and skill marketplaces ship;
+            // a deleted copy must fail here, not pass by being skipped.
+            assert!(
+                rel != SKILL_COPY_PATH,
+                "{rel} is missing — regenerate: cargo run --example gen_rules --features dev-tools"
+            );
             continue;
         };
         assert!(

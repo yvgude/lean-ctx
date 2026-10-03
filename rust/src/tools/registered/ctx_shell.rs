@@ -2,8 +2,6 @@ use rmcp::ErrorData;
 use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
-use crate::core::ocla::cache_types::{CacheKeyBuilder, ShellCommandKey};
-
 use crate::server::tool_trait::{
     BackgroundJobState, BackgroundShellOutcome, McpTool, ShellOutcome, ToolContext, ToolOutput,
     get_bool, get_int, get_str,
@@ -298,54 +296,6 @@ impl McpTool for CtxShellTool {
             };
 
             let inline = get_bool(args, "inline").unwrap_or(false);
-            let shell_cache_key = shell_cache_key(&cmd_clone, &cwd_clone, &extra_env);
-            if !raw
-                && !inline
-                && crate::core::config::Config::load()
-                    .cache
-                    .shell_cache_enabled
-                && let Some(key) = shell_cache_key.as_ref()
-                && let Some(cached) = crate::core::ocla::shell_cache_allowlist::SHELL_RESULT_CACHE
-                    .get(&key.cache_key())
-                    .map(|r| r.clone())
-                && let Ok(value) = serde_json::from_str::<Value>(&cached)
-                && let (Some(text), Some(exit_code)) = (
-                    value.get("text").and_then(Value::as_str),
-                    value.get("exit_code").and_then(Value::as_i64),
-                )
-            {
-                return Ok(ToolOutput {
-                    text: text.to_string(),
-                    original_tokens: crate::core::tokens::count_tokens(text),
-                    saved_tokens: 0,
-                    mode: Some("cross-agent-cache".to_string()),
-                    path: None,
-                    changed: false,
-                    shell_outcome: Some(ShellOutcome::Exit(exit_code as i32)),
-                    content_blocks: None,
-                });
-            }
-
-            // Cross-process delivery: check daemon for results from other IDE tabs
-            if let Some(ref key) = shell_cache_key {
-                let ck = key.cache_key();
-                let validator = key.validator();
-                if let Some(entry) =
-                    crate::core::ocla::cache_delivery::check(&ck, &validator, "ctx_shell")
-                {
-                    let stub = crate::core::ocla::cache_delivery::stub(&entry, "shell command");
-                    return Ok(ToolOutput {
-                        text: stub,
-                        original_tokens: entry.token_count as usize,
-                        saved_tokens: entry.token_count as usize,
-                        mode: Some("cross-agent-cache".to_string()),
-                        path: None,
-                        changed: false,
-                        shell_outcome: None,
-                        content_blocks: None,
-                    });
-                }
-            }
 
             let auto_background = should_auto_background(&cmd_clone, timeout_ms);
             if get_bool(args, "run_in_background").unwrap_or(false) || auto_background {
@@ -528,27 +478,6 @@ impl McpTool for CtxShellTool {
                 final_out
             };
 
-            if !raw
-                && !inline
-                && crate::core::config::Config::load()
-                    .cache
-                    .shell_cache_enabled
-                && let Some(key) = shell_cache_key
-            {
-                let cached = json!({ "text": final_out, "exit_code": exit_code }).to_string();
-                crate::core::ocla::shell_cache_allowlist::SHELL_RESULT_CACHE
-                    .insert(key.cache_key(), cached);
-                // Propagate to cross-process daemon cache
-                crate::core::ocla::cache_delivery::record(
-                    key.cache_key(),
-                    crate::core::ocla::cache_types::DeliveryKind::ShellCommand,
-                    key.validator(),
-                    None,
-                    &final_out,
-                    "ctx_shell",
-                );
-            }
-
             Ok(ToolOutput {
                 text: final_out,
                 original_tokens: original,
@@ -561,34 +490,6 @@ impl McpTool for CtxShellTool {
             })
         })
     }
-}
-
-fn shell_cache_key(
-    command: &str,
-    cwd: &str,
-    env: &std::collections::HashMap<String, String>,
-) -> Option<ShellCommandKey> {
-    if !crate::core::ocla::shell_cache_allowlist::is_cacheable_command(command) {
-        return None;
-    }
-    let mut env_pairs = env.iter().collect::<Vec<_>>();
-    env_pairs.sort_unstable_by(|left, right| left.0.cmp(right.0));
-    let mut canonical_env = String::new();
-    for (name, value) in env_pairs {
-        canonical_env.push_str(name);
-        canonical_env.push('=');
-        canonical_env.push_str(value);
-        canonical_env.push('\n');
-    }
-    Some(ShellCommandKey {
-        command_normalized: crate::core::ocla::shell_cache_allowlist::normalize_command(command),
-        cwd: if std::path::Path::new(cwd).is_absolute() {
-            "$PROJECT_ROOT".to_string()
-        } else {
-            cwd.to_string()
-        },
-        env_hash: blake3::hash(canonical_env.as_bytes()).to_hex().to_string(),
-    })
 }
 
 /// Deny shell execution for explicitly restricted MCP clients. Missing client

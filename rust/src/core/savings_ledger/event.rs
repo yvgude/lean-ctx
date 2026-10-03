@@ -217,7 +217,9 @@ pub struct SavingsEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub net: Option<i64>,
 
-    /// Quality signal from outcome tracking.
+    /// Compression-ratio band (`excellent` ≥ 70 % removed … `marginal` < 30 %).
+    /// Despite the field name it says nothing about answer or context quality;
+    /// those live in `core::context_quality`. Name kept: events are hash-chained.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quality_signal: Option<String>,
     /// Exclusive attribution group (no double-counting across groups).

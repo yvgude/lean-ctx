@@ -224,13 +224,19 @@ fn compression_quality_signal(original: usize, compressed: usize) -> Option<Stri
         return None;
     }
     let ratio = 1.0 - (compressed as f64 / original as f64);
-    let signal = match ratio {
+    Some(compression_band(ratio).to_owned())
+}
+
+/// Band of the fraction of tokens removed, stored as `SavingsEvent::quality_signal`.
+/// The single definition for every writer of that field; a compression measure, not
+/// a quality one.
+pub(crate) fn compression_band(removed_fraction: f64) -> &'static str {
+    match removed_fraction {
         r if r >= 0.7 => "excellent",
         r if r >= 0.5 => "good",
         r if r >= 0.3 => "moderate",
         _ => "marginal",
-    };
-    Some(signal.to_owned())
+    }
 }
 
 /// Best-effort append of one auditable savings event for a value-producing read.

@@ -297,6 +297,11 @@ fn format_impact(impact: &ImpactResult, target: &str, root: &str, fmt: OutputFor
 
     match fmt {
         OutputFormat::Json => {
+            // Bounded like `affected_files`: only the returned files' marks.
+            let weak: Vec<&String> = sorted
+                .iter()
+                .filter(|f| impact.weak_files.binary_search(f).is_ok())
+                .collect();
             let v = json!({
                 "schema_version": crate::core::contracts::GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION,
                 "tool": "ctx_impact",
@@ -309,6 +314,8 @@ fn format_impact(impact: &ImpactResult, target: &str, root: &str, fmt: OutputFor
                 "edges_traversed": impact.edges_traversed,
                 "affected_files_total": total,
                 "affected_files": sorted,
+                "weak_files_total": impact.weak_files.len(),
+                "weak_files": weak,
                 "truncated": truncated
             });
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
@@ -327,7 +334,11 @@ fn format_impact(impact: &ImpactResult, target: &str, root: &str, fmt: OutputFor
             );
 
             for file in &sorted {
-                result.push_str(&format!("  {file}\n"));
+                if impact.weak_files.binary_search(file).is_ok() {
+                    result.push_str(&format!("  {file}  (name match only)\n"));
+                } else {
+                    result.push_str(&format!("  {file}\n"));
+                }
             }
             if truncated {
                 result.push_str(&format!("  ... +{} more\n", total - limit));

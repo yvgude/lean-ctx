@@ -35,13 +35,23 @@ pub fn canonical_body() -> String {
     )
 }
 
-/// `(relative_path, content)` for every artifact the generator writes. All
-/// artifacts share one canonical body today; the shape leaves room for
-/// per-path bodies later without changing callers.
+/// The repo-root skill (installed by `skills/lean-ctx/scripts/install.sh` and
+/// skill marketplaces) is a verbatim copy of the template `lean-ctx setup`
+/// installs, so the two can never drift apart again.
+pub const SKILL_COPY_PATH: &str = "skills/lean-ctx/SKILL.md";
+
+/// `(relative_path, content)` for every artifact the generator writes: the
+/// versioned rule artifacts (one canonical body) plus the skill copy.
 #[must_use]
 pub fn artifacts() -> Vec<(&'static str, String)> {
     let body = canonical_body();
-    ARTIFACT_PATHS.iter().map(|p| (*p, body.clone())).collect()
+    let mut arts: Vec<(&'static str, String)> =
+        ARTIFACT_PATHS.iter().map(|p| (*p, body.clone())).collect();
+    arts.push((
+        SKILL_COPY_PATH,
+        include_str!("../templates/SKILL.md").to_string(),
+    ));
+    arts
 }
 
 #[cfg(test)]
@@ -65,10 +75,11 @@ mod tests {
     #[test]
     fn artifacts_cover_every_declared_path() {
         let arts = artifacts();
-        assert_eq!(arts.len(), ARTIFACT_PATHS.len());
-        for (path, body) in arts {
-            assert!(ARTIFACT_PATHS.contains(&path));
-            assert!(!body.is_empty());
+        for declared in ARTIFACT_PATHS.iter().chain([&SKILL_COPY_PATH]) {
+            assert!(
+                arts.iter().any(|(p, b)| p == declared && !b.is_empty()),
+                "{declared} missing from the generator output"
+            );
         }
     }
 }

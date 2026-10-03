@@ -25,7 +25,11 @@ pub(crate) const ALL_CLIENTS: &[ClientConstraints] = &[
         display_name: "Claude Code",
         mcp_instructions_max_chars: Some(2048),
         supports_auto_approve: true,
-        supports_config_instructions: true,
+        // Captured /v1/messages bodies (Claude Code 2.1.287, 2026-10-02): an
+        // `instructions` key in the ~/.claude.json server entry never reaches
+        // the model; only the initialize `instructions` do. Writing it only
+        // added a second, drifting copy of the rules.
+        supports_config_instructions: false,
     },
     ClientConstraints {
         id: "codebuddy",

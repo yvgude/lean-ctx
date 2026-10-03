@@ -1,0 +1,25 @@
+{
+  "name": "lean-ctx",
+  "version": "0.1.0",
+  "description": "Shape lean-ctx tools, wake on background job completion, and show per-session request usage.",
+  "author": {
+    "name": "Thinkery / Yves Gugger"
+  },
+  "license": "Apache-2.0",
+  "userConfig": {
+    "front_loaded_tools": {
+      "type": "string",
+      "title": "Front-loaded lean-ctx tools",
+      "description": "Lean-ctx MCP tool names to keep in the prompt; all other lean-ctx tools stay deferred.",
+      "multiple": true,
+      "default": [
+        "ctx_read",
+        "ctx_search",
+        "ctx_shell",
+        "ctx_compose",
+        "ctx_callgraph",
+        "ctx_session"
+      ]
+    }
+  }
+}

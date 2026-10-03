@@ -21,6 +21,7 @@ mod response_shaping;
 pub mod risk;
 pub mod schema;
 mod sections;
+mod semantic;
 mod serde_defaults;
 pub mod setter;
 mod shell_activation;
@@ -66,6 +67,7 @@ pub use response_shaping::{
     CodeRepetitionConfig, ConfirmationConfig, NarrationConfig, PreambleConfig,
     ResponseShapingConfig,
 };
+pub use semantic::SemanticMode;
 pub use shell_activation::ShellActivation;
 pub use value_display::{ValueDisplayConfig, ValueDisplayMode};
 

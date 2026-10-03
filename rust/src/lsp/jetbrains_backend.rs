@@ -28,6 +28,8 @@ pub struct JetBrainsHttpBackend {
     /// Truncation meta of the most recent capped call (references/implementations/
     /// type_hierarchy/symbols_overview), surfaced by ctx_refactor.
     last_meta: Option<crate::lsp::backend::Truncation>,
+    /// Per-request HTTP timeout; see `LspBackend::set_request_timeout`.
+    request_timeout: Duration,
 }
 
 impl JetBrainsHttpBackend {
@@ -36,10 +38,15 @@ impl JetBrainsHttpBackend {
     /// Mirrors `port_discovery::project_hash` canonicalization. On error (e.g. path
     /// does not exist), fall back to the raw root with a trailing-slash trim.
     fn canonical_root(project_root: &str) -> String {
-        let canonical = std::fs::canonicalize(project_root).map_or_else(
-            |_| project_root.to_string(),
-            |p| p.to_string_lossy().to_string(),
-        );
+        // Without the Windows verbatim prefix (`\\?\C:\…`): paths are joined
+        // onto and compared with this root, and a verbatim path neither
+        // accepts `/` separators nor matches URI-derived `C:/…` paths.
+        let canonical =
+            crate::core::pathutil::canonicalize_secure(std::path::Path::new(project_root))
+                .map_or_else(
+                    |_| project_root.to_string(),
+                    |p| p.to_string_lossy().to_string(),
+                );
         canonical
             .strip_suffix('/')
             .unwrap_or(&canonical)
@@ -55,6 +62,7 @@ impl JetBrainsHttpBackend {
             pid,
             port,
             last_meta: None,
+            request_timeout: Duration::from_secs(REQUEST_TIMEOUT_SECS),
         }
     }
 
@@ -71,7 +79,7 @@ impl JetBrainsHttpBackend {
         let payload = serde_json::to_vec(body).map_err(|e| format!("serialize request: {e}"))?;
         let resp = ureq::post(&url)
             .config()
-            .timeout_global(Some(Duration::from_secs(REQUEST_TIMEOUT_SECS)))
+            .timeout_global(Some(self.request_timeout))
             .build()
             .header("X-LeanCtx-Token", &self.token)
             .header("Content-Type", "application/json")
@@ -243,26 +251,29 @@ impl JetBrainsHttpBackend {
         }
     }
 
+    /// Project-relative wire path of `uri` (spec §6). URIs carry `/`, while a
+    /// Windows project root carries `\`: both are compared in `/` form, so a
+    /// file inside the project never goes out as an absolute path.
+    fn rel_path(&self, uri: &Uri) -> String {
+        let abs = crate::lsp::client::uri_to_file_path(uri)
+            .unwrap_or_default()
+            .replace('\\', "/");
+        let root = self.project_root.replace('\\', "/");
+        abs.strip_prefix(root.trim_end_matches('/'))
+            .and_then(|s| s.strip_prefix('/'))
+            .map_or_else(|| abs.clone(), str::to_string)
+    }
+
     /// `{path}` request body (file-level ops, no position).
     fn path_body(&self, uri: &Uri) -> Value {
-        let abs = crate::lsp::client::uri_to_file_path(uri).unwrap_or_default();
-        let rel = abs
-            .strip_prefix(&self.project_root)
-            .map(|s| s.strip_prefix('/').unwrap_or(s).to_string())
-            .unwrap_or(abs);
-        serde_json::json!({ "path": rel })
+        serde_json::json!({ "path": self.rel_path(uri) })
     }
 
     /// Build the `{path, line, character}` request body. `position` is already
     /// 0-based (LSP convention) — sent verbatim. `uri` → project-relative path.
     fn position_body(&self, uri: &Uri, position: Position) -> Value {
-        let abs = crate::lsp::client::uri_to_file_path(uri).unwrap_or_default();
-        let rel = abs
-            .strip_prefix(&self.project_root)
-            .map(|s| s.strip_prefix('/').unwrap_or(s).to_string())
-            .unwrap_or(abs);
         serde_json::json!({
-            "path": rel,
+            "path": self.rel_path(uri),
             "line": position.line,
             "character": position.character,
         })
@@ -768,6 +779,29 @@ impl LspBackend for JetBrainsHttpBackend {
         }
     }
 
+    fn set_request_timeout(&mut self, timeout: Option<Duration>) {
+        self.request_timeout = timeout.unwrap_or(Duration::from_secs(REQUEST_TIMEOUT_SECS));
+    }
+
+    fn backend_info(&self) -> crate::lsp::capabilities::SemanticBackendInfo {
+        use crate::lsp::capabilities::{
+            SemanticBackendInfo, SemanticBackendKind, SemanticCapabilities,
+        };
+        SemanticBackendInfo {
+            kind: SemanticBackendKind::JetBrains,
+            server_name: Some("jetbrains".to_string()),
+            server_version: crate::lsp::port_discovery::read_port_file(&self.project_root)
+                .map(|pf| crate::lsp::capabilities::compact_server_version(&pf.ide_version)),
+            capabilities: SemanticCapabilities {
+                // The bridge has no call-hierarchy endpoint.
+                call_hierarchy: false,
+                ..SemanticCapabilities::ALL
+            },
+            // PSI offsets are Java chars = UTF-16 code units.
+            utf8_positions: false,
+        }
+    }
+
     fn is_dead_after_error(&self, project_root: &str) -> bool {
         // A failed call justifies the one bounded `/health` ping `is_stale`
         // avoids: it catches a dead plugin listener whose IDE pid and port
@@ -1110,18 +1144,24 @@ mod tests {
 
     #[test]
     fn canonical_root_strips_trailing_slash_and_resolves_realpath() {
-        // Existing dir with a trailing slash → canonical form has no trailing slash
-        // and matches sha2's canonicalize (port_discovery::project_hash parity).
+        // Existing dir with a trailing slash → canonical form has no trailing
+        // slash and no Windows verbatim prefix; `project_hash` canonicalizes
+        // it again, so the port-file hash keeps parity with the plugin.
         let tmp = std::env::temp_dir();
         let with_slash = format!("{}/", tmp.to_string_lossy());
         let backend =
             JetBrainsHttpBackend::new(1, "t".to_string(), with_slash.clone(), std::process::id());
-        let expected = std::fs::canonicalize(&tmp)
+        let expected = crate::core::pathutil::canonicalize_secure(&tmp)
             .unwrap()
             .to_string_lossy()
             .to_string();
         assert_eq!(backend.project_root_for_test(), expected);
         assert!(!backend.project_root_for_test().ends_with('/'));
+        assert!(!backend.project_root_for_test().starts_with(r"\\?\"));
+        assert_eq!(
+            crate::lsp::port_discovery::project_hash(backend.project_root_for_test()),
+            crate::lsp::port_discovery::project_hash(&with_slash)
+        );
     }
 
     #[test]

@@ -102,7 +102,6 @@ pub struct CacheConfig {
     pub l2_ttl_secs: u64,
     pub l3_max_bytes: u64,
     pub l3_gc_threshold: f64,
-    pub shell_cache_enabled: bool,
     pub compose_cache_enabled: bool,
 }
 
@@ -115,7 +114,6 @@ impl Default for CacheConfig {
             l2_ttl_secs: 3_600,
             l3_max_bytes: 500_000_000,
             l3_gc_threshold: 0.9,
-            shell_cache_enabled: false,
             compose_cache_enabled: true,
         }
     }
@@ -128,16 +126,16 @@ mod cache_config_tests {
     #[test]
     fn cache_defaults_match_delivery_budget() {
         assert_eq!(CacheConfig::default().l3_max_bytes, 500_000_000);
-        assert!(!CacheConfig::default().shell_cache_enabled);
         assert!(CacheConfig::default().compose_cache_enabled);
     }
 
     #[test]
     fn cache_config_deserializes_partial_overrides() {
+        // `shell_cache_enabled` was removed (#1980); configs that still set it
+        // must keep loading.
         let parsed: CacheConfig =
             serde_json::from_str(r#"{"l1_max_entries": 12, "shell_cache_enabled": true}"#).unwrap();
         assert_eq!(parsed.l1_max_entries, 12);
-        assert!(parsed.shell_cache_enabled);
         assert_eq!(parsed.l2_ttl_secs, 3_600);
     }
 }

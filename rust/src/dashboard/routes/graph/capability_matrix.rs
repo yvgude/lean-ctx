@@ -28,6 +28,7 @@ fn is_import_like(kind: &str) -> bool {
 pub(super) fn realized_from_provider(
     provider: &GraphProvider,
     call_edges: Option<&[CallEdge]>,
+    project_root: &str,
 ) -> Vec<LanguageCapabilityRow> {
     let file_paths = provider.file_paths();
     let symbol_files: Vec<String> = provider.all_symbols().into_iter().map(|s| s.file).collect();
@@ -40,10 +41,35 @@ pub(super) fn realized_from_provider(
     let call_caller_files: Option<Vec<String>> =
         call_edges.map(|edges| edges.iter().map(|e| e.caller_file.clone()).collect());
 
-    language_capability_matrix_realized(
+    let mut rows = language_capability_matrix_realized(
         &file_paths,
         &symbol_files,
         &import_from_files,
         call_caller_files.as_deref(),
-    )
+    );
+    annotate_semantic(&mut rows, provider, project_root);
+    rows
+}
+
+/// Adds the semantic column: whether a language server can run here, and —
+/// on a property graph, the only store carrying evidence — how many of the
+/// language's call edges are verified.
+fn annotate_semantic(
+    rows: &mut [LanguageCapabilityRow],
+    provider: &GraphProvider,
+    project_root: &str,
+) {
+    use crate::core::semantic::coverage::{coverage_by_language, server_status};
+    let coverage = match provider {
+        GraphProvider::PropertyGraph(pg) => Some(coverage_by_language(pg)),
+        GraphProvider::GraphIndex(_) => None,
+    };
+    for row in rows {
+        row.semantic_server = server_status(row.language, project_root);
+        if let Some(cov) = &coverage {
+            let c = cov.get(row.language).copied().unwrap_or_default();
+            row.calls_verified = Some(c.verified);
+            row.calls_with_evidence = Some(c.total());
+        }
+    }
 }

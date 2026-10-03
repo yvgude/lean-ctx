@@ -20,8 +20,8 @@ API consumers.
 |---|---|---|
 | `leanctx.tokens.in` / `.out` | `lean_ctx_tokens_{input,output}_total` | Tokens processed through lean-ctx tools |
 | `leanctx.tokens.saved` | `lean_ctx_tokens_saved_total` | Estimated savings (counts cache re-reads at full size) |
-| `leanctx.tokens.saved_verified` | `lean_ctx_ledger_tokens_saved_total` | **Verified** savings — measured baselines from the hash-chained ledger, bounce-adjusted |
-| `leanctx.cost.saved_usd` | `lean_ctx_cost_saved_usd_total` | Verified savings priced at the recorded per-model input rate |
+| `leanctx.tokens.saved_verified` | `lean_ctx_ledger_tokens_saved_total` | Ledger savings — local token counts (baseline vs. delivered) from the hash-chained ledger, bounce-adjusted; not provider-billed |
+| `leanctx.cost.saved_usd` | `lean_ctx_cost_saved_usd_total` | Ledger savings priced at the recorded per-model input rate |
 | `leanctx.cache.hit_ratio` | `lean_ctx_cache_hit_rate` | Session cache effectiveness (0–1) |
 | `leanctx.compression.ratio` | `lean_ctx_compression_ratio` | Share of input removed before sending (0–1) |
 | `leanctx.slo.violations` | `lean_ctx_slo_violations_total` | Active SLO violations (see `lean-ctx slo`) |

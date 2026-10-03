@@ -11,8 +11,6 @@ lean-ctx is configured as an MCP server. Always use lean-ctx MCP tools instead o
 
 ctx_read modes: auto, anchored (edit via ctx_patch), full, map, signatures, diff, task, reference, aggressive, entropy, lines:N-M.
 
-Preferred workflow control: `ctx_workflow` (state + evidence + tool gating).
-
 Fallback only if MCP is unavailable: prefix with `lean-ctx -c`:
 - `lean-ctx -c git status`
 - `lean-ctx -c cargo test`

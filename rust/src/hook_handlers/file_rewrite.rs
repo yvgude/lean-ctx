@@ -9,9 +9,9 @@
 use super::powershell_rewrite::{self, PowerShellDecision, is_powershell_tool};
 use super::search_rewrite::{rewrite_dir_list_command, rewrite_search_command};
 use super::{
-    HOOK_STDIN_TIMEOUT, build_dual_allow_output, build_dual_deny_output, build_dual_rewrite_output,
-    dedup, is_disabled, is_shell_tool, payload, read_stdin_with_timeout, resolve_binary,
-    shell_quote, shell_tokenize,
+    HOOK_STDIN_TIMEOUT, build_deny_output, build_dual_allow_output, build_dual_rewrite_output,
+    dedup, is_claude_pretooluse_payload, is_disabled, is_shell_tool, payload,
+    read_stdin_with_timeout, resolve_binary, shell_quote, shell_tokenize,
 };
 use crate::compound_lexer;
 use crate::core::debug_log::{self, Route};
@@ -55,10 +55,13 @@ pub(super) fn compute_rewrite() -> String {
 
     // #1032: Cursor fires preToolUse twice. Dedup on a PID-independent key (tool +
     // command) so the second fire replays the decision instead of re-logging.
-    let key_material = format!("{tool_name}\u{0}{cmd}");
+    // The output dialect is part of the key: a replayed Cursor-shaped deny is
+    // invalid for Claude Code.
+    let claude = is_claude_pretooluse_payload(&v);
+    let key_material = format!("{tool_name}\u{0}{cmd}\u{0}{claude}");
     dedup::deduped("rewrite", &key_material, || {
         if is_powershell_tool(&tool_name) {
-            return powershell_output(&cmd, &binary, &tool_name, tool_args.as_ref());
+            return powershell_output(&cmd, &binary, &tool_name, tool_args.as_ref(), &v);
         }
         if let Some(rewritten) = rewrite_candidate(&cmd, &binary) {
             debug_log::log_hook_decision(
@@ -109,6 +112,7 @@ fn powershell_output(
     binary: &str,
     tool_name: &str,
     tool_args: Option<&serde_json::Value>,
+    payload: &serde_json::Value,
 ) -> String {
     match powershell_rewrite::decide(cmd, binary) {
         PowerShellDecision::Rewrite(rewritten) => {
@@ -129,7 +133,7 @@ fn powershell_output(
                 cmd,
                 "denied by the shell allowlist (PowerShell)",
             );
-            build_dual_deny_output(&msg)
+            build_deny_output(&msg, payload)
         }
         PowerShellDecision::Passthrough => {
             debug_log::log_hook_decision(
@@ -151,7 +155,7 @@ fn powershell_output(
 fn record_native_passthrough() {
     if let Ok(store) = crate::core::metering::MeterStore::from_data_dir() {
         let _ = store.append(&crate::core::metering::MeterEntry::new(
-            "native_shell_passthrough",
+            crate::core::metering::NATIVE_PASSTHROUGH_TOOL,
             0,
             0,
             0,

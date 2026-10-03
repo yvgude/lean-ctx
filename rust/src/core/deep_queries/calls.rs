@@ -13,8 +13,9 @@ pub(super) fn extract_calls(root: Node, src: &str, ext: &str) -> Vec<CallSite> {
     let mut calls = Vec::new();
     crate::core::ast_walk::for_each_descendant(root, |node| {
         if is_call_node(node.kind())
-            && let Some(call) = parse_call(node, src, ext)
+            && let Some(mut call) = parse_call(node, src, ext)
         {
+            call.callee_pos = locate_callee(node, &call.callee, src);
             calls.push(call);
         }
         // Rust: calls written inside macro bodies (`println!("{}", greet(x))`,
@@ -22,12 +23,62 @@ pub(super) fn extract_calls(root: Node, src: &str, ext: &str) -> Vec<CallSite> {
         // `call_expression`s — a file whose calls all sit inside macros used to
         // produce ZERO call edges (#658). Recover them at the token level.
         if ext == "rs"
-            && let Some(call) = parse_macro_interior_call(node, src)
+            && let Some(mut call) = parse_macro_interior_call(node, src)
         {
+            // The matched node *is* the callee identifier.
+            call.callee_pos = Some((node.start_position().row + 1, node.start_position().column));
             calls.push(call);
         }
     });
     calls
+}
+
+/// Locates the callee identifier inside a call node, grammar-agnostically:
+/// the last leaf whose text equals `callee`, outside argument and type-argument
+/// lists. "Last" picks the final path/member segment (`a.b.save()` → `save`,
+/// `crate::db::save()` → `save`); skipping arguments keeps `save(save)` from
+/// pointing at the argument. Iterative (heap stack) like `core::ast_walk`:
+/// long method chains nest deeply in the callee part (#378).
+#[cfg(feature = "tree-sitter")]
+fn locate_callee(call: Node, callee: &str, src: &str) -> Option<(usize, usize)> {
+    // Path callees (`crate::db::save`, `pkg.Func`) are matched by their last
+    // segment — the identifier a semantic backend resolves.
+    let callee = callee
+        .rsplit(|c: char| c == ':' || c == '.')
+        .next()
+        .unwrap_or(callee);
+    let mut best: Option<Node> = None;
+    let mut stack = vec![call];
+    while let Some(node) = stack.pop() {
+        // A nested call (the receiver in `a.b().c()`) never holds this call's
+        // callee; skipping it keeps long method chains linear, not quadratic.
+        if node.id() != call.id() && is_call_node(node.kind()) {
+            continue;
+        }
+        if matches!(
+            node.kind(),
+            "arguments"
+                | "argument_list"
+                | "value_arguments"
+                | "annotated_lambda"
+                | "lambda_literal"
+                | "type_arguments"
+                | "type_argument_list"
+        ) {
+            continue;
+        }
+        if node.child_count() == 0 {
+            if node_text(node, src) == callee
+                && best.is_none_or(|b| node.start_byte() > b.start_byte())
+            {
+                best = Some(node);
+            }
+            continue;
+        }
+        let mut cursor = node.walk();
+        stack.extend(node.children(&mut cursor));
+    }
+    best.map(|n| (n.start_position().row + 1, n.start_position().column))
 }
 
 /// Detect a call-like pattern inside a Rust macro `token_tree`: an
@@ -54,6 +105,7 @@ fn parse_macro_interior_call(node: Node, src: &str) -> Option<CallSite> {
         col: node.start_position().column,
         receiver: None,
         is_method,
+        callee_pos: None,
     })
 }
 
@@ -114,6 +166,7 @@ fn parse_call_lua(node: Node, src: &str) -> Option<CallSite> {
             col,
             receiver: None,
             is_method: false,
+            callee_pos: None,
         }),
         "dot_index_expression" => {
             let field = name.child_by_field_name("field")?;
@@ -126,6 +179,7 @@ fn parse_call_lua(node: Node, src: &str) -> Option<CallSite> {
                 col,
                 receiver,
                 is_method: false,
+                callee_pos: None,
             })
         }
         "method_index_expression" => {
@@ -139,6 +193,7 @@ fn parse_call_lua(node: Node, src: &str) -> Option<CallSite> {
                 col,
                 receiver,
                 is_method: true,
+                callee_pos: None,
             })
         }
         _ => None,
@@ -168,6 +223,7 @@ fn parse_call_csharp(node: Node, src: &str) -> Option<CallSite> {
             col,
             receiver: None,
             is_method: false,
+            callee_pos: None,
         });
     }
 
@@ -185,6 +241,7 @@ fn parse_call_csharp(node: Node, src: &str) -> Option<CallSite> {
             col,
             receiver,
             is_method: true,
+            callee_pos: None,
         });
     }
 
@@ -196,6 +253,7 @@ fn parse_call_csharp(node: Node, src: &str) -> Option<CallSite> {
         col,
         receiver: None,
         is_method: false,
+        callee_pos: None,
     })
 }
 
@@ -249,6 +307,7 @@ fn parse_call_gd(node: Node, src: &str) -> Option<CallSite> {
                     col,
                     receiver: None,
                     is_method: false,
+                    callee_pos: None,
                 })
             } else {
                 find_descendant_by_kind(func, "identifier").map(|id| CallSite {
@@ -257,6 +316,7 @@ fn parse_call_gd(node: Node, src: &str) -> Option<CallSite> {
                     col,
                     receiver: None,
                     is_method: false,
+                    callee_pos: None,
                 })
             }
         }
@@ -280,6 +340,7 @@ fn parse_call_gd(node: Node, src: &str) -> Option<CallSite> {
                     col,
                     receiver: None,
                     is_method: false,
+                    callee_pos: None,
                 });
             }
             Some(CallSite {
@@ -288,6 +349,7 @@ fn parse_call_gd(node: Node, src: &str) -> Option<CallSite> {
                 col,
                 receiver,
                 is_method: true,
+                callee_pos: None,
             })
         }
         _ => None,
@@ -310,6 +372,7 @@ fn parse_call_ts(node: Node, src: &str) -> Option<CallSite> {
             col: node.start_position().column,
             receiver: Some(node_text(obj, src).to_string()),
             is_method: true,
+            callee_pos: None,
         })
     } else {
         Some(CallSite {
@@ -318,6 +381,7 @@ fn parse_call_ts(node: Node, src: &str) -> Option<CallSite> {
             col: node.start_position().column,
             receiver: None,
             is_method: false,
+            callee_pos: None,
         })
     }
 }
@@ -335,6 +399,7 @@ fn parse_call_rust(node: Node, src: &str) -> Option<CallSite> {
                 col: node.start_position().column,
                 receiver,
                 is_method: true,
+                callee_pos: None,
             })
         }
         "scoped_identifier" | "identifier" => Some(CallSite {
@@ -343,6 +408,7 @@ fn parse_call_rust(node: Node, src: &str) -> Option<CallSite> {
             col: node.start_position().column,
             receiver: None,
             is_method: false,
+            callee_pos: None,
         }),
         _ => None,
     }
@@ -378,6 +444,7 @@ fn parse_call_python(node: Node, src: &str) -> Option<CallSite> {
                 col: node.start_position().column,
                 receiver: obj,
                 is_method: true,
+                callee_pos: None,
             })
         }
         "identifier" => Some(CallSite {
@@ -386,6 +453,7 @@ fn parse_call_python(node: Node, src: &str) -> Option<CallSite> {
             col: node.start_position().column,
             receiver: None,
             is_method: false,
+            callee_pos: None,
         }),
         _ => None,
     }
@@ -404,6 +472,7 @@ fn parse_call_go(node: Node, src: &str) -> Option<CallSite> {
                 col: node.start_position().column,
                 receiver: obj,
                 is_method: true,
+                callee_pos: None,
             })
         }
         "identifier" => Some(CallSite {
@@ -412,6 +481,7 @@ fn parse_call_go(node: Node, src: &str) -> Option<CallSite> {
             col: node.start_position().column,
             receiver: None,
             is_method: false,
+            callee_pos: None,
         }),
         _ => None,
     }
@@ -433,6 +503,7 @@ fn parse_call_java(node: Node, src: &str) -> Option<CallSite> {
             col: node.start_position().column,
             receiver: None,
             is_method: false,
+            callee_pos: None,
         });
     }
 
@@ -451,6 +522,7 @@ fn parse_call_java(node: Node, src: &str) -> Option<CallSite> {
             col: node.start_position().column,
             receiver: obj,
             is_method: true,
+            callee_pos: None,
         });
     }
 
@@ -461,6 +533,7 @@ fn parse_call_java(node: Node, src: &str) -> Option<CallSite> {
         col: node.start_position().column,
         receiver: None,
         is_method: false,
+        callee_pos: None,
     })
 }
 
@@ -475,6 +548,7 @@ fn parse_call_kotlin(node: Node, src: &str) -> Option<CallSite> {
             col: node.start_position().column,
             receiver: None,
             is_method: false,
+            callee_pos: None,
         }),
         "navigation_expression" => {
             let mut cursor = callee.walk();
@@ -506,6 +580,7 @@ fn parse_call_kotlin(node: Node, src: &str) -> Option<CallSite> {
                 col: node.start_position().column,
                 receiver,
                 is_method: true,
+                callee_pos: None,
             })
         }
         _ => find_descendant_by_kind(callee, "identifier").map(|name| CallSite {
@@ -514,6 +589,7 @@ fn parse_call_kotlin(node: Node, src: &str) -> Option<CallSite> {
             col: node.start_position().column,
             receiver: None,
             is_method: false,
+            callee_pos: None,
         }),
     }
 }

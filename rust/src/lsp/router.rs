@@ -23,9 +23,7 @@ use std::time::{Duration, Instant};
 
 use super::backend::LspBackend;
 use super::client::{LspClient, file_path_to_uri};
-use super::config::{
-    LspServerConfig, check_server_available, default_servers, language_for_extension,
-};
+use super::config::{ResolvedServer, check_server_available, language_for_extension};
 use super::jetbrains_backend::JetBrainsHttpBackend;
 use super::port_discovery;
 
@@ -74,40 +72,27 @@ fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
-fn resolve_config_for_language(language: &str) -> LspServerConfig {
-    let cfg = crate::core::config::Config::load();
-    if let Some(custom_path) = cfg.lsp.get(language) {
-        let expanded = expand_tilde(custom_path);
-        return LspServerConfig {
-            command: expanded,
-            args: if language == "typescript" || language == "javascript" {
-                vec!["--stdio".into()]
-            } else if language == "go" {
-                vec!["serve".into()]
-            } else {
-                vec![]
-            },
-        };
-    }
-    let servers = default_servers();
-    servers.get(language).cloned().unwrap_or(LspServerConfig {
-        command: format!("{language}-language-server"),
-        args: vec![],
-    })
-}
-
 /// Selects a code-intelligence backend for `language` (§4.3).
 ///
 /// Config `cfg.lsp[language]` (HashMap<String,String>):
 ///   - absent      → "auto" = B-first (JetBrains if reachable, else rust-analyzer)
 ///   - "auto"      → same as absent
 ///   - "jetbrains" → B only (error if the IDE is not reachable; no fallback)
-///   - anything else → treated as an explicit rust-analyzer binary path = A only
+///   - anything else → an explicit language-server binary path = A only
 ///
 /// Reachability = live port file + pid alive + `/health` ping. On any miss in
 /// "auto" mode we fall back to Backing A deterministically (one ~300ms timeout max).
-fn select_backend(language: &str, project_root: &str) -> Result<Box<dyn LspBackend>, String> {
-    let cfg = crate::core::config::Config::load();
+///
+/// Configuration is read for `project_root` itself, never for the process's
+/// working directory: a daemon serving several repositories must select and
+/// start the backend `project_root` asks for.
+fn select_backend(
+    language: &str,
+    project_root: &str,
+    policy: StartPolicy,
+    start_timeout: Option<Duration>,
+) -> Result<Box<dyn LspBackend>, String> {
+    let cfg = crate::core::config::Config::load_for_project_root(project_root);
     let mode = cfg.lsp.get(language).map(String::as_str);
 
     let want_b = matches!(mode, None | Some("auto" | "jetbrains"));
@@ -133,16 +118,95 @@ fn select_backend(language: &str, project_root: &str) -> Result<Box<dyn LspBacke
         }
     }
 
-    // Backing A: rust-analyzer (today's behavior).
-    let config = resolve_config_for_language(language);
-    if super::config::find_binary_in_path(&config.command).is_none()
-        && !Path::new(&config.command).is_file()
-    {
-        check_server_available(language)?;
+    // A live IDE is attached to, never spawned; a language server is.
+    if policy == StartPolicy::ReuseOnly {
+        return Err(format!(
+            "{NOT_RUNNING}: no running semantic backend for '{language}' in {project_root}"
+        ));
     }
+
+    // Backing A: a standalone language server.
+    let server = standalone_server_with(&cfg, language, project_root)?;
     let root_uri = file_path_to_uri(project_root)?;
-    let client = LspClient::start(&config, &root_uri)?;
+    let client = LspClient::start(&server, &root_uri, start_timeout)?;
     Ok(Box::new(client) as Box<dyn LspBackend>)
+}
+
+/// The standalone language server lean-ctx would start for `language` in
+/// `project_root`: the binary configured as `[lsp] <language> = "<path>"`,
+/// or else the one resolved for the project. Also answers status surfaces,
+/// so they report what would actually run.
+pub(crate) fn standalone_server(
+    language: &str,
+    project_root: &str,
+) -> Result<ResolvedServer, String> {
+    let cfg = crate::core::config::Config::load_for_project_root(project_root);
+    standalone_server_with(&cfg, language, project_root)
+}
+
+fn standalone_server_with(
+    cfg: &crate::core::config::Config,
+    language: &str,
+    project_root: &str,
+) -> Result<ResolvedServer, String> {
+    match cfg.lsp.get(language).map(String::as_str) {
+        Some(custom) if !matches!(custom, "auto" | "jetbrains") => {
+            let command = expand_tilde(custom);
+            let command = if Path::new(&command).is_file() {
+                command
+            } else {
+                super::config::find_runnable_server(&command)
+                    .ok_or_else(|| {
+                        format!(
+                            "Configured language server '{command}' for '{language}' not found or not runnable"
+                        )
+                    })?
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            Ok(super::config::configured_server(
+                language,
+                &command,
+                Path::new(project_root),
+            ))
+        }
+        _ => check_server_available(language, Path::new(project_root)),
+    }
+}
+
+/// What a non-mutating look at the registry finds for a language.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LiveIdentity {
+    /// A backend is cached and idle; its identity.
+    Known(String),
+    /// No backend is cached for this project and language.
+    NotRunning,
+    /// A backend is cached but serving another call right now.
+    Busy,
+}
+
+/// Identity of the backend cached for `file_path`'s language, without
+/// creating a registry entry, refreshing its idle clock, waiting, or starting
+/// anything — safe to call on every cache hit.
+pub fn live_identity(file_path: &str, project_root: &str) -> LiveIdentity {
+    let Some(language) = Path::new(file_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(language_for_extension)
+    else {
+        return LiveIdentity::NotRunning;
+    };
+    let key = BackendKey::new(project_root, language);
+    let Some(slot) = registry().get(&key).map(|e| Arc::clone(&e.slot)) else {
+        return LiveIdentity::NotRunning;
+    };
+    match slot.try_lock() {
+        Ok(guard) => guard.as_ref().map_or(LiveIdentity::NotRunning, |b| {
+            LiveIdentity::Known(b.backend_info().identity())
+        }),
+        Err(std::sync::TryLockError::WouldBlock) => LiveIdentity::Busy,
+        Err(std::sync::TryLockError::Poisoned(_)) => LiveIdentity::NotRunning,
+    }
 }
 
 /// Returns the slot for `key` (creating an empty one) and marks it used.
@@ -174,7 +238,70 @@ fn ensure_backend<'a>(
         .ok_or_else(|| "LSP backend slot unexpectedly empty".to_string())
 }
 
+/// Error prefix of a [`StartPolicy::ReuseOnly`] call that found nothing running.
+pub const NOT_RUNNING: &str = "SEMANTIC_BACKEND_NOT_RUNNING";
+
+/// Whether a call may start a language server that is not running yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartPolicy {
+    /// Start one on demand (interactive tools such as `ctx_refactor`).
+    Lazy,
+    /// Use only a backend that is already warm in this process or a live IDE.
+    /// Background work uses this so it never spawns a heavyweight server.
+    ReuseOnly,
+}
+
 pub fn with_backend<F, R>(file_path: &str, project_root: &str, f: F) -> Result<R, String>
+where
+    F: FnOnce(&mut dyn LspBackend, &str) -> Result<R, String>,
+{
+    with_backend_policy(file_path, project_root, StartPolicy::Lazy, f)
+}
+
+pub fn with_backend_policy<F, R>(
+    file_path: &str,
+    project_root: &str,
+    policy: StartPolicy,
+    f: F,
+) -> Result<R, String>
+where
+    F: FnOnce(&mut dyn LspBackend, &str) -> Result<R, String>,
+{
+    with_backend_opts(file_path, project_root, policy, BackendOpts::INTERACTIVE, f)
+}
+
+/// Error prefix of a non-waiting call that found the backend busy.
+pub const BUSY: &str = "SEMANTIC_BACKEND_BUSY";
+
+/// How a call may wait on the backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BackendOpts {
+    /// `false`: a backend serving another call (e.g. an interactive
+    /// `ctx_refactor`) is not waited for — fail fast with [`BUSY`].
+    pub wait: bool,
+    /// Bound for starting a server, if one must be started (`None` = the
+    /// server's default `initialize` timeout).
+    pub start_timeout: Option<Duration>,
+}
+
+impl BackendOpts {
+    /// Interactive tools: wait for the backend, default start-up time.
+    pub const INTERACTIVE: Self = Self {
+        wait: true,
+        start_timeout: None,
+    };
+}
+
+/// Like [`with_backend_policy`], with explicit waiting / start-up limits.
+/// Opportunistic semantic work never waits and bounds start-up by its own
+/// remaining budget, so it can neither delay interactive tools nor overrun.
+pub fn with_backend_opts<F, R>(
+    file_path: &str,
+    project_root: &str,
+    policy: StartPolicy,
+    opts: BackendOpts,
+    f: F,
+) -> Result<R, String>
 where
     F: FnOnce(&mut dyn LspBackend, &str) -> Result<R, String>,
 {
@@ -190,11 +317,21 @@ where
     })?;
 
     let slot = slot_for(&BackendKey::new(project_root, language));
-    let mut guard = match slot.lock() {
+    let locked = if opts.wait {
+        slot.lock().map_err(std::sync::TryLockError::Poisoned)
+    } else {
+        slot.try_lock()
+    };
+    let mut guard = match locked {
         Ok(guard) => guard,
+        Err(std::sync::TryLockError::WouldBlock) => {
+            return Err(format!(
+                "{BUSY}: '{language}' backend for {project_root} is serving another call"
+            ));
+        }
         // A previous call panicked mid-request: the server's protocol state is
         // unknown, so discard it and let this call start a fresh one.
-        Err(poisoned) => {
+        Err(std::sync::TryLockError::Poisoned(poisoned)) => {
             slot.clear_poison();
             let mut guard = poisoned.into_inner();
             *guard = None;
@@ -203,10 +340,13 @@ where
     };
 
     let backend = ensure_backend(&mut guard, project_root, || {
-        let backend = select_backend(language, project_root)?;
+        let backend = select_backend(language, project_root, policy, opts.start_timeout)?;
         start_idle_reaper();
         Ok(backend)
     })?;
+    // A backend is live here: let `auto` mode put it to use for the graph
+    // (rate-limited; runs on its own thread once this call is done).
+    crate::core::graph_enricher::schedule_semantic_refresh(project_root);
     let result = f(backend, language);
 
     // The server died during the call: evict it so the next call recovers.
@@ -272,6 +412,37 @@ fn start_idle_reaper() {
                 }
             });
     });
+}
+
+/// Whether any semantic backend is live for `project_root` right now: a warm
+/// language server in this process, or a reachable JetBrains IDE (port file
+/// with a live pid — no HTTP). Never blocks on a busy backend (busy = live).
+pub fn has_live_backend(project_root: &str) -> bool {
+    let root = crate::core::index_paths::normalize_project_root(project_root);
+    let warm = registry().iter().any(|(key, entry)| {
+        key.project_root == root
+            && match entry.slot.try_lock() {
+                Ok(slot) => slot.is_some(),
+                Err(std::sync::TryLockError::WouldBlock) => true,
+                Err(std::sync::TryLockError::Poisoned(_)) => false,
+            }
+    });
+    warm || port_discovery::read_port_file(project_root)
+        .is_some_and(|pf| port_discovery::pid_alive(pf.pid))
+}
+
+/// Whether any backend of `project_root` is serving a call right now — a
+/// non-blocking registry peek.
+pub fn backend_busy(project_root: &str) -> bool {
+    let root = crate::core::index_paths::normalize_project_root(project_root);
+    let slots: Vec<Slot> = registry()
+        .iter()
+        .filter(|(key, _)| key.project_root == root)
+        .map(|(_, e)| Arc::clone(&e.slot))
+        .collect();
+    slots
+        .iter()
+        .any(|s| matches!(s.try_lock(), Err(std::sync::TryLockError::WouldBlock)))
 }
 
 pub fn shutdown_all() {
@@ -400,6 +571,54 @@ mod tests {
         assert_eq!(backend_id("/leanctx-router-test/b"), Ok(Some(2)));
         // Same project spelled with a trailing slash → same normalized key.
         assert_eq!(backend_id("/leanctx-router-test/a/"), Ok(Some(1)));
+    }
+
+    #[test]
+    fn reuse_only_uses_a_warm_backend_and_never_starts_one() {
+        let _lock = stub_test_lock();
+        let warm = "/leanctx-router-test/warm";
+        seed_stub_backend(warm, "rust", stub(5));
+        let id = with_backend_policy(
+            &format!("{warm}/x.rs"),
+            warm,
+            StartPolicy::ReuseOnly,
+            |b, _| Ok(b.last_truncation().map(|t| t.total)),
+        );
+        assert_eq!(id, Ok(Some(5)));
+
+        assert!(has_live_backend(warm));
+        assert_eq!(
+            live_identity(&format!("{warm}/x.rs"), warm),
+            LiveIdentity::Known("lsp:unknown@unknown".into())
+        );
+        let held = Arc::clone(&registry()[&BackendKey::new(warm, "rust")].slot);
+        let guard = held.lock().unwrap();
+        assert_eq!(
+            live_identity(&format!("{warm}/x.rs"), warm),
+            LiveIdentity::Busy
+        );
+        assert!(backend_busy(warm));
+        drop(guard);
+        assert!(!backend_busy(warm));
+
+        // A pure peek: it never creates a registry entry for an unseen root.
+        let unseen = "/leanctx-router-test/unseen";
+        assert_eq!(
+            live_identity(&format!("{unseen}/x.rs"), unseen),
+            LiveIdentity::NotRunning
+        );
+        assert!(!registry().contains_key(&BackendKey::new(unseen, "rust")));
+
+        let cold = "/leanctx-router-test/cold";
+        assert!(!has_live_backend(cold));
+        let err = with_backend_policy(
+            &format!("{cold}/x.rs"),
+            cold,
+            StartPolicy::ReuseOnly,
+            |_, _| Ok(()),
+        )
+        .unwrap_err();
+        assert!(err.starts_with(NOT_RUNNING), "got: {err}");
     }
 
     #[test]

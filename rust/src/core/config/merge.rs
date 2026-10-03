@@ -311,6 +311,7 @@ impl Config {
         override_if_ne!(default.bm25_max_cache_mb, bm25_max_cache_mb);
         override_if_ne!(default.memory_profile, memory_profile);
         override_if_ne!(default.memory_cleanup, memory_cleanup);
+        override_if_ne!(default.semantic_mode, semantic_mode);
         // Only override when the local file actually defines `shell_allowlist`.
         // The field carries `#[serde(default = "default_shell_allowlist")]`, so a
         // local `.lean-ctx.toml` that omits the key still deserializes to the full

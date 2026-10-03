@@ -519,7 +519,11 @@ fn open_existing(project_root: &str) -> (Option<OpenGraphProvider>, bool) {
 
     let mut pg_provider = None;
     let mut pg_populated = false;
-    if let Ok(pg) = CodeGraph::open(project_root) {
+    // A graph built by an older engine may hold edges the current engine no
+    // longer derives (e.g. guessed `calls`, engine 6): never serve it — fall
+    // back to the index extractor and let the flagged rebuild replace it.
+    let pg_current = !crate::core::property_graph::engine_outdated(project_root);
+    if pg_current && let Ok(pg) = CodeGraph::open(project_root) {
         let nodes = pg.node_count().unwrap_or(0);
         let edges = pg.edge_count().unwrap_or(0);
         let file_cat = pg.file_catalog_count().unwrap_or(0);

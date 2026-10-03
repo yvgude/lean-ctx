@@ -228,6 +228,33 @@ fn build_dual_deny_output(msg: &str) -> String {
     .to_string()
 }
 
+/// Claude Code (and Claude-compatible CodeBuddy) PreToolUse payloads carry
+/// `transcript_path` plus `hook_event_name: "PreToolUse"`. Gemini sends
+/// `BeforeTool`, Cursor/Copilot send no such pair.
+fn is_claude_pretooluse_payload(v: &serde_json::Value) -> bool {
+    v.get("transcript_path").is_some()
+        && v.get("hook_event_name").and_then(serde_json::Value::as_str) == Some("PreToolUse")
+}
+
+/// The deny verdict for one concrete payload. Claude Code validates hook output
+/// strictly: a top-level `decision` other than the legacy `approve|block` makes
+/// it discard the whole object as a non-blocking error, so the verdict and its
+/// guidance never reach the model. Claude gets only `hookSpecificOutput`; every
+/// other host keeps the multi-dialect object.
+fn build_deny_output(msg: &str, payload: &serde_json::Value) -> String {
+    if is_claude_pretooluse_payload(payload) {
+        return serde_json::json!({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": msg
+            }
+        })
+        .to_string();
+    }
+    build_dual_deny_output(msg)
+}
+
 fn build_dual_rewrite_output(tool_input: Option<&serde_json::Value>, rewritten: &str) -> String {
     let updated_input = if let Some(obj) = tool_input.and_then(|v| v.as_object()) {
         let mut m = obj.clone();

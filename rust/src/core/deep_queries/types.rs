@@ -22,10 +22,17 @@ pub enum ImportKind {
 #[derive(Debug, Clone)]
 pub struct CallSite {
     pub callee: String,
+    /// 1-based line of the call expression.
     pub line: usize,
+    /// 0-based byte column of the call expression (its start, e.g. the receiver).
     pub col: usize,
     pub receiver: Option<String>,
     pub is_method: bool,
+    /// Position of the callee *identifier* itself — `(1-based line, 0-based
+    /// byte column)` — the point a semantic backend must be asked about: for
+    /// `repo.save()` this is `save`, not `repo`. `None` when it cannot be
+    /// located unambiguously.
+    pub callee_pos: Option<(usize, usize)>,
 }
 
 #[derive(Debug, Clone)]

@@ -238,23 +238,51 @@ fn enclosing_symbol_name_for_line(
 }
 
 #[cfg(feature = "embeddings")]
+/// Binds a callee name to its definition site in the caller's scope — the
+/// same ladder as the call graph (`call_graph::rank_callee_def_file`): the
+/// caller's own file, then exactly one imported file, then exactly one file
+/// project-wide. Ambiguous names yield `None`; the previous fallback picked
+/// the alphabetically first file and invented edges.
+#[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
 fn resolve_call_callee_site(
     def_index: &DefIndex,
     callee: &str,
     caller_file: &str,
-) -> Option<(String, usize, usize)> {
+    imported: &[String],
+) -> Option<(String, usize, usize, crate::core::semantic::EvidenceGrade)> {
+    use crate::core::semantic::EvidenceGrade;
     let sites = def_index.get(callee)?;
-    for (f, _ns, ls, le) in sites {
-        if f == caller_file {
-            return Some((f.clone(), *ls, *le));
-        }
+    // The single definition of `callee` in `file`; several (other namespace,
+    // other `impl` block) cannot be told apart without type information.
+    let first_in = |file: &str| {
+        let mut in_file = sites.iter().filter(|(f, ..)| f == file);
+        let (f, _, ls, le) = in_file.next()?;
+        in_file.next().is_none().then(|| (f.clone(), *ls, *le))
+    };
+    let mut files: Vec<&str> = sites.iter().map(|(f, ..)| f.as_str()).collect();
+    files.sort_unstable();
+    files.dedup();
+
+    if files.contains(&caller_file) {
+        // Defined in the caller's own file: bind it there, or — when that
+        // file defines it several times — refuse rather than look elsewhere.
+        let (f, ls, le) = first_in(caller_file)?;
+        return Some((f, ls, le, EvidenceGrade::ResolvedStructural));
     }
-    let mut sorted: Vec<(String, usize, usize)> = sites
+    let in_scope: Vec<&str> = files
         .iter()
-        .map(|(f, _ns, ls, le)| (f.clone(), *ls, *le))
+        .copied()
+        .filter(|f| imported.iter().any(|i| i == f))
         .collect();
-    sorted.sort_by(|a, b| a.0.cmp(&b.0));
-    sorted.into_iter().next()
+    if let [only] = in_scope.as_slice() {
+        let (f, ls, le) = first_in(only)?;
+        return Some((f, ls, le, EvidenceGrade::ResolvedStructural));
+    }
+    if let [only] = files.as_slice() {
+        let (f, ls, le) = first_in(only)?;
+        return Some((f, ls, le, EvidenceGrade::HeuristicStructural));
+    }
+    None
 }
 
 #[cfg(feature = "embeddings")]
@@ -308,8 +336,8 @@ fn index_graph_file_embeddings(
     targets.sort();
     targets.dedup();
 
-    for target_path in targets {
-        let Ok(target_id) = graph.upsert_node(&Node::file(&target_path)) else {
+    for target_path in &targets {
+        let Ok(target_id) = graph.upsert_node(&Node::file(target_path)) else {
             continue;
         };
         let _ = graph.upsert_edge(&Edge::new(file_node_id, target_id, EdgeKind::Imports));
@@ -331,11 +359,17 @@ fn index_graph_file_embeddings(
         };
         total_nodes += 1;
 
-        let Some((callee_file, c_line, c_end)) =
-            resolve_call_callee_site(def_index, &call.callee, rel_path)
+        let Some((callee_file, c_line, c_end, grade)) =
+            resolve_call_callee_site(def_index, &call.callee, rel_path, &targets)
         else {
             continue;
         };
+        let evidence = crate::core::semantic::EdgeEvidence::new(
+            grade,
+            crate::core::semantic::EvidenceOrigin::ImpactIndex,
+            None,
+            1,
+        );
 
         let callee_node = Node::symbol(
             &call.callee,
@@ -347,14 +381,19 @@ fn index_graph_file_embeddings(
             continue;
         };
         total_nodes += 1;
-        let _ = graph.upsert_edge(&Edge::new(caller_id, callee_id, EdgeKind::Calls));
+        let _ = graph.upsert_edge_with_evidence(caller_id, callee_id, &EdgeKind::Calls, &evidence);
         total_edges += 1;
 
         if callee_file != rel_path {
             let Ok(callee_file_id) = graph.upsert_node(&Node::file(&callee_file)) else {
                 continue;
             };
-            let _ = graph.upsert_edge(&Edge::new(file_node_id, callee_file_id, EdgeKind::Calls));
+            let _ = graph.upsert_edge_with_evidence(
+                file_node_id,
+                callee_file_id,
+                &EdgeKind::Calls,
+                &evidence,
+            );
             total_edges += 1;
         }
     }
@@ -768,5 +807,57 @@ pub(super) fn handle_update(root: &str, fmt: OutputFormat) -> String {
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
         }
         OutputFormat::Text => format!("{summary}\n[ctx_impact update: {tokens} tok]"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_call_callee_site;
+    use crate::core::semantic::EvidenceGrade;
+    use crate::core::type_ref_edges::DefIndex;
+
+    /// Regression: an ambiguous callee used to bind to the alphabetically
+    /// first defining file, inventing `calls` edges in the impact graph.
+    #[test]
+    fn callee_site_follows_caller_scope_and_never_guesses() {
+        let mut index = DefIndex::new();
+        index.insert(
+            "save".into(),
+            vec![("a.rs".into(), None, 3, 5), ("b.rs".into(), None, 7, 9)],
+        );
+        index.insert("only".into(), vec![("u.rs".into(), None, 1, 2)]);
+
+        let none: [String; 0] = [];
+        assert_eq!(
+            resolve_call_callee_site(&index, "save", "c.rs", &none),
+            None
+        );
+        assert_eq!(
+            resolve_call_callee_site(&index, "save", "c.rs", &["b.rs".to_string()]),
+            Some(("b.rs".into(), 7, 9, EvidenceGrade::ResolvedStructural))
+        );
+        assert_eq!(
+            resolve_call_callee_site(&index, "save", "a.rs", &none),
+            Some(("a.rs".into(), 3, 5, EvidenceGrade::ResolvedStructural))
+        );
+        assert_eq!(
+            resolve_call_callee_site(&index, "only", "c.rs", &none),
+            Some(("u.rs".into(), 1, 2, EvidenceGrade::HeuristicStructural))
+        );
+
+        // Two `Widget`s in the caller's own file (N1/N2 namespaces): refuse,
+        // and never fall through to an imported file's `Widget`.
+        index.insert(
+            "Widget".into(),
+            vec![
+                ("w.cs".into(), Some("N1".into()), 3, 5),
+                ("w.cs".into(), Some("N2".into()), 9, 11),
+                ("lib.cs".into(), None, 1, 2),
+            ],
+        );
+        assert_eq!(
+            resolve_call_callee_site(&index, "Widget", "w.cs", &["lib.cs".to_string()]),
+            None
+        );
     }
 }

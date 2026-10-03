@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod capabilities;
 pub mod client;
 pub mod config;
 pub mod edit_apply;
