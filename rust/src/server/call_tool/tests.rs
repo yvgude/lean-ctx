@@ -226,6 +226,46 @@ mod shell_outcome_tests {
         }
     }
 
+    /// Wait until a background job has completed, and say why when it has not.
+    ///
+    /// The callers used to poll for a bare 6–10 s and then assert
+    /// `matches!(status, Some(Completed))`. On a loaded ubuntu runner three
+    /// trivial `printf | yes | head` jobs missed that window one after the
+    /// other (PR #1995), and the assertion could not tell a slow job from one
+    /// that was cancelled or pruned away. The ceiling only costs time when the
+    /// job really is stuck; the panic names the state that was observed.
+    #[cfg(not(windows))]
+    fn wait_for_completed(job_id: &str) {
+        use crate::server::background_shell::JobState;
+        const CEILING: std::time::Duration = std::time::Duration::from_mins(1);
+        let deadline = std::time::Instant::now() + CEILING;
+        loop {
+            let state = crate::server::background_shell::status(job_id);
+            match &state {
+                Some(JobState::Completed { .. }) => return,
+                Some(JobState::Cancelled { output }) => {
+                    panic!("job {job_id} was cancelled instead of completing: {output:?}")
+                }
+                _ if std::time::Instant::now() >= deadline => {
+                    let observed = match state {
+                        None => "gone from the job table (removed or pruned)".to_string(),
+                        Some(JobState::Running { output }) => {
+                            let tail: String = output.chars().rev().take(200).collect();
+                            let tail: String = tail.chars().rev().collect();
+                            format!(
+                                "still running, {} bytes captured, tail {tail:?}",
+                                output.len()
+                            )
+                        }
+                        Some(other) => format!("{other:?}"),
+                    };
+                    panic!("job {job_id} did not complete within {CEILING:?}: {observed}");
+                }
+                _ => std::thread::sleep(std::time::Duration::from_millis(25)),
+            }
+        }
+    }
+
     fn text_of(result: &CallToolResult) -> String {
         result
             .content
@@ -363,19 +403,7 @@ mod shell_outcome_tests {
         };
         let job = BackgroundJobGuard::new(job_id.clone());
         std::fs::write(release_path, b"release").expect("release auto-detached child");
-        for _ in 0..400 {
-            if matches!(
-                crate::server::background_shell::status(&job_id),
-                Some(crate::server::background_shell::JobState::Completed { .. })
-            ) {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(25));
-        }
-        assert!(matches!(
-            crate::server::background_shell::status(&job_id),
-            Some(crate::server::background_shell::JobState::Completed { .. })
-        ));
+        wait_for_completed(&job_id);
         (
             pipeline_background_status(&job_id, false, false, false).await,
             job,
@@ -451,22 +479,7 @@ mod shell_outcome_tests {
             Some(30_000),
         );
         let job = BackgroundJobGuard::new(job_id.clone());
-        for _ in 0..400 {
-            if matches!(
-                crate::server::background_shell::status(&job_id),
-                Some(
-                    crate::server::background_shell::JobState::Completed { .. }
-                        | crate::server::background_shell::JobState::Cancelled { .. }
-                )
-            ) {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(25));
-        }
-        assert!(matches!(
-            crate::server::background_shell::status(&job_id),
-            Some(crate::server::background_shell::JobState::Completed { .. })
-        ));
+        wait_for_completed(&job_id);
         (job_id, job)
     }
 
@@ -756,15 +769,7 @@ mod shell_outcome_tests {
         assert!(structured["jobId"].as_str().is_some());
         assert!(structured.get("exitCode").is_none());
 
-        for _ in 0..240 {
-            if matches!(
-                crate::server::background_shell::status(&job.job_id),
-                Some(crate::server::background_shell::JobState::Completed { .. })
-            ) {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(25));
-        }
+        wait_for_completed(&job.job_id);
         let terminal = pipeline_background_status(&job.job_id, false, false, false).await;
         let archive_id = structured_of(&terminal)["archiveId"]
             .as_str()
@@ -996,19 +1001,7 @@ mod shell_outcome_tests {
             Some(10_000),
         );
         let _job = BackgroundJobGuard::new(job_id.clone());
-        for _ in 0..240 {
-            if matches!(
-                crate::server::background_shell::status(&job_id),
-                Some(crate::server::background_shell::JobState::Completed { .. })
-            ) {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(25));
-        }
-        assert!(matches!(
-            crate::server::background_shell::status(&job_id),
-            Some(crate::server::background_shell::JobState::Completed { .. })
-        ));
+        wait_for_completed(&job_id);
 
         // #1778: compile-time constant, not the process-global cwd (see
         // `shell_context` above).
