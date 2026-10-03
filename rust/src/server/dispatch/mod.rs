@@ -93,6 +93,16 @@ impl LeanCtxServer {
                         None,
                     ));
                 }
+                // Host hooks are for host extensions (a Claude Code mod's
+                // direct MCP call), not agents: refuse them on the agent path.
+                if crate::server::dynamic_tools::INTERNAL_HOST_TOOLS.contains(&inner.as_str()) {
+                    return Err(ErrorData::invalid_params(
+                        format!(
+                            "{inner} is an internal host hook and cannot be called via ctx_call"
+                        ),
+                        None,
+                    ));
+                }
 
                 let arg_map = match args.and_then(|m| m.get("arguments")) {
                     None | Some(Value::Null) => {

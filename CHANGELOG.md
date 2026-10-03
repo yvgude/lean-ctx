@@ -31,6 +31,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   data path (tool path, proxy, embedded) can observe and which evidence level a
   savings, reach or quality figure can reach.
 
+### Added — lean-ctx inside Claude Code (turn economy)
+
+- `lean-ctx claude-mod install|status|uninstall`: installs the lean-ctx Claude
+  Code mod (Claude Code 2.1.287+) from a local marketplace the binary writes —
+  no download, version-locked to the engine. `lean-ctx setup` offers it
+  interactively and refreshes an existing install; unattended runs and updates
+  never install it. `lean-ctx doctor` shows its state.
+- The mod wakes the model when `ctx_shell` background jobs finish instead of
+  leaving it to `sleep`/status polling (~19 % of all model requests in a
+  30-day corpus), shapes large native Bash stdout through lean-ctx, keeps a
+  configurable core of lean-ctx tools in front of ToolSearch, prefixes the
+  lean-ctx skill with the session's live facts, and adds `/leanctx`.
+- `ctx_shape`: internal host hook that compresses a native tool's output with
+  the real command line (command-aware patterns, secret redaction, policy
+  filters, recovery handle). Callable, never advertised.
+
+### Fixed
+
+- Claude Code native installs (`~/.local/share/claude/versions/…`) are now a
+  trusted `claude` location, so `claude mcp add-json` is used there instead of
+  silently falling back to editing `~/.claude.json`.
+
 ### Added — evidence-aware semantic code intelligence (ADR-015)
 
 - Every call edge in the property graph now records how it is known:
@@ -98,6 +120,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   Facts are matched as whole tokens; reversible rewrites (`FAIL`, the
   auto-dictionary legend) count as kept.
 - Contract: [docs/contracts/context-quality-v1.md](docs/contracts/context-quality-v1.md).
+
+### Fixed — wide source directories inside a project are searchable (#1984)
+
+- `ctx_search`, `ctx_tree` and `ctx_glob` refused a directory with more than
+  50 subdirectories and no project marker of its own as "broad or
+  privacy-protected", even when it sat inside a project (for example
+  `rust/src/core`, whose markers live in `rust/` and the repo root). A
+  project marker in an ancestor now counts. Directories outside any project
+  keep the protection.
 
 ### Fixed — tool output is never served stale or replaced by a dead reference (#1980)
 

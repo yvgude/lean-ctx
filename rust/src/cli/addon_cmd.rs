@@ -899,6 +899,9 @@ mod tests {
     /// authors unable to produce the very package the installer takes.
     #[test]
     fn release_accepts_an_mcp_only_addon() {
+        // Building signs the package, creating the publisher key under the data
+        // dir: isolate it (see context_package::skills tests).
+        let _data = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("lean-ctx-addon.toml"),

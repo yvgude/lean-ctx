@@ -223,6 +223,10 @@ pub fn run() {
                 crate::cli::cmd_git_trailer(&rest);
                 return;
             }
+            "claude-mod" | "claude_mod" => {
+                crate::cli::claude_mod_cmd::cmd_claude_mod(&rest);
+                return;
+            }
             "statusline" => {
                 crate::cli::cmd_statusline(&rest);
                 return;

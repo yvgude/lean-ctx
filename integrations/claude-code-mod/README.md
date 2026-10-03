@@ -1,56 +1,87 @@
 # lean-ctx for Claude Code
 
-A Community tier Claude Code mod for lean-ctx. It shapes the lean-ctx tool surface, wakes the model when watched shell jobs finish, and shows session-only request usage.
+A Claude Code mod (Community tier) that makes lean-ctx part of Claude Code itself
+instead of something the model has to be talked into using. Requires Claude Code
+**2.1.287+**; tested with **2.1.287**.
 
-Claude Code **2.1.287+** is required; this MVP was tested with **2.1.287**.
+## Install
+
+```sh
+lean-ctx claude-mod install     # or answer "y" in `lean-ctx setup`
+lean-ctx claude-mod status
+lean-ctx claude-mod uninstall
+```
+
+The lean-ctx binary carries the mod and installs it from a local marketplace in
+its data dir — nothing is downloaded, and the mod's version is the engine's
+version, so every lean-ctx update rolls it forward (`lean-ctx setup`/`update`
+refresh an existing install; they never install it on their own). It becomes
+active in new Claude Code sessions, or after `/reload-plugins`.
 
 ## Why
 
-The measured corpus recorded **7,551 status polls** for **1,030 background jobs**. The mod checks watched jobs inside Claude Code and submits one wake prompt when jobs finish.
+Measured on 569 Claude Code sessions (30 days): **~19 % of all model requests
+were waiting** — 7,551 status polls for 1,030 background jobs plus 1,770
+`sleep` calls — and every extra request re-reads the whole context (median
+149k tokens). The mod removes those requests instead of compressing around them.
 
 ## What it does
 
-- Keeps descriptions byte-identical and front-loads `ctx_read`, `ctx_search`, `ctx_shell`, `ctx_compose`, `ctx_callgraph`, and `ctx_session` by default; other lean-ctx tools stay deferred. Configure the list with the plugin's `front_loaded_tools` setting. This refines the server-wide `alwaysLoad: true` that `lean-ctx setup` writes for Claude Code: without the mod every lean-ctx tool is front-loaded, with it only the configured ones.
-- Watches `ctx_shell(run_in_background=true)` jobs every two seconds, reading the job state from ctx_shell's `structuredContent` (falling back to its JSON text, then to the `[background:…]` header). A finished job — including a failed one, which MCP reports as an error result — produces one deterministic wake with its ID, exit status, and the recovery handle, summary, or up to 20 output lines.
-- Answers bare `sleep N` waits, and the supported `sleep N && …status/tail…` form, only while a job is watched. Other Bash calls pass through unchanged.
-- Adds a stable reminder to watched job results so the model can continue other work instead of polling.
-- Registers `/leanctx` when lean-ctx MCP tools are present. It reports session request and token totals, ToolSearch-only requests, lean-ctx calls, answered sleeps, and delivered wakes.
-- Keeps no usage data after the session and sends no telemetry. It does not configure gateway policy, upload data, or create long-term proof.
-- Stays inert when no lean-ctx MCP tools are available. A status check that cannot be read keeps the watch; after five consecutive misses the job is handed back to the model's own polling. Normal tool calls always proceed.
+- **Wake, don't poll.** Watches `ctx_shell(run_in_background=true)` jobs in
+  Claude Code's process (state from ctx_shell's `structuredContent`, then its
+  JSON text, then the `[background:…]` header) and starts one new turn when they
+  finish — including failed jobs, which MCP reports as error results — with the
+  job id, exit status and recovery handle. Bare `sleep N` waits are answered
+  while a job is watched. Verified live: the model started a job, ended its
+  turn, and was woken by the mod with `Job … finished · exit 0` (no polls).
+- **Shape, don't redirect.** Large native `Bash` stdout (≥ 2,000 chars) is
+  compressed by lean-ctx's command-aware engine via the internal `ctx_shape`
+  tool — the same patterns, secret redaction and output filters as `ctx_shell`,
+  ending lossy results with a recovery handle. stderr, small output, images,
+  background launches and commands with `LEAN_CTX_RAW=1` / `lean-ctx raw` stay
+  byte-for-byte; any failure keeps the native result. Turn it off with the
+  `shape_native_output` setting.
+- **Focused tool surface.** Front-loads `ctx_read`, `ctx_search`, `ctx_shell`,
+  `ctx_compose`, `ctx_callgraph`, `ctx_session` (setting `front_loaded_tools`)
+  and defers every other lean-ctx tool — including the `shell` alias — behind
+  ToolSearch, with descriptions byte-identical. Verified by capturing the real
+  `/v1/messages` request: exactly the configured six keep their schema.
+- **Live skill.** Prefixes the `lean-ctx` skill with what is true in this
+  session (wake, front-loaded tools, shaping), so it never contradicts the mod.
+- **`/leanctx`.** This session's requests, input/output/cache tokens,
+  ToolSearch-only requests, lean-ctx calls, answered sleeps, wakes and shaped
+  Bash outputs — from Claude Code's own `turn.step` usage, not estimates.
 
-## Try it for one session
+It keeps nothing after the session, sends no telemetry, sets no gateway policy
+and stays inert when no lean-ctx MCP server is connected.
 
-From the repository root:
+## Security model
+
+A mod runs inside Claude Code with your permissions. This one only calls the
+mods API methods the validator lists below; it reaches lean-ctx through Claude
+Code's own MCP connection (`$.mcp.call`), never through a shell or the network.
+`ctx_shape` is an internal host hook: callable, but never advertised to agents.
+
+## Develop
+
+The sources are canonical in `rust/src/templates/claude_mod/` (embedded in the
+binary); this directory is the development workspace, regenerated with
+`cargo run --example gen_rules --features dev-tools` and drift-checked in CI.
+Edit the templates, regenerate, then:
 
 ```sh
-claude --plugin-dir ./integrations/claude-code-mod
-```
-
-## Install from the local marketplace
-
-From the repository root:
-
-```sh
-claude plugin marketplace add ./integrations/claude-code-mod
-claude plugin install lean-ctx@lean-ctx-local
-```
-
-Disable or uninstall the mod from the Installed tab in `/plugin`.
-
-## Validate and test
-
-Run the strict marketplace check, plugin validation, tests, and TypeScript check from the repository root. `tsc` needs the version-matched declarations in `.claude-plugin/types/` (git-ignored), which Claude Code writes the first time it loads the mod with `--plugin-dir`:
-
-```sh
+claude --plugin-dir ./integrations/claude-code-mod      # one session, hot reload
 claude plugin validate --strict integrations/claude-code-mod
 claude plugin validate --strict integrations/claude-code-mod/.claude-plugin/plugin.json
 claude plugin test integrations/claude-code-mod
 tsc -p integrations/claude-code-mod/tsconfig.json
 ```
 
-The plugin validator reports these hooks and calls:
+`tsc` needs the version-matched declarations in `.claude-plugin/types/`
+(git-ignored), which Claude Code writes the first time it loads the mod with
+`--plugin-dir`. The validator reports:
 
 ```text
-  ❯ ./register.ts hooks: tool.describe{tool=/"^mcp__lean[-_]ctx__ctx_[A-Za-z0-9_-]+$"/}, session.start, tool.call, turn.step, command.run{command=leanctx}
-  ❯ ./register.ts calls: $.clock.every (via startWatcher), $.command.register (via ensureMeterCommand), $.mcp.call (via pollWatchedJobs), $.prompt.submit (via submitWake)
+  ❯ ./register.ts hooks: tool.describe{tool=/"^mcp__lean[-_]ctx__[A-Za-z0-9_-]+$"/}, skill.prompt{skill=lean-ctx}, session.start, tool.call, turn.step, command.run{command=leanctx}
+  ❯ ./register.ts calls: $.clock.every (via startWatcher), $.command.register (via ensureMeterCommand), $.mcp.call (via pollWatchedJobs, shapeBash), $.prompt.submit (via submitWake)
 ```

@@ -37,6 +37,7 @@ const SELF_HELP: &[&[&str]] = &[
     &["value"],
     &["prompt-segment"],
     &["statusline"],
+    &["claude-mod", "claude_mod"],
     &["eval"],
     &["compliance"],
     &["agent"],

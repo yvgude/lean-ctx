@@ -424,7 +424,18 @@ fn compress_if_beneficial_with_exit(
             let base = dedup_build_diagnostics(&base);
             return truncate_verbatim(&base, count_tokens_for(&base, family), family);
         }
-        BuildOutputKind::WarningsOnly | BuildOutputKind::Clean | BuildOutputKind::NotBuildTool => {}
+        // A clean build is progress lines plus a verdict. Build commands are
+        // otherwise kept verbatim by the output policy below, so without this
+        // a *successful* `cargo build` shipped hundreds of `Compiling …` lines
+        // while a failing one had them folded.
+        BuildOutputKind::Clean => {
+            if let Some(folded) =
+                maybe_fold_progress(output, count_tokens_for(output, family), family)
+            {
+                return truncate_verbatim(&folded, count_tokens_for(&folded, family), family);
+            }
+        }
+        BuildOutputKind::WarningsOnly | BuildOutputKind::NotBuildTool => {}
     }
 
     if !is_search_output(command) && crate::tools::ctx_shell::contains_auth_flow(output) {

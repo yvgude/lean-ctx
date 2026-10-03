@@ -1,6 +1,6 @@
 {
   "name": "lean-ctx-local",
-  "description": "Local marketplace for the lean-ctx Claude Code mod MVP.",
+  "description": "Development marketplace for the lean-ctx Claude Code mod (end users install it with `lean-ctx claude-mod install`).",
   "owner": {
     "name": "Thinkery / Yves Gugger"
   },
@@ -8,8 +8,7 @@
     {
       "name": "lean-ctx",
       "source": ".",
-      "description": "Shape lean-ctx tools, wake on background job completion, and show per-session request usage.",
-      "version": "0.1.0"
+      "description": "Wake on background job completion, shape native Bash output, keep lean-ctx's core tools in front, and show per-session request usage."
     }
   ]
 }

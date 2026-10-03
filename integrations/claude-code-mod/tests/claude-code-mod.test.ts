@@ -21,6 +21,71 @@ async function flushMicrotasks() {
   await Promise.resolve();
 }
 
+function bashResult(stdout: string, extra: Record<string, unknown> = {}) {
+  return { result: { stdout, stderr: "warning: kept", interrupted: false, ...extra }, text: stdout };
+}
+
+// Shape, don't redirect: large native Bash stdout is replaced by ctx_shape's
+// shorter answer; everything else (stderr, small output, raw intent, errors,
+// a failing or non-shrinking shaper) leaves the native result untouched.
+test("native Bash stdout is shaped through ctx_shape and fails open", async ($, on) => {
+  const big = "Compiling crate v0.1.0\n".repeat(200);
+  const shapeCalls: Record<string, unknown>[] = [];
+  let shaper: "ok" | "error" | "longer" = "ok";
+  on("command.register", ($, event) => ({ value: { command: event.name } }));
+  on("tool.describe", ($, event) => ({ description: event.description }));
+  on("tool.call", ($, event) => {
+    const fields = event as unknown as Record<string, unknown>;
+    return fields.command === "small" ? bashResult("ok\n") : bashResult(big);
+  });
+  on("mcp.call", ($, event) => {
+    shapeCalls.push(event.args as Record<string, unknown>);
+    if (shaper === "error") return { deny: "shaper down" };
+    const text = shaper === "longer" ? big + "x" : "Compiling 200 crates\n[lean-ctx: full original at /tmp/h]";
+    return mcpResult(text);
+  });
+
+  // The server name is learned from the lean-ctx tool surface.
+  await $.tool.describe({
+    tool: "mcp__lean-ctx__ctx_read",
+    description: "read",
+    provider: { plugin: "mcp:lean-ctx", tier: "user" },
+  });
+
+  const shaped = await $.tool.call({ tool: "Bash", command: "cargo build" });
+  const shapedRecord = shaped.result as Record<string, unknown>;
+  expect(String(shapedRecord.stdout)).toContain("Compiling 200 crates");
+  expect(shapedRecord.stderr).toBe("warning: kept");
+  expect(shapeCalls[0]).toEqual({ tool: "Bash", command: "cargo build", output: big, exit_code: 0 });
+
+  const small = await $.tool.call({ tool: "Bash", command: "small" });
+  expect((small.result as Record<string, unknown>).stdout).toBe("ok\n");
+
+  const raw = await $.tool.call({ tool: "Bash", command: "LEAN_CTX_RAW=1 cargo build" });
+  expect((raw.result as Record<string, unknown>).stdout).toBe(big);
+
+  shaper = "error";
+  const failed = await $.tool.call({ tool: "Bash", command: "cargo build" });
+  expect((failed.result as Record<string, unknown>).stdout).toBe(big);
+
+  shaper = "longer";
+  const grown = await $.tool.call({ tool: "Bash", command: "cargo build" });
+  expect((grown.result as Record<string, unknown>).stdout).toBe(big);
+  expect(shapeCalls.length).toBe(3);
+});
+
+test("the lean-ctx skill is prefixed with this session's live facts", async ($, on) => {
+  on("skill.prompt", () => ({ text: "STATIC SKILL BODY" }));
+  const out = await $.skill.prompt({ skill: "lean-ctx", text: "STATIC SKILL BODY" });
+  expect(out.text.startsWith("## Live in this session (lean-ctx Claude Code mod)")).toBe(true);
+  expect(out.text).toContain("Never `sleep` or poll");
+  expect(out.text).toContain("ctx_callgraph, ctx_compose, ctx_read, ctx_search, ctx_session, ctx_shell");
+  expect(out.text.endsWith("STATIC SKILL BODY")).toBe(true);
+
+  const other = await $.skill.prompt({ skill: "commit", text: "COMMIT" });
+  expect(other.text).toBe("STATIC SKILL BODY");
+});
+
 test("lean-ctx tools keep descriptions and only configured tools are front-loaded", async ($, on) => {
   on("command.register", ($, event) => ({ value: { command: event.name } }));
   on("tool.describe", ($, event) => ({
@@ -228,7 +293,9 @@ test("sleep waits are answered only while watched and MCP errors fail open", asy
     await clock.advance(2_000);
     await flushMicrotasks();
   }
-  expect(wakes).toEqual([]);
+  // The model was told it would be woken: handing the job back is explicit.
+  expect(wakes.length).toBe(1);
+  expect(wakes[0]).toContain("can no longer watch background job(s) shell_error");
 
   const sleepAfterError = await $.tool.call({ tool: "Bash", command: "sleep 1" });
   expect(sleepAfterError.result).toBe("executed");
@@ -282,6 +349,6 @@ test("/leanctx reports per-session request, token, tool, sleep, and wake counts"
     presentation: { isFullscreen: false, columns: 80 },
   });
   expect(answer.text).toBe(
-    "Requests 1 · input 12 · output 3 · cache read 4 · cache creation 2 · ToolSearch-only 1 · lean-ctx calls 1 · sleeps answered 1 · wakes delivered 1",
+    "Requests 1 · input 12 · output 3 · cache read 4 · cache creation 2 · ToolSearch-only 1 · lean-ctx calls 1 · sleeps answered 1 · wakes delivered 1 · Bash outputs shaped 0 (−0 chars)",
   );
 });

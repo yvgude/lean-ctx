@@ -323,6 +323,20 @@ fn safe_scan_root_rejects_broad_dir() {
     assert!(!is_safe_scan_root(&root));
 }
 
+// #1984: `rust/src/core` (84 module dirs, markers only in `rust/` and the repo
+// root) was refused as a broad directory, so ctx_search/ctx_tree/ctx_glob
+// could not scan it.
+#[test]
+fn safe_scan_root_accepts_wide_dir_inside_project() {
+    let tmp = tempdir().unwrap();
+    std::fs::write(tmp.path().join("Cargo.toml"), "[package]\nname = \"t\"\n").unwrap();
+    let wide = tmp.path().join("src").join("core");
+    for i in 0..55 {
+        std::fs::create_dir_all(wide.join(format!("module{i}"))).unwrap();
+    }
+    assert!(is_safe_scan_root(&wide.to_string_lossy()));
+}
+
 #[test]
 fn no_index_env_skips_scan() {
     let _env = crate::core::data_dir::test_env_lock();

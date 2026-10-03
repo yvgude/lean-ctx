@@ -56,7 +56,8 @@ pub fn categorize_tool(name: &str) -> ToolCategory {
         | "ctx_dedup"
         | "ctx_preload"
         | "ctx_prefetch"
-        | "ctx_compress_memory" => ToolCategory::Internal,
+        | "ctx_compress_memory"
+        | "ctx_shape" => ToolCategory::Internal,
 
         // Core: always visible. Must cover every CORE_TOOL_NAMES entry —
         // otherwise the category gate silently drops a lazy-core tool for
@@ -181,13 +182,21 @@ pub fn is_local_collaboration_compatibility_tool(name: &str) -> bool {
     LOCAL_COLLABORATION_COMPATIBILITY_TOOLS.contains(&name)
 }
 
+/// Host-integration hooks: called by a host extension (the Claude Code mod's
+/// `$.mcp.call`), never by an agent. Advertising them would only spend prompt
+/// tokens on a tool the model must not use.
+pub const INTERNAL_HOST_TOOLS: &[&str] = &["ctx_shape"];
+
 /// Whether a registered tool belongs on a public MCP tool surface.
 ///
-/// Compatibility aliases and local collaboration substrate remain directly
-/// callable, including through `ctx_call`; this gate only controls discovery.
+/// Compatibility aliases, local collaboration substrate and internal host
+/// hooks remain directly callable, including through `ctx_call`; this gate only
+/// controls discovery.
 #[must_use]
 pub fn is_publicly_advertised_tool(name: &str) -> bool {
-    !is_deprecated_alias(name) && !is_local_collaboration_compatibility_tool(name)
+    !is_deprecated_alias(name)
+        && !is_local_collaboration_compatibility_tool(name)
+        && !INTERNAL_HOST_TOOLS.contains(&name)
 }
 
 /// The one-line deprecation notice prepended to a deprecated alias's output.
@@ -420,6 +429,8 @@ mod tests {
         }
         assert!(!is_local_collaboration_compatibility_tool("ctx_session"));
         assert!(is_publicly_advertised_tool("ctx_session"));
+        // Host hooks are callable but must never cost agents prompt tokens.
+        assert!(!is_publicly_advertised_tool("ctx_shape"));
     }
 
     #[test]

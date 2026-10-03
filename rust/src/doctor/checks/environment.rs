@@ -530,6 +530,32 @@ pub(crate) fn docker_env_outcomes() -> Vec<Outcome> {
 
     outcomes
 }
+/// The optional lean-ctx Claude Code mod: shown when Claude Code is present,
+/// never a failure when absent (it is opt-in). File-only — no `claude` spawn.
+pub(crate) fn claude_mod_outcome() -> Option<Outcome> {
+    use crate::hooks::agents::claude_mod;
+    let claude_dir = std::env::var_os("CLAUDE_CONFIG_DIR")
+        .map(std::path::PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|h| h.join(".claude")))?;
+    if !claude_dir.is_dir() {
+        return None;
+    }
+    let versions = claude_mod::cached_versions(&claude_dir);
+    let want = env!("CARGO_PKG_VERSION");
+    let line = if versions.iter().any(|v| v == want) {
+        format!("{BOLD}Claude Code mod{RST}  {GREEN}installed ({want}){RST}")
+    } else if let Some(old) = versions.last() {
+        format!(
+            "{BOLD}Claude Code mod{RST}  {YELLOW}{old} — older than this engine{RST}  {DIM}(run: lean-ctx claude-mod install){RST}"
+        )
+    } else {
+        format!(
+            "{BOLD}Claude Code mod{RST}  {DIM}not installed — optional: wake-not-poll, Bash shaping, /leanctx (run: lean-ctx claude-mod install){RST}"
+        )
+    };
+    Some(Outcome { ok: true, line })
+}
+
 pub(crate) fn skill_files_outcome() -> Outcome {
     let Some(home) = dirs::home_dir() else {
         return Outcome {

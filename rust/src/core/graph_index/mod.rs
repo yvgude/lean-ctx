@@ -66,6 +66,19 @@ fn has_marker_in_ancestry(p: &Path, stop: &Path) -> bool {
     false
 }
 
+/// True if `p` or an ancestor carries a project marker. Below `$HOME` the walk
+/// stops before `$HOME` itself (a dotfiles repo there must not vouch for every
+/// home directory); elsewhere it stops before the filesystem root.
+fn is_inside_project(p: &Path) -> bool {
+    let home = dirs::home_dir()
+        .map(|home| std::path::PathBuf::from(normalize_project_root(&home.to_string_lossy())));
+    let stop = home
+        .filter(|home| p.starts_with(home))
+        .or_else(|| p.ancestors().last().map(Path::to_path_buf))
+        .unwrap_or_default();
+    has_marker_in_ancestry(p, &stop)
+}
+
 fn is_safe_scan_root(path: &str) -> bool {
     let normalized = normalize_project_root(path);
     let p = Path::new(&normalized);
@@ -183,7 +196,12 @@ fn is_safe_scan_root(path: &str) -> bool {
         "go.work",
     ];
 
-    if !breadth_markers.iter().any(|m| p.join(m).exists()) && !dir_has_dotnet_project(p) {
+    // A wide source tree inside a project (`repo/rust/src/core`, markers only
+    // in an ancestor) is not a broad directory (#1984, as GL#438 above).
+    if !breadth_markers.iter().any(|m| p.join(m).exists())
+        && !dir_has_dotnet_project(p)
+        && !is_inside_project(p)
+    {
         // Multi-repo workspace parent: >=2 children with project markers is always safe
         if crate::core::pathutil::has_multi_repo_children(p) {
             return true;

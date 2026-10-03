@@ -2,6 +2,7 @@ mod amp;
 mod antigravity;
 mod claude;
 mod claude_delegation;
+pub mod claude_mod;
 mod claude_statusline;
 mod cline;
 mod codebuddy;

@@ -275,6 +275,12 @@ fn sha256_hex(data: &[u8]) -> String {
 mod tests {
     use super::*;
 
+    // Every test that builds a pack signs it: `build_skills_pack` creates the
+    // publisher key under the data dir. Each such test isolates that dir —
+    // otherwise it races tests that swap `LEAN_CTX_DATA_DIR` and delete their
+    // temp dir ("read signing key after race: No such file or directory"), and
+    // it writes a real key into the developer's data dir.
+
     fn scratch(label: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "lc-skills-{label}-{}-{:?}",
@@ -302,6 +308,7 @@ mod tests {
 
     #[test]
     fn builds_a_signed_verifying_skills_pack() {
+        let _data = crate::core::data_dir::isolated_data_dir();
         let dir = sample_dir("build");
         let plan = build_skills_pack(
             &dir,
@@ -326,6 +333,7 @@ mod tests {
     /// (and therefore an identical `content_hash`) across two builds.
     #[test]
     fn pack_content_is_deterministic() {
+        let _data = crate::core::data_dir::isolated_data_dir();
         let dir = sample_dir("determinism");
         let a = build_skills_pack(&dir, "@t/s", "1.0.0", "d", None, vec![]).expect("a");
         let b = build_skills_pack(&dir, "@t/s", "1.0.0", "d", None, vec![]).expect("b");
@@ -342,6 +350,7 @@ mod tests {
 
     #[test]
     fn tampered_blob_is_refused_at_verification_and_materialization() {
+        let _data = crate::core::data_dir::isolated_data_dir();
         let dir = sample_dir("tamper");
         let plan = build_skills_pack(&dir, "@t/s", "1.0.0", "d", None, vec![]).expect("plan");
 
@@ -374,6 +383,7 @@ mod tests {
 
     #[test]
     fn materializes_files_read_only_under_the_store() {
+        let _data = crate::core::data_dir::isolated_data_dir();
         let dir = sample_dir("mat");
         let plan = build_skills_pack(&dir, "@t/s", "1.2.3", "d", None, vec![]).expect("plan");
         let store = scratch("mat-store");
@@ -417,6 +427,7 @@ mod tests {
     /// reaches tool output.
     #[test]
     fn skill_bodies_pass_through_redaction() {
+        let _data = crate::core::data_dir::isolated_data_dir();
         let dir = scratch("redact");
         write(
             &dir,

@@ -40,8 +40,27 @@ pub fn canonical_body() -> String {
 /// installs, so the two can never drift apart again.
 pub const SKILL_COPY_PATH: &str = "skills/lean-ctx/SKILL.md";
 
+/// The Claude Code mod's development workspace (`claude plugin test`, `tsc`,
+/// `--plugin-dir`) mirrors the sources the binary embeds and installs
+/// (`templates/claude_mod/`), so what is tested is exactly what ships.
+pub const CLAUDE_MOD_COPIES: &[(&str, &str)] = &[
+    (
+        "integrations/claude-code-mod/hooks/register.ts",
+        crate::hooks::agents::claude_mod::REGISTER_TS,
+    ),
+    (
+        "integrations/claude-code-mod/hooks/hooks.json",
+        crate::hooks::agents::claude_mod::HOOKS_JSON,
+    ),
+    (
+        "integrations/claude-code-mod/.claude-plugin/plugin.json",
+        crate::hooks::agents::claude_mod::PLUGIN_JSON,
+    ),
+];
+
 /// `(relative_path, content)` for every artifact the generator writes: the
-/// versioned rule artifacts (one canonical body) plus the skill copy.
+/// versioned rule artifacts (one canonical body), the skill copy, and the
+/// Claude Code mod workspace copies.
 #[must_use]
 pub fn artifacts() -> Vec<(&'static str, String)> {
     let body = canonical_body();
@@ -51,6 +70,11 @@ pub fn artifacts() -> Vec<(&'static str, String)> {
         SKILL_COPY_PATH,
         include_str!("../templates/SKILL.md").to_string(),
     ));
+    arts.extend(
+        CLAUDE_MOD_COPIES
+            .iter()
+            .map(|(path, content)| (*path, (*content).to_string())),
+    );
     arts
 }
 

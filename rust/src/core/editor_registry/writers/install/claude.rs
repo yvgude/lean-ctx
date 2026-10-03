@@ -30,7 +30,10 @@ pub(crate) fn write_mcp_json(
     // Prefer the official CLI integration when available.
     // Skip when LEAN_CTX_QUIET=1 (bootstrap --json / setup --json) to avoid
     // spawning `claude mcp add-json` which can stall in non-interactive CI.
+    // Never from unit tests: on a machine with a trusted native install it
+    // would rewrite the developer's real ~/.claude.json.
     if is_claude
+        && !cfg!(test)
         && !matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1")
         && let Ok(result) = try_claude_mcp_add(&desired)
     {
@@ -94,29 +97,59 @@ pub(crate) fn find_in_path(binary: &str) -> Option<std::path::PathBuf> {
     None
 }
 
+/// The trusted `claude` executable, resolved to its real file on every platform
+/// (Windows: `claude.exe`; an npm `claude.cmd` shim cannot be spawned directly
+/// and is not trusted). `LEAN_CTX_TRUST_CLAUDE_PATH=1` overrides the location
+/// check for unusual installs — only the exact value `1`.
 pub(crate) fn validate_claude_binary() -> Result<std::path::PathBuf, String> {
-    let path = find_in_path("claude").ok_or("claude binary not found in PATH")?;
+    let name = if cfg!(windows) {
+        "claude.exe"
+    } else {
+        "claude"
+    };
+    let path = find_in_path(name).ok_or_else(|| format!("{name} not found in PATH"))?;
 
     let canonical =
         std::fs::canonicalize(&path).map_err(|e| format!("cannot resolve claude path: {e}"))?;
+    let home = crate::core::home::resolve_home_dir().and_then(|h| std::fs::canonicalize(h).ok());
 
-    let canonical_str = canonical.to_string_lossy();
-    let is_trusted = canonical_str.contains("/.claude/")
-        || canonical_str.contains("\\AppData\\")
-        || canonical_str.contains("/usr/local/bin/")
-        || canonical_str.contains("/opt/homebrew/")
-        || canonical_str.contains("/nix/store/")
-        || canonical_str.contains("/.npm/")
-        || canonical_str.contains("/.nvm/")
-        || canonical_str.contains("/node_modules/.bin/")
-        || std::env::var("LEAN_CTX_TRUST_CLAUDE_PATH").is_ok();
-
-    if !is_trusted {
+    if !is_trusted_claude_path(&canonical, home.as_deref())
+        && std::env::var("LEAN_CTX_TRUST_CLAUDE_PATH").as_deref() != Ok("1")
+    {
         return Err(format!(
-            "claude binary resolved to untrusted path: {canonical_str} — set LEAN_CTX_TRUST_CLAUDE_PATH=1 to override"
+            "claude binary resolved to untrusted path: {} — set LEAN_CTX_TRUST_CLAUDE_PATH=1 to override",
+            canonical.display()
         ));
     }
     Ok(canonical)
+}
+
+/// Install locations of genuine Claude Code builds, matched by path
+/// *components* (a substring test accepted look-alikes such as
+/// `/tmp/x/.local/share/claude/…`). User-level installs must sit under the real
+/// home directory; system installs under their fixed prefixes. The official
+/// native installer links `~/.local/bin/claude` to
+/// `~/.local/share/claude/versions/<v>`. A project-local `node_modules/.bin`
+/// is deliberately not trusted: it would let any checked-out repo supply the
+/// `claude` lean-ctx executes.
+fn is_trusted_claude_path(canonical: &std::path::Path, home: Option<&std::path::Path>) -> bool {
+    const HOME_ROOTS: &[&str] = &[
+        ".claude",
+        ".local/share/claude",
+        ".npm",
+        ".npm-global",
+        ".nvm",
+        ".bun",
+        "AppData",
+    ];
+    const SYSTEM_ROOTS: &[&str] = &[
+        "/usr/local/bin",
+        "/usr/local/lib/node_modules",
+        "/opt/homebrew",
+        "/nix/store",
+    ];
+    home.is_some_and(|h| HOME_ROOTS.iter().any(|r| canonical.starts_with(h.join(r))))
+        || SYSTEM_ROOTS.iter().any(|r| canonical.starts_with(r))
 }
 
 pub(crate) fn try_claude_mcp_add(desired: &Value) -> Result<WriteResult, String> {
@@ -126,18 +159,10 @@ pub(crate) fn try_claude_mcp_add(desired: &Value) -> Result<WriteResult, String>
 
     let server_json = serde_json::to_string(desired).map_err(|e| e.to_string())?;
 
-    let mut cmd = if cfg!(windows) {
-        let mut c = Command::new("cmd");
-        c.args([
-            "/C", "claude", "mcp", "add-json", "--scope", "user", "lean-ctx",
-        ]);
-        c
-    } else {
-        let claude_path = validate_claude_binary()?;
-        let mut c = Command::new(claude_path);
-        c.args(["mcp", "add-json", "--scope", "user", "lean-ctx"]);
-        c
-    };
+    // Same trusted, canonical executable on every platform — `cmd /C claude`
+    // used to run whatever `claude` PATH resolved to on Windows.
+    let mut cmd = Command::new(validate_claude_binary()?);
+    cmd.args(["mcp", "add-json", "--scope", "user", "lean-ctx"]);
 
     let mut child = cmd
         .stdin(Stdio::piped())
@@ -195,4 +220,24 @@ pub(crate) fn write_mcp_json_fresh(
         },
         note,
     })
+}
+
+#[cfg(test)]
+mod trust_tests {
+    use std::path::Path;
+
+    /// The native installer path is trusted; look-alikes outside the real
+    /// home, project-local shims and unrelated dirs are not (component match,
+    /// not substring — `/tmp/x/.local/share/claude/fake` used to pass).
+    #[test]
+    fn trust_is_anchored_to_home_and_system_roots() {
+        let home = Some(Path::new("/Users/u"));
+        let trusted = |p: &str| super::is_trusted_claude_path(Path::new(p), home);
+        assert!(trusted("/Users/u/.local/share/claude/versions/2.1.287"));
+        assert!(trusted("/opt/homebrew/Caskroom/claude-code/2.1.287/claude"));
+        assert!(!trusted("/tmp/x/.local/share/claude/fake"));
+        assert!(!trusted("/Users/u/repo/node_modules/.bin/claude"));
+        assert!(!trusted("/Users/other/.claude/local/claude"));
+        assert!(!trusted("/tmp/evil/claude"));
+    }
 }
